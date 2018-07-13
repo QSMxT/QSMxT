@@ -1,0 +1,23 @@
+{
+    "Acknowledgements": "TODO: whom you want to acknowledge",
+    "Authors": [
+        "TODO:",
+        "First1 Last1",
+        "First2 Last2",
+        "..."
+    ],
+    "BIDSVersion": "1.0.1",
+    "DatasetDOI": "TODO: eventually a DOI for the dataset",
+    "Funding": [
+        "TODO",
+        "GRANT #1",
+        "GRANT #2"
+    ],
+    "HowToAcknowledge": "TODO: describe how to acknowledge -- either cite a corresponding paper, or just in acknowledgement section",
+    "License": "TODO: choose a license, e.g. PDDL (http://opendatacommons.org/licenses/pddl/)",
+    "Name": "TODO: name of the dataset",
+    "ReferencesAndLinks": [
+        "TODO",
+        "List of papers or websites"
+    ]
+}
