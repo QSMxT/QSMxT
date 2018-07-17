@@ -1,1 +1,5 @@
 17042 Detection of Concussion dataset
+
+- copy data from 7Transfer into tar archive
+- convert using heudiconv to BIDS
+- use nipype to skullstrip with BET and tgv pipeline to process QSM
