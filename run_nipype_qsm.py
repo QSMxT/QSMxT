@@ -6,6 +6,8 @@ from nipype.interfaces.utility import IdentityInterface
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node
 from nipype import MapNode
+os.environ["FSLOUTPUTTYPE"] = "NIFTI"
+
 
 experiment_dir = '/QRISdata/Q0538/17042_detection_of_concussion/interim'
 output_dir = '/QRISdata/Q0538/17042_detection_of_concussion/processed'
