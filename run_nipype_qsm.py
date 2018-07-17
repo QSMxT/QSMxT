@@ -22,24 +22,27 @@ infosource.iterables = [('subject_id', subject_list)]
 # SelectFiles - to grab the data (alternative to DataGrabber)
 templates = {'mag': '{subject_id}/anat/*gre_M_echo_*.nii.gz',
              'phs': '{subject_id}/anat/*gre_P_echo_*.nii.gz'}
-selectfiles = Node(SelectFiles(templates, base_directory=experiment_dir), name="selectfiles")
+selectfiles = Node(SelectFiles(templates, base_directory=experiment_dir), name='selectfiles')
 
 # Datasink - creates output folder for important outputs
-datasink = Node(DataSink(base_directory=experiment_dir, container=output_dir), name="datasink")
+datasink = Node(DataSink(base_directory=experiment_dir, container=output_dir), name='datasink')
 
 # Create a preprocessing workflow
-preproc = Workflow(name='preproc')
+preproc = Workflow(name='preprocessing')
 preproc.base_dir = opj(experiment_dir, working_dir)
 
-bet = MapNode(BET(frac=0.4, mask=True, robust=True), name="bet", iterfield=['in_file'])
-phs_range = MapNode(ImageMaths(op_string='-div 4096 -mul 6.28318530718 -sub 3.14159265359'), name="phs_range", iterfield=['in_file'])
+bet = MapNode(BET(frac=0.4, mask=True, robust=True),
+              name='bet', iterfield=['in_file'])
+
+phs_range = MapNode(ImageMaths(op_string='-div 4096 -mul 6.28318530718 -sub 3.14159265359'),
+                    name='phs_range', iterfield=['in_file'])
 
 # Connect all components of the preprocessing workflow
 preproc.connect([(infosource, selectfiles, [('subject_id', 'subject_id')]),
                  (selectfiles, bet, [('mag', 'in_file')]),
                  (selectfiles, phs_range, [('phs', 'in_file')]),
-                 (bet, datasink, [('mask_file', 'preproc.@bet')]),
-                 (phs_range, datasink, [('out_file', 'preproc.@phs_range')]),
+                 (bet, datasink, [('mask_file', 'preprocessing.@bet')]),
+                 (phs_range, datasink, [('out_file', 'preprocessing.@phs_range')]),
                  ])
 
 preproc.run('MultiProc', plugin_args={'n_procs': 9})
