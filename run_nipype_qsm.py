@@ -49,4 +49,4 @@ Image(filename=opj(preproc.base_dir, 'preproc', 'graph.png'))
 preproc.write_graph(graph2use='flat', format='png', simple_form=True)
 Image(filename=opj(preproc.base_dir, 'preproc', 'graph_detailed.png'))
 
-preproc.run('MultiProc', plugin_args={'n_procs': 4})                                                                                                                                                13,0-1        All
+preproc.run('MultiProc', plugin_args={'n_procs': 4})
