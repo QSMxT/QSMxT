@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 from os.path import join as opj
 import os
-from nipype.interfaces.fsl import (BET, FLIRT, ImageMaths)
+from nipype.interfaces.fsl import (BET, ImageMaths)
 from nipype.interfaces.utility import IdentityInterface
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node
 from nipype import MapNode
+import nipype_interface_tgv_qsm as tgv
+
 os.environ["FSLOUTPUTTYPE"] = "NIFTI"
 
 
@@ -36,6 +38,7 @@ bet = MapNode(BET(frac=0.4, mask=True, robust=True),
 
 phs_range = MapNode(ImageMaths(op_string='-div 4096 -mul 6.28318530718 -sub 3.14159265359'),
                     name='phs_range', iterfield=['in_file'])
+
 
 # Connect all components of the preprocessing workflow
 preproc.connect([(infosource, selectfiles, [('subject_id', 'subject_id')]),

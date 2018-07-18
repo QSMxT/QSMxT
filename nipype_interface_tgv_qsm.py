@@ -1,18 +1,8 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Sun Aug  3 11:46:42 2014
-
-@author: epracht
-"""
 from __future__ import division
-
 import os
-
 from nipype.interfaces.base import BaseInterface, traits, TraitedSpec, File, CommandLineInputSpec
-from nipype.interfaces.traits_extension import isdefined
+from nipype.interfaces.base.traits_extension import isdefined
 from nipype.utils.filemanip import fname_presuffix
-
-# TODO DB Change this to a command line interface and just call the other functions
 
 THREAD_CONTROL_VARIABLE = "OMP_NUM_THREADS"
 
@@ -37,12 +27,12 @@ class QSMappingInputSpec(CommandLineInputSpec):
     out_suffix = traits.String("_qsm_recon", desc='Suffix for output files. Will be followed by 000 (reason - see CLI)',
                                usedefault=True, argstr="-o %s")
 
+
 class QSMappingOutputSpec(TraitedSpec):
     out_qsm = File(desc='Computed susceptibility map')
 
 
 class QSMappingInterface(BaseInterface):
-
     input_spec = QSMappingInputSpec
     output_spec = QSMappingOutputSpec
 
@@ -58,18 +48,16 @@ class QSMappingInterface(BaseInterface):
         else:
             self._num_threads_update()
 
-
     def _list_outputs(self):
         outputs = self.output_spec().get()
         outputs['out_qsm'] = gen_filename(self.inputs.file_magnitude, suffix=self.inputs.out_suffix + "000",
                                           newpath=os.getcwd())
-
         return outputs
 
     def _num_threads_update(self):
         self._num_threads = self.inputs.num_threads
-        if (self.inputs.num_threads == -1):
+        if self.inputs.num_threads == -1:
             pass  # System default
         else:
             self.inputs.environ.update({THREAD_CONTROL_VARIABLE:
-                                            '%s' % self.inputs.num_threads})
+                                        '%s' % self.inputs.num_threads})
