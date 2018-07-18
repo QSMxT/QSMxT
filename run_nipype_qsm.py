@@ -6,7 +6,7 @@ from nipype.interfaces.utility import IdentityInterface
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node
 from nipype import MapNode
-import nipype_interface_tgv_qsm as tgv
+from nipype_interface_tgv_qsm import QSMappingInterface
 
 os.environ["FSLOUTPUTTYPE"] = "NIFTI"
 
@@ -39,13 +39,17 @@ bet = MapNode(BET(frac=0.4, mask=True, robust=True),
 phs_range = MapNode(ImageMaths(op_string='-div 4096 -mul 6.28318530718 -sub 3.14159265359'),
                     name='phs_range', iterfield=['in_file'])
 
+qsm = Node(QSMappingInterface(TE=0.004, b0=7),
+           name='qsm')
+
 
 # Connect all components of the preprocessing workflow
 preproc.connect([(infosource, selectfiles, [('subject_id', 'subject_id')]),
                  (selectfiles, bet, [('mag', 'in_file')]),
                  (selectfiles, phs_range, [('phs', 'in_file')]),
-                 (bet, datasink, [('mask_file', 'preprocessing.@bet')]),
-                 (phs_range, datasink, [('out_file', 'preprocessing.@phs_range')]),
+                 (bet, qsm, [('mask_file', 'file_mask')]),
+                 (phs_range, qsm, [('out_file', 'file_phase')]),
+                 (qsm, datasink, [('out_qsm', 'preprocessing.@qsm')]),
                  ])
 
 preproc.run('MultiProc', plugin_args={'n_procs': 9})
