@@ -1,6 +1,6 @@
 from __future__ import division
 import os
-from nipype.interfaces.base import CommandLine, BaseInterface, traits, TraitedSpec, File, CommandLineInputSpec
+from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec
 from nipype.interfaces.base.traits_extension import isdefined
 from nipype.utils.filemanip import fname_presuffix
 
@@ -50,7 +50,7 @@ class QSMappingInterface(CommandLine):
 
     def _list_outputs(self):
         outputs = self.output_spec().get()
-        outputs['out_qsm'] = gen_filename(self.inputs.file_magnitude, suffix=self.inputs.out_suffix + "000",
+        outputs['out_qsm'] = gen_filename(self.inputs.file_phase, suffix=self.inputs.out_suffix + "_000",
                                           newpath=os.getcwd())
         return outputs
 

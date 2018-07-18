@@ -6,10 +6,9 @@ from nipype.interfaces.utility import IdentityInterface
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node
 from nipype import MapNode
-from nipype_interface_tgv_qsm import QSMappingInterface
+import nipype_interface_tgv_qsm as tgv
 
-os.environ["FSLOUTPUTTYPE"] = "NIFTI"
-
+os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
 
 experiment_dir = '/QRISdata/Q0538/17042_detection_of_concussion/interim'
 output_dir = '/QRISdata/Q0538/17042_detection_of_concussion/processed'
@@ -29,29 +28,28 @@ selectfiles = Node(SelectFiles(templates, base_directory=experiment_dir), name='
 # Datasink - creates output folder for important outputs
 datasink = Node(DataSink(base_directory=experiment_dir, container=output_dir), name='datasink')
 
-# Create a preprocessing workflow
-preproc = Workflow(name='preprocessing')
+
+# create Nodes
+bet_n = MapNode(BET(frac=0.4, mask=True, robust=True),
+                name='bet_node', iterfield=['in_file'])
+
+phs_range_n = MapNode(ImageMaths(op_string='-div 4096 -mul 6.28318530718 -sub 3.14159265359'),
+                      name='phs_range_node', iterfield=['in_file'])
+
+qsm_n = MapNode(tgv.QSMappingInterface(TE=0.004, b0=7, num_threads=9),
+                name='qsm_node', iterfield=['file_phase', 'file_mask'])
+
+
+# Connect Nodes in  preprocessing workflow
+preproc = Workflow(name='qsm')
 preproc.base_dir = opj(experiment_dir, working_dir)
-
-bet = Node(BET(frac=0.4, mask=True, robust=True),
-              name='bet')
-# iterfield=['in_file']
-
-phs_range = Node(ImageMaths(op_string='-div 4096 -mul 6.28318530718 -sub 3.14159265359'),
-                    name='phs_range')
-# iterfield=['in_file']
-
-qsm = Node(QSMappingInterface(TE=0.004, b0=7),
-           name='qsm')
-# iterfield=['file_phase']
-
-# Connect all components of the preprocessing workflow
 preproc.connect([(infosource, selectfiles, [('subject_id', 'subject_id')]),
-                 (selectfiles, bet, [('mag', 'in_file')]),
-                 (selectfiles, phs_range, [('phs', 'in_file')]),
-                 (bet, qsm, [('mask_file', 'file_mask')]),
-                 (phs_range, qsm, [('out_file', 'file_phase')]),
-                 (qsm, datasink, [('out_qsm', 'preprocessing.@qsm')]),
+                 (selectfiles, bet_n, [('mag', 'in_file')]),
+                 (selectfiles, phs_range_n, [('phs', 'in_file')]),
+                 (bet_n, qsm_n, [('mask_file', 'file_mask')]),
+                 (phs_range_n, qsm_n, [('out_file', 'file_phase')]),
+                 (qsm_n, datasink, [('out_qsm', 'qsm.@qsm_node')]),
                  ])
 
+# run
 preproc.run('MultiProc', plugin_args={'n_procs': 9})

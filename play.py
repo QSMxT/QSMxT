@@ -16,6 +16,6 @@ import nipype_interface_tgv_qsm as tgv
 # maths.run()
 
 tgv.QSMappingInterface.help()
-qsm = tgv.QSMappingInterface(file_mask='test_mask.nii', file_phase='test_phase.nii', TE=0.004, b0=7)
+qsm = tgv.QSMappingInterface(file_mask='test_mask.nii', file_phase='test_phase.nii', TE=0.004, b0=7, num_threads=9)
 print(qsm.cmdline)
 qsm.run()

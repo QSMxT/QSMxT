@@ -3,3 +3,5 @@ sub*
 .heudiconv/
 .IDEA
 *.nii
+test_mask.nii
+test_phase.nii
