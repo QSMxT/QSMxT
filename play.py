@@ -1,12 +1,21 @@
-from nipype_interface_tgv_qsm import QSMappingInterface
-from nipype.interfaces.fsl import ImageMaths
-from nipype.pipeline.engine import Workflow, Node
+#!/usr/bin/env python3
 
-ImageMaths.help()
-phs_range = Node(ImageMaths(op_string='-div 4096 -mul 6.28318530718 -sub 3.14159265359'), name='phs_range')
-phs_range.help()
+import nipype_interface_tgv_qsm as tgv
+# import nipype_interface_fsl_tgv as tgv
+# import nipype.interfaces.fsl as fsl
+# import nipype.interfaces.minc as minc
+# from nipype.interfaces.minc.testdata import minc2Dfile
+#
+# minc.Math.help()
+# maths = minc.Math(input_files=[minc2Dfile], scale=(3.0, 2))
+# print(maths.cmdline)
+#
+# fsl.ImageMaths.help()
+# maths = fsl.ImageMaths(in_file='test_phase.nii', op_string='-add 5', out_file='test_phase_add5.nii')
+# print(maths.cmdline)
+# maths.run()
 
-qsm = QSMappingInterface()
-qsm.help()
-qsm_node = Node(QSMappingInterface(TE=0.004, b0=3), name='phs_range')
-
+tgv.QSMappingInterface.help()
+qsm = tgv.QSMappingInterface(file_mask='test_mask.nii', file_phase='test_phase.nii', TE=0.004, b0=7)
+print(qsm.cmdline)
+qsm.run()

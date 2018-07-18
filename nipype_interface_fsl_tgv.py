@@ -1,18 +1,14 @@
-from __future__ import division
-import os
-from nipype.interfaces.base import CommandLine, BaseInterface, traits, TraitedSpec, File, CommandLineInputSpec
-from nipype.interfaces.base.traits_extension import isdefined
-from nipype.utils.filemanip import fname_presuffix
+from __future__ import (print_function, division, unicode_literals,
+                        absolute_import)
+
+from nipype.interfaces.base import (traits, TraitedSpec, File, CommandLine,
+                    CommandLineInputSpec, isdefined)
+from nipype.interfaces.fsl.base import FSLCommand, FSLCommandInputSpec, Info
 
 THREAD_CONTROL_VARIABLE = "OMP_NUM_THREADS"
 
 
-def gen_filename(fname, suffix, newpath=os.getcwd(), use_ext=True):
-    return fname_presuffix(fname, suffix=suffix, newpath=newpath, use_ext=use_ext)
-
-
-class QSMappingInputSpec(CommandLineInputSpec):
-    # TODO This is incomplete and just gives some basic parameters
+class QSMappingInputSpec(FSLCommandInputSpec):
     file_phase = File(exists=True, desc='Phase image', mandatory=True, argstr="-p %s")
     file_mask = File(exists=True, desc='Image mask', mandatory=True, argstr="-m %s")
     num_threads = traits.Int(1, usedefault=True, nohash=True, desc="Number of threads to use")
@@ -32,7 +28,7 @@ class QSMappingOutputSpec(TraitedSpec):
     out_qsm = File(desc='Computed susceptibility map')
 
 
-class QSMappingInterface(CommandLine):
+class QSMappingInterface(FSLCommand):
     input_spec = QSMappingInputSpec
     output_spec = QSMappingOutputSpec
 
@@ -61,3 +57,8 @@ class QSMappingInterface(CommandLine):
         else:
             self.inputs.environ.update({THREAD_CONTROL_VARIABLE:
                                         '%s' % self.inputs.num_threads})
+
+    def _gen_filename(self, name):
+        if name == 'out_file':
+            return self._list_outputs()[name]
+        return None
