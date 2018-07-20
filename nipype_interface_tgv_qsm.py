@@ -2,12 +2,12 @@ from __future__ import division
 import os
 from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec
 from nipype.interfaces.base.traits_extension import isdefined
-from nipype.utils.filemanip import fname_presuffix
+from nipype.utils.filemanip import fname_presuffix, split_filename
 
 THREAD_CONTROL_VARIABLE = "OMP_NUM_THREADS"
 
 
-def gen_filename(fname, suffix, newpath=os.getcwd(), use_ext=True):
+def gen_filename(fname, suffix, newpath, use_ext=True):
     return fname_presuffix(fname, suffix=suffix, newpath=newpath, use_ext=use_ext)
 
 
@@ -15,7 +15,7 @@ class QSMappingInputSpec(CommandLineInputSpec):
     # TODO This is incomplete and just gives some basic parameters
     file_phase = File(exists=True, desc='Phase image', mandatory=True, argstr="-p %s")
     file_mask = File(exists=True, desc='Image mask', mandatory=True, argstr="-m %s")
-    num_threads = traits.Int(1, usedefault=True, nohash=True, desc="Number of threads to use")
+    num_threads = traits.Int(-1, usedefault=True, nohash=True, desc="Number of threads to use, by default $NCPUS")
     TE = traits.Float(desc='Echo Time [sec]', mandatory=True, argstr="-t %f")
     b0 = traits.Float(desc='Field Strength [Tesla]', mandatory=True, argstr="-f %f")
     # Only support of one alpha here!
@@ -50,14 +50,17 @@ class QSMappingInterface(CommandLine):
 
     def _list_outputs(self):
         outputs = self.output_spec().get()
-        outputs['out_qsm'] = gen_filename(self.inputs.file_phase, suffix=self.inputs.out_suffix + "000",
-                                          newpath=os.getcwd())
+        pth, fname, ext = split_filename(self.inputs.file_phase)
+        # outputs['out_qsm'] = gen_filename(self.inputs.file_magnitude, suffix=self.inputs.out_suffix + "000",
+        #                                   newpath=os.getcwd())
+        # outputs['out_qsm'] = 'test'
+        outputs['out_qsm'] = gen_filename(self.inputs.file_phase, suffix=self.inputs.out_suffix + "_000",
+                                          newpath=pth)
         return outputs
 
     def _num_threads_update(self):
         self._num_threads = self.inputs.num_threads
         if self.inputs.num_threads == -1:
-            pass  # System default
+            self.inputs.environ.update({THREAD_CONTROL_VARIABLE: '$NCPUS'})
         else:
-            self.inputs.environ.update({THREAD_CONTROL_VARIABLE:
-                                        '%s' % self.inputs.num_threads})
+            self.inputs.environ.update({THREAD_CONTROL_VARIABLE: '%s' % self.inputs.num_threads})

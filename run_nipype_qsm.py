@@ -36,7 +36,7 @@ bet_n = MapNode(BET(frac=0.4, mask=True, robust=True),
 phs_range_n = MapNode(ImageMaths(op_string='-div 4096 -mul 6.28318530718 -sub 3.14159265359'),
                       name='phs_range_node', iterfield=['in_file'])
 
-qsm_n = MapNode(tgv.QSMappingInterface(TE=0.004, b0=7, num_threads=9),
+qsm_n = MapNode(tgv.QSMappingInterface(iterations=30, TE=0.04, b0=7),
                 name='qsm_node', iterfield=['file_phase', 'file_mask'])
 
 
@@ -48,7 +48,7 @@ preproc.connect([(infosource, selectfiles, [('subject_id', 'subject_id')]),
                  (selectfiles, phs_range_n, [('phs', 'in_file')]),
                  (bet_n, qsm_n, [('mask_file', 'file_mask')]),
                  (phs_range_n, qsm_n, [('out_file', 'file_phase')]),
-                 (qsm_n, datasink, [('out_qsm', 'qsm.@qsm_node')]),
+                 (qsm_n, datasink, [('out_qsm', 'qsm_final')]),
                  ])
 
 # run
