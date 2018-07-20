@@ -28,8 +28,9 @@ def infotodict(seqinfo):
     for s in seqinfo:
         if ('UNI-DEN' in s.series_description):
            info[t1w] = [s.series_id]
-        if ('Aspire_M' in s.series_description):
+        if ('NORM' in s.image_type) and not ('ND' in s.image_type):
            info[greM] = [s.series_id]
-        if ('Aspire_P' in s.series_description):
+        if not ('NORM' in s.image_type) and not ('ND' in s.image_type):
            info[greP] = [s.series_id]
+
     return info

@@ -10,11 +10,11 @@ import nipype_interface_tgv_qsm as tgv
 
 os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
 
-experiment_dir = '/QRISdata/Q0538/17042_detection_of_concussion/interim'
-output_dir = '/QRISdata/Q0538/17042_detection_of_concussion/processed'
-working_dir = '/gpfs1/scratch/30days/uqsbollm/17042_detection_of_concussion'
+experiment_dir = '.'
+output_dir = '../processed'
+working_dir = '../scratch'
 
-subject_list = ['sub-S008LCBL']
+subject_list = ['sub-']
 
 # Infosource - a function free node to iterate over the list of subject names
 infosource = Node(IdentityInterface(fields=['subject_id']), name="infosource")
