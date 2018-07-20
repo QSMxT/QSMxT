@@ -36,6 +36,8 @@ bet_n = MapNode(BET(frac=0.4, mask=True, robust=True),
 phs_range_n = MapNode(ImageMaths(op_string='-div 4096 -mul 6.28318530718 -sub 3.14159265359'),
                       name='phs_range_node', iterfield=['in_file'])
 
+# load params for qsm from json files here
+
 qsm_n = MapNode(tgv.QSMappingInterface(iterations=30, TE=0.04, b0=7),
                 name='qsm_node', iterfield=['file_phase', 'file_mask'])
 
