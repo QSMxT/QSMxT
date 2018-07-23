@@ -1,3 +1,9 @@
+"""
+Created on Sun Aug  3 11:46:42 2014
+
+@author: epracht
+modified by Steffen.Bollmann@cai.uq.edu.au
+"""
 from __future__ import division
 import os
 from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec
