@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 from os.path import join as opj
 import os
-from nipype.interfaces.fsl import (BET, ImageMaths)
+from nipype.interfaces.fsl import (BET, ImageMaths, ImageStats)
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink, JSONFileGrabber, JSONFileSink
 from nipype.pipeline.engine import Workflow, Node
@@ -23,9 +23,9 @@ infosource.iterables = [('subject_id', subject_list)]
 
 
 # SelectFiles - to grab the data (alternative to DataGrabber)
-templates = {'mag': '{subject_id}/anat/*gre_M_echo_[1,2].nii.gz',
-             'phs': '{subject_id}/anat/*gre_P_echo_[1,2].nii.gz',
-             'params': '{subject_id}/anat/*gre_P_echo_[1,2].json'}
+templates = {'mag': '{subject_id}/anat/*gre_M_echo_[3,2].nii.gz',
+             'phs': '{subject_id}/anat/*gre_P_echo_[3,2].nii.gz',
+             'params': '{subject_id}/anat/*gre_P_echo_[3,2].json'}
 selectfiles = Node(SelectFiles(templates, base_directory=experiment_dir), name='selectfiles')
 
 
@@ -33,20 +33,30 @@ selectfiles = Node(SelectFiles(templates, base_directory=experiment_dir), name='
 bet_n = MapNode(BET(frac=0.4, mask=True, robust=True),
                 name='bet_node', iterfield=['in_file'])
 
-phs_range_n = MapNode(ImageMaths(op_string='-div 4096 -mul 6.28318530718 -sub 3.14159265359'),
-                      name='phs_range_node', iterfield=['in_file'])
+stats = MapNode(ImageStats(op_string='-R'),
+                name='stats_node', iterfield=['in_file'])
+
+
+def getmax(thresh):
+    return '-div %.10f -mul 6.28318530718 -sub 3.14159265359' % (thresh[0][1])
+
+
+phs_range_n = MapNode(ImageMaths(),
+                      name='phs_range_node', iterfield=['in_file', 'op_string'])
 
 
 def read_json(in_file):
     import os
+    te = 0.001
+    b0 = 7
     if os.path.exists(in_file):
         import json
         with open(in_file, 'rt') as fp:
             data = json.load(fp)
-            EchoTime = data['EchoTime']
-            MagneticFieldStrength = data['MagneticFieldStrength']
+            te = data['EchoTime']
+            b0 = data['MagneticFieldStrength']
 
-    return EchoTime, MagneticFieldStrength
+    return te, b0
 
 
 params_n = MapNode(interface=Function(input_names=['in_file'],
@@ -66,8 +76,10 @@ preproc = Workflow(name='qsm')
 preproc.base_dir = opj(experiment_dir, working_dir)
 preproc.connect([(infosource, selectfiles, [('subject_id', 'subject_id')]),
                  (selectfiles, bet_n, [('mag', 'in_file')]),
+                 (selectfiles, stats, [('phs', 'in_file')]),
                  (selectfiles, phs_range_n, [('phs', 'in_file')]),
                  (selectfiles, params_n, [('params', 'in_file')]),
+                 (stats, phs_range_n, [(('out_stat', getmax), 'op_string')]),
                  (params_n, qsm_n, [('EchoTime', 'TE')]),
                  (params_n, qsm_n, [('MagneticFieldStrength', 'b0')]),
                  (bet_n, qsm_n, [('mask_file', 'file_mask')]),
