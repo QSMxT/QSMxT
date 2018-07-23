@@ -17,19 +17,20 @@ working_dir = '/gpfs1/scratch/30days/uqsbollm/17042_detection_of_concussion'
 subject_list = ['sub-S008LCBL']
 
 
-# Infosource - a function free node to iterate over the list of subject names
+qsm_wf = Workflow(name='qsm')
+qsm_wf.base_dir = opj(experiment_dir, working_dir)
+
 infosource = Node(IdentityInterface(fields=['subject_id']), name="infosource")
 infosource.iterables = [('subject_id', subject_list)]
 
-
-# SelectFiles - to grab the data (alternative to DataGrabber)
-templates = {'mag': '{subject_id}/anat/*gre_M_echo_[3,2].nii.gz',
-             'phs': '{subject_id}/anat/*gre_P_echo_[3,2].nii.gz',
-             'params': '{subject_id}/anat/*gre_P_echo_[3,2].json'}
+templates = {'mag': '{subject_id}/anat/*gre_M_echo_*.nii.gz',
+             'phs': '{subject_id}/anat/*gre_P_echo_*.nii.gz',
+             'params': '{subject_id}/anat/*gre_P_echo_*.json'}
 selectfiles = Node(SelectFiles(templates, base_directory=experiment_dir), name='selectfiles')
 
+qsm_wf.connect([(infosource, selectfiles, [('subject_id', 'subject_id')])])
 
-# create Nodes
+
 bet_n = MapNode(BET(frac=0.4, mask=True, robust=True),
                 name='bet_node', iterfield=['in_file'])
 
@@ -37,12 +38,20 @@ stats = MapNode(ImageStats(op_string='-R'),
                 name='stats_node', iterfield=['in_file'])
 
 
-def getmax(thresh):
-    return '-div %.10f -mul 6.28318530718 -sub 3.14159265359' % (thresh[0][1])
+def scale_to_pi(min_and_max):
+    data_min = min_and_max[0][0]
+    data_max = min_and_max[0][1]
+    return '-add %.10f -div %.10f -mul 6.28318530718 -sub 3.14159265359' % (data_min, data_max+data_min)
 
 
 phs_range_n = MapNode(ImageMaths(),
-                      name='phs_range_node', iterfield=['in_file', 'op_string'])
+                      name='phs_range_node', iterfield=['in_file'])
+
+qsm_wf.connect([(selectfiles, bet_n, [('mag', 'in_file')]),
+                (selectfiles, stats, [('phs', 'in_file')]),
+                (selectfiles, phs_range_n, [('phs', 'in_file')]),
+                (stats, phs_range_n, [(('out_stat', scale_to_pi), 'op_string')])
+                ])
 
 
 def read_json(in_file):
@@ -64,29 +73,34 @@ params_n = MapNode(interface=Function(input_names=['in_file'],
                                       function=read_json),
                    name='read_json', iterfield=['in_file'])
 
+qsm_wf.connect([(selectfiles, params_n, [('params', 'in_file')])])
+
+
+
 qsm_n = MapNode(tgv.QSMappingInterface(iterations=1, b0=7),
                 name='qsm_node', iterfield=['file_phase', 'file_mask', 'TE', 'b0'])
+
+qsm_wf.connect([
+    (params_n, qsm_n, [('EchoTime', 'TE')]),
+    (params_n, qsm_n, [('MagneticFieldStrength', 'b0')]),
+    (bet_n, qsm_n, [('mask_file', 'file_mask')]),
+    (phs_range_n, qsm_n, [('out_file', 'file_phase')])])
+
+
+
+
+
+
 
 datasink = Node(DataSink(base_directory=experiment_dir, container=output_dir),
                 name='datasink')
 
+qsm_wf.connect([(qsm_n, datasink, [('out_qsm', 'qsm')])])
 
-# Connect Nodes in  preprocessing workflow
-preproc = Workflow(name='qsm')
-preproc.base_dir = opj(experiment_dir, working_dir)
-preproc.connect([(infosource, selectfiles, [('subject_id', 'subject_id')]),
-                 (selectfiles, bet_n, [('mag', 'in_file')]),
-                 (selectfiles, stats, [('phs', 'in_file')]),
-                 (selectfiles, phs_range_n, [('phs', 'in_file')]),
-                 (selectfiles, params_n, [('params', 'in_file')]),
-                 (stats, phs_range_n, [(('out_stat', getmax), 'op_string')]),
-                 (params_n, qsm_n, [('EchoTime', 'TE')]),
-                 (params_n, qsm_n, [('MagneticFieldStrength', 'b0')]),
-                 (bet_n, qsm_n, [('mask_file', 'file_mask')]),
-                 (phs_range_n, qsm_n, [('out_file', 'file_phase')]),
-                 (qsm_n, datasink, [('out_qsm', 'qsm')]),
-                 ])
+
+
+
 
 # run as MultiProc
-preproc.write_graph(graph2use='flat', format='png', simple_form=False)
-preproc.run('MultiProc', plugin_args={'n_procs': 1})
+qsm_wf.write_graph(graph2use='flat', format='png', simple_form=False)
+qsm_wf.run('MultiProc', plugin_args={'n_procs': 1})
