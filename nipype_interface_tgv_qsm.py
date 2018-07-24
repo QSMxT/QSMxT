@@ -57,9 +57,6 @@ class QSMappingInterface(CommandLine):
     def _list_outputs(self):
         outputs = self.output_spec().get()
         pth, fname, ext = split_filename(self.inputs.file_phase)
-        # outputs['out_qsm'] = gen_filename(self.inputs.file_magnitude, suffix=self.inputs.out_suffix + "000",
-        #                                   newpath=os.getcwd())
-        # outputs['out_qsm'] = 'test'
         outputs['out_qsm'] = gen_filename(self.inputs.file_phase, suffix=self.inputs.out_suffix + "_000",
                                           newpath=pth)
         return outputs

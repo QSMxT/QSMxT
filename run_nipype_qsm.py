@@ -4,9 +4,10 @@ import os
 from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, Merge
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
-from nipype.pipeline.engine import Workflow, Node, JoinNode, MapNode
+from nipype.pipeline.engine import Workflow, Node, MapNode
 import nipype_interface_tgv_qsm as tgv
 
+# <editor-fold desc="Parameters">
 os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
 
 experiment_dir = '/QRISdata/Q0538/17042_detection_of_concussion/interim'
@@ -14,31 +15,34 @@ output_dir = '/QRISdata/Q0538/17042_detection_of_concussion/derivatives'
 working_dir = '/gpfs1/scratch/30days/uqsbollm/17042_detection_of_concussion'
 
 subject_list = ['sub-S008LCBL']
+# </editor-fold>
 
-# create workflow
+# <editor-fold desc="Create Workflow and link to subject list">
 qsm_wf = Workflow(name='qsm')
 qsm_wf.base_dir = opj(experiment_dir, working_dir)
 
 # create infosource to iterate over subject list
 infosource = Node(IdentityInterface(fields=['subject_id']), name="infosource")
 infosource.iterables = [('subject_id', subject_list)]
+# </editor-fold>
 
-# define templates for selecting files
+# <editor-fold desc="Select files">
 templates = {'mag': '{subject_id}/anat/*gre_M_echo_*.nii.gz',
              'phs': '{subject_id}/anat/*gre_P_echo_*.nii.gz',
              'params': '{subject_id}/anat/*gre_P_echo_*.json'}
 selectfiles = Node(SelectFiles(templates, base_directory=experiment_dir), name='selectfiles')
 
 qsm_wf.connect([(infosource, selectfiles, [('subject_id', 'subject_id')])])
+# </editor-fold>
 
-
-# Brain extract files
+# <editor-fold desc="Brain Extraction">
 bet_n = MapNode(BET(frac=0.4, mask=True, robust=True),
                 name='bet_node', iterfield=['in_file'])
 
 qsm_wf.connect([(selectfiles, bet_n, [('mag', 'in_file')])])
+# </editor-fold>
 
-
+# <editor-fold desc="Scale phase data">
 # Scale phase images
 stats = MapNode(ImageStats(op_string='-R'),
                 name='stats_node', iterfield=['in_file'])
@@ -58,9 +62,9 @@ qsm_wf.connect([(selectfiles, stats, [('phs', 'in_file')]),
                 (selectfiles, phs_range_n, [('phs', 'in_file')]),
                 (stats, phs_range_n, [(('out_stat', scale_to_pi), 'op_string')])
                 ])
+# </editor-fold>
 
-
-# Read echotime and fieldstrenghts from json files
+# <editor-fold desc="Read echotime and fieldstrenghts from json files ">
 def read_json(in_file):
     import os
     te = 0.001
@@ -81,8 +85,9 @@ params_n = MapNode(interface=Function(input_names=['in_file'],
                    name='read_json', iterfield=['in_file'])
 
 qsm_wf.connect([(selectfiles, params_n, [('params', 'in_file')])])
+# </editor-fold>
 
-
+# <editor-fold desc="QSM Processing">
 # Run QSM processing
 qsm_n = MapNode(tgv.QSMappingInterface(iterations=1, b0=7),
                 name='qsm_node', iterfield=['file_phase', 'file_mask', 'TE', 'b0'])
@@ -92,23 +97,34 @@ qsm_wf.connect([
     (params_n, qsm_n, [('MagneticFieldStrength', 'b0')]),
     (bet_n, qsm_n, [('mask_file', 'file_mask')]),
     (phs_range_n, qsm_n, [('out_file', 'file_phase')])])
+# </editor-fold>
 
+# <editor-fold desc="Mask processing">
+# Merge masks of individual echoes
+merge_masks_n = Node(Merge(dimension='t'),
+                     name="add_masks_node")
 
-# Add up masks of individual echoes
-sum_masks_n = Node(Merge(dimension='t'),
-                   name="add_masks_node")
+qsm_wf.connect([(bet_n, merge_masks_n, [('mask_file', 'in_files')])])
 
-qsm_wf.connect([(bet_n, sum_masks_n, [('mask_file', 'in_files')])])
+# Merge masks of individual echoes
+merge_masks_n = Node(ImageMaths(op_string='-Tmean'),
+                     name="add_masks_node")
 
+qsm_wf.connect([(bet_n, merge_masks_n, [('mask_file', 'in_files')])])
+# </editor-fold>
 
+#<editor-fold desc="Datasink">
 # Add data to datasink output folder
 datasink = Node(DataSink(base_directory=experiment_dir, container=output_dir),
                 name='datasink')
 
 # qsm_wf.connect([(qsm_n, datasink, [('out_qsm', 'qsm')])])
-qsm_wf.connect([(sum_masks_n, datasink, [('merged_file', 'masks')])])
+qsm_wf.connect([(merge_masks_n, datasink, [('merged_file', 'masks')])])
+#</editor-fold>
 
-
+# <editor-fold desc="Run">
 # run as MultiProc
 qsm_wf.write_graph(graph2use='flat', format='png', simple_form=False)
 qsm_wf.run('MultiProc', plugin_args={'n_procs': 9})
+# </editor-fold>
+
