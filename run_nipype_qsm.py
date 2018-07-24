@@ -43,7 +43,6 @@ qsm_wf.connect([(selectfiles, bet_n, [('mag', 'in_file')])])
 # </editor-fold>
 
 # <editor-fold desc="Scale phase data">
-# Scale phase images
 stats = MapNode(ImageStats(op_string='-R'),
                 name='stats_node', iterfield=['in_file'])
 
@@ -65,6 +64,8 @@ qsm_wf.connect([(selectfiles, stats, [('phs', 'in_file')]),
 # </editor-fold>
 
 # <editor-fold desc="Read echotime and fieldstrenghts from json files ">
+
+
 def read_json(in_file):
     import os
     te = 0.001
@@ -106,21 +107,36 @@ merge_masks_n = Node(Merge(dimension='t'),
 
 qsm_wf.connect([(bet_n, merge_masks_n, [('mask_file', 'in_files')])])
 
-# Merge masks of individual echoes
-merge_masks_n = Node(ImageMaths(op_string='-Tmean'),
-                     name="add_masks_node")
+# Mean masks of individual echoes
+mean_masks_n = Node(ImageMaths(op_string='-Tmean'),
+                    name="mean_masks_node")
 
-qsm_wf.connect([(bet_n, merge_masks_n, [('mask_file', 'in_files')])])
+qsm_wf.connect([(merge_masks_n, mean_masks_n, [('merged_file', 'in_file')])])
 # </editor-fold>
 
-#<editor-fold desc="Datasink">
-# Add data to datasink output folder
+# <editor-fold desc="QSM Post processing">
+# Merge qsms of individual echoes
+merge_qsms_n = Node(Merge(dimension='t'),
+                    name="merge_qsms_node")
+
+qsm_wf.connect([(qsm_n, merge_qsms_n, [('out_file', 'in_files')])])
+
+# mean qsms of individual echoes
+mean_qsms_n = Node(ImageMaths(op_string='-Tmean'),
+                   name="mean_qsms_node")
+
+qsm_wf.connect([(merge_qsms_n, mean_qsms_n, [('merged_file', 'in_file')])])
+# </editor-fold>
+
+# <editor-fold desc="Datasink">
 datasink = Node(DataSink(base_directory=experiment_dir, container=output_dir),
                 name='datasink')
 
-# qsm_wf.connect([(qsm_n, datasink, [('out_qsm', 'qsm')])])
-qsm_wf.connect([(merge_masks_n, datasink, [('merged_file', 'masks')])])
-#</editor-fold>
+# qsm_wf.connect([(qsm_n, datasink, [('out_file', 'qsm')])])
+qsm_wf.connect([(mean_masks_n, datasink, [('out_file', 'mask_mean')])])
+qsm_wf.connect([(mean_qsms_n, datasink, [('out_file', 'qsm_mean')])])
+
+# </editor-fold>
 
 # <editor-fold desc="Run">
 # run as MultiProc
