@@ -1,3 +1,9 @@
+"""
+Created on Sun Aug  3 11:46:42 2014
+
+@author: epracht
+modified by Steffen.Bollmann@cai.uq.edu.au
+"""
 from __future__ import division
 import os
 from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec
@@ -29,7 +35,7 @@ class QSMappingInputSpec(CommandLineInputSpec):
 
 
 class QSMappingOutputSpec(TraitedSpec):
-    out_qsm = File(desc='Computed susceptibility map')
+    out_file = File(desc='Computed susceptibility map')
 
 
 class QSMappingInterface(CommandLine):
@@ -51,11 +57,8 @@ class QSMappingInterface(CommandLine):
     def _list_outputs(self):
         outputs = self.output_spec().get()
         pth, fname, ext = split_filename(self.inputs.file_phase)
-        # outputs['out_qsm'] = gen_filename(self.inputs.file_magnitude, suffix=self.inputs.out_suffix + "000",
-        #                                   newpath=os.getcwd())
-        # outputs['out_qsm'] = 'test'
-        outputs['out_qsm'] = gen_filename(self.inputs.file_phase, suffix=self.inputs.out_suffix + "_000",
-                                          newpath=pth)
+        outputs['out_file'] = gen_filename(self.inputs.file_phase, suffix=self.inputs.out_suffix + "_000",
+                                           newpath=pth)
         return outputs
 
     def _num_threads_update(self):
