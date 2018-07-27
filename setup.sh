@@ -1,4 +1,9 @@
 #!/usr/bin/env bash
+# install dependencies e.g. or skip if already there
+git clone git@gitlab.com:uqsbollm/deploy_containers.git
+mv deploy_containers packageNAME
+
+# setup dependencies, ideally in .bashrc:
 export SINGULARITY_BINDPATH="/data"
 # Container in /data/lfs2/software/singularity/tgvqsm_amd_20180727
 export PATH=$PATH:/data/lfs2/software/singularity/tgvqsm_amd_20180727
