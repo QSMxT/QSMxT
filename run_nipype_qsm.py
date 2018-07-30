@@ -6,15 +6,18 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 import nipype_interface_tgv_qsm as tgv
-from nipype import config
-config.enable_debug_mode()
 
-config.set('execution', 'stop_on_first_crash', 'true')
-config.set('execution', 'remove_unnecessary_outputs', 'false')
-config.set('execution', 'keep_inputs', 'true')
-config.set('logging', 'workflow_level', 'DEBUG')
-config.set('logging', 'interface_level', 'DEBUG')
-config.set('logging', 'utils_level', 'DEBUG')
+# <editor-fold desc="DEBUG MODE">
+# from nipype import config
+# config.enable_debug_mode()
+#
+# config.set('execution', 'stop_on_first_crash', 'true')
+# config.set('execution', 'remove_unnecessary_outputs', 'false')
+# config.set('execution', 'keep_inputs', 'true')
+# config.set('logging', 'workflow_level', 'DEBUG')
+# config.set('logging', 'interface_level', 'DEBUG')
+# config.set('logging', 'utils_level', 'DEBUG')
+# </editor-fold>
 
 # <editor-fold desc="Parameters">
 os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
@@ -23,13 +26,13 @@ os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
 # output_dir = '/QRISdata/Q0538/17042_detection_of_concussion/derivatives'
 # working_dir = '/gpfs1/scratch/30days/uqsbollm/17042_detection_of_concussion'
 
-# experiment_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/interim'
-# output_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/derivatives'
-# working_dir = '/gpfs1/scratch/30days/uqsbollm/17042_detection_of_concussion'
+experiment_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/interim'
+output_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/derivatives'
+working_dir = '/gpfs1/scratch/30days/uqsbollm/17042_detection_of_concussion'
 
-experiment_dir = '/data/fastertemp/uqsbollm/uqrdmcache/CONCUSSION-Q0538/17042_detection_of_concussion/interim'
-output_dir = '/data/fastertemp/uqsbollm/uqrdmcache/CONCUSSION-Q0538/17042_detection_of_concussion/derivatives'
-working_dir = '/data/fastertemp/uqsbollm/scratch/CONCUSSION-Q0538'
+# experiment_dir = '/data/fastertemp/uqsbollm/uqrdmcache/CONCUSSION-Q0538/17042_detection_of_concussion/interim'
+# output_dir = '/data/fastertemp/uqsbollm/uqrdmcache/CONCUSSION-Q0538/17042_detection_of_concussion/derivatives'
+# working_dir = '/data/fastertemp/uqsbollm/scratch/CONCUSSION-Q0538'
 
 subject_list = ['sub-S008LCBL']
 # </editor-fold>
@@ -171,14 +174,14 @@ wf.connect([
 
 # <editor-fold desc="Run">
 # run as MultiProc
-wf.write_graph(graph2use='flat', format='png', simple_form=False)
-wf.run('MultiProc', plugin_args={'n_procs': 50})
+# wf.write_graph(graph2use='flat', format='png', simple_form=False)
+# wf.run('MultiProc', plugin_args={'n_procs': 50})
 
 
 # wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=1,mem=5gb,vmem=4gb, walltime=01:00:00'})
 
-# wf.run(plugin='PBSGraph',
-#        plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=20GB,vmem=20GB,walltime=14:00:00'))
+wf.run(plugin='PBSGraph',
+       plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=20GB,vmem=20GB,walltime=04:00:00'))
 
 # </editor-fold>
 
