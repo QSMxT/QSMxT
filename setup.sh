@@ -11,4 +11,4 @@ pip install https://github.com/nipy/heudiconv/archive/master.zip
 
 #install nipype
 conda install --channel conda-forge nipype
-
+pip install pydot

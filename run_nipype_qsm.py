@@ -6,7 +6,7 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 import nipype_interface_tgv_qsm as tgv
-
+# from .nipype_interface_tgv_qsm import QSMappingInterface as tgv
 # <editor-fold desc="DEBUG MODE">
 # from nipype import config
 # config.enable_debug_mode()
@@ -28,13 +28,22 @@ os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
 
 experiment_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/interim'
 output_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/derivatives'
-working_dir = '/gpfs1/scratch/30days/uqsbollm/17042_detection_of_concussion'
+working_dir = '/gpfs1/scratch/30days/uqsbollm/temp/CONCUSSION-Q0538'
+
+# experiment_dir = '/QRISdata/Q0538/17042_detection_of_concussion/interim'
+# output_dir = '/QRISdata/Q0538/17042_detection_of_concussion/derivatives'
+# working_dir = '/gpfs1/scratch/30days/uqsbollm/temp/CONCUSSION-Q0538'
 
 # experiment_dir = '/data/fastertemp/uqsbollm/uqrdmcache/CONCUSSION-Q0538/17042_detection_of_concussion/interim'
 # output_dir = '/data/fastertemp/uqsbollm/uqrdmcache/CONCUSSION-Q0538/17042_detection_of_concussion/derivatives'
 # working_dir = '/data/fastertemp/uqsbollm/scratch/CONCUSSION-Q0538'
 
 subject_list = ['sub-S008LCBL']
+
+# subject_list = ['sub-S008LCBL', 'sub-S009MC3D', 'sub-S009MC7D', 'sub-S009MCBL', 'sub-S010BD',
+#                 'sub-S011RJBL', 'sub-S013FBBL', 'sub-S014WSBL', 'sub-S015KSBL', 'sub-S016JVBL',
+#                 'sub-S017DPBL', 'sub-S018ALBL', 'sub-S019PLBL', 'sub-S020DABL']
+
 # </editor-fold>
 
 # <editor-fold desc="Create Workflow and link to subject list">
@@ -110,10 +119,10 @@ wf.connect([(selectfiles, params_n, [('params', 'in_file')])])
 
 # <editor-fold desc="QSM Processing">
 # Run QSM processing
-qsm_n = MapNode(tgv.QSMappingInterface(iterations=1000, alpha=[0.0015, 0.0005]),
+qsm_n = MapNode(tgv.QSMappingInterface(iterations=1000, alpha=[0.0015, 0.0005], num_threads=1),
                 name='qsm_node', iterfield=['file_phase', 'file_mask', 'TE', 'b0'])
 
-qsm_n.plugin_args = {'qsub_args': '-A UQ-CAI -l nodes=1:ppn=9,mem=15gb,vmem=15gb, walltime=01:00:00', 'overwrite': True}
+# qsm_n.plugin_args = {'qsub_args': '-A UQ-CAI -l nodes=1:ppn=9,mem=15gb,vmem=15gb, walltime=01:00:00', 'overwrite': True}
 
 wf.connect([
     (params_n, qsm_n, [('EchoTime', 'TE')]),
@@ -175,13 +184,11 @@ wf.connect([
 # <editor-fold desc="Run">
 # run as MultiProc
 # wf.write_graph(graph2use='flat', format='png', simple_form=False)
-# wf.run('MultiProc', plugin_args={'n_procs': 50})
 
 
-# wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=1,mem=5gb,vmem=4gb, walltime=01:00:00'})
-
-wf.run(plugin='PBSGraph',
-       plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=20GB,vmem=20GB,walltime=04:00:00'))
+wf.run('MultiProc', plugin_args={'n_procs': 9})
+# wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=1,mem=5gb,vmem=5gb, walltime=01:00:00'})
+# wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=20GB,vmem=20GB,walltime=04:00:00'))
 
 # </editor-fold>
 
