@@ -84,7 +84,6 @@ tbuilder.connect([(infosource, selectfiles, [('subject_id', 'subject_id')])])
 
 datasource = pe.Node(
     interface=util.IdentityInterface(fields=[
-        'InitialTemplateInputs', 'ListOfImagesDictionaries',
         'registrationImageTypes', 'interpolationMapping'
     ]),
     run_without_submitting=True,
@@ -134,7 +133,7 @@ BeginANTS = buildTemplateIteration2.get_node("BeginANTS")
 # }
 tbuilder.connect(buildTemplateIteration1, 'outputspec.template',
                  buildTemplateIteration2, 'inputspec.fixed_image')
-tbuilder.connect(datasource, 'ListOfImagesDictionaries',
+tbuilder.connect(selectfiles, 'mag',
                  buildTemplateIteration2, 'inputspec.ListOfImagesDictionaries')
 tbuilder.connect(datasource, 'registrationImageTypes', buildTemplateIteration2,
                  'inputspec.registrationImageTypes')

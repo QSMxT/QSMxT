@@ -40,7 +40,7 @@ working_dir = '/gpfs1/scratch/30days/uqsbollm/temp/CONCUSSION-Q0538'
 # output_dir = '/data/fastertemp/uqsbollm/uqrdmcache/CONCUSSION-Q0538/17042_detection_of_concussion/derivatives'
 # working_dir = '/data/fastertemp/uqsbollm/scratch/CONCUSSION-Q0538'
 
-# subject_list = ['sub-S013FBBL']
+# subject_list = ['sub-S008LCBL']
 
 subject_list = ['sub-S008LCBL', 'sub-S009MC3D', 'sub-S009MC7D', 'sub-S009MCBL', 'sub-S010BD',
                 'sub-S011RJBL', 'sub-S013FBBL', 'sub-S014WSBL', 'sub-S015KSBL', 'sub-S016JVBL',
@@ -123,8 +123,9 @@ wf.connect([(selectfiles, params_n, [('params', 'in_file')])])
 # Run QSM processing
 qsm_n = MapNode(tgv.QSMappingInterface(iterations=1000, alpha=[0.0015, 0.0005], num_threads=1),
                 name='qsm_node', iterfield=['file_phase', 'file_mask', 'TE', 'b0'])
-
-# qsm_n.plugin_args = {'qsub_args': '-A UQ-CAI -l nodes=1:ppn=9,mem=15gb,vmem=15gb, walltime=01:00:00', 'overwrite': True}
+#
+qsm_n.plugin_args = {'qsub_args': '-l nodes=1:ppn=16,mem=20gb,vmem=20gb, walltime=03:00:00',
+                     'overwrite': True}
 
 wf.connect([
     (params_n, qsm_n, [('EchoTime', 'TE')]),
@@ -192,18 +193,22 @@ datasink = Node(DataSink(base_directory=experiment_dir, container=output_dir),
 
 wf.connect([(add_masks_n, datasink, [('out_file', 'mask_sum')])])
 wf.connect([(add_qsms_n, datasink, [('out_file', 'qsm_sum')])])
-wf.connect([(final_qsm_n, datasink, [('out_file', 'qsm_final')])])
+wf.connect([(final_qsm_n, datasink, [('out_file', 'qsm_final_default')])])
 wf.connect([(qsm_n, datasink, [('out_file', 'qsm_singleEchoes')])])
 wf.connect([(bet_n, datasink, [('mask_file', 'mask_singleEchoes')])])
 
 # </editor-fold>
 
 # <editor-fold desc="Run">
-# run as MultiProc
-# wf.write_graph(graph2use='flat', format='png', simple_form=False)
-wf.run('MultiProc', plugin_args={'n_procs': int(os.environ['NCPUS'])})
+# # run as MultiProc
+# # wf.write_graph(graph2use='flat', format='png', simple_form=False)
+
+
+# wf.run('MultiProc', plugin_args={'n_procs': int(os.environ['NCPUS'])})
 # wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=1,mem=5gb,vmem=5gb, walltime=01:00:00'})
-# wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=20GB,vmem=20GB,walltime=04:00:00'))
+
+wf.run(plugin='PBSGraph', plugin_args=dict(
+    qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
 
 # </editor-fold>
 
