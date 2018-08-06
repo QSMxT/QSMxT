@@ -1,29 +1,51 @@
 #!/usr/bin/env python3
 from os.path import join as opj
 import os
-from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, Merge
+from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 import nipype_interface_tgv_qsm as tgv
-from nipype import config
-config.enable_debug_mode()
-
-config.set('execution', 'stop_on_first_crash', 'true')
-config.set('execution', 'remove_unnecessary_outputs', 'false')
-config.set('execution', 'keep_inputs', 'true')
-config.set('logging', 'workflow_level', 'DEBUG')
-config.set('logging', 'interface_level', 'DEBUG')
-config.set('logging', 'utils_level', 'DEBUG')
+# from .nipype_interface_tgv_qsm import QSMappingInterface as tgv
+# <editor-fold desc="DEBUG MODE">
+# from nipype import config
+# config.enable_debug_mode()
+#
+# config.set('execution', 'stop_on_first_crash', 'true')
+# config.set('execution', 'remove_unnecessary_outputs', 'false')
+# config.set('execution', 'keep_inputs', 'true')
+# config.set('logging', 'workflow_level', 'DEBUG')
+# config.set('logging', 'interface_level', 'DEBUG')
+# config.set('logging', 'utils_level', 'DEBUG')
+# </editor-fold>
 
 # <editor-fold desc="Parameters">
 os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
 
-experiment_dir = '/gpfs1/scratch/30days/..../interim'
-output_dir = '/gpfs1/scratch/30days/..../derivatives'
-working_dir = '/gpfs1/scratch/30days/.../scratch'
+# work on scratch space only
+experiment_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/interim'
 
-subject_list = ['sub-xxx']
+# output_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/derivatives'
+output_dir = '/QRISdata/Q0538/17042_detection_of_concussion/derivatives'
+
+working_dir = '/gpfs1/scratch/30days/uqsbollm/temp/CONCUSSION-Q0538'
+
+# work on collection for input and output
+# experiment_dir = '/QRISdata/Q0538/17042_detection_of_concussion/interim'
+# output_dir = '/QRISdata/Q0538/17042_detection_of_concussion/derivatives'
+# working_dir = '/gpfs1/scratch/30days/uqsbollm/temp/CONCUSSION-Q0538'
+
+# work on CAI cluster
+# experiment_dir = '/data/fastertemp/uqsbollm/uqrdmcache/CONCUSSION-Q0538/17042_detection_of_concussion/interim'
+# output_dir = '/data/fastertemp/uqsbollm/uqrdmcache/CONCUSSION-Q0538/17042_detection_of_concussion/derivatives'
+# working_dir = '/data/fastertemp/uqsbollm/scratch/CONCUSSION-Q0538'
+
+# subject_list = ['sub-S008LCBL']
+
+subject_list = ['sub-S008LCBL', 'sub-S009MC3D', 'sub-S009MC7D', 'sub-S009MCBL', 'sub-S010BD',
+                'sub-S011RJBL', 'sub-S013FBBL', 'sub-S014WSBL', 'sub-S015KSBL', 'sub-S016JVBL',
+                'sub-S017DPBL', 'sub-S018ALBL', 'sub-S019PLBL', 'sub-S020DABL']
+
 # </editor-fold>
 
 # <editor-fold desc="Create Workflow and link to subject list">
@@ -99,10 +121,11 @@ wf.connect([(selectfiles, params_n, [('params', 'in_file')])])
 
 # <editor-fold desc="QSM Processing">
 # Run QSM processing
-qsm_n = MapNode(tgv.QSMappingInterface(iterations=1000, alpha=[0.0015, 0.0005]),
+qsm_n = MapNode(tgv.QSMappingInterface(iterations=1000, alpha=[0.0015, 0.0005], num_threads=1),
                 name='qsm_node', iterfield=['file_phase', 'file_mask', 'TE', 'b0'])
-
-qsm_n.plugin_args = {'qsub_args': '-A UQ-CAI -l nodes=1:ppn=9,mem=15gb,vmem=15gb, walltime=01:00:00', 'overwrite': True}
+#
+qsm_n.plugin_args = {'qsub_args': '-l nodes=1:ppn=16,mem=20gb,vmem=20gb, walltime=03:00:00',
+                     'overwrite': True}
 
 wf.connect([
     (params_n, qsm_n, [('EchoTime', 'TE')]),
@@ -112,40 +135,55 @@ wf.connect([
 ])
 # </editor-fold>
 
-# <editor-fold desc="Mask processing">
-# Merge masks of individual echoes
-merge_masks_n = Node(Merge(dimension='t'),
-                     name="add_masks_node")
 
-wf.connect([(bet_n, merge_masks_n, [('mask_file', 'in_files')])])
-
-# Mean masks of individual echoes
-mean_masks_n = Node(ImageMaths(op_string='-Tmean'),
-                    name="mean_masks_node")
-
-wf.connect([(merge_masks_n, mean_masks_n, [('merged_file', 'in_file')])])
+# <editor-fold desc="Define the function that calls MultiImageMaths">
+def generate_multiimagemaths_lists(in_files):
+    in_file = in_files[0]
+    operand_files = in_files[1:]
+    op_string = '-add %s '
+    op_string = len(operand_files) * op_string
+    return in_file, operand_files, op_string
 # </editor-fold>
 
-# <editor-fold desc="QSM Post processing">
-# Merge qsms of individual echoes
-merge_qsms_n = Node(Merge(dimension='t'),
-                    name="merge_qsms_node")
 
-wf.connect([(qsm_n, merge_qsms_n, [('out_file', 'in_files')])])
+# <editor-fold desc="Mask processing">
+generate_add_masks_lists_n = Node(Function(
+    input_names=['in_files'],
+    output_names=['list_in_file', 'list_operand_files', 'list_op_string'],
+    function=generate_multiimagemaths_lists),
+    name='generate_add_masks_lists_node')
 
-# mean qsms of individual echoes
-mean_qsms_n = Node(ImageMaths(op_string='-Tmean'),
-                   name="mean_qsms_node")
+add_masks_n = Node(MultiImageMaths(),
+                   name="add_masks_node")
 
-wf.connect([(merge_qsms_n, mean_qsms_n, [('merged_file', 'in_file')])])
+wf.connect([(bet_n, generate_add_masks_lists_n, [('mask_file', 'in_files')])])
+wf.connect([(generate_add_masks_lists_n, add_masks_n, [('list_in_file', 'in_file')])])
+wf.connect([(generate_add_masks_lists_n, add_masks_n, [('list_operand_files', 'operand_files')])])
+wf.connect([(generate_add_masks_lists_n, add_masks_n, [('list_op_string', 'op_string')])])
+
+# </editor-fold>
+
+# # <editor-fold desc="QSM Post processing">
+generate_add_qsms_lists_n = Node(Function(
+    input_names=['in_files'],
+    output_names=['list_in_file', 'list_operand_files', 'list_op_string'],
+    function=generate_multiimagemaths_lists),
+    name='generate_add_qsms_lists_node')
+
+add_qsms_n = Node(MultiImageMaths(),
+                  name="add_qsms_node")
+
+wf.connect([(qsm_n, generate_add_qsms_lists_n, [('out_file', 'in_files')])])
+wf.connect([(generate_add_qsms_lists_n, add_qsms_n, [('list_in_file', 'in_file')])])
+wf.connect([(generate_add_qsms_lists_n, add_qsms_n, [('list_operand_files', 'operand_files')])])
+wf.connect([(generate_add_qsms_lists_n, add_qsms_n, [('list_op_string', 'op_string')])])
 
 # divide QSM by mask
 final_qsm_n = Node(ImageMaths(op_string='-div'),
-                   name="divide_mean_qsm_by_mean_mask")
+                   name="divide_added_qsm_by_added_masks")
 
-wf.connect([(mean_qsms_n, final_qsm_n, [('out_file', 'in_file')])])
-wf.connect([(mean_masks_n, final_qsm_n, [('out_file', 'in_file2')])])
-
+wf.connect([(add_qsms_n, final_qsm_n, [('out_file', 'in_file')])])
+wf.connect([(add_masks_n, final_qsm_n, [('out_file', 'in_file2')])])
 
 # </editor-fold>
 
@@ -153,23 +191,23 @@ wf.connect([(mean_masks_n, final_qsm_n, [('out_file', 'in_file2')])])
 datasink = Node(DataSink(base_directory=experiment_dir, container=output_dir),
                 name='datasink')
 
-wf.connect([
-    (mean_masks_n, datasink, [('out_file', 'mask_mean')]),
-    (mean_qsms_n, datasink, [('out_file', 'qsm_mean')]),
-    (final_qsm_n, datasink, [('out_file', 'qsm_final')])
-])
+wf.connect([(add_masks_n, datasink, [('out_file', 'mask_sum')])])
+wf.connect([(add_qsms_n, datasink, [('out_file', 'qsm_sum')])])
+wf.connect([(final_qsm_n, datasink, [('out_file', 'qsm_final_default')])])
+wf.connect([(qsm_n, datasink, [('out_file', 'qsm_singleEchoes')])])
+wf.connect([(bet_n, datasink, [('mask_file', 'mask_singleEchoes')])])
 
 # </editor-fold>
 
 # <editor-fold desc="Run">
-# run as MultiProc
-wf.write_graph(graph2use='flat', format='png', simple_form=False)
-# wf.run('MultiProc', plugin_args={'n_procs': 8})
+# # run as MultiProc
+# # wf.write_graph(graph2use='flat', format='png', simple_form=False)
 
 
-# wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=1,mem=5gb,vmem=4gb, walltime=01:00:00'})
+# wf.run('MultiProc', plugin_args={'n_procs': int(os.environ['NCPUS'])})
+# wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=1,mem=5gb,vmem=5gb, walltime=01:00:00'})
 
-wf.run(plugin='PBSGraph',
-       plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=20GB,vmem=20GB,walltime=14:00:00'))
+wf.run(plugin='PBSGraph', plugin_args=dict(
+    qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
 
 # </editor-fold>
