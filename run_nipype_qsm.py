@@ -211,4 +211,3 @@ wf.run(plugin='PBSGraph', plugin_args=dict(
     qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
 
 # </editor-fold>
-

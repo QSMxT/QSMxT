@@ -1,5 +1,5 @@
-17042 Detection of Concussion dataset
+PROJECT ID - Name
 
-- copy data from 7Transfer into tar archive
+- copy data from xxx into tar archive
 - convert using heudiconv to BIDS
-- use nipype to skullstrip with BET and tgv pipeline to process QSM
+- use nipype to ....
