@@ -1,0 +1,10 @@
+#!/bin/bash
+#PBS -A UQ-CAI
+#PBS -V
+#PBS -N tse_mc_nlin_pbs_script_ses-01
+#PBS -l select=1:ncpus=16:mem=64GB:vmem=64GB,walltime=25:00:00
+
+#Now do some things
+source ~/.bashrc
+~/scripts/OPTIMEX/2_tse_mc/tse_mc_nlin_script_ses-01.sh $SUBJNAME
+
