@@ -8,6 +8,8 @@ bash Miniconda3-latest-Linux-x86_64.sh
 
 #install heudiconv
 pip install https://github.com/nipy/heudiconv/archive/master.zip
+pip install git+git://github.com/mvdoc/dcmstack@bf/importsys
+
 
 #install nipype
 conda install --channel conda-forge nipype
