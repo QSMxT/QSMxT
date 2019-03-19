@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # install dependencies (fsl, tgv, ...) using transparent singularity or skip if already there
-https://gitlab.com/uqsbollm/transparent_singularity/
+https://github.com/CAIsr/transparent-singularity
+
 
 #setup a miniconda python environemnt e.g.
 wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
