@@ -1,5 +1,6 @@
 PROJECT ID - Name
 
-- copy data from xxx into tar archive
-- convert using heudiconv to BIDS
-- use nipype to ....
+- install dependencies by following setup.sh
+- change heuristic.py file to match your protocol settings
+- convert using heudiconv to BIDS by running run_1_dicomConversionToBids.sh
+- use nipype to run QSM pipeline by running run_2_nipype_qsm.py (adjust subject names inside the script)
