@@ -17,20 +17,17 @@ def infotodict(seqinfo):
     subindex: sub index within group
     """
 
-    t1w = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_T1w')
     greM = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_gre_M_echo_')
     greP = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_gre_P_echo_')
 
-    info = {t1w: [], greM: [], greP: [],}
+    info = {greM: [], greP: [],}
 
     #print(seqinfo)
 
     for s in seqinfo:
-        if ('UNI-DEN' in s.series_description):
-           info[t1w] = [s.series_id]
-        if ('NORM' in s.image_type) and not ('ND' in s.image_type):
+        if ('aspire' in s.series_description) and ('NORM' in s.image_type):
            info[greM] = [s.series_id]
-        if not ('NORM' in s.image_type) and not ('ND' in s.image_type):
+        if ('aspire' in s.series_description) and ('P' in s.image_type[2]):
            info[greP] = [s.series_id]
 
     return info
