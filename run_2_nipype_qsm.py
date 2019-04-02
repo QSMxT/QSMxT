@@ -24,27 +24,15 @@ os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
 
 # work on scratch space only
 experiment_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/interim'
+#this is where the scripts and the bids data are located
 
-# output_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/derivatives'
-output_dir = '/QRISdata/Q0538/17042_detection_of_concussion/derivatives'
+output_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/derivatives'
+# this is where the final files will be stored
 
 working_dir = '/gpfs1/scratch/30days/uqsbollm/temp/CONCUSSION-Q0538'
+# this is a temporary directory that can be deleted when everything ran
 
-# work on collection for input and output
-# experiment_dir = '/QRISdata/Q0538/17042_detection_of_concussion/interim'
-# output_dir = '/QRISdata/Q0538/17042_detection_of_concussion/derivatives'
-# working_dir = '/gpfs1/scratch/30days/uqsbollm/temp/CONCUSSION-Q0538'
-
-# work on CAI cluster
-# experiment_dir = '/data/fastertemp/uqsbollm/uqrdmcache/CONCUSSION-Q0538/17042_detection_of_concussion/interim'
-# output_dir = '/data/fastertemp/uqsbollm/uqrdmcache/CONCUSSION-Q0538/17042_detection_of_concussion/derivatives'
-# working_dir = '/data/fastertemp/uqsbollm/scratch/CONCUSSION-Q0538'
-
-# subject_list = ['sub-S008LCBL']
-
-subject_list = ['sub-S008LCBL', 'sub-S009MC3D', 'sub-S009MC7D', 'sub-S009MCBL', 'sub-S010BD',
-                'sub-S011RJBL', 'sub-S013FBBL', 'sub-S014WSBL', 'sub-S015KSBL', 'sub-S016JVBL',
-                'sub-S017DPBL', 'sub-S018ALBL', 'sub-S019PLBL', 'sub-S020DABL']
+subject_list = ['sub-S008LCBL', 'sub-S009MC3D']
 
 # </editor-fold>
 
@@ -81,9 +69,10 @@ stats = MapNode(ImageStats(op_string='-R'),
 def scale_to_pi(min_and_max):
     data_min = min_and_max[0][0]
     data_max = min_and_max[0][1]
-    # TODO: Test at 3T with -4096 to + 4096 range
-    return '-add %.10f -div %.10f -mul 6.28318530718 -sub 3.14159265359' % (data_min, data_max+data_min)
-
+    # this works for VB17 data that is between 0 and 4096:
+    #return '-add %.10f -div %.10f -mul 6.28318530718 -sub 3.14159265359' % (data_min, data_max+data_min)
+    # This works for VE11C data with -4096 to + 4096 range
+    return '-div %.10f -mul 3.14159265359' % (data_max)
 
 phs_range_n = MapNode(ImageMaths(),
                       name='phs_range_node', iterfield=['in_file'])
@@ -121,7 +110,7 @@ wf.connect([(selectfiles, params_n, [('params', 'in_file')])])
 
 # <editor-fold desc="QSM Processing">
 # Run QSM processing
-qsm_n = MapNode(tgv.QSMappingInterface(iterations=1000, alpha=[0.0015, 0.0005], num_threads=1),
+qsm_n = MapNode(tgv.QSMappingInterface(iterations=1000, alpha=[0.0015, 0.0005], num_threads=8),
                 name='qsm_node', iterfield=['file_phase', 'file_mask', 'TE', 'b0'])
 #
 qsm_n.plugin_args = {'qsub_args': '-l nodes=1:ppn=16,mem=20gb,vmem=20gb, walltime=03:00:00',
@@ -204,10 +193,13 @@ wf.connect([(bet_n, datasink, [('mask_file', 'mask_singleEchoes')])])
 # # wf.write_graph(graph2use='flat', format='png', simple_form=False)
 
 
-# wf.run('MultiProc', plugin_args={'n_procs': int(os.environ['NCPUS'])})
+#wf.run('MultiProc', plugin_args={'n_procs': int(os.environ['NCPUS'])})
+
+wf.run('MultiProc', plugin_args={'n_procs': 24})
+
 # wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=1,mem=5gb,vmem=5gb, walltime=01:00:00'})
 
-wf.run(plugin='PBSGraph', plugin_args=dict(
-    qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
+#wf.run(plugin='PBSGraph', plugin_args=dict(
+#    qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
 
 # </editor-fold>
