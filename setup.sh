@@ -5,7 +5,6 @@ git clone https://github.com/CAIsr/transparent-singularity.git tgvqsm_fsl_5p0p11
 cd tgvqsm_fsl_5p0p11_intel_20180730.simg
 ./run_transparent_singularity.sh tgvqsm_fsl_5p0p11_intel_20180730.simg
 
-
 #setup a miniconda python environemnt e.g.
 wget https://repo.continuum.io/miniconda/Miniconda3-latest-Linux-x86_64.sh
 bash Miniconda3-latest-Linux-x86_64.sh
@@ -15,9 +14,14 @@ source ~/.bashrc
 
 #install heudiconv
 pip install https://github.com/nipy/heudiconv/archive/master.zip
-pip install git+git://github.com/mvdoc/dcmstack@bf/importsys
 
+#install dcm2niix
+git clone https://github.com/rordenlab/dcm2niix.git
+cd dcm2niix
+mkdir build && cd build
+cmake ..
+make
+# add this to your path in .bashrc
 
 #install nipype
 conda install --channel conda-forge nipype
-pip install pydot
