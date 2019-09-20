@@ -23,16 +23,16 @@ import nipype_interface_tgv_qsm as tgv
 os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
 
 # work on scratch space only
-experiment_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/interim'
+experiment_dir = '/scratch/interim'
 #this is where the scripts and the bids data are located
 
-output_dir = '/gpfs1/scratch/30days/uqsbollm/CONCUSSION-Q0538/derivatives'
+output_dir = '/scratch/derivatives'
 # this is where the final files will be stored
 
-working_dir = '/gpfs1/scratch/30days/uqsbollm/temp/CONCUSSION-Q0538'
-# this is a temporary directory that can be deleted when everything ran
+working_dir = '/scratch/temp/'
+# this is a temporary directory that can be deleted when everything ran OK
 
-subject_list = ['sub-S008LCBL', 'sub-S009MC3D']
+subject_list = ['sub-1', 'sub-2']
 
 # </editor-fold>
 

@@ -25,9 +25,10 @@ def infotodict(seqinfo):
     #print(seqinfo)
 
     for s in seqinfo:
-        if ('aspire' in s.series_description) and ('NORM' in s.image_type):
+        if ('NORM' in s.image_type) and not ('ND' in s.image_type):
            info[greM] = [s.series_id]
-        if ('aspire' in s.series_description) and ('P' in s.image_type[2]):
+        if not ('NORM' in s.image_type) and not ('ND' in s.image_type):
            info[greP] = [s.series_id]
 
     return info
+
