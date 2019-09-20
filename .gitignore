@@ -6,3 +6,4 @@ sub*
 test_mask.nii
 test_phase.nii
 old
+.vscode
