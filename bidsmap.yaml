@@ -1,0 +1,129 @@
+# --------------------------------------------------------------------------------
+# This is a bidsmap YAML file with the key-value mappings for the different BIDS
+# modalities (anat, func, dwi, etc). The modality attributes are the keys that map
+# onto the BIDS labels. The bidsmap data-structure should be 5 levels deep:
+# dict > dict > list > dict > dict
+#
+# NB:
+# 1) Edit the bidsmap file to your needs before feeding it to bidscoiner.py
+# 2) (Institute) users may create their own bidsmap_[template].yaml or
+#    bidsmap_[sample].yaml file
+#
+# For more information, see:
+# https://github.com/Donders-Institute/bidscoin
+# https://docs.ansible.com/ansible/latest/reference_appendices/YAMLSyntax.html
+# --------------------------------------------------------------------------------
+
+
+Options:
+# --------------------------------------------------------------------------------
+# General options
+# --------------------------------------------------------------------------------
+  bidscoin:
+    version: 2.3.1                # BIDScoin version (should correspond with the version in ../bidscoin/version.txt)
+    bidsignore: extra_data/       # Semicolon-separated list of entries that are added to the .bidsignore file (for more info, see BIDS specifications), e.g. extra_data/;pet/;myfile.txt;yourfile.csv
+  dcm2niix:                       # See dcm2niix -h and https://www.nitrc.org/plugins/mwiki/index.php/dcm2nii:MainPage#General_Usage for more info
+    path: dcm2niix;               # Command to set the path to dcm2niix (note the semi-colon), e.g. module add dcm2niix/1.0.20180622; or PATH=/opt/dcm2niix/bin:$PATH; or /opt/dcm2niix/bin/ or '"C:\Program Files\dcm2niix\"' (note the quotes to deal with the whitespace)
+    args: -b y -z y -i n          # Argument string that is passed to dcm2niix. Tip: SPM users may want to use '-z n' (which produces unzipped nifti's, see dcm2niix -h for more information)
+
+
+PlugIns: []
+DICOM:
+# --------------------------------------------------------------------------------
+# DICOM key-value heuristics (DICOM fields that are mapped to the BIDS labels)
+# --------------------------------------------------------------------------------
+  subject: <<SourceFilePath>>     # <<SourceFilePath>> extracts the subject label from the source directory during bidscoiner runtime. A DICOM attribute can also be used as subject-label instead, e.g. <PatientID>
+  session: <<SourceFilePath>>     # <<SourceFilePath>> extracts the session label from the source directory during bidscoiner runtime. A DICOM attribute can also be used as session-label instead, e.g. <StudyID>
+  anat:       # ----------------------- All anatomical series --------------------
+  - provenance: ~
+    attributes:
+      Modality: MR
+      ProtocolName: ~
+      SeriesDescription: ~
+      ImageType: "['ORIGINAL', 'PRIMARY', 'M', 'NORM', 'DIS3D', 'DIS2D']"
+      SequenceName: ~
+      SequenceVariant: ~
+      ScanningSequence: ~
+      MRAcquisitionType: ~
+      SliceThickness: ~
+      FlipAngle: ~
+      EchoNumbers: ~
+      EchoTime: ~
+      RepetitionTime: ~
+      PhaseEncodingDirection: ~
+    bids:
+      acq: <SeriesDescription>
+      rec:
+      ce:
+      task:
+      echo: <EchoNumber>
+      dir: ROW
+      run: <AcquisitionNumber>
+      mod:
+      suffix: magnitude
+  - provenance: ~
+    attributes:
+      Modality: MR
+      ProtocolName: ~
+      SeriesDescription: ~
+      ImageType: "['ORIGINAL', 'PRIMARY', 'P', 'DIS3D', 'DIS2D']"
+      SequenceName: ~
+      SequenceVariant: ~
+      ScanningSequence: ~
+      MRAcquisitionType: ~
+      SliceThickness: ~
+      FlipAngle: ~
+      EchoNumbers: ~
+      EchoTime: ~
+      RepetitionTime: ~
+      PhaseEncodingDirection: ~
+    bids:
+      acq: <SeriesDescription>
+      rec:
+      ce:
+      task:
+      echo: <EchoNumber>
+      dir: ROW
+      run: <AcquisitionNumber>
+      mod:
+      suffix: phase
+  func:       # ----------------------- All functional series --------------------
+  dwi:        # ----------------------- All diffusion series ---------------------
+  fmap:       # ----------------------- All fieldmap series ----------------------
+  beh:        # ----------------------- All behavioural data ---------------------
+  pet:        # ----------------------- All PET series ---------------------------
+  extra_data: # ----------------------- All extra data ---------------------------
+  leave_out:  # ----------------------- Data that will be left out ---------------
+PAR:
+# --------------------------------------------------------------------------------
+# PAR key-value heuristics (Philips PAR fields that are mapped to the BIDS labels)
+# --------------------------------------------------------------------------------
+
+
+P7:
+# --------------------------------------------------------------------------------
+# P*.7 key-value heuristics (GE fields that are mapped to the BIDS labels)
+# --------------------------------------------------------------------------------
+
+
+Nifti:
+# --------------------------------------------------------------------------------
+# Nifti key-value heuristics (Nifti fields that are mapped to the BIDS labels)
+# --------------------------------------------------------------------------------
+
+
+FileSystem:
+# --------------------------------------------------------------------------------
+# File system key-value heuristics (these file- and foldernames will be mapped
+# to the BIDS labels; Special substitutions can be performed using python's
+# Format Specification Mini-Language)
+# --------------------------------------------------------------------------------
+  subject: <<SourceFilePath>>       # <<SourceFilePath>> extracts the subject label from the source directory during bidscoiner runtime
+  session: <<SourceFilePath>>       # <<SourceFilePath>> extracts the session label from the source directory during bidscoiner runtime
+  anat:       # ----------------------- All anatomical series --------------------
+  func:       # ----------------------- All functional series --------------------
+  dwi:        # ----------------------- All diffusion series ---------------------
+  fmap:       # ----------------------- All fieldmap series ----------------------
+  beh:        # ----------------------- All behavioural data ---------------------
+  extra_data: # ----------------------- All extra data ---------------------------
+  leave_out:  # ----------------------- Data that will be left out ---------------

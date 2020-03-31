@@ -17,18 +17,16 @@ def infotodict(seqinfo):
     subindex: sub index within group
     """
 
-    greM = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_gre_M_echo_')
-    greP = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_gre_P_echo_')
+    phase     = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_phase')
+    magnitude = create_key('{bids_subject_session_dir}/anat/{bids_subject_session_prefix}_magnitude')
 
-    info = {greM: [], greP: [],}
-
+    info = { phase: [], magnitude: [] }
     #print(seqinfo)
 
     for s in seqinfo:
-        if ('NORM' in s.image_type) and not ('ND' in s.image_type):
-           info[greM] = [s.series_id]
-        if not ('NORM' in s.image_type) and not ('ND' in s.image_type):
-           info[greP] = [s.series_id]
+        if ('P' in s.image_type):
+           info[phase] = [s.series_id]
+        if ('M' and 'NORM' in s.image_type):
+           info[magnitude] = [s.series_id]
 
     return info
-
