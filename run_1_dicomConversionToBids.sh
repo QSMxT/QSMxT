@@ -1,18 +1,25 @@
-#!/usr/bin/env bash
-#FOR DICOMs in a folder:
-basePath=enterToDicomHere
-#folder=mysubjectForTestingConversionOnOneCase
+#!/bin/bash
 
-echo $basePath
-for folder in `ls $basePath | xargs -n 1 basename`; do
-   echo $folder
-   heudiconv -d $basePath/{subject}/SEQNAME*/*.IMA -s $folder -f heuristic.py -c dcm2niix -b -o .
-done
+# input dicom folder
+dicomPath=dicom
 
-#Alternative: FOR DICOMS in a TAR file
+# output bids folder
+bidsPath=bids
 
-# for file in `ls -1 ../raw/*.tar  | xargs -n 1 basename`; do
-#    filename=${file%.tar}
-#    echo $filename
-#    heudiconv -d '../raw/{subject}.tar' -s $filename -f heuristic.py -c dcm2niix -b -o .
-# done
+scriptPath="$( cd "$( dirname "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+heuristicPath="${scriptPath}/bidsmap.yaml"
+bidsmapper.py -b "${heuristicPath}" -i 0 "${dicomPath}" "${bidsPath}"
+bidscoiner.py "${dicomPath}" "${bidsPath}"
+
+# for dicoms files
+#for folder in `ls $dicomPath | xargs -n 1 basename`; do
+#   echo $folder
+#   heudiconv -d $dicomPath/{subject}/SEQNAME*/*.IMA -s $folder -f heuristic.py -c dcm2niix -b -o .
+#done
+
+# for dicoms in a tar files
+#for file in `ls -1 "${dicomPath}"/*.tar  | xargs -n 1 basename`; do
+#    filename="${file%.tar}"
+#    echo "${filename}"
+#    heudiconv -d "${dicomPath}/{subject}.tar" -s "${filename}" -f heuristic.py -c dcm2niix -b -o "${bidsPath}"
+#done

@@ -1,9 +1,6 @@
 __pycache__/
-sub*
-.heudiconv/
-.IDEA
-*.nii
-test_mask.nii
-test_phase.nii
-old
+bids/
+dicom/
+nipype-qsm-work/
+nipype-qsm-out/
 .vscode
