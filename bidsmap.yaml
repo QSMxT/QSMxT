@@ -40,7 +40,7 @@ DICOM:
       Modality: MR
       ProtocolName: ~
       SeriesDescription: ~
-      ImageType: "['ORIGINAL', 'PRIMARY', 'M', 'NORM', 'DIS3D', 'DIS2D']"
+      ImageType: '*M*'
       SequenceName: ~
       SequenceVariant: ~
       ScanningSequence: ~
@@ -66,7 +66,7 @@ DICOM:
       Modality: MR
       ProtocolName: ~
       SeriesDescription: ~
-      ImageType: "['ORIGINAL', 'PRIMARY', 'P', 'DIS3D', 'DIS2D']"
+      ImageType: "*P*"
       SequenceName: ~
       SequenceVariant: ~
       ScanningSequence: ~
