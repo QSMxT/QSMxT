@@ -2,46 +2,42 @@
 
 import os.path
 import os
-from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths
+from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 import nipype_interface_tgv_qsm as tgv
+import argparse
 
-if __name__ == "__main__":
-    ## DEBUG ##
-    # from .nipype_interface_tgv_qsm import QSMappingInterface as tgv
-    # from nipype import config
-    # config.enable_debug_mode()
-    # config.set('execution', 'stop_on_first_crash', 'true')
-    # config.set('execution', 'remove_unnecessary_outputs', 'false')
-    # config.set('execution', 'keep_inputs', 'true')
-    # config.set('logging', 'workflow_level', 'DEBUG')
-    # config.set('logging', 'interface_level', 'DEBUG')
-    # config.set('logging', 'utils_level', 'DEBUG')
+def create_qsm_workflow(
+            subject_list,
+            bids_dir='bids',
+            work_dir='nipype-qsm-work',
+            out_dir='nipype-qsm-out',
+            bids_templates=None,
+            workflow_name='qsm'
+        ):
 
-    # environment variables
-    os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ" # output type
-
-    # directories
-    this_path   = os.path.dirname(os.path.abspath(__file__))
-    data_dir    = this_path + '/bids/'            # bids data directory
-    output_dir  = this_path + '/nipype-qsm-out/'  # final output directory
-    working_dir = this_path + '/nipype-qsm-work/' # temp working directory
-
-    # subjects in the data directory to process
-    subject_list = ['sub-0001']
+    # absolute paths to directories
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    bids_dir = os.path.join(this_dir, bids_dir)
+    work_dir = os.path.join(this_dir, work_dir)
+    out_dir  = os.path.join(this_dir, out_dir)
 
     # files to match
-    templates = {
-        'mag'    : '{subject_id_p}/anat/*magnitude*.nii.gz',
-        'phs'    : '{subject_id_p}/anat/*phase*.nii.gz',
-        'params' : '{subject_id_p}/anat/*phase*.json'
-    }
+    if bids_templates == None:
+        bids_templates = {
+            'mag'    : '{subject_id_p}/anat/*magnitude*.nii.gz',
+            'phs'    : '{subject_id_p}/anat/*phase*.nii.gz',
+            'params' : '{subject_id_p}/anat/*phase*.json'
+        }
 
-    # create workflow
-    wf = Workflow(name='qsm')
-    wf.base_dir = working_dir
+    # workflow name
+    workflow_name = workflow_name
+
+    # create initial workflow
+    wf = Workflow(name=workflow_name)
+    wf.base_dir = work_dir
 
     # use infosource to iterate workflow across subject list
     n_infosource = Node(
@@ -51,9 +47,9 @@ if __name__ == "__main__":
     )
     n_infosource.iterables = ('subject_id', subject_list) # runs the node with subject_id = each element in subject_list
 
-    # select matching files from data_dir
+    # select matching files from bids_dir
     n_selectfiles = Node(
-        interface=SelectFiles(templates, base_directory=data_dir),
+        interface=SelectFiles(bids_templates, base_directory=bids_dir),
         name='selectfiles'
         # output: ['mag', 'phs', 'params']
     )
@@ -88,14 +84,25 @@ if __name__ == "__main__":
     )
 
     def scale_to_pi(min_and_max):
-        # this works for VB17 data that is between 0 and 4096:
-        #data_min = min_and_max[0][0]
-        #data_max = min_and_max[0][1]
-        #return '-add %.10f -div %.10f -mul 6.28318530718 -sub 3.14159265359' % (data_min, data_max+data_min)
+        from math import pi
 
-        # This works for VE11C data with -4096 to + 4096 range
-        data_max = min_and_max[0][1]
-        return '-div %.10f -mul 3.14159265359' % (data_max)
+        min_value = min_and_max[0][0]
+        max_value = min_and_max[0][1]
+        fsl_cmd = ""
+
+        # set range to [0, max-min]
+        fsl_cmd += "-sub %.10f " % min_value
+        max_value -= min_value
+        min_value -= min_value
+
+        # set range to [0, 2pi]
+        fsl_cmd += "-div %.10f " % (max_value / (2*pi))
+        min_value /= max_value / (2*pi)
+        max_value /= max_value / (2*pi)
+
+        # set range to [-pi, pi]
+        fsl_cmd += "-sub %.10f" % pi
+        return fsl_cmd
 
     wf.connect([
         (n_selectfiles, mn_stats, [('phs', 'in_file')]),
@@ -133,13 +140,14 @@ if __name__ == "__main__":
 
     # qsm processing
     mn_qsm = MapNode(
-        tgv.QSMappingInterface(
+        interface=tgv.QSMappingInterface(
             iterations=1000, 
             alpha=[0.0015, 0.0005], 
             num_threads=8
         ),
         iterfield=['file_phase', 'file_mask', 'TE', 'b0'],
         name='qsm_node'
+        # output: 'out_file'
     )
     mn_qsm.plugin_args = {
         'qsub_args' : '-l nodes=1:ppn=16,mem=20gb,vmem=20gb, walltime=03:00:00',
@@ -173,6 +181,7 @@ if __name__ == "__main__":
     n_add_masks = Node(
         interface=MultiImageMaths(), 
         name="add_masks_node"
+        # output: 'out_file'
     )
 
     wf.connect([(mn_bet, n_generate_add_masks_lists, [('mask_file', 'in_files')])])
@@ -188,11 +197,13 @@ if __name__ == "__main__":
             function=generate_multiimagemaths_lists
         ),
         name='generate_add_qsms_lists_node'
+        # output: 'out_file'
     )
 
     n_add_qsms = Node(
         interface=MultiImageMaths(),
         name="add_qsms_node"
+        # output: 'out_file'
     )
 
     wf.connect([(mn_qsm, n_generate_add_qsms_lists, [('out_file', 'in_files')])])
@@ -204,6 +215,7 @@ if __name__ == "__main__":
     n_final_qsm = Node(
         interface=ImageMaths(op_string='-div'),
         name="divide_added_qsm_by_added_masks"
+        # output: 'out_file'
     )
 
     wf.connect([(n_add_qsms, n_final_qsm, [('out_file', 'in_file')])])
@@ -211,7 +223,7 @@ if __name__ == "__main__":
 
     # datasink
     n_datasink = Node(
-        interface=DataSink(base_directory=data_dir, container=output_dir),
+        interface=DataSink(base_directory=bids_dir, container=out_dir),
         name='datasink'
     )
 
@@ -221,7 +233,41 @@ if __name__ == "__main__":
     wf.connect([(mn_qsm, n_datasink, [('out_file', 'qsm_singleEchoes')])])
     wf.connect([(mn_bet, n_datasink, [('mask_file', 'mask_singleEchoes')])])
 
-    # run
+    return wf
+    
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(
+        description="QSM processing pipeline"
+    )
+
+    parser.add_argument(
+        '--debug',
+        dest='debug',
+        action='store_true',
+        help='debug mode'
+    )
+
+    args = parser.parse_args()
+
+    # environment variables
+    os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ" # output type
+
+    if args.debug:
+        from nipype import config
+        config.enable_debug_mode()
+        config.set('execution', 'stop_on_first_crash', 'true')
+        config.set('execution', 'remove_unnecessary_outputs', 'false')
+        config.set('execution', 'keep_inputs', 'true')
+        config.set('logging', 'workflow_level', 'DEBUG')
+        config.set('logging', 'interface_level', 'DEBUG')
+        config.set('logging', 'utils_level', 'DEBUG')
+
+    # create qsm workflow
+    wf = create_qsm_workflow(
+        subject_list=['sub-0032tumor']
+    )
+
+    # run workflow
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
     wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
     #wf.run('MultiProc', plugin_args={'n_procs': 24})
