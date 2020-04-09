@@ -2,20 +2,26 @@
 
 import os.path
 import os
-from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom
+from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 import nipype_interface_tgv_qsm as tgv
+import nipype_interface_romeo as romeo
 import argparse
 
 def create_qsm_workflow(
             subject_list,
+            bids_templates={
+                'mag'    : '{subject_id_p}/anat/*magnitude*.nii.gz',
+                'phs'    : '{subject_id_p}/anat/*phase*.nii.gz',
+                'params' : '{subject_id_p}/anat/*phase*.json'
+            },
             bids_dir='bids',
             work_dir='nipype-qsm-work',
             out_dir='nipype-qsm-out',
-            bids_templates=None,
-            workflow_name='qsm'
+            workflow_name='qsm',
+            masking='bet'
         ):
 
     # absolute paths to directories
@@ -23,17 +29,6 @@ def create_qsm_workflow(
     bids_dir = os.path.join(this_dir, bids_dir)
     work_dir = os.path.join(this_dir, work_dir)
     out_dir  = os.path.join(this_dir, out_dir)
-
-    # files to match
-    if bids_templates == None:
-        bids_templates = {
-            'mag'    : '{subject_id_p}/anat/*magnitude*.nii.gz',
-            'phs'    : '{subject_id_p}/anat/*phase*.nii.gz',
-            'params' : '{subject_id_p}/anat/*phase*.json'
-        }
-
-    # workflow name
-    workflow_name = workflow_name
 
     # create initial workflow
     wf = Workflow(name=workflow_name)
@@ -57,16 +52,6 @@ def create_qsm_workflow(
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
     ])
 
-    # brain extraction
-    mn_bet = MapNode(
-        interface=BET(frac=0.4, mask=True, robust=True),
-        iterfield=['in_file'],
-        name='bet_node'
-        # output: 'mask_file'
-    )
-    wf.connect([
-        (n_selectfiles, mn_bet, [('mag', 'in_file')])
-    ])
 
     # scale phase data
     mn_stats = MapNode(
@@ -97,8 +82,6 @@ def create_qsm_workflow(
 
         # set range to [0, 2pi]
         fsl_cmd += "-div %.10f " % (max_value / (2*pi))
-        min_value /= max_value / (2*pi)
-        max_value /= max_value / (2*pi)
 
         # set range to [-pi, pi]
         fsl_cmd += "-sub %.10f" % pi
@@ -108,7 +91,6 @@ def create_qsm_workflow(
         (n_selectfiles, mn_stats, [('phs', 'in_file')]),
         (n_selectfiles, mn_phs_range, [('phs', 'in_file')]),
         (mn_stats, mn_phs_range, [(('out_stat', scale_to_pi), 'op_string')])
-        # for vb17 use lambda min_max: '-add %.10f -div %.10f -mul 6.28318530718 -sub 3.14159265359' % (min_max[0][0], min_max[0][0]+min_max[0][1])
     ])
 
     # read echotime and field strengths from json files
@@ -138,14 +120,65 @@ def create_qsm_workflow(
         (n_selectfiles, mn_params, [('params', 'in_file')])
     ])
 
+    # brain extraction
+    if masking == 'bet':
+        mn_bet = MapNode(
+            interface=BET(frac=0.4, mask=True, robust=True),
+            iterfield=['in_file'],
+            name='mask_node'
+            # output: 'mask_file'
+        )
+        wf.connect([
+            (n_selectfiles, mn_bet, [('mag', 'in_file')])
+        ])
+    elif masking == 'romeo':
+        # ROMEO only operates on stacked .nii files
+        n_stacked_magnitude = Node(
+            interface=Merge(
+                dimension='t',
+                output_type='NIFTI'
+            ),
+            name="stack_magnitude",
+            iterfield=['in_files']
+            # output: 'merged_file'
+        )
+        wf.connect([
+            (n_selectfiles, n_stacked_magnitude, [('mag', 'in_files')])
+        ])
+        n_stacked_phase = Node(
+            interface=Merge(
+                dimension='t',
+                output_type='NIFTI'
+            ),
+            name="stack_phase",
+            iterfield=['in_files']
+            # output: 'merged_file'
+        )
+        wf.connect([
+            (mn_phs_range, n_stacked_phase, [('out_file', 'in_files')])
+        ])
+
+        mn_bet = Node(
+            interface=romeo.RomeoInterface(),
+            iterfield=['mag_file', 'phase_file', 'echo_times'],
+            name='mask_node'
+            # output: 'mask_file'
+        )
+        wf.connect([
+            (n_stacked_magnitude, mn_bet, [('merged_file', 'mag_file')]),
+            (n_stacked_phase, mn_bet, [('merged_file', 'phase_file')]),
+            (mn_params, mn_bet, [('EchoTime', 'echo_times')])
+        ])
+        # TODO: add MapNode to repeat the mask file for QSM
+
     # qsm processing
     mn_qsm = MapNode(
         interface=tgv.QSMappingInterface(
             iterations=1000, 
             alpha=[0.0015, 0.0005], 
-            num_threads=8
+            num_threads=8,
         ),
-        iterfield=['file_phase', 'file_mask', 'TE', 'b0'],
+        iterfield=['phase_file', 'mask_file', 'TE', 'b0'],
         name='qsm_node'
         # output: 'out_file'
     )
@@ -157,9 +190,19 @@ def create_qsm_workflow(
     wf.connect([
         (mn_params, mn_qsm, [('EchoTime', 'TE')]),
         (mn_params, mn_qsm, [('MagneticFieldStrength', 'b0')]),
-        (mn_bet, mn_qsm, [('mask_file', 'file_mask')]),
-        (mn_phs_range, mn_qsm, [('out_file', 'file_phase')])
+        (mn_bet, mn_qsm, [('mask_files', 'mask_file')]),
+        (mn_phs_range, mn_qsm, [('out_file', 'phase_file')])
     ])
+
+    # DELETE ME
+    # datasink
+    n_datasink = Node(
+        interface=DataSink(base_directory=bids_dir, container=out_dir),
+        name='datasink'
+    )
+    wf.connect([(mn_qsm, n_datasink, [('out_file', 'qsm')])])
+    return wf
+    # DELETE ME
 
     # mask processing
     def generate_multiimagemaths_lists(in_files):
@@ -247,6 +290,15 @@ if __name__ == "__main__":
         help='debug mode'
     )
 
+    parser.add_argument(
+        '--masking',
+        default='bet',
+        const='bet',
+        nargs='?',
+        choices=['bet', 'romeo'],
+        help='Masking strategy'
+    )
+
     args = parser.parse_args()
 
     # environment variables
@@ -264,13 +316,15 @@ if __name__ == "__main__":
 
     # create qsm workflow
     wf = create_qsm_workflow(
-        subject_list=['sub-0032tumor']
+        subject_list=[
+            'sub-0001'
+        ],
+        masking=args.masking
     )
 
     # run workflow
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
-    wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
+    #wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
     #wf.run('MultiProc', plugin_args={'n_procs': 24})
     #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=1,mem=5gb,vmem=5gb, walltime=01:00:00'})
-    #wf.run(plugin='PBSGraph', plugin_args=dict(
-    #qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
+    wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
