@@ -44,9 +44,8 @@ class RomeoInputSpec(CommandLineInputSpec):
 
 
 class RomeoOutputSpec(TraitedSpec):
-    mask_file = File(desc='Output mask')
-    mask_files = OutputMultiPath(
-        File(desc='Output masks')
+    mask_file = OutputMultiPath(
+        File(desc='Output mask')
     )
 
 
@@ -61,14 +60,14 @@ class RomeoInterface(CommandLine):
     def _list_outputs(self):
         outputs = self.output_spec().get()
 
-        outputs['mask_file'] = gen_filename(
+        mask_file = gen_filename(
             fname=self.inputs.output_folder + '/mask',
             suffix='.nii',
             newpath=self.inputs.output_folder
         )
 
         # NOTE: workaround for multi-echo data - the QSM node requires one mask per phase image
-        outputs['mask_files'] = [outputs['mask_file'] for x in range(len(self.inputs.echo_times))]
+        outputs['mask_file'] = [mask_file for x in range(len(self.inputs.echo_times))]
 
         return outputs
 

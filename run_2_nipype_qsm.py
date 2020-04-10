@@ -169,7 +169,6 @@ def create_qsm_workflow(
             (n_stacked_phase, mn_bet, [('merged_file', 'phase_file')]),
             (mn_params, mn_bet, [('EchoTime', 'echo_times')])
         ])
-        # TODO: add MapNode to repeat the mask file for QSM
 
     # qsm processing
     mn_qsm = MapNode(
@@ -190,19 +189,9 @@ def create_qsm_workflow(
     wf.connect([
         (mn_params, mn_qsm, [('EchoTime', 'TE')]),
         (mn_params, mn_qsm, [('MagneticFieldStrength', 'b0')]),
-        (mn_bet, mn_qsm, [('mask_files', 'mask_file')]),
+        (mn_bet, mn_qsm, [('mask_file', 'mask_file')]),
         (mn_phs_range, mn_qsm, [('out_file', 'phase_file')])
     ])
-
-    # DELETE ME
-    # datasink
-    n_datasink = Node(
-        interface=DataSink(base_directory=bids_dir, container=out_dir),
-        name='datasink'
-    )
-    wf.connect([(mn_qsm, n_datasink, [('out_file', 'qsm')])])
-    return wf
-    # DELETE ME
 
     # mask processing
     def generate_multiimagemaths_lists(in_files):
@@ -324,7 +313,7 @@ if __name__ == "__main__":
 
     # run workflow
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
-    #wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
+    wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
     #wf.run('MultiProc', plugin_args={'n_procs': 24})
     #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=1,mem=5gb,vmem=5gb, walltime=01:00:00'})
-    wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
+    #wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
