@@ -426,13 +426,15 @@ if __name__ == "__main__":
     else:
         subject_list = args.subjects
 
+    # create output folder
+    os.mkdir(os.path.join(args.out_dir, args.name))
 
     # create qsm workflow
     wf = create_qsm_workflow(
         subject_list=subject_list,
         bids_dir=args.bids_dir,
         work_dir=args.work_dir,
-        out_dir=args.out_dir,
+        out_dir=os.path.join(args.out_dir, args.name),
         workflow_name=args.name,
         masking=args.masking,
     )
