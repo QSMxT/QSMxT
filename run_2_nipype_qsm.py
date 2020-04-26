@@ -2,26 +2,28 @@
 
 import os.path
 import os
-from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge
+from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge, UnaryMaths
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 import nipype_interface_tgv_qsm as tgv
 import nipype_interface_romeo as romeo
+import nipype_interface_bestlinreg as bestlinreg
+import nipype_interface_applyxfm as applyxfm
 import argparse
 
 def create_qsm_workflow(
             subject_list,
+            bids_dir,
+            work_dir,
+            out_dir,
+            workflow_name,
+            masking='bet',
             bids_templates={
                 'mag'    : '{subject_id_p}/anat/*magnitude*.nii.gz',
                 'phs'    : '{subject_id_p}/anat/*phase*.nii.gz',
                 'params' : '{subject_id_p}/anat/*phase*.json'
             },
-            bids_dir='bids',
-            work_dir='nipype-qsm-work',
-            out_dir='nipype-qsm-out',
-            workflow_name='qsm',
-            masking='bet'
         ):
 
     # absolute paths to directories
@@ -120,16 +122,31 @@ def create_qsm_workflow(
         (n_selectfiles, mn_params, [('params', 'in_file')])
     ])
 
+    def repeat(name):
+        return name
+
     # brain extraction
     if masking == 'bet':
         mn_bet = MapNode(
             interface=BET(frac=0.4, mask=True, robust=True),
             iterfield=['in_file'],
-            name='mask_node'
+            name='bet'
             # output: 'mask_file'
         )
         wf.connect([
             (n_selectfiles, mn_bet, [('mag', 'in_file')])
+        ])
+        mn_mask = MapNode(
+            interface=Function(
+                input_names=['name'],
+                output_names=['mask_file'],
+                function=repeat
+            ),
+            iterfield=['name'],
+            name='join'
+        )
+        wf.connect([
+            (mn_bet, mn_mask, [('mask_file', 'name')])
         ])
     elif masking == 'romeo':
         # ROMEO only operates on stacked .nii files
@@ -158,16 +175,77 @@ def create_qsm_workflow(
             (mn_phs_range, n_stacked_phase, [('out_file', 'in_files')])
         ])
 
-        mn_bet = Node(
+        n_romeo = Node(
             interface=romeo.RomeoInterface(),
             iterfield=['mag_file', 'phase_file', 'echo_times'],
-            name='mask_node'
+            name='romeo'
             # output: 'mask_file'
         )
         wf.connect([
-            (n_stacked_magnitude, mn_bet, [('merged_file', 'mag_file')]),
-            (n_stacked_phase, mn_bet, [('merged_file', 'phase_file')]),
-            (mn_params, mn_bet, [('EchoTime', 'echo_times')])
+            (n_stacked_magnitude, n_romeo, [('merged_file', 'mag_file')]),
+            (n_stacked_phase, n_romeo, [('merged_file', 'phase_file')]),
+            (mn_params, n_romeo, [('EchoTime', 'echo_times')])
+        ])
+        mn_mask = MapNode(
+            interface=Function(
+                input_names=['name'],
+                output_names=['mask_file'],
+                function=repeat
+            ),
+            iterfield=['name'],
+            name='join'
+        )
+        wf.connect([
+            (n_romeo, mn_mask, [('mask_file', 'name')])
+        ])
+    elif masking == 'atlas-based':
+        n_selectatlas = Node(
+            interface=SelectFiles(
+                templates={
+                    'template' : '*template*',
+                    'mask'     : '*mask*'
+                },
+                base_directory='/home/ashley/repos/imaging_pipelines/atlas'
+            ),
+            name='selectatlas'
+            # output: ['template', 'mask']
+        )
+
+        mn_bestlinreg = MapNode(
+            interface=bestlinreg.NiiBestLinRegInterface(),
+            iterfield=['in_fixed', 'in_moving'],
+            name='bestlinreg'
+            # output: out_transform
+        )
+        wf.connect([
+            (n_selectfiles, mn_bestlinreg, [('mag', 'in_fixed')]),
+            (n_selectatlas, mn_bestlinreg, [('template', 'in_moving')])
+        ])
+
+        mn_applyxfm = MapNode(
+            interface=applyxfm.NiiApplyMincXfmInterface(),
+            iterfield=['in_file', 'in_like', 'in_transform'],
+            name='applyxfm'
+            # output: out_file
+        )
+        
+        wf.connect([
+            (n_selectatlas, mn_applyxfm, [('mask', 'in_file')]),
+            (n_selectfiles, mn_applyxfm, [('mag', 'in_like')]),
+            (mn_bestlinreg, mn_applyxfm, [('out_transform', 'in_transform')])
+        ])
+
+        mn_mask = MapNode(
+            interface=Function(
+                input_names=['name'],
+                output_names=['mask_file'],
+                function=repeat
+            ),
+            iterfield=['name'],
+            name='join'
+        )
+        wf.connect([
+            (mn_applyxfm, mn_mask, [('out_file', 'name')])
         ])
 
     # qsm processing
@@ -189,7 +267,7 @@ def create_qsm_workflow(
     wf.connect([
         (mn_params, mn_qsm, [('EchoTime', 'TE')]),
         (mn_params, mn_qsm, [('MagneticFieldStrength', 'b0')]),
-        (mn_bet, mn_qsm, [('mask_file', 'mask_file')]),
+        (mn_mask, mn_qsm, [('mask_file', 'mask_file')]),
         (mn_phs_range, mn_qsm, [('out_file', 'phase_file')])
     ])
 
@@ -216,7 +294,7 @@ def create_qsm_workflow(
         # output: 'out_file'
     )
 
-    wf.connect([(mn_bet, n_generate_add_masks_lists, [('mask_file', 'in_files')])])
+    wf.connect([(mn_mask, n_generate_add_masks_lists, [('mask_file', 'in_files')])])
     wf.connect([(n_generate_add_masks_lists, n_add_masks, [('list_in_file', 'in_file')])])
     wf.connect([(n_generate_add_masks_lists, n_add_masks, [('list_operand_files', 'operand_files')])])
     wf.connect([(n_generate_add_masks_lists, n_add_masks, [('list_op_string', 'op_string')])])
@@ -263,7 +341,7 @@ def create_qsm_workflow(
     wf.connect([(n_add_qsms, n_datasink, [('out_file', 'qsm_sum')])])
     wf.connect([(n_final_qsm, n_datasink, [('out_file', 'qsm_final_default')])])
     wf.connect([(mn_qsm, n_datasink, [('out_file', 'qsm_singleEchoes')])])
-    wf.connect([(mn_bet, n_datasink, [('mask_file', 'mask_singleEchoes')])])
+    wf.connect([(mn_mask, n_datasink, [('mask_file', 'mask_singleEchoes')])])
 
     return wf
     
@@ -284,8 +362,48 @@ if __name__ == "__main__":
         default='bet',
         const='bet',
         nargs='?',
-        choices=['bet', 'romeo'],
+        choices=['bet', 'romeo', 'atlas-based'],
         help='Masking strategy'
+    )
+
+    parser.add_argument(
+        '--subjects',
+        default=None,
+        const=None,
+        nargs='*',
+        help='list of subjects as seen in the bids/ folder'
+    )
+
+    parser.add_argument(
+        '--bids_dir',
+        default='bids',
+        const='bids',
+        nargs='?',
+        help='bids directory'
+    )
+
+    parser.add_argument(
+        '--work_dir',
+        default='work',
+        const='work',
+        nargs='?',
+        help='work directory'
+    )
+
+    parser.add_argument(
+        '--out_dir',
+        default='out',
+        const='out',
+        nargs='?',
+        help='output directory'
+    )
+
+    parser.add_argument(
+        '--name',
+        default='qsm',
+        const='qsm',
+        nargs='?',
+        help='workflow name'
     )
 
     args = parser.parse_args()
@@ -303,12 +421,22 @@ if __name__ == "__main__":
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
+    if not args.subjects:
+        subject_list = [subj for subj in os.listdir(args.bids_dir) if 'sub' in subj]
+    else:
+        subject_list = args.subjects
+
+    # create output folder
+    os.mkdir(os.path.join(args.out_dir, args.name))
+
     # create qsm workflow
     wf = create_qsm_workflow(
-        subject_list=[
-            'sub-0001'
-        ],
-        masking=args.masking
+        subject_list=subject_list,
+        bids_dir=args.bids_dir,
+        work_dir=args.work_dir,
+        out_dir=os.path.join(args.out_dir, args.name),
+        workflow_name=args.name,
+        masking=args.masking,
     )
 
     # run workflow
