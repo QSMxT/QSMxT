@@ -253,7 +253,7 @@ def create_qsm_workflow(
         interface=tgv.QSMappingInterface(
             iterations=1000, 
             alpha=[0.0015, 0.0005], 
-            num_threads=8,
+            #num_threads=1,
         ),
         iterfield=['phase_file', 'mask_file', 'TE', 'b0'],
         name='qsm_node'
@@ -427,21 +427,22 @@ if __name__ == "__main__":
         subject_list = args.subjects
 
     # create output folder
-    os.mkdir(os.path.join(args.out_dir, args.name))
+    #os.mkdir(os.path.join(args.out_dir, args.name))
 
     # create qsm workflow
     wf = create_qsm_workflow(
         subject_list=subject_list,
         bids_dir=args.bids_dir,
         work_dir=args.work_dir,
-        out_dir=os.path.join(args.out_dir, args.name),
+        out_dir=args.out_dir, #os.path.join(args.out_dir, args.name),
         workflow_name=args.name,
         masking=args.masking,
     )
 
     # run workflow
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
-    wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
+    #wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
+    wf.run('MultiProc', plugin_args={'n_procs': int(os.environ["NCPUS"])}) # NCPUS is set by Q system
     #wf.run('MultiProc', plugin_args={'n_procs': 24})
-    #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=1,mem=5gb,vmem=5gb, walltime=01:00:00'})
+    #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})
     #wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
