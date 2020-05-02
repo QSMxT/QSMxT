@@ -10,6 +10,7 @@ import nipype_interface_tgv_qsm as tgv
 import nipype_interface_romeo as romeo
 import nipype_interface_bestlinreg as bestlinreg
 import nipype_interface_applyxfm as applyxfm
+import nipype_interface_makehomogeneous as makehomogeneous
 import argparse
 
 def create_qsm_workflow(
@@ -125,6 +126,15 @@ def create_qsm_workflow(
     def repeat(name):
         return name
 
+    mn_homogeneity_filter = MapNode(
+        interface=makehomogeneous.MakeHomogeneousInterface(),
+        iterfield=['in_file'],
+        name='makehomogeneous'
+    )
+    wf.connect([
+        (n_selectfiles, mn_homogeneity_filter, [('mag', 'in_file')])
+    ])
+
     # brain extraction
     if masking == 'bet':
         mn_bet = MapNode(
@@ -134,7 +144,7 @@ def create_qsm_workflow(
             # output: 'mask_file'
         )
         wf.connect([
-            (n_selectfiles, mn_bet, [('mag', 'in_file')])
+            (mn_homogeneity_filter, mn_bet, [('out_file', 'in_file')])
         ])
         mn_mask = MapNode(
             interface=Function(
@@ -160,7 +170,7 @@ def create_qsm_workflow(
             # output: 'merged_file'
         )
         wf.connect([
-            (n_selectfiles, n_stacked_magnitude, [('mag', 'in_files')])
+            (mn_homogeneity_filter, n_stacked_magnitude, [('out_file', 'in_files')])
         ])
         n_stacked_phase = Node(
             interface=Merge(
@@ -217,8 +227,11 @@ def create_qsm_workflow(
             name='bestlinreg'
             # output: out_transform
         )
+
+        # TODO: Is the filtered magnitude actually better for this?
         wf.connect([
-            (n_selectfiles, mn_bestlinreg, [('mag', 'in_fixed')]),
+            #(n_selectfiles, mn_bestlinreg, [('mag', 'in_fixed')]),
+            (mn_homogeneity_filter, mn_bestlinreg, [('out_file', 'in_fixed')]),
             (n_selectatlas, mn_bestlinreg, [('template', 'in_moving')])
         ])
 
@@ -231,7 +244,7 @@ def create_qsm_workflow(
         
         wf.connect([
             (n_selectatlas, mn_applyxfm, [('mask', 'in_file')]),
-            (n_selectfiles, mn_applyxfm, [('mag', 'in_like')]),
+            (mn_homogeneity_filter, mn_applyxfm, [('out_file', 'in_like')]),
             (mn_bestlinreg, mn_applyxfm, [('out_transform', 'in_transform')])
         ])
 
@@ -371,7 +384,7 @@ if __name__ == "__main__":
         default=None,
         const=None,
         nargs='*',
-        help='list of subjects as seen in the bids/ folder'
+        help='list of subjects as seen in bids_dir'
     )
 
     parser.add_argument(
@@ -441,8 +454,8 @@ if __name__ == "__main__":
 
     # run workflow
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
-    #wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
-    wf.run('MultiProc', plugin_args={'n_procs': int(os.environ["NCPUS"])}) # NCPUS is set by Q system
+    wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
+    #wf.run('MultiProc', plugin_args={'n_procs': int(os.environ["NCPUS"])}) # NCPUS is set by Q system
     #wf.run('MultiProc', plugin_args={'n_procs': 24})
     #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})
     #wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
