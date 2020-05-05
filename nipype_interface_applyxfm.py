@@ -35,6 +35,6 @@ class NiiApplyMincXfmOutputSpec(TraitedSpec):
 class NiiApplyMincXfmInterface(CommandLine):
     input_spec = NiiApplyMincXfmInputSpec
     output_spec = NiiApplyMincXfmOutputSpec
-    _cmd = "python /home/ashley/repos/imaging_pipelines/scripts/nii-applyxfm.py"
+    _cmd = "nii-applyxfm.py"
 
     

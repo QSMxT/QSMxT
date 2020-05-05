@@ -30,5 +30,5 @@ class NiiBestlinregOutputSpec(TraitedSpec):
 class NiiBestLinRegInterface(CommandLine):
     input_spec = NiiBestlinregInputSpec
     output_spec = NiiBestlinregOutputSpec
-    _cmd = "python /home/ashley/repos/imaging_pipelines/scripts/nii-bestlinreg.py"
+    _cmd = "nii-bestlinreg.py"
 
