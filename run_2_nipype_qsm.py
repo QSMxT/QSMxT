@@ -209,13 +209,14 @@ def create_qsm_workflow(
             (n_romeo, mn_mask, [('mask_file', 'name')])
         ])
     elif masking == 'atlas-based':
+        atlas_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas")
         n_selectatlas = Node(
             interface=SelectFiles(
                 templates={
                     'template' : '*template*',
                     'mask'     : '*mask*'
                 },
-                base_directory='/home/ashley/repos/imaging_pipelines/atlas'
+                base_directory=atlas_dir
             ),
             name='selectatlas'
             # output: ['template', 'mask']
