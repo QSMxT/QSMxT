@@ -23,4 +23,4 @@ class MakeHomogeneousOutputSpec(TraitedSpec):
 class MakeHomogeneousInterface(CommandLine):
     input_spec = MakeHomogeneousInputSpec
     output_spec = MakeHomogeneousOutputSpec
-    _cmd = "julia /home/ashley/repos/imaging_pipelines/scripts/makehomogeneous.jl"
+    _cmd = "makehomogeneous.jl"

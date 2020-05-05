@@ -422,7 +422,8 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # environment variables
-    os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ" # output type
+    os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"  # output type
+    os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
 
     if args.debug:
         from nipype import config
@@ -439,9 +440,6 @@ if __name__ == "__main__":
     else:
         subject_list = args.subjects
 
-    # create output folder
-    #os.mkdir(os.path.join(args.out_dir, args.name))
-
     # create qsm workflow
     wf = create_qsm_workflow(
         subject_list=subject_list,
@@ -453,9 +451,12 @@ if __name__ == "__main__":
     )
 
     # run workflow
+    if "NCPUS" in os.environ:
+        wf.run('MultiProc', plugin_args={'n_procs': int(os.environ["NCPUS"])})
+    else:
+        wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
+        
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
-    wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
-    #wf.run('MultiProc', plugin_args={'n_procs': int(os.environ["NCPUS"])}) # NCPUS is set by Q system
     #wf.run('MultiProc', plugin_args={'n_procs': 24})
     #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})
     #wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
