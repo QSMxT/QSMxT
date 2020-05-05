@@ -40,9 +40,9 @@ if __name__ == "__main__":
 
     # convert to mnc
     sys_cmd("mkdir .tmp")
-    if ".nii.gz" in args.in_fixed: sys_cmd(f"gunzip -f -k -c {args.in_fixed} > .tmp/{os.path.basename(args.in_fixed).split(os.extsep)[0]}.nii")
+    if ".nii.gz" in args.in_fixed: sys_cmd(f"gunzip -f -c {args.in_fixed} > .tmp/{os.path.basename(args.in_fixed).split(os.extsep)[0]}.nii")
     else: sys_cmd(f"cp {args.in_fixed} .tmp/{os.path.basename(args.in_fixed).split(os.extsep)[0]}.nii")
-    if ".nii.gz" in args.in_moving: sys_cmd(f"gunzip -f -k -c {args.in_moving} > .tmp/{os.path.basename(args.in_moving).split(os.extsep)[0]}.nii")
+    if ".nii.gz" in args.in_moving: sys_cmd(f"gunzip -f -c {args.in_moving} > .tmp/{os.path.basename(args.in_moving).split(os.extsep)[0]}.nii")
     else: sys_cmd(f"cp {args.in_moving} .tmp/{os.path.basename(args.in_moving).split(os.extsep)[0]}.nii")
     sys_cmd(f"nii2mnc .tmp/{os.path.basename(args.in_fixed).split(os.extsep)[0]}.nii .tmp/{os.path.basename(args.in_fixed).split(os.extsep)[0]}.mnc -clobber")
     sys_cmd(f"nii2mnc .tmp/{os.path.basename(args.in_moving).split(os.extsep)[0]}.nii .tmp/{os.path.basename(args.in_moving).split(os.extsep)[0]}.mnc -clobber")
