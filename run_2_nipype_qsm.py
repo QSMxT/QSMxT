@@ -18,7 +18,6 @@ def create_qsm_workflow(
             bids_dir,
             work_dir,
             out_dir,
-            workflow_name,
             masking='bet',
             bids_templates={
                 'mag'    : '{subject_id_p}/anat/*magnitude*.nii.gz',
@@ -34,13 +33,15 @@ def create_qsm_workflow(
     out_dir  = os.path.join(this_dir, out_dir)
 
     # create initial workflow
-    wf = Workflow(name=workflow_name)
-    wf.base_dir = work_dir
+    wf = Workflow(name='qsm', base_dir=work_dir)
 
     # use infosource to iterate workflow across subject list
     n_infosource = Node(
-        interface=IdentityInterface(fields=['subject_id']), # input and output: subject_id
+        interface=IdentityInterface(
+            fields=['subject_id']
+        ),
         name="infosource"
+        # input: 'subject_id'
         # output: 'subject_id'
     )
     n_infosource.iterables = ('subject_id', subject_list) # runs the node with subject_id = each element in subject_list
@@ -186,14 +187,16 @@ def create_qsm_workflow(
         ])
 
         n_romeo = Node(
-            interface=romeo.RomeoInterface(),
-            iterfield=['mag_file', 'phase_file', 'echo_times'],
+            interface=romeo.RomeoInterface(
+                weights_threshold=200
+            ),
+            iterfield=['in_file', 'echo_times'],
             name='romeo'
-            # output: 'mask_file'
+            # output: 'out_file'
         )
         wf.connect([
-            (n_stacked_magnitude, n_romeo, [('merged_file', 'mag_file')]),
-            (n_stacked_phase, n_romeo, [('merged_file', 'phase_file')]),
+            #(n_stacked_magnitude, n_romeo, [('merged_file', 'mag_file')]),
+            (n_stacked_phase, n_romeo, [('merged_file', 'in_file')]),
             (mn_params, n_romeo, [('EchoTime', 'echo_times')])
         ])
         mn_mask = MapNode(
@@ -206,7 +209,7 @@ def create_qsm_workflow(
             name='join'
         )
         wf.connect([
-            (n_romeo, mn_mask, [('mask_file', 'name')])
+            (n_romeo, mn_mask, [('out_file', 'name')])
         ])
     elif masking == 'atlas-based':
         atlas_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas")
@@ -365,6 +368,32 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--bids_dir',
+        required=True,
+        help='bids directory'
+    )
+
+    parser.add_argument(
+        '--subjects',
+        default=None,
+        const=None,
+        nargs='*',
+        help='list of subjects as seen in bids_dir'
+    )
+
+    parser.add_argument(
+        '--work_dir',
+        required=True,
+        help='work directory'
+    )
+
+    parser.add_argument(
+        '--out_dir',
+        required=True,
+        help='output directory'
+    )
+
+    parser.add_argument(
         '--debug',
         dest='debug',
         action='store_true',
@@ -377,47 +406,7 @@ if __name__ == "__main__":
         const='bet',
         nargs='?',
         choices=['bet', 'romeo', 'atlas-based'],
-        help='Masking strategy'
-    )
-
-    parser.add_argument(
-        '--subjects',
-        default=None,
-        const=None,
-        nargs='*',
-        help='list of subjects as seen in bids_dir'
-    )
-
-    parser.add_argument(
-        '--bids_dir',
-        default='bids',
-        const='bids',
-        nargs='?',
-        help='bids directory'
-    )
-
-    parser.add_argument(
-        '--work_dir',
-        default='work',
-        const='work',
-        nargs='?',
-        help='work directory'
-    )
-
-    parser.add_argument(
-        '--out_dir',
-        default='out',
-        const='out',
-        nargs='?',
-        help='output directory'
-    )
-
-    parser.add_argument(
-        '--name',
-        default='qsm',
-        const='qsm',
-        nargs='?',
-        help='workflow name'
+        help='masking strategy'
     )
 
     args = parser.parse_args()
@@ -447,7 +436,6 @@ if __name__ == "__main__":
         bids_dir=args.bids_dir,
         work_dir=args.work_dir,
         out_dir=args.out_dir, #os.path.join(args.out_dir, args.name),
-        workflow_name=args.name,
         masking=args.masking,
     )
 
