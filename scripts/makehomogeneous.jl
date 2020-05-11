@@ -1,4 +1,4 @@
-#!/bin/julia
+#!/usr/bin/env julia
 using MriResearchTools
 img = readmag(ARGS[1]);
 corrected = makehomogeneous(Float32.(img); σ=[20, 20, 10]);

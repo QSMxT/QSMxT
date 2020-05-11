@@ -1,7 +1,13 @@
+import os
 from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec, OutputMultiPath
 from nipype.interfaces.base.traits_extension import isdefined
 from nipype.utils.filemanip import fname_presuffix, split_filename
 
+#phase_dir = ARGS[1]
+#TEs = [parse(Float64, x) for x in split(ARGS[2], ',')]
+#weights_threshold = parse(Int, ARGS[3])
+#TEs = [5.84,10.63,15.42,20.21,25]
+#out_dir = ARGS[4]
 
 def gen_filename(fname, suffix, newpath, use_ext=True):
     return fname_presuffix(
@@ -12,39 +18,37 @@ def gen_filename(fname, suffix, newpath, use_ext=True):
     )
 
 class RomeoInputSpec(CommandLineInputSpec):
-    mag_file = File(
+    in_file = File(
         exists=True,
-        desc='Magnitude image',
+        desc='Phase image',
         mandatory=True,
-        argstr="-m %s",
+        argstr="%s",
         position=0
-    )
-    output_folder = traits.String(
-        value="romeo",
-        desc='ROMEO output directory',
-        usedefault=True,
-        argstr="-o %s",
-        position=1
     )
     echo_times = traits.List(
         minlen=2,
         desc='Echo times',
         mandatory=True,
-        argstr="-t %s",
-        position=2
+        argstr="%s",
+        position=1
     )
-    phase_file = File(
-        exists=True,
-        desc='Phase image',
+    weights_threshold = traits.Int(
+        default_value=300,
+        desc='Weights threshold',
         mandatory=True,
         argstr="%s",
+        position=2
+    )
+    out_file = File(
+        argstr="%s",
+        name_source=['in_file'],
+        name_template='%s_romeomask.nii',
         position=3
     )
 
 
-
 class RomeoOutputSpec(TraitedSpec):
-    mask_file = OutputMultiPath(
+    out_file = OutputMultiPath(
         File(desc='Output mask')
     )
 
@@ -52,7 +56,7 @@ class RomeoOutputSpec(TraitedSpec):
 class RomeoInterface(CommandLine):
     input_spec = RomeoInputSpec
     output_spec = RomeoOutputSpec
-    _cmd = "/home/ashley/repos/ROMEO_compiled_20190920/bqunwrap"
+    _cmd = "romeo_mask.jl"
 
     def __init__(self, **inputs):
         super(RomeoInterface, self).__init__(**inputs)
@@ -60,14 +64,14 @@ class RomeoInterface(CommandLine):
     def _list_outputs(self):
         outputs = self.output_spec().get()
 
-        mask_file = gen_filename(
-            fname=self.inputs.output_folder + '/mask',
-            suffix='.nii',
-            newpath=self.inputs.output_folder
-        )
-
         # NOTE: workaround for multi-echo data - the QSM node requires one mask per phase image
-        outputs['mask_file'] = [mask_file for x in range(len(self.inputs.echo_times))]
+        pth, fname, ext = split_filename(self.inputs.in_file)
+        outfile = gen_filename(
+            fname=fname + "_romeomask",
+            suffix=ext,
+            newpath=os.getcwd()
+        )
+        outputs['out_file'] = [outfile for x in range(len(self.inputs.echo_times))]
 
         return outputs
 
@@ -75,5 +79,6 @@ class RomeoInterface(CommandLine):
         if name == 'echo_times':
             value = str(value)
             value = value.replace(' ', '')
+            value = value.replace('[', '').replace(']', '')
             return spec.argstr%value
         return super(RomeoInterface, self)._format_arg(name, spec, value)
