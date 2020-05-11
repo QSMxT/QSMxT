@@ -18,6 +18,7 @@ def create_qsm_workflow(
             bids_dir,
             work_dir,
             out_dir,
+            atlas_dir,
             masking='bet',
             bids_templates={
                 'mag'    : '{subject_id_p}/anat/*magnitude*.nii.gz',
@@ -212,7 +213,6 @@ def create_qsm_workflow(
             (n_romeo, mn_mask, [('out_file', 'name')])
         ])
     elif masking == 'atlas-based':
-        atlas_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas")
         n_selectatlas = Node(
             interface=SelectFiles(
                 templates={
@@ -364,7 +364,8 @@ def create_qsm_workflow(
     
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QSM processing pipeline"
+        description="QSM processing pipeline",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
@@ -409,6 +410,14 @@ if __name__ == "__main__":
         help='masking strategy'
     )
 
+    parser.add_argument(
+        '--atlas_dir',
+        default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas"),
+        const=os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas"),
+        nargs='?',
+        help='atlas directory',
+    )
+
     args = parser.parse_args()
 
     # environment variables
@@ -435,8 +444,9 @@ if __name__ == "__main__":
         subject_list=subject_list,
         bids_dir=args.bids_dir,
         work_dir=args.work_dir,
-        out_dir=args.out_dir, #os.path.join(args.out_dir, args.name),
+        out_dir=args.out_dir,
         masking=args.masking,
+        atlas_dir=args.atlas_dir
     )
 
     # run workflow
