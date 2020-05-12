@@ -446,7 +446,7 @@ if __name__ == "__main__":
         work_dir=args.work_dir,
         out_dir=args.out_dir,
         masking=args.masking,
-        atlas_dir=args.atlas_dir
+        atlas_dir=os.path.abspath(args.atlas_dir)
     )
 
     # run workflow
