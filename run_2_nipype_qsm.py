@@ -270,6 +270,7 @@ def create_qsm_workflow(
         interface=tgv.QSMappingInterface(
             iterations=1000, 
             alpha=[0.0015, 0.0005], 
+            erosions=2 if masking == 'romeo' else 5
             #num_threads=1,
         ),
         iterfield=['phase_file', 'mask_file', 'TE', 'b0'],
@@ -421,7 +422,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # environment variables
-    os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"  # output type
+    os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
     os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
 
     if args.debug:
@@ -449,6 +450,9 @@ if __name__ == "__main__":
         atlas_dir=os.path.abspath(args.atlas_dir)
     )
 
+    os.makedirs(os.path.abspath(args.work_dir))
+    os.makedirs(os.path.abspath(args.out_dir))
+
     # run workflow
     if "NCPUS" in os.environ:
         wf.run('MultiProc', plugin_args={'n_procs': int(os.environ["NCPUS"])})
@@ -456,6 +460,5 @@ if __name__ == "__main__":
         wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
         
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
-    #wf.run('MultiProc', plugin_args={'n_procs': 24})
     #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})
     #wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
