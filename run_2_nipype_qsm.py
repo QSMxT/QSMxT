@@ -450,8 +450,8 @@ if __name__ == "__main__":
         atlas_dir=os.path.abspath(args.atlas_dir)
     )
 
-    os.makedirs(os.path.abspath(args.work_dir))
-    os.makedirs(os.path.abspath(args.out_dir))
+    os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
+    os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
     if "NCPUS" in os.environ:
