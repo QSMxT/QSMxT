@@ -270,8 +270,8 @@ def create_qsm_workflow(
         interface=tgv.QSMappingInterface(
             iterations=1000, 
             alpha=[0.0015, 0.0005], 
-            erosions=2 if masking == 'romeo' else 5
-            #num_threads=1,
+            erosions=2 if masking == 'romeo' else 5,
+            num_threads=1,
         ),
         iterfield=['phase_file', 'mask_file', 'TE', 'b0'],
         name='qsm_node'
