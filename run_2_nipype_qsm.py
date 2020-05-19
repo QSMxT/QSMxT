@@ -233,9 +233,10 @@ def create_qsm_workflow(
         )
 
         # TODO: Is the filtered magnitude actually better for this?
+        #       Update 19-05-20 maybe not...
         wf.connect([
-            #(n_selectfiles, mn_bestlinreg, [('mag', 'in_fixed')]),
-            (mn_homogeneity_filter, mn_bestlinreg, [('out_file', 'in_fixed')]),
+            (n_selectfiles, mn_bestlinreg, [('mag', 'in_fixed')]),
+            #(mn_homogeneity_filter, mn_bestlinreg, [('out_file', 'in_fixed')]),
             (n_selectatlas, mn_bestlinreg, [('template', 'in_moving')])
         ])
 
@@ -248,7 +249,8 @@ def create_qsm_workflow(
         
         wf.connect([
             (n_selectatlas, mn_applyxfm, [('mask', 'in_file')]),
-            (mn_homogeneity_filter, mn_applyxfm, [('out_file', 'in_like')]),
+            (n_selectfiles, mn_applyxfm, [('mag', 'in_like')]),
+            #(mn_homogeneity_filter, mn_applyxfm, [('out_file', 'in_like')]),
             (mn_bestlinreg, mn_applyxfm, [('out_transform', 'in_transform')])
         ])
 
@@ -458,7 +460,7 @@ if __name__ == "__main__":
         wf.run('MultiProc', plugin_args={'n_procs': int(os.environ["NCPUS"])})
     else:
         wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
-        
+    
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
     #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})
     #wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
