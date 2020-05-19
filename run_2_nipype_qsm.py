@@ -26,6 +26,7 @@ def create_qsm_workflow(
         'phs': '{subject_id_p}/anat/*phase*.nii.gz',
         'params': '{subject_id_p}/anat/*phase*.json'
     },
+    qsm_threads=1
 ):
 
     # absolute paths to directories
@@ -274,7 +275,7 @@ def create_qsm_workflow(
             iterations=1000,
             alpha=[0.0015, 0.0005],
             erosions=2 if masking == 'romeo' else 5,
-            num_threads=1,
+            num_threads=qsm_threads, # TODO: set to 1 if using multiproc
         ),
         iterfield=['phase_file', 'mask_file', 'TE', 'b0'],
         name='qsm_node'
@@ -283,7 +284,7 @@ def create_qsm_workflow(
 
     # args for PBS
     mn_qsm.plugin_args = {
-        'qsub_args': '-l nodes=1:ppn=16,mem=20gb,vmem=20gb, walltime=03:00:00',
+        'qsub_args': '-A UQ-CAI -q Short -l nodes=1:ppn=16,mem=20gb,vmem=20gb,walltime=03:00:00',
         'overwrite': True
     }
 
@@ -439,10 +440,10 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--use_pbs',
-        dest='use_pbs',
+        '--use_pbs_graph',
+        dest='use_pbs_graph',
         action='store_true',
-        help='debug mode'
+        help='use PBS graph'
     )
 
     args = parser.parse_args()
@@ -450,6 +451,7 @@ if __name__ == "__main__":
     # environment variables
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
     os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
+    os.environ["PYTHONPATH"] += os.pathsep + os.path.dirname(os.path.abspath(__file__))
 
     if args.debug:
         from nipype import config
@@ -466,27 +468,36 @@ if __name__ == "__main__":
     else:
         subject_list = args.subjects
 
-    # create qsm workflow
+    ncpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+
     wf = create_qsm_workflow(
         subject_list=subject_list,
         bids_dir=args.bids_dir,
         work_dir=args.work_dir,
         out_dir=args.out_dir,
         masking=args.masking,
-        atlas_dir=os.path.abspath(args.atlas_dir)
+        atlas_dir=os.path.abspath(args.atlas_dir),
+        qsm_threads=ncpus if args.use_pbs_graph else 1
     )
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
-    if args.use_pbs:
-        wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
+    if args.use_pbs_graph:
+        wf.run(
+            plugin='PBSGraph',
+            plugin_args={
+                'qsub_args': '-A UQ-CAI -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'
+            }
+        )
     else:
-        if "NCPUS" in os.environ:
-            wf.run('MultiProc', plugin_args={'n_procs': int(os.environ["NCPUS"])})
-        else:
-            wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
+        wf.run(
+            plugin='MultiProc',
+            plugin_args={
+                'n_procs': ncpus
+            }
+        )
 
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
     #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})
