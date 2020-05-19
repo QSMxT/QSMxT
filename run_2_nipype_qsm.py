@@ -13,25 +13,26 @@ import nipype_interface_applyxfm as applyxfm
 import nipype_interface_makehomogeneous as makehomogeneous
 import argparse
 
+
 def create_qsm_workflow(
-            subject_list,
-            bids_dir,
-            work_dir,
-            out_dir,
-            atlas_dir,
-            masking='bet',
-            bids_templates={
-                'mag'    : '{subject_id_p}/anat/*magnitude*.nii.gz',
-                'phs'    : '{subject_id_p}/anat/*phase*.nii.gz',
-                'params' : '{subject_id_p}/anat/*phase*.json'
-            },
-        ):
+    subject_list,
+    bids_dir,
+    work_dir,
+    out_dir,
+    atlas_dir,
+    masking='bet',
+    bids_templates={
+        'mag': '{subject_id_p}/anat/*magnitude*.nii.gz',
+        'phs': '{subject_id_p}/anat/*phase*.nii.gz',
+        'params': '{subject_id_p}/anat/*phase*.json'
+    },
+):
 
     # absolute paths to directories
     this_dir = os.path.dirname(os.path.abspath(__file__))
     bids_dir = os.path.join(this_dir, bids_dir)
     work_dir = os.path.join(this_dir, work_dir)
-    out_dir  = os.path.join(this_dir, out_dir)
+    out_dir = os.path.join(this_dir, out_dir)
 
     # create initial workflow
     wf = Workflow(name='qsm', base_dir=work_dir)
@@ -45,11 +46,15 @@ def create_qsm_workflow(
         # input: 'subject_id'
         # output: 'subject_id'
     )
-    n_infosource.iterables = ('subject_id', subject_list) # runs the node with subject_id = each element in subject_list
+    # runs the node with subject_id = each element in subject_list
+    n_infosource.iterables = ('subject_id', subject_list)
 
     # select matching files from bids_dir
     n_selectfiles = Node(
-        interface=SelectFiles(bids_templates, base_directory=bids_dir),
+        interface=SelectFiles(
+            templates=bids_templates,
+            base_directory=bids_dir
+        ),
         name='selectfiles'
         # output: ['mag', 'phs', 'params']
     )
@@ -57,10 +62,10 @@ def create_qsm_workflow(
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
     ])
 
-
     # scale phase data
     mn_stats = MapNode(
-        interface=ImageStats(op_string='-R'), # -R : <min intensity> <max intensity>
+        # -R : <min intensity> <max intensity>
+        interface=ImageStats(op_string='-R'),
         iterfield=['in_file'],
         name='stats_node',
         # output: 'out_stat'
@@ -216,8 +221,8 @@ def create_qsm_workflow(
         n_selectatlas = Node(
             interface=SelectFiles(
                 templates={
-                    'template' : '*template*',
-                    'mask'     : '*mask*'
+                    'template': '*template*',
+                    'mask': '*mask*'
                 },
                 base_directory=atlas_dir
             ),
@@ -243,7 +248,7 @@ def create_qsm_workflow(
             name='applyxfm'
             # output: out_file
         )
-        
+
         wf.connect([
             (n_selectatlas, mn_applyxfm, [('mask', 'in_file')]),
             (n_selectfiles, mn_applyxfm, [('mag', 'in_like')]),
@@ -266,8 +271,8 @@ def create_qsm_workflow(
     # qsm processing
     mn_qsm = MapNode(
         interface=tgv.QSMappingInterface(
-            iterations=1000, 
-            alpha=[0.0015, 0.0005], 
+            iterations=1000,
+            alpha=[0.0015, 0.0005],
             erosions=2 if masking == 'romeo' else 5,
             num_threads=1,
         ),
@@ -275,9 +280,11 @@ def create_qsm_workflow(
         name='qsm_node'
         # output: 'out_file'
     )
+
+    # args for PBS
     mn_qsm.plugin_args = {
-        'qsub_args' : '-l nodes=1:ppn=16,mem=20gb,vmem=20gb, walltime=03:00:00',
-        'overwrite' : True
+        'qsub_args': '-l nodes=1:ppn=16,mem=20gb,vmem=20gb, walltime=03:00:00',
+        'overwrite': True
     }
 
     wf.connect([
@@ -294,26 +301,29 @@ def create_qsm_workflow(
         op_string = '-add %s '
         op_string = len(operand_files) * op_string
         return in_file, operand_files, op_string
-    
+
     n_generate_add_masks_lists = Node(
         interface=Function(
             input_names=['in_files'],
-            output_names=['list_in_file', 'list_operand_files', 'list_op_string'],
+            output_names=['list_in_file',
+                          'list_operand_files', 'list_op_string'],
             function=generate_multiimagemaths_lists
         ),
         name='generate_add_masks_lists_node'
     )
 
     n_add_masks = Node(
-        interface=MultiImageMaths(), 
+        interface=MultiImageMaths(),
         name="add_masks_node"
         # output: 'out_file'
     )
 
-    wf.connect([(mn_mask, n_generate_add_masks_lists, [('mask_file', 'in_files')])])
-    wf.connect([(n_generate_add_masks_lists, n_add_masks, [('list_in_file', 'in_file')])])
-    wf.connect([(n_generate_add_masks_lists, n_add_masks, [('list_operand_files', 'operand_files')])])
-    wf.connect([(n_generate_add_masks_lists, n_add_masks, [('list_op_string', 'op_string')])])
+    wf.connect([
+        (mn_mask, n_generate_add_masks_lists, [('mask_file', 'in_files')]),
+        (n_generate_add_masks_lists, n_add_masks, [('list_in_file', 'in_file')]),
+        (n_generate_add_masks_lists, n_add_masks, [('list_operand_files', 'operand_files')]),
+        (n_generate_add_masks_lists, n_add_masks, [('list_op_string', 'op_string')])
+    ])
 
     # qsm post-processing
     n_generate_add_qsms_lists = Node(
@@ -331,11 +341,12 @@ def create_qsm_workflow(
         name="add_qsms_node"
         # output: 'out_file'
     )
-
-    wf.connect([(mn_qsm, n_generate_add_qsms_lists, [('out_file', 'in_files')])])
-    wf.connect([(n_generate_add_qsms_lists, n_add_qsms, [('list_in_file', 'in_file')])])
-    wf.connect([(n_generate_add_qsms_lists, n_add_qsms, [('list_operand_files', 'operand_files')])])
-    wf.connect([(n_generate_add_qsms_lists, n_add_qsms, [('list_op_string', 'op_string')])])
+    wf.connect([
+        (mn_qsm, n_generate_add_qsms_lists, [('out_file', 'in_files')]),
+        (n_generate_add_qsms_lists, n_add_qsms, [('list_in_file', 'in_file')]),
+        (n_generate_add_qsms_lists, n_add_qsms, [('list_operand_files', 'operand_files')]),
+        (n_generate_add_qsms_lists, n_add_qsms, [('list_op_string', 'op_string')])
+    ])
 
     # divide qsm by mask
     n_final_qsm = Node(
@@ -343,9 +354,10 @@ def create_qsm_workflow(
         name="divide_added_qsm_by_added_masks"
         # output: 'out_file'
     )
-
-    wf.connect([(n_add_qsms, n_final_qsm, [('out_file', 'in_file')])])
-    wf.connect([(n_add_masks, n_final_qsm, [('out_file', 'in_file2')])])
+    wf.connect([
+        (n_add_qsms, n_final_qsm, [('out_file', 'in_file')]),
+        (n_add_masks, n_final_qsm, [('out_file', 'in_file2')])
+    ])
 
     # datasink
     n_datasink = Node(
@@ -353,14 +365,17 @@ def create_qsm_workflow(
         name='datasink'
     )
 
-    wf.connect([(n_add_masks, n_datasink, [('out_file', 'mask_sum')])])
-    wf.connect([(n_add_qsms, n_datasink, [('out_file', 'qsm_sum')])])
-    wf.connect([(n_final_qsm, n_datasink, [('out_file', 'qsm_final_default')])])
-    wf.connect([(mn_qsm, n_datasink, [('out_file', 'qsm_singleEchoes')])])
-    wf.connect([(mn_mask, n_datasink, [('mask_file', 'mask_singleEchoes')])])
+    wf.connect([
+        (n_add_masks, n_datasink, [('out_file', 'mask_sum')]),
+        (n_add_qsms, n_datasink, [('out_file', 'qsm_sum')]),
+        (n_final_qsm, n_datasink, [('out_file', 'qsm_final_default')]),
+        (mn_qsm, n_datasink, [('out_file', 'qsm_singleEchoes')]),
+        (mn_mask, n_datasink, [('mask_file', 'mask_singleEchoes')])
+    ])
 
     return wf
-    
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="QSM processing pipeline",
@@ -411,10 +426,23 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--atlas_dir',
-        default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas"),
-        const=os.path.join(os.path.dirname(os.path.abspath(__file__)), "atlas"),
+        default=os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "atlas"
+        ),
+        const=os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "atlas"
+        ),
         nargs='?',
         help='atlas directory',
+    )
+
+    parser.add_argument(
+        '--use_pbs',
+        dest='use_pbs',
+        action='store_true',
+        help='debug mode'
     )
 
     args = parser.parse_args()
@@ -452,11 +480,13 @@ if __name__ == "__main__":
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
-    if "NCPUS" in os.environ:
-        wf.run('MultiProc', plugin_args={'n_procs': int(os.environ["NCPUS"])})
+    if args.use_pbs:
+        wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
     else:
-        wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
-    
+        if "NCPUS" in os.environ:
+            wf.run('MultiProc', plugin_args={'n_procs': int(os.environ["NCPUS"])})
+        else:
+            wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
+
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
     #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})
-    #wf.run(plugin='PBSGraph', plugin_args=dict(qsub_args='-A UQ-CAI -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'))
