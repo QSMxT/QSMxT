@@ -128,17 +128,17 @@ def create_qsm_workflow(
     def repeat(name):
         return name
 
-    mn_homogeneity_filter = MapNode(
-        interface=makehomogeneous.MakeHomogeneousInterface(),
-        iterfield=['in_file'],
-        name='makehomogeneous'
-    )
-    wf.connect([
-        (n_selectfiles, mn_homogeneity_filter, [('mag', 'in_file')])
-    ])
-
     # brain extraction
     if masking == 'bet':
+        mn_homogeneity_filter = MapNode(
+            interface=makehomogeneous.MakeHomogeneousInterface(),
+            iterfield=['in_file'],
+            name='makehomogeneous'
+        )
+        wf.connect([
+            (n_selectfiles, mn_homogeneity_filter, [('mag', 'in_file')])
+        ])
+
         mn_bet = MapNode(
             interface=BET(frac=0.4, mask=True, robust=True),
             iterfield=['in_file'],
@@ -148,6 +148,7 @@ def create_qsm_workflow(
         wf.connect([
             (mn_homogeneity_filter, mn_bet, [('out_file', 'in_file')])
         ])
+
         mn_mask = MapNode(
             interface=Function(
                 input_names=['name'],
@@ -172,7 +173,7 @@ def create_qsm_workflow(
             # output: 'merged_file'
         )
         wf.connect([
-            (mn_homogeneity_filter, n_stacked_magnitude, [('out_file', 'in_files')])
+            (n_selectfiles, n_stacked_magnitude, [('mag', 'in_files')])
         ])
         n_stacked_phase = Node(
             interface=Merge(
@@ -196,7 +197,6 @@ def create_qsm_workflow(
             # output: 'out_file'
         )
         wf.connect([
-            #(n_stacked_magnitude, n_romeo, [('merged_file', 'mag_file')]),
             (n_stacked_phase, n_romeo, [('merged_file', 'in_file')]),
             (mn_params, n_romeo, [('EchoTime', 'echo_times')])
         ])
@@ -232,11 +232,8 @@ def create_qsm_workflow(
             # output: out_transform
         )
 
-        # TODO: Is the filtered magnitude actually better for this?
-        #       Update 19-05-20 maybe not...
         wf.connect([
             (n_selectfiles, mn_bestlinreg, [('mag', 'in_fixed')]),
-            #(mn_homogeneity_filter, mn_bestlinreg, [('out_file', 'in_fixed')]),
             (n_selectatlas, mn_bestlinreg, [('template', 'in_moving')])
         ])
 
@@ -250,7 +247,6 @@ def create_qsm_workflow(
         wf.connect([
             (n_selectatlas, mn_applyxfm, [('mask', 'in_file')]),
             (n_selectfiles, mn_applyxfm, [('mag', 'in_like')]),
-            #(mn_homogeneity_filter, mn_applyxfm, [('out_file', 'in_like')]),
             (mn_bestlinreg, mn_applyxfm, [('out_transform', 'in_transform')])
         ])
 
