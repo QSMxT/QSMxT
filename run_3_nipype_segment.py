@@ -15,6 +15,7 @@ def create_segmentation_workflow(
     bids_dir,
     work_dir,
     out_dir,
+    reconall_threads,
     bids_templates={
         'T1': '{subject_id_p}/anat/*t1*.nii.gz'
     },
@@ -53,7 +54,10 @@ def create_segmentation_workflow(
     ])
 
     recon_all = MapNode(
-        interface=ReconAll(),
+        interface=ReconAll(
+            parallel=True,
+            openmp=reconall_threads
+        ),
         name='recon_all',
         iterfield=['T1_files', 'subject_id']
     )
@@ -138,18 +142,18 @@ if __name__ == "__main__":
     else:
         subject_list = args.subjects
 
+    ncpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+    
     wf = create_segmentation_workflow(
         subject_list=subject_list,
         bids_dir=args.bids_dir,
         work_dir=args.work_dir,
-        out_dir=args.out_dir
+        out_dir=args.out_dir,
+        reconall_threads=ncpus
     )
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
-    if "NCPUS" in os.environ:
-        wf.run('MultiProc', plugin_args={'n_procs': int(os.environ["NCPUS"])})
-    else:
-        wf.run('MultiProc', plugin_args={'n_procs': int(os.cpu_count())})
+    wf.run('MultiProc', plugin_args={'n_procs': ncpus})
