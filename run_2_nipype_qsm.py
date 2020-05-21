@@ -451,7 +451,10 @@ if __name__ == "__main__":
     # environment variables
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
     os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
-    os.environ["PYTHONPATH"] += os.pathsep + os.path.dirname(os.path.abspath(__file__))
+
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + this_dir
+    else:                          os.environ["PYTHONPATH"]  = this_dir
 
     if args.debug:
         from nipype import config
