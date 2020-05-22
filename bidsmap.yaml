@@ -39,6 +39,32 @@ DICOM:
     attributes:
       Modality: MR
       ProtocolName: ~
+      SeriesDescription: '*t1*'
+      ImageType: '*M*'
+      SequenceName: ~
+      SequenceVariant: ~
+      ScanningSequence: ~
+      MRAcquisitionType: ~
+      SliceThickness: ~
+      FlipAngle: ~
+      EchoNumbers: ~
+      EchoTime: ~
+      RepetitionTime: ~
+      PhaseEncodingDirection: ~
+    bids:
+      acq: t1
+      rec:
+      ce:
+      task:
+      echo: <EchoNumber>
+      dir:
+      run: <AcquisitionNumber>
+      mod:
+      suffix: magnitude
+  - provenance: ~
+    attributes:
+      Modality: MR
+      ProtocolName: ~
       SeriesDescription: ~
       ImageType: '*M*'
       SequenceName: ~
@@ -52,12 +78,12 @@ DICOM:
       RepetitionTime: ~
       PhaseEncodingDirection: ~
     bids:
-      acq: <SeriesDescription>
+      acq: gre
       rec:
       ce:
       task:
       echo: <EchoNumber>
-      dir: ROW
+      dir:
       run: <AcquisitionNumber>
       mod:
       suffix: magnitude
@@ -78,12 +104,12 @@ DICOM:
       RepetitionTime: ~
       PhaseEncodingDirection: ~
     bids:
-      acq: <SeriesDescription>
+      acq: gre
       rec:
       ce:
       task:
       echo: <EchoNumber>
-      dir: ROW
+      dir:
       run: <AcquisitionNumber>
       mod:
       suffix: phase

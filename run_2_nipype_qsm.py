@@ -6,11 +6,13 @@ from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, 
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
+
 import nipype_interface_tgv_qsm as tgv
 import nipype_interface_romeo as romeo
 import nipype_interface_bestlinreg as bestlinreg
 import nipype_interface_applyxfm as applyxfm
 import nipype_interface_makehomogeneous as makehomogeneous
+
 import argparse
 
 
@@ -28,12 +30,6 @@ def create_qsm_workflow(
     },
     qsm_threads=1
 ):
-
-    # absolute paths to directories
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-    bids_dir = os.path.join(this_dir, bids_dir)
-    work_dir = os.path.join(this_dir, work_dir)
-    out_dir = os.path.join(this_dir, out_dir)
 
     # create initial workflow
     wf = Workflow(name='qsm', base_dir=work_dir)
@@ -275,7 +271,7 @@ def create_qsm_workflow(
             iterations=1000,
             alpha=[0.0015, 0.0005],
             erosions=2 if masking == 'romeo' else 5,
-            num_threads=qsm_threads, # TODO: set to 1 if using multiproc
+            num_threads=4, # TODO: set to 1 if using multiproc
         ),
         iterfield=['phase_file', 'mask_file', 'TE', 'b0'],
         name='qsm_node'
@@ -440,8 +436,8 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--use_pbs_graph',
-        dest='use_pbs_graph',
+        '--pbs',
+        dest='pbs',
         action='store_true',
         help='use PBS graph'
     )
@@ -475,19 +471,19 @@ if __name__ == "__main__":
 
     wf = create_qsm_workflow(
         subject_list=subject_list,
-        bids_dir=args.bids_dir,
-        work_dir=args.work_dir,
-        out_dir=args.out_dir,
+        bids_dir=os.path.abspath(args.bids_dir),
+        work_dir=os.path.abspath(args.work_dir),
+        out_dir=os.path.abspath(args.out_dir),
         masking=args.masking,
         atlas_dir=os.path.abspath(args.atlas_dir),
-        qsm_threads=ncpus if args.use_pbs_graph else 1
+        qsm_threads=ncpus if args.pbs else 1
     )
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
-    if args.use_pbs_graph:
+    if args.pbs:
         wf.run(
             plugin='PBSGraph',
             plugin_args={
