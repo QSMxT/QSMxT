@@ -20,11 +20,6 @@ def create_segmentation_workflow(
         'T1': '{subject_id_p}/anat/*t1*.nii.gz'
     },
 ):
-    # absolute paths to directories
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-    bids_dir = os.path.join(this_dir, bids_dir)
-    work_dir = os.path.join(this_dir, work_dir)
-    out_dir = os.path.join(this_dir, out_dir)
 
     wf = Workflow(name='segmentation', base_dir=work_dir)
 
@@ -61,13 +56,14 @@ def create_segmentation_workflow(
         name='recon_all',
         iterfield=['T1_files', 'subject_id']
     )
+    recon_all.plugin_args = {
+        'qsub_args': '-A UQ-CAI -q Short -l nodes=1:ppn=16,mem=20gb,vmem=20gb,walltime=12:00:00',
+        'overwrite': True
+    }
     wf.connect([
         (n_selectfiles, recon_all, [('T1', 'T1_files')]),
         (n_infosource, recon_all, [('subject_id', 'subject_id')])
     ])
-
-    # TODO: Add register to atlas
-    # ....
 
     # datasink
     n_datasink = Node(
@@ -137,8 +133,7 @@ if __name__ == "__main__":
         config.set('logging', 'utils_level', 'DEBUG')
 
     if not args.subjects:
-        subject_list = [subj for subj in os.listdir(
-            args.bids_dir) if 'sub' in subj]
+        subject_list = [subj for subj in os.listdir(args.bids_dir) if 'sub' in subj]
     else:
         subject_list = args.subjects
 
@@ -146,9 +141,9 @@ if __name__ == "__main__":
     
     wf = create_segmentation_workflow(
         subject_list=subject_list,
-        bids_dir=args.bids_dir,
-        work_dir=args.work_dir,
-        out_dir=args.out_dir,
+        bids_dir=os.path.abspath(args.bids_dir),
+        work_dir=os.path.abspath(args.work_dir),
+        out_dir=os.path.abspath(args.out_dir),
         reconall_threads=ncpus
     )
 
@@ -156,4 +151,9 @@ if __name__ == "__main__":
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
-    wf.run('MultiProc', plugin_args={'n_procs': ncpus})
+    wf.run(
+        plugin='PBSGraph',
+        plugin_args={
+            'qsub_args': '-A UQ-CAI -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:50:00'
+        }
+    )
