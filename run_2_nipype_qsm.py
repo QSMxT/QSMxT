@@ -22,9 +22,9 @@ def create_qsm_workflow(
     atlas_dir,
     masking='bet',
     bids_templates={
-        'mag': '{subject_id_p}/anat/*magnitude*.nii.gz',
-        'phs': '{subject_id_p}/anat/*phase*.nii.gz',
-        'params': '{subject_id_p}/anat/*phase*.json'
+        'mag': '{subject_id_p}/anat/*gre*magnitude*.nii.gz',
+        'phs': '{subject_id_p}/anat/*gre*phase*.nii.gz',
+        'params': '{subject_id_p}/anat/*gre*phase*.json'
     },
     qsm_threads=1
 ):
