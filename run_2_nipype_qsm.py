@@ -24,6 +24,7 @@ def create_qsm_workflow(
     atlas_dir,
     masking='bet',
     bids_templates={
+        'mag1': '{subject_id_p}/anat/*gre*E01*magnitude*.nii.gz',
         'mag': '{subject_id_p}/anat/*gre*magnitude*.nii.gz',
         'phs': '{subject_id_p}/anat/*gre*phase*.nii.gz',
         'params': '{subject_id_p}/anat/*gre*phase*.json'
@@ -131,6 +132,29 @@ def create_qsm_workflow(
         return name
 
     # brain extraction
+    if masking == 'bet-1echo':
+        n_bet = Node(
+            interface=BET(frac=0.4, mask=True, robust=True),
+            iterfield=['in_file'],
+            name='bet'
+            # output: 'mask_file'
+        )
+        wf.connect([
+            (n_selectfiles, n_bet, [('mag1', 'in_file')])
+        ])
+
+        mn_mask = Node(
+            interface=Function(
+                input_names=['name'],
+                output_names=['mask_file'],
+                function=repeat
+            ),
+            iterfield=['name'],
+            name='join'
+        )
+        wf.connect([
+            (n_bet, mn_mask, [('mask_file', 'name')])
+        ])
     if masking == 'bet':
         mn_homogeneity_filter = MapNode(
             interface=makehomogeneous.MakeHomogeneousInterface(),
@@ -271,16 +295,16 @@ def create_qsm_workflow(
             iterations=1000,
             alpha=[0.0015, 0.0005],
             erosions=2 if masking == 'romeo' else 5,
-            num_threads=4, # TODO: set to 1 if using multiproc
+            num_threads=qsm_threads
         ),
-        iterfield=['phase_file', 'mask_file', 'TE', 'b0'],
+        iterfield=['phase_file', 'TE', 'b0'],
         name='qsm_node'
         # output: 'out_file'
     )
 
     # args for PBS
     mn_qsm.plugin_args = {
-        'qsub_args': '-A UQ-CAI -q Short -l nodes=1:ppn=16,mem=20gb,vmem=20gb,walltime=03:00:00',
+        'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
         'overwrite': True
     }
 
@@ -417,7 +441,7 @@ if __name__ == "__main__":
         default='bet',
         const='bet',
         nargs='?',
-        choices=['bet', 'romeo', 'atlas-based'],
+        choices=['bet', 'bet-1echo', 'romeo', 'atlas-based'],
         help='masking strategy'
     )
 
@@ -467,8 +491,6 @@ if __name__ == "__main__":
     else:
         subject_list = args.subjects
 
-    ncpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
-
     wf = create_qsm_workflow(
         subject_list=subject_list,
         bids_dir=os.path.abspath(args.bids_dir),
@@ -476,14 +498,14 @@ if __name__ == "__main__":
         out_dir=os.path.abspath(args.out_dir),
         masking=args.masking,
         atlas_dir=os.path.abspath(args.atlas_dir),
-        qsm_threads=ncpus if args.pbs else 1
+        qsm_threads=16 if args.pbs else 1
     )
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
-    if args.pbs:
+    if args.pbs_ncpus:
         wf.run(
             plugin='PBSGraph',
             plugin_args={
@@ -494,7 +516,7 @@ if __name__ == "__main__":
         wf.run(
             plugin='MultiProc',
             plugin_args={
-                'n_procs': ncpus
+                'n_procs': int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
             }
         )
 
