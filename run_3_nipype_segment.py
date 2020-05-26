@@ -15,7 +15,7 @@ def create_segmentation_workflow(
     bids_dir,
     work_dir,
     out_dir,
-    reconall_threads,
+    reconall_cpus,
     bids_templates={
         'T1': '{subject_id_p}/anat/*t1*.nii.gz'
     },
@@ -51,13 +51,13 @@ def create_segmentation_workflow(
     recon_all = MapNode(
         interface=ReconAll(
             parallel=True,
-            openmp=reconall_threads
+            openmp=reconall_cpus
         ),
         name='recon_all',
         iterfield=['T1_files', 'subject_id']
     )
     recon_all.plugin_args = {
-        'qsub_args': '-A UQ-CAI -q Short -l nodes=1:ppn=16,mem=20gb,vmem=20gb,walltime=12:00:00',
+        'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
         'overwrite': True
     }
     wf.connect([
@@ -137,14 +137,12 @@ if __name__ == "__main__":
     else:
         subject_list = args.subjects
 
-    ncpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
-    
     wf = create_segmentation_workflow(
         subject_list=subject_list,
         bids_dir=os.path.abspath(args.bids_dir),
         work_dir=os.path.abspath(args.work_dir),
         out_dir=os.path.abspath(args.out_dir),
-        reconall_threads=ncpus
+        reconall_cpus=16
     )
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
