@@ -132,7 +132,7 @@ def create_qsm_workflow(
         return name
 
     # brain extraction
-    if masking == 'bet-1echo':
+    if masking == 'bet1echo':
         n_bet = Node(
             interface=BET(frac=0.4, mask=True, robust=True),
             iterfield=['in_file'],
@@ -317,6 +317,8 @@ def create_qsm_workflow(
 
     # mask processing
     def generate_multiimagemaths_lists(in_files):
+        if type(in_files) == str: # fix for single-echo masking
+            return in_files, [in_files], '-mul %s '
         in_file = in_files[0]
         operand_files = in_files[1:]
         op_string = '-add %s '
@@ -326,8 +328,11 @@ def create_qsm_workflow(
     n_generate_add_masks_lists = Node(
         interface=Function(
             input_names=['in_files'],
-            output_names=['list_in_file',
-                          'list_operand_files', 'list_op_string'],
+            output_names=[
+                'list_in_file',
+                'list_operand_files',
+                'list_op_string'
+            ],
             function=generate_multiimagemaths_lists
         ),
         name='generate_add_masks_lists_node'
@@ -441,7 +446,7 @@ if __name__ == "__main__":
         default='bet',
         const='bet',
         nargs='?',
-        choices=['bet', 'bet-1echo', 'romeo', 'atlas-based'],
+        choices=['bet', 'bet1echo', 'romeo', 'atlas-based'],
         help='masking strategy'
     )
 
@@ -505,7 +510,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
-    if args.pbs_ncpus:
+    if args.pbs:
         wf.run(
             plugin='PBSGraph',
             plugin_args={
