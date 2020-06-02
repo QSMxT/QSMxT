@@ -51,6 +51,15 @@ if __name__ == "__main__":
         default=False
     )
 
+    parser.add_argument(
+        '--inverse',
+        dest='inverse',
+        action='store_const',
+        help='invert transformation',
+        const=True,
+        default=False
+    )
+
     args = parser.parse_args()
 
     sys_cmd("mkdir .tmp")
@@ -61,24 +70,13 @@ if __name__ == "__main__":
     sys_cmd(f"nii2mnc .tmp/{os.path.basename(args.in_file).split(os.extsep)[0]}.nii .tmp/{os.path.basename(args.in_file).split(os.extsep)[0]}.mnc -clobber")
     sys_cmd(f"nii2mnc .tmp/{os.path.basename(args.in_like).split(os.extsep)[0]}.nii .tmp/{os.path.basename(args.in_like).split(os.extsep)[0]}.mnc -clobber")
 
-    if args.nearest:
-        sys_cmd(
-            f"mincresample \
-            -nearest_neighbour \
-            -keep_real_range \
-            -transformation {args.in_transform} \
-            -like .tmp/{os.path.basename(args.in_like).split(os.extsep)[0]}.mnc \
-            .tmp/{os.path.basename(args.in_file).split(os.extsep)[0]}.mnc \
-            .tmp/{os.path.basename(args.out_file).split(os.extsep)[0]}.mnc"
-        )
-    else:
-        sys_cmd(
-            f"mincresample \
-            -transformation {args.in_transform} \
-            -like .tmp/{os.path.basename(args.in_like).split(os.extsep)[0]}.mnc \
-            .tmp/{os.path.basename(args.in_file).split(os.extsep)[0]}.mnc \
-            .tmp/{os.path.basename(args.out_file).split(os.extsep)[0]}.mnc"
-        )
+    cmd = "mincresample "
+    cmd += "-invert_transformation " if args.inverse else ""
+    cmd += "-nearest_neighbour -keep_real_range " if args.nearest else ""
+    cmd += f"-like .tmp/{os.path.basename(args.in_like).split(os.extsep)[0]}.mnc "
+    cmd += f".tmp/{os.path.basename(args.in_file).split(os.extsep)[0]}.mnc "
+    cmd += f".tmp/{os.path.basename(args.out_file).split(os.extsep)[0]}.mnc"
+    sys_cmd(cmd)
         
     sys_cmd(f"mnc2nii .tmp/{os.path.basename(args.out_file).split(os.extsep)[0]}.mnc {args.out_file.split(os.extsep)[0]}.nii")
     sys_cmd(f"rm -rf .tmp")
