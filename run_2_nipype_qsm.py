@@ -290,6 +290,11 @@ def create_qsm_workflow(
         ])
 
     # qsm processing
+    mn_qsm_iterfield = ['phase_file', 'TE', 'b0']
+    
+    # if using a multi-echo masking method, add mask_file to iterfield
+    if masking != 'bet1echo': mn_qsm_iterfield.append('mask_file')
+
     mn_qsm = MapNode(
         interface=tgv.QSMappingInterface(
             iterations=1000,
@@ -297,7 +302,7 @@ def create_qsm_workflow(
             erosions=2 if masking == 'romeo' else 5,
             num_threads=qsm_threads
         ),
-        iterfield=['phase_file', 'TE', 'b0'],
+        iterfield=mn_qsm_iterfield,
         name='qsm_node'
         # output: 'out_file'
     )
