@@ -60,6 +60,22 @@ def create_qsm_workflow(
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
     ])
 
+    # count the number of echoes
+    def get_length(in_):
+        return len(in_)
+    n_num_echoes = Node(
+        interface=Function(
+            input_names=['in_'],
+            output_names=['num_echoes'],
+            function=get_length
+        ),
+        iterfield=['in_'],
+        name='get_num_echoes'
+    )
+    wf.connect([
+        (n_selectfiles, n_num_echoes, [('mag', 'in_')])
+    ])
+
     # scale phase data
     mn_stats = MapNode(
         # -R : <min intensity> <max intensity>
@@ -379,16 +395,40 @@ def create_qsm_workflow(
         (n_generate_add_qsms_lists, n_add_qsms, [('list_op_string', 'op_string')])
     ])
 
-    # divide qsm by mask
-    n_final_qsm = Node(
-        interface=ImageMaths(op_string='-div'),
-        name="divide_added_qsm_by_added_masks"
-        # output: 'out_file'
-    )
-    wf.connect([
-        (n_add_qsms, n_final_qsm, [('out_file', 'in_file')]),
-        (n_add_masks, n_final_qsm, [('out_file', 'in_file2')])
-    ])
+    # divide qsm by mask or number of echoes
+    if masking == 'bet1echo':
+        def generate_divide_qsm_by_echoes_opstring(num_echoes):
+            return f"-div {num_echoes}"
+        n_generate_divide_qsm_by_echoes_opstring = Node(
+            interface=Function(
+                input_names=['num_echoes'],
+                output_names=['divide_qsm_by_echoes_opstring'],
+                function=generate_divide_qsm_by_echoes_opstring
+            ),
+            name='generate_divide_qsm_by_echoes_opstring'
+        )
+        wf.connect([
+            (n_num_echoes, n_generate_divide_qsm_by_echoes_opstring, [('num_echoes', 'num_echoes')])
+        ])
+        n_final_qsm = Node(
+            interface=ImageMaths(),
+            name="divide_added_qsm_by_added_masks"
+            # output: 'out_file'
+        )
+        wf.connect([
+            (n_add_qsms, n_final_qsm, [('out_file', 'in_file')]),
+            (n_generate_divide_qsm_by_echoes_opstring, n_final_qsm, [('divide_qsm_by_echoes_opstring', 'op_string')])
+        ])
+    else:
+        n_final_qsm = Node(
+            interface=ImageMaths(op_string='-div'),
+            name="divide_added_qsm_by_added_masks"
+            # output: 'out_file'
+        )
+        wf.connect([
+            (n_add_qsms, n_final_qsm, [('out_file', 'in_file')]),
+            (n_add_masks, n_final_qsm, [('out_file', 'in_file2')])
+        ])
 
     # datasink
     n_datasink = Node(
