@@ -71,6 +71,7 @@ if __name__ == "__main__":
     sys_cmd(f"nii2mnc .tmp/{os.path.basename(args.in_like).split(os.extsep)[0]}.nii .tmp/{os.path.basename(args.in_like).split(os.extsep)[0]}.mnc -clobber")
 
     cmd = "mincresample "
+    cmd += f"-transformation {args.in_transform} "
     cmd += "-invert_transformation " if args.inverse else ""
     cmd += "-nearest_neighbour -keep_real_range " if args.nearest else ""
     cmd += f"-like .tmp/{os.path.basename(args.in_like).split(os.extsep)[0]}.mnc "
