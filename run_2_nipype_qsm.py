@@ -467,10 +467,10 @@ if __name__ == "__main__":
         'params': '{subject_id_p}/anat/*gre*phase*.json'
     }
     if 'bet-firstecho' in args.masking:
-        bids_templates['mag'] = bids_templates['mag'].replace('gre*', 'greE01*')
+        bids_templates['mag'] = bids_templates['mag'].replace('gre*', 'gre*E01*')
     if 'bet-lastecho' in args.masking:
         num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*gre*magnitude*.nii.gz")))
-        bids_templates['mag'] = bids_templates['mag'].replace('gre*', f'greE{num_echoes:02}*')
+        bids_templates['mag'] = bids_templates['mag'].replace('gre*', f'gre*E{num_echoes:02}*')
 
     wf = create_qsm_workflow(
         subject_list=subject_list,
