@@ -14,7 +14,7 @@ def save_nii(data, file_path, nii_like):
 def nonzero_average(in_files):
     data = []
     for in_nii_file in in_files:
-        in_nii = nib.load(file_path)
+        in_nii = nib.load(in_nii_file)
         in_data = in_nii.get_fdata()
         data.append(in_data)
     data = np.array(data)
