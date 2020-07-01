@@ -13,6 +13,7 @@ import nipype_interface_romeo as romeo
 import nipype_interface_bestlinreg as bestlinreg
 import nipype_interface_applyxfm as applyxfm
 import nipype_interface_makehomogeneous as makehomogeneous
+import nipype_interface_nonzeroaverage as nonzeroaverage
 
 import argparse
 
@@ -24,7 +25,7 @@ def create_qsm_workflow(
     out_dir,
     atlas_dir,
     bids_templates,
-    masking='bet',
+    masking='bet-multiecho',
     homogeneity_filter=True,
     qsm_threads=1
 ):
@@ -82,7 +83,7 @@ def create_qsm_workflow(
         # output: 'out_stat'
     )
     mn_phs_range = MapNode(
-        interface=ImageMaths(),
+        interface=ImageMaths(suffix="_scaled"),
         name='phs_range_node',
         iterfield=['in_file']
         # inputs: 'in_file', 'op_string'
@@ -330,101 +331,16 @@ def create_qsm_workflow(
         (mn_phs_range, mn_qsm, [('out_file', 'phase_file')])
     ])
 
-    # mask processing
-    def generate_multiimagemaths_lists(in_files):
-        if type(in_files) == str: # fix for single-echo masking
-            return in_files, [in_files], '-mul %s '
-        in_file = in_files[0]
-        operand_files = in_files[1:]
-        op_string = '-add %s '
-        op_string = len(operand_files) * op_string
-        return in_file, operand_files, op_string
-
-    if masking not in ['bet-firstecho', 'bet-lastecho']:
-        n_generate_add_masks_lists = Node(
-            interface=Function(
-                input_names=['in_files'],
-                output_names=[
-                    'list_in_file',
-                    'list_operand_files',
-                    'list_op_string'
-                ],
-                function=generate_multiimagemaths_lists
-            ),
-            name='generate_add_masks_lists_node'
-        )
-
-        n_add_masks = Node(
-            interface=MultiImageMaths(),
-            name="add_masks_node"
-            # output: 'out_file'
-        )
-
-        wf.connect([
-            (mn_mask, n_generate_add_masks_lists, [('mask_file', 'in_files')]),
-            (n_generate_add_masks_lists, n_add_masks, [('list_in_file', 'in_file')]),
-            (n_generate_add_masks_lists, n_add_masks, [('list_operand_files', 'operand_files')]),
-            (n_generate_add_masks_lists, n_add_masks, [('list_op_string', 'op_string')])
-        ])
-
-    # qsm post-processing
-    n_generate_add_qsms_lists = Node(
-        interface=Function(
-            input_names=['in_files'],
-            output_names=['list_in_file', 'list_operand_files', 'list_op_string'],
-            function=generate_multiimagemaths_lists
-        ),
-        name='generate_add_qsms_lists_node'
-        # output: 'out_file'
-    )
-
-    n_add_qsms = Node(
-        interface=MultiImageMaths(),
-        name="add_qsms_node"
-        # output: 'out_file'
+    # qsm averaging
+    n_final_qsm = Node(
+        interface=nonzeroaverage.NonzeroAverageInterface(),
+        name='qsm_final'
+        # input : in_files
+        # output : out_file
     )
     wf.connect([
-        (mn_qsm, n_generate_add_qsms_lists, [('out_file', 'in_files')]),
-        (n_generate_add_qsms_lists, n_add_qsms, [('list_in_file', 'in_file')]),
-        (n_generate_add_qsms_lists, n_add_qsms, [('list_operand_files', 'operand_files')]),
-        (n_generate_add_qsms_lists, n_add_qsms, [('list_op_string', 'op_string')])
+        (mn_qsm, n_final_qsm, [('out_file', 'in_files')])
     ])
-
-    # divide qsm by mask or number of echoes
-    if masking in ['bet-firstecho', 'bet-lastecho']:
-        # TODO: use mean of QSM
-        def generate_divide_qsm_by_echoes_opstring(num_echoes):
-            return f"-div {num_echoes}"
-        n_generate_divide_qsm_by_echoes_opstring = Node(
-            interface=Function(
-                input_names=['num_echoes'],
-                output_names=['divide_qsm_by_echoes_opstring'],
-                function=generate_divide_qsm_by_echoes_opstring
-            ),
-            name='generate_divide_qsm_by_echoes_opstring'
-        )
-        wf.connect([
-            (n_num_echoes, n_generate_divide_qsm_by_echoes_opstring, [('num_echoes', 'num_echoes')])
-        ])
-        n_final_qsm = Node(
-            interface=ImageMaths(),
-            name="divide_added_qsm_by_added_masks"
-            # output: 'out_file'
-        )
-        wf.connect([
-            (n_add_qsms, n_final_qsm, [('out_file', 'in_file')]),
-            (n_generate_divide_qsm_by_echoes_opstring, n_final_qsm, [('divide_qsm_by_echoes_opstring', 'op_string')])
-        ])
-    else:
-        n_final_qsm = Node(
-            interface=ImageMaths(op_string='-div'),
-            name="divide_added_qsm_by_added_masks"
-            # output: 'out_file'
-        )
-        wf.connect([
-            (n_add_qsms, n_final_qsm, [('out_file', 'in_file')]),
-            (n_add_masks, n_final_qsm, [('out_file', 'in_file2')])
-        ])
 
     # datasink
     n_datasink = Node(
@@ -432,14 +348,8 @@ def create_qsm_workflow(
         name='datasink'
     )
 
-    if masking not in ['bet-firstecho', 'bet-lastecho']:
-        wf.connect([
-            (n_add_masks, n_datasink, [('out_file', 'mask_sum')])
-        ])
-
     wf.connect([
-        (n_add_qsms, n_datasink, [('out_file', 'qsm_sum')]),
-        (n_final_qsm, n_datasink, [('out_file', 'qsm_final_default')]),
+        (n_final_qsm, n_datasink, [('out_file', 'qsm_final')]),
         (mn_qsm, n_datasink, [('out_file', 'qsm_singleEchoes')]),
         (mn_mask, n_datasink, [('mask_file', 'mask_singleEchoes')])
     ])
@@ -488,10 +398,10 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--masking',
-        default='bet',
-        const='bet',
+        default='bet-multiecho',
+        const='bet-multiecho',
         nargs='?',
-        choices=['bet', 'bet-firstecho', 'bet-lastecho', 'romeo', 'atlas-based', 'composite'],
+        choices=['bet-multiecho', 'bet-firstecho', 'bet-lastecho', 'romeo', 'atlas-based', 'composite'],
         help='masking strategy'
     )
 
