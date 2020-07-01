@@ -2,6 +2,7 @@
 
 import os.path
 import os
+import glob
 from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge, UnaryMaths
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
@@ -22,13 +23,9 @@ def create_qsm_workflow(
     work_dir,
     out_dir,
     atlas_dir,
+    bids_templates,
     masking='bet',
-    bids_templates={
-        'mag1': '{subject_id_p}/anat/*gre*E01*magnitude*.nii.gz',
-        'mag': '{subject_id_p}/anat/*gre*magnitude*.nii.gz',
-        'phs': '{subject_id_p}/anat/*gre*phase*.nii.gz',
-        'params': '{subject_id_p}/anat/*gre*phase*.json'
-    },
+    homogeneity_filter=True,
     qsm_threads=1
 ):
 
@@ -144,64 +141,59 @@ def create_qsm_workflow(
         (n_selectfiles, mn_params, [('params', 'in_file')])
     ])
 
-    def repeat(name):
-        return name
+    def repeat(in_file):
+        return in_file
 
-    # brain extraction
-    if masking == 'bet1echo':
-        n_bet = Node(
-            interface=BET(frac=0.4, mask=True, robust=True),
-            iterfield=['in_file'],
-            name='bet'
-            # output: 'mask_file'
-        )
-        wf.connect([
-            (n_selectfiles, n_bet, [('mag1', 'in_file')])
-        ])
-
-        mn_mask = Node(
-            interface=Function(
-                input_names=['name'],
-                output_names=['mask_file'],
-                function=repeat
-            ),
-            iterfield=['name'],
-            name='join'
-        )
-        wf.connect([
-            (n_bet, mn_mask, [('mask_file', 'name')])
-        ])
-    if masking == 'bet':
+    # homogeneity filter
+    n_mag = MapNode(
+        interface=Function(
+            input_names=['in_file'],
+            output_names=['out_file'],
+            function=repeat
+        ),
+        iterfield=['in_file'],
+        name='magnitude'
+    )
+    if homogeneity_filter:
         mn_homogeneity_filter = MapNode(
             interface=makehomogeneous.MakeHomogeneousInterface(),
             iterfield=['in_file'],
             name='makehomogeneous'
+            # output : out_file
         )
         wf.connect([
-            (n_selectfiles, mn_homogeneity_filter, [('mag', 'in_file')])
+            (n_selectfiles, mn_homogeneity_filter, [('mag', 'in_file')]),
+            (mn_homogeneity_filter, n_mag, [('out_file', 'in_file')])
+        ])
+    else:
+        wf.connect([
+            (n_selectfiles, n_mag, [('mag', 'in_file')])
         ])
 
-        mn_bet = MapNode(
+    # brain extraction
+    if 'bet' in masking:
+        bet = MapNode(
             interface=BET(frac=0.4, mask=True, robust=True),
             iterfield=['in_file'],
             name='bet'
             # output: 'mask_file'
         )
+
         wf.connect([
-            (mn_homogeneity_filter, mn_bet, [('out_file', 'in_file')])
+            (n_mag, bet, [('out_file', 'in_file')])
         ])
 
         mn_mask = MapNode(
             interface=Function(
-                input_names=['name'],
+                input_names=['in_file'],
                 output_names=['mask_file'],
                 function=repeat
             ),
-            iterfield=['name'],
+            iterfield=['in_file'],
             name='join'
         )
         wf.connect([
-            (mn_bet, mn_mask, [('mask_file', 'name')])
+            (bet, mn_mask, [('mask_file', 'in_file')])
         ])
     elif masking == 'romeo':
         # ROMEO only operates on stacked .nii files
@@ -215,7 +207,7 @@ def create_qsm_workflow(
             # output: 'merged_file'
         )
         wf.connect([
-            (n_selectfiles, n_stacked_magnitude, [('mag', 'in_files')])
+            (n_mag, n_stacked_magnitude, [('out_file', 'in_files')])
         ])
         n_stacked_phase = Node(
             interface=Merge(
@@ -227,7 +219,7 @@ def create_qsm_workflow(
             # output: 'merged_file'
         )
         wf.connect([
-            (mn_phs_range, n_stacked_phase, [('out_file', 'in_files')])
+            (n_selectfiles, n_stacked_phase, [('phs', 'in_files')])
         ])
 
         n_romeo = Node(
@@ -244,15 +236,15 @@ def create_qsm_workflow(
         ])
         mn_mask = MapNode(
             interface=Function(
-                input_names=['name'],
+                input_names=['in_file'],
                 output_names=['mask_file'],
                 function=repeat
             ),
-            iterfield=['name'],
+            iterfield=['in_file'],
             name='join'
         )
         wf.connect([
-            (n_romeo, mn_mask, [('out_file', 'name')])
+            (n_romeo, mn_mask, [('out_file', 'in_file')])
         ])
     elif masking == 'atlas-based':
         n_selectatlas = Node(
@@ -275,7 +267,7 @@ def create_qsm_workflow(
         )
 
         wf.connect([
-            (n_selectfiles, mn_bestlinreg, [('mag', 'in_fixed')]),
+            (n_mag, mn_bestlinreg, [('out_file', 'in_fixed')]),
             (n_selectatlas, mn_bestlinreg, [('template', 'in_moving')])
         ])
 
@@ -288,28 +280,30 @@ def create_qsm_workflow(
 
         wf.connect([
             (n_selectatlas, mn_applyxfm, [('mask', 'in_file')]),
-            (n_selectfiles, mn_applyxfm, [('mag', 'in_like')]),
+            (n_mag, mn_applyxfm, [('out_file', 'in_like')]),
             (mn_bestlinreg, mn_applyxfm, [('out_transform', 'in_transform')])
         ])
 
         mn_mask = MapNode(
             interface=Function(
-                input_names=['name'],
+                input_names=['in_file'],
                 output_names=['mask_file'],
                 function=repeat
             ),
-            iterfield=['name'],
+            iterfield=['in_file'],
             name='join'
         )
         wf.connect([
-            (mn_applyxfm, mn_mask, [('out_file', 'name')])
+            (mn_applyxfm, mn_mask, [('out_file', 'in_file')])
         ])
+    elif masking == 'composite':
+        raise NotImplementedError
 
     # qsm processing
     mn_qsm_iterfield = ['phase_file', 'TE', 'b0']
     
     # if using a multi-echo masking method, add mask_file to iterfield
-    if masking != 'bet1echo': mn_qsm_iterfield.append('mask_file')
+    if masking not in ['bet-firstecho', 'bet-lastecho']: mn_qsm_iterfield.append('mask_file')
 
     mn_qsm = MapNode(
         interface=tgv.QSMappingInterface(
@@ -346,31 +340,32 @@ def create_qsm_workflow(
         op_string = len(operand_files) * op_string
         return in_file, operand_files, op_string
 
-    n_generate_add_masks_lists = Node(
-        interface=Function(
-            input_names=['in_files'],
-            output_names=[
-                'list_in_file',
-                'list_operand_files',
-                'list_op_string'
-            ],
-            function=generate_multiimagemaths_lists
-        ),
-        name='generate_add_masks_lists_node'
-    )
+    if masking not in ['bet-firstecho', 'bet-lastecho']:
+        n_generate_add_masks_lists = Node(
+            interface=Function(
+                input_names=['in_files'],
+                output_names=[
+                    'list_in_file',
+                    'list_operand_files',
+                    'list_op_string'
+                ],
+                function=generate_multiimagemaths_lists
+            ),
+            name='generate_add_masks_lists_node'
+        )
 
-    n_add_masks = Node(
-        interface=MultiImageMaths(),
-        name="add_masks_node"
-        # output: 'out_file'
-    )
+        n_add_masks = Node(
+            interface=MultiImageMaths(),
+            name="add_masks_node"
+            # output: 'out_file'
+        )
 
-    wf.connect([
-        (mn_mask, n_generate_add_masks_lists, [('mask_file', 'in_files')]),
-        (n_generate_add_masks_lists, n_add_masks, [('list_in_file', 'in_file')]),
-        (n_generate_add_masks_lists, n_add_masks, [('list_operand_files', 'operand_files')]),
-        (n_generate_add_masks_lists, n_add_masks, [('list_op_string', 'op_string')])
-    ])
+        wf.connect([
+            (mn_mask, n_generate_add_masks_lists, [('mask_file', 'in_files')]),
+            (n_generate_add_masks_lists, n_add_masks, [('list_in_file', 'in_file')]),
+            (n_generate_add_masks_lists, n_add_masks, [('list_operand_files', 'operand_files')]),
+            (n_generate_add_masks_lists, n_add_masks, [('list_op_string', 'op_string')])
+        ])
 
     # qsm post-processing
     n_generate_add_qsms_lists = Node(
@@ -396,7 +391,8 @@ def create_qsm_workflow(
     ])
 
     # divide qsm by mask or number of echoes
-    if masking == 'bet1echo':
+    if masking in ['bet-firstecho', 'bet-lastecho']:
+        # TODO: use mean of QSM
         def generate_divide_qsm_by_echoes_opstring(num_echoes):
             return f"-div {num_echoes}"
         n_generate_divide_qsm_by_echoes_opstring = Node(
@@ -436,8 +432,12 @@ def create_qsm_workflow(
         name='datasink'
     )
 
+    if masking not in ['bet-firstecho', 'bet-lastecho']:
+        wf.connect([
+            (n_add_masks, n_datasink, [('out_file', 'mask_sum')])
+        ])
+
     wf.connect([
-        (n_add_masks, n_datasink, [('out_file', 'mask_sum')]),
         (n_add_qsms, n_datasink, [('out_file', 'qsm_sum')]),
         (n_final_qsm, n_datasink, [('out_file', 'qsm_final_default')]),
         (mn_qsm, n_datasink, [('out_file', 'qsm_singleEchoes')]),
@@ -491,8 +491,15 @@ if __name__ == "__main__":
         default='bet',
         const='bet',
         nargs='?',
-        choices=['bet', 'bet1echo', 'romeo', 'atlas-based'],
+        choices=['bet', 'bet-firstecho', 'bet-lastecho', 'romeo', 'atlas-based', 'composite'],
         help='masking strategy'
+    )
+
+    parser.add_argument(
+        "--hf",
+        dest='homogeneity_filter',
+        action='store_true',
+        help='disables magnitude homogeneity filter for bet; enables homogeneity filter for other masking strategies'
     )
 
     parser.add_argument(
@@ -541,6 +548,20 @@ if __name__ == "__main__":
     else:
         subject_list = args.subjects
 
+    # default homogeneity filter setting: on for BET, off for everything else
+    homogeneity_filter = 'bet' in args.masking
+
+    bids_templates = {
+        'mag': '{subject_id_p}/anat/*gre*magnitude*.nii.gz',
+        'phs': '{subject_id_p}/anat/*gre*phase*.nii.gz',
+        'params': '{subject_id_p}/anat/*gre*phase*.json'
+    }
+    if 'bet-firstecho' in args.masking:
+        bids_templates['mag'] = bids_templates['mag'].replace('gre*', 'greE01*')
+    if 'bet-lastecho' in args.masking:
+        num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*gre*magnitude*.nii.gz")))
+        bids_templates['mag'] = bids_templates['mag'].replace('gre*', f'greE{num_echoes:02}*')
+
     wf = create_qsm_workflow(
         subject_list=subject_list,
         bids_dir=os.path.abspath(args.bids_dir),
@@ -548,6 +569,8 @@ if __name__ == "__main__":
         out_dir=os.path.abspath(args.out_dir),
         masking=args.masking,
         atlas_dir=os.path.abspath(args.atlas_dir),
+        bids_templates=bids_templates,
+        homogeneity_filter=homogeneity_filter != args.homogeneity_filter,
         qsm_threads=16 if args.pbs else 1
     )
 
