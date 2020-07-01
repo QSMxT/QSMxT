@@ -12,7 +12,11 @@ phase_nii = readphase(phase_dir)
 hdr = header(phase_nii)
 
 phase = dropdims(phase_nii, dims = (findall(size(phase_nii) .== 1)...,));
-weights_edges = 256 .- MriResearchTools.ROMEO.calculateweights(phase[:,:,:,1]; weights=:romeo, phase2=phase[:,:,:,2], TEs=TEs)
+if length(TEs) > 1
+    weights_edges = 256 .- MriResearchTools.ROMEO.calculateweights(phase[:,:,:,1]; weights=:romeo, phase2=phase[:,:,:,2], TEs=TEs)
+else
+    weights_edges = 256 .- MriResearchTools.ROMEO.calculateweights(phase[:,:,:,1]; weights=:romeo, TEs=TEs)
+end
 weights_voxel = dropdims(sum(weights_edges; dims=1); dims=1)
 mask = Float64.(weights_voxel .> weights_threshold)
 
