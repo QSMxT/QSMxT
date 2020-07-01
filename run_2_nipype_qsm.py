@@ -58,22 +58,6 @@ def create_qsm_workflow(
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
     ])
 
-    # count the number of echoes
-    def get_length(in_):
-        return len(in_)
-    n_num_echoes = Node(
-        interface=Function(
-            input_names=['in_'],
-            output_names=['num_echoes'],
-            function=get_length
-        ),
-        iterfield=['in_'],
-        name='get_num_echoes'
-    )
-    wf.connect([
-        (n_selectfiles, n_num_echoes, [('mag', 'in_')])
-    ])
-
     # scale phase data
     mn_stats = MapNode(
         # -R : <min intensity> <max intensity>
