@@ -38,7 +38,7 @@ def create_qsm_workflow(
         interface=IdentityInterface(
             fields=['subject_id']
         ),
-        name="infosource"
+        name="subject_source"
         # input: 'subject_id'
         # output: 'subject_id'
     )
@@ -51,7 +51,7 @@ def create_qsm_workflow(
             templates=bids_templates,
             base_directory=bids_dir
         ),
-        name='selectfiles'
+        name='get_subject_data'
         # output: ['mag', 'phs', 'params']
     )
     wf.connect([
@@ -63,12 +63,12 @@ def create_qsm_workflow(
         # -R : <min intensity> <max intensity>
         interface=ImageStats(op_string='-R'),
         iterfield=['in_file'],
-        name='stats_node',
+        name='get_min_max',
         # output: 'out_stat'
     )
     mn_phs_range = MapNode(
         interface=ImageMaths(suffix="_scaled"),
-        name='phs_range_node',
+        name='scale_phase',
         iterfield=['in_file']
         # inputs: 'in_file', 'op_string'
         # output: 'out_file'
@@ -137,13 +137,13 @@ def create_qsm_workflow(
             function=repeat
         ),
         iterfield=['in_file'],
-        name='magnitude'
+        name='repeat_magnitude'
     )
     if homogeneity_filter:
         mn_homogeneity_filter = MapNode(
             interface=makehomogeneous.MakeHomogeneousInterface(),
             iterfield=['in_file'],
-            name='makehomogeneous'
+            name='make_homogeneous'
             # output : out_file
         )
         wf.connect([
@@ -160,7 +160,7 @@ def create_qsm_workflow(
         bet = MapNode(
             interface=BET(frac=0.4, mask=True, robust=True),
             iterfield=['in_file'],
-            name='bet'
+            name='fsl_bet'
             # output: 'mask_file'
         )
 
@@ -175,25 +175,13 @@ def create_qsm_workflow(
                 function=repeat
             ),
             iterfield=['in_file'],
-            name='join'
+            name='repeat_mask'
         )
         wf.connect([
             (bet, mn_mask, [('mask_file', 'in_file')])
         ])
     elif masking == 'romeo':
         # ROMEO only operates on stacked .nii files
-        n_stacked_magnitude = Node(
-            interface=Merge(
-                dimension='t',
-                output_type='NIFTI'
-            ),
-            name="stack_magnitude",
-            iterfield=['in_files']
-            # output: 'merged_file'
-        )
-        wf.connect([
-            (n_mag, n_stacked_magnitude, [('out_file', 'in_files')])
-        ])
         n_stacked_phase = Node(
             interface=Merge(
                 dimension='t',
@@ -212,7 +200,7 @@ def create_qsm_workflow(
                 weights_threshold=200
             ),
             iterfield=['in_file', 'echo_times'],
-            name='romeo'
+            name='romeo_mask'
             # output: 'out_file'
         )
         wf.connect([
@@ -226,7 +214,7 @@ def create_qsm_workflow(
                 function=repeat
             ),
             iterfield=['in_file'],
-            name='join'
+            name='repeat_mask'
         )
         wf.connect([
             (n_romeo, mn_mask, [('out_file', 'in_file')])
@@ -240,14 +228,14 @@ def create_qsm_workflow(
                 },
                 base_directory=atlas_dir
             ),
-            name='selectatlas'
+            name='get_atlas'
             # output: ['template', 'mask']
         )
 
         mn_bestlinreg = MapNode(
             interface=bestlinreg.NiiBestLinRegInterface(),
             iterfield=['in_fixed', 'in_moving'],
-            name='bestlinreg'
+            name='get_atlas_registration'
             # output: out_transform
         )
 
@@ -259,7 +247,7 @@ def create_qsm_workflow(
         mn_applyxfm = MapNode(
             interface=applyxfm.NiiApplyMincXfmInterface(),
             iterfield=['in_file', 'in_like', 'in_transform'],
-            name='applyxfm'
+            name='apply_atlas_registration'
             # output: out_file
         )
 
@@ -276,7 +264,7 @@ def create_qsm_workflow(
                 function=repeat
             ),
             iterfield=['in_file'],
-            name='join'
+            name='repeat_mask'
         )
         wf.connect([
             (mn_applyxfm, mn_mask, [('out_file', 'in_file')])
@@ -288,7 +276,7 @@ def create_qsm_workflow(
     mn_qsm_iterfield = ['phase_file', 'TE', 'b0']
     
     # if using a multi-echo masking method, add mask_file to iterfield
-    if masking not in ['bet-firstecho', 'bet-lastecho']: mn_qsm_iterfield.append('mask_file')
+    if masking not in ['bet-firstecho', 'bet-lastecho', 'romeo']: mn_qsm_iterfield.append('mask_file')
 
     mn_qsm = MapNode(
         interface=tgv.QSMappingInterface(
@@ -298,7 +286,7 @@ def create_qsm_workflow(
             num_threads=qsm_threads
         ),
         iterfield=mn_qsm_iterfield,
-        name='qsm_node'
+        name='qsm'
         # output: 'out_file'
     )
 
@@ -318,7 +306,7 @@ def create_qsm_workflow(
     # qsm averaging
     n_final_qsm = Node(
         interface=nonzeroaverage.NonzeroAverageInterface(),
-        name='qsm_final'
+        name='average_qsm'
         # input : in_files
         # output : out_file
     )
