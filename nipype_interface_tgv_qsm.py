@@ -6,7 +6,7 @@ modified by Steffen.Bollmann@cai.uq.edu.au
 """
 from __future__ import division
 import os
-from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec
+from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec, InputMultiPath
 from nipype.interfaces.base.traits_extension import isdefined
 from nipype.utils.filemanip import fname_presuffix, split_filename
 
@@ -20,7 +20,7 @@ def gen_filename(fname, suffix, newpath, use_ext=True):
 class QSMappingInputSpec(CommandLineInputSpec):
     # TODO This is incomplete and just gives some basic parameters
     phase_file = File(exists=True, desc='Phase image', mandatory=True, argstr="-p %s")
-    mask_file = File(exists=True, desc='Image mask', mandatory=True, argstr="-m %s")
+    mask_file = InputMultiPath(exists=True, desc='Image mask', mandatory=True, argstr="-m %s")
     num_threads = traits.Int(-1, usedefault=True, nohash=True, desc="Number of threads to use, by default $NCPUS")
     TE = traits.Float(desc='Echo Time [sec]', mandatory=True, argstr="-t %f")
     b0 = traits.Float(desc='Field Strength [Tesla]', mandatory=True, argstr="-f %f")

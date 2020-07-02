@@ -42,13 +42,21 @@ if __name__ == "__main__":
 
     romeo_qsm = romeo_qsm_nii.get_fdata()
     bet_qsm = bet_qsm_nii.get_fdata()
+
     romeo_zeros = np.array(np.abs(romeo_qsm) < 0.000001, dtype=np.int16)
     bet_mask = np.array(np.abs(bet_qsm) > 0.000001, dtype=np.int16)
+    #bet_zeros = np.array(np.abs(bet_qsm) < 0.000001, dtype=np.int16)
+    #romeo_mask = np.array(np.abs(romeo_qsm) > 0.000001, dtype=np.int16)
+    
     bet_extras_mask = bet_mask * romeo_zeros
+    #romeo_extras_mask = romeo_mask * bet_zeros
+    #extras_mask = bet_extras_mask + romeo_extras_mask
 
     composite_qsm = bet_extras_mask * bet_qsm + romeo_qsm
+    # added voxels - voxels added by ROMEO qsm and voxels added by BET QSM
 
-    nib.save(nib.Nifti1Image(composite_qsm, None), "0_composite_qsm.nii")
-    nib.save(nib.Nifti1Image(bet_extras_mask, None), "1_bet_extras_mask.nii")
-    nib.save(nib.Nifti1Image(bet_qsm, None), "2_bet_qsm.nii")
-    nib.save(nib.Nifti1Image(romeo_qsm, None), "3_romeo_qsm.nii")
+    nib.save(nib.Nifti1Image(composite_qsm, None), args.out_file)
+    #nib.save(nib.Nifti1Image(bet_extras_mask, None), "1_bet_extras_mask.nii")
+    #nib.save(nib.Nifti1Image(bet_qsm, None), "2_bet_qsm.nii")
+    #nib.save(nib.Nifti1Image(romeo_qsm, None), "3_romeo_qsm.nii")
+    #nib.save(nib.Nifti1Image(extras_mask, None), "4_extras_mask.nii")
