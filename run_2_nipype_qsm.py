@@ -207,6 +207,44 @@ def create_qsm_workflow(
             (n_stacked_phase, n_romeo, [('merged_file', 'in_file')]),
             (mn_params, n_romeo, [('EchoTime', 'echo_times')])
         ])
+
+        n_romeo_erode = Node(
+            interface=ImageMaths(
+                suffix='_ero',
+                op_string='-ero'
+            ),
+            name='romeo_ero'
+            # input  : 'in_file'
+            # output : 'out_file'
+        )
+        wf.connect([
+            (n_romeo, n_romeo_erode, [('out_file', 'in_file')])
+        ])
+        n_romeo_dilate = Node(
+            interface=ImageMaths(
+                suffix='_dil',
+                op_string='-dilM'
+            ),
+            name='romeo_ero_dil'
+            # input  : 'in_file'
+            # output : 'out_file'
+        )
+        wf.connect([
+            (n_romeo_erode, n_romeo_dilate, [('out_file', 'in_file')])
+        ])
+        n_romeo_fillh = Node(
+            interface=ImageMaths(
+                suffix='_fillh',
+                op_string='-fillh'
+            ),
+            name='romeo_ero_dil_fillh'
+            # input  : 'in_file'
+            # output : 'out_file'
+        )
+        wf.connect([
+            (n_romeo_dilate, n_romeo_fillh, [('out_file', 'in_file')])
+        ])
+
         mn_mask = MapNode(
             interface=Function(
                 input_names=['in_file'],
@@ -217,7 +255,7 @@ def create_qsm_workflow(
             name='repeat_mask'
         )
         wf.connect([
-            (n_romeo, mn_mask, [('out_file', 'in_file')])
+            (n_romeo_fillh, mn_mask, [('out_file', 'in_file')])
         ])
     elif masking == 'atlas-based':
         n_selectatlas = Node(
@@ -271,7 +309,7 @@ def create_qsm_workflow(
         ])
     elif masking == 'composite':
         raise NotImplementedError
-
+    
     # qsm processing
     mn_qsm_iterfield = ['phase_file', 'TE', 'b0']
     
