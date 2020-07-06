@@ -58,6 +58,22 @@ def create_qsm_workflow(
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
     ])
 
+    # count the number of echoes
+    def get_length(in_):
+        return len(in_)
+    n_num_echoes = Node(
+        interface=Function(
+            input_names=['in_'],
+            output_names=['num_echoes'],
+            function=get_length
+        ),
+        iterfield=['in_'],
+        name='get_num_echoes'
+    )
+    wf.connect([
+        (n_selectfiles, n_num_echoes, [('mag', 'in_')])
+    ])
+
     # scale phase data
     mn_stats = MapNode(
         # -R : <min intensity> <max intensity>
@@ -315,6 +331,7 @@ def create_qsm_workflow(
     
     # if using a multi-echo masking method, add mask_file to iterfield
     if masking not in ['bet-firstecho', 'bet-lastecho', 'romeo']: mn_qsm_iterfield.append('mask_file')
+    if masking == 'romeo': mn_qsm_iterfield.append('erosions')
 
     mn_qsm = MapNode(
         interface=tgv.QSMappingInterface(
@@ -340,6 +357,24 @@ def create_qsm_workflow(
         (mn_mask, mn_qsm, [('mask_file', 'mask_file')]),
         (mn_phs_range, mn_qsm, [('out_file', 'phase_file')])
     ])
+
+    if masking == 'romeo':
+        def get_erosions(num_echoes):
+            return [5+x for x in range(num_echoes)]
+
+        n_erosions = Node(
+            interface=Function(
+                input_names=['num_echoes'],
+                output_names=['num_erosions'],
+                function=get_erosions
+            ),
+            name='num_erosions'
+        )
+
+        wf.connect([
+            (n_num_echoes, n_erosions, [('num_echoes', 'num_echoes')]),
+            (n_erosions, mn_qsm, [('num_erosions', 'erosions')])
+        ])
 
     # qsm averaging
     n_final_qsm = Node(
