@@ -21,9 +21,9 @@ class RomeoInputSpec(CommandLineInputSpec):
         argstr="%s",
         position=0
     )
-    echo_times = traits.List(
-        minlen=2,
-        desc='Echo times',
+    echo_time = traits.Float(
+        minlen=1,
+        desc='Echo time',
         mandatory=True,
         argstr="%s",
         position=1
@@ -63,7 +63,7 @@ class RomeoInterface(CommandLine):
         pth, fname, ext = split_filename(self.inputs.in_file)
         outfile = gen_filename(
             fname=fname + "_romeomask",
-            suffix=ext,
+            suffix=".nii",
             newpath=os.getcwd()
         )
         outputs['out_file'] = outfile
