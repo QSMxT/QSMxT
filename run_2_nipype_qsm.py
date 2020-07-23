@@ -425,7 +425,7 @@ def create_qsm_workflow(
         ])
 
         wf.connect([
-            (n_romeo_e01_maths, n_datasink, [('out_file', 'mask_filled_single')])
+            (n_romeo_e01_maths, n_datasink, [('out_file', 'mask_filled_single')]),
             (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average')]),
             (n_composite, n_datasink, [('out_file', 'qsm_composite')]),
             (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled_single')])
