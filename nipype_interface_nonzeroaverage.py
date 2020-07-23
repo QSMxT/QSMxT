@@ -17,7 +17,7 @@ def nonzero_average(in_files, save_result=True):
         in_data = in_nii.get_fdata()
         data.append(in_data)
     data = np.array(data)
-    mask = abs(data) >= 0.00000001
+    mask = abs(data) >= 0.0001
     final = np.divide(data.sum(0), mask.sum(0), out=np.zeros_like(data.sum(0)), where=mask.sum(0)!=0)
     #final = data.sum(0) / mask.sum(0)
     if save_result:
