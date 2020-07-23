@@ -14,6 +14,7 @@ import nipype_interface_bestlinreg as bestlinreg
 import nipype_interface_applyxfm as applyxfm
 import nipype_interface_makehomogeneous as makehomogeneous
 import nipype_interface_nonzeroaverage as nonzeroaverage
+import nipype_interface_composite as composite
 
 import argparse
 
@@ -137,9 +138,19 @@ def create_qsm_workflow(
         iterfield=['in_file'],
         name='read_json'
     )
-
     wf.connect([
         (n_selectfiles, mn_params, [('params', 'in_file')])
+    ])
+    n_params_e01 = Node(
+        interface=Function(
+            input_names=['in_file'],
+            output_names=['EchoTime', 'MagneticFieldStrength'],
+            function=read_json
+        ),
+        name='read_json1'
+    )
+    wf.connect([
+        (n_selectfiles, n_params_e01, [('params1', 'in_file')])
     ])
 
     def repeat(in_file):
@@ -197,7 +208,7 @@ def create_qsm_workflow(
             (bet, mn_mask, [('mask_file', 'in_file')])
         ])
     elif masking == 'romeo':
-        # ROMEO only operates on stacked .nii files
+        # per-echo ROMEO masks
         n_romeo = MapNode(
             interface=romeo.RomeoInterface(
                 weights_threshold=200
@@ -211,6 +222,17 @@ def create_qsm_workflow(
             (mn_params, n_romeo, [('EchoTime', 'echo_time')])
         ])
 
+        n_romeo_maths = MapNode(
+            interface=ImageMaths(
+                suffix='_ero_dil',
+                op_string='-ero -dil'
+            ),
+            iterfield=['in_file'],
+            name='romeo_ero'
+            # input  : 'in_file'
+            # output : 'out_file'
+        )
+
         mn_mask = MapNode(
             interface=Function(
                 input_names=['in_file'],
@@ -221,7 +243,32 @@ def create_qsm_workflow(
             name='repeat_mask'
         )
         wf.connect([
-            (n_romeo, mn_mask, [('out_file', 'in_file')])
+            (n_romeo_maths, mn_mask, [('out_file', 'in_file')])
+        ])
+
+        # first-echo ROMEO mask for composite inclusions
+        n_romeo_e01 = Node(
+            interface=romeo.RomeoInterface(
+                weights_threshold=200
+            ),
+            name='romeoe01_mask'
+            # output : 'out_file'
+        )
+        wf.connect([
+            (n_selectfiles, n_romeo_e01, [('phs1', 'in_file')]),
+            (n_params_e01, n_romeo_e01, [('EchoTime', 'echo_time')])
+        ])
+        n_romeo_e01_maths = Node(
+            interface=ImageMaths(
+                suffix='_ero_dil_fillh',
+                op_string='-ero -dilM -fillh'
+            ),
+            name='romeoe01_ero_dil_fillh'
+            # input  : 'in_file'
+            # output : 'out_file'
+        )
+        wf.connect([
+            (n_romeo_e01, n_romeo_e01_maths, [('out_file', 'in_file')])
         ])
     elif masking == 'atlas-based':
         n_selectatlas = Node(
@@ -273,22 +320,20 @@ def create_qsm_workflow(
         wf.connect([
             (mn_applyxfm, mn_mask, [('out_file', 'in_file')])
         ])
-    elif masking == 'composite':
-        raise NotImplementedError
     
     # qsm processing
     mn_qsm_iterfield = ['phase_file', 'TE', 'b0']
     
     # if using a multi-echo masking method, add mask_file to iterfield
     if masking not in ['bet-firstecho', 'bet-lastecho']: mn_qsm_iterfield.append('mask_file')
-    #if masking == 'romeo': mn_qsm_iterfield.append('erosions')
 
     mn_qsm = MapNode(
         interface=tgv.QSMappingInterface(
             iterations=1000,
             alpha=[0.0015, 0.0005],
-            erosions=2 if masking == 'romeo' else 5,
-            num_threads=qsm_threads
+            erosions=0 if masking == 'romeo' else 5,
+            num_threads=qsm_threads,
+            out_suffix='_qsm_recon'
         ),
         iterfield=mn_qsm_iterfield,
         name='qsm'
@@ -309,14 +354,14 @@ def create_qsm_workflow(
     ])
 
     # qsm averaging
-    n_final_qsm = Node(
+    n_qsm_average = Node(
         interface=nonzeroaverage.NonzeroAverageInterface(),
-        name='average_qsm'
+        name='qsm_average'
         # input : in_files
         # output : out_file
     )
     wf.connect([
-        (mn_qsm, n_final_qsm, [('out_file', 'in_files')])
+        (mn_qsm, n_qsm_average, [('out_file', 'in_files')])
     ])
 
     # datasink
@@ -326,10 +371,66 @@ def create_qsm_workflow(
     )
 
     wf.connect([
-        (n_final_qsm, n_datasink, [('out_file', 'qsm_final')]),
-        (mn_qsm, n_datasink, [('out_file', 'qsm_singleEchoes')]),
-        (mn_mask, n_datasink, [('mask_file', 'mask_singleEchoes')])
+        (n_qsm_average, n_datasink, [('out_file', 'qsm_average')]),
+        (mn_qsm, n_datasink, [('out_file', 'qsm_single')]),
+        (mn_mask, n_datasink, [('mask_file', 'mask_single')])
     ])
+
+    if masking == 'romeo':
+        mn_qsm_filled = MapNode(
+            interface=tgv.QSMappingInterface(
+                iterations=1000,
+                alpha=[0.0015, 0.0005],
+                erosions=5,
+                num_threads=qsm_threads,
+                out_suffix='_qsm_recon_filled'
+            ),
+            iterfield=['phase_file', 'TE', 'b0'],
+            name='qsm_filled'
+            # output: 'out_file'
+        )
+
+        # args for PBS
+        mn_qsm_filled.plugin_args = {
+            'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
+            'overwrite': True
+        }
+
+        wf.connect([
+            (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
+            (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
+            (n_romeo_e01_maths, mn_qsm_filled, [('out_file', 'mask_file')]),
+            (mn_phs_range, mn_qsm_filled, [('out_file', 'phase_file')])
+        ])
+
+        # qsm averaging
+        n_qsm_filled_average = Node(
+            interface=nonzeroaverage.NonzeroAverageInterface(),
+            name='qsm_filled_average'
+            # input : in_files
+            # output : out_file
+        )
+        wf.connect([
+            (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')])
+        ])
+
+        # composite qsm
+        n_composite = Node(
+            interface=composite.CompositeNiftiInterface(),
+            name='qsm_composite'
+        )
+        wf.connect([
+            (n_qsm_average, n_composite, [('out_file', 'in_file1')]),
+            (n_qsm_filled_average, n_composite, [('out_file', 'in_file2')])
+        ])
+
+        wf.connect([
+            (n_romeo_e01_maths, n_datasink, [('out_file', 'mask_filled_single')])
+            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average')]),
+            (n_composite, n_datasink, [('out_file', 'qsm_composite')]),
+            (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled_single')])
+        ])
+
 
     return wf
 
@@ -441,7 +542,9 @@ if __name__ == "__main__":
     bids_templates = {
         'mag': '{subject_id_p}/anat/*gre*magnitude*.nii.gz',
         'phs': '{subject_id_p}/anat/*gre*phase*.nii.gz',
-        'params': '{subject_id_p}/anat/*gre*phase*.json'
+        'phs1': '{subject_id_p}/anat/*gre*E01*phase.nii.gz',
+        'params': '{subject_id_p}/anat/*gre*phase*.json',
+        'params1': '{subject_id_p}/anat/*gre*E01*phase*.json'
     }
     if 'bet-firstecho' in args.masking:
         bids_templates['mag'] = bids_templates['mag'].replace('gre*', 'gre*E01*')
