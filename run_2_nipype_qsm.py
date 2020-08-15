@@ -225,13 +225,16 @@ def create_qsm_workflow(
         n_romeo_maths = MapNode(
             interface=ImageMaths(
                 suffix='_ero_dil',
-                op_string='-ero -dil'
+                op_string='-ero -dilM'
             ),
             iterfield=['in_file'],
             name='romeo_ero'
             # input  : 'in_file'
             # output : 'out_file'
         )
+        wf.connect([
+            (n_romeo, n_romeo_maths, [('out_file', 'in_file')])
+        ])
 
         mn_mask = MapNode(
             interface=Function(

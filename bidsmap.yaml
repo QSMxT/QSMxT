@@ -65,6 +65,32 @@ DICOM:
     attributes:
       Modality: MR
       ProtocolName: ~
+      SeriesDescription: '*T1*'
+      ImageType: ~
+      SequenceName: ~
+      SequenceVariant: ~
+      ScanningSequence: ~
+      MRAcquisitionType: ~
+      SliceThickness: ~
+      FlipAngle: ~
+      EchoNumbers: ~
+      EchoTime: ~
+      RepetitionTime: ~
+      PhaseEncodingDirection: ~
+    bids:
+      acq: t1
+      rec:
+      ce:
+      task:
+      echo: <EchoNumber>
+      dir:
+      run: <AcquisitionNumber>
+      mod:
+      suffix: magnitude
+  - provenance: ~
+    attributes:
+      Modality: MR
+      ProtocolName: ~
       SeriesDescription: ~
       ImageType: '*M*'
       SequenceName: ~
