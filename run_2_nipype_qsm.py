@@ -72,7 +72,7 @@ def create_qsm_workflow(
         name='get_num_echoes'
     )
     wf.connect([
-        (n_selectfiles, n_num_echoes, [('mag', 'in_')])
+        (n_selectfiles, n_num_echoes, [('phs', 'in_')])
     ])
 
     # scale phase data
@@ -156,34 +156,35 @@ def create_qsm_workflow(
     def repeat(in_file):
         return in_file
 
-    # homogeneity filter
-    n_mag = MapNode(
-        interface=Function(
-            input_names=['in_file'],
-            output_names=['out_file'],
-            function=repeat
-        ),
-        iterfield=['in_file'],
-        name='repeat_magnitude'
-    )
-    if homogeneity_filter:
-        mn_homogeneity_filter = MapNode(
-            interface=makehomogeneous.MakeHomogeneousInterface(),
-            iterfield=['in_file'],
-            name='make_homogeneous'
-            # output : out_file
-        )
-        wf.connect([
-            (n_selectfiles, mn_homogeneity_filter, [('mag', 'in_file')]),
-            (mn_homogeneity_filter, n_mag, [('out_file', 'in_file')])
-        ])
-    else:
-        wf.connect([
-            (n_selectfiles, n_mag, [('mag', 'in_file')])
-        ])
 
     # brain extraction
     if 'bet' in masking:
+        # homogeneity filter
+        n_mag = MapNode(
+            interface=Function(
+                input_names=['in_file'],
+                output_names=['out_file'],
+                function=repeat
+            ),
+            iterfield=['in_file'],
+            name='repeat_magnitude'
+        )
+        if homogeneity_filter:
+            mn_homogeneity_filter = MapNode(
+                interface=makehomogeneous.MakeHomogeneousInterface(),
+                iterfield=['in_file'],
+                name='make_homogeneous'
+                # output : out_file
+            )
+            wf.connect([
+                (n_selectfiles, mn_homogeneity_filter, [('mag', 'in_file')]),
+                (mn_homogeneity_filter, n_mag, [('out_file', 'in_file')])
+            ])
+        else:
+            wf.connect([
+                (n_selectfiles, n_mag, [('mag', 'in_file')])
+            ])
+
         bet = MapNode(
             interface=BET(frac=0.4, mask=True, robust=True),
             iterfield=['in_file'],
@@ -225,13 +226,16 @@ def create_qsm_workflow(
         n_romeo_maths = MapNode(
             interface=ImageMaths(
                 suffix='_ero_dil',
-                op_string='-ero -dil'
+                op_string='-ero -dilM'
             ),
             iterfield=['in_file'],
-            name='romeo_ero'
+            name='romeo_ero_dil'
             # input  : 'in_file'
             # output : 'out_file'
         )
+        wf.connect([
+            (n_romeo, n_romeo_maths, [('out_file', 'in_file')])
+        ])
 
         mn_mask = MapNode(
             interface=Function(
@@ -251,7 +255,7 @@ def create_qsm_workflow(
             interface=romeo.RomeoInterface(
                 weights_threshold=200
             ),
-            name='romeoe01_mask'
+            name='romeo_e01_mask'
             # output : 'out_file'
         )
         wf.connect([
@@ -263,62 +267,12 @@ def create_qsm_workflow(
                 suffix='_ero_dil_fillh',
                 op_string='-ero -dilM -fillh'
             ),
-            name='romeoe01_ero_dil_fillh'
+            name='romeo_e01_ero_dil_fillh'
             # input  : 'in_file'
             # output : 'out_file'
         )
         wf.connect([
             (n_romeo_e01, n_romeo_e01_maths, [('out_file', 'in_file')])
-        ])
-    elif masking == 'atlas-based':
-        n_selectatlas = Node(
-            interface=SelectFiles(
-                templates={
-                    'template': '*template*',
-                    'mask': '*mask*'
-                },
-                base_directory=atlas_dir
-            ),
-            name='get_atlas'
-            # output: ['template', 'mask']
-        )
-
-        mn_bestlinreg = MapNode(
-            interface=bestlinreg.NiiBestLinRegInterface(),
-            iterfield=['in_fixed', 'in_moving'],
-            name='get_atlas_registration'
-            # output: out_transform
-        )
-
-        wf.connect([
-            (n_mag, mn_bestlinreg, [('out_file', 'in_fixed')]),
-            (n_selectatlas, mn_bestlinreg, [('template', 'in_moving')])
-        ])
-
-        mn_applyxfm = MapNode(
-            interface=applyxfm.NiiApplyMincXfmInterface(),
-            iterfield=['in_file', 'in_like', 'in_transform'],
-            name='apply_atlas_registration'
-            # output: out_file
-        )
-
-        wf.connect([
-            (n_selectatlas, mn_applyxfm, [('mask', 'in_file')]),
-            (n_mag, mn_applyxfm, [('out_file', 'in_like')]),
-            (mn_bestlinreg, mn_applyxfm, [('out_transform', 'in_transform')])
-        ])
-
-        mn_mask = MapNode(
-            interface=Function(
-                input_names=['in_file'],
-                output_names=['mask_file'],
-                function=repeat
-            ),
-            iterfield=['in_file'],
-            name='repeat_mask'
-        )
-        wf.connect([
-            (mn_applyxfm, mn_mask, [('out_file', 'in_file')])
         ])
     
     # qsm processing
@@ -551,6 +505,8 @@ if __name__ == "__main__":
     if 'bet-lastecho' in args.masking:
         num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*gre*magnitude*.nii.gz")))
         bids_templates['mag'] = bids_templates['mag'].replace('gre*', f'gre*E{num_echoes:02}*')
+    if 'romeo' in args.masking:
+        del bids_templates['mag']
 
     wf = create_qsm_workflow(
         subject_list=subject_list,
