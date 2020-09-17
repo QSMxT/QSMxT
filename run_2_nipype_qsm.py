@@ -9,7 +9,7 @@ from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 
 import nipype_interface_tgv_qsm as tgv
-import nipype_interface_romeo as romeo
+import nipype_interface_phasemask as phasemask
 import nipype_interface_bestlinreg as bestlinreg
 import nipype_interface_applyxfm as applyxfm
 import nipype_interface_makehomogeneous as makehomogeneous
@@ -24,7 +24,6 @@ def create_qsm_workflow(
     bids_dir,
     work_dir,
     out_dir,
-    atlas_dir,
     bids_templates,
     masking='bet-multiecho',
     homogeneity_filter=True,
@@ -76,21 +75,6 @@ def create_qsm_workflow(
     ])
 
     # scale phase data
-    mn_stats = MapNode(
-        # -R : <min intensity> <max intensity>
-        interface=ImageStats(op_string='-R'),
-        iterfield=['in_file'],
-        name='get_min_max',
-        # output: 'out_stat'
-    )
-    mn_phs_range = MapNode(
-        interface=ImageMaths(suffix="_scaled"),
-        name='scale_phase',
-        iterfield=['in_file']
-        # inputs: 'in_file', 'op_string'
-        # output: 'out_file'
-    )
-
     def scale_to_pi(min_and_max):
         from math import pi
 
@@ -110,10 +94,49 @@ def create_qsm_workflow(
         fsl_cmd += "-sub %.10f" % pi
         return fsl_cmd
 
+    mn_stats = MapNode(
+        # -R : <min intensity> <max intensity>
+        interface=ImageStats(op_string='-R'),
+        iterfield=['in_file'],
+        name='get_min_max',
+        # output: 'out_stat'
+    )
     wf.connect([
-        (n_selectfiles, mn_stats, [('phs', 'in_file')]),
-        (n_selectfiles, mn_phs_range, [('phs', 'in_file')]),
-        (mn_stats, mn_phs_range, [(('out_stat', scale_to_pi), 'op_string')])
+        (n_selectfiles, mn_stats, [('phs', 'in_file')])
+    ])
+
+    mn_phase_range = MapNode(
+        interface=ImageMaths(suffix="_scaled"),
+        name='scale_phase',
+        iterfield=['in_file']
+        # inputs: 'in_file', 'op_string'
+        # output: 'out_file'
+    )
+    wf.connect([
+        (n_selectfiles, mn_phase_range, [('phs', 'in_file')]),
+        (mn_stats, mn_phase_range, [(('out_stat', scale_to_pi), 'op_string')])
+    ])
+
+    mn_stats_e01 = MapNode(
+        # -R : <min intensity> <max intensity>
+        interface=ImageStats(op_string='-R'),
+        iterfield=['in_file'],
+        name='get_min_max_e01',
+        # output: 'out_stat'
+    )
+    wf.connect([
+        (n_selectfiles, mn_stats_e01, [('phs', 'in_file')])
+    ])
+    mn_phase_range_e01 = MapNode(
+        interface=ImageMaths(suffix="_scaled"),
+        name='scale_phase_e01',
+        iterfield=['in_file']
+        # inputs: 'in_file', 'op_string'
+        # output: 'out_file'
+    )
+    wf.connect([
+        (n_selectfiles, mn_phase_range_e01, [('phs1', 'in_file')]),
+        (mn_stats_e01, mn_phase_range_e01, [(('out_stat', scale_to_pi), 'op_string')])
     ])
 
     # read echotime and field strengths from json files
@@ -191,7 +214,6 @@ def create_qsm_workflow(
             name='fsl_bet'
             # output: 'mask_file'
         )
-
         wf.connect([
             (n_mag, bet, [('out_file', 'in_file')])
         ])
@@ -208,33 +230,33 @@ def create_qsm_workflow(
         wf.connect([
             (bet, mn_mask, [('mask_file', 'in_file')])
         ])
-    elif masking == 'romeo':
-        # per-echo ROMEO masks
-        n_romeo = MapNode(
-            interface=romeo.RomeoInterface(
-                weights_threshold=200
+    elif masking == 'phase-based':
+        # per-echo phase-based masks
+        mn_phasemask = MapNode(
+            interface=phasemask.PhaseMaskInterface(
+                weights_threshold=500
             ),
             iterfield=['in_file', 'echo_time'],
-            name='romeo_mask'
+            name='phase_mask'
             # output: 'out_file'
         )
         wf.connect([
-            (n_selectfiles, n_romeo, [('phs', 'in_file')]),
-            (mn_params, n_romeo, [('EchoTime', 'echo_time')])
+            (n_selectfiles, mn_phasemask, [('phs', 'in_file')]),
+            (mn_params, mn_phasemask, [('EchoTime', 'echo_time')])
         ])
 
-        n_romeo_maths = MapNode(
+        mn_phasemask_maths = MapNode(
             interface=ImageMaths(
                 suffix='_ero_dil',
                 op_string='-ero -dilM'
             ),
             iterfield=['in_file'],
-            name='romeo_ero_dil'
+            name='phasemask_ero_dil'
             # input  : 'in_file'
             # output : 'out_file'
         )
         wf.connect([
-            (n_romeo, n_romeo_maths, [('out_file', 'in_file')])
+            (mn_phasemask, mn_phasemask_maths, [('out_file', 'in_file')])
         ])
 
         mn_mask = MapNode(
@@ -247,32 +269,33 @@ def create_qsm_workflow(
             name='repeat_mask'
         )
         wf.connect([
-            (n_romeo_maths, mn_mask, [('out_file', 'in_file')])
+            (mn_phasemask_maths, mn_mask, [('out_file', 'in_file')])
         ])
 
-        # first-echo ROMEO mask for composite inclusions
-        n_romeo_e01 = Node(
-            interface=romeo.RomeoInterface(
-                weights_threshold=200
+        # first-echo phase-based mask for composite inclusions
+        n_phasemask_e01 = Node(
+            interface=phasemask.PhaseMaskInterface(
+                weights_threshold=300
             ),
-            name='romeo_e01_mask'
+            name='phasemask_e01'
             # output : 'out_file'
         )
         wf.connect([
-            (n_selectfiles, n_romeo_e01, [('phs1', 'in_file')]),
-            (n_params_e01, n_romeo_e01, [('EchoTime', 'echo_time')])
+            (n_selectfiles, n_phasemask_e01, [('phs1', 'in_file')]),
+            (n_params_e01, n_phasemask_e01, [('EchoTime', 'echo_time')])
         ])
-        n_romeo_e01_maths = Node(
+        n_phasemask_e01_maths = Node(
             interface=ImageMaths(
-                suffix='_ero_dil_fillh',
+                suffix='_maths',
                 op_string='-ero -dilM -fillh'
-            ),
-            name='romeo_e01_ero_dil_fillh'
+                #op_string='-ero -ero -dilM -dilM -dilM -dilM -ero -ero -fillh'
+            ),# #fslmaths out.nii -ero -ero -dilM -dilM -dilM -dilM -ero -ero -fillh OUT5 -add out.nii -bin -ero -dilM DONE.nii
+            name='phasemask_e01_maths'
             # input  : 'in_file'
             # output : 'out_file'
         )
         wf.connect([
-            (n_romeo_e01, n_romeo_e01_maths, [('out_file', 'in_file')])
+            (n_phasemask_e01, n_phasemask_e01_maths, [('out_file', 'in_file')])
         ])
     
     # qsm processing
@@ -285,7 +308,7 @@ def create_qsm_workflow(
         interface=tgv.QSMappingInterface(
             iterations=1000,
             alpha=[0.0015, 0.0005],
-            erosions=0 if masking == 'romeo' else 5,
+            erosions=0 if masking == 'phase-based' else 5,
             num_threads=qsm_threads,
             out_suffix='_qsm_recon'
         ),
@@ -304,7 +327,7 @@ def create_qsm_workflow(
         (mn_params, mn_qsm, [('EchoTime', 'TE')]),
         (mn_params, mn_qsm, [('MagneticFieldStrength', 'b0')]),
         (mn_mask, mn_qsm, [('mask_file', 'mask_file')]),
-        (mn_phs_range, mn_qsm, [('out_file', 'phase_file')])
+        (mn_phase_range, mn_qsm, [('out_file', 'phase_file')])
     ])
 
     # qsm averaging
@@ -330,12 +353,12 @@ def create_qsm_workflow(
         (mn_mask, n_datasink, [('mask_file', 'mask_single')])
     ])
 
-    if masking == 'romeo':
+    if masking == 'phase-based':
         mn_qsm_filled = MapNode(
             interface=tgv.QSMappingInterface(
                 iterations=1000,
                 alpha=[0.0015, 0.0005],
-                erosions=5,
+                erosions=0,
                 num_threads=qsm_threads,
                 out_suffix='_qsm_recon_filled'
             ),
@@ -353,8 +376,8 @@ def create_qsm_workflow(
         wf.connect([
             (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
             (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
-            (n_romeo_e01_maths, mn_qsm_filled, [('out_file', 'mask_file')]),
-            (mn_phs_range, mn_qsm_filled, [('out_file', 'phase_file')])
+            (n_phasemask_e01_maths, mn_qsm_filled, [('out_file', 'mask_file')]),
+            (mn_phase_range, mn_qsm_filled, [('out_file', 'phase_file')])
         ])
 
         # qsm averaging
@@ -379,7 +402,7 @@ def create_qsm_workflow(
         ])
 
         wf.connect([
-            (n_romeo_e01_maths, n_datasink, [('out_file', 'mask_filled_single')]),
+            (n_phasemask_e01_maths, n_datasink, [('out_file', 'mask_filled_single')]),
             (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average')]),
             (n_composite, n_datasink, [('out_file', 'qsm_composite')]),
             (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled_single')])
@@ -433,7 +456,7 @@ if __name__ == "__main__":
         default='bet-multiecho',
         const='bet-multiecho',
         nargs='?',
-        choices=['bet-multiecho', 'bet-firstecho', 'bet-lastecho', 'romeo', 'atlas-based', 'composite'],
+        choices=['bet-multiecho', 'bet-firstecho', 'bet-lastecho', 'phase-based'],
         help='masking strategy'
     )
 
@@ -442,20 +465,6 @@ if __name__ == "__main__":
         dest='homogeneity_filter',
         action='store_true',
         help='disables magnitude homogeneity filter for bet; enables homogeneity filter for other masking strategies'
-    )
-
-    parser.add_argument(
-        '--atlas_dir',
-        default=os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "atlas"
-        ),
-        const=os.path.join(
-            os.path.dirname(os.path.abspath(__file__)),
-            "atlas"
-        ),
-        nargs='?',
-        help='atlas directory',
     )
 
     parser.add_argument(
@@ -500,13 +509,16 @@ if __name__ == "__main__":
         'params': '{subject_id_p}/anat/*gre*phase*.json',
         'params1': '{subject_id_p}/anat/*gre*E01*phase*.json'
     }
+    num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*gre*magnitude*.nii.gz")))
     if 'bet-firstecho' in args.masking:
         bids_templates['mag'] = bids_templates['mag'].replace('gre*', 'gre*E01*')
     if 'bet-lastecho' in args.masking:
-        num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*gre*magnitude*.nii.gz")))
         bids_templates['mag'] = bids_templates['mag'].replace('gre*', f'gre*E{num_echoes:02}*')
-    if 'romeo' in args.masking:
+    if 'phase-based' in args.masking:
         del bids_templates['mag']
+    if num_echoes == 1:
+        bids_templates['phs1'] = bids_templates['phs']
+        bids_templates['params1'] = bids_templates['params'];
 
     wf = create_qsm_workflow(
         subject_list=subject_list,
@@ -514,7 +526,6 @@ if __name__ == "__main__":
         work_dir=os.path.abspath(args.work_dir),
         out_dir=os.path.abspath(args.out_dir),
         masking=args.masking,
-        atlas_dir=os.path.abspath(args.atlas_dir),
         bids_templates=bids_templates,
         homogeneity_filter=homogeneity_filter != args.homogeneity_filter,
         qsm_threads=16 if args.pbs else 1

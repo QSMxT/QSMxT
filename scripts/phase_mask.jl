@@ -21,3 +21,4 @@ weights_voxel = dropdims(sum(weights_edges; dims=1); dims=1)
 mask = Float64.(weights_voxel .> weights_threshold)
 
 savenii(mask, out_dir; header=hdr)
+savenii(Float64.(weights_voxel), "weights.nii"; header=hdr)

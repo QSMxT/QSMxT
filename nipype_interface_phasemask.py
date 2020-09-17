@@ -13,7 +13,7 @@ def gen_filename(fname, suffix, newpath, use_ext=True):
     )
 
 
-class RomeoInputSpec(CommandLineInputSpec):
+class PhaseMaskInputSpec(CommandLineInputSpec):
     in_file = File(
         exists=True,
         desc='Phase image',
@@ -38,31 +38,31 @@ class RomeoInputSpec(CommandLineInputSpec):
     out_file = File(
         argstr="%s",
         name_source=['in_file'],
-        name_template='%s_romeomask.nii',
+        name_template='%s_phasemask.nii',
         position=3
     )
 
 
-class RomeoOutputSpec(TraitedSpec):
+class PhaseMaskOutputSpec(TraitedSpec):
     out_file = File(
         desc='Output mask'
     )
 
 
-class RomeoInterface(CommandLine):
-    input_spec = RomeoInputSpec
-    output_spec = RomeoOutputSpec
-    _cmd = "romeo_mask.jl"
+class PhaseMaskInterface(CommandLine):
+    input_spec = PhaseMaskInputSpec
+    output_spec = PhaseMaskOutputSpec
+    _cmd = "phase_mask.jl"
 
     def __init__(self, **inputs):
-        super(RomeoInterface, self).__init__(**inputs)
+        super(PhaseMaskInterface, self).__init__(**inputs)
 
     def _list_outputs(self):
         outputs = self.output_spec().get()
 
         pth, fname, ext = split_filename(self.inputs.in_file)
         outfile = gen_filename(
-            fname=fname + "_romeomask",
+            fname=fname + "_phasemask",
             suffix=".nii",
             newpath=os.getcwd()
         )
@@ -76,4 +76,4 @@ class RomeoInterface(CommandLine):
             value = value.replace(' ', '')
             value = value.replace('[', '').replace(']', '')
             return spec.argstr % value
-        return super(RomeoInterface, self)._format_arg(name, spec, value)
+        return super(PhaseMaskInterface, self)._format_arg(name, spec, value)
