@@ -253,7 +253,7 @@ def create_qsm_workflow(
         # per-echo magnitude-based masks
         mn_magmask = MapNode(
             interface=ImageMaths(
-                suffix="_mask",
+                suffix="_magnitude-mask",
                 op_string="-thrp 40 -bin"
             ),
             iterfield=['in_file'],
@@ -289,7 +289,7 @@ def create_qsm_workflow(
             alpha=[0.0015, 0.0005],
             erosions=0 if masking in ['phase-based', 'magnitude-based'] else 5,
             num_threads=qsm_threads,
-            out_suffix='_qsm_recon'
+            out_suffix='_qsm'
         ),
         iterfield=mn_qsm_iterfield,
         name='qsm'
@@ -367,7 +367,7 @@ def create_qsm_workflow(
         ])
         n_phasemask_maths_e01 = Node(
             interface=ImageMaths(
-                suffix='_maths',
+                suffix='_ero_dil_fillh',
                 op_string='-ero -dilM -fillh'
                 #op_string='-ero -ero -dilM -dilM -dilM -dilM -ero -ero -fillh'
             ),# #fslmaths out.nii -ero -ero -dilM -dilM -dilM -dilM -ero -ero -fillh OUT5 -add out.nii -bin -ero -dilM DONE.nii
@@ -385,7 +385,7 @@ def create_qsm_workflow(
                 alpha=[0.0015, 0.0005],
                 erosions=0,
                 num_threads=qsm_threads,
-                out_suffix='_qsm_recon_filled'
+                out_suffix='_fillh_qsm'
             ),
             iterfield=['phase_file', 'TE', 'b0'],
             name='qsm_filled'
@@ -434,16 +434,16 @@ def create_qsm_workflow(
             (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled_single')])
         ])
     elif masking == 'magnitude-based':
-        mn_magmask_maths = MapNode(
+        mn_magmask_fillh = MapNode(
             interface=ImageMaths(
-                suffix='_maths',
+                suffix='_fillh',
                 op_string='-fillh'
             ),
             iterfield=['in_file'],
-            name='magmask_maths'
+            name='magnitude_mask_filled'
         )
         wf.connect([
-            (mn_magmask, mn_magmask_maths, [('out_file', 'in_file')])
+            (mn_magmask, mn_magmask_fillh, [('out_file', 'in_file')])
         ])
 
         mn_qsm_filled = MapNode(
@@ -452,7 +452,7 @@ def create_qsm_workflow(
                 alpha=[0.0015, 0.0005],
                 erosions=0,
                 num_threads=qsm_threads,
-                out_suffix='_qsm_recon_filled'
+                out_suffix='_fillh_qsm'
             ),
             iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
             name='qsm_filled'
@@ -469,7 +469,7 @@ def create_qsm_workflow(
         wf.connect([
             (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
             (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
-            (mn_magmask_maths, mn_qsm_filled, [('out_file', 'mask_file')]),
+            (mn_magmask_fillh, mn_qsm_filled, [('out_file', 'mask_file')]),
             (mn_phase_scaled, mn_qsm_filled, [('out_file', 'phase_file')])
         ])
 
@@ -495,7 +495,7 @@ def create_qsm_workflow(
         ])
 
         wf.connect([
-            (mn_magmask_maths, n_datasink, [('out_file', 'mask_filled_single')]),
+            (mn_magmask_fillh, n_datasink, [('out_file', 'mask_filled_single')]),
             (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average')]),
             (n_composite, n_datasink, [('out_file', 'qsm_composite')]),
             (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled_single')])
