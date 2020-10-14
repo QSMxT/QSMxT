@@ -497,7 +497,7 @@ if __name__ == "__main__":
     if num_echoes == 1:
         bids_templates['mag1'] = bids_templates['mag']
         bids_templates['phs1'] = bids_templates['phs']
-        bids_templates['params1'] = bids_templates['params'];
+        bids_templates['params1'] = bids_templates['params']
 
     wf = create_qsm_workflow(
         subject_list=subject_list,
