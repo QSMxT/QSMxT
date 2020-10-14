@@ -33,7 +33,7 @@ class PhaseWeightsInterface(CommandLine):
     def _list_outputs(self):
         outputs = self.output_spec().get()
 
-        pth, fname, ext = split_filename(self.inputs.in_file)
+        _, fname, _ = split_filename(self.inputs.in_file)
 
         outputs['out_file'] = fname_presuffix(
             fname=fname + "_weights",
