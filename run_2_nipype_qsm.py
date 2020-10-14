@@ -9,9 +9,8 @@ from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 
 import nipype_interface_tgv_qsm as tgv
-import nipype_interface_phasemask as phasemask
+import nipype_interface_phaseweights as phaseweights
 import nipype_interface_bestlinreg as bestlinreg
-import nipype_interface_applyxfm as applyxfm
 import nipype_interface_makehomogeneous as makehomogeneous
 import nipype_interface_nonzeroaverage as nonzeroaverage
 import nipype_interface_composite as composite
@@ -159,6 +158,16 @@ def create_qsm_workflow(
 
 
     # brain extraction
+    mn_mask = MapNode(
+        interface=Function(
+            input_names=['in_file'],
+            output_names=['mask_file'],
+            function=repeat
+        ),
+        iterfield=['in_file'],
+        name='repeat_mask'
+    )
+
     if 'bet' in masking:
         # homogeneity filter
         n_mag = MapNode(
@@ -196,64 +205,43 @@ def create_qsm_workflow(
             (n_mag, bet, [('out_file', 'in_file')])
         ])
 
-        mn_mask = MapNode(
-            interface=Function(
-                input_names=['in_file'],
-                output_names=['mask_file'],
-                function=repeat
-            ),
-            iterfield=['in_file'],
-            name='repeat_mask'
-        )
         wf.connect([
             (bet, mn_mask, [('mask_file', 'in_file')])
         ])
     elif masking == 'phase-based':
         # per-echo phase-based masks
-        mn_phasemask = MapNode(
-            interface=phasemask.PhaseMaskInterface(
-                weights_threshold=500
-            ),
-            iterfield=['in_file', 'echo_time'],
-            name='phase_mask'
+        mn_phaseweights = MapNode(
+            interface=phaseweights.PhaseWeightsInterface(),
+            iterfield=['in_file'],
+            name='phase_weights'
             # output: 'out_file'
         )
         wf.connect([
-            (n_selectfiles, mn_phasemask, [('phs', 'in_file')]),
-            (mn_params, mn_phasemask, [('EchoTime', 'echo_time')])
+            (n_selectfiles, mn_phaseweights, [('phs', 'in_file')]),
         ])
 
-        mn_phasemask_maths = MapNode(
+        mn_phasemask = MapNode(
             interface=ImageMaths(
-                suffix='_ero_dil',
-                op_string='-ero -dilM'
+                suffix='_mask',
+                op_string='-thrp 40 -bin -ero -dilM'
             ),
             iterfield=['in_file'],
-            name='phasemask_ero_dil'
+            name='phase_mask'
             # input  : 'in_file'
             # output : 'out_file'
         )
         wf.connect([
-            (mn_phasemask, mn_phasemask_maths, [('out_file', 'in_file')])
+            (mn_phaseweights, mn_phasemask, [('out_file', 'in_file')])
         ])
-
-        mn_mask = MapNode(
-            interface=Function(
-                input_names=['in_file'],
-                output_names=['mask_file'],
-                function=repeat
-            ),
-            iterfield=['in_file'],
-            name='repeat_mask'
-        )
+        
         wf.connect([
-            (mn_phasemask_maths, mn_mask, [('out_file', 'in_file')])
+            (mn_phasemask, mn_mask, [('out_file', 'in_file')])
         ])
     elif masking == 'magnitude-based':
         # per-echo magnitude-based masks
         mn_magmask = MapNode(
             interface=ImageMaths(
-                suffix="_magnitude-mask",
+                suffix="_mask",
                 op_string="-thrp 40 -bin"
             ),
             iterfield=['in_file'],
@@ -264,15 +252,6 @@ def create_qsm_workflow(
             (n_selectfiles, mn_magmask, [('mag', 'in_file')])
         ])
 
-        mn_mask = MapNode(
-            interface=Function(
-                input_names=['in_file'],
-                output_names=['mask_file'],
-                function=repeat
-            ),
-            iterfield=['in_file'],
-            name='repeat_mask'
-        )
         wf.connect([
             (mn_magmask, mn_mask, [('out_file', 'in_file')])
         ])
@@ -328,122 +307,21 @@ def create_qsm_workflow(
 
     wf.connect([
         (n_qsm_average, n_datasink, [('out_file', 'qsm_average')]),
-        (mn_qsm, n_datasink, [('out_file', 'qsm_single')]),
-        (mn_mask, n_datasink, [('mask_file', 'mask_single')])
+        (mn_qsm, n_datasink, [('out_file', 'qsm')]),
+        (mn_mask, n_datasink, [('mask_file', 'mask')])
     ])
 
-    if masking == 'phase-based':
-        n_stats_e01 = Node(
-            # -R : <min intensity> <max intensity>
-            interface=ImageStats(op_string='-R'),
-            name='get_stats_e01',
-            # output: 'out_stat'
-        )
-        wf.connect([
-            (n_selectfiles, n_stats_e01, [('phs1', 'in_file')])
-        ])
-        n_phase_scaled_e01 = Node(
-            interface=ImageMaths(suffix="_scaled"),
-            name='phase_scaled_e01'
-            # inputs: 'in_file', 'op_string'
-            # output: 'out_file'
-        )
-        wf.connect([
-            (n_selectfiles, n_phase_scaled_e01, [('phs1', 'in_file')]),
-            (n_stats_e01, n_phase_scaled_e01, [(('out_stat', scale_to_pi), 'op_string')])
-        ])
-
-        # first-echo phase-based mask for composite inclusions
-        n_phasemask_e01 = Node(
-            interface=phasemask.PhaseMaskInterface(
-                weights_threshold=300
-            ),
-            name='phasemask_e01'
-            # output : 'out_file'
-        )
-        wf.connect([
-            (n_phase_scaled_e01, n_phasemask_e01, [('phs1', 'in_file')]),
-            (n_params_e01, n_phasemask_e01, [('EchoTime', 'echo_time')])
-        ])
-        n_phasemask_maths_e01 = Node(
-            interface=ImageMaths(
-                suffix='_ero_dil_fillh',
-                op_string='-ero -dilM -fillh'
-                #op_string='-ero -ero -dilM -dilM -dilM -dilM -ero -ero -fillh'
-            ),# #fslmaths out.nii -ero -ero -dilM -dilM -dilM -dilM -ero -ero -fillh OUT5 -add out.nii -bin -ero -dilM DONE.nii
-            name='phasemask_e01_maths'
-            # input  : 'in_file'
-            # output : 'out_file'
-        )
-        wf.connect([
-            (n_phasemask_e01, n_phasemask_maths_e01, [('out_file', 'in_file')])
-        ])
-
-        mn_qsm_filled = MapNode(
-            interface=tgv.QSMappingInterface(
-                iterations=1000,
-                alpha=[0.0015, 0.0005],
-                erosions=0,
-                num_threads=qsm_threads,
-                out_suffix='_fillh_qsm'
-            ),
-            iterfield=['phase_file', 'TE', 'b0'],
-            name='qsm_filled'
-            # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
-            # output: 'out_file'
-        )
-
-        # args for PBS
-        mn_qsm_filled.plugin_args = {
-            'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
-            'overwrite': True
-        }
-
-        wf.connect([
-            (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
-            (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
-            (n_phasemask_maths_e01, mn_qsm_filled, [('out_file', 'mask_file')]),
-            (mn_phase_scaled, mn_qsm_filled, [('out_file', 'phase_file')])
-        ])
-
-        # qsm averaging
-        n_qsm_filled_average = Node(
-            interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='qsm_filled_average'
-            # input : in_files
-            # output : out_file
-        )
-        wf.connect([
-            (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')])
-        ])
-
-        # composite qsm
-        n_composite = Node(
-            interface=composite.CompositeNiftiInterface(),
-            name='qsm_composite'
-        )
-        wf.connect([
-            (n_qsm_average, n_composite, [('out_file', 'in_file1')]),
-            (n_qsm_filled_average, n_composite, [('out_file', 'in_file2')])
-        ])
-
-        wf.connect([
-            (n_phasemask_maths_e01, n_datasink, [('out_file', 'mask_filled_single')]),
-            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average')]),
-            (n_composite, n_datasink, [('out_file', 'qsm_composite')]),
-            (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled_single')])
-        ])
-    elif masking == 'magnitude-based':
-        mn_magmask_fillh = MapNode(
+    if masking in ['phase-based', 'magnitude-based']:
+        mn_mask_filled = MapNode(
             interface=ImageMaths(
                 suffix='_fillh',
                 op_string='-fillh'
             ),
             iterfield=['in_file'],
-            name='magnitude_mask_filled'
+            name='mask_filled'
         )
         wf.connect([
-            (mn_magmask, mn_magmask_fillh, [('out_file', 'in_file')])
+            (mn_mask, mn_mask_filled, [('mask_file', 'in_file')])
         ])
 
         mn_qsm_filled = MapNode(
@@ -452,10 +330,10 @@ def create_qsm_workflow(
                 alpha=[0.0015, 0.0005],
                 erosions=0,
                 num_threads=qsm_threads,
-                out_suffix='_fillh_qsm'
+                out_suffix='_qsm-filled'
             ),
             iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
-            name='qsm_filled'
+            name='qsm_filledmask'
             # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
             # output: 'out_file'
         )
@@ -469,14 +347,14 @@ def create_qsm_workflow(
         wf.connect([
             (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
             (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
-            (mn_magmask_fillh, mn_qsm_filled, [('out_file', 'mask_file')]),
+            (mn_mask_filled, mn_qsm_filled, [('out_file', 'mask_file')]),
             (mn_phase_scaled, mn_qsm_filled, [('out_file', 'phase_file')])
         ])
 
         # qsm averaging
         n_qsm_filled_average = Node(
             interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='qsm_filled_average'
+            name='qsm_filledmask_average'
             # input : in_files
             # output : out_file
         )
@@ -495,10 +373,9 @@ def create_qsm_workflow(
         ])
 
         wf.connect([
-            (mn_magmask_fillh, n_datasink, [('out_file', 'mask_filled_single')]),
-            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average')]),
+            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_average_filled-mask')]),
             (n_composite, n_datasink, [('out_file', 'qsm_composite')]),
-            (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled_single')])
+            (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled-mask')])
         ])
 
 
@@ -558,6 +435,13 @@ if __name__ == "__main__":
         dest='homogeneity_filter',
         action='store_true',
         help='disables magnitude homogeneity filter for bet; enables homogeneity filter for other masking strategies'
+    )
+
+    parser.add_argument(
+        "--threshold",
+        type=int,
+        default=30,
+        help='robust threshold used for magnitude-based and phase-based masking'
     )
 
     parser.add_argument(
@@ -630,6 +514,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
+    wf.write_graph(graph2use='flat', format='png', simple_form=False)
     if args.pbs:
         wf.run(
             plugin='PBSGraph',
@@ -645,5 +530,4 @@ if __name__ == "__main__":
             }
         )
 
-    #wf.write_graph(graph2use='flat', format='png', simple_form=False)
     #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})

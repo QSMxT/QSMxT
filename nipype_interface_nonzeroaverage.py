@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-import argparse
 import os
 import nibabel as nib
 import numpy as np
@@ -46,6 +45,7 @@ class NonzeroAverageInterface(SimpleInterface):
 
 
 if __name__ == "__main__":
+    import argparse
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
