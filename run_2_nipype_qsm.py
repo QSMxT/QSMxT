@@ -24,7 +24,9 @@ def create_qsm_workflow(
     work_dir,
     out_dir,
     bids_templates,
-    masking='bet-multiecho',
+    masking,
+    threshold=30,
+    extra_fill_strength=0,
     homogeneity_filter=True,
     qsm_threads=1
 ):
@@ -288,7 +290,11 @@ def create_qsm_workflow(
         mn_mask_filled = MapNode(
             interface=ImageMaths(
                 suffix='_fillh',
-                op_string='-fillh'
+                op_string="-fillh" if not fill_strength else " ".join(
+                    ["-dilM" for f in range(fill_strength)] 
+                    + ["-fillh"] 
+                    + ["-ero" for f in range(fill_strength)]
+                )
             ),
             iterfield=['in_file'],
             name='mask_filled'
@@ -417,6 +423,19 @@ if __name__ == "__main__":
         help='robust threshold used for magnitude-based and phase-based masking'
     )
 
+    def positive_int(value):
+        ivalue = int(value)
+        if ivalue <= 0:
+            raise argparse.ArgumentTypeError("%s is an invalid positive int value" % value)
+        return ivalue
+
+    parser.add_argument(
+        "--extra_fill_strength",
+        type=positive_int,
+        default=0,
+        help='add strength to hole-filling for phase-based and magnitude-based masking'
+    )
+
     parser.add_argument(
         '--pbs',
         dest='pbs',
@@ -470,9 +489,10 @@ if __name__ == "__main__":
         bids_dir=os.path.abspath(args.bids_dir),
         work_dir=os.path.abspath(args.work_dir),
         out_dir=os.path.abspath(args.out_dir),
+        bids_templates=bids_templates,
         masking=args.masking,
         threshold=args.threshold,
-        bids_templates=bids_templates,
+        fill_strength=args.extra_fill_strength,
         homogeneity_filter=homogeneity_filter != args.homogeneity_filter,
         qsm_threads=16 if args.pbs else 1
     )
