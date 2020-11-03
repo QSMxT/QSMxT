@@ -290,10 +290,10 @@ def create_qsm_workflow(
         mn_mask_filled = MapNode(
             interface=ImageMaths(
                 suffix='_fillh',
-                op_string="-fillh" if not fill_strength else " ".join(
-                    ["-dilM" for f in range(fill_strength)] 
+                op_string="-fillh" if not extra_fill_strength else " ".join(
+                    ["-dilM" for f in range(extra_fill_strength)] 
                     + ["-fillh"] 
-                    + ["-ero" for f in range(fill_strength)]
+                    + ["-ero" for f in range(extra_fill_strength)]
                 )
             ),
             iterfield=['in_file'],
@@ -492,7 +492,7 @@ if __name__ == "__main__":
         bids_templates=bids_templates,
         masking=args.masking,
         threshold=args.threshold,
-        fill_strength=args.extra_fill_strength,
+        extra_fill_strength=args.extra_fill_strength,
         homogeneity_filter=homogeneity_filter != args.homogeneity_filter,
         qsm_threads=16 if args.pbs else 1
     )
