@@ -3,7 +3,7 @@ using ArgParse
 using MriResearchTools
 
 s = ArgParseSettings()
-@add_arg_table s begin
+@add_arg_table! s begin
     "in_file"
         help = "input phase file"
         required = true
