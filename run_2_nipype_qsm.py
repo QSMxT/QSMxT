@@ -125,17 +125,6 @@ def create_qsm_workflow(
     wf.connect([
         (n_selectfiles, mn_params, [('params', 'in_file')])
     ])
-    n_params_e01 = Node(
-        interface=Function(
-            input_names=['in_file'],
-            output_names=['EchoTime', 'MagneticFieldStrength'],
-            function=read_json
-        ),
-        name='read_json1'
-    )
-    wf.connect([
-        (n_selectfiles, n_params_e01, [('params1', 'in_file')])
-    ])
 
     def repeat(in_file):
         return in_file
@@ -207,7 +196,7 @@ def create_qsm_workflow(
         mn_phasemask = MapNode(
             interface=ImageMaths(
                 suffix='_mask',
-                op_string='-thrp 40 -bin -ero -dilM'
+                op_string=f'-thrp {args.threshold} -bin -ero -dilM'
             ),
             iterfield=['in_file'],
             name='phase_mask'
@@ -226,7 +215,7 @@ def create_qsm_workflow(
         mn_magmask = MapNode(
             interface=ImageMaths(
                 suffix="_mask",
-                op_string="-thrp 40 -bin"
+                op_string=f"-thrp {args.threshold} -bin"
             ),
             iterfield=['in_file'],
             name='magnitude_mask'
@@ -466,10 +455,7 @@ if __name__ == "__main__":
     bids_templates = {
         'mag': '{subject_id_p}/anat/*gre*magnitude*.nii.gz',
         'phs': '{subject_id_p}/anat/*gre*phase*.nii.gz',
-        'phs1': '{subject_id_p}/anat/*gre*E01*phase.nii.gz',
-        'mag1': '{subject_id_p}/anat/*gre*E01*magnitude.nii.gz',
         'params': '{subject_id_p}/anat/*gre*phase*.json',
-        'params1': '{subject_id_p}/anat/*gre*E01*phase*.json'
     }
     num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*gre*magnitude*.nii.gz")))
     if 'bet-firstecho' in args.masking:
@@ -478,10 +464,6 @@ if __name__ == "__main__":
         bids_templates['mag'] = bids_templates['mag'].replace('gre*', f'gre*E{num_echoes:02}*')
     if 'phase-based' in args.masking:
         del bids_templates['mag']
-    if num_echoes == 1:
-        bids_templates['mag1'] = bids_templates['mag']
-        bids_templates['phs1'] = bids_templates['phs']
-        bids_templates['params1'] = bids_templates['params']
 
     wf = create_qsm_workflow(
         subject_list=subject_list,
@@ -489,6 +471,7 @@ if __name__ == "__main__":
         work_dir=os.path.abspath(args.work_dir),
         out_dir=os.path.abspath(args.out_dir),
         masking=args.masking,
+        threshold=args.threshold,
         bids_templates=bids_templates,
         homogeneity_filter=homogeneity_filter != args.homogeneity_filter,
         qsm_threads=16 if args.pbs else 1
