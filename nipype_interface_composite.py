@@ -13,7 +13,7 @@ def composite_nifti(in_file1, in_file2, save_result=True):
     in1_data = in1_nii.get_fdata()
     in2_data = in2_nii.get_fdata()
 
-    out_data = in1_data + in2_data * (in1_data == 0)
+    out_data = in1_data + (in2_data * (abs(in1_data) < 0.00001))
 
     if save_result:
         filename = f"{os.path.splitext(os.path.splitext(os.path.split(in_file1)[1])[0])[0]}_composite.nii"
