@@ -171,7 +171,7 @@ def create_qsm_workflow(
             ])
 
         bet = MapNode(
-            interface=BET(frac=0.4, mask=True, robust=True),
+            interface=BET(frac=0.7, mask=True, robust=True),
             iterfield=['in_file'],
             name='fsl_bet'
             # output: 'mask_file'
@@ -192,7 +192,7 @@ def create_qsm_workflow(
             # output: 'out_file'
         )
         wf.connect([
-            (n_selectfiles, mn_phaseweights, [('phs', 'in_file')]),
+            (mn_phase_scaled, mn_phaseweights, [('out_file', 'in_file')]),
         ])
 
         mn_phasemask = MapNode(
@@ -363,7 +363,7 @@ def create_qsm_workflow(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QSM processing pipeline",
+        description="QSMxT Processing Pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
