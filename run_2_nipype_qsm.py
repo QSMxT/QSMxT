@@ -340,23 +340,36 @@ def create_qsm_workflow(
         wf.connect([
             (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')])
         ])
+        wf.connect([
+            (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled-mask')]),
+            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_average_filled-mask')])
+        ])
 
         # composite qsm
-        n_composite = Node(
+        mn_qsm_composite = MapNode(
             interface=composite.CompositeNiftiInterface(),
-            name='qsm_composite'
+            name='qsm_composite',
+            iterfield=['in_file1', 'in_file2'],
         )
         wf.connect([
-            (n_qsm_average, n_composite, [('out_file', 'in_file1')]),
-            (n_qsm_filled_average, n_composite, [('out_file', 'in_file2')])
+            (mn_qsm, mn_qsm_composite, [('out_file', 'in_file1')]),
+            (mn_qsm_filled, mn_qsm_composite, [('out_file', 'in_file2')])
+        ])
+
+        n_qsm_composite_average = Node(
+            interface=nonzeroaverage.NonzeroAverageInterface(),
+            name='qsm_composite_average'
+            # input : in_files
+            # output: out_file
+        )
+        wf.connect([
+            (mn_qsm_composite, n_qsm_composite_average, [('out_file', 'in_files')])
         ])
 
         wf.connect([
-            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_average_filled-mask')]),
-            (n_composite, n_datasink, [('out_file', 'qsm_composite')]),
-            (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled-mask')])
+            (mn_qsm_composite, n_datasink, [('out_file', 'qsm_composite')]),
+            (n_qsm_composite_average, n_datasink, [('out_file', 'qsm_composite_average')]),
         ])
-
 
     return wf
 
