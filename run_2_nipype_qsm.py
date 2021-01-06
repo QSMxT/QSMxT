@@ -415,8 +415,8 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--masking',
-        default='bet-multiecho',
-        const='bet-multiecho',
+        default='magnitude-based',
+        const='magnitude-based',
         nargs='?',
         choices=['bet-multiecho', 'bet-firstecho', 'bet-lastecho', 'phase-based', 'magnitude-based'],
         help='masking strategy'
