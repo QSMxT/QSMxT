@@ -17,13 +17,17 @@ def clean_text(string):
 
 def dicomsort(src, dst):
     os.makedirs(dst, exist_ok=True)
-
+    extension = '.IMA'
     print('reading file list...')
     unsortedList = []
     for root, dirs, files in os.walk(src):
-        for file in files: 
-            if ".IMA" in file:# exclude non-dicoms, good for messy folders
+        for file in files:
+            if file[-4:] in ['.ima', '.IMA'] # exclude non-dicoms, good for messy folders
                 unsortedList.append(os.path.join(root, file))
+            elif file[-4:] in ['.dcm', '.DCM']:
+                extension = '.dcm'
+                unsortedList.append(os.path.join(root, file))
+
 
     print('%s files found.' % len(unsortedList))
         
@@ -42,7 +46,7 @@ def dicomsort(src, dst):
         studyInstanceUID = ds.get("StudyInstanceUID","NA")
         seriesInstanceUID = ds.get("SeriesInstanceUID","NA")
         instanceNumber = str(ds.get("InstanceNumber","0"))
-        fileName = modality + "." + seriesInstanceUID + "." + instanceNumber + ".IMA"
+        fileName = modality + "." + seriesInstanceUID + "." + instanceNumber + extension
         
         # uncompress files (using the gdcm package)
         try:
