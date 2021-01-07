@@ -381,9 +381,20 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--bids_dir',
-        required=True,
+        'bids_dir',
         help='bids directory'
+    )
+
+    parser.add_argument(
+        'out_dir',
+        help='output directory'
+    )
+
+    parser.add_argument(
+        '--work_dir',
+        default=None,
+        const=None,
+        help='work directory'
     )
 
     parser.add_argument(
@@ -392,25 +403,6 @@ if __name__ == "__main__":
         const=None,
         nargs='*',
         help='list of subjects as seen in bids_dir'
-    )
-
-    parser.add_argument(
-        '--work_dir',
-        required=True,
-        help='work directory'
-    )
-
-    parser.add_argument(
-        '--out_dir',
-        required=True,
-        help='output directory'
-    )
-
-    parser.add_argument(
-        '--debug',
-        dest='debug',
-        action='store_true',
-        help='debug mode'
     )
 
     parser.add_argument(
@@ -456,7 +448,17 @@ if __name__ == "__main__":
         help='use PBS graph'
     )
 
+    parser.add_argument(
+        '--debug',
+        dest='debug',
+        action='store_true',
+        help='debug mode'
+    )
+
     args = parser.parse_args()
+
+    if not args.work_dir:
+        args.work_dir = os.path.join(args.out_dir, "work")
 
     # environment variables
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
