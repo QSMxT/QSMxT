@@ -22,7 +22,7 @@ def dicomsort(src, dst):
     unsortedList = []
     for root, dirs, files in os.walk(src):
         for file in files:
-            if file[-4:] in ['.ima', '.IMA'] # exclude non-dicoms, good for messy folders
+            if file[-4:] in ['.ima', '.IMA']: # exclude non-dicoms, good for messy folders
                 unsortedList.append(os.path.join(root, file))
             elif file[-4:] in ['.dcm', '.DCM']:
                 extension = '.dcm'
@@ -57,19 +57,13 @@ def dicomsort(src, dst):
         # save files to a 3-tier nested folder structure
         patientID_date = f"sub-{patientID}_{studyDate}"
 
-        if not os.path.exists(os.path.join(dst, patientID_date)):
-            os.makedirs(os.path.join(dst, patientID_date))
+        if not os.path.exists(os.path.join(dst, patientID_date, seriesDescription)):
+            os.makedirs(os.path.join(dst, patientID_date, seriesDescription), exist_ok=True)
+            print('Saving out file: %s - %s - %s.' % (patientID, studyDate, seriesDescription ))
         
-        if not os.path.exists(os.path.join(dst, patientID_date, studyDescription)):
-            os.makedirs(os.path.join(dst, patientID_date, studyDescription))
-        
-        if not os.path.exists(os.path.join(dst, patientID_date, studyDescription, seriesDescription)):
-            os.makedirs(os.path.join(dst, patientID_date, studyDescription, seriesDescription))
-            print('Saving out file: %s - %s - %s - %s.' % (patientID, studyDate, studyDescription, seriesDescription ))
-        
-        ds.save_as(os.path.join(dst, patientID_date, studyDescription, seriesDescription, fileName))
+        ds.save_as(os.path.join(dst, patientID_date, seriesDescription, fileName))
 
-        if os.path.exists(os.path.join(dst, patientID_date, studyDescription, seriesDescription, fileName)):
+        if os.path.exists(os.path.join(dst, patientID_date, seriesDescription, fileName)):
             os.remove(dicom_loc)
 
     print('done.')
