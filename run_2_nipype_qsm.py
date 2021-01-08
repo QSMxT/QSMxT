@@ -495,9 +495,9 @@ if __name__ == "__main__":
         'params': '{subject_id_p}/anat/*gre*phase*.json',
     }
     num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*gre*magnitude*.nii.gz")))
-    if 'bet-firstecho' in args.masking:
+    if 'bet-firstecho' in args.masking and num_echoes > 1:
         bids_templates['mag'] = bids_templates['mag'].replace('gre*', 'gre*E01*')
-    if 'bet-lastecho' in args.masking:
+    if 'bet-lastecho' in args.masking and num_echoes > 1:
         bids_templates['mag'] = bids_templates['mag'].replace('gre*', f'gre*E{num_echoes:02}*')
     if 'phase-based' in args.masking:
         del bids_templates['mag']
