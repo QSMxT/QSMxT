@@ -3,7 +3,6 @@
 # Adapted from Alex Weston
 # Digital Innovation Lab, Mayo Clinic
 # https://gist.github.com/alex-weston-13/4dae048b423f1b4cb9828734a4ec8b83
-
 import argparse
 import os
 import pydicom # pydicom is using the gdcm package for decompression
@@ -15,7 +14,7 @@ def clean_text(string):
         string = string.replace(symbol, "_") # replace everything with an underscore
     return string.lower()  
 
-def dicomsort(src, dst):
+def dicomsort(src, dst, use_patient_name):
     os.makedirs(dst, exist_ok=True)
     extension = '.IMA'
     print('reading file list...')
@@ -36,6 +35,7 @@ def dicomsort(src, dst):
         ds = pydicom.read_file(dicom_loc, force=True)
     
         # get patient, study, and series information
+        patientName = clean_text(ds.get("PatiantName", "NA"))
         patientID = clean_text(ds.get("PatientID", "NA"))
         studyDate = clean_text(ds.get("StudyDate", "NA"))
         studyDescription = clean_text(ds.get("StudyDescription", "NA"))
@@ -47,23 +47,25 @@ def dicomsort(src, dst):
         seriesInstanceUID = ds.get("SeriesInstanceUID","NA")
         instanceNumber = str(ds.get("InstanceNumber","0"))
         fileName = modality + "." + seriesInstanceUID + "." + instanceNumber + extension
+
+        subj_name = patientName if use_patient_name else patientID
         
         # uncompress files (using the gdcm package)
         try:
             ds.decompress()
         except:
-            print('an instance in file %s - %s - %s - %s" could not be decompressed. exiting.' % (patientID, studyDate, studyDescription, seriesDescription ))
+            print('an instance in file %s - %s - %s - %s" could not be decompressed. exiting.' % (subj_name, studyDate, studyDescription, seriesDescription ))
     
         # save files to a 3-tier nested folder structure
-        patientID_date = f"sub-{patientID}_{studyDate}"
+        subjName_date = f"sub-{subj_name}_{studyDate}"
 
-        if not os.path.exists(os.path.join(dst, patientID_date, seriesDescription)):
-            os.makedirs(os.path.join(dst, patientID_date, seriesDescription), exist_ok=True)
-            print('Saving out file: %s - %s - %s.' % (patientID, studyDate, seriesDescription ))
+        if not os.path.exists(os.path.join(dst, subjName_date, seriesDescription)):
+            os.makedirs(os.path.join(dst, subjName_date, seriesDescription), exist_ok=True)
+            print('Saving out file: %s - %s.' % (subjName_date, seriesDescription))
         
-        ds.save_as(os.path.join(dst, patientID_date, seriesDescription, fileName))
+        ds.save_as(os.path.join(dst, subjName_date, seriesDescription, fileName))
 
-        if os.path.exists(os.path.join(dst, patientID_date, seriesDescription, fileName)):
+        if os.path.exists(os.path.join(dst, subjName_date, seriesDescription, fileName)):
             os.remove(dicom_loc)
 
     print('done.')
@@ -87,6 +89,12 @@ if __name__ == "__main__":
         help='output folder to contain sorted DICOMs'
     )
 
+    parser.add_argument(
+        '--use_patient_name',
+        action='store_true',
+        help='use patient name rather than ID for subject folders'
+    )
+
     args = parser.parse_args()
-    dicomsort(args.src, args.dst if args.dst is not None else args.src)
+    dicomsort(args.src, args.dst if args.dst is not None else args.src, args.use_patient_name)
     
