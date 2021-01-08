@@ -2,7 +2,7 @@ from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, Comma
 from nipype.utils.filemanip import fname_presuffix, split_filename
 import os
 
-class Nii2MncInputSpec(CommandLineInputSpec):
+class Mnc2NiiInputSpec(CommandLineInputSpec):
     in_file = File(
         exists=True,
         mandatory=True,
@@ -12,19 +12,19 @@ class Nii2MncInputSpec(CommandLineInputSpec):
     out_file = File(
         argstr="%s",
         name_source=['in_file'],
-        name_template='%s_nii2mnc.mnc',
+        name_template='%s_mnc2nii.mnc',
         position=1
     )
 
 
-class Nii2MncOutputSpec(TraitedSpec):
+class Mnc2NiiOutputSpec(TraitedSpec):
     out_file = File()
 
 
-class Nii2MncInterface(CommandLine):
-    input_spec = Nii2MncInputSpec
-    output_spec = Nii2MncOutputSpec
-    _cmd = "nii2mnc"
+class Mnc2NiiInterface(CommandLine):
+    input_spec = Mnc2NiiInputSpec
+    output_spec = Mnc2NiiOutputSpec
+    _cmd = "mnc2nii"
 
     def _list_outputs(self):
         outputs = self.output_spec().get()
@@ -32,9 +32,10 @@ class Nii2MncInterface(CommandLine):
         _, fname, _ = split_filename(self.inputs.in_file)
 
         outputs['out_file'] = fname_presuffix(
-            fname=fname + "_nii2mnc",
+            fname=fname + "_mnc2nii",
             suffix=".mnc",
             newpath=os.getcwd()
         )
 
         return outputs
+
