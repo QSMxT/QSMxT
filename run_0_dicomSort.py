@@ -35,7 +35,7 @@ def dicomsort(src, dst, use_patient_name):
         ds = pydicom.read_file(dicom_loc, force=True)
     
         # get patient, study, and series information
-        patientName = clean_text(ds.get("PatiantName", "NA"))
+        patientName = clean_text(str(ds.get("PatientName", "NA")))
         patientID = clean_text(ds.get("PatientID", "NA"))
         studyDate = clean_text(ds.get("StudyDate", "NA"))
         studyDescription = clean_text(ds.get("StudyDescription", "NA"))
