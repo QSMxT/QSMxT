@@ -283,7 +283,7 @@ def create_qsm_workflow(
     wf.connect([
         (n_qsm_average, n_datasink, [('out_file', 'qsm_average')]),
         (mn_qsm, n_datasink, [('out_file', 'qsm')]),
-        (mn_mask, n_datasink, [('mask_file', 'mask')])
+        (mn_mask, n_datasink, [('mask_file', 'masks')])
     ])
 
     if masking in ['phase-based', 'magnitude-based']:
@@ -301,6 +301,9 @@ def create_qsm_workflow(
         )
         wf.connect([
             (mn_mask, mn_mask_filled, [('mask_file', 'in_file')])
+        ])
+        wf.connect([
+            (mn_mask_filled, n_datasink, [('out_file', 'mask_filled')]),
         ])
 
         mn_qsm_filled = MapNode(
@@ -327,7 +330,10 @@ def create_qsm_workflow(
             (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
             (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
             (mn_mask_filled, mn_qsm_filled, [('out_file', 'mask_file')]),
-            (mn_phase_scaled, mn_qsm_filled, [('out_file', 'phase_file')])
+            (mn_phase_scaled, mn_qsm_filled, [('out_file', 'phase_file')]),
+        ])
+        wf.connect([
+            (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled')]),
         ])
 
         # qsm averaging
@@ -341,8 +347,7 @@ def create_qsm_workflow(
             (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')])
         ])
         wf.connect([
-            (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled-mask')]),
-            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_average_filled-mask')])
+            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average')])
         ])
 
         # composite qsm
@@ -394,7 +399,7 @@ if __name__ == "__main__":
         '--work_dir',
         default=None,
         const=None,
-        help='work directory'
+        help='work directory; defaults to \'work\' within \'out_dir\''
     )
 
     parser.add_argument(
@@ -443,14 +448,12 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--pbs',
-        dest='pbs',
         action='store_true',
         help='use PBS graph'
     )
 
     parser.add_argument(
         '--debug',
-        dest='debug',
         action='store_true',
         help='debug mode'
     )
