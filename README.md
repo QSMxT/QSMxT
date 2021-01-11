@@ -22,10 +22,11 @@ singularity shell https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpm
 # 2) run
 Convert Dicom data to BIDS:
 ```
-python3 run_0_dicomSort.py /vnm/dicoms_qsm_mag_phase/ dicom
-python3 run_1_dicomToBids.py
+cd REPLACE_WITH_YOUR_DATA_DIRECTORY
+python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY dicom
+python3 /opt/QSMxT/run_1_dicomToBids.py
 ```
 Run pipeline:
 ```
-python3 run_2_nipype_qsm.py bids output
+python3 /opt/QSMxT/run_2_nipype_qsm.py bids output
 ```
