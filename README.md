@@ -8,23 +8,24 @@ Linux:
 - singularity: https://sylabs.io/guides/3.7/user-guide/quick_start.html
 - Australian Mirror: 
 ```
-singularity shell https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210105.simg
+singularity shell https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210111.simg
 ```
 - US Mirror: 
 ```
-singularity shell  https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210105.simg
+singularity shell  https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210111.simg
 ```
 - European Mirror: 
 ```
-singularity shell https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210105.simg
+singularity shell https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210111.simg
 ```
 
 # 2) run
 Convert Dicom data to BIDS:
 ```
-python3 run_0_dicomSort.py /vnm/dicoms_qsm_mag_phase/
+python3 run_0_dicomSort.py /vnm/dicoms_qsm_mag_phase/ dicom
+python3 run_1_dicomToBids.py
 ```
-Run pipelines:
+Run pipeline:
 ```
-python3 run_2_nipype_qsm.py
+python3 run_2_nipype_qsm.py bids output
 ```
