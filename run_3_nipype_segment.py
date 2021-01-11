@@ -85,9 +85,20 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--bids_dir',
-        required=True,
+        'bids_dir',
         help='bids directory'
+    )
+
+    parser.add_argument(
+        'out_dir',
+        help='output directory'
+    )
+
+    parser.add_argument(
+        '--work_dir',
+        default=None,
+        const=None,
+        help='work directory'
     )
 
     parser.add_argument(
@@ -96,18 +107,6 @@ if __name__ == "__main__":
         const=None,
         nargs='*',
         help='list of subjects as seen in bids_dir'
-    )
-
-    parser.add_argument(
-        '--work_dir',
-        required=True,
-        help='work directory'
-    )
-
-    parser.add_argument(
-        '--out_dir',
-        required=True,
-        help='output directory'
     )
 
     parser.add_argument(
@@ -136,6 +135,9 @@ if __name__ == "__main__":
         subject_list = [subj for subj in os.listdir(args.bids_dir) if 'sub' in subj]
     else:
         subject_list = args.subjects
+
+    if not args.work_dir:
+        args.work_dir = os.path.join(args.out_dir, "work")
 
     wf = create_segmentation_workflow(
         subject_list=subject_list,
