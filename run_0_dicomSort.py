@@ -26,7 +26,9 @@ def dicomsort(src, dst, use_patient_name):
             elif file[-4:] in ['.dcm', '.DCM']:
                 extension = '.dcm'
                 unsortedList.append(os.path.join(root, file))
-
+            elif file[:3] == 'MR.':
+                extension = '.dcm'
+                unsortedList.append(os.path.join(root, file))
 
     print('%s files found.' % len(unsortedList))
         
