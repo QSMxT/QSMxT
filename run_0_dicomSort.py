@@ -14,7 +14,7 @@ def clean_text(string):
         string = string.replace(symbol, "_") # replace everything with an underscore
     return string.lower()  
 
-def dicomsort(src, dst, use_patient_name):
+def dicomsort(src, dst, use_patient_name, keep_originals):
     os.makedirs(dst, exist_ok=True)
     extension = '.IMA'
     print('reading file list...')
@@ -67,7 +67,7 @@ def dicomsort(src, dst, use_patient_name):
         
         ds.save_as(os.path.join(dst, subjName_date, seriesDescription, fileName))
 
-        if os.path.exists(os.path.join(dst, subjName_date, seriesDescription, fileName)):
+        if not keep_originals and os.path.exists(os.path.join(dst, subjName_date, seriesDescription, fileName)):
             os.remove(dicom_loc)
 
     print('done.')
@@ -97,6 +97,11 @@ if __name__ == "__main__":
         help='use patient name rather than ID for subject folders'
     )
 
+    parser.add_argument(
+        '--keep_originals',
+        action='store_true'
+    )
+
     args = parser.parse_args()
-    dicomsort(args.src, args.dst if args.dst is not None else args.src, args.use_patient_name)
+    dicomsort(args.src, args.dst if args.dst is not None else args.src, args.use_patient_name, args.keep_originals)
     
