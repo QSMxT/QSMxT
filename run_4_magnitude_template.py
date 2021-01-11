@@ -182,12 +182,12 @@ def get_step_sizes(mincfile):
 # </editor-fold>
 
 
-def make_workflow(bids_dir, work_dir, output_dir, pbs, templates, opt, conf):
+def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
     # args.work_dir
     # args.bids_dir
     # args.input_pattern
     # args.run
-    # args.output_dir
+    # args.out_dir
     # <editor-fold desc="Setup and datasource">
     workflow = pe.Workflow(name='volgenmodel', base_dir=work_dir)
 
@@ -206,7 +206,7 @@ def make_workflow(bids_dir, work_dir, output_dir, pbs, templates, opt, conf):
     print(results.outputs)
 
     datasink = pe.Node(interface=nio.DataSink(), name="datasink")
-    datasink.inputs.base_directory = output_dir
+    datasink.inputs.base_directory = out_dir
 
     # </editor-fold>
 
@@ -844,10 +844,10 @@ if __name__ == '__main__':
     #                    help='The amount of CPUs used in MultiProc mode')
     parser.add_argument('bids_dir', type=str, default='../fast-example',
                         help='The input bids directory')
-    parser.add_argument('output_dir', type=str, default='.',
+    parser.add_argument('out_dir', type=str, default='.',
                         help='The output directory (for final models)')
     parser.add_argument('--work_dir', type=str, default=None,
-                        help='The work directory (for temporary workflow files); defaults to \'work\' within \'output_dir\'')
+                        help='The work directory (for temporary workflow files); defaults to \'work\' within \'out_dir\'')
     parser.add_argument('--pbs', action='store_true', help='use PBS graph')
     parser.add_argument('--symmetric', type=bool, default=1, choices=[0, 1],
                         help='Symmetric averaging on? Will flip template at every level and repeat fit')
@@ -917,15 +917,15 @@ if __name__ == '__main__':
     if num_echoes == 0: templates['mag'] = templates['mag'].replace('E01*', '')
 
     if not cli_args.work_dir:
-        cli_args.work_dir = os.path.join(cli_args.output_dir, "work")
+        cli_args.work_dir = os.path.join(cli_args.out_dir, "work")
 
-    os.makedirs(os.path.abspath(cli_args.output_dir), exist_ok=True)
+    os.makedirs(os.path.abspath(cli_args.out_dir), exist_ok=True)
     os.makedirs(os.path.abspath(cli_args.work_dir), exist_ok=True)
 
     wf = make_workflow(
         bids_dir=os.path.abspath(cli_args.bids_dir),
         work_dir=os.path.abspath(cli_args.work_dir),
-        output_dir=os.path.abspath(cli_args.output_dir),
+        out_dir=os.path.abspath(cli_args.out_dir),
         pbs=cli_args.pbs,
         templates=templates,
         opt=options,
