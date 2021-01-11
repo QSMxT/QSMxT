@@ -56,7 +56,7 @@ def dicomsort(src, dst, use_patient_name, keep_originals):
         try:
             ds.decompress()
         except:
-            print('an instance in file %s - %s - %s - %s" could not be decompressed. exiting.' % (subj_name, studyDate, studyDescription, seriesDescription ))
+            print('an instance in file %s - %s - %s - %s" could not be decompressed (%s). exiting.' % (subj_name, studyDate, studyDescription, seriesDescription, dicom_loc ))
     
         # save files to a 3-tier nested folder structure
         subjName_date = f"sub-{subj_name}_{studyDate}"
