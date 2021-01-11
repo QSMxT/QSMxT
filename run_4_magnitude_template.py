@@ -62,7 +62,7 @@ def load_pklz(f):
 
 
 def _calc_threshold_blur_preprocess(input_file):
-    from volgenmodel import get_step_sizes
+    from run_4_magnitude_template import get_step_sizes
     (step_x, step_y, step_z) = get_step_sizes(input_file)
     return abs(step_x + step_y + step_z)
 
@@ -74,7 +74,7 @@ calc_threshold_blur_preprocess = utils.Function(
 
 
 def _calc_initial_model_fwhm3d(input_file):
-    from volgenmodel import get_step_sizes
+    from run_4_magnitude_template import get_step_sizes
     (xstep, ystep, zstep) = get_step_sizes(input_file)
     return (abs(xstep*4), abs(ystep*4), abs(zstep*4))
 
@@ -92,7 +92,7 @@ def _write_stage_conf_file(snum, snum_txt, conf, end_stage):
     assert end_stage is not None
 
     import os.path
-    from volgenmodel import to_perl_syntax
+    from run_4_magnitude_template import to_perl_syntax
 
     conf_fname = os.path.join(os.getcwd(), "fit_stage_%02d.conf" % snum)
     # print "    + Creating", conf_fname
