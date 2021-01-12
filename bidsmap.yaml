@@ -90,7 +90,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ~
+      ProtocolName: '*gre*'
       SeriesDescription: ~
       ImageType: '*M*'
       SequenceName: ~
@@ -104,7 +104,7 @@ DICOM:
       RepetitionTime: ~
       PhaseEncodingDirection: ~
     bids:
-      acq: gre
+      acq: qsm
       rec:
       ce:
       task:
@@ -116,7 +116,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ~
+      ProtocolName: '*gre*'
       SeriesDescription: ~
       ImageType: "*P*"
       SequenceName: ~
@@ -130,7 +130,59 @@ DICOM:
       RepetitionTime: ~
       PhaseEncodingDirection: ~
     bids:
-      acq: gre
+      acq: qsm
+      rec:
+      ce:
+      task:
+      echo: <EchoNumber>
+      dir:
+      run: <AcquisitionNumber>
+      mod:
+      suffix: phase
+  - provenance: ~
+    attributes:
+      Modality: MR
+      ProtocolName: '*epi*'
+      SeriesDescription: ~
+      ImageType: '*M*'
+      SequenceName: ~
+      SequenceVariant: ~
+      ScanningSequence: ~
+      MRAcquisitionType: ~
+      SliceThickness: ~
+      FlipAngle: ~
+      EchoNumbers: ~
+      EchoTime: ~
+      RepetitionTime: ~
+      PhaseEncodingDirection: ~
+    bids:
+      acq: qsm
+      rec:
+      ce:
+      task:
+      echo: <EchoNumber>
+      dir:
+      run: <AcquisitionNumber>
+      mod:
+      suffix: magnitude
+  - provenance: ~
+    attributes:
+      Modality: MR
+      ProtocolName: '*epi*'
+      SeriesDescription: ~
+      ImageType: "*P*"
+      SequenceName: ~
+      SequenceVariant: ~
+      ScanningSequence: ~
+      MRAcquisitionType: ~
+      SliceThickness: ~
+      FlipAngle: ~
+      EchoNumbers: ~
+      EchoTime: ~
+      RepetitionTime: ~
+      PhaseEncodingDirection: ~
+    bids:
+      acq: qsm
       rec:
       ce:
       task:
