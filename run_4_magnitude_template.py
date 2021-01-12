@@ -911,9 +911,9 @@ if __name__ == '__main__':
                      {str('step'): 0.7, str('blur_fwhm'): 0.35, str('iterations'): 5}]      # 11
 
     templates = {
-        'mag': '*/anat/*gre*E01*magnitude*.nii*',
+        'mag': '*/anat/*qsm*E01*magnitude*.nii*',
     }
-    num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(cli_args.bids_dir, "sub") + "*")[0], 'anat/') + "*gre*E*magnitude*.nii*")))
+    num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(cli_args.bids_dir, "sub") + "*")[0], 'anat/') + "*qsm*E*magnitude*.nii*")))
     if num_echoes == 0: templates['mag'] = templates['mag'].replace('E01*', '')
 
     if not cli_args.work_dir:

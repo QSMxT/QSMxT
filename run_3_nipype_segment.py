@@ -41,7 +41,7 @@ def create_segmentation_workflow(
             base_directory=bids_dir
         ),
         name='selectfiles'
-        # output: ['t1', 'gre']
+        # output: ['t1', 'mag']
     )
     wf.connect([
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
@@ -68,7 +68,7 @@ def create_segmentation_workflow(
     # convert segmentation to nii
     mn_recon_all_nii = MapNode(
         interface=MRIConvert(
-            out_type='nii.gz',
+            out_type='niigz',
         ),
         name='recon_all_nii',
         iterfield=['in_file']
@@ -76,6 +76,9 @@ def create_segmentation_workflow(
     wf.connect([
         (mn_recon_all, mn_recon_all_nii, [('aseg', 'in_file')])
     ])
+
+    # registration to magnitude
+
 
     # datasink
     n_datasink = Node(
@@ -157,12 +160,12 @@ if __name__ == "__main__":
     if not args.work_dir:
         args.work_dir = os.path.join(args.out_dir, "work")
 
-    num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*gre*magnitude*.nii*")))
+    num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*qsm*magnitude*.nii*")))
     multi_echo = num_echoes > 1
 
     templates={
         'T1': '{subject_id_p}/anat/*t1*.nii*',
-        'gre': '{subject_id_p}/anat/' + ('*gre*magnitude*.nii*' if not multi_echo else '*gre*E01*magnitude*.nii*')
+        'mag': '{subject_id_p}/anat/' + ('*qsm*magnitude*.nii*' if not multi_echo else '*qsm*E01*magnitude*.nii*')
     }
 
     wf = create_segmentation_workflow(
