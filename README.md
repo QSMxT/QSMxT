@@ -24,9 +24,21 @@ Convert Dicom data to BIDS:
 ```
 cd REPLACE_WITH_YOUR_DATA_DIRECTORY
 python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY dicom
-python3 /opt/QSMxT/run_1_dicomToBids.py
+python3 /opt/QSMxT/run_1_dicomToBids.py dicom bids
 ```
 Run pipeline:
 ```
-python3 /opt/QSMxT/run_2_nipype_qsm.py bids output
+python3 /opt/QSMxT/run_2_nipype_qsm.py bids qsm_output
+```
+Segment T1 and register to QSM space (UNDER CONSTRUCTION):
+```
+python3 /opt/QSMxT/run_3_nipype_segment.py bids qsm_output segmentation_output
+```
+Build GRE magnitude group template (UNDER CONSTRUCTION):
+```
+python3 /opt/QSMxT/run_4_magnitude_template.py bids gre_template
+```
+Build QSM template (UNDER CONSTRUCTION):
+```
+python3 /opt/QSMxT/run_5_qsm_template.py qsm_output gre_template qsm_template
 ```
