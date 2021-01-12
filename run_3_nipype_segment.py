@@ -3,7 +3,7 @@ from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink, DataGrabber
 
-from nipype.interfaces.freesurfer.preprocess import ReconAll
+from nipype.interfaces.freesurfer.preprocess import ReconAll, MRIConvert
 
 import glob
 import os
@@ -47,7 +47,8 @@ def create_segmentation_workflow(
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
     ])
 
-    recon_all = MapNode(
+    # segment t1
+    mn_recon_all = MapNode(
         interface=ReconAll(
             parallel=True,
             openmp=reconall_cpus
@@ -55,27 +56,36 @@ def create_segmentation_workflow(
         name='recon_all',
         iterfield=['T1_files', 'subject_id']
     )
-    recon_all.plugin_args = {
+    mn_recon_all.plugin_args = {
         'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
         'overwrite': True
     }
     wf.connect([
-        (n_selectfiles, recon_all, [('T1', 'T1_files')]),
-        (n_infosource, recon_all, [('subject_id', 'subject_id')])
+        (n_selectfiles, mn_recon_all, [('T1', 'T1_files')]),
+        (n_infosource, mn_recon_all, [('subject_id', 'subject_id')])
     ])
 
-    # registration to gre space
-
+    # convert segmentation to nii
+    mn_recon_all_nii = MapNode(
+        interface=MRIConvert(
+            out_type='nii.gz',
+        ),
+        name='recon_all_nii',
+        iterfield=['in_file']
+    )
+    wf.connect([
+        (mn_recon_all, mn_recon_all_nii, [('aseg', 'in_file')])
+    ])
 
     # datasink
     n_datasink = Node(
         interface=DataSink(
-            base_directory=bids_dir,
-            container=out_dir
+            base_directory=bids_dir
+            #container=out_dir
         ),
         name='datasink'
     )
-    wf.connect([(recon_all, n_datasink, [('aseg', 'aseg')])])
+    wf.connect([(mn_recon_all_nii, n_datasink, [('out_file', 'segmentation')])])
 
     return wf
 
