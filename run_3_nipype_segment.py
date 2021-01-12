@@ -5,6 +5,7 @@ from nipype.interfaces.io import SelectFiles, DataSink, DataGrabber
 
 from nipype.interfaces.freesurfer.preprocess import ReconAll
 
+import glob
 import os
 import os.path
 import argparse
@@ -16,9 +17,7 @@ def create_segmentation_workflow(
     work_dir,
     out_dir,
     reconall_cpus,
-    bids_templates={
-        'T1': '{subject_id_p}/anat/*t1*.nii.gz'
-    },
+    templates
 ):
 
     wf = Workflow(name='segmentation', base_dir=work_dir)
@@ -38,11 +37,11 @@ def create_segmentation_workflow(
     # select matching files from bids_dir
     n_selectfiles = Node(
         interface=SelectFiles(
-            templates=bids_templates,
+            templates=templates,
             base_directory=bids_dir
         ),
         name='selectfiles'
-        # output: ['mag', 'phs', 'params']
+        # output: ['t1', 'gre']
     )
     wf.connect([
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
@@ -64,6 +63,9 @@ def create_segmentation_workflow(
         (n_selectfiles, recon_all, [('T1', 'T1_files')]),
         (n_infosource, recon_all, [('subject_id', 'subject_id')])
     ])
+
+    # registration to gre space
+
 
     # datasink
     n_datasink = Node(
@@ -110,6 +112,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--pbs',
+        action='store_true',
+        help='use PBS graph'
+    )
+
+    parser.add_argument(
         '--debug',
         dest='debug',
         action='store_true',
@@ -139,21 +147,38 @@ if __name__ == "__main__":
     if not args.work_dir:
         args.work_dir = os.path.join(args.out_dir, "work")
 
+    num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*gre*magnitude*.nii*")))
+    multi_echo = num_echoes > 1
+
+    templates={
+        'T1': '{subject_id_p}/anat/*t1*.nii*',
+        'gre': '{subject_id_p}/anat/' + ('*gre*magnitude*.nii*' if not multi_echo else '*gre*E01*magnitude*.nii*')
+    }
+
     wf = create_segmentation_workflow(
         subject_list=subject_list,
         bids_dir=os.path.abspath(args.bids_dir),
         work_dir=os.path.abspath(args.work_dir),
         out_dir=os.path.abspath(args.out_dir),
-        reconall_cpus=16
+        reconall_cpus=16,
+        templates=templates
     )
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
-    wf.run(
-        plugin='PBSGraph',
-        plugin_args={
-            'qsub_args': '-A UQ-CAI -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:50:00'
-        }
-    )
+    if args.pbs:
+        wf.run(
+            plugin='PBSGraph',
+            plugin_args={
+                'qsub_args': '-A UQ-CAI -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:50:00'
+            }
+        )
+    else:
+        wf.run(
+            plugin='MultiProc',
+            plugin_args={
+                'n_procs': int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+            }
+        )
