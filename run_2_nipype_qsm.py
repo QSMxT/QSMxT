@@ -373,7 +373,7 @@ def create_qsm_workflow(
 
         wf.connect([
             (mn_qsm_composite, n_datasink, [('out_file', 'qsm_composite')]),
-            (n_qsm_composite_average, n_datasink, [('out_file', 'qsm_composite_average')]),
+            (n_qsm_composite_average, n_datasink, [('out_file', 'qsm_final')]),
         ])
 
     return wf
