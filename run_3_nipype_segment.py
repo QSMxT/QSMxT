@@ -48,33 +48,46 @@ def create_segmentation_workflow(
     ])
 
     # segment t1
-    mn_recon_all = MapNode(
+    mn_reconall = MapNode(
         interface=ReconAll(
             parallel=True,
             openmp=reconall_cpus
+            #hires=True,
+            #mprage=True
         ),
         name='recon_all',
         iterfield=['T1_files', 'subject_id']
     )
-    mn_recon_all.plugin_args = {
+    mn_reconall.plugin_args = {
         'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
         'overwrite': True
     }
     wf.connect([
-        (n_selectfiles, mn_recon_all, [('T1', 'T1_files')]),
-        (n_infosource, mn_recon_all, [('subject_id', 'subject_id')])
+        (n_selectfiles, mn_reconall, [('T1', 'T1_files')]),
+        (n_infosource, mn_reconall, [('subject_id', 'subject_id')])
     ])
 
     # convert segmentation to nii
-    mn_recon_all_nii = MapNode(
+    mn_reconall_aseg_nii = MapNode(
         interface=MRIConvert(
             out_type='niigz',
         ),
-        name='recon_all_nii',
+        name='reconall_aseg_nii',
         iterfield=['in_file']
     )
     wf.connect([
-        (mn_recon_all, mn_recon_all_nii, [('aseg', 'in_file')])
+        (mn_reconall, mn_reconall_aseg_nii, [('aseg', 'in_file')]),
+    ])
+
+    mn_reconall_orig_nii = MapNode(
+        interface=MRIConvert(
+            out_type='niigz'
+        ),
+        name='reconall_orig_nii',
+        iterfield=['in_file']
+    )
+    wf.connect([
+        (mn_reconall, mn_reconall_orig_nii, [('orig', 'in_file')])
     ])
 
     # registration to magnitude
@@ -88,7 +101,10 @@ def create_segmentation_workflow(
         ),
         name='datasink'
     )
-    wf.connect([(mn_recon_all_nii, n_datasink, [('out_file', 'segmentation')])])
+    wf.connect([
+        (mn_reconall_aseg_nii, n_datasink, [('out_file', 'segmentation')]),
+        (mn_reconall_orig_nii, n_datasink, [('out_file', 't1_orig')])
+    ])
 
     return wf
 
