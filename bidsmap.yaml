@@ -39,7 +39,7 @@ DICOM:
     attributes:
       Modality: MR
       ProtocolName: ~
-      SeriesDescription: '*t1*'
+      SeriesDescription: ['*t1*', '*T1*', '*MPRAGE*', '*MP2RAGE*']
       ImageType: '*M*'
       SequenceName: ~
       SequenceVariant: ~
@@ -64,33 +64,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ~
-      SeriesDescription: '*T1*'
-      ImageType: ~
-      SequenceName: ~
-      SequenceVariant: ~
-      ScanningSequence: ~
-      MRAcquisitionType: ~
-      SliceThickness: ~
-      FlipAngle: ~
-      EchoNumbers: ~
-      EchoTime: ~
-      RepetitionTime: ~
-      PhaseEncodingDirection: ~
-    bids:
-      acq: t1
-      rec:
-      ce:
-      task:
-      echo: <EchoNumber>
-      dir:
-      run: <AcquisitionNumber>
-      mod:
-      suffix: magnitude
-  - provenance: ~
-    attributes:
-      Modality: MR
-      ProtocolName: '*gre*'
+      ProtocolName: ['*gre*','*epi*','*QSM*','*qsm*']
       SeriesDescription: ~
       ImageType: '*M*'
       SequenceName: ~
@@ -116,59 +90,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: '*gre*'
-      SeriesDescription: ~
-      ImageType: "*P*"
-      SequenceName: ~
-      SequenceVariant: ~
-      ScanningSequence: ~
-      MRAcquisitionType: ~
-      SliceThickness: ~
-      FlipAngle: ~
-      EchoNumbers: ~
-      EchoTime: ~
-      RepetitionTime: ~
-      PhaseEncodingDirection: ~
-    bids:
-      acq: qsm
-      rec:
-      ce:
-      task:
-      echo: <EchoNumber>
-      dir:
-      run: <AcquisitionNumber>
-      mod:
-      suffix: phase
-  - provenance: ~
-    attributes:
-      Modality: MR
-      ProtocolName: '*epi*'
-      SeriesDescription: ~
-      ImageType: '*M*'
-      SequenceName: ~
-      SequenceVariant: ~
-      ScanningSequence: ~
-      MRAcquisitionType: ~
-      SliceThickness: ~
-      FlipAngle: ~
-      EchoNumbers: ~
-      EchoTime: ~
-      RepetitionTime: ~
-      PhaseEncodingDirection: ~
-    bids:
-      acq: qsm
-      rec:
-      ce:
-      task:
-      echo: <EchoNumber>
-      dir:
-      run: <AcquisitionNumber>
-      mod:
-      suffix: magnitude
-  - provenance: ~
-    attributes:
-      Modality: MR
-      ProtocolName: '*epi*'
+      ProtocolName: ['*gre*','*epi*','*QSM*','*qsm*']
       SeriesDescription: ~
       ImageType: "*P*"
       SequenceName: ~
