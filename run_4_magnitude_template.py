@@ -680,6 +680,8 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
         workflow.connect(merge_xfm, 'out', xfmconcat, 'input_files')
 
         workflow.connect(merge_xfmavg_and_step1, 'out', xfmconcat, 'input_grid_files')
+
+        workflow.connect(xfmconcat, 'output_file', datasink, 'transformation_' + snum_txt)
         # </editor-fold>
 
         # <editor-fold desc="Resample. The first stage (snum == 0) does not involve grid files.">
@@ -933,7 +935,7 @@ if __name__ == '__main__':
     )
 
 
-    if cli_args.pbs == 'MultiProc':
+    if cli_args.pbs:
         wf.run(
             plugin='PBSGraph',
             plugin_args={
