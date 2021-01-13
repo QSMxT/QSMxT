@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--heuristic',
-        default='bidsmap.yaml',
+        default=os.path.join(os.path.abspath(os.path.dirname(os.path.abspath(__file__))),'bidsmap.yaml'),
         const='bidsmap.yaml',
         nargs='?',
         help='bidsmap.yaml heuristic file'
@@ -50,6 +50,6 @@ if __name__ == "__main__":
         print(f"QSMxT: Warning: BIDS path is not empty: {bids_dir}")
 
     subprocess.call(f"bidsmapper -b {heuristic_path} -i 0 {dicom_dir} {bids_dir}", executable='/bin/bash', shell=True)
-    subprocess.call(f"bidscoiner {dicom_dir} {bids_dir}", executable='/bin/bash', shell=True)
+    subprocess.call(f"bidscoiner -b {heuristic_path} {dicom_dir} {bids_dir}", executable='/bin/bash', shell=True)
     bids_subject_dirs = list(set(os.listdir(bids_dir)) & set(os.listdir(dicom_dir)))
 
