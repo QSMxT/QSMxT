@@ -27,7 +27,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--heuristic',
-        default='bidsmap.yaml',
+        default=os.path.join(os.path.abspath(os.path.dirname(os.path.abspath(__file__))),'bidsmap.yaml'),
         const='bidsmap.yaml',
         nargs='?',
         help='bidsmap.yaml heuristic file'
