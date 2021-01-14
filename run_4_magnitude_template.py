@@ -681,7 +681,9 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
 
         workflow.connect(merge_xfmavg_and_step1, 'out', xfmconcat, 'input_grid_files')
 
-        workflow.connect(xfmconcat, 'output_file', datasink, 'transformation_' + snum_txt)
+        # The final set of transformations is output
+        if snum == len(fit_stages) - 1:
+            workflow.connect(xfmconcat, 'output_file', datasink, 'transformation')
         # </editor-fold>
 
         # <editor-fold desc="Resample. The first stage (snum == 0) does not involve grid files.">
