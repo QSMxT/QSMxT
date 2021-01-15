@@ -32,7 +32,7 @@ def create_qsm_workflow(
 ):
 
     # create initial workflow
-    wf = Workflow(name='qsm', base_dir=work_dir)
+    wf = Workflow(name='workflow_qsm', base_dir=work_dir)
 
     # use infosource to iterate workflow across subject list
     n_infosource = Node(
@@ -460,8 +460,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not args.work_dir:
-        args.work_dir = os.path.join(args.out_dir, "work")
+    if not args.work_dir: args.work_dir = args.out_dir
 
     # environment variables
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"

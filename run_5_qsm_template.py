@@ -13,7 +13,7 @@ import argparse
 
 def create_workflow(qsm_output_dir, magnitude_template_output_dir, qsm_template_output_dir, qsm_template_work_dir):
 
-    wf = Workflow(name='qsm_template', base_dir=qsm_template_work_dir)
+    wf = Workflow(name='workflow_qsm_template', base_dir=qsm_template_work_dir)
 
     n_datasource_qsm = Node(
         interface=DataGrabber(
@@ -165,7 +165,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not args.work_dir: args.work_dir = os.path.join(args.qsm_template_output_dir, "work")
+    if not args.work_dir: args.work_dir = args.qsm_template_output_dir
     os.makedirs(os.path.abspath(args.qsm_template_output_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
 
