@@ -267,7 +267,7 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
     # <editor-fold desc="do pre-processing nad normalise">
     mn_nii2mnc = pe.MapNode(
         interface=nii2mnc.Nii2MncInterface(),
-        name='nii2mnc',
+        name='datasource_nii2mnc',
         iterfield=['in_file']
     )
     workflow.connect([
@@ -815,13 +815,13 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
 
         # <editor-fold desc="if on last step, copy model to $opt{'output_model'}">
         if snum == len(fit_stages) - 1:
-            stage_model_nii2mnc = pe.MapNode(
-                interface=nii2mnc.Nii2MncInterface(),
-                name='nii2mnc',
+            stage_model_mnc2nii = pe.MapNode(
+                interface=mnc2nii.Mnc2NiiInterface(),
+                name='model_mnc2nii',
                 iterfield=['in_file']
             )
-            workflow.connect(stage_model, 'output_file', stage_model_nii2mnc, 'in_file')
-            workflow.connect(stage_model_nii2mnc, 'out_file', datasink, 'template')
+            workflow.connect(stage_model, 'output_file', stage_model_mnc2nii, 'in_file')
+            workflow.connect(stage_model_mnc2nii, 'out_file', datasink, 'template')
 
             # create and output standard deviation file if requested
             if opt['output_stdev'] is not None:
