@@ -3,17 +3,23 @@ from nipype.utils.filemanip import fname_presuffix, split_filename
 import os
 
 class Nii2MncInputSpec(CommandLineInputSpec):
+    dtype = traits.Str(
+        'float',
+        argstr='-%s',
+        usedefault=True,
+        position=0
+    )
     in_file = File(
         exists=True,
         mandatory=True,
         argstr="%s",
-        position=0
+        position=1
     )
     out_file = File(
         argstr="%s",
         name_source=['in_file'],
         name_template='%s_nii2mnc.mnc',
-        position=1
+        position=2
     )
 
 
