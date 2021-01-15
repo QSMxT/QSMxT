@@ -33,7 +33,7 @@ class Mnc2NiiInterface(CommandLine):
 
         outputs['out_file'] = fname_presuffix(
             fname=fname + "_mnc2nii",
-            suffix=".mnc",
+            suffix=".nii",
             newpath=os.getcwd()
         )
 
