@@ -7,96 +7,125 @@ from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype.interfaces.minc import Resample, BigAverage, VolSymm
 import nipype_interface_nii2mnc as nii2mnc
 import nipype_interface_mnc2nii as mnc2nii
+import nipype_interface_niiremoveheader as niiremoveheader
 import argparse
 
 
-def create_workflow(qsm_dir, voliso_dir, xfm_dir, out_dir, work_dir, templates):
+def create_workflow(qsm_output_dir, magnitude_template_output_dir, qsm_template_output_dir, qsm_template_work_dir):
 
-    wf = Workflow(name='qsm_template')
-    wf.base_dir = os.path.join(work_dir)
+    wf = Workflow(name='qsm_template', base_dir=qsm_template_work_dir)
 
-    datasource_qsm = Node(
+    n_datasource_qsm = Node(
         interface=DataGrabber(
             sort_filelist=True
         ),
         name='datasource_qsm'
     )
-    datasource_qsm.inputs.base_directory = qsm_dir
-    datasource_qsm.inputs.template = '*.nii*'
+    n_datasource_qsm.inputs.base_directory = qsm_output_dir
+    n_datasource_qsm.inputs.template = 'qsm_final/*/*.nii*'
 
-    datasource_xfm = Node(
+    n_datasource_xfm = Node(
         interface=DataGrabber(
             sort_filelist=True
         ),
         name='datasource_xfm'
     )
-    datasource_xfm.inputs.base_directory = xfm_dir
-    datasource_xfm.inputs.template = '*/*.xfm'
+    n_datasource_xfm.inputs.base_directory = magnitude_template_output_dir
+    n_datasource_xfm.inputs.template = 'transformations/*/*.xfm'
 
-    datasource_template = Node(
+    n_datasource_grid = Node(
+        interface=DataGrabber(
+            sort_filelist=True
+        ),
+        name='datasource_grid'
+    )
+    n_datasource_grid.inputs.base_directory = magnitude_template_output_dir
+    n_datasource_grid.inputs.template = 'transformations/*/*0.mnc'
+
+    n_datasource_template = Node(
         interface=DataGrabber(
             sort_filelist=True
         ),
         name='datasource_template'
     )
-    datasource_template.inputs.base_directory = voliso_dir
-    datasource_template.inputs.template = '*.mnc'
+    n_datasource_template.inputs.base_directory = magnitude_template_output_dir
+    n_datasource_template.inputs.template = 'template/*/*.nii*'
 
+    # strip nifti header
+    mn_niiremoveheader = MapNode(
+        interface=niiremoveheader.NiiRemoveHeaderInterface(),
+        name='subject_removeheader',
+        iterfield=['in_file']
+    )
+    wf.connect([
+        (n_datasource_qsm, mn_niiremoveheader, [('outfiles', 'in_file')])
+    ])
+
+    # convert subject QSM images to mnc
     mn_qsm_mnc = MapNode(
         interface=nii2mnc.Nii2MncInterface(),
         iterfield=['in_file'],
-        name='nii2mnc'
+        name='subject_qsm_nii2mnc'
     )
     wf.connect([
-        (datasource_qsm, mn_qsm_mnc, [('outfiles', 'in_file')])
+        (mn_niiremoveheader, mn_qsm_mnc, [('out_file', 'in_file')])
     ])
 
-    resample = MapNode(
+    # convert magnitude template to mnc
+    n_magnitude_template_mnc = Node(
+        interface=nii2mnc.Nii2MncInterface(),
+        name='magnitude_template_nii2mnc'
+    )
+    wf.connect([
+        (n_datasource_template, n_magnitude_template_mnc, [('outfiles', 'in_file')])
+    ])
+
+    mn_resample = MapNode(
         interface=Resample(
             nearest_neighbour_interpolation=True
         ),
         name='resample',
-        iterfield=['input_file', 'transformation']
+        iterfield=['input_file', 'transformation', 'input_grid_files']
     )
-    wf.connect(mn_qsm_mnc, 'out_file', resample, 'input_file')
-    wf.connect(datasource_xfm, 'outfiles', resample, 'transformation')
-    wf.connect(datasource_template, 'outfiles', resample, 'like')
+    wf.connect(mn_qsm_mnc, 'out_file', mn_resample, 'input_file')
+    wf.connect(n_datasource_xfm, 'outfiles', mn_resample, 'transformation')
+    wf.connect(n_datasource_grid, 'outfiles', mn_resample, 'input_grid_files')
+    wf.connect(n_magnitude_template_mnc, 'out_file', mn_resample, 'like')
 
-    resample_nii = MapNode(
+    mn_resample_nii = MapNode(
         interface=mnc2nii.Mnc2NiiInterface(),
         name='resample_nii',
-        iterfield=['input_file']
+        iterfield=['in_file']
     )
-    wf.connect(resample, 'output_file', resample_nii, 'input_file')
+    wf.connect(mn_resample, 'output_file', mn_resample_nii, 'in_file')
 
-    bigaverage = Node(
+    n_bigaverage = Node(
         interface=BigAverage(
             output_float=True,
             robust=False
         ),
         name='bigaverage',
-        iterfield=['input_file']
+        iterfield=['input_files']
     )
 
-    wf.connect(resample, 'output_file', bigaverage, 'input_files')
+    wf.connect(mn_resample, 'output_file', n_bigaverage, 'input_files')
 
-    bigaverage_nii = Node(
+    n_bigaverage_nii = Node(
         interface=mnc2nii.Mnc2NiiInterface(),
         name='bigaverage_nii'
     )
-    wf.connect(bigaverage, 'output_file', bigaverage_nii, 'input_file')
+    wf.connect(n_bigaverage, 'output_file', n_bigaverage_nii, 'in_file')
 
     datasink = Node(
         interface=DataSink(
-            base_directory=out_dir,
-            container=out_dir
+            base_directory=qsm_template_output_dir
+            #container=out_dir
         ),
         name='datasink'
     )
 
-    wf.connect([(bigaverage_nii, datasink, [('output_file', 'qsm_template')])])
-    wf.connect([(resample_nii, datasink, [('output_file', 'qsm_transformed')])])
-    wf.connect([(datasource_xfm, datasink, [('outfiles', 'xfm_transforms')])])
+    wf.connect([(n_bigaverage_nii, datasink, [('out_file', 'qsm_template')])])
+    wf.connect([(mn_resample_nii, datasink, [('out_file', 'qsm_transformed')])])
 
     return wf
 
@@ -140,10 +169,13 @@ if __name__ == "__main__":
     os.makedirs(os.path.abspath(args.qsm_template_output_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
 
+    os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
+
     wf = create_workflow(
-        qsm_dir=args.qsm_output_dir,
-        out_dir=args.qsm_template_output_dir,
-        templates=templates
+        qsm_output_dir=os.path.abspath(args.qsm_output_dir),
+        magnitude_template_output_dir=os.path.abspath(args.magnitude_template_output_dir),
+        qsm_template_output_dir=os.path.abspath(args.qsm_template_output_dir),
+        qsm_template_work_dir=os.path.abspath(args.work_dir)
     )
 
     if args.pbs:
