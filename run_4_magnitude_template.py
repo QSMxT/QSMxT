@@ -15,6 +15,7 @@ import nipype.pipeline.engine as pe
 import nipype.interfaces.io as nio
 import nipype.interfaces.utility as utils
 import nipype_interface_nii2mnc as nii2mnc
+import nipype_interface_mnc2nii as mnc2nii
 from copy import deepcopy
 import argparse
 import sys
@@ -814,7 +815,13 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
 
         # <editor-fold desc="if on last step, copy model to $opt{'output_model'}">
         if snum == len(fit_stages) - 1:
-            workflow.connect(stage_model, 'output_file', datasink, 'model')
+            stage_model_nii2mnc = pe.MapNode(
+                interface=nii2mnc.Nii2MncInterface(),
+                name='nii2mnc',
+                iterfield=['in_file']
+            )
+            workflow.connect(stage_model, 'output_file', stage_model_nii2mnc, 'in_file')
+            workflow.connect(stage_model_nii2mnc, 'out_file', datasink, 'template')
 
             # create and output standard deviation file if requested
             if opt['output_stdev'] is not None:
@@ -893,7 +900,7 @@ if __name__ == '__main__':
     options['config_file'] = None
     options['fit_stages'] = cli_args.fit_stages
     options['output_model'] = 'model.mnc'
-    options['output_stdev'] = 'stdev.mnc'
+    options['output_stdev'] = None #'stdev.mnc'
     # opt['workdir'] = '/scratch/volgenmodel-fast-example/work'
     options['verbose'] = 1
     options['clobber'] = 1
