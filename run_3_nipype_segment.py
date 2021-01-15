@@ -105,7 +105,7 @@ def create_segmentation_workflow(
 
     # apply transform to segmentation
     mn_register_t1_to_gre = MapNode(
-        interface=applyxfm.NiiApplyMincXfmInterface()
+        interface=applyxfm.NiiApplyMincXfmInterface(),
         name='register_segmentations',
         iterfield=['in_file', 'in_like', 'in_transform']
     )
