@@ -23,7 +23,6 @@ singularity shell https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpm
 # 2) run
 Convert Dicom data to BIDS:
 ```
-cd REPLACE_WITH_YOUR_DATA_DIRECTORY
 python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
 python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
 ```
@@ -31,7 +30,7 @@ Run QSM pipeline:
 ```
 python3 /opt/QSMxT/run_2_nipype_qsm.py 01_bids 02_qsm_output
 ```
-Segment data (T1 and GRE) (UNDER CONSTRUCTION):
+Segment data (T1 and GRE):
 ```
 python3 /opt/QSMxT/run_3_nipype_segment.py 01_bids 03_segmentation
 ```
