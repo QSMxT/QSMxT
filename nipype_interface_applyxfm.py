@@ -26,8 +26,10 @@ class NiiApplyMincXfmInputSpec(CommandLineInputSpec):
         name_template='%s_transformed.nii',
         position=3
     )
-    nearest = traits.Str(
-        "--nearest",
+    dtype = traits.Str(
+        '--nearest',
+        argstr='%s',
+        usedefault=True,
         position=4
     )
 
