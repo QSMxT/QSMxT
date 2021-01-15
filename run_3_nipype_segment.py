@@ -199,6 +199,7 @@ if __name__ == "__main__":
         subject_list = args.subjects
 
     if not args.work_dir: args.work_dir = args.out_dir
+    os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
 
     num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*qsm*magnitude*.nii*")))
     multi_echo = num_echoes > 1
