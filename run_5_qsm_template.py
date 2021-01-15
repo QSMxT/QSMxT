@@ -105,26 +105,21 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
 
     parser.add_argument(
-        "qsm_dir",
+        "qsm_output_dir",
         type=str,
         help="qsm output directory"
     )
 
     parser.add_argument(
-        "voliso_dir",
+        "magnitude_template_output_dir",
         type=str,
-        help='voliso_dir'
+        help='magnitude_template_output_dir'
     )
 
     parser.add_argument(
-        "xfm_dir",
+        "qsm_template_output_dir",
         type=str,
-        help='xfm_dir'
-    )
-
-    parser.add_argument(
-        "out_dir",
-        type=str
+        help='qsm_template_output_dir'
     )
 
     parser.add_argument(
@@ -141,16 +136,13 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not args.work_dir: args.work_dir = os.path.join(args.out_dir, "work")
+    if not args.work_dir: args.work_dir = os.path.join(args.qsm_template_output_dir, "work")
+    os.makedirs(os.path.abspath(args.qsm_template_output_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
-    os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     wf = create_workflow(
-        qsm_dir=args.qsm_dir,
-        out_dir=args.out_dir,
-        voliso_dir=args.voliso_dir,
-        xfm_dir=args.xfm_dir,
-        work_dir=args.work_dir,
+        qsm_dir=args.qsm_output_dir,
+        out_dir=args.qsm_template_output_dir,
         templates=templates
     )
 
