@@ -20,7 +20,7 @@ def create_segmentation_workflow(
     templates
 ):
 
-    wf = Workflow(name='segmentation', base_dir=work_dir)
+    wf = Workflow(name='workflow_segmentation', base_dir=work_dir)
 
     # use infosource to iterate workflow across subject list
     n_infosource = Node(
@@ -173,8 +173,7 @@ if __name__ == "__main__":
     else:
         subject_list = args.subjects
 
-    if not args.work_dir:
-        args.work_dir = os.path.join(args.out_dir, "work")
+    if not args.work_dir: args.work_dir = args.out_dir
 
     num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*qsm*magnitude*.nii*")))
     multi_echo = num_echoes > 1

@@ -192,7 +192,7 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
     # args.run
     # args.out_dir
     # <editor-fold desc="Setup and datasource">
-    workflow = pe.Workflow(name='volgenmodel', base_dir=work_dir)
+    workflow = pe.Workflow(name='workflow_magnitude_template', base_dir=work_dir)
 
     # infiles = sorted(glob.glob(os.path.join(args.bids_dir, args.input_pattern)))
     # templates = {'outfiles': 'sub-{subject}/ses-{ses_name}/anat/*nii2mnc.mnc'}
@@ -940,8 +940,7 @@ if __name__ == '__main__':
     num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(cli_args.bids_dir, "sub") + "*")[0], 'anat/') + "*qsm*E*magnitude*.nii*")))
     if num_echoes == 0: templates['mag'] = templates['mag'].replace('E01*', '')
 
-    if not cli_args.work_dir:
-        cli_args.work_dir = os.path.join(cli_args.out_dir, "work")
+    if not cli_args.work_dir: cli_args.work_dir = cli_args.out_dir
 
     os.makedirs(os.path.abspath(cli_args.out_dir), exist_ok=True)
     os.makedirs(os.path.abspath(cli_args.work_dir), exist_ok=True)
