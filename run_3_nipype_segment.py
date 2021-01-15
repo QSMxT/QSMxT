@@ -119,7 +119,7 @@ def create_segmentation_workflow(
     # datasink
     n_datasink = Node(
         interface=DataSink(
-            base_directory=bids_dir
+            base_directory=out_dir
             #container=out_dir
         ),
         name='datasink'
