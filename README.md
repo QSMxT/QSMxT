@@ -43,3 +43,35 @@ Build QSM group template (UNDER CONSTRUCTION):
 ```
 python3 /opt/QSMxT/run_5_qsm_template.py qsm_output gre_template_output qsm_template_output
 ```
+
+# 3) What if I get illegal instruction error?
+Then the processor is not compatible and tgv_qsm needs to be compiled on the host and then used inside the image instead of the precompiled version:
+
+on the host run and install in directory (e.g. /data/SOFTWARE):
+```
+wget https://repo.anaconda.com/miniconda/Miniconda2-4.6.14-Linux-x86_64.sh
+bash Miniconda2-4.6.14-Linux-x86_64.sh 
+conda install -c anaconda cython==0.25.2
+conda install numpy
+conda install pyparsing
+pip install scipy==0.17.1 nibabel==2.1.0
+wget http://www.neuroimaging.at/media/qsm/TGVQSM-plus.zip
+unzip TGVQSM-plus.zip
+cd TGVQSM-master-011045626121baa8bfdd6633929974c732ae35e3
+python setup.py install
+```
+
+Start a singularity shell with the software diretory bound:
+```
+singularity shell -B /data:/data qsmxt_1.0.0_20210113.simg
+```
+
+and overwrite the PATH:
+```
+export PATH=/data/SOFTWARE/deepQSM/tgv_qsm/miniconda2/bin:$PATH
+```
+
+check (it should use the tgv_qsm binary outside the container, not in /miniconda2/...):
+```
+which tgv_qsm
+```
