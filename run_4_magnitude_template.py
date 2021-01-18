@@ -15,9 +15,12 @@ import nipype.pipeline.engine as pe
 import nipype.interfaces.io as nio
 import nipype.interfaces.utility as utils
 import nipype_interface_nii2mnc as nii2mnc
+import nipype_interface_mnc2nii as mnc2nii
+import nipype_interface_niiremoveheader as niiremoveheader
 from copy import deepcopy
 import argparse
 import sys
+import shutil
 
 from nipype.interfaces.minc import  \
         Volcentre,      \
@@ -189,7 +192,7 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
     # args.run
     # args.out_dir
     # <editor-fold desc="Setup and datasource">
-    workflow = pe.Workflow(name='volgenmodel', base_dir=work_dir)
+    workflow = pe.Workflow(name='workflow_magnitude_template', base_dir=work_dir)
 
     # infiles = sorted(glob.glob(os.path.join(args.bids_dir, args.input_pattern)))
     # templates = {'outfiles': 'sub-{subject}/ses-{ses_name}/anat/*nii2mnc.mnc'}
@@ -264,13 +267,22 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
     # </editor-fold>
 
     # <editor-fold desc="do pre-processing nad normalise">
-    mn_nii2mnc = pe.MapNode(
-        interface=nii2mnc.Nii2MncInterface(),
-        name='nii2mnc',
+    mn_niiremoveheader = pe.MapNode(
+        interface=niiremoveheader.NiiRemoveHeaderInterface(),
+        name='subject_removeheader',
         iterfield=['in_file']
     )
     workflow.connect([
-        (datasource, mn_nii2mnc, [('mag', 'in_file')])
+        (datasource, mn_niiremoveheader, [('mag', 'in_file')])
+    ])
+
+    mn_nii2mnc = pe.MapNode(
+        interface=nii2mnc.Nii2MncInterface(),
+        name='subject_nii2mnc',
+        iterfield=['in_file']
+    )
+    workflow.connect([
+        (mn_niiremoveheader, mn_nii2mnc, [('out_file', 'in_file')])
     ])
 
     preprocess_volcentre = pe.MapNode(
@@ -681,7 +693,11 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
 
         workflow.connect(merge_xfmavg_and_step1, 'out', xfmconcat, 'input_grid_files')
 
-        workflow.connect(xfmconcat, 'output_file', datasink, 'transformation_' + snum_txt)
+        # The final set of transformations is output
+        if snum == len(fit_stages) - 1:
+            workflow.connect(xfmconcat, 'output_grids', datasink, 'transformation_grids')
+            workflow.connect(xfmconcat, 'output_file', datasink, 'transformations')
+            
         # </editor-fold>
 
         # <editor-fold desc="Resample. The first stage (snum == 0) does not involve grid files.">
@@ -812,7 +828,13 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
 
         # <editor-fold desc="if on last step, copy model to $opt{'output_model'}">
         if snum == len(fit_stages) - 1:
-            workflow.connect(stage_model, 'output_file', datasink, 'model')
+            stage_model_mnc2nii = pe.MapNode(
+                interface=mnc2nii.Mnc2NiiInterface(),
+                name='model_mnc2nii',
+                iterfield=['in_file']
+            )
+            workflow.connect(stage_model, 'output_file', stage_model_mnc2nii, 'in_file')
+            workflow.connect(stage_model_mnc2nii, 'out_file', datasink, 'template')
 
             # create and output standard deviation file if requested
             if opt['output_stdev'] is not None:
@@ -891,7 +913,7 @@ if __name__ == '__main__':
     options['config_file'] = None
     options['fit_stages'] = cli_args.fit_stages
     options['output_model'] = 'model.mnc'
-    options['output_stdev'] = 'stdev.mnc'
+    options['output_stdev'] = None #'stdev.mnc'
     # opt['workdir'] = '/scratch/volgenmodel-fast-example/work'
     options['verbose'] = 1
     options['clobber'] = 1
@@ -918,11 +940,12 @@ if __name__ == '__main__':
     num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(cli_args.bids_dir, "sub") + "*")[0], 'anat/') + "*qsm*E*magnitude*.nii*")))
     if num_echoes == 0: templates['mag'] = templates['mag'].replace('E01*', '')
 
-    if not cli_args.work_dir:
-        cli_args.work_dir = os.path.join(cli_args.out_dir, "work")
+    if not cli_args.work_dir: cli_args.work_dir = cli_args.out_dir
 
     os.makedirs(os.path.abspath(cli_args.out_dir), exist_ok=True)
     os.makedirs(os.path.abspath(cli_args.work_dir), exist_ok=True)
+
+    os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
 
     wf = make_workflow(
         bids_dir=os.path.abspath(cli_args.bids_dir),
@@ -952,5 +975,12 @@ if __name__ == '__main__':
                 'memory_gb': 80,
             }
         )
-        
+
+    # put xfms and grid files together
+    grid_files = glob.glob(os.path.join(os.path.abspath(cli_args.out_dir), "transformation_grids/*/*.mnc"))
+    for f in grid_files:
+        parts = f.split("/")
+        os.rename(f, os.path.join(os.path.abspath(cli_args.out_dir), "transformations", parts[-2], parts[-1]))
+    shutil.rmtree(os.path.join(os.path.abspath(cli_args.out_dir), "transformation_grids"))
+    
     print('done')

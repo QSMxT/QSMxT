@@ -1,19 +1,25 @@
-from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec
+from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec, Str
 from nipype.utils.filemanip import fname_presuffix, split_filename
 import os
 
 class Mnc2NiiInputSpec(CommandLineInputSpec):
+    dtype = traits.Str(
+        'float',
+        argstr='-%s',
+        usedefault=True,
+        position=0
+    )
     in_file = File(
         exists=True,
         mandatory=True,
         argstr="%s",
-        position=0
+        position=1
     )
     out_file = File(
         argstr="%s",
         name_source=['in_file'],
-        name_template='%s_mnc2nii.mnc',
-        position=1
+        name_template='%s_mnc2nii.nii',
+        position=2
     )
 
 
@@ -33,7 +39,7 @@ class Mnc2NiiInterface(CommandLine):
 
         outputs['out_file'] = fname_presuffix(
             fname=fname + "_mnc2nii",
-            suffix=".mnc",
+            suffix=".nii",
             newpath=os.getcwd()
         )
 
