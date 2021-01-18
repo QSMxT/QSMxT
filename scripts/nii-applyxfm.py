@@ -45,19 +45,15 @@ if __name__ == "__main__":
     parser.add_argument(
         '--nearest',
         dest='nearest',
-        action='store_const',
-        help='use nearest neighbour sampling',
-        const=True,
-        default=False
+        action='store_true',
+        help='use nearest neighbour sampling'
     )
 
     parser.add_argument(
         '--inverse',
         dest='inverse',
-        action='store_const',
-        help='invert transformation',
-        const=True,
-        default=False
+        action='store_true',
+        help='invert transformation'
     )
 
     args = parser.parse_args()

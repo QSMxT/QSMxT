@@ -32,7 +32,7 @@ def create_qsm_workflow(
 ):
 
     # create initial workflow
-    wf = Workflow(name='qsm', base_dir=work_dir)
+    wf = Workflow(name='workflow_qsm', base_dir=work_dir)
 
     # use infosource to iterate workflow across subject list
     n_infosource = Node(
@@ -282,7 +282,7 @@ def create_qsm_workflow(
 
     wf.connect([
         (n_qsm_average, n_datasink, [('out_file', 'qsm_average')]),
-        (mn_qsm, n_datasink, [('out_file', 'qsm')]),
+        (mn_qsm, n_datasink, [('out_file', 'qsms')]),
         (mn_mask, n_datasink, [('mask_file', 'masks')])
     ])
 
@@ -303,7 +303,7 @@ def create_qsm_workflow(
             (mn_mask, mn_mask_filled, [('mask_file', 'in_file')])
         ])
         wf.connect([
-            (mn_mask_filled, n_datasink, [('out_file', 'mask_filled')]),
+            (mn_mask_filled, n_datasink, [('out_file', 'masks_filled')]),
         ])
 
         mn_qsm_filled = MapNode(
@@ -333,7 +333,7 @@ def create_qsm_workflow(
             (mn_phase_scaled, mn_qsm_filled, [('out_file', 'phase_file')]),
         ])
         wf.connect([
-            (mn_qsm_filled, n_datasink, [('out_file', 'qsm_filled')]),
+            (mn_qsm_filled, n_datasink, [('out_file', 'qsms_filled')]),
         ])
 
         # qsm averaging
@@ -372,7 +372,7 @@ def create_qsm_workflow(
         ])
 
         wf.connect([
-            (mn_qsm_composite, n_datasink, [('out_file', 'qsm_composite')]),
+            (mn_qsm_composite, n_datasink, [('out_file', 'qsms_composite')]),
             (n_qsm_composite_average, n_datasink, [('out_file', 'qsm_final')]),
         ])
 
@@ -460,8 +460,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    if not args.work_dir:
-        args.work_dir = os.path.join(args.out_dir, "work")
+    if not args.work_dir: args.work_dir = args.out_dir
 
     # environment variables
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
