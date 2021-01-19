@@ -6,6 +6,7 @@ from nipype.interfaces.freesurfer.preprocess import ReconAll, MRIConvert
 import nipype_interface_bestlinreg as bestlinreg
 import nipype_interface_applyxfm as applyxfm
 
+import fnmatch
 import glob
 import os
 import os.path
@@ -158,7 +159,25 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--subjects',
+        '--subject_folder_pattern',
+        default='sub*',
+        help='pattern to match subject folders in bids_dir'
+    )
+
+    parser.add_argument(
+        '--input_t1_pattern',
+        default='anat/*t1*nii*',
+        help='pattern to match input t1 files within subject folders in bids_dir'
+    )
+
+    parser.add_argument(
+        '--input_magnitude_pattern',
+        default='anat/*qsm*E01*magnitude*nii*',
+        help='pattern to match input magnitude files (in the qsm space) within subject folders in bids_dir'
+    )
+
+    parser.add_argument(
+        '--subjects', '-s',
         default=None,
         const=None,
         nargs='*',
@@ -193,20 +212,29 @@ if __name__ == "__main__":
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
+    # subject folders
     if not args.subjects:
-        subject_list = [subj for subj in os.listdir(args.bids_dir) if 'sub' in subj]
+        subject_list = [subj for subj in os.listdir(args.bids_dir) if fnmatch.fnmatch(subj, args.subject_folder_pattern) and os.path.isdir(os.path.join(args.bids_dir, subj))]
     else:
         subject_list = args.subjects
 
     if not args.work_dir: args.work_dir = args.out_dir
     os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
 
-    num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*qsm*magnitude*.nii*")))
-    multi_echo = num_echoes > 1
+    # subject_folder_pattern, input_magnitude_pattern
+    num_echoes = len(glob.glob(os.path.join(args.bids_dir, subject_list[0], args.input_magnitude_pattern)))
+    if num_echoes == 0: args.input_magnitude_pattern = args.input_magnitude_pattern.replace("E01", "")
+
+    if not glob.glob(os.path.join(args.bids_dir, subject_list[0], args.input_t1_pattern)):
+        print(f"Error: No T1-weighted images found in {args.bids_dir} matching pattern {args.subject_folder_pattern}/{args.input_t1_pattern}")
+        exit()
+    if not glob.glob(os.path.join(args.bids_dir, subject_list[0], args.input_magnitude_pattern)):
+        print(f"Error: No magnitude images found in {args.bids_dir} matching pattern {args.subject_folder_pattern}/{args.input_magnitude_pattern}")
+        exit()
 
     templates={
-        'T1': '{subject_id_p}/anat/*t1*.nii*',
-        'mag': '{subject_id_p}/anat/' + ('*qsm*magnitude*.nii*' if not multi_echo else '*qsm*E01*magnitude*.nii*')
+        'T1': os.path.join('{subject_id_p}', args.input_t1_pattern),
+        'mag': os.path.join('{subject_id_p}', args.input_magnitude_pattern)
     }
 
     wf = create_segmentation_workflow(

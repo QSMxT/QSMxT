@@ -412,13 +412,13 @@ if __name__ == "__main__":
     parser.add_argument(
         '--input_magnitude_pattern',
         default='anat/*qsm*magnitude*.nii*',
-        help='pattern to match input magnitude files within bids_dir'
+        help='pattern to match input magnitude files within subject folders in bids_dir'
     )
 
     parser.add_argument(
         '--input_phase_pattern',
         default='anat/*qsm*phase*.nii*',
-        help='pattern to match input phase files within bids_dir'
+        help='pattern to match input phase files within subject folders in bids_dir'
     )
 
     parser.add_argument(
@@ -509,9 +509,9 @@ if __name__ == "__main__":
     homogeneity_filter = 'bet' in args.masking
 
     bids_templates = {
-        'mag': '{subject_id_p}/' + args.input_magnitude_pattern,
-        'phs': '{subject_id_p}/' + args.input_phase_pattern,
-        'params': '{subject_id_p}/' + args.input_phase_pattern.replace("nii.gz", "nii").replace("nii", "json"),
+        'mag': os.path.join('{subject_id_p}', args.input_magnitude_pattern),
+        'phs': os.path.join('{subject_id_p}', args.input_phase_pattern),
+        'params': os.path.join('{subject_id_p}', args.input_phase_pattern.replace("nii.gz", "nii").replace("nii", "json"))
     }
 
     num_echoes = len(glob.glob(os.path.join(args.bids_dir, subject_list[0], args.input_phase_pattern)))
