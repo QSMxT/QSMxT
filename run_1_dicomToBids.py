@@ -11,17 +11,11 @@ if __name__ == "__main__":
 
     parser.add_argument(
         'dicom',
-        default='dicom',
-        const='dicom',
-        nargs='?',
         help='dicom data folder'
     )
 
     parser.add_argument(
         'bids',
-        default='bids',
-        const='bids',
-        nargs='?',
         help='bids data folder'
     )
 
