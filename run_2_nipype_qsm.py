@@ -3,6 +3,7 @@
 import os.path
 import os
 import glob
+import fnmatch
 from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge, UnaryMaths
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
@@ -403,7 +404,25 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--subjects',
+        '--subject_folder_pattern',
+        default='sub*',
+        help='pattern to match subject folders in bids_dir'
+    )
+
+    parser.add_argument(
+        '--input_magnitude_pattern',
+        default='anat/*qsm*magnitude*.nii*',
+        help='pattern to match input magnitude files within bids_dir'
+    )
+
+    parser.add_argument(
+        '--input_phase_pattern',
+        default='anat/*qsm*phase*.nii*',
+        help='pattern to match input phase files within bids_dir'
+    )
+
+    parser.add_argument(
+        '--subjects', '-s',
         default=None,
         const=None,
         nargs='*',
@@ -411,7 +430,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--masking',
+        '--masking', '-m',
         default='magnitude-based',
         const='magnitude-based',
         nargs='?',
@@ -420,14 +439,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        "--hf",
+        '--homogeneity_filter', '-hf',
         dest='homogeneity_filter',
         action='store_true',
         help='disables magnitude homogeneity filter for bet; enables homogeneity filter for other masking strategies'
     )
 
     parser.add_argument(
-        "--threshold",
+        '--threshold', '-t',
         type=int,
         default=30,
         help='robust threshold used for magnitude-based and phase-based masking'
@@ -440,7 +459,7 @@ if __name__ == "__main__":
         return ivalue
 
     parser.add_argument(
-        "--extra_fill_strength",
+        '--extra_fill_strength',
         type=positive_int,
         default=0,
         help='add strength to hole-filling for phase-based and magnitude-based masking'
@@ -480,8 +499,9 @@ if __name__ == "__main__":
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
+    # subject folders
     if not args.subjects:
-        subject_list = [subj for subj in os.listdir(args.bids_dir) if 'sub' in subj]
+        subject_list = [subj for subj in os.listdir(args.bids_dir) if fnmatch.fnmatch(subj, args.subject_folder_pattern) and os.path.isdir(os.path.join(args.bids_dir, subj))]
     else:
         subject_list = args.subjects
 
@@ -489,11 +509,12 @@ if __name__ == "__main__":
     homogeneity_filter = 'bet' in args.masking
 
     bids_templates = {
-        'mag': '{subject_id_p}/anat/*qsm*magnitude*.nii.gz',
-        'phs': '{subject_id_p}/anat/*qsm*phase*.nii.gz',
-        'params': '{subject_id_p}/anat/*qsm*phase*.json',
+        'mag': '{subject_id_p}/' + args.input_magnitude_pattern,
+        'phs': '{subject_id_p}/' + args.input_phase_pattern,
+        'params': '{subject_id_p}/' + args.input_phase_pattern.replace("nii.gz", "nii").replace("nii", "json"),
     }
-    num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, "sub") + "*")[0], 'anat/') + "*qsm*magnitude*.nii.gz")))
+
+    num_echoes = len(glob.glob(os.path.join(args.bids_dir, subject_list[0], args.input_phase_pattern)))
     if 'bet-firstecho' in args.masking and num_echoes > 1:
         bids_templates['mag'] = bids_templates['mag'].replace('qsm*', 'qsm*E01*')
     if 'bet-lastecho' in args.masking and num_echoes > 1:
