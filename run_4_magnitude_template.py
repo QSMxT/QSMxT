@@ -18,6 +18,7 @@ import nipype_interface_nii2mnc as nii2mnc
 import nipype_interface_mnc2nii as mnc2nii
 import nipype_interface_niiremoveheader as niiremoveheader
 from copy import deepcopy
+import fnmatch
 import argparse
 import sys
 import shutil
@@ -872,6 +873,10 @@ if __name__ == '__main__':
                         help='The output directory (for final models)')
     parser.add_argument('--work_dir', type=str, default=None,
                         help='The work directory (for temporary workflow files); defaults to \'work\' within \'out_dir\'')
+    parser.add_argument('--subject_folder_pattern', default='sub*',
+                        help='pattern to match subject folders in bids_dir')
+    parser.add_argument('--input_magnitude_pattern', default='anat/*qsm*E01*magnitude*nii*',
+                        help='pattern to match input magnitude files (in the qsm space) within subject folders in bids_dir')
     parser.add_argument('--pbs', action='store_true', help='use PBS graph')
     parser.add_argument('--symmetric', type=bool, default=1, choices=[0, 1],
                         help='Symmetric averaging on? Will flip template at every level and repeat fit')
@@ -889,7 +894,7 @@ if __name__ == '__main__':
                         help='zero padding around image')
     parser.add_argument('--iso', type=bool, default=1, choices=[0, 1],
                         help='resample image to be isometric')
-    parser.add_argument('--fit_stages', type=str, default='lin,0,1,2,3,4,5,5,6,6,7,7,8,8,9,9,10,10,11,11',
+    parser.add_argument('--fit_stages', type=str, default='lin,0,1,2,3,4,5,5,6,6'),#,7,7,8,8,9,9,10,10,11,11',
                         help='fit stages to be run')
 
     cli_args, unparsed = parser.parse_known_args()
@@ -932,20 +937,26 @@ if __name__ == '__main__':
                      {str('step'): 1, str('blur_fwhm'): 0.5, str('iterations'): 5},         # 8
                      {str('step'): 0.9, str('blur_fwhm'): 0.45, str('iterations'): 5},      # 9
                      {str('step'): 0.8, str('blur_fwhm'): 0.4, str('iterations'): 5},       # 10
-                     {str('step'): 0.7, str('blur_fwhm'): 0.35, str('iterations'): 5}]      # 11
-
-    templates = {
-        'mag': '*/anat/*qsm*E01*magnitude*.nii*',
-    }
-    num_echoes = len(sorted(glob.glob(os.path.join(glob.glob(os.path.join(cli_args.bids_dir, "sub") + "*")[0], 'anat/') + "*qsm*E*magnitude*.nii*")))
-    if num_echoes == 0: templates['mag'] = templates['mag'].replace('E01*', '')
-
+                     {str('step'): 0.7, str('blur_fwhm'): 0.35, str('iterations'): 5}]  # 11
+                     
     if not cli_args.work_dir: cli_args.work_dir = cli_args.out_dir
+
+    num_echoes = len(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, args.subject_folder_pattern))[0], args.input_magnitude_pattern)))
+    if num_echoes == 0: args.input_magnitude_pattern = args.input_magnitude_pattern.replace("E01", "").replace("**", "*")
+    num_echoes = len(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, args.subject_folder_pattern))[0], args.input_magnitude_pattern)))
+
+    if num_echoes == 0:
+        print(f"Error: No magnitude images found in {args.bids_dir} matching pattern {args.subject_folder_pattern}/{args.input_magnitude_pattern}")
+        exit()
 
     os.makedirs(os.path.abspath(cli_args.out_dir), exist_ok=True)
     os.makedirs(os.path.abspath(cli_args.work_dir), exist_ok=True)
 
     os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
+
+    templates = {
+        'mag': os.path.join(args.subject_folder_pattern, args.input_magnitude_pattern),
+    }
 
     wf = make_workflow(
         bids_dir=os.path.abspath(cli_args.bids_dir),
