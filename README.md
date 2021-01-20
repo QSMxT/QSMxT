@@ -25,33 +25,36 @@ https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/q
 ```
 
 ### Run image
-```
+```bash
 singularity shell qsmxt_1.0.0_20210119.simg
+
+#alternatively mount additional data directories:
+singularity shell -B /data:/data qsmxt_1.0.0_20210119.simg
 ```
 
 
 # 2) run
 Convert Dicom data to BIDS:
-```
+```bash
 python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
 python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
 ```
 Run QSM pipeline:
-```
+```bash
 python3 /opt/QSMxT/run_2_nipype_qsm.py 01_bids 02_qsm_output
 
 #alternative when starting from custom bids structure:
 python3 /opt/QSMxT/run_2_nipype_qsm.py 01_bids 02_qsm_output --input_magnitude_pattern swi/*mag*.nii* --input_phase_pattern swi/*phase*.nii*
 ```
 Segment data (T1 and GRE):
-```
+```bash
 python3 /opt/QSMxT/run_3_nipype_segment.py 01_bids 03_segmentation
 ```
 Build magnitude group template:
-```
+```bash
 python3 /opt/QSMxT/run_4_magnitude_template.py 01_bids 04_magnitude_template
 ```
 Build QSM group template:
-```
+```bash
 python3 /opt/QSMxT/run_5_qsm_template.py 02_qsm_output 04_magnitude_template 05_qsm_template
 ```
