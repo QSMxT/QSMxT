@@ -548,7 +548,7 @@ if __name__ == "__main__":
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                f'qsub_args': '-A {args.qsub_account_string} -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'
+                'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'
             }
         )
     else:
