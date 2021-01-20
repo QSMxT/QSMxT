@@ -996,11 +996,4 @@ if __name__ == '__main__':
             }
         )
 
-    # put xfms and grid files together
-    grid_files = glob.glob(os.path.join(os.path.abspath(cli_args.out_dir), "transformation_grids/*/*.mnc"))
-    for f in grid_files:
-        parts = f.split("/")
-        os.rename(f, os.path.join(os.path.abspath(cli_args.out_dir), "transformations", parts[-2], parts[-1]))
-    shutil.rmtree(os.path.join(os.path.abspath(cli_args.out_dir), "transformation_grids"))
-    
     print('done')
