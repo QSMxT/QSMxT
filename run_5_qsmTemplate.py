@@ -134,20 +134,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="QSMxT qsmTemplate: QSM template builder. Produces a group template based on QSM results from " +
                     "multiple subjects. Requires an initial magnitude group template generated using " +
-                    "./run_4_magnitude_template.py.",
+                    "./run_4_magnitudeTemplate.py.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
         "qsm_output_dir",
         type=str,
-        help="the qsm output directory produced by ./run_2_nipype_qsm.py"
+        help="the qsm output directory produced by ./run_2_qsm.py"
     )
 
     parser.add_argument(
         "magnitude_template_output_dir",
         type=str,
-        help='the magnitude template output directory produced by ./run_4_magnitude_template.py'
+        help='the magnitude template output directory produced by ./run_4_magnitudeTemplate.py'
     )
 
     parser.add_argument(
