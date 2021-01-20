@@ -15,9 +15,9 @@ import subprocess
 import nipype.pipeline.engine as pe
 import nipype.interfaces.io as nio
 import nipype.interfaces.utility as utils
-import nipype_interface_nii2mnc as nii2mnc
-import nipype_interface_mnc2nii as mnc2nii
-import nipype_interface_niiremoveheader as niiremoveheader
+from interfaces import nipype_interface_nii2mnc as nii2mnc
+from interfaces import nipype_interface_mnc2nii as mnc2nii
+from interfaces import nipype_interface_niiremoveheader as niiremoveheader
 from copy import deepcopy
 import fnmatch
 import argparse

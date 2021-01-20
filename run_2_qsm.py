@@ -9,12 +9,12 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 
-import nipype_interface_tgv_qsm as tgv
-import nipype_interface_phaseweights as phaseweights
-import nipype_interface_bestlinreg as bestlinreg
-import nipype_interface_makehomogeneous as makehomogeneous
-import nipype_interface_nonzeroaverage as nonzeroaverage
-import nipype_interface_composite as composite
+from interfaces import nipype_interface_tgv_qsm as tgv
+from interfaces import nipype_interface_phaseweights as phaseweights
+from interfaces import nipype_interface_bestlinreg as bestlinreg
+from interfaces import nipype_interface_makehomogeneous as makehomogeneous
+from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
+from interfaces import nipype_interface_composite as composite
 
 import argparse
 
@@ -535,7 +535,7 @@ if __name__ == "__main__":
         threshold=args.threshold,
         extra_fill_strength=args.extra_fill_strength,
         homogeneity_filter=homogeneity_filter != args.homogeneity_filter,
-        qsm_threads=16 if args.pbs else 1,
+        qsm_threads=16 if args.qsub_account_string else 1,
         qsub_account_string=args.qsub_account_string
     )
 

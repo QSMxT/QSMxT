@@ -3,8 +3,9 @@ from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink, DataGrabber
 from nipype.interfaces.freesurfer.preprocess import ReconAll, MRIConvert
-import nipype_interface_bestlinreg as bestlinreg
-import nipype_interface_applyxfm as applyxfm
+
+from interfaces import nipype_interface_bestlinreg as bestlinreg
+from interfaces import nipype_interface_applyxfm as applyxfm
 
 import fnmatch
 import glob
