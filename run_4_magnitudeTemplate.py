@@ -982,7 +982,7 @@ if __name__ == '__main__':
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': f'-A {qsub_account_string} -l nodes=1:ppn=1,mem=1gb,vmem=1gb,walltime=00:10:00',
+                'qsub_args': f'-A {cli_args.qsub_account_string} -l nodes=1:ppn=1,mem=1gb,vmem=1gb,walltime=00:10:00',
                 #'max_jobs': '10',
                 'dont_resubmit_completed_jobs': True
             }
@@ -996,11 +996,4 @@ if __name__ == '__main__':
             }
         )
 
-    # put xfms and grid files together
-    grid_files = glob.glob(os.path.join(os.path.abspath(cli_args.out_dir), "transformation_grids/*/*.mnc"))
-    for f in grid_files:
-        parts = f.split("/")
-        os.rename(f, os.path.join(os.path.abspath(cli_args.out_dir), "transformations", parts[-2], parts[-1]))
-    shutil.rmtree(os.path.join(os.path.abspath(cli_args.out_dir), "transformation_grids"))
-    
     print('done')
