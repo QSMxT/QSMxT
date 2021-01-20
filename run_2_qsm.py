@@ -26,10 +26,11 @@ def create_qsm_workflow(
     out_dir,
     bids_templates,
     masking,
-    threshold=30,
-    extra_fill_strength=0,
-    homogeneity_filter=True,
-    qsm_threads=1
+    threshold,
+    extra_fill_strength,
+    homogeneity_filter,
+    qsm_threads,
+    qsub_account_string,
 ):
 
     # create initial workflow
@@ -253,7 +254,7 @@ def create_qsm_workflow(
 
     # args for PBS
     mn_qsm.plugin_args = {
-        'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
+        'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
         'overwrite': True
     }
 
@@ -323,7 +324,7 @@ def create_qsm_workflow(
 
         # args for PBS
         mn_qsm_filled.plugin_args = {
-            'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
+            'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
             'overwrite': True
         }
 
@@ -382,74 +383,73 @@ def create_qsm_workflow(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QSMxT Processing Pipeline",
+        description="QSMxT qsm: QSM Reconstruction Pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
         'bids_dir',
-        help='bids directory'
+        help='input data folder that can be created using run_1_dicomToBids.py; can also use a ' +
+             'custom folder containing subject folders and NIFTI files or a BIDS folder with a ' +
+             'different structure, as long as --subject_folder_pattern, --input_magnitude_pattern ' +
+             'and --input_phase_pattern are also specified'
     )
 
     parser.add_argument(
         'out_dir',
-        help='output directory'
+        help='output QSM folder; will be created if it does not exist'
     )
 
     parser.add_argument(
         '--work_dir',
         default=None,
-        const=None,
-        help='work directory; defaults to \'work\' within \'out_dir\''
+        help='nipype working directory; defaults to \'work\' within \'out_dir\''
     )
 
     parser.add_argument(
         '--subject_folder_pattern',
         default='sub*',
-        help='pattern to match subject folders in bids_dir'
+        help='pattern used to match subject folders in bids_dir'
     )
 
     parser.add_argument(
         '--input_magnitude_pattern',
         default='anat/*qsm*magnitude*.nii*',
-        help='pattern to match input magnitude files within subject folders in bids_dir'
+        help='pattern to match magnitude files for qsm within subject folders'
     )
 
     parser.add_argument(
         '--input_phase_pattern',
         default='anat/*qsm*phase*.nii*',
-        help='pattern to match input phase files within subject folders in bids_dir'
+        help='pattern to match phase files for qsm within subject folders'
     )
 
     parser.add_argument(
         '--subjects', '-s',
         default=None,
-        const=None,
         nargs='*',
-        help='list of subjects as seen in bids_dir'
+        help='list of subject folders to process; by default all subjects are processed'
     )
 
     parser.add_argument(
         '--masking', '-m',
         default='magnitude-based',
-        const='magnitude-based',
-        nargs='?',
         choices=['bet-multiecho', 'bet-firstecho', 'bet-lastecho', 'phase-based', 'magnitude-based'],
-        help='masking strategy'
+        help='masking strategy; magnitude-based and phase-based masking use a two-pass QSM inversion for artefact reduction'
     )
 
     parser.add_argument(
         '--homogeneity_filter', '-hf',
-        dest='homogeneity_filter',
         action='store_true',
-        help='disables magnitude homogeneity filter for bet; enables homogeneity filter for other masking strategies'
+        help='disables the magnitude homogeneity filter for bet masking strategies; ' +
+             'enables it for magnitude-based masking'
     )
 
     parser.add_argument(
         '--threshold', '-t',
         type=int,
         default=30,
-        help='robust threshold used for magnitude-based and phase-based masking'
+        help='threshold percentage used for magnitude-based and phase-based masking'
     )
 
     def positive_int(value):
@@ -462,19 +462,22 @@ if __name__ == "__main__":
         '--extra_fill_strength',
         type=positive_int,
         default=0,
-        help='add strength to hole-filling for phase-based and magnitude-based masking'
+        help='adds strength to hole-filling for phase-based and magnitude-based masking; ' +
+             'each integer increment adds to the masking procedure one further dilation step ' +
+             'prior to hole-filling, followed by an equal number of erosion steps'
     )
 
     parser.add_argument(
         '--pbs',
-        action='store_true',
-        help='use PBS graph'
+        default=None,
+        dest='qsub_account_string',
+        help='run the pipeline via PBS and use the argument as the QSUB account string'
     )
 
     parser.add_argument(
         '--debug',
         action='store_true',
-        help='debug mode'
+        help='enables some nipype settings for debugging'
     )
 
     args = parser.parse_args()
@@ -532,7 +535,8 @@ if __name__ == "__main__":
         threshold=args.threshold,
         extra_fill_strength=args.extra_fill_strength,
         homogeneity_filter=homogeneity_filter != args.homogeneity_filter,
-        qsm_threads=16 if args.pbs else 1
+        qsm_threads=16 if args.pbs else 1,
+        qsub_account_string=args.qsub_account_string
     )
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
@@ -540,11 +544,11 @@ if __name__ == "__main__":
 
     # run workflow
     wf.write_graph(graph2use='flat', format='png', simple_form=False)
-    if args.pbs:
+    if args.qsub_account_string:
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': '-A UQ-CAI -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'
+                f'qsub_args': '-A {args.qsub_account_string} -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'
             }
         )
     else:
@@ -555,4 +559,4 @@ if __name__ == "__main__":
             }
         )
 
-    #wf.run(plugin='PBS', plugin_args={'-A UQ-CAI -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})
+    #wf.run(plugin='PBS', plugin_args={f'-A {args.qsub_account_string} -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})

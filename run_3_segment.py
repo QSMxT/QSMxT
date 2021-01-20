@@ -19,7 +19,8 @@ def create_segmentation_workflow(
     work_dir,
     out_dir,
     reconall_cpus,
-    templates
+    templates,
+    qsub_account_string
 ):
 
     wf = Workflow(name='workflow_segmentation', base_dir=work_dir)
@@ -61,7 +62,7 @@ def create_segmentation_workflow(
         iterfield=['T1_files', 'subject_id']
     )
     mn_reconall.plugin_args = {
-        'qsub_args': f'-A UQ-CAI -q Short -l nodes=1:ppn={reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
+        'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn={reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
         'overwrite': True
     }
     wf.connect([
@@ -137,25 +138,28 @@ def create_segmentation_workflow(
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QSM segmentation pipeline",
+        description="QSMxT segment: QSM and T1 segmentation pipeline. Segments T1-weighted images and registers " +
+                    "these to the QSM space to produce segmentations for both T1 and QSM.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
         'bids_dir',
-        help='bids directory'
+        help='input data folder that can be created using run_1_dicomToBids.py; can also use a ' +
+             'custom folder containing subject folders and NIFTI files or a BIDS folder with a ' +
+             'different structure, as long as --subject_folder_pattern, --input_t1_pattern ' +
+             'and --input_magnitude_pattern are also specified'
     )
 
     parser.add_argument(
         'out_dir',
-        help='output directory'
+        help='output segmentation directory; will be created if it does not exist'
     )
 
     parser.add_argument(
         '--work_dir',
         default=None,
-        const=None,
-        help='work directory'
+        help='nipype working directory; defaults to \'work\' within \'out_dir\''
     )
 
     parser.add_argument(
@@ -167,34 +171,33 @@ if __name__ == "__main__":
     parser.add_argument(
         '--input_t1_pattern',
         default='anat/*t1*nii*',
-        help='pattern to match input t1 files within subject folders in bids_dir'
+        help='pattern to match input t1 files for segmentation within subject folders'
     )
 
     parser.add_argument(
         '--input_magnitude_pattern',
         default='anat/*qsm*E01*magnitude*nii*',
-        help='pattern to match input magnitude files (in the qsm space) within subject folders in bids_dir'
+        help='pattern to match input magnitude files (in the qsm space) within subject folders'
     )
-
+    
     parser.add_argument(
         '--subjects', '-s',
         default=None,
-        const=None,
         nargs='*',
-        help='list of subjects as seen in bids_dir'
+        help='list of subject folders to process; by default all subjects are processed'
     )
 
     parser.add_argument(
         '--pbs',
-        action='store_true',
-        help='use PBS graph'
+        default=None,
+        dest='qsub_account_string',
+        help='run the pipeline via PBS and use the argument as the QSUB account string'
     )
 
     parser.add_argument(
         '--debug',
-        dest='debug',
         action='store_true',
-        help='debug mode'
+        help='enables some nipype settings for debugging'
     )
 
     args = parser.parse_args()
@@ -243,18 +246,19 @@ if __name__ == "__main__":
         work_dir=os.path.abspath(args.work_dir),
         out_dir=os.path.abspath(args.out_dir),
         reconall_cpus=16,
-        templates=templates
+        templates=templates,
+        qsub_account_string=args.qsub_account_string
     )
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # run workflow
-    if args.pbs:
+    if args.qsub_account_string:
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': '-A UQ-CAI -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:50:00'
+                'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:50:00'
             }
         )
     else:
