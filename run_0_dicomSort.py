@@ -5,7 +5,29 @@
 # https://gist.github.com/alex-weston-13/4dae048b423f1b4cb9828734a4ec8b83
 import argparse
 import os
-import pydicom # pydicom is using the gdcm package for decompression
+import pydicom  # pydicom is using the gdcm package for decompression
+import shutil
+
+def empty_dirs(root_dir='.', recursive=True):
+    empty_dirs = []
+    for root, dirs, files in os.walk(root_dir, topdown=False):
+        #print root, dirs, files
+        if recursive:
+            all_subs_empty = True  # until proven otherwise
+            for sub in dirs:
+                full_sub = os.path.join(root, sub)
+                if full_sub not in empty_dirs:
+                    #print full_sub, "not empty"
+                    all_subs_empty = False
+                    break
+        else:
+            all_subs_empty = (len(dirs) == 0)
+        if all_subs_empty and len(files) == 0:
+            empty_dirs.append(root)
+            yield root
+
+def find_empty_dirs(root_dir='.', recursive=True):
+    return list(empty_dirs(root_dir, recursive))
 
 def clean_text(string):
     # clean and standardize text descriptions, which makes searching files easier
@@ -14,12 +36,12 @@ def clean_text(string):
         string = string.replace(symbol, "_") # replace everything with an underscore
     return string.lower()  
 
-def dicomsort(src, dst, use_patient_name, keep_originals):
-    os.makedirs(dst, exist_ok=True)
+def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
+    os.makedirs(output_dir, exist_ok=True)
     extension = '.IMA'
     print('reading file list...')
     unsortedList = []
-    for root, dirs, files in os.walk(src):
+    for root, dirs, files in os.walk(input_dir):
         for file in files:
             if file[-4:] in ['.ima', '.IMA']: # exclude non-dicoms, good for messy folders
                 unsortedList.append(os.path.join(root, file))
@@ -31,7 +53,9 @@ def dicomsort(src, dst, use_patient_name, keep_originals):
                 unsortedList.append(os.path.join(root, file))
 
     print('%s files found.' % len(unsortedList))
-        
+    
+    fail = False
+
     for dicom_loc in unsortedList:
         # read the file
         ds = pydicom.read_file(dicom_loc, force=True)
@@ -61,47 +85,61 @@ def dicomsort(src, dst, use_patient_name, keep_originals):
         # save files to a 3-tier nested folder structure
         subjName_date = f"sub-{subj_name}_{studyDate}"
 
-        if not os.path.exists(os.path.join(dst, subjName_date, seriesDescription)):
-            os.makedirs(os.path.join(dst, subjName_date, seriesDescription), exist_ok=True)
+        if not os.path.exists(os.path.join(output_dir, subjName_date, seriesDescription)):
+            os.makedirs(os.path.join(output_dir, subjName_date, seriesDescription), exist_ok=True)
             print('Saving out file: %s - %s.' % (subjName_date, seriesDescription))
         
-        ds.save_as(os.path.join(dst, subjName_date, seriesDescription, fileName))
+        ds.save_as(os.path.join(output_dir, subjName_date, seriesDescription, fileName))
 
-        if not keep_originals and os.path.exists(os.path.join(dst, subjName_date, seriesDescription, fileName)):
+        if not os.path.exists(os.path.join(output_dir, subjName_date, seriesDescription, fileName)):
+            fail = True
+
+    if not fail and delete_originals:
+        for dicom_loc in unsortedList:
             os.remove(dicom_loc)
+
+        for folder in find_empty_dirs(src):
+            print(folder)
+            #shutil.rmtree(folder)
 
     print('done.')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QSMxT DICOM to BIDS converter",
+        description="QSMxT dicomSort: Sorts DICOM files into a folder structure of the form <out_dir>/<PatientID>_<StudyDate>/<SeriesDescription>/",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
-        'src',
-        help='folder containing DICOM files'
+        'input_dir',
+        help='input DICOM directory; will be recursively searched for DICOM files'
     )
 
     parser.add_argument(
-        'dst',
+        'output_dir',
         default=None,
-        const=None,
-        nargs='?',
-        help='output folder to contain sorted DICOMs'
+        help='output directory for sorted DICOMs; by default this is the same as input_dir'
     )
 
     parser.add_argument(
         '--use_patient_name',
         action='store_true',
-        help='use patient name rather than ID for subject folders'
+        help='use the PatientName rather than PatientID for subject folders'
     )
 
     parser.add_argument(
-        '--keep_originals',
-        action='store_true'
+        '--delete_originals',
+        action='store_true',
+        help='delete the original DICOM files and folders after successfully sorting; by ' +
+             'default this is on when input_dir == output_dir'
     )
 
     args = parser.parse_args()
-    dicomsort(args.src, args.dst if args.dst is not None else args.src, args.use_patient_name, args.keep_originals)
+
+    dicomsort(
+        input_dir=args.input_dir,
+        output_dir=args.output_dir if args.output_dir is not None else args.input_dir,
+        use_patient_name=args.use_patient_name,
+        delete_originals=args.input_dir == args.output_dir or args.delete_originals
+    )
     

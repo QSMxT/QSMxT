@@ -5,18 +5,18 @@ import subprocess
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QSMxT DICOM to BIDS converter",
+        description="QSMxT dicomToBids: Converts a sorted DICOM folder to BIDS",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
         'dicom',
-        help='dicom data folder'
+        help='input DICOM data folder; should be sorted using run_0_dicomSort.py'
     )
 
     parser.add_argument(
         'bids',
-        help='bids data folder'
+        help='output BIDS data folder; will be created if it does not exist'
     )
 
     parser.add_argument(

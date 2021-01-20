@@ -131,36 +131,42 @@ def create_workflow(qsm_output_dir, magnitude_template_output_dir, qsm_template_
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="QSMxT qsmTemplate: QSM template builder. Produces a group template based on QSM results from " +
+                    "multiple subjects. Requires an initial magnitude group template generated using " +
+                    "./run_4_magnitude_template.py.",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     parser.add_argument(
         "qsm_output_dir",
         type=str,
-        help="qsm output directory"
+        help="the qsm output directory produced by ./run_2_nipype_qsm.py"
     )
 
     parser.add_argument(
         "magnitude_template_output_dir",
         type=str,
-        help='magnitude_template_output_dir'
+        help='the magnitude template output directory produced by ./run_4_magnitude_template.py'
     )
 
     parser.add_argument(
         "qsm_template_output_dir",
         type=str,
-        help='qsm_template_output_dir'
+        help='the intended output directory for the qsm group template'
     )
 
     parser.add_argument(
-        "--work_dir",
-        type=str,
-        default=None
+        '--work_dir',
+        default=None,
+        help='nipype working directory; defaults to \'work\' within \'out_dir\''
     )
 
     parser.add_argument(
         '--pbs',
-        action='store_true',
-        help='use PBS graph'
+        default=None,
+        dest='qsub_account_string',
+        help='run the pipeline via PBS and use the argument as the QSUB account string'
     )
 
     args = parser.parse_args()
@@ -178,11 +184,11 @@ if __name__ == "__main__":
         qsm_template_work_dir=os.path.abspath(args.work_dir)
     )
 
-    if args.pbs:
+    if args.qsub_account_string:
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': '-A UQ-CAI -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'
+                'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'
             }
         )
     else:

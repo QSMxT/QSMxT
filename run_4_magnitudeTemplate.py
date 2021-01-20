@@ -4,6 +4,7 @@
 
 # Author: Carlo Hamalainen <carlo@carlo-hamalainen.net>
 # Minor Edits: Isshaa Aarya and Steffen Bollmann <Steffen.Bollmann@live.de>
+# Further Edits for QSMxT: Ashley Stewart <a.stewart.au@gmail.com>
 
 #from nipype import config
 #config.enable_debug_mode()
@@ -186,7 +187,7 @@ def get_step_sizes(mincfile):
 # </editor-fold>
 
 
-def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
+def make_workflow(bids_dir, work_dir, out_dir, templates, opt, conf, qsub_account_string):
     # args.work_dir
     # args.bids_dir
     # args.input_pattern
@@ -351,7 +352,7 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
                                     interface=preprocess_volpad_id,
                                     name='preprocess_volpad',
                                     iterfield=['input_file'])
-        preprocess_volpad.plugin_args = {'qsub_args': '-A UQ-CAI -l nodes=1:ppn=10,mem=10gb,vmem=10gb,walltime=04:10:00',
+        preprocess_volpad.plugin_args = {'qsub_args': f'-A {qsub_account_string} -l nodes=1:ppn=10,mem=10gb,vmem=10gb,walltime=04:10:00',
                                       'overwrite': True}
 
     workflow.connect(preprocess_normalise, 'output_file', preprocess_volpad, 'input_file')
@@ -616,8 +617,8 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
                             name='nlpfit_' + snum_txt,
                             iterfield=['target', 'init_xfm'])
 
-            if pbs:
-                nlpfit.plugin_args = {'qsub_args': '-A UQ-CAI -l nodes=1:ppn=1,mem=10gb,vmem=10gb,walltime=04:10:00',
+            if qsub_account_string:
+                nlpfit.plugin_args = {'qsub_args': f'-A {qsub_account_string} -l nodes=1:ppn=1,mem=10gb,vmem=10gb,walltime=04:10:00',
                                       'overwrite': True}
 
             workflow.connect(write_conf, 'conf_fname', nlpfit, 'config_file')
@@ -864,20 +865,28 @@ def make_workflow(bids_dir, work_dir, out_dir, pbs, templates, opt, conf):
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description="QSMxT magnitudeTemplate: Magnitude template builder adapted from Volgenmodel. Registers and produces a template based on " +
+                    "a group of subjects. The outputs can be used to generate a QSM template using ./run_5_qsm_template.py",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
     #parser.add_argument('--ncpus', type=int, default=1,
     #                    help='The amount of CPUs used in MultiProc mode')
-    parser.add_argument('bids_dir', type=str, default='../fast-example',
-                        help='The input bids directory')
+    parser.add_argument('bids_dir',
+                        help='input data folder that can be created using run_1_dicomToBids.py; can also use a ' +
+                        'custom folder containing subject folders and NIFTI files or a BIDS folder with a ' +
+                        'different structure, as long as --subject_folder_pattern and --input_magnitude_pattern ' +
+                        'are also specified')
     parser.add_argument('out_dir', type=str, default='.',
                         help='The output directory (for final models)')
-    parser.add_argument('--work_dir', type=str, default=None,
-                        help='The work directory (for temporary workflow files); defaults to \'work\' within \'out_dir\'')
+    parser.add_argument('--work_dir', default=None,
+                        help='nipype working directory; defaults to \'work\' within \'out_dir\'')
     parser.add_argument('--subject_folder_pattern', default='sub*',
                         help='pattern to match subject folders in bids_dir')
     parser.add_argument('--input_magnitude_pattern', default='anat/*qsm*E01*magnitude*nii*',
                         help='pattern to match input magnitude files (in the qsm space) within subject folders in bids_dir')
-    parser.add_argument('--pbs', action='store_true', help='use PBS graph')
+    parser.add_argument('--pbs', default=None, dest='qsub_account_string',
+                        help='run the pipeline via PBS and use the argument as the QSUB account string')
     parser.add_argument('--symmetric', type=bool, default=1, choices=[0, 1],
                         help='Symmetric averaging on? Will flip template at every level and repeat fit')
     parser.add_argument('--symmetric_dir', type=str, default='x', choices=['x', 'y', 'z'],
@@ -894,7 +903,7 @@ if __name__ == '__main__':
                         help='zero padding around image')
     parser.add_argument('--iso', type=bool, default=1, choices=[0, 1],
                         help='resample image to be isometric')
-    parser.add_argument('--fit_stages', type=str, default='lin,0,1,2,3,4,5,5,6,6'),#,7,7,8,8,9,9,10,10,11,11',
+    parser.add_argument('--fit_stages', type=str, default='lin,0,1,2,3,4,5,5,6,6',#,7,7,8,8,9,9,10,10,11,11',
                         help='fit stages to be run')
 
     cli_args, unparsed = parser.parse_known_args()
@@ -962,18 +971,18 @@ if __name__ == '__main__':
         bids_dir=os.path.abspath(cli_args.bids_dir),
         work_dir=os.path.abspath(cli_args.work_dir),
         out_dir=os.path.abspath(cli_args.out_dir),
-        pbs=cli_args.pbs,
+        qsub_account_string=cli_args.qsub_account_string,
         templates=templates,
         opt=options,
         conf=configuration
     )
 
 
-    if cli_args.pbs:
+    if cli_args.qsub_account_string:
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': '-A UQ-CAI -l nodes=1:ppn=1,mem=1gb,vmem=1gb,walltime=00:10:00',
+                'qsub_args': f'-A {qsub_account_string} -l nodes=1:ppn=1,mem=1gb,vmem=1gb,walltime=00:10:00',
                 #'max_jobs': '10',
                 'dont_resubmit_completed_jobs': True
             }

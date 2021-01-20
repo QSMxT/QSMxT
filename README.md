@@ -28,19 +28,19 @@ python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
 ```
 Run QSM pipeline:
 ```
-python3 /opt/QSMxT/run_2_nipype_qsm.py 01_bids 02_qsm_output
+python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output
 ```
 Segment data (T1 and GRE):
 ```
-python3 /opt/QSMxT/run_3_nipype_segment.py 01_bids 03_segmentation
+python3 /opt/QSMxT/run_3_segment.py 01_bids 03_segmentation
 ```
 Build magnitude group template:
 ```
-python3 /opt/QSMxT/run_4_magnitude_template.py 01_bids 04_magnitude_template
+python3 /opt/QSMxT/run_4_magnitudeTemplate.py 01_bids 04_magnitude_template
 ```
 Build QSM group template:
 ```
-python3 /opt/QSMxT/run_5_qsm_template.py 02_qsm_output 04_magnitude_template 05_qsm_template
+python3 /opt/QSMxT/run_5_qsmTemplate.py 02_qsm_output 04_magnitude_template 05_qsm_template
 ```
 
 # 3) What if I get illegal instruction error?
