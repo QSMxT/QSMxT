@@ -5,9 +5,9 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink, DataGrabber
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype.interfaces.minc import Resample, BigAverage, VolSymm
-import nipype_interface_nii2mnc as nii2mnc
-import nipype_interface_mnc2nii as mnc2nii
-import nipype_interface_niiremoveheader as niiremoveheader
+from interfaces import nipype_interface_nii2mnc as nii2mnc
+from interfaces import nipype_interface_mnc2nii as mnc2nii
+from interfaces import nipype_interface_niiremoveheader as niiremoveheader
 import argparse
 
 
