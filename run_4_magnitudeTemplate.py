@@ -982,7 +982,7 @@ if __name__ == '__main__':
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': f'-A {qsub_account_string} -l nodes=1:ppn=1,mem=1gb,vmem=1gb,walltime=00:10:00',
+                'qsub_args': f'-A {cli_args.qsub_account_string} -l nodes=1:ppn=1,mem=1gb,vmem=1gb,walltime=00:10:00',
                 #'max_jobs': '10',
                 'dont_resubmit_completed_jobs': True
             }
