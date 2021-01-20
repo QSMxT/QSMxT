@@ -53,7 +53,7 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
                 extension = '.dcm'
                 unsortedList.append(os.path.join(root, file))
 
-    print('%s files found.' % len(unsortedList))
+    print(f'{len(unsortedList)} files found.')
     
     fail = False
 
@@ -82,7 +82,7 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
             ds.decompress()
         except Exception as e:
             print(f'An exception occurred while decompressing {dicom_loc}')
-            print('Exception details: {}'.format(e))
+            print(f'Exception details: {e}')
             exit()
     
         # save files to a 3-tier nested folder structure
@@ -90,7 +90,7 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
 
         if not os.path.exists(os.path.join(output_dir, subjName_date, seriesDescription)):
             os.makedirs(os.path.join(output_dir, subjName_date, seriesDescription), exist_ok=True)
-            print('Saving out file: %s - %s.' % (subjName_date, seriesDescription))
+            print(f'Saving new series: {subjName_date}_{seriesDescription}')
         
         ds.save_as(os.path.join(output_dir, subjName_date, seriesDescription, fileName))
 
