@@ -1,4 +1,4 @@
-#!/bin/python
+#!/usr/bin/env python3
 
 # Adapted from Alex Weston
 # Digital Innovation Lab, Mayo Clinic
