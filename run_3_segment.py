@@ -171,7 +171,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--input_t1_pattern',
-        default='anat/*t1*nii*',
+        default='anat/*T1w*nii*',
         help='pattern to match input t1 files for segmentation within subject folders'
     )
 
