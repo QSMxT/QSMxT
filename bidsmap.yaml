@@ -52,7 +52,7 @@ DICOM:
       RepetitionTime: ~
       PhaseEncodingDirection: ~
     bids:
-      acq: t1
+      acq: T1w
       rec:
       ce:
       task:
