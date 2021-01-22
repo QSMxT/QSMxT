@@ -438,22 +438,28 @@ if __name__ == "__main__":
     parser.add_argument(
         '--masking', '-m',
         default='magnitude-based',
-        choices=['bet-multiecho', 'bet-firstecho', 'bet-lastecho', 'phase-based', 'magnitude-based'],
-        help='masking strategy; magnitude-based and phase-based masking'
+        choices=['magnitude-based', 'phase-based', 'bet-multiecho', 'bet-firstecho', 'bet-lastecho'],
+        help='masking strategy. magnitude-based and phase-based masking generates a mask by ' +
+             'thresholding (adjust using the --threshold parameter). for phase-based masking, the ' +
+             'spatial phase coherence is thresholded and the magnitude is not required. bet-multiecho ' +
+             'uses a BET mask for each echo. bet-firstecho and bet-lastecho use a single BET mask for ' +
+             'all echoes, generated using the magnitude image from the first echo and last echo only, ' +
+             'respectively.'
     )
 
     parser.add_argument(
         '--two_pass',
         action='store_true',
-        help='Use a two-pass QSM inversion strategy for magnitude-based or phase-based masking for ' +
-             'artefact reduction. Can increase runtime dramatically.'
+        help='use a two-pass QSM inversion, separating low and high-susceptibility structures for ' +
+             'artefact reduction and doubling the runtim. can only be applied to magnitude-based ' +
+             'or phase-based masking.'
     )
 
     parser.add_argument(
         '--iterations',
         type=int,
         default=1000,
-        help='Number of iterations used for the dipole inversion step via tgv_qsm.'
+        help='number of iterations used for the dipole inversion step via tgv_qsm.'
     )
 
     parser.add_argument(
