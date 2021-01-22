@@ -15,9 +15,9 @@ import subprocess
 import nipype.pipeline.engine as pe
 import nipype.interfaces.io as nio
 import nipype.interfaces.utility as utils
-import nipype_interface_nii2mnc as nii2mnc
-import nipype_interface_mnc2nii as mnc2nii
-import nipype_interface_niiremoveheader as niiremoveheader
+from interfaces import nipype_interface_nii2mnc as nii2mnc
+from interfaces import nipype_interface_mnc2nii as mnc2nii
+from interfaces import nipype_interface_niiremoveheader as niiremoveheader
 from copy import deepcopy
 import fnmatch
 import argparse
@@ -67,7 +67,7 @@ def load_pklz(f):
 
 
 def _calc_threshold_blur_preprocess(input_file):
-    from run_4_magnitude_template import get_step_sizes
+    from run_4_magnitudeTemplate import get_step_sizes
     (step_x, step_y, step_z) = get_step_sizes(input_file)
     return abs(step_x + step_y + step_z)
 
@@ -79,7 +79,7 @@ calc_threshold_blur_preprocess = utils.Function(
 
 
 def _calc_initial_model_fwhm3d(input_file):
-    from run_4_magnitude_template import get_step_sizes
+    from run_4_magnitudeTemplate import get_step_sizes
     (xstep, ystep, zstep) = get_step_sizes(input_file)
     return (abs(xstep*4), abs(ystep*4), abs(zstep*4))
 
@@ -97,7 +97,7 @@ def _write_stage_conf_file(snum, snum_txt, conf, end_stage):
     assert end_stage is not None
 
     import os.path
-    from run_4_magnitude_template import to_perl_syntax
+    from run_4_magnitudeTemplate import to_perl_syntax
 
     conf_fname = os.path.join(os.getcwd(), "fit_stage_%02d.conf" % snum)
     # print "    + Creating", conf_fname
@@ -867,7 +867,7 @@ def make_workflow(bids_dir, work_dir, out_dir, templates, opt, conf, qsub_accoun
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
         description="QSMxT magnitudeTemplate: Magnitude template builder adapted from Volgenmodel. Registers and produces a template based on " +
-                    "a group of subjects. The outputs can be used to generate a QSM template using ./run_5_qsm_template.py",
+                    "a group of subjects. The outputs can be used to generate a QSM template using ./run_5_qsmTemplate.py",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
     #parser.add_argument('--ncpus', type=int, default=1,
@@ -982,7 +982,7 @@ if __name__ == '__main__':
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': f'-A {qsub_account_string} -l nodes=1:ppn=1,mem=1gb,vmem=1gb,walltime=00:10:00',
+                'qsub_args': f'-A {cli_args.qsub_account_string} -l nodes=1:ppn=1,mem=1gb,vmem=1gb,walltime=00:10:00',
                 #'max_jobs': '10',
                 'dont_resubmit_completed_jobs': True
             }
@@ -996,11 +996,4 @@ if __name__ == '__main__':
             }
         )
 
-    # put xfms and grid files together
-    grid_files = glob.glob(os.path.join(os.path.abspath(cli_args.out_dir), "transformation_grids/*/*.mnc"))
-    for f in grid_files:
-        parts = f.split("/")
-        os.rename(f, os.path.join(os.path.abspath(cli_args.out_dir), "transformations", parts[-2], parts[-1]))
-    shutil.rmtree(os.path.join(os.path.abspath(cli_args.out_dir), "transformation_grids"))
-    
     print('done')

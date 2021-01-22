@@ -52,7 +52,7 @@ DICOM:
       RepetitionTime: ~
       PhaseEncodingDirection: ~
     bids:
-      acq: t1
+      acq: T1w
       rec:
       ce:
       task:
@@ -64,7 +64,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ['*gre*','*epi*','*QSM*','*qsm*']
+      ProtocolName: ['*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*']
       SeriesDescription: ~
       ImageType: '*M*'
       SequenceName: ~
@@ -90,7 +90,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ['*gre*','*epi*','*QSM*','*qsm*']
+      ProtocolName: ['*GRE*','*gre*','*EPI*','*epi*','*QSM*','*qsm*']
       SeriesDescription: ~
       ImageType: "*P*"
       SequenceName: ~

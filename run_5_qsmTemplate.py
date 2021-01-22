@@ -5,9 +5,9 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink, DataGrabber
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype.interfaces.minc import Resample, BigAverage, VolSymm
-import nipype_interface_nii2mnc as nii2mnc
-import nipype_interface_mnc2nii as mnc2nii
-import nipype_interface_niiremoveheader as niiremoveheader
+from interfaces import nipype_interface_nii2mnc as nii2mnc
+from interfaces import nipype_interface_mnc2nii as mnc2nii
+from interfaces import nipype_interface_niiremoveheader as niiremoveheader
 import argparse
 
 
@@ -134,20 +134,20 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="QSMxT qsmTemplate: QSM template builder. Produces a group template based on QSM results from " +
                     "multiple subjects. Requires an initial magnitude group template generated using " +
-                    "./run_4_magnitude_template.py.",
+                    "./run_4_magnitudeTemplate.py.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
         "qsm_output_dir",
         type=str,
-        help="the qsm output directory produced by ./run_2_nipype_qsm.py"
+        help="the qsm output directory produced by ./run_2_qsm.py"
     )
 
     parser.add_argument(
         "magnitude_template_output_dir",
         type=str,
-        help='the magnitude template output directory produced by ./run_4_magnitude_template.py'
+        help='the magnitude template output directory produced by ./run_4_magnitudeTemplate.py'
     )
 
     parser.add_argument(
@@ -184,6 +184,13 @@ if __name__ == "__main__":
         qsm_template_work_dir=os.path.abspath(args.work_dir)
     )
 
+    # put xfms and grid files together
+    grid_files = glob.glob(os.path.join(os.path.abspath(args.qsm_template_output_dir), "transformation_grids/*/*.mnc"))
+    for f in grid_files:
+        parts = f.split("/")
+        os.rename(f, os.path.join(os.path.abspath(args.qsm_template_output_dir), "transformations", parts[-2], parts[-1]))
+    shutil.rmtree(os.path.join(os.path.abspath(args.qsm_template_output_dir), "transformation_grids"))
+    
     if args.qsub_account_string:
         wf.run(
             plugin='PBSGraph',
