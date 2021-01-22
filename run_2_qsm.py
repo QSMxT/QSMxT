@@ -26,6 +26,8 @@ def create_qsm_workflow(
     out_dir,
     bids_templates,
     masking,
+    two_pass,
+    qsm_iterations,
     threshold,
     extra_fill_strength,
     homogeneity_filter,
@@ -35,6 +37,12 @@ def create_qsm_workflow(
 
     # create initial workflow
     wf = Workflow(name='workflow_qsm', base_dir=work_dir)
+
+    # datasink
+    n_datasink = Node(
+        interface=DataSink(base_directory=bids_dir, container=out_dir),
+        name='datasink'
+    )
 
     # use infosource to iterate workflow across subject list
     n_infosource = Node(
@@ -233,60 +241,55 @@ def create_qsm_workflow(
             (mn_magmask, mn_mask, [('out_file', 'in_file')])
         ])
 
-    # qsm processing
-    mn_qsm_iterfield = ['phase_file', 'TE', 'b0']
-    
-    # if using a multi-echo masking method, add mask_file to iterfield
-    if masking not in ['bet-firstecho', 'bet-lastecho']: mn_qsm_iterfield.append('mask_file')
+    if two_pass or 'bet' in masking:
+        # qsm processing
+        mn_qsm_iterfield = ['phase_file', 'TE', 'b0']
+        
+        # if using a multi-echo masking method, add mask_file to iterfield
+        if masking not in ['bet-firstecho', 'bet-lastecho']: mn_qsm_iterfield.append('mask_file')
 
-    mn_qsm = MapNode(
-        interface=tgv.QSMappingInterface(
-            iterations=1000,
-            alpha=[0.0015, 0.0005],
-            erosions=0 if masking in ['phase-based', 'magnitude-based'] else 5,
-            num_threads=qsm_threads,
-            out_suffix='_qsm'
-        ),
-        iterfield=mn_qsm_iterfield,
-        name='qsm'
-        # output: 'out_file'
-    )
+        mn_qsm = MapNode(
+            interface=tgv.QSMappingInterface(
+                iterations=qsm_iterations,
+                alpha=[0.0015, 0.0005],
+                erosions=0 if masking in ['phase-based', 'magnitude-based'] else 5,
+                num_threads=qsm_threads,
+                out_suffix='_qsm'
+            ),
+            iterfield=mn_qsm_iterfield,
+            name='qsm'
+            # output: 'out_file'
+        )
 
-    # args for PBS
-    mn_qsm.plugin_args = {
-        'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
-        'overwrite': True
-    }
+        # args for PBS
+        mn_qsm.plugin_args = {
+            'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
+            'overwrite': True
+        }
 
-    wf.connect([
-        (mn_params, mn_qsm, [('EchoTime', 'TE')]),
-        (mn_params, mn_qsm, [('MagneticFieldStrength', 'b0')]),
-        (mn_mask, mn_qsm, [('mask_file', 'mask_file')]),
-        (mn_phase_scaled, mn_qsm, [('out_file', 'phase_file')])
-    ])
+        wf.connect([
+            (mn_params, mn_qsm, [('EchoTime', 'TE')]),
+            (mn_params, mn_qsm, [('MagneticFieldStrength', 'b0')]),
+            (mn_mask, mn_qsm, [('mask_file', 'mask_file')]),
+            (mn_phase_scaled, mn_qsm, [('out_file', 'phase_file')])
+        ])
 
-    # qsm averaging
-    n_qsm_average = Node(
-        interface=nonzeroaverage.NonzeroAverageInterface(),
-        name='qsm_average'
-        # input : in_files
-        # output : out_file
-    )
-    wf.connect([
-        (mn_qsm, n_qsm_average, [('out_file', 'in_files')])
-    ])
+        # qsm averaging
+        n_qsm_average = Node(
+            interface=nonzeroaverage.NonzeroAverageInterface(),
+            name='qsm_average'
+            # input : in_files
+            # output : out_file
+        )
+        wf.connect([
+            (mn_qsm, n_qsm_average, [('out_file', 'in_files')])
+        ])
 
-    # datasink
-    n_datasink = Node(
-        interface=DataSink(base_directory=bids_dir, container=out_dir),
-        name='datasink'
-    )
-
-    wf.connect([
-        (n_qsm_average, n_datasink, [('out_file', 'qsm_average')]),
-        (mn_qsm, n_datasink, [('out_file', 'qsms')]),
-        (mn_mask, n_datasink, [('mask_file', 'masks')])
-    ])
+        wf.connect([
+            (n_qsm_average, n_datasink, [('out_file', 'qsm_average')]),
+            (mn_qsm, n_datasink, [('out_file', 'qsms')]),
+            (mn_mask, n_datasink, [('mask_file', 'masks')])
+        ])
 
     if masking in ['phase-based', 'magnitude-based']:
         mn_mask_filled = MapNode(
@@ -310,7 +313,7 @@ def create_qsm_workflow(
 
         mn_qsm_filled = MapNode(
             interface=tgv.QSMappingInterface(
-                iterations=1000,
+                iterations=qsm_iterations,
                 alpha=[0.0015, 0.0005],
                 erosions=0,
                 num_threads=qsm_threads,
@@ -349,34 +352,35 @@ def create_qsm_workflow(
             (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')])
         ])
         wf.connect([
-            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average')])
+            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average' if two_pass else 'qsm_final')])
         ])
 
         # composite qsm
-        mn_qsm_composite = MapNode(
-            interface=composite.CompositeNiftiInterface(),
-            name='qsm_composite',
-            iterfield=['in_file1', 'in_file2'],
-        )
-        wf.connect([
-            (mn_qsm, mn_qsm_composite, [('out_file', 'in_file1')]),
-            (mn_qsm_filled, mn_qsm_composite, [('out_file', 'in_file2')])
-        ])
+        if two_pass:
+            mn_qsm_composite = MapNode(
+                interface=composite.CompositeNiftiInterface(),
+                name='qsm_composite',
+                iterfield=['in_file1', 'in_file2'],
+            )
+            wf.connect([
+                (mn_qsm, mn_qsm_composite, [('out_file', 'in_file1')]),
+                (mn_qsm_filled, mn_qsm_composite, [('out_file', 'in_file2')])
+            ])
 
-        n_qsm_composite_average = Node(
-            interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='qsm_composite_average'
-            # input : in_files
-            # output: out_file
-        )
-        wf.connect([
-            (mn_qsm_composite, n_qsm_composite_average, [('out_file', 'in_files')])
-        ])
+            n_qsm_composite_average = Node(
+                interface=nonzeroaverage.NonzeroAverageInterface(),
+                name='qsm_composite_average'
+                # input : in_files
+                # output: out_file
+            )
+            wf.connect([
+                (mn_qsm_composite, n_qsm_composite_average, [('out_file', 'in_files')])
+            ])
 
-        wf.connect([
-            (mn_qsm_composite, n_datasink, [('out_file', 'qsms_composite')]),
-            (n_qsm_composite_average, n_datasink, [('out_file', 'qsm_final')]),
-        ])
+            wf.connect([
+                (mn_qsm_composite, n_datasink, [('out_file', 'qsms_composite')]),
+                (n_qsm_composite_average, n_datasink, [('out_file', 'qsm_final')]),
+            ])
 
     return wf
 
@@ -435,7 +439,21 @@ if __name__ == "__main__":
         '--masking', '-m',
         default='magnitude-based',
         choices=['bet-multiecho', 'bet-firstecho', 'bet-lastecho', 'phase-based', 'magnitude-based'],
-        help='masking strategy; magnitude-based and phase-based masking use a two-pass QSM inversion for artefact reduction'
+        help='masking strategy; magnitude-based and phase-based masking'
+    )
+
+    parser.add_argument(
+        '--two_pass',
+        action='store_true',
+        help='Use a two-pass QSM inversion strategy for magnitude-based or phase-based masking for ' +
+             'artefact reduction. Can increase runtime dramatically.'
+    )
+
+    parser.add_argument(
+        '--iterations',
+        type=int,
+        default=1000,
+        help='Number of iterations used for the dipole inversion step via tgv_qsm.'
     )
 
     parser.add_argument(
@@ -532,6 +550,8 @@ if __name__ == "__main__":
         out_dir=os.path.abspath(args.out_dir),
         bids_templates=bids_templates,
         masking=args.masking,
+        two_pass=args.two_pass and 'bet' not in args.masking,
+        qsm_iterations=args.iterations,
         threshold=args.threshold,
         extra_fill_strength=args.extra_fill_strength,
         homogeneity_filter=homogeneity_filter != args.homogeneity_filter,
