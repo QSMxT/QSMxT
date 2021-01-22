@@ -205,6 +205,7 @@ if __name__ == "__main__":
 
     # environment variables
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
+    os.environ["SUBJECTS_DIR"] = "."
 
     if args.debug:
         from nipype import config
