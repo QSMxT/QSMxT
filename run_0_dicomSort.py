@@ -52,6 +52,9 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
             elif file[:3] == 'MR.':
                 extension = '.dcm'
                 unsortedList.append(os.path.join(root, file))
+            elif file[:2] == 'IM':
+                extension = '.dcm'
+                unsortedList.append(os.path.join(root, file))
 
     print(f'{len(unsortedList)} files found.')
     
@@ -101,7 +104,7 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
         for dicom_loc in unsortedList:
             os.remove(dicom_loc)
 
-        for folder in find_empty_dirs(src):
+        for folder in find_empty_dirs(input_dir):
             print(folder)
             #shutil.rmtree(folder)
 
