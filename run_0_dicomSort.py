@@ -1,4 +1,4 @@
-#!/bin/python
+#!/usr/bin/env python3
 
 # Adapted from Alex Weston
 # Digital Innovation Lab, Mayo Clinic
@@ -7,6 +7,7 @@ import argparse
 import os
 import pydicom  # pydicom is using the gdcm package for decompression
 import shutil
+import numpy
 
 def empty_dirs(root_dir='.', recursive=True):
     empty_dirs = []
@@ -51,8 +52,11 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
             elif file[:3] == 'MR.':
                 extension = '.dcm'
                 unsortedList.append(os.path.join(root, file))
+            elif file[:2] == 'IM':
+                extension = '.dcm'
+                unsortedList.append(os.path.join(root, file))
 
-    print('%s files found.' % len(unsortedList))
+    print(f'{len(unsortedList)} files found.')
     
     fail = False
 
@@ -79,15 +83,17 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
         # uncompress files (using the gdcm package)
         try:
             ds.decompress()
-        except:
-            print('an instance in file %s - %s - %s - %s" could not be decompressed (%s). exiting.' % (subj_name, studyDate, studyDescription, seriesDescription, dicom_loc ))
+        except Exception as e:
+            print(f'An exception occurred while decompressing {dicom_loc}')
+            print(f'Exception details: {e}')
+            exit()
     
         # save files to a 3-tier nested folder structure
         subjName_date = f"sub-{subj_name}_{studyDate}"
 
         if not os.path.exists(os.path.join(output_dir, subjName_date, seriesDescription)):
             os.makedirs(os.path.join(output_dir, subjName_date, seriesDescription), exist_ok=True)
-            print('Saving out file: %s - %s.' % (subjName_date, seriesDescription))
+            print(f'Saving new series: {subjName_date}_{seriesDescription}')
         
         ds.save_as(os.path.join(output_dir, subjName_date, seriesDescription, fileName))
 
@@ -98,7 +104,7 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
         for dicom_loc in unsortedList:
             os.remove(dicom_loc)
 
-        for folder in find_empty_dirs(src):
+        for folder in find_empty_dirs(input_dir):
             print(folder)
             #shutil.rmtree(folder)
 

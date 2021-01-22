@@ -3,8 +3,9 @@ from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink, DataGrabber
 from nipype.interfaces.freesurfer.preprocess import ReconAll, MRIConvert
-import nipype_interface_bestlinreg as bestlinreg
-import nipype_interface_applyxfm as applyxfm
+
+from interfaces import nipype_interface_bestlinreg as bestlinreg
+from interfaces import nipype_interface_applyxfm as applyxfm
 
 import fnmatch
 import glob
@@ -170,7 +171,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--input_t1_pattern',
-        default='anat/*t1*nii*',
+        default='anat/*T1w*nii*',
         help='pattern to match input t1 files for segmentation within subject folders'
     )
 
@@ -204,6 +205,7 @@ if __name__ == "__main__":
 
     # environment variables
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
+    os.environ["SUBJECTS_DIR"] = "."
 
     if args.debug:
         from nipype import config
