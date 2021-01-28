@@ -12,6 +12,7 @@ import glob
 import os
 import os.path
 import argparse
+import re
 
 
 def create_segmentation_workflow(
@@ -206,6 +207,19 @@ if __name__ == "__main__":
     # environment variables
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
     os.environ["SUBJECTS_DIR"] = "."
+
+
+    # check if minc is on the path and remove it - otherwise it collides with the old minc libraries included in freesurfer
+    test = os.environ['PATH']
+    clean_path=''
+    print('before removing minc from path: ', test)
+    for path in test.split(':'):
+        if 'minc' in path:
+            print('removing ', path)
+        else:
+            clean_path=clean_path+path+':'
+    print('after removing minc from path: ', clean_path)
+    os.environ['PATH'] = clean_path
 
     if args.debug:
         from nipype import config
