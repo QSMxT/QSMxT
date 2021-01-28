@@ -11,25 +11,25 @@ We developed an open-source QSM processing framework, QSMxT, that provides a ful
 ### Download image
 - Australian Mirror: 
 ```
-curl https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210119.simg -O
+curl https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210122.simg -O
 or
-wget https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210119.simg
+wget https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210122.simg
 ```
 - US Mirror: 
 ```
-https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210119.simg
+https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210122.simg
 ```
 - European Mirror: 
 ```
-https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210119.simg
+https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210122.simg
 ```
 
 ### Run image
 ```bash
-singularity shell qsmxt_1.0.0_20210119.simg
+singularity shell qsmxt_1.0.0_20210122.simg
 
 #alternatively mount additional data directories:
-singularity shell -B /data:/data qsmxt_1.0.0_20210119.simg
+singularity shell -B /data:/data qsmxt_1.0.0_20210122.simg
 ```
 
 
