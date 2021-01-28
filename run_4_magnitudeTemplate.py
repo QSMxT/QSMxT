@@ -963,6 +963,18 @@ if __name__ == '__main__':
 
     os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
 
+    # check if freesurfer is on the path and remove it - otherwise it collides with the old minc libraries included in freesurfer
+    test = os.environ['PATH']
+    clean_path=''
+    print('before removing freesurfer from path: ', test)
+    for path in test.split(':'):
+        if 'freesurfer' in path:
+            print('removing ', path)
+        else:
+            clean_path=clean_path+path+':'
+    print('after removing freesurfer from path: ', clean_path)
+    os.environ['PATH'] = clean_path
+
     templates = {
         'mag': os.path.join(args.subject_folder_pattern, args.input_magnitude_pattern),
     }
