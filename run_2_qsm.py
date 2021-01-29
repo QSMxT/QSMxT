@@ -6,9 +6,10 @@ import glob
 import fnmatch
 from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge, UnaryMaths
 from nipype.interfaces.utility import IdentityInterface, Function
-from nipype.interfaces.io import SelectFiles, DataSink
+from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 
+from interfaces import nipype_interface_selectfiles as sf
 from interfaces import nipype_interface_tgv_qsm as tgv
 from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_bestlinreg as bestlinreg
@@ -28,6 +29,7 @@ def create_qsm_workflow(
     masking,
     two_pass,
     qsm_iterations,
+    num_echoes_to_process,
     threshold,
     extra_fill_strength,
     homogeneity_filter,
@@ -58,8 +60,9 @@ def create_qsm_workflow(
 
     # select matching files from bids_dir
     n_selectfiles = Node(
-        interface=SelectFiles(
+        interface=sf.SelectFiles(
             templates=bids_templates,
+            num_files=num_echoes_to_process,
             base_directory=bids_dir
         ),
         name='get_subject_data'
@@ -436,6 +439,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--num_echoes', '-n',
+        dest='num_echoes_to_process',
+        default=None,
+        type=int,
+        help='the number of echoes to process; by default all echoes are processed'
+    )
+
+    parser.add_argument(
         '--masking', '-m',
         default='magnitude-based',
         choices=['magnitude-based', 'phase-based', 'bet-multiecho', 'bet-firstecho', 'bet-lastecho'],
@@ -558,6 +569,7 @@ if __name__ == "__main__":
         masking=args.masking,
         two_pass=args.two_pass and 'bet' not in args.masking,
         qsm_iterations=args.iterations,
+        num_echoes_to_process=args.num_echoes_to_process,
         threshold=args.threshold,
         extra_fill_strength=args.extra_fill_strength,
         homogeneity_filter=homogeneity_filter != args.homogeneity_filter,

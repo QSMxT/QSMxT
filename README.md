@@ -1,6 +1,6 @@
 We developed an open-source QSM processing framework, QSMxT, that provides a full QSM workflow including converting DICOM data to BIDS, a variety of robust masking strategies, phase unwrapping, background field correction, dipole inversion and region-of-interest analyses based on automated anatomical segmentations. We make all required external dependencies available in a reproducible and scalable analysis environment enabling users to process QSM data for large groups of participants on any operating system in a robust way. 
 
-# 1) install and start
+# 1) Install and start
 ## Windows/Mac:
 - https://github.com/NeuroDesk/vnm/
 - start QSMxT from Applications menu
@@ -33,7 +33,7 @@ singularity shell -B /data:/data qsmxt_1.0.0_20210122.simg
 ```
 
 
-# 2) run
+# 2) Run
 Convert Dicom data to BIDS:
 ```bash
 python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
@@ -57,4 +57,21 @@ python3 /opt/QSMxT/run_4_magnitudeTemplate.py 01_bids 04_magnitude_template
 Build QSM group template:
 ```bash
 python3 /opt/QSMxT/run_5_qsmTemplate.py 02_qsm_output 04_magnitude_template 05_qsm_template
+```
+
+# Parallel processing via PBS
+
+On a high-performance compute system (HPC), PBS can be used instead of MultiProc for execution of `run_2_qsm.py`, `run_3_segment.py`, `run_4_magnitudeTemplate.py` and `run_5_qsmTemplate.py` for much greater parallelisation. However, PBS commands cannot be reliably invoked from inside the container, and so this requires execution from the HPC's native environment. To achieve this, a different install and run process is required via [transparent-singularity](https://github.com/CAIsr/transparent-singularity).
+
+Follow the [instructions](https://github.com/CAIsr/transparent-singularity) to install the latest QSMxT container via transparent-singularity.
+
+Clone the QSMxT repository:
+```bash
+git clone https://github.com/QSMxT/QSMxT.git
+```
+
+Invoke QSMxT scripts directly, and use the `--pbs` flag along with your PBS account string. 
+```bash
+cd QSMxT
+python3 run_2_qsm.py bids qsm --pbs ACCOUNT_STRING
 ```
