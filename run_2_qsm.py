@@ -4,6 +4,7 @@ import os.path
 import os
 import glob
 import fnmatch
+import subprocess
 from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge, UnaryMaths
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
@@ -579,6 +580,9 @@ if __name__ == "__main__":
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
+
+    # make sure tgv_qsm is compiled on the target system before we start the pipeline:
+    process = subprocess.run(['tgv_qsm'])
 
     # run workflow
     wf.write_graph(graph2use='flat', format='png', simple_form=False)
