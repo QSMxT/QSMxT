@@ -6,14 +6,13 @@ We developed an open-source QSM processing framework, QSMxT, that provides a ful
 - start QSMxT from Applications menu
 
 ## Linux:
-- singularity: https://sylabs.io/guides/3.7/user-guide/quick_start.html
+- make sure singularity is installed or available on your HPC: https://sylabs.io/guides/3.7/user-guide/quick_start.html
+- QSMxT is tested with Singuarity 2.6.1 up to Singularity 3.7.0
 
 ### Download image
 - Australian Mirror: 
 ```
-curl https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210203.simg -O
-or
-wget https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210203.simg
+https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210203.simg
 ```
 - US Mirror: 
 ```
@@ -22,6 +21,13 @@ https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/
 - European Mirror: 
 ```
 https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210203.simg
+```
+
+- download examples using curl or wget
+```bash
+curl https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210203.simg -O
+or
+wget https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210203.simg
 ```
 
 ### Run image
@@ -79,4 +85,11 @@ Invoke QSMxT scripts directly, and use the `--pbs` flag along with your PBS acco
 ```bash
 cd QSMxT
 python3 run_2_qsm.py bids qsm --pbs ACCOUNT_STRING
+```
+
+# Docker
+
+There is also a docker image availabe:
+```
+docker run -it vnmd/qsmxt_1.0.0:20210203
 ```
