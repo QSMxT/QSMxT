@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import os.path
+import glob
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink, DataGrabber
 from nipype.pipeline.engine import Workflow, Node, MapNode
