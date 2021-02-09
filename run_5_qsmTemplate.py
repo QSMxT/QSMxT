@@ -2,6 +2,7 @@
 import os
 import os.path
 import glob
+import shutil
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink, DataGrabber
 from nipype.pipeline.engine import Workflow, Node, MapNode
@@ -189,7 +190,7 @@ if __name__ == "__main__":
     grid_files = glob.glob(os.path.join(os.path.abspath(args.qsm_template_output_dir), "transformation_grids/*/*.mnc"))
     for f in grid_files:
         parts = f.split("/")
-        os.rename(f, os.path.join(os.path.abspath(args.qsm_template_output_dir), "transformations", parts[-2], parts[-1]))
+        shutil.copyfile(f, os.path.join(os.path.abspath(args.qsm_template_output_dir), "transformations", parts[-2], parts[-1]))
     shutil.rmtree(os.path.join(os.path.abspath(args.qsm_template_output_dir), "transformation_grids"))
     
     if args.qsub_account_string:
