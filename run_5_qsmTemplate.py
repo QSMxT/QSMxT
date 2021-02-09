@@ -187,11 +187,11 @@ if __name__ == "__main__":
     )
 
     # put xfms and grid files together
-    grid_files = glob.glob(os.path.join(os.path.abspath(args.qsm_template_output_dir), "transformation_grids/*/*.mnc"))
+    grid_files = glob.glob(os.path.join(os.path.abspath(args.magnitude_template_output_dir), "transformation_grids/*/*.mnc"))
     for f in grid_files:
         parts = f.split("/")
+        os.makedirs(os.path.join(os.path.abspath(args.qsm_template_output_dir), "transformations", parts[-2]), exist_ok=True)
         shutil.copyfile(f, os.path.join(os.path.abspath(args.qsm_template_output_dir), "transformations", parts[-2], parts[-1]))
-    shutil.rmtree(os.path.join(os.path.abspath(args.qsm_template_output_dir), "transformation_grids"))
     
     if args.qsub_account_string:
         wf.run(
