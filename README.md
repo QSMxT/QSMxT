@@ -20,7 +20,7 @@ We developed an open-source QSM processing framework, QSMxT, that provides a ful
    wget <mirror>
 	```
 	
-- Australian Mirror: https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210205.simg
+    - Australian Mirror: https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210205.simg
 	- US Mirror: https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210205.simg
 	- European Mirror: https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210205.simg
 	
