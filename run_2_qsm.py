@@ -4,6 +4,7 @@ import os.path
 import os
 import glob
 import fnmatch
+import subprocess
 from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge, UnaryMaths
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
@@ -28,6 +29,7 @@ def create_qsm_workflow(
     bids_templates,
     masking,
     two_pass,
+    no_resampling,
     qsm_iterations,
     num_echoes_to_process,
     threshold,
@@ -250,14 +252,17 @@ def create_qsm_workflow(
         
         # if using a multi-echo masking method, add mask_file to iterfield
         if masking not in ['bet-firstecho', 'bet-lastecho']: mn_qsm_iterfield.append('mask_file')
+        
 
+        
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
                 iterations=qsm_iterations,
                 alpha=[0.0015, 0.0005],
                 erosions=0 if masking in ['phase-based', 'magnitude-based'] else 5,
                 num_threads=qsm_threads,
-                out_suffix='_qsm'
+                out_suffix='_qsm',
+                extra_arguments='--ignore-orientation --no-resampling' if no_resampling else ''
             ),
             iterfield=mn_qsm_iterfield,
             name='qsm'
@@ -313,14 +318,15 @@ def create_qsm_workflow(
         wf.connect([
             (mn_mask_filled, n_datasink, [('out_file', 'masks_filled')]),
         ])
-
+        
         mn_qsm_filled = MapNode(
             interface=tgv.QSMappingInterface(
                 iterations=qsm_iterations,
                 alpha=[0.0015, 0.0005],
                 erosions=0,
                 num_threads=qsm_threads,
-                out_suffix='_qsm-filled'
+                out_suffix='_qsm-filled',
+                extra_arguments='--ignore-orientation --no-resampling' if no_resampling else ''
             ),
             iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
             name='qsm_filledmask'
@@ -467,6 +473,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--no_resampling',
+        action='store_true',
+        help='deactivate resampling inside TGV_QSM. ' +
+             'Useful when resampling fails with error: Incompatible size of mask and data images  ' +
+             'Check results carefully.'
+    )
+
+    parser.add_argument(
         '--iterations',
         type=int,
         default=1000,
@@ -568,6 +582,7 @@ if __name__ == "__main__":
         bids_templates=bids_templates,
         masking=args.masking,
         two_pass=args.two_pass and 'bet' not in args.masking,
+        no_resampling=args.no_resampling,
         qsm_iterations=args.iterations,
         num_echoes_to_process=args.num_echoes_to_process,
         threshold=args.threshold,
@@ -579,6 +594,9 @@ if __name__ == "__main__":
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
+
+    # make sure tgv_qsm is compiled on the target system before we start the pipeline:
+    process = subprocess.run(['tgv_qsm'])
 
     # run workflow
     wf.write_graph(graph2use='flat', format='png', simple_form=False)

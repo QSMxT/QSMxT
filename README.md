@@ -20,17 +20,17 @@ We developed an open-source QSM processing framework, QSMxT, that provides a ful
    wget <mirror>
 	```
 	
-- Australian Mirror: https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210122.simg  
-	- US Mirror: https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210122.simg
-	- European Mirror: https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210122.simg
+- Australian Mirror: https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210205.simg
+	- US Mirror: https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210205.simg
+	- European Mirror: https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210205.simg
 	
 3. Run singularity image
 
     ```bash
-    singularity shell qsmxt_1.0.0_20210122.simg
+    singularity shell qsmxt_1.0.0_20210205.simg
 
     # alternative launch to mount additional data directories:
-    singularity shell -B /data:/data qsmxt_1.0.0_20210122.simg
+    singularity shell -B /data:/data qsmxt_1.0.0_20210205.simg
     ```
 
 # 2) QSMxT Usage
@@ -63,7 +63,12 @@ We developed an open-source QSM processing framework, QSMxT, that provides a ful
 
 On a high-performance compute system (HPC), PBS can be used instead of MultiProc for execution of `run_2_qsm.py`, `run_3_segment.py`, `run_4_magnitudeTemplate.py` and `run_5_qsmTemplate.py` for much greater parallelisation. However, PBS commands cannot be reliably invoked from inside the container, and so this requires execution from the HPC's native environment. To achieve this, a different install and run process is required via [transparent-singularity](https://github.com/CAIsr/transparent-singularity).
 
-Follow the [instructions](https://github.com/CAIsr/transparent-singularity) to install the latest QSMxT container via transparent-singularity.
+Install QSMxT container using [transparent-singularity](https://github.com/neurodesk/transparent-singularity):
+```bash
+git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.0.0_20210205
+cd qsmxt_1.0.0_20210205
+./run_transparent_singularity.sh --container qsmxt_1.0.0_20210205.simg
+```
 
 Clone the QSMxT repository:
 ```bash
@@ -74,4 +79,11 @@ Invoke QSMxT scripts directly, and use the `--pbs` flag along with your PBS acco
 ```bash
 cd QSMxT
 python3 run_2_qsm.py bids qsm --pbs ACCOUNT_STRING
+```
+
+# Docker
+
+There is also a docker image availabe:
+```
+docker run -it vnmd/qsmxt_1.0.0:20210203
 ```
