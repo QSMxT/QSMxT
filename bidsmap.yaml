@@ -40,7 +40,7 @@ DICOM:
       Modality: MR
       ProtocolName: ~
       SeriesDescription: ['*t1*', '*T1*', '*MPRAGE*', '*MP2RAGE*']
-      ImageType: '*M*'
+      ImageType: 'M'
       SequenceName: ~
       SequenceVariant: ~
       ScanningSequence: ~
@@ -66,7 +66,7 @@ DICOM:
       Modality: MR
       ProtocolName: ['*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*']
       SeriesDescription: ~
-      ImageType: '*M*'
+      ImageType: 'M'
       SequenceName: ~
       SequenceVariant: ~
       ScanningSequence: ~
@@ -92,7 +92,7 @@ DICOM:
       Modality: MR
       ProtocolName: ['*GRE*','*gre*','*EPI*','*epi*','*QSM*','*qsm*']
       SeriesDescription: ~
-      ImageType: "*P*"
+      ImageType: "P"
       SequenceName: ~
       SequenceVariant: ~
       ScanningSequence: ~
