@@ -46,79 +46,91 @@ def create_segmentation_workflow(
             base_directory=bids_dir
         ),
         name='selectfiles'
-        # output: ['t1', 'mag']
+        # output: ['T1', 'mag']
     )
     wf.connect([
         (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
     ])
 
+    def get_first(in_f):
+        if isinstance(in_f, list):
+            return in_f[0]
+        return in_f
+
+    n_getfirst_t1 = Node(
+        interface=Function(
+            input_names=['in_f'],
+            output_names=['out_f'],
+            function=get_first
+        ),
+        iterfield=['in_f'],
+        name='get_first_t1'
+    )
+    wf.connect([
+        (n_selectfiles, n_getfirst_t1, [('T1', 'in_f')])
+    ])
+
     # segment t1
-    mn_reconall = MapNode(
+    n_reconall = Node(
         interface=ReconAll(
             parallel=True,
             openmp=reconall_cpus
             #hires=True,
             #mprage=True
         ),
-        name='recon_all',
-        iterfield=['T1_files', 'subject_id']
+        name='recon_all'
     )
-    mn_reconall.plugin_args = {
+    n_reconall.plugin_args = {
         'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn={reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
         'overwrite': True
     }
     wf.connect([
-        (n_selectfiles, mn_reconall, [('T1', 'T1_files')]),
-        (n_infosource, mn_reconall, [('subject_id', 'subject_id')])
+        (n_getfirst_t1, n_reconall, [('out_f', 'T1_files')]),
+        (n_infosource, n_reconall, [('subject_id', 'subject_id')])
     ])
 
     # convert segmentation to nii
-    mn_reconall_aseg_nii = MapNode(
+    n_reconall_aseg_nii = Node(
         interface=MRIConvert(
             out_type='niigz',
         ),
-        name='reconall_aseg_nii',
-        iterfield=['in_file']
+        name='reconall_aseg_nii'
     )
     wf.connect([
-        (mn_reconall, mn_reconall_aseg_nii, [('aseg', 'in_file')]),
+        (n_reconall, n_reconall_aseg_nii, [('aseg', 'in_file')]),
     ])
 
     # convert original t1 to nii
-    mn_reconall_orig_nii = MapNode(
+    n_reconall_orig_nii = Node(
         interface=MRIConvert(
             out_type='niigz'
         ),
-        name='reconall_orig_nii',
-        iterfield=['in_file']
+        name='reconall_orig_nii'
     )
     wf.connect([
-        (mn_reconall, mn_reconall_orig_nii, [('orig', 'in_file')])
+        (n_reconall, n_reconall_orig_nii, [('orig', 'in_file')])
     ])
 
     # estimate transform for t1 to qsm
-    mn_calc_t1_to_gre = MapNode(
+    n_calc_t1_to_gre = Node(
         interface=bestlinreg.NiiBestLinRegInterface(),
-        name='calculate_reg',
-        iterfield=['in_fixed', 'in_moving']
+        name='calculate_reg'
     )
     wf.connect([
-        (n_selectfiles, mn_calc_t1_to_gre, [('mag', 'in_fixed')]),
-        (mn_reconall_orig_nii, mn_calc_t1_to_gre, [('out_file', 'in_moving')])
+        (n_selectfiles, n_calc_t1_to_gre, [('mag', 'in_fixed')]),
+        (n_reconall_orig_nii, n_calc_t1_to_gre, [('out_file', 'in_moving')])
     ])
 
     # apply transform to segmentation
-    mn_register_t1_to_gre = MapNode(
+    n_register_t1_to_gre = Node(
         interface=applyxfm.NiiApplyMincXfmInterface(),
-        name='register_segmentations',
-        iterfield=['in_file', 'in_like', 'in_transform']
+        name='register_segmentations'
     )
     wf.connect([
-        (mn_reconall_aseg_nii, mn_register_t1_to_gre, [('out_file', 'in_file')]),
-        (n_selectfiles, mn_register_t1_to_gre, [('mag', 'in_like')]),
-        (mn_calc_t1_to_gre, mn_register_t1_to_gre, [('out_transform', 'in_transform')])
+        (n_reconall_aseg_nii, n_register_t1_to_gre, [('out_file', 'in_file')]),
+        (n_selectfiles, n_register_t1_to_gre, [('mag', 'in_like')]),
+        (n_calc_t1_to_gre, n_register_t1_to_gre, [('out_transform', 'in_transform')])
     ])
-
 
     # datasink
     n_datasink = Node(
@@ -129,10 +141,10 @@ def create_segmentation_workflow(
         name='datasink'
     )
     wf.connect([
-        (mn_reconall_aseg_nii, n_datasink, [('out_file', 't1_mni_segmentation')]),
-        (mn_reconall_orig_nii, n_datasink, [('out_file', 't1_mni')]),
-        (mn_register_t1_to_gre, n_datasink, [('out_file', 'qsm_segmentation')]),
-        (mn_calc_t1_to_gre, n_datasink, [('out_transform', 't1_mni_to_qsm_transforms')])
+        (n_reconall_aseg_nii, n_datasink, [('out_file', 't1_mni_segmentation')]),
+        (n_reconall_orig_nii, n_datasink, [('out_file', 't1_mni')]),
+        (n_register_t1_to_gre, n_datasink, [('out_file', 'qsm_segmentation')]),
+        (n_calc_t1_to_gre, n_datasink, [('out_transform', 't1_mni_to_qsm_transforms')])
     ])
 
     return wf
