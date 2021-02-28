@@ -29,9 +29,11 @@ def create_qsm_workflow(
     bids_templates,
     masking,
     two_pass,
+    add_bet,
     no_resampling,
     qsm_iterations,
     num_echoes_to_process,
+    fractional_intensity,
     threshold,
     extra_fill_strength,
     homogeneity_filter,
@@ -158,8 +160,18 @@ def create_qsm_workflow(
         name='repeat_mask'
     )
 
-    if 'bet' in masking:
-        # homogeneity filter
+    if homogeneity_filter and masking != 'phase-based':
+        mn_homogeneity_filter = MapNode(
+            interface=makehomogeneous.MakeHomogeneousInterface(),
+            iterfield=['in_file'],
+            name='make_homogeneous'
+            # output : out_file
+        )
+        wf.connect([
+            (n_selectfiles, mn_homogeneity_filter, [('mag', 'in_file')])
+        ])
+
+    if 'bet' in masking or add_bet:
         n_mag = MapNode(
             interface=Function(
                 input_names=['in_file'],
@@ -169,15 +181,10 @@ def create_qsm_workflow(
             iterfield=['in_file'],
             name='repeat_magnitude'
         )
+
+        # homogeneity filter
         if homogeneity_filter:
-            mn_homogeneity_filter = MapNode(
-                interface=makehomogeneous.MakeHomogeneousInterface(),
-                iterfield=['in_file'],
-                name='make_homogeneous'
-                # output : out_file
-            )
             wf.connect([
-                (n_selectfiles, mn_homogeneity_filter, [('mag', 'in_file')]),
                 (mn_homogeneity_filter, n_mag, [('out_file', 'in_file')])
             ])
         else:
@@ -185,20 +192,21 @@ def create_qsm_workflow(
                 (n_selectfiles, n_mag, [('mag', 'in_file')])
             ])
 
-        bet = MapNode(
-            interface=BET(frac=0.7, mask=True, robust=True),
+        mn_bet = MapNode(
+            interface=BET(frac=fractional_intensity, mask=True, robust=True),
             iterfield=['in_file'],
             name='fsl_bet'
             # output: 'mask_file'
         )
         wf.connect([
-            (n_mag, bet, [('out_file', 'in_file')])
+            (n_mag, mn_bet, [('out_file', 'in_file')])
         ])
 
-        wf.connect([
-            (bet, mn_mask, [('mask_file', 'in_file')])
-        ])
-    elif masking == 'phase-based':
+        if not add_bet:
+            wf.connect([
+                (mn_bet, mn_mask, [('mask_file', 'in_file')])
+            ])
+    if masking == 'phase-based':
         # per-echo phase-based masks
         mn_phaseweights = MapNode(
             interface=phaseweights.PhaseWeightsInterface(),
@@ -238,22 +246,25 @@ def create_qsm_workflow(
             name='magnitude_mask'
             # output: 'out_file'
         )
-        wf.connect([
-            (n_selectfiles, mn_magmask, [('mag', 'in_file')])
-        ])
+
+        if homogeneity_filter:
+            wf.connect([
+                (mn_homogeneity_filter, mn_magmask, [('out_file', 'in_file')])
+            ])
+        else:
+            wf.connect([
+                (n_selectfiles, mn_magmask, [('mag', 'in_file')])
+            ])
 
         wf.connect([
             (mn_magmask, mn_mask, [('out_file', 'in_file')])
         ])
-
     if two_pass or 'bet' in masking:
         # qsm processing
         mn_qsm_iterfield = ['phase_file', 'TE', 'b0']
         
         # if using a multi-echo masking method, add mask_file to iterfield
         if masking not in ['bet-firstecho', 'bet-lastecho']: mn_qsm_iterfield.append('mask_file')
-        
-
         
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
@@ -298,7 +309,6 @@ def create_qsm_workflow(
             (mn_qsm, n_datasink, [('out_file', 'qsms')]),
             (mn_mask, n_datasink, [('mask_file', 'masks')])
         ])
-
     if masking in ['phase-based', 'magnitude-based']:
         mn_mask_filled = MapNode(
             interface=ImageMaths(
@@ -312,13 +322,29 @@ def create_qsm_workflow(
             iterfield=['in_file'],
             name='mask_filled'
         )
+
+        if add_bet:
+            mn_mask_plus_bet = MapNode(
+                interface=composite.CompositeNiftiInterface(),
+                name='mask_plus_bet',
+                iterfield=['in_file1', 'in_file2'],
+            )
+            wf.connect([
+                (mn_mask, mn_mask_plus_bet, [('mask_file', 'in_file1')]),
+                (mn_bet, mn_mask_plus_bet, [('mask_file', 'in_file2')])
+            ])
+            wf.connect([
+                (mn_mask_plus_bet, mn_mask_filled, [('out_file', 'in_file')])
+            ])
+        else:
+            wf.connect([
+                (mn_mask, mn_mask_filled, [('mask_file', 'in_file')])
+            ])
+
         wf.connect([
-            (mn_mask, mn_mask_filled, [('mask_file', 'in_file')])
+            (mn_mask_filled, n_datasink, [('out_file', 'masks_filled')])
         ])
-        wf.connect([
-            (mn_mask_filled, n_datasink, [('out_file', 'masks_filled')]),
-        ])
-        
+
         mn_qsm_filled = MapNode(
             interface=tgv.QSMappingInterface(
                 iterations=qsm_iterations,
@@ -473,6 +499,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--add_bet',
+        action='store_true',
+        help='add a bet mask to the filled in threshold-based mask'
+    )
+
+    parser.add_argument(
         '--no_resampling',
         action='store_true',
         help='deactivate resampling inside TGV_QSM. ' +
@@ -499,6 +531,13 @@ if __name__ == "__main__":
         type=int,
         default=30,
         help='threshold percentage used for magnitude-based and phase-based masking'
+    )
+
+    parser.add_argument(
+        '--fractional_intensity', '-fi',
+        type=float,
+        default=0.7,
+        help='fractional intensity for BET masking operations'
     )
 
     def positive_int(value):
@@ -553,7 +592,11 @@ if __name__ == "__main__":
 
     # subject folders
     if not args.subjects:
-        subject_list = [subj for subj in os.listdir(args.bids_dir) if fnmatch.fnmatch(subj, args.subject_folder_pattern) and os.path.isdir(os.path.join(args.bids_dir, subj))]
+        subject_list = [
+            subj for subj in os.listdir(args.bids_dir)
+            if fnmatch.fnmatch(subj, args.subject_folder_pattern)
+            and os.path.isdir(os.path.join(args.bids_dir, subj))
+        ]
     else:
         subject_list = args.subjects
 
@@ -567,12 +610,10 @@ if __name__ == "__main__":
     }
 
     num_echoes = len(glob.glob(os.path.join(args.bids_dir, subject_list[0], args.input_phase_pattern)))
-    if 'bet-firstecho' in args.masking and num_echoes > 1:
+    if ('bet-firstecho' in args.masking or args.add_bet) and num_echoes > 1:
         bids_templates['mag'] = bids_templates['mag'].replace('qsm*', 'qsm*E01*')
-    if 'bet-lastecho' in args.masking and num_echoes > 1:
+    if ('bet-lastecho' in args.masking or args.add_bet) and num_echoes > 1:
         bids_templates['mag'] = bids_templates['mag'].replace('qsm*', f'qsm*E{num_echoes:02}*')
-    if 'phase-based' in args.masking:
-        del bids_templates['mag']
 
     wf = create_qsm_workflow(
         subject_list=subject_list,
@@ -582,9 +623,11 @@ if __name__ == "__main__":
         bids_templates=bids_templates,
         masking=args.masking,
         two_pass=args.two_pass and 'bet' not in args.masking,
+        add_bet=args.add_bet,
         no_resampling=args.no_resampling,
         qsm_iterations=args.iterations,
         num_echoes_to_process=args.num_echoes_to_process,
+        fractional_intensity=args.fractional_intensity,
         threshold=args.threshold,
         extra_fill_strength=args.extra_fill_strength,
         homogeneity_filter=homogeneity_filter != args.homogeneity_filter,
