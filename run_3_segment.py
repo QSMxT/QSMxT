@@ -22,6 +22,7 @@ def create_segmentation_workflow(
     out_dir,
     reconall_cpus,
     templates,
+    t1_is_mprage,
     qsub_account_string
 ):
 
@@ -56,15 +57,16 @@ def create_segmentation_workflow(
     mn_reconall = MapNode(
         interface=ReconAll(
             parallel=True,
-            openmp=reconall_cpus
+            openmp=1,
+            mprage=t1_is_mprage
             #hires=True,
-            #mprage=True
         ),
         name='recon_all',
         iterfield=['T1_files', 'subject_id']
     )
+
     mn_reconall.plugin_args = {
-        'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn={reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
+        'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn=1,mem=20gb,vmem=20gb,walltime=18:00:00',
         'overwrite': True
     }
     wf.connect([
@@ -190,6 +192,12 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--t1_is_mprage',
+        action='store_true',
+        help='use if t1w images are MPRAGE; improves segmentation'
+    )
+
+    parser.add_argument(
         '--pbs',
         default=None,
         dest='qsub_account_string',
@@ -248,8 +256,9 @@ if __name__ == "__main__":
         bids_dir=os.path.abspath(args.bids_dir),
         work_dir=os.path.abspath(args.work_dir),
         out_dir=os.path.abspath(args.out_dir),
-        reconall_cpus=16,
+        reconall_cpus=1 if args.qsub_account_string is None else int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()),
         templates=templates,
+        t1_is_mprage=args.t1_is_mprage,
         qsub_account_string=args.qsub_account_string
     )
 
