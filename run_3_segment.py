@@ -81,14 +81,8 @@ def create_segmentation_workflow(
         ),
         name='recon_all'
     )
-<<<<<<< HEAD
-
-    mn_reconall.plugin_args = {
-        'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn=1,mem=20gb,vmem=20gb,walltime=18:00:00',
-=======
     n_reconall.plugin_args = {
         'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn={reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
->>>>>>> 91d36b3824e5f3e7a21bd9f5bd5cafc46cac370c
         'overwrite': True
     }
     wf.connect([
