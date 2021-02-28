@@ -15,8 +15,12 @@ def nonzero_average(in_files, save_result=True):
         in_nii = nib.load(in_nii_file)
         in_data = in_nii.get_fdata()
         data.append(in_data)
-    data = np.array(data)
-    mask = abs(data) >= 0.0001
+    try:
+        data = np.array(data)
+        mask = abs(data) >= 0.0001
+    except ValueError:
+        sizes = [x.shape for x in data]
+        raise ValueError(f"Tried to average files of incompatible dimensions; {sizes}")
     final = np.divide(data.sum(0), mask.sum(0), out=np.zeros_like(data.sum(0)), where=mask.sum(0)!=0)
     #final = data.sum(0) / mask.sum(0)
     if save_result:
