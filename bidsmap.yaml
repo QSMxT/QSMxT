@@ -64,7 +64,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ['*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*']
+      ProtocolName: ['*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
       SeriesDescription: ~
       ImageType: 'M'
       SequenceName: ~
@@ -90,9 +90,9 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ['*GRE*','*gre*','*EPI*','*epi*','*QSM*','*qsm*']
+      ProtocolName: ['*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
       SeriesDescription: ~
-      ImageType: "P"
+      ImageType: 'P'
       SequenceName: ~
       SequenceVariant: ~
       ScanningSequence: ~
@@ -119,6 +119,32 @@ DICOM:
   beh:        # ----------------------- All behavioural data ---------------------
   pet:        # ----------------------- All PET series ---------------------------
   extra_data: # ----------------------- All extra data ---------------------------
+  - provenance: ~
+    attributes:
+      Modality: MR
+      ProtocolName: '*swi*'
+      SeriesDescription: ~
+      ImageType: ~
+      SequenceName: ~
+      SequenceVariant: ~
+      ScanningSequence: ~
+      MRAcquisitionType: ~
+      SliceThickness: ~
+      FlipAngle: ~
+      EchoNumbers: ~
+      EchoTime: ~
+      RepetitionTime: ~
+      PhaseEncodingDirection: ~
+    bids:
+      acq: swi
+      rec:
+      ce:
+      task:
+      echo:
+      dir:
+      run: <AcquisitionNumber>
+      mod:
+      suffix:
   leave_out:  # ----------------------- Data that will be left out ---------------
 PAR:
 # --------------------------------------------------------------------------------
