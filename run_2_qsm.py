@@ -160,7 +160,7 @@ def create_qsm_workflow(
         name='repeat_mask'
     )
 
-    if homogeneity_filter and masking != 'phase-based':
+    if homogeneity_filter:
         mn_homogeneity_filter = MapNode(
             interface=makehomogeneous.MakeHomogeneousInterface(),
             iterfield=['in_file'],
@@ -172,35 +172,22 @@ def create_qsm_workflow(
         ])
 
     if 'bet' in masking or add_bet:
-        n_mag = MapNode(
-            interface=Function(
-                input_names=['in_file'],
-                output_names=['out_file'],
-                function=repeat
-            ),
-            iterfield=['in_file'],
-            name='repeat_magnitude'
-        )
-
-        # homogeneity filter
-        if homogeneity_filter:
-            wf.connect([
-                (mn_homogeneity_filter, n_mag, [('out_file', 'in_file')])
-            ])
-        else:
-            wf.connect([
-                (n_selectfiles, n_mag, [('mag', 'in_file')])
-            ])
-
         mn_bet = MapNode(
             interface=BET(frac=fractional_intensity, mask=True, robust=True),
             iterfield=['in_file'],
             name='fsl_bet'
             # output: 'mask_file'
         )
-        wf.connect([
-            (n_mag, mn_bet, [('out_file', 'in_file')])
-        ])
+
+        # homogeneity filter
+        if homogeneity_filter:
+            wf.connect([
+                (mn_homogeneity_filter, mn_bet, [('out_file', 'in_file')])
+            ])
+        else:
+            wf.connect([
+                (n_selectfiles, mn_bet, [('mag', 'in_file')])
+            ])
 
         if not add_bet:
             wf.connect([
@@ -601,7 +588,10 @@ if __name__ == "__main__":
         subject_list = args.subjects
 
     # default homogeneity filter setting: on for BET, off for everything else
-    homogeneity_filter = 'bet' in args.masking
+    homogeneity_filter = 'bet' in args.masking or args.add_bet
+
+    # add_bet option only works with non-bet masking methods
+    args.add_bet = args.add_bet and 'bet' not in args.masking
 
     bids_templates = {
         'mag': os.path.join('{subject_id_p}', args.input_magnitude_pattern),
@@ -610,9 +600,9 @@ if __name__ == "__main__":
     }
 
     num_echoes = len(glob.glob(os.path.join(args.bids_dir, subject_list[0], args.input_phase_pattern)))
-    if ('bet-firstecho' in args.masking or args.add_bet) and num_echoes > 1:
+    if 'bet-firstecho' in args.masking and num_echoes > 1:
         bids_templates['mag'] = bids_templates['mag'].replace('qsm*', 'qsm*E01*')
-    if ('bet-lastecho' in args.masking or args.add_bet) and num_echoes > 1:
+    if 'bet-lastecho' in args.masking and num_echoes > 1:
         bids_templates['mag'] = bids_templates['mag'].replace('qsm*', f'qsm*E{num_echoes:02}*')
 
     wf = create_qsm_workflow(
