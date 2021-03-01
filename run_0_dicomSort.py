@@ -32,9 +32,8 @@ def find_empty_dirs(root_dir='.', recursive=True):
 
 def clean_text(string):
     # clean and standardize text descriptions, which makes searching files easier
-    forbidden_symbols = ["*", ".", ",", "\"", "\\", "/", "|", "[", "]", ":", ";", " "]
-    for symbol in forbidden_symbols:
-        string = string.replace(symbol, "_") # replace everything with an underscore
+    for symbol in ["*", ".", ",", "\"", "\\", "/", "|", "[", "]", ":", ";", " "]:
+        string = string.replace(str(symbol), "_") # replace everything with an underscore
     return string.lower()  
 
 def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
@@ -70,6 +69,7 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
         studyDate = clean_text(ds.get("StudyDate", "NA"))
         studyDescription = clean_text(ds.get("StudyDescription", "NA"))
         seriesDescription = clean_text(ds.get("SeriesDescription", "NA"))
+        seriesNumber = clean_text(str(ds.get("SeriesNumber", "NA")))
     
         # generate new, standardized file name
         modality = ds.get("Modality","NA")
@@ -89,15 +89,17 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
             exit()
     
         # save files to a 3-tier nested folder structure
-        subjName_date = f"sub-{subj_name}_{studyDate}"
+        subjFolderName = f"sub-{subj_name}"#_{studyDate}"
+        seriesFolderName = f"{seriesNumber}_{seriesDescription}"
 
-        if not os.path.exists(os.path.join(output_dir, subjName_date, seriesDescription)):
-            os.makedirs(os.path.join(output_dir, subjName_date, seriesDescription), exist_ok=True)
-            print(f'Saving new series: {subjName_date}_{seriesDescription}')
+
+        if not os.path.exists(os.path.join(output_dir, subjFolderName, seriesFolderName)):
+            os.makedirs(os.path.join(output_dir, subjFolderName, seriesFolderName), exist_ok=True)
+            print(f'Saving new series: {subjFolderName}_{seriesFolderName}')
         
-        ds.save_as(os.path.join(output_dir, subjName_date, seriesDescription, fileName))
+        ds.save_as(os.path.join(output_dir, subjFolderName, seriesFolderName, fileName))
 
-        if not os.path.exists(os.path.join(output_dir, subjName_date, seriesDescription, fileName)):
+        if not os.path.exists(os.path.join(output_dir, subjFolderName, seriesFolderName, fileName)):
             fail = True
 
     if not fail and delete_originals:
@@ -148,4 +150,5 @@ if __name__ == "__main__":
         use_patient_name=args.use_patient_name,
         delete_originals=args.input_dir == args.output_dir or args.delete_originals
     )
+    
     
