@@ -36,7 +36,7 @@ def clean_text(string):
         string = string.replace(str(symbol), "_") # replace everything with an underscore
     return string.lower()  
 
-def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
+def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delete_originals):
     os.makedirs(output_dir, exist_ok=True)
     extension = '.IMA'
     print('reading file list...')
@@ -59,6 +59,9 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
     
     fail = False
 
+    subjName_dates = []
+    subjName_sessionNums = {}
+
     for dicom_loc in unsortedList:
         # read the file
         ds = pydicom.read_file(dicom_loc, force=True)
@@ -78,7 +81,7 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
         instanceNumber = str(ds.get("InstanceNumber","0"))
         fileName = modality + "." + seriesInstanceUID + "." + instanceNumber + extension
 
-        subj_name = patientName if use_patient_name else patientID
+        subj_name = patientName if use_patient_names else patientID
         
         # uncompress files (using the gdcm package)
         try:
@@ -87,19 +90,33 @@ def dicomsort(input_dir, output_dir, use_patient_name, delete_originals):
             print(f'An exception occurred while decompressing {dicom_loc}')
             print(f'Exception details: {e}')
             exit()
-    
-        # save files to a 3-tier nested folder structure
-        subjFolderName = f"sub-{subj_name}"#_{studyDate}"
-        seriesFolderName = f"{seriesNumber}_{seriesDescription}"
-
-
-        if not os.path.exists(os.path.join(output_dir, subjFolderName, seriesFolderName)):
-            os.makedirs(os.path.join(output_dir, subjFolderName, seriesFolderName), exist_ok=True)
-            print(f'Saving new series: {subjFolderName}_{seriesFolderName}')
         
-        ds.save_as(os.path.join(output_dir, subjFolderName, seriesFolderName, fileName))
+        # save files to a 3-tier nested folder structure
+        subjFolderName = f"sub-{subj_name}"
+        seriesFolderName = f"{seriesDescription}"
+    
+        subjName_date = f"{subj_name}_{studyDate}"
 
-        if not os.path.exists(os.path.join(output_dir, subjFolderName, seriesFolderName, fileName)):
+        if not any(subj_name in x for x in subjName_dates):
+            print(f'Identified subject: {subj_name}')
+        
+        if subjName_date not in subjName_dates:
+            subjName_dates.append(subjName_date)
+            if subj_name in subjName_sessionNums.keys():
+                subjName_sessionNums[subj_name] += 1
+            else:
+                subjName_sessionNums[subj_name] = 1
+            print(f'Identified session: {subj_name} #{subjName_sessionNums[subj_name]} {studyDate}')
+
+        sesFolderName = f"ses-{subjName_sessionNums[subj_name]}" if not use_session_dates else f"ses-{studyDate}"
+        
+        if not os.path.exists(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName)):
+            print(f'Identified series: {subjFolderName}/{sesFolderName}/{seriesFolderName}')
+            os.makedirs(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName), exist_ok=True)
+        
+        ds.save_as(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName, fileName))
+
+        if not os.path.exists(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName, fileName)):
             fail = True
 
     if not fail and delete_originals:
@@ -130,9 +147,15 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--use_patient_name',
+        '--use_patient_names',
         action='store_true',
         help='use the PatientName rather than PatientID for subject folders'
+    )
+
+    parser.add_argument(
+        '--use_session_dates',
+        action='store_true',
+        help='Use the StudyDate field rather than an incrementer for session IDs'
     )
 
     parser.add_argument(
@@ -147,7 +170,8 @@ if __name__ == "__main__":
     dicomsort(
         input_dir=args.input_dir,
         output_dir=args.output_dir if args.output_dir is not None else args.input_dir,
-        use_patient_name=args.use_patient_name,
+        use_patient_names=args.use_patient_names,
+        use_session_dates=args.use_session_dates,
         delete_originals=args.input_dir == args.output_dir or args.delete_originals
     )
     
