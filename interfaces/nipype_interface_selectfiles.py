@@ -1,3 +1,23 @@
+# ADAPTED FOR QSMXT BY ASHLEY STEWART (a.stewart.au@gmail.com)
+
+'''
+Copyright (c) 2009-2016, Nipype developers
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+
+Prior to release 0.12, Nipype was licensed under a BSD license.
+'''
+
 import string
 import re
 import os
@@ -137,7 +157,10 @@ class SelectFiles(IOBase):
 
             # Build the full template path
             if isdefined(self.inputs.base_directory):
-                template = op.abspath(op.join(self.inputs.base_directory, template))
+                if self.inputs.base_directory == '/':
+                    pass
+                else:
+                    template = op.abspath(op.join(self.inputs.base_directory, template))
             else:
                 template = op.abspath(template)
 
@@ -171,6 +194,9 @@ class SelectFiles(IOBase):
             # Limit the number of files matched
             if self._num_files:
                 filelist = filelist[:self._num_files]
+
+            # Get number of files
+            outputs['num_files'] = len(filelist)
 
             outputs[field] = filelist
 
