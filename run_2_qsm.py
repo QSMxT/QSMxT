@@ -380,11 +380,12 @@ def create_qsm_workflow(
             mn_qsm_composite = MapNode(
                 interface=composite.CompositeNiftiInterface(),
                 name='qsm_composite',
-                iterfield=['in_file1', 'in_file2'],
+                iterfield=['in_file1', 'in_file2', 'in_maskFile'],
             )
             wf.connect([
                 (mn_qsm, mn_qsm_composite, [('out_file', 'in_file1')]),
-                (mn_qsm_filled, mn_qsm_composite, [('out_file', 'in_file2')])
+                (mn_qsm_filled, mn_qsm_composite, [('out_file', 'in_file2')]),
+                (mn_mask, mn_qsm_composite, [('mask_file', 'in_maskFile')])
             ])
 
             n_qsm_composite_average = Node(
