@@ -225,7 +225,7 @@ def create_qsm_workflow(
         mn_magmask = MapNode(
             interface=ImageMaths(
                 suffix="_mask",
-                op_string=f"-thrp {args.threshold} -bin"
+                op_string=f"-thrp {args.threshold} -bin -ero -dilM"
             ),
             iterfield=['in_file'],
             name='magnitude_mask'
@@ -652,7 +652,7 @@ if __name__ == "__main__":
         wf.run(
             plugin='MultiProc',
             plugin_args={
-                'n_procs': int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+                'n_procs': 4#int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
             }
         )
 
