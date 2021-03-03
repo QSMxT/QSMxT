@@ -652,7 +652,7 @@ if __name__ == "__main__":
         wf.run(
             plugin='MultiProc',
             plugin_args={
-                'n_procs': 4#int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+                'n_procs': int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
             }
         )
 
