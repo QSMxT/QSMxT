@@ -16,7 +16,7 @@ import re
 
 
 def create_segmentation_workflow(
-    subject_list,
+    session_dirs,
     bids_dir,
     work_dir,
     out_dir,
@@ -31,14 +31,14 @@ def create_segmentation_workflow(
     # use infosource to iterate workflow across subject list
     n_infosource = Node(
         interface=IdentityInterface(
-            fields=['subject_id']
+            fields=['session_dir']
         ),
         name="infosource"
-        # input: 'subject_id'
-        # output: 'subject_id'
+        # input: 'session_dir'
+        # output: 'session_dir'
     )
-    # runs the node with subject_id = each element in subject_list
-    n_infosource.iterables = ('subject_id', subject_list)
+    # runs the node with session_id = each element in subject_list
+    n_infosource.iterables = ('session_dir', session_dirs)
 
     # select matching files from bids_dir
     n_selectfiles = Node(
@@ -50,7 +50,7 @@ def create_segmentation_workflow(
         # output: ['T1', 'mag']
     )
     wf.connect([
-        (n_infosource, n_selectfiles, [('subject_id', 'subject_id_p')])
+        (n_infosource, n_selectfiles, [('session_dir', 'session_dir_p')])
     ])
 
     def get_first(in_f):
@@ -87,7 +87,7 @@ def create_segmentation_workflow(
     }
     wf.connect([
         (n_getfirst_t1, n_reconall, [('out_f', 'T1_files')]),
-        (n_infosource, n_reconall, [('subject_id', 'subject_id')])
+        (n_infosource, n_reconall, [('session_dir', 'subject_id')])
     ])
 
     # convert segmentation to nii
@@ -160,65 +160,78 @@ if __name__ == "__main__":
 
     parser.add_argument(
         'bids_dir',
-        help='input data folder that can be created using run_1_dicomToBids.py; can also use a ' +
+        help='Input data folder that can be created using run_1_dicomToBids.py. Can also use a ' +
              'custom folder containing subject folders and NIFTI files or a BIDS folder with a ' +
-             'different structure, as long as --subject_folder_pattern, --input_t1_pattern ' +
-             'and --input_magnitude_pattern are also specified'
+             'different structure, as long as --subject_folder_pattern, --session_folder_pattern, ' +
+             '--input_t1_pattern and --input_magnitude_pattern are also specified.'
     )
 
     parser.add_argument(
         'out_dir',
-        help='output segmentation directory; will be created if it does not exist'
+        help='Output segmentation directory; will be created if it does not exist.'
     )
 
     parser.add_argument(
         '--work_dir',
         default=None,
-        help='nipype working directory; defaults to \'work\' within \'out_dir\''
+        help='NiPype working directory; defaults to \'work\' within \'out_dir\'.'
     )
 
     parser.add_argument(
         '--subject_folder_pattern',
         default='sub*',
-        help='pattern to match subject folders in bids_dir'
+        help='Pattern to match subject folders in bids_dir.'
+    )
+
+    parser.add_argument(
+        '--session_folder_pattern',
+        default='ses*',
+        help='Pattern to match session folders in subject folders.'
     )
 
     parser.add_argument(
         '--input_t1_pattern',
         default='anat/*T1w*nii*',
-        help='pattern to match input t1 files for segmentation within subject folders'
+        help='Pattern to match input t1 files for segmentation within subject folders.'
     )
 
     parser.add_argument(
         '--input_magnitude_pattern',
         default='anat/*qsm*E01*magnitude*nii*',
-        help='pattern to match input magnitude files (in the qsm space) within subject folders'
+        help='Pattern to match input magnitude files (in the qsm space) within subject folders.'
     )
     
     parser.add_argument(
         '--subjects', '-s',
         default=None,
         nargs='*',
-        help='list of subject folders to process; by default all subjects are processed'
+        help='List of subject folders to process; by default all subjects are processed.'
+    )
+    
+    parser.add_argument(
+        '--sessions',
+        default=None,
+        nargs='*',
+        help='List of session folders to process; by default all sessions are processed.'
     )
 
     parser.add_argument(
         '--t1_is_mprage',
         action='store_true',
-        help='use if t1w images are MPRAGE; improves segmentation'
+        help='Use if t1w images are MPRAGE; improves segmentation.'
     )
 
     parser.add_argument(
         '--pbs',
         default=None,
         dest='qsub_account_string',
-        help='run the pipeline via PBS and use the argument as the QSUB account string'
+        help='Run the pipeline via PBS and use the argument as the QSUB account string.'
     )
 
     parser.add_argument(
         '--debug',
         action='store_true',
-        help='enables some nipype settings for debugging'
+        help='Enables some NiPype settings for debugging.'
     )
 
     args = parser.parse_args()
@@ -237,33 +250,35 @@ if __name__ == "__main__":
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
-    # subject folders
-    if not args.subjects:
-        subject_list = [subj for subj in os.listdir(args.bids_dir) if fnmatch.fnmatch(subj, args.subject_folder_pattern) and os.path.isdir(os.path.join(args.bids_dir, subj))]
-    else:
-        subject_list = args.subjects
+    # determine subject/session folders
+    session_dirs = glob.glob(os.path.join(args.bids_dir, args.subject_folder_pattern, args.session_folder_pattern))
+    if args.subjects:
+        session_dirs = [x for x in session_dirs if any(s in x for s in args.subjects)]
+    if args.sessions:
+        session_dirs = [x for x in session_dirs if any(s in x for s in args.sessions)]
+    session_dirs = [x.replace(os.path.relpath(args.bids_dir) + os.path.sep, '') for x in session_dirs]
 
     if not args.work_dir: args.work_dir = args.out_dir
     os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
 
     # subject_folder_pattern, input_magnitude_pattern
-    num_echoes = len(glob.glob(os.path.join(args.bids_dir, subject_list[0], args.input_magnitude_pattern)))
+    num_echoes = len(glob.glob(os.path.join(args.bids_dir, session_dirs[0], args.input_magnitude_pattern)))
     if num_echoes == 0: args.input_magnitude_pattern = args.input_magnitude_pattern.replace("E01", "")
 
-    if not glob.glob(os.path.join(args.bids_dir, subject_list[0], args.input_t1_pattern)):
+    if not glob.glob(os.path.join(args.bids_dir, session_dirs[0], args.input_t1_pattern)):
         print(f"Error: No T1-weighted images found in {args.bids_dir} matching pattern {args.subject_folder_pattern}/{args.input_t1_pattern}")
         exit()
-    if not glob.glob(os.path.join(args.bids_dir, subject_list[0], args.input_magnitude_pattern)):
+    if not glob.glob(os.path.join(args.bids_dir, session_dirs[0], args.input_magnitude_pattern)):
         print(f"Error: No magnitude images found in {args.bids_dir} matching pattern {args.subject_folder_pattern}/{args.input_magnitude_pattern}")
         exit()
 
     templates={
-        'T1': os.path.join('{subject_id_p}', args.input_t1_pattern),
-        'mag': os.path.join('{subject_id_p}', args.input_magnitude_pattern)
+        'T1': os.path.join('{session_dir_p}', args.input_t1_pattern),
+        'mag': os.path.join('{session_dir_p}', args.input_magnitude_pattern)
     }
 
     wf = create_segmentation_workflow(
-        subject_list=subject_list,
+        session_dirs=session_dirs,
         bids_dir=os.path.abspath(args.bids_dir),
         work_dir=os.path.abspath(args.work_dir),
         out_dir=os.path.abspath(args.out_dir),
