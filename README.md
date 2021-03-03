@@ -85,5 +85,5 @@ python3 run_2_qsm.py bids qsm --pbs ACCOUNT_STRING
 
 There is also a docker image availabe:
 ```
-docker run -it vnmd/qsmxt_1.0.0:20210203
+docker run -it vnmd/qsmxt_1.0.0:20210205
 ```
