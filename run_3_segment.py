@@ -44,7 +44,8 @@ def create_segmentation_workflow(
     n_selectfiles = Node(
         interface=SelectFiles(
             templates=templates,
-            base_directory=bids_dir
+            base_directory=bids_dir,
+            sort_filelist=True
         ),
         name='selectfiles'
         # output: ['T1', 'mag']
