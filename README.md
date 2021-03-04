@@ -95,7 +95,9 @@ A user friendly way of running this pipeline in Windows is via our NeuroDesk pro
 Create a directory on your harddrive called “vnm” (e.g. C:/vnm) – this directory will be used to exchange files between your computer and all our tools.
 
 Then open a Windows PowerShell window and run the following command:
+```
 docker run --privileged --name vnm -v C:/vnm:/vnm -e USER=neuro -p 6080:80 -p 5900:5900 vnmd/vnm:20210304
+```
 
 Then open a browser window (chrome, firefox, edge …) and navigate to: http://localhost:6080/
 
@@ -106,11 +108,15 @@ Now you can store you dicom files in the C:/vnm directory and they will show up 
 In the QSMxT window type: cd /vnm
 
 Then you can start the processing by running the following commands in the QSMxT window:
+```
 python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
 python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
 python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output
 python3 /opt/QSMxT/run_3_segment.py 01_bids 03_segmentation
+```
 
 When done processing you can stop the environment by closing the browser, and CTRL-C in the powershell window, then run
+```
 docker stop vnm
 docker rm vnm
+```
