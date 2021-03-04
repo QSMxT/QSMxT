@@ -110,3 +110,7 @@ python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTO
 python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
 python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output
 python3 /opt/QSMxT/run_3_segment.py 01_bids 03_segmentation
+
+When done processing you can stop the environment by closing the browser, and CTRL-C in the powershell window, then run
+docker stop vnm
+docker rm vnm
