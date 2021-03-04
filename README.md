@@ -20,17 +20,17 @@ We developed an open-source QSM processing framework, QSMxT, that provides a ful
    wget <mirror>
 	```
 	
-    - Australian Mirror: https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210205.simg
-	- US Mirror: https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210205.simg
-	- European Mirror: https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210205.simg
+    - Australian Mirror: https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210304.simg
+	- US Mirror: https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210304.simg
+	- European Mirror: https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210304.simg
 	
 3. Run singularity image
 
     ```bash
-    singularity shell qsmxt_1.0.0_20210205.simg
+    singularity shell qsmxt_1.0.0_20210304.simg
 
     # alternative launch to mount additional data directories:
-    singularity shell -B /data:/data qsmxt_1.0.0_20210205.simg
+    singularity shell -B /data:/data qsmxt_1.0.0_20210304.simg
     ```
 
 # 2) QSMxT Usage
@@ -65,9 +65,9 @@ On a high-performance compute system (HPC), PBS can be used instead of MultiProc
 
 Install QSMxT container using [transparent-singularity](https://github.com/neurodesk/transparent-singularity):
 ```bash
-git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.0.0_20210205
-cd qsmxt_1.0.0_20210205
-./run_transparent_singularity.sh --container qsmxt_1.0.0_20210205.simg
+git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.0.0_20210304
+cd qsmxt_1.0.0_20210304
+./run_transparent_singularity.sh --container qsmxt_1.0.0_20210304.simg
 ```
 
 Clone the QSMxT repository:
@@ -85,5 +85,38 @@ python3 run_2_qsm.py bids qsm --pbs ACCOUNT_STRING
 
 There is also a docker image availabe:
 ```
-docker run -it vnmd/qsmxt_1.0.0:20210205
+docker run -it vnmd/qsmxt_1.0.0:20210304
+```
+
+# Running this pipeline in the NeuroDesk environment
+
+A user friendly way of running this pipeline in Windows is via our NeuroDesk (https://github.com/NeuroDesk/) project:
+
+Create a directory on your harddrive called “vnm” (e.g. C:/vnm) – this directory will be used to exchange files between your computer and all our tools.
+
+Then open a Windows PowerShell window and run the following command:
+```
+docker run --privileged --name vnm -v C:/vnm:/vnm -e USER=neuro -p 6080:80 -p 5900:5900 vnmd/vnm:20210304
+```
+
+Then open a browser window (chrome, firefox, edge …) and navigate to: http://localhost:6080/
+
+This should open the graphical interface and you can now start qsmxt from the Menu system (VNM Neuroimaging -> Quantitative Imaging -> qsmxt)
+ 
+Now you can store you dicom files in the C:/vnm directory and they will show up in /vnm inside our environment
+
+In the QSMxT window type: cd /vnm
+
+Then you can start the processing by running the following commands in the QSMxT window:
+```
+python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
+python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
+python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output
+python3 /opt/QSMxT/run_3_segment.py 01_bids 03_segmentation
+```
+
+When done processing you can stop the environment by closing the browser, and CTRL-C in the powershell window, then run
+```
+docker stop vnm
+docker rm vnm
 ```
