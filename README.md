@@ -90,7 +90,7 @@ docker run -it vnmd/qsmxt_1.0.0:20210304
 
 # Running this pipeline in the NeuroDesk environment
 
-A user friendly way of running this pipeline in Windows is via our NeuroDesk project:
+A user friendly way of running this pipeline in Windows is via our NeuroDesk (https://github.com/NeuroDesk/) project:
 
 Create a directory on your harddrive called “vnm” (e.g. C:/vnm) – this directory will be used to exchange files between your computer and all our tools.
 
