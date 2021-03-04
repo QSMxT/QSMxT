@@ -58,7 +58,7 @@ DICOM:
       task:
       echo: <EchoNumber>
       dir:
-      run: <AcquisitionNumber>
+      run: <<1>>
       mod:
       suffix: magnitude
   - provenance: ~
@@ -84,7 +84,7 @@ DICOM:
       task:
       echo: <EchoNumber>
       dir:
-      run: <AcquisitionNumber>
+      run: <<1>>
       mod:
       suffix: magnitude
   - provenance: ~
@@ -110,7 +110,7 @@ DICOM:
       task:
       echo: <EchoNumber>
       dir:
-      run: <AcquisitionNumber>
+      run: <<1>>
       mod:
       suffix: phase
   func:       # ----------------------- All functional series --------------------
@@ -142,7 +142,7 @@ DICOM:
       task:
       echo:
       dir:
-      run: <AcquisitionNumber>
+      run: <<1>>
       mod:
       suffix:
   leave_out:  # ----------------------- Data that will be left out ---------------
