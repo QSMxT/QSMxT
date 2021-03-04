@@ -914,6 +914,8 @@ if __name__ == '__main__':
                         help='nipype working directory; defaults to \'work\' within \'out_dir\'')
     parser.add_argument('--subject_folder_pattern', default='sub*',
                         help='pattern to match subject folders in bids_dir')
+    parser.add_argument('--session_folder_pattern', default='ses*',
+                        help='pattern to match session folders in subject folders')
     parser.add_argument('--input_magnitude_pattern', default='anat/*qsm*E01*magnitude*nii*',
                         help='pattern to match input magnitude files (in the qsm space) within subject folders in bids_dir')
     parser.add_argument('--pbs', default=None, dest='qsub_account_string',
@@ -981,12 +983,12 @@ if __name__ == '__main__':
                      
     if not cli_args.work_dir: cli_args.work_dir = cli_args.out_dir
 
-    num_echoes = len(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, args.subject_folder_pattern))[0], args.input_magnitude_pattern)))
+    num_echoes = len(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, args.subject_folder_pattern, args.session_folder_pattern))[0], args.input_magnitude_pattern)))
     if num_echoes == 0: args.input_magnitude_pattern = args.input_magnitude_pattern.replace("E01", "").replace("**", "*")
-    num_echoes = len(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, args.subject_folder_pattern))[0], args.input_magnitude_pattern)))
+    num_echoes = len(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, args.subject_folder_pattern, args.session_folder_pattern))[0], args.input_magnitude_pattern)))
 
     if num_echoes == 0:
-        print(f"Error: No magnitude images found in {args.bids_dir} matching pattern {args.subject_folder_pattern}/{args.input_magnitude_pattern}")
+        print(f"Error: No magnitude images found in {args.bids_dir} matching pattern {args.subject_folder_pattern}/{args.session_folder_pattern}/{args.input_magnitude_pattern}")
         exit()
 
     os.makedirs(os.path.abspath(cli_args.out_dir), exist_ok=True)
@@ -1007,7 +1009,7 @@ if __name__ == '__main__':
     os.environ['PATH'] = clean_path
 
     templates = {
-        'mag': os.path.join(args.subject_folder_pattern, args.input_magnitude_pattern),
+        'mag': os.path.join(args.subject_folder_pattern, args.session_folder_pattern, args.input_magnitude_pattern),
     }
 
     wf = make_workflow(
