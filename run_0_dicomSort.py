@@ -93,7 +93,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
         
         # save files to a 3-tier nested folder structure
         subjFolderName = f"sub-{subj_name}"
-        seriesFolderName = f"{seriesDescription}"
+        seriesFolderName = f"{seriesNumber}_{seriesDescription}"
     
         subjName_date = f"{subj_name}_{studyDate}"
 
