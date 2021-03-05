@@ -5,6 +5,7 @@ import os
 import glob
 import fnmatch
 import subprocess
+
 from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge, UnaryMaths
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink, DataGrabber
@@ -21,60 +22,87 @@ from interfaces import nipype_interface_composite as composite
 import argparse
 
 
-def create_qsm_workflow(
-    session_dirs,
-    bids_dir,
-    work_dir,
-    out_dir,
-    bids_templates,
-    masking,
-    two_pass,
-    add_bet,
-    no_resampling,
-    qsm_iterations,
-    num_echoes_to_process,
-    fractional_intensity,
-    threshold,
-    extra_fill_strength,
-    homogeneity_filter,
-    qsm_threads,
-    qsub_account_string,
-):
+def init_workflow():
+    subjects = [
+        os.path.split(path)[1]
+        for path in glob.glob(os.path.join(args.bids_dir, args.subject_pattern))
+        if not args.subjects or os.path.split(path)[1] in args.subjects
+    ]
+    wf = Workflow("workflow_qsm", base_dir=args.work_dir)
+    wf.add_nodes([
+        init_subject_workflow(subject)
+        for subject in subjects
+    ])
+    return wf
 
-    # create initial workflow
-    wf = Workflow(name='workflow_qsm', base_dir=work_dir)
+def init_subject_workflow(
+    subject
+):
+    sessions = [
+        os.path.split(path)[1]
+        for path in glob.glob(os.path.join(args.bids_dir, subject, args.session_pattern))
+        if not args.sessions or os.path.split(path)[1] in args.sessions
+    ]
+    wf = Workflow(subject, base_dir=os.path.join(args.work_dir, "workflow_qsm"))
+    wf.add_nodes([
+        init_session_workflow(subject, session)
+        for session in sessions
+    ])
+    return wf
+
+def init_session_workflow(subject, session):
+    wf = Workflow(session, base_dir=os.path.join(args.work_dir, "workflow_qsm", subject, session))
 
     # datasink
     n_datasink = Node(
-        interface=DataSink(base_directory=bids_dir, container=out_dir),
+        interface=DataSink(base_directory=args.out_dir),
         name='datasink'
     )
 
-    # iterate across subject list
-    n_selectSessions = Node(
-        interface=IdentityInterface(
-            fields=['session_dir'],
-        ),
-        name="select_sessions"
-    )
-    n_selectSessions.iterables = ('session_dir', session_dirs)
+    # identify all runs
+    runs = sorted(list(set([
+        f"run-{os.path.split(path)[1][os.path.split(path)[1].find('run-') + 4: os.path.split(path)[1].find('_', os.path.split(path)[1].find('run-') + 4)]}"
+        for path in glob.glob(os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session)))
+    ])))
 
-    # iterate across subject list
+    # iterate across each run
+    n_runPatterns = Node(
+        interface=IdentityInterface(
+            fields=['run'],
+        ),
+        name="iterate_runs"
+    )
+    n_runPatterns.iterables = ('run', runs)
+
+    # get relevant files from this run
     n_selectFiles = Node(
         interface=sf.SelectFiles(
-            templates=bids_templates,
-            num_files=num_echoes_to_process,
-            base_directory = bids_dir
+            templates={
+                'mag': args.magnitude_pattern.replace("{run}", "{{run}}").format(subject=subject, session=session),
+                'phs': args.phase_pattern.replace("{run}", "{{run}}").format(subject=subject, session=session),
+                'params': args.phase_pattern.replace("{run}", "{{run}}").replace("nii.gz", "nii").replace("nii", "json").format(subject=subject, session=session)
+            },
+            base_directory=os.path.abspath(args.bids_dir),
+            sort_filelist=True,
+            num_files=args.num_echoes_to_process
         ),
-        iterfield='session_dir_p',
         name='select_files'
-        # output: ['mag', 'phs', 'params']
     )
     wf.connect([
-        (n_selectSessions, n_selectFiles, [('session_dir', 'session_dir_p')])
+        (n_runPatterns, n_selectFiles, [('run', 'run')])
     ])
 
     # scale phase data
+    mn_stats = MapNode(
+        # -R : <min intensity> <max intensity>
+        interface=ImageStats(op_string='-R'),
+        iterfield=['in_file'],
+        name='get_stats',
+        # output: 'out_stat'
+    )
+    wf.connect([
+        (n_selectFiles, mn_stats, [('phs', 'in_file')])
+    ])
     def scale_to_pi(min_and_max):
         from math import pi
 
@@ -93,18 +121,6 @@ def create_qsm_workflow(
         # set range to [-pi, pi]
         fsl_cmd += "-sub %.10f" % pi
         return fsl_cmd
-
-    mn_stats = MapNode(
-        # -R : <min intensity> <max intensity>
-        interface=ImageStats(op_string='-R'),
-        iterfield=['in_file'],
-        name='get_stats',
-        # output: 'out_stat'
-    )
-    wf.connect([
-        (n_selectFiles, mn_stats, [('phs', 'in_file')])
-    ])
-
     mn_phase_scaled = MapNode(
         interface=ImageMaths(suffix="_scaled"),
         name='phase_scaled',
@@ -129,7 +145,6 @@ def create_qsm_workflow(
                 te = data['EchoTime']
                 b0 = data['MagneticFieldStrength']
         return te, b0
-
     mn_params = MapNode(
         interface=Function(
             input_names=['in_file'],
@@ -143,22 +158,8 @@ def create_qsm_workflow(
         (n_selectFiles, mn_params, [('params', 'in_file')])
     ])
 
-    def repeat(in_file):
-        return in_file
-
-
-    # brain extraction
-    mn_mask = MapNode(
-        interface=Function(
-            input_names=['in_file'],
-            output_names=['mask_file'],
-            function=repeat
-        ),
-        iterfield=['in_file'],
-        name='repeat_mask'
-    )
-
-    if homogeneity_filter and ('bet' in masking or add_bet):
+    # homogeneity filter
+    if args.homogeneity_filter and ('bet' in args.masking or args.add_bet):
         mn_homogeneity_filter = MapNode(
             interface=makehomogeneous.MakeHomogeneousInterface(),
             iterfield=['in_file'],
@@ -169,16 +170,26 @@ def create_qsm_workflow(
             (n_selectFiles, mn_homogeneity_filter, [('mag', 'in_file')])
         ])
 
-    if 'bet' in masking or add_bet:
+    # brain extraction
+    def repeat(in_file):
+        return in_file
+    mn_mask = MapNode(
+        interface=Function(
+            input_names=['in_file'],
+            output_names=['mask_file'],
+            function=repeat
+        ),
+        iterfield=['in_file'],
+        name='repeat_mask'
+    )
+    if args.masking == 'bet' or args.add_bet:
         mn_bet = MapNode(
-            interface=BET(frac=fractional_intensity, mask=True, robust=True),
+            interface=BET(frac=args.fractional_intensity, mask=True, robust=True),
             iterfield=['in_file'],
             name='fsl_bet'
             # output: 'mask_file'
         )
-
-        # homogeneity filter
-        if homogeneity_filter:
+        if args.homogeneity_filter:
             wf.connect([
                 (mn_homogeneity_filter, mn_bet, [('out_file', 'in_file')])
             ])
@@ -187,12 +198,11 @@ def create_qsm_workflow(
                 (n_selectFiles, mn_bet, [('mag', 'in_file')])
             ])
 
-        if not add_bet:
+        if not args.add_bet:
             wf.connect([
                 (mn_bet, mn_mask, [('mask_file', 'in_file')])
             ])
-    if masking == 'phase-based':
-        # per-echo phase-based masks
+    if args.masking == 'phase-based':
         mn_phaseweights = MapNode(
             interface=phaseweights.PhaseWeightsInterface(),
             iterfield=['in_file'],
@@ -220,8 +230,7 @@ def create_qsm_workflow(
         wf.connect([
             (mn_phasemask, mn_mask, [('out_file', 'in_file')])
         ])
-    elif masking == 'magnitude-based':
-        # per-echo magnitude-based masks
+    elif args.masking == 'magnitude-based':
         mn_magmask = MapNode(
             interface=ImageMaths(
                 suffix="_mask",
@@ -232,7 +241,7 @@ def create_qsm_workflow(
             # output: 'out_file'
         )
 
-        if homogeneity_filter:
+        if args.homogeneity_filter:
             wf.connect([
                 (mn_homogeneity_filter, mn_magmask, [('out_file', 'in_file')])
             ])
@@ -244,30 +253,26 @@ def create_qsm_workflow(
         wf.connect([
             (mn_magmask, mn_mask, [('out_file', 'in_file')])
         ])
-    if two_pass or 'bet' in masking:
-        # qsm processing
-        mn_qsm_iterfield = ['phase_file', 'TE', 'b0']
-        
-        # if using a multi-echo masking method, add mask_file to iterfield
-        if masking not in ['bet-firstecho', 'bet-lastecho']: mn_qsm_iterfield.append('mask_file')
-        
+    
+    # QSM reconstruction
+    if args.two_pass or args.masking == 'bet':
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
-                iterations=qsm_iterations,
+                iterations=args.qsm_iterations,
                 alpha=[0.0015, 0.0005],
-                erosions=0 if masking in ['phase-based', 'magnitude-based'] else 5,
-                num_threads=qsm_threads,
+                erosions=0 if args.masking in ['phase-based', 'magnitude-based'] else 5,
+                num_threads=args.qsm_threads,
                 out_suffix='_qsm',
-                extra_arguments='--ignore-orientation --no-resampling' if no_resampling else ''
+                extra_arguments='--ignore-orientation --no-resampling' if args.no_resampling else ''
             ),
-            iterfield=mn_qsm_iterfield,
+            iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
             name='qsm'
             # output: 'out_file'
         )
 
         # args for PBS
         mn_qsm.plugin_args = {
-            'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
+            'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn={args.qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
             'overwrite': True
         }
 
@@ -294,21 +299,21 @@ def create_qsm_workflow(
             (mn_qsm, n_datasink, [('out_file', 'qsms')]),
             (mn_mask, n_datasink, [('mask_file', 'masks')])
         ])
-    if masking in ['phase-based', 'magnitude-based']:
+    if args.masking in ['phase-based', 'magnitude-based']:
         mn_mask_filled = MapNode(
             interface=ImageMaths(
                 suffix='_fillh',
-                op_string="-fillh" if not extra_fill_strength else " ".join(
-                    ["-dilM" for f in range(extra_fill_strength)] 
+                op_string="-fillh" if not args.extra_fill_strength else " ".join(
+                    ["-dilM" for f in range(args.extra_fill_strength)] 
                     + ["-fillh"] 
-                    + ["-ero" for f in range(extra_fill_strength)]
+                    + ["-ero" for f in range(args.extra_fill_strength)]
                 )
             ),
             iterfield=['in_file'],
             name='mask_filled'
         )
 
-        if add_bet:
+        if args.add_bet:
             mn_mask_plus_bet = MapNode(
                 interface=composite.CompositeNiftiInterface(),
                 name='mask_plus_bet',
@@ -332,12 +337,12 @@ def create_qsm_workflow(
 
         mn_qsm_filled = MapNode(
             interface=tgv.QSMappingInterface(
-                iterations=qsm_iterations,
+                iterations=args.qsm_iterations,
                 alpha=[0.0015, 0.0005],
                 erosions=0,
-                num_threads=qsm_threads,
+                num_threads=args.qsm_threads,
                 out_suffix='_qsm-filled',
-                extra_arguments='--ignore-orientation --no-resampling' if no_resampling else ''
+                extra_arguments='--ignore-orientation --no-resampling' if args.no_resampling else ''
             ),
             iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
             name='qsm_filledmask'
@@ -347,7 +352,7 @@ def create_qsm_workflow(
 
         # args for PBS
         mn_qsm_filled.plugin_args = {
-            'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn={qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
+            'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn={args.qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
             'overwrite': True
         }
 
@@ -372,11 +377,11 @@ def create_qsm_workflow(
             (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')])
         ])
         wf.connect([
-            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average' if two_pass else 'qsm_final')])
+            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average' if args.two_pass else 'qsm_final')])
         ])
 
         # composite qsm
-        if two_pass:
+        if args.two_pass:
             mn_qsm_composite = MapNode(
                 interface=composite.CompositeNiftiInterface(),
                 name='qsm_composite',
@@ -416,8 +421,8 @@ if __name__ == "__main__":
         'bids_dir',
         help='Input data folder that can be created using run_1_dicomToBids.py; can also use a ' +
              'custom folder containing subject folders and NIFTI files or a BIDS folder with a ' +
-             'different structure, as long as --subject_folder_pattern, --session_folder_pattern, ' +
-             '--input_magnitude_pattern and --input_phase_pattern are also specified.'
+             'different structure, as long as --subject_pattern, --session_pattern, ' +
+             '--magnitude_pattern and --phase_pattern are also specified.'
     )
 
     parser.add_argument(
@@ -432,31 +437,31 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--subject_folder_pattern',
+        '--subject_pattern',
         default='sub*',
         help='Pattern used to match subject folders in bids_dir'
     )
 
     parser.add_argument(
-        '--session_folder_pattern',
+        '--session_pattern',
         default='ses*',
         help='Pattern used to match session folders in subject folders'
     )
 
     parser.add_argument(
-        '--input_magnitude_pattern',
-        default='anat/*qsm*magnitude*nii*',
-        help='Pattern to match magnitude files for qsm within subject folders.'
+        '--magnitude_pattern',
+        default='{subject}/{session}/anat/*qsm*{run}*magnitude*nii*',
+        help='Pattern to match magnitude files within the BIDS directory.'
     )
 
     parser.add_argument(
-        '--input_phase_pattern',
-        default='anat/*qsm*phase*nii*',
-        help='Pattern to match phase files for qsm within subject folders.'
+        '--phase_pattern',
+        default='{subject}/{session}/anat/*qsm*{run}*phase*nii*',
+        help='Pattern to match phase files for qsm within session folders.'
     )
 
     parser.add_argument(
-        '--subjects', '-s',
+        '--subjects',
         default=None,
         nargs='*',
         help='List of subject folders to process; by default all subjects are processed.'
@@ -470,7 +475,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--num_echoes', '-n',
+        '--num_echoes',
         dest='num_echoes_to_process',
         default=None,
         type=int,
@@ -480,13 +485,11 @@ if __name__ == "__main__":
     parser.add_argument(
         '--masking', '-m',
         default='magnitude-based',
-        choices=['magnitude-based', 'phase-based', 'bet-multiecho', 'bet-firstecho', 'bet-lastecho'],
+        choices=['magnitude-based', 'phase-based', 'bet'],
         help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
              'thresholding a lower percentage of the signal (adjust using the --threshold parameter). ' +
              'For phase-based masking, the spatial phase coherence is thresholded and the magnitude is ' +
-             'not required. bet-multiecho uses a BET mask for each echo. bet-firstecho and bet-lastecho ' +
-             'use a single BET mask for all echoes, generated using the magnitude image from the first ' +
-             'echo and last echo only, respectively.'
+             'not required.'
     )
 
     parser.add_argument(
@@ -512,27 +515,28 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--iterations',
+        dest='qsm_iterations',
         type=int,
         default=1000,
         help='Number of iterations used for the dipole inversion step via tgv_qsm.'
     )
 
     parser.add_argument(
-        '--homogeneity_filter', '-hf',
+        '--homogeneity_filter',
         action='store_true',
         help='Enables the magnitude homogeneity filter for magnitude-based and BET masking ' +
              'strategies.'
     )
 
     parser.add_argument(
-        '--threshold', '-t',
+        '--threshold',
         type=int,
         default=30,
         help='Threshold percentage used for magnitude-based and phase-based masking.'
     )
 
     parser.add_argument(
-        '--fractional_intensity', '-fi',
+        '--fractional_intensity',
         type=float,
         default=0.7,
         help='Fractional intensity for BET masking operations.'
@@ -589,50 +593,16 @@ if __name__ == "__main__":
 
     # set default work_dir if needed
     if not args.work_dir: args.work_dir = args.out_dir
+    args.bids_dir = os.path.abspath(args.bids_dir)
+    args.work_dir = os.path.abspath(args.work_dir)
+    args.out_dir = os.path.abspath(args.out_dir)
 
     # add_bet option only works with non-bet masking methods
-    args.add_bet = args.add_bet and 'bet' not in args.masking
+    args.add_bet = args.add_bet and args.masking != 'bet'
+    args.two_pass = args.two_pass and args.masking != 'bet'
+    args.qsm_threads = 16 if args.qsub_account_string else 1
 
-    # determine subject/session folders
-    session_dirs = glob.glob(os.path.join(args.bids_dir, args.subject_folder_pattern, args.session_folder_pattern))
-    if args.subjects:
-        session_dirs = [x for x in session_dirs if any(s in x for s in args.subjects)]
-    if args.sessions:
-        session_dirs = [x for x in session_dirs if any(s in x for s in args.sessions)]
-    session_dirs = [x.replace(os.path.relpath(args.bids_dir) + os.path.sep, '') for x in session_dirs]
-
-    # determine file matching strings for n_selectFiles Node
-    bids_templates = {
-        'mag': os.path.join('{session_dir_p}', args.input_magnitude_pattern),
-        'phs': os.path.join('{session_dir_p}', args.input_phase_pattern),
-        'params': os.path.join('{session_dir_p}', args.input_phase_pattern.replace("nii.gz", "nii").replace("nii", "json"))
-    }
-    if 'echo' in args.masking:
-        num_echoes = len(glob.glob(os.path.join(args.bids_dir, session_dirs[0], args.input_phase_pattern)))
-        if 'bet-firstecho' in args.masking and num_echoes > 1:
-            bids_templates['mag'] = bids_templates['mag'].replace('qsm*', 'qsm*E01*')
-        if 'bet-lastecho' in args.masking and num_echoes > 1:
-            bids_templates['mag'] = bids_templates['mag'].replace('qsm*', f'qsm*E{num_echoes:02}*')
-
-    wf = create_qsm_workflow(
-        session_dirs=session_dirs,
-        bids_dir=os.path.abspath(args.bids_dir),
-        work_dir=os.path.abspath(args.work_dir),
-        out_dir=os.path.abspath(args.out_dir),
-        bids_templates=bids_templates,
-        masking=args.masking,
-        two_pass=args.two_pass and 'bet' not in args.masking,
-        add_bet=args.add_bet,
-        no_resampling=args.no_resampling,
-        qsm_iterations=args.iterations,
-        num_echoes_to_process=args.num_echoes_to_process,
-        fractional_intensity=args.fractional_intensity,
-        threshold=args.threshold,
-        extra_fill_strength=args.extra_fill_strength,
-        homogeneity_filter=args.homogeneity_filter,
-        qsm_threads=16 if args.qsub_account_string else 1,
-        qsub_account_string=args.qsub_account_string
-    )
+    wf = init_workflow()
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
@@ -641,7 +611,7 @@ if __name__ == "__main__":
     process = subprocess.run(['tgv_qsm'])
 
     # run workflow
-    wf.write_graph(graph2use='flat', format='png', simple_form=False)
+    #wf.write_graph(graph2use='flat', format='png', simple_form=False)
     if args.qsub_account_string:
         wf.run(
             plugin='PBSGraph',
@@ -657,4 +627,3 @@ if __name__ == "__main__":
             }
         )
 
-    #wf.run(plugin='PBS', plugin_args={f'-A {args.qsub_account_string} -l nodes=1:ppn=16,mem=5gb,vmem=5gb, walltime=30:00:00'})

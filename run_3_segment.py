@@ -21,7 +21,7 @@ def init_workflow():
         os.path.split(path)[1]
         for path in glob.glob(os.path.join(args.bids_dir, args.subject_pattern))
     ]
-    wf = Workflow("wf_segmentation", base_dir=args.work_dir)
+    wf = Workflow("workflow_segmentation", base_dir=args.work_dir)
     wf.add_nodes([
         init_subject_workflow(subject)
         for subject in subjects
@@ -35,7 +35,7 @@ def init_subject_workflow(
         os.path.split(path)[1]
         for path in glob.glob(os.path.join(args.bids_dir, subject, args.session_pattern))
     ]
-    wf = Workflow(subject, base_dir=os.path.join(args.work_dir, "wf_segmentation"))
+    wf = Workflow(subject, base_dir=os.path.join(args.work_dir, "workflow_segmentation"))
     wf.add_nodes([
         init_session_workflow(subject, session)
         for session in sessions
@@ -43,7 +43,7 @@ def init_subject_workflow(
     return wf
 
 def init_session_workflow(subject, session):
-    wf = Workflow(session, base_dir=os.path.join(args.work_dir, "wf_segmentation", subject, session))
+    wf = Workflow(session, base_dir=os.path.join(args.work_dir, "workflow_segmentation", subject, session))
 
     # identify all runs - ensure that we only look at runs where both T1 and magnitude exist
     magnitude_runs = len([
