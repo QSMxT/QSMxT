@@ -46,18 +46,18 @@ def init_session_workflow(subject, session):
     wf = Workflow(session, base_dir=os.path.join(args.work_dir, "workflow_segmentation", subject, session))
 
     # identify all runs - ensure that we only look at runs where both T1 and magnitude exist
-    magnitude_runs = len([
+    magnitude_runs = sorted(list(set([
         os.path.split(path)[1][os.path.split(path)[1].find('run-') + 4: os.path.split(path)[1].find('_', os.path.split(path)[1].find('run-') + 4)]
         for path in glob.glob(os.path.join(args.bids_dir, args.magnitude_pattern.replace("{run}", "").format(subject=subject, session=session)))
-    ])
-    t1w_runs = len([
+    ])))
+    t1w_runs = sorted(list(set([
         os.path.split(path)[1][os.path.split(path)[1].find('run-') + 4: os.path.split(path)[1].find('_', os.path.split(path)[1].find('run-') + 4)]
         for path in glob.glob(os.path.join(args.bids_dir, args.t1_pattern.replace("{run}", "").format(subject=subject, session=session)))
-    ])
-    if t1w_runs != magnitude_runs:
+    ])))
+    if len(t1w_runs) != len(magnitude_runs):
         print(f"QSMxT: WARNING: Number of T1w and magnitude runs do not match for {subject}/{session}");
         time.sleep(3)
-    runs = [f'run-{x+1}' for x in range(min(magnitude_runs, t1w_runs))]
+    runs = [f'run-{x}' for x in t1w_runs]
 
     # iterate across each run
     n_runPatterns = Node(
