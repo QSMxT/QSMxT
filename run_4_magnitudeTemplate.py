@@ -906,17 +906,17 @@ if __name__ == '__main__':
     parser.add_argument('bids_dir',
                         help='input data folder that can be created using run_1_dicomToBids.py; can also use a ' +
                         'custom folder containing subject folders and NIFTI files or a BIDS folder with a ' +
-                        'different structure, as long as --subject_folder_pattern and --input_magnitude_pattern ' +
+                        'different structure, as long as --subject_pattern and --magnitude_pattern ' +
                         'are also specified')
     parser.add_argument('out_dir', type=str, default='.',
                         help='The output directory (for final models)')
     parser.add_argument('--work_dir', default=None,
                         help='nipype working directory; defaults to \'work\' within \'out_dir\'')
-    parser.add_argument('--subject_folder_pattern', default='sub*',
+    parser.add_argument('--subject_pattern', default='sub*',
                         help='pattern to match subject folders in bids_dir')
-    parser.add_argument('--session_folder_pattern', default='ses*',
+    parser.add_argument('--session_pattern', default='ses*',
                         help='pattern to match session folders in subject folders')
-    parser.add_argument('--input_magnitude_pattern', default='anat/*qsm*E01*magnitude*nii*',
+    parser.add_argument('--magnitude_pattern', default='anat/*qsm*E01*magnitude*nii*',
                         help='pattern to match input magnitude files (in the qsm space) within subject folders in bids_dir')
     parser.add_argument('--pbs', default=None, dest='qsub_account_string',
                         help='run the pipeline via PBS and use the argument as the QSUB account string')
@@ -983,12 +983,12 @@ if __name__ == '__main__':
                      
     if not cli_args.work_dir: cli_args.work_dir = cli_args.out_dir
 
-    num_echoes = len(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, args.subject_folder_pattern, args.session_folder_pattern))[0], args.input_magnitude_pattern)))
-    if num_echoes == 0: args.input_magnitude_pattern = args.input_magnitude_pattern.replace("E01", "").replace("**", "*")
-    num_echoes = len(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, args.subject_folder_pattern, args.session_folder_pattern))[0], args.input_magnitude_pattern)))
+    num_echoes = len(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, args.subject_pattern, args.session_pattern))[0], args.magnitude_pattern)))
+    if num_echoes == 0: args.magnitude_pattern = args.magnitude_pattern.replace("E01", "").replace("**", "*")
+    num_echoes = len(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, args.subject_pattern, args.session_pattern))[0], args.magnitude_pattern)))
 
     if num_echoes == 0:
-        print(f"Error: No magnitude images found in {args.bids_dir} matching pattern {args.subject_folder_pattern}/{args.session_folder_pattern}/{args.input_magnitude_pattern}")
+        print(f"Error: No magnitude images found in {args.bids_dir} matching pattern {args.subject_pattern}/{args.session_pattern}/{args.magnitude_pattern}")
         exit()
 
     os.makedirs(os.path.abspath(cli_args.out_dir), exist_ok=True)
@@ -1009,7 +1009,7 @@ if __name__ == '__main__':
     os.environ['PATH'] = clean_path
 
     templates = {
-        'mag': os.path.join(args.subject_folder_pattern, args.session_folder_pattern, args.input_magnitude_pattern),
+        'mag': os.path.join(args.subject_pattern, args.session_pattern, args.magnitude_pattern),
     }
 
     wf = make_workflow(
