@@ -77,7 +77,8 @@ def init_session_workflow(subject, session):
             },
             base_directory=os.path.abspath(args.bids_dir),
             sort_filelist=True,
-            num_files=1
+            num_files=1,
+            force_lists=True
         ),
         name='select_files'
     )
