@@ -4,9 +4,11 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import SelectFiles, DataSink, DataGrabber
 from nipype.interfaces.freesurfer.preprocess import ReconAll, MRIConvert
 
+from interfaces import nipype_interface_selectfiles as sf
 from interfaces import nipype_interface_bestlinreg as bestlinreg
 from interfaces import nipype_interface_applyxfm as applyxfm
 
+import time
 import fnmatch
 import glob
 import os
@@ -14,62 +16,73 @@ import os.path
 import argparse
 import re
 
-
-def create_segmentation_workflow(
-    session_dirs,
-    bids_dir,
-    work_dir,
-    out_dir,
-    reconall_cpus,
-    templates,
-    t1_is_mprage,
-    qsub_account_string
-):
-
-    wf = Workflow(name='workflow_segmentation', base_dir=work_dir)
-
-    # use infosource to iterate workflow across subject list
-    n_infosource = Node(
-        interface=IdentityInterface(
-            fields=['session_dir']
-        ),
-        name="infosource"
-        # input: 'session_dir'
-        # output: 'session_dir'
-    )
-    # runs the node with session_id = each element in subject_list
-    n_infosource.iterables = ('session_dir', session_dirs)
-
-    # select matching files from bids_dir
-    n_selectfiles = Node(
-        interface=SelectFiles(
-            templates=templates,
-            base_directory=bids_dir,
-            sort_filelist=True
-        ),
-        name='selectfiles'
-        # output: ['T1', 'mag']
-    )
-    wf.connect([
-        (n_infosource, n_selectfiles, [('session_dir', 'session_dir_p')])
+def init_workflow():
+    subjects = [
+        os.path.split(path)[1]
+        for path in glob.glob(os.path.join(args.bids_dir, args.subject_pattern))
+    ]
+    wf = Workflow("wf_segmentation", base_dir=args.work_dir)
+    wf.add_nodes([
+        init_subject_workflow(subject)
+        for subject in subjects
     ])
+    return wf
 
-    def get_first(in_f):
-        if isinstance(in_f, list):
-            return in_f[0]
-        return in_f
+def init_subject_workflow(
+    subject
+):
+    sessions = [
+        os.path.split(path)[1]
+        for path in glob.glob(os.path.join(args.bids_dir, subject, args.session_pattern))
+    ]
+    wf = Workflow(subject, base_dir=os.path.join(args.work_dir, "wf_segmentation"))
+    wf.add_nodes([
+        init_session_workflow(subject, session)
+        for session in sessions
+    ])
+    return wf
 
-    n_getfirst_t1 = Node(
-        interface=Function(
-            input_names=['in_f'],
-            output_names=['out_f'],
-            function=get_first
+def init_session_workflow(subject, session):
+    wf = Workflow(session, base_dir=os.path.join(args.work_dir, "wf_segmentation", subject, session))
+
+    # identify all runs - ensure that we only look at runs where both T1 and magnitude exist
+    magnitude_runs = len([
+        os.path.split(path)[1][os.path.split(path)[1].find('run-') + 4: os.path.split(path)[1].find('_', os.path.split(path)[1].find('run-') + 4)]
+        for path in glob.glob(os.path.join(args.bids_dir, args.magnitude_pattern.replace("{run}", "").format(subject=subject, session=session)))
+    ])
+    t1w_runs = len([
+        os.path.split(path)[1][os.path.split(path)[1].find('run-') + 4: os.path.split(path)[1].find('_', os.path.split(path)[1].find('run-') + 4)]
+        for path in glob.glob(os.path.join(args.bids_dir, args.t1_pattern.replace("{run}", "").format(subject=subject, session=session)))
+    ])
+    if t1w_runs != magnitude_runs:
+        print(f"QSMxT: WARNING: Number of T1w and magnitude runs do not match for {subject}/{session}");
+        time.sleep(3)
+    runs = [f'run-{x+1}' for x in range(min(magnitude_runs, t1w_runs))]
+
+    # iterate across each run
+    n_runPatterns = Node(
+        interface=IdentityInterface(
+            fields=['run'],
         ),
-        iterfield=['in_f'],
-        name='get_first_t1'
+        name="iterate_runs"
+    )
+    n_runPatterns.iterables = ('run', runs)
+
+    # get relevant files from this run
+    n_selectFiles = Node(
+        interface=sf.SelectFiles(
+            templates={
+                'T1': args.t1_pattern.replace("{run}", "{{run}}").format(subject=subject, session=session),
+                'mag': args.magnitude_pattern.replace("{run}", "{{run}}").format(subject=subject, session=session)
+            },
+            base_directory=os.path.abspath(args.bids_dir),
+            sort_filelist=True,
+            num_files=1
+        ),
+        name='select_files'
     )
     wf.connect([
-        (n_selectfiles, n_getfirst_t1, [('T1', 'in_f')])
+        (n_runPatterns, n_selectFiles, [('run', 'run')])
     ])
 
     # segment t1
@@ -77,18 +90,18 @@ def create_segmentation_workflow(
         interface=ReconAll(
             parallel=True,
             openmp=1,
-            mprage=t1_is_mprage
+            mprage=args.t1_is_mprage,
+            directive='all'
             #hires=True,
         ),
         name='recon_all'
     )
     n_reconall.plugin_args = {
-        'qsub_args': f'-A {qsub_account_string} -q Short -l nodes=1:ppn={reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
+        'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn={g_args.reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
         'overwrite': True
     }
     wf.connect([
-        (n_getfirst_t1, n_reconall, [('out_f', 'T1_files')]),
-        (n_infosource, n_reconall, [('session_dir', 'subject_id')])
+        (n_selectFiles, n_reconall, [('T1', 'T1_files')])
     ])
 
     # convert segmentation to nii
@@ -119,7 +132,7 @@ def create_segmentation_workflow(
         name='calculate_reg'
     )
     wf.connect([
-        (n_selectfiles, n_calc_t1_to_gre, [('mag', 'in_fixed')]),
+        (n_selectFiles, n_calc_t1_to_gre, [('mag', 'in_fixed')]),
         (n_reconall_orig_nii, n_calc_t1_to_gre, [('out_file', 'in_moving')])
     ])
 
@@ -130,14 +143,14 @@ def create_segmentation_workflow(
     )
     wf.connect([
         (n_reconall_aseg_nii, n_register_t1_to_gre, [('out_file', 'in_file')]),
-        (n_selectfiles, n_register_t1_to_gre, [('mag', 'in_like')]),
+        (n_selectFiles, n_register_t1_to_gre, [('mag', 'in_like')]),
         (n_calc_t1_to_gre, n_register_t1_to_gre, [('out_transform', 'in_transform')])
     ])
 
     # datasink
     n_datasink = Node(
         interface=DataSink(
-            base_directory=out_dir
+            base_directory=args.out_dir
             #container=out_dir
         ),
         name='datasink'
@@ -163,8 +176,8 @@ if __name__ == "__main__":
         'bids_dir',
         help='Input data folder that can be created using run_1_dicomToBids.py. Can also use a ' +
              'custom folder containing subject folders and NIFTI files or a BIDS folder with a ' +
-             'different structure, as long as --subject_folder_pattern, --session_folder_pattern, ' +
-             '--input_t1_pattern and --input_magnitude_pattern are also specified.'
+             'different structure, as long as --subject_pattern, --session_pattern, ' +
+             '--t1_pattern and --magnitude_pattern are also specified.'
     )
 
     parser.add_argument(
@@ -179,31 +192,31 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--subject_folder_pattern',
+        '--subject_pattern',
         default='sub*',
-        help='Pattern to match subject folders in bids_dir.'
+        help='Pattern used to match subject folders in bids_dir'
     )
 
     parser.add_argument(
-        '--session_folder_pattern',
+        '--session_pattern',
         default='ses*',
-        help='Pattern to match session folders in subject folders.'
+        help='Pattern used to match session folders in subject folders'
     )
 
     parser.add_argument(
-        '--input_t1_pattern',
-        default='anat/*T1w*nii*',
-        help='Pattern to match input t1 files for segmentation within subject folders.'
+        '--t1_pattern',
+        default='{subject}/{session}/anat/*T1w*{run}*nii*',
+        help='Pattern to match t1 files within the BIDS directory.'
     )
 
     parser.add_argument(
-        '--input_magnitude_pattern',
-        default='anat/*qsm*E01*magnitude*nii*',
-        help='Pattern to match input magnitude files (in the qsm space) within subject folders.'
+        '--magnitude_pattern',
+        default='{subject}/{session}/anat/*qsm*{run}*magnitude*nii*',
+        help='Pattern to match magnitude files within the BIDS directory.'
     )
     
     parser.add_argument(
-        '--subjects', '-s',
+        '--subjects',
         default=None,
         nargs='*',
         help='List of subject folders to process; by default all subjects are processed.'
@@ -251,43 +264,13 @@ if __name__ == "__main__":
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
-    # determine subject/session folders
-    session_dirs = glob.glob(os.path.join(args.bids_dir, args.subject_folder_pattern, args.session_folder_pattern))
-    if args.subjects:
-        session_dirs = [x for x in session_dirs if any(s in x for s in args.subjects)]
-    if args.sessions:
-        session_dirs = [x for x in session_dirs if any(s in x for s in args.sessions)]
-    session_dirs = [x.replace(os.path.relpath(args.bids_dir) + os.path.sep, '') for x in session_dirs]
-
     if not args.work_dir: args.work_dir = args.out_dir
     os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
 
-    # subject_folder_pattern, input_magnitude_pattern
-    num_echoes = len(glob.glob(os.path.join(args.bids_dir, session_dirs[0], args.input_magnitude_pattern)))
-    if num_echoes == 0: args.input_magnitude_pattern = args.input_magnitude_pattern.replace("E01", "")
+    g_args = lambda:None
+    g_args.reconall_cpus = 1 if args.qsub_account_string is None else int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
 
-    if not glob.glob(os.path.join(args.bids_dir, session_dirs[0], args.input_t1_pattern)):
-        print(f"Error: No T1-weighted images found in {args.bids_dir} matching pattern {args.subject_folder_pattern}/{args.input_t1_pattern}")
-        exit()
-    if not glob.glob(os.path.join(args.bids_dir, session_dirs[0], args.input_magnitude_pattern)):
-        print(f"Error: No magnitude images found in {args.bids_dir} matching pattern {args.subject_folder_pattern}/{args.input_magnitude_pattern}")
-        exit()
-
-    templates={
-        'T1': os.path.join('{session_dir_p}', args.input_t1_pattern),
-        'mag': os.path.join('{session_dir_p}', args.input_magnitude_pattern)
-    }
-
-    wf = create_segmentation_workflow(
-        session_dirs=session_dirs,
-        bids_dir=os.path.abspath(args.bids_dir),
-        work_dir=os.path.abspath(args.work_dir),
-        out_dir=os.path.abspath(args.out_dir),
-        reconall_cpus=1 if args.qsub_account_string is None else int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()),
-        templates=templates,
-        t1_is_mprage=args.t1_is_mprage,
-        qsub_account_string=args.qsub_account_string
-    )
+    wf = init_workflow()
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
