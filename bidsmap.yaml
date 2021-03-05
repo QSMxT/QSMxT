@@ -64,7 +64,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ['*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**', '*swi*']
+      ProtocolName: ['*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
       SeriesDescription: ~
       ImageType: 'M'
       SequenceName: ~
@@ -90,7 +90,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ['*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**', '*swi*']
+      ProtocolName: ['*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
       SeriesDescription: ~
       ImageType: 'P'
       SequenceName: ~
