@@ -20,17 +20,17 @@ We developed an open-source QSM processing framework, QSMxT, that provides a ful
    wget <mirror>
 	```
 	
-    - Australian Mirror: https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210304.simg
-	- US Mirror: https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210304.simg
-	- European Mirror: https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210304.simg
+    - Australian Mirror: https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210305.simg
+	- US Mirror: https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210305.simg
+	- European Mirror: https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210305.simg
 	
 3. Run singularity image
 
     ```bash
-    singularity shell qsmxt_1.0.0_20210304.simg
+    singularity shell qsmxt_1.0.0_20210305.simg
 
     # alternative launch to mount additional data directories:
-    singularity shell -B /data:/data qsmxt_1.0.0_20210304.simg
+    singularity shell -B /data:/data qsmxt_1.0.0_20210305.simg
     ```
 
 # 2) QSMxT Usage
@@ -65,9 +65,9 @@ On a high-performance compute system (HPC), PBS can be used instead of MultiProc
 
 Install QSMxT container using [transparent-singularity](https://github.com/neurodesk/transparent-singularity):
 ```bash
-git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.0.0_20210304
-cd qsmxt_1.0.0_20210304
-./run_transparent_singularity.sh --container qsmxt_1.0.0_20210304.simg
+git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.0.0_20210305
+cd qsmxt_1.0.0_20210305
+./run_transparent_singularity.sh --container qsmxt_1.0.0_20210305.simg
 ```
 
 Clone the QSMxT repository:
@@ -85,7 +85,7 @@ python3 run_2_qsm.py bids qsm --pbs ACCOUNT_STRING
 
 There is also a docker image availabe:
 ```
-docker run -it vnmd/qsmxt_1.0.0:20210304
+docker run -it vnmd/qsmxt_1.0.0:20210305
 ```
 
 # Running this pipeline in the NeuroDesk environment
@@ -96,7 +96,7 @@ Create a directory on your harddrive called “vnm” (e.g. C:/vnm) – this dir
 
 Then open a Windows PowerShell window and run the following command:
 ```
-docker run --privileged --name vnm -v C:/vnm:/vnm -e USER=neuro -p 6080:80 -p 5900:5900 vnmd/vnm:20210304
+docker run --privileged --name vnm -v C:/vnm:/vnm -e USER=neuro -p 6080:80 -p 5900:5900 vnmd/vnm:20210305
 ```
 
 Then open a browser window (chrome, firefox, edge …) and navigate to: http://localhost:6080/
