@@ -314,6 +314,17 @@ def init_session_workflow(subject, session):
         )
 
         if args.add_bet:
+            mn_bet_erode = MapNode(
+                interface=ImageMaths(
+                    suffix='_ero',
+                    op_string=f'-ero -ero'
+                ),
+                iterfield=['in_file'],
+                name='fsl_bet_erode'
+            )
+            wf.connect([
+                (mn_bet, mn_bet_erode, [('mask_file', 'in_file')])
+            ])
             mn_mask_plus_bet = MapNode(
                 interface=composite.CompositeNiftiInterface(),
                 name='mask_plus_bet',
@@ -321,7 +332,7 @@ def init_session_workflow(subject, session):
             )
             wf.connect([
                 (mn_mask, mn_mask_plus_bet, [('mask_file', 'in_file1')]),
-                (mn_bet, mn_mask_plus_bet, [('mask_file', 'in_file2')])
+                (mn_bet_erode, mn_mask_plus_bet, [('out_file', 'in_file2')])
             ])
             wf.connect([
                 (mn_mask_plus_bet, mn_mask_filled, [('out_file', 'in_file')])
@@ -538,7 +549,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--fractional_intensity',
         type=float,
-        default=0.7,
+        default=0.5,
         help='Fractional intensity for BET masking operations.'
     )
 
