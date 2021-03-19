@@ -98,7 +98,7 @@ def init_session_workflow(subject, session):
         name='recon_all'
     )
     n_reconall.plugin_args = {
-        'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn={g_args.reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
+        'qsub_args': f'-A {args.qsub_account_string} -l walltime=12:00:00 -l select=1:ncpus={g_args.reconall_cpus}:mem=20gb',
         'overwrite': True
     }
     wf.connect([
@@ -251,9 +251,29 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # environment variables
+    # supplementary arguments
+    g_args = lambda:None
+    g_args.reconall_cpus = 1# if args.qsub_account_string is None else int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+
+    # ensure directories are complete and absolute
+    if not args.work_dir: args.work_dir = args.out_dir
+    args.bids_dir = os.path.abspath(args.bids_dir)
+    args.work_dir = os.path.abspath(args.work_dir)
+    args.out_dir = os.path.abspath(args.out_dir)
+
+    # this script's directory
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # misc environment variables
+    os.environ["SUBJECTS_DIR"] = "." # needed for reconall
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
-    os.environ["SUBJECTS_DIR"] = "."
+
+    # PATH environment variable
+    os.environ["PATH"] += os.pathsep + os.path.join(this_dir, "scripts")
+
+    # PYTHONPATH environment variable
+    if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + this_dir
+    else:                          os.environ["PYTHONPATH"]  = this_dir
 
     if args.debug:
         from nipype import config
@@ -265,12 +285,6 @@ if __name__ == "__main__":
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
-    if not args.work_dir: args.work_dir = args.out_dir
-    os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
-
-    g_args = lambda:None
-    g_args.reconall_cpus = 1 if args.qsub_account_string is None else int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
-
     wf = init_workflow()
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
@@ -281,7 +295,7 @@ if __name__ == "__main__":
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:50:00'
+                'qsub_args': f'-A {args.qsub_account_string} -l walltime=00:50:00 -l select=1:ncpus=1:mem=5gb'
             }
         )
     else:
