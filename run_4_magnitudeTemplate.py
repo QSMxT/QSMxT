@@ -980,8 +980,11 @@ if __name__ == '__main__':
                      {str('step'): 0.9, str('blur_fwhm'): 0.45, str('iterations'): 5},      # 9
                      {str('step'): 0.8, str('blur_fwhm'): 0.4, str('iterations'): 5},       # 10
                      {str('step'): 0.7, str('blur_fwhm'): 0.35, str('iterations'): 5}]  # 11
-                     
+    
     if not cli_args.work_dir: cli_args.work_dir = cli_args.out_dir
+    cli_args.bids_dir = os.path.abspath(cli_args.bids_dir)
+    cli_args.work_dir = os.path.abspath(cli_args.work_dir)
+    cli_args.out_dir = os.path.abspath(cli_args.out_dir)
 
     num_echoes = len(glob.glob(os.path.join(glob.glob(os.path.join(args.bids_dir, args.subject_pattern, args.session_pattern))[0], args.magnitude_pattern)))
     if num_echoes == 0: args.magnitude_pattern = args.magnitude_pattern.replace("E01", "").replace("**", "*")
@@ -991,8 +994,8 @@ if __name__ == '__main__':
         print(f"Error: No magnitude images found in {args.bids_dir} matching pattern {args.subject_pattern}/{args.session_pattern}/{args.magnitude_pattern}")
         exit()
 
-    os.makedirs(os.path.abspath(cli_args.out_dir), exist_ok=True)
-    os.makedirs(os.path.abspath(cli_args.work_dir), exist_ok=True)
+    os.makedirs(cli_args.out_dir, exist_ok=True)
+    os.makedirs(cli_args.work_dir, exist_ok=True)
 
     os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
 
