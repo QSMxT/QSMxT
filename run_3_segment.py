@@ -43,7 +43,6 @@ def init_subject_workflow(
     return wf
 
 def init_session_workflow(subject, session):
-    wf = Workflow(session, base_dir=os.path.join(args.work_dir, "workflow_segmentation", subject, session))
 
     # identify all runs - ensure that we only look at runs where both T1 and magnitude exist
     magnitude_runs = sorted(list(set([
@@ -59,32 +58,31 @@ def init_session_workflow(subject, session):
         time.sleep(3)
     runs = [f'run-{x}' for x in t1w_runs]
 
-    # iterate across each run
-    n_runPatterns = Node(
-        interface=IdentityInterface(
-            fields=['run'],
-        ),
-        name="iterate_runs"
-    )
-    n_runPatterns.iterables = ('run', runs)
+    wf = Workflow(session, base_dir=os.path.join(args.work_dir, "workflow_segmentation", subject, session))
+    wf.add_nodes([
+        init_run_workflow(subject, session, run)
+        for run in runs
+    ])
+    return wf
+
+def init_run_workflow(subject, session, run):
+
+    wf = Workflow(run, base_dir=os.path.join(args.work_dir, "workflow_segmentation", subject, session, run))
 
     # get relevant files from this run
     n_selectFiles = Node(
         interface=sf.SelectFiles(
             templates={
-                'T1': args.t1_pattern.replace("{run}", "{{run}}").format(subject=subject, session=session),
-                'mag': args.magnitude_pattern.replace("{run}", "{{run}}").format(subject=subject, session=session)
+                'T1': args.t1_pattern.format(subject=subject, session=session, run=run),
+                'mag': args.magnitude_pattern.format(subject=subject, session=session, run=run)
             },
             base_directory=os.path.abspath(args.bids_dir),
             sort_filelist=True,
             num_files=1,
-            force_lists=True
+            force_lists=False
         ),
         name='select_files'
     )
-    wf.connect([
-        (n_runPatterns, n_selectFiles, [('run', 'run')])
-    ])
 
     # segment t1
     n_reconall = Node(
@@ -109,17 +107,19 @@ def init_session_workflow(subject, session):
     n_reconall_aseg_nii = Node(
         interface=MRIConvert(
             out_type='niigz',
+            out_file=f'{subject}_{session}_{run}_t1w-aseg.nii.gz'
         ),
         name='reconall_aseg_nii'
     )
     wf.connect([
-        (n_reconall, n_reconall_aseg_nii, [('aseg', 'in_file')]),
+        (n_reconall, n_reconall_aseg_nii, [('aseg', 'in_file')])
     ])
 
     # convert original t1 to nii
     n_reconall_orig_nii = Node(
         interface=MRIConvert(
-            out_type='niigz'
+            out_type='niigz',
+            out_file=f'{subject}_{session}_{run}_t1w.nii.gz'
         ),
         name='reconall_orig_nii'
     )
