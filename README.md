@@ -1,40 +1,63 @@
-We developed an open-source QSM processing framework, QSMxT, that provides a full QSM workflow including converting DICOM data to BIDS, a variety of robust masking strategies, phase unwrapping, background field correction, dipole inversion and region-of-interest analyses based on automated anatomical segmentations. We make all required external dependencies available in a reproducible and scalable analysis environment enabling users to process QSM data for large groups of participants on any operating system in a robust way. 
+# QSMxT: A Complete QSM Processing Framework
 
-# 1) Install and start
-## Standard install using VNM virtual desktop (Windows/Mac/Linux):
-1. Install VNM: https://github.com/NeuroDesk/vnm/
-2. Start QSMxT from the applications menu in the VNM desktop
+QSMxT aims to be a complete and end-to-end QSM processing and analysis framework. It includes pipelines that:
 
-## Alternate install for native linux (no virtual desktop):
-1. Install singularity: https://sylabs.io/guides/3.7/user-guide/quick_start.html
+1. Automatically convert DICOM data to the Brain Imaging Data Structure (BIDS)
+2. Automatically reconstruct QSM for all subjects, including steps for:
+   1. Robust masking for artefact reduction
+   2. Phase unwrapping (Laplacian based)
+   3. Background field removal + dipole inversion (TGV)
+   4. Multi-echo combination (QSM averaging)
+3. Automatically generate a common group space for the whole dataset, as well as average magnitude and QSM images that facilitate group-level analyses.
+4. Automatically segment T1w data and registration to the QSM space to extract quantitative values in anatomical regions of interest.
 
-2. Download QSMxT singularity image:
+QSMxT's containerised implementation makes all required external dependencies available in a reproducible and scalable way, supporting MacOS, Windows and Linux, and with options for parallel processing via PBS systems.
 
-   ```
-   curl <url> -O
-   ```
+![QSMxT Process Diagram](diagram.png)
+
+## Installation
+### Simple install and start via VNM
+
+A user friendly way of running this pipeline in Windows is via the Virtual Neuro Machine (VNM) provided by our NeuroDesk project:
+
+1. Install [Docker](https://www.docker.com/)
+2. Install [VNM](https://github.com/NeuroDesk/vnm/)
+3. Run the VNM container and open it in a browser window at http://localhost:6080/
+4. Start QSMxT from the applications menu in the VNM desktop
+   (*VNM Neuroimaging* > *Quantitative Imaging* > *qsmxt*)
+3. Follow the QSMxT usage instructions in the section below. Note that the `/vnm` folder in VNM is shared with the host OS for data sharing purposes (usually in `~/vnm` or `C:/vnm`). Begin by copying your DICOM data into a folder in this directory on the host OS, then reach the folder in VNM by entering `cd /vnm` into the QSMxT window.
+
+### Linux installation via Transparent Singularity (supports PBS)
+
+The tools provided by the QSMxT container can be exposed and used without VNM using the QSMxT Singularity container coupled with the transparent singularity software provided by our Neurodesk project. Transparent singularity allows the QSMxT Python scripts to be run directly within the host OS's environment. This mode of execution is necessary for parallel execution via PBS.
+
+1. Install [singularity](https://sylabs.io/guides/3.0/user-guide/quick_start.html)
    
-   or
-   
-   ```
-   wget <mirror>
-	```
-	
-    - Australian Mirror: https://swift.rc.nectar.org.au:8888/v1/AUTH_d6165cc7b52841659ce8644df1884d5e/singularityImages/qsmxt_1.0.0_20210305.simg
-	- US Mirror: https://objectstorage.us-ashburn-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210305.simg
-	- European Mirror: https://objectstorage.eu-zurich-1.oraclecloud.com/n/nrrir2sdpmdp/b/neurodesk/o/qsmxt_1.0.0_20210305.simg
-	
-3. Run singularity image
+2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    singularity shell qsmxt_1.0.0_20210305.simg
-
-    # alternative launch to mount additional data directories:
-    singularity shell -B /data:/data qsmxt_1.0.0_20210305.simg
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.0.0_20210305
+    cd qsmxt_1.0.0_20210305
+    ./run_transparent_singularity.sh --container qsmxt_1.0.0_20210305.simg
     ```
 
-# 2) QSMxT Usage
-1. Convert Dicom data to BIDS:
+3. Clone the QSMxT repository:
+    ```bash
+    git clone https://github.com/QSMxT/QSMxT.git
+    ```
+
+4. Invoke QSMxT scripts directly (see usage instructions in section below). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
+
+### Docker container
+
+There is also a docker image available:
+
+```
+docker run -it vnmd/qsmxt_1.0.0:20210305
+```
+
+## QSMxT Usage
+1. Convert DICOM data to BIDS:
     ```bash
     python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
     python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
@@ -42,9 +65,6 @@ We developed an open-source QSM processing framework, QSMxT, that provides a ful
 2. Run QSM pipeline:
     ```bash
     python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output
-
-    #alternative when starting from custom bids structure:
-    python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output --input_magnitude_pattern swi/*mag*.nii* --input_phase_pattern swi/*phase*.nii*
     ```
 3. Segment data (T1 and GRE):
     ```bash
@@ -58,65 +78,3 @@ We developed an open-source QSM processing framework, QSMxT, that provides a ful
     ```bash
     python3 /opt/QSMxT/run_5_qsmTemplate.py 02_qsm_output 04_magnitude_template 05_qsm_template
     ```
-
-# Parallel processing via PBS
-
-On a high-performance compute system (HPC), PBS can be used instead of MultiProc for execution of `run_2_qsm.py`, `run_3_segment.py`, `run_4_magnitudeTemplate.py` and `run_5_qsmTemplate.py` for much greater parallelisation. However, PBS commands cannot be reliably invoked from inside the container, and so this requires execution from the HPC's native environment. To achieve this, a different install and run process is required via [transparent-singularity](https://github.com/CAIsr/transparent-singularity).
-
-Install QSMxT container using [transparent-singularity](https://github.com/neurodesk/transparent-singularity):
-```bash
-git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.0.0_20210305
-cd qsmxt_1.0.0_20210305
-./run_transparent_singularity.sh --container qsmxt_1.0.0_20210305.simg
-```
-
-Clone the QSMxT repository:
-```bash
-git clone https://github.com/QSMxT/QSMxT.git
-```
-
-Invoke QSMxT scripts directly, and use the `--pbs` flag along with your PBS account string. 
-```bash
-cd QSMxT
-python3 run_2_qsm.py bids qsm --pbs ACCOUNT_STRING
-```
-
-# Docker
-
-There is also a docker image availabe:
-```
-docker run -it vnmd/qsmxt_1.0.0:20210305
-```
-
-# Running this pipeline in the NeuroDesk environment
-
-A user friendly way of running this pipeline in Windows is via our NeuroDesk (https://github.com/NeuroDesk/) project:
-
-Create a directory on your harddrive called “vnm” (e.g. C:/vnm) – this directory will be used to exchange files between your computer and all our tools.
-
-Then open a Windows PowerShell window and run the following command:
-```
-docker run --privileged --name vnm -v C:/vnm:/vnm -e USER=neuro -p 6080:80 -p 5900:5900 vnmd/vnm:20210305
-```
-
-Then open a browser window (chrome, firefox, edge …) and navigate to: http://localhost:6080/
-
-This should open the graphical interface and you can now start qsmxt from the Menu system (VNM Neuroimaging -> Quantitative Imaging -> qsmxt)
- 
-Now you can store you dicom files in the C:/vnm directory and they will show up in /vnm inside our environment
-
-In the QSMxT window type: cd /vnm
-
-Then you can start the processing by running the following commands in the QSMxT window:
-```
-python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
-python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
-python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output
-python3 /opt/QSMxT/run_3_segment.py 01_bids 03_segmentation
-```
-
-When done processing you can stop the environment by closing the browser, and CTRL-C in the powershell window, then run
-```
-docker stop vnm
-docker rm vnm
-```

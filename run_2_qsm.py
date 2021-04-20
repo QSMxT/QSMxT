@@ -583,11 +583,22 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # environment variables and paths
-    os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
-    os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
+    # ensure directories are complete and absolute
+    if not args.work_dir: args.work_dir = args.out_dir
+    args.bids_dir = os.path.abspath(args.bids_dir)
+    args.work_dir = os.path.abspath(args.work_dir)
+    args.out_dir = os.path.abspath(args.out_dir)
 
+    # this script's directory
     this_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # misc environment variables
+    os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
+
+    # path environment variable
+    os.environ["PATH"] += os.pathsep + os.path.join(this_dir, "scripts")
+
+    # add this_dir and cwd to pythonpath (not sure if this_dir needed...)
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + this_dir
     else:                          os.environ["PYTHONPATH"]  = this_dir
 
@@ -602,16 +613,13 @@ if __name__ == "__main__":
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
-    # set default work_dir if needed
-    if not args.work_dir: args.work_dir = args.out_dir
-    args.bids_dir = os.path.abspath(args.bids_dir)
-    args.work_dir = os.path.abspath(args.work_dir)
-    args.out_dir = os.path.abspath(args.out_dir)
-
     # add_bet option only works with non-bet masking methods
     args.add_bet = args.add_bet and args.masking != 'bet'
     args.two_pass = args.two_pass and args.masking != 'bet'
+
+    # set number of QSM threads
     args.qsm_threads = 16 if args.qsub_account_string else 1
+    args.qsm_ppn = 16
 
     wf = init_workflow()
 

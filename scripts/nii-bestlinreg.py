@@ -38,6 +38,10 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
+    args.in_fixed = os.path.abspath(args.in_fixed)
+    args.in_moving = os.path.abspath(args.in_moving)
+    args.out_transform = os.path.abspath(args.out_transform)
+
     # convert to mnc
     sys_cmd("mkdir .tmp")
     if ".nii.gz" in args.in_fixed: sys_cmd(f"gunzip -f -c {args.in_fixed} > .tmp/{os.path.basename(args.in_fixed).split(os.extsep)[0]}.nii")
