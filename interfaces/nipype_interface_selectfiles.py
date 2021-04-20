@@ -192,11 +192,14 @@ class SelectFiles(IOBase):
                 filelist = simplify_list(filelist)
 
             # Limit the number of files matched
-            if self._num_files:
-                filelist = filelist[:self._num_files]
-
-            # Get number of files
-            outputs['num_files'] = len(filelist)
+            if isinstance(filelist, list):
+                if self._num_files:
+                    filelist = filelist[:self._num_files]
+                outputs['num_files'] = len(filelist)
+                if len(filelist) == 1:
+                        filelist = filelist[0]
+            elif filelist:
+                outputs['num_files'] = 1
 
             outputs[field] = filelist
 

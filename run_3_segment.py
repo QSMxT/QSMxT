@@ -45,7 +45,6 @@ def init_subject_workflow(
     return wf
 
 def init_session_workflow(subject, session):
-    wf = Workflow(session, base_dir=os.path.join(args.work_dir, "workflow_segmentation", subject, session))
 
     # identify all runs - ensure that we only look at runs where both T1 and magnitude exist
     magnitude_runs = sorted(list(set([
@@ -61,32 +60,31 @@ def init_session_workflow(subject, session):
         time.sleep(3)
     runs = [f'run-{x}' for x in t1w_runs]
 
-    # iterate across each run
-    n_runPatterns = Node(
-        interface=IdentityInterface(
-            fields=['run'],
-        ),
-        name="iterate_runs"
-    )
-    n_runPatterns.iterables = ('run', runs)
+    wf = Workflow(session, base_dir=os.path.join(args.work_dir, "workflow_segmentation", subject, session))
+    wf.add_nodes([
+        init_run_workflow(subject, session, run)
+        for run in runs
+    ])
+    return wf
+
+def init_run_workflow(subject, session, run):
+
+    wf = Workflow(run, base_dir=os.path.join(args.work_dir, "workflow_segmentation", subject, session, run))
 
     # get relevant files from this run
     n_selectFiles = Node(
         interface=sf.SelectFiles(
             templates={
-                'T1': args.t1_pattern.replace("{run}", "{{run}}").format(subject=subject, session=session),
-                'mag': args.magnitude_pattern.replace("{run}", "{{run}}").format(subject=subject, session=session)
+                'T1': args.t1_pattern.format(subject=subject, session=session, run=run),
+                'mag': args.magnitude_pattern.format(subject=subject, session=session, run=run)
             },
             base_directory=os.path.abspath(args.bids_dir),
             sort_filelist=True,
             num_files=1,
-            force_lists=True
+            force_lists=False
         ),
         name='select_files'
     )
-    wf.connect([
-        (n_runPatterns, n_selectFiles, [('run', 'run')])
-    ])
 
     # segment t1
     n_reconall = Node(
@@ -100,7 +98,7 @@ def init_session_workflow(subject, session):
         name='recon_all'
     )
     n_reconall.plugin_args = {
-        'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn={g_args.reconall_cpus},mem=20gb,vmem=20gb,walltime=12:00:00',
+        'qsub_args': f'-A {args.qsub_account_string} -l walltime=12:00:00 -l select=1:ncpus={g_args.reconall_cpus}:mem=20gb',
         'overwrite': True
     }
     wf.connect([
@@ -111,17 +109,19 @@ def init_session_workflow(subject, session):
     n_reconall_aseg_nii = Node(
         interface=MRIConvert(
             out_type='niigz',
+            out_file=f'{subject}_{session}_{run}_t1w-aseg.nii.gz'
         ),
         name='reconall_aseg_nii'
     )
     wf.connect([
-        (n_reconall, n_reconall_aseg_nii, [('aseg', 'in_file')]),
+        (n_reconall, n_reconall_aseg_nii, [('aseg', 'in_file')])
     ])
 
     # convert original t1 to nii
     n_reconall_orig_nii = Node(
         interface=MRIConvert(
-            out_type='niigz'
+            out_type='niigz',
+            out_file=f'{subject}_{session}_{run}_t1w.nii.gz'
         ),
         name='reconall_orig_nii'
     )
@@ -253,9 +253,29 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # environment variables
+    # supplementary arguments
+    g_args = lambda:None
+    g_args.reconall_cpus = 1# if args.qsub_account_string is None else int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+
+    # ensure directories are complete and absolute
+    if not args.work_dir: args.work_dir = args.out_dir
+    args.bids_dir = os.path.abspath(args.bids_dir)
+    args.work_dir = os.path.abspath(args.work_dir)
+    args.out_dir = os.path.abspath(args.out_dir)
+
+    # this script's directory
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+
+    # misc environment variables
+    os.environ["SUBJECTS_DIR"] = "." # needed for reconall
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
-    os.environ["SUBJECTS_DIR"] = "."
+
+    # PATH environment variable
+    os.environ["PATH"] += os.pathsep + os.path.join(this_dir, "scripts")
+
+    # PYTHONPATH environment variable
+    if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + this_dir
+    else:                          os.environ["PYTHONPATH"]  = this_dir
 
     if args.debug:
         from nipype import config
@@ -267,12 +287,6 @@ if __name__ == "__main__":
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
-    if not args.work_dir: args.work_dir = args.out_dir
-    os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
-
-    g_args = lambda:None
-    g_args.reconall_cpus = 1 if args.qsub_account_string is None else int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
-
     wf = init_workflow()
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
@@ -283,7 +297,7 @@ if __name__ == "__main__":
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:50:00'
+                'qsub_args': f'-A {args.qsub_account_string} -l walltime=00:50:00 -l select=1:ncpus=1:mem=5gb'
             }
         )
     else:
