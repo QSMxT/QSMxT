@@ -20,6 +20,7 @@ def init_workflow():
     subjects = [
         os.path.split(path)[1]
         for path in glob.glob(os.path.join(args.bids_dir, args.subject_pattern))
+        if not args.subjects or os.path.split(path)[1] in args.subjects
     ]
     wf = Workflow("workflow_segmentation", base_dir=args.work_dir)
     wf.add_nodes([
@@ -34,6 +35,7 @@ def init_subject_workflow(
     sessions = [
         os.path.split(path)[1]
         for path in glob.glob(os.path.join(args.bids_dir, subject, args.session_pattern))
+        if not args.sessions or os.path.split(path)[1] in args.sessions
     ]
     wf = Workflow(subject, base_dir=os.path.join(args.work_dir, "workflow_segmentation"))
     wf.add_nodes([
