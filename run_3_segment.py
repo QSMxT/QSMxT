@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype.interfaces.utility import IdentityInterface, Function
-from nipype.interfaces.io import SelectFiles, DataSink, DataGrabber
+from nipype.interfaces.io import DataSink, DataGrabber
 from nipype.interfaces.freesurfer.preprocess import ReconAll, MRIConvert
 
-from interfaces import nipype_interface_selectfiles as sf
 from interfaces import nipype_interface_bestlinreg as bestlinreg
 from interfaces import nipype_interface_applyxfm as applyxfm
 
@@ -72,27 +71,29 @@ def init_run_workflow(subject, session, run):
     wf = Workflow(run, base_dir=os.path.join(args.work_dir, "workflow_segmentation", subject, session, run))
 
     # get relevant files from this run
-    n_selectFiles = Node(
-        interface=sf.SelectFiles(
-            templates={
-                'T1': args.t1_pattern.format(subject=subject, session=session, run=run),
-                'mag': args.magnitude_pattern.format(subject=subject, session=session, run=run)
-            },
-            base_directory=os.path.abspath(args.bids_dir),
-            sort_filelist=True,
-            num_files=1,
-            force_lists=False
-        ),
-        name='select_files'
-    )
-
+    t1_pattern = os.path.join(args.bids_dir, args.t1_pattern.format(subject=subject, session=session, run=run))
+    mag_pattern = os.path.join(args.bids_dir, args.magnitude_pattern.format(subject=subject, session=session, run=run))
+    t1_files = glob.glob(t1_pattern)
+    mag_files = sorted(glob.glob(mag_pattern))
+    if not t1_files:
+        print(f"No T1w files matching pattern: {t1_pattern}")
+        exit()
+    if not mag_files:
+        print(f"No magnitude files matching pattern: {mag_files}")
+        exit()
+    if len(t1_files) > 1:
+        print(f"QSMxT: Warning: Multiple T1w files matching pattern {t1_pattern}")
+    t1_file = t1_files[0]
+    mag_file = mag_files[0]
+    
     # segment t1
     n_reconall = Node(
         interface=ReconAll(
             parallel=True,
             openmp=1,
             mprage=args.t1_is_mprage,
-            directive='all'
+            directive='all',
+            T1_files=[t1_file]
             #hires=True,
         ),
         name='recon_all'
@@ -101,9 +102,6 @@ def init_run_workflow(subject, session, run):
         'qsub_args': f'-A {args.qsub_account_string} -l walltime=12:00:00 -l select=1:ncpus={g_args.reconall_cpus}:mem=20gb',
         'overwrite': True
     }
-    wf.connect([
-        (n_selectFiles, n_reconall, [('T1', 'T1_files')])
-    ])
 
     # convert segmentation to nii
     n_reconall_aseg_nii = Node(
@@ -131,22 +129,24 @@ def init_run_workflow(subject, session, run):
 
     # estimate transform for t1 to qsm
     n_calc_t1_to_gre = Node(
-        interface=bestlinreg.NiiBestLinRegInterface(),
+        interface=bestlinreg.NiiBestLinRegInterface(
+            in_fixed=mag_file
+        ),
         name='calculate_reg'
     )
     wf.connect([
-        (n_selectFiles, n_calc_t1_to_gre, [('mag', 'in_fixed')]),
         (n_reconall_orig_nii, n_calc_t1_to_gre, [('out_file', 'in_moving')])
     ])
 
     # apply transform to segmentation
     n_register_t1_to_gre = Node(
-        interface=applyxfm.NiiApplyMincXfmInterface(),
+        interface=applyxfm.NiiApplyMincXfmInterface(
+            in_like=mag_file
+        ),
         name='register_segmentations'
     )
     wf.connect([
         (n_reconall_aseg_nii, n_register_t1_to_gre, [('out_file', 'in_file')]),
-        (n_selectFiles, n_register_t1_to_gre, [('mag', 'in_like')]),
         (n_calc_t1_to_gre, n_register_t1_to_gre, [('out_transform', 'in_transform')])
     ])
 
@@ -277,11 +277,14 @@ if __name__ == "__main__":
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + this_dir
     else:                          os.environ["PYTHONPATH"]  = this_dir
 
+    # don't remove outputs
+    from nipype import config
+    config.set('execution', 'remove_unnecessary_outputs', 'false')
+
+    # debugging options
     if args.debug:
-        from nipype import config
         config.enable_debug_mode()
         config.set('execution', 'stop_on_first_crash', 'true')
-        config.set('execution', 'remove_unnecessary_outputs', 'false')
         config.set('execution', 'keep_inputs', 'true')
         config.set('logging', 'workflow_level', 'DEBUG')
         config.set('logging', 'interface_level', 'DEBUG')
