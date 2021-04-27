@@ -78,3 +78,11 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     ```bash
     python3 /opt/QSMxT/run_5_qsmTemplate.py 02_qsm_output 04_magnitude_template 05_qsm_template
     ```
+6. Export quantitative data to CSV using segmentations
+    ```bash
+    python3 /opt/QSMxT/run_6_analysis.py --segmentations 03_segmentation/qsm_segmentation/*.nii --qsm_files 02_qsm_output/qsm_final/*.nii --out_dir 06_analysis
+    ```
+7. Export quantitative data to CSV using a custom segmentation
+    ```bash
+    python3 /opt/QSMxT/run_6_analysis --segmentations my_segmentation.nii --qsm_files 05_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
+    ```
