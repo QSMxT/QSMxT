@@ -5,6 +5,7 @@ import os
 import glob
 import fnmatch
 import subprocess
+import psutil
 
 from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge, UnaryMaths
 from nipype.interfaces.utility import IdentityInterface, Function
@@ -28,6 +29,9 @@ def init_workflow():
         for path in glob.glob(os.path.join(args.bids_dir, args.subject_pattern))
         if not args.subjects or os.path.split(path)[1] in args.subjects
     ]
+    if not subjects:
+        print(f"No subjects found in: {os.path.join(args.bids_dir, args.session_pattern)}")
+        exit()
     wf = Workflow("workflow_qsm", base_dir=args.work_dir)
     wf.add_nodes([
         init_subject_workflow(subject)
@@ -43,6 +47,9 @@ def init_subject_workflow(
         for path in glob.glob(os.path.join(args.bids_dir, subject, args.session_pattern))
         if not args.sessions or os.path.split(path)[1] in args.sessions
     ]
+    if not sessions:
+        print(f"No sessions found in: {os.path.join(args.bids_dir, subject, args.session_pattern)}")
+        exit()
     wf = Workflow(subject, base_dir=os.path.join(args.work_dir, "workflow_qsm"))
     wf.add_nodes([
         init_session_workflow(subject, session)
@@ -58,6 +65,12 @@ def init_session_workflow(subject, session):
         interface=DataSink(base_directory=args.out_dir),
         name='datasink'
     )
+
+    # exit if no runs found
+    phase_files = glob.glob(os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session)))
+    if 'run-' not in phase_files[0]:
+        print(f"No 'run-' identifier found in file: {phase_files[0]}")
+        exit()
 
     # identify all runs
     runs = sorted(list(set([
@@ -159,15 +172,15 @@ def init_session_workflow(subject, session):
     ])
 
     # homogeneity filter
-    if args.homogeneity_filter and ('bet' in args.masking or args.add_bet):
-        mn_homogeneity_filter = MapNode(
+    if args.inhomogeneity_correction and ('bet' in args.masking or args.add_bet):
+        mn_inhomogeneity_correction = MapNode(
             interface=makehomogeneous.MakeHomogeneousInterface(),
             iterfield=['in_file'],
-            name='make_homogeneous'
+            name='correct_inhomogeneity'
             # output : out_file
         )
         wf.connect([
-            (n_selectFiles, mn_homogeneity_filter, [('mag', 'in_file')])
+            (n_selectFiles, mn_inhomogeneity_correction, [('mag', 'in_file')])
         ])
 
     # brain extraction
@@ -184,14 +197,14 @@ def init_session_workflow(subject, session):
     )
     if args.masking == 'bet' or args.add_bet:
         mn_bet = MapNode(
-            interface=BET(frac=args.fractional_intensity, mask=True, robust=True),
+            interface=BET(frac=args.bet_fractional_intensity, mask=True, robust=True),
             iterfield=['in_file'],
             name='fsl_bet'
             # output: 'mask_file'
         )
-        if args.homogeneity_filter:
+        if args.inhomogeneity_correction:
             wf.connect([
-                (mn_homogeneity_filter, mn_bet, [('out_file', 'in_file')])
+                (mn_inhomogeneity_correction, mn_bet, [('out_file', 'in_file')])
             ])
         else:
             wf.connect([
@@ -241,9 +254,9 @@ def init_session_workflow(subject, session):
             # output: 'out_file'
         )
 
-        if args.homogeneity_filter:
+        if args.inhomogeneity_correction:
             wf.connect([
-                (mn_homogeneity_filter, mn_magmask, [('out_file', 'in_file')])
+                (mn_inhomogeneity_correction, mn_magmask, [('out_file', 'in_file')])
             ])
         else:
             wf.connect([
@@ -272,7 +285,7 @@ def init_session_workflow(subject, session):
 
         # args for PBS
         mn_qsm.plugin_args = {
-            'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn={args.qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
+            'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.qsm_threads}:mem=20gb:vmem=20gb',
             'overwrite': True
         }
 
@@ -363,7 +376,7 @@ def init_session_workflow(subject, session):
 
         # args for PBS
         mn_qsm_filled.plugin_args = {
-            'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn={args.qsm_threads},mem=20gb,vmem=20gb,walltime=03:00:00',
+            'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.qsm_threads}:mem=20gb:vmem=20gb',
             'overwrite': True
         }
 
@@ -462,13 +475,15 @@ if __name__ == "__main__":
     parser.add_argument(
         '--magnitude_pattern',
         default='{subject}/{session}/anat/*qsm*{run}*magnitude*nii*',
-        help='Pattern to match magnitude files within the BIDS directory.'
+        help='Pattern to match magnitude files within the BIDS directory. ' +
+             'The {subject}, {session} and {run} placeholders must be present.'
     )
 
     parser.add_argument(
         '--phase_pattern',
         default='{subject}/{session}/anat/*qsm*{run}*phase*nii*',
-        help='Pattern to match phase files for qsm within session folders.'
+        help='Pattern to match phase files for qsm within session folders. ' +
+             'The {subject}, {session} and {run} placeholders must be present.'
     )
 
     parser.add_argument(
@@ -507,47 +522,31 @@ if __name__ == "__main__":
         '--two_pass',
         action='store_true',
         help='Use a two-pass QSM inversion, separating low and high-susceptibility structures for ' +
-             'artefact reduction and doubling the runtime. Can only be applied to magnitude-based ' +
-             'or phase-based masking.'
+             'artefact reduction (and doubling the runtime).'
     )
 
     parser.add_argument(
-        '--add_bet',
-        action='store_true',
-        help='Add a bet mask to the filled in threshold-based mask.'
-    )
-
-    parser.add_argument(
-        '--no_resampling',
-        action='store_true',
-        help='Deactivate resampling inside TGV_QSM. Useful when resampling fails with error: ' +
-             '\'Incompatible size of mask and data images\'. Check results carefully.'
-    )
-
-    parser.add_argument(
-        '--iterations',
-        dest='qsm_iterations',
+        '--qsm_iterations',
         type=int,
         default=1000,
-        help='Number of iterations used for the dipole inversion step via tgv_qsm.'
+        help='Number of iterations used for QSM reconstruction in tgv_qsm.'
     )
 
     parser.add_argument(
-        '--homogeneity_filter',
+        '--inhomogeneity_correction',
         action='store_true',
-        help='Enables the magnitude homogeneity filter for magnitude-based and BET masking ' +
-             'strategies.'
+        help='Applies an inomogeneity correction to the magnitude prior to masking'
     )
 
     parser.add_argument(
         '--threshold',
         type=int,
         default=30,
-        help='Threshold percentage used for magnitude-based and phase-based masking.'
+        help='Threshold percentage; anything less than the threshold will be excluded from the mask'
     )
 
     parser.add_argument(
-        '--fractional_intensity',
+        '--bet_fractional_intensity',
         type=float,
         default=0.5,
         help='Fractional intensity for BET masking operations.'
@@ -569,6 +568,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--add_bet',
+        action='store_true',
+        help='Add a bet mask to the filled in threshold-based mask. This is useful if ' +
+             'areas of the brain are missing.'
+    )
+
+    parser.add_argument(
         '--pbs',
         default=None,
         dest='qsub_account_string',
@@ -576,9 +582,24 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--n_procs',
+        type=int,
+        default=None,
+        help='Number of processes to run concurrently. By default, we use the number of CPUs, ' +
+             'provided there are 6 GBs of RAM available for each.'
+    )
+
+    parser.add_argument(
         '--debug',
         action='store_true',
         help='Enables some nipype settings for debugging.'
+    )
+    
+    parser.add_argument(
+        '--no_resampling',
+        action='store_true',
+        help='Deactivate resampling inside TGV_QSM. Useful when resampling fails with error: ' +
+             '\'Incompatible size of mask and data images\'. Check results carefully.'
     )
 
     args = parser.parse_args()
@@ -618,10 +639,14 @@ if __name__ == "__main__":
     args.two_pass = args.two_pass and args.masking != 'bet'
 
     # set number of QSM threads
-    args.qsm_threads = 16 if args.qsub_account_string else 1
-    args.qsm_ppn = 16
-
-    wf = init_workflow()
+    n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+    args.qsm_threads = n_cpus if args.qsub_account_string else 1
+    
+    # set number of concurrent processes to run depending on
+    # available CPUs and RAM (max 1 per 6 GB of available RAM)
+    if not args.n_procs:
+        available_ram_gb = psutil.virtual_memory().available / 1e9
+        args.n_procs = min(int(available_ram_gb / 6), n_cpus)
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
@@ -631,18 +656,19 @@ if __name__ == "__main__":
 
     # run workflow
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
+    wf = init_workflow()
     if args.qsub_account_string:
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': f'-A {args.qsub_account_string} -q Short -l nodes=1:ppn=1,mem=5GB,vmem=5GB,walltime=00:30:00'
+                'qsub_args': f'-A {args.qsub_account_string} -l walltime=00:30:00 -l select=1:ncpus=1:mem=5gb'
             }
         )
     else:
         wf.run(
             plugin='MultiProc',
             plugin_args={
-                'n_procs': int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+                'n_procs': args.n_procs
             }
         )
 
