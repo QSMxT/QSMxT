@@ -383,8 +383,10 @@ def make_workflow(bids_dir, work_dir, out_dir, templates, opt, conf, qsub_accoun
                                     interface=preprocess_volpad_id,
                                     name='preprocess_volpad',
                                     iterfield=['input_file'])
-        preprocess_volpad.plugin_args = {'qsub_args': f'-A {qsub_account_string} -l nodes=1:ppn=10,mem=10gb,vmem=10gb,walltime=04:10:00',
-                                      'overwrite': True}
+        preprocess_volpad.plugin_args = {
+            'qsub_args': f'-A {qsub_account_string} -l walltime=04:10:00 -l select=1:ncpus=10:mem=10gb:vmem=10gb,walltime=04:10:00',
+            'overwrite': True
+        }
 
     workflow.connect(preprocess_normalise, 'output_file', preprocess_volpad, 'input_file')
     # </editor-fold>
@@ -1030,7 +1032,7 @@ if __name__ == '__main__':
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': f'-A {cli_args.qsub_account_string} -l nodes=1:ppn=1,mem=1gb,vmem=1gb,walltime=00:10:00',
+                'qsub_args': f'-A {cli_args.qsub_account_string} -l walltime=00:10:00 -l select=1:ncpus=1:mem=1gb',
                 #'max_jobs': '10',
                 'dont_resubmit_completed_jobs': True
             }
