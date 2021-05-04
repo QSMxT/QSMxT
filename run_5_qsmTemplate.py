@@ -32,7 +32,7 @@ def create_workflow(qsm_output_dir, magnitude_template_output_dir, qsm_template_
         ),
         name='datasource_xfm'
     )
-    n_datasource_xfm.inputs.base_directory = magnitude_template_output_dir
+    n_datasource_xfm.inputs.base_directory = qsm_template_output_dir
     n_datasource_xfm.inputs.template = 'transformations/*/*.xfm'
 
     n_datasource_grid = Node(
@@ -41,7 +41,7 @@ def create_workflow(qsm_output_dir, magnitude_template_output_dir, qsm_template_
         ),
         name='datasource_grid'
     )
-    n_datasource_grid.inputs.base_directory = magnitude_template_output_dir
+    n_datasource_grid.inputs.base_directory = qsm_template_output_dir
     n_datasource_grid.inputs.template = 'transformations/*/*0.mnc'
 
     n_datasource_template = Node(
@@ -174,24 +174,39 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     if not args.work_dir: args.work_dir = args.qsm_template_output_dir
-    os.makedirs(os.path.abspath(args.qsm_template_output_dir), exist_ok=True)
-    os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
+    args.qsm_template_output_dir = os.path.abspath(args.qsm_template_output_dir)
+    args.qsm_output_dir = os.path.abspath(args.qsm_output_dir)
+    args.magnitude_template_output_dir = os.path.abspath(args.magnitude_template_output_dir)
+    args.work_dir = os.path.abspath(args.work_dir)
+
+    os.makedirs(args.qsm_template_output_dir, exist_ok=True)
+    os.makedirs(args.work_dir, exist_ok=True)
 
     os.environ["PATH"] += os.pathsep + os.path.join(os.path.dirname(os.path.abspath(__file__)), "scripts")
 
     wf = create_workflow(
-        qsm_output_dir=os.path.abspath(args.qsm_output_dir),
-        magnitude_template_output_dir=os.path.abspath(args.magnitude_template_output_dir),
-        qsm_template_output_dir=os.path.abspath(args.qsm_template_output_dir),
-        qsm_template_work_dir=os.path.abspath(args.work_dir)
+        qsm_output_dir=args.qsm_output_dir,
+        magnitude_template_output_dir=args.magnitude_template_output_dir,
+        qsm_template_output_dir=args.qsm_template_output_dir,
+        qsm_template_work_dir=args.work_dir
     )
 
     # put xfms and grid files together
-    grid_files = glob.glob(os.path.join(os.path.abspath(args.magnitude_template_output_dir), "transformation_grids/*/*.mnc"))
-    for f in grid_files:
-        parts = f.split("/")
-        os.makedirs(os.path.join(os.path.abspath(args.magnitude_template_output_dir), "transformations", parts[-2]), exist_ok=True)
-        shutil.copyfile(f, os.path.join(os.path.abspath(args.magnitude_template_output_dir), "transformations", parts[-2], parts[-1]))
+    grid_files = glob.glob(os.path.join(args.magnitude_template_output_dir, "transformation_grids/*/*.mnc"))
+    xfm_files = glob.glob(os.path.join(args.magnitude_template_output_dir, "transformations/*/*.xfm"))
+
+    for grid_file in grid_files:
+        parts = grid_file.split("/")
+        xfmconcat_dir = parts[-2]
+        filename = parts[-1]
+        os.makedirs(os.path.join(args.qsm_template_output_dir, "transformations", xfmconcat_dir), exist_ok=True)
+        shutil.copyfile(grid_file, os.path.join(args.qsm_template_output_dir, "transformations", xfmconcat_dir, filename))
+
+    for xfm_file in xfm_files:
+        parts = xfm_file.split("/")
+        xfmconcat_dir = parts[-2]
+        filename = parts[-1]
+        shutil.copyfile(xfm_file, os.path.join(args.qsm_template_output_dir, "transformations", xfmconcat_dir, filename))
     
     if args.qsub_account_string:
         wf.run(
