@@ -64,7 +64,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ['*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
+      ProtocolName: ['*ASPIRE*', '*Aspire*', '*aspire*', '*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
       SeriesDescription: ~
       ImageType: 'M'
       SequenceName: ~
@@ -90,7 +90,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ['*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
+      ProtocolName: ['*ASPIRE*', '*Aspire*', '*aspire*', '*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
       SeriesDescription: ~
       ImageType: 'P'
       SequenceName: ~
@@ -119,10 +119,11 @@ DICOM:
   beh:        # ----------------------- All behavioural data ---------------------
   pet:        # ----------------------- All PET series ---------------------------
   extra_data: # ----------------------- All extra data ---------------------------
+  leave_out:  # ----------------------- Data that will be left out ---------------
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: '*swi*'
+      ProtocolName: ['*swi*', '*SWI*']
       SeriesDescription: ~
       ImageType: ~
       SequenceName: ~
@@ -145,7 +146,6 @@ DICOM:
       run: <<1>>
       mod:
       suffix:
-  leave_out:  # ----------------------- Data that will be left out ---------------
 PAR:
 # --------------------------------------------------------------------------------
 # PAR key-value heuristics (Philips PAR fields that are mapped to the BIDS labels)
