@@ -1,15 +1,18 @@
 # QSMxT: A Complete QSM Processing Framework
 
-QSMxT aims to be a complete and end-to-end QSM processing and analysis framework. It includes pipelines that:
+QSMxT is a complete and end-to-end QSM processing and analysis framework that excels at automatically reconstructing and processing QSM for large groups of participants. 
+
+QSMxT provides pipelines implemented in Python that:
 
 1. Automatically convert DICOM data to the Brain Imaging Data Structure (BIDS)
-2. Automatically reconstruct QSM for all subjects, including steps for:
-   1. Robust masking for artefact reduction
+2. Automatically reconstruct QSM, including steps for:
+   1. Robust masking without anatomical priors
    2. Phase unwrapping (Laplacian based)
-   3. Background field removal + dipole inversion (TGV)
-   4. Multi-echo combination (QSM averaging)
-3. Automatically generate a common group space for the whole dataset, as well as average magnitude and QSM images that facilitate group-level analyses.
-4. Automatically segment T1w data and registration to the QSM space to extract quantitative values in anatomical regions of interest.
+   3. Background field removal + dipole inversion (`tgv_qsm`)
+   4. Multi-echo combination
+3. Automatically generate a common group space for the whole study, as well as average magnitude and QSM images that facilitate group-level analyses.
+4. Automatically segment T1w data and register them to the QSM space to extract quantitative values in anatomical regions of interest.
+5. Export quantitative data to CSV for all subjects using the automated segmentations, or a custom segmentation in the group space.
 
 QSMxT's containerised implementation makes all required external dependencies available in a reproducible and scalable way, supporting MacOS, Windows and Linux, and with options for parallel processing via PBS systems.
 
@@ -18,7 +21,7 @@ QSMxT's containerised implementation makes all required external dependencies av
 ## Installation
 ### Simple install and start via VNM
 
-A user friendly way of running this pipeline in Windows is via the Virtual Neuro Machine (VNM) provided by our NeuroDesk project:
+A user friendly way of running QSMxT in Windows is via the Virtual Neuro Machine (VNM) provided by the NeuroDesk project:
 
 1. Install [Docker](https://www.docker.com/)
 2. Install [VNM](https://github.com/NeuroDesk/vnm/)
@@ -29,7 +32,7 @@ A user friendly way of running this pipeline in Windows is via the Virtual Neuro
 
 ### Linux installation via Transparent Singularity (supports PBS)
 
-The tools provided by the QSMxT container can be exposed and used without VNM using the QSMxT Singularity container coupled with the transparent singularity software provided by our Neurodesk project. Transparent singularity allows the QSMxT Python scripts to be run directly within the host OS's environment. This mode of execution is necessary for parallel execution via PBS.
+The tools provided by the QSMxT container can be exposed and used without VNM using the QSMxT Singularity container coupled with the transparent singularity software provided by the Neurodesk project. Transparent singularity allows the QSMxT Python scripts to be run directly within the host OS's environment. This mode of execution is necessary for parallel execution via PBS.
 
 1. Install [singularity](https://sylabs.io/guides/3.0/user-guide/quick_start.html)
    
@@ -80,7 +83,7 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     ```
 6. Export quantitative data to CSV using segmentations
     ```bash
-    python3 /opt/QSMxT/run_6_analysis.py --segmentations 03_segmentation/qsm_segmentation/*.nii --qsm_files 02_qsm_output/qsm_final/*.nii --out_dir 06_analysis
+    python3 /opt/QSMxT/run_6_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentation/*.nii --qsm_files 02_qsm_output/qsm_final/*.nii --out_dir 06_analysis
     ```
 7. Export quantitative data to CSV using a custom segmentation
     ```bash
