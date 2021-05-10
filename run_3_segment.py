@@ -4,6 +4,7 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink, DataGrabber
 from nipype.interfaces.freesurfer.preprocess import ReconAll, MRIConvert
 
+from interfaces import nipype_interface_niiremoveheader as niiremoveheader
 from interfaces import nipype_interface_bestlinreg as bestlinreg
 from interfaces import nipype_interface_applyxfm as applyxfm
 
@@ -73,7 +74,7 @@ def init_run_workflow(subject, session, run):
     # get relevant files from this run
     t1_pattern = os.path.join(args.bids_dir, args.t1_pattern.format(subject=subject, session=session, run=run))
     mag_pattern = os.path.join(args.bids_dir, args.magnitude_pattern.format(subject=subject, session=session, run=run))
-    t1_files = glob.glob(t1_pattern)
+    t1_files = sorted(glob.glob(t1_pattern))
     mag_files = sorted(glob.glob(mag_pattern))
     if not t1_files:
         print(f"No T1w files matching pattern: {t1_pattern}")
@@ -115,39 +116,50 @@ def init_run_workflow(subject, session, run):
         (n_reconall, n_reconall_aseg_nii, [('aseg', 'in_file')])
     ])
 
-    # convert original t1 to nii
-    n_reconall_orig_nii = Node(
-        interface=MRIConvert(
-            out_type='niigz',
-            out_file=f'{subject}_{session}_{run}_t1w.nii.gz'
+    # remove header from magnitude file
+    n_removeheader_magnitude = Node(
+        interface=niiremoveheader.NiiRemoveHeaderInterface(
+            in_file=mag_file
         ),
-        name='reconall_orig_nii'
+        name='remove_header_magnitude',
+    )
+
+    # remove header from t1w file
+    n_removeheader_t1 = Node(
+        interface=niiremoveheader.NiiRemoveHeaderInterface(
+            in_file=t1_file
+        ),
+        name='remove_header_t1',
+    )
+
+    # remove header from t1w file
+    n_removeheader_aseg = Node(
+        interface=niiremoveheader.NiiRemoveHeaderInterface(),
+        name='remove_header_aseg',
     )
     wf.connect([
-        (n_reconall, n_reconall_orig_nii, [('orig', 'in_file')])
+        (n_reconall_aseg_nii, n_removeheader_aseg, [('out_file', 'in_file')])
     ])
 
     # estimate transform for t1 to qsm
-    n_calc_t1_to_gre = Node(
-        interface=bestlinreg.NiiBestLinRegInterface(
-            in_fixed=mag_file
-        ),
+    n_calc_t1_to_qsm = Node(
+        interface=bestlinreg.NiiBestLinRegInterface(),
         name='calculate_reg'
     )
     wf.connect([
-        (n_reconall_orig_nii, n_calc_t1_to_gre, [('out_file', 'in_moving')])
+        (n_removeheader_magnitude, n_calc_t1_to_qsm, [('out_file', 'in_fixed')]),
+        (n_removeheader_t1, n_calc_t1_to_qsm, [('out_file', 'in_moving')])
     ])
 
     # apply transform to segmentation
-    n_register_t1_to_gre = Node(
-        interface=applyxfm.NiiApplyMincXfmInterface(
-            in_like=mag_file
-        ),
+    n_register_t1_to_qsm = Node(
+        interface=applyxfm.NiiApplyMincXfmInterface(),
         name='register_segmentations'
     )
     wf.connect([
-        (n_reconall_aseg_nii, n_register_t1_to_gre, [('out_file', 'in_file')]),
-        (n_calc_t1_to_gre, n_register_t1_to_gre, [('out_transform', 'in_transform')])
+        (n_removeheader_magnitude, n_register_t1_to_qsm, [('out_file', 'in_like')]),
+        (n_removeheader_aseg, n_register_t1_to_qsm, [('out_file', 'in_file')]),
+        (n_calc_t1_to_qsm, n_register_t1_to_qsm, [('out_transform', 'in_transform')])
     ])
 
     # datasink
@@ -159,10 +171,10 @@ def init_run_workflow(subject, session, run):
         name='datasink'
     )
     wf.connect([
-        (n_reconall_aseg_nii, n_datasink, [('out_file', 't1_mni_segmentation')]),
-        (n_reconall_orig_nii, n_datasink, [('out_file', 't1_mni')]),
-        (n_register_t1_to_gre, n_datasink, [('out_file', 'qsm_segmentation')]),
-        (n_calc_t1_to_gre, n_datasink, [('out_transform', 't1_mni_to_qsm_transforms')])
+        (n_removeheader_aseg, n_datasink, [('out_file', 't1_mni_segmentation')]),
+        (n_removeheader_t1, n_datasink, [('out_file', 't1_mni')]),
+        (n_register_t1_to_qsm, n_datasink, [('out_file', 'qsm_segmentation')]),
+        (n_calc_t1_to_qsm, n_datasink, [('out_transform', 't1_mni_to_qsm_transforms')])
     ])
 
     return wf
