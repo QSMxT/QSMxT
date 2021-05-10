@@ -6,12 +6,9 @@ import argparse
 
 def load_nii(file_path):
     try:
-        return nib.load(file_path).get_fdata()
+        return nib.load(file_path)
     except:
         raise argparse.ArgumentTypeError(f"{file_path} is not a valid nifti file!")
-
-def save_nii(data, file_path):
-    nib.save(nib.nifti1.Nifti1Image(data, None), file_path)
 
 def get_np_datatype(type_name):
     types = {
@@ -52,4 +49,9 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     in_file = args.in_file
-    save_nii(np.array(in_file, dtype=args.dtype), args.out_file)
+    
+    # keep pixel dimension for non-isotropic data
+    header = nib.Nifti1Header()
+    header['pixdim'] = in_file.header['pixdim']
+
+    nib.save(nib.nifti1.Nifti1Image(in_file.get_fdata(), affine=None, header=header), args.out_file)
