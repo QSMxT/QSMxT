@@ -80,13 +80,15 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--segmentations',
-        nargs='*',
-        help='Segmentation files to use. There should either be 1 file or one for each in the QSM directory.'
+        nargs='+',
+        required=True,
+        help='Segmentation files to use. This can be either a single segmentation file, or one for each result in the QSM directory.'
     )
 
     parser.add_argument(
         '--qsm_files',
-        nargs='*',
+        nargs='+',
+        required=True,
         help='QSM files to analyse using the segmentation/s.'
     )
 
@@ -98,8 +100,9 @@ if __name__ == "__main__":
     parser.add_argument(
         '--labels_file',
         default=None,
-        help='Labels CSV file containing segmentation numbers in the first column, and ROI names in the second.'+
-             'The aseg_labels.csv file contains labels appropriate for the segmentation pipeline.'
+        help='Optional labels CSV file to include named fields in the output. The CSV should contain '+
+             'segmentation numbers in the first column and ROI names in the second. The aseg_labels.csv '+
+             'file contains labels for the aseg atlas used in the segmentation pipeline.'
     )
 
     args = parser.parse_args()
