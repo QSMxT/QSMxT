@@ -3,18 +3,30 @@ name: test QSM core pipeline
 on:
   push:
     branches: [ master ]
+    paths-ignore:
+      - run_3_segment.py
+      - run_4_magnitudeTemplate.py
+      - run_5_qsmTemplate.py
+      - run_6_analysis.py
+      - diagram.png
+      - aseg_labels.csv
+      - README.md
   pull_request:
     branches: [ master ]
+    paths-ignore:
+      - run_3_segment.py
+      - run_4_magnitudeTemplate.py
+      - run_5_qsmTemplate.py
+      - run_6_analysis.py
+      - diagram.png
+      - aseg_labels.csv
+      - README.md
     
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - uses: actions/setup-python@v2
-      with:
-        python-version: 3.8
     - name: Free up space
       uses: easimon/maximize-build-space@master
       with:
@@ -29,6 +41,10 @@ jobs:
           sudo mv /var/lib/docker /home/runner/work/docker
           sudo ln -s /home/runner/work/docker /var/lib/docker
           sudo systemctl restart docker
+    - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
     - name: run pipeline
       run: |
         /bin/bash run_test.sh
