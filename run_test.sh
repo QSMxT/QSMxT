@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+container=docker.pkg.github.com/neurodesk/caid/qsmxt_1.0.0:20210305
+
+docker pull $container
+
 cd /tmp
 pip install osfclient
 osf -p ru43c clone .
