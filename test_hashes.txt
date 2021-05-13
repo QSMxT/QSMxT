@@ -1,0 +1,2 @@
+040d61f9c2cc4c0cc85f70b609caa6c5  /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170705134431std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm-filled_000_average.nii
+22fa46b2bb02fa2bbf6525d0c6f76760  /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170706160506std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm-filled_000_average.nii
