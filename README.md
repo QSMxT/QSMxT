@@ -23,7 +23,7 @@ If you use QSMxT for a study, please cite https://doi.org/10.1101/2021.05.05.442
 ## Installation
 ### Simple install and start via VNM
 
-A user friendly way of running QSMxT in Windows is via the Virtual Neuro Machine (VNM) provided by the NeuroDesk project:
+A user friendly way of running QSMxT in Windows, Mac or Linux is via the Virtual Neuro Machine (VNM) provided by the NeuroDesk project:
 
 1. Install [Docker](https://www.docker.com/)
 2. Install [VNM](https://github.com/NeuroDesk/vnm/)
