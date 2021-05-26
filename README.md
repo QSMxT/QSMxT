@@ -94,6 +94,7 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
 
 ## Common errors and workarounds
 1. Return code: 137
+
 If you run ` python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output` and you get this error:
 ```
 Resampling phase data...
