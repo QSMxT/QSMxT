@@ -91,3 +91,13 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     ```bash
     python3 /opt/QSMxT/run_6_analysis --segmentations my_segmentation.nii --qsm_files 05_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
     ```
+
+## Common errors and workarounds
+1. Return code: 137
+If you run ` python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output` and you get this error:
+```
+Resampling phase data...
+Killed
+Return code: 137
+``` 
+This indicates insufficient memory for the pipeline to run. Check in your Docker settings if you provided sufficent RAM to your containers (e.g. a 0.75mm dataset requires around 20GB of memory)
