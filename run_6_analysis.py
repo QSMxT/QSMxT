@@ -1,8 +1,5 @@
 #!/usr/bin/env python3
 
-import matplotlib
-import matplotlib.pyplot as plt
-import seaborn as sns
 import numpy as np
 import nibabel as nib
 import argparse
