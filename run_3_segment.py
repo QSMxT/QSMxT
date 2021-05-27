@@ -1,20 +1,16 @@
 #!/usr/bin/env python3
-from nipype.pipeline.engine import Workflow, Node, MapNode
-from nipype.interfaces.utility import IdentityInterface, Function
-from nipype.interfaces.io import DataSink, DataGrabber
-from nipype.interfaces.freesurfer.preprocess import ReconAll, MRIConvert
+from nipype.pipeline.engine import Workflow, Node
+from nipype.interfaces.io import DataSink
+from nipype.interfaces.ants.registration import RegistrationSynQuick
+from nipype.interfaces.ants.resampling import ApplyTransforms
 
-from interfaces import nipype_interface_niiremoveheader as niiremoveheader
-from interfaces import nipype_interface_bestlinreg as bestlinreg
-from interfaces import nipype_interface_applyxfm as applyxfm
+from interfaces import nipype_interface_fastsurfer as fastsurfer
+from interfaces import nipype_interface_mgz2nii as mgz2nii
 
 import time
-import fnmatch
 import glob
 import os
-import os.path
 import argparse
-import re
 
 def init_workflow():
     subjects = [
@@ -86,83 +82,48 @@ def init_run_workflow(subject, session, run):
         print(f"QSMxT: Warning: Multiple T1w files matching pattern {t1_pattern}")
     t1_file = t1_files[0]
     mag_file = mag_files[0]
+
+    # register t1 to magnitude
+    n_registration = Node(
+        interface=RegistrationSynQuick(
+            #num_threads=1,
+            fixed_image=mag_file,
+            moving_image=t1_file
+        ),
+        # relevant outputs: out_matrix
+        name='register_t1_to_qsm'
+    )
     
     # segment t1
-    n_reconall = Node(
-        interface=ReconAll(
-            parallel=True,
-            openmp=1,
-            mprage=args.t1_is_mprage,
-            directive='all',
-            T1_files=[t1_file]
-            #hires=True,
-        ),
-        name='recon_all'
+    n_fastsurfer = Node(
+        interface=fastsurfer.FastSurferInterface(in_file=t1_file),
+        name='segment_t1'
     )
-    n_reconall.plugin_args = {
-        'qsub_args': f'-A {args.qsub_account_string} -l walltime=12:00:00 -l select=1:ncpus={g_args.reconall_cpus}:mem=20gb',
-        'overwrite': True
-    }
 
     # convert segmentation to nii
-    n_reconall_aseg_nii = Node(
-        interface=MRIConvert(
-            out_type='niigz',
-            out_file=f'{subject}_{session}_{run}_t1w-aseg.nii.gz'
+    n_fastsurfer_aseg_nii = Node(
+        interface=mgz2nii.Mgz2NiiInterface(),
+        name='fastsurfer_aseg_nii',
+    )
+    wf.connect([
+        (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
+    ])
+
+    # apply transforms to segmentation
+    n_transform_segmentation = Node(
+        interface=ApplyTransforms(
+            dimension=3,
+            #output_image=,
+            reference_image=mag_file,
+            interpolation="NearestNeighbor"
         ),
-        name='reconall_aseg_nii'
+        name='transform_segmentation_to_qsm'
     )
     wf.connect([
-        (n_reconall, n_reconall_aseg_nii, [('aseg', 'in_file')])
+        (n_fastsurfer_aseg_nii, n_transform_segmentation, [('out_file', 'input_image')]),
+        (n_registration, n_transform_segmentation, [('out_matrix', 'transforms')])
     ])
 
-    # remove header from magnitude file
-    n_removeheader_magnitude = Node(
-        interface=niiremoveheader.NiiRemoveHeaderInterface(
-            in_file=mag_file
-        ),
-        name='remove_header_magnitude',
-    )
-
-    # remove header from t1w file
-    n_removeheader_t1 = Node(
-        interface=niiremoveheader.NiiRemoveHeaderInterface(
-            in_file=t1_file
-        ),
-        name='remove_header_t1',
-    )
-
-    # remove header from t1w file
-    n_removeheader_aseg = Node(
-        interface=niiremoveheader.NiiRemoveHeaderInterface(),
-        name='remove_header_aseg',
-    )
-    wf.connect([
-        (n_reconall_aseg_nii, n_removeheader_aseg, [('out_file', 'in_file')])
-    ])
-
-    # estimate transform for t1 to qsm
-    n_calc_t1_to_qsm = Node(
-        interface=bestlinreg.NiiBestLinRegInterface(),
-        name='calculate_reg'
-    )
-    wf.connect([
-        (n_removeheader_magnitude, n_calc_t1_to_qsm, [('out_file', 'in_fixed')]),
-        (n_removeheader_t1, n_calc_t1_to_qsm, [('out_file', 'in_moving')])
-    ])
-
-    # apply transform to segmentation
-    n_register_t1_to_qsm = Node(
-        interface=applyxfm.NiiApplyMincXfmInterface(),
-        name='register_segmentations'
-    )
-    wf.connect([
-        (n_removeheader_magnitude, n_register_t1_to_qsm, [('out_file', 'in_like')]),
-        (n_removeheader_aseg, n_register_t1_to_qsm, [('out_file', 'in_file')]),
-        (n_calc_t1_to_qsm, n_register_t1_to_qsm, [('out_transform', 'in_transform')])
-    ])
-
-    # datasink
     n_datasink = Node(
         interface=DataSink(
             base_directory=args.out_dir
@@ -171,10 +132,8 @@ def init_run_workflow(subject, session, run):
         name='datasink'
     )
     wf.connect([
-        (n_removeheader_aseg, n_datasink, [('out_file', 't1_mni_segmentation')]),
-        (n_removeheader_t1, n_datasink, [('out_file', 't1_mni')]),
-        (n_register_t1_to_qsm, n_datasink, [('out_file', 'qsm_segmentation')]),
-        (n_calc_t1_to_qsm, n_datasink, [('out_transform', 't1_mni_to_qsm_transforms')])
+        (n_fastsurfer_aseg_nii, n_datasink, [('out_file', 't1_segmentations')]),
+        (n_transform_segmentation, n_datasink, [('output_image', 'qsm_segmentations')])
     ])
 
     return wf
@@ -245,12 +204,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--t1_is_mprage',
-        action='store_true',
-        help='Use if t1w images are MPRAGE; improves segmentation.'
-    )
-
-    parser.add_argument(
         '--pbs',
         default=None,
         dest='qsub_account_string',
@@ -281,9 +234,11 @@ if __name__ == "__main__":
     # misc environment variables
     os.environ["SUBJECTS_DIR"] = "." # needed for reconall
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
+    os.environ["FASTSURFER_HOME"] = "/opt/FastSurfer"
 
     # PATH environment variable
     os.environ["PATH"] += os.pathsep + os.path.join(this_dir, "scripts")
+    os.environ["PATH"] += os.pathsep + os.path.abspath("/opt/FastSurfer/")
 
     # PYTHONPATH environment variable
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + this_dir
@@ -322,3 +277,4 @@ if __name__ == "__main__":
                 'n_procs': int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
             }
         )
+
