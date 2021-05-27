@@ -10,19 +10,6 @@ def load_nii(file_path):
     except:
         raise argparse.ArgumentTypeError(f"{file_path} is not a valid nifti file!")
 
-def get_np_datatype(type_name):
-    types = {
-        'float' : np.float,
-        'float32' : np.float32,
-        'float64' : np.float64,
-        'int' : np.int,
-        'int8' : np.int8,
-        'int16' : np.int16,
-        'int32' : np.int32,
-        'int64' : np.int64
-    }
-    return types[type_name]
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -40,18 +27,26 @@ if __name__ == "__main__":
         help='the desired output filename'
     )
 
-    parser.add_argument(
-        '--dtype',
-        help='datatype',
-        type=get_np_datatype,
-        default='float'
-    )
-
     args = parser.parse_args()
     in_file = args.in_file
     
     # keep pixel dimension for non-isotropic data
     header = nib.Nifti1Header()
+    
     header['pixdim'] = in_file.header['pixdim']
+    header['scl_inter'] = in_file.header['scl_inter']
+    header['scl_slope'] = in_file.header['scl_slope']
+    header['descrip'] = in_file.header['descrip']
+    header['dim_info'] = in_file.header['dim_info']
+    header['dim_info'] = in_file.header['dim_info']
+    header['datatype'] = in_file.header['datatype']
+    header['bitpix'] = in_file.header['bitpix']
 
-    nib.save(nib.nifti1.Nifti1Image(in_file.get_fdata(), affine=None, header=header), args.out_file)
+    data = in_file.get_fdata()
+
+    # HACK
+    if in_file.header['qform_code'] == in_file.header['sform_code'] == 1:
+        data = np.flip(data, axis=0)
+        data = np.flip(data, axis=1)
+
+    nib.save(nib.nifti1.Nifti1Image(data, affine=None, header=header), args.out_file)
