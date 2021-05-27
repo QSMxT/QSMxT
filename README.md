@@ -23,7 +23,7 @@ If you use QSMxT for a study, please cite https://doi.org/10.1101/2021.05.05.442
 ## Installation
 ### Simple install and start via VNM
 
-A user friendly way of running QSMxT in Windows is via the Virtual Neuro Machine (VNM) provided by the NeuroDesk project:
+A user friendly way of running QSMxT in Windows, Mac or Linux is via the Virtual Neuro Machine (VNM) provided by the NeuroDesk project:
 
 1. Install [Docker](https://www.docker.com/)
 2. Install [VNM](https://github.com/NeuroDesk/vnm/)
@@ -91,3 +91,14 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     ```bash
     python3 /opt/QSMxT/run_6_analysis --segmentations my_segmentation.nii --qsm_files 05_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
     ```
+
+## Common errors and workarounds
+1. Return code: 137
+
+If you run ` python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output` and you get this error:
+```
+Resampling phase data...
+Killed
+Return code: 137
+``` 
+This indicates insufficient memory for the pipeline to run. Check in your Docker settings if you provided sufficent RAM to your containers (e.g. a 0.75mm dataset requires around 20GB of memory)
