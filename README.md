@@ -75,21 +75,17 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     ```bash
     python3 /opt/QSMxT/run_3_segment.py 01_bids 03_segmentation
     ```
-4. Build magnitude group template:
+4. Build magnitude and QSM group template:
     ```bash
-    python3 /opt/QSMxT/run_4_magnitudeTemplate.py 01_bids 04_magnitude_template
+    python3 /opt/QSMxT/run_4_template.py 01_bids 02_qsm_output 04_template
     ```
-5. Build QSM group template:
-    ```bash
-    python3 /opt/QSMxT/run_5_qsmTemplate.py 02_qsm_output 04_magnitude_template 05_qsm_template
-    ```
-6. Export quantitative data to CSV using segmentations
+5. Export quantitative data to CSV using segmentations
     ```bash
     python3 /opt/QSMxT/run_6_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentation/*.nii --qsm_files 02_qsm_output/qsm_final/*.nii --out_dir 06_analysis
     ```
-7. Export quantitative data to CSV using a custom segmentation
+6. Export quantitative data to CSV using a custom segmentation
     ```bash
-    python3 /opt/QSMxT/run_6_analysis --segmentations my_segmentation.nii --qsm_files 05_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
+    python3 /opt/QSMxT/run_6_analysis --segmentations my_segmentation.nii --qsm_files 04_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
     ```
 
 ## Common errors and workarounds
