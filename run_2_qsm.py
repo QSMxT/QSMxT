@@ -603,7 +603,7 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-
+    
     # ensure directories are complete and absolute
     if not args.work_dir: args.work_dir = args.out_dir
     args.bids_dir = os.path.abspath(args.bids_dir)
@@ -640,7 +640,7 @@ if __name__ == "__main__":
 
     # set number of QSM threads
     n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
-    args.qsm_threads = n_cpus if args.qsub_account_string else 1
+    args.qsm_threads = n_cpus if not args.qsub_account_string else 1
     
     # set number of concurrent processes to run depending on
     # available CPUs and RAM (max 1 per 6 GB of available RAM)
