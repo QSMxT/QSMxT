@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-container=vnmd/qsmxt_1.1.1:20210608
+container=vnmd/qsmxt_1.1.1:20210610
 
 docker pull $container
 
@@ -19,9 +19,9 @@ docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_0_dicomSort.py /tmp/di
 echo "[DEBUG] starting run_1_dicomToBids.py"
 docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_1_dicomToBids.py /tmp/00_dicom /tmp/01_bids
 
-unzip /tmp/osfstorage/qsm_final.zip -d /tmp/02_qsm_output
+unzip /tmp/osfstorage/qsm_final.zip -d /tmp/02_qsm_output_precomputed
 
 echo "[DEBUG] starting run_4_template.py"
-docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output /tmp/04_template
+docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output_precomputed /tmp/04_template
 
 md5sum --check tests/test_hashes_template.txt
