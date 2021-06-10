@@ -16,6 +16,8 @@ on:
       - aseg_labels.csv
       - README.md
     
+env:
+  container: vnmd/qsmxt_1.1.1:20210610
 
 jobs:
   test_qsm_pipeline:
