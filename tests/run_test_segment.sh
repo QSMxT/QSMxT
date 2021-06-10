@@ -25,10 +25,14 @@ sudo mv sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/01_bids/sub-170705134431std1312
 sudo rm -rf 01_bids/sub-170706160506std1312211075243167001/ 
 
 echo "[DEBUG] starting run_3_segment.py"
+echo "[DEBUG] live patching fastsurfer interface to limit threads:"
+
+sed -i 's/16/2/g' /tmp/QSMxT/interfaces/nipype_interface_fastsurfer.py
+
 docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_3_segment.py /tmp/01_bids /tmp/03_segmentation
 
 echo "[DEBUG] starting run_6_analysis.py"
-python3 /opt/QSMxT/run_6_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentation/*.nii --qsm_files 02_qsm_output/qsm_final/*.nii --out_dir 06_analysis
+docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_6_analysis.py --labels_file /tmp/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentation/*.nii --qsm_files 02_qsm_output/qsm_final/*.nii --out_dir 06_analysis
 
 [ -f  /tmp/03_segmentation/t1_segmentations/aparc.DKTatlas+aseg.deep_nii.nii ] && echo "$FILE exist." || exit 1
 [ -f  /tmp/03_segmentation/qsm_segmentations/aparc.DKTatlas+aseg.deep_nii_trans.nii ] && echo "$FILE exist." || exit 1
