@@ -9,3 +9,4 @@ batch*
 .vscode
 *.nii*
 debug/*
+testdata
