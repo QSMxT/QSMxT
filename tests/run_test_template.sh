@@ -24,4 +24,6 @@ unzip /tmp/osfstorage/qsm_final.zip -d /tmp/02_qsm_output_precomputed
 echo "[DEBUG] starting run_4_template.py"
 docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output_precomputed /tmp/04_template
 
-md5sum --check tests/test_hashes_template.txt
+[ -f /tmp/04_template/workflow_template/datasink/out/test/results/PassiveTemplate/_ReshapeAveragePassiveImageWithShapeUpdate0/AVG_QSMWARP_AVG_QSM.nii.gz ] && echo "$FILE exist." || exit 1
+[ -f /tmp/04_template/workflow_template/datasink/out/test/results/PreRegisterAverage/average.nii ] && echo "$FILE exist." || exit 1
+[ -f /tmp/04_template/workflow_template/datasink/out/test/results/PrimaryTemplate/iteration02_Reshaped.nii.gz ] && echo "$FILE exist." || exit 1

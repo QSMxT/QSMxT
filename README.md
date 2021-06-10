@@ -67,6 +67,8 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
     python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
     ```
+After this step check if the data were correctly recognized and converted to BIDS. Otherwise make a copy of /opt/QSMxT/bidsmap.yaml - adjust based on provenance example in 01_bids/code/bidscoin/bidsmap.yaml (see for example what it detected under extra_files) - and run again with the parameter `--heuristic bidsmap.yaml`. If the data were acquired on a GE scanner the complex data needs to be corrected by applying an FFT shift, this can be done with `python /opt/QSMxT/run_1_fixGEphaseFFTshift.py 01_bids/sub*/ses*/anat/*_run-1_*.nii.gz` . 
+
 2. Run QSM pipeline:
     ```bash
     python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output
