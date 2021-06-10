@@ -75,7 +75,7 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     ```bash
     python3 /opt/QSMxT/run_3_segment.py 01_bids 03_segmentation
     ```
-4. Build magnitude and QSM group template:
+4. Build magnitude and QSM group template (only makes sense when you have more than about 30 participants):
     ```bash
     python3 /opt/QSMxT/run_4_template.py 01_bids 02_qsm_output 04_template
     ```
@@ -85,7 +85,7 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     ```
 6. Export quantitative data to CSV using a custom segmentation
     ```bash
-    python3 /opt/QSMxT/run_6_analysis --segmentations my_segmentation.nii --qsm_files 04_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
+    python3 /opt/QSMxT/run_6_analysis.py --segmentations my_segmentation.nii --qsm_files 04_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
     ```
 
 ## Common errors and workarounds
