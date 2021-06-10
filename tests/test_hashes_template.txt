@@ -1,0 +1,3 @@
+78724e4d7af44c930dc5498a90567885  /tmp/04_template/workflow_template/datasink/out/test/results/PassiveTemplate/_ReshapeAveragePassiveImageWithShapeUpdate0/AVG_QSMWARP_AVG_QSM.nii.gz
+4d12cc99b8a825048218a443d066debc  /tmp/04_template/workflow_template/datasink/out/test/results/PreRegisterAverage/average.nii
+78fff1d8a7f5fb7bf104045613047252  /tmp/04_template/workflow_template/datasink/out/test/results/PrimaryTemplate/iteration02_Reshaped.nii.gz

@@ -5,8 +5,7 @@ on:
     branches: [ master ]
     paths-ignore:
       - run_3_segment.py
-      - run_4_magnitudeTemplate.py
-      - run_5_qsmTemplate.py
+      - run_4_template.py
       - run_6_analysis.py
       - diagram.png
       - aseg_labels.csv
@@ -15,8 +14,7 @@ on:
     branches: [ master ]
     paths-ignore:
       - run_3_segment.py
-      - run_4_magnitudeTemplate.py
-      - run_5_qsmTemplate.py
+      - run_4_template.py
       - run_6_analysis.py
       - diagram.png
       - aseg_labels.csv
@@ -24,7 +22,7 @@ on:
     
 
 jobs:
-  build:
+  test_qsm_pipeline:
     runs-on: ubuntu-latest
     steps:
     - name: Free up space
@@ -45,6 +43,6 @@ jobs:
     - uses: actions/setup-python@v2
       with:
         python-version: 3.8
-    - name: run pipeline
+    - name: test QSM pipeline
       run: |
-        /bin/bash run_test.sh
+        /bin/bash tests/run_test_qsm.sh
