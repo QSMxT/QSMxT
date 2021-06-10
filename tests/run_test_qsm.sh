@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-container=vnmd/qsmxt_1.1.1:20210610
-
 docker pull $container
 
 cp -r . /tmp/QSMxT
