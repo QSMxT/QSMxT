@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-container=vnmd/qsmxt_1.1.1:20210608
+container=vnmd/qsmxt_1.1.1:20210610
 
 docker pull $container
 
@@ -20,6 +20,6 @@ echo "[DEBUG] starting run_1_dicomToBids.py"
 docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_1_dicomToBids.py /tmp/00_dicom /tmp/01_bids
 
 echo "[DEBUG] starting run_2_qsm.py"
-docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output
+docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2
 
 md5sum --check tests/test_hashes_qsm.txt
