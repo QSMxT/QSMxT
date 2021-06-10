@@ -25,7 +25,7 @@ sudo rm -rf 01_bids/sub-170706160506std1312211075243167001/
 echo "[DEBUG] starting run_3_segment.py"
 echo "[DEBUG] live patching fastsurfer interface to limit threads:"
 
-sed -i 's/16/2/g' /tmp/QSMxT/interfaces/nipype_interface_fastsurfer.py
+sed -i 's/16/1/g' /tmp/QSMxT/interfaces/nipype_interface_fastsurfer.py
 
 docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_3_segment.py /tmp/01_bids /tmp/03_segmentation
 
