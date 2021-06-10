@@ -6,6 +6,7 @@ on:
     paths-ignore:
       - diagram.png
       - aseg_labels.csv
+      - run_1_fixGEphaseFFTshift.py
       - README.md
       - .gitignore
   pull_request:
@@ -14,6 +15,7 @@ on:
       - .gitignore
       - diagram.png
       - aseg_labels.csv
+      - run_1_fixGEphaseFFTshift.py
       - README.md
     
 env:
