@@ -190,7 +190,7 @@ if __name__ == "__main__":
 
     
     if len(magnitude_images) != len(qsm_images):
-        print(f"QSMxT: Error: Number of QSM images ({len(qsm_images)}) and magnitude images ({len(input_images)}) do not match.")
+        print(f"QSMxT: Error: Number of QSM images ({len(qsm_images)}) and magnitude images ({len(magnitude_images)}) do not match.")
         exit()
 
     # convert qsm_images to dictionary
