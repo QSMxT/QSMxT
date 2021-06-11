@@ -19,7 +19,7 @@ on:
       - README.md
     
 env:
-  container: vnmd/qsmxt_1.1.1:20210610
+  container: vnmd/qsmxt_1.1.2:20210611
 
 jobs:
   test_qsm_pipeline:
