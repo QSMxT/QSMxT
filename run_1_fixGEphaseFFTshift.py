@@ -35,6 +35,6 @@ for fileIdx in range(1,len(sys.argv)):
         mag_img = nib.Nifti1Image(mag_data, img.affine, img.header)
 
         print("writing corrected phase and magnitude data")
-        nib.save(phase_img, filename)
-        nib.save(mag_img, filename.replace('_magnitude','_phase'))
+        nib.save(mag_img, filename)
+        nib.save(phase_img, filename.replace('_magnitude','_phase'))
 
