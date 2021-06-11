@@ -100,3 +100,6 @@ Killed
 Return code: 137
 ``` 
 This indicates insufficient memory for the pipeline to run. Check in your Docker settings if you provided sufficent RAM to your containers (e.g. a 0.75mm dataset requires around 20GB of memory)
+
+2. RuntimeError: Insufficient resources available for job
+This also indicates that there is not enough memory for the job to run. Try limiting the CPUs to about 6GB RAM per CPU 
