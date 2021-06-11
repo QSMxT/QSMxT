@@ -38,9 +38,5 @@ ls /tmp/04_template/workflow_template/datasink/out/test
 echo "[DEBUG] ls /tmp/04_template/workflow_template/datasink/out/test/results:"
 ls /tmp/04_template/workflow_template/datasink/out/test/results
 
-echo "[DEBUG]: /tmp/04_template/workflow_template/datasink/out/test/results/PassiveTemplate/_ReshapeAveragePassiveImageWithShapeUpdate0/AVG_QSMWARP_AVG_QSM.nii.gz"
-[ -f /tmp/04_template/workflow_template/datasink/out/test/results/PassiveTemplate/_ReshapeAveragePassiveImageWithShapeUpdate0/AVG_QSMWARP_AVG_QSM.nii.gz ] && echo "$FILE exist." || exit 1
-echo "[DEBUG]: /tmp/04_template/workflow_template/datasink/out/test/results/PreRegisterAverage/average.nii"
-[ -f /tmp/04_template/workflow_template/datasink/out/test/results/PreRegisterAverage/average.nii ] && echo "$FILE exist." || exit 1
-echo "[DEBUG]: /tmp/04_template/workflow_template/datasink/out/test/results/PrimaryTemplate/iteration02_Reshaped.nii.gz"
-[ -f /tmp/04_template/workflow_template/datasink/out/test/results/PrimaryTemplate/iteration02_Reshaped.nii.gz ] && echo "$FILE exist." || exit 1
+echo "[DEBUG]: /tmp/04_template/workflow_template/datasink/out/test/results"
+[ -d /tmp/04_template/workflow_template/datasink/out/test/results/ ] && echo "results exist." || exit 1
