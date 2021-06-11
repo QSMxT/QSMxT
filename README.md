@@ -41,9 +41,9 @@ The tools provided by the QSMxT container can be exposed and used without VNM us
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.0.0_20210305
-    cd qsmxt_1.0.0_20210305
-    ./run_transparent_singularity.sh --container qsmxt_1.0.0_20210305.simg
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.2_20210611
+    cd qsmxt_1.1.2_20210611
+    ./run_transparent_singularity.sh --container qsmxt_1.1.2_20210611.simg
     ```
 
 3. Clone the QSMxT repository:
@@ -58,7 +58,7 @@ The tools provided by the QSMxT container can be exposed and used without VNM us
 There is also a docker image available:
 
 ```
-docker run -it vnmd/qsmxt_1.0.0:20210305
+docker run -it vnmd/qsmxt_1.1.2:20210611
 ```
 
 ## QSMxT Usage
@@ -67,6 +67,8 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
     python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
     ```
+After this step check if the data were correctly recognized and converted to BIDS. Otherwise make a copy of /opt/QSMxT/bidsmap.yaml - adjust based on provenance example in 01_bids/code/bidscoin/bidsmap.yaml (see for example what it detected under extra_files) - and run again with the parameter `--heuristic bidsmap.yaml`. If the data were acquired on a GE scanner the complex data needs to be corrected by applying an FFT shift, this can be done with `python /opt/QSMxT/run_1_fixGEphaseFFTshift.py 01_bids/sub*/ses*/anat/*_run-1_*.nii.gz` . 
+
 2. Run QSM pipeline:
     ```bash
     python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output
@@ -81,7 +83,7 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     ```
 5. Export quantitative data to CSV using segmentations
     ```bash
-    python3 /opt/QSMxT/run_6_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentation/*.nii --qsm_files 02_qsm_output/qsm_final/*.nii --out_dir 06_analysis
+    python3 /opt/QSMxT/run_6_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentations/*.nii --qsm_files 02_qsm_output/qsm_final/*/*.nii --out_dir 06_analysis
     ```
 6. Export quantitative data to CSV using a custom segmentation
     ```bash
