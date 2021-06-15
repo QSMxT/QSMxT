@@ -103,3 +103,8 @@ This indicates insufficient memory for the pipeline to run. Check in your Docker
 
 2. RuntimeError: Insufficient resources available for job
 This also indicates that there is not enough memory for the job to run. Try limiting the CPUs to about 6GB RAM per CPU 
+
+
+## Help
+run `cat /README.md` to print this help again.
+
