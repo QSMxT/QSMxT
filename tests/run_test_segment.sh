@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 
-docker pull $container
+sudo docker pull $container
 
-if ! type "osfclient" > /dev/null; then
+if ! command -v osfclient &> /dev/null
+then
+    echo "osfclient could not be found"
     sudo pip3 install osfclient
 fi
-
-[ -f  /tmp/03_segmentation/t1_segmentations/aparc.DKTatlas+aseg.deep_nii.nii ] && echo "$FILE exist." || exit 1
-
 
 if [[ ! -f /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_M_5_QSM_p2_1mmIso_TE20.zip ]]
 then
