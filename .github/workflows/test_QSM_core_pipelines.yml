@@ -75,5 +75,6 @@ jobs:
     steps:
     - name: test segmentation pipeline
       run: |
+        [ -d  /tmp/QSMxT ] && rm -rf /tmp/QSMxT     
         git clone https://github.com/QSMxT/QSMxT.git /tmp/QSMxT
         /bin/bash /tmp/QSMxT/tests/run_test_segment.sh
