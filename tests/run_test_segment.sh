@@ -42,8 +42,11 @@ sed -i 's/16/1/g' /tmp/QSMxT/interfaces/nipype_interface_fastsurfer.py
 
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_3_segment.py /tmp/01_bids /tmp/03_segmentation
 
-unzip /tmp/osfstorage/qsm_final.zip -d /tmp/02_qsm_output_precomputed
-
+if [[ ! -d /tmp/02_qsm_output_precomputed ]]
+then
+    echo "[DEBUG] unzipped qsm outputs do not exist - unzipping them:"
+    unzip /tmp/osfstorage/qsm_final.zip -d /tmp/02_qsm_output_precomputed
+fi
 
 echo "[DEBUG] starting run_5_analysis.py"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_5_analysis.py --labels_file /tmp/QSMxT/aseg_labels.csv --segmentations /tmp/03_segmentation/qsm_segmentations/*.nii --qsm_files /tmp/02_qsm_output_precomputed/qsm_final/*/*.nii --out_dir /tmp/06_analysis
