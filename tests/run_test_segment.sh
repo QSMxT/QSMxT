@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e
 
 sudo docker pull $container
 
@@ -29,7 +30,8 @@ sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_0_dicomSort.py /t
 echo "[DEBUG] starting run_1_dicomToBids.py"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_1_dicomToBids.py /tmp/00_dicom /tmp/01_bids
 
-osf -p bt4ez fetch TOMCAT_DIB/sub-01/ses-01_7T/anat/sub-01_ses-01_7T_T1w_defaced.nii.gz 
+echo "[DEBUG] downloading anatomical files to test"
+sudo osf -p bt4ez fetch TOMCAT_DIB/sub-01/ses-01_7T/anat/sub-01_ses-01_7T_T1w_defaced.nii.gz 
 sudo mv sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/01_bids/sub-170705134431std1312211075243167001/ses-1/anat/sub-170705134431std1312211075243167001_ses-1_T1w_run-1_magnitude.nii.gz
 sudo rm -rf 01_bids/sub-170706160506std1312211075243167001/ 
 
