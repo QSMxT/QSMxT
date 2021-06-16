@@ -19,7 +19,7 @@ on:
       - README.md
     
 env:
-  container: vnmd/qsmxt_1.1.2:20210611
+  container: vnmd/qsmxt_1.1.4:20210611
 
 jobs:
   # test_qsm_pipeline:
@@ -75,4 +75,5 @@ jobs:
     steps:
     - name: test segmentation pipeline
       run: |
-        /bin/bash tests/run_test_segment.sh
+        git clone https://github.com/QSMxT/QSMxT.git /tmp/QSMxT
+        /bin/bash /tmp/QSMxT/tests/run_test_segment.sh
