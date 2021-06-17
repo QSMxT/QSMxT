@@ -244,7 +244,6 @@ if __name__ == "__main__":
 
     # supplementary arguments
     g_args = lambda:None
-    g_args.reconall_cpus = 1# if args.qsub_account_string is None else int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
 
     # ensure directories are complete and absolute
     if not args.work_dir: args.work_dir = args.out_dir
