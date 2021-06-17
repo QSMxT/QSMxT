@@ -1,35 +1,65 @@
 #!/usr/bin/env bash
+set -e
 
-docker pull $container
+timeStamp=`date +"%Y-%m-%d-%T"`
+echo ${timeStamp}
 
-cp -r . /tmp/QSMxT
+git clone https://github.com/QSMxT/QSMxT.git /tmp/${timeStamp}/QSMxT
 
-pip install osfclient
+# container="vnmd/qsmxt_1.1.4:20210611"
 
-osf -p ru43c clone /tmp
-unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_M_5_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms
-unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_P_6_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms
-unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub2/GR_M_5_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms
-unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub2/GR_P_6_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms
+sudo docker pull $container
+
+if ! command -v osf &> /dev/null
+then
+    echo "[DEBUG] osfclient could not be found. Installing ..."
+    sudo pip3 install osfclient
+fi
+
+if [[ ! -f /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_M_5_QSM_p2_1mmIso_TE20.zip ]]
+then
+    echo "[DEBUG] osf files do not exist on filesystem. Downloading..."
+    osf -p ru43c clone /tmp
+fi
+
+if [[ ! -d /tmp/dicoms ]]
+then
+    echo "[DEBUG] unzipped dicoms do not exist. Unzipping"
+    unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_M_5_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms
+    unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_P_6_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms
+    unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub2/GR_M_5_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms
+    unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub2/GR_P_6_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms
+fi
 
 echo "[DEBUG] starting run_0_dicomSort.py"
-docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_0_dicomSort.py /tmp/dicoms /tmp/00_dicom
+sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_0_dicomSort.py /tmp/dicoms /tmp/${timeStamp}/00_dicom
 
 echo "[DEBUG] starting run_1_dicomToBids.py"
-docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_1_dicomToBids.py /tmp/00_dicom /tmp/01_bids
+sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_1_dicomToBids.py /tmp/${timeStamp}/00_dicom /tmp/${timeStamp}/01_bids
 
-osf -p bt4ez fetch TOMCAT_DIB/sub-01/ses-01_7T/anat/sub-01_ses-01_7T_T1w_defaced.nii.gz 
-sudo mv sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/01_bids/sub-170705134431std1312211075243167001/ses-1/anat/sub-170705134431std1312211075243167001_ses-1_T1w_run-1_magnitude.nii.gz
-sudo rm -rf 01_bids/sub-170706160506std1312211075243167001/ 
+if [[ ! -f /tmp/sub-01_ses-01_7T_T1w_defaced.nii.gz ]]
+then
+    echo "[DEBUG] downloading anatomical files to test"
+    osf -p bt4ez fetch TOMCAT_DIB/sub-01/ses-01_7T/anat/sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/sub-01_ses-01_7T_T1w_defaced.nii.gz
+    osf -p bt4ez fetch TOMCAT_DIB/sub-02/ses-01_7T/anat/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz
+fi
+sudo cp /tmp/sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/${timeStamp}/01_bids/sub-170705134431std1312211075243167001/ses-1/anat/sub-170705134431std1312211075243167001_ses-1_T1w_run-1_magnitude.nii.gz
+sudo cp /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/${timeStamp}/01_bids/sub-170706160506std1312211075243167001/ses-1/anat/sub-170706160506std1312211075243167001_ses-1_T1w_run-1_magnitude.nii.gz
+
 
 echo "[DEBUG] starting run_3_segment.py"
 docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_3_segment.py /tmp/01_bids /tmp/03_segmentation
 
-unzip /tmp/osfstorage/qsm_final.zip -d /tmp/02_qsm_output_precomputed
+sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_3_segment.py /tmp/${timeStamp}/01_bids /tmp/${timeStamp}/03_segmentation
 
+if [[ ! -d /tmp/02_qsm_output_precomputed ]]
+then
+    echo "[DEBUG] unzipped qsm outputs do not exist - unzipping them:"
+    unzip /tmp/osfstorage/qsm_final.zip -d /tmp/02_qsm_output_precomputed
+fi
 
-echo "[DEBUG] starting run_6_analysis.py"
-docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_6_analysis.py --labels_file /tmp/QSMxT/aseg_labels.csv --segmentations /tmp/03_segmentation/qsm_segmentations/*.nii --qsm_files /tmp/02_qsm_output_precomputed/qsm_final/*/*.nii --out_dir /tmp/06_analysis
+echo "[DEBUG] starting run_5_analysis.py"
+sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_5_analysis.py --labels_file /tmp/${timeStamp}/QSMxT/aseg_labels.csv --segmentations /tmp/${timeStamp}/03_segmentation/qsm_segmentations/*.nii --qsm_files /tmp/02_qsm_output_precomputed/qsm_final/*/*.nii --out_dir /tmp/${timeStamp}/05_analysis
 
 [ -f  /tmp/03_segmentation/t1_segmentations/*sub-170705134431std1312211075243167001*segmentation*.nii ] && echo "$FILE exist." || exit 1
 [ -f  /tmp/03_segmentation/qsm_segmentations/*sub-170705134431std1312211075243167001*segmentation*trans.nii ] && echo "$FILE exist." || exit 1
