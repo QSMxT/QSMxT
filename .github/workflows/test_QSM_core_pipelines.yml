@@ -75,5 +75,6 @@ jobs:
     steps:
     - name: test segmentation pipeline
       run: |
-
-        /bin/bash /tmp/QSMxT/tests/run_test_segment.sh
+        export timeStamp=`date +"%Y-%m-%d-%T"`
+        git clone https://github.com/QSMxT/QSMxT.git /tmp/${timeStamp}/QSMxT
+        /bin/bash /tmp/${timeStamp}/QSMxT/tests/run_test_segment.sh

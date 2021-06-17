@@ -1,12 +1,14 @@
 #!/usr/bin/env bash
 set -e
 
-timeStamp=`date +"%Y-%m-%d-%T"`
-echo ${timeStamp}
+# timeStamp=`date +"%Y-%m-%d-%T"`
+# echo ${timeStamp}
 
-git clone https://github.com/QSMxT/QSMxT.git /tmp/${timeStamp}/QSMxT
+# git clone https://github.com/QSMxT/QSMxT.git /tmp/${timeStamp}/QSMxT
 
-# container="vnmd/qsmxt_1.1.4:20210611"
+#  extract container version from README here:
+
+container="vnmd/qsmxt_1.1.4:20210611"
 
 sudo docker pull $container
 
