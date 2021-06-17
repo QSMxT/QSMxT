@@ -83,11 +83,11 @@ After this step check if the data were correctly recognized and converted to BID
     ```
 5. Export quantitative data to CSV using segmentations
     ```bash
-    python3 /opt/QSMxT/run_6_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentations/*.nii --qsm_files 02_qsm_output/qsm_final/*/*.nii --out_dir 06_analysis
+    python3 /opt/QSMxT/run_5_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentations/*.nii --qsm_files 02_qsm_output/qsm_final/*/*.nii --out_dir 06_analysis
     ```
 6. Export quantitative data to CSV using a custom segmentation
     ```bash
-    python3 /opt/QSMxT/run_6_analysis.py --segmentations my_segmentation.nii --qsm_files 04_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
+    python3 /opt/QSMxT/run_5_analysis.py --segmentations my_segmentation.nii --qsm_files 04_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
     ```
 
 ## Common errors and workarounds
@@ -103,3 +103,8 @@ This indicates insufficient memory for the pipeline to run. Check in your Docker
 
 2. RuntimeError: Insufficient resources available for job
 This also indicates that there is not enough memory for the job to run. Try limiting the CPUs to about 6GB RAM per CPU 
+
+
+## Help
+run `cat /README.md` to print this help again.
+
