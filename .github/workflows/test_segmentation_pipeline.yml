@@ -5,7 +5,6 @@ on:
     branches: [ master ]
     paths-ignore:
       - diagram.png
-      - aseg_labels.csv
       - run_1_fixGEphaseFFTshift.py
       - run_0_dicomSort.py
       - run_4_template.py
@@ -18,7 +17,6 @@ on:
     paths-ignore:
       - .gitignore
       - diagram.png
-      - aseg_labels.csv
       - run_1_fixGEphaseFFTshift.py
       - run_0_dicomSort.py
       - run_4_template.py
