@@ -26,9 +26,6 @@ on:
       - run_2_qsm.py
       - README.md
     
-env:
-  container: vnmd/qsmxt_1.1.4:20210611
-
 jobs:
   test_template_pipeline:
     runs-on: ubuntu-latest
