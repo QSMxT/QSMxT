@@ -28,7 +28,7 @@ jobs:
   test_segmentation_pipeline:
     runs-on: self-hosted
     steps:
-    - name: test segmentation pipeline
+    - name: segmentation pipeline
       run: |
         export timeStamp=`date +"%Y-%m-%d-%T"`
         git clone https://github.com/QSMxT/QSMxT.git /tmp/${timeStamp}/QSMxT
