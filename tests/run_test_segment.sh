@@ -50,8 +50,6 @@ sudo cp /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/${timeStamp}/01_bids/sub-1
 
 
 echo "[DEBUG] starting run_3_segment.py"
-docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_3_segment.py /tmp/01_bids /tmp/03_segmentation
-
 sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_3_segment.py /tmp/${timeStamp}/01_bids /tmp/${timeStamp}/03_segmentation
 
 if [[ ! -d /tmp/02_qsm_output_precomputed ]]
