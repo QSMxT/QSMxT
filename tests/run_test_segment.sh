@@ -2,13 +2,12 @@
 set -e
 
 # timeStamp=`date +"%Y-%m-%d-%T"`
+# timeStamp="2021-06-18-03:53:58"
 # echo ${timeStamp}
-
 # git clone https://github.com/QSMxT/QSMxT.git /tmp/${timeStamp}/QSMxT
 
-#  extract container version from README here:
-
-container="vnmd/qsmxt_1.1.4:20210611"
+#  extract container version from README:
+container=`cat /tmp/${timeStamp}/QSMxT/README.md | grep vnmd/qsmxt | cut -d ' ' -f 4`
 
 sudo docker pull $container
 
@@ -52,6 +51,11 @@ sudo cp /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/${timeStamp}/01_bids/sub-1
 echo "[DEBUG] starting run_3_segment.py"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_3_segment.py /tmp/${timeStamp}/01_bids /tmp/${timeStamp}/03_segmentation
 
+[ -f  /tmp/${timeStamp}/03_segmentation/t1_segmentations/sub-170705134431std1312211075243167001_ses-1_T1w_run-1_magnitude_segmentation_nii.nii ] && echo "FILE exists." || exit 1
+[ -f  /tmp/${timeStamp}/03_segmentation/t1_segmentations/sub-170706160506std1312211075243167001_ses-1_T1w_run-1_magnitude_segmentation_nii.nii ] && echo "FILE exists." || exit 1
+[ -f  /tmp/${timeStamp}/03_segmentation/qsm_segmentations/sub-170705134431std1312211075243167001_ses-1_T1w_run-1_magnitude_segmentation_nii_trans.nii ] && echo "FILE exists." || exit 1
+[ -f  /tmp/${timeStamp}/03_segmentation/qsm_segmentations/sub-170706160506std1312211075243167001_ses-1_T1w_run-1_magnitude_segmentation_nii_trans.nii ] && echo "FILE exists." || exit 1
+
 if [[ ! -d /tmp/02_qsm_output_precomputed ]]
 then
     echo "[DEBUG] unzipped qsm outputs do not exist - unzipping them:"
@@ -61,5 +65,5 @@ fi
 echo "[DEBUG] starting run_5_analysis.py"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_5_analysis.py --labels_file /tmp/${timeStamp}/QSMxT/aseg_labels.csv --segmentations /tmp/${timeStamp}/03_segmentation/qsm_segmentations/*.nii --qsm_files /tmp/02_qsm_output_precomputed/qsm_final/*/*.nii --out_dir /tmp/${timeStamp}/05_analysis
 
-[ -f  /tmp/03_segmentation/t1_segmentations/*sub-170705134431std1312211075243167001*segmentation*.nii ] && echo "$FILE exist." || exit 1
-[ -f  /tmp/03_segmentation/qsm_segmentations/*sub-170705134431std1312211075243167001*segmentation*trans.nii ] && echo "$FILE exist." || exit 1
+[ -f  /tmp/${timeStamp}/05_analysis/sub-170705134431std1312211075243167001_ses-1_T1w_run-1_magnitude_segmentation_nii_trans.csv ] && echo "FILE exists." || exit 1
+[ -f  /tmp/${timeStamp}/05_analysis/sub-170706160506std1312211075243167001_ses-1_T1w_run-1_magnitude_segmentation_nii_trans.csv ] && echo "FILE exists." || exit 1

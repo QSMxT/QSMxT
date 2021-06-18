@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-docker pull $container
-
 cp -r . /tmp/QSMxT
+container=`cat /tmp/QSMxT/README.md | grep vnmd/qsmxt | cut -d ' ' -f 4`
+
+docker pull $container
 
 pip install osfclient
 osf -p ru43c clone /tmp
