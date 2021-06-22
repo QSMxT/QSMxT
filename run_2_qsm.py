@@ -585,7 +585,7 @@ if __name__ == "__main__":
         '--n_procs',
         type=int,
         default=None,
-        help='Number of processes to run concurrently. By default, we use the number of CPUs, ' +
+        help='Number of processes to run concurrently for MultiProc. By default, we use the number of CPUs, ' +
              'provided there are 6 GBs of RAM available for each.'
     )
 
@@ -642,7 +642,7 @@ if __name__ == "__main__":
     n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
     args.qsm_threads = n_cpus if args.qsub_account_string else 1
     
-    # set number of concurrent processes to run depending on
+        # set number of concurrent processes to run depending on
     # available CPUs and RAM (max 1 per 6 GB of available RAM)
     if not args.n_procs:
         available_ram_gb = psutil.virtual_memory().available / 1e9
