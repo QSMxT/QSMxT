@@ -289,10 +289,10 @@ if __name__ == "__main__":
     n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
     
     # set number of concurrent processes to run depending on
-    # available CPUs and RAM (max 1 per 4 GB of available RAM)
+    # available CPUs and RAM (max 1 per 11 GB of available RAM)
     if not args.n_procs:
         available_ram_gb = psutil.virtual_memory().available / 1e9
-        args.n_procs = min(int(available_ram_gb / 4), n_cpus)
+        args.n_procs = min(int(available_ram_gb / 11), n_cpus)
 
     # run workflow
     if args.qsub_account_string:
