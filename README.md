@@ -41,9 +41,9 @@ The tools provided by the QSMxT container can be exposed and used without VNM us
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.0.0_20210305
-    cd qsmxt_1.0.0_20210305
-    ./run_transparent_singularity.sh --container qsmxt_1.0.0_20210305.simg
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.5_20210621
+    cd qsmxt_1.1.5_20210621
+    ./run_transparent_singularity.sh --container qsmxt_1.1.5_20210621.simg
     ```
 
 3. Clone the QSMxT repository:
@@ -58,7 +58,7 @@ The tools provided by the QSMxT container can be exposed and used without VNM us
 There is also a docker image available:
 
 ```
-docker run -it vnmd/qsmxt_1.0.0:20210305
+docker run -it vnmd/qsmxt_1.1.5:20210621
 ```
 
 ## QSMxT Usage
@@ -67,6 +67,8 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
     python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
     ```
+After this step check if the data were correctly recognized and converted to BIDS. Otherwise make a copy of /opt/QSMxT/bidsmap.yaml - adjust based on provenance example in 01_bids/code/bidscoin/bidsmap.yaml (see for example what it detected under extra_files) - and run again with the parameter `--heuristic bidsmap.yaml`. If the data were acquired on a GE scanner the complex data needs to be corrected by applying an FFT shift, this can be done with `python /opt/QSMxT/run_1_fixGEphaseFFTshift.py 01_bids/sub*/ses*/anat/*_run-1_*.nii.gz` . 
+
 2. Run QSM pipeline:
     ```bash
     python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output
@@ -75,21 +77,17 @@ docker run -it vnmd/qsmxt_1.0.0:20210305
     ```bash
     python3 /opt/QSMxT/run_3_segment.py 01_bids 03_segmentation
     ```
-4. Build magnitude group template:
+4. Build magnitude and QSM group template (only makes sense when you have more than about 30 participants):
     ```bash
-    python3 /opt/QSMxT/run_4_magnitudeTemplate.py 01_bids 04_magnitude_template
+    python3 /opt/QSMxT/run_4_template.py 01_bids 02_qsm_output 04_template
     ```
-5. Build QSM group template:
+5. Export quantitative data to CSV using segmentations
     ```bash
-    python3 /opt/QSMxT/run_5_qsmTemplate.py 02_qsm_output 04_magnitude_template 05_qsm_template
+    python3 /opt/QSMxT/run_5_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentations/*.nii --qsm_files 02_qsm_output/qsm_final/*/*.nii --out_dir 06_analysis
     ```
-6. Export quantitative data to CSV using segmentations
+6. Export quantitative data to CSV using a custom segmentation
     ```bash
-    python3 /opt/QSMxT/run_6_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentation/*.nii --qsm_files 02_qsm_output/qsm_final/*.nii --out_dir 06_analysis
-    ```
-7. Export quantitative data to CSV using a custom segmentation
-    ```bash
-    python3 /opt/QSMxT/run_6_analysis --segmentations my_segmentation.nii --qsm_files 05_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
+    python3 /opt/QSMxT/run_5_analysis.py --segmentations my_segmentation.nii --qsm_files 04_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
     ```
 
 ## Common errors and workarounds
@@ -102,3 +100,11 @@ Killed
 Return code: 137
 ``` 
 This indicates insufficient memory for the pipeline to run. Check in your Docker settings if you provided sufficent RAM to your containers (e.g. a 0.75mm dataset requires around 20GB of memory)
+
+2. RuntimeError: Insufficient resources available for job
+This also indicates that there is not enough memory for the job to run. Try limiting the CPUs to about 6GB RAM per CPU 
+
+
+## Help
+run `cat /README.md` to print this help again.
+

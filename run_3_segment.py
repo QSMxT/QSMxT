@@ -11,6 +11,7 @@ import time
 import glob
 import os
 import argparse
+import psutil
 
 def init_workflow():
     subjects = [
@@ -96,9 +97,16 @@ def init_run_workflow(subject, session, run):
     
     # segment t1
     n_fastsurfer = Node(
-        interface=fastsurfer.FastSurferInterface(in_file=t1_file),
+        interface=fastsurfer.FastSurferInterface(
+            in_file=t1_file,
+            num_threads=args.num_threads
+        ),
         name='segment_t1'
     )
+    n_fastsurfer.plugin_args = {
+        'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.num_threads}:mem=20gb:vmem=20gb',
+        'overwrite': True
+    }
 
     # convert segmentation to nii
     n_fastsurfer_aseg_nii = Node(
@@ -204,6 +212,22 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--num_threads',
+        type=int,
+        default=1,
+        help='The number of threads (MultiProc) or CPUs (PBS) used for each running instance ' +
+             'of FastSurfer'
+    )
+
+    parser.add_argument(
+        '--n_procs',
+        type=int,
+        default=None,
+        help='Number of processes to run concurrently. By default, we use the number of ' +
+             'available CPUs provided there are 4 GBs of memory available for each.'
+    )
+
+    parser.add_argument(
         '--pbs',
         default=None,
         dest='qsub_account_string',
@@ -220,7 +244,6 @@ if __name__ == "__main__":
 
     # supplementary arguments
     g_args = lambda:None
-    g_args.reconall_cpus = 1# if args.qsub_account_string is None else int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
 
     # ensure directories are complete and absolute
     if not args.work_dir: args.work_dir = args.out_dir
@@ -262,6 +285,15 @@ if __name__ == "__main__":
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
+    # get number of CPUs
+    n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+    
+    # set number of concurrent processes to run depending on
+    # available CPUs and RAM (max 1 per 4 GB of available RAM)
+    if not args.n_procs:
+        available_ram_gb = psutil.virtual_memory().available / 1e9
+        args.n_procs = min(int(available_ram_gb / 4), n_cpus)
+
     # run workflow
     if args.qsub_account_string:
         wf.run(
@@ -274,7 +306,7 @@ if __name__ == "__main__":
         wf.run(
             plugin='MultiProc',
             plugin_args={
-                'n_procs': int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+                'n_procs': args.n_procs
             }
         )
 

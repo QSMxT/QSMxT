@@ -111,7 +111,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
         sesFolderName = f"ses-{subjName_sessionNums[subj_name]}" if not use_session_dates else f"ses-{studyDate}"
         
         if not os.path.exists(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName)):
-            print(f'Identified series: {subjFolderName}/{sesFolderName}/{seriesFolderName}')
+            print(f'Identified series: {subjFolderName}/{sesFolderName}/{seriesFolderName}')    
             os.makedirs(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName), exist_ok=True)
         
         ds.save_as(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName, fileName))
@@ -123,8 +123,8 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
         for dicom_loc in unsortedList:
             os.remove(dicom_loc)
 
-        for folder in find_empty_dirs(input_dir):
-            print(folder)
+        #for folder in find_empty_dirs(input_dir):
+            #print(folder)
             #shutil.rmtree(folder)
 
     print('done.')
