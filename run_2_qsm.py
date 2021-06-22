@@ -172,7 +172,7 @@ def init_session_workflow(subject, session):
     ])
 
     # homogeneity filter
-    if args.inhomogeneity_correction and ('bet' in args.masking or args.add_bet):
+    if args.inhomogeneity_correction:
         mn_inhomogeneity_correction = MapNode(
             interface=makehomogeneous.MakeHomogeneousInterface(),
             iterfield=['in_file'],
@@ -638,10 +638,13 @@ if __name__ == "__main__":
     args.add_bet = args.add_bet and args.masking != 'bet'
     args.two_pass = args.two_pass and args.masking != 'bet'
 
+    # decide on inhomogeneity correction
+    args.inhomogeneity_correction = args.inhomogeneity_correction and (args.add_bet or 'phase-based' not in args.masking)
+
     # set number of QSM threads
     n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
     
-        # set number of concurrent processes to run depending on
+    # set number of concurrent processes to run depending on
     # available CPUs and RAM (max 1 per 6 GB of available RAM)
     if not args.n_procs:
         available_ram_gb = psutil.virtual_memory().available / 1e9
