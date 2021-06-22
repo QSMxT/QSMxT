@@ -12,6 +12,8 @@ on:
       - run_5_analysis.py
       - README.md
       - .gitignore
+      - .github/workflows/test/test_segmentation_pipeline.yml
+      - .github/workflows/test/test_template_pipeline.yml
   pull_request:
     branches: [ master ]
     paths-ignore:
@@ -23,6 +25,8 @@ on:
       - run_4_template.py
       - run_5_analysis.py
       - README.md
+      - .github/workflows/test/test_segmentation_pipeline.yml
+      - .github/workflows/test/test_template_pipeline.yml
     
 jobs:
   test_qsm_pipeline:

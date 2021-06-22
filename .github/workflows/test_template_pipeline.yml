@@ -13,6 +13,8 @@ on:
       - run_2_qsm.py
       - README.md
       - .gitignore
+      - .github/workflows/test/test_qsm_pipeline.yml
+      - .github/workflows/test/test_segmentation_pipeline.yml
   pull_request:
     branches: [ master ]
     paths-ignore:
@@ -25,6 +27,8 @@ on:
       - run_1_dicomToBids.py
       - run_2_qsm.py
       - README.md
+      - .github/workflows/test/test_qsm_pipeline.yml
+      - .github/workflows/test/test_segmentation_pipeline.yml
     
 jobs:
   test_template_pipeline:
