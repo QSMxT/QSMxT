@@ -14,6 +14,8 @@ on:
       - .gitignore
       - .github/workflows/test/test_segmentation_pipeline.yml
       - .github/workflows/test/test_template_pipeline.yml
+      - tests/run_test_segment.sh
+      - tests/run_test_template.sh
   pull_request:
     branches: [ master ]
     paths-ignore:
@@ -27,6 +29,8 @@ on:
       - README.md
       - .github/workflows/test/test_segmentation_pipeline.yml
       - .github/workflows/test/test_template_pipeline.yml
+      - tests/run_test_segment.sh
+      - tests/run_test_template.sh
     
 jobs:
   test_qsm_pipeline:
@@ -77,4 +81,28 @@ jobs:
     - name: test QSM pipeline inhomogeneity
       run: |
         /bin/bash tests/run_test_qsm_inhomogeneity.sh
+  test_qsm_pipeline_matrix:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Free up space
+      uses: easimon/maximize-build-space@master
+      with:
+        root-reserve-mb: 40000
+        swap-size-mb: 1024
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-haskell: 'true'
+        overprovision-lvm: 'true'
+    - name: Move docker installation
+      run: |
+          sudo mv /var/lib/docker /home/runner/work/docker
+          sudo ln -s /home/runner/work/docker /var/lib/docker
+          sudo systemctl restart docker
+    - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
+    - name: test QSM pipeline matrix test
+      run: |
+        /bin/bash tests/run_test_qsm_matrixtest.sh
 
