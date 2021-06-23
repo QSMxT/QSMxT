@@ -41,9 +41,9 @@ The tools provided by the QSMxT container can be exposed and used without VNM us
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.5_20210621
-    cd qsmxt_1.1.5_20210621
-    ./run_transparent_singularity.sh --container qsmxt_1.1.5_20210621.simg
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.6_20210621
+    cd qsmxt_1.1.6_20210621
+    ./run_transparent_singularity.sh --container qsmxt_1.1.6_20210621.simg
     ```
 
 3. Clone the QSMxT repository:
@@ -58,7 +58,7 @@ The tools provided by the QSMxT container can be exposed and used without VNM us
 There is also a docker image available:
 
 ```
-docker run -it vnmd/qsmxt_1.1.5:20210621
+docker run -it vnmd/qsmxt_1.1.6:20210623
 ```
 
 ## QSMxT Usage
