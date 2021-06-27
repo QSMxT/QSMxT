@@ -308,7 +308,7 @@ def init_session_workflow(subject, session):
         ])
 
         wf.connect([
-            (n_qsm_average, n_datasink, [('out_file', 'qsm_average')]),
+            (n_qsm_average, n_datasink, [('out_file', 'qsm_average' if args.masking != 'bet' else 'qsm_final')]),
             (mn_qsm, n_datasink, [('out_file', 'qsms')]),
             (mn_mask, n_datasink, [('mask_file', 'masks')])
         ])
