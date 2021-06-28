@@ -118,15 +118,3 @@ sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_
 [ -f /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170705134431std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm_000_composite_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
 [ -f /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170706160506std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm_000_composite_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
 sudo rm -rf /tmp/02_qsm_output
-
-echo "[DEBUG] starting run_2_qsm.py --two_pass --masking bet"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --two_pass --masking bet 
-[ -f /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170705134431std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm_000_composite_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
-[ -f /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170706160506std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm_000_composite_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
-sudo rm -rf /tmp/02_qsm_output
-
-echo "[DEBUG] starting run_2_qsm.py --two_pass --masking bet --add_bet --bet_fractional_intensity 0.4"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --two_pass --masking bet --add_bet --bet_fractional_intensity 0.4
-[ -f /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170705134431std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm_000_composite_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
-[ -f /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170706160506std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm_000_composite_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
-sudo rm -rf /tmp/02_qsm_output
