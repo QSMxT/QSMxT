@@ -16,15 +16,20 @@ cp -r . /tmp/QSMxT
 
 echo "[DEBUG]: testing the transparent singularity command from the README:"
 clone_command=`cat /tmp/QSMxT/README.md | grep https://github.com/NeuroDesk/transparent-singularity`
-cd_command=`cat /tmp/QSMxT/README.md | grep "cd qsmxt_"`
-run_command=`cat /tmp/QSMxT/README.md | grep "run_transparent_singularity"`
-source_command=`cat /tmp/QSMxT/README.md | grep "source activate_qsmxt_"`
 echo $clone_command
 $clone_command
+
+cd_command=`cat /tmp/QSMxT/README.md | grep "cd qsmxt_"`
 echo $cd_command
 $cd_command
+
+run_command=`cat /tmp/QSMxT/README.md | grep "run_transparent_singularity"`
 echo $run_command
 $run_command
+
+source_command=`cat /tmp/QSMxT/README.md | grep "source activate_qsmxt_"`
+echo $source_command
+$source_command
 
 pip install osfclient
 osf -p ru43c clone /tmp
@@ -38,7 +43,7 @@ echo "[DEBUG]: testing the python setup commands from the README:"
 
 wget_command=`cat /tmp/QSMxT/README.md | grep "wget https://repo.anaconda.com/miniconda"`
 echo $wget_command
-$wget_command
+$wget_command > /dev/null 2>&1
 
 bash_command=`cat /tmp/QSMxT/README.md | grep "bash Miniconda3"`
 echo $bash_command
