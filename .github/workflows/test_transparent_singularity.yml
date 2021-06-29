@@ -1,4 +1,4 @@
-name: qsm pipeline test
+name: transparent singularity test
 
 on:
   push:
@@ -33,7 +33,7 @@ on:
       - tests/run_test_qsm.sh
     
 jobs:
-  test_qsm_pipeline:
+  test_transparent_singularity_pipeline:
     runs-on: ubuntu-20.04
     steps:
     - uses: actions/checkout@v2
