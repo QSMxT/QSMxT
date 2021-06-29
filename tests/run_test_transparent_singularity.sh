@@ -41,6 +41,7 @@ echo $wget_command
 $wget_command
 
 bash Miniconda3-latest-Linux-x86_64.sh -b
+conda init bash
 source ~/.bashrc
 conda create -n qsmxt python=3.8
 conda activate qsmxt
