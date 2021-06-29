@@ -17,6 +17,7 @@ on:
       - .github/workflows/test_segmentation_pipeline.yml
       - tests/run_test_segment.sh
       - tests/run_test_qsm.sh
+      - tests/run_test_transparent_singularity.sh
   pull_request:
     branches: [ master ]
     paths-ignore:
@@ -33,6 +34,7 @@ on:
       - .github/workflows/test_segmentation_pipeline.yml
       - tests/run_test_segment.sh
       - tests/run_test_qsm.sh
+      - tests/run_test_transparent_singularity.sh
     
 jobs:
   test_template_pipeline:
