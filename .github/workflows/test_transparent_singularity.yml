@@ -13,6 +13,7 @@ on:
       - .gitignore
       - .github/workflows/test_segmentation_pipeline.yml
       - .github/workflows/test_template_pipeline.yml
+      - .github/workflows/test_qsm_pipeline.yml
       - tests/run_test_segment.sh
       - tests/run_test_template.sh
       - tests/run_test_qsm.sh
@@ -28,6 +29,7 @@ on:
       - run_5_analysis.py
       - .github/workflows/test_segmentation_pipeline.yml
       - .github/workflows/test_template_pipeline.yml
+      - .github/workflows/test_qsm_pipeline.yml
       - tests/run_test_segment.sh
       - tests/run_test_template.sh
       - tests/run_test_qsm.sh
