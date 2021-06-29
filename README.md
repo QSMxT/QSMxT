@@ -32,27 +32,6 @@ A user friendly way of running QSMxT in Windows, Mac or Linux is via the Virtual
    (*VNM Neuroimaging* > *Quantitative Imaging* > *qsmxt*)
 3. Follow the QSMxT usage instructions in the section below. Note that the `/vnm` folder in VNM is shared with the host OS for data sharing purposes (usually in `~/vnm` or `C:/vnm`). Begin by copying your DICOM data into a folder in this directory on the host OS, then reach the folder in VNM by entering `cd /vnm` into the QSMxT window.
 
-### Linux installation via Transparent Singularity (supports PBS)
-
-The tools provided by the QSMxT container can be exposed and used without VNM using the QSMxT Singularity container coupled with the transparent singularity software provided by the Neurodesk project. Transparent singularity allows the QSMxT Python scripts to be run directly within the host OS's environment. This mode of execution is necessary for parallel execution via PBS.
-
-1. Install [singularity](https://sylabs.io/guides/3.0/user-guide/quick_start.html)
-   
-2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
-
-    ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.6_20210623
-    cd qsmxt_1.1.6_20210623
-    ./run_transparent_singularity.sh --container qsmxt_1.1.6_20210623.simg
-    ```
-
-3. Clone the QSMxT repository:
-    ```bash
-    git clone https://github.com/QSMxT/QSMxT.git
-    ```
-
-4. Invoke QSMxT scripts directly (see usage instructions in section below). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
-
 ### Docker container
 
 There is also a docker image available:
@@ -104,6 +83,39 @@ This indicates insufficient memory for the pipeline to run. Check in your Docker
 2. RuntimeError: Insufficient resources available for job
 This also indicates that there is not enough memory for the job to run. Try limiting the CPUs to about 6GB RAM per CPU 
 
+
+
+### Linux installation via Transparent Singularity (supports PBS)
+
+The tools provided by the QSMxT container can be exposed and used using the QSMxT Singularity container coupled with the transparent singularity software provided by the Neurodesk project. Transparent singularity allows the QSMxT Python scripts to be run directly within the host OS's environment. This mode of execution is necessary for parallel execution via PBS.
+
+1. Install [singularity](https://sylabs.io/guides/3.0/user-guide/quick_start.html)
+   
+2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
+
+    ```bash
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.6_20210623
+    cd qsmxt_1.1.6_20210623
+    ./run_transparent_singularity.sh --container qsmxt_1.1.6_20210623.simg
+    source activate_qsmxt_1.1.6_20210623.simg.sh
+    ```
+
+3. Clone the QSMxT repository:
+    ```bash
+    git clone https://github.com/QSMxT/QSMxT.git
+    ```
+
+4. Install miniconda with nipype:
+    ```bash
+    wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+    bash Miniconda3-latest-Linux-x86_64.sh
+    source ~/.bashrc
+    conda create -n qsmxt python=3.8
+    conda activate qsmxt
+    conda install -c conda-forge nipype
+    ```
+
+5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
 
 ## Help
 run `cat /README.md` to print this help again.
