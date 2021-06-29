@@ -14,6 +14,7 @@ on:
       - .gitignore
       - .github/workflows/test_qsm_pipeline.yml
       - .github/workflows/test_template_pipeline.yml
+      - .github/workflows/test_transparent_singularity.yml
       - tests/run_test_template.sh
       - tests/run_test_qsm.sh
       - tests/run_test_transparent_singularity.sh
@@ -30,6 +31,7 @@ on:
       - README.md
       - .github/workflows/test_qsm_pipeline.yml
       - .github/workflows/test_template_pipeline.yml
+      - .github/workflows/test_transparent_singularity.yml
       - tests/run_test_template.sh
       - tests/run_test_qsm.sh
       - tests/run_test_transparent_singularity.sh
