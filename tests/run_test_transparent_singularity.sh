@@ -40,11 +40,11 @@ wget_command=`cat /tmp/QSMxT/README.md | grep "wget https://repo.anaconda.com/mi
 echo $wget_command
 $wget_command
 
-bash Miniconda3-latest-Linux-x86_64.sh -b
-conda init bash
+bash_command=`cat /tmp/QSMxT/README.md | grep "bash Miniconda3"`
+echo $bash_command
+$bash_command
+
 source ~/.bashrc
-conda create -n qsmxt python=3.8
-conda activate qsmxt
 conda install -c conda-forge -y nipype
 
 echo "[DEBUG] starting run_0_dicomSort.py"
