@@ -1,0 +1,46 @@
+name: qsm pipeline test
+
+on:
+  push:
+    branches: [ master ]
+    paths-ignore:
+      - diagram.png
+      - aseg_labels.csv
+      - run_1_fixGEphaseFFTshift.py
+      - run_3_segment.py
+      - run_4_template.py
+      - run_5_analysis.py
+      - .gitignore
+      - .github/workflows/test_segmentation_pipeline.yml
+      - .github/workflows/test_template_pipeline.yml
+      - tests/run_test_segment.sh
+      - tests/run_test_template.sh
+      - tests/run_test_qsm.sh
+  pull_request:
+    branches: [ master ]
+    paths-ignore:
+      - .gitignore
+      - diagram.png
+      - aseg_labels.csv
+      - run_1_fixGEphaseFFTshift.py
+      - run_3_segment.py
+      - run_4_template.py
+      - run_5_analysis.py
+      - .github/workflows/test_segmentation_pipeline.yml
+      - .github/workflows/test_template_pipeline.yml
+      - tests/run_test_segment.sh
+      - tests/run_test_template.sh
+      - tests/run_test_qsm.sh
+    
+jobs:
+  test_qsm_pipeline:
+    runs-on: ubuntu-20.04
+    steps:
+    - uses: actions/checkout@v2
+    - uses: actions/setup-python@v2
+      with:
+        python-version: 3.8
+    - name: test transparent singularity
+      run: |
+        /bin/bash tests/run_test_transparent_singularity.sh
+
