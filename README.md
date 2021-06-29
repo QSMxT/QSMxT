@@ -107,8 +107,8 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 
 4. Install miniconda with nipype:
     ```bash
-    wget https://repo.anaconda.com/miniconda/Miniconda3-py38_4.10.1-Linux-x86_64.sh	
-    bash Miniconda3-py38_4.10.1-Linux-x86_64.sh -b
+    wget https://repo.anaconda.com/miniconda/Miniconda3-py38_4.9.2-Linux-x86_64.sh	
+    bash Miniconda3-py38_4.9.2-Linux-x86_64.sh -b
     source ~/.bashrc
     conda create -n qsmxt python=3.8
     conda activate qsmxt
