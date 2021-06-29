@@ -40,25 +40,11 @@ wget_command=`cat /tmp/QSMxT/README.md | grep "wget https://repo.anaconda.com/mi
 echo $wget_command
 $wget_command
 
-bash_command=`cat /tmp/QSMxT/README.md | grep "bash Miniconda3-latest-Linux-x86_64.sh"`
-echo $bash_command
-$bash_command
-
-source_command=`cat /tmp/QSMxT/README.md | grep "source ~/.bashrc"`
-echo $source_command
-$source_command
-
-conda1_command=`cat /tmp/QSMxT/README.md | grep "conda create -n qsmxt python=3.8"`
-echo $conda1_command
-$conda1_command
-
-conda2_command=`cat /tmp/QSMxT/README.md | grep "conda activate qsmxt"`
-echo $conda2_command
-$conda2_command
-
-conda3_command=`cat /tmp/QSMxT/README.md | grep "conda install -c conda-forge nipype"`
-echo $conda3_command
-$conda3_command
+bash Miniconda3-latest-Linux-x86_64.sh -b
+source ~/.bashrc
+conda create -n qsmxt python=3.8
+conda activate qsmxt
+conda install -c conda-forge -y nipype
 
 echo "[DEBUG] starting run_0_dicomSort.py"
 python3 /tmp/QSMxT/run_0_dicomSort.py /tmp/dicoms /tmp/00_dicom
@@ -72,4 +58,6 @@ python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qs
 [ -f /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170706160506std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm-filled_000_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
 sudo rm -rf /tmp/02_qsm_output
 
+echo "[DEBUG] starting run_4_template.py"
+python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output /tmp/04_template
 
