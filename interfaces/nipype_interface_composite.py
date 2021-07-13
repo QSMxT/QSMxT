@@ -62,15 +62,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        'in_maskFile',
-        type=str,
-        default=None,
-        required=False
+        'out_file',
+        type=str
     )
 
     parser.add_argument(
-        'out_file',
-        type=str
+        '-in_maskFile',
+        type=str,
+        default=None
     )
 
     args = parser.parse_args()
