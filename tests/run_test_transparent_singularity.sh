@@ -36,7 +36,8 @@ echo "[DEBUG]: check julia executable:"
 cat julia
 
 echo "[DEBUG]: testing the julia package install command from the README:"
-run_command=`cat /tmp/QSMxT/README.md | grep "using Pkg"`
+# run_command=`cat /tmp/QSMxT/README.md | grep "using Pkg"`
+run_command="./julia -e 'using Pkg; Pkg.status(); Pkg.add(\"MriResearchTools\"); Pkg.add(\"ArgParse\"); Pkg.status()'"
 echo $run_command
 $run_command
 
