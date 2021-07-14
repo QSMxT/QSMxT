@@ -38,6 +38,7 @@ echo $run_command
 $run_command
 
 
+
 pip install osfclient > /dev/null 2>&1
 osf -p ru43c clone /tmp > /dev/null 2>&1
 unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_M_5_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms > /dev/null 2>&1
