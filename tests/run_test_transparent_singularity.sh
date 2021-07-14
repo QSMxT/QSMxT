@@ -31,6 +31,13 @@ source_command=`cat /tmp/QSMxT/README.md | grep "source activate_qsmxt_"`
 echo $source_command
 $source_command
 
+
+echo "[DEBUG]: testing the julia package install command from the README:"
+run_command=`cat /tmp/QSMxT/README.md | grep "using Pkg"`
+echo $run_command
+$run_command
+
+
 pip install osfclient > /dev/null 2>&1
 osf -p ru43c clone /tmp > /dev/null 2>&1
 unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_M_5_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms > /dev/null 2>&1
