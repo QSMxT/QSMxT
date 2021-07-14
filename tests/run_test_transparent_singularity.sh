@@ -32,6 +32,9 @@ echo $source_command
 $source_command
 
 
+echo "[DEBUG]: check julia executable:"
+cat julia
+
 echo "[DEBUG]: testing the julia package install command from the README:"
 run_command=`cat /tmp/QSMxT/README.md | grep "using Pkg"`
 echo $run_command
