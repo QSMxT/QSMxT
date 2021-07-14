@@ -66,6 +66,11 @@ echo "[DEBUG] starting run_2_qsm.py normal"
 [ -f /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170705134431std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm-filled_000_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
 [ -f /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170706160506std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm-filled_000_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
 
+echo "[DEBUG] starting run_2_qsm.py phase consistency (tests julia)"
+/usr/share/miniconda/bin/python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --masking phase-based
+[ -f /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170705134431std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm-filled_000_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
+[ -f /tmp/02_qsm_output/qsm_final/_run_run-1/sub-170706160506std1312211075243167001_ses-1_acq-qsmPH00_run-1_phase_scaled_qsm-filled_000_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
+
 
 echo "[DEBUG] starting run_4_template.py"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output /tmp/04_template
