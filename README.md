@@ -103,12 +103,17 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     source activate_qsmxt_1.1.6_20210623.simg.sh
     ```
 
-3. Clone the QSMxT repository:
+3. Install julia packages:
+    ```bash
+    ./julia -e 'using Pkg; Pkg.status(); Pkg.add("MriResearchTools"); Pkg.add("ArgParse"); Pkg.status()'
+    ```
+
+4. Clone the QSMxT repository:
     ```bash
     git clone https://github.com/QSMxT/QSMxT.git
     ```
 
-4. Install miniconda with nipype:
+5. Install miniconda with nipype:
     ```bash
     wget https://repo.anaconda.com/miniconda/Miniconda3-py38_4.9.2-Linux-x86_64.sh	
     bash Miniconda3-py38_4.9.2-Linux-x86_64.sh -b
@@ -118,7 +123,7 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     conda install -c conda-forge nipype
     ```
 
-5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
+6. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
 
 ## Help
 run `cat /README.md` to print this help again.
