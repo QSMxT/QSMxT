@@ -39,7 +39,8 @@ echo "[DEBUG]: testing the julia package install command from the README:"
 # run_command=`cat /tmp/QSMxT/README.md | grep "using Pkg"`
 run_command="./julia -e 'using Pkg; Pkg.status(); Pkg.add(\"MriResearchTools\"); Pkg.add(\"ArgParse\"); Pkg.status()'"
 echo $run_command
-$run_command
+# $run_command
+singularity exec  --pwd $PWD qsmxt_1.1.6_20210623.simg julia "-e 'using Pkg; Pkg.status(); Pkg.add(\"MriResearchTools\"); Pkg.add(\"ArgParse\"); Pkg.status()'"
 
 
 
