@@ -107,6 +107,10 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     ```bash
     ./julia -e 'using Pkg; Pkg.status(); Pkg.add("MriResearchTools"); Pkg.add("ArgParse"); Pkg.status()'
     ```
+    This command might fail in older singularity versions (e.g. "ERROR: syntax : incomplete:premature end of input") - then try this:
+    ```bash
+    singularity exec  --pwd $PWD qsmxt_1.1.6_20210623.simg julia -e 'using Pkg; Pkg.status(); Pkg.add("MriResearchTools"); Pkg.add("ArgParse"); Pkg.status()'
+    ```
 
 4. Clone the QSMxT repository:
     ```bash
