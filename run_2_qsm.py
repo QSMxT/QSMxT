@@ -657,7 +657,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
 
     # make sure tgv_qsm is compiled on the target system before we start the pipeline:
-    process = subprocess.run(['tgv_qsm'])
+    # process = subprocess.run(['tgv_qsm'])
 
     # run workflow
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
