@@ -649,6 +649,8 @@ if __name__ == "__main__":
     if not args.n_procs:
         available_ram_gb = psutil.virtual_memory().available / 1e9
         args.n_procs = min(int(available_ram_gb / 6), n_cpus)
+        if not args.n_procs:
+            print(f"Insufficient memory to run QSMxT ({available_ram_gb} GB available; 6 GB needed)")
 
     #qsm_threads should be set to adjusted n_procs (either computed earlier or given via cli)
     args.qsm_threads = args.n_procs if not args.qsub_account_string else 1
