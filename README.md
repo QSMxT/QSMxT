@@ -12,7 +12,7 @@ QSMxT provides pipelines implemented in Python that:
    4. Multi-echo combination
 3. Automatically generate a common group space for the whole study, as well as average magnitude and QSM images that facilitate group-level analyses.
 4. Automatically segment T1w data and register them to the QSM space to extract quantitative values in anatomical regions of interest.
-5. Export quantitative data to CSV for all subjects using the automated segmentations, or a custom segmentation in the group space.
+5. Export quantitative data to CSV for all subjects using the automated segmentations, or a custom segmentation in the group space (we recommend ITK snap http://www.itksnap.org/pmwiki/pmwiki.php to perform manual segmenations).
 
 QSMxT's containerised implementation makes all required external dependencies available in a reproducible and scalable way, supporting MacOS, Windows and Linux, and with options for parallel processing via PBS systems.
 
