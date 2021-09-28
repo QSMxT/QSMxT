@@ -29,7 +29,7 @@ A user friendly way of running QSMxT in Windows, Mac or Linux is via the Virtual
 2. Install [Neurodesktop](https://neurodesk.github.io)
 3. Run the Neurodesktop container and open it in a browser window
 4. Start QSMxT from the applications menu in the desktop
-   (*VNM Neuroimaging* > *Quantitative Imaging* > *qsmxt*)
+   (*Neurodesk* > *Quantitative Imaging* > *qsmxt*)
 3. Follow the QSMxT usage instructions in the section below. Note that the `/neurodesktop-storage` folder is shared with the host OS for data sharing purposes (usually in `~/neurodesktop-storage` or `C:/neurodesktop-storage`). Begin by copying your DICOM data into a folder in this directory on the host OS, then reach the folder by entering `cd /neurodesktop-storage` into the QSMxT window.
 
 ### Docker container
