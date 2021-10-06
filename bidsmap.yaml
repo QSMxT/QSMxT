@@ -64,7 +64,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ['*ASPIRE*', '*Aspire*', '*aspire*', '*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
+      ProtocolName: ['*ASPIRE*', '*Aspire*', '*aspire*', '*GRE*', '*Gre*', '*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
       SeriesDescription: ~
       ImageType: 'M'
       SequenceName: ~
@@ -90,7 +90,7 @@ DICOM:
   - provenance: ~
     attributes:
       Modality: MR
-      ProtocolName: ['*ASPIRE*', '*Aspire*', '*aspire*', '*GRE*','*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
+      ProtocolName: ['t1_fl3d_COR_p4_iso_FB', 'DeIdentified', '*ASPIRE*', '*Aspire*', '*aspire*', '*GRE*', '*Gre*', '*gre*','*epi*','*EPI*','*QSM*','*qsm*', '*T2Star*', '*T2star*', '*t2star*', '*T2\**', '*t2\**']
       SeriesDescription: ~
       ImageType: 'P'
       SequenceName: ~
