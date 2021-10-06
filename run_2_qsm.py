@@ -67,15 +67,20 @@ def init_session_workflow(subject, session):
     )
 
     # exit if no runs found
-    phase_files = glob.glob(os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session)))
-    if 'run-' not in phase_files[0]:
-        print(f"No 'run-' identifier found in file: {phase_files[0]}")
+    phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
+    phase_files = glob.glob(phase_pattern)
+    if not phase_files:
+        print(f"No phase files found matching pattern: {phase_pattern}")
         exit()
+    for phase_file in phase_files:
+        if 'run-' not in phase_file:
+            print(f"No 'run-' identifier found in file: {phase_file}")
+            exit()
 
     # identify all runs
     runs = sorted(list(set([
         f"run-{os.path.split(path)[1][os.path.split(path)[1].find('run-') + 4: os.path.split(path)[1].find('_', os.path.split(path)[1].find('run-') + 4)]}"
-        for path in glob.glob(os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session)))
+        for path in phase_files
     ])))
 
     # iterate across each run
@@ -97,6 +102,7 @@ def init_session_workflow(subject, session):
             },
             base_directory=os.path.abspath(args.bids_dir),
             sort_filelist=True,
+            error_if_empty=False,
             num_files=args.num_echoes_to_process
         ),
         name='select_files'
