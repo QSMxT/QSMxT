@@ -84,7 +84,7 @@ class SelectFiles(IOBase):
     output_spec = DynamicTraitedSpec
     _always_run = True
 
-    def __init__(self, templates, num_files=None, **kwargs):
+    def __init__(self, templates, num_files=None, error_if_empty=True, **kwargs):
         """Create an instance with specific input fields.
 
         Parameters
@@ -115,6 +115,7 @@ class SelectFiles(IOBase):
         self._outfields = list(templates)
         self._templates = templates
         self._num_files = num_files
+        self._error_if_empty = error_if_empty
 
         # Add the dynamic input fields
         undefined_traits = {}
@@ -173,7 +174,7 @@ class SelectFiles(IOBase):
             filelist = glob.glob(filled_template)
 
             # Handle the case where nothing matched
-            if not filelist:
+            if not filelist and self._error_if_empty:
                 msg = "No files were found matching %s template: %s" % (
                     field,
                     filled_template,
@@ -182,24 +183,26 @@ class SelectFiles(IOBase):
                     raise IOError(msg)
                 else:
                     warn(msg)
-
-            # Possibly sort the list
-            if self.inputs.sort_filelist:
-                filelist = human_order_sorted(filelist)
-
-            # Handle whether this must be a list or not
-            if field not in force_lists:
-                filelist = simplify_list(filelist)
-
-            # Limit the number of files matched
-            if isinstance(filelist, list):
-                if self._num_files:
-                    filelist = filelist[:self._num_files]
-                outputs['num_files'] = len(filelist)
-                if len(filelist) == 1:
-                        filelist = filelist[0]
             elif filelist:
-                outputs['num_files'] = 1
+                # Possibly sort the list
+                if self.inputs.sort_filelist:
+                    filelist = human_order_sorted(filelist)
+
+                # Handle whether this must be a list or not
+                if field not in force_lists:
+                    filelist = simplify_list(filelist)
+
+                # Limit the number of files matched
+                if isinstance(filelist, list):
+                    if self._num_files:
+                        filelist = filelist[:self._num_files]
+                    outputs['num_files'] = len(filelist)
+                    if len(filelist) == 1:
+                            filelist = filelist[0]
+                elif filelist:
+                    outputs['num_files'] = 1
+            else:
+                outputs['num_files'] = 0
 
             outputs[field] = filelist
 
