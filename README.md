@@ -12,7 +12,7 @@ QSMxT provides pipelines implemented in Python that:
    4. Multi-echo combination
 3. Automatically generate a common group space for the whole study, as well as average magnitude and QSM images that facilitate group-level analyses.
 4. Automatically segment T1w data and register them to the QSM space to extract quantitative values in anatomical regions of interest.
-5. Export quantitative data to CSV for all subjects using the automated segmentations, or a custom segmentation in the group space.
+5. Export quantitative data to CSV for all subjects using the automated segmentations, or a custom segmentation in the group space (we recommend ITK snap http://www.itksnap.org/pmwiki/pmwiki.php to perform manual segmenations).
 
 QSMxT's containerised implementation makes all required external dependencies available in a reproducible and scalable way, supporting MacOS, Windows and Linux, and with options for parallel processing via PBS systems.
 
@@ -26,11 +26,11 @@ If you use QSMxT for a study, please cite https://doi.org/10.1101/2021.05.05.442
 A user friendly way of running QSMxT in Windows, Mac or Linux is via the Virtual Neuro Machine (VNM) provided by the NeuroDesk project:
 
 1. Install [Docker](https://www.docker.com/)
-2. Install [VNM](https://github.com/NeuroDesk/vnm/)
-3. Run the VNM container and open it in a browser window at http://localhost:6080/
-4. Start QSMxT from the applications menu in the VNM desktop
-   (*VNM Neuroimaging* > *Quantitative Imaging* > *qsmxt*)
-3. Follow the QSMxT usage instructions in the section below. Note that the `/vnm` folder in VNM is shared with the host OS for data sharing purposes (usually in `~/vnm` or `C:/vnm`). Begin by copying your DICOM data into a folder in this directory on the host OS, then reach the folder in VNM by entering `cd /vnm` into the QSMxT window.
+2. Install [Neurodesktop](https://neurodesk.github.io)
+3. Run the Neurodesktop container and open it in a browser window
+4. Start QSMxT from the applications menu in the desktop
+   (*Neurodesk* > *Quantitative Imaging* > *qsmxt*)
+3. Follow the QSMxT usage instructions in the section below. Note that the `/neurodesktop-storage` folder is shared with the host OS for data sharing purposes (usually in `~/neurodesktop-storage` or `C:/neurodesktop-storage`). Begin by copying your DICOM data into a folder in this directory on the host OS, then reach the folder by entering `cd /neurodesktop-storage` into the QSMxT window.
 
 ### Docker container
 
