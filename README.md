@@ -21,9 +21,9 @@ If you use QSMxT for a study, please cite https://doi.org/10.1101/2021.05.05.442
 ![QSMxT Process Diagram](diagram.png)
 
 ## Installation
-### Simple install and start via VNM
+### install and start via Neurodesk project
 
-A user friendly way of running QSMxT in Windows, Mac or Linux is via the Virtual Neuro Machine (VNM) provided by the NeuroDesk project:
+A user friendly way of running QSMxT in Windows, Mac or Linux is via the NeuroDesktop provided by the NeuroDesk project:
 
 1. Install [Docker](https://www.docker.com/)
 2. Install [Neurodesktop](https://neurodesk.github.io)
@@ -88,7 +88,7 @@ This also indicates that there is not enough memory for the job to run. Try limi
 
 
 
-### Linux installation via Transparent Singularity (supports PBS)
+### Linux installation via Transparent Singularity (supports PBS and High Performance Computing)
 
 The tools provided by the QSMxT container can be exposed and used using the QSMxT Singularity container coupled with the transparent singularity software provided by the Neurodesk project. Transparent singularity allows the QSMxT Python scripts to be run directly within the host OS's environment. This mode of execution is necessary for parallel execution via PBS.
 
