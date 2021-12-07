@@ -36,8 +36,13 @@ A user friendly way of running QSMxT in Windows, Mac or Linux is via the NeuroDe
 
 There is also a docker image available:
 
+For Windows:
 ```
-docker run -it vnmd/qsmxt_1.1.6:20210623
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.6:20210623
+```
+For Linux/Mac:
+```
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.6:20210623
 ```
 
 ## QSMxT Usage
