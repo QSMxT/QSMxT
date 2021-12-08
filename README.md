@@ -102,27 +102,18 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.6_20210623
-    cd qsmxt_1.1.6_20210623
-    ./run_transparent_singularity.sh --container qsmxt_1.1.6_20210623.simg
-    source activate_qsmxt_1.1.6_20210623.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.8_20211208
+    cd qsmxt_1.1.8_20211208
+    ./run_transparent_singularity.sh --container qsmxt_1.1.8_20211208.simg
+    source activate_qsmxt_1.1.8_20211208.simg.sh
     ```
 
-3. Install julia packages:
-    ```bash
-    ./julia -e 'using Pkg; Pkg.status(); Pkg.add("MriResearchTools"); Pkg.add("ArgParse"); Pkg.status()'
-    ```
-    This command might fail in older singularity versions (e.g. "ERROR: syntax : incomplete:premature end of input") - then try this:
-    ```bash
-    singularity exec  --pwd $PWD qsmxt_1.1.6_20210623.simg julia -e 'using Pkg; Pkg.status(); Pkg.add("MriResearchTools"); Pkg.add("ArgParse"); Pkg.status()'
-    ```
-
-4. Clone the QSMxT repository:
+3. Clone the QSMxT repository:
     ```bash
     git clone https://github.com/QSMxT/QSMxT.git
     ```
 
-5. Install miniconda with nipype:
+4. Install miniconda with nipype:
     ```bash
     wget https://repo.anaconda.com/miniconda/Miniconda3-py38_4.9.2-Linux-x86_64.sh	
     bash Miniconda3-py38_4.9.2-Linux-x86_64.sh -b
@@ -132,7 +123,7 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     conda install -c conda-forge nipype
     ```
 
-6. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
+5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
 
 ## Help
 run `cat /README.md` to print this help again.
