@@ -13,6 +13,7 @@ sudo apt-get install --allow-unauthenticated singularity-container > /dev/null 2
 sudo apt install singularity-container > /dev/null 2>&1
 
 cp -r . /tmp/QSMxT
+# git clone https://github.com/QSMxT/QSMxT.git /tmp/QSMxT
 
 echo "[DEBUG]: testing the transparent singularity command from the README:"
 clone_command=`cat /tmp/QSMxT/README.md | grep https://github.com/NeuroDesk/transparent-singularity`
