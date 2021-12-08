@@ -38,11 +38,11 @@ There is also a docker image available:
 
 For Windows:
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.6:20210623
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.8:20211208
 ```
 For Linux/Mac:
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.6:20210623
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.8:20211208
 ```
 
 ## QSMxT Usage
