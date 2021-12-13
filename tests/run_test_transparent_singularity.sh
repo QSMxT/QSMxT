@@ -13,6 +13,7 @@ sudo apt-get install --allow-unauthenticated singularity-container > /dev/null 2
 sudo apt install singularity-container > /dev/null 2>&1
 
 cp -r . /tmp/QSMxT
+# git clone https://github.com/QSMxT/QSMxT.git /tmp/QSMxT
 
 echo "[DEBUG]: testing the transparent singularity command from the README:"
 clone_command=`cat /tmp/QSMxT/README.md | grep https://github.com/NeuroDesk/transparent-singularity`
@@ -35,12 +36,12 @@ $source_command
 echo "[DEBUG]: check julia executable:"
 cat julia
 
-echo "[DEBUG]: testing the julia package install command from the README:"
+# echo "[DEBUG]: testing the julia package install command from the README:"
 # run_command=`cat /tmp/QSMxT/README.md | grep "using Pkg"`
-run_command="./julia -e 'using Pkg; Pkg.status(); Pkg.add(\"MriResearchTools\"); Pkg.add(\"ArgParse\"); Pkg.status()'"
-echo $run_command
+# run_command="./julia -e 'using Pkg; Pkg.status(); Pkg.add(\"MriResearchTools\"); Pkg.add(\"ArgParse\"); Pkg.status()'"
+# echo $run_command
 # $run_command
-singularity exec  --pwd $PWD qsmxt_1.1.6_20210623.simg julia -e 'using Pkg; Pkg.status(); Pkg.add("MriResearchTools"); Pkg.add("ArgParse"); Pkg.status()'
+# singularity exec  --pwd $PWD qsmxt_1.1.6_20210623.simg julia -e 'using Pkg; Pkg.status(); Pkg.add("MriResearchTools"); Pkg.add("ArgParse"); Pkg.status()'
 
 
 
