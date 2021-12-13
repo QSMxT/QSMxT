@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 
 cp -r . /tmp/QSMxT
-container=`cat /tmp/QSMxT/README.md | grep vnmd/qsmxt | cut -d ' ' -f 4`
+container=`cat /tmp/QSMxT/README.md | grep vnmd/qsmxt | cut -d ' ' -f 6`
+echo "[DEBUG] this is the container I extracted from the readme: $container"
 
 sudo docker pull $container
 
