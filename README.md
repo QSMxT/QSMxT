@@ -21,9 +21,9 @@ If you use QSMxT for a study, please cite https://doi.org/10.1101/2021.05.05.442
 ![QSMxT Process Diagram](diagram.png)
 
 ## Installation
-### Simple install and start via VNM
+### install and start via Neurodesk project
 
-A user friendly way of running QSMxT in Windows, Mac or Linux is via the Virtual Neuro Machine (VNM) provided by the NeuroDesk project:
+A user friendly way of running QSMxT in Windows, Mac or Linux is via the NeuroDesktop provided by the NeuroDesk project:
 
 1. Install [Docker](https://www.docker.com/)
 2. Install [Neurodesktop](https://neurodesk.github.io)
@@ -36,8 +36,13 @@ A user friendly way of running QSMxT in Windows, Mac or Linux is via the Virtual
 
 There is also a docker image available:
 
+For Windows:
 ```
-docker run -it vnmd/qsmxt_1.1.6:20210623
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.8:20211211
+```
+For Linux/Mac:
+```
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.8:20211211
 ```
 
 ## QSMxT Usage
@@ -88,7 +93,7 @@ This also indicates that there is not enough memory for the job to run. Try limi
 
 
 
-### Linux installation via Transparent Singularity (supports PBS)
+### Linux installation via Transparent Singularity (supports PBS and High Performance Computing)
 
 The tools provided by the QSMxT container can be exposed and used using the QSMxT Singularity container coupled with the transparent singularity software provided by the Neurodesk project. Transparent singularity allows the QSMxT Python scripts to be run directly within the host OS's environment. This mode of execution is necessary for parallel execution via PBS.
 
@@ -97,27 +102,18 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.6_20210623
-    cd qsmxt_1.1.6_20210623
-    ./run_transparent_singularity.sh --container qsmxt_1.1.6_20210623.simg
-    source activate_qsmxt_1.1.6_20210623.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.8_20211211
+    cd qsmxt_1.1.8_20211211
+    ./run_transparent_singularity.sh --container qsmxt_1.1.8_20211211.simg
+    source activate_qsmxt_1.1.8_20211211.simg.sh
     ```
 
-3. Install julia packages:
-    ```bash
-    ./julia -e 'using Pkg; Pkg.status(); Pkg.add("MriResearchTools"); Pkg.add("ArgParse"); Pkg.status()'
-    ```
-    This command might fail in older singularity versions (e.g. "ERROR: syntax : incomplete:premature end of input") - then try this:
-    ```bash
-    singularity exec  --pwd $PWD qsmxt_1.1.6_20210623.simg julia -e 'using Pkg; Pkg.status(); Pkg.add("MriResearchTools"); Pkg.add("ArgParse"); Pkg.status()'
-    ```
-
-4. Clone the QSMxT repository:
+3. Clone the QSMxT repository:
     ```bash
     git clone https://github.com/QSMxT/QSMxT.git
     ```
 
-5. Install miniconda with nipype:
+4. Install miniconda with nipype:
     ```bash
     wget https://repo.anaconda.com/miniconda/Miniconda3-py38_4.9.2-Linux-x86_64.sh	
     bash Miniconda3-py38_4.9.2-Linux-x86_64.sh -b
@@ -127,7 +123,7 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     conda install -c conda-forge nipype
     ```
 
-6. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
+5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
 
 ## Help
 run `cat /README.md` to print this help again.
