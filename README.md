@@ -121,6 +121,7 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     conda create -n qsmxt python=3.8
     conda activate qsmxt
     conda install -c conda-forge nipype
+    pip install bidscoin
     ```
 
 5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
