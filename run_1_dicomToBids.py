@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import argparse
 import os
-import subprocess
+
+from bidscoin.bidscoiner import bidscoiner
+from bidscoin.bidsmapper import bidsmapper
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -43,7 +45,13 @@ if __name__ == "__main__":
     if len(os.listdir(bids_dir)) > 0:
         print(f"QSMxT: Warning: BIDS path is not empty: {bids_dir}")
 
-    subprocess.call(f"bidsmapper -b {heuristic_path} -i 0 {dicom_dir} {bids_dir}", executable='/bin/bash', shell=True)
-    subprocess.call(f"bidscoiner -b {heuristic_path} {dicom_dir} {bids_dir}", executable='/bin/bash', shell=True)
-    bids_subject_dirs = list(set(os.listdir(bids_dir)) & set(os.listdir(dicom_dir)))
+    bidsmapper(rawfolder    = dicom_dir,
+               bidsfolder   = bids_dir,
+               bidsmapfile  = heuristic_path,
+               templatefile = heuristic_path,
+               interactive  = False)
+
+    bidscoiner(rawfolder    = dicom_dir,
+               bidsfolder   = bids_dir,
+               bidsmapfile  = heuristic_path)
 
