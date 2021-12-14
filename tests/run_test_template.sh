@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 cp -r . /tmp/QSMxT
-container=`cat /tmp/QSMxT/README.md | grep vnmd/qsmxt | cut -d ' ' -f 4`
+container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
 
 docker pull $container
 

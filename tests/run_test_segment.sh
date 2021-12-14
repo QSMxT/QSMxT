@@ -7,7 +7,7 @@ set -e
 # git clone https://github.com/QSMxT/QSMxT.git /tmp/${timeStamp}/QSMxT
 
 #  extract container version from README:
-container=`cat /tmp/${timeStamp}/QSMxT/README.md | grep vnmd/qsmxt | cut -d ' ' -f 4`
+container=`cat /tmp/${timeStamp}/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
 
 sudo docker pull $container
 
