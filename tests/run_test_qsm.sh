@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 
 cp -r . /tmp/QSMxT
+# git clone https://github.com/QSMxT/QSMxT.git /tmp/QSMxT
+
 container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
 echo "[DEBUG] this is the container I extracted from the readme: $container"
 
@@ -224,6 +226,8 @@ if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; e
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --masking phase-based"
+# sudo docker run -it -v /tmp:/tmp $container
+# sudo docker run -it -v /tmp:/tmp vnmd/qsmxt_1.1.8:20211216
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --masking phase-based
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
