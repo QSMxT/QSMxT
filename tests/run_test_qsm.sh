@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+set -e 
 
 cp -r . /tmp/QSMxT
 # git clone https://github.com/QSMxT/QSMxT.git /tmp/QSMxT
