@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-
+set -e
 cp -r . /tmp/QSMxT
 container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
 
