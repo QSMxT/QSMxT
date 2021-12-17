@@ -3,8 +3,6 @@
 import os.path
 import os
 import glob
-import fnmatch
-import subprocess
 import psutil
 
 from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge, UnaryMaths
@@ -449,21 +447,14 @@ if __name__ == "__main__":
 
     parser.add_argument(
         'bids_dir',
-        help='Input data folder that can be created using run_1_dicomToBids.py; can also use a ' +
-             'custom folder containing subject folders and NIFTI files or a BIDS folder with a ' +
-             'different structure, as long as --subject_pattern, --session_pattern, ' +
-             '--magnitude_pattern and --phase_pattern are also specified.'
+        help='Input data folder generated using run_1_dicomConvert.py; can also use a ' +
+             'previously existing BIDS folder. Ensure that the --subject_pattern, '+
+             '--session_pattern, --magnitude_pattern and --phase_pattern are correct.'
     )
 
     parser.add_argument(
         'out_dir',
         help='Output QSM folder; will be created if it does not exist.'
-    )
-
-    parser.add_argument(
-        '--work_dir',
-        default=None,
-        help='NiPype working directory; defaults to \'work\' within \'out_dir\'.'
     )
 
     parser.add_argument(
@@ -480,14 +471,14 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--magnitude_pattern',
-        default='{subject}/{session}/anat/*qsm*{run}*magnitude*nii*',
+        default='{subject}/{session}/anat/*{run}*magnitude*nii*',
         help='Pattern to match magnitude files within the BIDS directory. ' +
              'The {subject}, {session} and {run} placeholders must be present.'
     )
 
     parser.add_argument(
         '--phase_pattern',
-        default='{subject}/{session}/anat/*qsm*{run}*phase*nii*',
+        default='{subject}/{session}/anat/*{run}*phase*nii*',
         help='Pattern to match phase files for qsm within session folders. ' +
              'The {subject}, {session} and {run} placeholders must be present.'
     )
@@ -519,16 +510,18 @@ if __name__ == "__main__":
         default='magnitude-based',
         choices=['magnitude-based', 'phase-based', 'bet'],
         help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
-             'thresholding a lower percentage of the signal (adjust using the --threshold parameter). ' +
-             'For phase-based masking, the spatial phase coherence is thresholded and the magnitude is ' +
-             'not required.'
+             'thresholding a lower percentage of the histogram of the signal (adjust using the '+
+             '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
+             'thresholded and the magnitude is not required. Using BET automatically disables '+
+             'the two-pass inversion strategy for artefact mitigation.'
     )
 
     parser.add_argument(
-        '--two_pass',
+        '--single_pass',
         action='store_true',
-        help='Use a two-pass QSM inversion, separating low and high-susceptibility structures for ' +
-             'artefact reduction (and doubling the runtime).'
+        help='Runs a single QSM inversion per echo, rather than the novel two-pass QSM inversion that '+
+             'separates reliable and less reliable phase regions for artefact reduction. '+
+             'Use this option to disable the novel inversion and approximately halve the runtime.'
     )
 
     parser.add_argument(
@@ -576,8 +569,9 @@ if __name__ == "__main__":
     parser.add_argument(
         '--add_bet',
         action='store_true',
-        help='Add a bet mask to the filled in threshold-based mask. This is useful if ' +
-             'areas of the brain are missing.'
+        help='When using magnitude or phase-based masking, this option adds a BET mask to the filled, '+
+             'threshold-based mask. This is useful if areas of the sample are missing due to a failure '+
+             'of the hole-filling algorithm.'
     )
 
     parser.add_argument(
@@ -611,7 +605,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # ensure directories are complete and absolute
-    if not args.work_dir: args.work_dir = args.out_dir
+    args.work_dir = args.out_dir
     args.bids_dir = os.path.abspath(args.bids_dir)
     args.work_dir = os.path.abspath(args.work_dir)
     args.out_dir = os.path.abspath(args.out_dir)
@@ -642,7 +636,7 @@ if __name__ == "__main__":
 
     # add_bet option only works with non-bet masking methods
     args.add_bet = args.add_bet and args.masking != 'bet'
-    args.two_pass = args.two_pass and args.masking != 'bet'
+    args.two_pass = args.masking != 'bet' and not args.single_pass
 
     # decide on inhomogeneity correction
     args.inhomogeneity_correction = args.inhomogeneity_correction and (args.add_bet or 'phase-based' not in args.masking)
@@ -657,9 +651,11 @@ if __name__ == "__main__":
         args.n_procs = min(int(available_ram_gb / 6), n_cpus)
         if not args.n_procs:
             print(f"Insufficient memory to run QSMxT ({available_ram_gb} GB available; 6 GB needed)")
+        print("Running with", args.n_procs, "procesors")
 
     #qsm_threads should be set to adjusted n_procs (either computed earlier or given via cli)
-    args.qsm_threads = args.n_procs if not args.qsub_account_string else 1
+    #args.qsm_threads = args.n_procs if not args.qsub_account_string else 1
+    args.qsm_threads = 1#args.n_procs if not args.qsub_account_string else 1
 
     os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
