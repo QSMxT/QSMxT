@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 
 cp -r . /tmp/QSMxT
-container=`cat /tmp/QSMxT/README.md | grep vnmd/qsmxt | cut -d ' ' -f 4`
+# git clone https://github.com/QSMxT/QSMxT.git /tmp/QSMxT
+
+container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
+echo "[DEBUG] this is the container I extracted from the readme: $container"
 
 sudo docker pull $container
 
@@ -29,29 +32,31 @@ echo "[DEBUG] starting run_2_qsm.py normal"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2
 [ -f $out_twopass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_twopass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
+
 
 echo "[DEBUG] starting run_2_qsm.py --single_pass"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+echo $min_max_std
+std=`echo $min_max_std | cut -d ' ' -f 3`; echo $std
+max=`echo $min_max_std | cut -d ' ' -f 2`; echo $max
+min=`echo $min_max_std | cut -d ' ' -f 1`; echo $min
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
 [ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
@@ -64,18 +69,18 @@ echo "[DEBUG] starting run_2_qsm.py --inhomogeneity_correction --single_pass"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --inhomogeneity_correction --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
 [ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
@@ -87,18 +92,18 @@ echo "[DEBUG] starting run_2_qsm.py --no_resampling --single_pass"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --no_resampling --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
 [ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
@@ -108,18 +113,18 @@ echo "[DEBUG] starting run_2_qsm.py --add_bet --single_pass"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --add_bet --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
 [ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
@@ -131,18 +136,18 @@ echo "[DEBUG] starting run_2_qsm.py --extra_fill_strength 2 --single_pass"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --extra_fill_strength 2 --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
 [ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
@@ -153,18 +158,18 @@ echo "[DEBUG] starting run_2_qsm.py --bet_fractional_intensity 0.4 --single_pass
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --bet_fractional_intensity 0.4 --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
 [ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
@@ -174,18 +179,18 @@ echo "[DEBUG] starting run_2_qsm.py --threshold 20 --single_pass"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --threshold 20 --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
 [ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
@@ -193,9 +198,9 @@ sudo rm -rf /tmp/02_qsm_output
 
 [ -f $out_twopass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_twopass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
@@ -205,39 +210,41 @@ echo "[DEBUG] starting run_2_qsm.py --masking magnitude-based --single_pass"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --masking magnitude-based --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
 [ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting `run_2`_qsm.py --masking phase-based --single_pass"
+# sudo docker run -it -v /tmp:/tmp $container
+# sudo docker run -it -v /tmp:/tmp vnmd/qsmxt_1.1.8:20211216
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --masking phase-based --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
 [ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
@@ -247,18 +254,18 @@ echo "[DEBUG] starting run_2_qsm.py --masking bet --single_pass"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --masking bet --single_pass
 [ -f $out_betaverage1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_betaverage1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
 [ -f $out_betaverage2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_betaverage2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
@@ -268,18 +275,18 @@ echo "[DEBUG] starting run_2_qsm.py --num_echoes 1 --single_pass"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --num_echoes 1 --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
 [ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 26`
-max=`echo $min_max_std | cut -d ' ' -f 25`
-min=`echo $min_max_std | cut -d ' ' -f 24`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
 if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
