@@ -16,7 +16,7 @@ echo "[DEBUG] starting run_0_dicomSort.py"
 docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_0_dicomSort.py /tmp/dicoms /tmp/00_dicom
 
 echo "[DEBUG] starting run_1_dicomConvert.py"
-docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_1_dicomConvert.py /tmp/00_dicom /tmp/01_bids --t2starw_series_patterns 'GRE*' --auto_yes
+docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_1_dicomConvert.py /tmp/00_dicom /tmp/01_bids --t2starw_series_patterns 'QSM*' --auto_yes
 
 unzip /tmp/osfstorage/qsm_final.zip -d /tmp/02_qsm_output_precomputed
 
