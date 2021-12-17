@@ -1,6 +1,8 @@
 name: segmentation pipeline test
 
 on:
+  workflow_dispatch:
+  repository_dispatch:
   push:
     branches: [ master ]
     paths-ignore:
