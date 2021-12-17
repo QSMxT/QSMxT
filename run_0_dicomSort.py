@@ -5,9 +5,12 @@
 # https://gist.github.com/alex-weston-13/4dae048b423f1b4cb9828734a4ec8b83
 import argparse
 import os
+import sys
 import pydicom  # pydicom is using the gdcm package for decompression
-import shutil
-import numpy
+import subprocess
+import glob
+import json
+import fnmatch
 
 def empty_dirs(root_dir='.', recursive=True):
     empty_dirs = []
@@ -54,14 +57,14 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
             elif file[:2] == 'IM':
                 extension = '.dcm'
                 unsortedList.append(os.path.join(root, file))
-
-    print(f'{len(unsortedList)} files found.')
+    print(f'{len(unsortedList)} dicom files found.')
     
     fail = False
 
     subjName_dates = []
     subjName_sessionNums = {}
 
+    print(f'sorting dicoms in {output_dir}...')
     for dicom_loc in unsortedList:
         # read the file
         ds = pydicom.read_file(dicom_loc, force=True)
@@ -123,11 +126,8 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
         for dicom_loc in unsortedList:
             os.remove(dicom_loc)
 
-        #for folder in find_empty_dirs(input_dir):
-            #print(folder)
-            #shutil.rmtree(folder)
+    print('done sorting dicoms.')
 
-    print('done.')
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -142,8 +142,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         'output_dir',
-        default=None,
-        help='output directory for sorted DICOMs; by default this is the same as input_dir'
+        help='output directory for sorted DICOMs'
     )
 
     parser.add_argument(
@@ -169,10 +168,9 @@ if __name__ == "__main__":
 
     dicomsort(
         input_dir=args.input_dir,
-        output_dir=args.output_dir if args.output_dir is not None else args.input_dir,
+        output_dir=args.output_dir,
         use_patient_names=args.use_patient_names,
         use_session_dates=args.use_session_dates,
         delete_originals=args.input_dir == args.output_dir or args.delete_originals
     )
-    
     

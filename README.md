@@ -49,9 +49,9 @@ docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.8:
 1. Convert DICOM data to BIDS:
     ```bash
     python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
-    python3 /opt/QSMxT/run_1_dicomToBids.py 00_dicom 01_bids
+    python3 /opt/QSMxT/run_1_dicomConvert.py 00_dicom 01_bids
     ```
-After this step check if the data were correctly recognized and converted to BIDS. Otherwise make a copy of /opt/QSMxT/bidsmap.yaml - adjust based on provenance example in 01_bids/code/bidscoin/bidsmap.yaml (see for example what it detected under extra_files) - and run again with the parameter `--heuristic bidsmap.yaml`. If the data were acquired on a GE scanner the complex data needs to be corrected by applying an FFT shift, this can be done with `python /opt/QSMxT/run_1_fixGEphaseFFTshift.py 01_bids/sub*/ses*/anat/*_run-1_*.nii.gz` . 
+Carefully read the output of the `run_1_dicomConvert.py` script to ensure data were correctly recognized and converted. If the data were acquired on a GE scanner the complex data needs to be corrected by applying an FFT shift, this can be done with `python /opt/QSMxT/run_1_fixGEphaseFFTshift.py 01_bids/sub*/ses*/anat/*.nii*` .
 
 2. Run QSM pipeline:
     ```bash
