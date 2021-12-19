@@ -187,13 +187,13 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--t1_pattern',
-        default='{subject}/{session}/anat/*T1w*{run}*nii*',
+        default='{subject}/{session}/anat/*{run}*T1w*nii*',
         help='Pattern to match t1 files within the BIDS directory.'
     )
 
     parser.add_argument(
         '--magnitude_pattern',
-        default='{subject}/{session}/anat/*qsm*{run}*magnitude*nii*',
+        default='{subject}/{session}/anat/*{run}*magnitude*nii*',
         help='Pattern to match magnitude files within the BIDS directory.'
     )
     
