@@ -51,10 +51,11 @@ sudo cp /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/${timeStamp}/01_bids/sub-1
 echo "[DEBUG] starting run_3_segment.py"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_3_segment.py /tmp/${timeStamp}/01_bids /tmp/${timeStamp}/03_segmentation --t1_pattern '{subject}/{session}/anat/*{run}*T1w*nii*'
 
-[ -f  /tmp/${timeStamp}/03_segmentation/t1_segmentations/sub-170705-134431-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii.nii ] && echo "FILE exists." || exit 1
-[ -f  /tmp/${timeStamp}/03_segmentation/t1_segmentations/sub-170706-160506-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii.nii ] && echo "FILE exists." || exit 1
-[ -f  /tmp/${timeStamp}/03_segmentation/qsm_segmentations/sub-170705-134431-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii_trans.nii ] && echo "FILE exists." || exit 1
-[ -f  /tmp/${timeStamp}/03_segmentation/qsm_segmentations/sub-170706-160506-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii_trans.nii ] && echo "FILE exists." || exit 1
+echo "[DEBUG] checking output of run_3_segment.py"
+[ -f  /tmp/${timeStamp}/03_segmentation/t1_segmentations/sub-170705-134431-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii.nii ] && echo "sub-170705-134431-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii.nii exists." || exit 1
+[ -f  /tmp/${timeStamp}/03_segmentation/t1_segmentations/sub-170706-160506-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii.nii ] && echo "sub-170706-160506-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii.nii exists." || exit 1
+[ -f  /tmp/${timeStamp}/03_segmentation/qsm_segmentations/sub-170705-134431-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii_trans.nii ] && echo "sub-170705-134431-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii_trans.nii exists." || exit 1
+[ -f  /tmp/${timeStamp}/03_segmentation/qsm_segmentations/sub-170706-160506-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii_trans.nii ] && echo "sub-170706-160506-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii_trans.nii exists." || exit 1
 
 if [[ ! -d /tmp/02_qsm_output_precomputed ]]
 then
@@ -65,5 +66,6 @@ fi
 echo "[DEBUG] starting run_5_analysis.py"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_5_analysis.py --labels_file /tmp/${timeStamp}/QSMxT/aseg_labels.csv --segmentations /tmp/${timeStamp}/03_segmentation/qsm_segmentations/*.nii --qsm_files /tmp/02_qsm_output_precomputed/qsm_final/*/*.nii --out_dir /tmp/${timeStamp}/05_analysis
 
+echo "[DEBUG] checking output of run_5_analysis.py"
 [ -f  /tmp/${timeStamp}/05_analysis/sub-170705-134431-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii_trans.csv ] && echo "FILE exists." || exit 1
 [ -f  /tmp/${timeStamp}/05_analysis/sub-170706-160506-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii_trans.csv ] && echo "FILE exists." || exit 1
