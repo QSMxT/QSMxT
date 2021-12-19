@@ -57,7 +57,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
         if json_datas[i]["Modality"] == "MR"
     ])))
     if not all_series_names:
-        print(f"No valid series found in JSON headers in '{output_dir}/.../extra_data' folders!")
+        print(f"Error: No valid series found in JSON headers in '{output_dir}/.../extra_data' folders!")
         exit(1)
     print(f"All series names identified: {all_series_names}")
 
