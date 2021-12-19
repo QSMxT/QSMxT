@@ -98,7 +98,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
         if t2starw_series_names:
             print(f"Identified matching t2starw series: {t2starw_series_names}")
     elif not t2starw_series_names:
-        print("Error: No t2starw series found!")
+        print(f"Error: No t2starw series found matching patterns: {t2starw_series_patterns}!")
         exit(1)
 
     # identify T1w series
