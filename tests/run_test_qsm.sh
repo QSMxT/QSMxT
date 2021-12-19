@@ -27,7 +27,7 @@ echo "[DEBUG] starting run_0_dicomSort.py"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_0_dicomSort.py /tmp/dicoms /tmp/00_dicom
 
 echo "[DEBUG] starting run_1_dicomConvert.py"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_1_dicomConvert.py /tmp/00_dicom /tmp/01_bids --t2starw_series_pattern '*QSM*' --auto_yes
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_1_dicomConvert.py /tmp/00_dicom /tmp/01_bids --auto_yes
 
 echo "[DEBUG] starting run_2_qsm.py normal"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2

@@ -266,8 +266,8 @@ if __name__ == "__main__":
     convert_to_nifti(
         input_dir=args.input_dir,
         output_dir=args.output_dir,
-        t2starw_series_patterns=args.t2starw_series_patterns,
-        t1w_series_patterns=args.t1w_series_patterns,
+        t2starw_series_patterns=[pattern.lower() for pattern in args.t2starw_series_patterns],
+        t1w_series_patterns=[pattern.lower() for pattern in args.t1w_series_patterns],
         auto_yes=args.auto_yes
     )
     
