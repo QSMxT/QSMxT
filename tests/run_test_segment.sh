@@ -44,12 +44,12 @@ then
     osf -p bt4ez fetch TOMCAT_DIB/sub-01/ses-01_7T/anat/sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/sub-01_ses-01_7T_T1w_defaced.nii.gz
     osf -p bt4ez fetch TOMCAT_DIB/sub-02/ses-01_7T/anat/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz
 fi
-sudo cp /tmp/sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/${timeStamp}/01_bids/sub-170705-134431-std-1312211075243167001/ses-1/anat/sub-170705134431std1312211075243167001_ses-1_T1w_run-1_magnitude.nii.gz
-sudo cp /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/${timeStamp}/01_bids/sub-170706-160506-std-1312211075243167001/ses-1/anat/sub-170706160506std1312211075243167001_ses-1_T1w_run-1_magnitude.nii.gz
+sudo cp /tmp/sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/${timeStamp}/01_bids/sub-170705-134431-std-1312211075243167001/ses-1/anat/sub-170705-134431-std-1312211075243167001_ses-1_run-1_T1w.nii.gz
+sudo cp /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/${timeStamp}/01_bids/sub-170706-160506-std-1312211075243167001/ses-1/anat/sub-170705-134431-std-1312211075243167001_ses-1_run-1_T1w.nii.gz
 
 
 echo "[DEBUG] starting run_3_segment.py"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_3_segment.py /tmp/${timeStamp}/01_bids /tmp/${timeStamp}/03_segmentation --t1_pattern '{subject}/{session}/anat/*T1w*{run}*nii*'
+sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_3_segment.py /tmp/${timeStamp}/01_bids /tmp/${timeStamp}/03_segmentation --t1_pattern '{subject}/{session}/anat/*{run}*T1w*nii*'
 
 [ -f  /tmp/${timeStamp}/03_segmentation/t1_segmentations/sub-170705-134431-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii.nii ] && echo "FILE exists." || exit 1
 [ -f  /tmp/${timeStamp}/03_segmentation/t1_segmentations/sub-170706-160506-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii.nii ] && echo "FILE exists." || exit 1
