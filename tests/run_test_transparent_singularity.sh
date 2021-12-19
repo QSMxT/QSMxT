@@ -67,7 +67,7 @@ source ~/.bashrc
 
 conda_command=`cat /tmp/QSMxT/README.md | grep "conda install "`
 echo $conda_command
-$conda_command > /dev/null 2>&1
+yes | $conda_command
 
 bidscoin_command=`cat /tmp/QSMxT/README.md | grep "pip install bidscoin"`
 echo $bidscoin_command
