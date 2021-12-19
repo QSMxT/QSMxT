@@ -52,7 +52,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
             json_files.extend(sorted(glob.glob(os.path.join(session_extra_folder, "*json"))))
             json_datas.extend([load_json(json_file) for json_file in sorted(glob.glob(os.path.join(session_extra_folder, "*json")))])
     all_series_names = sorted(list(set([
-        json_datas[i]['SeriesDescription']
+        json_datas[i]['SeriesDescription'].lower()
         for i in range(len(json_datas))
         if json_datas[i]["Modality"] == "MR"
     ])))
@@ -137,14 +137,14 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
             session_details = []
             for json_file in json_files:
                 json_data = load_json(json_file)
-                if json_data['Modality'] == 'MR' and json_data['SeriesDescription'] in t2starw_series_names + t1w_series_names:
+                if json_data['Modality'] == 'MR' and json_data['SeriesDescription'].lower() in t2starw_series_names + t1w_series_names:
                     details = {}
                     details['subject'] = subject
                     details['session'] = session
                     details['series_type'] = None
-                    if json_data['SeriesDescription'] in t2starw_series_names:
+                    if json_data['SeriesDescription'].lower() in t2starw_series_names:
                         details['series_type'] = 't2starw'
-                    elif json_data['SeriesDescription'] in t1w_series_names:
+                    elif json_data['SeriesDescription'].lower() in t1w_series_names:
                         details['series_type'] = 't1w'
                     details['series_num'] = json_data['SeriesNumber']
                     details['part_type'] = 'phase' if 'P' in json_data['ImageType'] else 'magnitude'
@@ -248,16 +248,16 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--t2starw_series_patterns',
-        default=['*t2starw*'],
+        default=['*t2starw*', '*qsm*'],
         nargs='*',
-        help='Patterns used to identify t2starw series for QSM from the DICOM SeriesDescription field'
+        help='Patterns used to identify t2starw series for QSM from the DICOM SeriesDescription field (case insensitive)'
     )
 
     parser.add_argument(
         '--t1w_series_patterns',
         default=['*t1w*'],
         nargs='*',
-        help='Patterns used to identify t1w series for segmentation from the DICOM SeriesDescription field'
+        help='Patterns used to identify t1w series for segmentation from the DICOM SeriesDescription field (case insensitive)'
     )
 
 
