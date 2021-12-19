@@ -192,7 +192,7 @@ if __name__ == "__main__":
     if len(magnitude_images) != len(qsm_images):
         print(f"QSMxT: Error: Number of QSM images ({len(qsm_images)}) and magnitude images ({len(magnitude_images)}) do not match.")
         print(f"Final QSM pattern: {qsm_pattern}")
-        print(f"Final magintude pattern: {magnitude_pattern}")
+        print(f"Final magnitude pattern: {magnitude_pattern}")
         exit()
 
     wf = init_workflow(magnitude_images, qsm_images)
