@@ -40,6 +40,15 @@ if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; el
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
+[ -f $out_twopass2 ] && echo "[DEBUG]. Test OK." || exit 1
+min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_twopass2 -R -S`
+std=`echo $min_max_std | cut -d ' ' -f 3`
+max=`echo $min_max_std | cut -d ' ' -f 2`
+min=`echo $min_max_std | cut -d ' ' -f 1`
+if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
+if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
+if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
+sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --single_pass"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --single_pass
@@ -189,16 +198,6 @@ if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; e
 
 [ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
 min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 3`
-max=`echo $min_max_std | cut -d ' ' -f 2`
-min=`echo $min_max_std | cut -d ' ' -f 1`
-if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
-if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
-if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
-sudo rm -rf /tmp/02_qsm_output
-
-[ -f $out_twopass2 ] && echo "[DEBUG]. Test OK." || exit 1
-min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_twopass2 -R -S`
 std=`echo $min_max_std | cut -d ' ' -f 3`
 max=`echo $min_max_std | cut -d ' ' -f 2`
 min=`echo $min_max_std | cut -d ' ' -f 1`
