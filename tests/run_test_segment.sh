@@ -36,7 +36,7 @@ echo "[DEBUG] starting run_0_dicomSort.py"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_0_dicomSort.py /tmp/dicoms /tmp/${timeStamp}/00_dicom
 
 echo "[DEBUG] starting run_1_dicomConvert.py"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_1_dicomConvert.py /tmp/${timeStamp}/00_dicom /tmp/${timeStamp}/01_bids --t2starw_series_patterns '*QSM*' --auto_yes
+sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_1_dicomConvert.py /tmp/${timeStamp}/00_dicom /tmp/${timeStamp}/01_bids --auto_yes
 
 if [[ ! -f /tmp/sub-01_ses-01_7T_T1w_defaced.nii.gz ]]
 then
