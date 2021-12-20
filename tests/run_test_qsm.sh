@@ -98,27 +98,6 @@ if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; e
 [ -f /tmp/02_qsm_output/workflow_qsm/sub-170705-134431-std-1312211075243167001/ses-1/_run_run-1/correct_inhomogeneity/mapflow/_correct_inhomogeneity0/result__correct_inhomogeneity0.pklz ] && echo "[DEBUG]. Test OK." || exit 1
 sudo rm -rf /tmp/02_qsm_output
 
-echo "[DEBUG] starting run_2_qsm.py --no_resampling --single_pass"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --no_resampling --single_pass
-[ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
-min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 3`
-max=`echo $min_max_std | cut -d ' ' -f 2`
-min=`echo $min_max_std | cut -d ' ' -f 1`
-if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
-if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
-if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
-
-[ -f $out_singlepass2 ] && echo "[DEBUG]. Test OK." || exit 1
-min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass2 -R -S`
-std=`echo $min_max_std | cut -d ' ' -f 3`
-max=`echo $min_max_std | cut -d ' ' -f 2`
-min=`echo $min_max_std | cut -d ' ' -f 1`
-if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
-if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
-if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
-sudo rm -rf /tmp/02_qsm_output
-
 echo "[DEBUG] starting run_2_qsm.py --add_bet --single_pass"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --add_bet --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
