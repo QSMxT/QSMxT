@@ -280,7 +280,7 @@ def init_session_workflow(subject, session):
                 erosions=0 if args.masking in ['phase-based', 'magnitude-based'] else 5,
                 num_threads=args.qsm_threads,
                 out_suffix='_qsm',
-                extra_arguments='--ignore-orientation --no-resampling' if args.no_resampling else ''
+                extra_arguments='--ignore-orientation --no-resampling'
             ),
             iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
             name='qsm'
@@ -370,7 +370,7 @@ def init_session_workflow(subject, session):
                 erosions=0,
                 num_threads=args.qsm_threads,
                 out_suffix='_qsm-filled',
-                extra_arguments='--ignore-orientation --no-resampling' if args.no_resampling else ''
+                extra_arguments='--ignore-orientation --no-resampling'
             ),
             iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
             name='qsm_filledmask'
@@ -595,13 +595,6 @@ if __name__ == "__main__":
         help='Enables some nipype settings for debugging.'
     )
     
-    parser.add_argument(
-        '--no_resampling',
-        action='store_true',
-        help='Deactivate resampling inside TGV_QSM. Useful when resampling fails with error: ' +
-             '\'Incompatible size of mask and data images\'. Check results carefully.'
-    )
-
     args = parser.parse_args()
     
     # ensure directories are complete and absolute
