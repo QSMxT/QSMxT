@@ -155,47 +155,49 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
                     details['num_echoes'] = None
                     details['new_name'] = None
                     session_details.append(details)
-            session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['series_type'], f['series_num'], 0 if 'phase' in f['part_type'] else 1, f['echo_time']))
-            
-            # update run numbers
-            run_num = 1
-            series_num = session_details[0]['series_num']
-            series_type = session_details[0]['series_type']
-            for i in range(len(session_details)):
-                if session_details[i]['series_num'] != series_num:
-                    if session_details[i]['series_type'] == 't2starw' and session_details[i-1]['part_type'] == 'phase':
-                        run_num += 1
-                    elif session_details[i]['series_type'] == 't1w' and session_details[i-1]['series_type'] == 't1w':
-                        run_num += 1
-                    elif session_details[i]['series_type'] != session_details[i-1]['series_type']:
-                        run_num = 1
-                    
-                series_num = session_details[i]['series_num']
+
+            if session_details:
+                session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['series_type'], f['series_num'], 0 if 'phase' in f['part_type'] else 1, f['echo_time']))
+                
+                # update run numbers
+                run_num = 1
+                series_num = session_details[0]['series_num']
                 series_type = session_details[0]['series_type']
-                session_details[i]['run_num'] = run_num
+                for i in range(len(session_details)):
+                    if session_details[i]['series_num'] != series_num:
+                        if session_details[i]['series_type'] == 't2starw' and session_details[i-1]['part_type'] == 'phase':
+                            run_num += 1
+                        elif session_details[i]['series_type'] == 't1w' and session_details[i-1]['series_type'] == 't1w':
+                            run_num += 1
+                        elif session_details[i]['series_type'] != session_details[i-1]['series_type']:
+                            run_num = 1
+                        
+                    series_num = session_details[i]['series_num']
+                    series_type = session_details[0]['series_type']
+                    session_details[i]['run_num'] = run_num
 
-            # update echo numbers and number of echoes
-            t2starw_details = [details for details in session_details if details['series_type'] == 't2starw']
-            t2starw_run_nums = sorted(list(set(details['run_num'] for details in t2starw_details)))
-            for run_num in t2starw_run_nums:
-                echo_times = sorted(list(set([details['echo_time'] for details in t2starw_details if details['run_num'] == run_num])))
-                num_echoes = len(echo_times)
-                for details in t2starw_details:
-                    if details['run_num'] == run_num:
-                        details['num_echoes'] = num_echoes
-                        details['echo_num'] = echo_times.index(details['echo_time']) + 1
+                # update echo numbers and number of echoes
+                t2starw_details = [details for details in session_details if details['series_type'] == 't2starw']
+                t2starw_run_nums = sorted(list(set(details['run_num'] for details in t2starw_details)))
+                for run_num in t2starw_run_nums:
+                    echo_times = sorted(list(set([details['echo_time'] for details in t2starw_details if details['run_num'] == run_num])))
+                    num_echoes = len(echo_times)
+                    for details in t2starw_details:
+                        if details['run_num'] == run_num:
+                            details['num_echoes'] = num_echoes
+                            details['echo_num'] = echo_times.index(details['echo_time']) + 1
 
-            # update names
-            for details in session_details:
-                if details['series_type'] == 't1w':
-                    details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{details['run_num']}_T1w")
-                elif details['num_echoes'] == 1:
-                    details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{details['run_num']}_part-{details['part_type']}_T2starw")
-                else:
-                    details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{details['run_num']}_echo-{details['echo_num']}_part-{details['part_type']}_MEGRE")
+                # update names
+                for details in session_details:
+                    if details['series_type'] == 't1w':
+                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{details['run_num']}_T1w")
+                    elif details['num_echoes'] == 1:
+                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{details['run_num']}_part-{details['part_type']}_T2starw")
+                    else:
+                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{details['run_num']}_echo-{details['echo_num']}_part-{details['part_type']}_MEGRE")
 
-            # store session details
-            all_session_details.extend(session_details)
+                # store session details
+                all_session_details.extend(session_details)
 
     # if running interactively, show a summary of the renames prior to actioning
     if sys.__stdin__.isatty() and not auto_yes:
