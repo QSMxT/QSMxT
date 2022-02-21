@@ -91,7 +91,8 @@ This also indicates that there is not enough memory for the job to run. Try limi
  python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output --n_procs 1
 ```
 
-
+3. If you are getting the error "Insufficient memory to run QSMxT (xxx GB available; 6GB needed)
+This means there is not enough memory available. Troulbeshoot advice when running this via Neurodesk is here: https://neurodesk.github.io/docs/neurodesktop/troubleshooting/#i-got-an-error-message-x-killed-or-not-enough-memory
 
 ### Linux installation via Transparent Singularity (supports PBS and High Performance Computing)
 
