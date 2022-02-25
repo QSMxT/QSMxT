@@ -149,7 +149,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
                     details['series_num'] = json_data['SeriesNumber']
                     details['part_type'] = 'phase' if 'P' in json_data['ImageType'] else 'magnitude'
                     details['echo_time'] = json_data['EchoTime']
-                    details['file_name'] = json_file.split('.')[0]
+                    details['file_name'] = json_file.split('.json')[0]
                     details['run_num'] = None
                     details['echo_num'] = None
                     details['num_echoes'] = None
