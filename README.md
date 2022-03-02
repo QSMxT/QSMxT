@@ -51,7 +51,7 @@ docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.9:
     python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
     python3 /opt/QSMxT/run_1_dicomConvert.py 00_dicom 01_bids
     ```
-Carefully read the output of the `run_1_dicomConvert.py` script to ensure data were correctly recognized and converted. If the data were acquired on a GE scanner the complex data needs to be corrected by applying an FFT shift, this can be done with `python /opt/QSMxT/run_1_fixGEphaseFFTshift.py 01_bids/sub*/ses*/anat/*.nii*` .
+Carefully read the output of the `run_1_dicomConvert.py` script to ensure data were correctly recognized and converted. You can also pass command line arguments to identify the runs, e.g. `python3 /opt/QSMxT/run_1_dicomConvert.py 00_dicom 01_bids --t2starw_series_patterns *gre* --t1w_series_patterns *mp2rage*`. If the data were acquired on a GE scanner the complex data needs to be corrected by applying an FFT shift, this can be done with `python /opt/QSMxT/run_1_fixGEphaseFFTshift.py 01_bids/sub*/ses*/anat/*.nii*` .
 
 2. Run QSM pipeline:
     ```bash
