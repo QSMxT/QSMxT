@@ -127,6 +127,17 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 
 5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
 
-## Help
-run `cat /README.md` to print this help again.
+### Bare metal installation
+Although we do not recommend installing the dependencies manually and we advocate the use of software containers for reproducibility and ease-of-use, you can install everything by hand. These are the dependencies required and this was tested in Ubuntu 18.04: 
 
+You need:
+- TGV-QSM running in miniconda 2
+- fsl version=6.0.4
+- ants version=2.3.4
+- dcm2niix latest version from github
+- miniconda version=4.7.12.1 with python 3.6 for nipype 1.6.0 pytorch 1.2.0 and torchvision 0.4.0 niflow-nipype1-workflows
+- FastSurfer.git
+- Bru2Nii v1.0.20180303
+- julia-1.6.1 with ArgParse and MriResearchTools
+
+Here is the detailed instruction that you could replicate: https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxtbase/build.sh and then on top https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxt/build.sh
