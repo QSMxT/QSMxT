@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+import sys
 import os.path
 import os
 import glob
@@ -650,8 +651,12 @@ if __name__ == "__main__":
     #args.qsm_threads = args.n_procs if not args.qsub_account_string else 1
     args.qsm_threads = 1#args.n_procs if not args.qsub_account_string else 1
 
-    os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
-    os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
+    os.makedirs(args.work_dir, exist_ok=True)
+    os.makedirs(args.out_dir, exist_ok=True)
+
+    # write the command used to invoke the script to outdir/qsmxt_command.txt
+    with open(os.path.join(args.out_dir, "qsmxt_command.txt"), 'w') as f:
+        f.write('readme')
 
     # make sure tgv_qsm is compiled on the target system before we start the pipeline:
     # process = subprocess.run(['tgv_qsm'])
