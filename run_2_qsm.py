@@ -657,7 +657,6 @@ if __name__ == "__main__":
     # write "qsmxt_command.txt" with the command used to invoke the script
     with open(os.path.join(args.out_dir, "qsmxt_command.txt"), 'w') as f:
         f.write(str.join(" ", sys.argv))
-    exit()
 
     # make sure tgv_qsm is compiled on the target system before we start the pipeline:
     # process = subprocess.run(['tgv_qsm'])
