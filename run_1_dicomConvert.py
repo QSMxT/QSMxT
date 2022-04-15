@@ -24,7 +24,7 @@ def clean(data):
     return data.replace('_', '')
 
 def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_patterns, auto_yes):
-    print('Converting all DICOMs to nifti...')
+    print('Converting all DICOMs to NIfTI...')
     subjects = os.listdir(input_dir)
     for subject in subjects:
         sessions = os.listdir(os.path.join(input_dir, subject))
