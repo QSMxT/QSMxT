@@ -6,18 +6,17 @@ import os
 import glob
 import psutil
 
-from nipype.interfaces.fsl import BET, ImageMaths, ImageStats, MultiImageMaths, CopyGeom, Merge, UnaryMaths
+from nipype.interfaces.fsl import BET, ImageMaths, ImageStats
 from nipype.interfaces.utility import IdentityInterface, Function
-from nipype.interfaces.io import DataSink, DataGrabber
+from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 
 from interfaces import nipype_interface_selectfiles as sf
 from interfaces import nipype_interface_tgv_qsm as tgv
 from interfaces import nipype_interface_phaseweights as phaseweights
-from interfaces import nipype_interface_bestlinreg as bestlinreg
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
-from interfaces import nipype_interface_composite as composite
+from interfaces import nipype_interface_twopass as twopass
 
 import argparse
 
@@ -312,11 +311,11 @@ def init_session_workflow(subject, session):
             (mn_qsm, n_qsm_average, [('out_file', 'in_files')])
         ])
 
-        wf.connect([
-            (n_qsm_average, n_datasink, [('out_file', 'qsm_average' if args.masking != 'bet' else 'qsm_final')]),
-            (mn_qsm, n_datasink, [('out_file', 'qsms')]),
-            (mn_mask, n_datasink, [('mask_file', 'masks')])
-        ])
+        if args.masking == 'bet':
+            wf.connect([
+                (n_qsm_average, n_datasink, [('out_file', 'qsm_final')]),
+            ])
+
     if args.masking in ['phase-based', 'magnitude-based']:
         mn_mask_filled = MapNode(
             interface=ImageMaths(
@@ -344,7 +343,7 @@ def init_session_workflow(subject, session):
                 (mn_bet, mn_bet_erode, [('mask_file', 'in_file')])
             ])
             mn_mask_plus_bet = MapNode(
-                interface=composite.CompositeNiftiInterface(),
+                interface=twopass.TwopassNiftiInterface(),
                 name='mask_plus_bet',
                 iterfield=['in_file1', 'in_file2'],
             )
@@ -359,10 +358,6 @@ def init_session_workflow(subject, session):
             wf.connect([
                 (mn_mask, mn_mask_filled, [('mask_file', 'in_file')])
             ])
-
-        wf.connect([
-            (mn_mask_filled, n_datasink, [('out_file', 'masks_filled')])
-        ])
 
         mn_qsm_filled = MapNode(
             interface=tgv.QSMappingInterface(
@@ -391,9 +386,6 @@ def init_session_workflow(subject, session):
             (mn_mask_filled, mn_qsm_filled, [('out_file', 'mask_file')]),
             (mn_phase_scaled, mn_qsm_filled, [('out_file', 'phase_file')]),
         ])
-        wf.connect([
-            (mn_qsm_filled, n_datasink, [('out_file', 'qsms_filled')]),
-        ])
 
         # qsm averaging
         n_qsm_filled_average = Node(
@@ -406,35 +398,34 @@ def init_session_workflow(subject, session):
             (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')])
         ])
         wf.connect([
-            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_filled_average' if args.two_pass else 'qsm_final')])
+            (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_singlepass' if args.two_pass else 'qsm_final')])
         ])
 
-        # composite qsm
+        # two-pass qsm
         if args.two_pass:
-            mn_qsm_composite = MapNode(
-                interface=composite.CompositeNiftiInterface(),
-                name='qsm_composite',
+            mn_qsm_twopass = MapNode(
+                interface=twopass.TwopassNiftiInterface(),
+                name='qsm_twopass',
                 iterfield=['in_file1', 'in_file2', 'in_maskFile'],
             )
             wf.connect([
-                (mn_qsm, mn_qsm_composite, [('out_file', 'in_file1')]),
-                (mn_qsm_filled, mn_qsm_composite, [('out_file', 'in_file2')]),
-                (mn_mask, mn_qsm_composite, [('mask_file', 'in_maskFile')])
+                (mn_qsm, mn_qsm_twopass, [('out_file', 'in_file1')]),
+                (mn_qsm_filled, mn_qsm_twopass, [('out_file', 'in_file2')]),
+                (mn_mask, mn_qsm_twopass, [('mask_file', 'in_maskFile')])
             ])
 
-            n_qsm_composite_average = Node(
+            n_qsm_twopass_average = Node(
                 interface=nonzeroaverage.NonzeroAverageInterface(),
-                name='qsm_composite_average'
+                name='qsm_twopass_average'
                 # input : in_files
                 # output: out_file
             )
             wf.connect([
-                (mn_qsm_composite, n_qsm_composite_average, [('out_file', 'in_files')])
+                (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')])
             ])
 
             wf.connect([
-                (mn_qsm_composite, n_datasink, [('out_file', 'qsms_composite')]),
-                (n_qsm_composite_average, n_datasink, [('out_file', 'qsm_final')]),
+                (n_qsm_twopass_average, n_datasink, [('out_file', 'qsm_final')]),
             ])
 
     return wf
