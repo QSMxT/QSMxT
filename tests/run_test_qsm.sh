@@ -11,8 +11,8 @@ sudo docker pull $container
 
 out_singlepass1='/tmp/02_qsm_output/qsm_final/_run_run-1/sub-170705-134431-std-1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm-filled_000_average.nii'
 out_singlepass2='/tmp/02_qsm_output/qsm_final/_run_run-1/sub-170706-160506-std-1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm-filled_000_average.nii'
-out_twopass1='/tmp/02_qsm_output/qsm_final/_run_run-1/sub-170705-134431-std-1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_composite_average.nii'
-out_twopass2='/tmp/02_qsm_output/qsm_final/_run_run-1/sub-170706-160506-std-1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_composite_average.nii'
+out_twopass1='/tmp/02_qsm_output/qsm_final/_run_run-1/sub-170705-134431-std-1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_twopass_average.nii'
+out_twopass2='/tmp/02_qsm_output/qsm_final/_run_run-1/sub-170706-160506-std-1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_twopass_average.nii'
 out_betaverage1='/tmp/02_qsm_output/qsm_final/_run_run-1/sub-170705-134431-std-1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_average.nii'
 out_betaverage2='/tmp/02_qsm_output/qsm_final/_run_run-1/sub-170706-160506-std-1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_average.nii'
 

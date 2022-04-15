@@ -6,7 +6,7 @@ import numpy as np
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File
 
 
-def composite_nifti(in_file1, in_file2, in_maskFile=None, save_result=True):
+def twopass_nifti(in_file1, in_file2, in_maskFile=None, save_result=True):
     in1_nii = nib.load(in_file1)
     in2_nii = nib.load(in_file2)
     if in_maskFile: in_mask_nii = nib.load(in_maskFile)
@@ -21,7 +21,7 @@ def composite_nifti(in_file1, in_file2, in_maskFile=None, save_result=True):
         out_data = in1_data + (in2_data * np.logical_not(in_mask_data))
 
     if save_result:
-        filename = f"{os.path.splitext(os.path.splitext(os.path.split(in_file1)[1])[0])[0]}_composite.nii"
+        filename = f"{os.path.splitext(os.path.splitext(os.path.split(in_file1)[1])[0])[0]}_twopass.nii"
         fullpath = os.path.join(os.path.abspath(os.curdir), filename)
         nib.save(nib.nifti1.Nifti1Image(out_data, affine=in1_nii.affine, header=in1_nii.header), fullpath)
         return fullpath
@@ -29,22 +29,22 @@ def composite_nifti(in_file1, in_file2, in_maskFile=None, save_result=True):
     return out_data
 
 
-class CompositeNiftiInputSpec(BaseInterfaceInputSpec):
+class TwopassNiftiInputSpec(BaseInterfaceInputSpec):
     in_file1 = File(mandatory=True, exists=True)
     in_file2 = File(mandatory=True, exists=True)
     in_maskFile = File(mandatory=False, exists=True)
 
 
-class CompositeNiftiOutputSpec(TraitedSpec):
+class TwopassNiftiOutputSpec(TraitedSpec):
     out_file = File()
 
 
-class CompositeNiftiInterface(SimpleInterface):
-    input_spec = CompositeNiftiInputSpec
-    output_spec = CompositeNiftiOutputSpec
+class TwopassNiftiInterface(SimpleInterface):
+    input_spec = TwopassNiftiInputSpec
+    output_spec = TwopassNiftiOutputSpec
 
     def _run_interface(self, runtime):
-        self._results['out_file'] = composite_nifti(self.inputs.in_file1, self.inputs.in_file2, self.inputs.in_maskFile)
+        self._results['out_file'] = twopass_nifti(self.inputs.in_file1, self.inputs.in_file2, self.inputs.in_maskFile)
         return runtime
 
 
@@ -74,5 +74,5 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     in1_nii = nib.load(args.in_file1)
-    result = composite_nifti(args.in_file1, args.in_file2, args.in_maskFile, save_result=False)
+    result = twopass_nifti(args.in_file1, args.in_file2, args.in_maskFile, save_result=False)
     nib.save(nib.nifti1.Nifti1Image(result, affine=in1_nii.affine, header=in1_nii.header), args.out_file)
