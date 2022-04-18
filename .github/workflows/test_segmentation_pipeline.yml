@@ -1,49 +1,12 @@
-name: segmentation pipeline test
-
 on:
-  workflow_dispatch:
-  repository_dispatch:
-  push:
-    branches: [ master ]
-    paths-ignore:
-      - diagram.png
-      - run_1_fixGEphaseFFTshift.py
-      - run_0_dicomSort.py
-      - run_4_template.py
-      - run_1_dicomToBids.py
-      - run_2_qsm.py
-      - README.md
-      - .gitignore
-      - .github/workflows/test_qsm_pipeline.yml
-      - .github/workflows/test_template_pipeline.yml
-      - .github/workflows/test_transparent_singularity.yml
-      - tests/run_test_template.sh
-      - tests/run_test_qsm.sh
-      - tests/run_test_transparent_singularity.sh
   pull_request:
-    branches: [ master ]
-    paths-ignore:
-      - .gitignore
-      - diagram.png
-      - run_1_fixGEphaseFFTshift.py
-      - run_0_dicomSort.py
-      - run_4_template.py
-      - run_1_dicomToBids.py
-      - run_2_qsm.py
-      - README.md
-      - .github/workflows/test_qsm_pipeline.yml
-      - .github/workflows/test_template_pipeline.yml
-      - .github/workflows/test_transparent_singularity.yml
-      - tests/run_test_template.sh
-      - tests/run_test_qsm.sh
-      - tests/run_test_transparent_singularity.sh
-    
+
 jobs:
-  test_segmentation_pipeline:
+  test:
     runs-on: self-hosted
     steps:
-    - name: segmentation pipeline
-      run: |
-        export timeStamp=`date +"%Y-%m-%d-%T"`
-        git clone https://github.com/QSMxT/QSMxT.git /tmp/${timeStamp}/QSMxT
-        /bin/bash /tmp/${timeStamp}/QSMxT/tests/run_test_segment.sh
+    - uses: actions/checkout@v1
+    - name: ps
+      run: ps aeuxwww
+    - name: env
+      run: env
