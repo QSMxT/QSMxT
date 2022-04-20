@@ -30,14 +30,14 @@ echo "[DEBUG] ls /tmp/04_template:"
 ls /tmp/04_template
 echo "[DEBUG] ls /tmp/04_template/workflow_template:"
 ls /tmp/04_template/workflow_template
-echo "[DEBUG] ls /tmp/04_template/workflow_template/datasink:"
-ls /tmp/04_template/workflow_template/datasink
-echo "[DEBUG] ls /tmp/04_template/workflow_template/datasink/out:"
-ls /tmp/04_template/workflow_template/datasink/out
-echo "[DEBUG] ls /tmp/04_template/workflow_template/datasink/out/test:"
-ls /tmp/04_template/workflow_template/datasink/out/test
-echo "[DEBUG] ls /tmp/04_template/workflow_template/datasink/out/test/results:"
-ls /tmp/04_template/workflow_template/datasink/out/test/results
+echo "[DEBUG] ls /tmp/04_template/workflow_template/nipype_datasink:"
+ls /tmp/04_template/workflow_template/nipype_datasink
+echo "[DEBUG] ls /tmp/04_template/workflow_template/nipype_datasink/out:"
+ls /tmp/04_template/workflow_template/nipype_datasink/out
+echo "[DEBUG] ls /tmp/04_template/workflow_template/nipype_datasink/out/test:"
+ls /tmp/04_template/workflow_template/nipype_datasink/out/test
+echo "[DEBUG] ls /tmp/04_template/workflow_template/nipype_datasink/out/test/results:"
+ls /tmp/04_template/workflow_template/nipype_datasink/out/test/results
 
-echo "[DEBUG]: /tmp/04_template/workflow_template/datasink/out/test/results"
-[ -d /tmp/04_template/workflow_template/datasink/out/test/results/ ] && echo "results exist." || exit 1
+echo "[DEBUG]: /tmp/04_template/workflow_template/nipype_datasink/out/test/results"
+[ -d /tmp/04_template/workflow_template/nipype_datasink/out/test/results/ ] && echo "results exist." || exit 1
