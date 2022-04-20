@@ -661,9 +661,12 @@ if __name__ == "__main__":
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:
+        # output command used to invoke script
         f.write(str.join(" ", sys.argv))
 
+        # QSMxT and Nipype
         f.write("\n\n - Stewart AW, Robinson SD, O’Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. https://www.frontiersin.org/article/10.3389/fninf.2011.00013")
 
         if any_string_matches_any_node(['fslstats', 'fslmaths']):
             f.write("\n\n - Jenkinson M, Beckmann CF, Behrens TEJ, Woolrich MW, Smith SM. FSL. NeuroImage. 2012;62(2):782-790. doi:10.1016/j.neuroimage.2011.09.015")
