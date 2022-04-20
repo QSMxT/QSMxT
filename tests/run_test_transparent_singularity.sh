@@ -44,7 +44,7 @@ cat julia
 # singularity exec  --pwd $PWD qsmxt_1.1.6_20210623.simg julia -e 'using Pkg; Pkg.status(); Pkg.add("MriResearchTools"); Pkg.add("ArgParse"); Pkg.status()'
 
 
-
+echo "[DEBUG]: download test data"
 pip install osfclient > /dev/null 2>&1
 osf -p ru43c clone /tmp > /dev/null 2>&1
 unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_M_5_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms > /dev/null 2>&1
