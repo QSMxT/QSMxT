@@ -5,7 +5,7 @@ import os
 import glob
 import argparse
 import psutil
-import re
+import sys
 
 import nipype.interfaces.utility as util
 import nipype.interfaces.ants as ants
@@ -25,7 +25,7 @@ def init_workflow(magnitude_images, qsm_images):
             fields=['magnitude_images', 'qsm_images', 'qsm_dict']
         ),
         run_without_submitting=True,
-        name='InputImages'
+        name='nipype_InputImages'
     )
     datasource.inputs.magnitude_images = magnitude_images
     datasource.inputs.qsm_images = qsm_images
@@ -35,7 +35,7 @@ def init_workflow(magnitude_images, qsm_images):
     # initial average
     initAvg = pe.Node(
         interface=ants.AverageImages(),
-        name='initAvg'
+        name='ants_average-images'
     )
     initAvg.inputs.dimension = 3
     initAvg.inputs.normalize = True
@@ -72,7 +72,7 @@ def init_workflow(magnitude_images, qsm_images):
     # datasink
     datasink = pe.Node(
         io.DataSink(base_directory=args.out_dir),
-        name="datasink"
+        name='nipype_datasink'
     )
     datasink.inputs.base_directory = os.path.join('out/test', "results")
     wf.connect([
@@ -196,6 +196,17 @@ if __name__ == "__main__":
         exit()
 
     wf = init_workflow(magnitude_images, qsm_images)
+
+    # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
+    with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:
+        # output command used to invoke script
+        f.write(str.join(" ", sys.argv))
+
+        # qsmxt, nipype, ants
+        f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
+        f.write("\n\n - Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")
+        f.write("\n\n")
 
     if args.qsub_account_string:
         wf.run(

@@ -23,18 +23,24 @@ def rename(old, new, always_show=False):
 def clean(data): 
     return data.replace('_', '')
 
+def get_folders_in(folder, full_path=False):
+    folders = list(filter(os.path.isdir, [os.path.join(folder, d) for d in os.listdir(folder)]))
+    if full_path: return folders
+    folders = [os.path.split(folder)[1] for folder in folders]
+    return folders
+
 def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_patterns, auto_yes):
     print('Converting all DICOMs to NIfTI...')
-    subjects = os.listdir(input_dir)
+    subjects = get_folders_in(input_dir)
     for subject in subjects:
-        sessions = os.listdir(os.path.join(input_dir, subject))
+        sessions = get_folders_in(os.path.join(input_dir, subject))
         for session in sessions:
             session_extra_folder = os.path.join(output_dir, clean(subject), session, "extra_data")
             os.makedirs(session_extra_folder, exist_ok=True)
             if 'dcm2niix_output.txt' in os.listdir(session_extra_folder):
                 print(f'Warning: {session_extra_folder} already has dcm2niix conversion output! Skipping...')
                 continue
-            series = os.listdir(os.path.join(input_dir, subject, session))
+            series = get_folders_in(os.path.join(input_dir, subject, session))
             for s in series:
                 series_dicom_folder = os.path.join(input_dir, subject, session, s)
                 print(f"dcm2niix -z n -o {session_extra_folder} {series_dicom_folder}")
@@ -42,11 +48,11 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
     
     print(f"Enumerating protocol names from JSON headers in '{output_dir}/.../extra_data' folders...")
     all_series_names = []
-    subjects = os.listdir(output_dir)
+    subjects = get_folders_in(output_dir)
     json_files = []
     json_datas = []
     for subject in subjects:
-        sessions = os.listdir(os.path.join(output_dir, subject))
+        sessions = get_folders_in(os.path.join(output_dir, subject))
         for session in sessions:
             session_extra_folder = os.path.join(output_dir, subject, session, "extra_data")
             json_files.extend(sorted(glob.glob(os.path.join(session_extra_folder, "*json"))))
@@ -129,7 +135,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
     print('Parsing JSON headers...')
     all_session_details = []
     for subject in subjects:
-        sessions = os.listdir(os.path.join(output_dir, subject))
+        sessions = get_folders_in(os.path.join(output_dir, subject))
         for session in sessions:
             session_extra_folder = os.path.join(output_dir, subject, session, "extra_data")
             session_anat_folder = os.path.join(output_dir, subject, session, "anat")
@@ -262,8 +268,25 @@ if __name__ == "__main__":
         help='Patterns used to identify t1w series for segmentation from the DICOM ProtocolName field (case insensitive)'
     )
 
-
     args = parser.parse_args()
+
+    args.input_dir = os.path.abspath(args.input_dir)
+    args.output_dir = os.path.abspath(args.output_dir)
+
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
+    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w') as f:
+        # output command used to invoke script
+        f.write(str.join(" ", sys.argv))
+
+        # qsmxt, dcm2niix, bids
+        f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - Stewart AW, Shaw T, Bollmann S. QSMxT: A Complete QSM Processing Framework. GitHub; 2022. https://github.com/QSMxT/QSMxT")
+        f.write("\n\n - Li X, Morgan PS, Ashburner J, Smith J, Rorden C. The first step for neuroimaging data analysis: DICOM to NIfTI conversion. J Neurosci Methods. 2016;264:47-56. doi:10.1016/j.jneumeth.2016.03.001")
+        f.write("\n\n - Rorden C et al. Rordenlab/Dcm2niix. GitHub; 2022. https://github.com/rordenlab/dcm2niix")
+        f.write("\n\n - Gorgolewski KJ, Auer T, Calhoun VD, et al. The brain imaging data structure, a format for organizing and describing outputs of neuroimaging experiments. Sci Data. 2016;3(1):160044. doi:10.1038/sdata.2016.44")
+        f.write("\n\n")
     
     convert_to_nifti(
         input_dir=args.input_dir,

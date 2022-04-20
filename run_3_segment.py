@@ -7,6 +7,7 @@ from nipype.interfaces.ants.resampling import ApplyTransforms
 from interfaces import nipype_interface_fastsurfer as fastsurfer
 from interfaces import nipype_interface_mgz2nii as mgz2nii
 
+import sys
 import time
 import glob
 import os
@@ -92,7 +93,7 @@ def init_run_workflow(subject, session, run):
             moving_image=t1_file
         ),
         # relevant outputs: out_matrix
-        name='register_t1_to_qsm'
+        name='ants_register-t1-to-qsm'
     )
     
     # segment t1
@@ -101,7 +102,7 @@ def init_run_workflow(subject, session, run):
             in_file=t1_file,
             num_threads=args.num_threads
         ),
-        name='segment_t1'
+        name='fastsurfer_segment-t1'
     )
     n_fastsurfer.plugin_args = {
         'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.num_threads}:mem=20gb:vmem=20gb',
@@ -111,7 +112,7 @@ def init_run_workflow(subject, session, run):
     # convert segmentation to nii
     n_fastsurfer_aseg_nii = Node(
         interface=mgz2nii.Mgz2NiiInterface(),
-        name='fastsurfer_aseg_nii',
+        name='nibabel_mgz2nii',
     )
     wf.connect([
         (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
@@ -125,7 +126,7 @@ def init_run_workflow(subject, session, run):
             reference_image=mag_file,
             interpolation="NearestNeighbor"
         ),
-        name='transform_segmentation_to_qsm'
+        name='ants_transform-segmentation-to-qsm'
     )
     wf.connect([
         (n_fastsurfer_aseg_nii, n_transform_segmentation, [('out_file', 'input_image')]),
@@ -137,7 +138,7 @@ def init_run_workflow(subject, session, run):
             base_directory=args.out_dir
             #container=out_dir
         ),
-        name='datasink'
+        name='nipype_datasink'
     )
     wf.connect([
         (n_fastsurfer_aseg_nii, n_datasink, [('out_file', 't1_segmentations')]),
@@ -293,6 +294,19 @@ if __name__ == "__main__":
     if not args.n_procs:
         available_ram_gb = psutil.virtual_memory().available / 1e9
         args.n_procs = min(int(available_ram_gb / 11), n_cpus)
+
+    # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
+    with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:
+        # output command used to invoke script
+        f.write(str.join(" ", sys.argv))
+
+        # qsmxt, nipype, fastsurfer, ants, nibabel
+        f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
+        f.write("\n\n - Henschel L, Conjeti S, Estrada S, Diers K, Fischl B, Reuter M. FastSurfer - A fast and accurate deep learning based neuroimaging pipeline. NeuroImage. 2020;219:117012. doi:10.1016/j.neuroimage.2020.117012")
+        f.write("\n\n - Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")
+        f.write("\n\n - Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
+        f.write("\n\n")
 
     # run workflow
     if args.qsub_account_string:

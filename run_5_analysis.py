@@ -4,7 +4,7 @@ import numpy as np
 import nibabel as nib
 import argparse
 import os
-from glob import glob
+import sys
 
 # get labels dictionary by parsing a labels CSV file
 def load_labels(label_filepath):
@@ -107,6 +107,16 @@ if __name__ == "__main__":
     # ensure directories are complete and absolute
     args.out_dir = os.path.abspath(args.out_dir)
     os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
+
+    # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
+    with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:
+        # output command used to invoke script
+        f.write(str.join(" ", sys.argv))
+
+        # qsmxt, nibabel
+        f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
+        f.write("\n\n")
 
     files_qsm = sorted(args.qsm_files)
     if args.labels_file:
