@@ -204,7 +204,7 @@ def init_session_workflow(subject, session):
         mn_bet = MapNode(
             interface=BET(frac=args.bet_fractional_intensity, mask=True, robust=True),
             iterfield=['in_file'],
-            name='fsl-bet_added-mask'
+            name='fsl-bet'
             # output: 'mask_file'
         )
         if args.inhomogeneity_correction:
