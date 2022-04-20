@@ -61,7 +61,7 @@ def init_session_workflow(subject, session):
     # datasink
     n_datasink = Node(
         interface=DataSink(base_directory=args.out_dir),
-        name='datasink'
+        name='nipype-datasink'
     )
 
     # exit if no runs found
@@ -86,7 +86,7 @@ def init_session_workflow(subject, session):
         interface=IdentityInterface(
             fields=['run'],
         ),
-        name="iterate_runs"
+        name='nipype_iterate-runs'
     )
     n_runPatterns.iterables = ('run', runs)
 
@@ -103,7 +103,7 @@ def init_session_workflow(subject, session):
             error_if_empty=False,
             num_files=args.num_echoes_to_process
         ),
-        name='select_files'
+        name='nipype_select-files'
     )
     wf.connect([
         (n_runPatterns, n_selectFiles, [('run', 'run')])
@@ -114,7 +114,7 @@ def init_session_workflow(subject, session):
         # -R : <min intensity> <max intensity>
         interface=ImageStats(op_string='-R'),
         iterfield=['in_file'],
-        name='get_stats',
+        name='fslstats_phase-range',
         # output: 'out_stat'
     )
     wf.connect([
@@ -140,7 +140,7 @@ def init_session_workflow(subject, session):
         return fsl_cmd
     mn_phase_scaled = MapNode(
         interface=ImageMaths(suffix="_scaled"),
-        name='phase_scaled',
+        name='fslmaths_scale-phase',
         iterfield=['in_file']
         # inputs: 'in_file', 'op_string'
         # output: 'out_file'
@@ -169,7 +169,7 @@ def init_session_workflow(subject, session):
             function=read_json
         ),
         iterfield=['in_file'],
-        name='read_json'
+        name='func_read-json'
     )
     wf.connect([
         (n_selectFiles, mn_params, [('params', 'in_file')])
@@ -180,7 +180,7 @@ def init_session_workflow(subject, session):
         mn_inhomogeneity_correction = MapNode(
             interface=makehomogeneous.MakeHomogeneousInterface(),
             iterfield=['in_file'],
-            name='correct_inhomogeneity'
+            name='mriresearchtools_correct-inhomogeneity'
             # output : out_file
         )
         wf.connect([
@@ -197,13 +197,14 @@ def init_session_workflow(subject, session):
             function=repeat
         ),
         iterfield=['in_file'],
-        name='repeat_mask'
+        name='func_repeat-mask'
     )
+
     if args.masking == 'bet' or args.add_bet:
         mn_bet = MapNode(
             interface=BET(frac=args.bet_fractional_intensity, mask=True, robust=True),
             iterfield=['in_file'],
-            name='fsl_bet'
+            name='fsl-bet_added-mask'
             # output: 'mask_file'
         )
         if args.inhomogeneity_correction:
@@ -223,7 +224,7 @@ def init_session_workflow(subject, session):
         mn_phaseweights = MapNode(
             interface=phaseweights.PhaseWeightsInterface(),
             iterfield=['in_file'],
-            name='phase_weights'
+            name='romeo_phase-weights'
             # output: 'out_file'
         )
         wf.connect([
@@ -236,7 +237,7 @@ def init_session_workflow(subject, session):
                 op_string=f'-thrp {args.threshold} -bin -ero -dilM'
             ),
             iterfield=['in_file'],
-            name='phase_mask'
+            name='fslmaths_phase-mask'
             # input  : 'in_file'
             # output : 'out_file'
         )
@@ -254,7 +255,7 @@ def init_session_workflow(subject, session):
                 op_string=f"-thrp {args.threshold} -bin -ero -dilM"
             ),
             iterfield=['in_file'],
-            name='magnitude_mask'
+            name='fslmaths_magnitude-mask'
             # output: 'out_file'
         )
 
@@ -283,7 +284,7 @@ def init_session_workflow(subject, session):
                 extra_arguments='--ignore-orientation --no-resampling'
             ),
             iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
-            name='qsm'
+            name='tgv-qsm_intermediate'
             # output: 'out_file'
         )
 
@@ -303,7 +304,7 @@ def init_session_workflow(subject, session):
         # qsm averaging
         n_qsm_average = Node(
             interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='qsm_average'
+            name='nibabel_qsm-average'
             # input : in_files
             # output : out_file
         )
@@ -327,7 +328,7 @@ def init_session_workflow(subject, session):
                 )
             ),
             iterfield=['in_file'],
-            name='mask_filled'
+            name='fslmaths_mask-filled'
         )
 
         if args.add_bet:
@@ -337,14 +338,14 @@ def init_session_workflow(subject, session):
                     op_string=f'-ero -ero'
                 ),
                 iterfield=['in_file'],
-                name='fsl_bet_erode'
+                name='fslmaths_erode-bet'
             )
             wf.connect([
                 (mn_bet, mn_bet_erode, [('mask_file', 'in_file')])
             ])
             mn_mask_plus_bet = MapNode(
                 interface=twopass.TwopassNiftiInterface(),
-                name='mask_plus_bet',
+                name='nibabel_mask-plus-bet',
                 iterfield=['in_file1', 'in_file2'],
             )
             wf.connect([
@@ -369,7 +370,7 @@ def init_session_workflow(subject, session):
                 extra_arguments='--ignore-orientation --no-resampling'
             ),
             iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
-            name='qsm_filledmask'
+            name='tgv-qsm_filled'
             # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
             # output: 'out_file'
         )
@@ -390,7 +391,7 @@ def init_session_workflow(subject, session):
         # qsm averaging
         n_qsm_filled_average = Node(
             interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='qsm_filledmask_average'
+            name='nibabel_qsm-filled-average'
             # input : in_files
             # output : out_file
         )
@@ -405,7 +406,7 @@ def init_session_workflow(subject, session):
         if args.two_pass:
             mn_qsm_twopass = MapNode(
                 interface=twopass.TwopassNiftiInterface(),
-                name='qsm_twopass',
+                name='nibabel_twopass',
                 iterfield=['in_file1', 'in_file2', 'in_maskFile'],
             )
             wf.connect([
@@ -416,7 +417,7 @@ def init_session_workflow(subject, session):
 
             n_qsm_twopass_average = Node(
                 interface=nonzeroaverage.NonzeroAverageInterface(),
-                name='qsm_twopass_average'
+                name='nibabel_twopass-average'
                 # input : in_files
                 # output: out_file
             )
@@ -645,16 +646,41 @@ if __name__ == "__main__":
     os.makedirs(args.work_dir, exist_ok=True)
     os.makedirs(args.out_dir, exist_ok=True)
 
-    # write "qsmxt_command.txt" with the command used to invoke the script
-    with open(os.path.join(args.out_dir, "qsmxt_command.txt"), 'w') as f:
-        f.write(str.join(" ", sys.argv))
-
     # make sure tgv_qsm is compiled on the target system before we start the pipeline:
     # process = subprocess.run(['tgv_qsm'])
 
     # run workflow
     #wf.write_graph(graph2use='flat', format='png', simple_form=False)
     wf = init_workflow()
+
+    # get all node names
+    node_names = [node._name.lower() for node in wf._get_all_nodes()]
+
+    def any_string_matches_any_node(strings):
+        return any(string in node_name for string in strings for node_name in node_names)
+
+    # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
+    with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:
+        f.write(str.join(" ", sys.argv))
+
+        f.write("\n\n - Stewart AW, Robinson SD, O’Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+
+        if any_string_matches_any_node(['fslstats', 'fslmaths']):
+            f.write("\n\n - Jenkinson M, Beckmann CF, Behrens TEJ, Woolrich MW, Smith SM. FSL. NeuroImage. 2012;62(2):782-790. doi:10.1016/j.neuroimage.2011.09.015")
+        if any_string_matches_any_node(['bet']):
+            f.write("\n\n - Smith SM. Fast robust automated brain extraction. Human Brain Mapping. 2002;17(3):143-155. doi:10.1002/hbm.10062")
+        if any_string_matches_any_node(['romeo']):
+            f.write("\n\n - Dymerska B, Eckstein K, Bachrata B, et al. Phase unwrapping with a rapid opensource minimum spanning tree algorithm (ROMEO). Magnetic Resonance in Medicine. 2021;85(4):2294-2308. doi:10.1002/mrm.28563")
+        if any_string_matches_any_node(['tgv']):
+            f.write("\n\n - Langkammer C, Bredies K, Poser BA, et al. Fast quantitative susceptibility mapping using 3D EPI and total generalized variation. NeuroImage. 2015;111:622-630. doi:10.1016/j.neuroimage.2015.02.041")
+        if any_string_matches_any_node(['correct-inhomogeneity']):
+            f.write("\n\n - Eckstein K, Trattnig S, Simon DR. A Simple homogeneity correction for neuroimaging at 7T. In: Proc. Intl. Soc. Mag. Reson. Med. International Society for Magnetic Resonance in Medicine; 2019. Abstract 2716. https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html")
+        if any_string_matches_any_node(['correct-inhomogeneity', 'romeo']):
+            f.write("\n\n - Eckstein K. MriResearchTools. 2022. https://github.com/korbinian90/MriResearchTools.jl")
+        if any_string_matches_any_node(['nibabel']):
+            f.write("\n\n - Brett M, Markiewicz CJ, Hanke M, et al. Nipy/Nibabel: 2.5.1. Zenodo; 2019. doi:10.5281/zenodo.3458246")
+        f.write("\n\n")
+
     if args.qsub_account_string:
         wf.run(
             plugin='PBSGraph',
