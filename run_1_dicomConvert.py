@@ -40,7 +40,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
                 print(f"dcm2niix -z n -o {session_extra_folder} {series_dicom_folder}")
                 subprocess.call(f"dcm2niix -z n -o {session_extra_folder} {series_dicom_folder} >> {os.path.join(session_extra_folder, 'dcm2niix_output.txt')}", executable='/bin/bash', shell=True)
     
-    print(f"Enumerating series names from JSON headers in '{output_dir}/.../extra_data' folders...")
+    print(f"Enumerating protocol names from JSON headers in '{output_dir}/.../extra_data' folders...")
     all_series_names = []
     subjects = os.listdir(output_dir)
     json_files = []
@@ -57,9 +57,9 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
         if json_datas[i]["Modality"] == "MR"
     ])))
     if not all_series_names:
-        print(f"Error: No valid series found in JSON headers in '{output_dir}/.../extra_data' folders!")
+        print(f"Error: No valid protocol names found in JSON headers in '{output_dir}/.../extra_data' folders!")
         exit(1)
-    print(f"All series names identified: {all_series_names}")
+    print(f"All protocol names identified: {all_series_names}")
 
     # identify series using patterns
     t2starw_series_names = []
@@ -147,7 +147,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
                     elif json_data['ProtocolName'].lower() in t1w_series_names:
                         details['series_type'] = 't1w'
                     details['series_num'] = json_data['SeriesNumber']
-                    details['part_type'] = 'phase' if 'P' in json_data['ImageType'] else 'magnitude'
+                    details['part_type'] = 'phase' if 'P' in (json_data['ImageType'] if 'ImageType' in json_data.keys() else 'M') else 'magnitude'
                     details['echo_time'] = json_data['EchoTime']
                     details['file_name'] = json_file.split('.json')[0]
                     details['run_num'] = None
