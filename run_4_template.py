@@ -197,6 +197,9 @@ if __name__ == "__main__":
 
     wf = init_workflow(magnitude_images, qsm_images)
 
+    os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
+    os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
+
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:
         # output command used to invoke script
