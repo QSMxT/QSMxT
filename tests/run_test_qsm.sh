@@ -95,7 +95,7 @@ if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; el
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
-[ -f /tmp/02_qsm_output/workflow_qsm/sub-170705-134431-std-1312211075243167001/ses-1/_run_run-1/correct_inhomogeneity/mapflow/_correct_inhomogeneity0/result__correct_inhomogeneity0.pklz ] && echo "[DEBUG]. Test OK." || exit 1
+[ -f /tmp/02_qsm_output/workflow_qsm/sub-170705-134431-std-1312211075243167001/ses-1/_run_run-1/mriresearchtools_correct-inhomogeneity/mapflow/_mriresearchtools_correct-inhomogeneity/result__mriresearchtools_correct-inhomogeneity0.pklz ] && echo "[DEBUG]. Test OK." || exit 1
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --add_bet --single_pass"
@@ -118,7 +118,7 @@ if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; el
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
-[ -f /tmp/02_qsm_output/workflow_qsm/sub-170705-134431-std-1312211075243167001/ses-1/_run_run-1/fsl_bet/mapflow/_fsl_bet0/result__fsl_bet0.pklz ] && echo "[DEBUG]. Test OK." || exit 1
+[ -f /tmp/02_qsm_output/workflow_qsm/sub-170705-134431-std-1312211075243167001/ses-1/_run_run-1/fsl-bet/mapflow/_fsl-bet0/result__fsl-bet0.pklz ] && echo "[DEBUG]. Test OK." || exit 1
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --extra_fill_strength 2 --single_pass"
