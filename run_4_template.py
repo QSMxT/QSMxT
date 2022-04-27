@@ -74,7 +74,6 @@ def init_workflow(magnitude_images, qsm_images):
         io.DataSink(base_directory=args.out_dir),
         name='nipype_datasink'
     )
-    datasink.inputs.base_directory = os.path.join('out/test', "results")
     wf.connect([
         (initAvg, datasink, [('output_average_image', 'initial_average')]),
         (buildTemplateIteration2, datasink, [('outputspec.template', 'magnitude_template')]),
