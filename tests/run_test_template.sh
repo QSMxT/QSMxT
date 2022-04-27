@@ -28,12 +28,16 @@ echo "[DEBUG] ls /tmp:"
 ls /tmp
 echo "[DEBUG] ls /tmp/04_template:"
 ls /tmp/04_template
-echo "[DEBUG] ls /tmp/04_template/out:"
-ls /tmp/04_template/out
-echo "[DEBUG] ls /tmp/04_template/out/test:"
-ls /tmp/04_template/out/test
-echo "[DEBUG] ls /tmp/04_template/out/test/results:"
-ls /tmp/04_template/out/test/results
 
-echo "[DEBUG]: /tmp/04_template/out/test/results"
-[ -d /tmp/04_template/out/test/results/ ] && echo "results exist." || exit 1
+echo "[DEBUG]: /tmp/04_template/magnitude_template"
+[ -d /tmp/04_template/magnitude_template/ ] && echo "magnitude template exists." || exit 1
+
+echo "[DEBUG]: /tmp/04_template/qsm_template"
+[ -d /tmp/04_template/qsm_template/ ] && echo "qsm template exists." || exit 1
+
+echo "[DEBUG]: /tmp/04_template/qsms_transformed"
+[ -d /tmp/04_template/qsms_transformed/ ] && echo "transformed qsm images exist." || exit 1
+
+echo "[DEBUG]: /tmp/04_template/transforms"
+[ -d /tmp/04_template/transforms/ ] && echo "transforms exist." || exit 1
+
