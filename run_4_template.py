@@ -165,11 +165,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # ensure directories are complete and absolute
-    if not args.work_dir: args.work_dir = args.out_dir
     args.bids_dir = os.path.abspath(args.bids_dir)
     args.qsm_dir = os.path.abspath(args.qsm_dir)
-    args.work_dir = os.path.abspath(args.work_dir)
     args.out_dir = os.path.abspath(args.out_dir)
+    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.out_dir)
 
     # environment variables for multi-threading
     os.environ["OMP_NUM_THREADS"] = "6"
@@ -197,8 +196,8 @@ if __name__ == "__main__":
 
     wf = init_workflow(magnitude_images, qsm_images)
 
-    os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
-    os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
+    os.makedirs(args.work_dir, exist_ok=True)
+    os.makedirs(args.out_dir, exist_ok=True)
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:

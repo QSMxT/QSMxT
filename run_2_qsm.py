@@ -98,7 +98,7 @@ def init_session_workflow(subject, session):
                 'phs': args.phase_pattern.replace("{run}", "{{run}}").format(subject=subject, session=session),
                 'params': args.phase_pattern.replace("{run}", "{{run}}").replace("nii.gz", "nii").replace("nii", "json").format(subject=subject, session=session)
             },
-            base_directory=os.path.abspath(args.bids_dir),
+            base_directory=args.bids_dir,
             sort_filelist=True,
             error_if_empty=False,
             num_files=args.num_echoes_to_process
@@ -591,10 +591,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     # ensure directories are complete and absolute
-    args.work_dir = args.out_dir
     args.bids_dir = os.path.abspath(args.bids_dir)
-    args.work_dir = os.path.abspath(args.work_dir)
     args.out_dir = os.path.abspath(args.out_dir)
+    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.out_dir)
 
     # this script's directory
     this_dir = os.path.dirname(os.path.abspath(__file__))

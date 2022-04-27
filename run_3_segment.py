@@ -247,10 +247,9 @@ if __name__ == "__main__":
     g_args = lambda:None
 
     # ensure directories are complete and absolute
-    if not args.work_dir: args.work_dir = args.out_dir
-    args.bids_dir = os.path.abspath(args.bids_dir)
-    args.work_dir = os.path.abspath(args.work_dir)
     args.out_dir = os.path.abspath(args.out_dir)
+    args.bids_dir = os.path.abspath(args.bids_dir)
+    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.out_dir)
 
     # this script's directory
     this_dir = os.path.dirname(os.path.abspath(__file__))
@@ -283,8 +282,8 @@ if __name__ == "__main__":
 
     wf = init_workflow()
 
-    os.makedirs(os.path.abspath(args.work_dir), exist_ok=True)
-    os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
+    os.makedirs(args.work_dir, exist_ok=True)
+    os.makedirs(args.out_dir, exist_ok=True)
 
     # get number of CPUs
     n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
