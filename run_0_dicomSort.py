@@ -71,7 +71,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
         patientID = clean_text(ds.get("PatientID", "NA"))
         studyDate = clean_text(ds.get("StudyDate", "NA"))
         studyDescription = clean_text(ds.get("StudyDescription", "NA"))
-        seriesDescription = clean_text(ds.get("SeriesDescription", "NA"))
+        protocolName = clean_text(ds.get("ProtocolName", "NA"))
         seriesNumber = clean_text(str(ds.get("SeriesNumber", "NA")))
     
         # generate new, standardized file name
@@ -93,7 +93,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
         
         # save files to a 3-tier nested folder structure
         subjFolderName = f"sub-{subj_name}"
-        seriesFolderName = f"{seriesNumber}_{seriesDescription}"
+        seriesFolderName = f"{seriesNumber}_{protocolName}"
     
         subjName_date = f"{subj_name}_{studyDate}"
 
