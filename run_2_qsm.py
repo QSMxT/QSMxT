@@ -32,8 +32,9 @@ def init_workflow():
         exit()
     wf = Workflow("workflow_qsm", base_dir=args.work_dir)
     wf.add_nodes([
-        init_subject_workflow(subject)
-        for subject in subjects
+        node for node in
+        [init_subject_workflow(subject) for subject in subjects]
+        if node
     ])
     return wf
 
@@ -50,64 +51,80 @@ def init_subject_workflow(
         exit()
     wf = Workflow(subject, base_dir=os.path.join(args.work_dir, "workflow_qsm"))
     wf.add_nodes([
-        init_session_workflow(subject, session)
-        for session in sessions
+        node for node in
+        [init_session_workflow(subject, session) for session in sessions]
+        if node
     ])
     return wf
 
 def init_session_workflow(subject, session):
-    wf = Workflow(session, base_dir=os.path.join(args.work_dir, "workflow_qsm", subject, session))
-
-    # datasink
-    n_datasink = Node(
-        interface=DataSink(base_directory=args.out_dir),
-        name='nipype-datasink'
-    )
-
     # exit if no runs found
     phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
     phase_files = glob.glob(phase_pattern)
     if not phase_files:
-        print(f"No phase files found matching pattern: {phase_pattern}")
-        exit()
+        print(f"Warning: No phase files found matching pattern: {phase_pattern}. Skipping {subject}/{session}")
+        return
     for phase_file in phase_files:
         if 'run-' not in phase_file:
-            print(f"No 'run-' identifier found in file: {phase_file}")
-            exit()
+            print(f"Warning: No 'run-' identifier found in file: {phase_file}. Skipping {subject}/{session}")
+            return
 
     # identify all runs
     runs = sorted(list(set([
         f"run-{os.path.split(path)[1][os.path.split(path)[1].find('run-') + 4: os.path.split(path)[1].find('_', os.path.split(path)[1].find('run-') + 4)]}"
         for path in phase_files
     ])))
+    
+    wf = Workflow(session, base_dir=os.path.join(args.work_dir, "workflow_qsm", subject, session))
+    wf.add_nodes([
+        node for node in
+        [init_run_workflow(subject, session, run) for run in runs]
+        if node
+    ])
+    return wf
 
-    # iterate across each run
-    n_runPatterns = Node(
-        interface=IdentityInterface(
-            fields=['run'],
-        ),
-        name='nipype_iterate-runs'
-    )
-    n_runPatterns.iterables = ('run', runs)
+def init_run_workflow(subject, session, run):
+    wf = Workflow(run, base_dir=os.path.join(args.work_dir, "workflow_qsm", subject, session, run))
 
     # get relevant files from this run
-    n_selectFiles = Node(
-        interface=sf.SelectFiles(
-            templates={
-                'mag': args.magnitude_pattern.replace("{run}", "{{run}}").format(subject=subject, session=session),
-                'phs': args.phase_pattern.replace("{run}", "{{run}}").format(subject=subject, session=session),
-                'params': args.phase_pattern.replace("{run}", "{{run}}").replace("nii.gz", "nii").replace("nii", "json").format(subject=subject, session=session)
-            },
-            base_directory=args.bids_dir,
-            sort_filelist=True,
-            error_if_empty=False,
-            num_files=args.num_echoes_to_process
-        ),
-        name='nipype_select-files'
+    phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.format(subject=subject, session=session, run=run))
+    phase_files = sorted(glob.glob(phase_pattern))[:args.num_echoes_to_process]
+    
+    magnitude_pattern = os.path.join(args.bids_dir, args.magnitude_pattern.format(subject=subject, session=session, run=run))
+    magnitude_files = sorted(glob.glob(magnitude_pattern))[:args.num_echoes_to_process]
+
+    params_pattern = os.path.join(args.bids_dir, args.phase_pattern.format(subject=subject, session=session, run=run).replace("nii.gz", "nii").replace("nii", "json"))
+    params_files = sorted(glob.glob(params_pattern))[:args.num_echoes_to_process]
+
+    masking = args.masking
+    add_bet = args.add_bet
+    inhomogeneity_correction = args.inhomogeneity_correction
+
+    if not phase_files:
+        print(f"Warning: No phase files found matching pattern: {phase_pattern}. Skipping {subject}/{session}/{run}")
+        return
+    if not magnitude_files and any([masking == 'magnitude-based', masking == 'bet', add_bet, inhomogeneity_correction]):
+        print(f"Warning: No magnitude files found matching pattern: {magnitude_pattern}. Reverting to phase-based masking for this run.")
+        masking = 'phase-based'
+        add_bet = False
+        inhomogeneity_correction = False
+
+    # datasink
+    n_datasink = Node(
+        interface=DataSink(base_directory=args.out_dir),
+        name='nipype_datasink'
     )
-    wf.connect([
-        (n_runPatterns, n_selectFiles, [('run', 'run')])
-    ])
+
+    # IDENTITY???
+    n_getfiles = Node(
+        IdentityInterface(
+            fields=['phase_files', 'magnitude_files', 'params_files']
+        ),
+        name='nipype_getfiles'
+    )
+    n_getfiles.inputs.phase_files = phase_files
+    n_getfiles.inputs.magnitude_files = magnitude_files
+    n_getfiles.inputs.params_files = params_files
 
     # scale phase data
     mn_stats = MapNode(
@@ -118,7 +135,7 @@ def init_session_workflow(subject, session):
         # output: 'out_stat'
     )
     wf.connect([
-        (n_selectFiles, mn_stats, [('phs', 'in_file')])
+        (n_getfiles, mn_stats, [('phase_files', 'in_file')])
     ])
     def scale_to_pi(min_and_max):
         from math import pi
@@ -146,7 +163,7 @@ def init_session_workflow(subject, session):
         # output: 'out_file'
     )
     wf.connect([
-        (n_selectFiles, mn_phase_scaled, [('phs', 'in_file')]),
+        (n_getfiles, mn_phase_scaled, [('phase_files', 'in_file')]),
         (mn_stats, mn_phase_scaled, [(('out_stat', scale_to_pi), 'op_string')])
     ])
 
@@ -172,11 +189,11 @@ def init_session_workflow(subject, session):
         name='func_read-json'
     )
     wf.connect([
-        (n_selectFiles, mn_params, [('params', 'in_file')])
+        (n_getfiles, mn_params, [('params_files', 'in_file')])
     ])
 
     # homogeneity filter
-    if args.inhomogeneity_correction:
+    if inhomogeneity_correction:
         mn_inhomogeneity_correction = MapNode(
             interface=makehomogeneous.MakeHomogeneousInterface(),
             iterfield=['in_file'],
@@ -184,7 +201,7 @@ def init_session_workflow(subject, session):
             # output : out_file
         )
         wf.connect([
-            (n_selectFiles, mn_inhomogeneity_correction, [('mag', 'in_file')])
+            (n_getfiles, mn_inhomogeneity_correction, [('magnitude_files', 'in_file')])
         ])
 
     # brain extraction
@@ -200,27 +217,27 @@ def init_session_workflow(subject, session):
         name='func_repeat-mask'
     )
 
-    if args.masking == 'bet' or args.add_bet:
+    if masking == 'bet' or add_bet:
         mn_bet = MapNode(
             interface=BET(frac=args.bet_fractional_intensity, mask=True, robust=True),
             iterfield=['in_file'],
             name='fsl-bet'
             # output: 'mask_file'
         )
-        if args.inhomogeneity_correction:
+        if inhomogeneity_correction:
             wf.connect([
                 (mn_inhomogeneity_correction, mn_bet, [('out_file', 'in_file')])
             ])
         else:
             wf.connect([
-                (n_selectFiles, mn_bet, [('mag', 'in_file')])
+                (n_getfiles, mn_bet, [('magnitude_files', 'in_file')])
             ])
 
-        if not args.add_bet:
+        if not add_bet:
             wf.connect([
                 (mn_bet, mn_mask, [('mask_file', 'in_file')])
             ])
-    if args.masking == 'phase-based':
+    if masking == 'phase-based':
         mn_phaseweights = MapNode(
             interface=phaseweights.PhaseWeightsInterface(),
             iterfield=['in_file'],
@@ -248,7 +265,7 @@ def init_session_workflow(subject, session):
         wf.connect([
             (mn_phasemask, mn_mask, [('out_file', 'in_file')])
         ])
-    elif args.masking == 'magnitude-based':
+    elif masking == 'magnitude-based':
         mn_magmask = MapNode(
             interface=ImageMaths(
                 suffix="_mask",
@@ -259,13 +276,13 @@ def init_session_workflow(subject, session):
             # output: 'out_file'
         )
 
-        if args.inhomogeneity_correction:
+        if inhomogeneity_correction:
             wf.connect([
                 (mn_inhomogeneity_correction, mn_magmask, [('out_file', 'in_file')])
             ])
         else:
             wf.connect([
-                (n_selectFiles, mn_magmask, [('mag', 'in_file')])
+                (n_getfiles, mn_magmask, [('magnitude_files', 'in_file')])
             ])
 
         wf.connect([
@@ -273,12 +290,12 @@ def init_session_workflow(subject, session):
         ])
     
     # QSM reconstruction
-    if args.two_pass or args.masking == 'bet':
+    if args.two_pass or masking == 'bet':
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
                 iterations=args.qsm_iterations,
                 alpha=[0.0015, 0.0005],
-                erosions=0 if args.masking in ['phase-based', 'magnitude-based'] else 5,
+                erosions=0 if masking in ['phase-based', 'magnitude-based'] else 5,
                 num_threads=args.qsm_threads,
                 out_suffix='_qsm',
                 extra_arguments='--ignore-orientation --no-resampling'
@@ -312,12 +329,12 @@ def init_session_workflow(subject, session):
             (mn_qsm, n_qsm_average, [('out_file', 'in_files')])
         ])
 
-        if args.masking == 'bet':
+        if masking == 'bet':
             wf.connect([
                 (n_qsm_average, n_datasink, [('out_file', 'qsm_final')]),
             ])
 
-    if args.masking in ['phase-based', 'magnitude-based']:
+    if masking in ['phase-based', 'magnitude-based']:
         mn_mask_filled = MapNode(
             interface=ImageMaths(
                 suffix='_fillh',
@@ -331,7 +348,7 @@ def init_session_workflow(subject, session):
             name='fslmaths_mask-filled'
         )
 
-        if args.add_bet:
+        if add_bet:
             mn_bet_erode = MapNode(
                 interface=ImageMaths(
                     suffix='_ero',
