@@ -94,6 +94,10 @@ echo "[DEBUG] checking outputs of run_2_qsm.py phase consistency (tests julia)"
 
 echo "[DEBUG] starting run_4_template.py"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output /tmp/04_template
+ls /tmp/04_template/workflow_template/
+ls /tmp/04_template/workflow_template/nipype_datasink
+ls /tmp/04_template/workflow_template/nipype_datasink/out
+ls /tmp/04_template/workflow_template/nipype_datasink/out/test/results
 echo "[DEBUG]: checking /tmp/04_template/workflow_template/nipype_datasink/out/test/results"
 [ -d /tmp/04_template/workflow_template/nipype_datasink/out/test/results/ ] && echo "results exist." || exit 1
 

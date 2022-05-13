@@ -21,7 +21,7 @@ docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_1_dicomConvert.py /tmp
 unzip /tmp/osfstorage/qsm_final.zip -d /tmp/02_qsm_output_precomputed/
 
 echo "[DEBUG] starting run_4_template.py"
-docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output_precomputed/* /tmp/04_template
+docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output_precomputed /tmp/04_template
 
 echo "[DEBUG] testing if outputs are there:"
 echo "[DEBUG] ls /tmp:"
