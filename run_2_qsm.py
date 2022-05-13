@@ -100,22 +100,20 @@ def init_run_workflow(subject, session, run):
     add_bet = args.add_bet
     inhomogeneity_correction = args.inhomogeneity_correction
 
+    # handle any errors
     if not phase_files:
-        print(f"Warning: No phase files found matching pattern: {phase_pattern}. Skipping {subject}/{session}/{run}")
+        print(f"Warning for {subject}/{session}/{run}: No phase files found matching pattern: {phase_pattern}. Skipping run...")
         return
-    if not magnitude_files and any([masking == 'magnitude-based', masking == 'bet', add_bet, inhomogeneity_correction]):
-        print(f"Warning: No magnitude files found matching pattern: {magnitude_pattern}. Reverting to phase-based masking for this run.")
+    if len(phase_files) != len(params_files):
+        print(f"Warning for {subject}/{session}/{run}: An unequal number of JSON and phase files are present. Skipping run...")
+        return
+    if (not magnitude_files and any([masking == 'magnitude-based', masking == 'bet', add_bet, inhomogeneity_correction])):
+        print(f"Warning for {subject}/{session}/{run}: No magnitude files found matching pattern: {magnitude_pattern}. Reverting to phase-based masking for this run.")
         masking = 'phase-based'
         add_bet = False
         inhomogeneity_correction = False
 
-    # datasink
-    n_datasink = Node(
-        interface=DataSink(base_directory=args.out_dir),
-        name='nipype_datasink'
-    )
-
-    # IDENTITY???
+    # get files
     n_getfiles = Node(
         IdentityInterface(
             fields=['phase_files', 'magnitude_files', 'params_files']
@@ -125,6 +123,12 @@ def init_run_workflow(subject, session, run):
     n_getfiles.inputs.phase_files = phase_files
     n_getfiles.inputs.magnitude_files = magnitude_files
     n_getfiles.inputs.params_files = params_files
+
+    # datasink
+    n_datasink = Node(
+        interface=DataSink(base_directory=args.out_dir),
+        name='nipype_datasink'
+    )
 
     # scale phase data
     mn_stats = MapNode(
