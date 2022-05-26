@@ -121,7 +121,7 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     source ~/.bashrc
     conda create -n qsmxt python=3.6
     conda activate qsmxt
-    conda install -c conda-forge nipype=1.6.0
+    conda install -c conda-forge nipype=1.6.0 scipy=1.8.0
     pip install bidscoin
     ```
 
