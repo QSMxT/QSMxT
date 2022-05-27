@@ -230,7 +230,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--magnitude_pattern',
         type=str,
-        default='*magnitude*'
+        default='*magnitude*',
         help='Pattern used to match t2starw magnitude files for QSM'
     )
 
