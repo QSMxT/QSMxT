@@ -38,11 +38,11 @@ There is also a docker image available:
 
 For Windows:
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.10:20220302
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.11:20220526
 ```
 For Linux/Mac:
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.10:20220302
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.11:20220526
 ```
 
 ## QSMxT Usage
@@ -103,10 +103,10 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.10_20220302
-    cd qsmxt_1.1.10_20220302
-    ./run_transparent_singularity.sh --container qsmxt_1.1.10_20220302.simg
-    source activate_qsmxt_1.1.10_20220302.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.11_20220526
+    cd qsmxt_1.1.11_20220526
+    ./run_transparent_singularity.sh --container qsmxt_1.1.11_20220526.simg
+    source activate_qsmxt_1.1.11_20220526.simg.sh
     ```
 
 3. Clone the QSMxT repository:
@@ -121,7 +121,7 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     source ~/.bashrc
     conda create -n qsmxt python=3.6
     conda activate qsmxt
-    conda install -c conda-forge nipype=1.6.0
+    conda install -c conda-forge nipype=1.6.0 scipy=1.8.0
     pip install bidscoin
     ```
 
