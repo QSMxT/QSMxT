@@ -292,7 +292,10 @@ if __name__ == "__main__":
     # available CPUs and RAM (max 1 per 11 GB of available RAM)
     if not args.n_procs:
         available_ram_gb = psutil.virtual_memory().available / 1e9
-        args.n_procs = min(int(available_ram_gb / 11), n_cpus)
+        args.n_procs = max(1, min(int(available_ram_gb / 11), n_cpus))
+        if available_ram_gb < 11:
+            print(f"Warning: Less than 11 GB of memory available ({available_ram_gb} GB). At least 11 GB is recommended. You may need to close background programs.")
+        print("Running with", args.n_procs, "processors.")
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:

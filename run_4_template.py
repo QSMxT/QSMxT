@@ -178,7 +178,10 @@ if __name__ == "__main__":
     n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
     if not args.n_procs:
         available_ram_gb = psutil.virtual_memory().available / 1e9
-        args.n_procs = min(int(available_ram_gb / 3), n_cpus)
+        args.n_procs = max(1, min(int(available_ram_gb / 3), n_cpus))
+        if available_ram_gb < 3:
+            print(f"Warning: Less than 3 GB of memory available ({available_ram_gb} GB). At least 3 GB is recommended. You may need to close background programs.")
+        print("Running with", args.n_procs, "processors.")
 
     # find input images
     magnitude_pattern = os.path.join(args.bids_dir, args.magnitude_pattern.format(subject=args.subject_pattern, session=args.session_pattern, run='*'))
