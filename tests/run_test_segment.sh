@@ -64,7 +64,7 @@ then
 fi
 
 echo "[DEBUG] starting run_5_analysis.py"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_5_analysis.py --labels_file /tmp/${timeStamp}/QSMxT/aseg_labels.csv --segmentations /tmp/${timeStamp}/03_segmentation/qsm_segmentations/*.nii --qsm_files /tmp/02_qsm_output_precomputed/qsm_final/*/*.nii --out_dir /tmp/${timeStamp}/05_analysis
+sudo docker run -v /tmp:/tmp $container python3 /tmp/${timeStamp}/QSMxT/run_5_analysis.py --labels_file /tmp/${timeStamp}/QSMxT/aseg_labels.csv --segmentations /tmp/${timeStamp}/03_segmentation/qsm_segmentations/*.nii --qsm_files /tmp/02_qsm_output_precomputed/qsm_final/*.nii --out_dir /tmp/${timeStamp}/05_analysis
 
 echo "[DEBUG] checking output of run_5_analysis.py"
 [ -f  /tmp/${timeStamp}/05_analysis/sub-170705-134431-std-1312211075243167001_ses-1_run-1_T1w_segmentation_nii_trans.csv ] && echo "FILE exists." || exit 1
