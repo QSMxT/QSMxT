@@ -53,13 +53,13 @@ def nifti_to_bids(input_dir, output_dir):
 
     csv_file = os.path.join(args.output_dir, 'dataset.csv')
     if os.path.exists(csv_file):
-        print(f"CSV file '{csv_file}' found!")
+        print(f"CSV file '{csv_file}' found in output folder!")
         csv_contents = []
         with open(csv_file, "r") as f:
             for line in f:
                 line_contents = line.replace("\n", "").split(",")
                 if len(line_contents) != 10:
-                    print('Incorrect number of columns in CSV! Delete it and try again.')
+                    print('Incorrect number of columns in CSV! Delete it or correct it and try again.')
                     exit()
                 if '' in line_contents:
                     print('CSV file incomplete! Delete it or complete it and try again.')
@@ -81,16 +81,16 @@ def nifti_to_bids(input_dir, output_dir):
             details['series_type'] = line_contents[8]
             details['part_type'] = line_contents[9]
             file_details.append(details)
-    else:    
-        print('reading file list...')
+    else:
+        print(f"Searching for NIfTI files in input directory '{args.input_dir}'...")
         unsorted_list = []
         for root, dirs, files in os.walk(input_dir):
             for f in files:
                 if f[-4:] == '.nii' or f[-7:] == '.nii.gz':
                     unsorted_list.append(os.path.join(root, f))
-        print(f'{len(unsorted_list)} nifti files found.')
+        print(f'Found {len(unsorted_list)} NIfTI files.')
 
-        print(f'extracting details from file paths and corresponding JSON files...')
+        print(f'Extracting any relevant details from filepaths and corresponding JSON files using match patterns and regular expressions...')
         file_details = []
         info_needed = False
         for nifti_file in unsorted_list:
@@ -155,10 +155,10 @@ def nifti_to_bids(input_dir, output_dir):
 
             info_needed = info_needed or any(v is None for v in list(details.values()))
             file_details.append(details)
-        print("finished extracting details")
+        print("Finished extracting details.")
 
         if info_needed:
-            print("additional information needed!")
+            print(f"Some information is missing! Writing all details to spreadsheet '{csv_file}'...")
             f = open(csv_file, 'w')
             f.write('filename,subject id,session id,run number,echo number,echo_time (ms),multi-echo (yes or no),field_strength (T),series_type (t2starw or t1w),part_type (magnitude or phase)\n')
             for d in file_details:
@@ -166,39 +166,37 @@ def nifti_to_bids(input_dir, output_dir):
                 line = line.replace(",None", ",").replace("None,", ",")
                 f.write(line)
             f.close()
-            print(f"PLEASE REVIEW SPREADSHEET {os.path.join(args.output_dir, 'dataset.csv')} AND FILL MISSING INFORMATION!")
+            print(f"PLEASE REVIEW SPREADSHEET '{csv_file}', FILL IN MISSING INFORMATION AND TRY AGAIN.")
             exit()
 
-    print(f"copying files into {args.output_dir}...")
-
+    print(f"Computing new file names...")
     for details in file_details:
         ext = 'nii.gz' if details['filename'][:-6] == 'nii.gz' else 'nii'
         if details['series_type'] == 't1w':
             details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject']}", f"ses-{details['session']}", "anat", f"sub-{details['subject']}_ses-{details['session']}_run-{details['run']}_T1w.{ext}")
-        elif details['multi-echo'] == 1:
+        elif details['multi-echo'].lower() == 'no':
             details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject']}", f"ses-{details['session']}", "anat", f"sub-{details['subject']}_ses-{details['session']}_run-{details['run']}_part-{details['part_type']}_T2starw.{ext}")
         else:
             details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject']}", f"ses-{details['session']}", "anat", f"sub-{details['subject']}_ses-{details['session']}_run-{details['run']}_echo-{details['echo']}_part-{details['part_type']}_MEGRE.{ext}")
 
     # if running interactively, show a summary of the renames prior to actioning
     if sys.__stdin__.isatty() and not args.auto_yes:
-        print("Summary of identified files and proposed renames (following BIDS standard):")
+        print("Summary of identified files and proposed new names (following BIDS standard):")
         for f in file_details:
             print(f"{os.path.split(f['filename'])[1]} \n\t -> {os.path.split(f['new_name'])[1]}")
-        if input("Confirm copy + renaming? (n for no): ").strip().lower() in ["n", "no"]:
+        if input("Confirm copy + renames? (n for no): ").strip().lower() in ["n", "no"]:
             exit()
 
     # copy/rename all files
     print("Copying NIfTI files with renames...")
     for details in file_details:
         copy(details['filename'], details['new_name'], always_show=args.auto_yes)
-    print("Copying JSON files with renames and creating them if needed...")
+    print("Copying JSON files with renames and generating them if needed...")
     for details in file_details:
         f = json_filename(details['filename'])
         if os.path.exists(f):
             copy(f, json_filename(details['new_name']), always_show=args.auto_yes)
         else:
-            print(f"Automatically generating JSON file '{json_filename(details['new_name'])}'")
             dictionary = { 
                 "EchoTime" : float(details['echo_time']),
                 "MagneticFieldStrength" : float(details['field_strength']),
@@ -208,7 +206,8 @@ def nifti_to_bids(input_dir, output_dir):
             }
             with open(json_filename(details['new_name']), 'w') as json_file:
                 json.dump(dictionary, json_file)
-    print("done!")
+            print(f"Automatically generated JSON file '{json_filename(details['new_name'])}'")
+    print("Done!")
 
 
 if __name__ == "__main__":
