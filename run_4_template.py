@@ -13,6 +13,7 @@ import nipype.interfaces.io as io
 import nipype.pipeline.engine as pe
 
 from scripts.antsBuildTemplate import ANTSTemplateBuildSingleIterationWF
+from scripts.get_qsmxt_version import get_qsmxt_version
 
 def init_workflow(magnitude_images, qsm_images):
 
@@ -71,7 +72,7 @@ def init_workflow(magnitude_images, qsm_images):
 
     # datasink
     datasink = pe.Node(
-        io.DataSink(base_directory=args.out_dir),
+        io.DataSink(base_directory=args.output_dir),
         name='nipype_datasink'
     )
     wf.connect([
@@ -105,14 +106,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        'out_dir',
+        'output_dir',
         help='Output folder; will be created if it does not exist.'
     )
 
     parser.add_argument(
         '--work_dir',
         default=None,
-        help='NiPype working directory; defaults to \'work\' within \'out_dir\'.'
+        help='NiPype working directory; defaults to \'work\' within \'output_dir\'.'
     )
 
     parser.add_argument(
@@ -166,8 +167,8 @@ if __name__ == "__main__":
     # ensure directories are complete and absolute
     args.bids_dir = os.path.abspath(args.bids_dir)
     args.qsm_dir = os.path.abspath(args.qsm_dir)
-    args.out_dir = os.path.abspath(args.out_dir)
-    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.out_dir)
+    args.output_dir = os.path.abspath(args.output_dir)
+    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.output_dir)
 
     # environment variables for multi-threading
     os.environ["OMP_NUM_THREADS"] = "6"
@@ -199,15 +200,20 @@ if __name__ == "__main__":
     wf = init_workflow(magnitude_images, qsm_images)
 
     os.makedirs(args.work_dir, exist_ok=True)
-    os.makedirs(args.out_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-    with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:
+    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w') as f:
+        # output QSMxT version
+        f.write(f"QSMxT: {get_qsmxt_version()}")
+        f.write("\n\n")
+
         # output command used to invoke script
         f.write(str.join(" ", sys.argv))
 
         # qsmxt, nipype, ants
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
         f.write("\n\n - Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")
         f.write("\n\n")
