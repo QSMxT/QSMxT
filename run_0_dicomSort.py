@@ -8,6 +8,7 @@ import argparse
 import os
 import sys
 import pydicom  # pydicom is using the gdcm package for decompression
+from scripts.get_qsmxt_version import get_qsmxt_version
 
 def empty_dirs(root_dir='.', recursive=True):
     empty_dirs = []
@@ -169,11 +170,16 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
 
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w') as f:
+        # output QSMxT version
+        f.write(f"QSMxT: {get_qsmxt_version()}")
+        f.write("\n\n")
+
         # output command used to invoke script
         f.write(str.join(" ", sys.argv))
 
         # qsmxt, pydicom, sort_dicoms.py
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Mason D, scaramallion, mrbean-bremen, et al. Pydicom/Pydicom: Pydicom 2.3.0. Zenodo; 2022. doi:10.5281/zenodo.6394735")
         f.write("\n\n - Weston A. alex-weston-13/sort_dicoms.py. GitHub; 2020. https://gist.github.com/alex-weston-13/4dae048b423f1b4cb9828734a4ec8b83")
         f.write("\n\n")

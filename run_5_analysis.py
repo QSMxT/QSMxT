@@ -6,6 +6,8 @@ import argparse
 import os
 import sys
 
+from scripts.get_qsmxt_version import get_qsmxt_version
+
 # get labels dictionary by parsing a labels CSV file
 def load_labels(label_filepath):
     # read label file
@@ -90,7 +92,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--out_dir',
+        '--output_dir',
         help='Output directory to write the quantitative data to.'
     )
 
@@ -105,16 +107,21 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # ensure directories are complete and absolute
-    args.out_dir = os.path.abspath(args.out_dir)
-    os.makedirs(os.path.abspath(args.out_dir), exist_ok=True)
+    args.output_dir = os.path.abspath(args.output_dir)
+    os.makedirs(os.path.abspath(args.output_dir), exist_ok=True)
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-    with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:
+    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w') as f:
+        # output QSMxT version
+        f.write(f"QSMxT: {get_qsmxt_version()}")
+        f.write("\n\n")
+        
         # output command used to invoke script
         f.write(str.join(" ", sys.argv))
 
         # qsmxt, nibabel
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
         f.write("\n\n")
 
@@ -146,7 +153,7 @@ if __name__ == "__main__":
 
             # write header to file
             f_name = (files_seg[i].split('/')[-1]).replace('.nii.gz', '.nii').replace('.nii', '.csv')
-            f = open(os.path.join(args.out_dir, f_name), 'w')
+            f = open(os.path.join(args.output_dir, f_name), 'w')
             f.write('roi,num_voxels,min,max,median,mean,std\n')
 
             # write data to file
@@ -170,7 +177,7 @@ if __name__ == "__main__":
 
         # write header to file
         f_name = os.path.split(args.segmentations[0])[1].replace('.nii.gz', '.nii').replace('.nii', '.csv')
-        f = open(os.path.join(args.out_dir, f_name), 'w')
+        f = open(os.path.join(args.output_dir, f_name), 'w')
         f.write('subject,roi,num_voxels,min,max,median,mean,std\n')
         
         # for each subject

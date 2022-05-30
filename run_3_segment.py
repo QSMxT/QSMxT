@@ -3,6 +3,7 @@ from nipype.pipeline.engine import Workflow, Node
 from nipype.interfaces.io import DataSink
 from nipype.interfaces.ants.registration import RegistrationSynQuick
 from nipype.interfaces.ants.resampling import ApplyTransforms
+from scripts.get_qsmxt_version import get_qsmxt_version
 
 from interfaces import nipype_interface_fastsurfer as fastsurfer
 from interfaces import nipype_interface_mgz2nii as mgz2nii
@@ -135,8 +136,8 @@ def init_run_workflow(subject, session, run):
 
     n_datasink = Node(
         interface=DataSink(
-            base_directory=args.out_dir
-            #container=out_dir
+            base_directory=args.output_dir
+            #container=output_dir
         ),
         name='nipype_datasink'
     )
@@ -164,14 +165,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        'out_dir',
+        'output_dir',
         help='Output segmentation directory; will be created if it does not exist.'
     )
 
     parser.add_argument(
         '--work_dir',
         default=None,
-        help='NiPype working directory; defaults to \'work\' within \'out_dir\'.'
+        help='NiPype working directory; defaults to \'work\' within \'output_dir\'.'
     )
 
     parser.add_argument(
@@ -247,9 +248,9 @@ if __name__ == "__main__":
     g_args = lambda:None
 
     # ensure directories are complete and absolute
-    args.out_dir = os.path.abspath(args.out_dir)
+    args.output_dir = os.path.abspath(args.output_dir)
     args.bids_dir = os.path.abspath(args.bids_dir)
-    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.out_dir)
+    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.output_dir)
 
     # this script's directory
     this_dir = os.path.dirname(os.path.abspath(__file__))
@@ -283,7 +284,7 @@ if __name__ == "__main__":
     wf = init_workflow()
 
     os.makedirs(args.work_dir, exist_ok=True)
-    os.makedirs(args.out_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
 
     # get number of CPUs
     n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
@@ -298,12 +299,17 @@ if __name__ == "__main__":
         print("Running with", args.n_procs, "processors.")
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-    with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:
+    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w') as f:
+        # output QSMxT version
+        f.write(f"QSMxT: {get_qsmxt_version()}")
+        f.write("\n\n")
+
         # output command used to invoke script
         f.write(str.join(" ", sys.argv))
 
         # qsmxt, nipype, fastsurfer, ants, nibabel
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
         f.write("\n\n - Henschel L, Conjeti S, Estrada S, Diers K, Fischl B, Reuter M. FastSurfer - A fast and accurate deep learning based neuroimaging pipeline. NeuroImage. 2020;219:117012. doi:10.1016/j.neuroimage.2020.117012")
         f.write("\n\n - Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")

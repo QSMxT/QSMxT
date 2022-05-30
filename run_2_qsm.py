@@ -10,6 +10,7 @@ from nipype.interfaces.fsl import BET, ImageMaths, ImageStats
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
+from scripts.get_qsmxt_version import get_qsmxt_version
 
 from interfaces import nipype_interface_selectfiles as sf
 from interfaces import nipype_interface_tgv_qsm as tgv
@@ -126,7 +127,7 @@ def init_run_workflow(subject, session, run):
 
     # datasink
     n_datasink = Node(
-        interface=DataSink(base_directory=args.out_dir),
+        interface=DataSink(base_directory=args.output_dir),
         name='nipype_datasink'
     )
 
@@ -467,7 +468,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        'out_dir',
+        'output_dir',
         help='Output QSM folder; will be created if it does not exist.'
     )
 
@@ -613,8 +614,8 @@ if __name__ == "__main__":
     
     # ensure directories are complete and absolute
     args.bids_dir = os.path.abspath(args.bids_dir)
-    args.out_dir = os.path.abspath(args.out_dir)
-    args.work_dir = os.path.abspath(args.out_dir)
+    args.output_dir = os.path.abspath(args.output_dir)
+    args.work_dir = os.path.abspath(args.output_dir)
 
     # this script's directory
     this_dir = os.path.dirname(os.path.abspath(__file__))
@@ -664,7 +665,7 @@ if __name__ == "__main__":
     args.qsm_threads = 1#args.n_procs if not args.qsub_account_string else 1
 
     os.makedirs(args.work_dir, exist_ok=True)
-    os.makedirs(args.out_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
 
     # make sure tgv_qsm is compiled on the target system before we start the pipeline:
     # process = subprocess.run(['tgv_qsm'])
@@ -680,12 +681,17 @@ if __name__ == "__main__":
         return any(string in node_name for string in strings for node_name in node_names)
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-    with open(os.path.join(args.out_dir, "details_and_citations.txt"), 'w') as f:
+    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w') as f:
+        # output QSMxT version
+        f.write(f"QSMxT: {get_qsmxt_version()}")
+        f.write("\n\n")
+
         # output command used to invoke script
         f.write(str.join(" ", sys.argv))
 
         # qsmxt, nipype
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
 
         if any_string_matches_any_node(['fslstats', 'fslmaths']):
