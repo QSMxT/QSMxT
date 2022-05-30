@@ -4,7 +4,7 @@ QSMxT is a complete and end-to-end QSM processing and analysis framework that ex
 
 QSMxT provides pipelines implemented in Python that:
 
-1. Automatically convert DICOM data to the Brain Imaging Data Structure (BIDS)
+1. Automatically convert unorganised DICOM or NIfTI data to the Brain Imaging Data Structure (BIDS)
 2. Automatically reconstruct QSM, including steps for:
    1. Robust masking without anatomical priors
    2. Phase unwrapping (Laplacian based)
@@ -30,7 +30,7 @@ A user friendly way of running QSMxT in Windows, Mac or Linux is via the NeuroDe
 3. Run the Neurodesktop container and open it in a browser window
 4. Start QSMxT from the applications menu in the desktop
    (*Neurodesk* > *Quantitative Imaging* > *qsmxt*)
-3. Follow the QSMxT usage instructions in the section below. Note that the `/neurodesktop-storage` folder is shared with the host OS for data sharing purposes (usually in `~/neurodesktop-storage` or `C:/neurodesktop-storage`). Begin by copying your DICOM data into a folder in this directory on the host OS, then reach the folder by entering `cd /neurodesktop-storage` into the QSMxT window.
+3. Follow the QSMxT usage instructions in the section below. Note that the `/neurodesktop-storage` folder is shared with the host OS for data sharing purposes (usually in `~/neurodesktop-storage` or `C:/neurodesktop-storage`). Begin by copying your DICOM data (or NIfTI data) into a folder in this directory on the host OS, then reach the folder by entering `cd /neurodesktop-storage` into the QSMxT window.
 
 ### Docker container
 
@@ -46,12 +46,20 @@ docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.11
 ```
 
 ## QSMxT Usage
-1. Convert DICOM data to BIDS:
+1. Convert DICOM or NIfTI data to BIDS:
     ```bash
+    # DICOM TO BIDS (recommended)
     python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
     python3 /opt/QSMxT/run_1_dicomConvert.py 00_dicom 01_bids
+
+    # NIFTI TO BIDS (if DICOMs are not available)
+    python3 /opt/QSMxT/run_1_niftiConvert.py REPLACE_WITH_YOUR_NIFTI_INPUT_DATA_DIRECTORY 01_bids
     ```
-Carefully read the output of the `run_1_dicomConvert.py` script to ensure data were correctly recognized and converted. You can also pass command line arguments to identify the runs, e.g. `python3 /opt/QSMxT/run_1_dicomConvert.py 00_dicom 01_bids --t2starw_series_patterns *gre* --t1w_series_patterns *mp2rage*`. If the data were acquired on a GE scanner the complex data needs to be corrected by applying an FFT shift, this can be done with `python /opt/QSMxT/run_1_fixGEphaseFFTshift.py 01_bids/sub*/ses*/anat/*.nii*` .
+    - If converting from DICOMs, carefully read the output of the `run_1_dicomConvert.py` script to ensure data were correctly recognized and converted. You can also pass command line arguments to identify the acquisition protocol names, e.g. `python3 /opt/QSMxT/run_1_dicomConvert.py 00_dicom 01_bids --t2starw_series_patterns *gre* --t1w_series_patterns *mp2rage*`.
+
+    - If converting from NIfTI, carefully read the output of the `run_1_niftiConvert.py` script to ensure data were correctly recognized and converted. The script will try to identify any important details from the filenames and from adjacent JSON header files, if available. It retrieves this information using customisable patterns and regular expressions which can be overridden using command-line arguments (see the output using the `--help` flag). If any information is missing, you will be prompted to fill out a CSV spreadsheet with the missing information before running the conversion script again using the same command. You can open the CSV file in a spreadsheet reader such as Microsoft Excel or LibreOffice Calc.
+
+    - If the data were acquired on a GE scanner, the complex data needs to be corrected by applying an FFT shift, this can be done with `python /opt/QSMxT/run_1_fixGEphaseFFTshift.py 01_bids/sub*/ses*/anat/*.nii*`.
 
 2. Run QSM pipeline:
     ```bash
