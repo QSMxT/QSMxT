@@ -83,6 +83,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
         fileName = modality + "." + seriesInstanceUID + "." + instanceNumber + extension
 
         subj_name = patientName if use_patient_names else patientID
+        subj_name = subj_name.replace('-', '').replace('_', '')
         
         # uncompress files (using the gdcm package)
         try:

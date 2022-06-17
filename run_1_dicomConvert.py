@@ -6,6 +6,8 @@ import subprocess
 import glob
 import json
 import fnmatch
+import datetime
+from scripts.get_qsmxt_version import get_qsmxt_version
 
 def load_json(path):
     f = open(path)
@@ -132,6 +134,33 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
     if not t1w_series_names:
         print(f"Warning: No t1w series found matching patterns {t1w_series_patterns}! Automated segmentation will not be possible.")
     
+    # create required dataset_description.json file
+    print('Generating datset description details...')
+    dataset_description = {
+        "Name" : f"QSMxT BIDS ({datetime.date.today()})",
+        "BIDSVersion" : "1.7.0",
+        "GeneratedBy" : [{
+            "Name" : "QSMxT",
+            "Version": f"{get_qsmxt_version()}",
+            "CodeURL" : "https://github.com/QSMxT/QSMxT"
+        }],
+        "Authors" : ["ADD AUTHORS HERE"]
+    }
+    print('Writing dataset_description.json...')
+    with open(os.path.join(args.output_dir, 'dataset_description.json'), 'w', encoding='utf-8') as dataset_json_file:
+        json.dump(dataset_description, dataset_json_file)
+    print('Done writing dataset_description.json')
+
+    print('Writing .bidsignore file...')
+    with open(os.path.join(args.output_dir, '.bidsignore'), 'w') as bidsignore_file:
+        bidsignore_file.write('*dcm2niix_output.txt\n')
+        bidsignore_file.write('details_and_citations.txt\n')
+    print('Done writing .bidsignore file')
+
+    with open(os.path.join(args.output_dir, 'README'), 'w') as readme_file:
+        readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
+        readme_file.write(f"\nDescribe your dataset here.\n")
+
     print('Parsing JSON headers...')
     all_session_details = []
     for subject in subjects:
@@ -153,7 +182,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
                     elif json_data['ProtocolName'].lower() in t1w_series_names:
                         details['series_type'] = 't1w'
                     details['series_num'] = json_data['SeriesNumber']
-                    details['part_type'] = 'phase' if 'P' in (json_data['ImageType'] if 'ImageType' in json_data.keys() else 'M') else 'magnitude'
+                    details['part_type'] = 'phase' if 'P' in (json_data['ImageType'] if 'ImageType' in json_data.keys() else 'M') else 'mag'
                     details['echo_time'] = json_data['EchoTime']
                     details['file_name'] = json_file.split('.json')[0]
                     details['run_num'] = None
