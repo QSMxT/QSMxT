@@ -170,7 +170,7 @@ if __name__ == "__main__":
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w') as f:
+    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version
         f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write("\n\n")

@@ -299,7 +299,7 @@ if __name__ == "__main__":
         print("Running with", args.n_procs, "processors.")
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w') as f:
+    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version
         f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write("\n\n")

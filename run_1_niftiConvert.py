@@ -23,7 +23,7 @@ def copy(old, new, always_show=False):
 
 
 def load_json(path):
-    f = open(path)
+    f = open(path, encoding='utf-8')
     j = json.load(f)
     f.close()
     return j
@@ -58,7 +58,7 @@ def find_files_with_extension(input_dir, extension):
 
 def get_details_from_csv(csv_file):
     csv_contents = []
-    with open(csv_file, "r") as f:
+    with open(csv_file, "r", encoding='utf-8') as f:
         for line in f:
             line_contents = line.replace("\n", "").split(",")
             if len(line_contents) != 10:
@@ -202,7 +202,7 @@ def update_details_with_jsons(all_details):
 
 
 def write_details_to_csv(all_details):
-    f = open(csv_file, 'w')
+    f = open(csv_file, 'w', encoding='utf-8')
     f.write('filename,subject id,session id,run number,echo number,echo_time (ms),multi-echo (yes or no),field_strength (T),series_type (t2starw or t1w),part_type (mag or phase)\n')
     for d in all_details:
         line = f"{d['filename']},{d['subject_id']},{d['session_id']},{d['run_num']},{d['echo_num']},{d['echo_time']},{d['multi-echo']},{d['field_strength']},{d['series_type']},{d['part_type']}\n"
@@ -296,12 +296,12 @@ def nifti_to_bids(input_dir, output_dir):
     print('Done writing dataset_description.json')
 
     print('Writing .bidsignore file...')
-    with open(os.path.join(args.output_dir, '.bidsignore'), 'w') as bidsignore_file:
+    with open(os.path.join(args.output_dir, '.bidsignore'), 'w', encoding='utf-8') as bidsignore_file:
         bidsignore_file.write('details_and_citations.txt\n')
         bidsignore_file.write('dataset_qsmxt.csv\n')
     print('Done writing .bidsignore file')
 
-    with open(os.path.join(args.output_dir, 'README'), 'w') as readme_file:
+    with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
         readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
         readme_file.write(f"\nDescribe your dataset here.\n")
 
@@ -407,7 +407,7 @@ if __name__ == "__main__":
 
     os.makedirs(args.output_dir, exist_ok=True)
 
-    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w') as f:
+    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version
         f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write("\n\n")

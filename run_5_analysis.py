@@ -11,7 +11,7 @@ from scripts.get_qsmxt_version import get_qsmxt_version
 # get labels dictionary by parsing a labels CSV file
 def load_labels(label_filepath):
     # read label file
-    label_file = open(label_filepath)
+    label_file = open(label_filepath, encoding='utf-8')
     lines = label_file.readlines()
     label_file.close()
 
@@ -111,7 +111,7 @@ if __name__ == "__main__":
     os.makedirs(os.path.abspath(args.output_dir), exist_ok=True)
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w') as f:
+    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version
         f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write("\n\n")
@@ -153,7 +153,7 @@ if __name__ == "__main__":
 
             # write header to file
             f_name = (files_seg[i].split('/')[-1]).replace('.nii.gz', '.nii').replace('.nii', '.csv')
-            f = open(os.path.join(args.output_dir, f_name), 'w')
+            f = open(os.path.join(args.output_dir, f_name), 'w', encoding='utf-8')
             f.write('roi,num_voxels,min,max,median,mean,std\n')
 
             # write data to file
@@ -177,7 +177,7 @@ if __name__ == "__main__":
 
         # write header to file
         f_name = os.path.split(args.segmentations[0])[1].replace('.nii.gz', '.nii').replace('.nii', '.csv')
-        f = open(os.path.join(args.output_dir, f_name), 'w')
+        f = open(os.path.join(args.output_dir, f_name), 'w', encoding='utf-8')
         f.write('subject,roi,num_voxels,min,max,median,mean,std\n')
         
         # for each subject
