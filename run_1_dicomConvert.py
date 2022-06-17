@@ -10,7 +10,7 @@ import datetime
 from scripts.get_qsmxt_version import get_qsmxt_version
 
 def load_json(path):
-    f = open(path)
+    f = open(path, encoding='utf-8')
     j = json.load(f)
     f.close()
     return j
@@ -152,12 +152,12 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
     print('Done writing dataset_description.json')
 
     print('Writing .bidsignore file...')
-    with open(os.path.join(args.output_dir, '.bidsignore'), 'w') as bidsignore_file:
+    with open(os.path.join(args.output_dir, '.bidsignore'), 'w', encoding='utf-8') as bidsignore_file:
         bidsignore_file.write('*dcm2niix_output.txt\n')
         bidsignore_file.write('details_and_citations.txt\n')
     print('Done writing .bidsignore file')
 
-    with open(os.path.join(args.output_dir, 'README'), 'w') as readme_file:
+    with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
         readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
         readme_file.write(f"\nDescribe your dataset here.\n")
 
@@ -305,7 +305,7 @@ if __name__ == "__main__":
     os.makedirs(args.output_dir, exist_ok=True)
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w') as f:
+    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output command used to invoke script
         f.write(str.join(" ", sys.argv))
 
