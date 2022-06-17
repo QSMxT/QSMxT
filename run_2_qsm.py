@@ -486,7 +486,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--magnitude_pattern',
-        default='{subject}/{session}/anat/*{run}*magnitude*nii*',
+        default='{subject}/{session}/anat/*{run}*mag*nii*',
         help='Pattern to match magnitude files within the BIDS directory. ' +
              'The {subject}, {session} and {run} placeholders must be present.'
     )

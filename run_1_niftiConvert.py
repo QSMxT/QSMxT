@@ -6,6 +6,7 @@ import sys
 import nibabel as nib
 import json
 import shutil
+import datetime
 
 from fnmatch import fnmatch
 from re import findall
@@ -107,8 +108,8 @@ def get_details_from_csv(csv_file):
             print(f"ERROR: Could not parse multi-echo field contents '{details['multi-echo']}' on line {i+1} as 'yes' or 'no'")
             exit()
 
-        if details['part_type'] not in ['phase', 'magnitude']:
-            print(f"ERROR: Could not parse part type field contents '{details['part_type']}' on line {i+1} as 'magnitude' or 'phase'")
+        if details['part_type'] not in ['phase', 'mag']:
+            print(f"ERROR: Could not parse part type field contents '{details['part_type']}' on line {i+1} as 'mag' or 'phase'")
             exit()
 
 
@@ -158,7 +159,7 @@ def get_details_from_filenames(file_list):
             details['echo_num'] = 1
             details['multi-echo'] = 'no'
         if magnitude or phase: details['series_type'] = 't2starw'
-        if magnitude: details['part_type'] = 'magnitude'
+        if magnitude: details['part_type'] = 'mag'
         if phase: details['part_type'] = 'phase'
 
         all_details.append(details)
@@ -187,7 +188,7 @@ def update_details_with_jsons(all_details):
                 if args.t2starw_protocol_patterns and any([fnmatch(details['protocol_name'], pattern) for pattern in args.t2starw_protocol_patterns]):
                     details['series_type'] = 't2starw'
             if 'ImageType' in json_data:
-                details['part_type'] = 'phase' if 'P' in json_data['ImageType'] else 'magnitude'
+                details['part_type'] = 'phase' if 'P' in json_data['ImageType'] else 'mag'
             if 'EchoTrainLength' in json_data:
                 try:
                     num_echoes = int(json_data['EchoTrainLength'])
@@ -202,7 +203,7 @@ def update_details_with_jsons(all_details):
 
 def write_details_to_csv(all_details):
     f = open(csv_file, 'w')
-    f.write('filename,subject id,session id,run number,echo number,echo_time (ms),multi-echo (yes or no),field_strength (T),series_type (t2starw or t1w),part_type (magnitude or phase)\n')
+    f.write('filename,subject id,session id,run number,echo number,echo_time (ms),multi-echo (yes or no),field_strength (T),series_type (t2starw or t1w),part_type (mag or phase)\n')
     for d in all_details:
         line = f"{d['filename']},{d['subject_id']},{d['session_id']},{d['run_num']},{d['echo_num']},{d['echo_time']},{d['multi-echo']},{d['field_strength']},{d['series_type']},{d['part_type']}\n"
         line = line.replace(",None", ",").replace("None,", ",")
@@ -272,10 +273,37 @@ def nifti_to_bids(input_dir, output_dir):
                 "ImageType" : ["P", "PHASE"] if details['part_type'] == 'phase' else ["M", "MAGNITUDE"],
                 "ProtocolName" : details['series_type']
             }
-            with open(json_filename(details['new_name']), 'w') as json_file:
+            with open(json_filename(details['new_name']), 'w', encoding='utf-8') as json_file:
                 json.dump(dictionary, json_file)
             print(f"INFO: Automatically generated JSON header file '{json_filename(details['new_name'])}'")
     print("INFO: Done copying and generating JSON header files.")
+
+    # create required dataset_description.json file
+    print('Generating datset description details...')
+    dataset_description = {
+        "Name" : f"QSMxT BIDS ({datetime.date.today()})",
+        "BIDSVersion" : "1.7.0",
+        "GeneratedBy" : [{
+            "Name" : "QSMxT",
+            "Version": f"{get_qsmxt_version()}",
+            "CodeURL" : "https://github.com/QSMxT/QSMxT"
+        }],
+        "Authors" : ["ADD AUTHORS HERE"]
+    }
+    print('Writing dataset_description.json...')
+    with open(os.path.join(args.output_dir, 'dataset_description.json'), 'w', encoding='utf-8') as dataset_json_file:
+        json.dump(dataset_description, dataset_json_file)
+    print('Done writing dataset_description.json')
+
+    print('Writing .bidsignore file...')
+    with open(os.path.join(args.output_dir, '.bidsignore'), 'w') as bidsignore_file:
+        bidsignore_file.write('details_and_citations.txt\n')
+        bidsignore_file.write('dataset_qsmxt.csv\n')
+    print('Done writing .bidsignore file')
+
+    with open(os.path.join(args.output_dir, 'README'), 'w') as readme_file:
+        readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
+        readme_file.write(f"\nDescribe your dataset here.\n")
 
 
 if __name__ == "__main__":
@@ -297,7 +325,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--magnitude_pattern',
         type=str,
-        default='*magnitude*',
+        default='*mag*',
         help='Pattern used to match t2starw magnitude files for QSM'
     )
 
@@ -375,7 +403,7 @@ if __name__ == "__main__":
     args.input_dir = os.path.abspath(args.input_dir)
     args.output_dir = os.path.abspath(args.output_dir)
     this_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_file = os.path.join(args.output_dir, 'dataset.csv')
+    csv_file = os.path.join(args.output_dir, 'dataset_qsmxt.csv')
 
     os.makedirs(args.output_dir, exist_ok=True)
 
