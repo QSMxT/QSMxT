@@ -2,7 +2,6 @@
 import nibabel as nib
 import numpy as np
 from scipy.stats import norm
-import matplotlib.pyplot as plt
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath
 
 
@@ -21,7 +20,7 @@ def thresholding(in_files, op_string=None):
         in_nii = nib.load(echo_file)
         in_data = in_nii.get_fdata()
         in_data = in_data.flatten()
-        image_histogram.append(in_data)   
+        image_histogram.append(in_data)
 
     try:
         image_histogram = np.array(image_histogram)
@@ -36,7 +35,7 @@ def thresholding(in_files, op_string=None):
     maxpoint = max(range(len(difference)), key=difference.__getitem__)
     threshold = bin[maxpoint]/np.amax(image_histogram)*100
 
-    op_string =  '-thrp {threshold} -bin -ero -dilM'.format(threshold=threshold)
+    op_string =  '-thrp {threshold} -bin -ero'.format(threshold=threshold)
     iter_op_string = [op_string]*len(in_files)
     return iter_op_string
 

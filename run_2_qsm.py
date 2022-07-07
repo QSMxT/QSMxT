@@ -333,7 +333,7 @@ def init_run_workflow(subject, session, run):
             interface=tgv.QSMappingInterface(
                 iterations=args.qsm_iterations,
                 alpha=[0.0015, 0.0005],
-                erosions=0 if masking in ['phase-based', 'magnitude-based'] else 5,
+                erosions=5 if masking == 'bet' else 0,
                 num_threads=args.qsm_threads,
                 out_suffix='_qsm',
                 extra_arguments='--ignore-orientation --no-resampling'
@@ -466,12 +466,12 @@ def init_run_workflow(subject, session, run):
             mn_qsm_twopass = MapNode(
                 interface=twopass.TwopassNiftiInterface(),
                 name='nibabel_twopass',
-                iterfield=['in_file1', 'in_file2', 'in_maskFile'],
+                iterfield=['in_file1', 'in_file2']
             )
             wf.connect([
                 (mn_qsm, mn_qsm_twopass, [('out_file', 'in_file1')]),
                 (mn_qsm_filled, mn_qsm_twopass, [('out_file', 'in_file2')]),
-                (mn_mask, mn_qsm_twopass, [('mask_file', 'in_maskFile')])
+                #(mn_mask, mn_qsm_twopass, [('mask_file', 'in_maskFile')])
             ])
 
             n_qsm_twopass_average = Node(
