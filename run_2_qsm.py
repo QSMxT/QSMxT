@@ -23,6 +23,9 @@ from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_masking as masking
 from interfaces import nipype_interface_erode as erode
 
+from workflows.unwrapping import unwrapping_workflow
+from workflows.nextqsm import nextqsm_B0_workflow, nextqsm_workflow
+
 import argparse
 
 
@@ -403,6 +406,54 @@ def init_run_workflow(subject, session, run):
 
     return wf
 
+def addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink):
+    # extract the fieldstrength of the first echo for input to nextqsm Node (not MapNode)
+    def first(list=None):
+        return list[0]
+    n_fieldStrength = Node(Function(input_names="list",
+                                    output_names=["fieldStrength"],
+                                    function=first),
+                            name='extract_fieldStrength')
+    n_mask = Node(Function(input_names="list", # TODO try to use B0 phase-based mask
+                                        output_names=["out_file"],
+                                        function=first),
+                                name='extract_Mask')
+    wf_unwrapping = unwrapping_workflow("romeoB0")
+    wf_nextqsmB0 = nextqsm_B0_workflow()
+    
+    wf.connect([
+        (mn_phase_scaled, wf_unwrapping, [('out_file', 'inputnode.wrapped_phase')]),
+        (n_getfiles, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
+        (mn_params, wf_unwrapping, [('EchoTime', 'inputnode.TE')]),
+        
+        (wf_unwrapping, wf_nextqsmB0, [('outputnode.B0', 'inputnode.B0'),]),
+        
+        (mn_mask, n_mask, [('mask_file', 'list'),]),
+        (n_mask, wf_nextqsmB0, [('out_file', 'inputnode.mask'),]),
+        (mn_params, n_fieldStrength, [('MagneticFieldStrength', 'list')]),
+        (n_fieldStrength, wf_nextqsmB0, [('fieldStrength', 'inputnode.fieldStrength'),]),
+        
+        (wf_nextqsmB0, n_datasink, [('outputnode.qsm', 'final_qsm')]),
+    ])
+    
+
+def addNextqsmWorkflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink, unwrapping_type):
+    wf_unwrapping = unwrapping_workflow(unwrapping_type)
+    wf_nextqsm = nextqsm_workflow()
+    
+    wf.connect([
+        (mn_phase_scaled, wf_unwrapping, [('out_file', 'inputnode.wrapped_phase')]),
+        (n_getfiles, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
+        (mn_params, wf_unwrapping, [('EchoTime', 'inputnode.TE')]),
+        
+        (wf_unwrapping, wf_nextqsm, [('outputnode.unwrapped_phase', 'inputnode.unwrapped_phase')]),
+        (mn_mask, wf_nextqsm, [('mask_file', 'inputnode.mask')]),
+        (mn_params, wf_nextqsm, [('EchoTime', 'inputnode.TE'),
+                                 ('MagneticFieldStrength', 'inputnode.fieldStrength')]),
+        
+        (wf_nextqsm, n_datasink, [('outputnode.qsm', 'qsm_echo'),
+                                  ('outputnode.qsm_average', 'qsm_final')])
+    ])
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -420,6 +471,18 @@ if __name__ == "__main__":
     parser.add_argument(
         'output_dir',
         help='Output QSM folder; will be created if it does not exist.'
+    )
+
+    parser.add_argument(
+        '--qsm_algorithm',
+        default='qsmxt',
+        help='Switch between different QSM algorithms'
+    )
+
+    parser.add_argument(
+        '--unwrapping_algorithm',
+        default='romeo',
+        help='romeo | romeoB0 | laplacian. Only used for nextqsm'
     )
 
     parser.add_argument(
