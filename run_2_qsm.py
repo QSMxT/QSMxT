@@ -19,6 +19,7 @@ from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_threshold as threshold
+from workflows.masking import masking_workflow
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 import argparse
@@ -327,6 +328,15 @@ def addMaskingNodes(wf, masking, add_bet, n_mag_files, mag_files_name, mn_phase_
             (n_threshold, mn_gaussmask, [('op_string', 'op_string')]),
             (mn_gaussmask, mn_mask, [('out_file', 'in_file')])
         ])  
+        
+    elif masking == 'hagberg-phase-based' or masking == 'romeo-phase-based':
+        wf_masking = masking_workflow(masking)
+        wf.connect([
+            (n_mag_files, wf_masking, [(mag_files_name, 'inputnode.mag')]),
+            (mn_phase_scaled, wf_masking, [('out_file', 'inputnode.phase')]),
+            (wf_masking, mn_mask, [('outputnode.mask', 'in_file')])
+        ])
+
     return (mn_mask, mn_bet)
 
     
@@ -563,7 +573,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--masking', '-m',
         default='magnitude-based',
-        choices=['magnitude-based', 'phase-based', 'bet', 'gaussian-based'],
+        choices=['magnitude-based', 'phase-based', 'bet', 'gaussian-based', 'hagberg-phase-based', 'romeo-phase-based'],
         help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
              'thresholding a lower percentage of the histogram of the signal (adjust using the '+
              '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
