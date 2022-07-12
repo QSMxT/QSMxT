@@ -1,4 +1,7 @@
 #!/usr/bin/env julia
+import Pkg
+Pkg.activate(".") # TODO remove before push to dockerhub
+
 using MriResearchTools
 using ArgParse
 

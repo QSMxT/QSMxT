@@ -238,7 +238,8 @@ def addInhomogeneityCorrectionNodes(wf, n_getfiles):
     ])
     return mn_inhomogeneity_correction
 
-def addMaskingNodes(wf, masking, add_bet, n_mag_files, mag_files_name, mn_phase_scaled):
+def addMaskingNodes(wf, masking_setting, add_bet, n_mag_files, mag_files_name, mn_phase_scaled):
+    masking = masking_setting[0]
     def repeat(in_file):
         return in_file
     mn_mask = MapNode(
@@ -330,7 +331,7 @@ def addMaskingNodes(wf, masking, add_bet, n_mag_files, mag_files_name, mn_phase_
         ])  
         
     elif masking == 'hagberg-phase-based' or masking == 'romeo-phase-based':
-        wf_masking = masking_workflow(masking)
+        wf_masking = masking_workflow(masking_setting)
         wf.connect([
             (n_mag_files, wf_masking, [(mag_files_name, 'inputnode.mag')]),
             (mn_phase_scaled, wf_masking, [('out_file', 'inputnode.phase')]),
@@ -573,12 +574,13 @@ if __name__ == "__main__":
     parser.add_argument(
         '--masking', '-m',
         default='magnitude-based',
-        choices=['magnitude-based', 'phase-based', 'bet', 'gaussian-based', 'hagberg-phase-based', 'romeo-phase-based'],
+        #choices=['magnitude-based', 'phase-based', 'bet', 'gaussian-based', 'hagberg-phase-based', 'romeo-phase-based'],
         help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
              'thresholding a lower percentage of the histogram of the signal (adjust using the '+
              '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
              'thresholded and the magnitude is not required. Using BET automatically disables '+
-             'the two-pass inversion strategy for artefact mitigation.'
+             'the two-pass inversion strategy for artefact mitigation.',
+        nargs='+'
     )
 
     parser.add_argument(
@@ -707,11 +709,11 @@ if __name__ == "__main__":
         config.set('logging', 'utils_level', 'DEBUG')
 
     # add_bet option only works with non-bet masking methods
-    args.add_bet = args.add_bet and args.masking != 'bet'
-    args.two_pass = args.masking != 'bet' and not args.single_pass
+    args.add_bet = args.add_bet and args.masking[0] != 'bet'
+    args.two_pass = args.masking[0] != 'bet' and not args.single_pass
 
     # decide on inhomogeneity correction
-    args.inhomogeneity_correction = args.inhomogeneity_correction and (args.add_bet or 'phase-based' not in args.masking)
+    args.inhomogeneity_correction = args.inhomogeneity_correction and (args.add_bet or 'phase-based' not in args.masking[0])
 
     # set number of QSM threads
     n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
