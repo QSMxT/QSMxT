@@ -18,7 +18,6 @@ from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from interfaces import nipype_interface_twopass as twopass
-from interfaces import nipype_interface_threshold as threshold
 from workflows.masking import masking_workflow
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
@@ -114,7 +113,7 @@ def init_run_workflow(subject, session, run):
         
     (mn_mask, mn_bet) = addMaskingNodes(wf, masking, add_bet, n_mag_files, mag_files_name, mn_phase_scaled)
  
-    addQsmReconstructionNodes(wf, masking, add_bet, mn_bet, n_datasink, mn_params, mn_mask, mn_phase_scaled)
+    addQsmReconstructionNodes(wf, masking[0], add_bet, mn_bet, n_datasink, mn_params, mn_mask, mn_phase_scaled)
     return wf
 
 def addGetFileNodes(subject, session, run):
@@ -307,31 +306,9 @@ def addMaskingNodes(wf, masking_setting, add_bet, n_mag_files, mag_files_name, m
             (n_mag_files, mn_magmask, [(mag_files_name, 'in_file')]),
             (mn_magmask, mn_mask, [('out_file', 'in_file')])
         ])
-
-    elif masking == 'gaussian-based':
-        n_threshold = Node(
-            interface=threshold.ThresholdInterface(),
-            iterfield=['in_files'],
-            name='automated-threshold'
-        )
-        mn_gaussmask = MapNode(
-                interface=ImageMaths(
-                    suffix="_mask"
-                ),
-                iterfield=['in_file', 'op_string'],
-                name='automated_threshold-mask'
-                # output: 'out_file'
-            )
-
-        wf.connect([
-            (n_mag_files, n_threshold, [(mag_files_name, 'in_files')]),
-            (n_mag_files, mn_gaussmask, [(mag_files_name, 'in_file')]),
-            (n_threshold, mn_gaussmask, [('op_string', 'op_string')]),
-            (mn_gaussmask, mn_mask, [('out_file', 'in_file')])
-        ])  
         
-    elif masking == 'hagberg-phase-based' or masking == 'romeo-phase-based':
-        wf_masking = masking_workflow(masking_setting)
+    elif masking in ['hagberg-phase-based', 'romeo-phase-based', 'gaussian-based']:
+        wf_masking = masking_workflow(masking_setting, args.extra_fill_strength)
         wf.connect([
             (n_mag_files, wf_masking, [(mag_files_name, 'inputnode.mag')]),
             (mn_phase_scaled, wf_masking, [('out_file', 'inputnode.phase')]),
@@ -620,7 +597,7 @@ if __name__ == "__main__":
 
     def positive_int(value):
         ivalue = int(value)
-        if ivalue <= 0:
+        if ivalue < 0:
             raise argparse.ArgumentTypeError("%s is an invalid positive int value" % value)
         return ivalue
 
