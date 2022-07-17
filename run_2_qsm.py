@@ -363,7 +363,7 @@ def addQsmReconstructionNodes(wf, masking, add_bet, mn_bet, n_datasink, mn_param
                 (n_qsm_average, n_datasink, [('out_file', 'qsm_final')]),
             ])
 
-    if masking in ['phase-based', 'magnitude-based', 'gaussian-based']:
+    if masking != 'bet':
         mn_mask_filled = MapNode(
             interface=ImageMaths(
                 suffix='_fillh',

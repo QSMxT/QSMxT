@@ -4,12 +4,12 @@ from nipype.interfaces.fsl import ImageMaths
 import interfaces.nipype_interface_masking as masking_interfaces
 import interfaces.nipype_interface_threshold as threshold_interface
 
-
+# masking options are hagberg-phase-based, romeo-phase-based and gaussian-based
 def masking_workflow(masking_setting, extra_fill_strength):
     masking_type=masking_setting[0]
     threshold = 0.5
     romeo_weights = 'grad+second'
-    for entry in masking_setting[2:]:
+    for entry in masking_setting[1:]:
         try:
             threshold = float(entry)
         except:

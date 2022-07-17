@@ -32,7 +32,7 @@ class RomeoMaskingInputSpec(CommandLineInputSpec):
         argstr="--mag %s"
     )
     weight_type = traits.Str(
-        default_value="grad+second",
+        default_value="error",
         argstr="--type %s"
     )
     voxelquality = File(

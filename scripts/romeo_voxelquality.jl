@@ -40,6 +40,8 @@ elseif args["type"] == "grad+second"
     weights[[1,3]] .= true
 elseif args["type"] == "grad+mag"
     weights[[1,4]] .= true
+else
+    error(1)
 end
 voxelquality = romeovoxelquality(phase; weights, optional_args...)
 
