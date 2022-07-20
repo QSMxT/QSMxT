@@ -8,3 +8,7 @@ def get_qsmxt_version():
     date = sys_cmd(f"git --git-dir {git_dir} log -1 --format=%cd", False, False)
     return f"{version} (commit date: {date})"
 
+if __name__ == "__main__":
+    print(get_qsmxt_version())
+
+    
