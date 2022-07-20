@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 import Pkg
-Pkg.activate(".") # TODO remove before push to dockerhub
+Pkg.activate("/neurodesktop-storage/qsmxt") # TODO remove before push to dockerhub
 
 using MriResearchTools
 using ArgParse
@@ -30,19 +30,25 @@ phase_nii = niread(args["phase"])
 phase = Float32.(phase_nii)
 
 weights = falses(6)
-if args["type"] == "grad+second+mag"
-    weights[[1,3,4]] .= true
-elseif args["type"] == "grad"
+if contains(args["type"], "grad")
     weights[1] = true
-elseif args["type"] == "second"
-        weights[3] = true
-elseif args["type"] == "grad+second"
-    weights[[1,3]] .= true
-elseif args["type"] == "grad+mag"
-    weights[[1,4]] .= true
-else
-    error(1)
+end
+if contains(args["type"], "me")
+    weights[2] = true
+end
+if contains(args["type"], "second")
+    weights[3] = true
+end
+if contains(args["type"], "mag")
+    weights[4] = true
+end
+if contains(args["type"], "mag1")
+    weights[5] = true
+end
+if contains(args["type"], "mag2")
+    weights[6] = true
 end
 voxelquality = romeovoxelquality(phase; weights, optional_args...)
+voxelquality[.!isfinite.(voxelquality)] .= 0
 
 savenii(voxelquality, args["output"]; header=header(phase_nii))

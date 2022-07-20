@@ -550,7 +550,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--masking', '-m',
-        default='magnitude-based',
+        default=['magnitude-based'],
         #choices=['magnitude-based', 'phase-based', 'bet', 'gaussian-based', 'hagberg-phase-based', 'romeo-phase-based'],
         help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
              'thresholding a lower percentage of the histogram of the signal (adjust using the '+
