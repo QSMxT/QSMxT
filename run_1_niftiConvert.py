@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import argparse
+from distutils.log import Log
 import os
 import sys
 import nibabel as nib
@@ -12,11 +13,11 @@ from fnmatch import fnmatch
 from re import findall
 
 from scripts.get_qsmxt_version import get_qsmxt_version
-
+from scripts.logger import LogLevel, make_logger, show_warning_summary 
 
 def copy(old, new, always_show=False):
     if always_show or not sys.__stdin__.isatty():
-        print(f'Copying {old} -> {new}')
+        logger.log(LogLevel.INFO.value, f'Copying {old} -> {new}')
     if not os.path.exists(os.path.split(new)[0]):
         os.makedirs(os.path.split(new)[0], exist_ok=True)
     shutil.copy2(old, new)
@@ -37,8 +38,9 @@ def parse_num_or_exit(string, error_message, whole_number=False):
     try:
         return int(string) if whole_number else float(string)
     except:
-        print(error_message)
-        exit()
+        logger.log(LogLevel.ERROR.value, error_message)
+        show_warning_summary(logger)
+        exit(1)
 
 
 def flatten(a):
@@ -62,11 +64,11 @@ def get_details_from_csv(csv_file):
         for line in f:
             line_contents = line.replace("\n", "").split(",")
             if len(line_contents) != 10:
-                print('ERROR: Incorrect number of columns in CSV! Delete it or correct it and try again.')
-                exit()
+                logger.log(LogLevel.ERROR.value, 'Incorrect number of columns in CSV! Delete it or correct it and try again.')
+                exit(1)
             if '' in line_contents:
-                print('ERROR: CSV file incomplete! Delete it or complete it and try again.')
-                exit()
+                logger.log(LogLevel.ERROR.value, 'CSV file incomplete! Delete it or complete it and try again.')
+                exit(1)
             csv_contents.append(line_contents)
     csv_contents = csv_contents[1:]
     
@@ -82,35 +84,35 @@ def get_details_from_csv(csv_file):
         
         details['run_num'] = parse_num_or_exit(
             line_contents[3],
-            error_message=f"ERROR: Could not parse run number '{line_contents[3]}' on line {i+1} as int",
+            error_message=f"Could not parse run number '{line_contents[3]}' on line {i+1} as int",
             whole_number=True
         )
         
         details['echo_num'] = parse_num_or_exit(
             line_contents[4],
-            error_message=f"ERROR: Could not parse echo number '{line_contents[4]}' on line {i+1} as int",
+            error_message=f"Could not parse echo number '{line_contents[4]}' on line {i+1} as int",
             whole_number=True
         )
 
         details['echo_time'] = parse_num_or_exit(
             line_contents[5],
-            error_message=f"ERROR: Could not parse echo time '{line_contents[5]}' on line {i+1} as float",
+            error_message=f"Could not parse echo time '{line_contents[5]}' on line {i+1} as float",
             whole_number=False
         )
         
         details['field_strength'] = parse_num_or_exit(
             line_contents[7],
-            error_message=f"ERROR: Could not parse field strength '{line_contents[7]}' on line {i+1} as float",
+            error_message=f"Could not parse field strength '{line_contents[7]}' on line {i+1} as float",
             whole_number=False
         )
         
         if details['multi-echo'] not in ['yes', 'no']:
-            print(f"ERROR: Could not parse multi-echo field contents '{details['multi-echo']}' on line {i+1} as 'yes' or 'no'")
-            exit()
+            logger.log(LogLevel.ERROR.value, f"Could not parse multi-echo field contents '{details['multi-echo']}' on line {i+1} as 'yes' or 'no'")
+            exit(1)
 
         if details['part_type'] not in ['phase', 'mag']:
-            print(f"ERROR: Could not parse part type field contents '{details['part_type']}' on line {i+1} as 'mag' or 'phase'")
-            exit()
+            logger.log(LogLevel.ERROR.value, f"Could not parse part type field contents '{details['part_type']}' on line {i+1} as 'mag' or 'phase'")
+            exit(1)
 
 
         all_details.append(details)
@@ -213,37 +215,37 @@ def write_details_to_csv(all_details):
 
 def nifti_to_bids(input_dir, output_dir):
     if os.path.exists(csv_file):
-        print(f"INFO: CSV spreadsheet '{csv_file}' found! Reading...")
+        logger.log(LogLevel.INFO.value, f"CSV spreadsheet '{csv_file}' found! Reading...")
         all_details = get_details_from_csv(csv_file)
-        print(f"INFO: CSV spreadsheet loaded.")
+        logger.log(LogLevel.INFO.value, f"CSV spreadsheet loaded.")
     else:
-        print(f"INFO: Finding NIfTI files...")
+        logger.log(LogLevel.INFO.value, f"Finding NIfTI files...")
         nifti_files = find_files_with_extension(args.input_dir, ['.nii', '.nii.gz'])
-        print(f"INFO: {len(nifti_files)} NIfTI files found.")
-        print(f"INFO: Extracting details from filenames using patterns...")
+        logger.log(LogLevel.INFO.value, f"{len(nifti_files)} NIfTI files found.")
+        logger.log(LogLevel.INFO.value, f"Extracting details from filenames using patterns...")
         all_details = get_details_from_filenames(nifti_files)
-        print(f"INFO: Done reading details.")
-        print(f"INFO: Updating details with JSON header information...")
+        logger.log(LogLevel.INFO.value, f"Done reading details.")
+        logger.log(LogLevel.INFO.value, f"Updating details with JSON header information...")
         all_details = update_details_with_jsons(all_details)
-        print(f"INFO: Done reading JSON header files.")
+        logger.log(LogLevel.INFO.value, f"Done reading JSON header files.")
 
     if any(value is None for value in flatten([list(details.values()) for details in all_details])):
-        print(f"INFO: Some information is missing! Writing all details to CSV spreadsheet '{csv_file}'...")
+        logger.log(LogLevel.INFO.value, f"Some information is missing! Writing all details to CSV spreadsheet '{csv_file}'...")
         write_details_to_csv(all_details)
-        print(f"INFO: Done writing to CSV.")
-        print(f"PLEASE REVIEW SPREADSHEET '{csv_file}', FILL IN MISSING INFORMATION AND RUN AGAIN WITH THE SAME COMMAND.")
-        exit()
+        logger.log(LogLevel.INFO.value, f"Done writing to CSV.")
+        logger.log(LogLevel.INFO.value, f"PLEASE FILL IN SPREADSHEET '{csv_file}' WITH MISSING INFORMATION AND RUN AGAIN WITH THE SAME COMMAND.")
+        exit(0)
 
-    print(f"INFO: Computing new NIfTI file names and locations...")
+    logger.log(LogLevel.INFO.value, "Computing new NIfTI file names and locations...")
     for details in all_details:
         ext = 'nii.gz' if details['filename'].endswith('nii.gz') else 'nii'
         if details['series_type'] == 't1w':
-            details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject_id']}", f"ses-{details['session_id']}", "anat", f"sub-{details['subject_id']}_ses-{details['session_id']}_run-{details['run_num']}_T1w.{ext}")
+            details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject_id']}", f"ses-{details['session_id']}", "anat", f"sub-{details['subject_id']}_ses-{details['session_id']}_run-{str(details['run_num']).zfill(2)}_T1w.{ext}")
         elif details['multi-echo'] and details['multi-echo'].lower() == 'no':
-            details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject_id']}", f"ses-{details['session_id']}", "anat", f"sub-{details['subject_id']}_ses-{details['session_id']}_run-{details['run_num']}_part-{details['part_type']}_T2starw.{ext}")
+            details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject_id']}", f"ses-{details['session_id']}", "anat", f"sub-{details['subject_id']}_ses-{details['session_id']}_run-{str(details['run_num']).zfill(2)}_part-{details['part_type']}_T2starw.{ext}")
         else:
-            details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject_id']}", f"ses-{details['session_id']}", "anat", f"sub-{details['subject_id']}_ses-{details['session_id']}_run-{details['run_num']}_echo-{details['echo_num']}_part-{details['part_type']}_MEGRE.{ext}")
-    print(f"INFO: New NIfTI file names and locations determined.")
+            details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject_id']}", f"ses-{details['session_id']}", "anat", f"sub-{details['subject_id']}_ses-{details['session_id']}_run-{str(details['run_num']).zfill(2)}_echo-{str(details['echo_num']).zfill(2)}_part-{details['part_type']}_MEGRE.{ext}")
+    logger.log(LogLevel.INFO.value, "New NIfTI file names and locations determined.")
 
     # if running interactively, show a summary of the renames prior to actioning
     if sys.__stdin__.isatty() and not args.auto_yes:
@@ -255,12 +257,12 @@ def nifti_to_bids(input_dir, output_dir):
             exit()
 
     # copy/rename all files
-    print("INFO: Copying NIfTI files to new locations with new names...")
+    logger.log(LogLevel.INFO.value, "Copying NIfTI files to new locations with new names...")
     for details in all_details:
         copy(details['filename'], details['new_name'], always_show=args.auto_yes)
-    print("INFO: Done copying NIfTI files.")
+    logger.log(LogLevel.INFO.value, "Done copying NIfTI files.")
 
-    print("INFO: Copying JSON header files if present and generating them if needed...")
+    logger.log(LogLevel.INFO.value, "Copying JSON header files if present and generating them if needed...")
     for details in all_details:
         f = json_filename(details['filename'])
         if os.path.exists(f):
@@ -275,11 +277,11 @@ def nifti_to_bids(input_dir, output_dir):
             }
             with open(json_filename(details['new_name']), 'w', encoding='utf-8') as json_file:
                 json.dump(dictionary, json_file)
-            print(f"INFO: Automatically generated JSON header file '{json_filename(details['new_name'])}'")
-    print("INFO: Done copying and generating JSON header files.")
+            logger.log(LogLevel.INFO.value, f"Automatically generated JSON header file '{json_filename(details['new_name'])}'")
+    logger.log(LogLevel.INFO.value, "Done copying and generating JSON header files.")
 
     # create required dataset_description.json file
-    print('Generating datset description details...')
+    logger.log(LogLevel.INFO.value, 'Generating details for BIDS datset_description.json...')
     dataset_description = {
         "Name" : f"QSMxT BIDS ({datetime.date.today()})",
         "BIDSVersion" : "1.7.0",
@@ -290,21 +292,23 @@ def nifti_to_bids(input_dir, output_dir):
         }],
         "Authors" : ["ADD AUTHORS HERE"]
     }
-    print('Writing dataset_description.json...')
+    logger.log(LogLevel.INFO.value, 'Writing BIDS dataset_description.json...')
     with open(os.path.join(args.output_dir, 'dataset_description.json'), 'w', encoding='utf-8') as dataset_json_file:
         json.dump(dataset_description, dataset_json_file)
-    print('Done writing dataset_description.json')
 
-    print('Writing .bidsignore file...')
+    logger.log(LogLevel.INFO.value, 'Writing BIDS .bidsignore file...')
     with open(os.path.join(args.output_dir, '.bidsignore'), 'w', encoding='utf-8') as bidsignore_file:
         bidsignore_file.write('details_and_citations.txt\n')
         bidsignore_file.write('dataset_qsmxt.csv\n')
-    print('Done writing .bidsignore file')
 
+    logger.log(LogLevel.INFO.value, 'Writing BIDS dataset README...')
     with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
         readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
         readme_file.write(f"\nDescribe your dataset here.\n")
 
+    logger.log(LogLevel.INFO.value, 'Finished')
+
+    show_warning_summary(logger)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -406,6 +410,17 @@ if __name__ == "__main__":
     csv_file = os.path.join(args.output_dir, 'dataset_qsmxt.csv')
 
     os.makedirs(args.output_dir, exist_ok=True)
+
+    logger = make_logger(
+        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        printlevel=LogLevel.INFO,
+        writelevel=LogLevel.INFO,
+        warnlevel=LogLevel.WARNING,
+        errorlevel=LogLevel.ERROR
+    )
+
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
 
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version

@@ -5,6 +5,7 @@ import os.path
 import os
 import glob
 import psutil
+import datetime
 
 from nipype.interfaces.fsl import BET, ImageMaths, ImageStats
 from nipype.interfaces.utility import IdentityInterface, Function
@@ -19,6 +20,7 @@ from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_threshold as threshold
+from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 import argparse
 
@@ -30,8 +32,8 @@ def init_workflow():
         if not args.subjects or os.path.split(path)[1] in args.subjects
     ]
     if not subjects:
-        print(f"No subjects found in: {os.path.join(args.bids_dir, args.session_pattern)}")
-        exit()
+        logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, args.session_pattern)}")
+        exit(1)
     wf = Workflow("workflow_qsm", base_dir=args.work_dir)
     wf.add_nodes([
         node for node in
@@ -49,8 +51,8 @@ def init_subject_workflow(
         if not args.sessions or os.path.split(path)[1] in args.sessions
     ]
     if not sessions:
-        print(f"No sessions found in: {os.path.join(args.bids_dir, subject, args.session_pattern)}")
-        exit()
+        logger.log(LogLevel.ERROR.value, f"No sessions found in: {os.path.join(args.bids_dir, subject, args.session_pattern)}")
+        exit(1)
     wf = Workflow(subject, base_dir=os.path.join(args.work_dir, "workflow_qsm"))
     wf.add_nodes([
         node for node in
@@ -64,11 +66,11 @@ def init_session_workflow(subject, session):
     phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
     phase_files = glob.glob(phase_pattern)
     if not phase_files:
-        print(f"Warning: No phase files found matching pattern: {phase_pattern}. Skipping {subject}/{session}")
+        logger.log(LogLevel.WARNING.value, f"No phase files found matching pattern: {phase_pattern}. Skipping {subject}/{session}")
         return
     for phase_file in phase_files:
         if 'run-' not in phase_file:
-            print(f"Warning: No 'run-' identifier found in file: {phase_file}. Skipping {subject}/{session}")
+            logger.log(LogLevel.WARNING.value, f"No 'run-' identifier found in file: {phase_file}. Skipping {subject}/{session}")
             return
 
     # identify all runs
@@ -104,13 +106,13 @@ def init_run_workflow(subject, session, run):
 
     # handle any errors
     if not phase_files:
-        print(f"Warning for {subject}/{session}/{run}: No phase files found matching pattern: {phase_pattern}. Skipping run...")
+        logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - no phase files found matching pattern {phase_pattern}.")
         return
     if len(phase_files) != len(params_files):
-        print(f"Warning for {subject}/{session}/{run}: An unequal number of JSON and phase files are present. Skipping run...")
+        logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
         return
     if (not magnitude_files and any([masking == 'gaussian-based', masking == 'magnitude-based', masking == 'bet', add_bet, inhomogeneity_correction])):
-        print(f"Warning for {subject}/{session}/{run}: No magnitude files found matching pattern: {magnitude_pattern}. Reverting to phase-based masking for this run.")
+        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
         masking = 'phase-based'
         add_bet = False
         inhomogeneity_correction = False
@@ -657,6 +659,21 @@ if __name__ == "__main__":
     # this script's directory
     this_dir = os.path.dirname(os.path.abspath(__file__))
 
+    os.makedirs(args.work_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # setup logger
+    logger = make_logger(
+        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        printlevel=LogLevel.INFO,
+        writelevel=LogLevel.INFO,
+        warnlevel=LogLevel.WARNING,
+        errorlevel=LogLevel.ERROR
+    )
+
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
+
     # misc environment variables
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
 
@@ -694,15 +711,12 @@ if __name__ == "__main__":
         available_ram_gb = psutil.virtual_memory().available / 1e9
         args.n_procs = max(1, min(int(available_ram_gb / 6), n_cpus))
         if available_ram_gb < 6:
-            print(f"Warning: Less than 6 GB of memory available ({available_ram_gb} GB). At least 6 GB is recommended. You may need to close background programs.")
-        print("Running with", args.n_procs, "procesors.")
+            logger.log(LogLevel.WARNING.value, f"Less than 6 GB of memory available ({available_ram_gb} GB). At least 6 GB is recommended. You may need to close background programs.")
+        logger.log(LogLevel.INFO.value, f"Running with {args.n_procs} procesors.")
 
     #qsm_threads should be set to adjusted n_procs (either computed earlier or given via cli)
     #args.qsm_threads = args.n_procs if not args.qsub_account_string else 1
     args.qsm_threads = 1#args.n_procs if not args.qsub_account_string else 1
-
-    os.makedirs(args.work_dir, exist_ok=True)
-    os.makedirs(args.output_dir, exist_ok=True)
 
     # make sure tgv_qsm is compiled on the target system before we start the pipeline:
     # process = subprocess.run(['tgv_qsm'])
@@ -761,3 +775,6 @@ if __name__ == "__main__":
                 'n_procs': args.n_procs
             }
         )
+
+    show_warning_summary(logger)
+

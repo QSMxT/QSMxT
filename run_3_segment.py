@@ -4,12 +4,13 @@ from nipype.interfaces.io import DataSink
 from nipype.interfaces.ants.registration import RegistrationSynQuick
 from nipype.interfaces.ants.resampling import ApplyTransforms
 from scripts.get_qsmxt_version import get_qsmxt_version
+from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 from interfaces import nipype_interface_fastsurfer as fastsurfer
 from interfaces import nipype_interface_mgz2nii as mgz2nii
 
 import sys
-import time
+import datetime
 import glob
 import os
 import argparse
@@ -55,8 +56,7 @@ def init_session_workflow(subject, session):
         for path in glob.glob(os.path.join(args.bids_dir, args.t1_pattern.replace("{run}", "").format(subject=subject, session=session)))
     ])))
     if len(t1w_runs) != len(magnitude_runs):
-        print(f"QSMxT: WARNING: Number of T1w and magnitude runs do not match for {subject}/{session}");
-        time.sleep(3)
+        logger.log(LogLevel.WARNING.value, f"Number of T1w and magnitude runs do not match for {subject}/{session}");
     runs = [f'run-{x}' for x in t1w_runs]
 
     wf = Workflow(session, base_dir=os.path.join(args.work_dir, "workflow_segmentation", subject, session))
@@ -76,13 +76,13 @@ def init_run_workflow(subject, session, run):
     t1_files = sorted(glob.glob(t1_pattern))
     mag_files = sorted(glob.glob(mag_pattern))
     if not t1_files:
-        print(f"No T1w files matching pattern: {t1_pattern}")
-        exit()
+        logger.log(LogLevel.ERROR.value, f"No T1w files matching pattern: {t1_pattern}")
+        exit(1)
     if not mag_files:
-        print(f"No magnitude files matching pattern: {mag_files}")
-        exit()
+        logger.log(LogLevel.ERROR.value, f"No magnitude files matching pattern: {mag_files}")
+        exit(1)
     if len(t1_files) > 1:
-        print(f"QSMxT: Warning: Multiple T1w files matching pattern {t1_pattern}")
+        logger.log(LogLevel.WARNING.value, f"Multiple T1w files matching pattern {t1_pattern}")
     t1_file = t1_files[0]
     mag_file = mag_files[0]
 
@@ -255,6 +255,21 @@ if __name__ == "__main__":
     # this script's directory
     this_dir = os.path.dirname(os.path.abspath(__file__))
 
+    os.makedirs(args.work_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # setup logger
+    logger = make_logger(
+        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        printlevel=LogLevel.INFO,
+        writelevel=LogLevel.INFO,
+        warnlevel=LogLevel.WARNING,
+        errorlevel=LogLevel.ERROR
+    )
+
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
+
     # misc environment variables
     os.environ["SUBJECTS_DIR"] = "." # needed for reconall
     os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
@@ -283,9 +298,6 @@ if __name__ == "__main__":
 
     wf = init_workflow()
 
-    os.makedirs(args.work_dir, exist_ok=True)
-    os.makedirs(args.output_dir, exist_ok=True)
-
     # get number of CPUs
     n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
     
@@ -295,8 +307,8 @@ if __name__ == "__main__":
         available_ram_gb = psutil.virtual_memory().available / 1e9
         args.n_procs = max(1, min(int(available_ram_gb / 11), n_cpus))
         if available_ram_gb < 11:
-            print(f"Warning: Less than 11 GB of memory available ({available_ram_gb} GB). At least 11 GB is recommended. You may need to close background programs.")
-        print("Running with", args.n_procs, "processors.")
+            logger.log(LogLevel.WARNING.value, f"Less than 11 GB of memory available ({available_ram_gb} GB). At least 11 GB is recommended. You may need to close background programs.")
+        logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors.")
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
@@ -331,4 +343,6 @@ if __name__ == "__main__":
                 'n_procs': args.n_procs
             }
         )
+
+    show_warning_summary(logger)
 
