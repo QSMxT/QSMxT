@@ -124,10 +124,6 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
         for dicom_loc in unsortedList:
             os.remove(dicom_loc)
 
-    logger.log(LogLevel.INFO.value, 'Finished')
-
-    show_warning_summary(logger)
-
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -204,4 +200,8 @@ if __name__ == "__main__":
         use_session_dates=args.use_session_dates,
         delete_originals=args.input_dir == args.output_dir or args.delete_originals
     )
+
+    show_warning_summary(logger)
+
+    logger.log(LogLevel.INFO.value, 'Finished')
     

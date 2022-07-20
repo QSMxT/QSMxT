@@ -291,10 +291,6 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
         readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
         readme_file.write(f"\nDescribe your dataset here.\n")
 
-    logger.log(LogLevel.INFO.value, 'Finished')
-
-    show_warning_summary(logger)
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="QSMxT dicomConvert: Converts DICOM files to NIfTI/BIDS",
@@ -381,4 +377,8 @@ if __name__ == "__main__":
         t1w_protocol_patterns=[pattern.lower() for pattern in args.t1w_protocol_patterns],
         auto_yes=args.auto_yes
     )
+
+    show_warning_summary(logger)
+
+    logger.log(LogLevel.INFO.value, 'Finished')
     

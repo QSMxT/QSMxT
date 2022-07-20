@@ -250,3 +250,5 @@ if __name__ == "__main__":
 
     show_warning_summary(logger)
 
+    logger.log(LogLevel.INFO.value, 'Finished')
+

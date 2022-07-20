@@ -213,7 +213,7 @@ if __name__ == "__main__":
         # close file
         f.close()
 
-    logger.log(LogLevel.INFO.value, 'Finished')
-
     show_warning_summary(logger)
+
+    logger.log(LogLevel.INFO.value, 'Finished')
 

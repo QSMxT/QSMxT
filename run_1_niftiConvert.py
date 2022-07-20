@@ -306,10 +306,6 @@ def nifti_to_bids(input_dir, output_dir):
         readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
         readme_file.write(f"\nDescribe your dataset here.\n")
 
-    logger.log(LogLevel.INFO.value, 'Finished')
-
-    show_warning_summary(logger)
-
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="QSMxT niftiConvert: Sorts NIfTI files into a near-BIDS format for use with QSMxT",
@@ -438,4 +434,8 @@ if __name__ == "__main__":
         input_dir=args.input_dir,
         output_dir=args.output_dir,
     )
+
+    show_warning_summary(logger)
+
+    logger.log(LogLevel.INFO.value, 'Finished')
 
