@@ -7,6 +7,7 @@ import os
 import sys
 
 from scripts.get_qsmxt_version import get_qsmxt_version
+from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 # get labels dictionary by parsing a labels CSV file
 def load_labels(label_filepath):
@@ -110,6 +111,17 @@ if __name__ == "__main__":
     args.output_dir = os.path.abspath(args.output_dir)
     os.makedirs(os.path.abspath(args.output_dir), exist_ok=True)
 
+    logger = make_logger(
+        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        printlevel=LogLevel.INFO,
+        writelevel=LogLevel.INFO,
+        warnlevel=LogLevel.WARNING,
+        errorlevel=LogLevel.ERROR
+    )
+
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
+
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version
@@ -136,7 +148,7 @@ if __name__ == "__main__":
     if len(args.segmentations) > 1:
         files_seg = sorted(args.segmentations)
         for i in range(len(files_seg)):
-            print(f"Analysing file {os.path.split(files_qsm[i])[-1]} with segmentation {os.path.split(files_seg[i])[-1]}")
+            logger.log(LogLevel.INFO.value, f"Analysing file {os.path.split(files_qsm[i])[-1]} with segmentation {os.path.split(files_seg[i])[-1]}")
 
             # load subject and segmentation data
             nii_seg = nib.load(files_seg[i])
@@ -200,4 +212,8 @@ if __name__ == "__main__":
 
         # close file
         f.close()
+
+    logger.log(LogLevel.INFO.value, 'Finished')
+
+    show_warning_summary(logger)
 

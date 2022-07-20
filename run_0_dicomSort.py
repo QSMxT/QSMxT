@@ -8,7 +8,9 @@ import argparse
 import os
 import sys
 import pydicom  # pydicom is using the gdcm package for decompression
+
 from scripts.get_qsmxt_version import get_qsmxt_version
+from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 def empty_dirs(root_dir='.', recursive=True):
     empty_dirs = []
@@ -40,7 +42,7 @@ def clean_text(string):
 def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delete_originals):
     os.makedirs(output_dir, exist_ok=True)
     extension = '.IMA'
-    print('reading file list...')
+    logger.log(LogLevel.INFO.value, "Reading file list...")
     unsortedList = []
     for root, dirs, files in os.walk(input_dir):
         for file in files:
@@ -55,14 +57,14 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
             elif file[:2] == 'IM':
                 extension = '.dcm'
                 unsortedList.append(os.path.join(root, file))
-    print(f'{len(unsortedList)} dicom files found.')
+    logger.log(LogLevel.INFO.value, f"{len(unsortedList)} dicom files found.")
     
     fail = False
 
     subjName_dates = []
     subjName_sessionNums = {}
 
-    print(f'sorting dicoms in {output_dir}...')
+    logger.log(LogLevel.INFO.value, f"Sorting DICOMs in {output_dir}...")
     for dicom_loc in unsortedList:
         # read the file
         ds = pydicom.read_file(dicom_loc, force=True)
@@ -89,18 +91,15 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
         try:
             ds.decompress()
         except Exception as e:
-            print(f'An exception occurred while decompressing {dicom_loc}')
-            print(f'Exception details: {e}')
-            exit()
+            logger.log(LogLevel.WARNING.value, f"An exception occurred while decompressing {dicom_loc}! {e}.")
         
         # save files to a 3-tier nested folder structure
         subjFolderName = f"sub-{subj_name}"
         seriesFolderName = f"{seriesNumber}_{protocolName}"
-    
         subjName_date = f"{subj_name}_{studyDate}"
 
         if not any(subj_name in x for x in subjName_dates):
-            print(f'Identified subject: {subj_name}')
+            logger.log(LogLevel.INFO.value, f"Identified subject: {subj_name}")
         
         if subjName_date not in subjName_dates:
             subjName_dates.append(subjName_date)
@@ -108,12 +107,12 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
                 subjName_sessionNums[subj_name] += 1
             else:
                 subjName_sessionNums[subj_name] = 1
-            print(f'Identified session: {subj_name} #{subjName_sessionNums[subj_name]} {studyDate}')
+            logger.log(LogLevel.INFO.value, f"Identified session: {subj_name} #{subjName_sessionNums[subj_name]} {studyDate}")
 
         sesFolderName = f"ses-{subjName_sessionNums[subj_name]}" if not use_session_dates else f"ses-{studyDate}"
         
         if not os.path.exists(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName)):
-            print(f'Identified series: {subjFolderName}/{sesFolderName}/{seriesFolderName}')    
+            logger.log(LogLevel.INFO.value, f"Identified series: {subjFolderName}/{sesFolderName}/{seriesFolderName}")
             os.makedirs(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName), exist_ok=True)
         
         ds.save_as(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName, fileName))
@@ -125,7 +124,9 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
         for dicom_loc in unsortedList:
             os.remove(dicom_loc)
 
-    print('done sorting dicoms.')
+    logger.log(LogLevel.INFO.value, 'Finished')
+
+    show_warning_summary(logger)
 
 
 if __name__ == "__main__":
@@ -169,6 +170,17 @@ if __name__ == "__main__":
     args.output_dir = os.path.abspath(args.output_dir)
 
     os.makedirs(args.output_dir, exist_ok=True)
+
+    logger = make_logger(
+        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        printlevel=LogLevel.INFO,
+        writelevel=LogLevel.INFO,
+        warnlevel=LogLevel.WARNING,
+        errorlevel=LogLevel.ERROR
+    )
+
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
 
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version

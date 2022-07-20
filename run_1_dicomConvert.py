@@ -7,7 +7,28 @@ import glob
 import json
 import fnmatch
 import datetime
+
 from scripts.get_qsmxt_version import get_qsmxt_version
+from scripts.logger import LogLevel, make_logger, show_warning_summary 
+
+def sys_cmd(cmd):
+    logger.log(LogLevel.INFO.value, f"Running command: '{cmd}'")
+        
+    process = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout_byte = process.stdout
+    stderr_byte = process.stderr
+
+    stdout_str = stdout_byte.decode('UTF-8')
+    stderr_str = str(stderr_byte.decode('UTF-8'))
+    return_code = process.returncode
+    
+    if stdout_str:
+        logger.log(LogLevel.DEBUG.value, f"Command output: '{stdout_str}'", end="")
+
+    if return_code:
+        logger.log(LogLevel.WARNING.value, f"Command '{cmd}' returned error {return_code}: '{stderr_str}'")
+    
+    return return_code
 
 def load_json(path):
     f = open(path, encoding='utf-8')
@@ -17,7 +38,7 @@ def load_json(path):
 
 def rename(old, new, always_show=False):
     if always_show or not sys.__stdin__.isatty():
-        print(f'Renaming {old} -> {new}')
+        logger.log(LogLevel.INFO.value, f'Renaming {old} -> {new}')
     if not os.path.exists(os.path.split(new)[0]):
         os.makedirs(os.path.split(new)[0], exist_ok=True)
     os.rename(old, new)
@@ -31,8 +52,8 @@ def get_folders_in(folder, full_path=False):
     folders = [os.path.split(folder)[1] for folder in folders]
     return folders
 
-def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_patterns, auto_yes):
-    print('Converting all DICOMs to NIfTI...')
+def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_protocol_patterns, auto_yes):
+    logger.log(LogLevel.INFO.value, 'Converting all DICOMs to NIfTI...')
     subjects = get_folders_in(input_dir)
     for subject in subjects:
         sessions = get_folders_in(os.path.join(input_dir, subject))
@@ -40,16 +61,14 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
             session_extra_folder = os.path.join(output_dir, clean(subject), session, "extra_data")
             os.makedirs(session_extra_folder, exist_ok=True)
             if 'dcm2niix_output.txt' in os.listdir(session_extra_folder):
-                print(f'Warning: {session_extra_folder} already has dcm2niix conversion output! Skipping...')
+                logger.log(LogLevel.WARNING.value, f'{session_extra_folder} already has dcm2niix conversion output! Skipping...')
                 continue
             series = get_folders_in(os.path.join(input_dir, subject, session))
             for s in series:
                 series_dicom_folder = os.path.join(input_dir, subject, session, s)
-                print(f"dcm2niix -z n -o {session_extra_folder} {series_dicom_folder}")
-                subprocess.call(f"dcm2niix -z n -o {session_extra_folder} {series_dicom_folder} >> {os.path.join(session_extra_folder, 'dcm2niix_output.txt')}", executable='/bin/bash', shell=True)
+                sys_cmd(f"dcm2niix -z n -o {session_extra_folder} {series_dicom_folder} >> {os.path.join(session_extra_folder, 'dcm2niix_output.txt')}")
     
-    print(f"Enumerating protocol names from JSON headers in '{output_dir}/.../extra_data' folders...")
-    all_series_names = []
+    logger.log(LogLevel.INFO.value, f"Loading JSON headers from '{output_dir}/.../extra_data' folders...")
     subjects = get_folders_in(output_dir)
     json_files = []
     json_datas = []
@@ -59,36 +78,57 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
             session_extra_folder = os.path.join(output_dir, subject, session, "extra_data")
             json_files.extend(sorted(glob.glob(os.path.join(session_extra_folder, "*json"))))
             json_datas.extend([load_json(json_file) for json_file in sorted(glob.glob(os.path.join(session_extra_folder, "*json")))])
-    all_series_names = sorted(list(set([
-        json_datas[i]['ProtocolName'].lower()
-        for i in range(len(json_datas))
-        if json_datas[i]["Modality"] == "MR"
-    ])))
-    if not all_series_names:
-        print(f"Error: No valid protocol names found in JSON headers in '{output_dir}/.../extra_data' folders!")
+
+    logger.log(LogLevel.INFO.value, f"Enumerating protocol names from JSON headers...")
+    all_protocol_names = []
+    for i in range(len(json_datas)):
+        if "Modality" not in json_datas[i]:
+            logger.log(LogLevel.WARNING.value, f"'Modality' missing from JSON header '{json_files[i]}'. Skipping...")
+            continue
+        if json_datas[i]["Modality"] != "MR":
+            continue
+        if "ProtocolName" not in json_datas[i]:
+            logger.log(LogLevel.WARNING.value, f"'ProtocolName' missing from JSON header '{json_files[i]}'. Skipping...")
+            continue
+        all_protocol_names.append(json_datas[i]["ProtocolName"].lower())
+    all_protocol_names = sorted(list(set(all_protocol_names)))
+
+    if not all_protocol_names:
+        logger.log(LogLevel.ERROR.value, f"No valid protocol names found in JSON headers in '{output_dir}/.../extra_data' folders!")
         exit(1)
-    print(f"All protocol names identified: {all_series_names}")
 
-    # identify series using patterns
-    t2starw_series_names = []
-    for t2starw_series_pattern in t2starw_series_patterns:
-        for series_name in all_series_names:
-            if fnmatch.fnmatch(series_name, t2starw_series_pattern):
-                t2starw_series_names.append(series_name)
-    t1w_series_names = []
-    for t1w_series_pattern in t1w_series_patterns:
-        for series_name in all_series_names:
-            if fnmatch.fnmatch(series_name, t1w_series_pattern):
-                t1w_series_names.append(series_name)
-    if t2starw_series_names:
-        print(f"Chosen t2starw patterns {t2starw_series_patterns} matched with the following series: {t2starw_series_names}")
-    if t1w_series_names:
-        print(f"Chosen t1w patterns {t1w_series_patterns} matched with the following series: {t1w_series_names}")
+    logger.log(LogLevel.INFO.value, f"All protocol names identified: {all_protocol_names}")
 
-    if not t2starw_series_names and (sys.__stdin__.isatty() and not auto_yes): # if running interactively
-        print(f"No t2starw series found matching patterns: {t2starw_series_patterns}")
-        for i in range(len(all_series_names)):
-            print(f"{i+1}. {all_series_names[i]}")
+    # identify protocol names using patterns if not interactive or auto_yes is enabled
+    t2starw_protocol_names = []
+    t1w_protocol_names = []
+
+    if not sys.__stdin__.isatty() or auto_yes:
+        logger.log(LogLevel.INFO.value, f"Enumerating t2starw protocol names using match patterns {t2starw_protocol_patterns}...")
+        t2starw_protocol_names = []
+        for t2starw_protocol_pattern in t2starw_protocol_patterns:
+            for protocol_name in all_protocol_names:
+                if fnmatch.fnmatch(protocol_name, t2starw_protocol_pattern):
+                    t2starw_protocol_names.append(protocol_name)
+        if t2starw_protocol_names:
+            logger.log(LogLevel.INFO.value, f"Identified the following t2starw protocols: {t2starw_protocol_names}")
+
+        logger.log(LogLevel.INFO.value, f"Enumerating t1w protocol names using match patterns {t1w_protocol_patterns}...")
+        t1w_protocol_names = []
+        for t1w_protocol_pattern in t1w_protocol_patterns:
+            for protocol_name in all_protocol_names:
+                if fnmatch.fnmatch(protocol_name, t1w_protocol_pattern):
+                    t1w_protocol_names.append(protocol_name)
+        if t1w_protocol_names:
+            logger.log(LogLevel.INFO.value, f"Identified the following t1w protocols: {t1w_protocol_names}")
+
+
+    else: # manually identify protocols using selection if interactive
+
+        # === T2*W PROTOCOLS SELECTION ===
+        print("== PROTOCOL NAMES ==")
+        for i in range(len(all_protocol_names)):
+            print(f"{i+1}. {all_protocol_names[i]}")
         while True:
             user_input = input("Identify T2Starw scans for QSM (comma-separated numbers): ")
             t2starw_scans_idx = user_input.split(",")
@@ -99,21 +139,20 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
                 continue
             t2starw_scans_idx = sorted(list(set(t2starw_scans_idx)))
             try:
-                t2starw_series_names = [all_series_names[j] for j in t2starw_scans_idx]
+                t2starw_protocol_names = [all_protocol_names[j] for j in t2starw_scans_idx]
                 break
             except:
                 print("Invalid input")
-        if t2starw_series_names:
-            print(f"Identified matching t2starw series: {t2starw_series_names}")
-    elif not t2starw_series_names:
-        print(f"Error: No t2starw series found matching patterns: {t2starw_series_patterns}!")
-        exit(1)
+        if not t2starw_protocol_names:
+            logger.log(LogLevel.ERROR.value, "No T2Star weighted protocols identified! Exiting...")
+            exit(1)
+        logger.log(LogLevel.INFO.value, f"Identified the following protocols as t2starw: {t2starw_protocol_names}")
 
-    # identify T1w series
-    if not t1w_series_names and (sys.__stdin__.isatty() and not auto_yes):
-        print(f"No t1w series found matching pattern: {t1w_series_pattern}")
-        for i in range(len(all_series_names)):
-            print(f"{i+1}. {all_series_names[i]}")
+        # === T1W PROTOCOLS SELECTION ===
+        print("== PROTOCOL NAMES ==")
+        remaining_protocol_names = [protocol_name for protocol_name in all_protocol_names if protocol_name not in t2starw_protocol_names]
+        for i in range(len(remaining_protocol_names)):
+            print(f"{i+1}. {remaining_protocol_names[i]}")
         while True:
             user_input = input("Identify t1w scans for automated segmentation (comma-separated numbers; enter nothing to ignore): ").strip()
             if user_input == "":
@@ -125,62 +164,40 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
                 print("Invalid input")
                 continue
             try:
-                t1w_series_names = [all_series_names[j] for j in t1w_scans_idx]
+                t1w_protocol_names = [remaining_protocol_names[j] for j in t1w_scans_idx]
                 break
             except:
                 print("Invalid input")
-        if t1w_series_names:
-            print(f"Identified matching t1w series: {t1w_series_names}")
-    if not t1w_series_names:
-        print(f"Warning: No t1w series found matching patterns {t1w_series_patterns}! Automated segmentation will not be possible.")
-    
-    # create required dataset_description.json file
-    print('Generating datset description details...')
-    dataset_description = {
-        "Name" : f"QSMxT BIDS ({datetime.date.today()})",
-        "BIDSVersion" : "1.7.0",
-        "GeneratedBy" : [{
-            "Name" : "QSMxT",
-            "Version": f"{get_qsmxt_version()}",
-            "CodeURL" : "https://github.com/QSMxT/QSMxT"
-        }],
-        "Authors" : ["ADD AUTHORS HERE"]
-    }
-    print('Writing dataset_description.json...')
-    with open(os.path.join(args.output_dir, 'dataset_description.json'), 'w', encoding='utf-8') as dataset_json_file:
-        json.dump(dataset_description, dataset_json_file)
-    print('Done writing dataset_description.json')
+        if not t1w_protocol_names:
+            logger.log(LogLevel.WARNING.value, f"No t1w protocols found matching patterns {t1w_protocol_patterns}! Automated segmentation will not be possible.")
+        else:
+            logger.log(LogLevel.INFO.value, f"Identified the following protocols as t1w: {t1w_protocol_names}")
 
-    print('Writing .bidsignore file...')
-    with open(os.path.join(args.output_dir, '.bidsignore'), 'w', encoding='utf-8') as bidsignore_file:
-        bidsignore_file.write('*dcm2niix_output.txt\n')
-        bidsignore_file.write('details_and_citations.txt\n')
-    print('Done writing .bidsignore file')
-
-    with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
-        readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
-        readme_file.write(f"\nDescribe your dataset here.\n")
-
-    print('Parsing JSON headers...')
+    logger.log(LogLevel.INFO.value, 'Parsing relevant details from JSON headers...')
     all_session_details = []
     for subject in subjects:
         sessions = get_folders_in(os.path.join(output_dir, subject))
         for session in sessions:
+            logger.log(LogLevel.INFO.value, f"Parsing relevant JSON data from {subject}/{session}...")
             session_extra_folder = os.path.join(output_dir, subject, session, "extra_data")
             session_anat_folder = os.path.join(output_dir, subject, session, "anat")
             json_files = sorted(glob.glob(os.path.join(session_extra_folder, "*json")))
             session_details = []
             for json_file in json_files:
                 json_data = load_json(json_file)
-                if json_data['Modality'] == 'MR' and json_data['ProtocolName'].lower() in t2starw_series_names + t1w_series_names:
+                if 'Modality' not in json_data:
+                    logger.log(LogLevel.WARNING.value, f"'Modality' missing from JSON header '{json_file}'! Skipping...")
+                elif 'ProtocolName' not in json_data:
+                    logger.log(LogLevel.WARNING.value, f"'ProtocolName' missing from JSON header '{json_file}'! Skipping...")
+                elif json_data['Modality'] == 'MR' and json_data['ProtocolName'].lower() in t2starw_protocol_names + t1w_protocol_names:
                     details = {}
                     details['subject'] = subject
                     details['session'] = session
-                    details['series_type'] = None
-                    if json_data['ProtocolName'].lower() in t2starw_series_names:
-                        details['series_type'] = 't2starw'
-                    elif json_data['ProtocolName'].lower() in t1w_series_names:
-                        details['series_type'] = 't1w'
+                    details['protocol_type'] = None
+                    if json_data['ProtocolName'].lower() in t2starw_protocol_names:
+                        details['protocol_type'] = 't2starw'
+                    elif json_data['ProtocolName'].lower() in t1w_protocol_names:
+                        details['protocol_type'] = 't1w'
                     details['series_num'] = json_data['SeriesNumber']
                     details['part_type'] = 'phase' if 'P' in (json_data['ImageType'] if 'ImageType' in json_data.keys() else 'M') else 'mag'
                     details['echo_time'] = json_data['EchoTime']
@@ -192,27 +209,27 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
                     session_details.append(details)
 
             if session_details:
-                session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['series_type'], f['series_num'], 0 if 'phase' in f['part_type'] else 1, f['echo_time']))
+                session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['protocol_type'], f['series_num'], 0 if 'phase' in f['part_type'] else 1, f['echo_time']))
                 
                 # update run numbers
                 run_num = 1
                 series_num = session_details[0]['series_num']
-                series_type = session_details[0]['series_type']
+                protocol_type = session_details[0]['protocol_type']
                 for i in range(len(session_details)):
                     if session_details[i]['series_num'] != series_num:
-                        if session_details[i]['series_type'] == 't2starw' and session_details[i-1]['part_type'] == 'phase':
+                        if session_details[i]['protocol_type'] == 't2starw' and session_details[i-1]['part_type'] == 'phase':
                             run_num += 1
-                        elif session_details[i]['series_type'] == 't1w' and session_details[i-1]['series_type'] == 't1w':
+                        elif session_details[i]['protocol_type'] == 't1w' and session_details[i-1]['protocol_type'] == 't1w':
                             run_num += 1
-                        elif session_details[i]['series_type'] != session_details[i-1]['series_type']:
+                        elif session_details[i]['protocol_type'] != session_details[i-1]['protocol_type']:
                             run_num = 1
                         
                     series_num = session_details[i]['series_num']
-                    series_type = session_details[0]['series_type']
+                    protocol_type = session_details[0]['protocol_type']
                     session_details[i]['run_num'] = run_num
 
                 # update echo numbers and number of echoes
-                t2starw_details = [details for details in session_details if details['series_type'] == 't2starw']
+                t2starw_details = [details for details in session_details if details['protocol_type'] == 't2starw']
                 t2starw_run_nums = sorted(list(set(details['run_num'] for details in t2starw_details)))
                 for run_num in t2starw_run_nums:
                     echo_times = sorted(list(set([details['echo_time'] for details in t2starw_details if details['run_num'] == run_num])))
@@ -224,12 +241,12 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
 
                 # update names
                 for details in session_details:
-                    if details['series_type'] == 't1w':
-                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{details['run_num']}_T1w")
+                    if details['protocol_type'] == 't1w':
+                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(details['run_num']).zfill(2)}_T1w")
                     elif details['num_echoes'] == 1:
-                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{details['run_num']}_part-{details['part_type']}_T2starw")
+                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(details['run_num']).zfill(2)}_part-{details['part_type']}_T2starw")
                     else:
-                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{details['run_num']}_echo-{details['echo_num']}_part-{details['part_type']}_MEGRE")
+                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(details['run_num']).zfill(2)}_echo-{str(details['echo_num']).zfill(2)}_part-{details['part_type']}_MEGRE")
 
                 # store session details
                 all_session_details.extend(session_details)
@@ -243,11 +260,40 @@ def convert_to_nifti(input_dir, output_dir, t2starw_series_patterns, t1w_series_
             exit()
 
     # rename all files
-    print("Renaming files...")
+    logger.log(LogLevel.INFO.value, "Renaming files...")
     for details in all_session_details:
         rename(details['file_name']+'.json', details['new_name']+'.json', always_show=auto_yes)
         rename(details['file_name']+'.nii', details['new_name']+'.nii', always_show=auto_yes)
-    print("Finished!")
+    
+    # create required dataset_description.json file
+    logger.log(LogLevel.INFO.value, 'Generating details for BIDS datset_description.json...')
+    dataset_description = {
+        "Name" : f"QSMxT BIDS ({datetime.date.today()})",
+        "BIDSVersion" : "1.7.0",
+        "GeneratedBy" : [{
+            "Name" : "QSMxT",
+            "Version": f"{get_qsmxt_version()}",
+            "CodeURL" : "https://github.com/QSMxT/QSMxT"
+        }],
+        "Authors" : ["ADD AUTHORS HERE"]
+    }
+    logger.log(LogLevel.INFO.value, 'Writing BIDS dataset_description.json...')
+    with open(os.path.join(args.output_dir, 'dataset_description.json'), 'w', encoding='utf-8') as dataset_json_file:
+        json.dump(dataset_description, dataset_json_file)
+
+    logger.log(LogLevel.INFO.value, 'Writing BIDS .bidsignore file...')
+    with open(os.path.join(args.output_dir, '.bidsignore'), 'w', encoding='utf-8') as bidsignore_file:
+        bidsignore_file.write('*dcm2niix_output.txt\n')
+        bidsignore_file.write('details_and_citations.txt\n')
+
+    logger.log(LogLevel.INFO.value, 'Writing BIDS dataset README...')
+    with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
+        readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
+        readme_file.write(f"\nDescribe your dataset here.\n")
+
+    logger.log(LogLevel.INFO.value, 'Finished')
+
+    show_warning_summary(logger)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -284,17 +330,17 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--t2starw_series_patterns',
+        '--t2starw_protocol_patterns',
         default=['*t2starw*', '*qsm*'],
         nargs='*',
-        help='Patterns used to identify t2starw series for QSM from the DICOM ProtocolName field (case insensitive)'
+        help='Patterns used to identify t2starw protocol names for QSM from the DICOM ProtocolName field (case insensitive)'
     )
 
     parser.add_argument(
-        '--t1w_series_patterns',
+        '--t1w_protocol_patterns',
         default=['*t1w*'],
         nargs='*',
-        help='Patterns used to identify t1w series for segmentation from the DICOM ProtocolName field (case insensitive)'
+        help='Patterns used to identify t1w protocol names for segmentation from the DICOM ProtocolName field (case insensitive)'
     )
 
     args = parser.parse_args()
@@ -303,6 +349,17 @@ if __name__ == "__main__":
     args.output_dir = os.path.abspath(args.output_dir)
 
     os.makedirs(args.output_dir, exist_ok=True)
+
+    logger = make_logger(
+        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        printlevel=LogLevel.INFO,
+        writelevel=LogLevel.INFO,
+        warnlevel=LogLevel.WARNING,
+        errorlevel=LogLevel.ERROR
+    )
+
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
@@ -320,8 +377,8 @@ if __name__ == "__main__":
     convert_to_nifti(
         input_dir=args.input_dir,
         output_dir=args.output_dir,
-        t2starw_series_patterns=[pattern.lower() for pattern in args.t2starw_series_patterns],
-        t1w_series_patterns=[pattern.lower() for pattern in args.t1w_series_patterns],
+        t2starw_protocol_patterns=[pattern.lower() for pattern in args.t2starw_protocol_patterns],
+        t1w_protocol_patterns=[pattern.lower() for pattern in args.t1w_protocol_patterns],
         auto_yes=args.auto_yes
     )
     

@@ -4,8 +4,10 @@
 import os
 import glob
 import argparse
+from httplib2 import debuglevel
 import psutil
 import sys
+import datetime
 
 import nipype.interfaces.utility as util
 import nipype.interfaces.ants as ants
@@ -14,6 +16,7 @@ import nipype.pipeline.engine as pe
 
 from scripts.antsBuildTemplate import ANTSTemplateBuildSingleIterationWF
 from scripts.get_qsmxt_version import get_qsmxt_version
+from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 def init_workflow(magnitude_images, qsm_images):
 
@@ -170,6 +173,21 @@ if __name__ == "__main__":
     args.output_dir = os.path.abspath(args.output_dir)
     args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.output_dir)
 
+    os.makedirs(args.work_dir, exist_ok=True)
+    os.makedirs(args.output_dir, exist_ok=True)
+
+    # setup logger
+    logger = make_logger(
+        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        printlevel=LogLevel.INFO,
+        writelevel=LogLevel.INFO,
+        warnlevel=LogLevel.WARNING,
+        errorlevel=LogLevel.ERROR
+    )
+
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
+
     # environment variables for multi-threading
     os.environ["OMP_NUM_THREADS"] = "6"
     os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "6"
@@ -181,8 +199,8 @@ if __name__ == "__main__":
         available_ram_gb = psutil.virtual_memory().available / 1e9
         args.n_procs = max(1, min(int(available_ram_gb / 3), n_cpus))
         if available_ram_gb < 3:
-            print(f"Warning: Less than 3 GB of memory available ({available_ram_gb} GB). At least 3 GB is recommended. You may need to close background programs.")
-        print("Running with", args.n_procs, "processors.")
+            logger.log(LogLevel.WARNING.value, f"Less than 3 GB of memory available ({available_ram_gb} GB). At least 3 GB is recommended. You may need to close background programs.")
+        logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors.")
 
     # find input images
     magnitude_pattern = os.path.join(args.bids_dir, args.magnitude_pattern.format(subject=args.subject_pattern, session=args.session_pattern, run='*'))
@@ -198,9 +216,6 @@ if __name__ == "__main__":
         exit()
 
     wf = init_workflow(magnitude_images, qsm_images)
-
-    os.makedirs(args.work_dir, exist_ok=True)
-    os.makedirs(args.output_dir, exist_ok=True)
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
@@ -232,4 +247,6 @@ if __name__ == "__main__":
                 'n_procs': args.n_procs
             }
         )
+
+    show_warning_summary(logger)
 
