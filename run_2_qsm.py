@@ -307,7 +307,7 @@ def addMaskingNodes(wf, masking_setting, add_bet, n_mag_files, mag_files_name, m
             (mn_magmask, mn_mask, [('out_file', 'in_file')])
         ])
         
-    elif masking in ['hagberg-phase-based', 'romeo-phase-based', 'gaussian-based']:
+    elif masking in ['hagberg-phase-based', 'romeo-phase-based', 'gaussian-based', 'gaussian-phase-based']:
         wf_masking = masking_workflow(masking_setting, args.extra_fill_strength)
         wf.connect([
             (n_mag_files, wf_masking, [(mag_files_name, 'inputnode.mag')]),

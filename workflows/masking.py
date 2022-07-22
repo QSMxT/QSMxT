@@ -93,20 +93,46 @@ def masking_workflow(masking_setting, extra_fill_strength):
             name='automated-threshold'
         )
         mn_gaussmask = MapNode(
-                interface=ImageMaths(
-                    suffix="_mask"
-                ),
-                iterfield=['in_file', 'op_string'],
-                name='automated_threshold-mask'
-                # output: 'out_file'
-            )
-
+            interface=ImageMaths(
+                suffix="_mask"
+            ),
+            iterfield=['in_file', 'op_string'],
+            name='automated_threshold-mask'
+            # output: 'out_file'
+        )
         wf.connect([
             (inputnode, n_threshold, [('mag', 'in_files')]),
             (inputnode, mn_gaussmask, [('mag', 'in_file')]),
             (n_threshold, mn_gaussmask, [('op_string', 'op_string')]),
             (mn_gaussmask, mask_filled, [('out_file', 'in_file')])
         ])  
-    
+    elif masking_type == 'gaussian-phase-based':
+        romeo = MapNode(
+            interface=masking_interfaces.RomeoMaskingInterface(),
+            iterfield=['phase', 'mag'],
+            name='romeo-voxelquality'
+        )
+        romeo.inputs.weight_type = romeo_weights
+        n_threshold = Node(
+            interface=threshold_interface.ThresholdInterface(),
+            iterfield=['in_files'],
+            name='automated-threshold'
+        )
+        mn_gaussmask = MapNode(
+            interface=ImageMaths(
+                suffix="_mask"
+            ),
+            iterfield=['in_file', 'op_string'],
+            name='automated_threshold-mask'
+            # output: 'out_file'
+        )
+        wf.connect([
+            (inputnode, romeo, [('phase', 'phase'),
+                                ('mag', 'mag')]),
+            (romeo, n_threshold, [('voxelquality', 'in_files')]),
+            (romeo, mn_gaussmask, [('voxelquality', 'in_file')]),
+            (n_threshold, mn_gaussmask, [('op_string', 'op_string')]),
+            (mn_gaussmask, mask_filled, [('out_file', 'in_file')])
+        ])
 
     return wf
