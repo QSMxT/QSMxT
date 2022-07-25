@@ -13,6 +13,7 @@ from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from scripts.get_qsmxt_version import get_qsmxt_version
 
+from interfaces import nipype_interface_selectfiles as sf
 from interfaces import nipype_interface_tgv_qsm as tgv
 from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
@@ -89,34 +90,7 @@ def init_session_workflow(subject, session):
 def init_run_workflow(subject, session, run):
     wf = Workflow(run, base_dir=os.path.join(args.work_dir, "workflow_qsm", subject, session, run))
 
-    run_info = addGetFileNodes(subject, session, run)
-    if not run_info:
-        return # Skipping run
-    (n_getfiles, masking, add_bet, inhomogeneity_correction) = run_info
-
-    # datasink
-    n_datasink = Node(
-        interface=DataSink(base_directory=args.output_dir),
-        name='nipype_datasink'
-    )
-
-    mn_params = addParamsNodes(wf, n_getfiles)
-    
-    mn_phase_scaled = addPhaseScaleNodes(wf, n_getfiles)
-    
-    if inhomogeneity_correction:
-        n_mag_files = addInhomogeneityCorrectionNodes(wf, n_getfiles)
-        mag_files_name = 'out_file'
-    else:
-        n_mag_files = n_getfiles
-        mag_files_name = 'magnitude_files'
-        
-    (mn_mask, mn_bet) = addMaskingNodes(wf, masking, add_bet, n_mag_files, mag_files_name, mn_phase_scaled)
- 
-    addQsmReconstructionNodes(wf, masking, add_bet, mn_bet, n_datasink, mn_params, mn_mask, mn_phase_scaled)
-    return wf
-
-def addGetFileNodes(subject, session, run):
+    # get relevant files from this run
     phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.format(subject=subject, session=session, run=run))
     phase_files = sorted(glob.glob(phase_pattern))[:args.num_echoes_to_process]
     
@@ -154,9 +128,13 @@ def addGetFileNodes(subject, session, run):
     n_getfiles.inputs.magnitude_files = magnitude_files
     n_getfiles.inputs.params_files = params_files
 
-    return (n_getfiles, masking, add_bet, inhomogeneity_correction)
+    # datasink
+    n_datasink = Node(
+        interface=DataSink(base_directory=args.output_dir),
+        name='nipype_datasink'
+    )
 
-def addPhaseScaleNodes(wf, n_getfiles):
+    # scale phase data
     mn_stats = MapNode(
         # -R : <min intensity> <max intensity>
         interface=ImageStats(op_string='-R'),
@@ -196,10 +174,8 @@ def addPhaseScaleNodes(wf, n_getfiles):
         (n_getfiles, mn_phase_scaled, [('phase_files', 'in_file')]),
         (mn_stats, mn_phase_scaled, [(('out_stat', scale_to_pi), 'op_string')])
     ])
-    return mn_phase_scaled
 
-# read echotime and field strengths from json files
-def addParamsNodes(wf, n_getfiles):
+    # read echotime and field strengths from json files
     def read_json(in_file):
         import os
         te = 0.001
@@ -223,21 +199,20 @@ def addParamsNodes(wf, n_getfiles):
     wf.connect([
         (n_getfiles, mn_params, [('params_files', 'in_file')])
     ])
-    return mn_params
 
-def addInhomogeneityCorrectionNodes(wf, n_getfiles):
-    mn_inhomogeneity_correction = MapNode(
-        interface=makehomogeneous.MakeHomogeneousInterface(),
-        iterfield=['in_file'],
-        name='mriresearchtools_correct-inhomogeneity'
-        # output : out_file
-    )
-    wf.connect([
-        (n_getfiles, mn_inhomogeneity_correction, [('magnitude_files', 'in_file')])
-    ])
-    return mn_inhomogeneity_correction
+    # homogeneity filter
+    if inhomogeneity_correction:
+        mn_inhomogeneity_correction = MapNode(
+            interface=makehomogeneous.MakeHomogeneousInterface(),
+            iterfield=['in_file'],
+            name='mriresearchtools_correct-inhomogeneity'
+            # output : out_file
+        )
+        wf.connect([
+            (n_getfiles, mn_inhomogeneity_correction, [('magnitude_files', 'in_file')])
+        ])
 
-def addMaskingNodes(wf, masking, add_bet, n_mag_files, mag_files_name, mn_phase_scaled):
+    # brain extraction
     def repeat(in_file):
         return in_file
     mn_mask = MapNode(
@@ -249,7 +224,7 @@ def addMaskingNodes(wf, masking, add_bet, n_mag_files, mag_files_name, mn_phase_
         iterfield=['in_file'],
         name='func_repeat-mask'
     )
-    mn_bet = None
+
     if masking == 'bet' or add_bet:
         mn_bet = MapNode(
             interface=BET(frac=args.bet_fractional_intensity, mask=True, robust=True),
@@ -257,8 +232,13 @@ def addMaskingNodes(wf, masking, add_bet, n_mag_files, mag_files_name, mn_phase_
             name='fsl-bet'
             # output: 'mask_file'
         )
-        wf.connect([
-                (n_mag_files, mn_bet, [(mag_files_name, 'in_file')])
+        if inhomogeneity_correction:
+            wf.connect([
+                (mn_inhomogeneity_correction, mn_bet, [('out_file', 'in_file')])
+            ])
+        else:
+            wf.connect([
+                (n_getfiles, mn_bet, [('magnitude_files', 'in_file')])
             ])
 
         if not add_bet:
@@ -287,7 +267,10 @@ def addMaskingNodes(wf, masking, add_bet, n_mag_files, mag_files_name, mn_phase_
             # output : 'out_file'
         )
         wf.connect([
-            (mn_phaseweights, mn_phasemask, [('out_file', 'in_file')]),
+            (mn_phaseweights, mn_phasemask, [('out_file', 'in_file')])
+        ])
+        
+        wf.connect([
             (mn_phasemask, mn_mask, [('out_file', 'in_file')])
         ])
     elif masking == 'magnitude-based':
@@ -301,8 +284,16 @@ def addMaskingNodes(wf, masking, add_bet, n_mag_files, mag_files_name, mn_phase_
             # output: 'out_file'
         )
 
+        if inhomogeneity_correction:
+            wf.connect([
+                (mn_inhomogeneity_correction, mn_magmask, [('out_file', 'in_file')])
+            ])
+        else:
+            wf.connect([
+                (n_getfiles, mn_magmask, [('magnitude_files', 'in_file')])
+            ])
+
         wf.connect([
-            (n_mag_files, mn_magmask, [(mag_files_name, 'in_file')]),
             (mn_magmask, mn_mask, [('out_file', 'in_file')])
         ])
 
@@ -321,16 +312,24 @@ def addMaskingNodes(wf, masking, add_bet, n_mag_files, mag_files_name, mn_phase_
                 # output: 'out_file'
             )
 
+        if inhomogeneity_correction:
+            wf.connect([
+                (mn_inhomogeneity_correction, n_threshold, [('out_file', 'in_files')]),
+                (mn_inhomogeneity_correction, mn_gaussmask, [('out_file', 'in_file')])
+            ])
+        else:
+            wf.connect([
+                (n_getfiles, n_threshold, [('magnitude_files', 'in_files')]),
+                (n_getfiles, mn_gaussmask, [('magnitude_files', 'in_file')])
+            ])
+
         wf.connect([
-            (n_mag_files, n_threshold, [(mag_files_name, 'in_files')]),
-            (n_mag_files, mn_gaussmask, [(mag_files_name, 'in_file')]),
             (n_threshold, mn_gaussmask, [('op_string', 'op_string')]),
             (mn_gaussmask, mn_mask, [('out_file', 'in_file')])
         ])  
-    return (mn_mask, mn_bet)
 
     
-def addQsmReconstructionNodes(wf, masking, add_bet, mn_bet, n_datasink, mn_params, mn_mask, mn_phase_scaled):
+    # QSM reconstruction
     if args.two_pass or masking == 'bet':
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
