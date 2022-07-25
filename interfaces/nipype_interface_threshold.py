@@ -35,7 +35,7 @@ def thresholding(in_files, op_string=None):
     maxpoint = max(range(len(difference)), key=difference.__getitem__)
     threshold = bin[maxpoint]/np.amax(image_histogram)*100
 
-    op_string =  f"-thr {bin[maxpoint]} -bin -ero"
+    op_string =  f"-thr {bin[maxpoint]} -bin -ero -dilM"
     iter_op_string = [op_string]*len(in_files)
     return iter_op_string
 
