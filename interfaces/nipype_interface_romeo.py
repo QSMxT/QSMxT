@@ -24,7 +24,7 @@ class RomeoInterface(CommandLine):
 class RomeoB0InputSpec(BaseInterfaceInputSpec):
     phase = InputMultiPath(mandatory=True, exists=True)
     mag = InputMultiPath(mandatory=True, exists=True)
-    TE = traits.ListFloat(desc='Echo Time [sec]', mandatory=True, argstr="-t %s")
+    TE = traits.ListFloat(desc='Echo Time [sec]', mandatory=True, argstr="-t [%s]")
 
 class RomeoB0OutputSpec(TraitedSpec):
     B0 = File('B0.nii', usedefault=True)
