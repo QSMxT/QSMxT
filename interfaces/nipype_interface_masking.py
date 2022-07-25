@@ -7,7 +7,9 @@ from scipy.stats import norm
 from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath, OutputMultiPath
 
-def histogram(image_histogram, normalize):
+# === HELPER FUNCTIONS ===
+
+def _histogram(image_histogram, normalize):
     hist, bin_edges = np.histogram(image_histogram, bins=np.arange(image_histogram.min(), image_histogram.max()))
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.
     std = np.std(image_histogram)
@@ -16,21 +18,22 @@ def histogram(image_histogram, normalize):
         hist = hist / np.sum(hist)
     return hist, bin_centers, mean, std
 
-def gaussian_threshold(image_histogram):
-    hist, bin, mu, std = histogram(image_histogram, True)
+def _gaussian_threshold(image_histogram):
+    hist, bin, mu, std = _histogram(image_histogram, True)
     normal_distribution = norm.pdf(bin, mu, std)
     difference = [normal_distribution[i] - hist[i] if hist[i]<normal_distribution[i] else 0 for i in range(len(hist)) ]
     maxpoint = max(range(len(difference)), key=difference.__getitem__)
     #threshold_percent = bin[maxpoint]/np.amax(image_histogram)*100
     return bin[maxpoint] #threshold_percent
 
-def clean_histogram(image_histogram):
+def _clean_histogram(image_histogram):
     p_lower = np.percentile(image_histogram, 0.05) 
     p_upper = np.percentile(image_histogram, 99.5)
     image_histogram = image_histogram[np.logical_and(image_histogram > p_lower, image_histogram < p_upper)]
     return image_histogram
 
-def masking(in_files, threshold=None, fill_strength=1):
+# === THRESHOLD-BASED MASKING FOR TWO-PASS AND SINGLE-PASS QSM ===
+def threshold_masking(in_files, threshold=None, fill_strength=1):
     # load data
     all_niis = [nib.load(in_file) for in_file in in_files]
     all_float_data = [nii.get_fdata() for nii in all_niis]
@@ -38,9 +41,9 @@ def masking(in_files, threshold=None, fill_strength=1):
     
     # calculate gaussian threshold if none given
     if not threshold:
-        threshold = gaussian_threshold(image_histogram)
+        threshold = _gaussian_threshold(image_histogram)
     else:
-        threshold = np.percentile(clean_histogram(image_histogram), 100-threshold)
+        threshold = np.percentile(_clean_histogram(image_histogram), 100-threshold)
 
     # do masking
     masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
@@ -62,8 +65,8 @@ def masking(in_files, threshold=None, fill_strength=1):
             filled_masks[i] = binary_erosion(filled_masks[i]).astype(int)
 
     # determine filenames
-    mask_filenames = [f"{os.path.split(in_file)[1].split('.')[0]}_mask.nii" for in_file in in_files]
-    filled_mask_filenames = [f"{os.path.split(in_file)[1].split('.')[0]}_mask_filled.nii" for in_file in in_files]
+    mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask.nii" for in_file in in_files]
+    filled_mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask_filled.nii" for in_file in in_files]
 
     for i in range(len(masks)):
         nib.save(
@@ -87,13 +90,14 @@ def masking(in_files, threshold=None, fill_strength=1):
 
 
 class MaskingInputSpec(BaseInterfaceInputSpec):
-    in_files = InputMultiPath(mandatory=False, exists=True)
-    threshold = traits.Int(mandatory=False)
+    in_files = InputMultiPath(mandatory=True, exists=True)
+    threshold = traits.Int(mandatory=False, default_value=None)
+    fill_strength = traits.Int(mandatory=False, default_value=1)
 
 
 class MaskingOutputSpec(TraitedSpec):
-    mask_files = OutputMultiPath(File(exists=False))
-    filled_mask_files = OutputMultiPath(File(exists=False))
+    masks = OutputMultiPath(File(exists=False))
+    masks_filled = OutputMultiPath(File(exists=False))
 
 
 class MaskingInterface(SimpleInterface):
@@ -101,9 +105,9 @@ class MaskingInterface(SimpleInterface):
     output_spec = MaskingOutputSpec
 
     def _run_interface(self, runtime):
-        mask_files, filled_mask_files = qsmxt_masking(self.inputs.in_files, self.inputs.threshold)
-        self._results['mask_files'] = mask_files
-        self._results['filled_mask_files'] = filled_mask_files
+        masks, masks_filled = threshold_masking(self.inputs.in_files, self.inputs.threshold, self.inputs.fill_strength)
+        self._results['masks'] = masks
+        self._results['masks_filled'] = masks_filled
         return runtime
 
 
@@ -113,13 +117,13 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--in_files',
-        nargs='*',
+        nargs='+',
+        required=True,
         type=str
     )
 
     parser.add_argument(
         '--fill_strength',
-        nargs=1,
         type=int,
         default=1
     )
@@ -132,5 +136,5 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    mask_files = masking(args.in_files, args.threshold, args.fill_strength)
+    mask_files = threshold_masking(args.in_files, args.threshold, args.fill_strength)
 
