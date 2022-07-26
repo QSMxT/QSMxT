@@ -1,4 +1,4 @@
-from nipype.interfaces.base import CommandLine, TraitedSpec, File, CommandLineInputSpec
+from nipype.interfaces.base import CommandLine, TraitedSpec, File, CommandLineInputSpec, traits
 from nipype.utils.filemanip import fname_presuffix, split_filename
 import os
 
@@ -42,3 +42,53 @@ class PhaseWeightsInterface(CommandLine):
         )
 
         return outputs
+
+
+class RomeoPhaseWeightsInputSpec(CommandLineInputSpec):
+    phase = File(
+        exists=True,
+        mandatory=True,
+        argstr="--phase %s"
+    )
+    mag = File(
+        exists=True,
+        argstr="--mag %s"
+    )
+    weight_type = traits.Str(
+        default_value="error",
+        argstr="--type %s"
+    )
+    out_file = File(
+        argstr="--output %s",
+        name_source=['phase'],
+        name_template='%s_romeo_voxelquality.nii'
+    )
+
+class RomeoPhaseWeightsOutputSpec(TraitedSpec):
+    out_file = File()
+
+class RomeoPhaseWeightsInterface(CommandLine):
+    input_spec = RomeoPhaseWeightsInputSpec
+    output_spec = RomeoPhaseWeightsOutputSpec
+    _cmd = "romeo_voxelquality.jl"
+    
+
+class HagbergPhaseWeightsInputSpec(CommandLineInputSpec):
+    phase = File(
+        exists=True,
+        mandatory=True,
+        argstr="--phase %s"
+    )
+    out_file = File(
+        argstr="--output %s",
+        name_source=['phase'],
+        name_template='%s_pb_mask.nii'
+    )
+
+class HagbergPhaseWeightsOutputSpec(TraitedSpec):
+    out_file = File()
+
+class HagbergPhaseWeightsInterface(CommandLine):
+    input_spec = HagbergPhaseWeightsInputSpec
+    output_spec = HagbergPhaseWeightsOutputSpec
+    _cmd = "hagberg_pb_masking.jl"

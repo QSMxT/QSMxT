@@ -194,6 +194,26 @@ def init_run_workflow(subject, session, run):
         wf.connect([
             (mn_phase_scaled, mn_phaseweights, [('out_file', 'in_file')]),
         ])
+    elif masking_method == 'romeo-phase-based':
+        mn_phaseweights = MapNode(
+            interface=phaseweights.RomeoPhaseWeightsInterface(),
+            iterfield=['phase', 'mag'],
+            name='flexible_romeo_phase-weights'
+        )
+        mn_phaseweights.inputs.weight_type = args.mask_type
+        wf.connect([
+            (mn_phase_scaled, mn_phaseweights, [('out_file', 'phase')]),
+            (n_getfiles, mn_phaseweights, [('magnitude_files', 'mag')]),
+        ])
+    elif masking_method == 'hagberg-phase-based':
+        mn_phaseweights = MapNode(
+            interface=phaseweights.HagbergPhaseWeightsInterface(),
+            iterfield=['phase'],
+            name='hagberg_phase-weights'
+        )
+        wf.connect([
+            (mn_phase_scaled, mn_phaseweights, [('out_file', 'phase')]),
+        ])
 
     # run bet if necessary
     if masking_method == 'bet' or add_bet:
@@ -223,7 +243,7 @@ def init_run_workflow(subject, session, run):
         ])
 
     # do threshold-based masking if necessary
-    if masking_method in ['phase-based', 'magnitude-based']:
+    if masking_method != 'bet':
         n_threshold_masking = Node(
             interface=masking.MaskingInterface(
                 fill_strength=args.fill_strength
@@ -233,7 +253,7 @@ def init_run_workflow(subject, session, run):
         )
         if args.threshold: n_threshold_masking = args.threshold
 
-        if masking_method == 'phase-based':    
+        if 'phase-based' in masking_method:
             wf.connect([
                 (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
             ])
@@ -275,7 +295,7 @@ def init_run_workflow(subject, session, run):
             (mn_bet_erode, mn_mask, [('out_file', 'masks')]),
             (mn_bet_erode, mn_mask, [('out_file', 'masks_filled')])
         ])
-    if masking_method in ['magnitude-based', 'phase-based']:
+    if masking_method != 'bet':
         wf.connect([
             (n_threshold_masking, mn_mask, [('masks', 'masks')])
         ])
@@ -296,7 +316,7 @@ def init_run_workflow(subject, session, run):
             wf.connect([
                 (mn_mask_plus_bet, mn_mask, [('out_file', 'masks_filled')])
             ])
-            
+
     # === Single-pass QSM reconstruction (filled) ===
     mn_qsm_filled = MapNode(
         interface=tgv.QSMappingInterface(
@@ -473,12 +493,20 @@ if __name__ == "__main__":
     parser.add_argument(
         '--masking', '-m',
         default='magnitude-based',
-        choices=['magnitude-based', 'phase-based', 'bet'],
+        choices=['magnitude-based', 'phase-based', 'bet', 'romeo-phase-based', 'hagberg-phase-based'],
         help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
              'thresholding a lower percentage of the histogram of the signal (adjust using the '+
              '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
              'thresholded and the magnitude is not required. Using BET automatically disables '+
              'the two-pass inversion strategy for artefact mitigation.'
+    )
+    
+    parser.add_argument(
+        '--mask_type',
+        default='grad+second+mag_coherence',
+        help='Only applied for the romeo-phase-based masking option. Options are grad (gradient), ' +
+             'second (second order gradient), mag_coherence, mag_intensity. The options can be ' +
+             'joined with "+", eg. grad+mag_coherence.'
     )
 
     parser.add_argument(
