@@ -164,7 +164,7 @@ if __name__ == "__main__":
             label_stats = get_stats(labels, seg, qsm)
 
             # write header to file
-            f_name = (files_seg[i].split('/')[-1]).replace('.nii.gz', '.nii').replace('.nii', '.csv')
+            f_name = (files_seg[i].split('/')[-1]).split('.')[0] + '.csv'
             f = open(os.path.join(args.output_dir, f_name), 'w', encoding='utf-8')
             f.write('roi,num_voxels,min,max,median,mean,std\n')
 
@@ -188,7 +188,7 @@ if __name__ == "__main__":
         update_labels(labels, seg)
 
         # write header to file
-        f_name = os.path.split(args.segmentations[0])[1].replace('.nii.gz', '.nii').replace('.nii', '.csv')
+        f_name = os.path.split(args.segmentations[0])[1].split('.')[0] + '.csv'
         f = open(os.path.join(args.output_dir, f_name), 'w', encoding='utf-8')
         f.write('subject,roi,num_voxels,min,max,median,mean,std\n')
         

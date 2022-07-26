@@ -1,4 +1,4 @@
-from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec
+from nipype.interfaces.base import CommandLine, TraitedSpec, File, CommandLineInputSpec
 from nipype.utils.filemanip import fname_presuffix, split_filename
 import os
 
