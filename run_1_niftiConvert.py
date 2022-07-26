@@ -31,7 +31,7 @@ def load_json(path):
 
 
 def json_filename(nifti_filename):
-    return nifti_filename.replace(".nii.gz", ".nii").replace(".nii", ".json")
+    return nifti_filename.split('.')[0] + '.json'
 
 
 def parse_num_or_exit(string, error_message, whole_number=False):
