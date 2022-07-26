@@ -30,7 +30,7 @@ class FastSurferInterface(CommandLine):
 
     def _list_outputs(self):
         outputs = self.output_spec().get()
-        infile_name = (os.path.split(self.inputs.in_file)[1]).replace(".nii.gz", ".nii").replace(".nii", "")
+        infile_name = (os.path.split(self.inputs.in_file)[1]).split('.')[0]
         outfile_old = os.path.join('output', 'mri', 'aparc.DKTatlas+aseg.deep.mgz')
         outfile_new = os.path.join('output', 'mri', infile_name + '_segmentation.mgz')
         shutil.copy(outfile_old, outfile_new)

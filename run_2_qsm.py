@@ -7,20 +7,21 @@ import glob
 import psutil
 import datetime
 
-from nipype.interfaces.fsl import BET, ImageMaths, ImageStats
+from nipype.interfaces.fsl import BET
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from scripts.get_qsmxt_version import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
-from interfaces import nipype_interface_selectfiles as sf
+from interfaces import nipype_interface_scalephase as scalephase
 from interfaces import nipype_interface_tgv_qsm as tgv
 from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_masking as masking
+from interfaces import nipype_interface_erode as erode
 
 import argparse
 
@@ -88,7 +89,11 @@ def init_session_workflow(subject, session):
     return wf
 
 def init_run_workflow(subject, session, run):
-    wf = Workflow(run, base_dir=os.path.join(args.work_dir, "workflow_qsm", subject, session, run))
+
+    # create copies of command-line arguments that may need to change for this run (if problems occur)
+    masking_method = args.masking
+    add_bet = args.add_bet
+    inhomogeneity_correction = args.inhomogeneity_correction
 
     # get relevant files from this run
     phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.format(subject=subject, session=session, run=run))
@@ -100,22 +105,21 @@ def init_run_workflow(subject, session, run):
     params_pattern = os.path.join(args.bids_dir, args.phase_pattern.format(subject=subject, session=session, run=run).replace("nii.gz", "nii").replace("nii", "json"))
     params_files = sorted(glob.glob(params_pattern))[:args.num_echoes_to_process]
 
-    masking_method = args.masking
-    add_bet = args.add_bet
-    inhomogeneity_correction = args.inhomogeneity_correction
-
-    # handle any errors
+    # handle any errors related to files
     if not phase_files:
         logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - no phase files found matching pattern {phase_pattern}.")
         return
     if len(phase_files) != len(params_files):
         logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
         return
-    if (not magnitude_files and any([masking_method == 'gaussian-based', masking_method == 'magnitude-based', masking_method == 'bet', add_bet, inhomogeneity_correction])):
+    if (not magnitude_files and any([masking_method == 'magnitude-based', masking_method == 'bet', add_bet, inhomogeneity_correction])):
         logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
         masking_method = 'phase-based'
         add_bet = False
         inhomogeneity_correction = False
+
+    # create nipype workflow for this run
+    wf = Workflow(run, base_dir=os.path.join(args.work_dir, "workflow_qsm", subject, session, run))
 
     # get files
     n_getfiles = Node(
@@ -135,57 +139,24 @@ def init_run_workflow(subject, session, run):
     )
 
     # scale phase data
-    mn_stats = MapNode(
-        # -R : <min intensity> <max intensity>
-        interface=ImageStats(op_string='-R'),
-        iterfield=['in_file'],
-        name='fslstats_phase-range',
-        # output: 'out_stat'
-    )
-    wf.connect([
-        (n_getfiles, mn_stats, [('phase_files', 'in_file')])
-    ])
-    def scale_to_pi(min_and_max):
-        from math import pi
-
-        min_value = min_and_max[0][0]
-        max_value = min_and_max[0][1]
-        fsl_cmd = ""
-
-        # set range to [0, max-min]
-        fsl_cmd += "-sub %.10f " % min_value
-        max_value -= min_value
-        min_value -= min_value
-
-        # set range to [0, 2pi]
-        fsl_cmd += "-div %.10f " % (max_value / (2*pi))
-
-        # set range to [-pi, pi]
-        fsl_cmd += "-sub %.10f" % pi
-        return fsl_cmd
     mn_phase_scaled = MapNode(
-        interface=ImageMaths(suffix="_scaled"),
-        name='fslmaths_scale-phase',
-        iterfield=['in_file']
-        # inputs: 'in_file', 'op_string'
-        # output: 'out_file'
+        interface=scalephase.ScalePhaseInterface(),
+        iterfield=['in_file'],
+        name='nibabel_scale-phase'
+        # outputs : 'out_file'
     )
     wf.connect([
-        (n_getfiles, mn_phase_scaled, [('phase_files', 'in_file')]),
-        (mn_stats, mn_phase_scaled, [(('out_stat', scale_to_pi), 'op_string')])
+        (n_getfiles, mn_phase_scaled, [('phase_files', 'in_file')])
     ])
 
     # read echotime and field strengths from json files
     def read_json(in_file):
-        import os
-        te = 0.001
-        b0 = 7
-        if os.path.exists(in_file):
-            import json
-            with open(in_file, 'rt') as fp:
-                data = json.load(fp)
-                te = data['EchoTime']
-                b0 = data['MagneticFieldStrength']
+        import json
+        json_file = open(in_file, 'rt')
+        data = json.load(json_file)
+        te = data['EchoTime']
+        b0 = data['MagneticFieldStrength']
+        json_file.close()
         return te, b0
     mn_params = MapNode(
         interface=Function(
@@ -212,6 +183,18 @@ def init_run_workflow(subject, session, run):
             (n_getfiles, mn_inhomogeneity_correction, [('magnitude_files', 'in_file')])
         ])
 
+    # do phase weights if necessary
+    if masking_method == 'phase-based':
+        mn_phaseweights = MapNode(
+            interface=phaseweights.PhaseWeightsInterface(),
+            iterfield=['in_file'],
+            name='romeo_phase-weights'
+            # output: 'out_file'
+        )
+        wf.connect([
+            (mn_phase_scaled, mn_phaseweights, [('out_file', 'in_file')]),
+        ])
+
     # run bet if necessary
     if masking_method == 'bet' or add_bet:
         mn_bet = MapNode(
@@ -229,39 +212,26 @@ def init_run_workflow(subject, session, run):
                 (n_getfiles, mn_bet, [('magnitude_files', 'in_file')])
             ])
         mn_bet_erode = MapNode(
-            interface=ImageMaths(
-                suffix='_ero',
-                op_string=f'-ero -ero'
+            interface=erode.ErosionInterface(
+                num_erosions=1
             ),
             iterfield=['in_file'],
-            name='fslmaths_erode-bet'
+            name='nibabel_erode'
         )
         wf.connect([
             (mn_bet, mn_bet_erode, [('mask_file', 'in_file')])
-        ])
-
-    # do phase weights if necessary
-    if masking_method == 'phase-based':
-        mn_phaseweights = MapNode(
-            interface=phaseweights.PhaseWeightsInterface(),
-            iterfield=['in_file'],
-            name='romeo_phase-weights'
-            # output: 'out_file'
-        )
-        wf.connect([
-            (mn_phase_scaled, mn_phaseweights, [('out_file', 'in_file')]),
         ])
 
     # do threshold-based masking if necessary
     if masking_method in ['phase-based', 'magnitude-based']:
         n_threshold_masking = Node(
             interface=masking.MaskingInterface(
-                threshold=args.threshold,
                 fill_strength=args.fill_strength
             ),
             name='python_threshold-masking'
             # inputs : ['in_files']
         )
+        if args.threshold: n_threshold_masking = args.threshold
 
         if masking_method == 'phase-based':    
             wf.connect([
@@ -301,8 +271,8 @@ def init_run_workflow(subject, session, run):
         name='func_repeat-mask'
     )
     if masking_method == 'bet':
-        mn_mask.masks = None
         wf.connect([
+            (mn_bet_erode, mn_mask, [('out_file', 'masks')]),
             (mn_bet_erode, mn_mask, [('out_file', 'masks_filled')])
         ])
     if masking_method in ['magnitude-based', 'phase-based']:
@@ -327,7 +297,7 @@ def init_run_workflow(subject, session, run):
                 (mn_mask_plus_bet, mn_mask, [('out_file', 'masks_filled')])
             ])
             
-    # Single-pass QSM reconstruction (filled)
+    # === Single-pass QSM reconstruction (filled) ===
     mn_qsm_filled = MapNode(
         interface=tgv.QSMappingInterface(
             iterations=args.qsm_iterations,
@@ -342,13 +312,10 @@ def init_run_workflow(subject, session, run):
         # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
         # output: 'out_file'
     )
-
-    # args for PBS
     mn_qsm_filled.plugin_args = {
         'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.qsm_threads}:mem=20gb:vmem=20gb',
         'overwrite': True
     }
-
     wf.connect([
         (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
         (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
@@ -364,14 +331,11 @@ def init_run_workflow(subject, session, run):
         # output : out_file
     )
     wf.connect([
-        (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')])
-    ])
-
-    wf.connect([
+        (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')]),
         (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_singlepass' if args.two_pass else 'qsm_final')]),
     ])
 
-    # Two-pass QSM reconstruction (not filled)
+    # === Two-pass QSM reconstruction (not filled) ===
     if args.two_pass:
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
@@ -509,7 +473,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--masking', '-m',
         default='magnitude-based',
-        choices=['magnitude-based', 'phase-based', 'bet', 'gaussian-based'],
+        choices=['magnitude-based', 'phase-based', 'bet'],
         help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
              'thresholding a lower percentage of the histogram of the signal (adjust using the '+
              '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
@@ -538,9 +502,11 @@ if __name__ == "__main__":
         help='Applies an inhomogeneity correction to the magnitude prior to masking'
     )
 
+    def nullable_int(value):
+        return value if value is None else int(value)
     parser.add_argument(
         '--threshold',
-        type=int,
+        type=nullable_int,
         default=None,
         help='Threshold percentage; anything less than the threshold will be excluded from the mask. ' +
              'By default, the threshold is automatically chosen based on a \'gaussian\' algorithm.'
