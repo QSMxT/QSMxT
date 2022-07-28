@@ -195,6 +195,30 @@ def init_run_workflow(subject, session, run):
             (mn_phase_scaled, mn_phaseweights, [('out_file', 'in_file')]),
         ])
 
+    # do threshold-based masking if necessary
+    if masking_method in ['phase-based', 'magnitude-based']:
+        n_threshold_masking = Node(
+            interface=masking.MaskingInterface(
+                fill_strength=args.fill_strength
+            ),
+            name='python_threshold-masking'
+            # inputs : ['in_files']
+        )
+        if args.threshold: n_threshold_masking = args.threshold
+
+        if masking_method == 'phase-based':    
+            wf.connect([
+                (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
+            ])
+        elif masking_method == 'magnitude-based' and not inhomogeneity_correction:
+            wf.connect([
+                (n_getfiles, n_threshold_masking, [('magnitude_files', 'in_files')])
+            ])
+        else:
+            wf.connect([
+                (mn_inhomogeneity_correction, n_threshold_masking, [('out_file', 'in_files')])
+            ])
+
     # run bet if necessary
     if masking_method == 'bet' or add_bet:
         mn_bet = MapNode(
@@ -221,30 +245,6 @@ def init_run_workflow(subject, session, run):
         wf.connect([
             (mn_bet, mn_bet_erode, [('mask_file', 'in_file')])
         ])
-
-    # do threshold-based masking if necessary
-    if masking_method in ['phase-based', 'magnitude-based']:
-        n_threshold_masking = Node(
-            interface=masking.MaskingInterface(
-                fill_strength=args.fill_strength
-            ),
-            name='python_threshold-masking'
-            # inputs : ['in_files']
-        )
-        if args.threshold: n_threshold_masking = args.threshold
-
-        if masking_method == 'phase-based':    
-            wf.connect([
-                (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
-            ])
-        elif masking_method == 'magnitude-based' and not inhomogeneity_correction:
-            wf.connect([
-                (n_getfiles, n_threshold_masking, [('magnitude_files', 'in_files')])
-            ])
-        else:
-            wf.connect([
-                (mn_inhomogeneity_correction, n_threshold_masking, [('out_file', 'in_files')])
-            ])
 
         # add bet if necessary
         if add_bet:
