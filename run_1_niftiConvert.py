@@ -1,10 +1,8 @@
 #!/usr/bin/env python3
 
 import argparse
-from distutils.log import Log
 import os
 import sys
-import nibabel as nib
 import json
 import shutil
 import datetime
@@ -426,8 +424,8 @@ if __name__ == "__main__":
         # output command used to invoke script
         f.write(str.join(" ", sys.argv))
 
-        f.write("\n\n - Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
         f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
+        f.write("\n\n - Gorgolewski KJ, Auer T, Calhoun VD, et al. The brain imaging data structure, a format for organizing and describing outputs of neuroimaging experiments. Sci Data. 2016;3(1):160044. doi:10.1038/sdata.2016.44")
         f.write("\n\n")
 
     nifti_to_bids(

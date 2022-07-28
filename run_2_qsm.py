@@ -142,7 +142,7 @@ def init_run_workflow(subject, session, run):
     mn_phase_scaled = MapNode(
         interface=scalephase.ScalePhaseInterface(),
         iterfield=['in_file'],
-        name='nibabel_scale-phase'
+        name='nibabel_numpy_scale-phase'
         # outputs : 'out_file'
     )
     wf.connect([
@@ -201,7 +201,7 @@ def init_run_workflow(subject, session, run):
             interface=masking.MaskingInterface(
                 fill_strength=args.fill_strength
             ),
-            name='python_threshold-masking'
+            name='scipy_numpy_nibabel_threshold-masking'
             # inputs : ['in_files']
         )
         if args.threshold: n_threshold_masking = args.threshold
@@ -240,7 +240,7 @@ def init_run_workflow(subject, session, run):
                 num_erosions=1
             ),
             iterfield=['in_file'],
-            name='nibabel_erode'
+            name='scipy_numpy_nibabel_erode'
         )
         wf.connect([
             (mn_bet, mn_bet_erode, [('mask_file', 'in_file')])
@@ -250,7 +250,7 @@ def init_run_workflow(subject, session, run):
         if add_bet:
             mn_mask_plus_bet = MapNode(
                 interface=twopass.TwopassNiftiInterface(),
-                name='nibabel_mask-plus-bet',
+                name='numpy_nibabel_mask-plus-bet',
                 iterfield=['in_file1', 'in_file2'],
             )
             wf.connect([
@@ -286,7 +286,7 @@ def init_run_workflow(subject, session, run):
         else:
             mn_mask_plus_bet = MapNode(
                 interface=twopass.TwopassNiftiInterface(),
-                name='nibabel_mask-plus-bet',
+                name='numpy_nibabel_mask-plus-bet',
                 iterfield=['in_file1', 'in_file2'],
             )
             wf.connect([
@@ -326,7 +326,7 @@ def init_run_workflow(subject, session, run):
     # qsm averaging
     n_qsm_filled_average = Node(
         interface=nonzeroaverage.NonzeroAverageInterface(),
-        name='nibabel_qsm-filled-average'
+        name='numpy_nibabel_qsm-filled-average'
         # input : in_files
         # output : out_file
     )
@@ -367,7 +367,7 @@ def init_run_workflow(subject, session, run):
         # qsm averaging
         n_qsm_average = Node(
             interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='nibabel_qsm-average'
+            name='numpy_nibabel_qsm-average'
             # input : in_files
             # output : out_file
         )
@@ -378,7 +378,7 @@ def init_run_workflow(subject, session, run):
         # Two-pass combination step
         mn_qsm_twopass = MapNode(
             interface=twopass.TwopassNiftiInterface(),
-            name='nibabel_twopass',
+            name='numpy_nibabel_twopass',
             iterfield=['in_file1', 'in_file2']
         )
         wf.connect([
@@ -389,7 +389,7 @@ def init_run_workflow(subject, session, run):
 
         n_qsm_twopass_average = Node(
             interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='nibabel_twopass-average'
+            name='numpy_nibabel_twopass-average'
             # input : in_files
             # output: out_file
         )
@@ -657,23 +657,27 @@ if __name__ == "__main__":
         # output command used to invoke script
         f.write(str.join(" ", sys.argv))
 
-        # qsmxt, nipype
+        # qsmxt, nipype, numpy
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
         f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
-
-        if any_string_matches_any_node(['fslstats', 'fslmaths']):
-            f.write("\n\n - Jenkinson M, Beckmann CF, Behrens TEJ, Woolrich MW, Smith SM. FSL. NeuroImage. 2012;62(2):782-790. doi:10.1016/j.neuroimage.2011.09.015")
+        
+        if any_string_matches_any_node(['tgv']):
+            f.write("\n\n - Langkammer C, Bredies K, Poser BA, et al. Fast quantitative susceptibility mapping using 3D EPI and total generalized variation. NeuroImage. 2015;111:622-630. doi:10.1016/j.neuroimage.2015.02.041")
+        if any_string_matches_any_node(['threshold-masking']) and args.threshold is None:
+            f.write("\n\n - Balan AGR, Traina AJM, Ribeiro MX, Marques PMA, Traina Jr. C. Smart histogram analysis applied to the skull-stripping problem in T1-weighted MRI. Computers in Biology and Medicine. 2012;42(5):509-522. doi:10.1016/j.compbiomed.2012.01.004")
         if any_string_matches_any_node(['bet']):
             f.write("\n\n - Smith SM. Fast robust automated brain extraction. Human Brain Mapping. 2002;17(3):143-155. doi:10.1002/hbm.10062")
         if any_string_matches_any_node(['romeo']):
             f.write("\n\n - Dymerska B, Eckstein K, Bachrata B, et al. Phase unwrapping with a rapid opensource minimum spanning tree algorithm (ROMEO). Magnetic Resonance in Medicine. 2021;85(4):2294-2308. doi:10.1002/mrm.28563")
-        if any_string_matches_any_node(['tgv']):
-            f.write("\n\n - Langkammer C, Bredies K, Poser BA, et al. Fast quantitative susceptibility mapping using 3D EPI and total generalized variation. NeuroImage. 2015;111:622-630. doi:10.1016/j.neuroimage.2015.02.041")
         if any_string_matches_any_node(['correct-inhomogeneity']):
             f.write("\n\n - Eckstein K, Trattnig S, Simon DR. A Simple homogeneity correction for neuroimaging at 7T. In: Proc. Intl. Soc. Mag. Reson. Med. International Society for Magnetic Resonance in Medicine; 2019. Abstract 2716. https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html")
-        if any_string_matches_any_node(['correct-inhomogeneity', 'romeo']):
+        if any_string_matches_any_node(['mriresearchtools']):
             f.write("\n\n - Eckstein K. korbinian90/MriResearchTools.jl. GitHub; 2022. https://github.com/korbinian90/MriResearchTools.jl")
+        if any_string_matches_any_node(['numpy']) and args.threshold is None:
+            f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
+        if any_string_matches_any_node(['scipy']):
+            f.write("\n\n - Virtanen P, Gommers R, Oliphant TE, et al. SciPy 1.0: fundamental algorithms for scientific computing in Python. Nat Methods. 2020;17(3):261-272. doi:10.1038/s41592-019-0686-2")
         if any_string_matches_any_node(['nibabel']):
             f.write("\n\n - Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
         f.write("\n\n")
