@@ -5,6 +5,7 @@ import nibabel as nib
 import argparse
 import os
 import sys
+import datetime
 
 from scripts.get_qsmxt_version import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
@@ -135,6 +136,7 @@ if __name__ == "__main__":
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
         f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
+        f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n")
 
     files_qsm = sorted(args.qsm_files)

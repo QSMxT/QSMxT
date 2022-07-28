@@ -4,7 +4,6 @@
 import os
 import glob
 import argparse
-from httplib2 import debuglevel
 import psutil
 import sys
 import datetime

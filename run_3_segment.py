@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+
 from nipype.pipeline.engine import Workflow, Node
 from nipype.interfaces.io import DataSink
 from nipype.interfaces.ants.registration import RegistrationSynQuick
@@ -113,7 +114,7 @@ def init_run_workflow(subject, session, run):
     # convert segmentation to nii
     n_fastsurfer_aseg_nii = Node(
         interface=mgz2nii.Mgz2NiiInterface(),
-        name='nibabel_mgz2nii',
+        name='numpy_nibabel_mgz2nii',
     )
     wf.connect([
         (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
@@ -325,6 +326,7 @@ if __name__ == "__main__":
         f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
         f.write("\n\n - Henschel L, Conjeti S, Estrada S, Diers K, Fischl B, Reuter M. FastSurfer - A fast and accurate deep learning based neuroimaging pipeline. NeuroImage. 2020;219:117012. doi:10.1016/j.neuroimage.2020.117012")
         f.write("\n\n - Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")
+        f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n - Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
         f.write("\n\n")
 

@@ -8,6 +8,7 @@ import argparse
 import os
 import sys
 import pydicom  # pydicom is using the gdcm package for decompression
+import datetime
 
 from scripts.get_qsmxt_version import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
