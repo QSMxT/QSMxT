@@ -69,10 +69,6 @@ conda_command=`cat /tmp/QSMxT/README.md | grep "conda install "`
 echo $conda_command
 yes | $conda_command
 
-bidscoin_command=`cat /tmp/QSMxT/README.md | grep "pip install bidscoin"`
-echo $bidscoin_command
-$bidscoin_command > /dev/null 2>&1
-
 echo "[DEBUG] starting run_0_dicomSort.py"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/run_0_dicomSort.py /tmp/dicoms /tmp/00_dicom
 

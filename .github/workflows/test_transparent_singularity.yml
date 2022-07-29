@@ -5,36 +5,24 @@ on:
   repository_dispatch:
   push:
     branches: [ master ]
-    paths-ignore:
-      - diagram.png
-      - aseg_labels.csv
-      - run_1_fixGEphaseFFTshift.py
-      - run_3_segment.py
+    paths:
+      - README.md
+      - run_0_dicomSort.py
+      - run_1_dicomConvert.py
+      - run_2_qsm.py
       - run_4_template.py
-      - run_5_analysis.py
-      - .gitignore
-      - .github/workflows/test_segmentation_pipeline.yml
-      - .github/workflows/test_template_pipeline.yml
-      - .github/workflows/test_qsm_pipeline.yml
-      - tests/run_test_segment.sh
-      - tests/run_test_template.sh
-      - tests/run_test_qsm.sh
+      - .github/workflows/test_transparent_singularity.yml
+      - tests/run_test_transparent_singularity.sh
   pull_request:
     branches: [ master ]
-    paths-ignore:
-      - .gitignore
-      - diagram.png
-      - aseg_labels.csv
-      - run_1_fixGEphaseFFTshift.py
-      - run_3_segment.py
+    paths:
+      - README.md
+      - run_0_dicomSort.py
+      - run_1_dicomConvert.py
+      - run_2_qsm.py
       - run_4_template.py
-      - run_5_analysis.py
-      - .github/workflows/test_segmentation_pipeline.yml
-      - .github/workflows/test_template_pipeline.yml
-      - .github/workflows/test_qsm_pipeline.yml
-      - tests/run_test_segment.sh
-      - tests/run_test_template.sh
-      - tests/run_test_qsm.sh
+      - .github/workflows/test_transparent_singularity.yml
+      - tests/run_test_transparent_singularity.sh
     
 jobs:
   test_transparent_singularity_pipeline:
