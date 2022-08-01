@@ -38,24 +38,24 @@ There is also a docker image available:
 
 For Windows:
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.12:20220729
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.12:20220801
 ```
 For Linux/Mac:
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.12:20220729
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.12:20220801
 ```
 
 ## QSMxT Usage
 1. Convert DICOM or NIfTI data to BIDS:
     ```bash
     # DICOM TO BIDS (recommended)
-    python3 /opt/QSMxT/run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
-    python3 /opt/QSMxT/run_1_dicomConvert.py 00_dicom 01_bids
+    run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
+    run_1_dicomConvert.py 00_dicom 01_bids
 
     # NIFTI TO BIDS (if DICOMs are not available)
-    python3 /opt/QSMxT/run_1_niftiConvert.py REPLACE_WITH_YOUR_NIFTI_INPUT_DATA_DIRECTORY 01_bids
+    run_1_niftiConvert.py REPLACE_WITH_YOUR_NIFTI_INPUT_DATA_DIRECTORY 01_bids
     ```
-    - If converting from DICOMs, carefully read the output of the `run_1_dicomConvert.py` script to ensure data were correctly recognized and converted. You can also pass command line arguments to identify the acquisition protocol names, e.g. `python3 /opt/QSMxT/run_1_dicomConvert.py 00_dicom 01_bids --t2starw_series_patterns *gre* --t1w_series_patterns *mp2rage*`.
+    - If converting from DICOMs, carefully read the output of the `run_1_dicomConvert.py` script to ensure data were correctly recognized and converted. You can also pass command line arguments to identify the acquisition protocol names, e.g. `run_1_dicomConvert.py 00_dicom 01_bids --t2starw_series_patterns *gre* --t1w_series_patterns *mp2rage*`.
 
     - If converting from NIfTI, carefully read the output of the `run_1_niftiConvert.py` script to ensure data were correctly recognized and converted. The script will try to identify any important details from the filenames and from adjacent JSON header files, if available. It retrieves this information using customisable patterns and regular expressions which can be overridden using command-line arguments (see the output using the `--help` flag). If any information is missing, you will be prompted to fill out a CSV spreadsheet with the missing information before running the conversion script again using the same command. You can open the CSV file in a spreadsheet reader such as Microsoft Excel or LibreOffice Calc.
 
@@ -63,29 +63,29 @@ docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.12
 
 2. Run QSM pipeline:
     ```bash
-    python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output
+    run_2_qsm.py 01_bids 02_qsm_output
     ```
 3. Segment data (T1 and GRE):
     ```bash
-    python3 /opt/QSMxT/run_3_segment.py 01_bids 03_segmentation
+    run_3_segment.py 01_bids 03_segmentation
     ```
 4. Build magnitude and QSM group template (only makes sense when you have more than about 30 participants):
     ```bash
-    python3 /opt/QSMxT/run_4_template.py 01_bids 02_qsm_output 04_template
+    run_4_template.py 01_bids 02_qsm_output 04_template
     ```
 5. Export quantitative data to CSV using segmentations
     ```bash
-    python3 /opt/QSMxT/run_5_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentations/*.nii --qsm_files 02_qsm_output/qsm_final/*/*.nii --out_dir 06_analysis
+    run_5_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentations/*.nii --qsm_files 02_qsm_output/qsm_final/*/*.nii --out_dir 06_analysis
     ```
 6. Export quantitative data to CSV using a custom segmentation
     ```bash
-    python3 /opt/QSMxT/run_5_analysis.py --segmentations my_segmentation.nii --qsm_files 04_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
+    run_5_analysis.py --segmentations my_segmentation.nii --qsm_files 04_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
     ```
 
 ## Common errors and workarounds
 1. Return code: 137
 
-If you run ` python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output` and you get this error:
+If you run `run_2_qsm.py 01_bids 02_qsm_output` and you get this error:
 ```
 Resampling phase data...
 Killed
@@ -96,7 +96,7 @@ This indicates insufficient memory for the pipeline to run. Check in your Docker
 2. RuntimeError: Insufficient resources available for job
 This also indicates that there is not enough memory for the job to run. Try limiting the CPUs to about 6GB RAM per CPU. You can try inserting the option `--n_procs 1` into the commands to limit the processing to one thread, e.g.:
 ```bash
- python3 /opt/QSMxT/run_2_qsm.py 01_bids 02_qsm_output --n_procs 1
+run_2_qsm.py 01_bids 02_qsm_output --n_procs 1
 ```
 
 3. If you are getting the error "Insufficient memory to run QSMxT (xxx GB available; 6GB needed)
@@ -111,10 +111,10 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.12_20220729
-    cd qsmxt_1.1.12_20220729
-    ./run_transparent_singularity.sh --container qsmxt_1.1.12_20220729.simg
-    source activate_qsmxt_1.1.12_20220729.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.12_20220801
+    cd qsmxt_1.1.12_20220801
+    ./run_transparent_singularity.sh --container qsmxt_1.1.12_20220801.simg
+    source activate_qsmxt_1.1.12_20220801.simg.sh
     ```
 
 3. Clone the QSMxT repository:

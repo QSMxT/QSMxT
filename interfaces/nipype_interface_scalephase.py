@@ -28,8 +28,7 @@ class ScalePhaseInterface(SimpleInterface):
     output_spec = ScalePhaseOutputSpec
 
     def _run_interface(self, runtime):
-        out_file = scale_to_pi(self.inputs.in_file)
-        self._results['out_file'] = out_file
+        self._results['out_file'] = scale_to_pi(self.inputs.in_file)
         return runtime
 
 
