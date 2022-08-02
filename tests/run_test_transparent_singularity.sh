@@ -78,15 +78,15 @@ echo "[DEBUG] starting run_1_dicomConvert.py"
 echo "[DEBUG] starting run_2_qsm.py normal"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2
 echo "[DEBUG] checking outputs of run_2_qsm.py normal"
-[ -f /tmp/02_qsm_output/qsm_final/sub-170705134431std1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_twopass_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
-[ -f /tmp/02_qsm_output/qsm_final/sub-170706160506std1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_twopass_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
+[ -f /tmp/02_qsm_output/qsm_final/sub-170705134431std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_qsm_000_twopass_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
+[ -f /tmp/02_qsm_output/qsm_final/sub-170706160506std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_qsm_000_twopass_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
 rm -rf /tmp/02_qsm_output/qsm_final/
 
 echo "[DEBUG] starting run_2_qsm.py phase consistency (tests julia)"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --masking phase-based
 echo "[DEBUG] checking outputs of run_2_qsm.py phase consistency (tests julia)"
-[ -f /tmp/02_qsm_output/qsm_final/sub-170705134431std1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_twopass_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
-[ -f /tmp/02_qsm_output/qsm_final/sub-170706160506std1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_twopass_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
+[ -f /tmp/02_qsm_output/qsm_final/sub-170705134431std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_qsm_000_twopass_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
+[ -f /tmp/02_qsm_output/qsm_final/sub-170706160506std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_qsm_000_twopass_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
 
 echo "[DEBUG] starting run_4_template.py"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output /tmp/04_template
