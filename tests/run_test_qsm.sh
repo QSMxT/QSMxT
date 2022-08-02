@@ -9,13 +9,12 @@ echo "[DEBUG] this is the container I extracted from the readme: $container"
 
 sudo docker pull $container
 
-out_singlepass1='/tmp/02_qsm_output/qsm_final/sub-170705134431std1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm-filled_000_average.nii'
-out_singlepass2='/tmp/02_qsm_output/qsm_final/sub-170706160506std1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm-filled_000_average.nii'
-out_twopass1='/tmp/02_qsm_output/qsm_final/sub-170705134431std1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_twopass_average.nii'
-out_twopass2='/tmp/02_qsm_output/qsm_final/sub-170706160506std1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_twopass_average.nii'
-out_betaverage1='/tmp/02_qsm_output/qsm_final/sub-170705134431std1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_average.nii'
-out_betaverage2='/tmp/02_qsm_output/qsm_final/sub-170706160506std1312211075243167001_ses-1_run-1_part-phase_T2starw_scaled_qsm_000_average.nii'
-
+out_singlepass1='/tmp/02_qsm_output/qsm_final/sub-170705134431std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_qsm-filled_000_average.nii'
+out_singlepass2='/tmp/02_qsm_output/qsm_final/sub-170706160506std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_qsm-filled_000_average.nii'
+out_twopass1='/tmp/02_qsm_output/qsm_final/sub-170705134431std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_qsm_000_twopass_average.nii'
+out_twopass2='/tmp/02_qsm_output/qsm_final/sub-170706160506std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_qsm_000_twopass_average.nii'
+out_betaverage1='/tmp/02_qsm_output/qsm_final/sub-170705134431std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_qsm_000_average.nii'
+out_betaverage2='/tmp/02_qsm_output/qsm_final/sub-170706160506std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_qsm_000_average.nii'
 pip install osfclient
 osf -p ru43c clone /tmp
 unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_M_5_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms
@@ -95,7 +94,7 @@ if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; el
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
-[ -f /tmp/02_qsm_output/workflow_qsm/sub-170705134431std1312211075243167001/ses-1/run-1/mriresearchtools_correct-inhomogeneity/mapflow/_mriresearchtools_correct-inhomogeneity0/result__mriresearchtools_correct-inhomogeneity0.pklz ] && echo "[DEBUG]. Test OK." || exit 1
+[ -f /tmp/02_qsm_output/workflow_qsm/sub-170705134431std1312211075243167001/ses-1/run-01/mriresearchtools_correct-inhomogeneity/mapflow/_mriresearchtools_correct-inhomogeneity0/result__mriresearchtools_correct-inhomogeneity0.pklz ] && echo "[DEBUG]. Test OK." || exit 1
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --add_bet --single_pass"
@@ -118,7 +117,7 @@ if [ 1 -eq "$(echo "${std} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; el
 if [ 1 -eq "$(echo "${max} > 0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 
-[ -f /tmp/02_qsm_output/workflow_qsm/sub-170705134431std1312211075243167001/ses-1/run-1/fsl-bet/mapflow/_fsl-bet0/result__fsl-bet0.pklz ] && echo "[DEBUG]. Test OK." || exit 1
+[ -f /tmp/02_qsm_output/workflow_qsm/sub-170705134431std1312211075243167001/ses-1/run-01/fsl-bet/mapflow/_fsl-bet0/result__fsl-bet0.pklz ] && echo "[DEBUG]. Test OK." || exit 1
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --extra_fill_strength 2 --single_pass"
