@@ -59,8 +59,7 @@ class QSMappingInterface(CommandLine):
     def _list_outputs(self):
         outputs = self.output_spec().get()
         pth, _, _ = split_filename(self.inputs.phase_file)
-        outputs['out_file'] = gen_filename(self.inputs.phase_file, suffix=self.inputs.out_suffix + "_000",
-                                           newpath=pth)
+        outputs['out_file'] = f"{self.inputs.phase_file.split('.')[0]}{self.inputs.out_suffix}_000.nii.gz"
         return outputs
 
     def _num_threads_update(self):

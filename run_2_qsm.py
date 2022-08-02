@@ -589,7 +589,7 @@ if __name__ == "__main__":
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
 
     # misc environment variables
-    os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
+    os.environ["FSLOUTPUTTYPE"] = "NIFTI"
 
     # path environment variable
     os.environ["PATH"] += os.pathsep + os.path.join(this_dir, "scripts")

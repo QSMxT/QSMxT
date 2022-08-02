@@ -24,10 +24,9 @@ def nonzero_average(in_files, save_result=True):
     final = np.divide(data.sum(0), mask.sum(0), out=np.zeros_like(data.sum(0)), where=mask.sum(0)!=0)
     #final = data.sum(0) / mask.sum(0)
     if save_result:
-        filename = f"{os.path.splitext(os.path.splitext(os.path.split(in_files[0])[1])[0])[0]}_average.nii"
-        fullpath = os.path.join(os.path.abspath(os.curdir), filename)
-        save_nii(final, fullpath, in_nii)
-        return fullpath
+        filename = f"{os.path.abspath(os.path.split(in_files[0])[1].split('.')[0])}_average.nii"
+        save_nii(final, filename, in_nii)
+        return filename
     return final
 
 
@@ -36,7 +35,7 @@ class NonzeroAverageInputSpec(BaseInterfaceInputSpec):
 
 
 class NonzeroAverageOutputSpec(TraitedSpec):
-    out_file = File()
+    out_file = File(exists=True)
 
 
 class NonzeroAverageInterface(SimpleInterface):
