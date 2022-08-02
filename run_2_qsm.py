@@ -284,15 +284,6 @@ def init_run_workflow(subject, session, run):
                 (n_threshold_masking, mn_mask, [('masks_filled', 'masks_filled')])
             ])
         else:
-            mn_mask_plus_bet = MapNode(
-                interface=twopass.TwopassNiftiInterface(),
-                name='numpy_nibabel_mask-plus-bet',
-                iterfield=['in_file1', 'in_file2'],
-            )
-            wf.connect([
-                (n_threshold_masking, mn_mask_plus_bet, [('masks', 'in_file1')]),
-                (mn_bet_erode, mn_mask_plus_bet, [('out_file', 'in_file2')])
-            ])
             wf.connect([
                 (mn_mask_plus_bet, mn_mask, [('out_file', 'masks_filled')])
             ])
