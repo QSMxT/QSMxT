@@ -273,7 +273,6 @@ if __name__ == "__main__":
 
     # misc environment variables
     os.environ["SUBJECTS_DIR"] = "." # needed for reconall
-    os.environ["FSLOUTPUTTYPE"] = "NIFTI_GZ"
     os.environ["FASTSURFER_HOME"] = "/opt/FastSurfer"
 
     # PATH environment variable
