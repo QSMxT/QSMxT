@@ -110,8 +110,10 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
             for protocol_name in all_protocol_names:
                 if fnmatch.fnmatch(protocol_name, t2starw_protocol_pattern):
                     t2starw_protocol_names.append(protocol_name)
-        if t2starw_protocol_names:
-            logger.log(LogLevel.INFO.value, f"Identified the following t2starw protocols: {t2starw_protocol_names}")
+        if not t2starw_protocol_names:
+            logger.log(LogLevel.ERROR.value, "No T2Star weighted protocols identified! Exiting...")
+            exit(1)
+        logger.log(LogLevel.INFO.value, f"Identified the following protocols as t2starw: {t2starw_protocol_names}")
 
         logger.log(LogLevel.INFO.value, f"Enumerating t1w protocol names using match patterns {t1w_protocol_patterns}...")
         t1w_protocol_names = []
@@ -119,8 +121,10 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
             for protocol_name in all_protocol_names:
                 if fnmatch.fnmatch(protocol_name, t1w_protocol_pattern):
                     t1w_protocol_names.append(protocol_name)
-        if t1w_protocol_names:
-            logger.log(LogLevel.INFO.value, f"Identified the following t1w protocols: {t1w_protocol_names}")
+        if not t1w_protocol_names:
+            logger.log(LogLevel.WARNING.value, f"No t1w protocols found matching patterns {t1w_protocol_patterns}! Automated segmentation will not be possible.")
+        else:
+            logger.log(LogLevel.INFO.value, f"Identified the following protocols as t1w: {t1w_protocol_names}")
 
 
     else: # manually identify protocols using selection if interactive
