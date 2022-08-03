@@ -11,6 +11,7 @@ on:
       - run_1_dicomConvert.py
       - run_3_segment.py
       - run_5_analysis.py
+      - interfaces/nipype_interface_fastsurfer.py
       - .github/workflows/test_segmentation_pipeline.yml
       - tests/run_test_segment.sh
       - aseg_labels.csv
@@ -22,6 +23,7 @@ on:
       - run_1_dicomConvert.py
       - run_3_segment.py
       - run_5_analysis.py
+      - interfaces/nipype_interface_fastsurfer.py
       - .github/workflows/test_segmentation_pipeline.yml
       - tests/run_test_segment.sh
       - aseg_labels.csv
