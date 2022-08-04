@@ -7,7 +7,7 @@ import os
 import sys
 import datetime
 
-from scripts.get_qsmxt_version import get_qsmxt_version
+from scripts.qsmxt_version import qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 # get labels dictionary by parsing a labels CSV file
@@ -120,13 +120,13 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version
-        f.write(f"QSMxT: {get_qsmxt_version()}")
+        f.write(f"QSMxT: {qsmxt_version()}")
         f.write("\n\n")
         
         # output command used to invoke script

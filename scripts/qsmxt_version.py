@@ -1,7 +1,7 @@
 import os
 from scripts.sys_cmd import sys_cmd
 
-def get_qsmxt_version():
+def qsmxt_version():
     this_dir = os.path.dirname(os.path.abspath(__file__))
     git_dir = os.path.join(this_dir, '..', '.git')
     version = sys_cmd(f"git --git-dir {git_dir} describe --tags", False, False)
@@ -9,6 +9,6 @@ def get_qsmxt_version():
     return f"{version} (commit date: {date})"
 
 if __name__ == "__main__":
-    print(get_qsmxt_version())
+    print(qsmxt_version())
 
     

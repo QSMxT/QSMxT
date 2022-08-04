@@ -10,7 +10,7 @@ import datetime
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
-from scripts.get_qsmxt_version import get_qsmxt_version
+from scripts.qsmxt_version import qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 from interfaces import nipype_interface_scalephase as scalephase
@@ -576,7 +576,7 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
 
     # misc environment variables
@@ -642,7 +642,7 @@ if __name__ == "__main__":
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version
-        f.write(f"QSMxT: {get_qsmxt_version()}")
+        f.write(f"QSMxT: {qsmxt_version()}")
         f.write("\n\n")
 
         # output command used to invoke script
