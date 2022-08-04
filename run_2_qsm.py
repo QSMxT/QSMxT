@@ -299,7 +299,16 @@ def init_run_workflow(subject, session, run):
             wf.connect([
                 (mn_mask_plus_bet, mn_mask, [('out_file', 'masks_filled')])
             ])
-            
+
+    # === Perform NeXt-QSM if selected
+    if args.qsm_algorithm == 'nextqsm':
+        addNextqsmWorkflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink, args.unwrapping_algorithm)
+        return wf
+    elif args.qsm_algorithm == 'nextqsm_combined':
+        addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink)
+        return wf
+    
+
     # === Single-pass QSM reconstruction (filled) ===
     mn_qsm_filled = MapNode(
         interface=tgv.QSMappingInterface(
@@ -428,7 +437,7 @@ def addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, 
         
         (wf_unwrapping, wf_nextqsmB0, [('outputnode.B0', 'inputnode.B0'),]),
         
-        (mn_mask, n_mask, [('mask_file', 'list'),]),
+        (mn_mask, n_mask, [('masks_filled', 'list'),]),
         (n_mask, wf_nextqsmB0, [('out_file', 'inputnode.mask'),]),
         (mn_params, n_fieldStrength, [('MagneticFieldStrength', 'list')]),
         (n_fieldStrength, wf_nextqsmB0, [('fieldStrength', 'inputnode.fieldStrength'),]),
@@ -447,7 +456,7 @@ def addNextqsmWorkflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_da
         (mn_params, wf_unwrapping, [('EchoTime', 'inputnode.TE')]),
         
         (wf_unwrapping, wf_nextqsm, [('outputnode.unwrapped_phase', 'inputnode.unwrapped_phase')]),
-        (mn_mask, wf_nextqsm, [('mask_file', 'inputnode.mask')]),
+        (mn_mask, wf_nextqsm, [('masks_filled', 'inputnode.mask')]),
         (mn_params, wf_nextqsm, [('EchoTime', 'inputnode.TE'),
                                  ('MagneticFieldStrength', 'inputnode.fieldStrength')]),
         
@@ -475,7 +484,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--qsm_algorithm',
-        default='qsmxt',
+        default='',
         help='Switch between different QSM algorithms'
     )
 
