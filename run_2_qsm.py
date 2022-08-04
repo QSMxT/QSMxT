@@ -22,6 +22,7 @@ from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_masking as masking
 from interfaces import nipype_interface_erode as erode
 from interfaces import nipype_interface_bet2 as bet2
+from interfaces import nipype_interface_phase_based as experimental_masking
 
 import argparse
 
@@ -194,9 +195,21 @@ def init_run_workflow(subject, session, run):
         wf.connect([
             (mn_phase_scaled, mn_phaseweights, [('out_file', 'in_file')]),
         ])
+    elif masking_method == 'romeo_phase-based':
+        mn_phaseweights = MapNode(
+            interface=experimental_masking.RomeoMaskingInterface(),
+            iterfield=['phase', 'mag'],
+            name='romeo-voxelquality'
+            # output: 'out_file'
+        )
+        mn_phaseweights.weight_type = args.masking_option
+        wf.connect([
+            (mn_phase_scaled, mn_phaseweights, [('out_file', 'phase')]),
+            (n_getfiles, mn_phaseweights, [('magnitude_files', 'mag')])
+        ])
 
     # do threshold-based masking if necessary
-    if masking_method in ['phase-based', 'magnitude-based']:
+    if masking_method in ['phase-based', 'magnitude-based', 'romeo_phase-based']:
         n_threshold_masking = Node(
             interface=masking.MaskingInterface(
                 fill_strength=args.fill_strength
@@ -206,7 +219,7 @@ def init_run_workflow(subject, session, run):
         )
         if args.threshold: n_threshold_masking.threshold = args.threshold
 
-        if masking_method == 'phase-based':    
+        if masking_method in ['phase-based', 'romeo_phase-based']:    
             wf.connect([
                 (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
             ])
@@ -275,7 +288,7 @@ def init_run_workflow(subject, session, run):
             (mn_bet_erode, mn_mask, [('out_file', 'masks')]),
             (mn_bet_erode, mn_mask, [('out_file', 'masks_filled')])
         ])
-    if masking_method in ['magnitude-based', 'phase-based']:
+    if masking_method in ['magnitude-based', 'phase-based', 'romeo_phase-based']:
         wf.connect([
             (n_threshold_masking, mn_mask, [('masks', 'masks')])
         ])
@@ -287,7 +300,7 @@ def init_run_workflow(subject, session, run):
             wf.connect([
                 (mn_mask_plus_bet, mn_mask, [('out_file', 'masks_filled')])
             ])
-            
+    
     # === Single-pass QSM reconstruction (filled) ===
     mn_qsm_filled = MapNode(
         interface=tgv.QSMappingInterface(
@@ -464,12 +477,17 @@ if __name__ == "__main__":
     parser.add_argument(
         '--masking', '-m',
         default='magnitude-based',
-        choices=['magnitude-based', 'phase-based', 'bet'],
+        choices=['magnitude-based', 'phase-based', 'romeo_phase-based', 'bet'],
         help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
              'thresholding a lower percentage of the histogram of the signal (adjust using the '+
              '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
              'thresholded and the magnitude is not required. Using BET automatically disables '+
              'the two-pass inversion strategy for artefact mitigation.'
+    )
+
+    parser.add_argument(
+        '--masking_option',
+        default='grad+second+mag'
     )
 
     parser.add_argument(
@@ -518,7 +536,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--fill_strength',
-        type=positive_int,
+        type=int,
         default=1,
         help='Adds strength to hole-filling for phase-based and magnitude-based masking; ' +
              'each integer increment adds to the masking procedure one further dilation step ' +
