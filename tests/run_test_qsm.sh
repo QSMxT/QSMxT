@@ -120,8 +120,8 @@ sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_
 [ -f /tmp/02_qsm_output/workflow_qsm/sub-170705134431std1312211075243167001/ses-1/run-01/fsl-bet/mapflow/_fsl-bet0/result__fsl-bet0.pklz ] && echo "[DEBUG]. Test OK." || exit 1
 sudo rm -rf /tmp/02_qsm_output
 
-echo "[DEBUG] starting run_2_qsm.py --extra_fill_strength 2 --single_pass"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --extra_fill_strength 2 --single_pass
+echo "[DEBUG] starting run_2_qsm.py --fill_strength 2 --single_pass"
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --fill_strength 2 --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 #min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
 #std=`echo $min_max_std | cut -d ' ' -f 3`
