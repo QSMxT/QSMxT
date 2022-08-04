@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os
 from scripts.sys_cmd import sys_cmd
 
