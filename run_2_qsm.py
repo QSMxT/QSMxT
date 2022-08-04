@@ -7,7 +7,6 @@ import glob
 import psutil
 import datetime
 
-from nipype.interfaces.fsl import BET
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
@@ -22,6 +21,7 @@ from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_masking as masking
 from interfaces import nipype_interface_erode as erode
+from interfaces import nipype_interface_bet2 as bet2
 
 import argparse
 
@@ -222,7 +222,7 @@ def init_run_workflow(subject, session, run):
     # run bet if necessary
     if masking_method == 'bet' or add_bet:
         mn_bet = MapNode(
-            interface=BET(frac=args.bet_fractional_intensity, mask=True, robust=True),
+            interface=bet2.Bet2Interface(fractional_intensity=args.bet_fractional_intensity),
             iterfield=['in_file'],
             name='fsl-bet'
             # output: 'mask_file'
