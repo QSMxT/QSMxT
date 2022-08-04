@@ -4,7 +4,7 @@ import os
 import nibabel as nib
 import numpy as np
 from scipy.stats import norm
-from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion
+from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion, gaussian_filter
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath, OutputMultiPath
 
 # === HELPER FUNCTIONS ===
@@ -49,21 +49,14 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
     # do masking
     masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
 
-    # erosion and dilation
-    for i in range(len(masks)):
-        masks[i] = binary_dilation(masks[i]).astype(int)
-        masks[i] = binary_erosion(masks[i]).astype(int)
+    # # erosion and dilation
+    # for i in range(len(masks)):
+    #     masks[i] = binary_dilation(masks[i]).astype(int)
+    #     masks[i] = binary_erosion(masks[i]).astype(int)
 
     # hole-filling
-    filled_masks = [mask.copy() for mask in masks]
-    for i in range(len(masks)):
-        for j in range(fill_strength):
-            filled_masks[i] = binary_dilation(filled_masks[i]).astype(int)
-        
-        filled_masks[i] = binary_fill_holes(filled_masks[i]).astype(int)
-        
-        for j in range(fill_strength):
-            filled_masks[i] = binary_erosion(filled_masks[i]).astype(int)
+    #filled_masks = [fill_holes_morphological(mask, fill_strength) for mask in masks]
+    filled_masks = [fill_holes_smoothing(mask, fill_strength) for mask in masks]
 
     # determine filenames
     mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask.nii" for in_file in in_files]
@@ -88,6 +81,20 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
         )
 
     return mask_filenames, filled_mask_filenames
+
+def fill_holes_smoothing(mask, sigma=[5,5,3], threshold=0.5):
+    smoothed = gaussian_filter(mask * 1.0, sigma, truncate=2.0) # truncate reduces the kernel size: less precise but faster
+    return np.array(smoothed > threshold, dtype=int)
+
+def fill_holes_morphological(mask, fill_strength):
+    filled_mask = mask.copy()
+    for j in range(fill_strength):
+        filled_mask = binary_dilation(filled_mask).astype(int)
+        filled_mask = binary_fill_holes(filled_mask).astype(int)
+        for j in range(fill_strength):
+            filled_mask = binary_erosion(filled_mask).astype(int)
+    return filled_mask
+
 
 
 class MaskingInputSpec(BaseInterfaceInputSpec):
