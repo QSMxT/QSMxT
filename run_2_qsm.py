@@ -202,7 +202,7 @@ def init_run_workflow(subject, session, run):
             name='romeo-voxelquality'
             # output: 'out_file'
         )
-        mn_phaseweights.weight_type = args.masking_option
+        mn_phaseweights.inputs.weight_type = args.masking_option
         wf.connect([
             (mn_phase_scaled, mn_phaseweights, [('out_file', 'phase')]),
             (n_getfiles, mn_phaseweights, [('magnitude_files', 'mag')])
