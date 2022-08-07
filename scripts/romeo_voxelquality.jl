@@ -33,20 +33,17 @@ weights = falses(6)
 if contains(args["type"], "grad")
     weights[1] = true
 end
-if contains(args["type"], "me")
+if contains(args["type"], "multi-echo")
     weights[2] = true
 end
 if contains(args["type"], "second")
     weights[3] = true
 end
-if contains(args["type"], "mag")
+if contains(args["type"], "mag_coherence")
     weights[4] = true
 end
-if contains(args["type"], "mag1")
+if contains(args["type"], "mag_weight")
     weights[5] = true
-end
-if contains(args["type"], "mag2")
-    weights[6] = true
 end
 voxelquality = romeovoxelquality(phase; weights, optional_args...)
 voxelquality[.!isfinite.(voxelquality)] .= 0
