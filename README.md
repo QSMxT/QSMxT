@@ -129,7 +129,7 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     source ~/.bashrc
     conda create -n qsmxt python=3.8
     conda activate qsmxt
-    pip install psutil datetime nipype nibabel scipy
+    pip install psutil datetime nipype nibabel scipy pydicom
     ```
 
 5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
