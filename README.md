@@ -124,12 +124,12 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 
 4. Install miniconda with nipype:
     ```bash
-    wget https://repo.anaconda.com/miniconda/Miniconda3-4.7.12.1-Linux-x86_64.sh	
-    bash Miniconda3-4.7.12.1-Linux-x86_64.sh -b
-    source ~/.bashrc
-    conda create -n qsmxt python=3.8
-    conda activate qsmxt
-    python3.8 -m pip install psutil datetime nipype nibabel scipy pydicom
+wget https://repo.anaconda.com/miniconda/Miniconda3-4.7.12.1-Linux-x86_64.sh	
+bash Miniconda3-4.7.12.1-Linux-x86_64.sh -b
+source ~/.bashrc
+conda create -n qsmxt python=3.8
+conda activate qsmxt
+python3.8 -m pip install psutil datetime nipype nibabel scipy pydicom
     ```
 
 5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
