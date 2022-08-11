@@ -65,9 +65,9 @@ $bash_command
 
 source ~/.bashrc
 
-conda_command=`cat /tmp/QSMxT/README.md | grep "conda install "`
-echo $conda_command
-yes | $conda_command
+pip_command=`cat /tmp/QSMxT/README.md | grep "pip install "`
+echo $pip_command
+$pip_command
 
 echo "[DEBUG] starting run_0_dicomSort.py"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/run_0_dicomSort.py /tmp/dicoms /tmp/00_dicom
