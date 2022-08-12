@@ -10,7 +10,8 @@ from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, Trai
 # === HELPER FUNCTIONS ===
 
 def _histogram(image_histogram, normalize):
-    hist, bin_edges = np.histogram(image_histogram, bins=np.arange(image_histogram.min(), image_histogram.max()))
+    bin_edges = np.histogram_bin_edges(image_histogram, bins='fd')
+    hist, _ = np.histogram(image_histogram, bins=bin_edges)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.
     std = np.std(image_histogram)
     mean = np.mean(image_histogram)
