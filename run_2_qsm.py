@@ -300,7 +300,8 @@ def init_run_workflow(subject, session, run):
             wf.connect([
                 (mn_mask_plus_bet, mn_mask, [('out_file', 'masks_filled')])
             ])
-    
+    if args.qsm_algorithm == 'none':
+        return wf
     # === Single-pass QSM reconstruction (filled) ===
     mn_qsm_filled = MapNode(
         interface=tgv.QSMappingInterface(
@@ -483,6 +484,11 @@ if __name__ == "__main__":
              '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
              'thresholded and the magnitude is not required. Using BET automatically disables '+
              'the two-pass inversion strategy for artefact mitigation.'
+    )
+
+    parser.add_argument(
+        '--qsm_algorithm',
+        default='qsmxt'
     )
 
     parser.add_argument(

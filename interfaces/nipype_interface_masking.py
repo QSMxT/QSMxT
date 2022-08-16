@@ -4,7 +4,7 @@ import os
 import nibabel as nib
 import numpy as np
 from scipy.stats import norm
-from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion, gaussian_filter
+from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion, gaussian_filter, binary_opening
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath, OutputMultiPath
 
 # === HELPER FUNCTIONS ===
@@ -54,9 +54,12 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
     #     masks[i] = binary_dilation(masks[i]).astype(int)
     #     masks[i] = binary_erosion(masks[i]).astype(int)
 
-    # hole-filling
+    # hole-filling (applied to filled_masks only)
     #filled_masks = [fill_holes_morphological(mask, fill_strength) for mask in masks]
     filled_masks = [fill_holes_smoothing(mask, fill_strength) for mask in masks]
+
+    # remove noisy background voxels (applied to masks only)
+    masks = [binary_opening(mask) for mask in masks]
 
     # determine filenames
     mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask.nii" for in_file in in_files]
@@ -82,7 +85,7 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
 
     return mask_filenames, filled_mask_filenames
 
-def fill_holes_smoothing(mask, sigma=[5,5,3], threshold=0.5):
+def fill_holes_smoothing(mask, sigma=[5,5,3], threshold=0.4):
     smoothed = gaussian_filter(mask * 1.0, sigma, truncate=2.0) # truncate reduces the kernel size: less precise but faster
     return np.array(smoothed > threshold, dtype=int)
 
