@@ -49,14 +49,17 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
     # do masking
     masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
 
-    # # erosion and dilation
+    # erosion and dilation commented out. It is not required for hole filling and opening is performed instead on the "masks" output
     # for i in range(len(masks)):
     #     masks[i] = binary_dilation(masks[i]).astype(int)
     #     masks[i] = binary_erosion(masks[i]).astype(int)
 
+    # original morphological application
+    # filled_masks = [fill_holes_morphological(mask, fill_strength) for mask in masks]
+
     # hole-filling (applied to filled_masks only)
-    #filled_masks = [fill_holes_morphological(mask, fill_strength) for mask in masks]
-    filled_masks = [fill_holes_smoothing(mask, fill_strength) for mask in masks]
+    hole_filling_threshold = 0.4
+    filled_masks = [fill_holes_smoothing(mask, fill_strength, hole_filling_threshold) for mask in masks]
 
     # remove noisy background voxels (applied to masks only)
     masks = [binary_opening(mask) for mask in masks]
@@ -85,10 +88,13 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
 
     return mask_filenames, filled_mask_filenames
 
-def fill_holes_smoothing(mask, sigma=[5,5,3], threshold=0.4):
+# The smoothing removes background noise and closes small holes
+# A smaller threshold grows the mask
+def fill_holes_smoothing(mask, sigma=[5,5,3], threshold=0.5):
     smoothed = gaussian_filter(mask * 1.0, sigma, truncate=2.0) # truncate reduces the kernel size: less precise but faster
     return np.array(smoothed > threshold, dtype=int)
 
+# original morphological operation
 def fill_holes_morphological(mask, fill_strength):
     filled_mask = mask.copy()
     for j in range(fill_strength):
