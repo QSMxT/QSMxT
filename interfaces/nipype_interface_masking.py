@@ -4,13 +4,14 @@ import os
 import nibabel as nib
 import numpy as np
 from scipy.stats import norm
-from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion
+from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion, gaussian_filter, binary_opening
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath, OutputMultiPath
 
 # === HELPER FUNCTIONS ===
 
 def _histogram(image_histogram, normalize):
-    hist, bin_edges = np.histogram(image_histogram, bins=np.arange(image_histogram.min(), image_histogram.max()))
+    bin_edges = np.histogram_bin_edges(image_histogram, bins='fd')
+    hist, _ = np.histogram(image_histogram, bins=bin_edges)
     bin_centers = (bin_edges[:-1] + bin_edges[1:]) / 2.
     std = np.std(image_histogram)
     mean = np.mean(image_histogram)
@@ -48,21 +49,12 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
     # do masking
     masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
 
-    # erosion and dilation
-    for i in range(len(masks)):
-        masks[i] = binary_dilation(masks[i]).astype(int)
-        masks[i] = binary_erosion(masks[i]).astype(int)
+    # remove noisy background voxels (applied to masks only)
+    masks = [binary_opening(mask) for mask in masks]
 
-    # hole-filling
-    filled_masks = [mask.copy() for mask in masks]
-    for i in range(len(masks)):
-        for j in range(fill_strength):
-            filled_masks[i] = binary_dilation(filled_masks[i]).astype(int)
-        
-        filled_masks[i] = binary_fill_holes(filled_masks[i]).astype(int)
-        
-        for j in range(fill_strength):
-            filled_masks[i] = binary_erosion(filled_masks[i]).astype(int)
+    # hole-filling (applied to filled_masks only)
+    hole_filling_threshold = 0.4
+    filled_masks = [fill_holes_smoothing(mask, fill_strength, hole_filling_threshold) for mask in masks]
 
     # determine filenames
     mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask.nii" for in_file in in_files]
@@ -87,6 +79,23 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
         )
 
     return mask_filenames, filled_mask_filenames
+
+# The smoothing removes background noise and closes small holes
+# A smaller threshold grows the mask
+def fill_holes_smoothing(mask, sigma=[5,5,3], threshold=0.5):
+    smoothed = gaussian_filter(mask * 1.0, sigma, truncate=2.0) # truncate reduces the kernel size: less precise but faster
+    return np.array(smoothed > threshold, dtype=int)
+
+# original morphological operation
+def fill_holes_morphological(mask, fill_strength):
+    filled_mask = mask.copy()
+    for j in range(fill_strength):
+        filled_mask = binary_dilation(filled_mask).astype(int)
+        filled_mask = binary_fill_holes(filled_mask).astype(int)
+        for j in range(fill_strength):
+            filled_mask = binary_erosion(filled_mask).astype(int)
+    return filled_mask
+
 
 
 class MaskingInputSpec(BaseInterfaceInputSpec):
