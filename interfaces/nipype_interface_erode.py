@@ -1,11 +1,12 @@
 #!/usr/bin/env python
 
-import os
-import nibabel as nib
-from scipy.ndimage import binary_erosion
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, traits, File
 
 def erosion(in_file, num_erosions=1):
+    import os
+    import nibabel as nib
+    from scipy.ndimage import binary_erosion
+    
     # load data
     nii = nib.load(in_file)
     data = nii.get_fdata()

@@ -1,5 +1,4 @@
-from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec
-import os
+from nipype.interfaces.base import CommandLine, TraitedSpec, File, CommandLineInputSpec
 
 
 class NiiBestlinregInputSpec(CommandLineInputSpec):

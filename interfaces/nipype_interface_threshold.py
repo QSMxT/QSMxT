@@ -2,7 +2,7 @@
 import nibabel as nib
 import numpy as np
 from scipy.stats import norm
-from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath
+from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, traits, InputMultiPath
 
 
 def histogram(image_histogram, normalize):

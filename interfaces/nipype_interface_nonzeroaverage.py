@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-import os
-import nibabel as nib
-import numpy as np
+
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, InputMultiPath, File
 
 
-def save_nii(data, file_path, nii_like):
-    nib.save(nib.nifti1.Nifti1Image(data, affine=nii_like.affine, header=nii_like.header), file_path)
-
-
 def nonzero_average(in_files, save_result=True):
+    import os
+    import nibabel as nib
+    import numpy as np
+
     data = []
     for in_nii_file in in_files:
         in_nii = nib.load(in_nii_file)
@@ -25,7 +23,7 @@ def nonzero_average(in_files, save_result=True):
     #final = data.sum(0) / mask.sum(0)
     if save_result:
         filename = f"{os.path.abspath(os.path.split(in_files[0])[1].split('.')[0])}_average.nii"
-        save_nii(final, filename, in_nii)
+        nib.save(nib.nifti1.Nifti1Image(final, affine=in_nii.affine, header=in_nii.header), filename)
         return filename
     return final
 
@@ -63,5 +61,5 @@ if __name__ == "__main__":
     )
 
     args = parser.parse_args()
-    qsm_final = nonzero_average(args.in_files, False);
-    save_nii(qsm_final, args.out_file, nib.load(args.in_files[0]))
+    qsm_final = nonzero_average(args.in_files, True);
+
