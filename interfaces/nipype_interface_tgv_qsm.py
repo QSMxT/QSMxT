@@ -5,7 +5,6 @@ Created on Sun Aug  3 11:46:42 2014
 modified by Steffen.Bollmann@cai.uq.edu.au
 """
 from __future__ import division
-import os
 from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec, InputMultiPath
 from nipype.interfaces.base.traits_extension import isdefined
 from nipype.utils.filemanip import fname_presuffix, split_filename
@@ -13,12 +12,7 @@ from nipype.utils.filemanip import fname_presuffix, split_filename
 THREAD_CONTROL_VARIABLE = "OMP_NUM_THREADS"
 
 
-def gen_filename(fname, suffix, newpath, use_ext=True):
-    return fname_presuffix(fname, suffix=suffix, newpath=newpath, use_ext=use_ext)
-
-
 class QSMappingInputSpec(CommandLineInputSpec):
-    # TODO This is incomplete and just gives some basic parameters
     phase_file = File(exists=True, desc='Phase image', mandatory=True, argstr="-p %s")
     mask_file = InputMultiPath(exists=True, desc='Image mask', mandatory=True, argstr="-m %s")
     num_threads = traits.Int(-1, usedefault=True, nohash=True, desc="Number of threads to use, by default $NCPUS")

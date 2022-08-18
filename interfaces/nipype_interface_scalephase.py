@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
-from math import pi
-import os
-import nibabel as nib
-import numpy as np
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File
 
 def scale_to_pi(in_file):
+    import os
+    from math import pi
+    import nibabel as nib
+    import numpy as np
     nii = nib.load(in_file)
     data = nii.get_fdata()
     data = np.array(np.interp(data, (data.min(), data.max()), (-pi, +pi)), dtype=data.dtype)
