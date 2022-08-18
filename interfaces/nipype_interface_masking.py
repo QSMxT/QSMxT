@@ -61,6 +61,7 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
     filled_mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask_filled.nii" for in_file in in_files]
 
     for i in range(len(masks)):
+        all_niis[i].header.set_data_dtype(np.uint8)
         nib.save(
             nib.Nifti1Image(
                 dataobj=masks[i],
