@@ -66,7 +66,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
             series = get_folders_in(os.path.join(input_dir, subject, session))
             for s in series:
                 series_dicom_folder = os.path.join(input_dir, subject, session, s)
-                sys_cmd(f"dcm2niix -z n -o {session_extra_folder} {series_dicom_folder} >> {os.path.join(session_extra_folder, 'dcm2niix_output.txt')}")
+                sys_cmd(f"dcm2niix -z n -o \"{session_extra_folder}\" \"{series_dicom_folder}\" >> \"{os.path.join(session_extra_folder, 'dcm2niix_output.txt')}\"")
     
     logger.log(LogLevel.INFO.value, f"Loading JSON headers from '{output_dir}/.../extra_data' folders...")
     subjects = get_folders_in(output_dir)
