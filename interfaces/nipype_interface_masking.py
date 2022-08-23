@@ -43,7 +43,7 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
     # calculate gaussian threshold if none given
     if not threshold:
         threshold = _gaussian_threshold(image_histogram)
-    else:
+    elif 0 < threshold < 1:
         threshold = np.percentile(_clean_histogram(image_histogram), 100-threshold)
 
     # do masking
@@ -55,6 +55,7 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
     # hole-filling (applied to filled_masks only)
     hole_filling_threshold = 0.4
     filled_masks = [fill_holes_smoothing(mask, fill_strength, hole_filling_threshold) for mask in masks]
+    filled_masks = [fill_holes_morphological(mask, fill_strength) for mask in masks]
 
     # determine filenames
     mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask.nii" for in_file in in_files]
@@ -88,12 +89,13 @@ def fill_holes_smoothing(mask, sigma=[5,5,3], threshold=0.5):
 
 # original morphological operation
 def fill_holes_morphological(mask, fill_strength):
+    fill_strength=0
     filled_mask = mask.copy()
     for j in range(fill_strength):
         filled_mask = binary_dilation(filled_mask).astype(int)
-        filled_mask = binary_fill_holes(filled_mask).astype(int)
-        for j in range(fill_strength):
-            filled_mask = binary_erosion(filled_mask).astype(int)
+    filled_mask = binary_fill_holes(filled_mask).astype(int)
+    for j in range(fill_strength):
+        filled_mask = binary_erosion(filled_mask).astype(int)
     return filled_mask
 
 
