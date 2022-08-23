@@ -217,7 +217,7 @@ def init_run_workflow(subject, session, run):
             name='scipy_numpy_nibabel_threshold-masking'
             # inputs : ['in_files']
         )
-        if args.threshold: n_threshold_masking.threshold = args.threshold
+        if args.threshold: n_threshold_masking.inputs.threshold = args.threshold
 
         if masking_method in ['phase-based', 'romeo_phase-based']:    
             wf.connect([

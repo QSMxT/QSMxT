@@ -1,6 +1,5 @@
 #!/usr/bin/env julia
 import Pkg
-Pkg.activate("/neurodesktop-storage/qsmxt") # TODO remove before push to dockerhub
 
 using MriResearchTools
 using ArgParse
