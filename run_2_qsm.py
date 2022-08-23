@@ -506,11 +506,9 @@ if __name__ == "__main__":
         help='Applies an inhomogeneity correction to the magnitude prior to masking'
     )
 
-    def nullable_int(value):
-        return value if value is None else int(value)
     parser.add_argument(
         '--threshold',
-        type=nullable_int,
+        type=float,
         default=None,
         help='Threshold percentage; anything less than the threshold will be excluded from the mask. ' +
              'By default, the threshold is automatically chosen based on a \'gaussian\' algorithm.'

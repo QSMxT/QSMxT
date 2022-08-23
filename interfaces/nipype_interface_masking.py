@@ -41,10 +41,7 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
     image_histogram = np.array([data.flatten() for data in all_float_data])
     
     # calculate gaussian threshold if none given
-    if not threshold:
-        threshold = _gaussian_threshold(image_histogram)
-    elif 0 < threshold < 1:
-        threshold = np.percentile(_clean_histogram(image_histogram), 100-threshold)
+    if not threshold: threshold = _gaussian_threshold(image_histogram)
 
     # do masking
     masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
@@ -54,8 +51,8 @@ def threshold_masking(in_files, threshold=None, fill_strength=1):
 
     # hole-filling (applied to filled_masks only)
     hole_filling_threshold = 0.4
-    filled_masks = [fill_holes_smoothing(mask, fill_strength, hole_filling_threshold) for mask in masks]
-    filled_masks = [fill_holes_morphological(mask, fill_strength) for mask in masks]
+    filled_masks = [binary_erosion(fill_holes_smoothing(binary_dilation(mask))) for mask in masks]
+    #filled_masks = [fill_holes_morphological(mask, fill_strength) for mask in masks]
 
     # determine filenames
     mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask.nii" for in_file in in_files]
@@ -103,7 +100,7 @@ def fill_holes_morphological(mask, fill_strength):
 
 class MaskingInputSpec(BaseInterfaceInputSpec):
     in_files = InputMultiPath(mandatory=True, exists=True)
-    threshold = traits.Int(mandatory=False, default_value=None)
+    threshold = traits.Float(mandatory=False, default_value=None)
     fill_strength = traits.Int(mandatory=False, default_value=1)
 
 
@@ -144,7 +141,7 @@ if __name__ == "__main__":
         '--threshold',
         nargs='?',
         default=None,
-        type=int
+        type=float
     )
 
     args = parser.parse_args()
