@@ -187,16 +187,6 @@ def init_run_workflow(subject, session, run):
     # do phase weights if necessary
     if masking_method == 'phase-based':
         mn_phaseweights = MapNode(
-            interface=phaseweights.PhaseWeightsInterface(),
-            iterfield=['in_file'],
-            name='romeo_phase-weights'
-            # output: 'out_file'
-        )
-        wf.connect([
-            (mn_phase_scaled, mn_phaseweights, [('out_file', 'in_file')]),
-        ])
-    elif masking_method == 'romeo_phase-based':
-        mn_phaseweights = MapNode(
             interface=experimental_masking.RomeoMaskingInterface(),
             iterfield=['phase', 'mag'],
             name='romeo-voxelquality'
@@ -209,7 +199,7 @@ def init_run_workflow(subject, session, run):
         ])
 
     # do threshold-based masking if necessary
-    if masking_method in ['phase-based', 'magnitude-based', 'romeo_phase-based']:
+    if masking_method in ['phase-based', 'magnitude-based']:
         n_threshold_masking = Node(
             interface=masking.MaskingInterface(
                 fill_strength=args.fill_strength
@@ -219,7 +209,7 @@ def init_run_workflow(subject, session, run):
         )
         if args.threshold: n_threshold_masking.inputs.threshold = args.threshold
 
-        if masking_method in ['phase-based', 'romeo_phase-based']:    
+        if masking_method in ['phase-based']:    
             wf.connect([
                 (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
             ])
@@ -288,7 +278,7 @@ def init_run_workflow(subject, session, run):
             (mn_bet_erode, mn_mask, [('out_file', 'masks')]),
             (mn_bet_erode, mn_mask, [('out_file', 'masks_filled')])
         ])
-    if masking_method in ['magnitude-based', 'phase-based', 'romeo_phase-based']:
+    if masking_method in ['magnitude-based', 'phase-based']:
         wf.connect([
             (n_threshold_masking, mn_mask, [('masks', 'masks')])
         ])
@@ -477,7 +467,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--masking', '-m',
         default='magnitude-based',
-        choices=['magnitude-based', 'phase-based', 'romeo_phase-based', 'bet'],
+        choices=['magnitude-based', 'phase-based', 'bet'],
         help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
              'thresholding a lower percentage of the histogram of the signal (adjust using the '+
              '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
