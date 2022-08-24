@@ -203,7 +203,9 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                     elif json_data['ProtocolName'].lower() in t1w_protocol_names:
                         details['protocol_type'] = 't1w'
                     details['series_num'] = json_data['SeriesNumber']
-                    details['part_type'] = 'phase' if 'P' in (json_data['ImageType'] if 'ImageType' in json_data.keys() else 'M') else 'mag'
+                    details['part_type'] = 'mag'
+                    if 'ImageType' in json_data.keys() and any(x in json_data['ImageType'] for x in ['P', 'PHASE', 'phase', 'p']):
+                        details['part_type'] = 'phase'
                     details['echo_time'] = json_data['EchoTime']
                     details['file_name'] = json_file.split('.json')[0]
                     details['run_num'] = None
