@@ -139,12 +139,12 @@ Although we do not recommend installing the dependencies manually and we advocat
 
 You need:
 - TGV-QSM running in miniconda 2
-- fsl version=6.0.4
-- ants version=2.3.4
-- dcm2niix latest version from github
-- miniconda version=4.7.12.1 with python 3.6 for nipype 1.6.0 pytorch 1.2.0 and torchvision 0.4.0 niflow-nipype1-workflows
-- FastSurfer https://github.com/Deep-MI/FastSurfer.git
-- Bru2Nii v1.0.20180303 https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip
+- bet2 (https://github.com/liangfu/bet2)
+- ANTs version=2.3.4
+- dcm2niix (https://github.com/rordenlab/dcm2niix)
+- miniconda version=4.7.12.1 with python3.8 and pip packages psutil, datetime, nipype, nibabel, scipy and pydicom
+- FastSurfer (https://github.com/Deep-MI/FastSurfer.git)
+- Bru2Nii v1.0.20180303 (https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip)
 - julia-1.6.1 with ArgParse and MriResearchTools
 
 Here is the detailed instruction that you could replicate: https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxtbase/build.sh and then on top https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxt/build.sh
