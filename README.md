@@ -55,7 +55,7 @@ docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.12
     # NIFTI TO BIDS (if DICOMs are not available)
     run_1_niftiConvert.py REPLACE_WITH_YOUR_NIFTI_INPUT_DATA_DIRECTORY 01_bids
     ```
-    - If converting from DICOMs, carefully read the output of the `run_1_dicomConvert.py` script to ensure data were correctly recognized and converted. You can also pass command line arguments to identify the acquisition protocol names, e.g. `run_1_dicomConvert.py 00_dicom 01_bids --t2starw_series_patterns *gre* --t1w_series_patterns *mp2rage*`.
+    - If converting from DICOMs, carefully read the output of the `run_1_dicomConvert.py` script to ensure data were correctly recognized and converted. You can also pass command line arguments to identify the acquisition protocol names, e.g. `run_1_dicomConvert.py 00_dicom 01_bids --t2starw_protocol_patterns *gre* --t1w_protocol_patterns *mp2rage*`.
 
     - If converting from NIfTI, carefully read the output of the `run_1_niftiConvert.py` script to ensure data were correctly recognized and converted. The script will try to identify any important details from the filenames and from adjacent JSON header files, if available. It retrieves this information using customisable patterns and regular expressions which can be overridden using command-line arguments (see the output using the `--help` flag). If any information is missing, you will be prompted to fill out a CSV spreadsheet with the missing information before running the conversion script again using the same command. You can open the CSV file in a spreadsheet reader such as Microsoft Excel or LibreOffice Calc.
 
