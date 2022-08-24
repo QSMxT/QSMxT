@@ -90,6 +90,7 @@ def init_session_workflow(subject, session):
     return wf
 
 def init_run_workflow(subject, session, run):
+    logger.log(LogLevel.INFO.value, f"Creating nipype workflow for {subject}/{session}/{run}...")
 
     # create copies of command-line arguments that may need to change for this run (if problems occur)
     masking_method = args.masking
@@ -201,9 +202,7 @@ def init_run_workflow(subject, session, run):
     # do threshold-based masking if necessary
     if masking_method in ['phase-based', 'magnitude-based']:
         n_threshold_masking = Node(
-            interface=masking.MaskingInterface(
-                fill_strength=args.fill_strength
-            ),
+            interface=masking.MaskingInterface(),
             name='scipy_numpy_nibabel_threshold-masking'
             # inputs : ['in_files']
         )
@@ -509,15 +508,6 @@ if __name__ == "__main__":
         type=float,
         default=0.5,
         help='Fractional intensity for BET masking operations.'
-    )
-
-    parser.add_argument(
-        '--fill_strength',
-        type=int,
-        default=1,
-        help='Adds strength to hole-filling for phase-based and magnitude-based masking; ' +
-             'each integer increment adds to the masking procedure one further dilation step ' +
-             'prior to hole-filling, followed by an equal number of erosion steps.'
     )
 
     parser.add_argument(

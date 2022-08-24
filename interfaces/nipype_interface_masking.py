@@ -34,7 +34,7 @@ def _clean_histogram(image_histogram):
     return image_histogram
 
 # === THRESHOLD-BASED MASKING FOR TWO-PASS AND SINGLE-PASS QSM ===
-def threshold_masking(in_files, threshold=None, fill_strength=1):
+def threshold_masking(in_files, threshold=None, fill_strength=0):
     # load data
     all_niis = [nib.load(in_file) for in_file in in_files]
     all_float_data = [nii.get_fdata() for nii in all_niis]
@@ -86,8 +86,7 @@ def fill_holes_smoothing(mask, sigma=[5,5,3], threshold=0.5):
     return np.array(smoothed > threshold, dtype=int)
 
 # original morphological operation
-def fill_holes_morphological(mask, fill_strength):
-    fill_strength=0
+def fill_holes_morphological(mask, fill_strength=0):
     filled_mask = mask.copy()
     for j in range(fill_strength):
         filled_mask = binary_dilation(filled_mask).astype(int)
@@ -134,7 +133,8 @@ if __name__ == "__main__":
     parser.add_argument(
         '--fill_strength',
         type=int,
-        default=1
+        required=False,
+        default=0
     )
 
     parser.add_argument(
