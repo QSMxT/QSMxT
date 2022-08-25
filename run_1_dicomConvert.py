@@ -86,9 +86,9 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
             if "Manufacturer" not in json_datas[i]:
                 logger.log(LogLevel.WARNING.value, f"'Manufacturer' missing from JSON header '{json_files[i]}'. Unable to determine whether any GE data requires correction. You may need to manually run nii-fix-ge.py to correct complex or four.")
                 continue
-            if json_datas["Manufacturer"].upper().strip() in ["GE", "GE MEDICAL SYSTEMS"]:
-                phase_path = glob.glob(json_datas[i].replace('.json', '.nii*'))[0]
-                mag_path = glob.glob(json_datas[i].replace('_ph.json', '.nii*'))[0]
+            if json_datas[i]["Manufacturer"].upper().strip() in ["GE", "GE MEDICAL SYSTEMS"]:
+                phase_path = glob.glob(json_files[i].replace('.json', '.nii*'))[0]
+                mag_path = glob.glob(json_files[i].replace('_ph.json', '.nii*'))[0]
                 logger.log(LogLevel.INFO.value, f"Correcting GE data: phase={phase_path}; mag={mag_path}")
                 fix_ge_polar(mag_path, phase_path, delete_originals=True)
 
@@ -166,25 +166,26 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
         logger.log(LogLevel.INFO.value, f"Identified the following protocols as t2starw: {t2starw_protocol_names}")
 
         # === T1W PROTOCOLS SELECTION ===
-        print("== PROTOCOL NAMES ==")
         remaining_protocol_names = [protocol_name for protocol_name in all_protocol_names if protocol_name not in t2starw_protocol_names]
-        for i in range(len(remaining_protocol_names)):
-            print(f"{i+1}. {remaining_protocol_names[i]}")
-        while True:
-            user_input = input("Identify t1w scans for automated segmentation (comma-separated numbers; enter nothing to ignore): ").strip()
-            if user_input == "":
-                break
-            t1w_scans_idx = user_input.split(",")
-            try:
-                t1w_scans_idx = sorted(list(set([int(j)-1 for j in t1w_scans_idx])))
-            except:
-                print("Invalid input")
-                continue
-            try:
-                t1w_protocol_names = [remaining_protocol_names[j] for j in t1w_scans_idx]
-                break
-            except:
-                print("Invalid input")
+        if remaining_protocol_names:
+            print("== PROTOCOL NAMES ==")
+            for i in range(len(remaining_protocol_names)):
+                print(f"{i+1}. {remaining_protocol_names[i]}")
+            while True:
+                user_input = input("Identify t1w scans for automated segmentation (comma-separated numbers; enter nothing to ignore): ").strip()
+                if user_input == "":
+                    break
+                t1w_scans_idx = user_input.split(",")
+                try:
+                    t1w_scans_idx = sorted(list(set([int(j)-1 for j in t1w_scans_idx])))
+                except:
+                    print("Invalid input")
+                    continue
+                try:
+                    t1w_protocol_names = [remaining_protocol_names[j] for j in t1w_scans_idx]
+                    break
+                except:
+                    print("Invalid input")
         if not t1w_protocol_names:
             logger.log(LogLevel.WARNING.value, f"No t1w protocols found matching patterns {t1w_protocol_patterns}! Automated segmentation will not be possible.")
         else:

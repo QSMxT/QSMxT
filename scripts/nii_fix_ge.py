@@ -30,7 +30,7 @@ def fix_ge_polar(mag_path, phase_path, delete_originals=True):
     phase_corr_data = np.angle(complex_data_correct_image)
 
     # create nifti image
-    phase_nii.header.set_data_dtype(np.float)
+    phase_nii.header.set_data_dtype(np.float32)
     phase_corr_nii = nib.Nifti1Image(phase_corr_data, phase_nii.affine, phase_nii.header)
     
     # determine filename
