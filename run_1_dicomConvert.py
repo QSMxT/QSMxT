@@ -10,6 +10,7 @@ import datetime
 
 from scripts.qsmxt_version import qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary 
+from scripts.nii_fix_ge import fix_ge_polar, fix_ge_complex
 
 def sys_cmd(cmd):
     logger.log(LogLevel.INFO.value, f"Running command: '{cmd}'")
@@ -78,6 +79,18 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
             session_extra_folder = os.path.join(output_dir, subject, session, "extra_data")
             json_files.extend(sorted(glob.glob(os.path.join(session_extra_folder, "*json"))))
             json_datas.extend([load_json(json_file) for json_file in sorted(glob.glob(os.path.join(session_extra_folder, "*json")))])
+
+    logger.log(LogLevel.INFO.value, f"Checking for GE data requiring correction...")
+    for i in range(len(json_datas)):
+        if '_ph.json' in json_files[i]:
+            if "Manufacturer" not in json_datas[i]:
+                logger.log(LogLevel.WARNING.value, f"'Manufacturer' missing from JSON header '{json_files[i]}'. Unable to determine whether any GE data requires correction. You may need to manually run nii-fix-ge.py to correct complex or four.")
+                continue
+            if json_datas["Manufacturer"].upper().strip() in ["GE", "GE MEDICAL SYSTEMS"]:
+                phase_path = glob.glob(json_datas[i].replace('.json', '.nii*'))[0]
+                mag_path = glob.glob(json_datas[i].replace('_ph.json', '.nii*'))[0]
+                logger.log(LogLevel.INFO.value, f"Correcting GE data: phase={phase_path}; mag={mag_path}")
+                fix_ge_polar(mag_path, phase_path, delete_originals=True)
 
     logger.log(LogLevel.INFO.value, f"Enumerating protocol names from JSON headers...")
     all_protocol_names = []
