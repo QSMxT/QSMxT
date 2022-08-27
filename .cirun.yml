@@ -2,7 +2,7 @@ runners:
   - name: oracle-runner
     cloud: oracle
     instance_type: VM.Standard.E2.1.Micro
-    machine_image: ocid1.image.oc1.uk-london-1.aaaaaaaao3yssdwhx57ni4medn3k2dhomu4w42a2f5htigs3qnb5ephaq43a
+    machine_image: ocid1.image.oc1.uk-london-1.aaaaaaaavy5v3inu2ho2h57vwvvsclukdh4jvhg45um2nrejyxa7s46zcwoq
     region: uk-london-1
     labels:
       - oracle
