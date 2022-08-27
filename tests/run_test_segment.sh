@@ -6,7 +6,7 @@ set -e
 # echo ${timeStamp}
 # git clone https://github.com/QSMxT/QSMxT.git /tmp/${timeStamp}/QSMxT
 
-sudo yum install docker -y
+sudo yum install docker python3 -y
 
 #  extract container version from README:
 container=`cat /tmp/${timeStamp}/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
