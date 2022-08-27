@@ -30,7 +30,7 @@ on:
     
 jobs:
   test_segmentation_pipeline:
-    runs-on: [self-hosted, oracle]
+    runs-on: [self-hosted]
     steps:
     - name: segmentation pipeline
       run: |
