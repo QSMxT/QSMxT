@@ -4,6 +4,13 @@ import nibabel as nib
 import numpy as np
 import argparse
 import os
+import json
+
+def load_json(path):
+    f = open(path, encoding='utf-8')
+    j = json.load(f)
+    f.close()
+    return j
 
 def fix_ge_polar(mag_path, phase_path, delete_originals=True):
 
@@ -76,8 +83,8 @@ def fix_ge_complex(real_path, imag_path, delete_originals=False):
     
     # determine filenames
     extension = ".".join(real_path.split('.')[1:])
-    mag_path = f"{real_path.split('.')[0]}_mag.{extension}"
-    phase_path =  f"{real_path.split('.')[0]}_phase.{extension}"
+    mag_path = f"{real_path.replace('_real', '').split('.')[0]}.{extension}"
+    phase_path =  f"{real_path.replace('_real', '').split('.')[0]}_ph.{extension}"
     
     # save new images to file
     nib.save(mag_nii, mag_path)
@@ -87,6 +94,25 @@ def fix_ge_complex(real_path, imag_path, delete_originals=False):
     if delete_originals:
         os.remove(real_path)
         os.remove(imag_path)
+
+    # create new json headers
+    if os.path.exists(f"{real_path.split('.')[0]}.json"):
+        mag_json_data = load_json(f"{real_path.split('.')[0]}.json")
+        mag_json_data["ImageType"] = ["MAGNITUDE" if x == "REAL" else x for x in mag_json_data["ImageType"]]
+        mag_json = open(f"{real_path.replace('_real', '').split('.')[0]}.json", 'w')
+        json.dump(mag_json_data, mag_json)
+        mag_json.close()
+
+        phase_json_data = load_json(f"{real_path.split('.')[0]}.json")
+        phase_json_data["ImageType"] = ["PHASE" if x == "REAL" else x for x in phase_json_data["ImageType"]]
+        phase_json = open(f"{real_path.replace('_real', '').split('.')[0]}_ph.json", 'w')
+        json.dump(phase_json_data, phase_json)
+        phase_json.close()
+
+        # delete original json headers
+        if delete_originals:
+            os.remove(f"{real_path.split('.')[0]}.json")
+            os.remove(f"{imag_path.split('.')[0]}.json")
 
 
 if __name__ == "__main__":

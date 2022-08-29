@@ -81,16 +81,34 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
             json_datas.extend([load_json(json_file) for json_file in sorted(glob.glob(os.path.join(session_extra_folder, "*json")))])
 
     logger.log(LogLevel.INFO.value, f"Checking for GE data requiring correction...")
+    ge_corrections = False
     for i in range(len(json_datas)):
-        if '_ph.json' in json_files[i]:
+        if any([x in json_files[i] for x in ['_ph.json', '_real.json']]):
             if "Manufacturer" not in json_datas[i]:
                 logger.log(LogLevel.WARNING.value, f"'Manufacturer' missing from JSON header '{json_files[i]}'. Unable to determine whether any GE data requires correction. You may need to manually run nii-fix-ge.py to correct complex or four.")
                 continue
+            ge_corrections = True
             if json_datas[i]["Manufacturer"].upper().strip() in ["GE", "GE MEDICAL SYSTEMS"]:
-                phase_path = glob.glob(json_files[i].replace('.json', '.nii*'))[0]
-                mag_path = glob.glob(json_files[i].replace('_ph.json', '.nii*'))[0]
-                logger.log(LogLevel.INFO.value, f"Correcting GE data: phase={phase_path}; mag={mag_path}")
-                fix_ge_polar(mag_path, phase_path, delete_originals=True)
+                if '_ph.json' in json_files[i]:
+                    phase_path = glob.glob(json_files[i].replace('.json', '.nii*'))[0]
+                    mag_path = glob.glob(json_files[i].replace('_ph.json', '.nii*'))[0]
+                    logger.log(LogLevel.INFO.value, f"Correcting GE data: phase={phase_path}; mag={mag_path}")
+                    fix_ge_polar(mag_path, phase_path, delete_originals=True)
+                else: # if '_real.json' in json_files[i]:
+                    real_path = glob.glob(json_files[i].replace('.json', '.nii*'))[0]
+                    imag_path = glob.glob(json_files[i].replace('_real.json', '_imaginary.nii*'))[0]
+                    logger.log(LogLevel.INFO.value, f"Correcting GE data: real={real_path}; imag={imag_path}")
+                    fix_ge_complex(real_path, imag_path, delete_originals=True)
+    if ge_corrections:
+        logger.log(LogLevel.INFO.value, f"Loading updated JSON headers from '{output_dir}/.../extra_data' folders...")
+        json_files = []
+        json_datas = []
+        for subject in subjects:
+            sessions = get_folders_in(os.path.join(output_dir, subject))
+            for session in sessions:
+                session_extra_folder = os.path.join(output_dir, subject, session, "extra_data")
+                json_files.extend(sorted(glob.glob(os.path.join(session_extra_folder, "*json"))))
+                json_datas.extend([load_json(json_file) for json_file in sorted(glob.glob(os.path.join(session_extra_folder, "*json")))])
 
     logger.log(LogLevel.INFO.value, f"Enumerating protocol names from JSON headers...")
     all_protocol_names = []
