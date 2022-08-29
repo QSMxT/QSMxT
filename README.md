@@ -38,11 +38,11 @@ There is also a docker image available:
 
 For Windows:
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.12:20220809
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.13:20220829
 ```
 For Linux/Mac:
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.12:20220809
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.13:20220829
 ```
 
 ## QSMxT Usage
@@ -109,10 +109,10 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.12_20220809
-    cd qsmxt_1.1.12_20220809
-    ./run_transparent_singularity.sh --container qsmxt_1.1.12_20220809.simg
-    source activate_qsmxt_1.1.12_20220809.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.13_20220829
+    cd qsmxt_1.1.13_20220829
+    ./run_transparent_singularity.sh --container qsmxt_1.1.13_20220829.simg
+    source activate_qsmxt_1.1.13_20220829.simg.sh
     ```
 
 3. Clone the QSMxT repository:
