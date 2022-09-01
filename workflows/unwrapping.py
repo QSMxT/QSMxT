@@ -13,7 +13,7 @@ def unwrapping_workflow(unwrapping='laplacian'):
         name='inputnode')
     
     outputnode = MapNode(
-        interface=IdentityInterface(fields=['unwrapped_phase', 'B0']),
+        interface=IdentityInterface(fields=['unwrapped_phase']),
         iterfield=['unwrapped_phase'],
         name='outputnode')
     
@@ -31,12 +31,13 @@ def unwrapping_workflow(unwrapping='laplacian'):
     elif unwrapping == "romeo":
         romeo = MapNode(
             interface=romeo_interface.RomeoInterface(),
-            iterfield=['phase', 'mag'],
+            iterfield=['phase', 'mag', 'TE'],
             name='phase_unwrap_romeo'
         )
         wf.connect([
             (inputnode, romeo, [('wrapped_phase', 'phase'),
-                                ('mag', 'mag')]),
+                                ('mag', 'mag'),
+                                ('TE', 'TE')]),
             (romeo, outputnode, [('out_file', 'unwrapped_phase')])
         ])
         
@@ -49,8 +50,7 @@ def unwrapping_workflow(unwrapping='laplacian'):
             (inputnode, romeo, [('wrapped_phase', 'phase'),
                                 ('mag', 'mag'),
                                 ('TE', 'TE')]),
-            (romeo, outputnode, [('unwrapped_phase', 'unwrapped_phase'),
-                                ('B0', 'B0')])
+            (romeo, outputnode, [('B0', 'unwrapped_phase')])
         ])
         
     return wf

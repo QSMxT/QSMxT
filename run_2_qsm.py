@@ -8,6 +8,7 @@ import psutil
 import datetime
 import argparse
 
+from nipype import config
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
@@ -21,7 +22,7 @@ from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_axialsampling as sampling
 
 from workflows.nextqsm import add_nextqsm_workflow, add_b0nextqsm_workflow
-from workflows.tgvqsm import add_tgvqsm_workflow
+from workflows.tgvqsm import add_tgvqsm_workflow, add_b0tgvqsm_workflow
 from workflows.masking import add_masking_nodes
 
 
@@ -278,7 +279,9 @@ def init_run_workflow(run_args, subject, session, run):
 
     # qsm steps
     if run_args.qsm_algorithm == 'tgv_qsm':
-        wf = add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink, phase_files[0])
+        wf = add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink, phase_files[0], run_args.nextqsm_unwrapping_algorithm)
+    elif run_args.qsm_algorithm == 'tgv_qsm_combined':
+        wf = add_b0tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink, phase_files[0])    
     elif run_args.qsm_algorithm == 'nextqsm':
         wf = add_nextqsm_workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, run_args.nextqsm_unwrapping_algorithm)
     elif run_args.qsm_algorithm == 'nextqsm_combined':
@@ -332,7 +335,7 @@ def parse_args(args):
     parser.add_argument(
         '--phase_pattern',
         default='{subject}/{session}/anat/*{run}*phase*nii*',
-        help='Pattern to match phase files for qsm within session folders. ' +
+        help='Pattern to match phase files for qsm within sessiomn_maskn folders. ' +
              'The {subject}, {session} and {run} placeholders must be present.'
     )
 
@@ -361,7 +364,7 @@ def parse_args(args):
     parser.add_argument(
         '--qsm_algorithm',
         default='tgv_qsm',
-        choices=['tgv_qsm', 'nextqsm'],
+        choices=['tgv_qsm', 'tgv_qsm_combined', 'nextqsm'],
         help="The QSM algorithm to use. The tgv_qsm algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 "+
              "from Langkammer et al. By default, the tgv_qsm algorithm also includes a two-pass inversion that "+
              "aims to mitigate streaking artefacts in QSM based on doi:10.1002/mrm.29048. The two-pass "+
@@ -374,7 +377,7 @@ def parse_args(args):
     parser.add_argument(
         '--nextqsm_unwrapping_algorithm',
         default='romeo',
-        choices=['romeo', 'romeob0', 'laplacian'],
+        choices=['romeo', 'romeoB0', 'laplacian'],
         help="Unwrapping algorithm to use with nextqsm."
     )
 
@@ -507,7 +510,7 @@ def create_logger(args):
 def process_args(args):
     # default masking settings for QSM algorithms
     if not args.masking:
-        if args.qsm_algorithm == 'tgv_qsm':
+        if args.qsm_algorithm == 'tgv_qsm' or args.qsm_algorithm == 'tgv_qsm_combined':
             args.masking = 'phase-based'
         elif args.qsm_algorithm == 'nextqsm':
             args.masking = 'bet-firstecho'
@@ -640,4 +643,3 @@ if __name__ == "__main__":
 
     show_warning_summary(logger)
     logger.log(LogLevel.INFO.value, 'Finished')
-

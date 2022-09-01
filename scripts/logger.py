@@ -94,4 +94,3 @@ def show_warning_summary(logger):
         logger.log(LogLevel.INFO.value, "Process completed with warnings. Some runs may have been skipped.")
     if logger.handlers[2].stream.items:
         logger.log(LogLevel.INFO.value, "Errors occurred - outputs may not be usable.")
-
