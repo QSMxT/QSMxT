@@ -51,7 +51,8 @@ def threshold_masking(in_files, threshold=None, fill_strength=0):
 
     # hole-filling (applied to filled_masks only)
     hole_filling_threshold = 0.4
-    filled_masks = [binary_erosion(fill_holes_smoothing(binary_dilation(mask))) for mask in masks]
+    filled_masks = [fill_holes_smoothing(mask) for mask in masks]
+    #filled_masks = [binary_erosion(fill_holes_smoothing(binary_dilation(mask))) for mask in masks]
     #filled_masks = [fill_holes_morphological(mask, fill_strength) for mask in masks]
 
     # determine filenames
