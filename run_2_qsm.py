@@ -23,6 +23,8 @@ from interfaces import nipype_interface_masking as masking
 from interfaces import nipype_interface_erode as erode
 from interfaces import nipype_interface_bet2 as bet2
 from interfaces import nipype_interface_phase_based as experimental_masking
+from interfaces import nipype_interface_json as json
+from interfaces import nipype_interface_addtojson as addtojson
 
 import argparse
 
@@ -140,6 +142,20 @@ def init_run_workflow(subject, session, run):
         name='nipype_datasink'
     )
 
+    n_json = Node(
+        interface=json.JsonInterface(
+            in_dict={
+                "QSMxT version" : qsmxt_version(),
+                "Run command" : str.join(" ", sys.argv),
+                "Python interpreter" : sys.executable
+            },
+            out_file=f"{subject}_{session}_{run}_qsmxt-header.json"
+        ),
+        name="json_createheader"
+        # inputs : 'in_dict'
+        # outputs: 'out_file'
+    )
+
     # scale phase data
     mn_phase_scaled = MapNode(
         interface=scalephase.ScalePhaseInterface(),
@@ -207,6 +223,20 @@ def init_run_workflow(subject, session, run):
             # inputs : ['in_files']
         )
         if args.threshold: n_threshold_masking.inputs.threshold = args.threshold
+
+        n_add_threshold_to_json = Node(
+            interface=addtojson.AddToJsonInterface(
+                in_key = "threshold"
+            ),
+            name="json_add-threshold"
+        )
+        wf.connect([
+            (n_json, n_add_threshold_to_json, [('out_file', 'in_file')]),
+            (n_threshold_masking, n_add_threshold_to_json, [('threshold', 'in_num_value')])
+        ])
+        wf.connect([
+            (n_add_threshold_to_json, n_datasink, [('out_file', 'headers')])
+        ])
 
         if masking_method in ['phase-based']:    
             wf.connect([
@@ -563,6 +593,7 @@ if __name__ == "__main__":
 
     logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
+    logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
     # misc environment variables
     os.environ["FSLOUTPUTTYPE"] = "NIFTI"
@@ -609,7 +640,7 @@ if __name__ == "__main__":
 
     #qsm_threads should be set to adjusted n_procs (either computed earlier or given via cli)
     #args.qsm_threads = args.n_procs if not args.qsub_account_string else 1
-    args.qsm_threads = 1#args.n_procs if not args.qsub_account_string else 1
+    args.qsm_threads = args.n_procs if not args.qsub_account_string else 6
 
     # make sure tgv_qsm is compiled on the target system before we start the pipeline:
     # process = subprocess.run(['tgv_qsm'])
@@ -626,14 +657,13 @@ if __name__ == "__main__":
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
-        # output QSMxT version
+        # output QSMxT version, run command, and python interpreter
         f.write(f"QSMxT: {qsmxt_version()}")
-        f.write("\n\n")
-
-        # output command used to invoke script
-        f.write(str.join(" ", sys.argv))
+        f.write(f"\nRun command: {str.join(' ', sys.argv)}")
+        f.write(f"\nPython interpreter: {sys.executable}")
 
         # qsmxt, nipype, numpy
+        f.write("\n\n == References ==")
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
         f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
@@ -651,7 +681,7 @@ if __name__ == "__main__":
             f.write("\n\n - Eckstein K, Trattnig S, Simon DR. A Simple homogeneity correction for neuroimaging at 7T. In: Proc. Intl. Soc. Mag. Reson. Med. International Society for Magnetic Resonance in Medicine; 2019. Abstract 2716. https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html")
         if any_string_matches_any_node(['mriresearchtools']):
             f.write("\n\n - Eckstein K. korbinian90/MriResearchTools.jl. GitHub; 2022. https://github.com/korbinian90/MriResearchTools.jl")
-        if any_string_matches_any_node(['numpy']) and args.threshold is None:
+        if any_string_matches_any_node(['numpy']):
             f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         if any_string_matches_any_node(['scipy']):
             f.write("\n\n - Virtanen P, Gommers R, Oliphant TE, et al. SciPy 1.0: fundamental algorithms for scientific computing in Python. Nat Methods. 2020;17(3):261-272. doi:10.1038/s41592-019-0686-2")

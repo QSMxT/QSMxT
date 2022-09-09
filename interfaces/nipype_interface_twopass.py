@@ -6,7 +6,7 @@ import numpy as np
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File
 
 
-def twopass_nifti(in_file1, in_file2, in_maskFile=None, save_result=True):
+def twopass_nifti(in_file1, in_file2, in_maskFile=None, save_result=True, out_name=None):
     in1_nii = nib.load(in_file1)
     in2_nii = nib.load(in_file2)
     if in_maskFile: in_mask_nii = nib.load(in_maskFile)
@@ -21,10 +21,11 @@ def twopass_nifti(in_file1, in_file2, in_maskFile=None, save_result=True):
         out_data = in1_data + (in2_data * np.logical_not(in_mask_data))
 
     if save_result:
-        filename = f"{os.path.splitext(os.path.splitext(os.path.split(in_file1)[1])[0])[0]}_twopass.nii"
-        fullpath = os.path.join(os.path.abspath(os.curdir), filename)
-        nib.save(nib.nifti1.Nifti1Image(out_data, affine=in1_nii.affine, header=in1_nii.header), fullpath)
-        return fullpath
+        if not out_name:
+            filename = f"{os.path.splitext(os.path.splitext(os.path.split(in_file1)[1])[0])[0]}_twopass.nii"
+            out_name = os.path.join(os.path.abspath(os.curdir), filename)
+        nib.save(nib.nifti1.Nifti1Image(out_data, affine=in1_nii.affine, header=in1_nii.header), out_name)
+        return out_name
 
     return out_data
 

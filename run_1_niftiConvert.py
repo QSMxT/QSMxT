@@ -415,14 +415,15 @@ if __name__ == "__main__":
 
     logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
+    logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
-        # output QSMxT version
+        # output QSMxT version, run command, and python interpreter
         f.write(f"QSMxT: {qsmxt_version()}")
-        f.write("\n\n")
+        f.write(f"\nRun command: {str.join(' ', sys.argv)}")
+        f.write(f"\nPython interpreter: {sys.executable}")
 
-        # output command used to invoke script
-        f.write(str.join(" ", sys.argv))
+        f.write("\n\n == References ==")
 
         f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Gorgolewski KJ, Auer T, Calhoun VD, et al. The brain imaging data structure, a format for organizing and describing outputs of neuroimaging experiments. Sci Data. 2016;3(1):160044. doi:10.1038/sdata.2016.44")

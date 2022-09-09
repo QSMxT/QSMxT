@@ -35,6 +35,9 @@ def _clean_histogram(image_histogram):
 
 # === THRESHOLD-BASED MASKING FOR TWO-PASS AND SINGLE-PASS QSM ===
 def threshold_masking(in_files, threshold=None, fill_strength=0):
+    # sort input filepaths
+    in_files = sorted(in_files)
+
     # load data
     all_niis = [nib.load(in_file) for in_file in in_files]
     all_float_data = [nii.get_fdata() for nii in all_niis]
@@ -47,15 +50,13 @@ def threshold_masking(in_files, threshold=None, fill_strength=0):
     masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
 
     # remove noisy background voxels (applied to masks only)
-    masks = [binary_opening(mask) for mask in masks]
+    small_masks = [binary_opening(mask) for mask in masks]
 
     # hole-filling (applied to filled_masks only)
-    hole_filling_threshold = 0.4
-    filled_masks = [binary_erosion(fill_holes_smoothing(binary_dilation(mask))) for mask in masks]
-    #filled_masks = [fill_holes_morphological(mask, fill_strength) for mask in masks]
+    filled_masks = [fill_holes_smoothing(mask) for mask in masks]
 
     # determine filenames
-    mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask.nii" for in_file in in_files]
+    small_mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask.nii" for in_file in in_files]
     filled_mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask_filled.nii" for in_file in in_files]
 
     for i in range(len(masks)):
@@ -66,7 +67,7 @@ def threshold_masking(in_files, threshold=None, fill_strength=0):
                 header=all_niis[i].header,
                 affine=all_niis[i].affine
             ),
-            mask_filenames[i]
+            small_mask_filenames[i]
         )
         nib.save(
             nib.Nifti1Image(
@@ -77,11 +78,11 @@ def threshold_masking(in_files, threshold=None, fill_strength=0):
             filled_mask_filenames[i]
         )
 
-    return mask_filenames, filled_mask_filenames
+    return small_mask_filenames, filled_mask_filenames, threshold
 
 # The smoothing removes background noise and closes small holes
 # A smaller threshold grows the mask
-def fill_holes_smoothing(mask, sigma=[5,5,3], threshold=0.5):
+def fill_holes_smoothing(mask, sigma=[5,5,5], threshold=0.4):
     smoothed = gaussian_filter(mask * 1.0, sigma, truncate=2.0) # truncate reduces the kernel size: less precise but faster
     return np.array(smoothed > threshold, dtype=int)
 
@@ -106,6 +107,7 @@ class MaskingInputSpec(BaseInterfaceInputSpec):
 class MaskingOutputSpec(TraitedSpec):
     masks = OutputMultiPath(File(exists=False))
     masks_filled = OutputMultiPath(File(exists=False))
+    threshold = traits.Float()
 
 
 class MaskingInterface(SimpleInterface):
@@ -113,9 +115,10 @@ class MaskingInterface(SimpleInterface):
     output_spec = MaskingOutputSpec
 
     def _run_interface(self, runtime):
-        masks, masks_filled = threshold_masking(self.inputs.in_files, self.inputs.threshold, self.inputs.fill_strength)
+        masks, masks_filled, threshold = threshold_masking(self.inputs.in_files, self.inputs.threshold, self.inputs.fill_strength)
         self._results['masks'] = masks
         self._results['masks_filled'] = masks_filled
+        self._results['threshold'] = threshold
         return runtime
 
 
