@@ -394,11 +394,16 @@ if __name__ == "__main__":
 
     logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
+    logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
-        # output command used to invoke script
-        f.write(str.join(" ", sys.argv))
+        # output QSMxT version, run command, and python interpreter
+        f.write(f"QSMxT: {qsmxt_version()}")
+        f.write(f"\nRun command: {str.join(' ', sys.argv)}")
+        f.write(f"\nPython interpreter: {sys.executable}")
+
+        f.write("\n\n == References ==")
 
         # qsmxt, dcm2niix, bids
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
