@@ -63,7 +63,7 @@ def threshold_masking(in_files, threshold=None, fill_strength=0):
         all_niis[i].header.set_data_dtype(np.uint8)
         nib.save(
             nib.Nifti1Image(
-                dataobj=masks[i],
+                dataobj=small_masks[i],
                 header=all_niis[i].header,
                 affine=all_niis[i].affine
             ),
