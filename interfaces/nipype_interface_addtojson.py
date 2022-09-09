@@ -33,6 +33,7 @@ class AddToJsonInterface(SimpleInterface):
         json_dict = load_json(self.inputs.in_file)
         
         key = self.inputs.in_key
+        json_dict[key] = None
         if self.inputs.in_str_value:
             json_dict[key] = self.inputs.in_str_value
             val_type = "string"
@@ -49,7 +50,6 @@ class AddToJsonInterface(SimpleInterface):
             json_dict[key] = self.inputs.in_bool_value
             val_type = "bool"
         elif self.inputs.in_isnull_value:
-            json_dict[key] = None
             val_type = "null"
 
         out_file = f"{os.path.abspath(os.path.splitext(os.path.split(self.inputs.in_file)[1])[0])}_add-{val_type}.json"
