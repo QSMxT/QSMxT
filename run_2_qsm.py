@@ -25,6 +25,7 @@ from interfaces import nipype_interface_bet2 as bet2
 from interfaces import nipype_interface_phase_based as experimental_masking
 from interfaces import nipype_interface_json as json
 from interfaces import nipype_interface_addtojson as addtojson
+from interfaces import nipype_interface_axialsampling as sampling
 
 from workflows.unwrapping import unwrapping_workflow
 from workflows.nextqsm import nextqsm_B0_workflow, nextqsm_workflow
@@ -193,20 +194,33 @@ def init_run_workflow(subject, session, run):
         (n_getfiles, mn_phase_scaled, [('phase_files', 'in_file')])
     ])
 
+    # resample to axial
+    mn_resample_inputs = MapNode(
+        interface=sampling.AxialSamplingInterface(
+            obliquity_threshold=10
+        ),
+        iterfield=['in_mag', 'in_pha'],
+        name='nibabel_numpy_nilearn_axial-resampling'
+    )
+    wf.connect([
+        (n_getfiles, mn_resample_inputs, [('magnitude_files', 'in_mag')]),
+        (mn_phase_scaled, mn_resample_inputs, [('out_file', 'in_pha')])
+    ])
+
     # masking steps
-    mn_mask = add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, n_getfiles, mn_phase_scaled, n_json, n_datasink)
+    mn_mask = add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_resample_inputs, n_json, n_datasink)
 
     # qsm steps
     if args.qsm_algorithm == 'tgvqsm':
-        wf = add_tgvqsm_workflow(wf, mn_params, mn_mask, mn_phase_scaled, n_datasink)
+        wf = add_tgvqsm_workflow(wf, mn_params, mn_resample_inputs, mn_mask, n_datasink, magnitude_files[0])
     elif args.qsm_algorithm == 'nextqsm':
-        wf = addNextqsmWorkflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink, args.unwrapping_algorithm)
+        wf = addNextqsmWorkflow(wf, n_getfiles, mn_params, mn_resample_inputs, mn_mask, n_datasink, args.unwrapping_algorithm)
     elif args.qsm_algorithm == 'nextqsm_combined':
-        wf = addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink)
+        wf = addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_resample_inputs, mn_mask, n_datasink)
 
     return wf
 
-def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, n_getfiles, mn_phase_scaled, n_json, n_datasink):
+def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_resample_inputs, n_json, n_datasink):
 
     # run homogeneity filter if necessary
     if inhomogeneity_correction:
@@ -217,7 +231,7 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, n_g
             # output : out_file
         )
         wf.connect([
-            (n_getfiles, mn_inhomogeneity_correction, [('magnitude_files', 'in_file')])
+            (mn_resample_inputs, mn_inhomogeneity_correction, [('out_mag', 'in_file')])
         ])
 
     # do phase weights if necessary
@@ -230,8 +244,8 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, n_g
         )
         mn_phaseweights.inputs.weight_type = "grad+second+mag"
         wf.connect([
-            (mn_phase_scaled, mn_phaseweights, [('out_file', 'phase')]),
-            (n_getfiles, mn_phaseweights, [('magnitude_files', 'mag')])
+            (mn_resample_inputs, mn_phaseweights, [('out_pha', 'phase')]),
+            (mn_resample_inputs, mn_phaseweights, [('out_mag', 'mag')])
         ])
 
     # do threshold-based masking if necessary
@@ -263,7 +277,7 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, n_g
             ])
         elif masking_method == 'magnitude-based' and not inhomogeneity_correction:
             wf.connect([
-                (n_getfiles, n_threshold_masking, [('magnitude_files', 'in_files')])
+                (mn_resample_inputs, n_threshold_masking, [('out_mag', 'in_files')])
             ])
         else:
             wf.connect([
@@ -284,7 +298,7 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, n_g
             ])
         else:
             wf.connect([
-                (n_getfiles, mn_bet, [('magnitude_files', 'in_file')])
+                (mn_resample_inputs, mn_bet, [('out_mag', 'in_file')])
             ])
         mn_bet_erode = MapNode(
             interface=erode.ErosionInterface(
@@ -341,7 +355,7 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, n_g
 
     return mn_mask
 
-def add_tgvqsm_workflow(wf, mn_params, mn_mask, mn_phase_scaled, n_datasink):
+def add_tgvqsm_workflow(wf, mn_params, mn_resample_inputs, mn_mask, n_datasink, magnitude_file):
     # === Single-pass QSM reconstruction (filled) ===
     mn_qsm_filled = MapNode(
         interface=tgv.QSMappingInterface(
@@ -365,7 +379,7 @@ def add_tgvqsm_workflow(wf, mn_params, mn_mask, mn_phase_scaled, n_datasink):
         (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
         (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
         (mn_mask, mn_qsm_filled, [('masks_filled', 'mask_file')]),
-        (mn_phase_scaled, mn_qsm_filled, [('out_file', 'phase_file')]),
+        (mn_resample_inputs, mn_qsm_filled, [('out_pha', 'phase_file')]),
     ])
 
     # qsm averaging
@@ -376,8 +390,19 @@ def add_tgvqsm_workflow(wf, mn_params, mn_mask, mn_phase_scaled, n_datasink):
         # output : out_file
     )
     wf.connect([
-        (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')]),
-        (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_singlepass' if args.two_pass else 'qsm_final')]),
+        (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')])
+    ])
+
+    # resample qsm to original
+    n_resample_qsm = Node(
+        interface=sampling.ResampleLikeInterface(
+            in_like=magnitude_file
+        ),
+        name='nibabel_numpy_nilearn_resample-qsm'
+    )
+    wf.connect([
+        (n_qsm_filled_average, n_resample_qsm, [('out_file', 'in_file')]),
+        (n_resample_qsm, n_datasink, [('out_file', 'qsm_singlepass' if args.two_pass else 'qsm_final')]),
     ])
 
     # === Two-pass QSM reconstruction (not filled) ===
@@ -407,7 +432,7 @@ def add_tgvqsm_workflow(wf, mn_params, mn_mask, mn_phase_scaled, n_datasink):
             (mn_params, mn_qsm, [('EchoTime', 'TE')]),
             (mn_params, mn_qsm, [('MagneticFieldStrength', 'b0')]),
             (mn_mask, mn_qsm, [('masks', 'mask_file')]),
-            (mn_phase_scaled, mn_qsm, [('out_file', 'phase_file')])
+            (mn_resample_inputs, mn_qsm, [('out_pha', 'phase_file')])
         ])
 
         # qsm averaging
@@ -443,8 +468,16 @@ def add_tgvqsm_workflow(wf, mn_params, mn_mask, mn_phase_scaled, n_datasink):
             (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')])
         ])
 
+        # resample qsm to original
+        n_resample_qsm_twopass = Node(
+            interface=sampling.ResampleLikeInterface(
+                in_like=magnitude_file
+            ),
+            name='nibabel_numpy_nilearn_resample-qsm-twopass'
+        )
         wf.connect([
-            (n_qsm_twopass_average, n_datasink, [('out_file', 'qsm_final')]),
+            (n_qsm_twopass_average, n_resample_qsm_twopass, [('out_file', 'in_file')]),
+            (n_resample_qsm_twopass, n_datasink, [('out_file', 'qsm_final')]),
         ])
 
     return wf
