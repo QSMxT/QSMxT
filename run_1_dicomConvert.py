@@ -32,7 +32,7 @@ def sys_cmd(cmd):
     return return_code
 
 def load_json(path):
-    f = open(path, encoding='utf-8')
+    f = open(path, encoding='utf-8', encoding='utf-8')
     j = json.load(f)
     f.close()
     return j
@@ -215,6 +215,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
         sessions = get_folders_in(os.path.join(output_dir, subject))
         for session in sessions:
             logger.log(LogLevel.INFO.value, f"Parsing relevant JSON data from {subject}/{session}...")
+            logger.log(LogLevel.INFO.value, f"Parsing relevant JSON data from {subject}/{session}...")
             session_extra_folder = os.path.join(output_dir, subject, session, "extra_data")
             session_anat_folder = os.path.join(output_dir, subject, session, "anat")
             json_files = sorted(glob.glob(os.path.join(session_extra_folder, "*json")))
@@ -282,9 +283,9 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                     if details['protocol_type'] == 't1w':
                         details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(details['run_num']).zfill(2)}_T1w")
                     elif details['num_echoes'] == 1:
-                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(details['run_num']).zfill(2)}_part-{details['part_type']}_T2starw")
+                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(str(details['run_num']).zfill(2)).zfill(2)}_part-{details['part_type']}_T2starw")
                     else:
-                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(details['run_num']).zfill(2)}_echo-{str(details['echo_num']).zfill(2)}_part-{details['part_type']}_MEGRE")
+                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(str(details['run_num']).zfill(2)).zfill(2)}_echo-{str(str(details['echo_num']).zfill(2)).zfill(2)}_part-{details['part_type']}_MEGRE")
 
                 # store session details
                 all_session_details.extend(session_details)
@@ -420,6 +421,10 @@ if __name__ == "__main__":
         t1w_protocol_patterns=[pattern.lower() for pattern in args.t1w_protocol_patterns],
         auto_yes=args.auto_yes
     )
+
+    show_warning_summary(logger)
+
+    logger.log(LogLevel.INFO.value, 'Finished')
 
     show_warning_summary(logger)
 
