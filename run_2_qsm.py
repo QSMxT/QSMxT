@@ -145,6 +145,7 @@ def init_run_workflow(subject, session, run):
         name='nipype_datasink'
     )
 
+    # create json header for this run
     n_json = Node(
         interface=json.JsonInterface(
             in_dict={
@@ -158,17 +159,6 @@ def init_run_workflow(subject, session, run):
         # inputs : 'in_dict'
         # outputs: 'out_file'
     )
-
-    # scale phase data
-    mn_phase_scaled = MapNode(
-        interface=scalephase.ScalePhaseInterface(),
-        iterfield=['in_file'],
-        name='nibabel_numpy_scale-phase'
-        # outputs : 'out_file'
-    )
-    wf.connect([
-        (n_getfiles, mn_phase_scaled, [('phase_files', 'in_file')])
-    ])
 
     # read echotime and field strengths from json files
     def read_json(in_file):
@@ -191,6 +181,32 @@ def init_run_workflow(subject, session, run):
     wf.connect([
         (n_getfiles, mn_params, [('params_files', 'in_file')])
     ])
+
+    # scale phase data
+    mn_phase_scaled = MapNode(
+        interface=scalephase.ScalePhaseInterface(),
+        iterfield=['in_file'],
+        name='nibabel_numpy_scale-phase'
+        # outputs : 'out_file'
+    )
+    wf.connect([
+        (n_getfiles, mn_phase_scaled, [('phase_files', 'in_file')])
+    ])
+
+    # masking steps
+    mn_mask = add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, n_getfiles, mn_phase_scaled, n_json, n_datasink)
+
+    # qsm steps
+    if args.qsm_algorithm == 'tgvqsm':
+        wf = add_tgvqsm_workflow(wf, mn_params, mn_mask, mn_phase_scaled, n_datasink)
+    elif args.qsm_algorithm == 'nextqsm':
+        wf = addNextqsmWorkflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink, args.unwrapping_algorithm)
+    elif args.qsm_algorithm == 'nextqsm_combined':
+        wf = addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink)
+
+    return wf
+
+def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, n_getfiles, mn_phase_scaled, n_json, n_datasink):
 
     # run homogeneity filter if necessary
     if inhomogeneity_correction:
@@ -323,20 +339,15 @@ def init_run_workflow(subject, session, run):
                 (mn_mask_plus_bet, mn_mask, [('out_file', 'masks_filled')])
             ])
 
-    # === Perform NeXt-QSM if selected
-    if args.qsm_algorithm == 'nextqsm':
-        addNextqsmWorkflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink, args.unwrapping_algorithm)
-        return wf
-    elif args.qsm_algorithm == 'nextqsm_combined':
-        addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink)
-        return wf
+    return mn_mask
 
+def add_tgvqsm_workflow(wf, mn_params, mn_mask, mn_phase_scaled, n_datasink):
     # === Single-pass QSM reconstruction (filled) ===
     mn_qsm_filled = MapNode(
         interface=tgv.QSMappingInterface(
             iterations=args.qsm_iterations,
             alpha=[0.0015, 0.0005],
-            erosions=0,
+            erosions=0 if args.two_pass else 5,
             num_threads=args.qsm_threads,
             out_suffix='_qsm-filled',
             extra_arguments='--ignore-orientation --no-resampling'
@@ -375,13 +386,14 @@ def init_run_workflow(subject, session, run):
             interface=tgv.QSMappingInterface(
                 iterations=args.qsm_iterations,
                 alpha=[0.0015, 0.0005],
-                erosions=5 if masking_method == 'bet' else 0,
+                erosions=0,
                 num_threads=args.qsm_threads,
                 out_suffix='_qsm',
                 extra_arguments='--ignore-orientation --no-resampling'
             ),
             iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
             name='tgv-qsm_intermediate'
+            # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
             # output: 'out_file'
         )
 
@@ -466,8 +478,9 @@ def addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, 
         
         (wf_nextqsmB0, n_datasink, [('outputnode.qsm', 'final_qsm')]),
     ])
-    
 
+    return wf
+    
 def addNextqsmWorkflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink, unwrapping_type):
     wf_unwrapping = unwrapping_workflow(unwrapping_type)
     wf_nextqsm = nextqsm_workflow()
@@ -485,6 +498,8 @@ def addNextqsmWorkflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_da
         (wf_nextqsm, n_datasink, [('outputnode.qsm', 'qsm_echo'),
                                   ('outputnode.qsm_average', 'qsm_final')])
     ])
+
+    return wf
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -553,7 +568,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--masking', '-m',
+        '--qsm_algorithm',
+        default='tgvqsm',
+        choices=['tgvqsm', 'nextqsm', 'nextqsm_combined']
+    )
+
+    parser.add_argument(
+        '--masking',
         default='phase-based',
         choices=['magnitude-based', 'phase-based', 'bet'],
         help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
