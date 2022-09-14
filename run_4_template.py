@@ -7,6 +7,7 @@ import argparse
 import psutil
 import sys
 import datetime
+import datetime
 
 import nipype.interfaces.utility as util
 import nipype.interfaces.ants as ants
@@ -74,7 +75,7 @@ def init_workflow(magnitude_images, qsm_images):
 
     # datasink
     datasink = pe.Node(
-        io.DataSink(base_directory=args.output_dir),
+        io.DataSink(base_directory=args.outputput_dir),
         name='nipype_datasink'
     )
     wf.connect([
@@ -108,14 +109,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        'output_dir',
+        'outputput_dir',
         help='Output folder; will be created if it does not exist.'
     )
 
     parser.add_argument(
         '--work_dir',
         default=None,
-        help='NiPype working directory; defaults to \'work\' within \'output_dir\'.'
+        help='NiPype working directory; defaults to \'work\' within \'outputput_dir\'.'
     )
 
     parser.add_argument(
@@ -197,7 +198,10 @@ if __name__ == "__main__":
     n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
     if not args.n_procs:
         available_ram_gb = psutil.virtual_memory().available / 1e9
-        args.n_procs = max(1, min(int(available_ram_gb / 3), n_cpus))
+        args.n_procs = max(1, max(1, min(int(available_ram_gb / 3), n_cpus))
+        if available_ram_gb < 3:
+            logger.log(LogLevel.WARNING.value, f"Less than 3 GB of memory available ({available_ram_gb} GB). At least 3 GB is recommended. You may need to close background programs.")
+        logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors."))
         if available_ram_gb < 3:
             logger.log(LogLevel.WARNING.value, f"Less than 3 GB of memory available ({available_ram_gb} GB). At least 3 GB is recommended. You may need to close background programs.")
         logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors.")
@@ -229,6 +233,7 @@ if __name__ == "__main__":
         # qsmxt, nipype, ants
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
         f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
+        f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
         f.write("\n\n - Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")
         f.write("\n\n")
@@ -247,6 +252,10 @@ if __name__ == "__main__":
                 'n_procs': args.n_procs
             }
         )
+
+    show_warning_summary(logger)
+
+    logger.log(LogLevel.INFO.value, 'Finished')
 
     show_warning_summary(logger)
 

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+
 from nipype.pipeline.engine import Workflow, Node
 from nipype.interfaces.io import DataSink
 from nipype.interfaces.ants.registration import RegistrationSynQuick
@@ -11,7 +12,7 @@ from interfaces import nipype_interface_fastsurfer as fastsurfer
 from interfaces import nipype_interface_mgz2nii as mgz2nii
 
 import sys
-import datetime
+import datedatetime
 import glob
 import os
 import argparse
@@ -114,7 +115,7 @@ def init_run_workflow(subject, session, run):
     # convert segmentation to nii
     n_fastsurfer_aseg_nii = Node(
         interface=mgz2nii.Mgz2NiiInterface(),
-        name='numpy_nibabel_mgz2nii',
+        name='numpy_numpy_nibabel_mgz2nii',
     )
     wf.connect([
         (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
@@ -137,8 +138,8 @@ def init_run_workflow(subject, session, run):
 
     n_datasink = Node(
         interface=DataSink(
-            base_directory=args.output_dir
-            #container=output_dir
+            base_directory=args.outputput_dir
+            #container=outputput_dir
         ),
         name='nipype_datasink'
     )
@@ -166,14 +167,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        'output_dir',
+        'outputput_dir',
         help='Output segmentation directory; will be created if it does not exist.'
     )
 
     parser.add_argument(
         '--work_dir',
         default=None,
-        help='NiPype working directory; defaults to \'work\' within \'output_dir\'.'
+        help='NiPype working directory; defaults to \'work\' within \'outputput_dir\'.'
     )
 
     parser.add_argument(
@@ -249,9 +250,9 @@ if __name__ == "__main__":
     g_args = lambda:None
 
     # ensure directories are complete and absolute
-    args.output_dir = os.path.abspath(args.output_dir)
+    args.outputput_dir = os.path.abspath(args.outputput_dir)
     args.bids_dir = os.path.abspath(args.bids_dir)
-    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.output_dir)
+    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.outputput_dir)
 
     # this script's directory
     this_dir = os.path.dirname(os.path.abspath(__file__))
@@ -306,7 +307,10 @@ if __name__ == "__main__":
     # available CPUs and RAM (max 1 per 11 GB of available RAM)
     if not args.n_procs:
         available_ram_gb = psutil.virtual_memory().available / 1e9
-        args.n_procs = max(1, min(int(available_ram_gb / 11), n_cpus))
+        args.n_procs = max(1, max(1, min(int(available_ram_gb / 11), n_cpus))
+        if available_ram_gb < 11:
+            logger.log(LogLevel.WARNING.value, f"Less than 11 GB of memory available ({available_ram_gb} GB). At least 11 GB is recommended. You may need to close background programs.")
+        logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors."))
         if available_ram_gb < 11:
             logger.log(LogLevel.WARNING.value, f"Less than 11 GB of memory available ({available_ram_gb} GB). At least 11 GB is recommended. You may need to close background programs.")
         logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors.")
@@ -323,9 +327,11 @@ if __name__ == "__main__":
         # qsmxt, nipype, fastsurfer, ants, nibabel
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
         f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
+        f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
         f.write("\n\n - Henschel L, Conjeti S, Estrada S, Diers K, Fischl B, Reuter M. FastSurfer - A fast and accurate deep learning based neuroimaging pipeline. NeuroImage. 2020;219:117012. doi:10.1016/j.neuroimage.2020.117012")
         f.write("\n\n - Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")
+        f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n - Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
         f.write("\n\n")
@@ -345,6 +351,10 @@ if __name__ == "__main__":
                 'n_procs': args.n_procs
             }
         )
+
+    show_warning_summary(logger)
+
+    logger.log(LogLevel.INFO.value, 'Finished')
 
     show_warning_summary(logger)
 
