@@ -129,17 +129,6 @@ def init_run_workflow(subject, session, run):
     # create nipype workflow for this run
     wf = Workflow(run, base_dir=os.path.join(args.work_dir, "workflow_qsm", subject, session, run))
 
-    # get files
-    n_getfiles = Node(
-        IdentityInterface(
-            fields=['phase_files', 'magnitude_files', 'params_files']
-        ),
-        name='nipype_getfiles'
-    )
-    n_getfiles.inputs.phase_files = phase_files
-    n_getfiles.inputs.magnitude_files = magnitude_files
-    n_getfiles.inputs.params_files = params_files
-
     # datasink
     n_datasink = Node(
         interface=DataSink(base_directory=args.output_dir),
@@ -160,6 +149,17 @@ def init_run_workflow(subject, session, run):
         # inputs : 'in_dict'
         # outputs: 'out_file'
     )
+
+    # get files
+    n_getfiles = Node(
+        IdentityInterface(
+            fields=['phase_files', 'magnitude_files', 'params_files']
+        ),
+        name='nipype_getfiles'
+    )
+    n_getfiles.inputs.phase_files = phase_files
+    n_getfiles.inputs.magnitude_files = magnitude_files
+    n_getfiles.inputs.params_files = params_files
 
     # read echotime and field strengths from json files
     def read_json(in_file):
@@ -207,20 +207,36 @@ def init_run_workflow(subject, session, run):
         (mn_phase_scaled, mn_resample_inputs, [('out_file', 'in_pha')])
     ])
 
+    def repeat(magnitude_files, phase_files):
+        return magnitude_files, phase_files
+    mn_inputs = MapNode(
+        interface=Function(
+            input_names=['magnitude_files', 'phase_files'],
+            output_names=['magnitude_files', 'phase_files'],
+            function=repeat
+        ),
+        iterfield=['magnitude_files', 'phase_files'],
+        name='func_repeat-inputs'
+    )
+    wf.connect([
+        (mn_resample_inputs, mn_inputs, [('out_mag', 'magnitude_files')]),
+        (mn_resample_inputs, mn_inputs, [('out_pha', 'phase_files')])
+    ])
+
     # masking steps
-    mn_mask = add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_resample_inputs, n_json, n_datasink)
+    mn_mask = add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_inputs, n_json, n_datasink)
 
     # qsm steps
     if args.qsm_algorithm == 'tgvqsm':
-        wf = add_tgvqsm_workflow(wf, mn_params, mn_resample_inputs, mn_mask, n_datasink, magnitude_files[0])
+        wf = add_tgvqsm_workflow(wf, mn_params, mn_inputs, mn_mask, n_datasink, magnitude_files[0])
     elif args.qsm_algorithm == 'nextqsm':
-        wf = addNextqsmWorkflow(wf, n_getfiles, mn_params, mn_resample_inputs, mn_mask, n_datasink, args.unwrapping_algorithm)
+        wf = addNextqsmWorkflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, args.unwrapping_algorithm)
     elif args.qsm_algorithm == 'nextqsm_combined':
-        wf = addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_resample_inputs, mn_mask, n_datasink)
+        wf = addB0NextqsmB0Workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink)
 
     return wf
 
-def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_resample_inputs, n_json, n_datasink):
+def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_inputs, n_json, n_datasink):
 
     # run homogeneity filter if necessary
     if inhomogeneity_correction:
@@ -231,7 +247,7 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_
             # output : out_file
         )
         wf.connect([
-            (mn_resample_inputs, mn_inhomogeneity_correction, [('out_mag', 'in_file')])
+            (mn_inputs, mn_inhomogeneity_correction, [('magnitude_files', 'in_file')])
         ])
 
     # do phase weights if necessary
@@ -244,8 +260,8 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_
         )
         mn_phaseweights.inputs.weight_type = "grad+second+mag"
         wf.connect([
-            (mn_resample_inputs, mn_phaseweights, [('out_pha', 'phase')]),
-            (mn_resample_inputs, mn_phaseweights, [('out_mag', 'mag')])
+            (mn_inputs, mn_phaseweights, [('phase_files', 'phase')]),
+            (mn_inputs, mn_phaseweights, [('magnitude_files', 'mag')])
         ])
 
     # do threshold-based masking if necessary
@@ -277,7 +293,7 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_
             ])
         elif masking_method == 'magnitude-based' and not inhomogeneity_correction:
             wf.connect([
-                (mn_resample_inputs, n_threshold_masking, [('out_mag', 'in_files')])
+                (mn_inputs, n_threshold_masking, [('magnitude_files', 'in_files')])
             ])
         else:
             wf.connect([
@@ -298,7 +314,7 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_
             ])
         else:
             wf.connect([
-                (mn_resample_inputs, mn_bet, [('out_mag', 'in_file')])
+                (mn_inputs, mn_bet, [('magnitude_files', 'in_file')])
             ])
         mn_bet_erode = MapNode(
             interface=erode.ErosionInterface(
@@ -355,7 +371,7 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_
 
     return mn_mask
 
-def add_tgvqsm_workflow(wf, mn_params, mn_resample_inputs, mn_mask, n_datasink, magnitude_file):
+def add_tgvqsm_workflow(wf, mn_params, mn_inputs, mn_mask, n_datasink, magnitude_file):
     # === Single-pass QSM reconstruction (filled) ===
     mn_qsm_filled = MapNode(
         interface=tgv.QSMappingInterface(
@@ -379,7 +395,7 @@ def add_tgvqsm_workflow(wf, mn_params, mn_resample_inputs, mn_mask, n_datasink, 
         (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
         (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
         (mn_mask, mn_qsm_filled, [('masks_filled', 'mask_file')]),
-        (mn_resample_inputs, mn_qsm_filled, [('out_pha', 'phase_file')]),
+        (mn_inputs, mn_qsm_filled, [('phase_files', 'phase_file')]),
     ])
 
     # qsm averaging
@@ -432,7 +448,7 @@ def add_tgvqsm_workflow(wf, mn_params, mn_resample_inputs, mn_mask, n_datasink, 
             (mn_params, mn_qsm, [('EchoTime', 'TE')]),
             (mn_params, mn_qsm, [('MagneticFieldStrength', 'b0')]),
             (mn_mask, mn_qsm, [('masks', 'mask_file')]),
-            (mn_resample_inputs, mn_qsm, [('out_pha', 'phase_file')])
+            (mn_inputs, mn_qsm, [('phase_files', 'phase_file')])
         ])
 
         # qsm averaging
@@ -482,7 +498,7 @@ def add_tgvqsm_workflow(wf, mn_params, mn_resample_inputs, mn_mask, n_datasink, 
 
     return wf
 
-def addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink):
+def addB0NextqsmB0Workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink):
     # extract the fieldstrength of the first echo for input to nextqsm Node (not MapNode)
     def first(list=None):
         return list[0]
@@ -498,8 +514,8 @@ def addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, 
     wf_nextqsmB0 = nextqsm_B0_workflow()
     
     wf.connect([
-        (mn_phase_scaled, wf_unwrapping, [('out_file', 'inputnode.wrapped_phase')]),
-        (n_getfiles, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
+        (mn_inputs, wf_unwrapping, [('phase_files', 'inputnode.wrapped_phase')]),
+        (mn_inputs, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
         (mn_params, wf_unwrapping, [('EchoTime', 'inputnode.TE')]),
         
         (wf_unwrapping, wf_nextqsmB0, [('outputnode.B0', 'inputnode.B0'),]),
@@ -514,13 +530,13 @@ def addB0NextqsmB0Workflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, 
 
     return wf
     
-def addNextqsmWorkflow(wf, n_getfiles, mn_params, mn_phase_scaled, mn_mask, n_datasink, unwrapping_type):
+def addNextqsmWorkflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, unwrapping_type):
     wf_unwrapping = unwrapping_workflow(unwrapping_type)
     wf_nextqsm = nextqsm_workflow()
     
     wf.connect([
-        (mn_phase_scaled, wf_unwrapping, [('out_file', 'inputnode.wrapped_phase')]),
-        (n_getfiles, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
+        (mn_inputs, wf_unwrapping, [('phase_files', 'inputnode.wrapped_phase')]),
+        (mn_inputs, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
         (mn_params, wf_unwrapping, [('EchoTime', 'inputnode.TE')]),
         
         (wf_unwrapping, wf_nextqsm, [('outputnode.unwrapped_phase', 'inputnode.unwrapped_phase')]),
@@ -604,6 +620,12 @@ if __name__ == "__main__":
         '--qsm_algorithm',
         default='tgvqsm',
         choices=['tgvqsm', 'nextqsm', 'nextqsm_combined']
+    )
+
+    parser.add_argument(
+        '--unwrapping_algorithm',
+        default='romeo',
+        choices=['romeo','romeob0','laplacian'] # Laplacian is only for nextqsm
     )
 
     parser.add_argument(
