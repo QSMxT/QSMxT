@@ -120,7 +120,7 @@ def init_run_workflow(subject, session, run):
     if len(phase_files) != len(params_files):
         logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
         return
-    if (not magnitude_files and any([masking_method == 'magnitude-based', masking_method == 'bet', add_bet, inhomogeneity_correction])):
+    if (not magnitude_files and any([masking_method == 'magnitude-based', 'bet' in masking_method, add_bet, inhomogeneity_correction])):
         logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
         masking_method = 'phase-based'
         add_bet = False
@@ -207,6 +207,18 @@ def init_run_workflow(subject, session, run):
         (mn_phase_scaled, mn_resample_inputs, [('out_file', 'in_pha')])
     ])
 
+    # run homogeneity filter if necessary
+    if inhomogeneity_correction:
+        mn_inhomogeneity_correction = MapNode(
+            interface=makehomogeneous.MakeHomogeneousInterface(),
+            iterfield=['in_file'],
+            name='mriresearchtools_correct-inhomogeneity'
+            # output : out_file
+        )
+        wf.connect([
+            (mn_resample_inputs, mn_inhomogeneity_correction, [('out_mag', 'in_file')])
+        ])
+
     def repeat(magnitude_files, phase_files):
         return magnitude_files, phase_files
     mn_inputs = MapNode(
@@ -219,12 +231,19 @@ def init_run_workflow(subject, session, run):
         name='func_repeat-inputs'
     )
     wf.connect([
-        (mn_resample_inputs, mn_inputs, [('out_mag', 'magnitude_files')]),
         (mn_resample_inputs, mn_inputs, [('out_pha', 'phase_files')])
     ])
+    if inhomogeneity_correction:
+        wf.connect([
+            (mn_inhomogeneity_correction, mn_inputs, [('out_file', 'magnitude_files')])
+        ])
+    else:
+        wf.connect([
+            (mn_resample_inputs, mn_inputs, [('out_mag', 'magnitude_files')])
+        ])
 
     # masking steps
-    mn_mask = add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_inputs, n_json, n_datasink)
+    mn_mask = add_masking_nodes(wf, masking_method, add_bet, mn_inputs, n_json, n_datasink)
 
     # qsm steps
     if args.qsm_algorithm == 'tgvqsm':
@@ -236,19 +255,7 @@ def init_run_workflow(subject, session, run):
 
     return wf
 
-def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_inputs, n_json, n_datasink):
-
-    # run homogeneity filter if necessary
-    if inhomogeneity_correction:
-        mn_inhomogeneity_correction = MapNode(
-            interface=makehomogeneous.MakeHomogeneousInterface(),
-            iterfield=['in_file'],
-            name='mriresearchtools_correct-inhomogeneity'
-            # output : out_file
-        )
-        wf.connect([
-            (mn_inputs, mn_inhomogeneity_correction, [('magnitude_files', 'in_file')])
-        ])
+def add_masking_nodes(wf, masking_method, add_bet, mn_inputs, n_json, n_datasink):
 
     # do phase weights if necessary
     if masking_method == 'phase-based':
@@ -291,26 +298,35 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_
             wf.connect([
                 (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
             ])
-        elif masking_method == 'magnitude-based' and not inhomogeneity_correction:
+        elif masking_method == 'magnitude-based':
             wf.connect([
                 (mn_inputs, n_threshold_masking, [('magnitude_files', 'in_files')])
             ])
-        else:
-            wf.connect([
-                (mn_inhomogeneity_correction, n_threshold_masking, [('out_file', 'in_files')])
-            ])
 
     # run bet if necessary
-    if masking_method == 'bet' or add_bet:
+    if masking_method in ['bet', 'bet-firstecho'] or add_bet:
+        def get_first(magnitude_files): return [magnitude_files[0] for f in magnitude_files]
+        n_getfirst = Node(
+            interface=Function(
+                input_names=['magnitude_files'],
+                output_names=['magnitude_file'],
+                function=get_first
+            ),
+            name='func_get-first'
+        )
+        wf.connect([
+            (mn_inputs, n_getfirst, [('magnitude_files', 'magnitude_files')])
+        ])
+
         mn_bet = MapNode(
             interface=bet2.Bet2Interface(fractional_intensity=args.bet_fractional_intensity),
             iterfield=['in_file'],
             name='fsl-bet'
             # output: 'mask_file'
         )
-        if inhomogeneity_correction:
+        if masking_method == 'bet-firstecho':
             wf.connect([
-                (mn_inhomogeneity_correction, mn_bet, [('out_file', 'in_file')])
+                (n_getfirst, mn_bet, [('magnitude_file', 'in_file')])
             ])
         else:
             wf.connect([
@@ -318,7 +334,7 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_
             ])
         mn_bet_erode = MapNode(
             interface=erode.ErosionInterface(
-                num_erosions=1
+                num_erosions=2
             ),
             iterfield=['in_file'],
             name='scipy_numpy_nibabel_erode'
@@ -351,8 +367,10 @@ def add_masking_nodes(wf, masking_method, add_bet, inhomogeneity_correction, mn_
         iterfield=['masks', 'masks_filled'],
         name='func_repeat-mask'
     )
-    if masking_method == 'bet':
+    if masking_method in ['bet', 'bet-firstecho']:
         wf.connect([
+            #(mn_bet_erode, mn_mask, [('out_file', 'masks')]),
+            #(mn_bet, mn_mask, [('mask_file', 'masks_filled')])
             (mn_bet_erode, mn_mask, [('out_file', 'masks')]),
             (mn_bet_erode, mn_mask, [('out_file', 'masks_filled')])
         ])
@@ -631,7 +649,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--masking',
         default='phase-based',
-        choices=['magnitude-based', 'phase-based', 'bet'],
+        choices=['magnitude-based', 'phase-based', 'bet', 'bet-firstecho'],
         help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
              'thresholding a lower percentage of the histogram of the signal (adjust using the '+
              '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
@@ -736,7 +754,7 @@ if __name__ == "__main__":
     # path environment variable
     os.environ["PATH"] += os.pathsep + os.path.join(this_dir, "scripts")
 
-    # add this_dir and cwd to pythonpath (not sure if this_dir needed...)
+    # add this_dir and cwd to pythonpath
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + this_dir
     else:                          os.environ["PYTHONPATH"]  = this_dir
 
@@ -752,10 +770,10 @@ if __name__ == "__main__":
         config.set('logging', 'utils_level', 'DEBUG')
 
     # add_bet option only works with non-bet masking methods
-    args.add_bet = args.add_bet and args.masking != 'bet'
+    args.add_bet = args.add_bet and 'bet' not in args.masking
 
     # two-pass option does not work with 'bet' masking
-    args.two_pass = args.masking != 'bet' and not args.single_pass
+    args.two_pass = 'bet' not in args.masking and not args.single_pass
     args.single_pass = not args.two_pass
 
     # decide on inhomogeneity correction
