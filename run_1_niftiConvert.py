@@ -204,6 +204,7 @@ def update_details_with_jsons(all_details):
 def write_details_to_csv(all_details):
     f = open(csv_file, 'w', encoding='utf-8')
     f.write('filename,subject id,session id,run number,echo number,echo_time (s),multi-echo (yes or no),field_strength (T),series_type (t2starw or t1w),part_type (mag or phase)\n')
+    all_details.sort(key=lambda d: d['filename'])
     for d in all_details:
         line = f"{d['filename']},{d['subject_id']},{d['session_id']},{d['run_num']},{d['echo_num']},{d['echo_time']},{d['multi-echo']},{d['field_strength']},{d['series_type']},{d['part_type']}\n"
         line = line.replace(",None", ",").replace("None,", ",")
@@ -271,7 +272,8 @@ def nifti_to_bids(input_dir, output_dir):
                 "MagneticFieldStrength" : details['field_strength'],
                 "EchoNumber" : details['echo_num'],
                 "ImageType" : ["P", "PHASE"] if details['part_type'] == 'phase' else ["M", "MAGNITUDE"],
-                "ProtocolName" : details['series_type']
+                "ProtocolName" : details['series_type'],
+                "ConversionSoftware" : "dcm2niix"
             }
             with open(json_filename(details['new_name']), 'w', encoding='utf-8') as json_file:
                 json.dump(dictionary, json_file)
