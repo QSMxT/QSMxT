@@ -32,7 +32,7 @@ def sys_cmd(cmd):
     return return_code
 
 def load_json(path):
-    f = open(path, encoding='utf-8', encoding='utf-8')
+    f = open(path, encoding='utf-8')
     j = json.load(f)
     f.close()
     return j
@@ -249,7 +249,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
 
             if session_details:
                 session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['protocol_type'], f['series_num'], 0 if 'phase' in f['part_type'] else 1, f['echo_time']))
-                
+
                 # update run numbers
                 run_num = 1
                 series_num = session_details[0]['series_num']
