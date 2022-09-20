@@ -72,11 +72,14 @@ def normalizeB0(B0_file, fieldStrength, filename=None):
     B0 = B0_nii.get_fdata() # in [Hz]
     normalized = B0 / centre_freq * 1e3
     
-    if filename is not None:
-        save_nii(normalized, filename, B0_nii)
-        return filename
-    
-    return normalized
+    if not filename:
+        filename = os.path.split(B0_file)[-1]
+        extension = ".".join(filename.split('.')[1:])
+        filename = f"{filename}_normalize.{extension}"
+
+    save_nii(normalized, filename, B0_nii)
+
+    return filename
 
 class NormalizeB0InputSpec(BaseInterfaceInputSpec):
     B0_file = File(mandatory=True, exists=True)
