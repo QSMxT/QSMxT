@@ -5,7 +5,7 @@ from nipype.utils.filemanip import fname_presuffix, split_filename
 ## Laplacian wrapper
 class LaplacianInputSpec(CommandLineInputSpec):
     phase = File(position=0, mandatory=True, exists=True, argstr='%s')
-    out_file = File(position=1, name_source=['phase'], name_template='%s_laplacian_unwrapped.nii.gz', argstr="%s")
+    out_file = File(position=1, name_source=['phase'], name_template='%s_laplacian-unwrapped.nii.gz', argstr="%s")
 
 class LaplacianOutputSpec(TraitedSpec):
     out_file = File()

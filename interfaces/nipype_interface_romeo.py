@@ -9,7 +9,7 @@ class RomeoInputSpec(BaseInterfaceInputSpec):
     phase = File(mandatory=True, exists=True, argstr="--phase %s")
     #mask = File(mandatory=False, exists=True, argstr="--mask %s")
     mag = File(mandatory=False, exists=True, argstr="--mag %s")
-    out_file = File(name_source=['phase'], name_template='%s_unwrapped.nii.gz', argstr="--output %s")
+    out_file = File(name_source=['phase'], name_template='%s_romeo-unwrapped.nii.gz', argstr="--output %s")
 
 class RomeoOutputSpec(TraitedSpec):
     out_file = File()
@@ -17,7 +17,7 @@ class RomeoOutputSpec(TraitedSpec):
 class RomeoInterface(CommandLine):
     input_spec = RomeoInputSpec
     output_spec = RomeoOutputSpec
-    _cmd = "romeoApp.jl --no-rescale"
+    _cmd = "/neurodesktop-storage/qsmxt/scripts/romeoApp.jl --no-rescale"
 
 
 ## Romeo wrapper multi-echo (Node)
@@ -33,7 +33,7 @@ class RomeoB0OutputSpec(TraitedSpec):
 class RomeoB0Interface(CommandLine):
     input_spec = RomeoB0InputSpec
     output_spec = RomeoB0OutputSpec
-    _cmd = "romeoApp.jl -B --no-rescale --phase-offset-correction --phase multi-echo-phase.nii --mag multi-echo-mag.nii"
+    _cmd = "/neurodesktop-storage/qsmxt/scripts/romeoApp.jl -B --no-rescale --phase-offset-correction --phase multi-echo-phase.nii --mag multi-echo-mag.nii"
 
     def _run_interface(self, runtime):
         save_multi_echo(self.inputs.phase, "multi-echo-phase.nii")
