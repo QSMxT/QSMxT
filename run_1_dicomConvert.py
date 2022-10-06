@@ -346,18 +346,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--use_patient_names',
-        action='store_true',
-        help='Use the PatientName rather than PatientID for subject folders'
-    )
-
-    parser.add_argument(
-        '--use_session_dates',
-        action='store_true',
-        help='Use the StudyDate field rather than an incrementer for session IDs'
-    )
-
-    parser.add_argument(
         '--auto_yes',
         action='store_true',
         help='Force running non-interactively'
