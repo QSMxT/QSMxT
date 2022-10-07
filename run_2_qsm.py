@@ -392,7 +392,7 @@ def add_tgvqsm_workflow(wf, mn_params, mn_inputs, mn_mask, n_datasink, magnitude
     mn_qsm_filled = MapNode(
         interface=tgv.QSMappingInterface(
             iterations=args.qsm_iterations,
-            alpha=[0.0015, 0.0005],
+            alpha=args.qsm_alphas,
             erosions=0 if args.two_pass else 5,
             num_threads=args.qsm_threads,
             out_suffix='_qsm-filled',
@@ -442,7 +442,7 @@ def add_tgvqsm_workflow(wf, mn_params, mn_inputs, mn_mask, n_datasink, magnitude
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
                 iterations=args.qsm_iterations,
-                alpha=[0.0015, 0.0005],
+                alpha=args.qsm_alphas,
                 erosions=0,
                 num_threads=args.qsm_threads,
                 out_suffix='_qsm',
@@ -668,6 +668,14 @@ if __name__ == "__main__":
         type=int,
         default=1000,
         help='Number of iterations used for QSM reconstruction in tgv_qsm.'
+    )
+
+    parser.add_argument(
+        '--qsm_alphas',
+        type=float,
+        default=[0.0015, 0.0005],
+        nargs=2,
+        help='Regularisation alphas for tgv_qsm.'
     )
 
     parser.add_argument(
