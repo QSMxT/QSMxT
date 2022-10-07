@@ -369,10 +369,8 @@ def add_masking_nodes(wf, masking_method, add_bet, mn_inputs, n_json, n_datasink
     )
     if masking_method in ['bet', 'bet-firstecho']:
         wf.connect([
-            #(mn_bet_erode, mn_mask, [('out_file', 'masks')]),
-            #(mn_bet, mn_mask, [('mask_file', 'masks_filled')])
-            (mn_bet_erode, mn_mask, [('out_file', 'masks')]),
-            (mn_bet_erode, mn_mask, [('out_file', 'masks_filled')])
+            (mn_bet, mn_mask, [('mask_file', 'masks')]),
+            (mn_bet, mn_mask, [('mask_file', 'masks_filled')]),
         ])
     if masking_method in ['magnitude-based', 'phase-based']:
         wf.connect([
