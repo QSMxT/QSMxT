@@ -16,7 +16,7 @@ QSMxT provides pipelines implemented in Python that:
 
 QSMxT's containerised implementation makes all required external dependencies available in a reproducible and scalable way, supporting MacOS, Windows and Linux, and with options for parallel processing via PBS systems.
 
-If you use QSMxT for a study, please cite https://doi.org/10.1101/2021.05.05.442850.
+If you use QSMxT for a study, please cite https://onlinelibrary.wiley.com/doi/10.1002/mrm.29048 (or the preprint https://doi.org/10.1101/2021.05.05.442850.)
 
 ![QSMxT Process Diagram](diagram.png)
 
