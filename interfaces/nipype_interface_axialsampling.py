@@ -9,10 +9,11 @@ def resample_to_axial(mag_nii, pha_nii):
     # calculate base affine
     voxel_size = np.array(mag_nii.header.get_zooms())
     resolution = np.array(mag_nii.header.get_data_shape())
+    origin = np.array(voxel_size * resolution / 2)
     base_affine = np.eye(4)
     np.fill_diagonal(base_affine, voxel_size * np.sign(np.diag(mag_nii.affine))[:3])
     base_affine[3,3] = 1
-    base_affine[:3,3] = voxel_size * resolution/2 * -np.sign(np.diag(mag_nii.affine)[:3])
+    base_affine[:3,3] = origin * -np.sign(np.diag(mag_nii.affine)[:3])
 
     # compute real and imaginary components from magnitude and phase
     pha = pha_nii.get_fdata()
@@ -33,11 +34,35 @@ def resample_to_axial(mag_nii, pha_nii):
     # convert real and imaginary to magnitude and phase
     real_rot = real_rot_nii.get_fdata()
     imag_rot = imag_rot_nii.get_fdata()
-
     mag_rot = np.array(np.round(np.hypot(real_rot, imag_rot), 0), dtype=mag_nii.header.get_data_dtype())
-    mag_rot_nii = nib.Nifti1Image(mag_rot, affine=real_rot_nii.affine, header=mag_nii.header)
-
     pha_rot = np.array(np.arctan2(imag_rot, real_rot), dtype=np.float16)
+
+    # crop
+    '''
+    pha_rot = pha_rot[mag_rot.any(axis=2).any(axis=1)]
+    mag_rot = mag_rot[mag_rot.any(axis=2).any(axis=1)]
+    
+    pha_rot = np.rot90(pha_rot, axes=(0, 2))
+    mag_rot = np.rot90(mag_rot, axes=(0, 2))
+    
+    pha_rot = pha_rot[mag_rot.any(axis=2).any(axis=1)]
+    mag_rot = mag_rot[mag_rot.any(axis=2).any(axis=1)]
+
+    pha_rot = np.rot90(pha_rot, axes=(0, 1))
+    mag_rot = np.rot90(mag_rot, axes=(0, 1))
+
+    pha_rot = pha_rot[mag_rot.any(axis=2).any(axis=1)]
+    mag_rot = mag_rot[mag_rot.any(axis=2).any(axis=1)]
+
+    pha_rot = np.rot90(pha_rot, axes=(0, 1), k=3)
+    mag_rot = np.rot90(mag_rot, axes=(0, 1), k=3)
+
+    pha_rot = np.rot90(pha_rot, axes=(0, 2), k=3)
+    mag_rot = np.rot90(mag_rot, axes=(0, 2), k=3)
+    '''
+
+    # create nifti objects
+    mag_rot_nii = nib.Nifti1Image(mag_rot, affine=real_rot_nii.affine, header=mag_nii.header)
     pha_rot_nii = nib.Nifti1Image(pha_rot, affine=real_rot_nii.affine, header=pha_nii.header)
 
     return mag_rot_nii, pha_rot_nii
