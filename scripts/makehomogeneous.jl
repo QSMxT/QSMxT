@@ -8,5 +8,5 @@ out_file = splitext(splitdir(out_path)[2])[1]
 out_ext = splitext(splitdir(out_path)[2])[2]
 
 mag = readmag(in_path);
-corrected = makehomogeneous(Float32.(mag); σ=[20, 20, 10])
+corrected = makehomogeneous(Float32.(mag); sigma=[20, 20, 10])
 savenii(corrected, out_file * out_ext, out_folder, header(mag))
