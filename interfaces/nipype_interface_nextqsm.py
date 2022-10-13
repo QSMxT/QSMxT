@@ -21,7 +21,7 @@ class NextqsmOutputSpec(TraitedSpec):
 class NextqsmInterface(CommandLine):
     input_spec = NextqsmInputSpec
     output_spec = NextqsmOutputSpec
-    _cmd = "/neurodesktop-storage/nextqsm/src_tensorflow/predict_all.py"
+    _cmd = "predict_all.py"
 
 
 ## Normalize input data for NeXtQSM

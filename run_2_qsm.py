@@ -10,19 +10,18 @@ import datetime
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
-from scripts.qsmxt_version import qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 from interfaces import nipype_interface_scalephase as scalephase
 from interfaces import nipype_interface_tgv_qsm as tgv
-from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_masking as masking
 from interfaces import nipype_interface_erode as erode
 from interfaces import nipype_interface_bet2 as bet2
-from interfaces import nipype_interface_phase_based as experimental_masking
+from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_json as json
 from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_axialsampling as sampling
@@ -139,7 +138,7 @@ def init_run_workflow(subject, session, run):
     n_json = Node(
         interface=json.JsonInterface(
             in_dict={
-                "QSMxT version" : qsmxt_version(),
+                "QSMxT version" : get_qsmxt_version(),
                 "Run command" : str.join(" ", sys.argv),
                 "Python interpreter" : sys.executable
             },
@@ -260,7 +259,7 @@ def add_masking_nodes(wf, masking_method, add_bet, mn_inputs, n_json, n_datasink
     # do phase weights if necessary
     if masking_method == 'phase-based':
         mn_phaseweights = MapNode(
-            interface=experimental_masking.RomeoMaskingInterface(),
+            interface=phaseweights.RomeoMaskingInterface(),
             iterfield=['phase', 'mag'],
             name='romeo-voxelquality'
             # output: 'out_file'
@@ -750,7 +749,7 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
@@ -817,7 +816,7 @@ if __name__ == "__main__":
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {qsmxt_version()}")
+        f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
         f.write(f"\nPython interpreter: {sys.executable}")
 

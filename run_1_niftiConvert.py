@@ -10,7 +10,7 @@ import datetime
 from fnmatch import fnmatch
 from re import findall
 
-from scripts.qsmxt_version import qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary 
 
 def copy(old, new, always_show=False):
@@ -287,7 +287,7 @@ def nifti_to_bids(input_dir, output_dir):
         "BIDSVersion" : "1.7.0",
         "GeneratedBy" : [{
             "Name" : "QSMxT",
-            "Version": f"{qsmxt_version()}",
+            "Version": f"{get_qsmxt_version()}",
             "CodeURL" : "https://github.com/QSMxT/QSMxT"
         }],
         "Authors" : ["ADD AUTHORS HERE"]
@@ -303,7 +303,7 @@ def nifti_to_bids(input_dir, output_dir):
 
     logger.log(LogLevel.INFO.value, 'Writing BIDS dataset README...')
     with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
-        readme_file.write(f"Generated using QSMxT ({qsmxt_version()})\n")
+        readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
         readme_file.write(f"\nDescribe your dataset here.\n")
 
 if __name__ == "__main__":
@@ -415,13 +415,13 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {qsmxt_version()}")
+        f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
         f.write(f"\nPython interpreter: {sys.executable}")
 

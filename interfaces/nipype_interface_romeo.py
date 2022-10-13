@@ -17,8 +17,7 @@ class RomeoOutputSpec(TraitedSpec):
 class RomeoInterface(CommandLine):
     input_spec = RomeoInputSpec
     output_spec = RomeoOutputSpec
-    _cmd = "/neurodesktop-storage/qsmxt/scripts/romeoApp.jl --no-rescale"
-
+    _cmd = "romeoApp.jl --no-rescale"
 
 ## Romeo wrapper multi-echo (Node)
 class RomeoB0InputSpec(BaseInterfaceInputSpec):
@@ -33,7 +32,7 @@ class RomeoB0OutputSpec(TraitedSpec):
 class RomeoB0Interface(CommandLine):
     input_spec = RomeoB0InputSpec
     output_spec = RomeoB0OutputSpec
-    _cmd = "/neurodesktop-storage/qsmxt/scripts/romeoApp.jl -B --no-rescale --phase-offset-correction --phase multi-echo-phase.nii --mag multi-echo-mag.nii"
+    _cmd = "romeoApp.jl -B --no-rescale --phase-offset-correction --phase multi-echo-phase.nii --mag multi-echo-mag.nii"
 
     def _run_interface(self, runtime):
         save_multi_echo(self.inputs.phase, "multi-echo-phase.nii")

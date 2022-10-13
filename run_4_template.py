@@ -15,7 +15,7 @@ import nipype.interfaces.io as io
 import nipype.pipeline.engine as pe
 
 from scripts.antsBuildTemplate import ANTSTemplateBuildSingleIterationWF
-from scripts.qsmxt_version import qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 def init_workflow(magnitude_images, qsm_images):
@@ -185,7 +185,7 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
@@ -198,10 +198,7 @@ if __name__ == "__main__":
     n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
     if not args.n_procs:
         available_ram_gb = psutil.virtual_memory().available / 1e9
-        args.n_procs = max(1, max(1, min(int(available_ram_gb / 3), n_cpus))
-        if available_ram_gb < 3:
-            logger.log(LogLevel.WARNING.value, f"Less than 3 GB of memory available ({available_ram_gb} GB). At least 3 GB is recommended. You may need to close background programs.")
-        logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors."))
+        args.n_procs = max(1, min(int(available_ram_gb / 3), n_cpus))
         if available_ram_gb < 3:
             logger.log(LogLevel.WARNING.value, f"Less than 3 GB of memory available ({available_ram_gb} GB). At least 3 GB is recommended. You may need to close background programs.")
         logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors.")
@@ -224,7 +221,7 @@ if __name__ == "__main__":
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {qsmxt_version()}")
+        f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
         f.write(f"\nPython interpreter: {sys.executable}")
 
@@ -252,10 +249,6 @@ if __name__ == "__main__":
                 'n_procs': args.n_procs
             }
         )
-
-    show_warning_summary(logger)
-
-    logger.log(LogLevel.INFO.value, 'Finished')
 
     show_warning_summary(logger)
 

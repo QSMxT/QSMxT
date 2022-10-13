@@ -5,14 +5,14 @@ from nipype.pipeline.engine import Workflow, Node
 from nipype.interfaces.io import DataSink
 from nipype.interfaces.ants.registration import RegistrationSynQuick
 from nipype.interfaces.ants.resampling import ApplyTransforms
-from scripts.qsmxt_version import qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 from interfaces import nipype_interface_fastsurfer as fastsurfer
 from interfaces import nipype_interface_mgz2nii as mgz2nii
 
 import sys
-import datedatetime
+import datetime
 import glob
 import os
 import argparse
@@ -269,7 +269,7 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
@@ -307,10 +307,7 @@ if __name__ == "__main__":
     # available CPUs and RAM (max 1 per 11 GB of available RAM)
     if not args.n_procs:
         available_ram_gb = psutil.virtual_memory().available / 1e9
-        args.n_procs = max(1, max(1, min(int(available_ram_gb / 11), n_cpus))
-        if available_ram_gb < 11:
-            logger.log(LogLevel.WARNING.value, f"Less than 11 GB of memory available ({available_ram_gb} GB). At least 11 GB is recommended. You may need to close background programs.")
-        logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors."))
+        args.n_procs = max(1, min(int(available_ram_gb / 11), n_cpus))
         if available_ram_gb < 11:
             logger.log(LogLevel.WARNING.value, f"Less than 11 GB of memory available ({available_ram_gb} GB). At least 11 GB is recommended. You may need to close background programs.")
         logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors.")
@@ -318,7 +315,7 @@ if __name__ == "__main__":
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {qsmxt_version()}")
+        f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
         f.write(f"\nPython interpreter: {sys.executable}")
 
@@ -351,10 +348,6 @@ if __name__ == "__main__":
                 'n_procs': args.n_procs
             }
         )
-
-    show_warning_summary(logger)
-
-    logger.log(LogLevel.INFO.value, 'Finished')
 
     show_warning_summary(logger)
 
