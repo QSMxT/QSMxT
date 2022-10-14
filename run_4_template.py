@@ -75,7 +75,7 @@ def init_workflow(magnitude_images, qsm_images):
 
     # datasink
     datasink = pe.Node(
-        io.DataSink(base_directory=args.outputput_dir),
+        io.DataSink(base_directory=args.output_dir),
         name='nipype_datasink'
     )
     wf.connect([
@@ -116,7 +116,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--work_dir',
         default=None,
-        help='NiPype working directory; defaults to \'work\' within \'outputput_dir\'.'
+        help='NiPype working directory; defaults to \'work\' within \'output_dir\'.'
     )
 
     parser.add_argument(
