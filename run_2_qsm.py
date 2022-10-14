@@ -114,7 +114,7 @@ def init_run_workflow(subject, session, run):
     params_files = sorted(glob.glob(params_pattern))[:args.num_echoes_to_process]
     
     mask_pattern = os.path.join(args.bids_dir, args.mask_pattern.format(subject=subject, session=session, run=run))
-    mask_files = sorted(glob.glob(mask_pattern))[:args.num_echoes_to_process]
+    mask_files = sorted(glob.glob(mask_pattern))[:args.num_echoes_to_process] if args.use_existing_masks else []
     
     # handle any errors related to files and adjust any settings if needed
     if not phase_files:
