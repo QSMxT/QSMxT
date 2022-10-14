@@ -1,5 +1,6 @@
 import os
 from nipype.interfaces.base import  traits, CommandLine, BaseInterfaceInputSpec, TraitedSpec, File, InputMultiPath, OutputMultiPath
+from scripts import qsmxt_functions
 import nibabel as nib
 import numpy as np
 
@@ -17,7 +18,7 @@ class RomeoOutputSpec(TraitedSpec):
 class RomeoInterface(CommandLine):
     input_spec = RomeoInputSpec
     output_spec = RomeoOutputSpec
-    _cmd = "romeoApp.jl --no-rescale"
+    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "romeo_unwrapping.jl --no-rescale")
 
 ## Romeo wrapper multi-echo (Node)
 class RomeoB0InputSpec(BaseInterfaceInputSpec):

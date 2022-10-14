@@ -1,6 +1,6 @@
 from nipype.interfaces.base import  CommandLine, TraitedSpec, File, CommandLineInputSpec
-from nipype.utils.filemanip import fname_presuffix, split_filename
-
+from scripts import qsmxt_functions
+import os
 
 ## Laplacian wrapper
 class LaplacianInputSpec(CommandLineInputSpec):
@@ -13,5 +13,5 @@ class LaplacianOutputSpec(TraitedSpec):
 class LaplacianInterface(CommandLine):
     input_spec = LaplacianInputSpec
     output_spec = LaplacianOutputSpec
-    _cmd = "laplacian_unwrapping.jl"
+    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "laplacian_unwrapping.jl")
     

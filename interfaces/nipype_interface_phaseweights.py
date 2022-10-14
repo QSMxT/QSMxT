@@ -1,4 +1,6 @@
 from nipype.interfaces.base import CommandLine, TraitedSpec, File, CommandLineInputSpec, traits
+from scripts import qsmxt_functions
+import os
 
 class PbMaskingInputSpec(CommandLineInputSpec):
     phase = File(
@@ -18,7 +20,7 @@ class PbMaskingOutputSpec(TraitedSpec):
 class PbMaskingInterface(CommandLine):
     input_spec = PbMaskingInputSpec
     output_spec = PbMaskingOutputSpec
-    _cmd = "hagberg_pb_masking.jl"
+    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "hagberg_pb_masking.jl")
 
 
 class RomeoMaskingInputSpec(CommandLineInputSpec):
