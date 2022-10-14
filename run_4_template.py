@@ -109,7 +109,7 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        'outputput_dir',
+        'output_dir',
         help='Output folder; will be created if it does not exist.'
     )
 
