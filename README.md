@@ -32,6 +32,14 @@ A user friendly way of running QSMxT in Windows, Mac or Linux is via the NeuroDe
    (*Neurodesk* > *Quantitative Imaging* > *qsmxt*)
 3. Follow the QSMxT usage instructions in the section below. Note that the `/neurodesktop-storage` folder is shared with the host OS for data sharing purposes (usually in `~/neurodesktop-storage` or `C:/neurodesktop-storage`). Begin by copying your DICOM data (or NIfTI data) into a folder in this directory on the host OS, then reach the folder by entering `cd /neurodesktop-storage` into the QSMxT window.
 
+#### Updating QSMxT within Neurodesk
+
+To use the latest version of the QSMxT container within an older version of Neurodesk, use:
+
+```
+bash /neurocommand/local/fetch_and_run.sh qsmxt 1.1.13 20221014
+```
+
 ### Docker container
 
 There is also a docker image available:
