@@ -29,7 +29,7 @@ echo "[DEBUG] starting run_1_dicomConvert.py"
 sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_1_dicomConvert.py /tmp/00_dicom /tmp/01_bids --auto_yes
 
 echo "[DEBUG] starting run_2_qsm.py normal"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --tgvqsm_iterations 2
 [ -f $out_twopass1 ] && echo "[DEBUG]. Test OK." || exit 1
 #min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_twopass1 -R -S`
 #std=`echo $min_max_std | cut -d ' ' -f 3`
@@ -50,7 +50,7 @@ sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --single_pass"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --single_pass
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --tgvqsm_iterations 2 --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 #min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
 #echo $min_max_std
@@ -75,7 +75,7 @@ sudo rm -rf /tmp/02_qsm_output
 echo "[DEBUG] Testing individual features (+single_pass):"
 
 echo "[DEBUG] starting run_2_qsm.py --masking magnitude-based --inhomogeneity_correction --single_pass"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --masking magnitude-based --inhomogeneity_correction --single_pass
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --tgvqsm_iterations 2 --masking magnitude-based --inhomogeneity_correction --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 #min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
 #std=`echo $min_max_std | cut -d ' ' -f 3`
@@ -98,7 +98,7 @@ sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --add_bet --single_pass"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --add_bet --single_pass
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --tgvqsm_iterations 2 --add_bet --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 #min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
 #std=`echo $min_max_std | cut -d ' ' -f 3`
@@ -122,7 +122,7 @@ sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --bet_fractional_intensity 0.4 --single_pass"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --bet_fractional_intensity 0.4 --single_pass
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --tgvqsm_iterations 2 --bet_fractional_intensity 0.4 --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 #min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
 #std=`echo $min_max_std | cut -d ' ' -f 3`
@@ -143,7 +143,7 @@ sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --threshold 0.4 --single_pass"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --threshold 0.4 --single_pass
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --tgvqsm_iterations 2 --threshold 0.4 --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 #min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
 #std=`echo $min_max_std | cut -d ' ' -f 3`
@@ -164,7 +164,7 @@ sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --masking magnitude-based --single_pass"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --masking magnitude-based --single_pass
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --tgvqsm_iterations 2 --masking magnitude-based --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 #min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
 #std=`echo $min_max_std | cut -d ' ' -f 3`
@@ -185,7 +185,7 @@ sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --masking bet --single_pass"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --masking bet --single_pass
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --tgvqsm_iterations 2 --masking bet --single_pass
 [ -f $out_betaverage1 ] && echo "[DEBUG]. Test OK." || exit 1
 #min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_betaverage1 -R -S`
 #std=`echo $min_max_std | cut -d ' ' -f 3`
@@ -206,7 +206,7 @@ sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_
 sudo rm -rf /tmp/02_qsm_output
 
 echo "[DEBUG] starting run_2_qsm.py --num_echoes 1 --single_pass"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --qsm_iterations 2 --num_echoes 1 --single_pass
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --tgvqsm_iterations 2 --num_echoes 1 --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 #min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
 #std=`echo $min_max_std | cut -d ' ' -f 3`
