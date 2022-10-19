@@ -308,94 +308,94 @@ def nifti_to_bids(input_dir, output_dir):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QSMxT niftiConvert: Sorts NIfTI files into a near-BIDS format for use with QSMxT",
+        description="QSMxT niftiConvert: Sorts NIfTI files into BIDS for use with QSMxT",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
         'input_dir',
-        help='input NIfTI directory; will be recursively searched for NIfTI files'
+        help='Input NIfTI directory to be recursively searched for NIfTI files.'
     )
 
     parser.add_argument(
         'output_dir',
-        help='output near-BIDS format folder'
+        help='Output BIDS directory.'
     )
 
     parser.add_argument(
         '--magnitude_pattern',
         type=str,
         default='*mag*',
-        help='Pattern used to match t2starw magnitude files for QSM'
+        help='Pattern used to identify T2*-weighted magnitude files to be used for QSM based on filenames.'
     )
 
     parser.add_argument(
         '--phase_pattern',
         type=str,
         default='*phase*',
-        help='Pattern used to match t2starw phase files for QSM'
+        help='Pattern used to identify T2*-weighted phase files to be used for QSM based on filenames.'
     )
 
     parser.add_argument(
         '--t1w_pattern',
         type=str,
         default='*T1w*',
-        help='Pattern used to match T1w images for segmentation'
+        help='Pattern used to identify T1-weighted files for segmentation purposes based on filenames.'
     )
 
     parser.add_argument(
         '--t1w_protocol_patterns',
         type=str,
         default=['*t1w*'],
-        help='Patterns used to match protocol names in JSON headers to identify T1w images for segmentation'
+        help='Patterns used to identify T1-weighted files for segmentation purposes based on the \'ProtocolName\' in adjacent JSON headers.'
     )
 
     parser.add_argument(
         '--t2starw_protocol_patterns',
         type=str,
         default=['*qsm*', '*t2starw*'],
-        help='Patterns used to match protocol names in JSON headers to identify t2starw images for QSM'
+        help='Patterns used to identify T2*-weighted files to be used for QSM based on the \'ProtocolName\' in adjacent JSON headers.'
     )
 
     parser.add_argument(
         '--subject_pattern',
         type=str,
         default='sub-([^_/\\\\]+)',
-        help='Regular expression to retrieve the subject name from the filepath'
+        help='Regular expression to capture the subject ID from NIfTI filepaths.'
     )
 
     parser.add_argument(
         '--session_pattern',
         type=str,
         default='ses-([^_/\\\\]+)',
-        help='Regular expression to retrieve the session name from the filepath'
+        help='Regular expression to capture the session ID from NIfTI filepaths.'
     )
 
     parser.add_argument(
         '--protocol_pattern',
         type=str,
         default=None,
-        help='Regular expression to retrieve the protocol name from the filepath'
+        help='Regular expression to capture the \'ProtocolName\' from NIfTI filepaths (used in place of JSON headers if unavailable).'
     )
 
     parser.add_argument(
         '--run_pattern',
         type=str,
         default='run-([0-9]+)',
-        help='Regular expression to retrieve the run number from the filepath'
+        help='Regular expression to capture the run number from NIfTI filepaths (one scanning session may have multiple runs of the same sequence).'
     )
 
     parser.add_argument(
         '--echo_pattern',
         type=str,
         default='echo-([0-9]+)',
-        help='Regular expression to retrieve the echo number from the filepath'
+        help='Regular expression to capture the echo number from NIfTI filepaths.'
     )
 
     parser.add_argument(
         '--auto_yes',
         action='store_true',
-        help='Force running non-interactively'
+        help='Force running non-interactively. This is useful when used as part of a script or on a testing server.'
     )
 
     args = parser.parse_args()

@@ -343,39 +343,42 @@ if __name__ == "__main__":
 
     parser.add_argument(
         'output_dir',
-        help='Output directory for converted NIfTIs'
+        help='Output BIDS directory.'
     )
 
     parser.add_argument(
         '--use_patient_names',
         action='store_true',
-        help='Use the PatientName rather than PatientID for subject folders'
+        help='Use the \'PatientName\' DICOM field rather than \'PatientID\' to identify subject names.'
     )
 
     parser.add_argument(
         '--use_session_dates',
         action='store_true',
-        help='Use the StudyDate field rather than an incrementer for session IDs'
+        help='Use the \'StudyDate\' field rather than an incrementer for to identify scanning sessions.'
     )
 
     parser.add_argument(
         '--auto_yes',
         action='store_true',
-        help='Force running non-interactively'
+        help='Force running non-interactively. This option is useful when used as part of a script or on a testing server.'
     )
 
     parser.add_argument(
         '--t2starw_protocol_patterns',
         default=['*t2starw*', '*qsm*'],
         nargs='*',
-        help='Patterns used to identify t2starw protocol names for QSM from the DICOM ProtocolName field (case insensitive)'
+        help='Patterns used to identify series acquired for QSM, which must be T2*-weighted. These patterns will be used '+
+             'to match the \'ProtocolName\' field. If no series are found matching these protocols, you will be prompted '+
+             'to select the appropriate series\' interactively.'
     )
 
     parser.add_argument(
         '--t1w_protocol_patterns',
         default=['*t1w*'],
         nargs='*',
-        help='Patterns used to identify t1w protocol names for segmentation from the DICOM ProtocolName field (case insensitive)'
+        help='Patterns used to identify series containing T1-weighted brain images. These series may be used during the '+
+             'run_3_segment.py script for automated brain segmentation and registration to the QSM space.'
     )
 
     args = parser.parse_args()

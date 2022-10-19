@@ -272,10 +272,10 @@ def init_run_workflow(subject, session, run):
     mn_mask, n_json = add_masking_nodes(wf, masking_method, mask_files, add_bet, mn_inputs, n_json, n_datasink)
 
     # qsm steps
-    if args.qsm_algorithm == 'tgvqsm':
+    if args.qsm_algorithm == 'tgv_qsm':
         wf = add_tgvqsm_workflow(wf, mn_params, mn_inputs, mn_mask, n_datasink, magnitude_files[0], two_pass)
     elif args.qsm_algorithm == 'nextqsm':
-        wf = addNextqsmWorkflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, args.unwrapping_algorithm)
+        wf = addNextqsmWorkflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, args.nextqsm_unwrapping_algorithm)
     elif args.qsm_algorithm == 'nextqsm_combined':
         wf = addB0NextqsmB0Workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink)
     
@@ -309,7 +309,7 @@ def add_masking_nodes(wf, masking_method, mask_files, add_bet, mn_inputs, n_json
                 name='scipy_numpy_nibabel_threshold-masking'
                 # inputs : ['in_files']
             )
-            if args.threshold: n_threshold_masking.inputs.threshold = args.threshold
+            if args.masking_threshold: n_threshold_masking.inputs.threshold = args.masking_threshold
 
             n_add_threshold_to_json = Node(
                 interface=addtojson.AddToJsonInterface(
@@ -428,8 +428,8 @@ def add_tgvqsm_workflow(wf, mn_params, mn_inputs, mn_mask, n_datasink, magnitude
     # === Single-pass QSM reconstruction (filled) ===
     mn_qsm_filled = MapNode(
         interface=tgv.QSMappingInterface(
-            iterations=args.qsm_iterations,
-            alpha=args.qsm_alphas,
+            iterations=args.tgvqsm_iterations,
+            alpha=args.tgvqsm_alphas,
             erosions=0 if args.two_pass else 5,
             num_threads=args.qsm_threads,
             out_suffix='_qsm-filled',
@@ -478,8 +478,8 @@ def add_tgvqsm_workflow(wf, mn_params, mn_inputs, mn_mask, n_datasink, magnitude
     if two_pass:
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
-                iterations=args.qsm_iterations,
-                alpha=args.qsm_alphas,
+                iterations=args.tgvqsm_iterations,
+                alpha=args.tgvqsm_alphas,
                 erosions=0,
                 num_threads=args.qsm_threads,
                 out_suffix='_qsm',
@@ -611,9 +611,9 @@ if __name__ == "__main__":
 
     parser.add_argument(
         'bids_dir',
-        help='Input data folder generated using run_1_dicomConvert.py; can also use a ' +
-             'previously existing BIDS folder. Ensure that the --subject_pattern, '+
-             '--session_pattern, --magnitude_pattern and --phase_pattern are correct.'
+        help='Input data folder generated using run_1_dicomConvert.py. You can also use a ' +
+             'previously existing BIDS folder. In this case, ensure that the --subject_pattern, '+
+             '--session_pattern, --magnitude_pattern and --phase_pattern are correct for your data.'
     )
 
     parser.add_argument(
@@ -671,77 +671,80 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--qsm_algorithm',
-        default='tgvqsm',
-        choices=['tgvqsm', 'nextqsm', 'nextqsm_combined']
+        default='tgv_qsm',
+        choices=['tgv_qsm', 'nextqsm'],
+        help="The QSM algorithm to use.\n\t- The tgv_qsm algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 "+
+             "from Langkammer et al. By default, the tgv_qsm algorithm also includes a two-pass inversion that "+
+             "aims to mitigate streaking artefacts in QSM based on doi: . The two-pass inversion can be disabled "+
+             "to reduce runtime by half by specifying --single_pass."
+             "\n\tThe NeXtQSM option requires NeXtQSM installed (available by default in the QSMxT container) and "+
+             "uses a deep learning model implemented in Tensorflow based on doi:10.48550/arXiv.2107.07752 from "+
+             "Cognolato et al."
     )
 
     parser.add_argument(
-        '--unwrapping_algorithm',
+        '--nextqsm_unwrapping_algorithm',
         default='romeo',
-        choices=['romeo','romeob0','laplacian'] # Laplacian is only for nextqsm
+        choices=['romeo', 'romeob0', 'laplacian'],
+        help="Unwrapping algorithm to use with nextqsm."
+    )
+
+    parser.add_argument(
+        '--tgvqsm_iterations',
+        type=int,
+        default=1000,
+        help='Number of iterations used by tgv_qsm.'
+    )
+
+    parser.add_argument(
+        '--tgvqsm_alphas',
+        type=float,
+        default=[0.0015, 0.0005],
+        nargs=2,
+        help='Regularisation alphas used by tgv_qsm.'
     )
 
     parser.add_argument(
         '--masking',
         default='phase-based',
-        choices=['magnitude-based', 'phase-based', 'bet', 'bet-firstecho'],
-        help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
-             'thresholding a lower percentage of the histogram of the signal (adjust using the '+
+        choices=['phase-based', 'magnitude-based', 'bet', 'bet-firstecho'],
+        help='Masking strategy.\n\t- Phase-based and magnitude-based masking generate masks by ' +
+             'thresholding out regions below a percentage of the signal histogram (adjust using the '+
              '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
-             'thresholded and the magnitude is not required. Using BET automatically disables '+
-             'the two-pass inversion strategy for artefact mitigation.'
+             'thresholded and the magnitude is not required.\n\tBET masking generates a multi-echo mask '+
+             'using the Brain Extraction Tool (BET), with the \'bet-firstecho\' option generating only a '+
+             'single BET mask based on the first echo magnitude image.'
     )
-    
+
+    def between_0_and_1(num):
+        num = float(num)
+        if num < 0 or num > 1: raise ValueError(f"Argument must be between 0 and 1 - got {num}.")
+        return num
     parser.add_argument(
-        '--use_existing_masks',
-        action='store_true',
-        help='This option will use existing masks from the BIDS folder, when possible, instead of '+
-             'generating new ones. The masks will be selected based on the --mask_pattern argument. '+
-             'A single mask may be present (and will be applied to all echoes), or a mask for each '+
-             'echo can be used. When existing masks cannot be found, the chosen --masking algorithm '+
-             'will be used as a fallback.'
-    )
-    
-    parser.add_argument(
-        '--mask_pattern',
-        default='{subject}/{session}/extra_data/*{run}*mask*nii*'
+        '--masking_threshold',
+        type=between_0_and_1,
+        default=None,
+        help='Masking threshold (between 0 and 1). For magnitude-based masking, this represents the '+
+             'percentage of the histogram to exclude from masks. For phase-based masking, this represents the '+
+             'the minimum phase matching quality level required to for voxels to be included in the mask. If '+
+             'no threshold is provided, one is automatically chosen based on a histogram analysis.'
     )
 
     parser.add_argument(
         '--single_pass',
         action='store_true',
-        help='Runs a single QSM inversion per echo, rather than the novel two-pass QSM inversion that '+
+        help='Runs a single QSM inversion per echo, rather than the two-pass QSM inversion that '+
              'separates reliable and less reliable phase regions for artefact reduction. '+
              'Use this option to disable the novel inversion and approximately halve the runtime.'
     )
 
     parser.add_argument(
-        '--qsm_iterations',
-        type=int,
-        default=1000,
-        help='Number of iterations used for QSM reconstruction in tgv_qsm.'
-    )
-
-    parser.add_argument(
-        '--qsm_alphas',
-        type=float,
-        default=[0.0015, 0.0005],
-        nargs=2,
-        help='Regularisation alphas for tgv_qsm.'
-    )
-
-    parser.add_argument(
         '--inhomogeneity_correction',
         action='store_true',
-        help='Applies an inhomogeneity correction to the magnitude prior to masking'
-    )
-
-    parser.add_argument(
-        '--threshold',
-        type=float,
-        default=None,
-        help='Threshold percentage; anything less than the threshold will be excluded from the mask. ' +
-             'By default, the threshold is automatically chosen based on a \'gaussian\' algorithm.'
+        help='Applies an inhomogeneity correction to the magnitude prior to masking. This option is '+
+             'only relevant for magnitude-based masking, and is only recommended if there are obvious '+
+             'field bias problems in the magnitude images, which typically occur in ultra-high field '+
+             'acquisitions.'
     )
 
     parser.add_argument(
@@ -757,6 +760,23 @@ if __name__ == "__main__":
         help='When using magnitude or phase-based masking, this option adds a BET mask to the filled, '+
              'threshold-based mask. This is useful if areas of the sample are missing due to a failure '+
              'of the hole-filling algorithm.'
+    )
+    
+    parser.add_argument(
+        '--use_existing_masks',
+        action='store_true',
+        help='This option will use existing masks from the BIDS folder, when possible, instead of '+
+             'generating new ones. The masks will be selected based on the --mask_pattern argument. '+
+             'A single mask may be present (and will be applied to all echoes), or a mask for each '+
+             'echo can be used. When existing masks cannot be found, the chosen --masking algorithm '+
+             'will be used as a fallback.'
+    )
+    
+    parser.add_argument(
+        '--mask_pattern',
+        default='{subject}/{session}/extra_data/*{run}*mask*nii*',
+        help='Pattern used to identify mask files to be used when the --use_existing_masks option '+
+             'is enabled.'
     )
 
     parser.add_argument(
@@ -881,7 +901,7 @@ if __name__ == "__main__":
         
         if any_string_matches_any_node(['tgv']):
             f.write("\n\n - Langkammer C, Bredies K, Poser BA, et al. Fast quantitative susceptibility mapping using 3D EPI and total generalized variation. NeuroImage. 2015;111:622-630. doi:10.1016/j.neuroimage.2015.02.041")
-        if any_string_matches_any_node(['threshold-masking']) and args.threshold is None:
+        if any_string_matches_any_node(['threshold-masking']) and args.masking_threshold is None:
             f.write("\n\n - Balan AGR, Traina AJM, Ribeiro MX, Marques PMA, Traina Jr. C. Smart histogram analysis applied to the skull-stripping problem in T1-weighted MRI. Computers in Biology and Medicine. 2012;42(5):509-522. doi:10.1016/j.compbiomed.2012.01.004")
         if any_string_matches_any_node(['bet']):
             f.write("\n\n - Smith SM. Fast robust automated brain extraction. Human Brain Mapping. 2002;17(3):143-155. doi:10.1002/hbm.10062")

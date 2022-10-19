@@ -134,42 +134,43 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, check
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QSMxT dicomSort: Sorts DICOM files into a folder structure of the form <out_dir>/<PatientID>_<StudyDate>/<SeriesDescription>/",
+        description="QSMxT dicomSort: Sorts DICOM files into a folder structure of the form <out_dir>/<Subject>/<Session>/<Series>",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
         'input_dir',
-        help='input DICOM directory; will be recursively searched for DICOM files'
+        help='Input DICOM directory to be recursively searched for DICOM files.'
     )
 
     parser.add_argument(
         'output_dir',
-        help='output directory for sorted DICOMs'
+        help='Output directory to house sorted DICOMs.'
     )
 
     parser.add_argument(
         '--use_patient_names',
         action='store_true',
-        help='use the PatientName rather than PatientID for subject folders'
+        help='Use the DICOM \'PatientName\' field rather than \'PatientID\' to identify subjects.'
     )
 
     parser.add_argument(
         '--use_session_dates',
         action='store_true',
-        help='Use the StudyDate field rather than an incrementer for session IDs'
+        help='Use the \'StudyDate\' field rather than an incrementer to identify scanning sessions.'
     )
 
     parser.add_argument(
         '--check_all_files',
         action='store_true',
-        help='Ignores the DICOM file extensions .dcm and .IMA and instead reads all files for valid DICOM headers'
+        help='Ignores the DICOM file extensions .dcm and .IMA and instead reads all files for valid DICOM headers. '+
+             'This is useful if some of your DICOM files have unusual file extensions or none at all.'
     )
 
     parser.add_argument(
         '--delete_originals',
         action='store_true',
-        help='delete the original DICOM files and folders after successfully sorting; by ' +
+        help='Delete the original DICOM files and folders after successfully sorting; by ' +
              'default this is on when input_dir == output_dir'
     )
 
