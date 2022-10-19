@@ -347,18 +347,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--use_patient_names',
-        action='store_true',
-        help='Use the \'PatientName\' DICOM field rather than \'PatientID\' to identify subject names.'
-    )
-
-    parser.add_argument(
-        '--use_session_dates',
-        action='store_true',
-        help='Use the \'StudyDate\' field rather than an incrementer for to identify scanning sessions.'
-    )
-
-    parser.add_argument(
         '--auto_yes',
         action='store_true',
         help='Force running non-interactively. This option is useful when used as part of a script or on a testing server.'

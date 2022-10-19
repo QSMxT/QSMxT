@@ -122,6 +122,8 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     ./run_transparent_singularity.sh --container qsmxt_1.1.13_20221019.simg
     source activate_qsmxt_1.1.13_20221019.simg.sh
     ```
+    
+    - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
 
 3. Clone the QSMxT repository:
     ```bash
