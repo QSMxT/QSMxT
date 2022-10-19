@@ -8,7 +8,7 @@ import json
 import fnmatch
 import datetime
 
-from scripts.qsmxt_version import qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary 
 from scripts.nii_fix_ge import fix_ge_polar, fix_ge_complex
 
@@ -215,6 +215,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
         sessions = get_folders_in(os.path.join(output_dir, subject))
         for session in sessions:
             logger.log(LogLevel.INFO.value, f"Parsing relevant JSON data from {subject}/{session}...")
+            logger.log(LogLevel.INFO.value, f"Parsing relevant JSON data from {subject}/{session}...")
             session_extra_folder = os.path.join(output_dir, subject, session, "extra_data")
             session_anat_folder = os.path.join(output_dir, subject, session, "anat")
             json_files = sorted(glob.glob(os.path.join(session_extra_folder, "*json")))
@@ -248,7 +249,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
 
             if session_details:
                 session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['protocol_type'], f['series_num'], 0 if 'phase' in f['part_type'] else 1, f['echo_time']))
-                
+
                 # update run numbers
                 run_num = 1
                 series_num = session_details[0]['series_num']
@@ -282,9 +283,9 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                     if details['protocol_type'] == 't1w':
                         details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(details['run_num']).zfill(2)}_T1w")
                     elif details['num_echoes'] == 1:
-                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(details['run_num']).zfill(2)}_part-{details['part_type']}_T2starw")
+                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(str(details['run_num']).zfill(2)).zfill(2)}_part-{details['part_type']}_T2starw")
                     else:
-                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(details['run_num']).zfill(2)}_echo-{str(details['echo_num']).zfill(2)}_part-{details['part_type']}_MEGRE")
+                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(str(details['run_num']).zfill(2)).zfill(2)}_echo-{str(str(details['echo_num']).zfill(2)).zfill(2)}_part-{details['part_type']}_MEGRE")
 
                 # store session details
                 all_session_details.extend(session_details)
@@ -310,7 +311,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
         "BIDSVersion" : "1.7.0",
         "GeneratedBy" : [{
             "Name" : "QSMxT",
-            "Version": f"{qsmxt_version()}",
+            "Version": f"{get_qsmxt_version()}",
             "CodeURL" : "https://github.com/QSMxT/QSMxT"
         }],
         "Authors" : ["ADD AUTHORS HERE"]
@@ -326,7 +327,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
 
     logger.log(LogLevel.INFO.value, 'Writing BIDS dataset README...')
     with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
-        readme_file.write(f"Generated using QSMxT ({qsmxt_version()})\n")
+        readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
         readme_file.write(f"\nDescribe your dataset here.\n")
 
 if __name__ == "__main__":
@@ -342,39 +343,42 @@ if __name__ == "__main__":
 
     parser.add_argument(
         'output_dir',
-        help='Output directory for converted NIfTIs'
+        help='Output BIDS directory.'
     )
 
     parser.add_argument(
         '--use_patient_names',
         action='store_true',
-        help='Use the PatientName rather than PatientID for subject folders'
+        help='Use the \'PatientName\' DICOM field rather than \'PatientID\' to identify subject names.'
     )
 
     parser.add_argument(
         '--use_session_dates',
         action='store_true',
-        help='Use the StudyDate field rather than an incrementer for session IDs'
+        help='Use the \'StudyDate\' field rather than an incrementer for to identify scanning sessions.'
     )
 
     parser.add_argument(
         '--auto_yes',
         action='store_true',
-        help='Force running non-interactively'
+        help='Force running non-interactively. This option is useful when used as part of a script or on a testing server.'
     )
 
     parser.add_argument(
         '--t2starw_protocol_patterns',
         default=['*t2starw*', '*qsm*'],
         nargs='*',
-        help='Patterns used to identify t2starw protocol names for QSM from the DICOM ProtocolName field (case insensitive)'
+        help='Patterns used to identify series acquired for QSM, which must be T2*-weighted. These patterns will be used '+
+             'to match the \'ProtocolName\' field. If no series are found matching these protocols, you will be prompted '+
+             'to select the appropriate series\' interactively.'
     )
 
     parser.add_argument(
         '--t1w_protocol_patterns',
         default=['*t1w*'],
         nargs='*',
-        help='Patterns used to identify t1w protocol names for segmentation from the DICOM ProtocolName field (case insensitive)'
+        help='Patterns used to identify series containing T1-weighted brain images. These series may be used during the '+
+             'run_3_segment.py script for automated brain segmentation and registration to the QSM space.'
     )
 
     args = parser.parse_args()
@@ -392,14 +396,14 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {qsmxt_version()}")
+        f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
         f.write(f"\nPython interpreter: {sys.executable}")
 
@@ -424,4 +428,4 @@ if __name__ == "__main__":
     show_warning_summary(logger)
 
     logger.log(LogLevel.INFO.value, 'Finished')
-    
+

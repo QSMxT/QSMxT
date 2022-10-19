@@ -24,7 +24,7 @@ def erosion(in_file, num_erosions=1):
 
 class ErosionInputSpec(BaseInterfaceInputSpec):
     in_file = File(mandatory=True, exists=True)
-    num_erosions = traits.Int(1, usedefault=True)
+    num_erosions = traits.Int(default=1)
 
 
 class ErosionOutputSpec(TraitedSpec):

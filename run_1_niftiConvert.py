@@ -10,7 +10,7 @@ import datetime
 from fnmatch import fnmatch
 from re import findall
 
-from scripts.qsmxt_version import qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary 
 
 def copy(old, new, always_show=False):
@@ -204,6 +204,7 @@ def update_details_with_jsons(all_details):
 def write_details_to_csv(all_details):
     f = open(csv_file, 'w', encoding='utf-8')
     f.write('filename,subject id,session id,run number,echo number,echo_time (s),multi-echo (yes or no),field_strength (T),series_type (t2starw or t1w),part_type (mag or phase)\n')
+    all_details.sort(key=lambda d: d['filename'])
     for d in all_details:
         line = f"{d['filename']},{d['subject_id']},{d['session_id']},{d['run_num']},{d['echo_num']},{d['echo_time']},{d['multi-echo']},{d['field_strength']},{d['series_type']},{d['part_type']}\n"
         line = line.replace(",None", ",").replace("None,", ",")
@@ -271,7 +272,8 @@ def nifti_to_bids(input_dir, output_dir):
                 "MagneticFieldStrength" : details['field_strength'],
                 "EchoNumber" : details['echo_num'],
                 "ImageType" : ["P", "PHASE"] if details['part_type'] == 'phase' else ["M", "MAGNITUDE"],
-                "ProtocolName" : details['series_type']
+                "ProtocolName" : details['series_type'],
+                "ConversionSoftware" : "dcm2niix"
             }
             with open(json_filename(details['new_name']), 'w', encoding='utf-8') as json_file:
                 json.dump(dictionary, json_file)
@@ -285,7 +287,7 @@ def nifti_to_bids(input_dir, output_dir):
         "BIDSVersion" : "1.7.0",
         "GeneratedBy" : [{
             "Name" : "QSMxT",
-            "Version": f"{qsmxt_version()}",
+            "Version": f"{get_qsmxt_version()}",
             "CodeURL" : "https://github.com/QSMxT/QSMxT"
         }],
         "Authors" : ["ADD AUTHORS HERE"]
@@ -301,99 +303,99 @@ def nifti_to_bids(input_dir, output_dir):
 
     logger.log(LogLevel.INFO.value, 'Writing BIDS dataset README...')
     with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
-        readme_file.write(f"Generated using QSMxT ({qsmxt_version()})\n")
+        readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
         readme_file.write(f"\nDescribe your dataset here.\n")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QSMxT niftiConvert: Sorts NIfTI files into a near-BIDS format for use with QSMxT",
+        description="QSMxT niftiConvert: Sorts NIfTI files into BIDS for use with QSMxT",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
         'input_dir',
-        help='input NIfTI directory; will be recursively searched for NIfTI files'
+        help='Input NIfTI directory to be recursively searched for NIfTI files.'
     )
 
     parser.add_argument(
         'output_dir',
-        help='output near-BIDS format folder'
+        help='Output BIDS directory.'
     )
 
     parser.add_argument(
         '--magnitude_pattern',
         type=str,
         default='*mag*',
-        help='Pattern used to match t2starw magnitude files for QSM'
+        help='Pattern used to identify T2*-weighted magnitude files to be used for QSM based on filenames.'
     )
 
     parser.add_argument(
         '--phase_pattern',
         type=str,
         default='*phase*',
-        help='Pattern used to match t2starw phase files for QSM'
+        help='Pattern used to identify T2*-weighted phase files to be used for QSM based on filenames.'
     )
 
     parser.add_argument(
         '--t1w_pattern',
         type=str,
         default='*T1w*',
-        help='Pattern used to match T1w images for segmentation'
+        help='Pattern used to identify T1-weighted files for segmentation purposes based on filenames.'
     )
 
     parser.add_argument(
         '--t1w_protocol_patterns',
         type=str,
         default=['*t1w*'],
-        help='Patterns used to match protocol names in JSON headers to identify T1w images for segmentation'
+        help='Patterns used to identify T1-weighted files for segmentation purposes based on the \'ProtocolName\' in adjacent JSON headers.'
     )
 
     parser.add_argument(
         '--t2starw_protocol_patterns',
         type=str,
         default=['*qsm*', '*t2starw*'],
-        help='Patterns used to match protocol names in JSON headers to identify t2starw images for QSM'
+        help='Patterns used to identify T2*-weighted files to be used for QSM based on the \'ProtocolName\' in adjacent JSON headers.'
     )
 
     parser.add_argument(
         '--subject_pattern',
         type=str,
         default='sub-([^_/\\\\]+)',
-        help='Regular expression to retrieve the subject name from the filepath'
+        help='Regular expression to capture the subject ID from NIfTI filepaths.'
     )
 
     parser.add_argument(
         '--session_pattern',
         type=str,
         default='ses-([^_/\\\\]+)',
-        help='Regular expression to retrieve the session name from the filepath'
+        help='Regular expression to capture the session ID from NIfTI filepaths.'
     )
 
     parser.add_argument(
         '--protocol_pattern',
         type=str,
         default=None,
-        help='Regular expression to retrieve the protocol name from the filepath'
+        help='Regular expression to capture the \'ProtocolName\' from NIfTI filepaths (used in place of JSON headers if unavailable).'
     )
 
     parser.add_argument(
         '--run_pattern',
         type=str,
         default='run-([0-9]+)',
-        help='Regular expression to retrieve the run number from the filepath'
+        help='Regular expression to capture the run number from NIfTI filepaths (one scanning session may have multiple runs of the same sequence).'
     )
 
     parser.add_argument(
         '--echo_pattern',
         type=str,
         default='echo-([0-9]+)',
-        help='Regular expression to retrieve the echo number from the filepath'
+        help='Regular expression to capture the echo number from NIfTI filepaths.'
     )
 
     parser.add_argument(
         '--auto_yes',
         action='store_true',
-        help='Force running non-interactively'
+        help='Force running non-interactively. This is useful when used as part of a script or on a testing server.'
     )
 
     args = parser.parse_args()
@@ -413,13 +415,13 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {qsmxt_version()}")
+        f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
         f.write(f"\nPython interpreter: {sys.executable}")
 

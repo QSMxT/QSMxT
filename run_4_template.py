@@ -7,6 +7,7 @@ import argparse
 import psutil
 import sys
 import datetime
+import datetime
 
 import nipype.interfaces.utility as util
 import nipype.interfaces.ants as ants
@@ -14,7 +15,7 @@ import nipype.interfaces.io as io
 import nipype.pipeline.engine as pe
 
 from scripts.antsBuildTemplate import ANTSTemplateBuildSingleIterationWF
-from scripts.qsmxt_version import qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 def init_workflow(magnitude_images, qsm_images):
@@ -184,7 +185,7 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
@@ -220,7 +221,7 @@ if __name__ == "__main__":
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {qsmxt_version()}")
+        f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
         f.write(f"\nPython interpreter: {sys.executable}")
 
@@ -228,6 +229,7 @@ if __name__ == "__main__":
 
         # qsmxt, nipype, ants
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
         f.write("\n\n - Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")

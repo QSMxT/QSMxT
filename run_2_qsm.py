@@ -10,21 +10,20 @@ import datetime
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
-from scripts.qsmxt_version import qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 from interfaces import nipype_interface_scalephase as scalephase
-from interfaces import nipype_interface_tgv_qsm as tgv
-from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
-from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
-from interfaces import nipype_interface_twopass as twopass
-from interfaces import nipype_interface_masking as masking
-from interfaces import nipype_interface_erode as erode
-from interfaces import nipype_interface_bet2 as bet2
-from interfaces import nipype_interface_phase_based as experimental_masking
+
 from interfaces import nipype_interface_json as json
 from interfaces import nipype_interface_addtojson as addtojson
+from interfaces import nipype_interface_axialsampling as sampling
+
+from workflows.unwrapping import unwrapping_workflow
+from workflows.nextqsm import nextqsm_B0_workflow, nextqsm_workflow
+from workflows.tgvqsm import add_tgvqsm_workflow
+from workflows.masking import add_masking_nodes
 
 import argparse
 
@@ -95,6 +94,7 @@ def init_run_workflow(subject, session, run):
     logger.log(LogLevel.INFO.value, f"Creating nipype workflow for {subject}/{session}/{run}...")
 
     # create copies of command-line arguments that may need to change for this run (if problems occur)
+    two_pass = args.two_pass
     masking_method = args.masking
     add_bet = args.add_bet
     inhomogeneity_correction = args.inhomogeneity_correction
@@ -108,33 +108,35 @@ def init_run_workflow(subject, session, run):
 
     params_pattern = os.path.join(args.bids_dir, args.phase_pattern.format(subject=subject, session=session, run=run).replace("nii.gz", "nii").replace("nii", "json"))
     params_files = sorted(glob.glob(params_pattern))[:args.num_echoes_to_process]
-
-    # handle any errors related to files
+    
+    mask_pattern = os.path.join(args.bids_dir, args.mask_pattern.format(subject=subject, session=session, run=run))
+    mask_files = sorted(glob.glob(mask_pattern))[:args.num_echoes_to_process] if args.use_existing_masks else []
+    
+    # handle any errors related to files and adjust any settings if needed
     if not phase_files:
         logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - no phase files found matching pattern {phase_pattern}.")
         return
     if len(phase_files) != len(params_files):
         logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
         return
-    if (not magnitude_files and any([masking_method == 'magnitude-based', masking_method == 'bet', add_bet, inhomogeneity_correction])):
+    if (not magnitude_files and any([masking_method == 'magnitude-based', 'bet' in masking_method, add_bet, inhomogeneity_correction])):
         logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
         masking_method = 'phase-based'
         add_bet = False
         inhomogeneity_correction = False
+    if args.use_existing_masks and not mask_files:
+        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {masking_method} masking.")
+    if args.use_existing_masks and len(mask_files) > 1 and len(mask_files) != len(phase_files):
+        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but unequal number of mask and phase files present. Reverting to {masking_method} masking.")
+        mask_files = []
+    if args.use_existing_masks and mask_files:
+        inhomogeneity_correction = False
+        two_pass = False
+        add_bet = False
+    
 
     # create nipype workflow for this run
     wf = Workflow(run, base_dir=os.path.join(args.work_dir, "workflow_qsm", subject, session, run))
-
-    # get files
-    n_getfiles = Node(
-        IdentityInterface(
-            fields=['phase_files', 'magnitude_files', 'params_files']
-        ),
-        name='nipype_getfiles'
-    )
-    n_getfiles.inputs.phase_files = phase_files
-    n_getfiles.inputs.magnitude_files = magnitude_files
-    n_getfiles.inputs.params_files = params_files
 
     # datasink
     n_datasink = Node(
@@ -142,12 +144,16 @@ def init_run_workflow(subject, session, run):
         name='nipype_datasink'
     )
 
+    # create json header for this run
     n_json = Node(
         interface=json.JsonInterface(
             in_dict={
-                "QSMxT version" : qsmxt_version(),
+                "QSMxT version" : get_qsmxt_version(),
                 "Run command" : str.join(" ", sys.argv),
-                "Python interpreter" : sys.executable
+                "Python interpreter" : sys.executable,
+                "Inhomogeneity correction" : inhomogeneity_correction,
+                "QSM algorithm" : f"{args.qsm_algorithm}" + (f" with two-pass algorithm" if two_pass else ""),
+                "Masking algorithm" : (f"{masking_method}" + (f" plus BET" if add_bet else "")) if not mask_files else ("Predefined (one mask)" if len(mask_files) == 1 else "Predefined (multi-echo mask)")
             },
             out_file=f"{subject}_{session}_{run}_qsmxt-header.json"
         ),
@@ -156,16 +162,18 @@ def init_run_workflow(subject, session, run):
         # outputs: 'out_file'
     )
 
-    # scale phase data
-    mn_phase_scaled = MapNode(
-        interface=scalephase.ScalePhaseInterface(),
-        iterfield=['in_file'],
-        name='nibabel_numpy_scale-phase'
-        # outputs : 'out_file'
+    # get files
+    n_getfiles = Node(
+        IdentityInterface(
+            fields=['phase_files', 'magnitude_files', 'params_files', 'mask_files']
+        ),
+        name='nipype_getfiles'
     )
-    wf.connect([
-        (n_getfiles, mn_phase_scaled, [('phase_files', 'in_file')])
-    ])
+    n_getfiles.inputs.phase_files = phase_files
+    n_getfiles.inputs.magnitude_files = magnitude_files
+    n_getfiles.inputs.params_files = params_files
+    if len(mask_files) == 1: mask_files = [mask_files[0] for _ in phase_files]
+    n_getfiles.inputs.mask_files = mask_files
 
     # read echotime and field strengths from json files
     def read_json(in_file):
@@ -189,6 +197,34 @@ def init_run_workflow(subject, session, run):
         (n_getfiles, mn_params, [('params_files', 'in_file')])
     ])
 
+    # scale phase data
+    mn_phase_scaled = MapNode(
+        interface=scalephase.ScalePhaseInterface(),
+        iterfield=['in_file'],
+        name='nibabel_numpy_scale-phase'
+        # outputs : 'out_file'
+    )
+    wf.connect([
+        (n_getfiles, mn_phase_scaled, [('phase_files', 'in_file')])
+    ])
+
+    # resample to axial
+    mn_resample_inputs = MapNode(
+        interface=sampling.AxialSamplingInterface(
+            obliquity_threshold=10
+        ),
+        iterfield=['in_mag', 'in_pha', 'in_mask'] if mask_files else ['in_mag', 'in_pha'],
+        name='nibabel_numpy_nilearn_axial-resampling'
+    )
+    wf.connect([
+        (n_getfiles, mn_resample_inputs, [('magnitude_files', 'in_mag')]),
+        (mn_phase_scaled, mn_resample_inputs, [('out_file', 'in_pha')])
+    ])
+    if mask_files:
+        wf.connect([
+            (n_getfiles, mn_resample_inputs, [('mask_files', 'in_mask')])
+        ])
+
     # run homogeneity filter if necessary
     if inhomogeneity_correction:
         mn_inhomogeneity_correction = MapNode(
@@ -198,234 +234,105 @@ def init_run_workflow(subject, session, run):
             # output : out_file
         )
         wf.connect([
-            (n_getfiles, mn_inhomogeneity_correction, [('magnitude_files', 'in_file')])
+            (mn_resample_inputs, mn_inhomogeneity_correction, [('out_mag', 'in_file')])
         ])
 
-    # do phase weights if necessary
-    if masking_method == 'phase-based':
-        mn_phaseweights = MapNode(
-            interface=experimental_masking.RomeoMaskingInterface(),
-            iterfield=['phase', 'mag'],
-            name='romeo-voxelquality'
-            # output: 'out_file'
-        )
-        mn_phaseweights.inputs.weight_type = "grad+second+mag"
-        wf.connect([
-            (mn_phase_scaled, mn_phaseweights, [('out_file', 'phase')]),
-            (n_getfiles, mn_phaseweights, [('magnitude_files', 'mag')])
-        ])
-
-    # do threshold-based masking if necessary
-    if masking_method in ['phase-based', 'magnitude-based']:
-        n_threshold_masking = Node(
-            interface=masking.MaskingInterface(),
-            name='scipy_numpy_nibabel_threshold-masking'
-            # inputs : ['in_files']
-        )
-        if args.threshold: n_threshold_masking.inputs.threshold = args.threshold
-
-        n_add_threshold_to_json = Node(
-            interface=addtojson.AddToJsonInterface(
-                in_key = "threshold"
-            ),
-            name="json_add-threshold"
-        )
-        wf.connect([
-            (n_json, n_add_threshold_to_json, [('out_file', 'in_file')]),
-            (n_threshold_masking, n_add_threshold_to_json, [('threshold', 'in_num_value')])
-        ])
-        wf.connect([
-            (n_add_threshold_to_json, n_datasink, [('out_file', 'headers')])
-        ])
-
-        if masking_method in ['phase-based']:    
-            wf.connect([
-                (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
-            ])
-        elif masking_method == 'magnitude-based' and not inhomogeneity_correction:
-            wf.connect([
-                (n_getfiles, n_threshold_masking, [('magnitude_files', 'in_files')])
-            ])
-        else:
-            wf.connect([
-                (mn_inhomogeneity_correction, n_threshold_masking, [('out_file', 'in_files')])
-            ])
-
-    # run bet if necessary
-    if masking_method == 'bet' or add_bet:
-        mn_bet = MapNode(
-            interface=bet2.Bet2Interface(fractional_intensity=args.bet_fractional_intensity),
-            iterfield=['in_file'],
-            name='fsl-bet'
-            # output: 'mask_file'
-        )
-        if inhomogeneity_correction:
-            wf.connect([
-                (mn_inhomogeneity_correction, mn_bet, [('out_file', 'in_file')])
-            ])
-        else:
-            wf.connect([
-                (n_getfiles, mn_bet, [('magnitude_files', 'in_file')])
-            ])
-        mn_bet_erode = MapNode(
-            interface=erode.ErosionInterface(
-                num_erosions=1
-            ),
-            iterfield=['in_file'],
-            name='scipy_numpy_nibabel_erode'
-        )
-        wf.connect([
-            (mn_bet, mn_bet_erode, [('mask_file', 'in_file')])
-        ])
-
-        # add bet if necessary
-        if add_bet:
-            mn_mask_plus_bet = MapNode(
-                interface=twopass.TwopassNiftiInterface(),
-                name='numpy_nibabel_mask-plus-bet',
-                iterfield=['in_file1', 'in_file2'],
-            )
-            wf.connect([
-                (n_threshold_masking, mn_mask_plus_bet, [('masks', 'in_file1')]),
-                (mn_bet_erode, mn_mask_plus_bet, [('out_file', 'in_file2')])
-            ])
-
-    # link up nodes to get standardised outputs as 'masks' and 'masks_filled' in mn_mask
-    def repeat(masks, masks_filled):
-        return masks, masks_filled
-    mn_mask = MapNode(
+    def repeat(magnitude_files, phase_files, mask_files=None):
+        return magnitude_files, phase_files, mask_files
+    mn_inputs = MapNode(
         interface=Function(
-            input_names=['masks', 'masks_filled'],
-            output_names=['masks', 'masks_filled'],
+            input_names=['magnitude_files', 'phase_files', 'mask_files'] if mask_files else ['magnitude_files', 'phase_files'],
+            output_names=['magnitude_files', 'phase_files', 'mask_files'],
             function=repeat
         ),
-        iterfield=['masks', 'masks_filled'],
-        name='func_repeat-mask'
-    )
-    if masking_method == 'bet':
-        wf.connect([
-            (mn_bet_erode, mn_mask, [('out_file', 'masks')]),
-            (mn_bet_erode, mn_mask, [('out_file', 'masks_filled')])
-        ])
-    if masking_method in ['magnitude-based', 'phase-based']:
-        wf.connect([
-            (n_threshold_masking, mn_mask, [('masks', 'masks')])
-        ])
-        if not add_bet:
-            wf.connect([
-                (n_threshold_masking, mn_mask, [('masks_filled', 'masks_filled')])
-            ])
-        else:
-            wf.connect([
-                (mn_mask_plus_bet, mn_mask, [('out_file', 'masks_filled')])
-            ])
-
-    # === Single-pass QSM reconstruction (filled) ===
-    mn_qsm_filled = MapNode(
-        interface=tgv.QSMappingInterface(
-            iterations=args.qsm_iterations,
-            alpha=args.qsm_alphas,
-            erosions=0,
-            num_threads=args.qsm_threads,
-            out_suffix='_qsm-filled',
-            extra_arguments='--ignore-orientation --no-resampling'
-        ),
-        iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
-        name='tgv-qsm_filled'
-        # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
-        # output: 'out_file'
-    )
-    mn_qsm_filled.plugin_args = {
-        'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.qsm_threads}:mem=20gb:vmem=20gb',
-        'overwrite': True
-    }
-    wf.connect([
-        (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
-        (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
-        (mn_mask, mn_qsm_filled, [('masks_filled', 'mask_file')]),
-        (mn_phase_scaled, mn_qsm_filled, [('out_file', 'phase_file')]),
-    ])
-
-    # qsm averaging
-    n_qsm_filled_average = Node(
-        interface=nonzeroaverage.NonzeroAverageInterface(),
-        name='numpy_nibabel_qsm-filled-average'
-        # input : in_files
-        # output : out_file
+        iterfield=['magnitude_files', 'phase_files', 'mask_files'] if mask_files else ['magnitude_files', 'phase_files'],
+        name='func_repeat-inputs'
     )
     wf.connect([
-        (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')]),
-        (n_qsm_filled_average, n_datasink, [('out_file', 'qsm_singlepass' if args.two_pass else 'qsm_final')]),
+        (mn_resample_inputs, mn_inputs, [('out_pha', 'phase_files')])
     ])
-
-    # === Two-pass QSM reconstruction (not filled) ===
-    if args.two_pass:
-        mn_qsm = MapNode(
-            interface=tgv.QSMappingInterface(
-                iterations=args.qsm_iterations,
-                alpha=args.qsm_alphas,
-                erosions=5 if masking_method == 'bet' else 0,
-                num_threads=args.qsm_threads,
-                out_suffix='_qsm',
-                extra_arguments='--ignore-orientation --no-resampling'
-            ),
-            iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
-            name='tgv-qsm_intermediate'
-            # output: 'out_file'
-        )
-
-        # args for PBS
-        mn_qsm.plugin_args = {
-            'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.qsm_threads}:mem=20gb:vmem=20gb',
-            'overwrite': True
-        }
-
+    if mask_files:
         wf.connect([
-            (mn_params, mn_qsm, [('EchoTime', 'TE')]),
-            (mn_params, mn_qsm, [('MagneticFieldStrength', 'b0')]),
-            (mn_mask, mn_qsm, [('masks', 'mask_file')]),
-            (mn_phase_scaled, mn_qsm, [('out_file', 'phase_file')])
+            (mn_resample_inputs, mn_inputs, [('out_mask', 'mask_files')])
+        ])
+    if inhomogeneity_correction:
+        wf.connect([
+            (mn_inhomogeneity_correction, mn_inputs, [('out_file', 'magnitude_files')])
+        ])
+    else:
+        wf.connect([
+            (mn_resample_inputs, mn_inputs, [('out_mag', 'magnitude_files')])
         ])
 
-        # qsm averaging
-        n_qsm_average = Node(
-            interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='numpy_nibabel_qsm-average'
-            # input : in_files
-            # output : out_file
-        )
-        wf.connect([
-            (mn_qsm, n_qsm_average, [('out_file', 'in_files')])
-        ])
+    # masking steps
+    mn_mask, n_json = add_masking_nodes(wf, args, masking_method, mask_files, add_bet, mn_inputs, n_json)
 
-        # Two-pass combination step
-        mn_qsm_twopass = MapNode(
-            interface=twopass.TwopassNiftiInterface(),
-            name='numpy_nibabel_twopass',
-            iterfield=['in_file1', 'in_file2']
-        )
-        wf.connect([
-            (mn_qsm, mn_qsm_twopass, [('out_file', 'in_file1')]),
-            (mn_qsm_filled, mn_qsm_twopass, [('out_file', 'in_file2')]),
-            #(mn_mask, mn_qsm_twopass, [('mask_file', 'in_maskFile')])
-        ])
-
-        n_qsm_twopass_average = Node(
-            interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='numpy_nibabel_twopass-average'
-            # input : in_files
-            # output: out_file
-        )
-        wf.connect([
-            (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')])
-        ])
-
-        wf.connect([
-            (n_qsm_twopass_average, n_datasink, [('out_file', 'qsm_final')]),
-        ])
-
+    # qsm steps
+    if args.qsm_algorithm == 'tgv_qsm':
+        wf = add_tgvqsm_workflow(wf, args, mn_params, mn_inputs, mn_mask, n_datasink, magnitude_files[0], two_pass)
+    elif args.qsm_algorithm == 'nextqsm':
+        wf = addNextqsmWorkflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, args.nextqsm_unwrapping_algorithm)
+    elif args.qsm_algorithm == 'nextqsm_combined':
+        wf = addB0NextqsmB0Workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink)
+    
+    wf.connect([
+        (n_json, n_datasink, [('out_file', 'qsm_headers')])
+    ])
+    
     return wf
 
+
+def addB0NextqsmB0Workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink):
+    # extract the fieldstrength of the first echo for input to nextqsm Node (not MapNode)
+    def first(list=None):
+        return list[0]
+    n_fieldStrength = Node(Function(input_names="list",
+                                    output_names=["fieldStrength"],
+                                    function=first),
+                            name='extract_fieldStrength')
+    n_mask = Node(Function(input_names="list", # TODO try to use B0 phase-based mask
+                                        output_names=["out_file"],
+                                        function=first),
+                                name='extract_Mask')
+    wf_unwrapping = unwrapping_workflow("romeoB0")
+    wf_nextqsmB0 = nextqsm_B0_workflow()
+    
+    wf.connect([
+        (mn_inputs, wf_unwrapping, [('phase_files', 'inputnode.wrapped_phase')]),
+        (mn_inputs, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
+        (mn_params, wf_unwrapping, [('EchoTime', 'inputnode.TE')]),
+        
+        (wf_unwrapping, wf_nextqsmB0, [('outputnode.B0', 'inputnode.B0'),]),
+        
+        (mn_mask, n_mask, [('masks_filled', 'list'),]),
+        (n_mask, wf_nextqsmB0, [('out_file', 'inputnode.mask'),]),
+        (mn_params, n_fieldStrength, [('MagneticFieldStrength', 'list')]),
+        (n_fieldStrength, wf_nextqsmB0, [('fieldStrength', 'inputnode.fieldStrength'),]),
+        
+        (wf_nextqsmB0, n_datasink, [('outputnode.qsm', 'final_qsm')]),
+    ])
+
+    return wf
+    
+def addNextqsmWorkflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, unwrapping_type):
+    wf_unwrapping = unwrapping_workflow(unwrapping_type)
+    wf_nextqsm = nextqsm_workflow()
+    
+    wf.connect([
+        (mn_inputs, wf_unwrapping, [('phase_files', 'inputnode.wrapped_phase')]),
+        (mn_inputs, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
+        (mn_params, wf_unwrapping, [('EchoTime', 'inputnode.TE')]),
+        
+        (wf_unwrapping, wf_nextqsm, [('outputnode.unwrapped_phase', 'inputnode.unwrapped_phase')]),
+        (mn_mask, wf_nextqsm, [('masks_filled', 'inputnode.mask')]),
+        (mn_params, wf_nextqsm, [('EchoTime', 'inputnode.TE'),
+                                 ('MagneticFieldStrength', 'inputnode.fieldStrength')]),
+        
+        (wf_nextqsm, n_datasink, [('outputnode.qsm', 'qsm_echo'),
+                                  ('outputnode.qsm_average', 'qsm_final')])
+    ])
+
+    return wf
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -435,9 +342,9 @@ if __name__ == "__main__":
 
     parser.add_argument(
         'bids_dir',
-        help='Input data folder generated using run_1_dicomConvert.py; can also use a ' +
-             'previously existing BIDS folder. Ensure that the --subject_pattern, '+
-             '--session_pattern, --magnitude_pattern and --phase_pattern are correct.'
+        help='Input data folder generated using run_1_dicomConvert.py. You can also use a ' +
+             'previously existing BIDS folder. In this case, ensure that the --subject_pattern, '+
+             '--session_pattern, --magnitude_pattern and --phase_pattern are correct for your data.'
     )
 
     parser.add_argument(
@@ -494,51 +401,81 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--masking', '-m',
+        '--qsm_algorithm',
+        default='tgv_qsm',
+        choices=['tgv_qsm', 'nextqsm'],
+        help="The QSM algorithm to use.\n\t- The tgv_qsm algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 "+
+             "from Langkammer et al. By default, the tgv_qsm algorithm also includes a two-pass inversion that "+
+             "aims to mitigate streaking artefacts in QSM based on doi: . The two-pass inversion can be disabled "+
+             "to reduce runtime by half by specifying --single_pass."
+             "\n\tThe NeXtQSM option requires NeXtQSM installed (available by default in the QSMxT container) and "+
+             "uses a deep learning model implemented in Tensorflow based on doi:10.48550/arXiv.2107.07752 from "+
+             "Cognolato et al."
+    )
+
+    parser.add_argument(
+        '--nextqsm_unwrapping_algorithm',
+        default='romeo',
+        choices=['romeo', 'romeob0', 'laplacian'],
+        help="Unwrapping algorithm to use with nextqsm."
+    )
+
+    parser.add_argument(
+        '--tgvqsm_iterations',
+        type=int,
+        default=1000,
+        help='Number of iterations used by tgv_qsm.'
+    )
+
+    parser.add_argument(
+        '--tgvqsm_alphas',
+        type=float,
+        default=[0.0015, 0.0005],
+        nargs=2,
+        help='Regularisation alphas used by tgv_qsm.'
+    )
+
+    parser.add_argument(
+        '--masking',
         default='phase-based',
-        choices=['magnitude-based', 'phase-based', 'bet'],
-        help='Masking strategy. Magnitude-based and phase-based masking generates a mask by ' +
-             'thresholding a lower percentage of the histogram of the signal (adjust using the '+
+        choices=['phase-based', 'magnitude-based', 'bet', 'bet-firstecho'],
+        help='Masking strategy.\n\t- Phase-based and magnitude-based masking generate masks by ' +
+             'thresholding out regions below a percentage of the signal histogram (adjust using the '+
              '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
-             'thresholded and the magnitude is not required. Using BET automatically disables '+
-             'the two-pass inversion strategy for artefact mitigation.'
+             'thresholded and the magnitude is not required.\n\tBET masking generates a multi-echo mask '+
+             'using the Brain Extraction Tool (BET), with the \'bet-firstecho\' option generating only a '+
+             'single BET mask based on the first echo magnitude image.'
+    )
+
+    def between_0_and_1(num):
+        num = float(num)
+        if num < 0 or num > 1: raise ValueError(f"Argument must be between 0 and 1 - got {num}.")
+        return num
+    parser.add_argument(
+        '--masking_threshold',
+        type=between_0_and_1,
+        default=None,
+        help='Masking threshold (between 0 and 1). For magnitude-based masking, this represents the '+
+             'percentage of the histogram to exclude from masks. For phase-based masking, this represents the '+
+             'the minimum phase matching quality level required to for voxels to be included in the mask. If '+
+             'no threshold is provided, one is automatically chosen based on a histogram analysis.'
     )
 
     parser.add_argument(
         '--single_pass',
         action='store_true',
-        help='Runs a single QSM inversion per echo, rather than the novel two-pass QSM inversion that '+
+        help='Runs a single QSM inversion per echo, rather than the two-pass QSM inversion that '+
              'separates reliable and less reliable phase regions for artefact reduction. '+
              'Use this option to disable the novel inversion and approximately halve the runtime.'
     )
 
     parser.add_argument(
-        '--qsm_iterations',
-        type=int,
-        default=1000,
-        help='Number of iterations used for QSM reconstruction in tgv_qsm.'
-    )
-
-    parser.add_argument(
-        '--qsm_alphas',
-        type=float,
-        default=[0.0015, 0.0005],
-        nargs=2,
-        help='Regularisation alphas for tgv_qsm.'
-    )
-
-    parser.add_argument(
         '--inhomogeneity_correction',
         action='store_true',
-        help='Applies an inhomogeneity correction to the magnitude prior to masking'
-    )
-
-    parser.add_argument(
-        '--threshold',
-        type=float,
-        default=None,
-        help='Threshold percentage; anything less than the threshold will be excluded from the mask. ' +
-             'By default, the threshold is automatically chosen based on a \'gaussian\' algorithm.'
+        help='Applies an inhomogeneity correction to the magnitude prior to masking. This option is '+
+             'only relevant for magnitude-based masking, and is only recommended if there are obvious '+
+             'field bias problems in the magnitude images, which typically occur in ultra-high field '+
+             'acquisitions.'
     )
 
     parser.add_argument(
@@ -554,6 +491,23 @@ if __name__ == "__main__":
         help='When using magnitude or phase-based masking, this option adds a BET mask to the filled, '+
              'threshold-based mask. This is useful if areas of the sample are missing due to a failure '+
              'of the hole-filling algorithm.'
+    )
+    
+    parser.add_argument(
+        '--use_existing_masks',
+        action='store_true',
+        help='This option will use existing masks from the BIDS folder, when possible, instead of '+
+             'generating new ones. The masks will be selected based on the --mask_pattern argument. '+
+             'A single mask may be present (and will be applied to all echoes), or a mask for each '+
+             'echo can be used. When existing masks cannot be found, the chosen --masking algorithm '+
+             'will be used as a fallback.'
+    )
+    
+    parser.add_argument(
+        '--mask_pattern',
+        default='{subject}/{session}/extra_data/*{run}*mask*nii*',
+        help='Pattern used to identify mask files to be used when the --use_existing_masks option '+
+             'is enabled.'
     )
 
     parser.add_argument(
@@ -599,7 +553,7 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
@@ -609,7 +563,7 @@ if __name__ == "__main__":
     # path environment variable
     os.environ["PATH"] += os.pathsep + os.path.join(this_dir, "scripts")
 
-    # add this_dir and cwd to pythonpath (not sure if this_dir needed...)
+    # add this_dir and cwd to pythonpath
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + this_dir
     else:                          os.environ["PYTHONPATH"]  = this_dir
 
@@ -625,10 +579,10 @@ if __name__ == "__main__":
         config.set('logging', 'utils_level', 'DEBUG')
 
     # add_bet option only works with non-bet masking methods
-    args.add_bet = args.add_bet and args.masking != 'bet'
+    args.add_bet = args.add_bet and 'bet' not in args.masking
 
     # two-pass option does not work with 'bet' masking
-    args.two_pass = args.masking != 'bet' and not args.single_pass
+    args.two_pass = 'bet' not in args.masking and not args.single_pass
     args.single_pass = not args.two_pass
 
     # decide on inhomogeneity correction
@@ -666,7 +620,7 @@ if __name__ == "__main__":
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {qsmxt_version()}")
+        f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
         f.write(f"\nPython interpreter: {sys.executable}")
 
@@ -678,7 +632,7 @@ if __name__ == "__main__":
         
         if any_string_matches_any_node(['tgv']):
             f.write("\n\n - Langkammer C, Bredies K, Poser BA, et al. Fast quantitative susceptibility mapping using 3D EPI and total generalized variation. NeuroImage. 2015;111:622-630. doi:10.1016/j.neuroimage.2015.02.041")
-        if any_string_matches_any_node(['threshold-masking']) and args.threshold is None:
+        if any_string_matches_any_node(['threshold-masking']) and args.masking_threshold is None:
             f.write("\n\n - Balan AGR, Traina AJM, Ribeiro MX, Marques PMA, Traina Jr. C. Smart histogram analysis applied to the skull-stripping problem in T1-weighted MRI. Computers in Biology and Medicine. 2012;42(5):509-522. doi:10.1016/j.compbiomed.2012.01.004")
         if any_string_matches_any_node(['bet']):
             f.write("\n\n - Smith SM. Fast robust automated brain extraction. Human Brain Mapping. 2002;17(3):143-155. doi:10.1002/hbm.10062")

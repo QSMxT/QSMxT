@@ -10,7 +10,7 @@ import sys
 import pydicom  # pydicom is using the gdcm package for decompression
 import datetime
 
-from scripts.qsmxt_version import qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 def empty_dirs(root_dir='.', recursive=True):
@@ -40,26 +40,27 @@ def clean_text(string):
         string = string.replace(str(symbol), "_") # replace everything with an underscore
     return string.lower()  
 
-def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delete_originals):
-    os.makedirs(output_dir, exist_ok=True)
-    extension = '.IMA'
-    logger.log(LogLevel.INFO.value, "Reading file list...")
+def find_dicoms(input_dir, check_all_files):
     unsortedList = []
     for root, dirs, files in os.walk(input_dir):
-        for file in files:
-            if file[-4:] in ['.ima', '.IMA']: # exclude non-dicoms, good for messy folders
-                unsortedList.append(os.path.join(root, file))
-            elif file[-4:] in ['.dcm', '.DCM']:
-                extension = '.dcm'
-                unsortedList.append(os.path.join(root, file))
-            elif file[:3] == 'MR.':
-                extension = '.dcm'
-                unsortedList.append(os.path.join(root, file))
-            elif file[:2] == 'IM':
-                extension = '.dcm'
-                unsortedList.append(os.path.join(root, file))
-    logger.log(LogLevel.INFO.value, f"{len(unsortedList)} dicom files found.")
-    
+        for f in files:
+            file_extension = ".".join(f.split('.')[1:])
+            if file_extension.lower() in ['ima', 'dcm']:
+                unsortedList.append(os.path.join(root, f))
+    if not unsortedList or check_all_files:
+        if not unsortedList:
+            logger.log(LogLevel.WARNING.value, "No .IMA or .dcm files found! Checking all files for valid DICOM headers...")
+        for root, dirs, files in os.walk(input_dir):
+            for f in files:
+                ds = pydicom.read_file(os.path.join(root, f))
+                unsortedList.append(os.path.join(root, f))
+    return unsortedList
+
+def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, check_all_files, delete_originals):
+    os.makedirs(output_dir, exist_ok=True)
+    logger.log(LogLevel.INFO.value, "Reading file list...")
+    unsortedList = find_dicoms(input_dir, check_all_files)
+    logger.log(LogLevel.INFO.value, f"{len(unsortedList)} DICOM files found.")
     fail = False
 
     subjName_dates = []
@@ -68,7 +69,11 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
     logger.log(LogLevel.INFO.value, f"Sorting DICOMs in {output_dir}...")
     for dicom_loc in unsortedList:
         # read the file
-        ds = pydicom.read_file(dicom_loc, force=True)
+        try:
+            ds = pydicom.read_file(dicom_loc)
+        except:
+            logger.log(LogLevel.WARNING.value, f"Failed to read file as DICOM: {dicom_loc}. Skipping...")
+            continue
     
         # get patient, study, and series information
         patientName = clean_text(str(ds.get("PatientName", "NA")))
@@ -83,9 +88,10 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
         studyInstanceUID = ds.get("StudyInstanceUID","NA")
         seriesInstanceUID = ds.get("SeriesInstanceUID","NA")
         instanceNumber = str(ds.get("InstanceNumber","0"))
-        fileName = modality + "." + seriesInstanceUID + "." + instanceNumber + extension
+        fileName = modality + "." + seriesInstanceUID + "." + instanceNumber + ".dcm"
 
         subj_name = patientName if use_patient_names else patientID
+        subj_name = subj_name.replace('-', '').replace('_', '')
         subj_name = subj_name.replace('-', '').replace('_', '')
         
         # uncompress files (using the gdcm package)
@@ -128,36 +134,43 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, delet
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="QSMxT dicomSort: Sorts DICOM files into a folder structure of the form <out_dir>/<PatientID>_<StudyDate>/<SeriesDescription>/",
+        description="QSMxT dicomSort: Sorts DICOM files into a folder structure of the form <out_dir>/<Subject>/<Session>/<Series>",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
         'input_dir',
-        help='input DICOM directory; will be recursively searched for DICOM files'
+        help='Input DICOM directory to be recursively searched for DICOM files.'
     )
 
     parser.add_argument(
         'output_dir',
-        help='output directory for sorted DICOMs'
+        help='Output directory to house sorted DICOMs.'
     )
 
     parser.add_argument(
         '--use_patient_names',
         action='store_true',
-        help='use the PatientName rather than PatientID for subject folders'
+        help='Use the DICOM \'PatientName\' field rather than \'PatientID\' to identify subjects.'
     )
 
     parser.add_argument(
         '--use_session_dates',
         action='store_true',
-        help='Use the StudyDate field rather than an incrementer for session IDs'
+        help='Use the \'StudyDate\' field rather than an incrementer to identify scanning sessions.'
+    )
+
+    parser.add_argument(
+        '--check_all_files',
+        action='store_true',
+        help='Ignores the DICOM file extensions .dcm and .IMA and instead reads all files for valid DICOM headers. '+
+             'This is useful if some of your DICOM files have unusual file extensions or none at all.'
     )
 
     parser.add_argument(
         '--delete_originals',
         action='store_true',
-        help='delete the original DICOM files and folders after successfully sorting; by ' +
+        help='Delete the original DICOM files and folders after successfully sorting; by ' +
              'default this is on when input_dir == output_dir'
     )
 
@@ -176,13 +189,13 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {qsmxt_version()}")
+        f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
         f.write(f"\nPython interpreter: {sys.executable}")
 
@@ -200,6 +213,7 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
         use_patient_names=args.use_patient_names,
         use_session_dates=args.use_session_dates,
+        check_all_files=args.check_all_files,
         delete_originals=args.input_dir == args.output_dir or args.delete_originals
     )
 

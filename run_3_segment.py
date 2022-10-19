@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 
+
 from nipype.pipeline.engine import Workflow, Node
 from nipype.interfaces.io import DataSink
 from nipype.interfaces.ants.registration import RegistrationSynQuick
 from nipype.interfaces.ants.resampling import ApplyTransforms
-from scripts.qsmxt_version import qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 from interfaces import nipype_interface_fastsurfer as fastsurfer
@@ -114,7 +115,7 @@ def init_run_workflow(subject, session, run):
     # convert segmentation to nii
     n_fastsurfer_aseg_nii = Node(
         interface=mgz2nii.Mgz2NiiInterface(),
-        name='numpy_nibabel_mgz2nii',
+        name='numpy_numpy_nibabel_mgz2nii',
     )
     wf.connect([
         (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
@@ -137,8 +138,8 @@ def init_run_workflow(subject, session, run):
 
     n_datasink = Node(
         interface=DataSink(
-            base_directory=args.output_dir
-            #container=output_dir
+            base_directory=args.outputput_dir
+            #container=outputput_dir
         ),
         name='nipype_datasink'
     )
@@ -166,14 +167,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        'output_dir',
+        'outputput_dir',
         help='Output segmentation directory; will be created if it does not exist.'
     )
 
     parser.add_argument(
         '--work_dir',
         default=None,
-        help='NiPype working directory; defaults to \'work\' within \'output_dir\'.'
+        help='NiPype working directory; defaults to \'work\' within \'outputput_dir\'.'
     )
 
     parser.add_argument(
@@ -249,9 +250,9 @@ if __name__ == "__main__":
     g_args = lambda:None
 
     # ensure directories are complete and absolute
-    args.output_dir = os.path.abspath(args.output_dir)
+    args.outputput_dir = os.path.abspath(args.outputput_dir)
     args.bids_dir = os.path.abspath(args.bids_dir)
-    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.output_dir)
+    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.outputput_dir)
 
     # this script's directory
     this_dir = os.path.dirname(os.path.abspath(__file__))
@@ -268,7 +269,7 @@ if __name__ == "__main__":
         errorlevel=LogLevel.ERROR
     )
 
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
 
@@ -314,7 +315,7 @@ if __name__ == "__main__":
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {qsmxt_version()}")
+        f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
         f.write(f"\nPython interpreter: {sys.executable}")
 
@@ -323,9 +324,11 @@ if __name__ == "__main__":
         # qsmxt, nipype, fastsurfer, ants, nibabel
         f.write("\n\n - Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
         f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
+        f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
         f.write("\n\n - Henschel L, Conjeti S, Estrada S, Diers K, Fischl B, Reuter M. FastSurfer - A fast and accurate deep learning based neuroimaging pipeline. NeuroImage. 2020;219:117012. doi:10.1016/j.neuroimage.2020.117012")
         f.write("\n\n - Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")
+        f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n - Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
         f.write("\n\n")

@@ -1,5 +1,6 @@
 from nipype.interfaces.base import CommandLine, TraitedSpec, File, CommandLineInputSpec
-
+from scripts import qsmxt_functions
+import os
 
 class MakeHomogeneousInputSpec(CommandLineInputSpec):
     in_file = File(
@@ -23,4 +24,4 @@ class MakeHomogeneousOutputSpec(TraitedSpec):
 class MakeHomogeneousInterface(CommandLine):
     input_spec = MakeHomogeneousInputSpec
     output_spec = MakeHomogeneousOutputSpec
-    _cmd = "makehomogeneous.jl"
+    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "makehomogeneous.jl")

@@ -23,9 +23,9 @@ class Bet2InputSpec(CommandLineInputSpec):
         exists=False
     )
     fractional_intensity = traits.Float(
-        default=0.5,
+        mandatory=False,
         argstr="-f %f",
-        position=2
+        default=0.5
     )
 
 
@@ -38,5 +38,4 @@ class Bet2Interface(CommandLine):
     input_spec = Bet2InputSpec
     output_spec = Bet2OutputSpec
     _cmd = "bet"
-
 

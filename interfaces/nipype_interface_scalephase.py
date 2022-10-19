@@ -9,6 +9,8 @@ def scale_to_pi(in_file):
     import numpy as np
     nii = nib.load(in_file)
     data = nii.get_fdata()
+    if abs(np.round(np.min(data), 2)) == np.round(np.max(data), 2) == 3.14:
+        return in_file
     data = np.array(np.interp(data, (data.min(), data.max()), (-pi, +pi)), dtype=data.dtype)
     out_file = os.path.abspath(os.path.split(in_file)[1].replace(".nii", "_scaled.nii"))
     nib.save(nib.Nifti1Image(dataobj=data, header=nii.header, affine=nii.affine), out_file)

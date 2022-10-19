@@ -32,17 +32,25 @@ A user friendly way of running QSMxT in Windows, Mac or Linux is via the NeuroDe
    (*Neurodesk* > *Quantitative Imaging* > *qsmxt*)
 3. Follow the QSMxT usage instructions in the section below. Note that the `/neurodesktop-storage` folder is shared with the host OS for data sharing purposes (usually in `~/neurodesktop-storage` or `C:/neurodesktop-storage`). Begin by copying your DICOM data (or NIfTI data) into a folder in this directory on the host OS, then reach the folder by entering `cd /neurodesktop-storage` into the QSMxT window.
 
+#### Updating QSMxT within Neurodesk
+
+To use the latest version of the QSMxT container within an older version of Neurodesk, use:
+
+```
+bash /neurocommand/local/fetch_and_run.sh qsmxt 1.1.13 20221019
+```
+
 ### Docker container
 
 There is also a docker image available:
 
 For Windows:
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.13:20220829
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.13:20221019
 ```
 For Linux/Mac:
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.13:20220829
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.13:20221019
 ```
 
 ## QSMxT Usage
@@ -109,10 +117,10 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.13_20220829
-    cd qsmxt_1.1.13_20220829
-    ./run_transparent_singularity.sh --container qsmxt_1.1.13_20220829.simg
-    source activate_qsmxt_1.1.13_20220829.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.13_20221019
+    cd qsmxt_1.1.13_20221019
+    ./run_transparent_singularity.sh --container qsmxt_1.1.13_20221019.simg
+    source activate_qsmxt_1.1.13_20221019.simg.sh
     ```
 
 3. Clone the QSMxT repository:
@@ -127,7 +135,7 @@ bash Miniconda3-4.7.12.1-Linux-x86_64.sh -b
 source ~/.bashrc
 conda create -n qsmxt python=3.8
 conda activate qsmxt
-pip install psutil datetime nipype nibabel scipy pydicom
+pip install psutil datetime nipype nibabel nilearn scipy pydicom
 ```
 
 5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
@@ -140,9 +148,9 @@ You need:
 - bet2 (https://github.com/liangfu/bet2)
 - ANTs version=2.3.4
 - dcm2niix (https://github.com/rordenlab/dcm2niix)
-- miniconda version=4.7.12.1 with python3.8 and pip packages psutil, datetime, nipype, nibabel, scipy and pydicom
+- miniconda version=4.7.12.1 with python3.8 and pip packages psutil, datetime, nipype, nibabel, nilearn, scipy and pydicom
 - FastSurfer (https://github.com/Deep-MI/FastSurfer.git)
 - Bru2Nii v1.0.20180303 (https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip)
-- julia-1.6.1 with ArgParse and MriResearchTools
+- julia-1.6.1 with ArgParse, MriResearchTools, FFTW and RomeoApp (see https://github.com/korbinian90/RomeoApp.jl)
 
 Here is the detailed instruction that you could replicate: https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxtbase/build.sh and then on top https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxt/build.sh
