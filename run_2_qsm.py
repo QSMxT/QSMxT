@@ -14,20 +14,16 @@ from scripts.qsmxt_functions import get_qsmxt_version
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 from interfaces import nipype_interface_scalephase as scalephase
-from interfaces import nipype_interface_tgv_qsm as tgv
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
-from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
-from interfaces import nipype_interface_twopass as twopass
-from interfaces import nipype_interface_masking as masking
-from interfaces import nipype_interface_erode as erode
-from interfaces import nipype_interface_bet2 as bet2
-from interfaces import nipype_interface_phaseweights as phaseweights
+
 from interfaces import nipype_interface_json as json
 from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_axialsampling as sampling
 
 from workflows.unwrapping import unwrapping_workflow
 from workflows.nextqsm import nextqsm_B0_workflow, nextqsm_workflow
+from workflows.tgvqsm import add_tgvqsm_workflow
+from workflows.masking import add_masking_nodes
 
 import argparse
 
@@ -269,11 +265,11 @@ def init_run_workflow(subject, session, run):
         ])
 
     # masking steps
-    mn_mask, n_json = add_masking_nodes(wf, masking_method, mask_files, add_bet, mn_inputs, n_json, n_datasink)
+    mn_mask, n_json = add_masking_nodes(wf, args, masking_method, mask_files, add_bet, mn_inputs, n_json)
 
     # qsm steps
     if args.qsm_algorithm == 'tgv_qsm':
-        wf = add_tgvqsm_workflow(wf, mn_params, mn_inputs, mn_mask, n_datasink, magnitude_files[0], two_pass)
+        wf = add_tgvqsm_workflow(wf, args, mn_params, mn_inputs, mn_mask, n_datasink, magnitude_files[0], two_pass)
     elif args.qsm_algorithm == 'nextqsm':
         wf = addNextqsmWorkflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, args.nextqsm_unwrapping_algorithm)
     elif args.qsm_algorithm == 'nextqsm_combined':
@@ -285,271 +281,6 @@ def init_run_workflow(subject, session, run):
     
     return wf
 
-def add_masking_nodes(wf, masking_method, mask_files, add_bet, mn_inputs, n_json, n_datasink):
-
-    if not mask_files:    
-        # do phase weights if necessary
-        if masking_method == 'phase-based':
-            mn_phaseweights = MapNode(
-                interface=phaseweights.RomeoMaskingInterface(),
-                iterfield=['phase', 'mag'],
-                name='romeo-voxelquality'
-                # output: 'out_file'
-            )
-            mn_phaseweights.inputs.weight_type = "grad+second+mag"
-            wf.connect([
-                (mn_inputs, mn_phaseweights, [('phase_files', 'phase')]),
-                (mn_inputs, mn_phaseweights, [('magnitude_files', 'mag')])
-            ])
-
-        # do threshold-based masking if necessary
-        if masking_method in ['phase-based', 'magnitude-based']:
-            n_threshold_masking = Node(
-                interface=masking.MaskingInterface(),
-                name='scipy_numpy_nibabel_threshold-masking'
-                # inputs : ['in_files']
-            )
-            if args.masking_threshold: n_threshold_masking.inputs.threshold = args.masking_threshold
-
-            n_add_threshold_to_json = Node(
-                interface=addtojson.AddToJsonInterface(
-                    in_key = "Masking threshold"
-                ),
-                name="json_add-threshold"
-            )
-            wf.connect([
-                (n_json, n_add_threshold_to_json, [('out_file', 'in_file')]),
-                (n_threshold_masking, n_add_threshold_to_json, [('threshold', 'in_num_value')])
-            ])
-            # VERY HACK-Y
-            n_json = n_add_threshold_to_json
-            
-
-            if masking_method in ['phase-based']:    
-                wf.connect([
-                    (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
-                ])
-            elif masking_method == 'magnitude-based':
-                wf.connect([
-                    (mn_inputs, n_threshold_masking, [('magnitude_files', 'in_files')])
-                ])
-
-        # run bet if necessary
-        if masking_method in ['bet', 'bet-firstecho'] or add_bet:
-            def get_first(magnitude_files): return [magnitude_files[0] for f in magnitude_files]
-            n_getfirst = Node(
-                interface=Function(
-                    input_names=['magnitude_files'],
-                    output_names=['magnitude_file'],
-                    function=get_first
-                ),
-                name='func_get-first'
-            )
-            wf.connect([
-                (mn_inputs, n_getfirst, [('magnitude_files', 'magnitude_files')])
-            ])
-
-            mn_bet = MapNode(
-                interface=bet2.Bet2Interface(fractional_intensity=args.bet_fractional_intensity),
-                iterfield=['in_file'],
-                name='fsl-bet'
-                # output: 'mask_file'
-            )
-            if masking_method == 'bet-firstecho':
-                wf.connect([
-                    (n_getfirst, mn_bet, [('magnitude_file', 'in_file')])
-                ])
-            else:
-                wf.connect([
-                    (mn_inputs, mn_bet, [('magnitude_files', 'in_file')])
-                ])
-            mn_bet_erode = MapNode(
-                interface=erode.ErosionInterface(
-                    num_erosions=2
-                ),
-                iterfield=['in_file'],
-                name='scipy_numpy_nibabel_erode'
-            )
-            wf.connect([
-                (mn_bet, mn_bet_erode, [('mask_file', 'in_file')])
-            ])
-
-            # add bet if necessary
-            if add_bet:
-                mn_mask_plus_bet = MapNode(
-                    interface=twopass.TwopassNiftiInterface(),
-                    name='numpy_nibabel_mask-plus-bet',
-                    iterfield=['in_file1', 'in_file2'],
-                )
-                wf.connect([
-                    (n_threshold_masking, mn_mask_plus_bet, [('masks', 'in_file1')]),
-                    (mn_bet_erode, mn_mask_plus_bet, [('out_file', 'in_file2')])
-                ])
-
-    # link up nodes to get standardised outputs as 'masks' and 'masks_filled' in mn_mask
-    def repeat(masks, masks_filled):
-        return masks, masks_filled
-    mn_mask = MapNode(
-        interface=Function(
-            input_names=['masks', 'masks_filled'],
-            output_names=['masks', 'masks_filled'],
-            function=repeat
-        ),
-        iterfield=['masks', 'masks_filled'],
-        name='func_repeat-mask'
-    )
-    
-    if mask_files:
-        wf.connect([
-            (mn_inputs, mn_mask, [('mask_files', 'masks')]),
-            (mn_inputs, mn_mask, [('mask_files', 'masks_filled')])
-        ])
-    elif masking_method in ['bet', 'bet-firstecho']:
-        wf.connect([
-            (mn_bet, mn_mask, [('mask_file', 'masks')]),
-            (mn_bet, mn_mask, [('mask_file', 'masks_filled')]),
-        ])
-    elif masking_method in ['magnitude-based', 'phase-based']:
-        wf.connect([
-            (n_threshold_masking, mn_mask, [('masks', 'masks')])
-        ])
-        if not add_bet:
-            wf.connect([
-                (n_threshold_masking, mn_mask, [('masks_filled', 'masks_filled')])
-            ])
-        else:
-            wf.connect([
-                (mn_mask_plus_bet, mn_mask, [('out_file', 'masks_filled')])
-            ])
-
-    return mn_mask, n_json
-
-def add_tgvqsm_workflow(wf, mn_params, mn_inputs, mn_mask, n_datasink, magnitude_file, two_pass):
-    # === Single-pass QSM reconstruction (filled) ===
-    mn_qsm_filled = MapNode(
-        interface=tgv.QSMappingInterface(
-            iterations=args.tgvqsm_iterations,
-            alpha=args.tgvqsm_alphas,
-            erosions=0 if args.two_pass else 5,
-            num_threads=args.qsm_threads,
-            out_suffix='_qsm-filled',
-            extra_arguments='--ignore-orientation --no-resampling'
-        ),
-        iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
-        name='tgv-qsm_filled'
-        # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
-        # output: 'out_file'
-    )
-    mn_qsm_filled.plugin_args = {
-        'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.qsm_threads}:mem=20gb:vmem=20gb',
-        'overwrite': True
-    }
-    wf.connect([
-        (mn_params, mn_qsm_filled, [('EchoTime', 'TE')]),
-        (mn_params, mn_qsm_filled, [('MagneticFieldStrength', 'b0')]),
-        (mn_mask, mn_qsm_filled, [('masks_filled', 'mask_file')]),
-        (mn_inputs, mn_qsm_filled, [('phase_files', 'phase_file')]),
-    ])
-
-    # qsm averaging
-    n_qsm_filled_average = Node(
-        interface=nonzeroaverage.NonzeroAverageInterface(),
-        name='numpy_nibabel_qsm-filled-average'
-        # input : in_files
-        # output : out_file
-    )
-    wf.connect([
-        (mn_qsm_filled, n_qsm_filled_average, [('out_file', 'in_files')])
-    ])
-
-    # resample qsm to original
-    n_resample_qsm = Node(
-        interface=sampling.ResampleLikeInterface(
-            in_like=magnitude_file
-        ),
-        name='nibabel_numpy_nilearn_resample-qsm'
-    )
-    wf.connect([
-        (n_qsm_filled_average, n_resample_qsm, [('out_file', 'in_file')]),
-        (n_resample_qsm, n_datasink, [('out_file', 'qsm_singlepass' if args.two_pass else 'qsm_final')]),
-    ])
-
-    # === Two-pass QSM reconstruction (not filled) ===
-    if two_pass:
-        mn_qsm = MapNode(
-            interface=tgv.QSMappingInterface(
-                iterations=args.tgvqsm_iterations,
-                alpha=args.tgvqsm_alphas,
-                erosions=0,
-                num_threads=args.qsm_threads,
-                out_suffix='_qsm',
-                extra_arguments='--ignore-orientation --no-resampling'
-            ),
-            iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
-            name='tgv-qsm_intermediate'
-            # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
-            # output: 'out_file'
-        )
-
-        # args for PBS
-        mn_qsm.plugin_args = {
-            'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.qsm_threads}:mem=20gb:vmem=20gb',
-            'overwrite': True
-        }
-
-        wf.connect([
-            (mn_params, mn_qsm, [('EchoTime', 'TE')]),
-            (mn_params, mn_qsm, [('MagneticFieldStrength', 'b0')]),
-            (mn_mask, mn_qsm, [('masks', 'mask_file')]),
-            (mn_inputs, mn_qsm, [('phase_files', 'phase_file')])
-        ])
-
-        # qsm averaging
-        n_qsm_average = Node(
-            interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='numpy_nibabel_qsm-average'
-            # input : in_files
-            # output : out_file
-        )
-        wf.connect([
-            (mn_qsm, n_qsm_average, [('out_file', 'in_files')])
-        ])
-
-        # Two-pass combination step
-        mn_qsm_twopass = MapNode(
-            interface=twopass.TwopassNiftiInterface(),
-            name='numpy_nibabel_twopass',
-            iterfield=['in_file1', 'in_file2']
-        )
-        wf.connect([
-            (mn_qsm, mn_qsm_twopass, [('out_file', 'in_file1')]),
-            (mn_qsm_filled, mn_qsm_twopass, [('out_file', 'in_file2')]),
-            #(mn_mask, mn_qsm_twopass, [('mask_file', 'in_maskFile')])
-        ])
-
-        n_qsm_twopass_average = Node(
-            interface=nonzeroaverage.NonzeroAverageInterface(),
-            name='numpy_nibabel_twopass-average'
-            # input : in_files
-            # output: out_file
-        )
-        wf.connect([
-            (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')])
-        ])
-
-        # resample qsm to original
-        n_resample_qsm_twopass = Node(
-            interface=sampling.ResampleLikeInterface(
-                in_like=magnitude_file
-            ),
-            name='nibabel_numpy_nilearn_resample-qsm-twopass'
-        )
-        wf.connect([
-            (n_qsm_twopass_average, n_resample_qsm_twopass, [('out_file', 'in_file')]),
-            (n_resample_qsm_twopass, n_datasink, [('out_file', 'qsm_final')]),
-        ])
-
-    return wf
 
 def addB0NextqsmB0Workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink):
     # extract the fieldstrength of the first echo for input to nextqsm Node (not MapNode)
