@@ -34,6 +34,7 @@ def nextqsm_workflow(name='nextqsm'):
         name='nextqsm'
         # output: 'out_file'
     )
+    nextqsm.estimated_memory_gb = 13
     average = Node(
         interface=nonzeroaverage.NonzeroAverageInterface(),
         name='nibabel_nextqsm-average'
