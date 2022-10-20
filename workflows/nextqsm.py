@@ -1,8 +1,11 @@
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype.interfaces.utility import IdentityInterface
 from nipype.interfaces.fsl import ImageMaths
-import interfaces.nipype_interface_nextqsm as nextqsm_interface
+
+from workflows.unwrapping import unwrapping_workflow
+from interfaces import nipype_interface_nextqsm as nextqsm_interface
 from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
+
 
 def nextqsm_workflow(name='nextqsm'):
     wf = Workflow(name)
@@ -119,4 +122,58 @@ def nextqsm_B0_workflow(name='nextqsm_B0', use_B0_mask=False, B0_threshold=0.5):
         ])
     
     return wf
+
+
+def add_b0nextqsm_workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink):
+    # extract the fieldstrength of the first echo for input to nextqsm Node (not MapNode)
+    def first(list=None):
+        return list[0]
+    n_fieldStrength = Node(Function(input_names="list",
+                                    output_names=["fieldStrength"],
+                                    function=first),
+                            name='extract_fieldStrength')
+    n_mask = Node(Function(input_names="list", # TODO try to use B0 phase-based mask
+                                        output_names=["out_file"],
+                                        function=first),
+                                name='extract_Mask')
+    wf_unwrapping = unwrapping_workflow("romeoB0")
+    wf_nextqsmB0 = nextqsm_B0_workflow()
     
+    wf.connect([
+        (mn_inputs, wf_unwrapping, [('phase_files', 'inputnode.wrapped_phase')]),
+        (mn_inputs, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
+        (mn_params, wf_unwrapping, [('EchoTime', 'inputnode.TE')]),
+        
+        (wf_unwrapping, wf_nextqsmB0, [('outputnode.B0', 'inputnode.B0'),]),
+        
+        (mn_mask, n_mask, [('masks_filled', 'list'),]),
+        (n_mask, wf_nextqsmB0, [('out_file', 'inputnode.mask'),]),
+        (mn_params, n_fieldStrength, [('MagneticFieldStrength', 'list')]),
+        (n_fieldStrength, wf_nextqsmB0, [('fieldStrength', 'inputnode.fieldStrength'),]),
+        
+        (wf_nextqsmB0, n_datasink, [('outputnode.qsm', 'final_qsm')]),
+    ])
+
+    return wf
+
+
+def add_nextqsm_workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, unwrapping_type):
+    wf_unwrapping = unwrapping_workflow(unwrapping_type)
+    wf_nextqsm = nextqsm_workflow()
+    
+    wf.connect([
+        (mn_inputs, wf_unwrapping, [('phase_files', 'inputnode.wrapped_phase')]),
+        (mn_inputs, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
+        (mn_params, wf_unwrapping, [('EchoTime', 'inputnode.TE')]),
+        
+        (wf_unwrapping, wf_nextqsm, [('outputnode.unwrapped_phase', 'inputnode.unwrapped_phase')]),
+        (mn_mask, wf_nextqsm, [('masks_filled', 'inputnode.mask')]),
+        (mn_params, wf_nextqsm, [('EchoTime', 'inputnode.TE'),
+                                 ('MagneticFieldStrength', 'inputnode.fieldStrength')]),
+        
+        (wf_nextqsm, n_datasink, [('outputnode.qsm', 'qsm_echo'),
+                                  ('outputnode.qsm_average', 'qsm_final')])
+    ])
+
+    return wf
+

@@ -3,6 +3,7 @@
 import sys
 import os
 import glob
+import copy
 import psutil
 import datetime
 import argparse
@@ -19,8 +20,7 @@ from interfaces import nipype_interface_json as json
 from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_axialsampling as sampling
 
-from workflows.unwrapping import unwrapping_workflow
-from workflows.nextqsm import nextqsm_B0_workflow, nextqsm_workflow
+from workflows.nextqsm import add_nextqsm_workflow, add_b0nextqsm_workflow
 from workflows.tgvqsm import add_tgvqsm_workflow
 from workflows.masking import add_masking_nodes
 
@@ -82,32 +82,26 @@ def init_session_workflow(subject, session):
     wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow_qsm", subject, session))
     wf.add_nodes([
         node for node in
-        [init_run_workflow(subject, session, run) for run in runs]
+        [init_run_workflow(subject, session, run, copy.deepcopy(args)) for run in runs]
         if node
     ])
     return wf
 
-def init_run_workflow(subject, session, run):
+def init_run_workflow(subject, session, run, run_args):
     logger.log(LogLevel.INFO.value, f"Creating nipype workflow for {subject}/{session}/{run}...")
 
-    # create copies of command-line arguments that may need to change for this run (if problems occur)
-    two_pass = args.two_pass
-    masking_method = args.masking
-    add_bet = args.add_bet
-    inhomogeneity_correction = args.inhomogeneity_correction
-
     # get relevant files from this run
-    phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.format(subject=subject, session=session, run=run))
-    phase_files = sorted(glob.glob(phase_pattern))[:args.num_echoes_to_process]
+    phase_pattern = os.path.join(run_args.bids_dir, run_args.phase_pattern.format(subject=subject, session=session, run=run))
+    phase_files = sorted(glob.glob(phase_pattern))[:run_args.num_echoes_to_process]
     
-    magnitude_pattern = os.path.join(args.bids_dir, args.magnitude_pattern.format(subject=subject, session=session, run=run))
-    magnitude_files = sorted(glob.glob(magnitude_pattern))[:args.num_echoes_to_process]
+    magnitude_pattern = os.path.join(run_args.bids_dir, run_args.magnitude_pattern.format(subject=subject, session=session, run=run))
+    magnitude_files = sorted(glob.glob(magnitude_pattern))[:run_args.num_echoes_to_process]
 
-    params_pattern = os.path.join(args.bids_dir, args.phase_pattern.format(subject=subject, session=session, run=run).replace("nii.gz", "nii").replace("nii", "json"))
-    params_files = sorted(glob.glob(params_pattern))[:args.num_echoes_to_process]
+    params_pattern = os.path.join(run_args.bids_dir, run_args.phase_pattern.format(subject=subject, session=session, run=run).replace("nii.gz", "nii").replace("nii", "json"))
+    params_files = sorted(glob.glob(params_pattern))[:run_args.num_echoes_to_process]
     
-    mask_pattern = os.path.join(args.bids_dir, args.mask_pattern.format(subject=subject, session=session, run=run))
-    mask_files = sorted(glob.glob(mask_pattern))[:args.num_echoes_to_process] if args.use_existing_masks else []
+    mask_pattern = os.path.join(run_args.bids_dir, run_args.mask_pattern.format(subject=subject, session=session, run=run))
+    mask_files = sorted(glob.glob(mask_pattern))[:run_args.num_echoes_to_process] if run_args.use_existing_masks else []
     
     # handle any errors related to files and adjust any settings if needed
     if not phase_files:
@@ -116,28 +110,29 @@ def init_run_workflow(subject, session, run):
     if len(phase_files) != len(params_files):
         logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
         return
-    if (not magnitude_files and any([masking_method == 'magnitude-based', 'bet' in masking_method, add_bet, inhomogeneity_correction])):
+    if (not magnitude_files and any([run_args.masking == 'magnitude-based', 'bet' in run_args.masking, run_args.add_bet, run_args.inhomogeneity_correction])):
         logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
-        masking_method = 'phase-based'
-        add_bet = False
-        inhomogeneity_correction = False
-    if args.use_existing_masks and not mask_files:
-        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {masking_method} masking.")
-    if args.use_existing_masks and len(mask_files) > 1 and len(mask_files) != len(phase_files):
-        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but unequal number of mask and phase files present. Reverting to {masking_method} masking.")
+        run_args.masking = 'phase-based'
+        run_args.add_bet = False
+        run_args.inhomogeneity_correction = False
+    if run_args.use_existing_masks and not mask_files:
+        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking} masking.")
+    if run_args.use_existing_masks and len(mask_files) > 1 and len(mask_files) != len(phase_files):
+        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but unequal number of mask and phase files present. Reverting to {run_args.masking} masking.")
         mask_files = []
-    if args.use_existing_masks and mask_files:
-        inhomogeneity_correction = False
-        two_pass = False
-        add_bet = False
+    if run_args.use_existing_masks and mask_files:
+        run_args.inhomogeneity_correction = False
+        run_args.two_pass = False
+        run_args.single_pass = True
+        run_args.add_bet = False
     
 
     # create nipype workflow for this run
-    wf = Workflow(run, base_dir=os.path.join(args.output_dir, "workflow_qsm", subject, session, run))
+    wf = Workflow(run, base_dir=os.path.join(run_args.output_dir, "workflow_qsm", subject, session, run))
 
     # datasink
     n_datasink = Node(
-        interface=DataSink(base_directory=args.output_dir),
+        interface=DataSink(base_directory=run_args.output_dir),
         name='nipype_datasink'
     )
 
@@ -148,9 +143,9 @@ def init_run_workflow(subject, session, run):
                 "QSMxT version" : get_qsmxt_version(),
                 "Run command" : str.join(" ", sys.argv),
                 "Python interpreter" : sys.executable,
-                "Inhomogeneity correction" : inhomogeneity_correction,
-                "QSM algorithm" : f"{args.qsm_algorithm}" + (f" with two-pass algorithm" if two_pass else ""),
-                "Masking algorithm" : (f"{masking_method}" + (f" plus BET" if add_bet else "")) if not mask_files else ("Predefined (one mask)" if len(mask_files) == 1 else "Predefined (multi-echo mask)")
+                "Inhomogeneity correction" : run_args.inhomogeneity_correction,
+                "QSM algorithm" : f"{run_args.qsm_algorithm}" + (f" with two-pass algorithm" if run_args.two_pass else ""),
+                "Masking algorithm" : (f"{run_args.masking}" + (f" plus BET" if run_args.add_bet else "")) if not mask_files else ("Predefined (one mask)" if len(mask_files) == 1 else "Predefined (multi-echo mask)")
             },
             out_file=f"{subject}_{session}_{run}_qsmxt-header.json"
         ),
@@ -223,7 +218,7 @@ def init_run_workflow(subject, session, run):
         ])
 
     # run homogeneity filter if necessary
-    if inhomogeneity_correction:
+    if run_args.inhomogeneity_correction:
         mn_inhomogeneity_correction = MapNode(
             interface=makehomogeneous.MakeHomogeneousInterface(),
             iterfield=['in_file'],
@@ -252,7 +247,7 @@ def init_run_workflow(subject, session, run):
         wf.connect([
             (mn_resample_inputs, mn_inputs, [('out_mask', 'mask_files')])
         ])
-    if inhomogeneity_correction:
+    if run_args.inhomogeneity_correction:
         wf.connect([
             (mn_inhomogeneity_correction, mn_inputs, [('out_file', 'magnitude_files')])
         ])
@@ -262,73 +257,20 @@ def init_run_workflow(subject, session, run):
         ])
 
     # masking steps
-    mn_mask, n_json = add_masking_nodes(wf, args, masking_method, mask_files, add_bet, mn_inputs, n_json)
+    mn_mask, n_json = add_masking_nodes(wf, run_args, mask_files, mn_inputs, n_json)
 
     # qsm steps
-    if args.qsm_algorithm == 'tgv_qsm':
-        wf = add_tgvqsm_workflow(wf, args, mn_params, mn_inputs, mn_mask, n_datasink, magnitude_files[0], two_pass)
-    elif args.qsm_algorithm == 'nextqsm':
-        wf = addNextqsmWorkflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, args.nextqsm_unwrapping_algorithm)
-    elif args.qsm_algorithm == 'nextqsm_combined':
-        wf = addB0NextqsmB0Workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink)
+    if run_args.qsm_algorithm == 'tgv_qsm':
+        wf = add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink, magnitude_files[0])
+    elif run_args.qsm_algorithm == 'nextqsm':
+        wf = add_nextqsm_workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, run_args.nextqsm_unwrapping_algorithm)
+    elif run_args.qsm_algorithm == 'nextqsm_combined':
+        wf = add_b0nextqsm_workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink)
     
     wf.connect([
         (n_json, n_datasink, [('out_file', 'qsm_headers')])
     ])
     
-    return wf
-
-
-def addB0NextqsmB0Workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink):
-    # extract the fieldstrength of the first echo for input to nextqsm Node (not MapNode)
-    def first(list=None):
-        return list[0]
-    n_fieldStrength = Node(Function(input_names="list",
-                                    output_names=["fieldStrength"],
-                                    function=first),
-                            name='extract_fieldStrength')
-    n_mask = Node(Function(input_names="list", # TODO try to use B0 phase-based mask
-                                        output_names=["out_file"],
-                                        function=first),
-                                name='extract_Mask')
-    wf_unwrapping = unwrapping_workflow("romeoB0")
-    wf_nextqsmB0 = nextqsm_B0_workflow()
-    
-    wf.connect([
-        (mn_inputs, wf_unwrapping, [('phase_files', 'inputnode.wrapped_phase')]),
-        (mn_inputs, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
-        (mn_params, wf_unwrapping, [('EchoTime', 'inputnode.TE')]),
-        
-        (wf_unwrapping, wf_nextqsmB0, [('outputnode.B0', 'inputnode.B0'),]),
-        
-        (mn_mask, n_mask, [('masks_filled', 'list'),]),
-        (n_mask, wf_nextqsmB0, [('out_file', 'inputnode.mask'),]),
-        (mn_params, n_fieldStrength, [('MagneticFieldStrength', 'list')]),
-        (n_fieldStrength, wf_nextqsmB0, [('fieldStrength', 'inputnode.fieldStrength'),]),
-        
-        (wf_nextqsmB0, n_datasink, [('outputnode.qsm', 'final_qsm')]),
-    ])
-
-    return wf
-    
-def addNextqsmWorkflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, unwrapping_type):
-    wf_unwrapping = unwrapping_workflow(unwrapping_type)
-    wf_nextqsm = nextqsm_workflow()
-    
-    wf.connect([
-        (mn_inputs, wf_unwrapping, [('phase_files', 'inputnode.wrapped_phase')]),
-        (mn_inputs, wf_unwrapping, [('magnitude_files', 'inputnode.mag')]),
-        (mn_params, wf_unwrapping, [('EchoTime', 'inputnode.TE')]),
-        
-        (wf_unwrapping, wf_nextqsm, [('outputnode.unwrapped_phase', 'inputnode.unwrapped_phase')]),
-        (mn_mask, wf_nextqsm, [('masks_filled', 'inputnode.mask')]),
-        (mn_params, wf_nextqsm, [('EchoTime', 'inputnode.TE'),
-                                 ('MagneticFieldStrength', 'inputnode.fieldStrength')]),
-        
-        (wf_nextqsm, n_datasink, [('outputnode.qsm', 'qsm_echo'),
-                                  ('outputnode.qsm_average', 'qsm_final')])
-    ])
-
     return wf
 
 def parse_args(args):
@@ -403,11 +345,11 @@ def parse_args(args):
         '--qsm_algorithm',
         default='tgv_qsm',
         choices=['tgv_qsm', 'nextqsm'],
-        help="The QSM algorithm to use.\n\t- The tgv_qsm algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 "+
+        help="The QSM algorithm to use. The tgv_qsm algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 "+
              "from Langkammer et al. By default, the tgv_qsm algorithm also includes a two-pass inversion that "+
-             "aims to mitigate streaking artefacts in QSM based on doi: . The two-pass inversion can be disabled "+
-             "to reduce runtime by half by specifying --single_pass."
-             "\n\tThe NeXtQSM option requires NeXtQSM installed (available by default in the QSMxT container) and "+
+             "aims to mitigate streaking artefacts in QSM based on doi:10.1002/mrm.29048. The two-pass "+
+             "inversion can be disabled to reduce runtime by half by specifying --single_pass. "+
+             "The NeXtQSM option requires NeXtQSM installed (available by default in the QSMxT container) and "+
              "uses a deep learning model implemented in Tensorflow based on doi:10.48550/arXiv.2107.07752 from "+
              "Cognolato et al."
     )
@@ -532,6 +474,7 @@ def parse_args(args):
     )
     
     args = parser.parse_args(args)
+    os.makedirs(args.output_dir, exist_ok=True)
     
     return args
 
@@ -609,9 +552,6 @@ def write_references(wf):
 if __name__ == "__main__":
     # parse command-line arguments
     args = parse_args(sys.argv[1:])
-    
-    # create directories
-    os.makedirs(args.output_dir, exist_ok=True)
     
     # setup logger
     logger = make_logger(

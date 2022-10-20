@@ -8,11 +8,11 @@ from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_twopass as twopass
 
-def add_masking_nodes(wf, args, masking_method, mask_files, add_bet, mn_inputs, n_json):
+def add_masking_nodes(wf, run_args, mask_files, mn_inputs, n_json):
 
     if not mask_files:    
         # do phase weights if necessary
-        if masking_method == 'phase-based':
+        if run_args.masking == 'phase-based':
             mn_phaseweights = MapNode(
                 interface=phaseweights.RomeoMaskingInterface(),
                 iterfield=['phase', 'mag'],
@@ -26,13 +26,13 @@ def add_masking_nodes(wf, args, masking_method, mask_files, add_bet, mn_inputs, 
             ])
 
         # do threshold-based masking if necessary
-        if masking_method in ['phase-based', 'magnitude-based']:
+        if run_args.masking in ['phase-based', 'magnitude-based']:
             n_threshold_masking = Node(
                 interface=masking.MaskingInterface(),
                 name='scipy_numpy_nibabel_threshold-masking'
                 # inputs : ['in_files']
             )
-            if args.masking_threshold: n_threshold_masking.inputs.threshold = args.masking_threshold
+            if run_args.masking_threshold: n_threshold_masking.inputs.threshold = run_args.masking_threshold
 
             n_add_threshold_to_json = Node(
                 interface=addtojson.AddToJsonInterface(
@@ -48,17 +48,17 @@ def add_masking_nodes(wf, args, masking_method, mask_files, add_bet, mn_inputs, 
             n_json = n_add_threshold_to_json
             
 
-            if masking_method in ['phase-based']:    
+            if run_args.masking in ['phase-based']:    
                 wf.connect([
                     (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
                 ])
-            elif masking_method == 'magnitude-based':
+            elif run_args.masking == 'magnitude-based':
                 wf.connect([
                     (mn_inputs, n_threshold_masking, [('magnitude_files', 'in_files')])
                 ])
 
         # run bet if necessary
-        if masking_method in ['bet', 'bet-firstecho'] or add_bet:
+        if run_args.masking in ['bet', 'bet-firstecho'] or run_args.add_bet:
             def get_first(magnitude_files): return [magnitude_files[0] for f in magnitude_files]
             n_getfirst = Node(
                 interface=Function(
@@ -73,12 +73,12 @@ def add_masking_nodes(wf, args, masking_method, mask_files, add_bet, mn_inputs, 
             ])
 
             mn_bet = MapNode(
-                interface=bet2.Bet2Interface(fractional_intensity=args.bet_fractional_intensity),
+                interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
                 name='fsl-bet'
                 # output: 'mask_file'
             )
-            if masking_method == 'bet-firstecho':
+            if run_args.masking == 'bet-firstecho':
                 wf.connect([
                     (n_getfirst, mn_bet, [('magnitude_file', 'in_file')])
                 ])
@@ -98,7 +98,7 @@ def add_masking_nodes(wf, args, masking_method, mask_files, add_bet, mn_inputs, 
             ])
 
             # add bet if necessary
-            if add_bet:
+            if run_args.add_bet:
                 mn_mask_plus_bet = MapNode(
                     interface=twopass.TwopassNiftiInterface(),
                     name='numpy_nibabel_mask-plus-bet',
@@ -127,16 +127,16 @@ def add_masking_nodes(wf, args, masking_method, mask_files, add_bet, mn_inputs, 
             (mn_inputs, mn_mask, [('mask_files', 'masks')]),
             (mn_inputs, mn_mask, [('mask_files', 'masks_filled')])
         ])
-    elif masking_method in ['bet', 'bet-firstecho']:
+    elif run_args.masking in ['bet', 'bet-firstecho']:
         wf.connect([
             (mn_bet, mn_mask, [('mask_file', 'masks')]),
             (mn_bet, mn_mask, [('mask_file', 'masks_filled')]),
         ])
-    elif masking_method in ['magnitude-based', 'phase-based']:
+    elif run_args.masking in ['magnitude-based', 'phase-based']:
         wf.connect([
             (n_threshold_masking, mn_mask, [('masks', 'masks')])
         ])
-        if not add_bet:
+        if not run_args.add_bet:
             wf.connect([
                 (n_threshold_masking, mn_mask, [('masks_filled', 'masks_filled')])
             ])
