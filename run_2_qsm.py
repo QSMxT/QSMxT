@@ -5,11 +5,12 @@ import os
 import glob
 import psutil
 import datetime
+import argparse
 
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
-from scripts.qsmxt_functions import get_qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 from interfaces import nipype_interface_scalephase as scalephase
@@ -23,8 +24,6 @@ from workflows.nextqsm import nextqsm_B0_workflow, nextqsm_workflow
 from workflows.tgvqsm import add_tgvqsm_workflow
 from workflows.masking import add_masking_nodes
 
-import argparse
-
 
 def init_workflow():
     subjects = [
@@ -35,7 +34,7 @@ def init_workflow():
     if not subjects:
         logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, args.session_pattern)}")
         exit(1)
-    wf = Workflow("workflow_qsm", base_dir=args.work_dir)
+    wf = Workflow("workflow_qsm", base_dir=args.output_dir)
     wf.add_nodes([
         node for node in
         [init_subject_workflow(subject) for subject in subjects]
@@ -54,7 +53,7 @@ def init_subject_workflow(
     if not sessions:
         logger.log(LogLevel.ERROR.value, f"No sessions found in: {os.path.join(args.bids_dir, subject, args.session_pattern)}")
         exit(1)
-    wf = Workflow(subject, base_dir=os.path.join(args.work_dir, "workflow_qsm"))
+    wf = Workflow(subject, base_dir=os.path.join(args.output_dir, "workflow_qsm"))
     wf.add_nodes([
         node for node in
         [init_session_workflow(subject, session) for session in sessions]
@@ -80,7 +79,7 @@ def init_session_workflow(subject, session):
         for path in phase_files
     ])))
     
-    wf = Workflow(session, base_dir=os.path.join(args.work_dir, "workflow_qsm", subject, session))
+    wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow_qsm", subject, session))
     wf.add_nodes([
         node for node in
         [init_run_workflow(subject, session, run) for run in runs]
@@ -134,7 +133,7 @@ def init_run_workflow(subject, session, run):
     
 
     # create nipype workflow for this run
-    wf = Workflow(run, base_dir=os.path.join(args.work_dir, "workflow_qsm", subject, session, run))
+    wf = Workflow(run, base_dir=os.path.join(args.output_dir, "workflow_qsm", subject, session, run))
 
     # datasink
     n_datasink = Node(
@@ -340,6 +339,7 @@ def parse_args(args):
 
     parser.add_argument(
         'bids_dir',
+        type=os.path.abspath,
         help='Input data folder generated using run_1_dicomConvert.py. You can also use a ' +
              'previously existing BIDS folder. In this case, ensure that the --subject_pattern, '+
              '--session_pattern, --magnitude_pattern and --phase_pattern are correct for your data.'
@@ -347,6 +347,7 @@ def parse_args(args):
 
     parser.add_argument(
         'output_dir',
+        type=os.path.abspath,
         help='Output QSM folder; will be created if it does not exist.'
     )
 
@@ -435,14 +436,15 @@ def parse_args(args):
 
     parser.add_argument(
         '--masking',
-        default='phase-based',
+        default=None,
         choices=['phase-based', 'magnitude-based', 'bet', 'bet-firstecho'],
-        help='Masking strategy.\n\t- Phase-based and magnitude-based masking generate masks by ' +
+        help='Masking strategy. Phase-based and magnitude-based masking generate masks by ' +
              'thresholding out regions below a percentage of the signal histogram (adjust using the '+
              '--masking_threshold parameter). For phase-based masking, the spatial phase coherence is '+
-             'thresholded and the magnitude is not required.\n\tBET masking generates a multi-echo mask '+
+             'thresholded and the magnitude is not required. BET masking generates a multi-echo mask '+
              'using the Brain Extraction Tool (BET), with the \'bet-firstecho\' option generating only a '+
-             'single BET mask based on the first echo magnitude image.'
+             'single BET mask based on the first echo magnitude image. The default masking algorithm for '+
+             'the tgvqsm algorithm is phase-based, and the default for nextqsm is bet-firstecho.'
     )
 
     def between_0_and_1(num):
@@ -529,90 +531,41 @@ def parse_args(args):
         help='Enables some nipype settings for debugging.'
     )
     
-    return parser.parse_args(args)
-
-if __name__ == "__main__":
-    # parse command-line arguments
-    args = parse_args(sys.argv[1:])
+    args = parser.parse_args(args)
     
-    # ensure directories are complete and absolute
-    args.bids_dir = os.path.abspath(args.bids_dir)
-    args.output_dir = os.path.abspath(args.output_dir)
-    args.work_dir = os.path.abspath(args.output_dir)
+    return args
 
-    # this script's directory
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-
-    os.makedirs(args.work_dir, exist_ok=True)
-    os.makedirs(args.output_dir, exist_ok=True)
-
-    # setup logger
-    logger = make_logger(
-        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
-        printlevel=LogLevel.INFO,
-        writelevel=LogLevel.INFO,
-        warnlevel=LogLevel.WARNING,
-        errorlevel=LogLevel.ERROR
-    )
-
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
-    logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
-    logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
-
-    # misc environment variables
-    os.environ["FSLOUTPUTTYPE"] = "NIFTI"
-
-    # path environment variable
-    os.environ["PATH"] += os.pathsep + os.path.join(this_dir, "scripts")
-
-    # add this_dir and cwd to pythonpath
-    if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + this_dir
-    else:                          os.environ["PYTHONPATH"]  = this_dir
-
-    # debug options
-    if args.debug:
-        from nipype import config
-        config.enable_debug_mode()
-        config.set('execution', 'stop_on_first_crash', 'true')
-        config.set('execution', 'remove_unnecessary_outputs', 'false')
-        config.set('execution', 'keep_inputs', 'true')
-        config.set('logging', 'workflow_level', 'DEBUG')
-        config.set('logging', 'interface_level', 'DEBUG')
-        config.set('logging', 'utils_level', 'DEBUG')
-
+def process_args(args):
+    # default masking settings for QSM algorithms
+    if not args.masking:
+        if args.qsm_algorithm == 'tgv_qsm':
+            args.masking = 'phase-based'
+        elif args.qsm_algorithm == 'nextqsm':
+            args.masking = 'bet-firstecho'
+    
     # add_bet option only works with non-bet masking methods
-    args.add_bet = args.add_bet and 'bet' not in args.masking
+    args.add_bet &= 'bet' not in args.masking
 
     # two-pass option does not work with 'bet' masking
     args.two_pass = 'bet' not in args.masking and not args.single_pass
     args.single_pass = not args.two_pass
 
     # decide on inhomogeneity correction
-    args.inhomogeneity_correction = args.inhomogeneity_correction and (args.add_bet or 'phase-based' not in args.masking)
+    args.inhomogeneity_correction &= (args.add_bet or 'phase-based' not in args.masking)
 
-    # set number of QSM threads
-    n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
-    
     # set number of concurrent processes to run depending on
     # available CPUs and RAM (max 1 per 6 GB of available RAM)
     if not args.n_procs:
-        available_ram_gb = psutil.virtual_memory().available / 1e9
-        args.n_procs = max(1, min(int(available_ram_gb / 6), n_cpus))
-        if available_ram_gb < 6:
-            logger.log(LogLevel.WARNING.value, f"Less than 6 GB of memory available ({available_ram_gb} GB). At least 6 GB is recommended. You may need to close background programs.")
-        logger.log(LogLevel.INFO.value, f"Running with {args.n_procs} processors.")
+        n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
+        args.n_procs = n_cpus
 
     #qsm_threads should be set to adjusted n_procs (either computed earlier or given via cli)
     #args.qsm_threads = args.n_procs if not args.qsub_account_string else 1
-    args.qsm_threads = args.n_procs if not args.qsub_account_string else 6
+    args.qsm_threads = min(6, args.n_procs) if not args.qsub_account_string else 6
+    
+    return args
 
-    # make sure tgv_qsm is compiled on the target system before we start the pipeline:
-    # process = subprocess.run(['tgv_qsm'])
-
-    # run workflow
-    #wf.write_graph(graph2use='flat', format='png', simple_form=False)
-    wf = init_workflow()
-
+def write_references(wf):
     # get all node names
     node_names = [node._name.lower() for node in wf._get_all_nodes()]
 
@@ -653,6 +606,57 @@ if __name__ == "__main__":
             f.write("\n\n - Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
         f.write("\n\n")
 
+if __name__ == "__main__":
+    # parse command-line arguments
+    args = parse_args(sys.argv[1:])
+    
+    # create directories
+    os.makedirs(args.output_dir, exist_ok=True)
+    
+    # setup logger
+    logger = make_logger(
+        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        printlevel=LogLevel.INFO,
+        writelevel=LogLevel.INFO,
+        warnlevel=LogLevel.WARNING,
+        errorlevel=LogLevel.ERROR
+    )
+
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
+    logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
+    
+    # process args and make any necessary corrections
+    args = process_args(args)
+    
+    # misc environment variables
+    os.environ["FSLOUTPUTTYPE"] = "NIFTI"
+
+    # path environment variable
+    os.environ["PATH"] += os.pathsep + os.path.join(get_qsmxt_dir(), "scripts")
+
+    # add this_dir and cwd to pythonpath
+    if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + get_qsmxt_dir()
+    else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
+
+    # debug options
+    if args.debug:
+        from nipype import config
+        config.enable_debug_mode()
+        config.set('execution', 'stop_on_first_crash', 'true')
+        config.set('execution', 'remove_unnecessary_outputs', 'false')
+        config.set('execution', 'keep_inputs', 'true')
+        config.set('logging', 'workflow_level', 'DEBUG')
+        config.set('logging', 'interface_level', 'DEBUG')
+        config.set('logging', 'utils_level', 'DEBUG')
+    
+    # build workflow
+    wf = init_workflow()
+    
+    # write references to file
+    write_references(wf)
+
+    # run workflow
     if args.qsub_account_string:
         wf.run(
             plugin='PBSGraph',
@@ -669,6 +673,5 @@ if __name__ == "__main__":
         )
 
     show_warning_summary(logger)
-
     logger.log(LogLevel.INFO.value, 'Finished')
 
