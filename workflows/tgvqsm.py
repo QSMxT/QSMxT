@@ -12,7 +12,7 @@ def add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink,
             iterations=run_args.tgvqsm_iterations,
             alpha=run_args.tgvqsm_alphas,
             erosions=0 if run_args.two_pass else 5,
-            num_threads=run_args.qsm_threads,
+            num_threads=run_args.tgvqsm_threads,
             out_suffix='_qsm-filled',
             extra_arguments='--ignore-orientation --no-resampling'
         ),
@@ -23,7 +23,7 @@ def add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink,
     )
     mn_qsm_filled.estimated_memory_gb = 6
     mn_qsm_filled.plugin_args = {
-        'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={run_args.qsm_threads}:mem=20gb:vmem=20gb',
+        'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={run_args.tgvqsm_threads}:mem=20gb:vmem=20gb',
         'overwrite': True
     }
     wf.connect([
@@ -63,7 +63,7 @@ def add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink,
                 iterations=run_args.tgvqsm_iterations,
                 alpha=run_args.tgvqsm_alphas,
                 erosions=0,
-                num_threads=run_args.qsm_threads,
+                num_threads=run_args.tgvqsm_threads,
                 out_suffix='_qsm',
                 extra_arguments='--ignore-orientation --no-resampling'
             ),
@@ -76,7 +76,7 @@ def add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink,
 
         # args for PBS
         mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={run_args.qsm_threads}:mem=20gb:vmem=20gb',
+            'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={run_args.tgvqsm_threads}:mem=20gb:vmem=20gb',
             'overwrite': True
         }
 

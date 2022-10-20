@@ -37,9 +37,11 @@ class _StringStream:
     def flush(self):
         pass
 
+def get_logger():
+    return _logging.getLogger(name='main')
 
 def make_logger(logpath=None, printlevel=LogLevel.INFO, warnlevel=LogLevel.WARNING, errorlevel=LogLevel.ERROR, writelevel=LogLevel.WARNING):
-
+    
     for log_level in LogLevel:
         _logging.addLevelName(log_level.value, log_level.name)
 

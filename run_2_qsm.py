@@ -12,7 +12,7 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir
-from scripts.logger import LogLevel, make_logger, show_warning_summary
+from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logger
 
 from interfaces import nipype_interface_scalephase as scalephase
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
@@ -25,7 +25,8 @@ from workflows.tgvqsm import add_tgvqsm_workflow
 from workflows.masking import add_masking_nodes
 
 
-def init_workflow():
+def init_workflow(args):
+    logger = get_logger()
     subjects = [
         os.path.split(path)[1]
         for path in glob.glob(os.path.join(args.bids_dir, args.subject_pattern))
@@ -37,14 +38,15 @@ def init_workflow():
     wf = Workflow("workflow_qsm", base_dir=args.output_dir)
     wf.add_nodes([
         node for node in
-        [init_subject_workflow(subject) for subject in subjects]
+        [init_subject_workflow(args, subject) for subject in subjects]
         if node
     ])
     return wf
 
 def init_subject_workflow(
-    subject
+    args, subject
 ):
+    logger = get_logger()
     sessions = [
         os.path.split(path)[1]
         for path in glob.glob(os.path.join(args.bids_dir, subject, args.session_pattern))
@@ -56,12 +58,13 @@ def init_subject_workflow(
     wf = Workflow(subject, base_dir=os.path.join(args.output_dir, "workflow_qsm"))
     wf.add_nodes([
         node for node in
-        [init_session_workflow(subject, session) for session in sessions]
+        [init_session_workflow(args, subject, session) for session in sessions]
         if node
     ])
     return wf
 
-def init_session_workflow(subject, session):
+def init_session_workflow(args, subject, session):
+    logger = get_logger()
     # exit if no runs found
     phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
     phase_files = glob.glob(phase_pattern)
@@ -82,26 +85,27 @@ def init_session_workflow(subject, session):
     wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow_qsm", subject, session))
     wf.add_nodes([
         node for node in
-        [init_run_workflow(subject, session, run, copy.deepcopy(args)) for run in runs]
+        [init_run_workflow(copy.deepcopy(args), subject, session, run) for run in runs]
         if node
     ])
     return wf
 
-def init_run_workflow(subject, session, run, run_args):
+def init_run_workflow(run_args, subject, session, run):
+    logger = get_logger()
     logger.log(LogLevel.INFO.value, f"Creating nipype workflow for {subject}/{session}/{run}...")
 
     # get relevant files from this run
     phase_pattern = os.path.join(run_args.bids_dir, run_args.phase_pattern.format(subject=subject, session=session, run=run))
-    phase_files = sorted(glob.glob(phase_pattern))[:run_args.num_echoes_to_process]
+    phase_files = sorted(glob.glob(phase_pattern))[:run_args.num_echoes]
     
     magnitude_pattern = os.path.join(run_args.bids_dir, run_args.magnitude_pattern.format(subject=subject, session=session, run=run))
-    magnitude_files = sorted(glob.glob(magnitude_pattern))[:run_args.num_echoes_to_process]
+    magnitude_files = sorted(glob.glob(magnitude_pattern))[:run_args.num_echoes]
 
     params_pattern = os.path.join(run_args.bids_dir, run_args.phase_pattern.format(subject=subject, session=session, run=run).replace("nii.gz", "nii").replace("nii", "json"))
-    params_files = sorted(glob.glob(params_pattern))[:run_args.num_echoes_to_process]
+    params_files = sorted(glob.glob(params_pattern))[:run_args.num_echoes]
     
     mask_pattern = os.path.join(run_args.bids_dir, run_args.mask_pattern.format(subject=subject, session=session, run=run))
-    mask_files = sorted(glob.glob(mask_pattern))[:run_args.num_echoes_to_process] if run_args.use_existing_masks else []
+    mask_files = sorted(glob.glob(mask_pattern))[:run_args.num_echoes] if run_args.use_existing_masks else []
     
     # handle any errors related to files and adjust any settings if needed
     if not phase_files:
@@ -335,7 +339,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--num_echoes',
-        dest='num_echoes_to_process',
+        dest='num_echoes',
         default=None,
         type=int,
         help='The number of echoes to process; by default all echoes are processed.'
@@ -474,9 +478,18 @@ def parse_args(args):
     )
     
     args = parser.parse_args(args)
-    os.makedirs(args.output_dir, exist_ok=True)
     
     return args
+
+def create_logger(args):
+    logger = make_logger(
+        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        printlevel=LogLevel.INFO,
+        writelevel=LogLevel.INFO,
+        warnlevel=LogLevel.WARNING,
+        errorlevel=LogLevel.ERROR
+    )
+    return logger
 
 def process_args(args):
     # default masking settings for QSM algorithms
@@ -504,9 +517,31 @@ def process_args(args):
 
     #qsm_threads should be set to adjusted n_procs (either computed earlier or given via cli)
     #args.qsm_threads = args.n_procs if not args.qsub_account_string else 1
-    args.qsm_threads = min(6, args.n_procs) if not args.qsub_account_string else 6
+    args.tgvqsm_threads = min(6, args.n_procs) if not args.qsub_account_string else 6
+    
+    # debug options
+    if args.debug:
+        from nipype import config
+        config.enable_debug_mode()
+        config.set('execution', 'stop_on_first_crash', 'true')
+        config.set('execution', 'remove_unnecessary_outputs', 'false')
+        config.set('execution', 'keep_inputs', 'true')
+        config.set('logging', 'workflow_level', 'DEBUG')
+        config.set('logging', 'interface_level', 'DEBUG')
+        config.set('logging', 'utils_level', 'DEBUG')
     
     return args
+
+def set_env_variables():
+    # misc environment variables
+    os.environ["FSLOUTPUTTYPE"] = "NIFTI"
+
+    # path environment variable
+    os.environ["PATH"] += os.pathsep + os.path.join(get_qsmxt_dir(), "scripts")
+
+    # add this_dir and cwd to pythonpath
+    if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + get_qsmxt_dir()
+    else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
 
 def write_references(wf):
     # get all node names
@@ -553,15 +588,11 @@ if __name__ == "__main__":
     # parse command-line arguments
     args = parse_args(sys.argv[1:])
     
+    # create output directory if it doesn't exist
+    os.makedirs(args.output_dir, exist_ok=True)
+    
     # setup logger
-    logger = make_logger(
-        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
-        printlevel=LogLevel.INFO,
-        writelevel=LogLevel.INFO,
-        warnlevel=LogLevel.WARNING,
-        errorlevel=LogLevel.ERROR
-    )
-
+    logger = create_logger(args)
     logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
@@ -569,29 +600,11 @@ if __name__ == "__main__":
     # process args and make any necessary corrections
     args = process_args(args)
     
-    # misc environment variables
-    os.environ["FSLOUTPUTTYPE"] = "NIFTI"
-
-    # path environment variable
-    os.environ["PATH"] += os.pathsep + os.path.join(get_qsmxt_dir(), "scripts")
-
-    # add this_dir and cwd to pythonpath
-    if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + get_qsmxt_dir()
-    else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
-
-    # debug options
-    if args.debug:
-        from nipype import config
-        config.enable_debug_mode()
-        config.set('execution', 'stop_on_first_crash', 'true')
-        config.set('execution', 'remove_unnecessary_outputs', 'false')
-        config.set('execution', 'keep_inputs', 'true')
-        config.set('logging', 'workflow_level', 'DEBUG')
-        config.set('logging', 'interface_level', 'DEBUG')
-        config.set('logging', 'utils_level', 'DEBUG')
+    # set environment variables
+    set_env_variables()
     
     # build workflow
-    wf = init_workflow()
+    wf = init_workflow(args)
     
     # write references to file
     write_references(wf)
