@@ -9,9 +9,9 @@ from nipype.utils.filemanip import fname_presuffix, split_filename
 
 ## NeXtQSM wrapper
 class NextqsmInputSpec(BaseInterfaceInputSpec):
-    phase = File(mandatory=True, exists=True, argstr="%s")
-    mask = File(mandatory=False, exists=True, argstr="%s")
-    out_file = File(argstr="%s", name_source=['phase'], name_template='%s_qsm.nii.gz')
+    phase = File(mandatory=True, exists=True, argstr="%s", position=0)
+    mask = File(mandatory=False, exists=True, argstr="%s", position=1)
+    out_file = File(argstr="%s", name_source=['phase'], name_template='%s_qsm.nii.gz', position=2)
     #out_suffix = traits.String("_qsm_recon", desc='Suffix for output files. Will be followed by 000 (reason - see CLI)',
     #                           usedefault=True, argstr="-o %s")
 
