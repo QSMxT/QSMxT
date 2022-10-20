@@ -142,8 +142,8 @@ sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_
 #if [ 1 -eq "$(echo "${min} < -0.0001" | bc)" ]; then echo "[DEBUG]. Test OK."; else echo "NOT OK" && exit 1; fi
 sudo rm -rf /tmp/02_qsm_output
 
-echo "[DEBUG] starting run_2_qsm.py --threshold 0.4 --single_pass"
-sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --tgvqsm_iterations 2 --threshold 0.4 --single_pass
+echo "[DEBUG] starting run_2_qsm.py --masking_threshold 0.4 --single_pass"
+sudo docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --n_procs 2 --tgvqsm_iterations 2 --masking_threshold 0.4 --single_pass
 [ -f $out_singlepass1 ] && echo "[DEBUG]. Test OK." || exit 1
 #min_max_std=`sudo docker run -v /tmp:/tmp $container fslstats $out_singlepass1 -R -S`
 #std=`echo $min_max_std | cut -d ' ' -f 3`

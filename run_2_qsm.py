@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 
 import sys
-import os.path
 import os
 import glob
 import psutil
@@ -15,7 +14,6 @@ from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 from interfaces import nipype_interface_scalephase as scalephase
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
-
 from interfaces import nipype_interface_json as json
 from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_axialsampling as sampling
@@ -334,7 +332,7 @@ def addNextqsmWorkflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, unwrapping
 
     return wf
 
-if __name__ == "__main__":
+def parse_args(args):
     parser = argparse.ArgumentParser(
         description="QSMxT qsm: QSM Reconstruction Pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -441,7 +439,7 @@ if __name__ == "__main__":
         choices=['phase-based', 'magnitude-based', 'bet', 'bet-firstecho'],
         help='Masking strategy.\n\t- Phase-based and magnitude-based masking generate masks by ' +
              'thresholding out regions below a percentage of the signal histogram (adjust using the '+
-             '--threshold parameter). For phase-based masking, the spatial phase coherence is '+
+             '--masking_threshold parameter). For phase-based masking, the spatial phase coherence is '+
              'thresholded and the magnitude is not required.\n\tBET masking generates a multi-echo mask '+
              'using the Brain Extraction Tool (BET), with the \'bet-firstecho\' option generating only a '+
              'single BET mask based on the first echo magnitude image.'
@@ -531,7 +529,11 @@ if __name__ == "__main__":
         help='Enables some nipype settings for debugging.'
     )
     
-    args = parser.parse_args()
+    return parser.parse_args(args)
+
+if __name__ == "__main__":
+    # parse command-line arguments
+    args = parse_args(sys.argv[1:])
     
     # ensure directories are complete and absolute
     args.bids_dir = os.path.abspath(args.bids_dir)
