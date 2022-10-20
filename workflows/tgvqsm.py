@@ -21,6 +21,7 @@ def add_tgvqsm_workflow(wf, args, mn_params, mn_inputs, mn_mask, n_datasink, mag
         # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
         # output: 'out_file'
     )
+    mn_qsm_filled.estimated_memory_gb = 6
     mn_qsm_filled.plugin_args = {
         'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.qsm_threads}:mem=20gb:vmem=20gb',
         'overwrite': True
@@ -71,6 +72,7 @@ def add_tgvqsm_workflow(wf, args, mn_params, mn_inputs, mn_mask, n_datasink, mag
             # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
             # output: 'out_file'
         )
+        mn_qsm.estimated_memory_gb = 6
 
         # args for PBS
         mn_qsm.plugin_args = {
