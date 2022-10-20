@@ -138,8 +138,8 @@ def init_run_workflow(subject, session, run):
 
     n_datasink = Node(
         interface=DataSink(
-            base_directory=args.outputput_dir
-            #container=outputput_dir
+            base_directory=args.output_dir
+            #container=output_dir
         ),
         name='nipype_datasink'
     )
@@ -167,14 +167,14 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        'outputput_dir',
+        'output_dir',
         help='Output segmentation directory; will be created if it does not exist.'
     )
 
     parser.add_argument(
         '--work_dir',
         default=None,
-        help='NiPype working directory; defaults to \'work\' within \'outputput_dir\'.'
+        help='NiPype working directory; defaults to \'work\' within \'output_dir\'.'
     )
 
     parser.add_argument(
@@ -250,9 +250,9 @@ if __name__ == "__main__":
     g_args = lambda:None
 
     # ensure directories are complete and absolute
-    args.outputput_dir = os.path.abspath(args.outputput_dir)
+    args.output_dir = os.path.abspath(args.output_dir)
     args.bids_dir = os.path.abspath(args.bids_dir)
-    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.outputput_dir)
+    args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.output_dir)
 
     # this script's directory
     this_dir = os.path.dirname(os.path.abspath(__file__))
