@@ -22,10 +22,8 @@ def get_container_version(check_path=True):
             if '## qsmxt/' in line:
                 version = line.split("/")[1].split(" ")[0].strip()
                 return f"{version}"
-    if check_path:
-        if shutil.which("qsmxt_version.py"):
-            return sys_cmd("qsmxt_version.py --container_only", print_output=False, print_command=False)
-    else:
-        return "unknown"
+    if check_path and shutil.which("qsmxt_version.py"):
+        return sys_cmd("qsmxt_version.py --container_only", print_output=False, print_command=False)
+    return "unknown"
     
     
