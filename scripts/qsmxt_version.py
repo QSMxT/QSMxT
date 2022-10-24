@@ -1,9 +1,23 @@
 #!/usr/bin/env python3
-import os
-from scripts.sys_cmd import sys_cmd
-from scripts.qsmxt_functions import get_qsmxt_version
+import argparse
+from scripts.qsmxt_functions import get_qsmxt_version, get_container_version
 
 if __name__ == "__main__":
-    print(get_qsmxt_version())
+    parser = argparse.ArgumentParser(
+        description="QSMxT: Version checker",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    parser.add_argument(
+        '--container_only',
+        action='store_true'
+    )
+    
+    args = parser.parse_args()
+    
+    if args.container_only:
+        print(get_container_version(check_path=False))
+    else:
+        print(f"{get_qsmxt_version()} (container version {get_container_version(check_path=False)})")
 
     
