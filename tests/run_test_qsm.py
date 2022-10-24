@@ -2,26 +2,27 @@
 import osfclient
 import pytest
 import os
-
+import tempfile
 import run_2_qsm as qsm
 from scripts.sys_cmd import sys_cmd
 
 @pytest.fixture
 def bids_dir():
-    if not os.path.exists('bids-osf'):
-        if not os.path.exists('bids-osf.tar'):
+    tmp_dir = tempfile.gettempdir()
+    if not os.path.exists(os.path.join(tmp_dir, 'bids-osf')):
+        if not os.path.exists(os.path.join(tmp_dir, 'bids-osf.tar')):
             print("Downloading test data...")
             file_pointer = next(osfclient.OSF().project("9jc42").storage().files)
-            file_handle = open('bids-osf.tar', 'wb')
+            file_handle = open(os.path.join(tmp_dir, 'bids-osf.tar'), 'wb')
             file_pointer.write_to(file_handle)
         print("Extracting test data...")
-        sys_cmd("tar xf bids-osf.tar")
-        sys_cmd("rm bids-osf.tar")
-    return 'bids-osf'
+        sys_cmd(f"tar xf {os.path.join(tmp_dir, 'bids-osf.tar')} -C {tmp_dir}")
+        sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-osf.tar')}")
+    return os.path.join(tmp_dir, 'bids-osf')
 
 def workflow(args, init_workflow, run_workflow, run_args):
-    print("=== PREPARING WORKFLOW ===")
-    if init_workflow and not run_workflow:
+    assert(not (run_workflow == True and init_workflow == False))
+    if init_workflow:
         wf = qsm.init_workflow(args)
     if init_workflow and run_workflow:
         qsm.set_env_variables()
@@ -29,8 +30,12 @@ def workflow(args, init_workflow, run_workflow, run_args):
             args_dict = vars(args)
             for key, value in run_args.items():
                 args_dict[key] = value
-        wf = qsm.init_workflow(args)
+            wf = qsm.init_workflow(args)
         wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
+        print(wf.n_datasink)
+        print(wf['n_datasink'])
+        print(wf.nipype_datasink)
+        print(wf['nipype_datasink'])
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
@@ -38,11 +43,11 @@ def workflow(args, init_workflow, run_workflow, run_args):
 def test_args_defaults(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm"
+        os.path.join(tempfile.gettempdir(), "qsm")
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
@@ -61,12 +66,12 @@ def test_args_defaults(bids_dir, init_workflow, run_workflow, run_args):
 def test_args_tgvqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm",
+        os.path.join(tempfile.gettempdir(), "qsm"),
         "--qsm_algorithm", "tgv_qsm"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
@@ -85,12 +90,12 @@ def test_args_tgvqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
 def test_args_nextqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm",
+        os.path.join(tempfile.gettempdir(), "qsm"),
         "--qsm_algorithm", "nextqsm"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "nextqsm")
     assert(args.masking == "bet-firstecho")
     assert(args.two_pass == False)
@@ -104,18 +109,18 @@ def test_args_nextqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
     
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, True, { 'num_echoes' : 2 })
+    (True, True, { 'num_echoes' : 2, 'n_procs' : 1 })
 ])
 def test_args_nextqsm_laplacian(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm",
+        os.path.join(tempfile.gettempdir(), "qsm"),
         "--qsm_algorithm", "nextqsm",
         "--nextqsm_unwrapping_algorithm", "laplacian"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "nextqsm")
     assert(args.masking == "bet-firstecho")
     assert(args.two_pass == False)
@@ -134,12 +139,12 @@ def test_args_nextqsm_laplacian(bids_dir, init_workflow, run_workflow, run_args)
 def test_args_singlepass(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm",
+        os.path.join(tempfile.gettempdir(), "qsm"),
         "--single_pass"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == False)
@@ -158,13 +163,13 @@ def test_args_singlepass(bids_dir, init_workflow, run_workflow, run_args):
 def test_args_inhomogeneity_correction_bet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm",
+        os.path.join(tempfile.gettempdir(), "qsm"),
         "--inhomogeneity_correction",
         "--masking", "bet"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "bet")
     assert(args.two_pass == False)
@@ -183,13 +188,13 @@ def test_args_inhomogeneity_correction_bet(bids_dir, init_workflow, run_workflow
 def test_args_inhomogeneity_correction_magnitudebased(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm",
+        os.path.join(tempfile.gettempdir(), "qsm"),
         "--inhomogeneity_correction",
         "--masking", "magnitude-based"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "magnitude-based")
     assert(args.two_pass == True)
@@ -208,12 +213,12 @@ def test_args_inhomogeneity_correction_magnitudebased(bids_dir, init_workflow, r
 def test_args_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm",
+        os.path.join(tempfile.gettempdir(), "qsm"),
         "--inhomogeneity_correction",
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
@@ -232,12 +237,12 @@ def test_args_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_work
 def test_args_addbet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm",
+        os.path.join(tempfile.gettempdir(), "qsm"),
         "--add_bet"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
@@ -256,13 +261,13 @@ def test_args_addbet(bids_dir, init_workflow, run_workflow, run_args):
 def test_args_addbet_invalid(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm",
+        os.path.join(tempfile.gettempdir(), "qsm"),
         "--add_bet",
         "--masking", "bet"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "bet")
     assert(args.two_pass == False)
@@ -281,12 +286,12 @@ def test_args_addbet_invalid(bids_dir, init_workflow, run_workflow, run_args):
 def test_args_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm",
+        os.path.join(tempfile.gettempdir(), "qsm"),
         "--use_existing_masks"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
@@ -305,12 +310,12 @@ def test_args_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args
 def test_args_numechoes(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        "qsm",
+        os.path.join(tempfile.gettempdir(), "qsm"),
         "--num_echoes", "3"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.abspath("qsm"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)

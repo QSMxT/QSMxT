@@ -10,8 +10,24 @@ on:
       - run_0_dicomSort.py
       - run_1_dicomConvert.py
       - run_2_qsm.py
+      - interfaces/nipype_interface_addtojson.py
+      - interfaces/nipype_interface_axialsampling.py
+      - interfaces/nipype_interface_bet2.py
+      - interfaces/nipype_interface_erode.py
+      - interfaces/nipype_interface_json.py
+      - interfaces/nipype_interface_laplacian_unwrapping.py
+      - interfaces/nipype_interface_makehomogeneous.py
+      - interfaces/nipype_interface_masking.py
+      - interfaces/nipype_interface_nextqsm.py
+      - interfaces/nipype_interface_nonzeroaverage.py
+      - interfaces/nipype_interface_phaseweights.py
+      - interfaces/nipype_interface_romeo.py
+      - interfaces/nipype_interface_scalephase.py
+      - interfaces/nipype_interface_tgv_qsm.py
+      - interfaces/nipype_interface_twopass.py
       - .github/workflows/test_qsm_pipeline.yml
       - tests/run_test_qsm.sh
+      - tests/run_test_qsm.py
   pull_request:
     branches: [ master ]
     paths:
@@ -19,8 +35,24 @@ on:
       - run_0_dicomSort.py
       - run_1_dicomConvert.py
       - run_2_qsm.py
+      - interfaces/nipype_interface_addtojson.py
+      - interfaces/nipype_interface_axialsampling.py
+      - interfaces/nipype_interface_bet2.py
+      - interfaces/nipype_interface_erode.py
+      - interfaces/nipype_interface_json.py
+      - interfaces/nipype_interface_laplacian_unwrapping.py
+      - interfaces/nipype_interface_makehomogeneous.py
+      - interfaces/nipype_interface_masking.py
+      - interfaces/nipype_interface_nextqsm.py
+      - interfaces/nipype_interface_nonzeroaverage.py
+      - interfaces/nipype_interface_phaseweights.py
+      - interfaces/nipype_interface_romeo.py
+      - interfaces/nipype_interface_scalephase.py
+      - interfaces/nipype_interface_tgv_qsm.py
+      - interfaces/nipype_interface_twopass.py
       - .github/workflows/test_qsm_pipeline.yml
       - tests/run_test_qsm.sh
+      - tests/run_test_qsm.py
     
 jobs:
   test_qsm_pipeline:
