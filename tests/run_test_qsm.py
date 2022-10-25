@@ -1,7 +1,13 @@
 #!/usr/bin/env python3
+import os
+
+if os.environ.get('PYTHONPATH'):
+    os.environ['PYTHONPATH'] = os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + os.pathsep + os.environ['PYTHONPATH']
+else:
+    os.environ['PYTHONPATH'] = os.path.split(os.path.dirname(os.path.abspath(__file__)))[0]
+
 import osfclient
 import pytest
-import os
 import tempfile
 import run_2_qsm as qsm
 from scripts.sys_cmd import sys_cmd
