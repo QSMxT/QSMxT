@@ -1,15 +1,9 @@
 #!/usr/bin/env python3
 import os
-
-if os.environ.get('PYTHONPATH'):
-    os.environ['PYTHONPATH'] = os.path.split(os.path.dirname(os.path.abspath(__file__)))[0] + os.pathsep + os.environ['PYTHONPATH']
-else:
-    os.environ['PYTHONPATH'] = os.path.split(os.path.dirname(os.path.abspath(__file__)))[0]
-
 import osfclient
 import pytest
 import tempfile
-import run_2_qsm as qsm
+from ..run_2_qsm import *
 from scripts.sys_cmd import sys_cmd
 
 @pytest.fixture
@@ -29,14 +23,14 @@ def bids_dir():
 def workflow(args, init_workflow, run_workflow, run_args):
     assert(not (run_workflow == True and init_workflow == False))
     if init_workflow:
-        wf = qsm.init_workflow(args)
+        wf = init_workflow(args)
     if init_workflow and run_workflow:
-        qsm.set_env_variables()
+        set_env_variables()
         if run_args:
             args_dict = vars(args)
             for key, value in run_args.items():
                 args_dict[key] = value
-            wf = qsm.init_workflow(args)
+            wf = init_workflow(args)
         wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
         print(wf.n_datasink)
         print(wf['n_datasink'])
@@ -47,7 +41,7 @@ def workflow(args, init_workflow, run_workflow, run_args):
     (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_args_defaults(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm")
     ]))
@@ -70,7 +64,7 @@ def test_args_defaults(bids_dir, init_workflow, run_workflow, run_args):
     (True, False, None)
 ])
 def test_args_tgvqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--qsm_algorithm", "tgv_qsm"
@@ -94,7 +88,7 @@ def test_args_tgvqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     (True, True, { 'num_echoes' : 2 })
 ])
 def test_args_nextqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--qsm_algorithm", "nextqsm"
@@ -118,7 +112,7 @@ def test_args_nextqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     (True, True, { 'num_echoes' : 2, 'n_procs' : 1 })
 ])
 def test_args_nextqsm_laplacian(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--qsm_algorithm", "nextqsm",
@@ -143,7 +137,7 @@ def test_args_nextqsm_laplacian(bids_dir, init_workflow, run_workflow, run_args)
     (True, False, None)
 ])
 def test_args_singlepass(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--single_pass"
@@ -167,7 +161,7 @@ def test_args_singlepass(bids_dir, init_workflow, run_workflow, run_args):
     (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_args_inhomogeneity_correction_bet(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--inhomogeneity_correction",
@@ -192,7 +186,7 @@ def test_args_inhomogeneity_correction_bet(bids_dir, init_workflow, run_workflow
     (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_args_inhomogeneity_correction_magnitudebased(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--inhomogeneity_correction",
@@ -217,7 +211,7 @@ def test_args_inhomogeneity_correction_magnitudebased(bids_dir, init_workflow, r
     (True, False, None)
 ])
 def test_args_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--inhomogeneity_correction",
@@ -241,7 +235,7 @@ def test_args_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_work
     (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_args_addbet(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--add_bet"
@@ -265,7 +259,7 @@ def test_args_addbet(bids_dir, init_workflow, run_workflow, run_args):
     (True, False, None)
 ])
 def test_args_addbet_invalid(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--add_bet",
@@ -290,7 +284,7 @@ def test_args_addbet_invalid(bids_dir, init_workflow, run_workflow, run_args):
     (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_args_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--use_existing_masks"
@@ -314,7 +308,7 @@ def test_args_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args
     (True, False, None)
 ])
 def test_args_numechoes(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
+    args = process_args(parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--num_echoes", "3"
