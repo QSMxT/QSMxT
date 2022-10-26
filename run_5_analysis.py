@@ -141,82 +141,91 @@ def write_details_and_citations(writedir):
         f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n")
 
-def calculate_statistics(args, logger):
+def get_labels(args):
     if args.labels_file:
         args.labels_file = os.path.abspath(args.labels_file)
         labels_orig = load_labels(args.labels_file)
     else:
         labels_orig = {}
+    return labels_orig
 
+def multiple_segmentations(args, logger):
     files_qsm = sorted(args.qsm_files)
-    # for each segmentation file
-    if len(args.segmentations) > 1:
-        files_seg = sorted(args.segmentations)
-        for i in range(len(files_seg)):
-            logger.log(LogLevel.INFO.value, f"Analysing file {os.path.split(files_qsm[i])[-1]} with segmentation {os.path.split(files_seg[i])[-1]}")
+    files_seg = sorted(args.segmentations)
+    labels_orig = get_labels(args)
+    for i in range(len(files_seg)):
+        logger.log(LogLevel.INFO.value, f"Analysing file {os.path.split(files_qsm[i])[-1]} with segmentation {os.path.split(files_seg[i])[-1]}")
 
-            # load subject and segmentation data
-            nii_seg = nib.load(files_seg[i])
-            nii_qsm = nib.load(files_qsm[i])
-            seg = nii_seg.get_fdata().flatten()
-            qsm = nii_qsm.get_fdata().flatten()
-
-            # update labels with this segmentation
-            labels = labels_orig.copy()
-            update_labels(labels, seg)
-
-            # get statistics for each label name
-            label_stats = get_stats(labels, seg, qsm)
-
-            # write header to file
-            f_name = (files_seg[i].split('/')[-1]).split('.')[0] + '.csv'
-            f = open(os.path.join(args.output_dir, f_name), 'w', encoding='utf-8')
-            f.write('roi,num_voxels,min,max,median,mean,std\n')
-
-            # write data to file
-            for label_name in labels.keys():
-                line = [label_name]
-                line.extend(label_stats[label_name])
-                line = ",".join([str(x) for x in line])
-                f.write(line)
-                f.write('\n')
-
-            # close file
-            f.close()
-    else:
-        # single segmentation file
-        nii_seg = nib.load(args.segmentations[0])
+        # load subject and segmentation data
+        nii_seg = nib.load(files_seg[i])
+        nii_qsm = nib.load(files_qsm[i])
         seg = nii_seg.get_fdata().flatten()
-        
+        qsm = nii_qsm.get_fdata().flatten()
+
         # update labels with this segmentation
         labels = labels_orig.copy()
         update_labels(labels, seg)
 
+        # get statistics for each label name
+        label_stats = get_stats(labels, seg, qsm)
+
         # write header to file
-        f_name = os.path.split(args.segmentations[0])[1].split('.')[0] + '.csv'
+        f_name = (files_seg[i].split('/')[-1]).split('.')[0] + '.csv'
         f = open(os.path.join(args.output_dir, f_name), 'w', encoding='utf-8')
-        f.write('subject,roi,num_voxels,min,max,median,mean,std\n')
-        
-        # for each subject
-        for i in range(len(files_qsm)):
+        f.write('roi,num_voxels,min,max,median,mean,std\n')
 
-            # load the data
-            nii_qsm = nib.load(files_qsm[i])
-            qsm = nii_qsm.get_fdata().flatten()
-
-            # get statistics for each label name
-            label_stats = get_stats(labels, seg, qsm)
-
-            # write data to file
-            for label_name in labels.keys():
-                line = [os.path.split(files_qsm[i])[1], label_name]
-                line.extend(label_stats[label_name])
-                line = ",".join([str(x) for x in line])
-                f.write(line)
-                f.write('\n')
+        # write data to file
+        for label_name in labels.keys():
+            line = [label_name]
+            line.extend(label_stats[label_name])
+            line = ",".join([str(x) for x in line])
+            f.write(line)
+            f.write('\n')
 
         # close file
         f.close()
+
+def multiple_subjects(args, logger):
+    files_qsm = sorted(args.qsm_files)
+    labels_orig = get_labels(args)
+    
+    # single segmentation file
+    nii_seg = nib.load(args.segmentations[0])
+    seg = nii_seg.get_fdata().flatten()
+    
+    # update labels with this segmentation
+    labels = labels_orig.copy()
+    update_labels(labels, seg)
+
+    # write header to file
+    f_name = os.path.split(args.segmentations[0])[1].split('.')[0] + '.csv'
+    f = open(os.path.join(args.output_dir, f_name), 'w', encoding='utf-8')
+    f.write('subject,roi,num_voxels,min,max,median,mean,std\n')
+    
+    # for each subject
+    for i in range(len(files_qsm)):
+
+        # load the data
+        nii_qsm = nib.load(files_qsm[i])
+        qsm = nii_qsm.get_fdata().flatten()
+
+        # get statistics for each label name
+        label_stats = get_stats(labels, seg, qsm)
+
+        # write data to file
+        for label_name in labels.keys():
+            line = [os.path.split(files_qsm[i])[1], label_name]
+            line.extend(label_stats[label_name])
+            line = ",".join([str(x) for x in line])
+            f.write(line)
+            f.write('\n')
+    f.close()
+
+def calculate_statistics(args, logger):
+    if len(args.segmentations) > 1:
+        multiple_segmentations(args, logger)
+    else:
+        multiple_subjects(args, logger)
 
 
 if __name__ == "__main__":
