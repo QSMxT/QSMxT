@@ -107,13 +107,13 @@ def parse_args():
 
     return parser.parse_args()
 
-def check_output_dir(args):
+def check_output_dir():
     args.output_dir = os.path.abspath(args.output_dir)
     os.makedirs(os.path.abspath(args.output_dir), exist_ok=True)
 
-def init_logger(writedir):
+def init_logger():
     logger = make_logger(
-        logpath=os.path.join(writedir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
         printlevel=LogLevel.INFO,
         writelevel=LogLevel.INFO,
         warnlevel=LogLevel.WARNING,
@@ -125,8 +125,8 @@ def init_logger(writedir):
     return logger
 
 # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-def write_details_and_citations(writedir):
-    with open(os.path.join(writedir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
+def write_details_and_citations():
+    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
         f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
@@ -141,7 +141,7 @@ def write_details_and_citations(writedir):
         f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n")
 
-def get_labels(args):
+def get_labels():
     if args.labels_file:
         args.labels_file = os.path.abspath(args.labels_file)
         labels_orig = load_labels(args.labels_file)
@@ -149,18 +149,19 @@ def get_labels(args):
         labels_orig = {}
     return labels_orig
 
-def multiple_segmentations(args, logger):
+def load_nii_as_array(file):
+    nii = nib.load(file)
+    return nii.get_fdata().flatten()
+
+def one_segmentation_per_subject():
     files_qsm = sorted(args.qsm_files)
     files_seg = sorted(args.segmentations)
-    labels_orig = get_labels(args)
+    labels_orig = get_labels()
     for i in range(len(files_seg)):
         logger.log(LogLevel.INFO.value, f"Analysing file {os.path.split(files_qsm[i])[-1]} with segmentation {os.path.split(files_seg[i])[-1]}")
 
-        # load subject and segmentation data
-        nii_seg = nib.load(files_seg[i])
-        nii_qsm = nib.load(files_qsm[i])
-        seg = nii_seg.get_fdata().flatten()
-        qsm = nii_qsm.get_fdata().flatten()
+        seg = load_nii_as_array(files_seg[i])
+        qsm = load_nii_as_array(files_qsm[i])
 
         # update labels with this segmentation
         labels = labels_orig.copy()
@@ -185,13 +186,12 @@ def multiple_segmentations(args, logger):
         # close file
         f.close()
 
-def multiple_subjects(args, logger):
+def same_segmentation_for_all_subjects():
     files_qsm = sorted(args.qsm_files)
-    labels_orig = get_labels(args)
+    labels_orig = get_labels()
     
     # single segmentation file
-    nii_seg = nib.load(args.segmentations[0])
-    seg = nii_seg.get_fdata().flatten()
+    seg = load_nii_as_array(args.segmentations[0])
     
     # update labels with this segmentation
     labels = labels_orig.copy()
@@ -204,10 +204,7 @@ def multiple_subjects(args, logger):
     
     # for each subject
     for i in range(len(files_qsm)):
-
-        # load the data
-        nii_qsm = nib.load(files_qsm[i])
-        qsm = nii_qsm.get_fdata().flatten()
+        qsm = load_nii_as_array(files_qsm[i])
 
         # get statistics for each label name
         label_stats = get_stats(labels, seg, qsm)
@@ -221,20 +218,20 @@ def multiple_subjects(args, logger):
             f.write('\n')
     f.close()
 
-def calculate_statistics(args, logger):
+def calculate_statistics():
     if len(args.segmentations) > 1:
-        multiple_segmentations(args, logger)
+        one_segmentation_per_subject()
     else:
-        multiple_subjects(args, logger)
+        same_segmentation_for_all_subjects()
 
 
 if __name__ == "__main__":
     args = parse_args()
-    check_output_dir(args)
-    logger = init_logger(args.output_dir)
-    write_details_and_citations(args.output_dir)
+    check_output_dir()
+    logger = init_logger()
+    write_details_and_citations()
     
-    calculate_statistics(args, logger)
+    calculate_statistics()
     
     show_warning_summary(logger)
     logger.log(LogLevel.INFO.value, 'Finished')
