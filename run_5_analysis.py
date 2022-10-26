@@ -36,7 +36,7 @@ def load_labels(label_filepath):
     return labels
 
 # give names to segmentation labels that don't have one
-def update_labels(labels, segmentation):
+def update_labels(labels, seg):
     for seg_num in sorted(list(set(seg))):
         # get segmentation name 
         if seg_num == 0: continue
@@ -72,8 +72,7 @@ def get_stats(labels, seg, qsm):
         label_stats[label_name] = [num_voxels, min_v, max_v, median, mean, std]
     return label_stats
 
-if __name__ == "__main__":
-
+def parse_args():
     parser = argparse.ArgumentParser(
         description="QSMxT qsm: QSM Reconstruction Pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -106,26 +105,28 @@ if __name__ == "__main__":
              'file contains labels for the aseg atlas used in the segmentation pipeline.'
     )
 
-    args = parser.parse_args()
+    return parser.parse_args()
 
-    # ensure directories are complete and absolute
+def check_output_dir(args):
     args.output_dir = os.path.abspath(args.output_dir)
     os.makedirs(os.path.abspath(args.output_dir), exist_ok=True)
 
+def init_logger(writedir):
     logger = make_logger(
-        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        logpath=os.path.join(writedir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
         printlevel=LogLevel.INFO,
         writelevel=LogLevel.INFO,
         warnlevel=LogLevel.WARNING,
         errorlevel=LogLevel.ERROR
     )
-
     logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
+    return logger
 
-    # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
+# write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
+def write_details_and_citations(writedir):
+    with open(os.path.join(writedir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
         f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
@@ -140,13 +141,14 @@ if __name__ == "__main__":
         f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n")
 
-    files_qsm = sorted(args.qsm_files)
+def calculate_statistics(args, logger):
     if args.labels_file:
         args.labels_file = os.path.abspath(args.labels_file)
         labels_orig = load_labels(args.labels_file)
     else:
         labels_orig = {}
 
+    files_qsm = sorted(args.qsm_files)
     # for each segmentation file
     if len(args.segmentations) > 1:
         files_seg = sorted(args.segmentations)
@@ -185,7 +187,7 @@ if __name__ == "__main__":
         # single segmentation file
         nii_seg = nib.load(args.segmentations[0])
         seg = nii_seg.get_fdata().flatten()
-
+        
         # update labels with this segmentation
         labels = labels_orig.copy()
         update_labels(labels, seg)
@@ -216,7 +218,14 @@ if __name__ == "__main__":
         # close file
         f.close()
 
+
+if __name__ == "__main__":
+    args = parse_args()
+    check_output_dir(args)
+    logger = init_logger(args.output_dir)
+    write_details_and_citations(args.output_dir)
+    
+    calculate_statistics(args, logger)
+    
     show_warning_summary(logger)
-
     logger.log(LogLevel.INFO.value, 'Finished')
-
