@@ -72,6 +72,34 @@ def get_stats(labels, seg, qsm):
         label_stats[label_name] = [num_voxels, min_v, max_v, median, mean, std]
     return label_stats
 
+def get_stats_ground_truth(labels, seg, qsm, chi):
+    label_stats = {}
+    for label_name in labels.keys():
+        # get qsm values for this label
+        qsm_seg = np.zeros_like(seg)
+        for label_id in labels[label_name]:
+            qsm_seg = np.logical_or(qsm_seg, seg == label_id)
+        region = np.logical_and(qsm != 0, qsm_seg)
+        qsm_values = qsm[region]
+        chi_values = chi[region]
+
+        # skip if no values
+        if len(qsm_values) == 0:
+            label_stats[label_name] = []
+            continue
+
+        # get statistics and store them
+        num_voxels = len(qsm_values)
+        min_v = np.min(qsm_values)
+        max_v = np.max(qsm_values)
+        median = np.median(qsm_values)
+        mean = np.mean(qsm_values)
+        std  = np.std(qsm_values)
+        mean_abs_diff = np.mean(np.abs(qsm_values - chi_values))
+        rms_diff = np.sqrt(np.mean(np.square(qsm_values - chi_values)))
+        label_stats[label_name] = [num_voxels, min_v, max_v, median, mean, std, mean_abs_diff, rms_diff]
+    return label_stats
+
 def parse_args():
     parser = argparse.ArgumentParser(
         description="QSMxT qsm: QSM Reconstruction Pipeline",
@@ -91,9 +119,16 @@ def parse_args():
         required=True,
         help='QSM files to analyse using the segmentation/s.'
     )
-
+    
+    parser.add_argument(
+        '--qsm_ground_truth',
+        default=None,
+        help='When a QSM ground truth is provided, a RMS value between the QSM and ground truth is calculated per segmented region.'
+    )
+    
     parser.add_argument(
         '--output_dir',
+        required=True,
         help='Output directory to write the quantitative data to.'
     )
 
@@ -223,14 +258,49 @@ def calculate_statistics():
         one_segmentation_per_subject()
     else:
         same_segmentation_for_all_subjects()
+    if args.qsm_ground_truth:
+        diff_to_ground_truth_by_region()
 
+def diff_to_ground_truth_by_region():
+    file_qsm = args.qsm_files[0]
+    file_seg = args.segmentations[0]
+    file_chi = args.qsm_ground_truth
+    logger.log(LogLevel.INFO.value, f"Comparing file {file_qsm} with segmentation {file_seg} against ground truth {file_chi}")
+    
+    seg = load_nii_as_array(file_seg)
+    qsm = load_nii_as_array(file_qsm)
+    chi = load_nii_as_array(file_chi)
+    
+    labels = get_labels()
+    update_labels(labels, seg)
+
+    # get statistics for each label name
+    label_stats = get_stats_ground_truth(labels, seg, qsm, chi)
+    mean_l1 = np.mean([label_stats[label_name][-2] for label_name in labels.keys()])
+    mean_l2 = np.mean([label_stats[label_name][-1] for label_name in labels.keys()])
+    print(f"l1: {mean_l1}")
+    print(f"l2: {mean_l2}")
+
+    # write header to file
+    f_name = os.path.split(args.segmentations[0])[1].split('.')[0] + '_ground_truth.csv'
+    f = open(os.path.join(args.output_dir, f_name), 'w', encoding='utf-8')
+    f.write('subject,roi,num_voxels,min,max,median,mean,std,mean_abs_diff,rms_diff\n')
+    
+    # write data to file
+    for label_name in labels.keys():
+        line = [os.path.split(file_qsm)[1], label_name]
+        line.extend(label_stats[label_name])
+        line = ",".join([str(x) for x in line])
+        f.write(line)
+        f.write('\n')
+    f.close()
 
 if __name__ == "__main__":
     args = parse_args()
     check_output_dir()
     logger = init_logger()
     write_details_and_citations()
-    
+
     calculate_statistics()
     
     show_warning_summary(logger)
