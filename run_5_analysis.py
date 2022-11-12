@@ -142,11 +142,11 @@ def parse_args():
 
     return parser.parse_args()
 
-def check_output_dir():
+def check_output_dir(args):
     args.output_dir = os.path.abspath(args.output_dir)
     os.makedirs(os.path.abspath(args.output_dir), exist_ok=True)
 
-def init_logger():
+def init_logger(args):
     logger = make_logger(
         logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
         printlevel=LogLevel.INFO,
@@ -160,7 +160,7 @@ def init_logger():
     return logger
 
 # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-def write_details_and_citations():
+def write_details_and_citations(args):
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
         f.write(f"QSMxT: {get_qsmxt_version()}")
@@ -176,7 +176,7 @@ def write_details_and_citations():
         f.write("\n\n - Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n")
 
-def get_labels():
+def get_labels(args):
     if args.labels_file:
         args.labels_file = os.path.abspath(args.labels_file)
         labels_orig = load_labels(args.labels_file)
@@ -188,10 +188,10 @@ def load_nii_as_array(file):
     nii = nib.load(file)
     return nii.get_fdata().flatten()
 
-def one_segmentation_per_subject():
+def one_segmentation_per_subject(args, logger):
     files_qsm = sorted(args.qsm_files)
     files_seg = sorted(args.segmentations)
-    labels_orig = get_labels()
+    labels_orig = get_labels(args)
     for i in range(len(files_seg)):
         logger.log(LogLevel.INFO.value, f"Analysing file {os.path.split(files_qsm[i])[-1]} with segmentation {os.path.split(files_seg[i])[-1]}")
 
@@ -221,9 +221,9 @@ def one_segmentation_per_subject():
         # close file
         f.close()
 
-def same_segmentation_for_all_subjects():
+def same_segmentation_for_all_subjects(args, logger):
     files_qsm = sorted(args.qsm_files)
-    labels_orig = get_labels()
+    labels_orig = get_labels(args)
     
     # single segmentation file
     seg = load_nii_as_array(args.segmentations[0])
@@ -253,15 +253,15 @@ def same_segmentation_for_all_subjects():
             f.write('\n')
     f.close()
 
-def calculate_statistics():
+def calculate_statistics(args, logger):
     if len(args.segmentations) > 1:
-        one_segmentation_per_subject()
+        one_segmentation_per_subject(args, logger)
     else:
-        same_segmentation_for_all_subjects()
+        same_segmentation_for_all_subjects(args, logger)
     if args.qsm_ground_truth:
-        diff_to_ground_truth_by_region()
+        diff_to_ground_truth_by_region(args, logger)
 
-def diff_to_ground_truth_by_region():
+def diff_to_ground_truth_by_region(args, logger):
     file_qsm = args.qsm_files[0]
     file_seg = args.segmentations[0]
     file_chi = args.qsm_ground_truth
@@ -271,7 +271,7 @@ def diff_to_ground_truth_by_region():
     qsm = load_nii_as_array(file_qsm)
     chi = load_nii_as_array(file_chi)
     
-    labels = get_labels()
+    labels = get_labels(args)
     update_labels(labels, seg)
 
     # get statistics for each label name
@@ -297,11 +297,11 @@ def diff_to_ground_truth_by_region():
 
 if __name__ == "__main__":
     args = parse_args()
-    check_output_dir()
-    logger = init_logger()
-    write_details_and_citations()
+    check_output_dir(args)
+    logger = init_logger(args)
+    write_details_and_citations(args)
 
-    calculate_statistics()
+    calculate_statistics(args, logger)
     
     show_warning_summary(logger)
     logger.log(LogLevel.INFO.value, 'Finished')
