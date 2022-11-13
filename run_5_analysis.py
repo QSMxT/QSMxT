@@ -293,7 +293,20 @@ def diff_to_ground_truth_by_region(args, logger):
         line = ",".join([str(x) for x in line])
         f.write(line)
         f.write('\n')
+    
+    # write number of removed brain voxels
+    n_brain_cut = num_voxels_cut_from_brain(qsm, seg)    
+    print(f"Number of removed brain voxels: {n_brain_cut}")
+    f.write(f"\nNumber of removed brain voxels:\n{n_brain_cut}\n")
+    
+    print(f"Filename: {os.path.join(args.output_dir, f_name)}")
     f.close()
+
+def num_voxels_cut_from_brain(qsm, seg):
+    brain_seg = seg >= 13 # brain is label >= 13
+    not_brain_qsm = qsm == 0
+    voxels_cut = np.logical_and(brain_seg, not_brain_qsm)
+    return sum(voxels_cut)
 
 if __name__ == "__main__":
     args = parse_args()
@@ -305,3 +318,14 @@ if __name__ == "__main__":
     
     show_warning_summary(logger)
     logger.log(LogLevel.INFO.value, 'Finished')
+
+
+## What we want
+## Quantitative comparison to ground truth chi map on qsm challenge data
+# for each region get comparison to ground truth (mean-abs-diff, RMSE)
+## Compare size of mask to not cut away too much 
+# >=13 for qsm challenge is outside
+## Run automatically on a range of settings
+# - automatic threshold
+# - mask threshold 0.1:0.05:0.8
+# - maskTh1 0.1:0.1:0.8 x maskTh2 0.1:0.1:0.8
