@@ -100,7 +100,7 @@ def get_stats_ground_truth(labels, seg, qsm, chi):
         label_stats[label_name] = [num_voxels, min_v, max_v, median, mean, std, mean_abs_diff, rms_diff]
     return label_stats
 
-def parse_args():
+def parse_args(args):
     parser = argparse.ArgumentParser(
         description="QSMxT qsm: QSM Reconstruction Pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -140,7 +140,7 @@ def parse_args():
              'file contains labels for the aseg atlas used in the segmentation pipeline.'
     )
 
-    return parser.parse_args()
+    return parser.parse_args(args)
 
 def check_output_dir(args):
     args.output_dir = os.path.abspath(args.output_dir)
@@ -308,8 +308,7 @@ def num_voxels_cut_from_brain(qsm, seg):
     voxels_cut = np.logical_and(brain_seg, not_brain_qsm)
     return sum(voxels_cut)
 
-if __name__ == "__main__":
-    args = parse_args()
+def run_analysis(args):
     check_output_dir(args)
     logger = init_logger(args)
     write_details_and_citations(args)
@@ -320,6 +319,11 @@ if __name__ == "__main__":
     logger.log(LogLevel.INFO.value, 'Finished')
 
 
+if __name__ == "__main__":
+    args = parse_args(sys.argv[1:])
+    run_analysis(args)
+    
+
 ## What we want
 ## Quantitative comparison to ground truth chi map on qsm challenge data
 # for each region get comparison to ground truth (mean-abs-diff, RMSE)
@@ -328,4 +332,4 @@ if __name__ == "__main__":
 ## Run automatically on a range of settings
 # - automatic threshold
 # - mask threshold 0.1:0.05:0.8
-# - maskTh1 0.1:0.1:0.8 x maskTh2 0.1:0.1:0.8
+# - smallMaskTh 0.1:0.1:0.8 x filledMaskTh 0.1:0.1:0.8 (requires some code change to have different thresholds)
