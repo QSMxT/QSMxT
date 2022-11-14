@@ -30,9 +30,10 @@ def run_qsm(data_dir, out_dir, th1=None, th2=None):
     ]))
     run_args = None
     if th1 is not None and th2 is not None:
-        run_args = { "--threshold" : th1 }
+        run_args = { "masking_threshold" : (th1, th2) }
     elif th1 is not None:
-        run_args = { "--threshold" : (th1, th2) }
+        run_args = { "masking_threshold" : th1 }
+    print(f"run_args: {run_args}")
     workflow(args, True, True, run_args)
 
 def run_analysis(data_dir, result_dir):
@@ -41,15 +42,16 @@ def run_analysis(data_dir, result_dir):
             "--qsm_files", result_dir + "/qsm/qsm_final/sub-1_ses-1_run-01_echo-01_part-phase_MEGRE_qsm_000_twopass_average.nii",
             "--output_dir", result_dir + "/test_analysis",
             "--qsm_ground_truth", data_dir + "/sub-1/ses-1/extra_data/sub-1_ses-1_run-01_chi-interpolated.nii.gz"]
-    analysis.run_analysis(args)
+    analysis.run_analysis(analysis.parse_args(args))
 
 
 if __name__ == "__main__":
     ## Need to run this first in bash to import from the current changed module instead of /opt/qsmxt:
     # export PYTHONPATH=/neurodesktop-storage/qsmxt/:$PYTHONPATH
+    # export PATH=/neurodesktop-storage/qsmxt/scripts/:$PATH
     
     data_dir = bids_dir()
-    out_dir = "."
+    out_dir = "results"
     
     # Automatic masking
     dir_automatic = out_dir + "/automatic_masking"
@@ -58,14 +60,14 @@ if __name__ == "__main__":
     
     # One mask threshold 0.1:0.05:0.8
     for thresh in np.arange(0.1, 0.8, 0.05):
-        dir_one_thresh = out_dir + f"/one_thresh_masking_{thresh}"
+        dir_one_thresh = out_dir + f"/one_thresh_masking_{thresh:.2f}"
         run_qsm(data_dir, dir_one_thresh, thresh)
         run_analysis(data_dir, dir_one_thresh)
     
     # Two smallMaskTh 0.1:0.1:0.8 x filledMaskTh 0.1:0.1:0.8
     for th1 in np.arange(0.1, 0.8, 0.1):
         for th2 in np.arange(0.1, 0.8, 0.1):
-            dir_two_thresh = out_dir + "/two_thresh_masking_{th1}_{th2}"
+            dir_two_thresh = out_dir + f"/two_thresh_masking_{th1:.2f}_{th2:.2f}"
             run_qsm(data_dir, dir_two_thresh, th1, th2)
             run_analysis(data_dir, dir_two_thresh)
     

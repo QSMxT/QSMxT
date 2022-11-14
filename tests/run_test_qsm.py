@@ -34,10 +34,10 @@ def workflow(args, init_workflow, run_workflow, run_args):
                 args_dict[key] = value
             wf = qsm.init_workflow(args)
         wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
-        print(wf.n_datasink)
-        print(wf['n_datasink'])
-        print(wf.nipype_datasink)
-        print(wf['nipype_datasink'])
+        # print(wf.n_datasink)
+        # print(wf['n_datasink'])
+        # print(wf.nipype_datasink)
+        # print(wf['nipype_datasink'])
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
