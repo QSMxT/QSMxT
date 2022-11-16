@@ -8,22 +8,28 @@ from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_twopass as twopass
 
-def add_masking_nodes(wf, run_args, mask_files, mn_inputs, n_json):
+def add_masking_nodes(wf, run_args, mask_files, mn_inputs, magnitude_available, n_json):
 
     if not mask_files:    
         # do phase weights if necessary
         if run_args.masking == 'phase-based':
             mn_phaseweights = MapNode(
                 interface=phaseweights.RomeoMaskingInterface(),
-                iterfield=['phase', 'mag'],
+                iterfield=['phase', 'mag'] if magnitude_available else ['phase'],
                 name='romeo-voxelquality'
                 # output: 'out_file'
             )
-            mn_phaseweights.inputs.weight_type = "grad+second+mag"
-            wf.connect([
-                (mn_inputs, mn_phaseweights, [('phase_files', 'phase')]),
-                (mn_inputs, mn_phaseweights, [('magnitude_files', 'mag')])
-            ])
+            if magnitude_available:
+                mn_phaseweights.inputs.weight_type = "grad+second+mag"
+                wf.connect([
+                    (mn_inputs, mn_phaseweights, [('phase_files', 'phase')]),
+                    (mn_inputs, mn_phaseweights, [('magnitude_files', 'mag')])
+                ])
+            else:
+                mn_phaseweights.inputs.weight_type = "grad+second"
+                wf.connect([
+                    (mn_inputs, mn_phaseweights, [('phase_files', 'phase')]),
+                ])
 
         # do threshold-based masking if necessary
         if run_args.masking in ['phase-based', 'magnitude-based']:

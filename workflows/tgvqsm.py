@@ -5,7 +5,7 @@ from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_axialsampling as sampling
 
-def add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink, magnitude_file):
+def add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink, phase_file):
     # === Single-pass QSM reconstruction (filled) ===
     mn_qsm_filled = MapNode(
         interface=tgv.QSMappingInterface(
@@ -47,7 +47,7 @@ def add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink,
     # resample qsm to original
     n_resample_qsm = Node(
         interface=sampling.ResampleLikeInterface(
-            in_like=magnitude_file
+            in_like=phase_file
         ),
         name='nibabel_numpy_nilearn_resample-qsm'
     )
@@ -123,7 +123,7 @@ def add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink,
         # resample qsm to original
         n_resample_qsm_twopass = Node(
             interface=sampling.ResampleLikeInterface(
-                in_like=magnitude_file
+                in_like=phase_file
             ),
             name='nibabel_numpy_nilearn_resample-qsm-twopass'
         )

@@ -205,21 +205,22 @@ def init_run_workflow(run_args, subject, session, run):
     ])
 
     # resample to axial
-    mn_resample_inputs = MapNode(
-        interface=sampling.AxialSamplingInterface(
-            obliquity_threshold=10
-        ),
-        iterfield=['in_mag', 'in_pha', 'in_mask'] if mask_files else ['in_mag', 'in_pha'],
-        name='nibabel_numpy_nilearn_axial-resampling'
-    )
-    wf.connect([
-        (n_getfiles, mn_resample_inputs, [('magnitude_files', 'in_mag')]),
-        (mn_phase_scaled, mn_resample_inputs, [('out_file', 'in_pha')])
-    ])
-    if mask_files:
+    if magnitude_files:
+        mn_resample_inputs = MapNode(
+            interface=sampling.AxialSamplingInterface(
+                obliquity_threshold=10
+            ),
+            iterfield=['in_mag', 'in_pha', 'in_mask'] if mask_files else ['in_mag', 'in_pha'],
+            name='nibabel_numpy_nilearn_axial-resampling'
+        )
         wf.connect([
-            (n_getfiles, mn_resample_inputs, [('mask_files', 'in_mask')])
+            (n_getfiles, mn_resample_inputs, [('magnitude_files', 'in_mag')]),
+            (mn_phase_scaled, mn_resample_inputs, [('out_file', 'in_pha')])
         ])
+        if mask_files:
+            wf.connect([
+                (n_getfiles, mn_resample_inputs, [('mask_files', 'in_mask')])
+            ])
 
     # run homogeneity filter if necessary
     if run_args.inhomogeneity_correction:
@@ -233,39 +234,51 @@ def init_run_workflow(run_args, subject, session, run):
             (mn_resample_inputs, mn_inhomogeneity_correction, [('out_mag', 'in_file')])
         ])
 
-    def repeat(magnitude_files, phase_files, mask_files=None):
-        return magnitude_files, phase_files, mask_files
+    def repeat(phase_files, magnitude_files=None, mask_files=None):
+        return phase_files, magnitude_files, mask_files
+    mn_inputs_iterfield = ['phase_files']
+    if magnitude_files: mn_inputs_iterfield.append('magnitude_files')
+    if mask_files: mn_inputs_iterfield.append('mask_files')
     mn_inputs = MapNode(
         interface=Function(
-            input_names=['magnitude_files', 'phase_files', 'mask_files'] if mask_files else ['magnitude_files', 'phase_files'],
-            output_names=['magnitude_files', 'phase_files', 'mask_files'],
+            input_names=mn_inputs_iterfield.copy(),
+            output_names=['phase_files', 'magnitude_files', 'mask_files'],
             function=repeat
         ),
-        iterfield=['magnitude_files', 'phase_files', 'mask_files'] if mask_files else ['magnitude_files', 'phase_files'],
+        iterfield=mn_inputs_iterfield.copy(),
         name='func_repeat-inputs'
     )
-    wf.connect([
-        (mn_resample_inputs, mn_inputs, [('out_pha', 'phase_files')])
-    ])
-    if mask_files:
+    if magnitude_files:
         wf.connect([
-            (mn_resample_inputs, mn_inputs, [('out_mask', 'mask_files')])
+            (mn_resample_inputs, mn_inputs, [('out_pha', 'phase_files')])
         ])
-    if run_args.inhomogeneity_correction:
-        wf.connect([
-            (mn_inhomogeneity_correction, mn_inputs, [('out_file', 'magnitude_files')])
-        ])
+        if mask_files:
+            wf.connect([
+                (mn_resample_inputs, mn_inputs, [('out_mask', 'mask_files')])
+            ])
+        if run_args.inhomogeneity_correction:
+            wf.connect([
+                (mn_inhomogeneity_correction, mn_inputs, [('out_file', 'magnitude_files')])
+            ])
+        else:
+            wf.connect([
+                (mn_resample_inputs, mn_inputs, [('out_mag', 'magnitude_files')])
+            ])
     else:
         wf.connect([
-            (mn_resample_inputs, mn_inputs, [('out_mag', 'magnitude_files')])
+            (mn_phase_scaled, mn_inputs, [('out_file', 'phase_files')])
         ])
-
+        if mask_files:
+            wf.connect([
+                (n_getfiles, mn_inputs, [('mask_files', 'mask_files')])
+            ])
+    
     # masking steps
-    mn_mask, n_json = add_masking_nodes(wf, run_args, mask_files, mn_inputs, n_json)
+    mn_mask, n_json = add_masking_nodes(wf, run_args, mask_files, mn_inputs, len(magnitude_files) > 0, n_json)
 
     # qsm steps
     if run_args.qsm_algorithm == 'tgv_qsm':
-        wf = add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink, magnitude_files[0])
+        wf = add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink, phase_files[0])
     elif run_args.qsm_algorithm == 'nextqsm':
         wf = add_nextqsm_workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, run_args.nextqsm_unwrapping_algorithm)
     elif run_args.qsm_algorithm == 'nextqsm_combined':

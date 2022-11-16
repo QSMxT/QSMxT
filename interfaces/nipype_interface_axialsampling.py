@@ -77,7 +77,7 @@ def resample_files(mag_file, pha_file, mask_file=None, obliquity_threshold=None)
     print(f"Saving pha={pha_resampled_fname}")
     nib.save(pha_rot_nii, pha_resampled_fname)
     
-    mask_resampled_fname = None
+    mask_resampled_fname = "placeholder"
     if mask_rot_nii:
         mask_fname = os.path.split(mask_file)[1].split('.')[0]
         mask_extension = '.'.join(mask_file.split('.')[1:])
@@ -111,7 +111,7 @@ class AxialSamplingInputSpec(BaseInterfaceInputSpec):
 class AxialSamplingOutputSpec(TraitedSpec):
     out_mag = File(exists=True)
     out_pha = File(exists=True)
-    out_mask = File()
+    out_mask = File(mandatory=False)
 
 
 class AxialSamplingInterface(SimpleInterface):
