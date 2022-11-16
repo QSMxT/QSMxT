@@ -52,8 +52,11 @@ def find_dicoms(input_dir, check_all_files):
             logger.log(LogLevel.WARNING.value, "No .IMA or .dcm files found! Checking all files for valid DICOM headers...")
         for root, dirs, files in os.walk(input_dir):
             for f in files:
-                ds = pydicom.read_file(os.path.join(root, f))
-                unsortedList.append(os.path.join(root, f))
+                try:
+                    ds = pydicom.read_file(os.path.join(root, f))
+                    unsortedList.append(os.path.join(root, f))
+                except:
+                    pass
     return unsortedList
 
 def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, check_all_files, delete_originals):
