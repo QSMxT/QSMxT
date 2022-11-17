@@ -303,7 +303,7 @@ def diff_to_ground_truth_by_region(args, logger):
     f.close()
 
 def num_voxels_cut_from_brain(qsm, seg):
-    brain_seg = seg < 13 # brain is label < 13
+    brain_seg = seg < 12 # brain is label < 12 on qsm challenge data
     not_brain_qsm = qsm == 0
     voxels_cut = np.logical_and(brain_seg, not_brain_qsm)
     return sum(voxels_cut)
