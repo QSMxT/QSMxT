@@ -43,6 +43,15 @@ def run_analysis(data_dir, result_dir):
             "--qsm_ground_truth", data_dir + "/sub-1/ses-1/extra_data/sub-1_ses-1_run-01_chi-interpolated.nii.gz"]
     analysis.run_analysis(analysis.parse_args(args))
 
+def run_analysis_per_echo(data_dir, result_dir, n_echos):
+    print(f"Running echo analysis for {result_dir}")
+    for i in range(0, n_echos):
+        args = ["--segmentations", data_dir + "/sub-1/ses-1/extra_data/sub-1_ses-1_run-01_segmentation.nii.gz",
+            "--qsm_files", result_dir + f"/qsm/workflow_qsm/sub-1/ses-1/run-01/numpy_nibabel_twopass/mapflow/_numpy_nibabel_twopass{i}/sub-1_ses-1_run-01_echo-0{i+1}_part-phase_MEGRE_qsm_000_twopass.nii",
+            "--output_dir", result_dir + f"/test_analysis/echo{i}",
+            "--qsm_ground_truth", data_dir + "/sub-1/ses-1/extra_data/sub-1_ses-1_run-01_chi-interpolated.nii.gz"]
+        analysis.run_analysis(analysis.parse_args(args))
+
 
 if __name__ == "__main__":
     ## Need to run this first in bash to import from the current changed module instead of /opt/qsmxt:
@@ -56,14 +65,16 @@ if __name__ == "__main__":
     current_dir = out_dir + "/automatic_masking"
     if not os.path.isdir(current_dir + "/test_analysis"):
         run_qsm(data_dir, current_dir)
-        run_analysis(data_dir, current_dir)
+    run_analysis(data_dir, current_dir)
+    run_analysis_per_echo(data_dir, current_dir, 4)
     
     # One mask threshold 0.1:0.05:0.8
     for thresh in np.arange(0.1, 0.8, 0.05):
         current_dir = out_dir + f"/one_thresh_masking_{thresh:.2f}"
         if not os.path.isdir(current_dir + "/test_analysis"):
             run_qsm(data_dir, current_dir, thresh)
-            run_analysis(data_dir, current_dir)
+        run_analysis(data_dir, current_dir)
+        run_analysis_per_echo(data_dir, current_dir, 4)
     
     # Two smallMaskTh 0.1:0.1:0.8 x filledMaskTh 0.1:0.1:0.8
     for th1 in np.arange(0.1, 0.8, 0.1):
@@ -71,5 +82,6 @@ if __name__ == "__main__":
             current_dir = out_dir + f"/two_thresh_masking_{th1:.2f}_{th2:.2f}"
             if not os.path.isdir(current_dir + "/test_analysis"):
                 run_qsm(data_dir, current_dir, th1, th2)
-                run_analysis(data_dir, current_dir)
+            run_analysis(data_dir, current_dir)
+            run_analysis_per_echo(data_dir, current_dir, 4)
     
