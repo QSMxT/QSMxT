@@ -15,7 +15,7 @@ def nonzero_average(in_files, save_result=True):
         data.append(in_data)
     try:
         data = np.array(data)
-        mask = abs(data) >= 0.0001
+        mask = abs(data) >= 1e-10
     except ValueError:
         sizes = [x.shape for x in data]
         raise ValueError(f"Tried to average files of incompatible dimensions; {sizes}")

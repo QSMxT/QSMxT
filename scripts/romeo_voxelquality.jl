@@ -12,7 +12,7 @@ s = ArgParseSettings()
     "--mag"
         help = "input - mag filename"
     "--type"
-        help = """grad || grad+second || grad+mag || grad+second+mag"""
+        help = """grad || grad+second"""
         default = "grad"
     "--output"
         help = "output - unwrapped phase filename"
@@ -25,7 +25,7 @@ if !isnothing(args["mag"])
     optional_args[:mag] = Float32.(niread(args["mag"]))
 end
 
-phase_nii = niread(args["phase"])
+phase_nii = readphase(args["phase"])
 phase = Float32.(phase_nii)
 
 weights = falses(6)

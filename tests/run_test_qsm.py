@@ -6,6 +6,8 @@ import tempfile
 import run_2_qsm as qsm
 from scripts.sys_cmd import sys_cmd
 
+run_workflow = True
+
 @pytest.fixture
 def bids_dir():
     tmp_dir = tempfile.gettempdir()
@@ -32,13 +34,13 @@ def workflow(args, init_workflow, run_workflow, run_args):
                 args_dict[key] = value
             wf = qsm.init_workflow(args)
         wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
-        print(wf.n_datasink)
-        print(wf['n_datasink'])
-        print(wf.nipype_datasink)
-        print(wf['nipype_datasink'])
+        # print(wf.n_datasink)
+        # print(wf['n_datasink'])
+        # print(wf.nipype_datasink)
+        # print(wf['nipype_datasink'])
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
+    (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_args_defaults(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -85,7 +87,7 @@ def test_args_tgvqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, True, { 'num_echoes' : 2 })
+    (True, run_workflow, { 'num_echoes' : 2 })
 ])
 def test_args_nextqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -109,7 +111,7 @@ def test_args_nextqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
     
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, True, { 'num_echoes' : 2, 'n_procs' : 1 })
+    (True, run_workflow, { 'num_echoes' : 2, 'n_procs' : 1 })
 ])
 def test_args_nextqsm_laplacian(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -158,7 +160,7 @@ def test_args_singlepass(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
+    (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_args_inhomogeneity_correction_bet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -183,7 +185,7 @@ def test_args_inhomogeneity_correction_bet(bids_dir, init_workflow, run_workflow
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
+    (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_args_inhomogeneity_correction_magnitudebased(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -232,7 +234,7 @@ def test_args_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_work
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
+    (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_args_addbet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -281,7 +283,7 @@ def test_args_addbet_invalid(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
+    (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_args_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
