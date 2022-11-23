@@ -82,5 +82,5 @@ jobs:
     - uses: actions/upload-artifact@v3
       with:
         name: qsm-result
-        path: /tmp/qsm/qsm_final/
+        path: /tmp/qsm-metrics/
 
