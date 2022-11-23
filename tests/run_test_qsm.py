@@ -124,7 +124,7 @@ def print_metrics(name, bids_path, qsm_path):
     #plt.savefig(os.path.join(qsm_path, "qsm_final", "metrics.png"))
     #plt.close()
 
-    display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", "slice.png"))
+    display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", "slice.png")))
 
 
 def workflow(args, init_workflow, run_workflow, run_args, show_metrics=False):
