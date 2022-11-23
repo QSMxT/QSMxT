@@ -57,7 +57,7 @@ def workflow(args, init_workflow, run_workflow, run_args, show_metrics=False):
             for key, value in run_args.items():
                 args_dict[key] = value
             wf = qsm.init_workflow(args)
-        shutil.rmtree(os.path.join(args.output_dir, "qsm_final"))
+        shutil.rmtree(os.path.join(args.output_dir, "qsm_final"), ignore_errors=True)
         wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
         if show_metrics:
             print_metrics(args.bids_dir, args.output_dir)
