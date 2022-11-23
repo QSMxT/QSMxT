@@ -110,7 +110,7 @@ def test_args_tgvqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflow, { 'num_echoes' : 2 })
+    (True, run_workflow, { 'num_echoes' : 2, 'n_procs' : 1 })
 ])
 def test_args_nextqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
