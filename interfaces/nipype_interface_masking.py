@@ -6,6 +6,7 @@ import numpy as np
 from scipy.stats import norm
 from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion, gaussian_filter, binary_opening
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath, OutputMultiPath
+from skimage import filters
 
 # === HELPER FUNCTIONS ===
 
@@ -44,7 +45,9 @@ def threshold_masking(in_files, threshold=None, fill_strength=0):
     image_histogram = np.array([data.flatten() for data in all_float_data])
     
     # calculate gaussian threshold if none given
-    if not threshold: threshold = _gaussian_threshold(image_histogram)
+    if not threshold: threshold = filters.threshold_otsu(image_histogram) * 0.75
+    #hist, bins_center = exposure.histogram(camera)
+    #threshold = _gaussian_threshold(image_histogram)
 
     # do masking
     masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
@@ -53,7 +56,7 @@ def threshold_masking(in_files, threshold=None, fill_strength=0):
     small_masks = [binary_opening(mask) for mask in masks]
 
     # hole-filling (applied to filled_masks only)
-    filled_masks = [fill_holes_smoothing(mask) for mask in masks]
+    filled_masks = [fill_holes_morphological(fill_holes_smoothing(mask)) for mask in masks]
 
     # determine filenames
     small_mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask.nii" for in_file in in_files]
