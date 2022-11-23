@@ -15,7 +15,7 @@ from scripts.sys_cmd import sys_cmd
 from matplotlib import pyplot as plt
 from scripts.logger import LogLevel, make_logger
 
-run_workflow = True
+run_workflow = False
 logger = make_logger(
     logpath=f"log.txt",
     printlevel=LogLevel.INFO,
