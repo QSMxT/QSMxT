@@ -137,7 +137,7 @@ bash Miniconda3-4.7.12.1-Linux-x86_64.sh -b
 source ~/.bashrc
 conda create -n qsmxt python=3.8
 conda activate qsmxt
-pip install psutil datetime nipype nibabel nilearn scipy pydicom osfclient seaborn
+pip install psutil datetime nipype nibabel nilearn scipy pydicom osfclient cloudstor seaborn
 ```
 
 5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
@@ -150,7 +150,7 @@ You need:
 - bet2 (https://github.com/liangfu/bet2)
 - ANTs version=2.3.4
 - dcm2niix (https://github.com/rordenlab/dcm2niix)
-- miniconda version=4.7.12.1 with python3.8 and pip packages psutil, datetime, nipype, nibabel, nilearn, scipy, pydicom, osfclient and seaborn
+- miniconda version=4.7.12.1 with python3.8 and pip packages psutil, datetime, nipype, nibabel, nilearn, scipy, pydicom, osfclient, cloudstor and seaborn
 - FastSurfer (https://github.com/Deep-MI/FastSurfer.git)
 - Bru2Nii v1.0.20180303 (https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip)
 - julia-1.6.1 with ArgParse, MriResearchTools, FFTW and RomeoApp (see https://github.com/korbinian90/RomeoApp.jl)

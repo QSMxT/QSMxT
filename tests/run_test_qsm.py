@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import os
 import osfclient
+import cloudstor
 import pytest
 import tempfile
 import glob
@@ -12,8 +13,16 @@ import seaborn as sns
 import run_2_qsm as qsm
 from scripts.sys_cmd import sys_cmd
 from matplotlib import pyplot as plt
+from scripts.logger import LogLevel, make_logger
 
 run_workflow = True
+logger = make_logger(
+    logpath=f"log.txt",
+    printlevel=LogLevel.INFO,
+    writelevel=LogLevel.INFO,
+    warnlevel=LogLevel.WARNING,
+    errorlevel=LogLevel.ERROR
+)
 
 @pytest.fixture
 def bids_dir():
@@ -28,6 +37,18 @@ def bids_dir():
         sys_cmd(f"tar xf {os.path.join(tmp_dir, 'bids-osf.tar')} -C {tmp_dir}")
         sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-osf.tar')}")
     return os.path.join(tmp_dir, 'bids-osf')
+
+@pytest.fixture
+def bids_dir_secret():
+    tmp_dir = tempfile.gettempdir()
+    if not os.path.exists(os.path.join(tmp_dir, 'bids-secret')):
+        if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
+            print("Downloading test data...")
+            cloudstor.cloudstor(url=os.environ['DATA_URL'], password=os.environ['DATA_PASS']).download('', os.path.join(tmp_dir, 'bids-secret.tar'))
+        print("Extracting test data...")
+        sys_cmd(f"tar xf {os.path.join(tmp_dir, 'bids-secret.tar')} -C {tmp_dir}")
+        sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-secret.tar')}")
+    return os.path.join(tmp_dir, 'bids-secret')
 
 def display_nii(
     nii_path=None, data=None, dim=0, title=None, slc=None, dpi=96, size=None, out_png=None, final_fig=True, title_fontsize=12,
@@ -430,6 +451,30 @@ def test_args_numechoes(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.add_bet == False)
     assert(args.use_existing_masks == False)
     assert(args.num_echoes == 3)
+    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
+    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
+    
+    workflow(args, init_workflow, run_workflow, run_args)
+
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, False, None)
+])
+def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir_secret,
+        os.path.join(tempfile.gettempdir(), "qsm-secret")
+    ]))
+    
+    assert(args.bids_dir == os.path.abspath(bids_dir_secret))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm-secret"))
+    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.masking == "phase-based")
+    assert(args.two_pass == True)
+    assert(args.single_pass == False)
+    assert(args.inhomogeneity_correction == False)
+    assert(args.add_bet == False)
+    assert(args.use_existing_masks == False)
     assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
