@@ -79,4 +79,8 @@ jobs:
     - name: test QSM pipeline
       run: |
         /bin/bash tests/run_test_qsm.sh
+    - uses: actions/upload-artifact@v3
+      with:
+        name: qsm-result
+        path: /tmp/qsm/qsm_final/
 

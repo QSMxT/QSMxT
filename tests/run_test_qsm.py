@@ -3,8 +3,13 @@ import os
 import osfclient
 import pytest
 import tempfile
+import glob
+import nibabel as nib
+import shutil
 import run_2_qsm as qsm
 from scripts.sys_cmd import sys_cmd
+from run_5_analysis import load_labels, update_labels, get_stats_ground_truth
+from scripts.qsmxt_functions import get_qsmxt_dir
 
 run_workflow = True
 
@@ -22,7 +27,26 @@ def bids_dir():
         sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-osf.tar')}")
     return os.path.join(tmp_dir, 'bids-osf')
 
-def workflow(args, init_workflow, run_workflow, run_args):
+def print_metrics(bids_path, qsm_path):
+    qsm_file = glob.glob(os.path.join(qsm_path, "qsm_final", "*qsm*nii*"))[0]
+    seg_file = glob.glob(os.path.join(bids_path, "sub-1", "ses-1", "extra_data", "*segmentation*nii*"))[0]
+    chi_file = glob.glob(os.path.join(bids_path, "sub-1", "ses-1", "extra_data", "*chi*crop*nii*"))[0]
+
+    qsm = nib.load(qsm_file).get_fdata()
+    seg = nib.load(seg_file).get_fdata()
+    chi = nib.load(chi_file).get_fdata()
+
+    labels = {}
+    update_labels(labels, seg)
+    label_stats = get_stats_ground_truth(labels, seg, qsm, chi)
+    
+    for label_name in label_stats.keys():
+        if label_stats[label_name]:
+            voxels, min_v, max_v, median, mean, std, mean_abs_diff, rms_diff = label_stats[label_name]
+            print(f"{label_name}: voxels={voxels}; min={round(min_v, 4)}; max={round(max_v, 4)}; median={round(median, 4)}; mean={round(mean, 4)}; std={round(std, 4)}; mean_abs_diff={round(mean_abs_diff, 2)}; rms_diff={round(rms_diff, 4)}")
+
+
+def workflow(args, init_workflow, run_workflow, run_args, show_metrics=False):
     assert(not (run_workflow == True and init_workflow == False))
     if init_workflow:
         wf = qsm.init_workflow(args)
@@ -33,11 +57,10 @@ def workflow(args, init_workflow, run_workflow, run_args):
             for key, value in run_args.items():
                 args_dict[key] = value
             wf = qsm.init_workflow(args)
+        shutil.rmtree(os.path.join(args.output_dir, "qsm_final"))
         wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
-        # print(wf.n_datasink)
-        # print(wf['n_datasink'])
-        # print(wf.nipype_datasink)
-        # print(wf['nipype_datasink'])
+        if show_metrics:
+            print_metrics(args.bids_dir, args.output_dir)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
@@ -330,6 +353,30 @@ def test_args_numechoes(bids_dir, init_workflow, run_workflow, run_args):
     assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
     workflow(args, init_workflow, run_workflow, run_args)
+
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflow, None)
+])
+def test_metrics(bids_dir, init_workflow, run_workflow, run_args):
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir,
+        os.path.join(tempfile.gettempdir(), "qsm")
+    ]))
+    
+    assert(args.bids_dir == os.path.abspath(bids_dir))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
+    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.masking == "phase-based")
+    assert(args.two_pass == True)
+    assert(args.single_pass == False)
+    assert(args.inhomogeneity_correction == False)
+    assert(args.add_bet == False)
+    assert(args.use_existing_masks == False)
+    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
+    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
+    
+    workflow(args, init_workflow, run_workflow, run_args, show_metrics=True)
 
 # TODO
 #  - check file outputs

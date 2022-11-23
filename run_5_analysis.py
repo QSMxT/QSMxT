@@ -37,7 +37,7 @@ def load_labels(label_filepath):
 
 # give names to segmentation labels that don't have one
 def update_labels(labels, seg):
-    for seg_num in sorted(list(set(seg))):
+    for seg_num in sorted(list(set(seg.flatten()))):
         # get segmentation name 
         if seg_num == 0: continue
         seg_name = None
