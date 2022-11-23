@@ -8,7 +8,7 @@ import nibabel as nib
 import shutil
 import numpy as np
 import pandas as pd
-#import seaborn as sns
+import seaborn as sns
 import run_2_qsm as qsm
 from scripts.sys_cmd import sys_cmd
 from matplotlib import pyplot as plt
@@ -115,14 +115,14 @@ def print_metrics(name, bids_path, qsm_path):
         new_vals = np.append(labels_column, rmse_column, axis=1)
         metrics_np = np.append(metrics_np, new_vals, axis=0)
 
-    #metrics = pd.DataFrame(data=metrics_np, columns=columns)
-    #metrics['RMSE'] = metrics['RMSE'].astype(float)
-    #plt.figure(figsize=(15, 8), dpi=200)
-    #ax = sns.boxplot(data=metrics, x="Label", y="RMSE", color="seagreen")
-    #ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
-    #plt.tight_layout()
-    #plt.savefig(os.path.join(qsm_path, "qsm_final", "metrics.png"))
-    #plt.close()
+    metrics = pd.DataFrame(data=metrics_np, columns=columns)
+    metrics['RMSE'] = metrics['RMSE'].astype(float)
+    plt.figure(figsize=(15, 8), dpi=200)
+    ax = sns.boxplot(data=metrics, x="Label", y="RMSE", color="seagreen")
+    ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
+    plt.tight_layout()
+    plt.savefig(os.path.join(qsm_path, "qsm_final", "metrics.png"))
+    plt.close()
 
     display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", "slice.png")))
 
