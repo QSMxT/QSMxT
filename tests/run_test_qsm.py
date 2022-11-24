@@ -45,7 +45,7 @@ def bids_dir_secret():
         if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
             print("Downloading test data...")
             print("DATA_URL", os.environ['DATA_URL'])
-            cloudstor.cloudstor(url=os.environ['DATA_URL'], password=os.environ['DATA_PASS']).download('bids-secret.tar', os.path.join(tmp_dir, 'bids-secret.tar'))
+            cloudstor.cloudstor(url=os.environ['DATA_URL'], password=os.environ['DATA_PASS']).download('', os.path.join(tmp_dir, 'bids-secret.tar'))
         print("Extracting test data...")
         sys_cmd(f"tar xf {os.path.join(tmp_dir, 'bids-secret.tar')} -C {tmp_dir}")
         sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-secret.tar')}")
