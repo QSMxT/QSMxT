@@ -84,6 +84,6 @@ jobs:
         /bin/bash tests/run_test_qsm.sh
     - uses: actions/upload-artifact@v3
       with:
-        name: qsm-result
-        path: /tmp/qsm-metrics/qsm*
+        name: test-outputs
+        path: /tmp/test-outputs
 
