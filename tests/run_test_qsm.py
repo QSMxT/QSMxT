@@ -491,12 +491,12 @@ def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
 def test_metrics(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        os.path.join(tempfile.gettempdir(), "qsm-outputs", "test_metrics"),
+        os.path.join(tempfile.gettempdir(), "test-outputs", "test_metrics"),
         "--masking", "magnitude-based"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm-outputs", "test_metrics"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "test-outputs", "test_metrics"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "magnitude-based")
     assert(args.two_pass == True)
