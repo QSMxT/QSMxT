@@ -7,6 +7,7 @@ import tempfile
 import glob
 import nibabel as nib
 import shutil
+import datetime
 import numpy as np
 import pandas as pd
 import seaborn as sns
@@ -16,13 +17,16 @@ from matplotlib import pyplot as plt
 from scripts.logger import LogLevel, make_logger
 
 run_workflow = True
-logger = make_logger(
-    logpath=f"log.txt",
-    printlevel=LogLevel.INFO,
-    writelevel=LogLevel.INFO,
-    warnlevel=LogLevel.WARNING,
-    errorlevel=LogLevel.ERROR
-)
+
+def create_logger(log_dir):
+    os.makedirs(log_dir, exist_ok=True)
+    return make_logger(
+        logpath=os.path.join(log_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        printlevel=LogLevel.INFO,
+        writelevel=LogLevel.INFO,
+        warnlevel=LogLevel.WARNING,
+        errorlevel=LogLevel.ERROR
+    )
 
 @pytest.fixture
 def bids_dir():
@@ -148,8 +152,9 @@ def print_metrics(name, bids_path, qsm_path):
     display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", "slice.png")))
 
 
-def workflow(args, init_workflow, run_workflow, run_args, show_metrics=False):
+def workflow(args, init_workflow, run_workflow, run_args, show_metrics=False, delete_workflow=False):
     assert(not (run_workflow == True and init_workflow == False))
+    create_logger(args.output_dir)
     if init_workflow:
         wf = qsm.init_workflow(args)
     if init_workflow and run_workflow:
@@ -159,10 +164,9 @@ def workflow(args, init_workflow, run_workflow, run_args, show_metrics=False):
             for key, value in run_args.items():
                 args_dict[key] = value
             wf = qsm.init_workflow(args)
-        #shutil.rmtree(os.path.join(args.output_dir, "qsm_final"), ignore_errors=True)
-        wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
-        if show_metrics:
-            print_metrics(str(args), args.bids_dir, args.output_dir)
+        wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})            
+        if delete_workflow:
+            shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"), ignore_errors=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
@@ -487,12 +491,12 @@ def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
 def test_metrics(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        os.path.join(tempfile.gettempdir(), "qsm-metrics"),
+        os.path.join(tempfile.gettempdir(), "test-outputs", "test_metrics"),
         "--masking", "magnitude-based"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm-metrics"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "test-outputs", "test_metrics"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "magnitude-based")
     assert(args.two_pass == True)
@@ -504,6 +508,7 @@ def test_metrics(bids_dir, init_workflow, run_workflow, run_args):
     assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
     workflow(args, init_workflow, run_workflow, run_args, show_metrics=True)
+    print_metrics(str(args), args.bids_dir, args.output_dir)
 
 # TODO
 #  - check file outputs

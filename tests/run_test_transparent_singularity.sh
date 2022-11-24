@@ -64,9 +64,10 @@ echo $bash_command
 $bash_command
 
 source ~/.bashrc
+export PATH=/usr/share/miniconda/bin:$PATH
 
 pip_command=`cat /tmp/QSMxT/README.md | grep "pip install "`
-pip_command="/usr/share/miniconda/bin/python3 -m ${pip_command}"
+#pip_command="/usr/share/miniconda/bin/python3 -m ${pip_command}"
 echo $pip_command
 $pip_command
 
