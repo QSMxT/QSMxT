@@ -78,7 +78,8 @@ jobs:
         python-version: 3.8
     - name: test QSM pipeline
       env:
-        DATA_KEY: ${{ secrets.DATA_KEY }}
+        DATA_URL: ${{ secrets.DATA_URL }}
+        DATA_PASS: ${{ secrets.DATA_PASS }}
       run: |
         /bin/bash tests/run_test_qsm.sh
     - uses: actions/upload-artifact@v3
