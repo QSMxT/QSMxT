@@ -164,6 +164,9 @@ def workflow(args, init_workflow, run_workflow, run_args, show_metrics=False, de
             for key, value in run_args.items():
                 args_dict[key] = value
             wf = qsm.init_workflow(args)
+        args_file = open(os.path.join(args.output_dir, "args.txt"), 'w')
+        args_file.write(str(args))
+        args_file.close()
         wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})            
         if delete_workflow:
             shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"), ignore_errors=True)
@@ -462,7 +465,7 @@ def test_args_numechoes(bids_dir, init_workflow, run_workflow, run_args):
 
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, False, None)
+    (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -483,6 +486,15 @@ def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
     assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
     workflow(args, init_workflow, run_workflow, run_args)
+    
+    # zip up results
+    results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.tar"
+    shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
+    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
+
+    # upload results
+    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['UPLOAD_PASS'])
+    cs.upload(results_tar, results_tar)
 
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
@@ -491,12 +503,12 @@ def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
 def test_metrics(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        os.path.join(tempfile.gettempdir(), "test-outputs", "test_metrics"),
+        os.path.join(tempfile.gettempdir(), "public-outputs", "test_metrics"),
         "--masking", "magnitude-based"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "test-outputs", "test_metrics"))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "public-outputs", "test_metrics"))
     assert(args.qsm_algorithm == "tgv_qsm")
     assert(args.masking == "magnitude-based")
     assert(args.two_pass == True)
