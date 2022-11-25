@@ -5,7 +5,7 @@ echo "GITHUB_HEAD_REF: ${GITHUB_HEAD_REF}"
 echo "GITHUB_REF: ${GITHUB_REF}"
 echo "GITHUB_REF##*/: ${GITHUB_REF##*/}"
 
-if [ -z ${GITHUB_HEAD_REF} ]; then
+if [ -n "${GITHUB_HEAD_REF}" ]; then
     echo "GITHUB_HEAD_REF DEFINED... USING IT."
     BRANCH=${GITHUB_HEAD_REF}
 else
