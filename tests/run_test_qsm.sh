@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 set -e 
 
-branch="${GITHUB_REF##*/}"
-echo "[DEBUG] Pulling QSMxT branch ${branch}..."
-git clone -b "${branch}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
+echo "[DEBUG] Pulling QSMxT branch ${GIT_BRANCH}..."
+git clone -b "${GIT_BRANCH}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
 
 container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
 echo "[DEBUG] Pulling QSMxT container ${container}..."
