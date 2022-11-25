@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -e 
 
-echo "GITHUB_BASE_REF: ${GITHUB_BASE_REF}"
-echo "GITHUB_HEAD_REF: ${GITHUB_HEAD_REF}"
-echo "GITHUB_REF: ${GITHUB_REF}"
-exit
+if [ -z ${GITHUB_HEAD_REF+x} ]; then
+    BRANCH=${GITHUB_HEAD_REF}
+else
+    BRANCH=${GITHUB_REF##*/}
+fi
 
-echo "[DEBUG] Pulling QSMxT branch ${GIT_BRANCH}..."
-git clone -b "${GIT_BRANCH}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
+echo "[DEBUG] Pulling QSMxT branch ${BRANCH}..."
+git clone -b "${BRANCH}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
 
 container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
 echo "[DEBUG] Pulling QSMxT container ${container}..."
