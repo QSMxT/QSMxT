@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -e 
 
-GIT_BRANCH="${GITHUB_BASE_REF:-${GITHUB_REF#refs/heads/}}"
+echo "GITHUB_BASE_REF: ${GITHUB_BASE_REF}"
+echo "GITHUB_REF: ${GITHUB_REF}"
+exit
+
 echo "[DEBUG] Pulling QSMxT branch ${GIT_BRANCH}..."
 git clone -b "${GIT_BRANCH}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
 
