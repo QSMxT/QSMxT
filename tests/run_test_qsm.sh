@@ -21,5 +21,6 @@ echo "[DEBUG] Pulling QSMxT container ${container}..."
 sudo docker pull "${container}"
 
 echo "[DEBUG] Running QSM pipeline tests..."
+echo "sudo docker run --env PYTHONPATH=/tmp/QSMxT --env DATA_URL=\"${DATA_URL}\" --env DATA_PASS=\"${DATA_PASS}\" --env UPLOAD_URL=\"${UPLOAD_URL}\" --env UPLOAD_PASS=\"${UPLOAD_PASS}\" --env -v /tmp:/tmp ${container} pytest /tmp/QSMxT/tests/run_test_qsm.py -s"
 sudo docker run --env PYTHONPATH=/tmp/QSMxT --env DATA_URL="${DATA_URL}" --env DATA_PASS="${DATA_PASS}" --env UPLOAD_URL="${UPLOAD_URL}" --env UPLOAD_PASS="${UPLOAD_PASS}" --env -v /tmp:/tmp ${container} pytest /tmp/QSMxT/tests/run_test_qsm.py -s
 
