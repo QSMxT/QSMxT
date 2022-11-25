@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 set -e 
 
+echo "GITHUB_HEAD_REF: ${GITHUB_HEAD_REF}"
+echo "GITHUB_REF: ${GITHUB_REF}"
+echo "GITHUB_REF##*/: ${GITHUB_REF##*/}"
+
 if [ -z ${GITHUB_HEAD_REF+x} ]; then
+    echo "GITHUB_HEAD_REF DEFINED... USING IT."
     BRANCH=${GITHUB_HEAD_REF}
 else
+    echo "GITHUB_HEAD_REF UNDEFINED... USING GITHUB_REF##*/"
     BRANCH=${GITHUB_REF##*/}
 fi
 
