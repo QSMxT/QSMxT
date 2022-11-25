@@ -76,9 +76,6 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
-    - name: Set environment variables
-        run: |
-          GIT_BRANCH=${GITHUB_BASE_REF:-${GITHUB_REF#refs/heads/}}
     - name: Test QSM pipeline
       env:
         DATA_URL: ${{ secrets.DATA_URL }}
