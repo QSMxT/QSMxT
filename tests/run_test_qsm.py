@@ -48,7 +48,7 @@ def bids_dir_secret():
     if not os.path.exists(os.path.join(tmp_dir, 'bids-secret')):
         if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
             print("Downloading test data...")
-            cloudstor.cloudstor(url=os.environ['DATA_URL'], password=os.environ['DATA_PASS']).download('', os.path.join(tmp_dir, 'bids-secret.tar'))
+            cloudstor.cloudstor(url=os.environ['DOWNLOAD_URL'], password=os.environ['DATA_PASS']).download('', os.path.join(tmp_dir, 'bids-secret.tar'))
         print("Extracting test data...")
         sys_cmd(f"tar xf {os.path.join(tmp_dir, 'bids-secret.tar')} -C {tmp_dir}")
         sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-secret.tar')}")
@@ -493,7 +493,7 @@ def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
     sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
 
     # upload results
-    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['UPLOAD_PASS'])
+    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
     cs.upload(results_tar, results_tar)
 
 

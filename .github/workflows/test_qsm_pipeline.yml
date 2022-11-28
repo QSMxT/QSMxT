@@ -78,10 +78,9 @@ jobs:
         python-version: 3.8
     - name: Test QSM pipeline
       env:
-        DATA_URL: ${{ secrets.DATA_URL }}
-        DATA_PASS: ${{ secrets.DATA_PASS }}
+        DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
         UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
-        UPLOAD_PASS: ${{ secrets.UPLOAD_PASS }}
+        DATA_PASS: ${{ secrets.DATA_PASS }}
       run: |
         /bin/bash tests/run_test_qsm.sh
     - uses: actions/upload-artifact@v3
