@@ -13,7 +13,8 @@ def get_qsmxt_version():
     return f"{version} (commit date: {date})"
 
 def get_container_version(check_path=True):
-    if 'qsmxt' in os.environ.get('SINGULARITY_NAME'):
+
+    if os.environ.get('SINGULARITY_NAME') and 'qsmxt' in os.environ.get('SINGULARITY_NAME'):
         return f"{os.environ.get('SINGULARITY_NAME')} (singularity)"
     if os.path.exists("/README.md"):
         with open("/README.md", 'r') as readme_handle:
