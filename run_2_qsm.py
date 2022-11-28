@@ -17,7 +17,6 @@ from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logg
 from interfaces import nipype_interface_scalephase as scalephase
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_json as json
-from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_axialsampling as sampling
 
 from workflows.nextqsm import add_nextqsm_workflow, add_b0nextqsm_workflow
@@ -275,6 +274,14 @@ def init_run_workflow(run_args, subject, session, run):
     
     # masking steps
     mn_mask, n_json = add_masking_nodes(wf, run_args, mask_files, mn_inputs, len(magnitude_files) > 0, n_json)
+    
+    wf.connect([
+        (mn_mask, n_datasink, [('masks', 'masks')])
+    ])
+    if run_args.two_pass:
+        wf.connect([
+            (mn_mask, n_datasink, [('masks_filled', 'mask_filled')])
+        ])
 
     # qsm steps
     if run_args.qsm_algorithm == 'tgv_qsm':
