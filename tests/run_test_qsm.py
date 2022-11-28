@@ -520,7 +520,8 @@ def test_metrics(bids_dir, init_workflow, run_workflow, run_args):
     assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
     workflow(args, init_workflow, run_workflow, run_args, show_metrics=True)
-    print_metrics(str(args), args.bids_dir, args.output_dir)
+    if run_workflow:
+        print_metrics(str(args), args.bids_dir, args.output_dir)
 
 # TODO
 #  - check file outputs
