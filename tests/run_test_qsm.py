@@ -486,9 +486,14 @@ def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
     assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
     workflow(args, init_workflow, run_workflow, run_args)
+
+    # upload filename
+    if os.environ.get('BRANCH'):
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}.tar"
+    else:
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.tar"
     
     # zip up results
-    results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.tar"
     shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
     sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
 
