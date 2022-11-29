@@ -13,5 +13,5 @@ class LaplacianOutputSpec(TraitedSpec):
 class LaplacianInterface(CommandLine):
     input_spec = LaplacianInputSpec
     output_spec = LaplacianOutputSpec
-    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "laplacian_unwrapping.jl")
+    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "mrt_laplacian_unwrapping.jl")
     

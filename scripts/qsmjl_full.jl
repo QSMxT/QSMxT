@@ -14,7 +14,6 @@ s = ArgParseSettings()
         required = true
     "--TEs"
         help = "input - echo times (s)"
-        arg_type = Vector{Float64}
         required = true
     "--vsz"
         help = "input - voxel size (mm)"
@@ -31,9 +30,12 @@ s = ArgParseSettings()
     "--unwrapped-phase-out"
         help = "output - unwrapped phase"
         default = "unwrapped_phase.nii"
-    "--tissue-phase-out"
+    "--frequency-out"
+        help = "output - frequency"
+        default = "frequency.nii"
+    "--tissue-frequency-out"
         help = "output - tissue phase"
-        default = "tissue_phase.nii"
+        default = "tissue_frequency.nii"
 end
 
 args = parse_args(ARGS, s)
@@ -41,33 +43,35 @@ args = parse_args(ARGS, s)
 # constants
 γ = 267.52      # gyromagnetic ratio
 
-# load 3D single-, or multi-echo data using your favourite
-# package, e.g. MAT.jl, NIfTI.jl, ParXRec.jl, ...
-phase_nii = niread(args["phase"])
-savenii(phase_nii.raw, "phase.nii", header=phase_nii.header)
-
+# input parameters
 B0 = args["b0-str"]    # main magnetic field strength
 vsz = args["vsz"]      # voxel size (units??)
-TEs = args["TEs"]      #,0.012,0.020,0.028)    # echo times
 bdir = args["b0-dir"]  # direction of B-field
+TEs = let expr = Meta.parse(args["TEs"])
+    @assert expr.head == :vect
+    Float32.(expr.args)
+end
 
-# extract brain mask from last echo using FSL's bet
+# input data
+phase_nii = niread(args["phase"])
 mask_nii = niread(args["mask"])
 mask = !=(0).(mask_nii.raw)
 
-# unwrap phase + harmonic background field correction
+# phase unwrapping
 uphase = unwrap_laplacian(phase_nii.raw, mask, vsz)
 savenii(uphase, args["unwrapped-phase-out"], header=phase_nii.header)
 
-# convert units
+# convert phase to frequency
 @views for t in axes(uphase, 4)
     uphase[:,:,:,t] .*= inv(B0 * γ * TEs[t])
 end
+savenii(uphase, args["frequency-out"], header=phase_nii.header)
 
-# remove non-harmonic background fields
-tissue_phase, vsharp_mask = vsharp(uphase, mask, vsz)
-savenii(tissue_phase, args["tissue-phase-out"], header=phase_nii.header)
+# background field removal
+tissue_freq, vsharp_mask = vsharp(uphase, mask, vsz)
+savenii(tissue_freq, args["tissue-frequency-out"], header=phase_nii.header)
 
 # dipole inversion
-χ = rts(tissue_phase, vsharp_mask, vsz, bdir=bdir)
+χ = rts(tissue_freq, vsharp_mask, vsz, bdir=bdir)
 savenii(χ, args["qsm-out"], header=phase_nii.header)
+
