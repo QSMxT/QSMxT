@@ -19,6 +19,7 @@ from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_json as json
 from interfaces import nipype_interface_axialsampling as sampling
 
+from workflows.qsmjl import qsm_workflow
 from workflows.nextqsm import add_nextqsm_workflow, add_b0nextqsm_workflow
 from workflows.tgvqsm import add_tgvqsm_workflow
 from workflows.masking import add_masking_nodes
@@ -179,7 +180,7 @@ def init_run_workflow(run_args, subject, session, run):
         b0 = data['MagneticFieldStrength']
         json_file.close()
         return te, b0
-    mn_params = MapNode(
+    mn_json_params = MapNode(
         interface=Function(
             input_names=['in_file'],
             output_names=['EchoTime', 'MagneticFieldStrength'],
@@ -189,7 +190,25 @@ def init_run_workflow(run_args, subject, session, run):
         name='func_read-json'
     )
     wf.connect([
-        (n_getfiles, mn_params, [('params_files', 'in_file')])
+        (n_getfiles, mn_json_params, [('params_files', 'in_file')])
+    ])
+
+    # read voxel size 'vsz' from nifti file
+    def read_nii(in_file):
+        import nibabel as nib
+        if isinstance(in_file, list): in_file = in_file[0]
+        nii = nib.load(in_file)
+        return str(nii.header.get_zooms()).replace(" ", "")
+    n_nii_params = Node(
+        interface=Function(
+            input_names=['in_file'],
+            output_names=['vsz'],
+            function=read_nii
+        ),
+        name='nibabel_read-nii'
+    )
+    wf.connect([
+        (n_getfiles, n_nii_params, [('magnitude_files', 'in_file')])
     ])
 
     # scale phase data
@@ -235,45 +254,45 @@ def init_run_workflow(run_args, subject, session, run):
 
     def repeat(phase_files, magnitude_files=None, mask_files=None):
         return phase_files, magnitude_files, mask_files
-    mn_inputs_iterfield = ['phase_files']
-    if magnitude_files: mn_inputs_iterfield.append('magnitude_files')
-    if mask_files: mn_inputs_iterfield.append('mask_files')
-    mn_inputs = MapNode(
+    mn_masking_inputs_iterfield = ['phase_files']
+    if magnitude_files: mn_masking_inputs_iterfield.append('magnitude_files')
+    if mask_files: mn_masking_inputs_iterfield.append('mask_files')
+    mn_masking_inputs = MapNode(
         interface=Function(
-            input_names=mn_inputs_iterfield.copy(),
+            input_names=mn_masking_inputs_iterfield.copy(),
             output_names=['phase_files', 'magnitude_files', 'mask_files'],
             function=repeat
         ),
-        iterfield=mn_inputs_iterfield.copy(),
+        iterfield=mn_masking_inputs_iterfield.copy(),
         name='func_repeat-inputs'
     )
     if magnitude_files:
         wf.connect([
-            (mn_resample_inputs, mn_inputs, [('out_pha', 'phase_files')])
+            (mn_resample_inputs, mn_masking_inputs, [('out_pha', 'phase_files')])
         ])
         if mask_files:
             wf.connect([
-                (mn_resample_inputs, mn_inputs, [('out_mask', 'mask_files')])
+                (mn_resample_inputs, mn_masking_inputs, [('out_mask', 'mask_files')])
             ])
         if run_args.inhomogeneity_correction:
             wf.connect([
-                (mn_inhomogeneity_correction, mn_inputs, [('out_file', 'magnitude_files')])
+                (mn_inhomogeneity_correction, mn_masking_inputs, [('out_file', 'magnitude_files')])
             ])
         else:
             wf.connect([
-                (mn_resample_inputs, mn_inputs, [('out_mag', 'magnitude_files')])
+                (mn_resample_inputs, mn_masking_inputs, [('out_mag', 'magnitude_files')])
             ])
     else:
         wf.connect([
-            (mn_phase_scaled, mn_inputs, [('out_file', 'phase_files')])
+            (mn_phase_scaled, mn_masking_inputs, [('out_file', 'phase_files')])
         ])
         if mask_files:
             wf.connect([
-                (n_getfiles, mn_inputs, [('mask_files', 'mask_files')])
+                (n_getfiles, mn_masking_inputs, [('mask_files', 'mask_files')])
             ])
     
     # masking steps
-    mn_mask, n_json = add_masking_nodes(wf, run_args, mask_files, mn_inputs, len(magnitude_files) > 0, n_json)
+    mn_mask, n_json = add_masking_nodes(wf, run_args, mask_files, mn_masking_inputs, len(magnitude_files) > 0, n_json)
     
     wf.connect([
         (mn_mask, n_datasink, [('masks', 'masks')])
@@ -284,12 +303,28 @@ def init_run_workflow(run_args, subject, session, run):
         ])
 
     # qsm steps
-    if run_args.qsm_algorithm == 'tgv_qsm':
-        wf = add_tgvqsm_workflow(wf, run_args, mn_params, mn_inputs, mn_mask, n_datasink, phase_files[0])
-    elif run_args.qsm_algorithm == 'nextqsm':
-        wf = add_nextqsm_workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, run_args.nextqsm_unwrapping_algorithm)
-    elif run_args.qsm_algorithm == 'nextqsm_combined':
-        wf = add_b0nextqsm_workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink)
+    mn_qsm_inputs = MapNode(
+        interface=IdentityInterface(
+            fields=['phase', 'magnitude', 'mask', 'TE', 'B0_str', 'B0_dir', 'vsz']
+        ),
+        iterfield=['phase', 'magnitude', 'mask', 'TE'],
+        name='qsm_inputs'
+    )
+    wf.connect([
+        (mn_masking_inputs, mn_qsm_inputs, [('phase_files', 'phase')]),
+        (mn_masking_inputs, mn_qsm_inputs, [('magnitude_files', 'magnitude')]),
+        (mn_mask, mn_qsm_inputs, [('masks', 'mask')]),
+        (mn_json_params, mn_qsm_inputs, [('EchoTime', 'TE')]),
+        (mn_json_params, mn_qsm_inputs, [('MagneticFieldStrength', 'B0_str')]),
+        (n_nii_params, mn_qsm_inputs, [('vsz', 'vsz')])
+    ])
+    mn_qsm_inputs.inputs.B0_dir = "(0,0,1)"
+
+    qsm_wf = qsm_workflow(run_args, mn_qsm_inputs)
+    wf.connect([
+        (qsm_wf, n_datasink, [('qsm_outputs.qsm', 'qsm')]),
+    ])
+
     
     wf.connect([
         (n_json, n_datasink, [('out_file', 'qsm_headers')])
@@ -367,10 +402,10 @@ def parse_args(args):
 
     parser.add_argument(
         '--qsm_algorithm',
-        default='tgv_qsm',
-        choices=['tgv_qsm', 'nextqsm'],
-        help="The QSM algorithm to use. The tgv_qsm algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 "+
-             "from Langkammer et al. By default, the tgv_qsm algorithm also includes a two-pass inversion that "+
+        default='tgvqsm',
+        choices=['tgvqsm', 'nextqsm', 'qsmjl'],
+        help="The QSM algorithm to use. The tgvqsm algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 "+
+             "from Langkammer et al. By default, the tgvqsm algorithm also includes a two-pass inversion that "+
              "aims to mitigate streaking artefacts in QSM based on doi:10.1002/mrm.29048. The two-pass "+
              "inversion can be disabled to reduce runtime by half by specifying --single_pass. "+
              "The NeXtQSM option requires NeXtQSM installed (available by default in the QSMxT container) and "+
@@ -379,7 +414,7 @@ def parse_args(args):
     )
 
     parser.add_argument(
-        '--nextqsm_unwrapping_algorithm',
+        '--unwrapping_algorithm',
         default='romeo',
         choices=['romeo', 'romeob0', 'laplacian'],
         help="Unwrapping algorithm to use with nextqsm."
@@ -389,7 +424,7 @@ def parse_args(args):
         '--tgvqsm_iterations',
         type=int,
         default=1000,
-        help='Number of iterations used by tgv_qsm.'
+        help='Number of iterations used by tgvqsm.'
     )
 
     parser.add_argument(
@@ -397,7 +432,7 @@ def parse_args(args):
         type=float,
         default=[0.0015, 0.0005],
         nargs=2,
-        help='Regularisation alphas used by tgv_qsm.'
+        help='Regularisation alphas used by tgvqsm.'
     )
 
     parser.add_argument(
@@ -514,7 +549,7 @@ def create_logger(args):
 def process_args(args):
     # default masking settings for QSM algorithms
     if not args.masking:
-        if args.qsm_algorithm == 'tgv_qsm':
+        if args.qsm_algorithm in ['tgvqsm', 'qsmjl']:
             args.masking = 'phase-based'
         elif args.qsm_algorithm == 'nextqsm':
             args.masking = 'bet-firstecho'

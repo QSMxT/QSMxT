@@ -33,11 +33,13 @@ args = parse_args(ARGS, s)
 
 # input parameters
 B0 = args["b0-str"]    # main magnetic field strength
-vsz = args["vsz"]      # voxel size (units??)
+#vsz = args["vsz"]      # voxel size (units??)
 TEs = let expr = Meta.parse(args["TEs"])
     @assert expr.head == :vect
     Float32.(expr.args)
 end
+vsz = Meta.parse(args["vsz"])
+B0 = Meta.parse(args["b0-str"])
 
 # input data
 phase_nii = niread(args["phase"])

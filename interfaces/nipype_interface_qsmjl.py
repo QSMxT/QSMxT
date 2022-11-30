@@ -15,9 +15,9 @@ class LaplacianUnwrappingInputSpec(CommandLineInputSpec):
         argstr="--mask %s",
         position=1
     )
-    in_vsz = traits.Tuple(
-        argstr="--vsz %s",
-        default=(1, 1, 1),
+    in_vsz = traits.String(
+        argstr="--vsz \"%s\"",
+        default="(1,1,1)",
         position=2
     )
     out_unwrapped = File(
@@ -51,14 +51,13 @@ class PhaseToFreqInputSpec(CommandLineInputSpec):
         argstr="--mask %s",
         position=1
     )
-    in_TEs = traits.Tuple(
+    in_TEs = traits.Float(
         argstr="--TEs [%s]",
-        default=(1, 1, 1),
         position=2
     )
-    in_vsz = traits.Tuple(
-        argstr="--vsz %s",
-        default=(1, 1, 1),
+    in_vsz = traits.String(
+        argstr="--vsz \"%s\"",
+        default="(1,1,1)",
         position=3
     )
     in_b0str = traits.Float(
@@ -67,7 +66,7 @@ class PhaseToFreqInputSpec(CommandLineInputSpec):
         position=4
     )
     out_frequency = File(
-        argstr="--frequency_out %s",
+        argstr="--frequency-out %s",
         name_source=['in_phase'],
         name_template='%s_freq.nii',
         position=5
@@ -97,22 +96,22 @@ class VsharpInputSpec(CommandLineInputSpec):
         argstr="--mask %s",
         position=1
     )
-    in_vsz = traits.Tuple(
-        argstr="--vsz %s",
-        default=(1, 1, 1),
+    in_vsz = traits.String(
+        argstr="--vsz \"%s\"",
+        default="(1,1,1)",
         position=2
     )
     out_freq = File(
-        argstr="--frequency_out %s",
-        name_source=['in_freq'],
+        argstr="--tissue-frequency-out %s",
+        name_source=['in_frequency'],
         name_template='%s_freq.nii',
-        position=5
+        position=3
     )
     out_mask = File(
-        argstr="--frequency_out %s",
+        argstr="--vsharp-mask-out %s",
         name_source=['in_mask'],
-        name_template='%s_vsharp.nii',
-        position=6
+        name_template='%s_vsharp-mask.nii',
+        position=4
     )
 
 
@@ -121,7 +120,7 @@ class VsharpOutputSpec(TraitedSpec):
     out_mask = File()
 
 
-class PhaseToFreqInterface(CommandLine):
+class VsharpInterface(CommandLine):
     input_spec = VsharpInputSpec
     output_spec = VsharpOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_vsharp.jl")
@@ -140,20 +139,20 @@ class QsmInputSpec(CommandLineInputSpec):
         argstr="--mask %s",
         position=1
     )
-    in_vsz = traits.Tuple(
-        argstr="--vsz %s",
-        default=(1, 1, 1),
+    in_vsz = traits.String(
+        argstr="--vsz \"%s\"",
+        default="(1,1,1)",
         position=2
     )
-    in_b0dir = traits.Float(
-        argstr="--b0-dir %s",
-        default=(0, 0, 1),
+    in_b0dir = traits.String(
+        argstr="--b0-dir \"%s\"",
+        default="(0,0,1)",
         position=3
     )
     out_qsm = File(
         argstr="--qsm-out %s",
         name_source=['in_frequency'],
-        name_template='%s_qsm.nii',
+        name_template='%s_qsmjl.nii',
         position=4
     )
 
