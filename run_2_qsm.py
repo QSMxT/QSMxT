@@ -18,11 +18,12 @@ from interfaces import nipype_interface_scalephase as scalephase
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_json as json
 from interfaces import nipype_interface_axialsampling as sampling
+from interfaces import nipype_interface_addtojson as addtojson
+from interfaces import nipype_interface_twopass as twopass
+from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 
 from workflows.qsmjl import qsm_workflow
-from workflows.nextqsm import add_nextqsm_workflow, add_b0nextqsm_workflow
-from workflows.tgvqsm import add_tgvqsm_workflow
-from workflows.masking import add_masking_nodes
+from workflows.masking import masking_workflow
 
 
 def init_workflow(args):
@@ -130,7 +131,6 @@ def init_run_workflow(run_args, subject, session, run):
         run_args.single_pass = True
         run_args.add_bet = False
     
-
     # create nipype workflow for this run
     wf = Workflow(run, base_dir=os.path.join(run_args.output_dir, "workflow_qsm", subject, session, run))
 
@@ -252,6 +252,7 @@ def init_run_workflow(run_args, subject, session, run):
             (mn_resample_inputs, mn_inhomogeneity_correction, [('out_mag', 'in_file')])
         ])
 
+    # collect inputs for masking
     def repeat(phase_files, magnitude_files=None, mask_files=None):
         return phase_files, magnitude_files, mask_files
     mn_masking_inputs_iterfield = ['phase_files']
@@ -292,15 +293,26 @@ def init_run_workflow(run_args, subject, session, run):
             ])
     
     # masking steps
-    mn_mask, n_json = add_masking_nodes(wf, run_args, mask_files, mn_masking_inputs, len(magnitude_files) > 0, n_json)
-    
+    wf_masking = masking_workflow(run_args, mn_masking_inputs, mask_files, len(magnitude_files) > 0, fill_masks=True, add_bet=run_args.add_bet, name="mask")
     wf.connect([
-        (mn_mask, n_datasink, [('masks', 'masks')])
+        (wf_masking, n_datasink, [('masking_outputs.masks', 'masks')])
     ])
-    if run_args.two_pass:
+    # add threshold to json output
+    if run_args.masking in ['magnitude-based', 'phase-based']:
+        n_addtojson = Node(
+            interface=addtojson.AddToJsonInterface(
+                in_key = "Masking threshold"
+            ),
+            name="json_add-threshold"
+        )
         wf.connect([
-            (mn_mask, n_datasink, [('masks_filled', 'mask_filled')])
+            (n_json, n_addtojson, [('out_file', 'in_file')]),
+            (wf_masking, n_addtojson, [('masking_outputs.threshold', 'in_num_value')])
         ])
+        n_json = n_addtojson
+    wf.connect([
+        (n_json, n_datasink, [('out_file', 'qsm_headers')])
+    ])
 
     # qsm steps
     mn_qsm_inputs = MapNode(
@@ -313,22 +325,68 @@ def init_run_workflow(run_args, subject, session, run):
     wf.connect([
         (mn_masking_inputs, mn_qsm_inputs, [('phase_files', 'phase')]),
         (mn_masking_inputs, mn_qsm_inputs, [('magnitude_files', 'magnitude')]),
-        (mn_mask, mn_qsm_inputs, [('masks', 'mask')]),
+        (wf_masking, mn_qsm_inputs, [('masking_outputs.masks', 'mask')]),
         (mn_json_params, mn_qsm_inputs, [('EchoTime', 'TE')]),
         (mn_json_params, mn_qsm_inputs, [('MagneticFieldStrength', 'B0_str')]),
         (n_nii_params, mn_qsm_inputs, [('vsz', 'vsz')])
     ])
     mn_qsm_inputs.inputs.B0_dir = "(0,0,1)"
-
-    qsm_wf = qsm_workflow(run_args, mn_qsm_inputs)
+    wf_qsm = qsm_workflow(run_args, mn_qsm_inputs, "qsm")
+    n_qsm_average = Node(
+        interface=nonzeroaverage.NonzeroAverageInterface(),
+        name="nibabel_numpy_qsm-average"
+    )
     wf.connect([
-        (qsm_wf, n_datasink, [('qsm_outputs.qsm', 'qsm')]),
+        (wf_qsm, n_qsm_average, [('qsm_outputs.qsm', 'in_files')]),
+    ])
+    wf.connect([
+        (n_qsm_average, n_datasink, [('out_file', 'qsm_final' if not run_args.two_pass else 'qsm_filled')])
     ])
 
-    
-    wf.connect([
-        (n_json, n_datasink, [('out_file', 'qsm_headers')])
-    ])
+
+    if run_args.two_pass:
+        wf_masking_intermediate = masking_workflow(run_args, mn_masking_inputs, mask_files, len(magnitude_files) > 0, fill_masks=False, add_bet=False, name="mask-intermediate")
+        mn_qsm_inputs_intermediate = MapNode(
+            interface=IdentityInterface(
+                fields=['phase', 'magnitude', 'mask', 'TE', 'B0_str', 'B0_dir', 'vsz']
+            ),
+            iterfield=['phase', 'magnitude', 'mask', 'TE'],
+            name='qsm_inputs-intermediate'
+        )
+        wf.connect([
+            (mn_masking_inputs, mn_qsm_inputs_intermediate, [('phase_files', 'phase')]),
+            (mn_masking_inputs, mn_qsm_inputs_intermediate, [('magnitude_files', 'magnitude')]),
+            (wf_masking_intermediate, mn_qsm_inputs_intermediate, [('masking_outputs.masks', 'mask')]),
+            (mn_json_params, mn_qsm_inputs_intermediate, [('EchoTime', 'TE')]),
+            (mn_json_params, mn_qsm_inputs_intermediate, [('MagneticFieldStrength', 'B0_str')]),
+            (n_nii_params, mn_qsm_inputs_intermediate, [('vsz', 'vsz')])
+        ])
+        mn_qsm_inputs_intermediate.inputs.B0_dir = "(0,0,1)"
+        wf_qsm_intermediate = qsm_workflow(run_args, mn_qsm_inputs_intermediate, "qsm-intermediate")
+        
+        # two-pass combination
+        mn_qsm_twopass = MapNode(
+            interface=twopass.TwopassNiftiInterface(),
+            name='numpy_nibabel_twopass',
+            iterfield=['in_file1', 'in_file2']
+        )
+        wf.connect([
+            (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file1')]),
+            (wf_qsm, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file2')])
+        ])
+
+        # averaging
+        n_qsm_twopass_average = Node(
+            interface=nonzeroaverage.NonzeroAverageInterface(),
+            name="nibabel_numpy_twopass-average"
+        )
+        wf.connect([
+            (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')]),
+        ])
+        wf.connect([
+            (n_qsm_twopass_average, n_datasink, [('out_file', 'qsm_final')])
+        ])
+        
     
     return wf
 

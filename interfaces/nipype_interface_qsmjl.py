@@ -45,12 +45,6 @@ class PhaseToFreqInputSpec(CommandLineInputSpec):
         argstr="--phase %s",
         position=0
     )
-    in_mask = File(
-        exists=True,
-        mandatory=True,
-        argstr="--mask %s",
-        position=1
-    )
     in_TEs = traits.Float(
         argstr="--TEs [%s]",
         position=2

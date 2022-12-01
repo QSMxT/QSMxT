@@ -9,18 +9,15 @@ s = ArgParseSettings()
     "--phase"
         help = "input - phase"
         required = true
-    "--mask"
-        help = "input - mask"
-        required = true
     "--TEs"
         help = "input - echo times (s)"
         required = true
     "--vsz"
         help = "input - voxel size (mm)"
-        default = (1, 1, 1)
+        default = "(1,1,1)"
     "--b0-str"
         help = "input - magnetic field strength"
-        default = 3
+        default = "3"
     "--frequency-out"
         help = "output - frequency"
         default = "frequency.nii"
@@ -38,13 +35,11 @@ TEs = let expr = Meta.parse(args["TEs"])
     @assert expr.head == :vect
     Float32.(expr.args)
 end
-vsz = Meta.parse(args["vsz"])
-B0 = Meta.parse(args["b0-str"])
+vsz = Tuple(eval(Meta.parse(args["vsz"])))
+B0 = Float32(Meta.parse(args["b0-str"]))
 
 # input data
 phase_nii = niread(args["phase"])
-mask_nii = niread(args["mask"])
-mask = !=(0).(mask_nii.raw)
 phase = phase_nii.raw
 
 # convert frequency to hertz

@@ -8,8 +8,8 @@ from interfaces import nipype_interface_tgv_qsm as tgv
 from interfaces import nipype_interface_qsmjl as qsmjl
 from interfaces import nipype_interface_nextqsm as nextqsm
 
-def qsm_workflow(run_args, mn_inputs):
-    wf = Workflow(name="qsm_workflow")
+def qsm_workflow(run_args, mn_inputs, name):
+    wf = Workflow(name=f"{name}_workflow")
 
     mn_outputs = MapNode(
         interface=IdentityInterface(
@@ -30,14 +30,15 @@ def qsm_workflow(run_args, mn_inputs):
         )
         if run_args.unwrapping_algorithm == 'laplacian':
             mn_laplacian = MapNode(
-                interface=laplacian.LaplacianInterface(),
-                iterfield=['phase'],
-                name='mrt_laplacian-unwrapping'
+                interface=qsmjl.LaplacianUnwrappingInterface(),
+                iterfield=['in_phase', 'in_mask'],
+                name='qsmjl_laplacian-unwrapping'
             )
             wf.connect([
-                (mn_inputs, mn_laplacian, [('phase', 'phase')]),
-                (mn_laplacian, mn_outputs, [('out_file', 'unwrapped_phase')]),
-                (mn_laplacian, mn_unwrapping, [('out_file', 'unwrapped_phase')])
+                (mn_inputs, mn_laplacian, [('phase', 'in_phase')]),
+                (mn_inputs, mn_laplacian, [('mask', 'in_mask')]),
+                (mn_laplacian, mn_outputs, [('out_unwrapped', 'unwrapped_phase')]),
+                (mn_laplacian, mn_unwrapping, [('out_unwrapped', 'unwrapped_phase')])
             ])
         if run_args.unwrapping_algorithm == 'romeo':
             mn_romeo = MapNode(
@@ -56,12 +57,11 @@ def qsm_workflow(run_args, mn_inputs):
         mn_phase_to_freq = MapNode(
             interface=qsmjl.PhaseToFreqInterface(), 
             name='qsmjl_phase-to-freq',
-            iterfield=['in_phase', 'in_mask', 'in_TEs', 'in_b0str']
+            iterfield=['in_phase', 'in_TEs', 'in_b0str']
             # in_phase, in_mask, in_TEs, in_vsz, in_b0str, out_frequency
         )
         wf.connect([
             (mn_unwrapping, mn_phase_to_freq, [('unwrapped_phase', 'in_phase')]),
-            (mn_inputs, mn_phase_to_freq, [('mask', 'in_mask')]),
             (mn_inputs, mn_phase_to_freq, [('TE', 'in_TEs')]),
             (mn_inputs, mn_phase_to_freq, [('vsz', 'in_vsz')]),
             (mn_inputs, mn_phase_to_freq, [('B0_str', 'in_b0str')]),

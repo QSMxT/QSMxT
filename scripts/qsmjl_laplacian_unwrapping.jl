@@ -14,7 +14,7 @@ s = ArgParseSettings()
         required = true
     "--vsz"
         help = "input - voxel size (mm)"
-        default = (1, 1, 1)
+        default = "(1,1,1)"
     "--unwrapped-phase-out"
         help = "output - unwrapped phase"
         default = "unwrapped_phase.nii"
@@ -23,7 +23,7 @@ end
 args = parse_args(ARGS, s)
 
 # input parameters
-vsz = args["vsz"]      # voxel size (units??)
+vsz = Tuple(eval(Meta.parse(args["vsz"])))
 
 # input data
 phase_nii = niread(args["phase"])
