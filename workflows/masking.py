@@ -121,7 +121,7 @@ def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_
         ])
     elif run_args.masking in ['bet', 'bet-firstecho']:
         wf.connect([
-            (mn_bet, mn_outputs, [('mask_file', 'masks')]),
+            (mn_bet_erode, mn_outputs, [('out_file', 'masks')]),
         ])
     elif run_args.masking in ['magnitude-based', 'phase-based']:
         wf.connect([
