@@ -34,7 +34,9 @@ def add_masking_nodes(wf, run_args, mask_files, mn_inputs, magnitude_available, 
         # do threshold-based masking if necessary
         if run_args.masking in ['phase-based', 'magnitude-based']:
             n_threshold_masking = Node(
-                interface=masking.MaskingInterface(),
+                interface=masking.MaskingInterface(
+                    threshold_algorithm=run_args.threshold_algorithm
+                ),
                 name='scipy_numpy_nibabel_threshold-masking'
                 # inputs : ['in_files']
             )

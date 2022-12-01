@@ -35,7 +35,7 @@ def _clean_histogram(image_histogram):
     return image_histogram
 
 # === THRESHOLD-BASED MASKING FOR TWO-PASS AND SINGLE-PASS QSM ===
-def threshold_masking(in_files, threshold=None, fill_strength=0):
+def threshold_masking(in_files, threshold=None, threshold_algorithm='gaussian', fill_strength=0):
     # sort input filepaths
     in_files = sorted(in_files)
 
@@ -45,9 +45,11 @@ def threshold_masking(in_files, threshold=None, fill_strength=0):
     image_histogram = np.array([data.flatten() for data in all_float_data])
     
     # calculate gaussian threshold if none given
-    if not threshold: threshold = filters.threshold_otsu(image_histogram) * 0.75
-    #hist, bins_center = exposure.histogram(camera)
-    #threshold = _gaussian_threshold(image_histogram)
+    if not threshold:
+        if threshold_algorithm == 'gaussian':
+            threshold = _gaussian_threshold(image_histogram)
+        else:
+            threshold = filters.threshold_otsu(image_histogram) * 0.75
 
     # do masking
     masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
@@ -104,6 +106,7 @@ def fill_holes_morphological(mask, fill_strength=0):
 class MaskingInputSpec(BaseInterfaceInputSpec):
     in_files = InputMultiPath(mandatory=True, exists=True)
     threshold = traits.Float(mandatory=False, default_value=None)
+    threshold_algorithm = traits.String(mandatory=False, value="gaussian")
     fill_strength = traits.Int(mandatory=False, default_value=1)
 
 
@@ -118,7 +121,12 @@ class MaskingInterface(SimpleInterface):
     output_spec = MaskingOutputSpec
 
     def _run_interface(self, runtime):
-        masks, masks_filled, threshold = threshold_masking(self.inputs.in_files, self.inputs.threshold, self.inputs.fill_strength)
+        masks, masks_filled, threshold = threshold_masking(
+            in_files=self.inputs.in_files,
+            threshold=self.inputs.threshold,
+            threshold_algorithm=self.inputs.threshold_algorithm,
+            fill_strength=self.inputs.fill_strength
+        )
         self._results['masks'] = masks
         self._results['masks_filled'] = masks_filled
         self._results['threshold'] = threshold
