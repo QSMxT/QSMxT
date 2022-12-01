@@ -311,6 +311,8 @@ if __name__ == "__main__":
         if available_ram_gb < 11:
             logger.log(LogLevel.WARNING.value, f"Less than 11 GB of memory available ({available_ram_gb} GB). At least 11 GB is recommended. You may need to close background programs.")
         logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors.")
+    # set number of threads per CPU to use by FastSurfer/pytorch
+    os.environ["OMP_NUM_THREADS"] = str(args.n_procs)
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
