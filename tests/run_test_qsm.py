@@ -496,6 +496,20 @@ def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
     cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
     cs.upload(results_tar, results_tar)
 
+    # upload filename
+    if os.environ.get('BRANCH'):
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}.tar"
+    else:
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.tar"
+    
+    # zip up results
+    shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
+    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
+
+    # upload results
+    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
+    cs.upload(results_tar, results_tar)
+
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflow, None)

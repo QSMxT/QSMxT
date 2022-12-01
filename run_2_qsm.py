@@ -521,6 +521,12 @@ def parse_args(args):
     )
 
     parser.add_argument(
+        '--threshold_algorithm',
+        default='gaussian',
+        choices=['gaussian', 'otsu']
+    )
+
+    parser.add_argument(
         '--single_pass',
         action='store_true',
         help='Runs a single QSM inversion per echo, rather than the two-pass QSM inversion that '+
