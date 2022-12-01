@@ -4,7 +4,6 @@ import sys
 import os
 import glob
 import copy
-import psutil
 import datetime
 import argparse
 
@@ -505,6 +504,14 @@ def parse_args(args):
     )
 
     parser.add_argument(
+        '--tgvqsm_erosions',
+        type=int,
+        default=3,
+        help='Number of erosions applied during the TGV-QSM algorithm. Note that BET '+
+        'masks may also be eroded using the --bet_erosions flag.'
+    )
+
+    parser.add_argument(
         '--masking',
         default=None,
         choices=['phase-based', 'magnitude-based', 'bet', 'bet-firstecho'],
@@ -559,6 +566,14 @@ def parse_args(args):
         type=float,
         default=0.5,
         help='Fractional intensity for BET masking operations.'
+    )
+
+    parser.add_argument(
+        '--bet_erosions',
+        type=int,
+        default=2,
+        help='Number of erosions applied to BET masks prior to QSM processing steps. Note that some '+
+        'algorithms may erode the mask further (e.g. V-SHARP and TGV-QSM.'
     )
 
     parser.add_argument(

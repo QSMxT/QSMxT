@@ -115,7 +115,7 @@ def qsm_workflow(run_args, mn_inputs, name):
             interface=tgv.QSMappingInterface(
                 iterations=run_args.tgvqsm_iterations,
                 alpha=run_args.tgvqsm_alphas,
-                erosions=0 if run_args.two_pass else 5,
+                erosions=run_args.tgvqsm_erosions,
                 num_threads=run_args.tgvqsm_threads,
                 out_suffix='_tgvqsm',
                 extra_arguments='--ignore-orientation --no-resampling'
