@@ -498,9 +498,9 @@ def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
 
     # upload filename
     if os.environ.get('BRANCH'):
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}.tar"
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_tgvqsm.tar"
     else:
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.tar"
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_tgvqsm.tar"
     
     # zip up results
     shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
@@ -512,9 +512,59 @@ def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
 
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, True, None)
+])
+def test_bids_secret_qsmjl(bids_dir_secret, init_workflow, run_workflow, run_args):
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir_secret,
+        os.path.join(tempfile.gettempdir(), "qsm-secret"),
+        "--qsm_algorithm", "qsmjl"
+    ]))
+    
+    assert(args.bids_dir == os.path.abspath(bids_dir_secret))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm-secret"))
+    assert(args.qsm_algorithm == "qsmjl")
+    assert(args.masking == "phase-based")
+    assert(args.two_pass == True)
+    assert(args.single_pass == False)
+    assert(args.inhomogeneity_correction == False)
+    assert(args.add_bet == False)
+    assert(args.use_existing_masks == False)
+    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
+    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
+    
+    workflow(args, init_workflow, run_workflow, run_args)
+    
+    # zip up results
+    results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.tar"
+    shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
+    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
+
+    # upload results
+    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
+    cs.upload(results_tar, results_tar)
+
+    # upload filename
+    if os.environ.get('BRANCH'):
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_qsmjl.tar"
+    else:
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_qsmjl.tar"
+    
+    # zip up results
+    shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
+    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
+
+    # upload results
+    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
+    cs.upload(results_tar, results_tar)
+
+
+
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflow, None)
 ])
-def test_metrics(bids_dir, init_workflow, run_workflow, run_args):
+def test_metrics_tgvqsm(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "public-outputs", "test_metrics"),
