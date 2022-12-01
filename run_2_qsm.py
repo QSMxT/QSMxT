@@ -22,7 +22,7 @@ from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 
-from workflows.qsmjl import qsm_workflow
+from workflows.qsm import qsm_workflow
 from workflows.masking import masking_workflow
 
 
@@ -172,25 +172,43 @@ def init_run_workflow(run_args, subject, session, run):
     n_getfiles.inputs.mask_files = mask_files
 
     # read echotime and field strengths from json files
-    def read_json(in_file):
+    def read_json_me(in_file):
         import json
         json_file = open(in_file, 'rt')
         data = json.load(json_file)
         te = data['EchoTime']
+        json_file.close()
+        return te
+    def read_json_se(in_files):
+        import json
+        json_file = open(in_files[0], 'rt')
+        data = json.load(json_file)
         b0 = data['MagneticFieldStrength']
         json_file.close()
-        return te, b0
+        return b0
     mn_json_params = MapNode(
         interface=Function(
             input_names=['in_file'],
-            output_names=['EchoTime', 'MagneticFieldStrength'],
-            function=read_json
+            output_names=['EchoTime'],
+            function=read_json_me
         ),
         iterfield=['in_file'],
-        name='func_read-json'
+        name='func_read-json-me'
     )
     wf.connect([
         (n_getfiles, mn_json_params, [('params_files', 'in_file')])
+    ])
+    n_json_params = Node(
+        interface=Function(
+            input_names=['in_files'],
+            output_names=['MagneticFieldStrength'],
+            function=read_json_se
+        ),
+        iterfield=['in_files'],
+        name='func_read-json-se'
+    )
+    wf.connect([
+        (n_getfiles, n_json_params, [('params_files', 'in_files')])
     ])
 
     # read voxel size 'vsz' from nifti file
@@ -253,18 +271,11 @@ def init_run_workflow(run_args, subject, session, run):
         ])
 
     # collect inputs for masking
-    def repeat(phase_files, magnitude_files=None, mask_files=None):
-        return phase_files, magnitude_files, mask_files
-    mn_masking_inputs_iterfield = ['phase_files']
-    if magnitude_files: mn_masking_inputs_iterfield.append('magnitude_files')
-    if mask_files: mn_masking_inputs_iterfield.append('mask_files')
     mn_masking_inputs = MapNode(
-        interface=Function(
-            input_names=mn_masking_inputs_iterfield.copy(),
-            output_names=['phase_files', 'magnitude_files', 'mask_files'],
-            function=repeat
+        interface=IdentityInterface(
+            fields=['phase_files', 'magnitude_files', 'mask_files']
         ),
-        iterfield=mn_masking_inputs_iterfield.copy(),
+        iterfield=['phase_files', 'magnitude_files', 'mask_files'],
         name='func_repeat-inputs'
     )
     if magnitude_files:
@@ -327,7 +338,7 @@ def init_run_workflow(run_args, subject, session, run):
         (mn_masking_inputs, mn_qsm_inputs, [('magnitude_files', 'magnitude')]),
         (wf_masking, mn_qsm_inputs, [('masking_outputs.masks', 'mask')]),
         (mn_json_params, mn_qsm_inputs, [('EchoTime', 'TE')]),
-        (mn_json_params, mn_qsm_inputs, [('MagneticFieldStrength', 'B0_str')]),
+        (n_json_params, mn_qsm_inputs, [('MagneticFieldStrength', 'B0_str')]),
         (n_nii_params, mn_qsm_inputs, [('vsz', 'vsz')])
     ])
     mn_qsm_inputs.inputs.B0_dir = "(0,0,1)"
@@ -358,7 +369,7 @@ def init_run_workflow(run_args, subject, session, run):
             (mn_masking_inputs, mn_qsm_inputs_intermediate, [('magnitude_files', 'magnitude')]),
             (wf_masking_intermediate, mn_qsm_inputs_intermediate, [('masking_outputs.masks', 'mask')]),
             (mn_json_params, mn_qsm_inputs_intermediate, [('EchoTime', 'TE')]),
-            (mn_json_params, mn_qsm_inputs_intermediate, [('MagneticFieldStrength', 'B0_str')]),
+            (n_json_params, mn_qsm_inputs_intermediate, [('MagneticFieldStrength', 'B0_str')]),
             (n_nii_params, mn_qsm_inputs_intermediate, [('vsz', 'vsz')])
         ])
         mn_qsm_inputs_intermediate.inputs.B0_dir = "(0,0,1)"

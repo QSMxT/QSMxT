@@ -57,7 +57,7 @@ def qsm_workflow(run_args, mn_inputs, name):
         mn_phase_to_freq = MapNode(
             interface=qsmjl.PhaseToFreqInterface(), 
             name='qsmjl_phase-to-freq',
-            iterfield=['in_phase', 'in_TEs', 'in_b0str']
+            iterfield=['in_phase', 'in_TEs']
             # in_phase, in_mask, in_TEs, in_vsz, in_b0str, out_frequency
         )
         wf.connect([
@@ -120,7 +120,7 @@ def qsm_workflow(run_args, mn_inputs, name):
                 out_suffix='_tgvqsm',
                 extra_arguments='--ignore-orientation --no-resampling'
             ),
-            iterfield=['phase_file', 'TE', 'b0', 'mask_file'],
+            iterfield=['phase_file', 'TE', 'mask_file'],
             name='tgvqsm',
             mem_gb=6
             # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
