@@ -239,6 +239,38 @@ def init_run_workflow(run_args, subject, session, run):
         (n_getfiles, mn_phase_scaled, [('phase_files', 'in_file')])
     ])
 
+    # reorient to canonical
+    def as_closest_canonical(phase, magnitude=None, mask=None):
+        import os
+        import nibabel as nib
+        out_phase = os.path.abspath(f"{os.path.split(phase)[-1].split('.')[0]}_canonical.nii")
+        out_mag = os.path.abspath(f"{os.path.split(magnitude)[-1].split('.')[0]}_canonical.nii") if magnitude else None
+        out_mask = os.path.abspath(f"{os.path.split(mask)[-1].split('.')[0]}_canonical.nii") if mask else None
+        nib.save(nib.as_closest_canonical(nib.load(phase)), out_phase)
+        if magnitude: nib.save(nib.as_closest_canonical(nib.load(magnitude)), out_mag)
+        if mask: nib.save(nib.as_closest_canonical(nib.load(mask)), out_mask)
+        return out_mag, out_phase, out_mask
+    mn_inputs_canonical = MapNode(
+        interface=Function(
+            input_names=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
+            output_names=['magnitude', 'phase', 'mask'],
+            function=as_closest_canonical
+        ),
+        iterfield=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
+        name='nibabel_as-canonical'
+    )
+    wf.connect([
+        (n_getfiles, mn_inputs_canonical, [('phase_files', 'phase')])
+    ])
+    if magnitude_files:
+        wf.connect([
+            (n_getfiles, mn_inputs_canonical, [('magnitude_files', 'magnitude')]),
+        ])
+    if mask_files:
+        wf.connect([
+            (n_getfiles, mn_inputs_canonical, [('mask_files', 'mask')]),
+        ])
+    
     # resample to axial
     if magnitude_files:
         mn_resample_inputs = MapNode(
@@ -249,12 +281,12 @@ def init_run_workflow(run_args, subject, session, run):
             name='nibabel_numpy_nilearn_axial-resampling'
         )
         wf.connect([
-            (n_getfiles, mn_resample_inputs, [('magnitude_files', 'in_mag')]),
+            (mn_inputs_canonical, mn_resample_inputs, [('magnitude', 'in_mag')]),
             (mn_phase_scaled, mn_resample_inputs, [('out_file', 'in_pha')])
         ])
         if mask_files:
             wf.connect([
-                (n_getfiles, mn_resample_inputs, [('mask_files', 'in_mask')])
+                (mn_inputs_canonical, mn_resample_inputs, [('mask', 'in_mask')])
             ])
 
     # run homogeneity filter if necessary
@@ -299,7 +331,7 @@ def init_run_workflow(run_args, subject, session, run):
         ])
         if mask_files:
             wf.connect([
-                (n_getfiles, mn_masking_inputs, [('mask_files', 'mask_files')])
+                (mn_inputs_canonical, mn_masking_inputs, [('mask', 'mask_files')])
             ])
     
     # masking steps
