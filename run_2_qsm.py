@@ -282,7 +282,7 @@ def init_run_workflow(run_args, subject, session, run):
         )
         wf.connect([
             (mn_inputs_canonical, mn_resample_inputs, [('magnitude', 'in_mag')]),
-            (mn_phase_scaled, mn_resample_inputs, [('out_file', 'in_pha')])
+            (mn_inputs_canonical, mn_resample_inputs, [('phase', 'in_pha')])
         ])
         if mask_files:
             wf.connect([
@@ -327,7 +327,7 @@ def init_run_workflow(run_args, subject, session, run):
             ])
     else:
         wf.connect([
-            (mn_phase_scaled, mn_masking_inputs, [('out_file', 'phase_files')])
+            (mn_inputs_canonical, mn_masking_inputs, [('phase', 'phase_files')])
         ])
         if mask_files:
             wf.connect([
