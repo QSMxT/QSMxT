@@ -182,7 +182,7 @@ def test_args_defaults(bids_dir, init_workflow, run_workflow, run_args):
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
     assert(args.single_pass == False)
@@ -201,12 +201,12 @@ def test_args_tgvqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--qsm_algorithm", "tgv_qsm"
+        "--qsm_algorithm", "tgvqsm"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
     assert(args.single_pass == False)
@@ -279,7 +279,7 @@ def test_args_singlepass(bids_dir, init_workflow, run_workflow, run_args):
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == False)
     assert(args.single_pass == True)
@@ -304,7 +304,7 @@ def test_args_inhomogeneity_correction_bet(bids_dir, init_workflow, run_workflow
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "bet")
     assert(args.two_pass == False)
     assert(args.single_pass == True)
@@ -329,7 +329,7 @@ def test_args_inhomogeneity_correction_magnitudebased(bids_dir, init_workflow, r
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "magnitude-based")
     assert(args.two_pass == True)
     assert(args.single_pass == False)
@@ -353,7 +353,7 @@ def test_args_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_work
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
     assert(args.single_pass == False)
@@ -377,7 +377,7 @@ def test_args_addbet(bids_dir, init_workflow, run_workflow, run_args):
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
     assert(args.single_pass == False)
@@ -402,7 +402,7 @@ def test_args_addbet_invalid(bids_dir, init_workflow, run_workflow, run_args):
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "bet")
     assert(args.two_pass == False)
     assert(args.single_pass == True)
@@ -426,7 +426,7 @@ def test_args_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
     assert(args.single_pass == False)
@@ -450,7 +450,7 @@ def test_args_numechoes(bids_dir, init_workflow, run_workflow, run_args):
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
     assert(args.single_pass == False)
@@ -475,7 +475,7 @@ def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
     
     assert(args.bids_dir == os.path.abspath(bids_dir_secret))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm-secret"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "phase-based")
     assert(args.two_pass == True)
     assert(args.single_pass == False)
@@ -573,7 +573,7 @@ def test_metrics_tgvqsm(bids_dir, init_workflow, run_workflow, run_args):
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "public-outputs", "test_metrics"))
-    assert(args.qsm_algorithm == "tgv_qsm")
+    assert(args.qsm_algorithm == "tgvqsm")
     assert(args.masking == "magnitude-based")
     assert(args.two_pass == True)
     assert(args.single_pass == False)
