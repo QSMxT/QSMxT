@@ -249,18 +249,18 @@ def init_run_workflow(run_args, subject, session, run):
         nib.save(nib.as_closest_canonical(nib.load(phase)), out_phase)
         if magnitude: nib.save(nib.as_closest_canonical(nib.load(magnitude)), out_mag)
         if mask: nib.save(nib.as_closest_canonical(nib.load(mask)), out_mask)
-        return out_mag, out_phase, out_mask
+        return out_phase, out_mag, out_mask
     mn_inputs_canonical = MapNode(
         interface=Function(
             input_names=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
-            output_names=['magnitude', 'phase', 'mask'],
+            output_names=['phase', 'magnitude', 'mask'],
             function=as_closest_canonical
         ),
         iterfield=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
         name='nibabel_as-canonical'
     )
     wf.connect([
-        (n_getfiles, mn_inputs_canonical, [('phase_files', 'phase')])
+        (mn_phase_scaled, mn_inputs_canonical, [('out_file', 'phase')])
     ])
     if magnitude_files:
         wf.connect([
