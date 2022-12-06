@@ -35,7 +35,7 @@ def _clean_histogram(image_histogram):
     return image_histogram
 
 # === THRESHOLD-BASED MASKING FOR TWO-PASS AND SINGLE-PASS QSM ===
-def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussian', mask_suffix="_mask", fill_masks=False, fill_strength=0):
+def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussian', threshold_algorithm_factor=1.0, filling_algorithm='both', mask_suffix="_mask", fill_masks=False, fill_strength=0):
     # sort input filepaths
     in_files = sorted(in_files)
 
@@ -50,6 +50,7 @@ def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussi
             threshold = _gaussian_threshold(image_histogram)
         else:
             threshold = filters.threshold_otsu(image_histogram)
+        threshold *= threshold_algorithm_factor
     elif type(user_threshold) == int: # user-defined absolute threshold
         threshold = user_threshold
     else: # user-defined percentage threshold
@@ -59,7 +60,10 @@ def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussi
     # do masking
     masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
     if fill_masks:
-        masks = [fill_holes_morphological(fill_holes_smoothing(mask)) for mask in masks]
+        if filling_algorithm in ['morphological', 'both']:
+            masks = [fill_holes_morphological(mask) for mask in masks]
+        if filling_algorithm in ['smoothing', 'both']:
+            masks = [fill_holes_smoothing(mask) for mask in masks]
     else:
         masks = [binary_opening(mask) for mask in masks]
 
@@ -102,7 +106,9 @@ class MaskingInputSpec(BaseInterfaceInputSpec):
     threshold = traits.Float(mandatory=False, default_value=None)
     fill_masks = traits.Bool(mandatory=False, default_value=True)
     mask_suffix = traits.String(mandatory=False, value="_mask")
-    threshold_algorithm = traits.String(mandatory=False, value="gaussian")
+    threshold_algorithm = traits.String(mandatory=False, value="otsu")
+    threshold_algorithm_factor = traits.Float(mandatory=False, default_value=1.0)
+    filling_algorithm = traits.String(mandatory=False, value='both')
     fill_strength = traits.Int(mandatory=False, default_value=1)
 
 
@@ -121,6 +127,8 @@ class MaskingInterface(SimpleInterface):
             in_files=self.inputs.in_files,
             user_threshold=self.inputs.threshold,
             threshold_algorithm=self.inputs.threshold_algorithm,
+            threshold_algorithm_factor=self.inputs.threshold_algorithm_factor,
+            filling_algorithm=self.inputs.filling_algorithm,
             mask_suffix=f"_{self.inputs.mask_suffix}",
             fill_masks=self.inputs.fill_masks,
             fill_strength=self.inputs.fill_strength

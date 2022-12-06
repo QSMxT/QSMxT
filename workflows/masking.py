@@ -46,7 +46,9 @@ def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_
                 interface=masking.MaskingInterface(
                     fill_masks=fill_masks,
                     mask_suffix=name,
-                    threshold_algorithm=run_args.threshold_algorithm
+                    threshold_algorithm=run_args.threshold_algorithm,
+                    threshold_algorithm_factor=run_args.threshold_algorithm_factor,
+                    filling_algorithm=run_args.filling_algorithm
                 ),
                 name='scipy_numpy_nibabel_threshold-masking'
                 # inputs : ['in_files']

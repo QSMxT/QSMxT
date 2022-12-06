@@ -114,9 +114,10 @@ def init_run_workflow(run_args, subject, session, run):
     if len(phase_files) != len(params_files):
         logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
         return
-    if not magnitude_files and run_args.masking_input == 'magnitude':
+    if run_args.masking_input == 'magnitude' and not magnitude_files:
         logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
         run_args.masking_input = 'phase'
+        run_args.masking_algorithm = 'threshold'
         run_args.inhomoeneity_correction = False
     if run_args.use_existing_masks and not mask_files:
         logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking_algorithm} masking.")
@@ -384,7 +385,7 @@ def init_run_workflow(run_args, subject, session, run):
         (n_qsm_average, n_datasink, [('out_file', 'qsm_final' if not run_args.two_pass else 'qsm_filled')])
     ])
 
-
+    # two-pass algorithm
     if run_args.two_pass:
         wf_masking_intermediate = masking_workflow(run_args, mn_masking_inputs, mask_files, len(magnitude_files) > 0, fill_masks=False, add_bet=False, name="mask-intermediate")
         mn_qsm_inputs_intermediate = MapNode(
@@ -514,15 +515,6 @@ def parse_args(args):
     )
 
     parser.add_argument(
-        '--unwrapping_algorithm',
-        default='romeo',
-        choices=['romeo', 'laplacian'],
-        help="Unwrapping algorithm. ROMEO is based on doi:10.1002/mrm.28563 from Eckstein et al. Laplacian is "+
-             "based on doi:10.1364/OL.28.001194 and doi:10.1002/nbm.3064 from Schofield MA. et al. and Zhou D. "+
-             "et al., respectively."
-    )
-
-    parser.add_argument(
         '--tgvqsm_iterations',
         type=int,
         default=1000,
@@ -545,13 +537,25 @@ def parse_args(args):
     )
 
     parser.add_argument(
+        '--unwrapping_algorithm',
+        default='romeo',
+        choices=['romeo', 'laplacian'],
+        help="Phase unwrapping algorithm. ROMEO is based on doi:10.1002/mrm.28563 from Eckstein et al. "+
+             "Laplacian is based on doi:10.1364/OL.28.001194 and doi:10.1002/nbm.3064 from Schofield MA. "+
+             "et al. and Zhou D. et al., respectively."
+    )
+
+    parser.add_argument(
         '--masking_algorithm',
         default=None,
         choices=['threshold', 'bet', 'bet-firstecho'],
-        help='Masking algorithm. Threshold-based masking uses a simple binary threshold followed by '+
-             'gaussian smoothing and morphological hole-filling operations. BET masking generates a '+
-             'mask using the Brain Extraction Tool (BET) based on doi:10.1002/hbm.10062 from Smith SM., '+
-             'with the \'bet-firstecho\' option generating only a single BET mask based on the first echo.'
+        help='Masking algorithm. Threshold-based masking uses a simple binary threshold applied to the '+
+             '--masking_input, followed by a hole-filling strategy determined by the --filling_algorithm. '+
+             'BET masking generates a mask using the Brain Extraction Tool (BET) based on '+
+             'doi:10.1002/hbm.10062 from Smith SM., with the \'bet-firstecho\' option generating only a '+
+             'single BET mask based on the first echo. The default algorithm is \'threshold\' except for '+
+             'when the --qsm_algorithm is set to \'nextqsm\', which will change the default to '+
+             '\'bet-firstecho\'.'
     )
 
     parser.add_argument(
@@ -561,26 +565,46 @@ def parse_args(args):
         help='Input to the masking algorithm. Phase-based masking may reduce artefacts near the ROI '+
              'boundary (see doi:10.1002/mrm.29368 from Hagberg et al.). Phase-based masking creates a '+
              'quality map based on the second-order spatial phase gradients using ROMEO '+
-             '(doi:10.1002/mrm.28563 from Eckstein et al.).'
+             '(doi:10.1002/mrm.28563 from Eckstein et al.). The default masking input is the phase, '+
+             'but is forcibly set to the magnitude if BET-masking is used.'
     )
 
     parser.add_argument(
         '--threshold_value',
         type=float,
         default=None,
-        help='Masking threshold. Values between 0 and 1 represent a percentage of the multi-echo input '+
-             'range. Values greater than 1 represent an absolute threshold value. Lower values will '+
-             'result in larger masks. If no threshold is provided, the --threshold_algorithm is used to '+
-             'select one automatically.'
+        help='Masking threshold for when --masking_algorithm is set to threshold. Values between 0 and 1'+
+             'represent a percentage of the multi-echo input range. Values greater than 1 represent an '+
+             'absolute threshold value. Lower values will result in larger masks. If no threshold is '+
+             'provided, the --threshold_algorithm is used to select one automatically.'
     )
 
     parser.add_argument(
         '--threshold_algorithm',
         default='otsu',
         choices=['otsu', 'gaussian'],
-        help='Algorithm used to select a threshold for threshold-based masking. The gaussian method is '+
-             'based on doi:10.1016/j.compbiomed.2012.01.004 from Balan AGR. et al. The otsu method is '+
-             'based on doi:10.1109/TSMC.1979.4310076 from Otsu et al.'
+        help='Algorithm used to select a threshold for threshold-based masking if --threshold_value is '+
+             'left unspecified. The gaussian method is based on doi:10.1016/j.compbiomed.2012.01.004 '+
+             'from Balan AGR. et al. The otsu method is based on doi:10.1109/TSMC.1979.4310076 from Otsu '+
+             'et al.'
+    )
+
+    parser.add_argument(
+        '--filling_algorithm',
+        default='both',
+        choices=['morphological', 'smoothing', 'both'],
+        help='Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing '+
+             'operation is applied first prior to a morphological hole-filling operation. Gaussian '+
+             'smoothing may fill some unwanted regions (e.g. connecting the skull and brain tissue), whereas '+
+             'morphological hole-filling may fail to fill some desired regions if they are not fully enclosed.'
+    )
+
+    parser.add_argument(
+        '--threshold_algorithm_factor',
+        default=1.25,
+        type=float,
+        help='Factor to multiply the algorithmically-determined threshold by. Larger factors will create '+
+             'smaller masks.'
     )
 
     parser.add_argument(
@@ -594,7 +618,7 @@ def parse_args(args):
     parser.add_argument(
         '--add_bet',
         action='store_true',
-        help='Combines the chosen masking method with BET. This is currently only relevant when the '+
+        help='Combines the chosen masking method with BET. This option is only relevant when the '+
              '--masking_algorithm is set to threshold.'
     )
 
@@ -619,8 +643,8 @@ def parse_args(args):
         help='This option will use existing masks from the BIDS folder, where possible, instead of '+
              'generating new ones. The masks will be selected based on the --mask_pattern argument. '+
              'A single mask may be present (and will be applied to all echoes), or a mask for each '+
-             'echo can be used. When existing masks cannot be found, the chosen --masking_algorithm '+
-             'will be used as a fallback.'
+             'echo can be used. When existing masks cannot be found, the --masking_algorithm will '+
+             'be used as a fallback.'
     )
     
     parser.add_argument(
