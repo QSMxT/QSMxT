@@ -757,7 +757,7 @@ def set_env_variables(args):
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + get_qsmxt_dir()
     else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
 
-    os.environ["JULIA_NUM_THREADS"] = str(args.process_threads)
+    #os.environ["JULIA_NUM_THREADS"] = str(args.process_threads)
 
 def write_references(wf):
     # get all node names
