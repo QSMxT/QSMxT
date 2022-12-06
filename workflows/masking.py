@@ -132,10 +132,10 @@ def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_
         wf.connect([
             (mn_erode, mn_outputs, [('out_file', 'masks')]),
         ])
-    if run_args.masking_algorithm == 'threshold':
-        wf.connect([
-            (n_threshold_masking, mn_outputs, [('threshold', 'threshold')])
-        ])
+        if run_args.masking_algorithm == 'threshold':
+            wf.connect([
+                (n_threshold_masking, mn_outputs, [('threshold', 'threshold')])
+            ])
 
     return wf
 
