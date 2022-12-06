@@ -114,21 +114,28 @@ def init_run_workflow(run_args, subject, session, run):
     if len(phase_files) != len(params_files):
         logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
         return
-    if run_args.masking_input == 'magnitude' and not magnitude_files:
-        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
-        run_args.masking_input = 'phase'
-        run_args.masking_algorithm = 'threshold'
-        run_args.inhomoeneity_correction = False
-    if run_args.use_existing_masks and not mask_files:
-        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking_algorithm} masking.")
-    if run_args.use_existing_masks and len(mask_files) > 1 and len(mask_files) != len(phase_files):
-        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but unequal number of mask and phase files present. Reverting to {run_args.masking_algorithm} masking.")
-        mask_files = []
-    if run_args.use_existing_masks and mask_files:
-        run_args.inhomogeneity_correction = False
-        run_args.two_pass = False
-        run_args.single_pass = True
-        run_args.add_bet = False
+    if run_args.use_existing_masks:
+        if not mask_files:
+            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking_algorithm} masking.")
+        if len(mask_files) > 1 and len(mask_files) != len(phase_files):
+            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but unequal number of mask and phase files present. Reverting to {run_args.masking_algorithm} masking.")
+            mask_files = []
+        if mask_files:
+            run_args.inhomogeneity_correction = False
+            run_args.two_pass = False
+            run_args.single_pass = True
+            run_args.add_bet = False
+    if not magnitude_files:
+        if run_args.masking_input == 'magnitude':
+            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
+            run_args.masking_input = 'phase'
+            run_args.masking_algorithm = 'threshold'
+            run_args.inhomogeneity_correction = False
+            run_args.add_bet = False
+        if run_args.add_bet:
+            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} cannot use --add_bet option - no magnitude files found matching pattern: {magnitude_pattern}.")
+            run_args.add_bet = False
+        
     
     # create nipype workflow for this run
     wf = Workflow(run, base_dir=os.path.join(run_args.output_dir, "workflow_qsm", subject, session, run))
@@ -594,17 +601,25 @@ def parse_args(args):
         default='both',
         choices=['morphological', 'smoothing', 'both'],
         help='Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing '+
-             'operation is applied first prior to a morphological hole-filling operation. Gaussian '+
+             'operation is applied first prior to a morphological hole-filling operation. Note that gaussian '+
              'smoothing may fill some unwanted regions (e.g. connecting the skull and brain tissue), whereas '+
-             'morphological hole-filling may fail to fill some desired regions if they are not fully enclosed.'
+             'morphological hole-filling alone may fail to fill desired regions if they are not fully enclosed.'
     )
 
     parser.add_argument(
         '--threshold_algorithm_factor',
-        default=1.25,
+        default=1.0,
         type=float,
         help='Factor to multiply the algorithmically-determined threshold by. Larger factors will create '+
              'smaller masks.'
+    )
+
+    parser.add_argument(
+        '--mask_erosions',
+        type=int,
+        default=1,
+        help='Number of erosions applied to masks prior to QSM processing steps. Note that some algorithms '+
+             'may erode the mask further (e.g. V-SHARP and TGV-QSM).'
     )
 
     parser.add_argument(
@@ -627,14 +642,6 @@ def parse_args(args):
         type=float,
         default=0.5,
         help='Fractional intensity for BET masking operations.'
-    )
-
-    parser.add_argument(
-        '--bet_erosions',
-        type=int,
-        default=2,
-        help='Number of erosions applied to BET masks prior to QSM processing steps. Note that some '+
-             'algorithms may erode the mask further (e.g. V-SHARP and TGV-QSM).'
     )
     
     parser.add_argument(
@@ -716,9 +723,12 @@ def process_args(args):
     args.two_pass &= 'bet' not in args.masking_algorithm
     args.single_pass = not args.two_pass
 
+    # force masking input to magnitude if bet is the masking method
+    args.masking_input = 'magnitude' if 'bet' in args.masking_algorithm else args.masking_input
+
     # decide on inhomogeneity correction
     args.inhomogeneity_correction &= (args.add_bet or args.masking_input == 'magnitude')
-
+    
     # set number of concurrent processes to run depending on available resources
     if not args.n_procs:
         args.n_procs = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())

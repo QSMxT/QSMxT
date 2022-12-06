@@ -3,6 +3,8 @@
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, traits, File
 
 def erosion(in_file, num_erosions=1):
+    if num_erosions == 0: return in_file
+
     import os
     import nibabel as nib
     from scipy.ndimage import binary_erosion
