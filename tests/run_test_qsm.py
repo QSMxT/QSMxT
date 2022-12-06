@@ -157,7 +157,7 @@ def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=False)
     if init_workflow:
         wf = qsm.init_workflow(args)
     if init_workflow and run_workflow:
-        qsm.set_env_variables()
+        qsm.set_env_variables(args)
         if run_args:
             args_dict = vars(args)
             for key, value in run_args.items():
