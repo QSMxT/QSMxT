@@ -197,25 +197,15 @@ def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     assert(0 < args.process_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
-    workflow(args, init_workflow, run_workflow, run_args)
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
     
-    # zip up results
-    results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.tar"
-    shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
-    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
-
-    # upload results
-    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
-    cs.upload(results_tar, results_tar)
-
     # upload filename
     if os.environ.get('BRANCH'):
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_defaults.tar"
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_rts.tar"
     else:
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_defaults.tar"
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_rts.tar"
     
     # zip up results
-    shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
     sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
 
     # upload results
@@ -239,17 +229,8 @@ def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.masking_algorithm == "bet")
     assert(args.masking_input == "magnitude")
     
-    workflow(args, init_workflow, run_workflow, run_args)
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
     
-    # zip up results
-    results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.tar"
-    shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
-    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
-
-    # upload results
-    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
-    cs.upload(results_tar, results_tar)
-
     # upload filename
     if os.environ.get('BRANCH'):
         results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_nextqsm.tar"
@@ -257,7 +238,6 @@ def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
         results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_nextqsm.tar"
     
     # zip up results
-    shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
     sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
 
     # upload results
@@ -302,25 +282,15 @@ def test_rts_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
         os.path.join(tempfile.gettempdir(), "qsm-secret")
     ]))
     
-    workflow(args, init_workflow, run_workflow, run_args)
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
     
-    # zip up results
-    results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.tar"
-    shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
-    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
-
-    # upload results
-    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
-    cs.upload(results_tar, results_tar)
-
     # upload filename
     if os.environ.get('BRANCH'):
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_defaults-real.tar"
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_realdata.tar"
     else:
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_defaults-real.tar"
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_realdata.tar"
     
     # zip up results
-    shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
     sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
 
     # upload results
