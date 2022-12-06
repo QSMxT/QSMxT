@@ -509,7 +509,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--qsm_algorithm',
-        default='tgvqsm',
+        default='rts',
         choices=['tgvqsm', 'nextqsm', 'rts'],
         help="QSM algorithm. The tgvqsm algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 from "+
              "Langkammer et al., and includes unwrapping and background field removal steps as part of a "+
@@ -554,7 +554,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--masking_algorithm',
-        default=None,
+        default='threshold',
         choices=['threshold', 'bet', 'bet-firstecho'],
         help='Masking algorithm. Threshold-based masking uses a simple binary threshold applied to the '+
              '--masking_input, followed by a hole-filling strategy determined by the --filling_algorithm. '+
@@ -608,7 +608,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--threshold_algorithm_factor',
-        default=1.0,
+        default=1.25,
         type=float,
         help='Factor to multiply the algorithmically-determined threshold by. Larger factors will create '+
              'smaller masks.'
@@ -710,11 +710,8 @@ def create_logger(args):
 
 def process_args(args):
     # default masking settings for QSM algorithms
-    if not args.masking_algorithm:
-        if args.qsm_algorithm in ['tgvqsm', 'rts']:
-            args.masking_algorithm = 'threshold'
-        elif args.qsm_algorithm == 'nextqsm':
-            args.masking_algorithm = 'bet-firstecho'
+    if not args.masking_algorithm and args.qsm_algorithm == 'nextqsm':
+        args.masking_algorithm = 'bet-firstecho'
     
     # add_bet option only works with non-bet masking methods
     args.add_bet &= 'bet' not in args.masking_algorithm
@@ -734,8 +731,7 @@ def process_args(args):
         args.n_procs = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
 
     # set number of concurrent threads for specific programs
-    args.tgvqsm_threads = args.n_procs if not args.qsub_account_string else 6
-    args.julia_threads = args.n_procs if not args.qsub_account_string else 6
+    args.process_threads = args.n_procs if not args.qsub_account_string else 6
 
     # debug options
     if args.debug:
@@ -761,7 +757,7 @@ def set_env_variables(args):
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + get_qsmxt_dir()
     else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
 
-    os.environ["JULIA_NUM_THREADS"] = str(args.julia_threads)
+    os.environ["JULIA_NUM_THREADS"] = str(args.process_threads)
 
 def write_references(wf):
     # get all node names

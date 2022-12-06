@@ -33,7 +33,7 @@ def qsm_workflow(run_args, mn_inputs, name):
                 interface=qsmjl.LaplacianUnwrappingInterface(),
                 iterfield=['in_phase', 'in_mask'],
                 name='qsmjl_laplacian-unwrapping',
-                n_procs=min(run_args.julia_threads, 2)
+                n_procs=min(run_args.process_threads, 2)
             )
             wf.connect([
                 (mn_inputs, mn_laplacian, [('phase', 'in_phase')]),
@@ -74,7 +74,7 @@ def qsm_workflow(run_args, mn_inputs, name):
             interface=qsmjl.VsharpInterface(),
             iterfield=['in_frequency', 'in_mask'],
             name='qsmjl_vsharp',
-            n_procs=min(run_args.julia_threads, 2),
+            n_procs=min(run_args.process_threads, 2),
             mem_gb=3
             # in_frequency, in_mask, in_vsz, out_freq, out_mask
         )
@@ -104,7 +104,7 @@ def qsm_workflow(run_args, mn_inputs, name):
             interface=qsmjl.RtsQsmInterface(),
             name='qsmjl_rts',
             iterfield=['in_frequency', 'in_mask'],
-            n_procs=min(run_args.julia_threads, 2)
+            n_procs=min(run_args.process_threads, 2)
             # in_frequency, in_mask, in_vsz, in_b0dir, out_qsm
         )
         wf.connect([
@@ -120,7 +120,7 @@ def qsm_workflow(run_args, mn_inputs, name):
                 iterations=run_args.tgvqsm_iterations,
                 alpha=run_args.tgvqsm_alphas,
                 erosions=run_args.tgvqsm_erosions,
-                num_threads=run_args.tgvqsm_threads,
+                num_threads=run_args.process_threads,
                 out_suffix='_tgvqsm',
                 extra_arguments='--ignore-orientation --no-resampling'
             ),
@@ -131,7 +131,7 @@ def qsm_workflow(run_args, mn_inputs, name):
             # output: 'out_file'
         )
         mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={run_args.tgvqsm_threads}:mem=20gb:vmem=20gb',
+            'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={run_args.process_threads}:mem=20gb:vmem=20gb',
             'overwrite': True
         }
         wf.connect([
