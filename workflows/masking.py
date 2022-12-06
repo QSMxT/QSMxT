@@ -77,19 +77,6 @@ def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_
 
         # run bet if necessary
         if run_args.masking_algorithm in ['bet', 'bet-firstecho'] or add_bet:
-            def get_first(magnitude_files): return [magnitude_files[0] for f in magnitude_files]
-            n_getfirst = Node(
-                interface=Function(
-                    input_names=['magnitude_files'],
-                    output_names=['magnitude_file'],
-                    function=get_first
-                ),
-                name='func_get-first'
-            )
-            wf.connect([
-                (mn_inputs, n_getfirst, [('magnitude_files', 'magnitude_files')])
-            ])
-
             mn_bet = MapNode(
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
@@ -97,6 +84,18 @@ def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_
                 # output: 'mask_file'
             )
             if run_args.masking_algorithm == 'bet-firstecho':
+                def get_first(magnitude_files): return [magnitude_files[0] for f in magnitude_files]
+                n_getfirst = Node(
+                    interface=Function(
+                        input_names=['magnitude_files'],
+                        output_names=['magnitude_file'],
+                        function=get_first
+                    ),
+                    name='func_get-first'
+                )
+                wf.connect([
+                    (mn_inputs, n_getfirst, [('magnitude_files', 'magnitude_files')])
+                ])
                 wf.connect([
                     (n_getfirst, mn_bet, [('magnitude_file', 'in_file')])
                 ])

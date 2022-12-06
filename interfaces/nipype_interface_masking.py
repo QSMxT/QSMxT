@@ -35,7 +35,7 @@ def _clean_histogram(image_histogram):
     return image_histogram
 
 # === THRESHOLD-BASED MASKING FOR TWO-PASS AND SINGLE-PASS QSM ===
-def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussian', threshold_algorithm_factor=1.0, filling_algorithm='both', mask_suffix="_mask", fill_masks=False, fill_strength=0):
+def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussian', threshold_algorithm_factor=1.0, filling_algorithm='both', mask_suffix="_mask", fill_masks=False):
     # sort input filepaths
     in_files = sorted(in_files)
 
@@ -109,7 +109,6 @@ class MaskingInputSpec(BaseInterfaceInputSpec):
     threshold_algorithm = traits.String(mandatory=False, value="otsu")
     threshold_algorithm_factor = traits.Float(mandatory=False, default_value=1.0)
     filling_algorithm = traits.String(mandatory=False, value='both')
-    fill_strength = traits.Int(mandatory=False, default_value=1)
 
 
 class MaskingOutputSpec(TraitedSpec):
@@ -131,7 +130,6 @@ class MaskingInterface(SimpleInterface):
             filling_algorithm=self.inputs.filling_algorithm,
             mask_suffix=f"_{self.inputs.mask_suffix}",
             fill_masks=self.inputs.fill_masks,
-            fill_strength=self.inputs.fill_strength
         )
         self._results['masks'] = masks
         self._results['threshold'] = threshold
@@ -150,19 +148,51 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--fill_strength',
-        type=int,
-        required=False,
-        default=0
+        '--threshold_value',
+        type=float,
+        default=None,
+        help='Masking threshold for when --masking_algorithm is set to threshold. Values between 0 and 1'+
+             'represent a percentage of the multi-echo input range. Values greater than 1 represent an '+
+             'absolute threshold value. Lower values will result in larger masks. If no threshold is '+
+             'provided, the --threshold_algorithm is used to select one automatically.'
     )
 
     parser.add_argument(
-        '--threshold',
-        nargs='?',
-        default=None,
-        type=float
+        '--threshold_algorithm',
+        default='otsu',
+        choices=['otsu', 'gaussian'],
+        help='Algorithm used to select a threshold for threshold-based masking if --threshold_value is '+
+             'left unspecified. The gaussian method is based on doi:10.1016/j.compbiomed.2012.01.004 '+
+             'from Balan AGR. et al. The otsu method is based on doi:10.1109/TSMC.1979.4310076 from Otsu '+
+             'et al.'
     )
 
+    parser.add_argument(
+        '--filling_algorithm',
+        default='both',
+        choices=['morphological', 'smoothing', 'both', 'none'],
+        help='Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing '+
+             'operation is applied first prior to a morphological hole-filling operation. Note that gaussian '+
+             'smoothing may fill some unwanted regions (e.g. connecting the skull and brain tissue), whereas '+
+             'morphological hole-filling alone may fail to fill desired regions if they are not fully enclosed.'
+    )
+
+    parser.add_argument(
+        '--threshold_algorithm_factor',
+        default=1.0,
+        type=float,
+        help='Factor to multiply the algorithmically-determined threshold by. Larger factors will create '+
+             'smaller masks.'
+    )
+
+
     args = parser.parse_args()
-    mask_files = threshold_masking(args.in_files, args.threshold, args.fill_strength)
+    mask_files = threshold_masking(
+        in_files=args.in_files,
+        user_threshold=args.threshold_value,
+        threshold_algorithm=args.threshold_algorithm,
+        threshold_algorithm_factor=args.threshold_algorithm_factor,
+        filling_algorithm=args.filling_algorithm,
+        fill_masks=args.filling_algorithm != 'none'
+    )
 
