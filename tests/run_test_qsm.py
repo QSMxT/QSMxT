@@ -460,17 +460,7 @@ def test_two_pass(bids_dir, init_workflow, run_workflow, run_args):
     ]))
     
     assert(args.two_pass == True)
-    
     workflow(args, init_workflow, run_workflow, run_args)
-
-# Possible other tests...
-# test_use_existing_masks for multi-echo masks
-# test_num_echoes
-# test_threshold_value_0p5
-# test_threshold_value_500
-# test_threshold_algo_gaussian
-# test_filling_algo_morphological
-# test_filling_algo_gaussian
 
 # TODO
 #  - check file outputs

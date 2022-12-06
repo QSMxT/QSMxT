@@ -103,12 +103,13 @@ def init_run_workflow(subject, session, run):
     n_fastsurfer = Node(
         interface=fastsurfer.FastSurferInterface(
             in_file=t1_file,
-            num_threads=args.num_threads
+            num_threads=args.n_procs
         ),
-        name='fastsurfer_segment-t1'
+        name='fastsurfer_segment-t1',
+        mem_gb=11
     )
     n_fastsurfer.plugin_args = {
-        'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.num_threads}:mem=20gb:vmem=20gb',
+        'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.n_procs}:mem=20gb:vmem=20gb',
         'overwrite': True
     }
 
@@ -216,14 +217,6 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--num_threads',
-        type=int,
-        default=1,
-        help='The number of threads (MultiProc) or CPUs (PBS) used for each running instance ' +
-             'of FastSurfer'
-    )
-
-    parser.add_argument(
         '--n_procs',
         type=int,
         default=None,
@@ -298,19 +291,17 @@ if __name__ == "__main__":
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
-    wf = init_workflow()
-
-    # get number of CPUs
-    n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
-    
     # set number of concurrent processes to run depending on
-    # available CPUs and RAM (max 1 per 11 GB of available RAM)
     if not args.n_procs:
-        available_ram_gb = psutil.virtual_memory().available / 1e9
-        args.n_procs = max(1, min(int(available_ram_gb / 11), n_cpus))
-        if available_ram_gb < 11:
-            logger.log(LogLevel.WARNING.value, f"Less than 11 GB of memory available ({available_ram_gb} GB). At least 11 GB is recommended. You may need to close background programs.")
-        logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors.")
+        n_cpus = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
+        args.n_procs = n_cpus
+        print(n_cpus, type(n_cpus))
+        logger.log(LogLevel.INFO.value, f"Running with {args.n_procs} processors.")
+    
+    # set number of threads per CPU to use by FastSurfer/pytorch
+    os.environ["OMP_NUM_THREADS"] = str(args.n_procs)
+    
+    wf = init_workflow()
 
     # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
