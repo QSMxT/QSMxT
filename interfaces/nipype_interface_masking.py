@@ -35,7 +35,7 @@ def _clean_histogram(image_histogram):
     return image_histogram
 
 # === THRESHOLD-BASED MASKING FOR TWO-PASS AND SINGLE-PASS QSM ===
-def threshold_masking(in_files, threshold=None, threshold_algorithm='gaussian', mask_suffix="_mask", fill_masks=False, fill_strength=0):
+def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussian', mask_suffix="_mask", fill_masks=False, fill_strength=0):
     # sort input filepaths
     in_files = sorted(in_files)
 
@@ -45,11 +45,16 @@ def threshold_masking(in_files, threshold=None, threshold_algorithm='gaussian', 
     image_histogram = np.array([data.flatten() for data in all_float_data])
     
     # calculate gaussian threshold if none given
-    if not threshold:
+    if not user_threshold:
         if threshold_algorithm == 'gaussian':
             threshold = _gaussian_threshold(image_histogram)
         else:
-            threshold = filters.threshold_otsu(image_histogram) * 0.75
+            threshold = filters.threshold_otsu(image_histogram)
+    elif type(user_threshold) == int: # user-defined absolute threshold
+        threshold = user_threshold
+    else: # user-defined percentage threshold
+        data_range = np.max(np.array(all_float_data)) - np.min(np.array(all_float_data))
+        threshold = np.min(data_range) + (user_threshold * data_range)
 
     # do masking
     masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
@@ -114,7 +119,7 @@ class MaskingInterface(SimpleInterface):
     def _run_interface(self, runtime):
         masks, threshold = threshold_masking(
             in_files=self.inputs.in_files,
-            threshold=self.inputs.threshold,
+            user_threshold=self.inputs.threshold,
             threshold_algorithm=self.inputs.threshold_algorithm,
             mask_suffix=f"_{self.inputs.mask_suffix}",
             fill_masks=self.inputs.fill_masks,

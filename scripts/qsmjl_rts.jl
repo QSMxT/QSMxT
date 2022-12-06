@@ -6,6 +6,8 @@ using QSM
 
 s = ArgParseSettings()
 @add_arg_table! s begin
+    "--qsm_algorithm"
+        help = "rts | tkd | tsvd | nltv | tv"
     "--tissue-frequency"
         help = "input - tissue frequency"
         required = true

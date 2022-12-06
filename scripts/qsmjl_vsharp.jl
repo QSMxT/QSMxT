@@ -36,6 +36,11 @@ mask = !=(0).(mask_nii.raw)
 frequency = frequency_nii.raw .* mask
 
 # background field removal
+if iszero(mask)
+    savenii(mask, args["tissue-frequency-out"], header=frequency_nii.header)
+    savenii(mask, args["vsharp-mask-out"], header=frequency_nii.header)
+    exit()
+end
 tissue_phase, vsharp_mask = vsharp(frequency, mask, vsz)
 savenii(tissue_phase, args["tissue-frequency-out"], header=frequency_nii.header)
 savenii(vsharp_mask, args["vsharp-mask-out"], header=frequency_nii.header)

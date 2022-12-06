@@ -21,7 +21,7 @@ def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_
 
     if not mask_files:
         # do phase weights if necessary
-        if run_args.masking == 'phase-based':
+        if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
             mn_phaseweights = MapNode(
                 interface=phaseweights.RomeoMaskingInterface(),
                 iterfield=['phase', 'mag'] if magnitude_available else ['phase'],
@@ -40,8 +40,8 @@ def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_
                     (mn_inputs, mn_phaseweights, [('phase_files', 'phase')]),
                 ])
 
-        # do threshold-based masking if necessary
-        if run_args.masking in ['phase-based', 'magnitude-based']:
+        # do threshold masking if necessary
+        if run_args.masking_algorithm == 'threshold':
             n_threshold_masking = Node(
                 interface=masking.MaskingInterface(
                     fill_masks=fill_masks,
@@ -51,19 +51,19 @@ def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_
                 name='scipy_numpy_nibabel_threshold-masking'
                 # inputs : ['in_files']
             )
-            if run_args.masking_threshold: n_threshold_masking.inputs.threshold = run_args.masking_threshold
+            if run_args.threshold_value: n_threshold_masking.inputs.threshold = run_args.threshold_value
 
-            if run_args.masking in ['phase-based']:    
+            if run_args.masking_input == 'phase':    
                 wf.connect([
                     (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
                 ])
-            elif run_args.masking == 'magnitude-based':
+            elif run_args.masking_input == 'magnitude':
                 wf.connect([
                     (mn_inputs, n_threshold_masking, [('magnitude_files', 'in_files')])
                 ])
 
         # run bet if necessary
-        if run_args.masking in ['bet', 'bet-firstecho'] or add_bet:
+        if run_args.masking_algorithm in ['bet', 'bet-firstecho'] or add_bet:
             def get_first(magnitude_files): return [magnitude_files[0] for f in magnitude_files]
             n_getfirst = Node(
                 interface=Function(
@@ -83,7 +83,7 @@ def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_
                 name='fsl-bet'
                 # output: 'mask_file'
             )
-            if run_args.masking == 'bet-firstecho':
+            if run_args.masking_algorithm == 'bet-firstecho':
                 wf.connect([
                     (n_getfirst, mn_bet, [('magnitude_file', 'in_file')])
                 ])
@@ -119,11 +119,11 @@ def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_
         wf.connect([
             (mn_inputs, mn_outputs, [('mask_files', 'masks')]),
         ])
-    elif run_args.masking in ['bet', 'bet-firstecho']:
+    elif run_args.masking_algorithm in ['bet', 'bet-firstecho']:
         wf.connect([
             (mn_bet_erode, mn_outputs, [('out_file', 'masks')]),
         ])
-    elif run_args.masking in ['magnitude-based', 'phase-based']:
+    elif run_args.masking_algorithm == 'threshold':
         wf.connect([
             (n_threshold_masking, mn_outputs, [('threshold', 'threshold')])
         ])

@@ -114,15 +114,14 @@ def init_run_workflow(run_args, subject, session, run):
     if len(phase_files) != len(params_files):
         logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
         return
-    if (not magnitude_files and any([run_args.masking == 'magnitude-based', 'bet' in run_args.masking, run_args.add_bet, run_args.inhomogeneity_correction])):
+    if not magnitude_files and run_args.masking_input == 'magnitude':
         logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
-        run_args.masking = 'phase-based'
-        run_args.add_bet = False
-        run_args.inhomogeneity_correction = False
+        run_args.masking_input = 'phase'
+        run_args.inhomoeneity_correction = False
     if run_args.use_existing_masks and not mask_files:
-        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking} masking.")
+        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking_algorithm} masking.")
     if run_args.use_existing_masks and len(mask_files) > 1 and len(mask_files) != len(phase_files):
-        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but unequal number of mask and phase files present. Reverting to {run_args.masking} masking.")
+        logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but unequal number of mask and phase files present. Reverting to {run_args.masking_algorithm} masking.")
         mask_files = []
     if run_args.use_existing_masks and mask_files:
         run_args.inhomogeneity_correction = False
@@ -148,7 +147,7 @@ def init_run_workflow(run_args, subject, session, run):
                 "Python interpreter" : sys.executable,
                 "Inhomogeneity correction" : run_args.inhomogeneity_correction,
                 "QSM algorithm" : f"{run_args.qsm_algorithm}" + (f" with two-pass algorithm" if run_args.two_pass else ""),
-                "Masking algorithm" : (f"{run_args.masking}" + (f" plus BET" if run_args.add_bet else "")) if not mask_files else ("Predefined (one mask)" if len(mask_files) == 1 else "Predefined (multi-echo mask)")
+                "Masking algorithm" : (f"{run_args.masking_algorithm}" + (f" plus BET" if run_args.add_bet else "")) if not mask_files else ("Predefined (one mask)" if len(mask_files) == 1 else "Predefined (multi-echo mask)")
             },
             out_file=f"{subject}_{session}_{run}_qsmxt-header.json"
         ),
@@ -225,7 +224,7 @@ def init_run_workflow(run_args, subject, session, run):
         name='nibabel_read-nii'
     )
     wf.connect([
-        (n_getfiles, n_nii_params, [('magnitude_files', 'in_file')])
+        (n_getfiles, n_nii_params, [('phase_files', 'in_file')])
     ])
 
     # scale phase data
@@ -340,7 +339,7 @@ def init_run_workflow(run_args, subject, session, run):
         (wf_masking, n_datasink, [('masking_outputs.masks', 'masks')])
     ])
     # add threshold to json output
-    if run_args.masking in ['magnitude-based', 'phase-based']:
+    if run_args.masking_algorithm == 'threshold':
         n_addtojson = Node(
             interface=addtojson.AddToJsonInterface(
                 in_key = "Masking threshold"
@@ -434,7 +433,7 @@ def init_run_workflow(run_args, subject, session, run):
 
 def parse_args(args):
     parser = argparse.ArgumentParser(
-        description="QSMxT qsm: QSM Reconstruction Pipeline",
+        description="QSMxT: QSM Reconstruction Pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
@@ -503,21 +502,24 @@ def parse_args(args):
     parser.add_argument(
         '--qsm_algorithm',
         default='tgvqsm',
-        choices=['tgvqsm', 'nextqsm', 'qsmjl'],
-        help="The QSM algorithm to use. The tgvqsm algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 "+
-             "from Langkammer et al. By default, the tgvqsm algorithm also includes a two-pass inversion that "+
-             "aims to mitigate streaking artefacts in QSM based on doi:10.1002/mrm.29048. The two-pass "+
-             "inversion can be disabled to reduce runtime by half by specifying --single_pass. "+
-             "The NeXtQSM option requires NeXtQSM installed (available by default in the QSMxT container) and "+
-             "uses a deep learning model implemented in Tensorflow based on doi:10.48550/arXiv.2107.07752 from "+
-             "Cognolato et al."
+        choices=['tgvqsm', 'nextqsm', 'rts'],
+        help="QSM algorithm. The tgvqsm algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 from "+
+             "Langkammer et al., and includes unwrapping and background field removal steps as part of a "+
+             "combined optimisation. The NeXtQSM option requires NeXtQSM installed (available by default in the "+
+             "QSMxT container) and uses a deep learning model implemented in Tensorflow based on "+
+             "doi:10.48550/arXiv.2107.07752 from Cognolato et al., and combines the QSM inversion with a "+
+             "background field removal step. The RTS algorithm is based on doi:10.1016/j.neuroimage.2017.11.018 "+
+             "from Kames C. et al., and solves only the dipole-inversion step, requiring separate unwrapping and "+
+             "background field removal steps. "
     )
 
     parser.add_argument(
         '--unwrapping_algorithm',
         default='romeo',
-        choices=['romeo', 'romeob0', 'laplacian'],
-        help="Unwrapping algorithm to use with nextqsm."
+        choices=['romeo', 'laplacian'],
+        help="Unwrapping algorithm. ROMEO is based on doi:10.1002/mrm.28563 from Eckstein et al. Laplacian is "+
+             "based on doi:10.1364/OL.28.001194 and doi:10.1002/nbm.3064 from Schofield MA. et al. and Zhou D. "+
+             "et al., respectively."
     )
 
     parser.add_argument(
@@ -539,58 +541,61 @@ def parse_args(args):
         '--tgvqsm_erosions',
         type=int,
         default=3,
-        help='Number of erosions applied during the TGV-QSM algorithm. Note that BET '+
-        'masks may also be eroded using the --bet_erosions flag.'
+        help='Number of erosions applied during the TGV-QSM algorithm.'
     )
 
     parser.add_argument(
-        '--masking',
+        '--masking_algorithm',
         default=None,
-        choices=['phase-based', 'magnitude-based', 'bet', 'bet-firstecho'],
-        help='Masking strategy. Phase-based and magnitude-based masking generate masks by ' +
-             'thresholding out regions below a percentage of the signal histogram (adjust using the '+
-             '--masking_threshold parameter). For phase-based masking, the spatial phase coherence is '+
-             'thresholded and the magnitude is not required. BET masking generates a multi-echo mask '+
-             'using the Brain Extraction Tool (BET), with the \'bet-firstecho\' option generating only a '+
-             'single BET mask based on the first echo magnitude image. The default masking algorithm for '+
-             'the tgvqsm algorithm is phase-based, and the default for nextqsm is bet-firstecho.'
+        choices=['threshold', 'bet', 'bet-firstecho'],
+        help='Masking algorithm. Threshold-based masking uses a simple binary threshold followed by '+
+             'gaussian smoothing and morphological hole-filling operations. BET masking generates a '+
+             'mask using the Brain Extraction Tool (BET) based on doi:10.1002/hbm.10062 from Smith SM., '+
+             'with the \'bet-firstecho\' option generating only a single BET mask based on the first echo.'
     )
 
-    def between_0_and_1(num):
-        num = float(num)
-        if num < 0 or num > 1: raise ValueError(f"Argument must be between 0 and 1 - got {num}.")
-        return num
     parser.add_argument(
-        '--masking_threshold',
-        type=between_0_and_1,
+        '--masking_input',
+        default='phase',
+        choices=['phase', 'magnitude'],
+        help='Input to the masking algorithm. Phase-based masking may reduce artefacts near the ROI '+
+             'boundary (see doi:10.1002/mrm.29368 from Hagberg et al.). Phase-based masking creates a '+
+             'quality map based on the second-order spatial phase gradients using ROMEO '+
+             '(doi:10.1002/mrm.28563 from Eckstein et al.).'
+    )
+
+    parser.add_argument(
+        '--threshold_value',
+        type=float,
         default=None,
-        help='Masking threshold (between 0 and 1). For magnitude-based masking, this represents the '+
-             'percentage of the histogram to exclude from masks. For phase-based masking, this represents the '+
-             'the minimum phase matching quality level required to for voxels to be included in the mask. If '+
-             'no threshold is provided, one is automatically chosen based on a histogram analysis.'
+        help='Masking threshold. Values between 0 and 1 represent a percentage of the multi-echo input '+
+             'range. Values greater than 1 represent an absolute threshold value. Lower values will '+
+             'result in larger masks. If no threshold is provided, the --threshold_algorithm is used to '+
+             'select one automatically.'
     )
 
     parser.add_argument(
         '--threshold_algorithm',
-        default='gaussian',
-        choices=['gaussian', 'otsu']
-    )
-
-    parser.add_argument(
-        '--single_pass',
-        action='store_true',
-        help='Runs a single QSM inversion per echo, rather than the two-pass QSM inversion that '+
-             'separates reliable and less reliable phase regions for artefact reduction. '+
-             'Use this option to disable the novel inversion and approximately halve the runtime.'
+        default='otsu',
+        choices=['otsu', 'gaussian'],
+        help='Algorithm used to select a threshold for threshold-based masking. The gaussian method is '+
+             'based on doi:10.1016/j.compbiomed.2012.01.004 from Balan AGR. et al. The otsu method is '+
+             'based on doi:10.1109/TSMC.1979.4310076 from Otsu et al.'
     )
 
     parser.add_argument(
         '--inhomogeneity_correction',
         action='store_true',
-        help='Applies an inhomogeneity correction to the magnitude prior to masking. This option is '+
-             'only relevant for magnitude-based masking, and is only recommended if there are obvious '+
-             'field bias problems in the magnitude images, which typically occur in ultra-high field '+
-             'acquisitions.'
+        help='Applies an inhomogeneity correction to the magnitude prior to masking based on '+
+             'https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html from Eckstein et al. This option '+
+             'is only relevant when the --masking_input is the magnitude.'
+    )
+
+    parser.add_argument(
+        '--add_bet',
+        action='store_true',
+        help='Combines the chosen masking method with BET. This is currently only relevant when the '+
+             '--masking_algorithm is set to threshold.'
     )
 
     parser.add_argument(
@@ -605,24 +610,16 @@ def parse_args(args):
         type=int,
         default=2,
         help='Number of erosions applied to BET masks prior to QSM processing steps. Note that some '+
-        'algorithms may erode the mask further (e.g. V-SHARP and TGV-QSM.'
-    )
-
-    parser.add_argument(
-        '--add_bet',
-        action='store_true',
-        help='When using magnitude or phase-based masking, this option adds a BET mask to the filled, '+
-             'threshold-based mask. This is useful if areas of the sample are missing due to a failure '+
-             'of the hole-filling algorithm.'
+             'algorithms may erode the mask further (e.g. V-SHARP and TGV-QSM).'
     )
     
     parser.add_argument(
         '--use_existing_masks',
         action='store_true',
-        help='This option will use existing masks from the BIDS folder, when possible, instead of '+
+        help='This option will use existing masks from the BIDS folder, where possible, instead of '+
              'generating new ones. The masks will be selected based on the --mask_pattern argument. '+
              'A single mask may be present (and will be applied to all echoes), or a mask for each '+
-             'echo can be used. When existing masks cannot be found, the chosen --masking algorithm '+
+             'echo can be used. When existing masks cannot be found, the chosen --masking_algorithm '+
              'will be used as a fallback.'
     )
     
@@ -631,6 +628,18 @@ def parse_args(args):
         default='{subject}/{session}/extra_data/*{run}*mask*nii*',
         help='Pattern used to identify mask files to be used when the --use_existing_masks option '+
              'is enabled.'
+    )
+
+    parser.add_argument(
+        '--two_pass',
+        action='store_true',
+        help='Runs the QSM reconstruction in a two-stage fashion to reduce artefacts; combines '+
+             'the results from two QSM images reconstructed using masks that separate more reliable '+
+             'and less reliable phase regions. Note that this option requires threshold-based masking, '+
+             'doubles reconstruction time, and in some cases can deteriorate QSM contrast in some '+
+             'regions. Applications where two-pass QSM may improve results include body imaging, '+
+             'lesion imaging, and imaging of other strong susceptibility sources. This method is '+
+             'based on doi:10.1002/mrm.29048 from Stewart et al.'
     )
 
     parser.add_argument(
@@ -644,8 +653,8 @@ def parse_args(args):
         '--n_procs',
         type=int,
         default=None,
-        help='Number of processes to run concurrently for MultiProc. By default, we use the number of CPUs, ' +
-             'provided there are 6 GBs of RAM available for each.'
+        help='Number of processes to run concurrently for MultiProc. By default, the number of available '+
+             'CPUs is used.'
     )
 
     parser.add_argument(
@@ -670,32 +679,30 @@ def create_logger(args):
 
 def process_args(args):
     # default masking settings for QSM algorithms
-    if not args.masking:
-        if args.qsm_algorithm in ['tgvqsm', 'qsmjl']:
-            args.masking = 'phase-based'
+    if not args.masking_algorithm:
+        if args.qsm_algorithm in ['tgvqsm', 'rts']:
+            args.masking_algorithm = 'threshold'
         elif args.qsm_algorithm == 'nextqsm':
-            args.masking = 'bet-firstecho'
+            args.masking_algorithm = 'bet-firstecho'
     
     # add_bet option only works with non-bet masking methods
-    args.add_bet &= 'bet' not in args.masking
+    args.add_bet &= 'bet' not in args.masking_algorithm
 
     # two-pass option does not work with 'bet' masking
-    args.two_pass = 'bet' not in args.masking and not args.single_pass
+    args.two_pass &= 'bet' not in args.masking_algorithm
     args.single_pass = not args.two_pass
 
     # decide on inhomogeneity correction
-    args.inhomogeneity_correction &= (args.add_bet or 'phase-based' not in args.masking)
+    args.inhomogeneity_correction &= (args.add_bet or args.masking_input == 'magnitude')
 
-    # set number of concurrent processes to run depending on
-    # available CPUs and RAM (max 1 per 6 GB of available RAM)
+    # set number of concurrent processes to run depending on available resources
     if not args.n_procs:
-        n_cpus = int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count())
-        args.n_procs = n_cpus
+        args.n_procs = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
 
-    #qsm_threads should be set to adjusted n_procs (either computed earlier or given via cli)
-    #args.qsm_threads = args.n_procs if not args.qsub_account_string else 1
-    args.tgvqsm_threads = min(6, args.n_procs) if not args.qsub_account_string else 6
-    
+    # set number of concurrent threads for specific programs
+    args.tgvqsm_threads = args.n_procs if not args.qsub_account_string else 6
+    args.julia_threads = args.n_procs if not args.qsub_account_string else 6
+
     # debug options
     if args.debug:
         from nipype import config
@@ -709,7 +716,7 @@ def process_args(args):
     
     return args
 
-def set_env_variables():
+def set_env_variables(args):
     # misc environment variables
     os.environ["FSLOUTPUTTYPE"] = "NIFTI"
 
@@ -719,6 +726,8 @@ def set_env_variables():
     # add this_dir and cwd to pythonpath
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + get_qsmxt_dir()
     else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
+
+    os.environ["JULIA_NUM_THREADS"] = str(args.julia_threads)
 
 def write_references(wf):
     # get all node names
@@ -740,9 +749,13 @@ def write_references(wf):
         f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         f.write("\n\n - Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
         
+        # nextqsm
+        # qsm.jl laplacian
+        # qsm.jl rts
+        # qsm.jl v-sharp
         if any_string_matches_any_node(['tgv']):
             f.write("\n\n - Langkammer C, Bredies K, Poser BA, et al. Fast quantitative susceptibility mapping using 3D EPI and total generalized variation. NeuroImage. 2015;111:622-630. doi:10.1016/j.neuroimage.2015.02.041")
-        if any_string_matches_any_node(['threshold-masking']) and args.masking_threshold is None:
+        if any_string_matches_any_node(['threshold-masking']) and args.threshold_value is None:
             f.write("\n\n - Balan AGR, Traina AJM, Ribeiro MX, Marques PMA, Traina Jr. C. Smart histogram analysis applied to the skull-stripping problem in T1-weighted MRI. Computers in Biology and Medicine. 2012;42(5):509-522. doi:10.1016/j.compbiomed.2012.01.004")
         if any_string_matches_any_node(['bet']):
             f.write("\n\n - Smith SM. Fast robust automated brain extraction. Human Brain Mapping. 2002;17(3):143-155. doi:10.1002/hbm.10062")
@@ -778,7 +791,7 @@ if __name__ == "__main__":
     args = process_args(args)
     
     # set environment variables
-    set_env_variables()
+    set_env_variables(args)
     
     # build workflow
     wf = init_workflow(args)

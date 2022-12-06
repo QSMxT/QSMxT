@@ -20,7 +20,7 @@ def qsm_workflow(run_args, mn_inputs, name):
     )
 
     # === PHASE UNWRAPPING ===
-    if run_args.qsm_algorithm in ['nextqsm', 'qsmjl']:
+    if run_args.qsm_algorithm in ['nextqsm', 'rts']:
         mn_unwrapping = MapNode(
             interface=IdentityInterface(
                 fields=['unwrapped_phase']
@@ -32,7 +32,8 @@ def qsm_workflow(run_args, mn_inputs, name):
             mn_laplacian = MapNode(
                 interface=qsmjl.LaplacianUnwrappingInterface(),
                 iterfield=['in_phase', 'in_mask'],
-                name='qsmjl_laplacian-unwrapping'
+                name='qsmjl_laplacian-unwrapping',
+                n_procs=min(run_args.julia_threads, 2)
             )
             wf.connect([
                 (mn_inputs, mn_laplacian, [('phase', 'in_phase')]),
@@ -44,7 +45,7 @@ def qsm_workflow(run_args, mn_inputs, name):
             mn_romeo = MapNode(
                 interface=romeo.RomeoInterface(),
                 iterfield=['phase', 'mag'],
-                name='mrt_romeo'
+                name='mrt_romeo',
             )
             wf.connect([
                 (mn_inputs, mn_romeo, [('phase', 'phase'), ('magnitude', 'mag')]),
@@ -53,7 +54,7 @@ def qsm_workflow(run_args, mn_inputs, name):
             ])
 
     # === PHASE TO FREQUENCY ===
-    if run_args.qsm_algorithm in ['nextqsm', 'qsmjl']: 
+    if run_args.qsm_algorithm in ['nextqsm', 'rts']: 
         mn_phase_to_freq = MapNode(
             interface=qsmjl.PhaseToFreqInterface(), 
             name='qsmjl_phase-to-freq',
@@ -68,11 +69,13 @@ def qsm_workflow(run_args, mn_inputs, name):
         ])
 
     # === BACKGROUND FIELD REMOVAL ===
-    if run_args.qsm_algorithm in ['qsmjl']:
+    if run_args.qsm_algorithm in ['rts']:
         mn_vsharp = MapNode(
             interface=qsmjl.VsharpInterface(),
             iterfield=['in_frequency', 'in_mask'],
-            name='qsmjl_vsharp'
+            name='qsmjl_vsharp',
+            n_procs=min(run_args.julia_threads, 2),
+            mem_gb=3
             # in_frequency, in_mask, in_vsz, out_freq, out_mask
         )
         wf.connect([
@@ -96,11 +99,12 @@ def qsm_workflow(run_args, mn_inputs, name):
             (mn_inputs, n_qsm, [('mask', 'mask')]),
             (n_qsm, mn_outputs, [('out_file', 'qsm')]),
         ])
-    if run_args.qsm_algorithm == 'qsmjl':
+    if run_args.qsm_algorithm == 'rts':
         n_qsm = MapNode(
-            interface=qsmjl.QsmInterface(),
-            name='qsmjl',
-            iterfield=['in_frequency', 'in_mask']
+            interface=qsmjl.RtsQsmInterface(),
+            name='qsmjl_rts',
+            iterfield=['in_frequency', 'in_mask'],
+            n_procs=min(run_args.julia_threads, 2)
             # in_frequency, in_mask, in_vsz, in_b0dir, out_qsm
         )
         wf.connect([

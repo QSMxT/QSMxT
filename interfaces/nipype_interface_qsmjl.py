@@ -120,7 +120,7 @@ class VsharpInterface(CommandLine):
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_vsharp.jl")
 
 
-class QsmInputSpec(CommandLineInputSpec):
+class RtsQsmInputSpec(CommandLineInputSpec):
     in_frequency = File(
         exists=True,
         mandatory=True,
@@ -151,12 +151,12 @@ class QsmInputSpec(CommandLineInputSpec):
     )
 
 
-class QsmOutputSpec(TraitedSpec):
+class RtsQsmOutputSpec(TraitedSpec):
     out_qsm = File()
 
 
-class QsmInterface(CommandLine):
-    input_spec = QsmInputSpec
-    output_spec = QsmOutputSpec
-    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_inversion.jl")
+class RtsQsmInterface(CommandLine):
+    input_spec = RtsQsmInputSpec
+    output_spec = RtsQsmOutputSpec
+    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_rts.jl")
 
