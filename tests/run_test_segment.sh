@@ -29,7 +29,7 @@ sudo cp /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/01_bids/sub-170706160506st
 
 
 echo "[DEBUG] starting run_3_segment.py"
-docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_3_segment.py /tmp/01_bids /tmp/03_segmentation --t1_pattern '{subject}/{session}/anat/*{run}*T1w*nii*' --n_procs 2
+docker run -v /tmp:/tmp $container python3 /tmp/QSMxT/run_3_segment.py /tmp/01_bids /tmp/03_segmentation --t1_pattern '{subject}/{session}/anat/*{run}*T1w*nii*'
 
 echo "[DEBUG] checking output of run_3_segment.py"
 [ -f  /tmp/03_segmentation/t1_segmentations/sub-170705134431std1312211075243167001_ses-1_run-01_T1w_segmentation_nii.nii ] && echo "sub-170705134431std1312211075243167001_ses-1_run-01_T1w_segmentation_nii.nii exists." || exit 1
