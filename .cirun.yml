@@ -5,4 +5,4 @@ runners:
     machine_image: ocid1.image.oc1.eu-frankfurt-1.aaaaaaaa6m57xzoztlide4653fjavkm6dpksmz3kaa4gig4h34jod76aapva
     region: eu-frankfurt-1
     labels:
-      - oracle
+      - cirun-oracle
