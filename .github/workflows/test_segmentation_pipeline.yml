@@ -52,4 +52,4 @@ jobs:
         python-version: 3.8
     - name: segmentation pipeline
       run: |
-        /bin/bash /tmp/${timeStamp}/QSMxT/tests/run_test_segment.sh
+        /bin/bash /tmp/QSMxT/tests/run_test_segment.sh
