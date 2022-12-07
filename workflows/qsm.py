@@ -8,6 +8,8 @@ from interfaces import nipype_interface_tgv_qsm as tgv
 from interfaces import nipype_interface_qsmjl as qsmjl
 from interfaces import nipype_interface_nextqsm as nextqsm
 
+import psutil
+
 def qsm_workflow(run_args, mn_inputs, name):
     wf = Workflow(name=f"{name}_workflow")
 
@@ -91,7 +93,7 @@ def qsm_workflow(run_args, mn_inputs, name):
             interface=nextqsm.NextqsmInterface(),
             name='nextqsm',
             iterfield=['phase', 'mask'],
-            mem_gb=13
+            mem_gb=min(13, psutil.virtual_memory().available/10e8 * 0.9)
             # phase, mask, out_file
         )
         wf.connect([

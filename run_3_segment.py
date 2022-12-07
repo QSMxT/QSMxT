@@ -107,7 +107,7 @@ def init_run_workflow(subject, session, run):
         ),
         name='fastsurfer_segment-t1',
         n_procs=min(args.n_procs, 6),
-        mem_gb=None if args.n_procs <= 6 else 11
+        mem_gb=min(11, psutil.virtual_memory().available/10e8 * 0.9)
     )
     n_fastsurfer.plugin_args = {
         'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.n_procs}:mem=20gb:vmem=20gb',
