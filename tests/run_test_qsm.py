@@ -226,7 +226,7 @@ def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "nextqsm")
     assert(args.unwrapping_algorithm == "romeo")
-    assert(args.masking_algorithm == "bet")
+    assert(args.masking_algorithm == "bet-firstecho")
     assert(args.masking_input == "magnitude")
     
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
@@ -247,16 +247,16 @@ def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, False, None)
 ])
-def test_tgvqsm(bids_dir, init_workflow, run_workflow, run_args):
+def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--qsm_algorithm", "tgvqsm"
+        "--qsm_algorithm", "tgv"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgvqsm")
+    assert(args.qsm_algorithm == "tgv")
     assert(args.masking_algorithm == "threshold")
     assert(args.masking_input == "phase")
     assert(args.threshold_value == None)
@@ -274,7 +274,7 @@ def test_tgvqsm(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
+    (True, True, { 'tgv_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
 def test_rts_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([

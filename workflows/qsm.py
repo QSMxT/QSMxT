@@ -20,7 +20,7 @@ def qsm_workflow(run_args, mn_inputs, name):
     )
 
     # === PHASE UNWRAPPING ===
-    if run_args.qsm_algorithm in ['nextqsm', 'rts']:
+    if run_args.unwrapping_algorithm:
         mn_unwrapping = MapNode(
             interface=IdentityInterface(
                 fields=['unwrapped_phase']
@@ -114,18 +114,18 @@ def qsm_workflow(run_args, mn_inputs, name):
             (mn_inputs, n_qsm, [('B0_dir', 'in_b0dir')]),
             (n_qsm, mn_outputs, [('out_qsm', 'qsm')]),
         ])
-    if run_args.qsm_algorithm == 'tgvqsm':
+    if run_args.qsm_algorithm == 'tgv':
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
-                iterations=run_args.tgvqsm_iterations,
-                alpha=run_args.tgvqsm_alphas,
-                erosions=run_args.tgvqsm_erosions,
+                iterations=run_args.tgv_iterations,
+                alpha=run_args.tgv_alphas,
+                erosions=run_args.tgv_erosions,
                 num_threads=run_args.process_threads,
-                out_suffix='_tgvqsm',
+                out_suffix='_tgv',
                 extra_arguments='--ignore-orientation --no-resampling'
             ),
             iterfield=['phase_file', 'TE', 'mask_file'],
-            name='tgvqsm',
+            name='tgv',
             mem_gb=6
             # inputs: 'phase_file', 'TE', 'b0', 'mask_file'
             # output: 'out_file'
@@ -135,12 +135,20 @@ def qsm_workflow(run_args, mn_inputs, name):
             'overwrite': True
         }
         wf.connect([
-            (mn_inputs, mn_qsm, [('phase', 'phase_file')]),
             (mn_inputs, mn_qsm, [('mask', 'mask_file')]),
             (mn_inputs, mn_qsm, [('TE', 'TE')]),
             (mn_inputs, mn_qsm, [('B0_str', 'b0')]),
             (mn_qsm, mn_outputs, [('out_file', 'qsm')]),
         ])
+        if run_args.unwrapping_algorithm:
+            wf.connect([
+                (mn_unwrapping, mn_qsm, [('unwrapped_phase', 'phase_file')])
+            ])
+        else:
+            wf.connect([
+                (mn_inputs, mn_qsm, [('phase', 'phase_file')])
+            ])
+
     
     return wf
 

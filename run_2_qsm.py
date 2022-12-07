@@ -510,8 +510,8 @@ def parse_args(args):
     parser.add_argument(
         '--qsm_algorithm',
         default='rts',
-        choices=['tgvqsm', 'nextqsm', 'rts'],
-        help="QSM algorithm. The tgvqsm algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 from "+
+        choices=['tgv', 'nextqsm', 'rts'],
+        help="QSM algorithm. The tgv algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 from "+
              "Langkammer et al., and includes unwrapping and background field removal steps as part of a "+
              "combined optimisation. The NeXtQSM option requires NeXtQSM installed (available by default in the "+
              "QSMxT container) and uses a deep learning model implemented in Tensorflow based on "+
@@ -522,34 +522,35 @@ def parse_args(args):
     )
 
     parser.add_argument(
-        '--tgvqsm_iterations',
+        '--tgv_iterations',
         type=int,
         default=1000,
-        help='Number of iterations used by tgvqsm.'
+        help='Number of iterations used by tgv.'
     )
 
     parser.add_argument(
-        '--tgvqsm_alphas',
+        '--tgv_alphas',
         type=float,
         default=[0.0015, 0.0005],
         nargs=2,
-        help='Regularisation alphas used by tgvqsm.'
+        help='Regularisation alphas used by tgv.'
     )
 
     parser.add_argument(
-        '--tgvqsm_erosions',
+        '--tgv_erosions',
         type=int,
         default=3,
-        help='Number of erosions applied during the TGV-QSM algorithm.'
+        help='Number of erosions applied by tgv.'
     )
 
     parser.add_argument(
         '--unwrapping_algorithm',
-        default='romeo',
+        default=None,
         choices=['romeo', 'laplacian'],
         help="Phase unwrapping algorithm. ROMEO is based on doi:10.1002/mrm.28563 from Eckstein et al. "+
              "Laplacian is based on doi:10.1364/OL.28.001194 and doi:10.1002/nbm.3064 from Schofield MA. "+
-             "et al. and Zhou D. et al., respectively."
+             "et al. and Zhou D. et al., respectively. ROMEO is the default when --qsm_algorithm is set to "+
+             "rts or nextqsm, and no unwrapping is applied by default when --qsm_algorithm is set to tgv."
     )
 
     parser.add_argument(
@@ -715,6 +716,11 @@ def process_args(args):
             args.masking_algorithm = 'bet-firstecho'
         else:
             args.masking_algorithm = 'threshold'
+
+    # default unwrapping settings for QSM algorithms
+    if not args.unwrapping_algorithm:
+        if args.qsm_algorithm in ['nextqsm', 'rts']:
+            args.unwrapping_algorithm = 'romeo'
     
     # add_bet option only works with non-bet masking methods
     args.add_bet &= 'bet' not in args.masking_algorithm
