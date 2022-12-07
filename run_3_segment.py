@@ -106,7 +106,8 @@ def init_run_workflow(subject, session, run):
             num_threads=args.n_procs
         ),
         name='fastsurfer_segment-t1',
-        mem_gb=11
+        n_procs=min(args.n_procs, 6),
+        mem_gb=None if args.n_procs <= 6 else 11
     )
     n_fastsurfer.plugin_args = {
         'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.n_procs}:mem=20gb:vmem=20gb',
@@ -295,7 +296,6 @@ if __name__ == "__main__":
     if not args.n_procs:
         n_cpus = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
         args.n_procs = n_cpus
-        print(n_cpus, type(n_cpus))
         logger.log(LogLevel.INFO.value, f"Running with {args.n_procs} processors.")
     
     # set number of threads per CPU to use by FastSurfer/pytorch
