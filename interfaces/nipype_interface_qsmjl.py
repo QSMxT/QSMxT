@@ -98,7 +98,7 @@ class VsharpInputSpec(CommandLineInputSpec):
     out_freq = File(
         argstr="--tissue-frequency-out %s",
         name_source=['in_frequency'],
-        name_template='%s_freq.nii',
+        name_template='%s_local.nii',
         position=3
     )
     out_mask = File(
