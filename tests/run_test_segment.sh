@@ -24,8 +24,8 @@ then
     osf -p bt4ez fetch TOMCAT_DIB/sub-01/ses-01_7T/anat/sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/sub-01_ses-01_7T_T1w_defaced.nii.gz
     osf -p bt4ez fetch TOMCAT_DIB/sub-02/ses-01_7T/anat/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz
 fi
-cp /tmp/sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/01_bids/sub-170705134431std1312211075243167001/ses-1/anat/sub-170705134431std1312211075243167001_ses-1_run-01_T1w.nii.gz
-cp /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/01_bids/sub-170706160506std1312211075243167001/ses-1/anat/sub-170706160506std1312211075243167001_ses-1_run-01_T1w.nii.gz
+sudo cp /tmp/sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/01_bids/sub-170705134431std1312211075243167001/ses-1/anat/sub-170705134431std1312211075243167001_ses-1_run-01_T1w.nii.gz
+sudo cp /tmp/sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/01_bids/sub-170706160506std1312211075243167001/ses-1/anat/sub-170706160506std1312211075243167001_ses-1_run-01_T1w.nii.gz
 
 
 echo "[DEBUG] starting run_3_segment.py"
