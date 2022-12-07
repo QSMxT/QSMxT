@@ -83,7 +83,7 @@ echo "[DEBUG] checking outputs of run_2_qsm.py normal"
 ls /tmp/02_qsm_output/qsm_final
 [ -f /tmp/02_qsm_output/qsm_final/sub-170705134431std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_canonical_romeo-unwrapped_freq_freq_qsmjl_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
 [ -f /tmp/02_qsm_output/qsm_final/sub-170706160506std1312211075243167001_ses-1_run-01_part-phase_T2starw_scaled_canonical_romeo-unwrapped_freq_freq_qsmjl_average.nii ] && echo "[DEBUG]. Test OK." || exit 1
-rm -rf /tmp/02_qsm_output/qsm_final/
+rm -rf /tmp/02_qsm_output/qsm_workflow/
 
 echo "[DEBUG] starting run_4_template.py"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output /tmp/04_template
