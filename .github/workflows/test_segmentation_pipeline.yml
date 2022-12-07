@@ -30,7 +30,7 @@ on:
     
 jobs:
   test_segmentation_pipeline:
-    runs-on: [self-hosted]
+    runs-on: ubuntu-latest
     steps:
     - name: Free up space
       uses: easimon/maximize-build-space@master
