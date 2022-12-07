@@ -213,7 +213,7 @@ def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     cs.upload(results_tar, results_tar)
             
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, None)
+    (True, False, None)
 ])
 def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
