@@ -554,7 +554,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--masking_algorithm',
-        default='threshold',
+        default=None,
         choices=['threshold', 'bet', 'bet-firstecho'],
         help='Masking algorithm. Threshold-based masking uses a simple binary threshold applied to the '+
              '--masking_input, followed by a hole-filling strategy determined by the --filling_algorithm. '+
@@ -710,8 +710,11 @@ def create_logger(args):
 
 def process_args(args):
     # default masking settings for QSM algorithms
-    if not args.masking_algorithm and args.qsm_algorithm == 'nextqsm':
-        args.masking_algorithm = 'bet-firstecho'
+    if not args.masking_algorithm:
+        if args.qsm_algorithm == 'nextqsm':
+            args.masking_algorithm = 'bet-firstecho'
+        else:
+            args.masking_algorithm = 'threshold'
     
     # add_bet option only works with non-bet masking methods
     args.add_bet &= 'bet' not in args.masking_algorithm
