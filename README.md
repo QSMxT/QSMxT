@@ -17,6 +17,8 @@ QSMxT provides pipelines implemented in Python that:
 4. Automatically segment T1w data and register them to the QSM space to extract quantitative values in anatomical regions of interest.
 5. Export quantitative data to CSV for all subjects using the automated segmentations, or a custom segmentation in the group space (we recommend [ITK-SNAP](http://www.itksnap.org/pmwiki/pmwiki.php) to perform manual segmenations).
 
+For a list of algorithms QSMxT uses, see the [Reference List](#references-and-algorithm-list).
+
 QSMxT's containerised implementation via Docker and Singularity makes all required external dependencies available in a reproducible and scalable way, supporting MacOS, Windows and Linux, and with options for parallel processing via multiple processors, or via HPC systems using the Singularity container. QSMxT is also available on [Neurodesk](https://neurodesk.org), which makes the Singularity container available from the applications menu without installing anything. Neurodesk containers such as QSMxT can be pulled into Google Colab to write and share reproducible QSM notebooks ([example](https://bit.ly/qsmxt)).
 
 If you use QSMxT for a study, please cite https://onlinelibrary.wiley.com/doi/10.1002/mrm.29048 (or the preprint https://doi.org/10.1101/2021.05.05.442850), along with the list of citations provided in the `details_and_citations.txt` file that is created alongside the QSMxT outputs.
