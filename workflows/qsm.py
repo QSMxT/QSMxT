@@ -28,7 +28,7 @@ def qsm_workflow(run_args, mn_inputs, name):
                 fields=['unwrapped_phase']
             ),
             iterfield=['unwrapped_phase'],
-            name='mrt_phase-unwrap'
+            name='phase-unwrapping'
         )
         if run_args.unwrapping_algorithm == 'laplacian':
             mn_laplacian = MapNode(

@@ -1,12 +1,14 @@
 # QSMxT: A Complete QSM Processing and Analysis Pipeline
 
+![QSMxT Process Diagram](https://qsmxt.github.io/images/qsmxt-process-diagram.png)
+
 QSMxT is a complete QSM processing and analysis pipeline that excels at automatically reconstructing and processing QSM across large groups of participants. 
 
 QSMxT provides pipelines implemented in Python that:
 
 1. Automatically convert unorganised DICOM or NIfTI data to the Brain Imaging Data Structure (BIDS)
 2. Automatically reconstruct QSM, including steps for:
-   1. Masking (using a robust threshold-based algorithm or BET)
+   1. Masking
    2. Phase unwrapping
    3. Background field removal
    4. Dipole inversion
@@ -19,7 +21,6 @@ QSMxT's containerised implementation via Docker and Singularity makes all requir
 
 If you use QSMxT for a study, please cite https://onlinelibrary.wiley.com/doi/10.1002/mrm.29048 (or the preprint https://doi.org/10.1101/2021.05.05.442850), along with the list of citations provided in the `details_and_citations.txt` file that is created alongside the QSMxT outputs.
 
-![QSMxT Process Diagram](https://qsmxt.github.io/images/qsmxt-process-diagram.png)
 
 ## Installation
 ### Install and start via Neurodesk project
