@@ -157,8 +157,8 @@ def add_b0nextqsm_workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink):
     return wf
 
 
-def add_nextqsm_workflow(wf, mn_inputs, mn_params, mn_mask, n_datasink, unwrapping_type):
-    wf_unwrapping = unwrapping_workflow(unwrapping_type)
+def add_nextqsm_workflow(wf, run_args, mn_inputs, mn_params, mn_mask, n_datasink):
+    wf_unwrapping = unwrapping_workflow(run_args.unwrapping_algorithm)
     wf_nextqsm = nextqsm_workflow()
     
     wf.connect([

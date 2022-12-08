@@ -13,18 +13,20 @@ def nonzero_average(in_files, save_result=True):
         in_nii = nib.load(in_nii_file)
         in_data = in_nii.get_fdata()
         data.append(in_data)
+    
+    data = np.array(data)
+    mask = abs(data) >= 5e-5
+    
     try:
-        data = np.array(data)
-        mask = abs(data) >= 1e-10
+        final = data.sum(0) / mask.sum(0)
     except ValueError:
-        sizes = [x.shape for x in data]
-        raise ValueError(f"Tried to average files of incompatible dimensions; {sizes}")
-    final = np.divide(data.sum(0), mask.sum(0), out=np.zeros_like(data.sum(0)), where=mask.sum(0)!=0)
-    #final = data.sum(0) / mask.sum(0)
+        raise ValueError(f"Tried to average files of incompatible dimensions; data.shape[..]={[x.shape for x in data]}")
+
     if save_result:
         filename = f"{os.path.abspath(os.path.split(in_files[0])[1].split('.')[0])}_average.nii"
         nib.save(nib.nifti1.Nifti1Image(final, affine=in_nii.affine, header=in_nii.header), filename)
         return filename
+
     return final
 
 

@@ -6,6 +6,7 @@ import numpy as np
 from scipy.stats import norm
 from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion, gaussian_filter, binary_opening
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath, OutputMultiPath
+from skimage import filters
 
 # === HELPER FUNCTIONS ===
 
@@ -34,7 +35,7 @@ def _clean_histogram(image_histogram):
     return image_histogram
 
 # === THRESHOLD-BASED MASKING FOR TWO-PASS AND SINGLE-PASS QSM ===
-def threshold_masking(in_files, threshold=None, fill_strength=0):
+def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussian', threshold_algorithm_factor=1.0, filling_algorithm='both', mask_suffix="_mask", fill_masks=False):
     # sort input filepaths
     in_files = sorted(in_files)
 
@@ -44,41 +45,43 @@ def threshold_masking(in_files, threshold=None, fill_strength=0):
     image_histogram = np.array([data.flatten() for data in all_float_data])
     
     # calculate gaussian threshold if none given
-    if not threshold: threshold = _gaussian_threshold(image_histogram)
+    if not user_threshold:
+        if threshold_algorithm == 'gaussian':
+            threshold = _gaussian_threshold(image_histogram)
+        else:
+            threshold = filters.threshold_otsu(image_histogram)
+        threshold *= threshold_algorithm_factor
+    elif type(user_threshold) == int: # user-defined absolute threshold
+        threshold = user_threshold
+    else: # user-defined percentage threshold
+        data_range = np.max(np.array(all_float_data)) - np.min(np.array(all_float_data))
+        threshold = np.min(data_range) + (user_threshold * data_range)
 
     # do masking
     masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
-
-    # remove noisy background voxels (applied to masks only)
-    small_masks = [binary_opening(mask) for mask in masks]
-
-    # hole-filling (applied to filled_masks only)
-    filled_masks = [fill_holes_smoothing(mask) for mask in masks]
+    if fill_masks:
+        if filling_algorithm in ['morphological', 'both']:
+            masks = [fill_holes_morphological(mask) for mask in masks]
+        if filling_algorithm in ['smoothing', 'both']:
+            masks = [fill_holes_smoothing(mask) for mask in masks]
+    else:
+        masks = [binary_opening(mask) for mask in masks]
 
     # determine filenames
-    small_mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask.nii" for in_file in in_files]
-    filled_mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_mask_filled.nii" for in_file in in_files]
+    mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}{mask_suffix}.nii" for in_file in in_files]
 
     for i in range(len(masks)):
         all_niis[i].header.set_data_dtype(np.uint8)
         nib.save(
             nib.Nifti1Image(
-                dataobj=small_masks[i],
+                dataobj=masks[i],
                 header=all_niis[i].header,
                 affine=all_niis[i].affine
             ),
-            small_mask_filenames[i]
-        )
-        nib.save(
-            nib.Nifti1Image(
-                dataobj=filled_masks[i],
-                header=all_niis[i].header,
-                affine=all_niis[i].affine
-            ),
-            filled_mask_filenames[i]
+            mask_filenames[i]
         )
 
-    return small_mask_filenames, filled_mask_filenames, threshold
+    return mask_filenames, threshold
 
 # The smoothing removes background noise and closes small holes
 # A smaller threshold grows the mask
@@ -101,7 +104,11 @@ def fill_holes_morphological(mask, fill_strength=0):
 class MaskingInputSpec(BaseInterfaceInputSpec):
     in_files = InputMultiPath(mandatory=True, exists=True)
     threshold = traits.Float(mandatory=False, default_value=None)
-    fill_strength = traits.Int(mandatory=False, default_value=1)
+    fill_masks = traits.Bool(mandatory=False, default_value=True)
+    mask_suffix = traits.String(mandatory=False, value="_mask")
+    threshold_algorithm = traits.String(mandatory=False, value="otsu")
+    threshold_algorithm_factor = traits.Float(mandatory=False, default_value=1.0)
+    filling_algorithm = traits.String(mandatory=False, value='both')
 
 
 class MaskingOutputSpec(TraitedSpec):
@@ -115,9 +122,16 @@ class MaskingInterface(SimpleInterface):
     output_spec = MaskingOutputSpec
 
     def _run_interface(self, runtime):
-        masks, masks_filled, threshold = threshold_masking(self.inputs.in_files, self.inputs.threshold, self.inputs.fill_strength)
+        masks, threshold = threshold_masking(
+            in_files=self.inputs.in_files,
+            user_threshold=self.inputs.threshold,
+            threshold_algorithm=self.inputs.threshold_algorithm,
+            threshold_algorithm_factor=self.inputs.threshold_algorithm_factor,
+            filling_algorithm=self.inputs.filling_algorithm,
+            mask_suffix=f"_{self.inputs.mask_suffix}",
+            fill_masks=self.inputs.fill_masks,
+        )
         self._results['masks'] = masks
-        self._results['masks_filled'] = masks_filled
         self._results['threshold'] = threshold
         return runtime
 
@@ -134,19 +148,51 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--fill_strength',
-        type=int,
-        required=False,
-        default=0
+        '--threshold_value',
+        type=float,
+        default=None,
+        help='Masking threshold for when --masking_algorithm is set to threshold. Values between 0 and 1'+
+             'represent a percentage of the multi-echo input range. Values greater than 1 represent an '+
+             'absolute threshold value. Lower values will result in larger masks. If no threshold is '+
+             'provided, the --threshold_algorithm is used to select one automatically.'
     )
 
     parser.add_argument(
-        '--threshold',
-        nargs='?',
-        default=None,
-        type=float
+        '--threshold_algorithm',
+        default='otsu',
+        choices=['otsu', 'gaussian'],
+        help='Algorithm used to select a threshold for threshold-based masking if --threshold_value is '+
+             'left unspecified. The gaussian method is based on doi:10.1016/j.compbiomed.2012.01.004 '+
+             'from Balan AGR. et al. The otsu method is based on doi:10.1109/TSMC.1979.4310076 from Otsu '+
+             'et al.'
     )
 
+    parser.add_argument(
+        '--filling_algorithm',
+        default='both',
+        choices=['morphological', 'smoothing', 'both', 'none'],
+        help='Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing '+
+             'operation is applied first prior to a morphological hole-filling operation. Note that gaussian '+
+             'smoothing may fill some unwanted regions (e.g. connecting the skull and brain tissue), whereas '+
+             'morphological hole-filling alone may fail to fill desired regions if they are not fully enclosed.'
+    )
+
+    parser.add_argument(
+        '--threshold_algorithm_factor',
+        default=1.0,
+        type=float,
+        help='Factor to multiply the algorithmically-determined threshold by. Larger factors will create '+
+             'smaller masks.'
+    )
+
+
     args = parser.parse_args()
-    mask_files = threshold_masking(args.in_files, args.threshold, args.fill_strength)
+    mask_files = threshold_masking(
+        in_files=args.in_files,
+        user_threshold=args.threshold_value,
+        threshold_algorithm=args.threshold_algorithm,
+        threshold_algorithm_factor=args.threshold_algorithm_factor,
+        filling_algorithm=args.filling_algorithm,
+        fill_masks=args.filling_algorithm != 'none'
+    )
 

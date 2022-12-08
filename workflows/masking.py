@@ -1,18 +1,35 @@
-from nipype.pipeline.engine import Node, MapNode
+from nipype.pipeline.engine import Workflow, Node, MapNode
+from nipype.interfaces.utility import IdentityInterface, Function
 
-from nipype.interfaces.utility import Function
 from interfaces import nipype_interface_masking as masking
 from interfaces import nipype_interface_erode as erode
 from interfaces import nipype_interface_bet2 as bet2
 from interfaces import nipype_interface_phaseweights as phaseweights
-from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_twopass as twopass
 
-def add_masking_nodes(wf, run_args, mask_files, mn_inputs, magnitude_available, n_json):
+def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_masks, add_bet, name):
 
-    if not mask_files:    
+    wf = Workflow(name=f"{name}_workflow")
+
+    mn_outputs = MapNode(
+        interface=IdentityInterface(
+            fields=['masks', 'threshold']
+        ),
+        iterfield=['masks', 'threshold'],
+        name='masking_outputs'
+    )
+
+    if not mask_files:
+        mn_erode = MapNode(
+            interface=erode.ErosionInterface(
+                num_erosions=run_args.mask_erosions
+            ),
+            iterfield=['in_file'],
+            name='scipy_numpy_nibabel_erode'
+        )
+
         # do phase weights if necessary
-        if run_args.masking == 'phase-based':
+        if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
             mn_phaseweights = MapNode(
                 interface=phaseweights.RomeoMaskingInterface(),
                 iterfield=['phase', 'mag'] if magnitude_available else ['phase'],
@@ -31,60 +48,55 @@ def add_masking_nodes(wf, run_args, mask_files, mn_inputs, magnitude_available, 
                     (mn_inputs, mn_phaseweights, [('phase_files', 'phase')]),
                 ])
 
-        # do threshold-based masking if necessary
-        if run_args.masking in ['phase-based', 'magnitude-based']:
+        # do threshold masking if necessary
+        if run_args.masking_algorithm == 'threshold':
             n_threshold_masking = Node(
-                interface=masking.MaskingInterface(),
+                interface=masking.MaskingInterface(
+                    fill_masks=fill_masks,
+                    mask_suffix=name,
+                    threshold_algorithm=run_args.threshold_algorithm,
+                    threshold_algorithm_factor=run_args.threshold_algorithm_factor,
+                    filling_algorithm=run_args.filling_algorithm
+                ),
                 name='scipy_numpy_nibabel_threshold-masking'
                 # inputs : ['in_files']
             )
-            if run_args.masking_threshold: n_threshold_masking.inputs.threshold = run_args.masking_threshold
+            if run_args.threshold_value: n_threshold_masking.inputs.threshold = run_args.threshold_value
 
-            n_add_threshold_to_json = Node(
-                interface=addtojson.AddToJsonInterface(
-                    in_key = "Masking threshold"
-                ),
-                name="json_add-threshold"
-            )
-            wf.connect([
-                (n_json, n_add_threshold_to_json, [('out_file', 'in_file')]),
-                (n_threshold_masking, n_add_threshold_to_json, [('threshold', 'in_num_value')])
-            ])
-            # VERY HACK-Y
-            n_json = n_add_threshold_to_json
-            
-
-            if run_args.masking in ['phase-based']:    
+            if run_args.masking_input == 'phase':    
                 wf.connect([
                     (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
                 ])
-            elif run_args.masking == 'magnitude-based':
+            elif run_args.masking_input == 'magnitude':
                 wf.connect([
                     (mn_inputs, n_threshold_masking, [('magnitude_files', 'in_files')])
                 ])
+            if not run_args.add_bet:
+                wf.connect([
+                    (n_threshold_masking, mn_erode, [('masks', 'in_file')])
+                ])
 
         # run bet if necessary
-        if run_args.masking in ['bet', 'bet-firstecho'] or run_args.add_bet:
-            def get_first(magnitude_files): return [magnitude_files[0] for f in magnitude_files]
-            n_getfirst = Node(
-                interface=Function(
-                    input_names=['magnitude_files'],
-                    output_names=['magnitude_file'],
-                    function=get_first
-                ),
-                name='func_get-first'
-            )
-            wf.connect([
-                (mn_inputs, n_getfirst, [('magnitude_files', 'magnitude_files')])
-            ])
-
+        if run_args.masking_algorithm in ['bet', 'bet-firstecho'] or add_bet:
             mn_bet = MapNode(
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
                 name='fsl-bet'
                 # output: 'mask_file'
             )
-            if run_args.masking == 'bet-firstecho':
+            if run_args.masking_algorithm == 'bet-firstecho':
+                def get_first(magnitude_files): return [magnitude_files[0] for f in magnitude_files]
+                n_getfirst = Node(
+                    interface=Function(
+                        input_names=['magnitude_files'],
+                        output_names=['magnitude_file'],
+                        function=get_first
+                    ),
+                    name='func_get-first'
+                )
+                wf.connect([
+                    (mn_inputs, n_getfirst, [('magnitude_files', 'magnitude_files')])
+                ])
                 wf.connect([
                     (n_getfirst, mn_bet, [('magnitude_file', 'in_file')])
                 ])
@@ -92,19 +104,9 @@ def add_masking_nodes(wf, run_args, mask_files, mn_inputs, magnitude_available, 
                 wf.connect([
                     (mn_inputs, mn_bet, [('magnitude_files', 'in_file')])
                 ])
-            mn_bet_erode = MapNode(
-                interface=erode.ErosionInterface(
-                    num_erosions=2
-                ),
-                iterfield=['in_file'],
-                name='scipy_numpy_nibabel_erode'
-            )
-            wf.connect([
-                (mn_bet, mn_bet_erode, [('mask_file', 'in_file')])
-            ])
 
             # add bet if necessary
-            if run_args.add_bet:
+            if add_bet:
                 mn_mask_plus_bet = MapNode(
                     interface=twopass.TwopassNiftiInterface(),
                     name='numpy_nibabel_mask-plus-bet',
@@ -112,43 +114,29 @@ def add_masking_nodes(wf, run_args, mask_files, mn_inputs, magnitude_available, 
                 )
                 wf.connect([
                     (n_threshold_masking, mn_mask_plus_bet, [('masks', 'in_file1')]),
-                    (mn_bet_erode, mn_mask_plus_bet, [('out_file', 'in_file2')])
+                    (mn_bet, mn_mask_plus_bet, [('mask_file', 'in_file2')])
+                ])
+                wf.connect([
+                    (mn_mask_plus_bet, mn_erode, [('out_file', 'in_file')])
+                ])
+            else:
+                wf.connect([
+                    (mn_bet, mn_erode, [('mask_file', 'in_file')])
                 ])
 
-    # link up nodes to get standardised outputs as 'masks' and 'masks_filled' in mn_mask
-    def repeat(masks, masks_filled):
-        return masks, masks_filled
-    mn_mask = MapNode(
-        interface=Function(
-            input_names=['masks', 'masks_filled'],
-            output_names=['masks', 'masks_filled'],
-            function=repeat
-        ),
-        iterfield=['masks', 'masks_filled'],
-        name='func_repeat-mask'
-    )
-    
+    # outputs
     if mask_files:
         wf.connect([
-            (mn_inputs, mn_mask, [('mask_files', 'masks')]),
-            (mn_inputs, mn_mask, [('mask_files', 'masks_filled')])
+            (mn_inputs, mn_outputs, [('mask_files', 'masks')]),
         ])
-    elif run_args.masking in ['bet', 'bet-firstecho']:
+    else:
         wf.connect([
-            (mn_bet, mn_mask, [('mask_file', 'masks')]),
-            (mn_bet, mn_mask, [('mask_file', 'masks_filled')]),
+            (mn_erode, mn_outputs, [('out_file', 'masks')]),
         ])
-    elif run_args.masking in ['magnitude-based', 'phase-based']:
-        wf.connect([
-            (n_threshold_masking, mn_mask, [('masks', 'masks')])
-        ])
-        if not run_args.add_bet:
+        if run_args.masking_algorithm == 'threshold':
             wf.connect([
-                (n_threshold_masking, mn_mask, [('masks_filled', 'masks_filled')])
-            ])
-        else:
-            wf.connect([
-                (mn_mask_plus_bet, mn_mask, [('out_file', 'masks_filled')])
+                (n_threshold_masking, mn_outputs, [('threshold', 'threshold')])
             ])
 
-    return mn_mask, n_json
+    return wf
+

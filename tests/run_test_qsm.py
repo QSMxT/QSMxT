@@ -16,7 +16,7 @@ from scripts.sys_cmd import sys_cmd
 from matplotlib import pyplot as plt
 from scripts.logger import LogLevel, make_logger
 
-run_workflow = True
+run_workflows = True
 
 def create_logger(log_dir):
     os.makedirs(log_dir, exist_ok=True)
@@ -146,19 +146,18 @@ def print_metrics(name, bids_path, qsm_path):
     ax = sns.boxplot(data=metrics, x="Label", y="RMSE", color="seagreen")
     ax.set_xticklabels(ax.get_xticklabels(), rotation=45, ha="right")
     plt.tight_layout()
-    plt.savefig(os.path.join(qsm_path, "qsm_final", "metrics.png"))
+    plt.savefig(os.path.join(qsm_path, "qsm_final", f"{name}_metrics.png"))
     plt.close()
 
-    display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", "slice.png")))
+    display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", f"{name}_slice.png")))
 
-
-def workflow(args, init_workflow, run_workflow, run_args, show_metrics=False, delete_workflow=False):
+def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=False):
     assert(not (run_workflow == True and init_workflow == False))
     create_logger(args.output_dir)
     if init_workflow:
         wf = qsm.init_workflow(args)
     if init_workflow and run_workflow:
-        qsm.set_env_variables()
+        qsm.set_env_variables(args)
         if run_args:
             args_dict = vars(args)
             for key, value in run_args.items():
@@ -172,9 +171,9 @@ def workflow(args, init_workflow, run_workflow, run_args, show_metrics=False, de
             shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"), ignore_errors=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
+    (True, run_workflows, None)
 ])
-def test_args_defaults(bids_dir, init_workflow, run_workflow, run_args):
+def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm")
@@ -182,46 +181,41 @@ def test_args_defaults(bids_dir, init_workflow, run_workflow, run_args):
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "phase-based")
-    assert(args.two_pass == True)
-    assert(args.single_pass == False)
+    assert(args.qsm_algorithm == "rts")
+    assert(args.unwrapping_algorithm == "romeo")
+    assert(args.masking_algorithm == "threshold")
+    assert(args.masking_input == "phase")
+    assert(args.threshold_value == None)
+    assert(args.threshold_algorithm == 'otsu')
+    assert(args.filling_algorithm == 'both')
+    assert(args.threshold_algorithm_factor == 1.25)
+    assert(args.mask_erosions == 1)
     assert(args.inhomogeneity_correction == False)
     assert(args.add_bet == False)
     assert(args.use_existing_masks == False)
+    assert(args.two_pass == False)
     assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
+    assert(0 < args.process_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
-    workflow(args, init_workflow, run_workflow, run_args)
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+    
+    # upload filename
+    if os.environ.get('BRANCH'):
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_rts.tar"
+    else:
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_rts.tar"
+    
+    # zip up results
+    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
+
+    # upload results
+    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
+    cs.upload(results_tar, results_tar)
             
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, False, None)
 ])
-def test_args_tgvqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
-        bids_dir,
-        os.path.join(tempfile.gettempdir(), "qsm"),
-        "--qsm_algorithm", "tgv_qsm"
-    ]))
-    
-    assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "phase-based")
-    assert(args.two_pass == True)
-    assert(args.single_pass == False)
-    assert(args.inhomogeneity_correction == False)
-    assert(args.add_bet == False)
-    assert(args.use_existing_masks == False)
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    
-    workflow(args, init_workflow, run_workflow, run_args)
-
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, False, { 'num_echoes' : 2, 'n_procs' : 1 })
-])
-def test_args_nextqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
+def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
@@ -231,144 +225,154 @@ def test_args_nextqsm_defaults(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "nextqsm")
-    assert(args.masking == "bet-firstecho")
-    assert(args.two_pass == False)
-    assert(args.single_pass == True)
-    assert(args.inhomogeneity_correction == False)
-    assert(args.add_bet == False)
-    assert(args.use_existing_masks == False)
-    assert(args.nextqsm_unwrapping_algorithm == "romeo")
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
+    assert(args.unwrapping_algorithm == "romeo")
+    assert(args.masking_algorithm == "bet-firstecho")
+    assert(args.masking_input == "magnitude")
     
-    workflow(args, init_workflow, run_workflow, run_args)
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
     
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, False, { 'num_echoes' : 2, 'n_procs' : 1 })
-])
-def test_args_nextqsm_laplacian(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
-        bids_dir,
-        os.path.join(tempfile.gettempdir(), "qsm"),
-        "--qsm_algorithm", "nextqsm",
-        "--nextqsm_unwrapping_algorithm", "laplacian"
-    ]))
+    # upload filename
+    if os.environ.get('BRANCH'):
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_nextqsm.tar"
+    else:
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_nextqsm.tar"
     
-    assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "nextqsm")
-    assert(args.masking == "bet-firstecho")
-    assert(args.two_pass == False)
-    assert(args.single_pass == True)
-    assert(args.inhomogeneity_correction == False)
-    assert(args.add_bet == False)
-    assert(args.use_existing_masks == False)
-    assert(args.nextqsm_unwrapping_algorithm == "laplacian")
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    
-    workflow(args, init_workflow, run_workflow, run_args)
+    # zip up results
+    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
+
+    # upload results
+    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
+    cs.upload(results_tar, results_tar)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, False, None)
 ])
-def test_args_singlepass(bids_dir, init_workflow, run_workflow, run_args):
+def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--single_pass"
+        "--qsm_algorithm", "tgv"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "phase-based")
-    assert(args.two_pass == False)
-    assert(args.single_pass == True)
+    assert(args.qsm_algorithm == "tgv")
+    assert(args.masking_algorithm == "threshold")
+    assert(args.masking_input == "phase")
+    assert(args.threshold_value == None)
+    assert(args.threshold_algorithm == 'otsu')
+    assert(args.filling_algorithm == 'both')
+    assert(args.threshold_algorithm_factor == 1.25)
+    assert(args.mask_erosions == 1)
     assert(args.inhomogeneity_correction == False)
     assert(args.add_bet == False)
     assert(args.use_existing_masks == False)
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    
-    workflow(args, init_workflow, run_workflow, run_args)
-
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
-])
-def test_args_inhomogeneity_correction_bet(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
-        bids_dir,
-        os.path.join(tempfile.gettempdir(), "qsm"),
-        "--inhomogeneity_correction",
-        "--masking", "bet"
-    ]))
-    
-    assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "bet")
     assert(args.two_pass == False)
-    assert(args.single_pass == True)
-    assert(args.inhomogeneity_correction == True)
-    assert(args.add_bet == False)
-    assert(args.use_existing_masks == False)
     assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
+    assert(0 < args.process_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
+    (True, True, { 'tgv_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
 ])
-def test_args_inhomogeneity_correction_magnitudebased(bids_dir, init_workflow, run_workflow, run_args):
+def test_rts_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir_secret,
+        os.path.join(tempfile.gettempdir(), "qsm-secret")
+    ]))
+    
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+    
+    # upload filename
+    if os.environ.get('BRANCH'):
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_realdata.tar"
+    else:
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_realdata.tar"
+    
+    # zip up results
+    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
+
+    # upload results
+    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
+    cs.upload(results_tar, results_tar)
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1 })
+])
+def test_laplacian_unwrapping(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--inhomogeneity_correction",
-        "--masking", "magnitude-based"
+        "--unwrapping_algorithm", "laplacian"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "magnitude-based")
-    assert(args.two_pass == True)
-    assert(args.single_pass == False)
-    assert(args.inhomogeneity_correction == True)
-    assert(args.add_bet == False)
-    assert(args.use_existing_masks == False)
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
+    assert(args.qsm_algorithm == "rts")
+    assert(args.unwrapping_algorithm == "laplacian")
     
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, False, None)
+    (True, run_workflows, { 'num_echoes' : 1 })
 ])
-def test_args_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_workflow, run_args):
+def test_masking_algo_bet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--inhomogeneity_correction",
+        "--masking_algorithm", "bet"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "phase-based")
-    assert(args.two_pass == True)
-    assert(args.single_pass == False)
-    assert(args.inhomogeneity_correction == False)
+    assert(args.qsm_algorithm == "rts")
+    assert(args.masking_algorithm == "bet")
+    assert(args.masking_input == "magnitude")
     assert(args.add_bet == False)
-    assert(args.use_existing_masks == False)
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
+    (True, run_workflows, { 'num_echoes' : 1 })
 ])
-def test_args_addbet(bids_dir, init_workflow, run_workflow, run_args):
+def test_masking_algo_bet_firstecho(bids_dir, init_workflow, run_workflow, run_args):
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--masking_algorithm", "bet-firstecho"
+    ]))
+    
+    assert(args.bids_dir == os.path.abspath(bids_dir))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
+    assert(args.qsm_algorithm == "rts")
+    assert(args.masking_algorithm == "bet-firstecho")
+    assert(args.masking_input == "magnitude")
+    assert(args.add_bet == False)
+    
+    workflow(args, init_workflow, run_workflow, run_args)
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1 })
+])
+def test_masking_input_magnitude(bids_dir, init_workflow, run_workflow, run_args):
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--masking_input", "magnitude"
+    ]))
+    
+    assert(args.bids_dir == os.path.abspath(bids_dir))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
+    assert(args.qsm_algorithm == "rts")
+    assert(args.masking_input == "magnitude")
+    
+    workflow(args, init_workflow, run_workflow, run_args)
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1 })
+])
+def test_add_bet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
@@ -377,156 +381,86 @@ def test_args_addbet(bids_dir, init_workflow, run_workflow, run_args):
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "phase-based")
-    assert(args.two_pass == True)
-    assert(args.single_pass == False)
-    assert(args.inhomogeneity_correction == False)
+    assert(args.qsm_algorithm == "rts")
+    assert(args.masking_input == "phase")
     assert(args.add_bet == True)
-    assert(args.use_existing_masks == False)
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, False, None)
+    (True, False, { 'num_echoes' : 1 })
 ])
-def test_args_addbet_invalid(bids_dir, init_workflow, run_workflow, run_args):
+def test_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--add_bet",
-        "--masking", "bet"
+        "--inhomogeneity_correction"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "bet")
-    assert(args.two_pass == False)
-    assert(args.single_pass == True)
-    assert(args.inhomogeneity_correction == False)
+    assert(args.masking_algorithm == "threshold")
+    assert(args.masking_input == "phase")
     assert(args.add_bet == False)
-    assert(args.use_existing_masks == False)
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
+    assert(args.inhomogeneity_correction == False)
     
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflow, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
+    (True, False, { 'num_echoes' : 1 })
 ])
-def test_args_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
+def test_inhomogeneity_correction(bids_dir, init_workflow, run_workflow, run_args):
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--masking_input", "magnitude",
+        "--inhomogeneity_correction"
+    ]))
+    
+    assert(args.bids_dir == os.path.abspath(bids_dir))
+    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
+    assert(args.masking_algorithm == "threshold")
+    assert(args.masking_input == "magnitude")
+    assert(args.add_bet == False)
+    assert(args.inhomogeneity_correction == True)
+    
+    workflow(args, init_workflow, run_workflow, run_args)
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 2 })
+])
+def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--use_existing_masks"
     ]))
     
-    assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "phase-based")
-    assert(args.two_pass == True)
-    assert(args.single_pass == False)
+    assert(args.masking_algorithm == "threshold")
+    assert(args.masking_input == "phase")
+    assert(args.threshold_value == None)
+    assert(args.threshold_algorithm == 'otsu')
+    assert(args.filling_algorithm == 'both')
+    assert(args.threshold_algorithm_factor == 1.25)
+    assert(args.mask_erosions == 1)
     assert(args.inhomogeneity_correction == False)
     assert(args.add_bet == False)
     assert(args.use_existing_masks == True)
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, False, None)
+    (True, run_workflows, { 'num_echoes' : 1 })
 ])
-def test_args_numechoes(bids_dir, init_workflow, run_workflow, run_args):
+def test_two_pass(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--num_echoes", "3"
+        "--two_pass"
     ]))
     
-    assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "phase-based")
     assert(args.two_pass == True)
-    assert(args.single_pass == False)
-    assert(args.inhomogeneity_correction == False)
-    assert(args.add_bet == False)
-    assert(args.use_existing_masks == False)
-    assert(args.num_echoes == 3)
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    
     workflow(args, init_workflow, run_workflow, run_args)
-
-
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, True, { 'tgvqsm_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
-])
-def test_bids_secret(bids_dir_secret, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
-        bids_dir_secret,
-        os.path.join(tempfile.gettempdir(), "qsm-secret")
-    ]))
-    
-    assert(args.bids_dir == os.path.abspath(bids_dir_secret))
-    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm-secret"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "phase-based")
-    assert(args.two_pass == True)
-    assert(args.single_pass == False)
-    assert(args.inhomogeneity_correction == False)
-    assert(args.add_bet == False)
-    assert(args.use_existing_masks == False)
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    
-    workflow(args, init_workflow, run_workflow, run_args)
-
-    # upload filename
-    if os.environ.get('BRANCH'):
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}.tar"
-    else:
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.tar"
-    
-    # zip up results
-    shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"))
-    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
-
-    # upload results
-    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
-    cs.upload(results_tar, results_tar)
-
-
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflow, None)
-])
-def test_metrics(bids_dir, init_workflow, run_workflow, run_args):
-    args = qsm.process_args(qsm.parse_args([
-        bids_dir,
-        os.path.join(tempfile.gettempdir(), "public-outputs", "test_metrics"),
-        "--masking", "magnitude-based"
-    ]))
-    
-    assert(args.bids_dir == os.path.abspath(bids_dir))
-    assert(args.output_dir == os.path.join(tempfile.gettempdir(), "public-outputs", "test_metrics"))
-    assert(args.qsm_algorithm == "tgv_qsm")
-    assert(args.masking == "magnitude-based")
-    assert(args.two_pass == True)
-    assert(args.single_pass == False)
-    assert(args.inhomogeneity_correction == False)
-    assert(args.add_bet == False)
-    assert(args.use_existing_masks == False)
-    assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    assert(0 < args.tgvqsm_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-    
-    workflow(args, init_workflow, run_workflow, run_args, show_metrics=True)
-    if run_workflow:
-        print_metrics(str(args), args.bids_dir, args.output_dir)
 
 # TODO
 #  - check file outputs

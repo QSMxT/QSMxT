@@ -16,7 +16,7 @@ def twopass_nifti(in_file1, in_file2, in_maskFile=None, save_result=True, out_na
     if in_maskFile: in_mask_data = in_mask_nii.get_fdata()
 
     if not in_maskFile:
-        out_data = in1_data + (in2_data * (abs(in1_data) < 1e-10))
+        out_data = in1_data + (in2_data * (abs(in1_data) < 5e-05))
     else:
         out_data = in1_data + (in2_data * np.logical_not(in_mask_data))
 
