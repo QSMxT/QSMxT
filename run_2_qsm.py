@@ -546,7 +546,7 @@ def parse_args(args):
     parser.add_argument(
         '--unwrapping_algorithm',
         default=None,
-        choices=['romeo', 'laplacian'],
+        choices=['romeo', 'romeo-combined', 'laplacian'],
         help="Phase unwrapping algorithm. ROMEO is based on doi:10.1002/mrm.28563 from Eckstein et al. "+
              "Laplacian is based on doi:10.1364/OL.28.001194 and doi:10.1002/nbm.3064 from Schofield MA. "+
              "et al. and Zhou D. et al., respectively. ROMEO is the default when --qsm_algorithm is set to "+

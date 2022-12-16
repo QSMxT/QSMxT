@@ -1,4 +1,4 @@
-import os
+import os, re
 from nipype.interfaces.base import  traits, CommandLine, BaseInterfaceInputSpec, TraitedSpec, File, InputMultiPath, OutputMultiPath
 from scripts import qsmxt_functions
 import nibabel as nib
@@ -33,6 +33,8 @@ class RomeoInterface(CommandLine):
 class RomeoB0InputSpec(BaseInterfaceInputSpec):
     phase = InputMultiPath(mandatory=True, exists=True)
     mag = InputMultiPath(mandatory=True, exists=True)
+    combine_phase = File(exists=True, argstr="--phase %s", position=0)
+    combine_mag = File(exists=True, argstr="--mag %s", position=1)
     TE = traits.ListFloat(desc='Echo Time [sec]', mandatory=True, argstr="-t [%s]")
 
 class RomeoB0OutputSpec(TraitedSpec):
@@ -42,7 +44,7 @@ class RomeoB0OutputSpec(TraitedSpec):
 class RomeoB0Interface(CommandLine):
     input_spec = RomeoB0InputSpec
     output_spec = RomeoB0OutputSpec
-    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "romeo_unwrapping.jl -B --no-rescale --phase-offset-correction --phase multi-echo-phase.nii --mag multi-echo-mag.nii")
+    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "romeo_unwrapping.jl -B --no-rescale --phase-offset-correction")
 
     def _run_interface(self, runtime):
         self.inputs.combine_phase = save_multi_echo(self.inputs.phase, os.path.join(os.getcwd(), "multi-echo-phase.nii"))
@@ -53,8 +55,6 @@ class RomeoB0Interface(CommandLine):
         
     def _list_outputs(self):
         outputs = self.output_spec().get()
-        #fn_unwrapped_phase = os.path.abspath(os.path.join('.', 'unwrapped.nii'))
-        #outputs['unwrapped_phase'] = save_individual_echo(fn_unwrapped_phase, os.getcwd())
         outputs['B0'] = os.path.join(os.getcwd(), "B0.nii")
         outfile_final = os.path.join(os.getcwd(), os.path.split(self.inputs.phase[0])[1].split(".")[0] + "_romeoB0-unwrapped.nii")
 
@@ -69,18 +69,15 @@ def save_multi_echo(in_files, fn_path):
     sample_nii = nib.load(in_files[0])
     nib.save(nib.nifti1.Nifti1Image(image4d, affine=sample_nii.affine, header=sample_nii.header), fn_path)
     return fn_path
-    
-def save_individual_echo(in_file, pth):
-    image4d_nii = nib.load(in_file)
-    image4d = image4d_nii.get_fdata()
-    if image4d.ndim == 3:
-        image4d = image4d.reshape((*image4d.shape, 1))
-        
-    output_names = []
-    n_eco = image4d.shape[3]
-    for i in range(0, n_eco):
-        file_without_ext = in_file.replace(".nii.gz", ".nii").replace(".nii", "")
-        fn =  os.path.join(pth, f"{file_without_ext}_echo{i}.nii.gz")
-        nib.save(nib.nifti1.Nifti1Image(image4d[:,:,:,i], affine=image4d_nii.affine, header=image4d_nii.header), fn)
-        output_names.append(fn)
-    return output_names
+
+
+if __name__ == "__main__":
+    combine = RomeoB0Interface(phase=['/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-1_part-phase_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-2_part-phase_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-3_part-phase_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-4_part-phase_MEGRE.nii.gz'],
+                                mag=['/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-1_part-mag_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-2_part-mag_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-3_part-mag_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-4_part-mag_MEGRE.nii.gz'],
+                                TE=[4,12,20,28])
+    # combine = RomeoInterface(phase='/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-basel-3depi-P001/ses-1/anat/sub-basel-3depi-P001_ses-1_run-1_part-phase_T2starw.nii',
+    #                             mag='/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-basel-3depi-P001/ses-1/anat/sub-basel-3depi-P001_ses-1_run-1_part-mag_T2starw.nii',
+    #                             )
+  
+    result = combine.run()
+    # print(result.runtime)

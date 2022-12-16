@@ -1,5 +1,5 @@
 from nipype.pipeline.engine import Workflow, Node, MapNode
-from nipype.interfaces.utility import IdentityInterface
+from nipype.interfaces.utility import IdentityInterface, Function
 
 import interfaces.nipype_interface_laplacian_unwrapping as laplacian
 import interfaces.nipype_interface_romeo as romeo
@@ -54,6 +54,35 @@ def qsm_workflow(run_args, mn_inputs, name):
                 (mn_romeo, mn_outputs, [('out_file', 'unwrapped_phase')]),
                 (mn_romeo, mn_unwrapping, [('out_file', 'unwrapped_phase')])
             ])
+        if run_args.unwrapping_algorithm == 'romeo-combined':
+            mn_romeo_combine = Node(
+                interface=romeo.RomeoB0Interface(),
+                iterfield=['phase', 'mag', 'TE'],
+                name='mrt_romeo_combine',
+            )
+            wf.connect([
+                (mn_inputs, mn_romeo_combine, [('phase', 'phase'), ('magnitude', 'mag'), ('TE', 'TE')]),
+                (mn_romeo_combine, mn_outputs, [('B0', 'unwrapped_phase')]),
+                (mn_romeo_combine, mn_unwrapping, [('B0', 'unwrapped_phase')])
+            ])
+
+        def get_inputs(phase_list, mask_list=None, TE_list=None):
+            list_len = len(phase_list)
+            print( mask_list, TE_list)
+            return mask_list[:list_len+1], TE_list[:list_len+1]
+
+        mn_get_inputs = Node(
+                            Function(
+                                input_names=["phase_list", "mask_list", "TE_list"],
+                                output_names=[ "mask", "TE"],
+                                function=get_inputs
+                            ),
+                            name='get_inputs'
+                    )
+        wf.connect([
+            (mn_unwrapping, mn_get_inputs, [('unwrapped_phase', 'phase_list')]),
+            (mn_inputs, mn_get_inputs, [('mask', 'mask_list'), ('TE', 'TE_list')]),
+        ])
 
     # === PHASE TO FREQUENCY ===
     if run_args.qsm_algorithm in ['nextqsm', 'rts']: 
@@ -65,7 +94,7 @@ def qsm_workflow(run_args, mn_inputs, name):
         )
         wf.connect([
             (mn_unwrapping, mn_phase_to_freq, [('unwrapped_phase', 'in_phase')]),
-            (mn_inputs, mn_phase_to_freq, [('TE', 'in_TEs')]),
+            (mn_get_inputs, mn_phase_to_freq, [('TE', 'in_TEs')]),
             (mn_inputs, mn_phase_to_freq, [('vsz', 'in_vsz')]),
             (mn_inputs, mn_phase_to_freq, [('B0_str', 'in_b0str')]),
         ])
@@ -82,7 +111,7 @@ def qsm_workflow(run_args, mn_inputs, name):
         )
         wf.connect([
             (mn_phase_to_freq, mn_vsharp, [('out_frequency', 'in_frequency')]),
-            (mn_inputs, mn_vsharp, [('mask', 'in_mask')]),
+            (mn_get_inputs, mn_vsharp, [('mask', 'in_mask')]),
             (mn_inputs, mn_vsharp, [('vsz', 'in_vsz')]),
             (mn_vsharp, mn_outputs, [('out_freq', 'tissue_frequency')])
         ])
@@ -98,7 +127,7 @@ def qsm_workflow(run_args, mn_inputs, name):
         )
         wf.connect([
             (mn_phase_to_freq, n_qsm, [('out_frequency', 'phase')]),
-            (mn_inputs, n_qsm, [('mask', 'mask')]),
+            (mn_get_inputs, n_qsm, [('mask', 'mask')]),
             (n_qsm, mn_outputs, [('out_file', 'qsm')]),
         ])
     if run_args.qsm_algorithm == 'rts':
@@ -137,8 +166,8 @@ def qsm_workflow(run_args, mn_inputs, name):
             'overwrite': True
         }
         wf.connect([
-            (mn_inputs, mn_qsm, [('mask', 'mask_file')]),
-            (mn_inputs, mn_qsm, [('TE', 'TE')]),
+            (mn_get_inputs, mn_qsm, [('mask', 'mask_file')]),
+            (mn_get_inputs, mn_qsm, [('TE', 'TE')]),
             (mn_inputs, mn_qsm, [('B0_str', 'b0')]),
             (mn_qsm, mn_outputs, [('out_file', 'qsm')]),
         ])
