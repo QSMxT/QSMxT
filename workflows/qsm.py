@@ -15,9 +15,9 @@ def qsm_workflow(run_args, mn_inputs, name):
 
     mn_outputs = MapNode(
         interface=IdentityInterface(
-            fields=['unwrapped_phase', 'tissue_frequency', 'qsm']
+            fields=['unwrapped_phase', 'tissue_frequency', 'qsm', 'mask']
         ),
-        iterfield=['unwrapped_phase', 'tissue_frequency', 'qsm'],
+        iterfield=['unwrapped_phase', 'tissue_frequency', 'qsm', 'mask'],
         name='qsm_outputs'
     )
 
@@ -72,19 +72,51 @@ def qsm_workflow(run_args, mn_inputs, name):
 
     # === BACKGROUND FIELD REMOVAL ===
     if run_args.qsm_algorithm in ['rts']:
-        mn_vsharp = MapNode(
-            interface=qsmjl.VsharpInterface(),
-            iterfield=['in_frequency', 'in_mask'],
-            name='qsmjl_vsharp',
-            n_procs=min(run_args.process_threads, 2),
-            mem_gb=3
-            # in_frequency, in_mask, in_vsz, out_freq, out_mask
+        mn_bf = MapNode(
+            interface=IdentityInterface(
+                fields=['tissue_frequency', 'mask']
+            ),
+            iterfield=['tissue_frequency', 'mask'],
+            name='bf-removal'
         )
+        if run_args.bf_algorithm == 'vsharp':
+            mn_vsharp = MapNode(
+                interface=qsmjl.VsharpInterface(),
+                iterfield=['in_frequency', 'in_mask'],
+                name='qsmjl_vsharp',
+                n_procs=min(run_args.process_threads, 2),
+                mem_gb=3
+                # in_frequency, in_mask, in_vsz, out_freq, out_mask
+            )
+            wf.connect([
+                (mn_phase_to_freq, mn_vsharp, [('out_frequency', 'in_frequency')]),
+                (mn_inputs, mn_vsharp, [('mask', 'in_mask')]),
+                (mn_inputs, mn_vsharp, [('vsz', 'in_vsz')]),
+                (mn_vsharp, mn_bf, [('out_freq', 'tissue_frequency')]),
+                (mn_vsharp, mn_bf, [('out_mask', 'mask')]),
+                (mn_vsharp, mn_outputs, [('out_freq', 'tissue_frequency')]),
+                (mn_vsharp, mn_outputs, [('out_mask', 'mask')])
+            ])
+        if run_args.bf_algorithm == 'pdf':
+            mn_pdf = MapNode(
+                interface=qsmjl.PdfInterface(),
+                iterfield=['in_frequency', 'in_mask'],
+                name='qsmjl_pdf',
+                n_procs=min(run_args.process_threads, 2),
+                mem_gb=3
+            )
+            wf.connect([
+                (mn_phase_to_freq, mn_pdf, [('out_frequency', 'in_frequency')]),
+                (mn_inputs, mn_pdf, [('mask', 'in_mask')]),
+                (mn_inputs, mn_pdf, [('vsz', 'in_vsz')]),
+                (mn_pdf, mn_bf, [('out_freq', 'tissue_frequency')]),
+                (mn_inputs, mn_bf, [('mask', 'mask')]),
+                (mn_pdf, mn_outputs, [('out_freq', 'tissue_frequency')]),
+                (mn_inputs, mn_outputs, [('mask', 'mask')])
+            ])
+    else:
         wf.connect([
-            (mn_phase_to_freq, mn_vsharp, [('out_frequency', 'in_frequency')]),
-            (mn_inputs, mn_vsharp, [('mask', 'in_mask')]),
-            (mn_inputs, mn_vsharp, [('vsz', 'in_vsz')]),
-            (mn_vsharp, mn_outputs, [('out_freq', 'tissue_frequency')])
+            (mn_inputs, mn_outputs, [('mask', 'mask')])
         ])
 
     # === DIPOLE INVERSION ===
@@ -110,8 +142,8 @@ def qsm_workflow(run_args, mn_inputs, name):
             # in_frequency, in_mask, in_vsz, in_b0dir, out_qsm
         )
         wf.connect([
-            (mn_vsharp, n_qsm, [('out_freq', 'in_frequency')]),
-            (mn_vsharp, n_qsm, [('out_mask', 'in_mask')]),
+            (mn_bf, n_qsm, [('tissue_frequency', 'in_frequency')]),
+            (mn_bf, n_qsm, [('mask', 'in_mask')]),
             (mn_inputs, n_qsm, [('vsz', 'in_vsz')]),
             (mn_inputs, n_qsm, [('B0_dir', 'in_b0dir')]),
             (n_qsm, mn_outputs, [('out_qsm', 'qsm')]),
