@@ -26,7 +26,7 @@ class QSMappingInputSpec(CommandLineInputSpec):
     # We only support one iteration - easier to handle in nipype
     iterations = traits.Int(1000, desc='Number of iterations to perform', usedefault=True, argstr="-i %d")
     erosions = traits.Int(5, desc='Number of mask erosions', usedefault=True, argstr="-e %d")
-    out_suffix = traits.String("_qsm_recon", desc='Suffix for output files. Will be followed by 000 (reason - see CLI)',
+    out_suffix = traits.String("_tgv", desc='Suffix for output files. Will be followed by 000 (reason - see CLI)',
                                usedefault=True, argstr="-o %s")
 
 
@@ -55,7 +55,7 @@ class QSMappingInterface(CommandLine):
         
         # TGV-QSM doesn't output files in the current directory for some reason, so we should move it
         outfile_original = f"{self.inputs.phase_file.split('.')[0]}{self.inputs.out_suffix}_000.nii.gz"
-        outfile_final = os.path.abspath(os.path.split(outfile_original)[1])
+        outfile_final = os.path.abspath(os.path.split(outfile_original)[1]).replace("_000.nii.gz", ".nii.gz")
         if not os.path.exists(outfile_final):
             shutil.move(outfile_original, outfile_final)
         
