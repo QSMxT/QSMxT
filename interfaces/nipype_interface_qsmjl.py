@@ -23,7 +23,7 @@ class LaplacianUnwrappingInputSpec(CommandLineInputSpec):
     out_unwrapped = File(
         argstr="--unwrapped-phase-out %s",
         name_source=['in_phase'],
-        name_template='%s_laplacian-unwrapped.nii',
+        name_template='%s_unwrapped-laplacian.nii',
         position=3
     )
 
@@ -98,7 +98,7 @@ class VsharpInputSpec(CommandLineInputSpec):
     out_freq = File(
         argstr="--tissue-frequency-out %s",
         name_source=['in_frequency'],
-        name_template='%s_local.nii',
+        name_template='%s_vsharp.nii',
         position=3
     )
     out_mask = File(
@@ -118,6 +118,42 @@ class VsharpInterface(CommandLine):
     input_spec = VsharpInputSpec
     output_spec = VsharpOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_vsharp.jl")
+
+
+class PdfInputSpec(CommandLineInputSpec):
+    in_frequency = File(
+        exists=True,
+        mandatory=True,
+        argstr="--frequency %s",
+        position=0
+    )
+    in_mask = File(
+        exists=True,
+        mandatory=True,
+        argstr="--mask %s",
+        position=1
+    )
+    in_vsz = traits.String(
+        argstr="--vsz \"%s\"",
+        default="(1,1,1)",
+        position=2
+    )
+    out_freq = File(
+        argstr="--tissue-frequency-out %s",
+        name_source=['in_frequency'],
+        name_template='%s_pdf.nii',
+        position=3
+    )
+
+
+class PdfOutputSpec(TraitedSpec):
+    out_freq = File()
+
+
+class PdfInterface(CommandLine):
+    input_spec = PdfInputSpec
+    output_spec = PdfOutputSpec
+    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_pdf.jl")
 
 
 class RtsQsmInputSpec(CommandLineInputSpec):
@@ -146,7 +182,7 @@ class RtsQsmInputSpec(CommandLineInputSpec):
     out_qsm = File(
         argstr="--qsm-out %s",
         name_source=['in_frequency'],
-        name_template='%s_qsmjl.nii',
+        name_template='%s_rts.nii',
         position=4
     )
 
