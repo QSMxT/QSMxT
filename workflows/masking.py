@@ -7,15 +7,21 @@ from interfaces import nipype_interface_bet2 as bet2
 from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_twopass as twopass
 
-def masking_workflow(run_args, mn_inputs, mask_files, magnitude_available, fill_masks, add_bet, name):
+def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_bet, name):
 
     wf = Workflow(name=f"{name}_workflow")
 
-    mn_outputs = MapNode(
+    mn_inputs = Node(
+        interface=IdentityInterface(
+            fields=['phase_files', 'magnitude_files', 'mask_files']
+        ),
+        name='masking_inputs'
+    )
+
+    mn_outputs = Node(
         interface=IdentityInterface(
             fields=['masks', 'threshold']
         ),
-        iterfield=['masks', 'threshold'],
         name='masking_outputs'
     )
 

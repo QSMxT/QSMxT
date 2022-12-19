@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 import os, re
 from nipype.interfaces.base import  traits, CommandLine, BaseInterfaceInputSpec, TraitedSpec, File, InputMultiPath, OutputMultiPath
 from scripts import qsmxt_functions
@@ -8,17 +10,19 @@ def B0_unit_convert(B0_map, te):
     from math import pi
     nii = nib.load(B0_map)
     sim_phase = nii.get_fdata()
-    sim_phase = sim_phase * (2*pi * te)/(10**3) # shortest te in s
-    sim_phase = (sim_phase + np.pi) % (2 * np.pi) - np.pi
-    out_file = os.path.abspath(os.path.split(B0_map)[1].replace(".nii", "_scaled.nii"))
-    nib.save(nib.Nifti1Image(dataobj=sim_phase, header=nii.header, affine=nii.affine), out_file)
-    return out_file
+    sim_phase_unwrapped = sim_phase * (2*pi * te)/(10**3) # shortest te in s
+    sim_phase_wrapped = (sim_phase_unwrapped + np.pi) % (2 * np.pi) - np.pi
+    out_file_unwrapped = os.path.abspath(os.path.split(B0_map)[1].replace(".nii", "_to-phase-unwrapped.nii"))
+    out_file_wrapped = os.path.abspath(os.path.split(B0_map)[1].replace(".nii", "_to-phase-wrapped.nii"))
+    nib.save(nib.Nifti1Image(dataobj=sim_phase_unwrapped, header=nii.header, affine=nii.affine), out_file_unwrapped)
+    nib.save(nib.Nifti1Image(dataobj=sim_phase_wrapped, header=nii.header, affine=nii.affine), out_file_wrapped)
+    return out_file_wrapped, out_file_unwrapped
 
 ## Romeo wrapper single-echo (MapNode)
 class RomeoInputSpec(BaseInterfaceInputSpec):
     phase = File(mandatory=True, exists=True, argstr="--phase %s")
     #mask = File(mandatory=False, exists=True, argstr="--mask %s")
-    mag = File(mandatory=False, exists=True, argstr="--mag %s")
+    magnitude = File(mandatory=False, exists=True, argstr="--mag %s")
     out_file = File(name_source=['phase'], name_template='%s_romeo-unwrapped.nii.gz', argstr="--output %s")
 
 class RomeoOutputSpec(TraitedSpec):
@@ -32,13 +36,19 @@ class RomeoInterface(CommandLine):
 ## Romeo wrapper multi-echo (Node)
 class RomeoB0InputSpec(BaseInterfaceInputSpec):
     phase = InputMultiPath(mandatory=True, exists=True)
-    mag = InputMultiPath(mandatory=True, exists=True)
+    magnitude = InputMultiPath(mandatory=True, exists=True)
+    mask = InputMultiPath(mandatory=False, exists=True)
     combine_phase = File(exists=True, argstr="--phase %s", position=0)
     combine_mag = File(exists=True, argstr="--mag %s", position=1)
     TE = traits.ListFloat(desc='Echo Time [sec]', mandatory=True, argstr="-t [%s]")
 
 class RomeoB0OutputSpec(TraitedSpec):
     B0 = File('B0.nii', exists=True)
+    phase_wrapped = File(exists=True)
+    phase_unwrapped = File(exists=True)
+    magnitude = File(exists=True)
+    mask = File(exists=True)
+    TE = traits.Float()
     # B0s = OutputMultiPath(File(exists=False))
 
 class RomeoB0Interface(CommandLine):
@@ -48,20 +58,23 @@ class RomeoB0Interface(CommandLine):
 
     def _run_interface(self, runtime):
         self.inputs.combine_phase = save_multi_echo(self.inputs.phase, os.path.join(os.getcwd(), "multi-echo-phase.nii"))
-        self.inputs.combine_mag = save_multi_echo(self.inputs.mag, os.path.join(os.getcwd(), "multi-echo-mag.nii"))
-        
+        self.inputs.combine_mag = save_multi_echo(self.inputs.magnitude, os.path.join(os.getcwd(), "multi-echo-mag.nii"))
+        self.inputs.TE = [TE*1000 for TE in self.inputs.TE]
         return super(RomeoB0Interface, self)._run_interface(runtime)
-        
         
     def _list_outputs(self):
         outputs = self.output_spec().get()
-        outputs['B0'] = os.path.join(os.getcwd(), "B0.nii")
-        outfile_final = os.path.join(os.getcwd(), os.path.split(self.inputs.phase[0])[1].split(".")[0] + "_romeoB0-unwrapped.nii")
-
-        os.rename(outputs['B0'], outfile_final)
+        
+        outfile_final = os.path.join(os.getcwd(), os.path.split(self.inputs.phase[0])[1].split(".")[0] + "_romeo-combined.nii")
+        os.rename(os.path.join(os.getcwd(), "B0.nii"), outfile_final)
         outputs['B0'] = outfile_final
+        
+        outputs['phase_wrapped'], outputs['phase_unwrapped'] = B0_unit_convert(outfile_final, np.min(self.inputs.TE))
+        outputs['magnitude'] = self.inputs.magnitude[0]
 
-        outputs['B0'] = B0_unit_convert(outputs['B0'], np.min(self.inputs.TE))
+        outputs['TE'] = np.min(self.inputs.TE)/1000
+        if self.inputs.mask: outputs['mask'] = self.inputs.mask[0]
+
         return outputs
     
 def save_multi_echo(in_files, fn_path):
@@ -72,12 +85,21 @@ def save_multi_echo(in_files, fn_path):
 
 
 if __name__ == "__main__":
-    combine = RomeoB0Interface(phase=['/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-1_part-phase_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-2_part-phase_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-3_part-phase_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-4_part-phase_MEGRE.nii.gz'],
-                                mag=['/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-1_part-mag_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-2_part-mag_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-3_part-mag_MEGRE.nii.gz', '/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-qsmchallenge2019-sim1/ses-1/anat/sub-1_ses-1_run-1_echo-4_part-mag_MEGRE.nii.gz'],
-                                TE=[4,12,20,28])
-    # combine = RomeoInterface(phase='/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-basel-3depi-P001/ses-1/anat/sub-basel-3depi-P001_ses-1_run-1_part-phase_T2starw.nii',
-    #                             mag='/neurodesktop-storage/QSMxT/qsmxt-test-battery-bids/bids/sub-basel-3depi-P001/ses-1/anat/sub-basel-3depi-P001_ses-1_run-1_part-mag_T2starw.nii',
-    #                             )
+    combine = RomeoB0Interface(
+        phase=[
+            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-01_part-phase_MEGRE.nii.gz',
+            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-02_part-phase_MEGRE.nii.gz',
+            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-03_part-phase_MEGRE.nii.gz',
+            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-04_part-phase_MEGRE.nii.gz'
+        ],
+        magnitude=[
+            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-01_part-mag_MEGRE.nii.gz',
+            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-02_part-mag_MEGRE.nii.gz',
+            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-03_part-mag_MEGRE.nii.gz',
+            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-04_part-mag_MEGRE.nii.gz'
+        ],
+        TE=[4,12,20,28]
+    )
   
     result = combine.run()
-    # print(result.runtime)
+

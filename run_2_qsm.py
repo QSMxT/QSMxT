@@ -308,44 +308,38 @@ def init_run_workflow(run_args, subject, session, run):
             (mn_resample_inputs, mn_inhomogeneity_correction, [('out_mag', 'in_file')])
         ])
 
-    # collect inputs for masking
-    mn_masking_inputs = MapNode(
-        interface=IdentityInterface(
-            fields=['phase_files', 'magnitude_files', 'mask_files']
-        ),
-        iterfield=['phase_files', 'magnitude_files', 'mask_files'],
-        name='func_repeat-inputs'
-    )
+    # === MASKING ===
+    wf_masking = masking_workflow(run_args, mask_files, len(magnitude_files) > 0, fill_masks=True, add_bet=run_args.add_bet, name="mask")
+
     if magnitude_files:
         wf.connect([
-            (mn_resample_inputs, mn_masking_inputs, [('out_pha', 'phase_files')])
+            (mn_resample_inputs, wf_masking, [('out_pha', 'masking_inputs.phase_files')])
         ])
         if mask_files:
             wf.connect([
-                (mn_resample_inputs, mn_masking_inputs, [('out_mask', 'mask_files')])
+                (mn_resample_inputs, wf_masking, [('out_mask', 'masking_inputs.mask_files')])
             ])
         if run_args.inhomogeneity_correction:
             wf.connect([
-                (mn_inhomogeneity_correction, mn_masking_inputs, [('out_file', 'magnitude_files')])
+                (mn_inhomogeneity_correction, wf_masking, [('out_file', 'masking_inputs.magnitude_files')])
             ])
         else:
             wf.connect([
-                (mn_resample_inputs, mn_masking_inputs, [('out_mag', 'magnitude_files')])
+                (mn_resample_inputs, wf_masking, [('out_mag', 'masking_inputs.magnitude_files')])
             ])
     else:
         wf.connect([
-            (mn_inputs_canonical, mn_masking_inputs, [('phase', 'phase_files')])
+            (mn_inputs_canonical, wf_masking, [('phase', 'masking_inputs.phase_files')])
         ])
         if mask_files:
             wf.connect([
-                (mn_inputs_canonical, mn_masking_inputs, [('mask', 'mask_files')])
+                (mn_inputs_canonical, wf_masking, [('mask', 'masking_inputs.mask_files')])
             ])
     
-    # masking steps
-    wf_masking = masking_workflow(run_args, mn_masking_inputs, mask_files, len(magnitude_files) > 0, fill_masks=True, add_bet=run_args.add_bet, name="mask")
     wf.connect([
         (wf_masking, n_datasink, [('masking_outputs.masks', 'masks')])
     ])
+
     # add threshold to json output
     if run_args.masking_algorithm == 'threshold':
         n_addtojson = Node(
@@ -363,24 +357,19 @@ def init_run_workflow(run_args, subject, session, run):
         (n_json, n_datasink, [('out_file', 'qsm_headers')])
     ])
 
-    # qsm steps
-    mn_qsm_inputs = MapNode(
-        interface=IdentityInterface(
-            fields=['phase', 'magnitude', 'mask', 'TE', 'B0_str', 'B0_dir', 'vsz']
-        ),
-        iterfield=['phase', 'magnitude', 'mask', 'TE'],
-        name='qsm_inputs'
-    )
+    # === QSM ===
+    wf_qsm = qsm_workflow(run_args, "qsm")
+
     wf.connect([
-        (mn_masking_inputs, mn_qsm_inputs, [('phase_files', 'phase')]),
-        (mn_masking_inputs, mn_qsm_inputs, [('magnitude_files', 'magnitude')]),
-        (wf_masking, mn_qsm_inputs, [('masking_outputs.masks', 'mask')]),
-        (mn_json_params, mn_qsm_inputs, [('EchoTime', 'TE')]),
-        (n_json_params, mn_qsm_inputs, [('MagneticFieldStrength', 'B0_str')]),
-        (n_nii_params, mn_qsm_inputs, [('vsz', 'vsz')])
+        (wf_masking, wf_qsm, [('masking_inputs.phase_files', 'qsm_inputs.phase')]),
+        (wf_masking, wf_qsm, [('masking_inputs.magnitude_files', 'qsm_inputs.magnitude')]),
+        (wf_masking, wf_qsm, [('masking_outputs.masks', 'qsm_inputs.mask')]),
+        (mn_json_params, wf_qsm, [('EchoTime', 'qsm_inputs.TE')]),
+        (n_json_params, wf_qsm, [('MagneticFieldStrength', 'qsm_inputs.B0_str')]),
+        (n_nii_params, wf_qsm, [('vsz', 'qsm_inputs.vsz')])
     ])
-    mn_qsm_inputs.inputs.B0_dir = "(0,0,1)"
-    wf_qsm = qsm_workflow(run_args, mn_qsm_inputs, "qsm")
+    wf_qsm.get_node('qsm_inputs').inputs.B0_dir = "(0,0,1)"
+    
     n_qsm_average = Node(
         interface=nonzeroaverage.NonzeroAverageInterface(),
         name="nibabel_numpy_qsm-average"
@@ -394,25 +383,18 @@ def init_run_workflow(run_args, subject, session, run):
 
     # two-pass algorithm
     if run_args.two_pass:
-        wf_masking_intermediate = masking_workflow(run_args, mn_masking_inputs, mask_files, len(magnitude_files) > 0, fill_masks=False, add_bet=False, name="mask-intermediate")
-        mn_qsm_inputs_intermediate = MapNode(
-            interface=IdentityInterface(
-                fields=['phase', 'magnitude', 'mask', 'TE', 'B0_str', 'B0_dir', 'vsz']
-            ),
-            iterfield=['phase', 'magnitude', 'mask', 'TE'],
-            name='qsm_inputs-intermediate'
-        )
+        wf_masking_intermediate = masking_workflow(run_args, mask_files, len(magnitude_files) > 0, fill_masks=False, add_bet=False, name="mask-intermediate")
+        wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate")
         wf.connect([
-            (mn_masking_inputs, mn_qsm_inputs_intermediate, [('phase_files', 'phase')]),
-            (mn_masking_inputs, mn_qsm_inputs_intermediate, [('magnitude_files', 'magnitude')]),
-            (wf_masking_intermediate, mn_qsm_inputs_intermediate, [('masking_outputs.masks', 'mask')]),
-            (mn_json_params, mn_qsm_inputs_intermediate, [('EchoTime', 'TE')]),
-            (n_json_params, mn_qsm_inputs_intermediate, [('MagneticFieldStrength', 'B0_str')]),
-            (n_nii_params, mn_qsm_inputs_intermediate, [('vsz', 'vsz')])
+            (wf_masking, wf_qsm_intermediate, [('masking_inputs.phase_files', 'qsm_inputs.phase')]),
+            (wf_masking, wf_qsm_intermediate, [('masking_inputs.magnitude_files', 'qsm_inputs.magnitude')]),
+            (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.masks', 'qsm_inputs.mask')]),
+            (mn_json_params, wf_qsm_intermediate, [('EchoTime', 'qsm_inputs.TE')]),
+            (n_json_params, wf_qsm_intermediate, [('MagneticFieldStrength', 'qsm_inputs.B0_str')]),
+            (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')])
         ])
-        mn_qsm_inputs_intermediate.inputs.B0_dir = "(0,0,1)"
-        wf_qsm_intermediate = qsm_workflow(run_args, mn_qsm_inputs_intermediate, "qsm-intermediate")
-        
+        wf_qsm_intermediate.get_node('qsm_inputs').inputs.B0_dir = "(0,0,1)"
+                
         # two-pass combination
         mn_qsm_twopass = MapNode(
             interface=twopass.TwopassNiftiInterface(),
@@ -505,6 +487,11 @@ def parse_args(args):
         default=None,
         type=int,
         help='The number of echoes to process; by default all echoes are processed.'
+    )
+
+    parser.add_argument(
+        '--combine_phase',
+        action='store_true'
     )
 
     parser.add_argument(
