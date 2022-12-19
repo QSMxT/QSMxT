@@ -43,8 +43,8 @@ class AddToJsonInterface(SimpleInterface):
         elif self.inputs.in_obj_value:
             json_dict[key] = self.inputs.in_obj_value
             val_type = "object"
-        elif self.inputs.in_arr_value:
-            json_dict[key] = self.inputs.in_arr_value
+        elif len(self.inputs.in_arr_value):
+            json_dict[key] = [val for val in self.inputs.in_arr_value]
             val_type = "array"
         elif self.inputs.in_bool_value:
             json_dict[key] = self.inputs.in_bool_value

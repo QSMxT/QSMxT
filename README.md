@@ -157,7 +157,7 @@ You need:
 - miniconda version=4.7.12.1 with python3.8 and pip packages psutil, datetime, nipype, nibabel, nilearn, scipy, scikit-image, pydicom, osfclient, cloudstor (https://github.com/astewartau/cloudstor), pytest and seaborn
 - FastSurfer (https://github.com/Deep-MI/FastSurfer.git)
 - Bru2Nii v1.0.20180303 (https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip)
-- julia-1.6.1 with ArgParse, MriResearchTools, FFTW and RomeoApp (see https://github.com/korbinian90/RomeoApp.jl)
+- julia-1.6.1 with ArgParse, MriResearchTools, QSM.jl, FFTW and RomeoApp (see https://github.com/korbinian90/RomeoApp.jl)
 
 Here is the detailed instruction that you could replicate: https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxtbase/build.sh and then on top https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxt/build.sh
 
@@ -195,7 +195,6 @@ Here is the detailed instruction that you could replicate: https://github.com/Ne
 - **Pipeline implementation:** Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT
 - **dcm2niix software:** Li X, Morgan PS, Ashburner J, Smith J, Rorden C. The first step for neuroimaging data analysis: DICOM to NIfTI conversion. J Neurosci Methods. 2016;264:47-56. doi:10.1016/j.jneumeth.2016.03.001
 - **BIDS:** Gorgolewski KJ, Auer T, Calhoun VD, et al. The brain imaging data structure, a format for organizing and describing outputs of neuroimaging experiments. Sci Data. 2016;3(1):160044. doi:10.1038/sdata.2016.44
-        f.write("\n\n - Rorden C et al. Rordenlab/Dcm2niix. GitHub; 2022. https://github.com/rordenlab/dcm2niix
 
 ## Segmentation pipeline
 - **Pipeline implementation:** Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT

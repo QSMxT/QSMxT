@@ -23,7 +23,7 @@ class RomeoInputSpec(BaseInterfaceInputSpec):
     phase = File(mandatory=True, exists=True, argstr="--phase %s")
     #mask = File(mandatory=False, exists=True, argstr="--mask %s")
     magnitude = File(mandatory=False, exists=True, argstr="--mag %s")
-    out_file = File(name_source=['phase'], name_template='%s_romeo-unwrapped.nii.gz', argstr="--output %s")
+    out_file = File(name_source=['phase'], name_template='%s_romeo.nii.gz', argstr="--output %s")
 
 class RomeoOutputSpec(TraitedSpec):
     out_file = File()
