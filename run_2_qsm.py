@@ -253,6 +253,7 @@ def init_run_workflow(run_args, subject, session, run):
         out_phase = os.path.abspath(f"{os.path.split(phase)[-1].split('.')[0]}_canonical.nii")
         out_mag = os.path.abspath(f"{os.path.split(magnitude)[-1].split('.')[0]}_canonical.nii") if magnitude else None
         out_mask = os.path.abspath(f"{os.path.split(mask)[-1].split('.')[0]}_canonical.nii") if mask else None
+        if nib.aff2axcodes(nib.load(phase).affine) == ('R', 'A', 'S'): return phase, magnitude, mask
         nib.save(nib.as_closest_canonical(nib.load(phase)), out_phase)
         if magnitude: nib.save(nib.as_closest_canonical(nib.load(magnitude)), out_mag)
         if mask: nib.save(nib.as_closest_canonical(nib.load(mask)), out_mask)
