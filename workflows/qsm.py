@@ -154,12 +154,6 @@ def qsm_workflow(run_args, name):
                 (mn_pdf, n_outputs, [('out_freq', 'tissue_frequency')]),
                 (n_inputs, n_outputs, [('mask', 'mask')])
             ])
-    else:
-        wf.connect([
-            (n_frequency, mn_vsharp, [('frequency', 'in_frequency')]),
-            (n_combine, mn_vsharp, [('mask', 'in_mask')]),
-            (n_inputs, mn_vsharp, [('vsz', 'in_vsz')]),
-        ])
 
     # === DIPOLE INVERSION ===
     if run_args.qsm_algorithm == 'nextqsm':
