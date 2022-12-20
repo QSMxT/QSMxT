@@ -185,7 +185,7 @@ def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.unwrapping_algorithm == "romeo")
     assert(args.masking_algorithm == "threshold")
     assert(args.masking_input == "phase")
-    assert(args.threshold_value == None)
+    assert(args.threshold_value == [None, None])
     assert(args.threshold_algorithm == 'otsu')
     assert(args.filling_algorithm == 'both')
     assert(args.threshold_algorithm_factor == 1.25)
@@ -259,7 +259,7 @@ def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.qsm_algorithm == "tgv")
     assert(args.masking_algorithm == "threshold")
     assert(args.masking_input == "phase")
-    assert(args.threshold_value == None)
+    assert(args.threshold_value == [None, None])
     assert(args.threshold_algorithm == 'otsu')
     assert(args.filling_algorithm == 'both')
     assert(args.threshold_algorithm_factor == 1.25)
@@ -438,7 +438,7 @@ def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
     
     assert(args.masking_algorithm == "threshold")
     assert(args.masking_input == "phase")
-    assert(args.threshold_value == None)
+    assert(args.threshold_value == [None, None])
     assert(args.threshold_algorithm == 'otsu')
     assert(args.filling_algorithm == 'both')
     assert(args.threshold_algorithm_factor == 1.25)
@@ -456,7 +456,7 @@ def test_two_pass(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--two_pass"
+        "--two_pass", "on"
     ]))
     
     assert(args.two_pass == True)
