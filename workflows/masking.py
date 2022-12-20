@@ -7,7 +7,7 @@ from interfaces import nipype_interface_bet2 as bet2
 from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_twopass as twopass
 
-def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_bet, name):
+def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_bet, name, index):
 
     wf = Workflow(name=f"{name}_workflow")
 
@@ -28,7 +28,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
     if not mask_files:
         mn_erode = MapNode(
             interface=erode.ErosionInterface(
-                num_erosions=run_args.mask_erosions
+                num_erosions=run_args.mask_erosions[index]
             ),
             iterfield=['in_file'],
             name='scipy_numpy_nibabel_erode'
@@ -58,16 +58,16 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
         if run_args.masking_algorithm == 'threshold':
             n_threshold_masking = Node(
                 interface=masking.MaskingInterface(
+                    threshold_algorithm=run_args.threshold_algorithm,
+                    threshold_algorithm_factor=run_args.threshold_algorithm_factor[index],
                     fill_masks=fill_masks,
                     mask_suffix=name,
-                    threshold_algorithm=run_args.threshold_algorithm,
-                    threshold_algorithm_factor=run_args.threshold_algorithm_factor,
                     filling_algorithm=run_args.filling_algorithm
                 ),
                 name='scipy_numpy_nibabel_threshold-masking'
                 # inputs : ['in_files']
             )
-            if run_args.threshold_value: n_threshold_masking.inputs.threshold = run_args.threshold_value
+            if run_args.threshold_value[index]: n_threshold_masking.inputs.threshold = run_args.threshold_value[index]
 
             if run_args.masking_input == 'phase':    
                 wf.connect([

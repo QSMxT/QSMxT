@@ -42,28 +42,31 @@ def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussi
     # load data
     all_niis = [nib.load(in_file) for in_file in in_files]
     all_float_data = [nii.get_fdata() for nii in all_niis]
-    image_histogram = np.array([data.flatten() for data in all_float_data])
     
     # calculate gaussian threshold if none given
-    if not user_threshold:
-        if threshold_algorithm == 'gaussian':
-            threshold = _gaussian_threshold(image_histogram)
-        else:
-            threshold = filters.threshold_otsu(image_histogram)
-        threshold *= threshold_algorithm_factor
-    elif type(user_threshold) == int: # user-defined absolute threshold
-        threshold = user_threshold
-    else: # user-defined percentage threshold
-        data_range = np.max(np.array(all_float_data)) - np.min(np.array(all_float_data))
-        threshold = np.min(data_range) + (user_threshold * data_range)
+    def get_threshold(data):
+        if not user_threshold:
+            image_histogram = np.array(data.flatten())
+            if threshold_algorithm == 'gaussian':
+                threshold = _gaussian_threshold(image_histogram)
+            else:
+                threshold = filters.threshold_otsu(image_histogram)
+            threshold *= threshold_algorithm_factor
+        elif type(user_threshold) == int: # user-defined absolute threshold
+            threshold = user_threshold
+        else: # user-defined percentage threshold
+            data_range = np.max(np.array(all_float_data)) - np.min(np.array(all_float_data))
+            threshold = np.min(data_range) + (user_threshold * data_range)
+        return threshold
 
     # do masking
-    masks = [np.array(data > threshold, dtype=int) for data in all_float_data]
+    thresholds = [get_threshold(data) for data in all_float_data]
+    masks = [np.array(all_float_data[i] > thresholds[i], dtype=int) for i in range(len(all_float_data))]
     if fill_masks:
-        if filling_algorithm in ['morphological', 'both']:
-            masks = [fill_holes_morphological(mask) for mask in masks]
         if filling_algorithm in ['smoothing', 'both']:
             masks = [fill_holes_smoothing(mask) for mask in masks]
+        if filling_algorithm in ['morphological', 'both']:
+            masks = [fill_holes_morphological(mask) for mask in masks]
     else:
         masks = [binary_opening(mask) for mask in masks]
 
@@ -81,7 +84,7 @@ def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussi
             mask_filenames[i]
         )
 
-    return mask_filenames, threshold
+    return mask_filenames, thresholds
 
 # The smoothing removes background noise and closes small holes
 # A smaller threshold grows the mask
@@ -114,7 +117,7 @@ class MaskingInputSpec(BaseInterfaceInputSpec):
 class MaskingOutputSpec(TraitedSpec):
     masks = OutputMultiPath(File(exists=False))
     masks_filled = OutputMultiPath(File(exists=False))
-    threshold = traits.Float()
+    threshold = traits.List()
 
 
 class MaskingInterface(SimpleInterface):
