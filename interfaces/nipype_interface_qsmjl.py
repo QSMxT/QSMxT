@@ -68,7 +68,7 @@ class PhaseToFreqInputSpec(CommandLineInputSpec):
 
 
 class PhaseToFreqOutputSpec(TraitedSpec):
-    out_frequency = File()
+    frequency = File()
 
 
 class PhaseToFreqInterface(CommandLine):
