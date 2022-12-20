@@ -343,7 +343,7 @@ def init_run_workflow(run_args, subject, session, run):
             ])
     
     # masking steps
-    wf_masking = masking_workflow(run_args, mn_masking_inputs, mask_files, len(magnitude_files) > 0, fill_masks=True, add_bet=run_args.add_bet, name="mask")
+    wf_masking = masking_workflow(run_args, mn_masking_inputs, mask_files, len(magnitude_files) > 0, fill_masks=True, add_bet=run_args.add_bet, index=0, name="mask")
     wf.connect([
         (wf_masking, n_datasink, [('masking_outputs.masks', 'masks')])
     ])
@@ -357,7 +357,7 @@ def init_run_workflow(run_args, subject, session, run):
         )
         wf.connect([
             (n_json, n_addtojson, [('out_file', 'in_file')]),
-            (wf_masking, n_addtojson, [('masking_outputs.threshold', 'in_num_value')])
+            (wf_masking, n_addtojson, [('masking_outputs.threshold', 'in_arr_value')])
         ])
         n_json = n_addtojson
     wf.connect([
@@ -395,7 +395,7 @@ def init_run_workflow(run_args, subject, session, run):
 
     # two-pass algorithm
     if run_args.two_pass:
-        wf_masking_intermediate = masking_workflow(run_args, mn_masking_inputs, mask_files, len(magnitude_files) > 0, fill_masks=False, add_bet=False, name="mask-intermediate")
+        wf_masking_intermediate = masking_workflow(run_args, mn_masking_inputs, mask_files, len(magnitude_files) > 0, fill_masks=False, add_bet=False, index=1, name="mask-intermediate")
         mn_qsm_inputs_intermediate = MapNode(
             interface=IdentityInterface(
                 fields=['phase', 'magnitude', 'mask', 'TE', 'B0_str', 'B0_dir', 'vsz']
@@ -418,10 +418,11 @@ def init_run_workflow(run_args, subject, session, run):
         mn_qsm_twopass = MapNode(
             interface=twopass.TwopassNiftiInterface(),
             name='numpy_nibabel_twopass',
-            iterfield=['in_file1', 'in_file2']
+            iterfield=['in_file1', 'in_file2', 'in_mask']
         )
         wf.connect([
             (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file1')]),
+            (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.mask', 'in_mask')]),
             (wf_qsm, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file2')])
         ])
 
@@ -555,6 +556,13 @@ def parse_args(args):
     )
 
     parser.add_argument(
+        '--bf_algorithm',
+        default='vsharp',
+        choices=['vsharp', 'pdf'],
+        help='TODO' #TODO
+    )
+
+    parser.add_argument(
         '--masking_algorithm',
         default=None,
         choices=['threshold', 'bet', 'bet-firstecho'],
@@ -581,7 +589,8 @@ def parse_args(args):
     parser.add_argument(
         '--threshold_value',
         type=float,
-        default=None,
+        nargs='+',
+        default=[None, None],
         help='Masking threshold for when --masking_algorithm is set to threshold. Values between 0 and 1'+
              'represent a percentage of the multi-echo input range. Values greater than 1 represent an '+
              'absolute threshold value. Lower values will result in larger masks. If no threshold is '+
@@ -610,7 +619,8 @@ def parse_args(args):
 
     parser.add_argument(
         '--threshold_algorithm_factor',
-        default=1.25,
+        default=[1.25, 1.25],
+        nargs='+',
         type=float,
         help='Factor to multiply the algorithmically-determined threshold by. Larger factors will create '+
              'smaller masks.'
@@ -619,7 +629,8 @@ def parse_args(args):
     parser.add_argument(
         '--mask_erosions',
         type=int,
-        default=1,
+        nargs='+',
+        default=[1, 1],
         help='Number of erosions applied to masks prior to QSM processing steps. Note that some algorithms '+
              'may erode the mask further (e.g. V-SHARP and TGV-QSM).'
     )
@@ -665,14 +676,16 @@ def parse_args(args):
 
     parser.add_argument(
         '--two_pass',
-        action='store_true',
-        help='Runs the QSM reconstruction in a two-stage fashion to reduce artefacts; combines '+
-             'the results from two QSM images reconstructed using masks that separate more reliable '+
-             'and less reliable phase regions. Note that this option requires threshold-based masking, '+
-             'doubles reconstruction time, and in some cases can deteriorate QSM contrast in some '+
-             'regions. Applications where two-pass QSM may improve results include body imaging, '+
-             'lesion imaging, and imaging of other strong susceptibility sources. This method is '+
-             'based on doi:10.1002/mrm.29048 from Stewart et al.'
+        choices=['on', 'off'],
+        default=None,
+        help='Setting this to \'on\' will perform a QSM reconstruction in a two-stage fashion to reduce '+
+             'artefacts; combines the results from two QSM images reconstructed using masks that separate '+
+             'more reliable and less reliable phase regions. Note that this option requires threshold-based '+
+             'masking, doubles reconstruction time, and in some cases can deteriorate QSM contrast in some '+
+             'regions, depending on other parameters such as the threshold. Applications where two-pass QSM '+
+             'may improve results include body imaging, lesion imaging, and imaging of other strong '+
+             'susceptibility sources. This method is based on doi:10.1002/mrm.29048 from Stewart et al. By '+
+             'default, two-pass is enabled for the RTS algorithm only.'
     )
 
     parser.add_argument(
@@ -723,10 +736,21 @@ def process_args(args):
         if args.qsm_algorithm in ['nextqsm', 'rts']:
             args.unwrapping_algorithm = 'romeo'
     
+    # default two-pass settings for QSM algorithms
+    if not args.two_pass:
+        if args.qsm_algorithm in ['rts']:
+            args.two_pass = 'on'
+        else:
+            args.two_pass = 'off'
+    args.two_pass = True if args.two_pass == 'on' else False
+
+    # two-pass not recommended for v-sharp
+    
+
     # add_bet option only works with non-bet masking methods
     args.add_bet &= 'bet' not in args.masking_algorithm
 
-    # two-pass option does not work with 'bet' masking
+    # two-pass option only works with non-bet masking methods
     args.two_pass &= 'bet' not in args.masking_algorithm
     args.single_pass = not args.two_pass
 
