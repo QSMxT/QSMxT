@@ -10,6 +10,7 @@ import argparse
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
+from nipype import config, logging
 from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir
 from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logger
 
@@ -460,7 +461,7 @@ def parse_args(args):
         type=os.path.abspath,
         help='Output QSM folder; will be created if it does not exist.'
     )
-
+    
     parser.add_argument(
         '--subject_pattern',
         default='sub*',
@@ -735,7 +736,7 @@ def process_args(args):
     if not args.unwrapping_algorithm:
         if args.qsm_algorithm in ['nextqsm', 'rts']:
             args.unwrapping_algorithm = 'romeo'
-    
+
     # default two-pass settings for QSM algorithms
     if not args.two_pass:
         if args.qsm_algorithm in ['rts']:
@@ -745,7 +746,7 @@ def process_args(args):
     args.two_pass = True if args.two_pass == 'on' else False
 
     # two-pass not recommended for v-sharp
-    
+    # TODO
 
     # add_bet option only works with non-bet masking methods
     args.add_bet &= 'bet' not in args.masking_algorithm
@@ -872,6 +873,9 @@ if __name__ == "__main__":
     # write references to file
     write_references(wf)
 
+    config.update_config({'logging': { 'log_directory': args.output_dir, 'log_to_file': True }})
+    logging.update_logging(config)
+
     # run workflow
     if args.qsub_account_string:
         wf.run(
@@ -883,9 +887,7 @@ if __name__ == "__main__":
     else:
         wf.run(
             plugin='MultiProc',
-            plugin_args={
-                'n_procs': args.n_procs
-            }
+            plugin_args={ 'n_procs' : args.n_procs, 'status_callback' : log_nodes_cb }
         )
 
     show_warning_summary(logger)
