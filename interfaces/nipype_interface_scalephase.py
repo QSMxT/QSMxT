@@ -18,11 +18,11 @@ def scale_to_pi(in_file):
 
 
 class ScalePhaseInputSpec(BaseInterfaceInputSpec):
-    in_file = File(mandatory=True, exists=True)
+    phase = File(mandatory=True, exists=True)
     
 
 class ScalePhaseOutputSpec(TraitedSpec):
-    out_file = File(mandatory=True, exists=True)
+    phase_scaled = File(mandatory=True, exists=True)
 
 
 class ScalePhaseInterface(SimpleInterface):
@@ -30,7 +30,7 @@ class ScalePhaseInterface(SimpleInterface):
     output_spec = ScalePhaseOutputSpec
 
     def _run_interface(self, runtime):
-        self._results['out_file'] = scale_to_pi(self.inputs.in_file)
+        self._results['phase_scaled'] = scale_to_pi(self.inputs.phase)
         return runtime
 
 

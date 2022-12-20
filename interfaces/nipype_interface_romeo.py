@@ -23,10 +23,10 @@ class RomeoInputSpec(BaseInterfaceInputSpec):
     phase = File(mandatory=True, exists=True, argstr="--phase %s")
     #mask = File(mandatory=False, exists=True, argstr="--mask %s")
     magnitude = File(mandatory=False, exists=True, argstr="--mag %s")
-    out_file = File(name_source=['phase'], name_template='%s_romeo.nii.gz', argstr="--output %s")
+    phase_unwrapped = File(name_source=['phase'], name_template='%s_romeo.nii.gz', argstr="--output %s")
 
 class RomeoOutputSpec(TraitedSpec):
-    out_file = File()
+    phase_unwrapped = File()
 
 class RomeoInterface(CommandLine):
     input_spec = RomeoInputSpec
@@ -43,7 +43,7 @@ class RomeoB0InputSpec(BaseInterfaceInputSpec):
     TE = traits.ListFloat(desc='Echo Time [sec]', mandatory=True, argstr="-t [%s]")
 
 class RomeoB0OutputSpec(TraitedSpec):
-    B0 = File('B0.nii', exists=True)
+    frequency = File('B0.nii', exists=True)
     phase_wrapped = File(exists=True)
     phase_unwrapped = File(exists=True)
     magnitude = File(exists=True)
@@ -67,7 +67,7 @@ class RomeoB0Interface(CommandLine):
         
         outfile_final = os.path.join(os.getcwd(), os.path.split(self.inputs.phase[0])[1].split(".")[0] + "_romeo-combined.nii")
         os.rename(os.path.join(os.getcwd(), "B0.nii"), outfile_final)
-        outputs['B0'] = outfile_final
+        outputs['frequency'] = outfile_final
         
         outputs['phase_wrapped'], outputs['phase_unwrapped'] = B0_unit_convert(outfile_final, np.min(self.inputs.TE))
         outputs['magnitude'] = self.inputs.magnitude[0]

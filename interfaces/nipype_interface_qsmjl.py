@@ -3,33 +3,33 @@ from scripts import qsmxt_functions
 import os
 
 class LaplacianUnwrappingInputSpec(CommandLineInputSpec):
-    in_phase = File(
+    phase = File(
         exists=True,
         mandatory=True,
         argstr="--phase %s",
         position=0
     )
-    in_mask = File(
+    mask = File(
         exists=True,
         mandatory=True,
         argstr="--mask %s",
         position=1
     )
-    in_vsz = traits.String(
+    vsz = traits.String(
         argstr="--vsz \"%s\"",
         default="(1,1,1)",
         position=2
     )
-    out_unwrapped = File(
+    phase_unwrapped = File(
         argstr="--unwrapped-phase-out %s",
-        name_source=['in_phase'],
+        name_source=['phase'],
         name_template='%s_unwrapped-laplacian.nii',
         position=3
     )
 
 
 class LaplacianUnwrappingOutputSpec(TraitedSpec):
-    out_unwrapped = File()
+    phase_unwrapped = File()
 
 
 class LaplacianUnwrappingInterface(CommandLine):
@@ -39,29 +39,29 @@ class LaplacianUnwrappingInterface(CommandLine):
 
 
 class PhaseToFreqInputSpec(CommandLineInputSpec):
-    in_phase = File(
+    phase = File(
         exists=True,
         mandatory=True,
         argstr="--phase %s",
         position=0
     )
-    in_TEs = traits.Float(
+    TE = traits.Float(
         argstr="--TEs [%s]",
         position=2
     )
-    in_vsz = traits.String(
+    vsz = traits.String(
         argstr="--vsz \"%s\"",
         default="(1,1,1)",
         position=3
     )
-    in_b0str = traits.Float(
+    b0_strength = traits.Float(
         argstr="--b0-str %s",
         default=3,
         position=4
     )
-    out_frequency = File(
+    frequency = File(
         argstr="--frequency-out %s",
-        name_source=['in_phase'],
+        name_source=['phase'],
         name_template='%s_freq.nii',
         position=5
     )
@@ -78,40 +78,40 @@ class PhaseToFreqInterface(CommandLine):
 
 
 class VsharpInputSpec(CommandLineInputSpec):
-    in_frequency = File(
+    frequency = File(
         exists=True,
         mandatory=True,
         argstr="--frequency %s",
         position=0
     )
-    in_mask = File(
+    mask = File(
         exists=True,
         mandatory=True,
         argstr="--mask %s",
         position=1
     )
-    in_vsz = traits.String(
+    vsz = traits.String(
         argstr="--vsz \"%s\"",
         default="(1,1,1)",
         position=2
     )
-    out_freq = File(
+    tissue_frequency = File(
         argstr="--tissue-frequency-out %s",
-        name_source=['in_frequency'],
+        name_source=['frequency'],
         name_template='%s_vsharp.nii',
         position=3
     )
-    out_mask = File(
+    vsharp_mask = File(
         argstr="--vsharp-mask-out %s",
-        name_source=['in_mask'],
+        name_source=['mask'],
         name_template='%s_vsharp-mask.nii',
         position=4
     )
 
 
 class VsharpOutputSpec(TraitedSpec):
-    out_freq = File()
-    out_mask = File()
+    tissue_frequency = File()
+    vsharp_mask = File()
 
 
 class VsharpInterface(CommandLine):
@@ -121,33 +121,33 @@ class VsharpInterface(CommandLine):
 
 
 class PdfInputSpec(CommandLineInputSpec):
-    in_frequency = File(
+    frequency = File(
         exists=True,
         mandatory=True,
         argstr="--frequency %s",
         position=0
     )
-    in_mask = File(
+    mask = File(
         exists=True,
         mandatory=True,
         argstr="--mask %s",
         position=1
     )
-    in_vsz = traits.String(
+    vsz = traits.String(
         argstr="--vsz \"%s\"",
         default="(1,1,1)",
         position=2
     )
-    out_freq = File(
+    tissue_frequency = File(
         argstr="--tissue-frequency-out %s",
-        name_source=['in_frequency'],
+        name_source=['frequency'],
         name_template='%s_pdf.nii',
         position=3
     )
 
 
 class PdfOutputSpec(TraitedSpec):
-    out_freq = File()
+    tissue_frequency = File()
 
 
 class PdfInterface(CommandLine):
@@ -157,38 +157,38 @@ class PdfInterface(CommandLine):
 
 
 class RtsQsmInputSpec(CommandLineInputSpec):
-    in_frequency = File(
+    tissue_frequency = File(
         exists=True,
         mandatory=True,
         argstr="--tissue-frequency %s",
         position=0
     )
-    in_mask = File(
+    mask = File(
         exists=True,
         mandatory=True,
         argstr="--mask %s",
         position=1
     )
-    in_vsz = traits.String(
+    vsz = traits.String(
         argstr="--vsz \"%s\"",
         default="(1,1,1)",
         position=2
     )
-    in_b0dir = traits.String(
+    b0_direction = traits.String(
         argstr="--b0-dir \"%s\"",
         default="(0,0,1)",
         position=3
     )
-    out_qsm = File(
+    qsm = File(
         argstr="--qsm-out %s",
-        name_source=['in_frequency'],
+        name_source=['tissue_frequency'],
         name_template='%s_rts.nii',
         position=4
     )
 
 
 class RtsQsmOutputSpec(TraitedSpec):
-    out_qsm = File()
+    qsm = File()
 
 
 class RtsQsmInterface(CommandLine):

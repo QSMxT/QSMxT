@@ -13,7 +13,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
 
     mn_inputs = Node(
         interface=IdentityInterface(
-            fields=['phase_files', 'magnitude_files', 'mask_files']
+            fields=['phase', 'magnitude', 'mask']
         ),
         name='masking_inputs'
     )
@@ -45,13 +45,13 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
             if magnitude_available:
                 mn_phaseweights.inputs.weight_type = "grad+second+mag"
                 wf.connect([
-                    (mn_inputs, mn_phaseweights, [('phase_files', 'phase')]),
-                    (mn_inputs, mn_phaseweights, [('magnitude_files', 'mag')])
+                    (mn_inputs, mn_phaseweights, [('phase', 'phase')]),
+                    (mn_inputs, mn_phaseweights, [('magnitude', 'mag')])
                 ])
             else:
                 mn_phaseweights.inputs.weight_type = "grad+second"
                 wf.connect([
-                    (mn_inputs, mn_phaseweights, [('phase_files', 'phase')]),
+                    (mn_inputs, mn_phaseweights, [('phase', 'phase')]),
                 ])
 
         # do threshold masking if necessary
@@ -75,7 +75,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 ])
             elif run_args.masking_input == 'magnitude':
                 wf.connect([
-                    (mn_inputs, n_threshold_masking, [('magnitude_files', 'in_files')])
+                    (mn_inputs, n_threshold_masking, [('magnitude', 'in_files')])
                 ])
             if not run_args.add_bet:
                 wf.connect([
@@ -94,21 +94,21 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 def get_first(magnitude_files): return [magnitude_files[0] for f in magnitude_files]
                 n_getfirst = Node(
                     interface=Function(
-                        input_names=['magnitude_files'],
+                        input_names=['magnitude'],
                         output_names=['magnitude_file'],
                         function=get_first
                     ),
                     name='func_get-first'
                 )
                 wf.connect([
-                    (mn_inputs, n_getfirst, [('magnitude_files', 'magnitude_files')])
+                    (mn_inputs, n_getfirst, [('magnitude', 'magnitude')])
                 ])
                 wf.connect([
                     (n_getfirst, mn_bet, [('magnitude_file', 'in_file')])
                 ])
             else:
                 wf.connect([
-                    (mn_inputs, mn_bet, [('magnitude_files', 'in_file')])
+                    (mn_inputs, mn_bet, [('magnitude', 'in_file')])
                 ])
 
             # add bet if necessary
@@ -133,7 +133,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
     # outputs
     if mask_files:
         wf.connect([
-            (mn_inputs, mn_outputs, [('mask_files', 'masks')]),
+            (mn_inputs, mn_outputs, [('mask', 'masks')]),
         ])
     else:
         wf.connect([
