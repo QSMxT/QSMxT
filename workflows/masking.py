@@ -86,7 +86,6 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
                 name='fsl-bet'
-                # output: 'mask_file'
             )
             if run_args.masking_algorithm == 'bet-firstecho':
                 def get_first(magnitude): return [magnitude[0] for f in magnitude]

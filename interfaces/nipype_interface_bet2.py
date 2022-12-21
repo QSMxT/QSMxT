@@ -15,7 +15,7 @@ class Bet2InputSpec(CommandLineInputSpec):
         position=1,
         exists=False
     )
-    mask_file = File(
+    mask = File(
         argstr="-m %s",
         name_source=['in_file'],
         name_template='%s_bet-mask.nii.gz',
