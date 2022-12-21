@@ -57,6 +57,7 @@ def qsm_workflow(run_args, name):
                     interface=romeo.RomeoInterface(),
                     iterfield=['phase', 'magnitude'],
                     name='mrt_romeo',
+                    mem_gb=3
                 )
                 wf.connect([
                     (n_inputs, mn_romeo, [('phase', 'phase'), ('magnitude', 'magnitude')]),
@@ -147,7 +148,8 @@ def qsm_workflow(run_args, name):
             interface=qsmjl.RtsQsmInterface(),
             name='qsmjl_rts',
             iterfield=['tissue_frequency', 'mask'],
-            n_procs=min(run_args.process_threads, 2)
+            n_procs=min(run_args.process_threads, 2),
+            mem_gb=5
         )
         wf.connect([
             (mn_bf, mn_qsm, [('tissue_frequency', 'tissue_frequency')]),
