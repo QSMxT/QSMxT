@@ -438,11 +438,11 @@ def init_run_workflow(run_args, subject, session, run):
         mn_qsm_twopass = MapNode(
             interface=twopass.TwopassNiftiInterface(),
             name='numpy_nibabel_twopass',
-            iterfield=['in_file1', 'in_file2', 'in_mask']
+            iterfield=['in_file1', 'in_file2', 'mask']
         )
         wf.connect([
             (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file1')]),
-            (wf_masking_intermediate, mn_qsm_twopass, [('masking_outputs.mask', 'in_mask')]),
+            (wf_masking_intermediate, mn_qsm_twopass, [('masking_outputs.mask', 'mask')]),
             (wf_qsm, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file2')])
         ])
 
