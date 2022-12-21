@@ -200,7 +200,7 @@ def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.inhomogeneity_correction == False)
     assert(args.add_bet == False)
     assert(args.use_existing_masks == False)
-    assert(args.two_pass == False)
+    assert(args.two_pass == True)
     assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     assert(0 < args.process_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
@@ -457,7 +457,7 @@ def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, False, { 'num_echoes' : 1 })
 ])
 def test_two_pass(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([

@@ -288,18 +288,18 @@ def init_run_workflow(run_args, subject, session, run):
     if magnitude_files:
         mn_resample_inputs = MapNode(
             interface=sampling.AxialSamplingInterface(
-                obliquity_threshold=10
+                obliquity_threshold=run_args.obliquity_threshold
             ),
-            iterfield=['in_mag', 'in_pha', 'in_mask'] if mask_files else ['in_mag', 'in_pha'],
+            iterfield=['magnitude', 'phase', 'mask'] if mask_files else ['magnitude', 'phase'],
             name='nibabel_numpy_nilearn_axial-resampling'
         )
         wf.connect([
-            (mn_inputs_canonical, mn_resample_inputs, [('magnitude', 'in_mag')]),
-            (mn_inputs_canonical, mn_resample_inputs, [('phase', 'in_pha')])
+            (mn_inputs_canonical, mn_resample_inputs, [('magnitude', 'magnitude')]),
+            (mn_inputs_canonical, mn_resample_inputs, [('phase', 'phase')])
         ])
         if mask_files:
             wf.connect([
-                (mn_inputs_canonical, mn_resample_inputs, [('mask', 'in_mask')])
+                (mn_inputs_canonical, mn_resample_inputs, [('mask', 'mask')])
             ])
 
     # combine phase data if necessary
@@ -316,13 +316,13 @@ def init_run_workflow(run_args, subject, session, run):
         )
         wf.connect([
             (mn_json_params, n_romeo_combine, [('TE', 'TE')]),
-            (mn_resample_inputs, n_romeo_combine, [('out_pha', 'phase'), ('out_mag', 'magnitude')]),
+            (mn_resample_inputs, n_romeo_combine, [('phase', 'phase'), ('magnitude', 'magnitude')]),
             (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency'), ('phase_wrapped', 'phase'), ('phase_unwrapped', 'phase_unwrapped'), ('magnitude', 'magnitude'), ('mask', 'mask'), ('TE', 'TE')])
         ])
         if mask_files: wf.connect([(mn_resample_inputs, n_romeo_combine, [('out_mask', 'mask')])])
     else:
         wf.connect([
-            (mn_resample_inputs, n_inputs_combine, [('out_pha', 'phase'), ('out_mag', 'magnitude'), ('out_mask', 'mask')]),
+            (mn_resample_inputs, n_inputs_combine, [('phase', 'phase'), ('magnitude', 'magnitude'), ('mask', 'mask')]),
             (mn_json_params, n_inputs_combine, [('TE', 'TE')])
         ])
 
@@ -415,6 +415,12 @@ def init_run_workflow(run_args, subject, session, run):
     # two-pass algorithm
     if run_args.two_pass:
         wf_masking_intermediate = masking_workflow(run_args, mask_files, len(magnitude_files) > 0, fill_masks=False, add_bet=False, name="mask-intermediate", index=1)
+        wf.connect([
+            (wf_masking, wf_masking_intermediate, [('masking_inputs.phase', 'masking_inputs.phase')]),
+            (wf_masking, wf_masking_intermediate, [('masking_inputs.mask', 'masking_inputs.mask')]),
+            (wf_masking, wf_masking_intermediate, [('masking_inputs.magnitude', 'masking_inputs.magnitude')])
+        ])
+
         wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate")
         wf.connect([
             (n_inputs_combine, wf_qsm_intermediate, [('phase', 'qsm_inputs.phase')]),
@@ -436,7 +442,7 @@ def init_run_workflow(run_args, subject, session, run):
         )
         wf.connect([
             (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file1')]),
-            (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.mask', 'in_mask')]),
+            (wf_masking_intermediate, mn_qsm_twopass, [('masking_outputs.masks', 'in_mask')]),
             (wf_qsm, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file2')])
         ])
 
@@ -521,6 +527,13 @@ def parse_args(args):
         default=None,
         type=int,
         help='The number of echoes to process; by default all echoes are processed.'
+    )
+
+    parser.add_argument(
+        '--obliquity_threshold',
+        type=int,
+        default=10,
+        help="TODO" #TODO
     )
 
     parser.add_argument(
@@ -905,7 +918,7 @@ if __name__ == "__main__":
     else:
         wf.run(
             plugin='MultiProc',
-            plugin_args={ 'n_procs' : args.n_procs, 'status_callback' : log_nodes_cb }
+            plugin_args={ 'n_procs' : args.n_procs }
         )
 
     show_warning_summary(logger)

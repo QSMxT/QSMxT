@@ -29,7 +29,7 @@ class RomeoMaskingInputSpec(CommandLineInputSpec):
         mandatory=True,
         argstr="--phase %s"
     )
-    mag = File(
+    magnitude = File(
         exists=True,
         argstr="--mag %s"
     )
@@ -37,14 +37,14 @@ class RomeoMaskingInputSpec(CommandLineInputSpec):
         default_value="grad+second",
         argstr="--type %s"
     )
-    out_file = File(
+    quality_map = File(
         argstr="--output %s",
         name_source=['phase'],
         name_template='%s_romeo_voxelquality.nii'
     )
 
 class RomeoMaskingOutputSpec(TraitedSpec):
-    out_file = File()
+    quality_map = File()
 
 class RomeoMaskingInterface(CommandLine):
     input_spec = RomeoMaskingInputSpec

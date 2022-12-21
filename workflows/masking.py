@@ -11,14 +11,14 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
 
     wf = Workflow(name=f"{name}_workflow")
 
-    mn_inputs = Node(
+    n_inputs = Node(
         interface=IdentityInterface(
             fields=['phase', 'magnitude', 'mask']
         ),
         name='masking_inputs'
     )
 
-    mn_outputs = Node(
+    n_outputs = Node(
         interface=IdentityInterface(
             fields=['masks', 'threshold']
         ),
@@ -38,20 +38,18 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
         if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
             mn_phaseweights = MapNode(
                 interface=phaseweights.RomeoMaskingInterface(),
-                iterfield=['phase', 'mag'] if magnitude_available else ['phase'],
-                name='romeo-voxelquality'
-                # output: 'out_file'
+                iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
+                name='romeo-voxelquality',
+                mem_gb=3
             )
+            mn_phaseweights.inputs.weight_type = "grad+second"
+            wf.connect([
+                (n_inputs, mn_phaseweights, [('phase', 'phase')]),
+            ])
             if magnitude_available:
                 mn_phaseweights.inputs.weight_type = "grad+second+mag"
                 wf.connect([
-                    (mn_inputs, mn_phaseweights, [('phase', 'phase')]),
-                    (mn_inputs, mn_phaseweights, [('magnitude', 'mag')])
-                ])
-            else:
-                mn_phaseweights.inputs.weight_type = "grad+second"
-                wf.connect([
-                    (mn_inputs, mn_phaseweights, [('phase', 'phase')]),
+                    (n_inputs, mn_phaseweights, [('magnitude', 'magnitude')])
                 ])
 
         # do threshold masking if necessary
@@ -71,11 +69,11 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
 
             if run_args.masking_input == 'phase':    
                 wf.connect([
-                    (mn_phaseweights, n_threshold_masking, [('out_file', 'in_files')])
+                    (mn_phaseweights, n_threshold_masking, [('quality_map', 'in_files')])
                 ])
             elif run_args.masking_input == 'magnitude':
                 wf.connect([
-                    (mn_inputs, n_threshold_masking, [('magnitude', 'in_files')])
+                    (n_inputs, n_threshold_masking, [('magnitude', 'in_files')])
                 ])
             if not run_args.add_bet:
                 wf.connect([
@@ -101,14 +99,14 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                     name='func_get-first'
                 )
                 wf.connect([
-                    (mn_inputs, n_getfirst, [('magnitude', 'magnitude')])
+                    (n_inputs, n_getfirst, [('magnitude', 'magnitude')])
                 ])
                 wf.connect([
                     (n_getfirst, mn_bet, [('magnitude_file', 'in_file')])
                 ])
             else:
                 wf.connect([
-                    (mn_inputs, mn_bet, [('magnitude', 'in_file')])
+                    (n_inputs, mn_bet, [('magnitude', 'in_file')])
                 ])
 
             # add bet if necessary
@@ -133,15 +131,15 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
     # outputs
     if mask_files:
         wf.connect([
-            (mn_inputs, mn_outputs, [('mask', 'masks')]),
+            (n_inputs, n_outputs, [('mask', 'masks')]),
         ])
     else:
         wf.connect([
-            (mn_erode, mn_outputs, [('out_file', 'masks')]),
+            (mn_erode, n_outputs, [('out_file', 'masks')]),
         ])
         if run_args.masking_algorithm == 'threshold':
             wf.connect([
-                (n_threshold_masking, mn_outputs, [('threshold', 'threshold')])
+                (n_threshold_masking, n_outputs, [('threshold', 'threshold')])
             ])
 
     return wf
