@@ -212,7 +212,7 @@ def init_run_workflow(run_args, subject, session, run):
     n_json_params = Node(
         interface=Function(
             input_names=['params_files'],
-            output_names=['MagneticFieldStrength'],
+            output_names=['b0_strength'],
             function=read_json_se
         ),
         iterfield=['params_file'],
@@ -396,7 +396,7 @@ def init_run_workflow(run_args, subject, session, run):
         (n_inputs_combine, wf_qsm, [('magnitude', 'qsm_inputs.magnitude')]),
         (wf_masking, wf_qsm, [('masking_outputs.masks', 'qsm_inputs.mask')]),
         (n_inputs_combine, wf_qsm, [('TE', 'qsm_inputs.TE')]),
-        (n_json_params, wf_qsm, [('MagneticFieldStrength', 'qsm_inputs.b0_strength')]),
+        (n_json_params, wf_qsm, [('b0_strength', 'qsm_inputs.b0_strength')]),
         (n_nii_params, wf_qsm, [('vsz', 'qsm_inputs.vsz')])
     ])
     wf_qsm.get_node('qsm_inputs').inputs.b0_direction = "(0,0,1)"
@@ -417,11 +417,13 @@ def init_run_workflow(run_args, subject, session, run):
         wf_masking_intermediate = masking_workflow(run_args, mask_files, len(magnitude_files) > 0, fill_masks=False, add_bet=False, name="mask-intermediate", index=1)
         wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate")
         wf.connect([
-            (wf_masking, wf_qsm_intermediate, [('masking_inputs.phase_files', 'qsm_inputs.phase')]),
-            (wf_masking, wf_qsm_intermediate, [('masking_inputs.magnitude_files', 'qsm_inputs.magnitude')]),
+            (n_inputs_combine, wf_qsm_intermediate, [('phase', 'qsm_inputs.phase')]),
+            (n_inputs_combine, wf_qsm_intermediate, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
+            (n_inputs_combine, wf_qsm_intermediate, [('frequency', 'qsm_inputs.frequency')]),
+            (n_inputs_combine, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
             (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.masks', 'qsm_inputs.mask')]),
             (mn_json_params, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
-            (n_json_params, wf_qsm_intermediate, [('MagneticFieldStrength', 'qsm_inputs.b0_strength')]),
+            (n_json_params, wf_qsm_intermediate, [('b0_strength', 'qsm_inputs.b0_strength')]),
             (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')])
         ])
         wf_qsm_intermediate.get_node('qsm_inputs').inputs.b0_direction = "(0,0,1)"
