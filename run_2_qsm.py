@@ -366,7 +366,7 @@ def init_run_workflow(run_args, subject, session, run):
             ])
     
     wf.connect([
-        (wf_masking, n_outputs, [('masking_outputs.masks', 'masks')])
+        (wf_masking, n_outputs, [('masking_outputs.mask', 'mask')])
     ])
 
     # add threshold to json output
@@ -394,7 +394,7 @@ def init_run_workflow(run_args, subject, session, run):
         (n_inputs_combine, wf_qsm, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
         (n_inputs_combine, wf_qsm, [('frequency', 'qsm_inputs.frequency')]),
         (n_inputs_combine, wf_qsm, [('magnitude', 'qsm_inputs.magnitude')]),
-        (wf_masking, wf_qsm, [('masking_outputs.masks', 'qsm_inputs.mask')]),
+        (wf_masking, wf_qsm, [('masking_outputs.mask', 'qsm_inputs.mask')]),
         (n_inputs_combine, wf_qsm, [('TE', 'qsm_inputs.TE')]),
         (n_json_params, wf_qsm, [('b0_strength', 'qsm_inputs.b0_strength')]),
         (n_nii_params, wf_qsm, [('vsz', 'qsm_inputs.vsz')])
@@ -427,7 +427,7 @@ def init_run_workflow(run_args, subject, session, run):
             (n_inputs_combine, wf_qsm_intermediate, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
             (n_inputs_combine, wf_qsm_intermediate, [('frequency', 'qsm_inputs.frequency')]),
             (n_inputs_combine, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
-            (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.masks', 'qsm_inputs.mask')]),
+            (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.mask', 'qsm_inputs.mask')]),
             (mn_json_params, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
             (n_json_params, wf_qsm_intermediate, [('b0_strength', 'qsm_inputs.b0_strength')]),
             (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')])
@@ -442,7 +442,7 @@ def init_run_workflow(run_args, subject, session, run):
         )
         wf.connect([
             (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file1')]),
-            (wf_masking_intermediate, mn_qsm_twopass, [('masking_outputs.masks', 'in_mask')]),
+            (wf_masking_intermediate, mn_qsm_twopass, [('masking_outputs.mask', 'in_mask')]),
             (wf_qsm, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file2')])
         ])
 
