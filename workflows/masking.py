@@ -20,7 +20,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
 
     n_outputs = Node(
         interface=IdentityInterface(
-            fields=['masks', 'threshold']
+            fields=['mask', 'threshold']
         ),
         name='masking_outputs'
     )
@@ -77,7 +77,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 ])
             if not run_args.add_bet:
                 wf.connect([
-                    (n_threshold_masking, mn_erode, [('masks', 'in_file')])
+                    (n_threshold_masking, mn_erode, [('mask', 'in_file')])
                 ])
 
         # run bet if necessary
@@ -89,11 +89,11 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 # output: 'mask_file'
             )
             if run_args.masking_algorithm == 'bet-firstecho':
-                def get_first(magnitude_files): return [magnitude_files[0] for f in magnitude_files]
+                def get_first(magnitude): return [magnitude[0] for f in magnitude]
                 n_getfirst = Node(
                     interface=Function(
                         input_names=['magnitude'],
-                        output_names=['magnitude_file'],
+                        output_names=['magnitude'],
                         function=get_first
                     ),
                     name='func_get-first'
@@ -102,7 +102,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                     (n_inputs, n_getfirst, [('magnitude', 'magnitude')])
                 ])
                 wf.connect([
-                    (n_getfirst, mn_bet, [('magnitude_file', 'in_file')])
+                    (n_getfirst, mn_bet, [('magnitude', 'in_file')])
                 ])
             else:
                 wf.connect([
@@ -117,25 +117,25 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                     iterfield=['in_file1', 'in_file2'],
                 )
                 wf.connect([
-                    (n_threshold_masking, mn_mask_plus_bet, [('masks', 'in_file1')]),
-                    (mn_bet, mn_mask_plus_bet, [('mask_file', 'in_file2')])
+                    (n_threshold_masking, mn_mask_plus_bet, [('mask', 'in_file1')]),
+                    (mn_bet, mn_mask_plus_bet, [('mask', 'in_file2')])
                 ])
                 wf.connect([
                     (mn_mask_plus_bet, mn_erode, [('out_file', 'in_file')])
                 ])
             else:
                 wf.connect([
-                    (mn_bet, mn_erode, [('mask_file', 'in_file')])
+                    (mn_bet, mn_erode, [('mask', 'in_file')])
                 ])
 
     # outputs
     if mask_files:
         wf.connect([
-            (n_inputs, n_outputs, [('mask', 'masks')]),
+            (n_inputs, n_outputs, [('mask', 'mask')]),
         ])
     else:
         wf.connect([
-            (mn_erode, n_outputs, [('out_file', 'masks')]),
+            (mn_erode, n_outputs, [('out_file', 'mask')]),
         ])
         if run_args.masking_algorithm == 'threshold':
             wf.connect([

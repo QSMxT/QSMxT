@@ -31,7 +31,7 @@ class Bet2InputSpec(CommandLineInputSpec):
 
 class Bet2OutputSpec(TraitedSpec):
     out_file = File(exists=True)
-    mask_file = File(exists=True)
+    mask = File(exists=True)
 
 
 class Bet2Interface(CommandLine):

@@ -115,8 +115,7 @@ class MaskingInputSpec(BaseInterfaceInputSpec):
 
 
 class MaskingOutputSpec(TraitedSpec):
-    masks = OutputMultiPath(File(exists=False))
-    masks_filled = OutputMultiPath(File(exists=False))
+    mask = OutputMultiPath(File(exists=False))
     threshold = traits.List()
 
 
@@ -125,7 +124,7 @@ class MaskingInterface(SimpleInterface):
     output_spec = MaskingOutputSpec
 
     def _run_interface(self, runtime):
-        masks, threshold = threshold_masking(
+        mask, threshold = threshold_masking(
             in_files=self.inputs.in_files,
             user_threshold=self.inputs.threshold,
             threshold_algorithm=self.inputs.threshold_algorithm,
@@ -134,7 +133,7 @@ class MaskingInterface(SimpleInterface):
             mask_suffix=f"_{self.inputs.mask_suffix}",
             fill_masks=self.inputs.fill_masks,
         )
-        self._results['masks'] = masks
+        self._results['mask'] = mask
         self._results['threshold'] = threshold
         return runtime
 
