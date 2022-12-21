@@ -22,7 +22,7 @@ def create_logger(log_dir):
     os.makedirs(log_dir, exist_ok=True)
     return make_logger(
         logpath=os.path.join(log_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
-        printlevel=LogLevel.DEBUG.value,
+        printlevel=LogLevel.DEBUG,
         writelevel=LogLevel.INFO,
         warnlevel=LogLevel.WARNING,
         errorlevel=LogLevel.ERROR
