@@ -54,7 +54,7 @@ class QSMappingInterface(CommandLine):
         outputs = self.output_spec().get()
         
         # TGV-QSM doesn't output files in the current directory for some reason, so we should move it
-        outfile_original = f"{self.inputs.phase_file.split('.')[0]}{self.inputs.out_suffix}_000.nii.gz"
+        outfile_original = f"{self.inputs.phase.split('.')[0]}{self.inputs.out_suffix}_000.nii.gz"
         outfile_final = os.path.abspath(os.path.split(outfile_original)[1]).replace("_000.nii.gz", ".nii.gz")
         if not os.path.exists(outfile_final):
             shutil.move(outfile_original, outfile_final)

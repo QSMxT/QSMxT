@@ -168,7 +168,7 @@ def qsm_workflow(run_args, name):
                 out_suffix='_tgv',
                 extra_arguments='--ignore-orientation --no-resampling'
             ),
-            iterfield=['phase_file', 'TE', 'mask_file'],
+            iterfield=['phase', 'TE', 'mask'],
             name='tgv',
             mem_gb=6
         )
@@ -177,18 +177,18 @@ def qsm_workflow(run_args, name):
             'overwrite': True
         }
         wf.connect([
-            (n_inputs, mn_qsm, [('mask', 'mask_file')]),
+            (n_inputs, mn_qsm, [('mask', 'mask')]),
             (n_inputs, mn_qsm, [('TE', 'TE')]),
             (n_inputs, mn_qsm, [('b0_strength', 'b0_strength')]),
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
         if run_args.unwrapping_algorithm:
             wf.connect([
-                (n_unwrapping, mn_qsm, [('phase_unwrapped', 'phase_file')])
+                (n_unwrapping, mn_qsm, [('phase_unwrapped', 'phase')])
             ])
         else:
             wf.connect([
-                (n_inputs, mn_qsm, [('phase', 'phase_file')])
+                (n_inputs, mn_qsm, [('phase', 'phase')])
             ])
 
     
