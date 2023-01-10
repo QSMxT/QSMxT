@@ -8,6 +8,8 @@ def nonzero_average(in_files, save_result=True):
     import nibabel as nib
     import numpy as np
 
+    if len(in_files) == 1: return in_files[0]
+
     data = []
     for in_nii_file in in_files:
         in_nii = nib.load(in_nii_file)

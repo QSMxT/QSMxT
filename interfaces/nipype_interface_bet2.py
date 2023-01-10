@@ -15,7 +15,7 @@ class Bet2InputSpec(CommandLineInputSpec):
         position=1,
         exists=False
     )
-    mask_file = File(
+    mask = File(
         argstr="-m %s",
         name_source=['in_file'],
         name_template='%s_bet-mask.nii.gz',
@@ -31,7 +31,7 @@ class Bet2InputSpec(CommandLineInputSpec):
 
 class Bet2OutputSpec(TraitedSpec):
     out_file = File(exists=True)
-    mask_file = File(exists=True)
+    mask = File(exists=True)
 
 
 class Bet2Interface(CommandLine):

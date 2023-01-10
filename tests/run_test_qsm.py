@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env pytest
 import os
 import osfclient
 import cloudstor
@@ -22,7 +22,7 @@ def create_logger(log_dir):
     os.makedirs(log_dir, exist_ok=True)
     return make_logger(
         logpath=os.path.join(log_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
-        printlevel=LogLevel.INFO,
+        printlevel=LogLevel.DEBUG,
         writelevel=LogLevel.INFO,
         warnlevel=LogLevel.WARNING,
         errorlevel=LogLevel.ERROR
@@ -153,21 +153,28 @@ def print_metrics(name, bids_path, qsm_path):
 
 def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=False):
     assert(not (run_workflow == True and init_workflow == False))
-    create_logger(args.output_dir)
+    logger = create_logger(args.output_dir)
+    logger.log(LogLevel.DEBUG.value, f"WORKFLOW DETAILS: {args}")
     if init_workflow:
+        logger.log(LogLevel.DEBUG.value, f"Initialising workflow...")
         wf = qsm.init_workflow(args)
     if init_workflow and run_workflow:
         qsm.set_env_variables(args)
         if run_args:
+            logger.log(LogLevel.DEBUG.value, f"Updating args with run_args: {run_args}")
             args_dict = vars(args)
             for key, value in run_args.items():
                 args_dict[key] = value
+            logger.log(LogLevel.DEBUG.value, f"Initialising workflow with updated args...")
             wf = qsm.init_workflow(args)
+        logger.log(LogLevel.DEBUG.value, f"Saving args to {os.path.join(args.output_dir, 'args.txt')}...")
         args_file = open(os.path.join(args.output_dir, "args.txt"), 'w')
         args_file.write(str(args))
         args_file.close()
-        wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})            
+        logger.log(LogLevel.DEBUG.value, f"Running workflow!")
+        wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
         if delete_workflow:
+            logger.log(LogLevel.DEBUG.value, f"Deleting workflow folder {os.path.join(args.output_dir, 'workflow_qsm')}")
             shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"), ignore_errors=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
@@ -185,15 +192,15 @@ def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.unwrapping_algorithm == "romeo")
     assert(args.masking_algorithm == "threshold")
     assert(args.masking_input == "phase")
-    assert(args.threshold_value == None)
+    assert(args.threshold_value == [None, None])
     assert(args.threshold_algorithm == 'otsu')
     assert(args.filling_algorithm == 'both')
-    assert(args.threshold_algorithm_factor == 1.25)
-    assert(args.mask_erosions == 1)
+    assert(args.threshold_algorithm_factor == [1.25, 1.25])
+    assert(args.mask_erosions == [1, 1])
     assert(args.inhomogeneity_correction == False)
     assert(args.add_bet == False)
     assert(args.use_existing_masks == False)
-    assert(args.two_pass == False)
+    assert(args.two_pass == True)
     assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     assert(0 < args.process_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
@@ -259,11 +266,11 @@ def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.qsm_algorithm == "tgv")
     assert(args.masking_algorithm == "threshold")
     assert(args.masking_input == "phase")
-    assert(args.threshold_value == None)
+    assert(args.threshold_value == [None, None])
     assert(args.threshold_algorithm == 'otsu')
     assert(args.filling_algorithm == 'both')
-    assert(args.threshold_algorithm_factor == 1.25)
-    assert(args.mask_erosions == 1)
+    assert(args.threshold_algorithm_factor == [1.25, 1.25])
+    assert(args.mask_erosions == [1, 1])
     assert(args.inhomogeneity_correction == False)
     assert(args.add_bet == False)
     assert(args.use_existing_masks == False)
@@ -438,11 +445,11 @@ def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
     
     assert(args.masking_algorithm == "threshold")
     assert(args.masking_input == "phase")
-    assert(args.threshold_value == None)
+    assert(args.threshold_value == [None, None])
     assert(args.threshold_algorithm == 'otsu')
     assert(args.filling_algorithm == 'both')
-    assert(args.threshold_algorithm_factor == 1.25)
-    assert(args.mask_erosions == 1)
+    assert(args.threshold_algorithm_factor == [1.25, 1.25])
+    assert(args.mask_erosions == [1, 1])
     assert(args.inhomogeneity_correction == False)
     assert(args.add_bet == False)
     assert(args.use_existing_masks == True)
@@ -450,13 +457,13 @@ def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, False, { 'num_echoes' : 1 })
 ])
 def test_two_pass(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--two_pass"
+        "--two_pass", "on"
     ]))
     
     assert(args.two_pass == True)

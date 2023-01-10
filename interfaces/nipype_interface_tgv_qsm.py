@@ -13,11 +13,11 @@ THREAD_CONTROL_VARIABLE = "OMP_NUM_THREADS"
 
 
 class QSMappingInputSpec(CommandLineInputSpec):
-    phase_file = File(exists=True, desc='Phase image', mandatory=True, argstr="-p %s")
-    mask_file = InputMultiPath(exists=True, desc='Image mask', mandatory=True, argstr="-m %s")
+    phase = File(exists=True, desc='Phase image', mandatory=True, argstr="-p %s")
+    mask = InputMultiPath(exists=True, desc='Image mask', mandatory=True, argstr="-m %s")
     num_threads = traits.Int(-1, usedefault=True, nohash=True, desc="Number of threads to use, by default $NCPUS")
     TE = traits.Float(desc='Echo Time [sec]', mandatory=True, argstr="-t %f")
-    b0 = traits.Float(desc='Field Strength [Tesla]', mandatory=True, argstr="-f %f")
+    b0_strength = traits.Float(desc='Field Strength [Tesla]', mandatory=True, argstr="-f %f")
     extra_arguments = traits.String(desc='Add extra arguments. E.G. --ignore-orientation --no-resampling will ignore orientation of files and do no resampling (for cases where resampling in tgv_qsm fails)',
                                argstr="%s")
     # Only support of one alpha here!
@@ -31,7 +31,7 @@ class QSMappingInputSpec(CommandLineInputSpec):
 
 
 class QSMappingOutputSpec(TraitedSpec):
-    out_file = File(desc='Computed susceptibility map')
+    qsm = File(desc='Computed susceptibility map')
 
 
 class QSMappingInterface(CommandLine):
@@ -54,12 +54,12 @@ class QSMappingInterface(CommandLine):
         outputs = self.output_spec().get()
         
         # TGV-QSM doesn't output files in the current directory for some reason, so we should move it
-        outfile_original = f"{self.inputs.phase_file.split('.')[0]}{self.inputs.out_suffix}_000.nii.gz"
+        outfile_original = f"{self.inputs.phase.split('.')[0]}{self.inputs.out_suffix}_000.nii.gz"
         outfile_final = os.path.abspath(os.path.split(outfile_original)[1]).replace("_000.nii.gz", ".nii.gz")
         if not os.path.exists(outfile_final):
             shutil.move(outfile_original, outfile_final)
         
-        outputs['out_file'] = outfile_final
+        outputs['qsm'] = outfile_final
         return outputs
 
     def _num_threads_update(self):

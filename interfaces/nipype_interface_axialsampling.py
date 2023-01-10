@@ -102,16 +102,16 @@ def resample_like(in_file, in_like, interpolation='continuous'):
 
 
 class AxialSamplingInputSpec(BaseInterfaceInputSpec):
-    in_mag = File(mandatory=True, exists=True)
-    in_pha = File(mandatory=True, exists=True)
-    in_mask = File(mandatory=False, exists=True)
+    magnitude = File(mandatory=True, exists=True)
+    phase = File(mandatory=True, exists=True)
+    mask = File(mandatory=False, exists=True)
     obliquity_threshold = traits.Float(mandatory=False)
 
 
 class AxialSamplingOutputSpec(TraitedSpec):
-    out_mag = File(exists=True)
-    out_pha = File(exists=True)
-    out_mask = File(mandatory=False)
+    magnitude = File(exists=True)
+    phase = File(exists=True)
+    mask = File(mandatory=False)
 
 
 class AxialSamplingInterface(SimpleInterface):
@@ -119,15 +119,15 @@ class AxialSamplingInterface(SimpleInterface):
     output_spec = AxialSamplingOutputSpec
 
     def _run_interface(self, runtime):
-        out_mag, out_pha, out_mask = resample_files(
-            mag_file=self.inputs.in_mag,
-            pha_file=self.inputs.in_pha,
-            mask_file=self.inputs.in_mask,
+        magnitude, phase, mask = resample_files(
+            mag_file=self.inputs.magnitude,
+            pha_file=self.inputs.phase,
+            mask_file=self.inputs.mask,
             obliquity_threshold=self.inputs.obliquity_threshold
         )
-        self._results['out_mag'] = out_mag
-        self._results['out_pha'] = out_pha
-        self._results['out_mask'] = out_mask
+        self._results['magnitude'] = magnitude
+        self._results['phase'] = phase
+        self._results['mask'] = mask
         
         return runtime
 

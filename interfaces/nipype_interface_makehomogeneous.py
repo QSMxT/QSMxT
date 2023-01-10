@@ -3,22 +3,22 @@ from scripts import qsmxt_functions
 import os
 
 class MakeHomogeneousInputSpec(CommandLineInputSpec):
-    in_file = File(
+    magnitude = File(
         exists=True,
         mandatory=True,
         argstr="%s",
         position=0
     )
-    out_file = File(
+    magnitude_corrected = File(
         argstr="%s",
-        name_source=['in_file'],
+        name_source=['magnitude'],
         name_template='%s_makehomogeneous.nii',
         position=1
     )
 
 
 class MakeHomogeneousOutputSpec(TraitedSpec):
-    out_file = File()
+    magnitude_corrected = File()
 
 
 class MakeHomogeneousInterface(CommandLine):

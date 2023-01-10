@@ -1,8 +1,5 @@
 import logging as _logging
-from nipype import logging as _np_logging
-import json as _json
 from enum import Enum
-from nipype.pipeline.engine import MapNode
 
 class LogLevel(Enum):
     CRITICAL = 50
@@ -97,45 +94,4 @@ def show_warning_summary(logger):
         logger.log(LogLevel.INFO.value, "Process completed with warnings. Some runs may have been skipped.")
     if logger.handlers[2].stream.items:
         logger.log(LogLevel.INFO.value, "Errors occurred - outputs may not be usable.")
-
-def log_nodes_cb(node, status):
-    """Function to record node run statistics to a log file as json
-    dictionaries
-
-    Parameters
-    ----------
-    node : nipype.pipeline.engine.Node
-        the node being logged
-    status : string
-        acceptable values are 'start', 'end'; otherwise it is
-        considered and error
-
-    Returns
-    -------
-    None
-        this function does not return any values, it logs the node
-        status info to the callback logger
-    """
-    if status != "end":
-        return
-    if isinstance(node, MapNode):
-        return
-
-    status_dict = {
-        "name": node.name,
-        "id": node._id,
-        "start": getattr(node.result.runtime, "startTime"),
-        "finish": getattr(node.result.runtime, "endTime"),
-        "duration": getattr(node.result.runtime, "duration"),
-        "runtime_threads": getattr(node.result.runtime, "cpu_percent", "N/A"),
-        "runtime_memory_gb": getattr(node.result.runtime, "mem_peak_gb", "N/A"),
-        "estimated_memory_gb": node.mem_gb,
-        "num_threads": node.n_procs,
-    }
-
-    if status_dict["start"] is None or status_dict["finish"] is None:
-        status_dict["error"] = True
-
-    # Dump string to log
-    _np_logging.getLogger("callback").debug(_json.dumps(status_dict))
 
