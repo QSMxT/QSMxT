@@ -99,7 +99,7 @@ def qsm_workflow(run_args, name):
             iterfield=['tissue_frequency', 'mask'],
             name='bf-removal'
         )
-        if True:
+        if run_args.bf_algorithm == 'vsharp':
             mn_vsharp = MapNode(
                 interface=qsmjl.VsharpInterface(),
                 iterfield=['frequency', 'mask'],
@@ -114,7 +114,7 @@ def qsm_workflow(run_args, name):
                 (mn_vsharp, mn_bf, [('tissue_frequency', 'tissue_frequency')]),
                 (mn_vsharp, mn_bf, [('vsharp_mask', 'mask')]),
             ])
-        if False:
+        if run_args.bf_algorithm == 'pdf':
             mn_pdf = MapNode(
                 interface=qsmjl.PdfInterface(),
                 iterfield=['frequency', 'mask'],
