@@ -622,7 +622,7 @@ def parse_args(args):
         '--threshold_value',
         type=float,
         nargs='+',
-        default=[None, None],
+        default=[None],
         help='Masking threshold for when --masking_algorithm is set to threshold. Values between 0 and 1'+
              'represent a percentage of the multi-echo input range. Values greater than 1 represent an '+
              'absolute threshold value. Lower values will result in larger masks. If no threshold is '+
@@ -651,7 +651,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--threshold_algorithm_factor',
-        default=[1.25, 1.25],
+        default=[1.25],
         nargs='+',
         type=float,
         help='Factor to multiply the algorithmically-determined threshold by. Larger factors will create '+
@@ -662,7 +662,7 @@ def parse_args(args):
         '--mask_erosions',
         type=int,
         nargs='+',
-        default=[1, 1],
+        default=[1],
         help='Number of erosions applied to masks prior to QSM processing steps. Note that some algorithms '+
              'may erode the mask further (e.g. V-SHARP and TGV-QSM).'
     )

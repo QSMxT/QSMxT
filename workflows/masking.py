@@ -28,7 +28,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
     if not mask_files:
         mn_erode = MapNode(
             interface=erode.ErosionInterface(
-                num_erosions=run_args.mask_erosions[index]
+                num_erosions=run_args.mask_erosions[index % len(run_args.mask_erosions)]
             ),
             iterfield=['in_file'],
             name='scipy_numpy_nibabel_erode'
