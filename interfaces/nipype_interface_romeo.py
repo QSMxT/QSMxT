@@ -26,7 +26,7 @@ class RomeoInputSpec(BaseInterfaceInputSpec):
     phase_unwrapped = File(name_source=['phase'], name_template='%s_romeo.nii.gz', argstr="--output %s")
 
 class RomeoOutputSpec(TraitedSpec):
-    phase_unwrapped = File()
+    phase_unwrapped = File(exists=True)
 
 class RomeoInterface(CommandLine):
     input_spec = RomeoInputSpec

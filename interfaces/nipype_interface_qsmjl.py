@@ -29,7 +29,7 @@ class LaplacianUnwrappingInputSpec(CommandLineInputSpec):
 
 
 class LaplacianUnwrappingOutputSpec(TraitedSpec):
-    phase_unwrapped = File()
+    phase_unwrapped = File(exists=True)
 
 
 class LaplacianUnwrappingInterface(CommandLine):
@@ -68,7 +68,7 @@ class PhaseToFreqInputSpec(CommandLineInputSpec):
 
 
 class PhaseToFreqOutputSpec(TraitedSpec):
-    frequency = File()
+    frequency = File(exists=True)
 
 
 class PhaseToFreqInterface(CommandLine):
@@ -110,8 +110,8 @@ class VsharpInputSpec(CommandLineInputSpec):
 
 
 class VsharpOutputSpec(TraitedSpec):
-    tissue_frequency = File()
-    vsharp_mask = File()
+    tissue_frequency = File(exists=True)
+    vsharp_mask = File(exists=True)
 
 
 class VsharpInterface(CommandLine):
@@ -147,7 +147,7 @@ class PdfInputSpec(CommandLineInputSpec):
 
 
 class PdfOutputSpec(TraitedSpec):
-    tissue_frequency = File()
+    tissue_frequency = File(exists=True)
 
 
 class PdfInterface(CommandLine):
@@ -188,7 +188,7 @@ class RtsQsmInputSpec(CommandLineInputSpec):
 
 
 class RtsQsmOutputSpec(TraitedSpec):
-    qsm = File()
+    qsm = File(exists=True)
 
 
 class RtsQsmInterface(CommandLine):

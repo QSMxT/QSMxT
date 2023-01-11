@@ -58,7 +58,6 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 interface=masking.MaskingInterface(
                     threshold_algorithm=run_args.threshold_algorithm,
                     threshold_algorithm_factor=run_args.threshold_algorithm_factor[index % len(run_args.threshold_algorithm_factor)],
-                    threshold=run_args.threshold_value[index % len(run_args.threshold_value)],
                     fill_masks=fill_masks,
                     mask_suffix=name,
                     filling_algorithm=run_args.filling_algorithm
@@ -66,6 +65,8 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 name='scipy_numpy_nibabel_threshold-masking'
                 # inputs : ['in_files']
             )
+            if run_args.threshold_value[index % len(run_args.threshold_value)]:
+                n_threshold_masking.inputs.threshold = run_args.threshold_value[index % len(run_args.threshold_value)]
 
             if run_args.masking_input == 'phase':    
                 wf.connect([
