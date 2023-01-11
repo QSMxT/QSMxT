@@ -129,6 +129,7 @@ def qsm_workflow(run_args, name):
                 (mn_pdf, mn_bf, [('tissue_frequency', 'tissue_frequency')]),
                 (n_inputs, mn_bf, [('mask', 'mask')]),
             ])
+            mn_pdf.plugin_args = { 'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={run_args.process_threads}:mem=12gb:vmem=12gb' }
 
     # === DIPOLE INVERSION ===
     if run_args.qsm_algorithm == 'nextqsm':
