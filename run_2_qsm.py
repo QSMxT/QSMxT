@@ -740,6 +740,13 @@ def parse_args(args):
         action='store_true',
         help='Enables some nipype settings for debugging.'
     )
+
+    parser.add_argument(
+        '--dry',
+        action='store_true',
+        help='Creates the nipype pipeline using the chosen settings, but does not execute it. Useful for '+
+             'debugging purposes, or for creating a citations file.'
+    )
     
     args = parser.parse_args(args)
     
@@ -912,18 +919,19 @@ if __name__ == "__main__":
     logging.update_logging(config)
 
     # run workflow
-    if args.qsub_account_string:
-        wf.run(
-            plugin='PBSGraph',
-            plugin_args={
-                'qsub_args': f'-A {args.qsub_account_string} -l walltime=00:30:00 -l select=1:ncpus=1:mem=5gb'
-            }
-        )
-    else:
-        wf.run(
-            plugin='MultiProc',
-            plugin_args={ 'n_procs' : args.n_procs }
-        )
+    if not args.dry:
+        if args.qsub_account_string:
+            wf.run(
+                plugin='PBSGraph',
+                plugin_args={
+                    'qsub_args': f'-A {args.qsub_account_string} -l walltime=00:30:00 -l select=1:ncpus=1:mem=5gb'
+                }
+            )
+        else:
+            wf.run(
+                plugin='MultiProc',
+                plugin_args={ 'n_procs' : args.n_procs }
+            )
 
     show_warning_summary(logger)
     logger.log(LogLevel.INFO.value, 'Finished')
