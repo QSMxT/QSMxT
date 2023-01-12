@@ -4,7 +4,7 @@ import os
 import nibabel as nib
 import numpy as np
 from scipy.stats import norm
-from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion, gaussian_filter, binary_opening
+from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion, gaussian_filter, binary_opening, convolve
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath, OutputMultiPath
 from skimage import filters
 
@@ -62,6 +62,7 @@ def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussi
     # do masking
     thresholds = [get_threshold(data) for data in all_float_data]
     masks = [np.array(all_float_data[i] > thresholds[i], dtype=int) for i in range(len(all_float_data))]
+    masks = [fill_small_holes(mask) for mask in masks]
     if fill_masks:
         if filling_algorithm in ['smoothing', 'both']:
             masks = [fill_holes_smoothing(mask) for mask in masks]
@@ -102,7 +103,16 @@ def fill_holes_morphological(mask, fill_strength=0):
         filled_mask = binary_erosion(filled_mask).astype(int)
     return filled_mask
 
-
+def fill_small_holes(mask):
+    mask = mask.copy()
+    kernel = np.array([
+        [[1, 1, 1], [1, 1, 1], [1, 1, 1]],
+        [[1, 1, 1], [1, 0, 1], [1, 1, 1]],
+        [[1, 1, 1], [1, 1, 1], [1, 1, 1]]
+    ])
+    weights = convolve(mask, kernel, mode='constant', cval=0.0)
+    mask[weights >= 27 - 2] = 1
+    return mask
 
 class MaskingInputSpec(BaseInterfaceInputSpec):
     in_files = InputMultiPath(mandatory=True, exists=True)
