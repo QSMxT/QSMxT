@@ -76,7 +76,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 wf.connect([
                     (n_inputs, n_threshold_masking, [('magnitude', 'in_files')])
                 ])
-            if not run_args.add_bet:
+            if not add_bet:
                 wf.connect([
                     (n_threshold_masking, mn_erode, [('mask', 'in_file')])
                 ])
