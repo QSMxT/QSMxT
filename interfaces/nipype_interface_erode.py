@@ -30,7 +30,7 @@ class ErosionInputSpec(BaseInterfaceInputSpec):
 
 
 class ErosionOutputSpec(TraitedSpec):
-    out_file = File(File(exists=True))
+    out_file = File(exists=True)
 
 
 class ErosionInterface(SimpleInterface):
