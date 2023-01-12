@@ -152,16 +152,20 @@ def init_run_workflow(run_args, subject, session, run):
     )
 
     # create json header for this run
+    json_dict = {
+        "QSMxT version" : get_qsmxt_version(),
+        "Run command" : str.join(" ", sys.argv),
+        "Python interpreter" : sys.executable,
+        "Inhomogeneity correction" : run_args.inhomogeneity_correction,
+        "QSM algorithm" : f"{run_args.qsm_algorithm}",
+        "Masking algorithm" : (f"{run_args.masking_algorithm}" + (f" plus BET" if run_args.add_bet else "")) if not mask_files else ("Predefined (one mask)" if len(mask_files) == 1 else "Predefined (multi-echo mask)"),
+        "Two-pass algorithm" : "on" if run_args.two_pass else "off"
+    }
+    if run_args.qsm_algorithm not in ['tgv']: json_dict["Unwrapping algorithm"] = run_args.unwrapping_algorithm
+    if run_args.qsm_algorithm not in ['tgv']: json_dict["BF removal algorithm"] = run_args.bf_algorithm
     n_json = Node(
         interface=json.JsonInterface(
-            in_dict={
-                "QSMxT version" : get_qsmxt_version(),
-                "Run command" : str.join(" ", sys.argv),
-                "Python interpreter" : sys.executable,
-                "Inhomogeneity correction" : run_args.inhomogeneity_correction,
-                "QSM algorithm" : f"{run_args.qsm_algorithm}" + (f" with two-pass algorithm" if run_args.two_pass else ""),
-                "Masking algorithm" : (f"{run_args.masking_algorithm}" + (f" plus BET" if run_args.add_bet else "")) if not mask_files else ("Predefined (one mask)" if len(mask_files) == 1 else "Predefined (multi-echo mask)")
-            },
+            in_dict=json_dict,
             out_file=f"{subject}_{session}_{run}_qsmxt-header.json"
         ),
         name="json_createheader"
@@ -428,7 +432,7 @@ def init_run_workflow(run_args, subject, session, run):
             (n_inputs_combine, wf_qsm_intermediate, [('frequency', 'qsm_inputs.frequency')]),
             (n_inputs_combine, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
             (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.mask', 'qsm_inputs.mask')]),
-            (mn_json_params, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
+            (n_inputs_combine, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
             (n_json_params, wf_qsm_intermediate, [('b0_strength', 'qsm_inputs.b0_strength')]),
             (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')])
         ])
