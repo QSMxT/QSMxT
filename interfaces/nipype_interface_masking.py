@@ -52,7 +52,7 @@ def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussi
             else:
                 threshold = filters.threshold_otsu(image_histogram)
             threshold *= threshold_algorithm_factor
-        elif type(user_threshold) == int: # user-defined absolute threshold
+        elif round(user_threshold) == user_threshold: # user-defined absolute threshold
             threshold = user_threshold
         else: # user-defined percentage threshold
             data_range = np.max(np.array(all_float_data)) - np.min(np.array(all_float_data))
