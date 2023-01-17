@@ -807,9 +807,6 @@ def process_args(args):
     if not args.n_procs:
         args.n_procs = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
 
-    # set number of concurrent threads for specific programs
-    args.process_threads = args.n_procs if not args.qsub_account_string else 6
-
     # debug options
     if args.debug:
         from nipype import config
@@ -834,7 +831,7 @@ def set_env_variables(args):
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + get_qsmxt_dir()
     else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
 
-    #os.environ["JULIA_NUM_THREADS"] = str(args.process_threads)
+    #os.environ["JULIA_NUM_THREADS"] = str(args.max_process_threads)
 
 def write_references(wf):
     # get all node names
@@ -932,9 +929,14 @@ if __name__ == "__main__":
                 }
             )
         else:
+            plugin_args = { 'n_procs' : args.n_procs, 'memory_gb' : }
+            if os.environ.get("PBS_JOBID"):
+                jobid = os.environ.get("PBS_JOBID").split("=")[1].split(".")[0]
+                plugin_args['memory_gb'] = float(sys_cmd(f"qstat -f {jobid} | grep Resource_List.mem").split(" = ")[1].split("gb")[0])
+                print(plugin_args)
             wf.run(
                 plugin='MultiProc',
-                plugin_args={ 'n_procs' : args.n_procs }
+                plugin_args=plugin_args
             )
 
     show_warning_summary(logger)
