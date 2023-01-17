@@ -666,7 +666,7 @@ def parse_args(args):
         '--mask_erosions',
         type=int,
         nargs='+',
-        default=[1],
+        default=[1, 0],
         help='Number of erosions applied to masks prior to QSM processing steps. Note that some algorithms '+
              'may erode the mask further (e.g. V-SHARP and TGV-QSM).'
     )
