@@ -12,6 +12,7 @@ from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype import config, logging
 from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir
+from scripts.sys_cmd import sys_cmd
 from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logger
 
 from interfaces import nipype_interface_romeo as romeo
@@ -932,9 +933,14 @@ if __name__ == "__main__":
                 }
             )
         else:
+            plugin_args = { 'n_procs' : args.n_procs }
+            if os.environ.get("PBS_JOBID"):
+                jobid = os.environ.get("PBS_JOBID").split(".")[0]
+                plugin_args['memory_gb'] = float(sys_cmd(f"qstat -f {jobid} | grep Resource_List.mem", print_output=False, print_command=False).split(" = ")[1].split("gb")[0])
+                print(plugin_args)
             wf.run(
                 plugin='MultiProc',
-                plugin_args={ 'n_procs' : args.n_procs }
+                plugin_args=plugin_args
             )
 
     show_warning_summary(logger)
