@@ -21,10 +21,10 @@ class CommandLineJulia(CommandLine):
         self._num_threads = self.inputs.num_threads
         if self.inputs.num_threads == -1:
             print(f"SETTING TO $NCPUS ({os.environ.get('NCPUS')})")
-            self.inputs.environ.update({ "JULIA_NUM_THREADS" : "$NCPUS" })
+            self.inputs.environ.update({ "JULIA_NUM_THREADS" : "$NCPUS", "JULIA_CPU_THREADS" : "$NCPUS" })
         else:
             print(f"SETTING TO INPUTS.NUM_THREADS ({self.inputs.num_threads})")
-            self.inputs.environ.update({ "JULIA_NUM_THREADS" : f"{self.inputs.num_threads}" })
+            self.inputs.environ.update({ "JULIA_NUM_THREADS" : f"{self.inputs.num_threads}", "JULIA_CPU_THREADS" : "$NCPUS" })
 
 class LaplacianUnwrappingInputSpec(CommandLineInputSpecJulia):
     def __init__(self, **inputs): super(CommandLineInputSpecJulia, self).__init__(**inputs)
