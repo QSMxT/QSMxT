@@ -110,7 +110,7 @@ def init_run_workflow(subject, session, run):
         mem_gb=min(11, psutil.virtual_memory().available/10e8 * 0.9)
     )
     n_fastsurfer.plugin_args = {
-        'qsub_args': f'-A {args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={args.n_procs}:mem=20gb:vmem=20gb',
+        'qsub_args': f'-A {args.pbs} -l walltime=03:00:00 -l select=1:ncpus={args.n_procs}:mem=20gb:vmem=20gb',
         'overwrite': True
     }
 
@@ -330,11 +330,11 @@ if __name__ == "__main__":
         f.write("\n\n")
 
     # run workflow
-    if args.qsub_account_string:
+    if args.pbs:
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': f'-A {args.qsub_account_string} -l walltime=00:50:00 -l select=1:ncpus=1:mem=5gb'
+                'qsub_args': f'-A {args.pbs} -l walltime=00:50:00 -l select=1:ncpus=1:mem=5gb'
             }
         )
     else:

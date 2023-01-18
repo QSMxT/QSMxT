@@ -42,7 +42,7 @@ def tgvqsm_workflow(run_args, phase_file, name="tgvqsm"):
     )
     mn_qsm_filled.estimated_memory_gb = 6
     mn_qsm_filled.plugin_args = {
-        'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={run_args.tgvqsm_threads}:mem=20gb:vmem=20gb',
+        'qsub_args': f'-A {run_args.pbs} -l walltime=03:00:00 -l select=1:ncpus={run_args.tgvqsm_threads}:mem=20gb:vmem=20gb',
         'overwrite': True
     }
     wf.connect([
@@ -95,7 +95,7 @@ def tgvqsm_workflow(run_args, phase_file, name="tgvqsm"):
 
         # args for PBS
         mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={run_args.tgvqsm_threads}:mem=20gb:vmem=20gb',
+            'qsub_args': f'-A {run_args.pbs} -l walltime=03:00:00 -l select=1:ncpus={run_args.tgvqsm_threads}:mem=20gb:vmem=20gb',
             'overwrite': True
         }
 
@@ -207,7 +207,7 @@ def tgvqsm_B0_workflow(run_args, phase_file, name="tgvqsm_B0"):
     )
     mn_qsm_filled.estimated_memory_gb = 6
     mn_qsm_filled.plugin_args = {
-        'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={run_args.tgvqsm_threads}:mem=20gb:vmem=20gb',
+        'qsub_args': f'-A {run_args.pbs} -l walltime=03:00:00 -l select=1:ncpus={run_args.tgvqsm_threads}:mem=20gb:vmem=20gb',
         'overwrite': True
     }
     wf.connect([
@@ -250,7 +250,7 @@ def tgvqsm_B0_workflow(run_args, phase_file, name="tgvqsm_B0"):
 
         # args for PBS
         mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=03:00:00 -l select=1:ncpus={run_args.tgvqsm_threads}:mem=20gb:vmem=20gb',
+            'qsub_args': f'-A {run_args.pbs} -l walltime=03:00:00 -l select=1:ncpus={run_args.tgvqsm_threads}:mem=20gb:vmem=20gb',
             'overwrite': True
         }
 

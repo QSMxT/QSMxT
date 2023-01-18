@@ -56,7 +56,7 @@ def init_workflow(magnitude_images, qsm_images):
     ])
     BeginANTS1 = buildTemplateIteration1.get_node("BeginANTS")
     BeginANTS1.plugin_args = {
-        'qsub_args': f'-A {args.qsub_account_string} -l walltime=04:00:00 -l select=1:ncpus=10:mem=8gb',
+        'qsub_args': f'-A {args.pbs} -l walltime=04:00:00 -l select=1:ncpus=10:mem=8gb',
         'overwrite': True
     }
 
@@ -69,7 +69,7 @@ def init_workflow(magnitude_images, qsm_images):
     ])
     BeginANTS2 = buildTemplateIteration2.get_node("BeginANTS")
     BeginANTS2.plugin_args = {
-        'qsub_args': f'-A {args.qsub_account_string} -l walltime=04:00:00 -l select=1:ncpus=10:mem=8gb',
+        'qsub_args': f'-A {args.pbs} -l walltime=04:00:00 -l select=1:ncpus=10:mem=8gb',
         'overwrite': True
     }
 
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--pbs',
         default=None,
-        dest='qsub_account_string',
+        dest='pbs',
         help='Run the pipeline via PBS and use the argument as the QSUB account string.'
     )
 
@@ -241,11 +241,11 @@ if __name__ == "__main__":
         f.write("\n\n - Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")
         f.write("\n\n")
 
-    if args.qsub_account_string:
+    if args.pbs:
         wf.run(
             plugin='PBSGraph',
             plugin_args={
-                'qsub_args': f'-A {args.qsub_account_string} -l walltime=00:30:00 -l select=1:ncpus=1:mem=5gb'
+                'qsub_args': f'-A {args.pbs} -l walltime=00:30:00 -l select=1:ncpus=1:mem=5gb'
             }
         )
     else:
