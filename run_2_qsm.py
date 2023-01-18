@@ -949,7 +949,7 @@ if __name__ == "__main__":
             wf.run(
                 plugin='PBSGraph',
                 plugin_args={
-                    'qsub_args': f'-A {args.pbs} -l walltime=00:30:00 -l select=1:ncpus=1:mem=5gb'
+                    'qsub_args': f'-A {args.pbs} -N QSMxT -l walltime=00:30:00 -l select=1:ncpus=1:mem=5gb'
                 }
             )
         else:

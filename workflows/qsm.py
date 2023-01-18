@@ -50,7 +50,7 @@ def qsm_workflow(run_args, name):
                 (mn_laplacian, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')])
             ])
             mn_laplacian.plugin_args = {
-                'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={laplacian_threads}:mem=5gb',
+                'qsub_args': f'-A {run_args.pbs} -N Laplacian -l walltime=01:00:00 -l select=1:ncpus={laplacian_threads}:mem=5gb',
                 'overwrite': True
             }
         if run_args.unwrapping_algorithm == 'romeo':
@@ -95,7 +95,7 @@ def qsm_workflow(run_args, name):
                 (mn_phase_to_freq, n_frequency, [('frequency', 'frequency')])
             ])
             mn_phase_to_freq.plugin_args = {
-                'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={phase_to_freq_threads}:mem=5gb',
+                'qsub_args': f'-A {run_args.pbs} -N PhaToFreq -l walltime=01:00:00 -l select=1:ncpus={phase_to_freq_threads}:mem=5gb',
                 'overwrite': True
             }
         else:
@@ -129,7 +129,7 @@ def qsm_workflow(run_args, name):
                 (mn_vsharp, mn_bf, [('vsharp_mask', 'mask')]),
             ])
             mn_vsharp.plugin_args = {
-                'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={vsharp_threads}:mem=5gb',
+                'qsub_args': f'-A {run_args.pbs} -N VSHARP -l walltime=01:00:00 -l select=1:ncpus={vsharp_threads}:mem=5gb',
                 'overwrite': True
             }
         if run_args.bf_algorithm == 'pdf':
@@ -149,7 +149,7 @@ def qsm_workflow(run_args, name):
                 (n_inputs, mn_bf, [('mask', 'mask')]),
             ])
             mn_pdf.plugin_args = {
-                'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={pdf_threads}:mem=8gb',
+                'qsub_args': f'-A {run_args.pbs} -N PDF -l walltime=01:00:00 -l select=1:ncpus={pdf_threads}:mem=8gb',
                 'overwrite': True
             }
 
@@ -184,7 +184,7 @@ def qsm_workflow(run_args, name):
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
         mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={rts_threads}:mem=5gb',
+            'qsub_args': f'-A {run_args.pbs} -N RTS -l walltime=01:00:00 -l select=1:ncpus={rts_threads}:mem=5gb',
             'overwrite': True
         }
     if run_args.qsm_algorithm == 'tgv':
@@ -204,7 +204,7 @@ def qsm_workflow(run_args, name):
             n_procs=tgv_threads
         )
         mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={tgv_threads}:mem=6gb',
+            'qsub_args': f'-A {run_args.pbs} -N TGV -l walltime=01:00:00 -l select=1:ncpus={tgv_threads}:mem=6gb',
             'overwrite': True
         }
         wf.connect([
