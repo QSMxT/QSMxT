@@ -15,7 +15,7 @@ import nipype.interfaces.io as io
 import nipype.pipeline.engine as pe
 
 from scripts.antsBuildTemplate import ANTSTemplateBuildSingleIterationWF
-from scripts.qsmxt_functions import get_qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version, get_diff
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 def init_workflow(magnitude_images, qsm_images):
@@ -188,6 +188,13 @@ if __name__ == "__main__":
     logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
+
+    diff = get_diff()
+    if diff:
+        logger.log(LogLevel.WARNING.value, f"Working directory not clean! Writing diff to {os.path.join(args.output_dir, 'diff.txt')}...")
+        diff_file = open("diff.txt", "w")
+        diff_file.write(diff)
+        diff_file.close()
 
     # environment variables for multi-threading
     os.environ["OMP_NUM_THREADS"] = "6"

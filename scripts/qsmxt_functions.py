@@ -13,7 +13,6 @@ def get_qsmxt_version():
     return f"{version} (commit date: {date})"
 
 def get_container_version(check_path=True):
-
     if os.environ.get('SINGULARITY_NAME') and 'qsmxt' in os.environ.get('SINGULARITY_NAME'):
         return f"{os.environ.get('SINGULARITY_NAME')} (singularity)"
     if os.path.exists("/README.md"):
@@ -27,4 +26,9 @@ def get_container_version(check_path=True):
         return sys_cmd("qsmxt_version.py --container_only", print_output=False, print_command=False)
     return "unknown"
     
-    
+def get_diff():
+    this_dir = os.path.dirname(os.path.abspath(__file__))
+    qsmxt_dir = get_qsmxt_dir()
+    diff = sys_cmd(f"git -C {get_qsmxt_dir()} diff", False, False)
+    return f"{diff}\n" if diff else ""
+

@@ -11,7 +11,7 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype import config, logging
-from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir
+from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir, get_diff
 from scripts.sys_cmd import sys_cmd
 from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logger
 
@@ -911,6 +911,14 @@ if __name__ == "__main__":
     logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
+
+    # print diff if needed
+    diff = get_diff()
+    if diff:
+        logger.log(LogLevel.WARNING.value, f"Working directory not clean! Writing diff to {os.path.join(args.output_dir, 'diff.txt')}...")
+        diff_file = open("diff.txt", "w")
+        diff_file.write(diff)
+        diff_file.close()
     
     # process args and make any necessary corrections
     args = process_args(args)
