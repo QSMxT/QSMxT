@@ -10,7 +10,7 @@ import sys
 import pydicom  # pydicom is using the gdcm package for decompression
 import datetime
 
-from scripts.qsmxt_functions import get_qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version, get_diff
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 def empty_dirs(root_dir='.', recursive=True):
@@ -195,6 +195,13 @@ if __name__ == "__main__":
     logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
+
+    diff = get_diff()
+    if diff:
+        logger.log(LogLevel.WARNING.value, f"Working directory not clean! Writing diff to {os.path.join(args.output_dir, 'diff.txt')}...")
+        diff_file = open("diff.txt", "w")
+        diff_file.write(diff)
+        diff_file.close()
 
     with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter

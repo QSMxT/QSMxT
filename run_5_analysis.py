@@ -7,7 +7,7 @@ import os
 import sys
 import datetime
 
-from scripts.qsmxt_functions import get_qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_version, get_diff
 from scripts.logger import LogLevel, make_logger, show_warning_summary
 
 # get labels dictionary by parsing a labels CSV file
@@ -311,6 +311,14 @@ def num_voxels_cut_from_brain(qsm, seg):
 def run_analysis(args):
     check_output_dir(args)
     logger = init_logger(args)
+
+    diff = get_diff()
+    if diff:
+        logger.log(LogLevel.WARNING.value, f"Working directory not clean! Writing diff to {os.path.join(args.output_dir, 'diff.txt')}...")
+        diff_file = open("diff.txt", "w")
+        diff_file.write(diff)
+        diff_file.close()
+    
     write_details_and_citations(args)
 
     calculate_statistics(args, logger)
