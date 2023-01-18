@@ -729,7 +729,14 @@ def parse_args(args):
         '--pbs',
         default=None,
         dest='qsub_account_string',
-        help='Run the pipeline via PBS and use the argument as the QSUB account string.'
+        help='Run the pipeline via PBS and use the argument as the account string.'
+    )
+
+    parser.add_argument(
+        '--slurm',
+        default=None,
+        dest='slurm_account_string',
+        help='Run the pipeline via SLURM and use the argument as the account string.'
     )
 
     parser.add_argument(
@@ -922,6 +929,13 @@ if __name__ == "__main__":
 
     # run workflow
     if not args.dry:
+        if args.slurm_account_string:
+            wf.run(
+                plugin='SLURM',
+                plugin_args={
+                    'sbatch_args': f'--account={args.slurm_account_string} --time=00:30:00 --nodes=1 --ntasks-per-node=1 --mem=5gb'
+                }
+            )
         if args.qsub_account_string:
             wf.run(
                 plugin='PBSGraph',
