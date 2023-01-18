@@ -815,6 +815,9 @@ def process_args(args):
     if not args.n_procs:
         args.n_procs = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
 
+    # determine whether multiproc will be used
+    args.multiproc = not (args.pbs or args.slurm)
+
     # debug options
     if args.debug:
         from nipype import config
@@ -838,8 +841,6 @@ def set_env_variables(args):
     # add this_dir and cwd to pythonpath
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + get_qsmxt_dir()
     else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
-
-    #os.environ["JULIA_NUM_THREADS"] = str(args.max_process_threads)
 
 def write_references(wf):
     # get all node names

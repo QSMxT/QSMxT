@@ -36,12 +36,13 @@ def qsm_workflow(run_args, name):
             name='phase-unwrapping'
         )
         if run_args.unwrapping_algorithm == 'laplacian':
+            laplacian_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
             mn_laplacian = MapNode(
-                interface=qsmjl.LaplacianUnwrappingInterface(num_threads=min(run_args.n_procs, 2)),
+                interface=qsmjl.LaplacianUnwrappingInterface(num_threads=laplacian_threads),
                 iterfield=['phase', 'mask'],
                 name='qsmjl_laplacian-unwrapping',
                 mem_gb=3,
-                n_procs=min(run_args.n_procs, 2)
+                n_procs=laplacian_threads
             )
             wf.connect([
                 (n_inputs, mn_laplacian, [('phase', 'phase')]),
@@ -49,7 +50,7 @@ def qsm_workflow(run_args, name):
                 (mn_laplacian, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')])
             ])
             mn_laplacian.plugin_args = {
-                'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={min(run_args.n_procs, 2)}:mem=3gb',
+                'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={laplacian_threads}:mem=3gb',
                 'overwrite': True
             }
         if run_args.unwrapping_algorithm == 'romeo':
@@ -78,12 +79,13 @@ def qsm_workflow(run_args, name):
     )
     if run_args.qsm_algorithm in ['nextqsm', 'rts']:
         if not run_args.combine_phase:
+            phase_to_freq_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
             mn_phase_to_freq = MapNode(
-                interface=qsmjl.PhaseToFreqInterface(num_threads=min(run_args.n_procs, 2)),
+                interface=qsmjl.PhaseToFreqInterface(num_threads=phase_to_freq_threads),
                 name='qsmjl_phase-to-freq',
                 iterfield=['phase', 'TE'],
                 mem_gb=3,
-                n_procs=min(run_args.n_procs, 2)
+                n_procs=phase_to_freq_threads
             )
             wf.connect([
                 (n_unwrapping, mn_phase_to_freq, [('phase_unwrapped', 'phase')]),
@@ -93,7 +95,7 @@ def qsm_workflow(run_args, name):
                 (mn_phase_to_freq, n_frequency, [('frequency', 'frequency')])
             ])
             mn_phase_to_freq.plugin_args = {
-                'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={min(run_args.n_procs, 2)}:mem=3gb',
+                'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={phase_to_freq_threads}:mem=3gb',
                 'overwrite': True
             }
         else:
@@ -111,11 +113,12 @@ def qsm_workflow(run_args, name):
             name='bf-removal'
         )
         if run_args.bf_algorithm == 'vsharp':
+            vsharp_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
             mn_vsharp = MapNode(
-                interface=qsmjl.VsharpInterface(num_threads=min(run_args.n_procs, 2)),
+                interface=qsmjl.VsharpInterface(num_threads=vsharp_threads),
                 iterfield=['frequency', 'mask'],
                 name='qsmjl_vsharp',
-                n_procs=min(run_args.n_procs, 2),
+                n_procs=vsharp_threads,
                 mem_gb=3
             )
             wf.connect([
@@ -126,16 +129,17 @@ def qsm_workflow(run_args, name):
                 (mn_vsharp, mn_bf, [('vsharp_mask', 'mask')]),
             ])
             mn_vsharp.plugin_args = {
-                'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={min(run_args.n_procs, 2)}:mem=3gb',
+                'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={vsharp_threads}:mem=3gb',
                 'overwrite': True
             }
         if run_args.bf_algorithm == 'pdf':
+            pdf_threads = run_args.n_procs if run_args.multiproc else 8
             mn_pdf = MapNode(
-                interface=qsmjl.PdfInterface(num_threads=4),
+                interface=qsmjl.PdfInterface(num_threads=pdf_threads),
                 iterfield=['frequency', 'mask'],
                 name='qsmjl_pdf',
-                n_procs=4,
-                mem_gb=3
+                n_procs=pdf_threads,
+                mem_gb=5
             )
             wf.connect([
                 (n_frequency, mn_pdf, [('frequency', 'frequency')]),
@@ -145,7 +149,7 @@ def qsm_workflow(run_args, name):
                 (n_inputs, mn_bf, [('mask', 'mask')]),
             ])
             mn_pdf.plugin_args = {
-                'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus=4:mem=3gb',
+                'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={pdf_threads}:mem=8gb',
                 'overwrite': True
             }
 
@@ -163,11 +167,12 @@ def qsm_workflow(run_args, name):
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
     if run_args.qsm_algorithm == 'rts':
+        rts_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
         mn_qsm = MapNode(
-            interface=qsmjl.RtsQsmInterface(num_threads=min(run_args.n_procs, 2), terminal_output="file_split"),
+            interface=qsmjl.RtsQsmInterface(num_threads=rts_threads),
             name='qsmjl_rts',
             iterfield=['tissue_frequency', 'mask'],
-            n_procs=min(run_args.n_procs, 2),
+            n_procs=rts_threads,
             mem_gb=5,
             terminal_output="file_split"
         )
@@ -179,26 +184,27 @@ def qsm_workflow(run_args, name):
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
         mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={min(run_args.n_procs, 2)}:mem=5gb',
+            'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={rts_threads}:mem=5gb',
             'overwrite': True
         }
     if run_args.qsm_algorithm == 'tgv':
+        tgv_threads = min(6, run_args.n_procs) if run_args.multiproc else 6
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
                 iterations=run_args.tgv_iterations,
                 alpha=run_args.tgv_alphas,
                 erosions=run_args.tgv_erosions,
-                num_threads=run_args.process_threads,
+                num_threads=tgv_threads,
                 out_suffix='_tgv',
                 extra_arguments='--ignore-orientation --no-resampling'
             ),
             iterfield=['phase', 'TE', 'mask'],
             name='tgv',
             mem_gb=6,
-            n_procs=min(run_args.n_procs, 6)
+            n_procs=tgv_threads
         )
         mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={min(run_args.n_procs, 6)}:mem=6gb',
+            'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={tgv_threads}:mem=6gb',
             'overwrite': True
         }
         wf.connect([
