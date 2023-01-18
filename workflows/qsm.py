@@ -131,10 +131,10 @@ def qsm_workflow(run_args, name):
             }
         if run_args.bf_algorithm == 'pdf':
             mn_pdf = MapNode(
-                interface=qsmjl.PdfInterface(num_threads=min(run_args.n_procs, 4)),
+                interface=qsmjl.PdfInterface(num_threads=4),
                 iterfield=['frequency', 'mask'],
                 name='qsmjl_pdf',
-                n_procs=min(run_args.n_procs, 4),
+                n_procs=4,
                 mem_gb=3
             )
             wf.connect([
@@ -145,7 +145,7 @@ def qsm_workflow(run_args, name):
                 (n_inputs, mn_bf, [('mask', 'mask')]),
             ])
             mn_pdf.plugin_args = {
-                'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus={min(run_args.n_procs, 4)}:mem=3gb',
+                'qsub_args': f'-A {run_args.qsub_account_string} -l walltime=01:00:00 -l select=1:ncpus=4:mem=3gb',
                 'overwrite': True
             }
 
