@@ -30,5 +30,5 @@ def get_diff():
     this_dir = os.path.dirname(os.path.abspath(__file__))
     qsmxt_dir = get_qsmxt_dir()
     diff = sys_cmd(f"git -C {get_qsmxt_dir()} diff", False, False)
-    return f"{diff}\n"
+    return f"{diff}\n" if diff else ""
 
