@@ -4,11 +4,7 @@ using MriResearchTools
 using ArgParse
 using QSM
 
-if haskey(ENV, "JULIA_NUM_THREADS")
-    println("JULIA_NUM_THREADS: ", ENV["JULIA_NUM_THREADS"])
-else
-    println("JULIA_NUM_THREADS is not defined.")
-end
+QSM.FFTW_NTHREADS[] = nthreads()
 
 s = ArgParseSettings()
 @add_arg_table! s begin

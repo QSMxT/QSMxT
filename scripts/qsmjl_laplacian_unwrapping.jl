@@ -4,6 +4,8 @@ using MriResearchTools
 using ArgParse
 using QSM
 
+QSM.FFTW_NTHREADS[] = nthreads()
+
 s = ArgParseSettings()
 @add_arg_table! s begin
     "--phase"
