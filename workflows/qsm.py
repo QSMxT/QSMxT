@@ -50,7 +50,7 @@ def qsm_workflow(run_args, name):
                 (mn_laplacian, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')])
             ])
             mn_laplacian.plugin_args = {
-                'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={laplacian_threads}:mem=3gb',
+                'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={laplacian_threads}:mem=5gb',
                 'overwrite': True
             }
         if run_args.unwrapping_algorithm == 'romeo':
@@ -95,7 +95,7 @@ def qsm_workflow(run_args, name):
                 (mn_phase_to_freq, n_frequency, [('frequency', 'frequency')])
             ])
             mn_phase_to_freq.plugin_args = {
-                'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={phase_to_freq_threads}:mem=3gb',
+                'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={phase_to_freq_threads}:mem=5gb',
                 'overwrite': True
             }
         else:
@@ -129,7 +129,7 @@ def qsm_workflow(run_args, name):
                 (mn_vsharp, mn_bf, [('vsharp_mask', 'mask')]),
             ])
             mn_vsharp.plugin_args = {
-                'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={vsharp_threads}:mem=3gb',
+                'qsub_args': f'-A {run_args.pbs} -l walltime=01:00:00 -l select=1:ncpus={vsharp_threads}:mem=5gb',
                 'overwrite': True
             }
         if run_args.bf_algorithm == 'pdf':
