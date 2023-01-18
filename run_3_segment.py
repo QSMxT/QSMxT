@@ -228,7 +228,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--pbs',
         default=None,
-        dest='qsub_account_string',
+        dest='pbs',
         help='Run the pipeline via PBS and use the argument as the QSUB account string.'
     )
 
