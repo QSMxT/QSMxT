@@ -141,7 +141,7 @@ bash Miniconda3-4.7.12.1-Linux-x86_64.sh -b
 source ~/.bashrc
 conda create -n qsmxt python=3.8
 conda activate qsmxt
-pip install psutil datetime nipype nibabel nilearn scipy scikit-image pydicom osfclient pytest seaborn git+https://github.com/astewartau/cloudstor.git
+pip install psutil datetime networkx==2.8.8 nipype nibabel nilearn scipy scikit-image pydicom osfclient pytest seaborn git+https://github.com/astewartau/cloudstor.git
 ```
 
 5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
