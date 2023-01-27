@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--qsm_pattern',
-        default=os.path.join('qsm_final', '*', '*'),
+        default=os.path.join('qsm_final', '*.*'),
         help='Pattern used to match QSM images in qsm_dir'
     )
 
