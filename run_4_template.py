@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--qsm_pattern',
-        default=os.path.join('qsm_final', '**', '**'),
+        default=os.path.join('qsm_final', '*', '*'),
         help='Pattern used to match QSM images in qsm_dir'
     )
 
@@ -213,9 +213,9 @@ if __name__ == "__main__":
     # find input images
     magnitude_pattern = os.path.join(args.bids_dir, args.magnitude_pattern.format(subject=args.subject_pattern, session=args.session_pattern, run='*'))
     qsm_pattern = os.path.join(args.qsm_dir, args.qsm_pattern)
-    magnitude_images = sorted(glob.glob(magnitude_pattern, recursive=True))
+    magnitude_images = sorted(glob.glob(magnitude_pattern))
     magnitude_images = [x for x in magnitude_images if 'echo-1' in x or '_T2starw' in x]
-    qsm_images = sorted(glob.glob(qsm_pattern, recursive=True))
+    qsm_images = sorted(glob.glob(qsm_pattern))
 
     if len(magnitude_images) != len(qsm_images):
         print(f"QSMxT: Error: Number of QSM images ({len(qsm_images)}) and magnitude images ({len(magnitude_images)}) do not match.")
