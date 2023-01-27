@@ -121,7 +121,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         '--qsm_pattern',
-        default=os.path.join('qsm_final', '*.nii'),
+        default=os.path.join('qsm_final', '**', '**'),
         help='Pattern used to match QSM images in qsm_dir'
     )
 
@@ -208,14 +208,14 @@ if __name__ == "__main__":
         args.n_procs = max(1, min(int(available_ram_gb / 3), n_cpus))
         if available_ram_gb < 3:
             logger.log(LogLevel.WARNING.value, f"Less than 3 GB of memory available ({available_ram_gb} GB). At least 3 GB is recommended. You may need to close background programs.")
-        logger.log(LogLevel.INFO.value, "Running with", args.n_procs, "processors.")
+        logger.log(LogLevel.INFO.value, f"Running with {args.n_procs} processors.")
 
     # find input images
     magnitude_pattern = os.path.join(args.bids_dir, args.magnitude_pattern.format(subject=args.subject_pattern, session=args.session_pattern, run='*'))
     qsm_pattern = os.path.join(args.qsm_dir, args.qsm_pattern)
-    magnitude_images = sorted(glob.glob(magnitude_pattern))
+    magnitude_images = sorted(glob.glob(magnitude_pattern, recursive=True))
     magnitude_images = [x for x in magnitude_images if 'echo-1' in x or '_T2starw' in x]
-    qsm_images = sorted(glob.glob(qsm_pattern))
+    qsm_images = sorted(glob.glob(qsm_pattern, recursive=True))
 
     if len(magnitude_images) != len(qsm_images):
         print(f"QSMxT: Error: Number of QSM images ({len(qsm_images)}) and magnitude images ({len(magnitude_images)}) do not match.")
