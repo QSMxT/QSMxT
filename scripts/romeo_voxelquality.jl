@@ -44,7 +44,7 @@ end
 if contains(args["type"], "mag_weight")
     weights[5] = true
 end
-voxelquality = romeovoxelquality(phase; weights, optional_args...)
+voxelquality = romeovoxelquality(phase; weights, optional_args...) * 100
 voxelquality[.!isfinite.(voxelquality)] .= 0
 
 savenii(voxelquality, args["output"]; header=header(phase_nii))
