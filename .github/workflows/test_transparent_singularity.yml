@@ -11,6 +11,32 @@ on:
       - run_1_dicomConvert.py
       - run_2_qsm.py
       - run_4_template.py
+      - interfaces/nipype_interface_addtojson.py
+      - interfaces/nipype_interface_axialsampling.py
+      - interfaces/nipype_interface_bet2.py
+      - interfaces/nipype_interface_erode.py
+      - interfaces/nipype_interface_json.py
+      - interfaces/nipype_interface_laplacian_unwrapping.py
+      - interfaces/nipype_interface_makehomogeneous.py
+      - interfaces/nipype_interface_masking.py
+      - interfaces/nipype_interface_nextqsm.py
+      - interfaces/nipype_interface_nonzeroaverage.py
+      - interfaces/nipype_interface_phaseweights.py
+      - interfaces/nipype_interface_romeo.py
+      - interfaces/nipype_interface_scalephase.py
+      - interfaces/nipype_interface_tgv_qsm.py
+      - interfaces/nipype_interface_twopass.py
+      - scripts/makehomogeneous.jl
+      - scripts/qsmjl_full.jl
+      - scripts/qsmjl_laplacian_unwrapping.jl
+      - scripts/qsmjl_pdf.jl
+      - scripts/qsmjl_rts.jl
+      - scripts/qsmjl_tv.jl
+      - scripts/qsmjl.vsharp.jl
+      - scripts/romeo_unwrapping.jl
+      - scripts/romeo_voxelquality.jl
+      - scripts/logger.py
+      - scripts/qsmxt_functions.py
       - .github/workflows/test_transparent_singularity.yml
       - tests/run_test_transparent_singularity.sh
   pull_request:
@@ -21,6 +47,32 @@ on:
       - run_1_dicomConvert.py
       - run_2_qsm.py
       - run_4_template.py
+      - interfaces/nipype_interface_addtojson.py
+      - interfaces/nipype_interface_axialsampling.py
+      - interfaces/nipype_interface_bet2.py
+      - interfaces/nipype_interface_erode.py
+      - interfaces/nipype_interface_json.py
+      - interfaces/nipype_interface_laplacian_unwrapping.py
+      - interfaces/nipype_interface_makehomogeneous.py
+      - interfaces/nipype_interface_masking.py
+      - interfaces/nipype_interface_nextqsm.py
+      - interfaces/nipype_interface_nonzeroaverage.py
+      - interfaces/nipype_interface_phaseweights.py
+      - interfaces/nipype_interface_romeo.py
+      - interfaces/nipype_interface_scalephase.py
+      - interfaces/nipype_interface_tgv_qsm.py
+      - interfaces/nipype_interface_twopass.py
+      - scripts/makehomogeneous.jl
+      - scripts/qsmjl_full.jl
+      - scripts/qsmjl_laplacian_unwrapping.jl
+      - scripts/qsmjl_pdf.jl
+      - scripts/qsmjl_rts.jl
+      - scripts/qsmjl_tv.jl
+      - scripts/qsmjl.vsharp.jl
+      - scripts/romeo_unwrapping.jl
+      - scripts/romeo_voxelquality.jl
+      - scripts/logger.py
+      - scripts/qsmxt_functions.py
       - .github/workflows/test_transparent_singularity.yml
       - tests/run_test_transparent_singularity.sh
     
