@@ -594,9 +594,10 @@ def parse_args(args):
 
     parser.add_argument(
         '--bf_algorithm',
-        default='vsharp',
+        default='pdf',
         choices=['vsharp', 'pdf'],
-        help='TODO' #TODO
+        help='Background field correction algorithm. V-SHARP is based on doi:10.1002/mrm.23000 PDF is '+
+             'based on doi:10.1002/nbm.1670.'
     )
 
     parser.add_argument(
@@ -656,7 +657,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--threshold_algorithm_factor',
-        default=[1.25],
+        default=[1.7, 1.0],
         nargs='+',
         type=float,
         help='Factor to multiply the algorithmically-determined threshold by. Larger factors will create '+
@@ -667,7 +668,7 @@ def parse_args(args):
         '--mask_erosions',
         type=int,
         nargs='+',
-        default=[1, 0],
+        default=[3, 0],
         help='Number of erosions applied to masks prior to QSM processing steps. Note that some algorithms '+
              'may erode the mask further (e.g. V-SHARP and TGV-QSM).'
     )
@@ -714,7 +715,7 @@ def parse_args(args):
     parser.add_argument(
         '--two_pass',
         choices=['on', 'off'],
-        default=None,
+        default='on',
         help='Setting this to \'on\' will perform a QSM reconstruction in a two-stage fashion to reduce '+
              'artefacts; combines the results from two QSM images reconstructed using masks that separate '+
              'more reliable and less reliable phase regions. Note that this option requires threshold-based '+
@@ -789,14 +790,11 @@ def process_args(args):
 
     # default two-pass settings for QSM algorithms
     if not args.two_pass:
-        if args.qsm_algorithm in ['rts']:
+        if args.qsm_algorithm in ['rts', 'tgv']:
             args.two_pass = 'on'
         else:
             args.two_pass = 'off'
     args.two_pass = True if args.two_pass == 'on' else False
-
-    # two-pass not recommended for v-sharp
-    # TODO
 
     # add_bet option only works with non-bet masking methods
     args.add_bet &= 'bet' not in args.masking_algorithm
@@ -828,7 +826,7 @@ def process_args(args):
         config.set('logging', 'workflow_level', 'DEBUG')
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
-    
+
     return args
 
 def set_env_variables(args):
