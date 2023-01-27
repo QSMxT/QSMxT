@@ -192,7 +192,7 @@ if __name__ == "__main__":
     diff = get_diff()
     if diff:
         logger.log(LogLevel.WARNING.value, f"Working directory not clean! Writing diff to {os.path.join(args.output_dir, 'diff.txt')}...")
-        diff_file = open("diff.txt", "w")
+        diff_file = open(os.path.join(args.output_dir, "diff.txt"), "w")
         diff_file.write(diff)
         diff_file.close()
 
