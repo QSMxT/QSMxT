@@ -4,7 +4,7 @@ using MriResearchTools
 using ArgParse
 using QSM
 
-QSM.FFTW_NTHREADS[] = nthreads()
+QSM.FFTW_NTHREADS[] = Threads.nthreads()
 
 s = ArgParseSettings()
 @add_arg_table! s begin
