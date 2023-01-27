@@ -5,11 +5,11 @@ import os
 
 class CommandLineInputSpecJulia(CommandLineInputSpec):
     num_threads = traits.Int(-1, usedefault=True, desc="Number of threads to use, by default $NCPUS")
-    def __init__(self, **inputs): super(CommandLineInputSpec, self).__init__(**inputs)
+    def __init__(self, **inputs): super(CommandLineInputSpecJulia, self).__init__(**inputs)
 
 class CommandLineJulia(CommandLine):
     def __init__(self, **inputs):
-        super(CommandLine, self).__init__(**inputs)
+        super(CommandLineJulia, self).__init__(**inputs)
         self.inputs.on_trait_change(self._num_threads_update, 'num_threads')
 
         if not isdefined(self.inputs.num_threads):
@@ -20,14 +20,12 @@ class CommandLineJulia(CommandLine):
     def _num_threads_update(self):
         self._num_threads = self.inputs.num_threads
         if self.inputs.num_threads == -1:
-            print(f"SETTING TO $NCPUS ({os.environ.get('NCPUS')})")
             self.inputs.environ.update({ "JULIA_NUM_THREADS" : "$NCPUS", "JULIA_CPU_THREADS" : "$NCPUS" })
         else:
-            print(f"SETTING TO INPUTS.NUM_THREADS ({self.inputs.num_threads})")
             self.inputs.environ.update({ "JULIA_NUM_THREADS" : f"{self.inputs.num_threads}", "JULIA_CPU_THREADS" : "$NCPUS" })
 
 class LaplacianUnwrappingInputSpec(CommandLineInputSpecJulia):
-    def __init__(self, **inputs): super(CommandLineInputSpecJulia, self).__init__(**inputs)
+    def __init__(self, **inputs): super(LaplacianUnwrappingInputSpec, self).__init__(**inputs)
     phase = File(
         exists=True,
         mandatory=True,
@@ -58,14 +56,14 @@ class LaplacianUnwrappingOutputSpec(TraitedSpec):
 
 
 class LaplacianUnwrappingInterface(CommandLineJulia):
-    def __init__(self, **inputs): super(CommandLineJulia, self).__init__(**inputs)
+    def __init__(self, **inputs): super(LaplacianUnwrappingInterface, self).__init__(**inputs)
     input_spec = LaplacianUnwrappingInputSpec
     output_spec = LaplacianUnwrappingOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_laplacian_unwrapping.jl")
 
 
 class PhaseToFreqInputSpec(CommandLineInputSpecJulia):
-    def __init__(self, **inputs): super(CommandLineInputSpecJulia, self).__init__(**inputs)
+    def __init__(self, **inputs): super(PhaseToFreqInputSpec, self).__init__(**inputs)
     phase = File(
         exists=True,
         mandatory=True,
@@ -99,14 +97,14 @@ class PhaseToFreqOutputSpec(TraitedSpec):
 
 
 class PhaseToFreqInterface(CommandLineJulia):
-    def __init__(self, **inputs): super(CommandLineJulia, self).__init__(**inputs)
+    def __init__(self, **inputs): super(PhaseToFreqInterface, self).__init__(**inputs)
     input_spec = PhaseToFreqInputSpec
     output_spec = PhaseToFreqOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_phase_to_frequency.jl")
 
 
 class VsharpInputSpec(CommandLineInputSpecJulia):
-    def __init__(self, **inputs): super(CommandLineInputSpecJulia, self).__init__(**inputs)
+    def __init__(self, **inputs): super(VsharpInputSpec, self).__init__(**inputs)
     frequency = File(
         exists=True,
         mandatory=True,
@@ -144,14 +142,14 @@ class VsharpOutputSpec(TraitedSpec):
 
 
 class VsharpInterface(CommandLineJulia):
-    def __init__(self, **inputs): super(CommandLineJulia, self).__init__(**inputs)
+    def __init__(self, **inputs): super(VsharpInterface, self).__init__(**inputs)
     input_spec = VsharpInputSpec
     output_spec = VsharpOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_vsharp.jl")
 
 
 class PdfInputSpec(CommandLineInputSpecJulia):
-    def __init__(self, **inputs): super(CommandLineInputSpecJulia, self).__init__(**inputs)
+    def __init__(self, **inputs): super(PdfInputSpec, self).__init__(**inputs)
     frequency = File(
         exists=True,
         mandatory=True,
@@ -182,14 +180,14 @@ class PdfOutputSpec(TraitedSpec):
 
 
 class PdfInterface(CommandLineJulia):
-    def __init__(self, **inputs): super(CommandLineJulia, self).__init__(**inputs)
+    def __init__(self, **inputs): super(PdfInterface, self).__init__(**inputs)
     input_spec = PdfInputSpec
     output_spec = PdfOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_pdf.jl")
 
 
 class RtsQsmInputSpec(CommandLineInputSpecJulia):
-    def __init__(self, **inputs): super(CommandLineInputSpecJulia, self).__init__(**inputs)
+    def __init__(self, **inputs): super(RtsQsmInputSpec, self).__init__(**inputs)
     tissue_frequency = File(
         exists=True,
         mandatory=True,
@@ -225,7 +223,7 @@ class RtsQsmOutputSpec(TraitedSpec):
 
 
 class RtsQsmInterface(CommandLineJulia):
-    def __init__(self, **inputs): super(CommandLineJulia, self).__init__(**inputs)
+    def __init__(self, **inputs): super(RtsQsmInterface, self).__init__(**inputs)
     input_spec = RtsQsmInputSpec
     output_spec = RtsQsmOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_rts.jl")
