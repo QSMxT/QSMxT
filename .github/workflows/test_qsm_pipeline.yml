@@ -25,6 +25,17 @@ on:
       - interfaces/nipype_interface_scalephase.py
       - interfaces/nipype_interface_tgv_qsm.py
       - interfaces/nipype_interface_twopass.py
+      - scripts/makehomogeneous.jl
+      - scripts/qsmjl_full.jl
+      - scripts/qsmjl_laplacian_unwrapping.jl
+      - scripts/qsmjl_pdf.jl
+      - scripts/qsmjl_rts.jl
+      - scripts/qsmjl_tv.jl
+      - scripts/qsmjl.vsharp.jl
+      - scripts/romeo_unwrapping.jl
+      - scripts/romeo_voxelquality.jl
+      - scripts/logger.py
+      - scripts/qsmxt_functions.py
       - .github/workflows/test_qsm_pipeline.yml
       - tests/run_test_qsm.sh
       - tests/run_test_qsm.py
@@ -50,6 +61,17 @@ on:
       - interfaces/nipype_interface_scalephase.py
       - interfaces/nipype_interface_tgv_qsm.py
       - interfaces/nipype_interface_twopass.py
+      - scripts/makehomogeneous.jl
+      - scripts/qsmjl_full.jl
+      - scripts/qsmjl_laplacian_unwrapping.jl
+      - scripts/qsmjl_pdf.jl
+      - scripts/qsmjl_rts.jl
+      - scripts/qsmjl_tv.jl
+      - scripts/qsmjl.vsharp.jl
+      - scripts/romeo_unwrapping.jl
+      - scripts/romeo_voxelquality.jl
+      - scripts/logger.py
+      - scripts/qsmxt_functions.py
       - .github/workflows/test_qsm_pipeline.yml
       - tests/run_test_qsm.sh
       - tests/run_test_qsm.py
