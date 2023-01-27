@@ -805,7 +805,7 @@ def process_args(args):
 
     # two-pass option does not work with nextqsm or v-sharp
     args.two_pass &= args.qsm_algorithm != 'nextqsm'
-    args.two_pass &= args.bf_algorihtm != 'vsharp'
+    args.two_pass &= args.bf_algorithm != 'vsharp'
 
     # force masking input to magnitude if bet is the masking method
     args.masking_input = 'magnitude' if 'bet' in args.masking_algorithm else args.masking_input
