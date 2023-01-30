@@ -648,7 +648,7 @@ def parse_args(args):
     parser.add_argument(
         '--filling_algorithm',
         default='both',
-        choices=['morphological', 'smoothing', 'both'],
+        choices=['morphological', 'gaussian', 'both'],
         help='Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing '+
              'operation is applied first prior to a morphological hole-filling operation. Note that gaussian '+
              'smoothing may fill some unwanted regions (e.g. connecting the skull and brain tissue), whereas '+

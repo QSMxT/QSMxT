@@ -64,7 +64,7 @@ def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussi
     masks = [np.array(all_float_data[i] > thresholds[i], dtype=int) for i in range(len(all_float_data))]
     masks = [fill_small_holes(mask) for mask in masks]
     if fill_masks:
-        if filling_algorithm in ['smoothing', 'both']:
+        if filling_algorithm in ['gaussian', 'both']:
             masks = [fill_holes_smoothing(mask) for mask in masks]
         if filling_algorithm in ['morphological', 'both']:
             masks = [fill_holes_morphological(mask) for mask in masks]
@@ -182,7 +182,7 @@ if __name__ == "__main__":
     parser.add_argument(
         '--filling_algorithm',
         default='both',
-        choices=['morphological', 'smoothing', 'both', 'none'],
+        choices=['morphological', 'gaussian', 'both', 'none'],
         help='Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing '+
              'operation is applied first prior to a morphological hole-filling operation. Note that gaussian '+
              'smoothing may fill some unwanted regions (e.g. connecting the skull and brain tissue), whereas '+
