@@ -71,12 +71,7 @@ def interactive_arg_editor(args):
             'add_bet' : True
         },
         'bet' : {
-            'combine_phase' : False,
-            'qsm_algorithm' : 'rts',
-            'unwrapping_algorithm' : 'romeo',
-            'bf_algorithm' : 'pdf',
-            'masking_algorithm' : 'bet',
-            'mask_erosions' : [3],
+            'masking_algorithm' : 'bet'
         },
         'fast' : {
             'combine_phase' : False,
@@ -104,12 +99,18 @@ def interactive_arg_editor(args):
         }
     }
 
+    def overwrite_args(args, new_args):
+        for key, value in new_args.items():
+            args[key] = value
+        return args
+    if args.premade: args = overwrite_args(args, default_args[args.premade])
+
     if not len(sys.argv) > 3 and not (len(sys.argv) == 5 and '--premade' in sys.argv):
         print("\n=== Premade pipelines ===")
         print("gre: Applies suggested settings for 3D-GRE images")
         print("epi: Applies suggested settings for 3D-EPI images (assumes human brain)")
         print("bet: Applies a traditional BET-masking approach (artefact reduction unavailable)")
-        print("fast: Applies the fastest algorithms")
+        print("fast: Applies a set of fast algorithms")
         print("body: Applies suggested settings for non-brain applications") # ...
         print("nextqsm: Applies suggested settings for running the NeXtQSM algorithm (assumes human brain)")
 
@@ -118,10 +119,6 @@ def interactive_arg_editor(args):
             options=['gre', 'epi', 'bet', 'fast', 'body']
         )
 
-        def overwrite_args(args, new_args):
-            for key, value in new_args.items():
-                args[key] = value
-            return args
         if args.premade: args = overwrite_args(args, default_args[args.premade])
 
     while True:
