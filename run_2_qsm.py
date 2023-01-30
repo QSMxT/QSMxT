@@ -852,7 +852,7 @@ def process_args(args):
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
-    return vars(args)
+    return dotdict(vars(args))
 
 def set_env_variables(args):
     # misc environment variables
