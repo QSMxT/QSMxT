@@ -852,7 +852,7 @@ def process_args(args):
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
-    return args
+    return vars(args)
 
 def set_env_variables(args):
     # misc environment variables
@@ -945,7 +945,7 @@ if __name__ == "__main__":
         diff_file.close()
     
     # process args and make any necessary corrections
-    args = dotdict(vars(process_args(args)))
+    args = process_args(args)
 
     # run interactive arg editor
     if not args.non_interactive:
