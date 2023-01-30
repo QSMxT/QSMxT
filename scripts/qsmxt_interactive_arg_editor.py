@@ -111,7 +111,7 @@ def interactive_arg_editor(args):
         print("bet: Applies a traditional BET-masking approach (artefact reduction unavailable)")
         print("fast: Applies the fastest algorithms")
         print("body: Applies suggested settings for non-brain applications") # ...
-        print("nextqsm: Applies suggested settings for running the NeXtQSM algorithm")
+        print("nextqsm: Applies suggested settings for running the NeXtQSM algorithm (assumes human brain)")
 
         args.premade = get_user_input(
             prompt=f"\nSelect premade pipeline (enter for default - {args.premade}): ",
