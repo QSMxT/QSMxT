@@ -14,6 +14,7 @@ from nipype import config, logging
 from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir, get_diff
 from scripts.sys_cmd import sys_cmd
 from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logger
+from scripts.qsmxt_interactive_arg_editor import interactive_arg_editor
 
 from interfaces import nipype_interface_romeo as romeo
 from interfaces import nipype_interface_scalephase as scalephase
@@ -27,6 +28,11 @@ from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from workflows.qsm import qsm_workflow
 from workflows.masking import masking_workflow
 
+class dotdict(dict):
+    """dot.notation access to dictionary attributes"""
+    __getattr__ = dict.get
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
 
 def init_workflow(args):
     logger = get_logger()
@@ -88,7 +94,7 @@ def init_session_workflow(args, subject, session):
     wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow_qsm", subject, session))
     wf.add_nodes([
         node for node in
-        [init_run_workflow(copy.deepcopy(args), subject, session, run) for run in runs]
+        [init_run_workflow(dotdict(args.copy()), subject, session, run) for run in runs]
         if node
     ])
     return wf
@@ -293,7 +299,7 @@ def init_run_workflow(run_args, subject, session, run):
     if magnitude_files:
         mn_resample_inputs = MapNode(
             interface=sampling.AxialSamplingInterface(
-                obliquity_threshold=run_args.obliquity_threshold
+                obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
             ),
             iterfield=['magnitude', 'phase', 'mask'] if mask_files else ['magnitude', 'phase'],
             name='nibabel_numpy_nilearn_axial-resampling'
@@ -535,14 +541,23 @@ def parse_args(args):
     )
 
     parser.add_argument(
+        '--premade',
+        choices=['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm'],
+        default='gre',
+        help='Premade pipelines'
+    )
+
+    parser.add_argument(
         '--obliquity_threshold',
         type=int,
         default=10,
-        help="TODO" #TODO
+        help="The 'obliquity' as measured by nilearn from which oblique-acquired acqisitions should be " +
+             "axially resampled. Use -1 to disable resampling completely."
     )
 
     parser.add_argument(
         '--combine_phase',
+        default=False,
         action='store_true'
     )
 
@@ -581,7 +596,7 @@ def parse_args(args):
         default=3,
         help='Number of erosions applied by tgv.'
     )
-
+    
     parser.add_argument(
         '--unwrapping_algorithm',
         default=None,
@@ -628,7 +643,7 @@ def parse_args(args):
         '--threshold_value',
         type=float,
         nargs='+',
-        default=[None],
+        default=[None, None],
         help='Masking threshold for when --masking_algorithm is set to threshold. Values between 0 and 1'+
              'represent a percentage of the multi-echo input range. Values greater than 1 represent an '+
              'absolute threshold value. Lower values will result in larger masks. If no threshold is '+
@@ -746,6 +761,12 @@ def parse_args(args):
         default=None,
         help='Number of processes to run concurrently for MultiProc. By default, the number of available '+
              'CPUs is used.'
+    )
+
+    parser.add_argument(
+        '--non_interactive',
+        action='store_true',
+        help='Disables interactive steps.'
     )
 
     parser.add_argument(
@@ -918,13 +939,17 @@ if __name__ == "__main__":
     # print diff if needed
     diff = get_diff()
     if diff:
-        logger.log(LogLevel.WARNING.value, f"Working directory not clean! Writing diff to {os.path.join(args.output_dir, 'diff.txt')}...")
+        logger.log(LogLevel.WARNING.value, f"QSMxT's working directory is not clean! Writing git diff to {os.path.join(args.output_dir, 'diff.txt')}...")
         diff_file = open(os.path.join(args.output_dir, "diff.txt"), "w")
         diff_file.write(diff)
         diff_file.close()
     
     # process args and make any necessary corrections
-    args = process_args(args)
+    args = dotdict(vars(process_args(args)))
+
+    # run interactive arg editor
+    if not args.non_interactive:
+        args = interactive_arg_editor(args)
     
     # set environment variables
     set_env_variables(args)
