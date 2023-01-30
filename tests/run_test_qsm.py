@@ -183,7 +183,8 @@ def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=False)
 def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        os.path.join(tempfile.gettempdir(), "qsm")
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -226,7 +227,8 @@ def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--qsm_algorithm", "nextqsm"
+        "--qsm_algorithm", "nextqsm",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -258,7 +260,8 @@ def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--qsm_algorithm", "tgv"
+        "--qsm_algorithm", "tgv",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -286,7 +289,8 @@ def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
 def test_rts_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir_secret,
-        os.path.join(tempfile.gettempdir(), "qsm-secret")
+        os.path.join(tempfile.gettempdir(), "qsm-secret"),
+        "--non_interactive"
     ]))
     
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
@@ -311,7 +315,8 @@ def test_laplacian_unwrapping(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--unwrapping_algorithm", "laplacian"
+        "--unwrapping_algorithm", "laplacian",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -328,7 +333,8 @@ def test_masking_algo_bet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--masking_algorithm", "bet"
+        "--masking_algorithm", "bet",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -347,7 +353,8 @@ def test_masking_algo_bet_firstecho(bids_dir, init_workflow, run_workflow, run_a
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--masking_algorithm", "bet-firstecho"
+        "--masking_algorithm", "bet-firstecho",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -366,7 +373,8 @@ def test_masking_input_magnitude(bids_dir, init_workflow, run_workflow, run_args
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--masking_input", "magnitude"
+        "--masking_input", "magnitude",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -383,7 +391,8 @@ def test_add_bet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--add_bet"
+        "--add_bet",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -401,7 +410,8 @@ def test_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_workflow,
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--inhomogeneity_correction"
+        "--inhomogeneity_correction",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -421,7 +431,8 @@ def test_inhomogeneity_correction(bids_dir, init_workflow, run_workflow, run_arg
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--masking_input", "magnitude",
-        "--inhomogeneity_correction"
+        "--inhomogeneity_correction",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -440,7 +451,8 @@ def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--use_existing_masks"
+        "--use_existing_masks",
+        "--non_interactive"
     ]))
     
     assert(args.masking_algorithm == "threshold")
@@ -463,7 +475,8 @@ def test_two_pass(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--two_pass", "on"
+        "--two_pass", "on",
+        "--non_interactive"
     ]))
     
     assert(args.two_pass == True)
