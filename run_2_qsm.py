@@ -543,7 +543,7 @@ def parse_args(args):
     parser.add_argument(
         '--premade',
         choices=['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm'],
-        default='gre',
+        default=None,
         help='Premade pipelines'
     )
 
@@ -663,11 +663,13 @@ def parse_args(args):
     parser.add_argument(
         '--filling_algorithm',
         default='both',
-        choices=['morphological', 'gaussian', 'both'],
+        choices=['morphological', 'gaussian', 'both', 'bet'],
         help='Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing '+
              'operation is applied first prior to a morphological hole-filling operation. Note that gaussian '+
              'smoothing may fill some unwanted regions (e.g. connecting the skull and brain tissue), whereas '+
-             'morphological hole-filling alone may fail to fill desired regions if they are not fully enclosed.'
+             'morphological hole-filling alone may fail to fill desired regions if they are not fully enclosed.'+
+             'The BET option is applicable to two-pass QSM only, and will use ONLY a BET mask as the filled '+
+             'version of the mask.'
     )
 
     parser.add_argument(
@@ -779,7 +781,7 @@ def parse_args(args):
         '--dry',
         action='store_true',
         help='Creates the nipype pipeline using the chosen settings, but does not execute it. Useful for '+
-             'debugging purposes, or for creating a citations file.'
+             'debugging purposes, or for creating citations and settings files.'
     )
     
     args = parser.parse_args(args)
@@ -809,24 +811,32 @@ def process_args(args):
         if args.qsm_algorithm in ['nextqsm', 'rts']:
             args.unwrapping_algorithm = 'romeo'
 
+    # add_bet option only works with non-bet masking methods
+    args.add_bet &= 'bet' not in args.masking_algorithm
+
     # default two-pass settings for QSM algorithms
     if not args.two_pass:
         if args.qsm_algorithm in ['rts', 'tgv']:
             args.two_pass = 'on'
         else:
             args.two_pass = 'off'
+    
+    # convert two_pass from on/off to True/False
     args.two_pass = True if args.two_pass == 'on' else False
-
-    # add_bet option only works with non-bet masking methods
-    args.add_bet &= 'bet' not in args.masking_algorithm
 
     # two-pass option only works with non-bet masking methods
     args.two_pass &= 'bet' not in args.masking_algorithm
-    args.single_pass = not args.two_pass
 
     # two-pass option does not work with nextqsm or v-sharp
     args.two_pass &= args.qsm_algorithm != 'nextqsm'
     args.two_pass &= args.bf_algorithm != 'vsharp'
+
+    # single-pass variable once confirmed
+    args.single_pass = not args.two_pass
+
+    # 'bet' hole-filling not applicable for single-pass
+    if args.single_pass and args.filling_algorithm == 'bet':
+        args.filling_algorithm == 'both'
 
     # force masking input to magnitude if bet is the masking method
     args.masking_input = 'magnitude' if 'bet' in args.masking_algorithm else args.masking_input
@@ -865,22 +875,17 @@ def set_env_variables(args):
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + get_qsmxt_dir()
     else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
 
-def write_references(wf):
+def write_citations(wf):
     # get all node names
     node_names = [node._name.lower() for node in wf._get_all_nodes()]
 
     def any_string_matches_any_node(strings):
         return any(string in node_name for string in strings for node_name in node_names)
 
-    # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
-        # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {get_qsmxt_version()}")
-        f.write(f"\nRun command: {str.join(' ', sys.argv)}")
-        f.write(f"\nPython interpreter: {sys.executable}")
-
+    # write "citations.txt" with any necessary citations
+    with open(os.path.join(args.output_dir, "citations.txt"), 'w', encoding='utf-8') as f:
         # qsmxt, nipype, numpy
-        f.write("\n\n == References ==")
+        f.write("\n\n == Citations ==")
         f.write(f"\n\n - QSMxT{'' if not args.two_pass else ' and two-pass combination method'}: Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
         f.write("\n\n - QSMxT: Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         
@@ -919,9 +924,95 @@ def write_references(wf):
         if any_string_matches_any_node(['numpy']):
             f.write("\n\n - Python package - Numpy: Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n - Nipype package: Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
-        
-
         f.write("\n\n")
+
+def write_settings(args):
+
+    with open(os.path.join(args.output_dir, "settings.txt"), 'w', encoding='utf-8') as f:
+        # output QSMxT version, run command, and python interpreter
+        f.write(f"QSMxT: {get_qsmxt_version()}")
+        f.write(f"\nRun command: {str.join(' ', sys.argv)}")
+        f.write(f"\nPython interpreter: {sys.executable}")
+
+        if args.premade:
+            default_args = process_args(parse_args([args.bids_dir, args.output_dir, "--premade", args.premade]))
+        else:
+            default_args = process_args(parse_args([args.bids_dir, args.output_dir]))
+
+        run_args = [ args.bids_dir, args.output_dir ]
+        if args.subject_pattern != default_args.subject_pattern:
+            run_args.append(['--subject_pattern', f"'{args.subject_pattern}'"])
+        if args.session_pattern != default_args.session_pattern:
+            run_args.append(['--session_pattern', f"'{args.session_pattern}'"])
+        if args.magnitude_pattern != default_args.magnitude_pattern:
+            run_args.append(['--magnitude_pattern', f"'{args.magnitude_pattern}'"])
+        if args.phase_pattern != default_args.phase_pattern:
+            run_args.append(['--phase_pattern', f"'{args.phase_pattern}'"])
+        if args.subjects != default_args.subjects:
+            run_args.append(['--subjects'] + [subject for subject in args.subjects])
+        if args.num_echoes != default_args.num_echoes:
+            run_args.append(['--num_echoes', args.num_echoes])
+        if args.premade != default_args.premade:
+            run_args.append(['--premade', args.premade])
+        if args.obliquity_threshold != default_args.obliquity_threshold:
+            run_args.append(['--obliquity_threshold', args.obliquity_threshold])
+        if args.combine_phase != default_args.combine_phase:
+            if args.combine_phase: run_args.append(['--combine_phase'])
+        if args.qsm_algorithm != default_args.qsm_algorithm:
+            run_args.append(['--qsm_algorithm', args.qsm_algorithm])
+        if args.tgv_iterations != default_args.tgv_iterations:
+            run_args.append(['--tgv_iterations', args.tgv_iterations])
+        if args.tgv_alphas != default_args.tgv_alphas:
+            run_args.append(['--tgv_alphas', args.tgv_alphas])
+        if args.tgv_erosions != default_args.tgv_erosions:
+            run_args.append(['--tgv_erosions', args.tgv_erosions])
+        if args.unwrapping_algorithm != default_args.unwrapping_algorithm:
+            run_args.append(['--unwrapping_algorithm', args.unwrapping_algorithm])
+        if args.bf_algorithm != default_args.bf_algorithm:
+            run_args.append(['--bf_algorithm', args.bf_algorithm])
+        if args.masking_algorithm != default_args.masking_algorithm:
+            run_args.append(['--masking_algorithm', args.masking_algorithm])
+        if args.masking_input != default_args.masking_input:
+            run_args.append(['--masking_input', args.masking_input])
+        if args.threshold_value != default_args.threshold_value:
+            run_args.append(['--threshold_value'] + [str(val) for val in args.threshold_value])
+        if args.threshold_algorithm != default_args.threshold_algorithm:
+            run_args.append(['--threshold_algorithm', args.threshold_algorithm])
+        if args.filling_algorithm != default_args.filling_algorithm:
+            run_args.append(['--filling_algorithm', args.filling_algorithm])
+        if args.threshold_algorithm_factor != default_args.threshold_algorithm_factor:
+            run_args.append(['--threshold_algorithm_factor', + [str(val) for val in args.threshold_algorithm_factor]])
+        if args.mask_erosions != default_args.mask_erosions:
+            run_args.append(['--mask_erosions', str(args.mask_erosions)])
+        if args.inhomogeneity_correction != default_args.inhomogeneity_correction:
+            if args.inhomogeneity_correction: run_args.append(['--inhomogeneity_correction'])
+        if args.add_bet != default_args.add_bet:
+            if args.add_bet: run_args.append(['--add_bet'])
+        if args.bet_fractional_intensity != default_args.bet_fractional_intensity:
+            run_args.append(['--bet_fractional_intensity', args.bet_fractional_intensity])
+        if args.use_existing_masks != default_args.use_existing_masks:
+            if args.use_existing_masks: run_args.append(['--use_existing_masks'])
+        if args.mask_pattern != default_args.mask_pattern:
+            run_args.append(['--mask_pattern', f"'{mask_pattern}'"])
+        if args.two_pass != default_args.two_pass == 'on':
+            run_args.append(['--two_pass', 'on' if args.two_pass else 'off'])
+        if args.pbs != default_args.pbs:
+            run_args.append(['--pbs', args.pbs])
+        if args.slurm != default_args.slurm:
+            run_args.append(['--slurm', args.slurm])
+        if args.n_procs != default_args.n_procs:
+            run_args.append(['--n_procs', str(n_procs)])
+        if args.non_interactive != default_args.non_interactive:
+            if args.non_interactive: run_args.append(['--non_interactive'])
+        if args.debug != default_args.debug:
+            if args.debug: run_args.append(['--debug'])
+        if args.dry != default_args.dry:
+            if args.dry: run_args.append(['--dry'])
+        print(run_args)
+
+        f.write(f"\nRun command (one-command): {run_args}")
+        f.write("\n\n")
+
 
 if __name__ == "__main__":
     # parse command-line arguments
@@ -950,6 +1041,9 @@ if __name__ == "__main__":
     # run interactive arg editor
     if not args.non_interactive:
         args = interactive_arg_editor(args)
+
+    # write settings to file
+    write_settings(args)
     
     # set environment variables
     set_env_variables(args)
@@ -957,8 +1051,8 @@ if __name__ == "__main__":
     # build workflow
     wf = init_workflow(args)
     
-    # write references to file
-    write_references(wf)
+    # write citations to file
+    write_citations(wf)
 
     config.update_config({'logging': { 'log_directory': args.output_dir, 'log_to_file': True }})
     logging.update_logging(config)

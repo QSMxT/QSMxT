@@ -115,8 +115,9 @@ def interactive_arg_editor(args):
         print("nextqsm: Applies suggested settings for running the NeXtQSM algorithm (assumes human brain)")
 
         args.premade = get_user_input(
-            prompt=f"\nSelect premade pipeline (enter for default - {args.premade}): ",
-            options=['gre', 'epi', 'bet', 'fast', 'body']
+            prompt=f"\nSelect premade pipeline (enter for default - gre): ",
+            options=['gre', 'epi', 'bet', 'fast', 'body'],
+            default='gre'
         )
 
         if args.premade: args = overwrite_args(args, default_args[args.premade])
@@ -124,6 +125,7 @@ def interactive_arg_editor(args):
     while True:
         os.system('clear')
         print("== Summary ==")
+        '''
         print(f"\nPaths and patterns:")
         print(f" - Input BIDS directory: {args.bids_dir}")
         print(f" - Output QSM directory: {args.output_dir}")
@@ -144,6 +146,7 @@ def interactive_arg_editor(args):
             print(f" - Execution type: MultiProc (n_procs={args.n_procs})")
         print(f" - Debug mode: {args.debug}")
         print(f" - Dry run: {args.dry}")
+        '''
         
         print("\n(1) Masking:")
         print(f" - Use existing masks if available: {'Yes' if args.use_existing_masks else 'No'}")
@@ -205,10 +208,11 @@ def interactive_arg_editor(args):
                     options=['yes', 'no'],
                     type_=bool
                 )
-                args.mask_pattern = get_user_input(
-                    prompt=f"Enter mask file pattern [default: {args.mask_pattern}]: ",
-                    default=args.mask_pattern
-                )
+                if args.use_existing_masks:
+                    args.mask_pattern = get_user_input(
+                        prompt=f"Enter mask file pattern [default: {args.mask_pattern}]: ",
+                        default=args.mask_pattern
+                    )
                 
                 print("\n== Masking algorithm ==")
                 print("threshold: ")
@@ -311,6 +315,7 @@ def interactive_arg_editor(args):
                         args.threshold_value = [None, None]
                         print("\n== Threshold algorithm factors ==")
                         print("The threshold algorithm can be tweaked by multiplying it by some factor.")
+                        print("Use two values to specify different factors for each pass in two-pass QSM")
                         args.threshold_algorithm_factor = get_list_input(
                             prompt=f"\nEnter threshold algorithm factor(s) (space-separated) [default - {str(args.threshold_algorithm_factor)}]: ",
                             list_type=float,
@@ -318,32 +323,46 @@ def interactive_arg_editor(args):
                             list_len=(1, 2)
                         )
                         
-                    print("\n== Hole-filling algorithm ==")
-                    print("Threshold-based masking requires an algorithm to fill holes in the mask.\n")
+                    print("\n== Filled mask algorithm ==")
+                    print("Threshold-based masking requires an algorithm to create a filled mask.\n")
                     print("gaussian:")
-                    print(" - applies the scipy gaussian_filter function")
+                    print(" - applies the scipy gaussian_filter function to the threshold mask")
                     print(" - may fill some unwanted regions (e.g. connecting skull to brain)")
                     print("morphological:")
-                    print(" - applies the scipy binary_fill_holes function")
+                    print(" - applies the scipy binary_fill_holes function to the threshold mask")
                     print("both:")
-                    print(" - applies both methods (gaussian followed by morphological)")
+                    print(" - applies both methods (gaussian followed by morphological) to the threshold mask")
+                    print("bet:")
+                    print(" - uses a BET mask as the filled mask")
                     args.filling_algorithm = get_user_input(
                         prompt=f"\nSelect hole-filling algorithm: [default - {args.filling_algorithm}]: ",
-                        options=['gaussian', 'morphological', 'both'],
+                        options=['gaussian', 'morphological', 'both', 'bet'],
                         default=args.filling_algorithm
                     )
-                    args.add_bet = get_user_input(
-                        prompt=f"\nInclude a BET mask in the hole-filling operation (yes or no) [default - {'yes' if args.add_bet else 'no'}]: ",
-                        options=['yes', 'no'],
-                        default=args.add_bet,
-                        type_=bool
-                    )
+                    if args.filling_algorithm != 'bet':
+                        args.add_bet = get_user_input(
+                            prompt=f"\nInclude a BET mask in the hole-filling operation (yes or no) [default - {'yes' if args.add_bet else 'no'}]: ",
+                            options=['yes', 'no'],
+                            default=args.add_bet,
+                            type_=bool
+                        )
                     if args.add_bet:
                         args.bet_fractional_intensity = get_user_input(
                             prompt=f"\nBET fractional intensity [default - {args.bet_fractional_intensity}]: ",
                             default=args.bet_fractional_intensity,
                             type_=float
                         )
+            
+                print("\n== Erosions ==")
+                print("The number of times to erode the mask.")
+                print("Use two values to specify different erosion for each pass in two-pass QSM")
+                args.mask_erosions = get_list_input(
+                    prompt=f"\nEnter number of erosions [default - {str(args.mask_erosions)}]: ",
+                    list_type=int,
+                    default=args.mask_erosions,
+                    list_len=(1, 2)
+                )
+
             if user_in == 2: # PHASE PROCESSING
                 os.system('clear')
                 print("== Resample to axial ==")
@@ -354,7 +373,7 @@ def interactive_arg_editor(args):
                     type_=float
                 )
 
-                print("== Combine phase ==")
+                print("\n== Combine phase ==")
                 print("This step will combine multi-echo phase data by generating a field map using ROMEO.")
                 args.combine_phase = get_user_input(
                     prompt=f"\nCombine multi-echo phase data [default - {'yes' if args.combine_phase else 'no'}]: ",
