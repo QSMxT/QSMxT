@@ -346,12 +346,20 @@ def interactive_arg_editor(args):
                         )
             if user_in == 2: # PHASE PROCESSING
                 os.system('clear')
-                print("\n== Resample to axial ==")
+                print("== Resample to axial ==")
                 print("This step will perform axial resampling for oblique acquisitions.")
                 args.obliquity_threshold = get_user_input(
                     prompt=f"\nEnter an obliquity threshold to cause resampling or -1 for none [default - {args.obliquity_threshold}]: ",
                     default=args.obliquity_threshold,
                     type_=float
+                )
+
+                print("== Combine phase ==")
+                print("This step will combine multi-echo phase data by generating a field map using ROMEO.")
+                args.combine_phase = get_user_input(
+                    prompt=f"\nCombine multi-echo phase data [default - {'yes' if args.combine_phase else 'no'}]: ",
+                    default=args.combine_phase,
+                    type_=bool
                 )
 
                 print("\n== QSM Algorithm ==")
