@@ -65,7 +65,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 name='scipy_numpy_nibabel_threshold-masking'
                 # inputs : ['in_files']
             )
-            if run_args.threshold_value[index % len(run_args.threshold_value)]:
+            if run_args.threshold_value:
                 n_threshold_masking.inputs.threshold = run_args.threshold_value[index % len(run_args.threshold_value)]
 
             if run_args.masking_input == 'phase':    

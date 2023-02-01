@@ -467,6 +467,100 @@ def init_run_workflow(run_args, subject, session, run):
     return wf
 
 def parse_args(args):
+    premades = {
+        'default' : {
+            'subject_pattern' : 'sub*',
+            'session_pattern' : 'ses*',
+            'magnitude_pattern' : '{subject}/{session}/anat/*{run}*mag*nii*',
+            'phase_pattern' : '{subject}/{session}/anat/*{run}*phase*nii*',
+            'subjects' :  None,
+            'sessions' :  None,
+            'num_echoes' :  None,
+            'obliquity_threshold' :  10,
+            'combine_phase' :  False,
+            'qsm_algorithm' :  'rts',
+            'tgv_iterations' :  1000,
+            'tgv_alphas' :  [0.0015, 0.0005],
+            'tgv_erosions' :  3,
+            'unwrapping_algorithm' :  'romeo',
+            'bf_algorithm' :  'pdf',
+            'masking_algorithm' : 'threshold', 
+            'masking_input' :  'phase',
+            'threshold_algorithm' :  'otsu',
+            'filling_algorithm' :  'both',
+            'threshold_value' :  None,
+            'threshold_algorithm_factor' :  [1.7, 1.0],
+            'mask_erosions' :  [3, 0],
+            'inhomogeneity_correction' :  False,
+            'add_bet' :  False,
+            'bet_fractional_intensity' :  0.5,
+            'use_existing_masks' :  False,
+            'mask_pattern' :  '{subject}/{session}/extra_data/*{run}*mask*nii*',
+            'two_pass' :  'on',
+            'pbs' :  None,
+            'slurm' :  None,
+            'n_procs' :  None,
+            'debug' :  False,
+            'dry' :  False
+        },
+        'gre' : {
+            'combine_phase' : False,
+            'qsm_algorithm' : 'rts',
+            'unwrapping_algorithm' : 'romeo',
+            'bf_algorithm' : 'pdf',
+            'masking_algorithm' : 'threshold',
+            'two_pass' : True,
+            'masking_input' : 'phase',
+            'threshold_algorithm' : 'otsu',
+            'threshold_algorithm_factor' : [1.7, 1.0],
+            'filling_algorithm' : 'both',
+            'inhomogeneity_correction' : False,
+            'mask_erosions' : [3, 0],
+        },
+        'epi' : {
+            'combine_phase' : False,
+            'qsm_algorithm' : 'rts',
+            'unwrapping_algorithm' : 'romeo',
+            'bf_algorithm' : 'pdf',
+            'masking_algorithm' : 'threshold',
+            'two_pass' : True,
+            'masking_input' : 'phase',
+            'threshold_algorithm' : 'otsu',
+            'threshold_algorithm_factor' : [1.7, 1.0],
+            'filling_algorithm' : 'both',
+            'inhomogeneity_correction' : True,
+            'mask_erosions' : [3, 0],
+            'add_bet' : True
+        },
+        'bet' : {
+            'masking_algorithm' : 'bet'
+        },
+        'fast' : {
+            'combine_phase' : False,
+            'qsm_algorithm' : 'rts',
+            'unwrapping_algorithm' : 'romeo',
+            'bf_algorithm' : 'vsharp',
+            'masking_algorithm' : 'bet',
+            'mask_erosions' : [3],
+        },
+        'body' : {
+            'combine_phase' : False,
+            'qsm_algorithm' : 'tgv',
+            'masking_algorithm' : 'threshold',
+            'two_pass' : True,
+            'masking_input' : 'phase',
+            'threshold_value' : [0.25],
+            'filling_algorithm' : 'both',
+            'mask_erosions' : [3, 0],
+        },
+        'nextqsm' : {
+            'combine_phase' : False,
+            'qsm_algorithm' : 'nextqsm',
+            'masking_algorithm' : 'bet-firstecho',
+            'mask_erosions' : [3]
+        }
+    }
+    
     parser = argparse.ArgumentParser(
         description="QSMxT: QSM Reconstruction Pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -487,27 +581,34 @@ def parse_args(args):
     )
     
     parser.add_argument(
+        '--premade',
+        choices=['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm'],
+        default=None,
+        help='Pattern used to match subject folders in bids_dir'
+    )
+    
+    parser.add_argument(
         '--subject_pattern',
-        default='sub*',
+        default=None,
         help='Pattern used to match subject folders in bids_dir'
     )
 
     parser.add_argument(
         '--session_pattern',
-        default='ses*',
+        default=None,
         help='Pattern used to match session folders in subject folders'
     )
 
     parser.add_argument(
         '--magnitude_pattern',
-        default='{subject}/{session}/anat/*{run}*mag*nii*',
+        default=None,
         help='Pattern to match magnitude files within the BIDS directory. ' +
              'The {subject}, {session} and {run} placeholders must be present.'
     )
 
     parser.add_argument(
         '--phase_pattern',
-        default='{subject}/{session}/anat/*{run}*phase*nii*',
+        default=None,
         help='Pattern to match phase files for qsm within session folders. ' +
              'The {subject}, {session} and {run} placeholders must be present.'
     )
@@ -537,18 +638,19 @@ def parse_args(args):
     parser.add_argument(
         '--obliquity_threshold',
         type=int,
-        default=10,
+        default=None,
         help="TODO" #TODO
     )
 
     parser.add_argument(
         '--combine_phase',
+        default=None,
         action='store_true'
     )
 
     parser.add_argument(
         '--qsm_algorithm',
-        default='rts',
+        default=None,
         choices=['tgv', 'nextqsm', 'rts'],
         help="QSM algorithm. The tgv algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 from "+
              "Langkammer et al., and includes unwrapping and background field removal steps as part of a "+
@@ -563,14 +665,14 @@ def parse_args(args):
     parser.add_argument(
         '--tgv_iterations',
         type=int,
-        default=1000,
+        default=None,
         help='Number of iterations used by tgv.'
     )
 
     parser.add_argument(
         '--tgv_alphas',
         type=float,
-        default=[0.0015, 0.0005],
+        default=None,
         nargs=2,
         help='Regularisation alphas used by tgv.'
     )
@@ -578,7 +680,7 @@ def parse_args(args):
     parser.add_argument(
         '--tgv_erosions',
         type=int,
-        default=3,
+        default=None,
         help='Number of erosions applied by tgv.'
     )
 
@@ -594,7 +696,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--bf_algorithm',
-        default='pdf',
+        default=None,
         choices=['vsharp', 'pdf'],
         help='Background field correction algorithm. V-SHARP is based on doi:10.1002/mrm.23000 PDF is '+
              'based on doi:10.1002/nbm.1670.'
@@ -615,7 +717,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--masking_input',
-        default='phase',
+        default=None,
         choices=['phase', 'magnitude'],
         help='Input to the masking algorithm. Phase-based masking may reduce artefacts near the ROI '+
              'boundary (see doi:10.1002/mrm.29368 from Hagberg et al.). Phase-based masking creates a '+
@@ -628,7 +730,7 @@ def parse_args(args):
         '--threshold_value',
         type=float,
         nargs='+',
-        default=[None],
+        default=None,
         help='Masking threshold for when --masking_algorithm is set to threshold. Values between 0 and 1'+
              'represent a percentage of the multi-echo input range. Values greater than 1 represent an '+
              'absolute threshold value. Lower values will result in larger masks. If no threshold is '+
@@ -637,7 +739,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--threshold_algorithm',
-        default='otsu',
+        default=None,
         choices=['otsu', 'gaussian'],
         help='Algorithm used to select a threshold for threshold-based masking if --threshold_value is '+
              'left unspecified. The gaussian method is based on doi:10.1016/j.compbiomed.2012.01.004 '+
@@ -647,7 +749,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--filling_algorithm',
-        default='both',
+        default=None,
         choices=['morphological', 'gaussian', 'both'],
         help='Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing '+
              'operation is applied first prior to a morphological hole-filling operation. Note that gaussian '+
@@ -657,7 +759,7 @@ def parse_args(args):
 
     parser.add_argument(
         '--threshold_algorithm_factor',
-        default=[1.7, 1.0],
+        default=None,
         nargs='+',
         type=float,
         help='Factor to multiply the algorithmically-determined threshold by. Larger factors will create '+
@@ -668,7 +770,7 @@ def parse_args(args):
         '--mask_erosions',
         type=int,
         nargs='+',
-        default=[3, 0],
+        default=None,
         help='Number of erosions applied to masks prior to QSM processing steps. Note that some algorithms '+
              'may erode the mask further (e.g. V-SHARP and TGV-QSM).'
     )
@@ -676,6 +778,7 @@ def parse_args(args):
     parser.add_argument(
         '--inhomogeneity_correction',
         action='store_true',
+        default=None,
         help='Applies an inhomogeneity correction to the magnitude prior to masking based on '+
              'https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html from Eckstein et al. This option '+
              'is only relevant when the --masking_input is the magnitude.'
@@ -684,6 +787,7 @@ def parse_args(args):
     parser.add_argument(
         '--add_bet',
         action='store_true',
+        default=None,
         help='Combines the chosen masking method with BET. This option is only relevant when the '+
              '--masking_algorithm is set to threshold.'
     )
@@ -691,13 +795,14 @@ def parse_args(args):
     parser.add_argument(
         '--bet_fractional_intensity',
         type=float,
-        default=0.5,
+        default=None,
         help='Fractional intensity for BET masking operations.'
     )
     
     parser.add_argument(
         '--use_existing_masks',
         action='store_true',
+        default=None,
         help='This option will use existing masks from the BIDS folder, where possible, instead of '+
              'generating new ones. The masks will be selected based on the --mask_pattern argument. '+
              'A single mask may be present (and will be applied to all echoes), or a mask for each '+
@@ -707,7 +812,7 @@ def parse_args(args):
     
     parser.add_argument(
         '--mask_pattern',
-        default='{subject}/{session}/extra_data/*{run}*mask*nii*',
+        default=None,
         help='Pattern used to identify mask files to be used when the --use_existing_masks option '+
              'is enabled.'
     )
@@ -715,7 +820,7 @@ def parse_args(args):
     parser.add_argument(
         '--two_pass',
         choices=['on', 'off'],
-        default='on',
+        default=None,
         help='Setting this to \'on\' will perform a QSM reconstruction in a two-stage fashion to reduce '+
              'artefacts; combines the results from two QSM images reconstructed using masks that separate '+
              'more reliable and less reliable phase regions. Note that this option requires threshold-based '+
@@ -751,17 +856,67 @@ def parse_args(args):
     parser.add_argument(
         '--debug',
         action='store_true',
+        default=None,
         help='Enables some nipype settings for debugging.'
     )
 
     parser.add_argument(
         '--dry',
         action='store_true',
+        default=None,
         help='Creates the nipype pipeline using the chosen settings, but does not execute it. Useful for '+
              'debugging purposes, or for creating a citations file.'
     )
+
+    parser.add_argument(
+        '--non_interactive',
+        action='store_true',
+        default=None,
+        help='Runs the pipeline in non-interactive mode.'
+    )
     
+    # parse explicit arguments ONLY
     args = parser.parse_args(args)
+    explicit_args = {}
+    for k in args.__dict__:
+        if args.__dict__[k] is not None:
+            explicit_args[k] = args.__dict__[k]
+    
+    # get implicit args based on usual defaults
+    implicit_args = premades['default']
+    
+    # update implicit args based on any premade pipeline
+    if 'premade' in explicit_args.keys():
+        for key, value in premades[explicit_args['premade']].items():
+            if key not in explicit_args or explicit_args[key] == value:
+                implicit_args[key] = value
+    
+    # remove any unnecessary explicit args
+    for key, value in implicit_args.items():
+        if key in explicit_args and explicit_args[key] == value:
+            del explicit_args[key]
+
+    # create final args
+    final_args = implicit_args.copy()
+    for key, value in explicit_args.items():
+        final_args[key] = value
+    
+    # update the arguments using the computed ones
+    vars(args).update(final_args)
+
+    # compute the minimum run command to re-execute the built pipeline non-interactively
+    run_command = f"run_2_qsm.py {final_args['bids_dir']} {final_args['output_dir']}"
+    for key, value in final_args.items():
+        if key in ['bids_dir', 'output_dir']: continue
+        if value == True: run_command += f' --{key}'
+        if value == False: continue
+        elif isinstance(value, str): run_command += f" --{key} '{value}'"
+        elif isinstance(value, (int, float)): run_command += f" --{key} {value}"
+        elif isinstance(value, list):
+            run_command += f" --{key}"
+            for val in value:
+                run_command += f" {val}"
+    if '--non_interactive' not in run_command: run_command += ' --non_interactive'
     
     return args
 

@@ -1,0 +1,123 @@
+{
+    "default": {
+        "subject_pattern": "sub*",
+        "session_pattern": "ses*",
+        "magnitude_pattern": "{subject}/{session}/anat/*{run}*mag*nii*",
+        "phase_pattern": "{subject}/{session}/anat/*{run}*phase*nii*",
+        "subjects": null,
+        "sessions": null,
+        "num_echoes": null,
+        "obliquity_threshold": 10,
+        "combine_phase": false,
+        "qsm_algorithm": "rts",
+        "tgv_iterations": 1000,
+        "tgv_alphas": [
+            0.0015,
+            0.0005
+        ],
+        "tgv_erosions": 3,
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "pdf",
+        "masking_algorithm": "threshold",
+        "masking_input": "phase",
+        "threshold_algorithm": "otsu",
+        "filling_algorithm": "both",
+        "threshold_value": null,
+        "threshold_algorithm_factor": [
+            1.7,
+            1.0
+        ],
+        "mask_erosions": [
+            3,
+            0
+        ],
+        "inhomogeneity_correction": false,
+        "add_bet": false,
+        "bet_fractional_intensity": 0.5,
+        "use_existing_masks": false,
+        "mask_pattern": "{subject}/{session}/extra_data/*{run}*mask*nii*",
+        "two_pass": "on",
+        "pbs": null,
+        "slurm": null,
+        "n_procs": null,
+        "debug": false,
+        "dry": false
+    },
+    "gre": {
+        "combine_phase": false,
+        "qsm_algorithm": "rts",
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "pdf",
+        "masking_algorithm": "threshold",
+        "two_pass": true,
+        "masking_input": "phase",
+        "threshold_algorithm": "otsu",
+        "threshold_algorithm_factor": [
+            1.7,
+            1.0
+        ],
+        "filling_algorithm": "both",
+        "inhomogeneity_correction": false,
+        "mask_erosions": [
+            3,
+            0
+        ]
+    },
+    "epi": {
+        "combine_phase": false,
+        "qsm_algorithm": "rts",
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "pdf",
+        "masking_algorithm": "threshold",
+        "two_pass": true,
+        "masking_input": "phase",
+        "threshold_algorithm": "otsu",
+        "threshold_algorithm_factor": [
+            1.7,
+            1.0
+        ],
+        "filling_algorithm": "both",
+        "inhomogeneity_correction": true,
+        "mask_erosions": [
+            3,
+            0
+        ],
+        "add_bet": true
+    },
+    "bet": {
+        "masking_algorithm": "bet"
+    },
+    "fast": {
+        "combine_phase": false,
+        "qsm_algorithm": "rts",
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "vsharp",
+        "masking_algorithm": "bet",
+        "mask_erosions": [
+            3
+        ]
+    },
+    "body": {
+        "combine_phase": false,
+        "qsm_algorithm": "tgv",
+        "masking_algorithm": "threshold",
+        "two_pass": true,
+        "masking_input": "phase",
+        "threshold_value": [
+            0.25
+        ],
+        "filling_algorithm": "both",
+        "mask_erosions": [
+            3,
+            0
+        ]
+    },
+    "nextqsm": {
+        "combine_phase": false,
+        "qsm_algorithm": "nextqsm",
+        "masking_algorithm": "bet-firstecho",
+        "mask_erosions": [
+            3
+        ]
+    }
+}
