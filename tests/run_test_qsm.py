@@ -162,9 +162,8 @@ def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=False)
         qsm.set_env_variables(args)
         if run_args:
             logger.log(LogLevel.DEBUG.value, f"Updating args with run_args: {run_args}")
-            args_dict = vars(args)
             for key, value in run_args.items():
-                args_dict[key] = value
+                args[key] = value
             logger.log(LogLevel.DEBUG.value, f"Initialising workflow with updated args...")
             wf = qsm.init_workflow(args)
         logger.log(LogLevel.DEBUG.value, f"Saving args to {os.path.join(args.output_dir, 'args.txt')}...")
@@ -195,7 +194,7 @@ def upload_folder(folder, result_id):
         print("No UPLOAD_URL/DATA_PASS variable found... Skipping upload")
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, None)
+    (True, run_workflows, { 'num_echoes' : 2, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
 ])
 def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -208,6 +207,7 @@ def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "rts")
     assert(args.unwrapping_algorithm == "romeo")
+    assert(args.bf_algorithm == "pdf")
     assert(args.masking_algorithm == "threshold")
     assert(args.masking_input == "phase")
     assert(args.threshold_value == None)
@@ -228,7 +228,7 @@ def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     upload_folder(folder=args.output_dir, result_id='rts')
             
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, False, None)
+    (True, run_workflows, { 'num_echoes' : 2 })
 ])
 def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -251,7 +251,7 @@ def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
     upload_folder(folder=args.output_dir, result_id='nextqsm')
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, False, None)
+    (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False })
 ])
 def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -281,7 +281,7 @@ def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, True, { 'tgv_iterations' : 1, 'num_echoes' : 2, 'single_pass' : True })
+    (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
 ])
 def test_rts_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -294,7 +294,7 @@ def test_rts_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
     upload_folder(folder=args.output_dir, result_id='rts_realdata')
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
 ])
 def test_laplacian_unwrapping(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -308,11 +308,12 @@ def test_laplacian_unwrapping(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "rts")
     assert(args.unwrapping_algorithm == "laplacian")
+    assert(args.bf_algorithm == "pdf")
     
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, False, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp' })
 ])
 def test_masking_algo_bet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -325,6 +326,8 @@ def test_masking_algo_bet(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "rts")
+    assert(args.unwrapping_algorithm == 'romeo')
+    assert(args.bf_algorithm == 'pdf')
     assert(args.masking_algorithm == "bet")
     assert(args.masking_input == "magnitude")
     assert(args.add_bet == False)
@@ -332,7 +335,7 @@ def test_masking_algo_bet(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, False, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp' })
 ])
 def test_masking_algo_bet_firstecho(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -345,6 +348,8 @@ def test_masking_algo_bet_firstecho(bids_dir, init_workflow, run_workflow, run_a
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "rts")
+    assert(args.unwrapping_algorithm == 'romeo')
+    assert(args.bf_algorithm == 'pdf')
     assert(args.masking_algorithm == "bet-firstecho")
     assert(args.masking_input == "magnitude")
     assert(args.add_bet == False)
@@ -352,7 +357,7 @@ def test_masking_algo_bet_firstecho(bids_dir, init_workflow, run_workflow, run_a
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
 ])
 def test_masking_input_magnitude(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -365,12 +370,14 @@ def test_masking_input_magnitude(bids_dir, init_workflow, run_workflow, run_args
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "rts")
+    assert(args.unwrapping_algorithm == 'romeo')
+    assert(args.bf_algorithm == 'pdf')
     assert(args.masking_input == "magnitude")
     
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
 ])
 def test_add_bet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -383,13 +390,15 @@ def test_add_bet(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.bids_dir == os.path.abspath(bids_dir))
     assert(args.output_dir == os.path.join(tempfile.gettempdir(), "qsm"))
     assert(args.qsm_algorithm == "rts")
+    assert(args.unwrapping_algorithm == 'romeo')
+    assert(args.bf_algorithm == 'pdf')
     assert(args.masking_input == "phase")
     assert(args.add_bet == True)
     
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, False, { 'num_echoes' : 1 })
+    (True, False, None)
 ])
 def test_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -409,7 +418,7 @@ def test_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_workflow,
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, False, { 'num_echoes' : 1 })
+    (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
 ])
 def test_inhomogeneity_correction(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -430,7 +439,7 @@ def test_inhomogeneity_correction(bids_dir, init_workflow, run_workflow, run_arg
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 2 })
+    (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
 ])
 def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
@@ -454,7 +463,7 @@ def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, False, { 'num_echoes' : 1 })
+    (True, run_workflows, { 'num_echoes' : 1 })
 ])
 def test_two_pass(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([

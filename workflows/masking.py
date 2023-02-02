@@ -35,7 +35,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
         )
 
         # do phase weights if necessary
-        if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
+        if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase' and not (fill_masks and run_args.filling_algorithm == 'bet'):
             mn_phaseweights = MapNode(
                 interface=phaseweights.RomeoMaskingInterface(),
                 iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
@@ -53,7 +53,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 ])
 
         # do threshold masking if necessary
-        if run_args.masking_algorithm == 'threshold':
+        if run_args.masking_algorithm == 'threshold' and not (fill_masks and run_args.filling_algorithm == 'bet'):
             n_threshold_masking = Node(
                 interface=masking.MaskingInterface(
                     threshold_algorithm=run_args.threshold_algorithm,
@@ -82,7 +82,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 ])
 
         # run bet if necessary
-        if run_args.masking_algorithm in ['bet', 'bet-firstecho'] or add_bet:
+        if run_args.masking_algorithm in ['bet', 'bet-firstecho'] or add_bet or (run_args.filling_algorithm == 'bet' and fill_masks):
             mn_bet = MapNode(
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
@@ -109,7 +109,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                     (n_inputs, mn_bet, [('magnitude', 'in_file')])
                 ])
 
-            # add bet if necessary
+            # add bet to threshold-based mask if necessary
             if add_bet:
                 mn_mask_plus_bet = MapNode(
                     interface=twopass.TwopassNiftiInterface(),
@@ -137,7 +137,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
         wf.connect([
             (mn_erode, n_outputs, [('out_file', 'mask')]),
         ])
-        if run_args.masking_algorithm == 'threshold':
+        if run_args.masking_algorithm == 'threshold' and not (fill_masks and run_args.filling_algorithm == 'bet'):
             wf.connect([
                 (n_threshold_masking, n_outputs, [('threshold', 'threshold')])
             ])

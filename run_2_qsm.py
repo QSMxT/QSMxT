@@ -29,6 +29,11 @@ from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from workflows.qsm import qsm_workflow
 from workflows.masking import masking_workflow
 
+class dotdict(dict):
+    """dot.notation access to dictionary attributes"""
+    __getattr__ = dict.get
+    __setattr__ = dict.__setitem__
+    __delattr__ = dict.__delitem__
 
 def init_workflow(args):
     logger = get_logger('main')
@@ -88,7 +93,7 @@ def init_session_workflow(args, subject, session):
     wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow_qsm", subject, session))
     wf.add_nodes([
         node for node in
-        [init_run_workflow(copy.deepcopy(args), subject, session, run) for run in runs]
+        [init_run_workflow(dotdict(args.copy()), subject, session, run) for run in runs]
         if node
     ])
     return wf
@@ -293,7 +298,7 @@ def init_run_workflow(run_args, subject, session, run):
     if magnitude_files:
         mn_resample_inputs = MapNode(
             interface=sampling.AxialSamplingInterface(
-                obliquity_threshold=run_args.obliquity_threshold
+                obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
             ),
             iterfield=['magnitude', 'phase', 'mask'] if mask_files else ['magnitude', 'phase'],
             name='nibabel_numpy_nilearn_axial-resampling'
@@ -545,10 +550,18 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
+        '--premade',
+        choices=['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm'],
+        default=None,
+        help='Premade pipelines'
+    )
+
+    parser.add_argument(
         '--obliquity_threshold',
         type=int,
         default=None,
-        help="TODO" #TODO
+        help="The 'obliquity' as measured by nilearn from which oblique-acquired acqisitions should be " +
+             "axially resampled. Use -1 to disable resampling completely."
     )
 
     parser.add_argument(
@@ -592,7 +605,7 @@ def parse_args(args, return_run_command=False):
         default=None,
         help='Number of erosions applied by tgv.'
     )
-
+    
     parser.add_argument(
         '--unwrapping_algorithm',
         default=None,
@@ -659,11 +672,13 @@ def parse_args(args, return_run_command=False):
     parser.add_argument(
         '--filling_algorithm',
         default=None,
-        choices=['morphological', 'gaussian', 'both'],
+        choices=['morphological', 'gaussian', 'both', 'bet'],
         help='Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing '+
              'operation is applied first prior to a morphological hole-filling operation. Note that gaussian '+
              'smoothing may fill some unwanted regions (e.g. connecting the skull and brain tissue), whereas '+
-             'morphological hole-filling alone may fail to fill desired regions if they are not fully enclosed.'
+             'morphological hole-filling alone may fail to fill desired regions if they are not fully enclosed.'+
+             'The BET option is applicable to two-pass QSM only, and will use ONLY a BET mask as the filled '+
+             'version of the mask.'
     )
 
     parser.add_argument(
@@ -760,6 +775,12 @@ def parse_args(args, return_run_command=False):
         default=None,
         help='Number of processes to run concurrently for MultiProc. By default, the number of available '+
              'CPUs is used.'
+    )
+
+    parser.add_argument(
+        '--non_interactive',
+        action='store_true',
+        help='Disables interactive steps.'
     )
 
     parser.add_argument(
@@ -1212,24 +1233,32 @@ def process_args(args):
         if args.qsm_algorithm in ['nextqsm', 'rts']:
             args.unwrapping_algorithm = 'romeo'
 
+    # add_bet option only works with non-bet masking methods
+    args.add_bet &= 'bet' not in args.masking_algorithm
+
     # default two-pass settings for QSM algorithms
     if not args.two_pass:
         if args.qsm_algorithm in ['rts', 'tgv']:
             args.two_pass = 'on'
         else:
             args.two_pass = 'off'
+    
+    # convert two_pass from on/off to True/False
     args.two_pass = True if args.two_pass == 'on' else False
-
-    # add_bet option only works with non-bet masking methods
-    args.add_bet &= 'bet' not in args.masking_algorithm
 
     # two-pass option only works with non-bet masking methods
     args.two_pass &= 'bet' not in args.masking_algorithm
-    args.single_pass = not args.two_pass
 
     # two-pass option does not work with nextqsm or v-sharp
     args.two_pass &= args.qsm_algorithm != 'nextqsm'
     args.two_pass &= args.bf_algorithm != 'vsharp'
+
+    # single-pass variable once confirmed
+    args.single_pass = not args.two_pass
+
+    # 'bet' hole-filling not applicable for single-pass
+    if args.single_pass and args.filling_algorithm == 'bet':
+        args.filling_algorithm == 'both'
 
     # decide on inhomogeneity correction
     args.inhomogeneity_correction &= (args.add_bet or args.masking_input == 'magnitude')
@@ -1252,7 +1281,7 @@ def process_args(args):
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
-    return args
+    return dotdict(vars(args))
 
 def set_env_variables(args):
     # misc environment variables
@@ -1265,7 +1294,7 @@ def set_env_variables(args):
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + get_qsmxt_dir()
     else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
 
-def write_references(wf):
+def write_citations(wf):
     # get all node names
     node_names = [node._name.lower() for node in wf._get_all_nodes()]
 
@@ -1275,7 +1304,7 @@ def write_references(wf):
     # write "references.txt" with the command used to invoke the script and any necessary references
     with open(os.path.join(args.output_dir, "references.txt"), 'w', encoding='utf-8') as f:
         # qsmxt, nipype, numpy
-        f.write("\n\n == References ==")
+        f.write("\n\n == Citations ==")
         f.write(f"\n\n - QSMxT{'' if not args.two_pass else ' and two-pass combination method'}: Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
         f.write("\n\n - QSMxT: Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         
@@ -1316,6 +1345,7 @@ def write_references(wf):
         f.write("\n\n - Nipype package: Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
         f.write("\n\n")
 
+
 if __name__ == "__main__":
     # create initial logger
     logger = create_logger(name='pre')
@@ -1342,7 +1372,7 @@ if __name__ == "__main__":
     # print diff if needed
     diff = get_diff()
     if diff:
-        logger.log(LogLevel.WARNING.value, f"Working directory not clean! Writing diff to {os.path.join(args.output_dir, 'diff.txt')}...")
+        logger.log(LogLevel.WARNING.value, f"QSMxT's working directory is not clean! Writing git diff to {os.path.join(args.output_dir, 'diff.txt')}...")
         diff_file = open(os.path.join(args.output_dir, "diff.txt"), "w")
         diff_file.write(diff)
         diff_file.close()
@@ -1360,8 +1390,8 @@ if __name__ == "__main__":
     # build workflow
     wf = init_workflow(args)
     
-    # write references to file
-    write_references(wf)
+    # write citations to file
+    write_citations(wf)
 
     config.update_config({'logging': { 'log_directory': args.output_dir, 'log_to_file': True }})
     logging.update_logging(config)
