@@ -410,6 +410,7 @@ def init_run_workflow(run_args, subject, session, run):
     )
     wf.connect([
         (wf_qsm, n_qsm_average, [('qsm_outputs.qsm', 'in_files')]),
+        (wf_masking, n_qsm_average, [('masking_outputs.mask', 'in_masks')])
     ])
     wf.connect([
         (n_qsm_average, n_outputs, [('out_file', 'qsm_final' if not run_args.two_pass else 'qsm_filled')])
@@ -456,6 +457,7 @@ def init_run_workflow(run_args, subject, session, run):
         )
         wf.connect([
             (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')]),
+            (wf_masking_intermediate, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
         ])
         wf.connect([
             (n_qsm_twopass_average, n_outputs, [('out_file', 'qsm_final')])
