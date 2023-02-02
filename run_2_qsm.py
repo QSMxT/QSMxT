@@ -4,7 +4,6 @@ import sys
 import os
 import glob
 import copy
-import datetime
 import argparse
 import json
 
@@ -28,12 +27,6 @@ from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 
 from workflows.qsm import qsm_workflow
 from workflows.masking import masking_workflow
-
-class dotdict(dict):
-    """dot.notation access to dictionary attributes"""
-    __getattr__ = dict.get
-    __setattr__ = dict.__setitem__
-    __delattr__ = dict.__delitem__
 
 def init_workflow(args):
     logger = get_logger('main')
@@ -93,7 +86,7 @@ def init_session_workflow(args, subject, session):
     wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow_qsm", subject, session))
     wf.add_nodes([
         node for node in
-        [init_run_workflow(dotdict(args.copy()), subject, session, run) for run in runs]
+        [init_run_workflow(copy.deepcopy(args), subject, session, run) for run in runs]
         if node
     ])
     return wf
@@ -550,13 +543,6 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
-        '--premade',
-        choices=['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm'],
-        default=None,
-        help='Premade pipelines'
-    )
-
-    parser.add_argument(
         '--obliquity_threshold',
         type=int,
         default=None,
@@ -775,12 +761,6 @@ def parse_args(args, return_run_command=False):
         default=None,
         help='Number of processes to run concurrently for MultiProc. By default, the number of available '+
              'CPUs is used.'
-    )
-
-    parser.add_argument(
-        '--non_interactive',
-        action='store_true',
-        help='Disables interactive steps.'
     )
 
     parser.add_argument(
@@ -1281,7 +1261,7 @@ def process_args(args):
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')
 
-    return dotdict(vars(args))
+    return args
 
 def set_env_variables(args):
     # misc environment variables
@@ -1417,7 +1397,6 @@ if __name__ == "__main__":
             if os.environ.get("PBS_JOBID"):
                 jobid = os.environ.get("PBS_JOBID").split(".")[0]
                 plugin_args['memory_gb'] = float(sys_cmd(f"qstat -f {jobid} | grep Resource_List.mem", print_output=False, print_command=False).split(" = ")[1].split("gb")[0])
-                print(plugin_args)
             wf.run(
                 plugin='MultiProc',
                 plugin_args=plugin_args
