@@ -162,8 +162,9 @@ def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=False)
         qsm.set_env_variables(args)
         if run_args:
             logger.log(LogLevel.DEBUG.value, f"Updating args with run_args: {run_args}")
+            arg_dict = vars(args)
             for key, value in run_args.items():
-                args[key] = value
+                arg_dict[key] = value
             logger.log(LogLevel.DEBUG.value, f"Initialising workflow with updated args...")
             wf = qsm.init_workflow(args)
         logger.log(LogLevel.DEBUG.value, f"Saving args to {os.path.join(args.output_dir, 'args.txt')}...")
