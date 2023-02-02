@@ -228,3 +228,46 @@ class RtsQsmInterface(CommandLineJulia):
     output_spec = RtsQsmOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_rts.jl")
 
+
+class TvQsmInputSpec(CommandLineInputSpecJulia):
+    def __init__(self, **inputs): super(TvQsmInputSpec, self).__init__(**inputs)
+    tissue_frequency = File(
+        exists=True,
+        mandatory=True,
+        argstr="--tissue-frequency %s",
+        position=0
+    )
+    mask = File(
+        exists=True,
+        mandatory=True,
+        argstr="--mask %s",
+        position=1
+    )
+    vsz = traits.String(
+        argstr="--vsz \"%s\"",
+        default="(1,1,1)",
+        position=2
+    )
+    b0_direction = traits.String(
+        argstr="--b0-dir \"%s\"",
+        default="(0,0,1)",
+        position=3
+    )
+    qsm = File(
+        argstr="--qsm-out %s",
+        name_source=['tissue_frequency'],
+        name_template='%s_rts.nii',
+        position=4
+    )
+
+
+class TvQsmOutputSpec(TraitedSpec):
+    qsm = File(exists=True)
+
+
+class TvQsmInterface(CommandLineJulia):
+    def __init__(self, **inputs): super(TvQsmInterface, self).__init__(**inputs)
+    input_spec = TvQsmInputSpec
+    output_spec = TvQsmOutputSpec
+    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_tv.jl")
+

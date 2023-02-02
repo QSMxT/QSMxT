@@ -77,7 +77,7 @@ def qsm_workflow(run_args, name):
         ),
         name='frequency-inputs'
     )
-    if run_args.qsm_algorithm in ['nextqsm', 'rts']:
+    if run_args.qsm_algorithm in ['nextqsm', 'rts', 'tv']:
         if not run_args.combine_phase:
             phase_to_freq_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
             mn_phase_to_freq = MapNode(
@@ -104,7 +104,7 @@ def qsm_workflow(run_args, name):
             ])
         
     # === BACKGROUND FIELD REMOVAL ===
-    if run_args.qsm_algorithm in ['rts']:
+    if run_args.qsm_algorithm in ['rts', 'tv']:
         mn_bf = MapNode(
             interface=IdentityInterface(
                 fields=['tissue_frequency', 'mask']
@@ -185,6 +185,27 @@ def qsm_workflow(run_args, name):
         ])
         mn_qsm.plugin_args = {
             'qsub_args': f'-A {run_args.pbs} -N RTS -l walltime=01:00:00 -l select=1:ncpus={rts_threads}:mem=5gb',
+            'overwrite': True
+        }
+    if run_args.qsm_algorithm == 'tv':
+        tv_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+        mn_qsm = MapNode(
+            interface=qsmjl.TvQsmInterface(num_threads=tv_threads),
+            name='qsmjl_tv',
+            iterfield=['tissue_frequency', 'mask'],
+            n_procs=tv_threads,
+            mem_gb=5,
+            terminal_output="file_split"
+        )
+        wf.connect([
+            (mn_bf, mn_qsm, [('tissue_frequency', 'tissue_frequency')]),
+            (mn_bf, mn_qsm, [('mask', 'mask')]),
+            (n_inputs, mn_qsm, [('vsz', 'vsz')]),
+            (n_inputs, mn_qsm, [('b0_direction', 'b0_direction')]),
+            (mn_qsm, n_outputs, [('qsm', 'qsm')]),
+        ])
+        mn_qsm.plugin_args = {
+            'qsub_args': f'-A {run_args.pbs} -N RTS -l walltime=01:00:00 -l select=1:ncpus={tv_threads}:mem=5gb',
             'overwrite': True
         }
     if run_args.qsm_algorithm == 'tgv':

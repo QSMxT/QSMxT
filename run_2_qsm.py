@@ -559,7 +559,7 @@ def parse_args(args, return_run_command=False):
     parser.add_argument(
         '--qsm_algorithm',
         default=None,
-        choices=['tgv', 'nextqsm', 'rts'],
+        choices=['tgv', 'tv', 'nextqsm', 'rts'],
         help="QSM algorithm. The tgv algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 from "+
              "Langkammer et al., and includes unwrapping and background field removal steps as part of a "+
              "combined optimisation. The NeXtQSM option requires NeXtQSM installed (available by default in the "+
@@ -1127,20 +1127,25 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
             )
 
             print("\n== QSM Algorithm ==")
-            print("rts: Rapid Two-Step (10.1016/j.neuroimage.2017.11.018)")
+            print("rts: Rapid Two-Step QSM")
+            print("   - https://doi.org/10.1016/j.neuroimage.2017.11.018")
             print("   - Compatible with two-pass artefact reduction algorithm")
             print("   - Fast runtime")
-            print("tgv: Total Generalized Variation (10.1016/j.neuroimage.2015.02.041)")
+            print("tv: Fast quantitative susceptibility mapping with L1-regularization and automatic parameter selection")
+            print("   - https://doi.org/10.1002/mrm.25029")
+            print("tgv: Total Generalized Variation")
+            print("   - https://doi.org/10.1016/j.neuroimage.2015.02.041")
             print("   - Combined unwrapping, background field removal and dipole inversion")
             print("   - Most stable with custom masks")
             print("   - Long runtime")
             print("   - Compatible with two-pass artefact reduction algorithm")
-            print("nextqsm: NeXtQSM (10.1016/j.media.2022.102700)")
+            print("nextqsm: NeXtQSM")
+            print("   - https://doi.org/10.1016/j.media.2022.102700")
             print('   - Uses deep learning to solve the background field removal and dipole inversion steps')
             print('   - High memory requirements (>=12gb recommended)')
             args.qsm_algorithm = get_option(
                 prompt=f"\nSelect QSM algorithm [default - {args.qsm_algorithm}]: ",
-                options=['rts', 'tgv', 'nextqsm'],
+                options=['rts', 'tv', 'tgv', 'nextqsm'],
                 default=args.qsm_algorithm
             )
 

@@ -39,6 +39,6 @@ mask_nii = niread(args["mask"])
 mask = !=(0).(mask_nii.raw)
 
 # dipole inversion
-χ = tv(tissue_freq_nii.raw, mask, vsz, bdir=bdir)
+χ = tv(tissue_freq_nii.raw, mask, vsz, bdir=bdir, lambda=0.25e-3, maxit=500)
 savenii(χ, args["qsm-out"], header=tissue_freq_nii.header)
 
