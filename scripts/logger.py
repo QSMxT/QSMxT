@@ -37,16 +37,21 @@ class _StringStream:
     def flush(self):
         pass
 
-def get_logger():
-    return _logging.getLogger(name='main')
+def get_logger(name='main'):
+    return _logging.getLogger(name=name)
 
-def make_logger(logpath=None, printlevel=LogLevel.INFO, warnlevel=LogLevel.WARNING, errorlevel=LogLevel.ERROR, writelevel=LogLevel.WARNING):
+def make_logger(name='main', logpath=None, printlevel=LogLevel.INFO, warnlevel=LogLevel.WARNING, errorlevel=LogLevel.ERROR, writelevel=LogLevel.WARNING):
+    # create/get logger
+    logger = _logging.getLogger(name=name)
+
+    # return logger if it already has handlers
+    if logger.hasHandlers():
+        return logger
     
+    # check level names if needed
     for log_level in LogLevel:
-        _logging.addLevelName(log_level.value, log_level.name)
-
-    # create logger
-    logger = _logging.getLogger(name='main')
+        if log_level.value not in _logging._levelToName.values():
+            _logging.addLevelName(log_level.value, log_level.name)
 
     # create console handler and set level to my level
     console_handler = _logging.StreamHandler(stream=_StringStream())

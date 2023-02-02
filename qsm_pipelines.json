@@ -1,5 +1,6 @@
 {
     "default": {
+        "description" : "Default QSMxT settings (GRE)",
         "subject_pattern": "sub*",
         "session_pattern": "ses*",
         "magnitude_pattern": "{subject}/{session}/anat/*{run}*mag*nii*",
@@ -41,9 +42,11 @@
         "slurm": null,
         "n_procs": null,
         "debug": false,
-        "dry": false
+        "dry": false,
+        "non_interactive" : false
     },
     "gre": {
+        "description": "Applies suggested settings for 3D-GRE images",
         "combine_phase": false,
         "qsm_algorithm": "rts",
         "unwrapping_algorithm": "romeo",
@@ -64,6 +67,7 @@
         ]
     },
     "epi": {
+        "description": "Applies suggested settings for 3D-EPI images (assumes human brain)",
         "combine_phase": false,
         "qsm_algorithm": "rts",
         "unwrapping_algorithm": "romeo",
@@ -85,9 +89,11 @@
         "add_bet": true
     },
     "bet": {
+        "description": "Applies a traditional BET-masking approach (artefact reduction unavailable)",
         "masking_algorithm": "bet"
     },
     "fast": {
+        "description": "Applies a set of fast algorithms",
         "combine_phase": false,
         "qsm_algorithm": "rts",
         "unwrapping_algorithm": "romeo",
@@ -98,6 +104,7 @@
         ]
     },
     "body": {
+        "description": "Applies suggested settings for non-brain applications",
         "combine_phase": false,
         "qsm_algorithm": "tgv",
         "masking_algorithm": "threshold",
@@ -113,6 +120,7 @@
         ]
     },
     "nextqsm": {
+        "description": "Applies suggested settings for running the NeXtQSM algorithm (assumes human brain)",
         "combine_phase": false,
         "qsm_algorithm": "nextqsm",
         "masking_algorithm": "bet-firstecho",

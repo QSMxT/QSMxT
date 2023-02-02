@@ -177,13 +177,31 @@ def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=False)
             logger.log(LogLevel.DEBUG.value, f"Deleting workflow folder {os.path.join(args.output_dir, 'workflow_qsm')}")
             shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"), ignore_errors=True)
 
+def upload_folder(folder, result_id):
+    # upload filename
+    if os.environ.get('BRANCH'):
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_{result_id}.tar"
+    else:
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{result_id}.tar"
+    
+    # zip up results
+    sys_cmd(f"tar -cf {results_tar} {folder}")
+
+    # upload results
+    try:
+        cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
+        cs.upload(results_tar, results_tar)
+    except KeyError:
+        print("No UPLOAD_URL/DATA_PASS variable found... Skipping upload")
+
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, None)
 ])
 def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
-        os.path.join(tempfile.gettempdir(), "qsm")
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -192,7 +210,7 @@ def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.unwrapping_algorithm == "romeo")
     assert(args.masking_algorithm == "threshold")
     assert(args.masking_input == "phase")
-    assert(args.threshold_value == [None, None])
+    assert(args.threshold_value == None)
     assert(args.threshold_algorithm == 'otsu')
     assert(args.filling_algorithm == 'both')
     assert(args.threshold_algorithm_factor == [1.7, 1.0])
@@ -206,18 +224,8 @@ def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
     
-    # upload filename
-    if os.environ.get('BRANCH'):
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_rts.tar"
-    else:
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_rts.tar"
-    
-    # zip up results
-    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
-
-    # upload results
-    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
-    cs.upload(results_tar, results_tar)
+    # upload output folder
+    upload_folder(folder=args.output_dir, result_id='rts')
             
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, False, None)
@@ -226,7 +234,8 @@ def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--qsm_algorithm", "nextqsm"
+        "--premade", "nextqsm",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -239,17 +248,7 @@ def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
     
     # upload filename
-    if os.environ.get('BRANCH'):
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_nextqsm.tar"
-    else:
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_nextqsm.tar"
-    
-    # zip up results
-    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
-
-    # upload results
-    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
-    cs.upload(results_tar, results_tar)
+    upload_folder(folder=args.output_dir, result_id='nextqsm')
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, False, None)
@@ -258,7 +257,8 @@ def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--qsm_algorithm", "tgv"
+        "--qsm_algorithm", "tgv",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -266,7 +266,7 @@ def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.qsm_algorithm == "tgv")
     assert(args.masking_algorithm == "threshold")
     assert(args.masking_input == "phase")
-    assert(args.threshold_value == [None, None])
+    assert(args.threshold_value == None)
     assert(args.threshold_algorithm == 'otsu')
     assert(args.filling_algorithm == 'both')
     assert(args.threshold_algorithm_factor == [1.7, 1.0])
@@ -274,7 +274,7 @@ def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
     assert(args.inhomogeneity_correction == False)
     assert(args.add_bet == False)
     assert(args.use_existing_masks == False)
-    assert(args.two_pass == False)
+    assert(args.two_pass == True)
     assert(0 < args.n_procs <= int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     assert(0 < args.process_threads < int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
     
@@ -286,23 +286,12 @@ def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
 def test_rts_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir_secret,
-        os.path.join(tempfile.gettempdir(), "qsm-secret")
+        os.path.join(tempfile.gettempdir(), "qsm-secret"),
+        "--non_interactive"
     ]))
     
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
-    
-    # upload filename
-    if os.environ.get('BRANCH'):
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_realdata.tar"
-    else:
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_realdata.tar"
-    
-    # zip up results
-    sys_cmd(f"tar -cf {results_tar} {args.output_dir}")
-
-    # upload results
-    cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
-    cs.upload(results_tar, results_tar)
+    upload_folder(folder=args.output_dir, result_id='rts_realdata')
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
@@ -311,7 +300,8 @@ def test_laplacian_unwrapping(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--unwrapping_algorithm", "laplacian"
+        "--unwrapping_algorithm", "laplacian",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -328,7 +318,8 @@ def test_masking_algo_bet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--masking_algorithm", "bet"
+        "--masking_algorithm", "bet",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -347,7 +338,8 @@ def test_masking_algo_bet_firstecho(bids_dir, init_workflow, run_workflow, run_a
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--masking_algorithm", "bet-firstecho"
+        "--masking_algorithm", "bet-firstecho",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -366,7 +358,8 @@ def test_masking_input_magnitude(bids_dir, init_workflow, run_workflow, run_args
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--masking_input", "magnitude"
+        "--masking_input", "magnitude",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -383,7 +376,8 @@ def test_add_bet(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--add_bet"
+        "--add_bet",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -401,7 +395,8 @@ def test_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_workflow,
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--inhomogeneity_correction"
+        "--inhomogeneity_correction",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -421,7 +416,8 @@ def test_inhomogeneity_correction(bids_dir, init_workflow, run_workflow, run_arg
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--masking_input", "magnitude",
-        "--inhomogeneity_correction"
+        "--inhomogeneity_correction",
+        "--non_interactive"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -440,12 +436,13 @@ def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--use_existing_masks"
+        "--use_existing_masks",
+        "--non_interactive"
     ]))
     
     assert(args.masking_algorithm == "threshold")
     assert(args.masking_input == "phase")
-    assert(args.threshold_value == [None, None])
+    assert(args.threshold_value == None)
     assert(args.threshold_algorithm == 'otsu')
     assert(args.filling_algorithm == 'both')
     assert(args.threshold_algorithm_factor == [1.7, 1.0])
@@ -463,7 +460,8 @@ def test_two_pass(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--two_pass", "on"
+        "--two_pass", "on",
+        "--non_interactive"
     ]))
     
     assert(args.two_pass == True)

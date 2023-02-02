@@ -6,6 +6,7 @@ import glob
 import copy
 import datetime
 import argparse
+import json
 
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
@@ -14,11 +15,12 @@ from nipype import config, logging
 from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir, get_diff
 from scripts.sys_cmd import sys_cmd
 from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logger
+from scripts.user_input import get_option, get_string, get_num, get_nums
 
 from interfaces import nipype_interface_romeo as romeo
 from interfaces import nipype_interface_scalephase as scalephase
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
-from interfaces import nipype_interface_json as json
+from interfaces import nipype_interface_json as np_json
 from interfaces import nipype_interface_axialsampling as sampling
 from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_twopass as twopass
@@ -29,7 +31,7 @@ from workflows.masking import masking_workflow
 
 
 def init_workflow(args):
-    logger = get_logger()
+    logger = get_logger('main')
     subjects = [
         os.path.split(path)[1]
         for path in glob.glob(os.path.join(args.bids_dir, args.subject_pattern))
@@ -46,10 +48,8 @@ def init_workflow(args):
     ])
     return wf
 
-def init_subject_workflow(
-    args, subject
-):
-    logger = get_logger()
+def init_subject_workflow(args, subject):
+    logger = get_logger('main')
     sessions = [
         os.path.split(path)[1]
         for path in glob.glob(os.path.join(args.bids_dir, subject, args.session_pattern))
@@ -67,7 +67,7 @@ def init_subject_workflow(
     return wf
 
 def init_session_workflow(args, subject, session):
-    logger = get_logger()
+    logger = get_logger('main')
     # exit if no runs found
     phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
     phase_files = glob.glob(phase_pattern)
@@ -94,7 +94,7 @@ def init_session_workflow(args, subject, session):
     return wf
 
 def init_run_workflow(run_args, subject, session, run):
-    logger = get_logger()
+    logger = get_logger('main')
     logger.log(LogLevel.INFO.value, f"Creating nipype workflow for {subject}/{session}/{run}...")
 
     # get relevant files from this run
@@ -165,7 +165,7 @@ def init_run_workflow(run_args, subject, session, run):
     if run_args.qsm_algorithm not in ['tgv']: json_dict["Unwrapping algorithm"] = run_args.unwrapping_algorithm
     if run_args.qsm_algorithm not in ['tgv']: json_dict["BF removal algorithm"] = run_args.bf_algorithm
     n_json = Node(
-        interface=json.JsonInterface(
+        interface=np_json.JsonInterface(
             in_dict=json_dict,
             out_file=f"{subject}_{session}_{run}_qsmxt-header.json"
         ),
@@ -466,101 +466,7 @@ def init_run_workflow(run_args, subject, session, run):
     
     return wf
 
-def parse_args(args):
-    premades = {
-        'default' : {
-            'subject_pattern' : 'sub*',
-            'session_pattern' : 'ses*',
-            'magnitude_pattern' : '{subject}/{session}/anat/*{run}*mag*nii*',
-            'phase_pattern' : '{subject}/{session}/anat/*{run}*phase*nii*',
-            'subjects' :  None,
-            'sessions' :  None,
-            'num_echoes' :  None,
-            'obliquity_threshold' :  10,
-            'combine_phase' :  False,
-            'qsm_algorithm' :  'rts',
-            'tgv_iterations' :  1000,
-            'tgv_alphas' :  [0.0015, 0.0005],
-            'tgv_erosions' :  3,
-            'unwrapping_algorithm' :  'romeo',
-            'bf_algorithm' :  'pdf',
-            'masking_algorithm' : 'threshold', 
-            'masking_input' :  'phase',
-            'threshold_algorithm' :  'otsu',
-            'filling_algorithm' :  'both',
-            'threshold_value' :  None,
-            'threshold_algorithm_factor' :  [1.7, 1.0],
-            'mask_erosions' :  [3, 0],
-            'inhomogeneity_correction' :  False,
-            'add_bet' :  False,
-            'bet_fractional_intensity' :  0.5,
-            'use_existing_masks' :  False,
-            'mask_pattern' :  '{subject}/{session}/extra_data/*{run}*mask*nii*',
-            'two_pass' :  'on',
-            'pbs' :  None,
-            'slurm' :  None,
-            'n_procs' :  None,
-            'debug' :  False,
-            'dry' :  False
-        },
-        'gre' : {
-            'combine_phase' : False,
-            'qsm_algorithm' : 'rts',
-            'unwrapping_algorithm' : 'romeo',
-            'bf_algorithm' : 'pdf',
-            'masking_algorithm' : 'threshold',
-            'two_pass' : True,
-            'masking_input' : 'phase',
-            'threshold_algorithm' : 'otsu',
-            'threshold_algorithm_factor' : [1.7, 1.0],
-            'filling_algorithm' : 'both',
-            'inhomogeneity_correction' : False,
-            'mask_erosions' : [3, 0],
-        },
-        'epi' : {
-            'combine_phase' : False,
-            'qsm_algorithm' : 'rts',
-            'unwrapping_algorithm' : 'romeo',
-            'bf_algorithm' : 'pdf',
-            'masking_algorithm' : 'threshold',
-            'two_pass' : True,
-            'masking_input' : 'phase',
-            'threshold_algorithm' : 'otsu',
-            'threshold_algorithm_factor' : [1.7, 1.0],
-            'filling_algorithm' : 'both',
-            'inhomogeneity_correction' : True,
-            'mask_erosions' : [3, 0],
-            'add_bet' : True
-        },
-        'bet' : {
-            'masking_algorithm' : 'bet'
-        },
-        'fast' : {
-            'combine_phase' : False,
-            'qsm_algorithm' : 'rts',
-            'unwrapping_algorithm' : 'romeo',
-            'bf_algorithm' : 'vsharp',
-            'masking_algorithm' : 'bet',
-            'mask_erosions' : [3],
-        },
-        'body' : {
-            'combine_phase' : False,
-            'qsm_algorithm' : 'tgv',
-            'masking_algorithm' : 'threshold',
-            'two_pass' : True,
-            'masking_input' : 'phase',
-            'threshold_value' : [0.25],
-            'filling_algorithm' : 'both',
-            'mask_erosions' : [3, 0],
-        },
-        'nextqsm' : {
-            'combine_phase' : False,
-            'qsm_algorithm' : 'nextqsm',
-            'masking_algorithm' : 'bet-firstecho',
-            'mask_erosions' : [3]
-        }
-    }
-    
+def parse_args(args, return_run_command=False):
     parser = argparse.ArgumentParser(
         description="QSMxT: QSM Reconstruction Pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
@@ -579,12 +485,15 @@ def parse_args(args):
         type=os.path.abspath,
         help='Output QSM folder; will be created if it does not exist.'
     )
+
+    parser.add_argument(
+        '--pipeline_file',
+        default=None,
+    )
     
     parser.add_argument(
         '--premade',
-        choices=['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm'],
-        default=None,
-        help='Pattern used to match subject folders in bids_dir'
+        default=None
     )
     
     parser.add_argument(
@@ -865,7 +774,7 @@ def parse_args(args):
         action='store_true',
         default=None,
         help='Creates the nipype pipeline using the chosen settings, but does not execute it. Useful for '+
-             'debugging purposes, or for creating a citations file.'
+             'debugging purposes, or for creating a references file.'
     )
 
     parser.add_argument(
@@ -874,6 +783,8 @@ def parse_args(args):
         default=None,
         help='Runs the pipeline in non-interactive mode.'
     )
+
+    logger = get_logger('pre')
     
     # parse explicit arguments ONLY
     args = parser.parse_args(args)
@@ -881,15 +792,34 @@ def parse_args(args):
     for k in args.__dict__:
         if args.__dict__[k] is not None:
             explicit_args[k] = args.__dict__[k]
-    
+
     # get implicit args based on usual defaults
+    pipeline_file = f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')}"
+    with open(pipeline_file, "r") as json_file:
+        premades = json.load(json_file)
     implicit_args = premades['default']
     
-    # update implicit args based on any premade pipeline
+    # update implicit args based on any premade pipelines
+    if args.pipeline_file:
+        with open(args.pipeline_file, "r") as json_file:
+            user_premades = json.load(json_file)
+        premades.update(user_premades)
     if 'premade' in explicit_args.keys():
-        for key, value in premades[explicit_args['premade']].items():
-            if key not in explicit_args or explicit_args[key] == value:
+        if explicit_args['premade'] in premades:
+            for key, value in premades[explicit_args['premade']].items():
+                if key not in explicit_args or explicit_args[key] == value:
+                    implicit_args[key] = value
+        else:
+            logger.log(LogLevel.ERROR.value, f"Chosen premade pipeline '{explicit_args['premade']}' not found!")
+            if args.non_interactive: exit(1)
+            del explicit_args['premade']
+    elif 'premade' in implicit_args.keys():
+        if implicit_args['premade'] in premades:
+            for key, value in premades[implicit_args['premade']].items():
                 implicit_args[key] = value
+        else:
+            logger.log(LogLevel.ERROR.value, f"Chosen premade pipeline '{implicit_args['premade']}' not found!")
+            del implicit_args['premade']
     
     # remove any unnecessary explicit args
     for key, value in implicit_args.items():
@@ -900,29 +830,354 @@ def parse_args(args):
     final_args = implicit_args.copy()
     for key, value in explicit_args.items():
         final_args[key] = value
+
+    # get adjustments from the user
+    if not final_args['non_interactive']:
+        final_args2, implicit_args = get_interactive_args(final_args.copy(), explicit_args, implicit_args, premades)
+        for key, val in final_args2.items():
+            if key not in implicit_args or implicit_args[key] != val:
+                explicit_args[key] = val
+            final_args[key] = val
+
+    # remove any unnecessary explicit args
+    for key, value in implicit_args.items():
+        if key in explicit_args and explicit_args[key] == value:
+            del explicit_args[key]
     
     # update the arguments using the computed ones
-    vars(args).update(final_args)
-
-    # compute the minimum run command to re-execute the built pipeline non-interactively
-    run_command = f"run_2_qsm.py {final_args['bids_dir']} {final_args['output_dir']}"
-    for key, value in final_args.items():
-        if key in ['bids_dir', 'output_dir']: continue
-        if value == True: run_command += f' --{key}'
-        if value == False: continue
-        elif isinstance(value, str): run_command += f" --{key} '{value}'"
-        elif isinstance(value, (int, float)): run_command += f" --{key} {value}"
-        elif isinstance(value, list):
-            run_command += f" --{key}"
-            for val in value:
-                run_command += f" {val}"
-    if '--non_interactive' not in run_command: run_command += ' --non_interactive'
+    keys = set(vars(args)) & set(final_args)
+    for key in keys:
+        vars(args)[key] = final_args[key]
     
+    # compute the minimum run command to re-execute the built pipeline non-interactively
+    if return_run_command:
+        run_command = f"run_2_qsm.py {explicit_args['bids_dir']} {explicit_args['output_dir']}"
+        if 'premade' in explicit_args and explicit_args['premade'] != 'default':
+            run_command += f" --premade '{explicit_args['premade']}'"
+        for key, value in explicit_args.items():
+            if key in ['bids_dir', 'output_dir', 'non_interactive', 'premade']: continue
+            if value == True: run_command += f' --{key}'
+            elif isinstance(value, str): run_command += f" --{key} '{value}'"
+            elif isinstance(value, (int, float)) and value != False: run_command += f" --{key} {value}"
+            elif isinstance(value, list):
+                run_command += f" --{key}"
+                for val in value:
+                    run_command += f" {val}"
+        run_command += ' --non_interactive'
+        return args, run_command
     return args
 
-def create_logger(args):
+def get_interactive_args(args, explicit_args, implicit_args, premades):
+    class dotdict(dict):
+        """dot.notation access to dictionary attributes"""
+        __getattr__ = dict.get
+        __setattr__ = dict.__setitem__
+        __delattr__ = dict.__delitem__
+    args = dotdict(args)
+        
+    # allow user to update the premade if none was chosen
+    if not args.premade:
+        print("\n=== Premade pipelines ===")
+
+        for key, value in premades.items():
+            print(f"{key}", end="")
+            if "description" in value:
+                print(f": {value['description']}")
+            else:
+                print()
+
+        args.premade = get_option(
+            prompt="\nSelect a premade to begin [default - 'default']: ",
+            options=premades.keys(),
+            default='default'
+        )
+        for key, value in premades[args.premade].items():
+            if key not in explicit_args and key != 'premade':
+                args[key] = value
+            implicit_args[key] = value
+
+    # pipeline customisation
+    while True:
+        print("\n(1) Masking:")
+        print(f" - Use existing masks if available: {'Yes' if args.use_existing_masks else 'No'}")
+        if args.masking_algorithm == 'threshold':
+            print(f" - Masking algorithm: threshold ({args.masking_input}-based{('; inhomogeneity-corrected)' if args.masking_input == 'magnitude' and args.inhomogeneity_correction else ')')}")
+            print(f"   - Two-pass artefact reduction: {'Enabled' if args.two_pass else 'Disabled'}")
+            if args.threshold_value:
+                if len(args.threshold_value) >= 2 and all(args.threshold_value) and args.two_pass:
+                    if int(args.threshold_value[0]) == float(args.threshold_value[0]) and int(args.threshold_value[1]) == float(args.threshold_value[1]):
+                        print(f"   - Threshold: {int(args.threshold_value[0])}, {int(args.threshold_value[1])} (hardcoded voxel intensities)")
+                    else:
+                        print(f"   - Threshold: {float(args.threshold_value[0])}%, {float(args.threshold_value[1])}% (hardcoded percentiles of the signal histogram)")
+                elif len(args.threshold_value) == 1 and all(args.threshold_value):
+                    if int(args.threshold_value[0]) == float(args.threshold_value[0]):
+                        print(f"   - Threshold: {int(args.threshold_value[0])} (hardcoded voxel intensity)")
+                    else:
+                        print(f"   - Threshold: {float(args.threshold_value[0])}% (hardcoded percentile of per-echo histogram)")
+            else:
+                print(f"   - Threshold algorithm: {args.threshold_algorithm}", end="")
+                if len(args.threshold_algorithm_factor) >= 2 and args.two_pass:
+                    print(f" (x{args.threshold_algorithm_factor[0]} for single-pass; x{args.threshold_algorithm_factor[1]} for two-pass)")
+                elif len(args.threshold_algorithm_factor) == 1:
+                    print(f" (x{args.threshold_algorithm_factor[0]})")
+                else:
+                    print()
+            print(f"   - Hole-filling algorithm: {'morphological+gaussian' if args.filling_algorithm == 'both' else args.filling_algorithm}{'+bet' if args.add_bet else ''}{f' (bet fractional intensity = {args.bet_fractional_intensity})' if args.add_bet else ''}")
+            if args.two_pass and len(args.mask_erosions) == 2:
+                print(f"   - Erosions: {args.mask_erosions[0]} erosions for single-pass; {args.mask_erosions[1]} erosions for two-pass")
+        else:
+            print(f" - Masking algorithm: {args.masking_algorithm}{f' (fractional intensity = {args.bet_fractional_intensity})' if 'bet' in args.masking_algorithm else ''}")
+            print(f"   - Erosions: {args.mask_erosions[0]}")
+        
+        print("\n(2) Phase processing:")
+        print(f" - Axial resampling: " + (f"Enabled (obliquity threshold = {args.obliquity_threshold})" if args.obliquity_threshold else " Disabled"))
+        print(f" - Multi-echo combination: " + ("B0 mapping (using ROMEO)" if args.combine_phase else "Susceptibility averaging"))
+        if args.qsm_algorithm not in ['tgv']:
+            print(f" - Phase unwrapping: {args.unwrapping_algorithm}")
+            if args.qsm_algorithm not in ['nextqsm']:
+                print(f" - Background field removal: {args.bf_algorithm}")
+        print(f" - Dipole inversion: {args.qsm_algorithm}")
+        
+        user_in = get_option(
+            prompt="\nEnter a number to customize; enter 'run' to run: ",
+            options=['1', '2', 'run'],
+            default=None
+        )
+        if user_in == 'run': break
+        
+        if user_in == '1': # MASKING
+            os.system('clear')
+            print("=== MASKING ===")
+
+            print("\n== Existing masks ==")
+            args.use_existing_masks = 'yes' == get_option(
+                prompt=f"Use existing masks if available [default: {'yes' if args.use_existing_masks else 'no'}]: ",
+                options=['yes', 'no'],
+                default='yes' if args.use_existing_masks else 'no'
+            )
+            if args.use_existing_masks:
+                args.mask_pattern = get_string(
+                    prompt=f"Enter mask file pattern [default: {args.mask_pattern}]: ",
+                    default=args.mask_pattern
+                )
+            
+            print("\n== Masking algorithm ==")
+            print("threshold: ")
+            print("     - required for the two-pass artefact reduction algorithm (https://doi.org/10.1002/mrm.29048)")
+            print("     - required for applications other than in vivo human brain")
+            print("     - more robust to severe pathology")
+            print("bet: Applies the Brain Extraction Tool (standalone version)")
+            print("     - the standard in most QSM pipelines")
+            print("     - robust in healthy human brains")
+            print("     - Paper: https://doi.org/10.1002/hbm.10062")
+            print("     - Code: https://github.com/liangfu/bet2")
+            print("bet-firstecho: Applies BET to the first-echo magnitude only")
+            print("     - This setting is the same as BET for single-echo acquisitions or if multi-echo images are combined using B0 mapping")
+            print("\nNOTE: Even if you are using premade masks, a masking method is required as a backup.\n")
+            args.masking_algorithm = get_option(
+                prompt=f"Select masking algorithm [default - {args.masking_algorithm}]: ",
+                options=['bet', 'bet-firstecho', 'threshold'],
+                default=args.masking_algorithm
+            )
+
+            if 'bet' in args.masking_algorithm:
+                args.bet_fractional_intensity = get_num(
+                    prompt=f"\nBET fractional intensity [default - {args.bet_fractional_intensity}]: ",
+                    min_val=0,
+                    max_val=1,
+                    default=args.bet_fractional_intensity
+                )
+
+            if args.masking_algorithm == 'threshold':
+                print("\n== Threshold input ==")
+                print("Select the input to be used in the thresholding algorithm.\n")
+                print("magnitude: use the MRI signal magnitude")
+                print("  - standard approach")
+                print("  - requires magnitude images")
+                print("phase: use a phase quality map")
+                print("  - phase quality map produced by ROMEO (https://doi.org/10.1002/mrm.28563)")
+                print("  - measured between 0 and 100")
+                print("  - some evidence that phase-based masks are more reliable near the brain boundary (https://doi.org/10.1002/mrm.29368)")
+
+                args.masking_input = get_option(
+                    prompt=f"\nSelect threshold input [default - {args.masking_input}]: ",
+                    options=['magnitude', 'phase'],
+                    default=args.masking_input
+                )
+
+                if args.masking_input == 'magnitude':
+                    args.inhomogeneity_correction = 'yes' == get_option(
+                        prompt=f"\nApply inhomogeneity correction to magnitude [default: {'yes' if args.inhomogeneity_correction else 'no'}]: ",
+                        options=['yes', 'no'],
+                        default='yes' if args.inhomogeneity_correction else 'no'
+                    )
+
+                print("\n== Two-pass Artefact Reduction ==")
+                print("Select whether to use the two-pass artefact reduction algorithm (https://doi.org/10.1002/mrm.29048).\n")
+                print("  - reduces artefacts, particularly near strong susceptibility sources")
+                print("  - sometimes requires tweaking of the mask to maintain accuracy in high-susceptibility regions")
+                print("  - single-pass results will still be included in the output")
+                print("  - doubles the runtime of the pipeline")
+                args.two_pass = 'on' == get_option(
+                    f"\nSelect on or off [default - {'on' if args.two_pass else 'off'}]: ",
+                    options=['on', 'off'],
+                    default=args.two_pass
+                )
+                if len(args.threshold_value) == 2 and not args.two_pass:
+                    args.threshold_value = [args.threshold_value[0]]
+
+                print("\n== Threshold value ==")
+                print("Select an algorithm to automate threshold selection, or enter a custom threshold.\n")
+                print("otsu: Automate threshold selection using the Otsu algorithm (https://doi.org/10.1109/TSMC.1979.4310076)")
+                print("gaussian: Automate threshold selection using a Gaussian algorithm (https://doi.org/10.1016/j.compbiomed.2012.01.004)")
+                print("\nHardcoded threshold:")
+                print(" - Use an integer to indicate an absolute signal intensity")
+                print(" - Use a floating-point value from 0-1 to indicate a percentile of the per-echo signal histogram")
+                if args.two_pass: print(" - Use two values to specify different thresholds for each pass in two-pass QSM")
+                while True:
+                    user_in = input(f"\nSelect threshold algorithm or value [default - {args.threshold_value if args.threshold_value != [None, None] else args.threshold_algorithm if args.threshold_algorithm else 'otsu'}]: ")
+                    if user_in == "":
+                        break
+                    elif user_in in ['otsu', 'gaussian']:
+                        args.threshold_algorithm = user_in
+                        break
+                    else:
+                        try:
+                            user_in = [float(val) for val in user_in.split(" ")]
+                        except ValueError:
+                            continue
+                        if not (1 <= len(user_in) <= 2):
+                            continue
+                        if all(val == int(val) for val in user_in):
+                            args.threshold_value = [int(val) for val in user_in]
+                        else:
+                            args.threshold_value = user_in
+                        break
+
+                if args.threshold_value != None: args.threshold_algorithm = None
+                if args.threshold_value == None and not args.threshold_algorithm:
+                    args.threshold_algorithm = 'otsu'
+
+                if args.threshold_algorithm in ['otsu', 'gaussian']:
+                    args.threshold_value = None
+                    print("\n== Threshold algorithm factors ==")
+                    print("The threshold algorithm can be tweaked by multiplying it by some factor.")
+                    print("Use two values to specify different factors for each pass in two-pass QSM")
+                    args.threshold_algorithm_factor = get_nums(
+                        prompt=f"\nEnter threshold algorithm factor(s) (space-separated) [default - {str(args.threshold_algorithm_factor)}]: ",
+                        default=args.threshold_algorithm_factor,
+                        min_val=0,
+                        max_n=2
+                    )
+                    
+                print("\n== Filled mask algorithm ==")
+                print("Threshold-based masking requires an algorithm to create a filled mask.\n")
+                print("gaussian:")
+                print(" - applies the scipy gaussian_filter function to the threshold mask")
+                print(" - may fill some unwanted regions (e.g. connecting skull to brain)")
+                print("morphological:")
+                print(" - applies the scipy binary_fill_holes function to the threshold mask")
+                print("both:")
+                print(" - applies both methods (gaussian followed by morphological) to the threshold mask")
+                print("bet:")
+                print(" - uses a BET mask as the filled mask")
+                args.filling_algorithm = get_option(
+                    prompt=f"\nSelect hole-filling algorithm: [default - {args.filling_algorithm}]: ",
+                    options=['gaussian', 'morphological', 'both', 'bet'],
+                    default=args.filling_algorithm
+                )
+                if args.filling_algorithm != 'bet':
+                    args.add_bet = 'yes' == get_option(
+                        prompt=f"\nInclude a BET mask in the hole-filling operation (yes or no) [default - {'yes' if args.add_bet else 'no'}]: ",
+                        options=['yes', 'no'],
+                        default='yes' if args.add_bet else 'no'
+                    )
+                if args.add_bet:
+                    args.bet_fractional_intensity = get_num(
+                        prompt=f"\nBET fractional intensity [default - {args.bet_fractional_intensity}]: ",
+                        default=args.bet_fractional_intensity
+                    )
+        
+            print("\n== Erosions ==")
+            print("The number of times to erode the mask.")
+            print("Use two values to specify different erosion for each pass in two-pass QSM")
+            args.mask_erosions = get_nums(
+                prompt=f"\nEnter number of erosions [default - {str(args.mask_erosions)}]: ",
+                default=args.mask_erosions,
+                min_val=0,
+                max_n=2,
+                dtype=int
+            )
+        if user_in == '2': # PHASE PROCESSING
+            os.system('clear')
+            print("== Resample to axial ==")
+            print("This step will perform axial resampling for oblique acquisitions.")
+            args.obliquity_threshold = get_num(
+                prompt=f"\nEnter an obliquity threshold to cause resampling or -1 for none [default - {args.obliquity_threshold}]: ",
+                default=args.obliquity_threshold
+            )
+
+            print("\n== Combine phase ==")
+            print("This step will combine multi-echo phase data by generating a field map using ROMEO.")
+            args.combine_phase = 'yes' == get_option(
+                prompt=f"\nCombine multi-echo phase data [default - {'yes' if args.combine_phase else 'no'}]: ",
+                options=['yes', 'no'],
+                default='yes' if args.combine_phase else 'no'
+            )
+
+            print("\n== QSM Algorithm ==")
+            print("rts: Rapid Two-Step (10.1016/j.neuroimage.2017.11.018)")
+            print("   - Compatible with two-pass artefact reduction algorithm")
+            print("   - Fast runtime")
+            print("tgv: Total Generalized Variation (10.1016/j.neuroimage.2015.02.041)")
+            print("   - Combined unwrapping, background field removal and dipole inversion")
+            print("   - Most stable with custom masks")
+            print("   - Long runtime")
+            print("   - Compatible with two-pass artefact reduction algorithm")
+            print("nextqsm: NeXtQSM (10.1016/j.media.2022.102700)")
+            print('   - Uses deep learning to solve the background field removal and dipole inversion steps')
+            print('   - High memory requirements (>=12gb recommended)')
+            args.qsm_algorithm = get_option(
+                prompt=f"\nSelect QSM algorithm [default - {args.qsm_algorithm}]: ",
+                options=['rts', 'tgv', 'nextqsm'],
+                default=args.qsm_algorithm
+            )
+
+            if args.qsm_algorithm in ['rts', 'nextqsm']:
+                print("\n== Unwrapping algorithm ==")
+                print("romeo: (https://doi.org/10.1002/mrm.28563)")
+                print(" - quantitative")
+                print("laplacian: (https://doi.org/10.1364/OL.28.001194; https://doi.org/10.1002/nbm.3064)")
+                print(" - non-quantitative")
+                print(" - popular for its numerical simplicity")
+                args.unwrapping_algorithm = get_option(
+                    prompt=f"\nSelect unwrapping algorithm [default - {args.unwrapping_algorithm}]: ",
+                    options=['romeo', 'laplacian'],
+                    default=args.unwrapping_algorithm
+                )
+
+            if args.qsm_algorithm in ['rts']:
+                print("\n== Background field removal ==")
+                print("vsharp: V-SHARP algorithm (https://doi.org/10.1002/mrm.23000)")
+                print(" - fast")
+                print(" - involves a mask erosion step that impacts the next steps")
+                print(" - less reliable with threshold-based masks")
+                print(" - not compatible with artefact reduction algorithm")
+                print("pdf: Projection onto Dipole Fields algorithm (https://doi.org/10.1002/nbm.1670)")
+                print(" - slower")
+                print(" - more accurate")
+                print(" - does not require an additional erosion step")
+                args.bf_algorithm = get_option(
+                    prompt=f"\nSelect background field removal algorithm [default - {args.bf_algorithm}]: ",
+                    options=['vsharp', 'pdf'],
+                    default=args.bf_algorithm
+                )
+    return args.copy(), implicit_args
+
+def create_logger(name, logpath=None):
     logger = make_logger(
-        logpath=os.path.join(args.output_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        name=name,
+        logpath=logpath,
         printlevel=LogLevel.INFO,
         writelevel=LogLevel.INFO,
         warnlevel=LogLevel.WARNING,
@@ -931,12 +1186,26 @@ def create_logger(args):
     return logger
 
 def process_args(args):
+    # default QSM algorithms
+    if not args.qsm_algorithm:
+        args.qsm_algorithm = 'rts'
+
     # default masking settings for QSM algorithms
     if not args.masking_algorithm:
         if args.qsm_algorithm == 'nextqsm':
             args.masking_algorithm = 'bet-firstecho'
         else:
             args.masking_algorithm = 'threshold'
+    
+    # force masking input to magnitude if bet is the masking method
+    args.masking_input = 'magnitude' if 'bet' in args.masking_algorithm else args.masking_input
+
+    # default threshold settings
+    if args.masking_algorithm == 'threshold':
+        if not (args.threshold_value or args.threshold_algorithm):
+            args.threshold_algorithm = 'otsu'
+        if not args.filling_algorithm:
+            args.filling_algorithm = 'both'
 
     # default unwrapping settings for QSM algorithms
     if not args.unwrapping_algorithm:
@@ -961,9 +1230,6 @@ def process_args(args):
     # two-pass option does not work with nextqsm or v-sharp
     args.two_pass &= args.qsm_algorithm != 'nextqsm'
     args.two_pass &= args.bf_algorithm != 'vsharp'
-
-    # force masking input to magnitude if bet is the masking method
-    args.masking_input = 'magnitude' if 'bet' in args.masking_algorithm else args.masking_input
 
     # decide on inhomogeneity correction
     args.inhomogeneity_correction &= (args.add_bet or args.masking_input == 'magnitude')
@@ -1006,13 +1272,8 @@ def write_references(wf):
     def any_string_matches_any_node(strings):
         return any(string in node_name for string in strings for node_name in node_names)
 
-    # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
-        # output QSMxT version, run command, and python interpreter
-        f.write(f"QSMxT: {get_qsmxt_version()}")
-        f.write(f"\nRun command: {str.join(' ', sys.argv)}")
-        f.write(f"\nPython interpreter: {sys.executable}")
-
+    # write "references.txt" with the command used to invoke the script and any necessary references
+    with open(os.path.join(args.output_dir, "references.txt"), 'w', encoding='utf-8') as f:
         # qsmxt, nipype, numpy
         f.write("\n\n == References ==")
         f.write(f"\n\n - QSMxT{'' if not args.two_pass else ' and two-pass combination method'}: Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
@@ -1053,22 +1314,30 @@ def write_references(wf):
         if any_string_matches_any_node(['numpy']):
             f.write("\n\n - Python package - Numpy: Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
         f.write("\n\n - Nipype package: Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
-        
-
         f.write("\n\n")
 
 if __name__ == "__main__":
-    # parse command-line arguments
-    args = parse_args(sys.argv[1:])
-    
+    # create initial logger
+    logger = create_logger(name='pre')
+    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
+
+    # parse explicit arguments
+    logger.log(LogLevel.INFO.value, f"Parsing arguments...")
+    args, run_command = parse_args(sys.argv[1:], return_run_command=True)
+
     # create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
     
-    # setup logger
-    logger = create_logger(args)
+    # overwrite logger with one that logs to file
+    logpath = os.path.join(args.output_dir, f"qsmxt_log.log")
+    logger.log(LogLevel.INFO.value, f"Starting log file: {logpath}")
+    logger = create_logger(
+        name='main',
+        logpath=logpath
+    )
     logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
-    logger.log(LogLevel.INFO.value, f"Command: {str.join(' ', sys.argv)}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
+    logger.log(LogLevel.INFO.value, f"Command: {run_command}")
 
     # print diff if needed
     diff = get_diff()
@@ -1080,6 +1349,10 @@ if __name__ == "__main__":
     
     # process args and make any necessary corrections
     args = process_args(args)
+
+    # write command to file
+    with open(os.path.join(args.output_dir, 'command.txt'), 'w') as command_file:
+        command_file.write(f"{run_command}\n")
     
     # set environment variables
     set_env_variables(args)
