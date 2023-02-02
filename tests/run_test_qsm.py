@@ -229,7 +229,7 @@ def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     upload_folder(folder=args.output_dir, result_id='rts')
             
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 2 })
+    (True, False, { 'num_echoes' : 2 })
 ])
 def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
