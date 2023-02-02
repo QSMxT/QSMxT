@@ -89,7 +89,9 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 name='fsl-bet'
             )
             if run_args.masking_algorithm == 'bet-firstecho':
-                def get_first(magnitude): return [magnitude[0] for f in magnitude]
+                def get_first(magnitude):
+                    if isinstance(magnitude, list): return [magnitude[0] for f in magnitude]
+                    return [magnitude]
                 n_getfirst = Node(
                     interface=Function(
                         input_names=['magnitude'],
