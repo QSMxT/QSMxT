@@ -1297,7 +1297,7 @@ def write_citations(wf):
     # write "references.txt" with the command used to invoke the script and any necessary references
     with open(os.path.join(args.output_dir, "references.txt"), 'w', encoding='utf-8') as f:
         # qsmxt, nipype, numpy
-        f.write("\n\n == Citations ==")
+        f.write("== Citations ==")
         f.write(f"\n\n - QSMxT{'' if not args.two_pass else ' and two-pass combination method'}: Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
         f.write("\n\n - QSMxT: Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
         
@@ -1323,6 +1323,8 @@ def write_citations(wf):
             f.write("\n\n - QSM algorithm - NeXtQSM: Cognolato, F., O'Brien, K., Jin, J. et al. (2022). NeXtQSM—A complete deep learning pipeline for data-consistent Quantitative Susceptibility Mapping trained with hybrid data. Medical Image Analysis, 102700. doi:10.1016/j.media.2022.102700")
         if any_string_matches_any_node(['rts']):
             f.write("\n\n - QSM algorithm - RTS: Kames C, Wiggermann V, Rauscher A. Rapid two-step dipole inversion for susceptibility mapping with sparsity priors. Neuroimage. 2018 Feb 15;167:276-83. doi:10.1016/j.neuroimage.2017.11.018")
+        if any_string_matches_any_node(['tv']):
+            f.write("\n\n - QSM algorithm - TV: Bilgic B, Fan AP, Polimeni JR, Cauley SF, Bianciardi M, Adalsteinsson E, Wald LL, Setsompop K. Fast quantitative susceptibility mapping with L1-regularization and automatic parameter selection. Magnetic resonance in medicine. 2014 Nov;72(5):1444-59")
         if any_string_matches_any_node(['tgv']):
             f.write("\n\n - QSM algorithm - TGV: Langkammer C, Bredies K, Poser BA, et al. Fast quantitative susceptibility mapping using 3D EPI and total generalized variation. NeuroImage. 2015;111:622-630. doi:10.1016/j.neuroimage.2015.02.041")
         if any_string_matches_any_node(['qsmjl']):
