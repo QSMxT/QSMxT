@@ -858,7 +858,7 @@ def parse_args(args, return_run_command=False):
         if 'premade' in explicit_args and explicit_args['premade'] != 'default':
             run_command += f" --premade '{explicit_args['premade']}'"
         for key, value in explicit_args.items():
-            if key in ['bids_dir', 'output_dir', 'non_interactive', 'premade']: continue
+            if key in ['bids_dir', 'output_dir', 'non_interactive', 'premade', 'multiproc']: continue
             if value == True: run_command += f' --{key}'
             elif isinstance(value, str): run_command += f" --{key} '{value}'"
             elif isinstance(value, (int, float)) and value != False: run_command += f" --{key} {value}"
@@ -901,6 +901,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
 
     # pipeline customisation
     while True:
+        args = process_args(args)
         print("\n(1) Masking:")
         print(f" - Use existing masks if available: {'Yes' if args.use_existing_masks else 'No'}")
         if args.masking_algorithm == 'threshold':
