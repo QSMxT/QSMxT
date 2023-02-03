@@ -26,14 +26,6 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
     )
 
     if not mask_files:
-        mn_erode = MapNode(
-            interface=erode.ErosionInterface(
-                num_erosions=run_args.mask_erosions[index % len(run_args.mask_erosions)]
-            ),
-            iterfield=['in_file'],
-            name='scipy_numpy_nibabel_erode'
-        )
-
         # do phase weights if necessary
         if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase' and not (fill_masks and run_args.filling_algorithm == 'bet'):
             mn_phaseweights = MapNode(
@@ -60,6 +52,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                     threshold_algorithm_factor=run_args.threshold_algorithm_factor[index % len(run_args.threshold_algorithm_factor)],
                     fill_masks=fill_masks,
                     mask_suffix=name,
+                    num_erosions=run_args.mask_erosions[index % len(run_args.mask_erosions)] if run_args.mask_erosions else 0,
                     filling_algorithm=run_args.filling_algorithm
                 ),
                 name='scipy_numpy_nibabel_threshold-masking'
@@ -76,9 +69,9 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 wf.connect([
                     (n_inputs, n_threshold_masking, [('magnitude', 'in_files')])
                 ])
-            if not add_bet:
+            if not (add_bet or (run_args.filling_algorithm == 'bet' and fill_masks)):
                 wf.connect([
-                    (n_threshold_masking, mn_erode, [('mask', 'in_file')])
+                    (n_threshold_masking, n_outputs, [('mask', 'mask')])
                 ])
 
         # run bet if necessary
@@ -111,6 +104,18 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                     (n_inputs, mn_bet, [('magnitude', 'in_file')])
                 ])
 
+            # erode bet mask
+            mn_bet_erode = MapNode(
+                interface=erode.ErosionInterface(
+                    num_erosions=run_args.mask_erosions[index % len(run_args.mask_erosions)] if run_args.mask_erosions else 0
+                ),
+                iterfield=['in_file'],
+                name='scipy_numpy_nibabel_bet_erode'
+            )
+            wf.connect([
+                (mn_bet, mn_bet_erode, [('mask', 'in_file')])
+            ])
+
             # add bet to threshold-based mask if necessary
             if add_bet:
                 mn_mask_plus_bet = MapNode(
@@ -120,14 +125,12 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 )
                 wf.connect([
                     (n_threshold_masking, mn_mask_plus_bet, [('mask', 'in_file1')]),
-                    (mn_bet, mn_mask_plus_bet, [('mask', 'in_file2')])
-                ])
-                wf.connect([
-                    (mn_mask_plus_bet, mn_erode, [('out_file', 'in_file')])
+                    (mn_bet_erode, mn_mask_plus_bet, [('out_file', 'in_file2')]),
+                    (mn_mask_plus_bet, n_outputs, [('out_file', 'mask')])
                 ])
             else:
                 wf.connect([
-                    (mn_bet, mn_erode, [('mask', 'in_file')])
+                    (mn_bet_erode, n_outputs, [('out_file', 'mask')])
                 ])
 
     # outputs
@@ -136,9 +139,6 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
             (n_inputs, n_outputs, [('mask', 'mask')]),
         ])
     else:
-        wf.connect([
-            (mn_erode, n_outputs, [('out_file', 'mask')]),
-        ])
         if run_args.masking_algorithm == 'threshold' and not (fill_masks and run_args.filling_algorithm == 'bet'):
             wf.connect([
                 (n_threshold_masking, n_outputs, [('threshold', 'threshold')])

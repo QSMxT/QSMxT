@@ -35,7 +35,7 @@ def _clean_histogram(image_histogram):
     return image_histogram
 
 # === THRESHOLD-BASED MASKING FOR TWO-PASS AND SINGLE-PASS QSM ===
-def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussian', threshold_algorithm_factor=1.0, filling_algorithm='both', mask_suffix="_mask", fill_masks=False):
+def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussian', threshold_algorithm_factor=1.0, filling_algorithm='both', num_erosions=0, mask_suffix="_mask", fill_masks=False):
     # sort input filepaths
     in_files = sorted(in_files)
 
@@ -68,8 +68,20 @@ def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussi
             masks = [fill_holes_smoothing(mask) for mask in masks]
         if filling_algorithm in ['morphological', 'both']:
             masks = [fill_holes_morphological(mask) for mask in masks]
+        if num_erosions:
+            masks = [binary_erosion(mask, iterations=num_erosions) for mask in masks]
     else:
+        # clean up the mask
         masks = [binary_opening(mask) for mask in masks]
+
+        if num_erosions:
+            # identify holes in the mask
+            masks_filled = [fill_holes_morphological(mask) for mask in masks]
+            holes = [masks_filled[i] - masks[i] for i in range(len(masks))]
+
+            # erode the mask without expanding holes
+            masks_filled_ero = [binary_erosion(mask, iterations=num_erosions) for mask in masks_filled]
+            masks = [(masks_filled_ero[i] - holes[i]) == 1 for i in range(len(masks))]
 
     # determine filenames
     mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}{mask_suffix}.nii" for in_file in in_files]
@@ -122,6 +134,7 @@ class MaskingInputSpec(BaseInterfaceInputSpec):
     threshold_algorithm = traits.String(mandatory=False, value="otsu")
     threshold_algorithm_factor = traits.Float(mandatory=False, default_value=1.0)
     filling_algorithm = traits.String(mandatory=False, value='both')
+    num_erosions = traits.Int(mandatory=False, default_value=0)
 
 
 class MaskingOutputSpec(TraitedSpec):
@@ -140,6 +153,7 @@ class MaskingInterface(SimpleInterface):
             threshold_algorithm=self.inputs.threshold_algorithm,
             threshold_algorithm_factor=self.inputs.threshold_algorithm_factor,
             filling_algorithm=self.inputs.filling_algorithm,
+            num_erosions=self.inputs.num_erosions,
             mask_suffix=f"_{self.inputs.mask_suffix}",
             fill_masks=self.inputs.fill_masks,
         )
@@ -190,6 +204,13 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
+        '--num_erosions',
+        default=1,
+        type=int,
+        help='Number of times to erode the mask.'
+    )
+
+    parser.add_argument(
         '--threshold_algorithm_factor',
         default=1.0,
         type=float,
@@ -205,6 +226,7 @@ if __name__ == "__main__":
         threshold_algorithm=args.threshold_algorithm,
         threshold_algorithm_factor=args.threshold_algorithm_factor,
         filling_algorithm=args.filling_algorithm,
+        num_erosions=args.num_erosions,
         fill_masks=args.filling_algorithm != 'none'
     )
 

@@ -341,7 +341,15 @@ def init_run_workflow(run_args, subject, session, run):
         ])
 
     # === MASKING ===
-    wf_masking = masking_workflow(run_args, mask_files, len(magnitude_files) > 0, fill_masks=True, add_bet=run_args.add_bet, name="mask", index=0)
+    wf_masking = masking_workflow(
+        run_args=run_args,
+        mask_files=mask_files,
+        magnitude_available=len(magnitude_files) > 0,
+        fill_masks=True,
+        add_bet=run_args.add_bet and run_args.filling_algorithm != 'bet',
+        name="mask",
+        index=0
+    )
 
     if magnitude_files:
         wf.connect([
