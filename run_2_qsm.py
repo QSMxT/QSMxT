@@ -497,11 +497,16 @@ def parse_args(args, return_run_command=False):
     parser.add_argument(
         '--pipeline_file',
         default=None,
+        help=f"Specify a JSON file to use from which custom premade pipelines will be made available. "+
+             f"See {os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')} for the default pipelines."
     )
     
     parser.add_argument(
         '--premade',
-        default=None
+        default=None,
+        help="Specify a premade pipeline to use as the default. By default, this is 'default'. The "+
+             "name of the pipeline must be present in either " +
+            f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')} or in --pipeline_file."
     )
     
     parser.add_argument(
