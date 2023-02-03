@@ -23,7 +23,7 @@ def nonzero_average(in_files, mask_files=None, save_result=True):
             in_mask_nii = nib.load(in_mask_file)
             in_data = in_mask_nii.get_fdata()
             mask.append(in_data)
-        mask = np.array(mask, dtype=np.int)
+        mask = np.array(mask, dtype=int)
         mask *= abs(data) >= 5e-5
     else:
         mask = abs(data) >= 5e-5

@@ -61,7 +61,7 @@ def threshold_masking(in_files, bet_masks=None, user_threshold=None, threshold_a
 
     # do masking
     thresholds = [get_threshold(data) for data in all_float_data]
-    masks = [np.array(all_float_data[i] > thresholds[i], dtype=np.int) for i in range(len(all_float_data))]
+    masks = [np.array(all_float_data[i] > thresholds[i], dtype=int) for i in range(len(all_float_data))]
     masks = [fill_small_holes(mask) for mask in masks]
     if fill_masks:
         if filling_algorithm in ['gaussian', 'both']:
@@ -69,7 +69,7 @@ def threshold_masking(in_files, bet_masks=None, user_threshold=None, threshold_a
         if filling_algorithm in ['morphological', 'both']:
             masks = [fill_holes_morphological(mask) for mask in masks]
         if num_erosions:
-            masks = [np.array(binary_erosion(mask, iterations=num_erosions), dtype=np.int) for mask in masks]
+            masks = [np.array(binary_erosion(mask, iterations=num_erosions), dtype=int) for mask in masks]
     else:
         # clean up the mask
         masks = [binary_opening(mask) for mask in masks]
@@ -79,16 +79,16 @@ def threshold_masking(in_files, bet_masks=None, user_threshold=None, threshold_a
             # use a bet masks to inform this, if available
             if bet_masks:
                 bet_masks = [nib.load(bet_mask).get_fdata() for bet_mask in bet_masks]
-                masks_filled = [np.array((masks[i] + bet_masks[i]) >= 1, dtype=np.int) for i in range(len(masks))]
+                masks_filled = [np.array((masks[i] + bet_masks[i]) >= 1, dtype=int) for i in range(len(masks))]
             else:
                 masks_filled = [fill_holes_morphological(mask) for mask in masks]
 
             # erode the mask without expanding holes
-            masks_filled_ero = [np.array(binary_erosion(mask, iterations=num_erosions), dtype=np.int) for mask in masks_filled]
+            masks_filled_ero = [np.array(binary_erosion(mask, iterations=num_erosions), dtype=int) for mask in masks_filled]
             
-            holes = [np.array((masks_filled_ero[i] - masks[i]) == 1, np.int) for i in range(len(masks))]
+            holes = [np.array((masks_filled_ero[i] - masks[i]) == 1, int) for i in range(len(masks))]
 
-            masks = [np.array((masks_filled_ero[i] - holes[i]) >= 1, dtype=np.int) for i in range(len(masks))]
+            masks = [np.array((masks_filled_ero[i] - holes[i]) >= 1, dtype=int) for i in range(len(masks))]
 
     # determine filenames
     mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}{mask_suffix}.nii" for in_file in in_files]
