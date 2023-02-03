@@ -44,38 +44,14 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                     (n_inputs, mn_phaseweights, [('magnitude', 'magnitude')])
                 ])
 
-        # do threshold masking if necessary
-        if run_args.masking_algorithm == 'threshold' and not (fill_masks and run_args.filling_algorithm == 'bet'):
-            n_threshold_masking = Node(
-                interface=masking.MaskingInterface(
-                    threshold_algorithm=run_args.threshold_algorithm,
-                    threshold_algorithm_factor=run_args.threshold_algorithm_factor[index % len(run_args.threshold_algorithm_factor)],
-                    fill_masks=fill_masks,
-                    mask_suffix=name,
-                    num_erosions=run_args.mask_erosions[index % len(run_args.mask_erosions)] if run_args.mask_erosions else 0,
-                    filling_algorithm=run_args.filling_algorithm
-                ),
-                name='scipy_numpy_nibabel_threshold-masking'
-                # inputs : ['in_files']
-            )
-            if run_args.threshold_value:
-                n_threshold_masking.inputs.threshold = run_args.threshold_value[index % len(run_args.threshold_value)]
+        bet_used = magnitude_available and (
+             run_args.masking_algorithm in ['bet', 'bet-firstecho']
+             or run_args.add_bet
+             or run_args.filling_algorithm == 'bet')
+        bet_this_run = bet_used and (fill_masks or (run_args.mask_erosions and run_args.masking_algorithm == 'threshold' and not fill_masks))
 
-            if run_args.masking_input == 'phase':    
-                wf.connect([
-                    (mn_phaseweights, n_threshold_masking, [('quality_map', 'in_files')])
-                ])
-            elif run_args.masking_input == 'magnitude':
-                wf.connect([
-                    (n_inputs, n_threshold_masking, [('magnitude', 'in_files')])
-                ])
-            if not (add_bet or (run_args.filling_algorithm == 'bet' and fill_masks)):
-                wf.connect([
-                    (n_threshold_masking, n_outputs, [('mask', 'mask')])
-                ])
-
-        # run bet if necessary
-        if run_args.masking_algorithm in ['bet', 'bet-firstecho'] or add_bet or (run_args.filling_algorithm == 'bet' and fill_masks):
+        # do bet mask if necessary
+        if bet_this_run:
             mn_bet = MapNode(
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
@@ -116,7 +92,42 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 (mn_bet, mn_bet_erode, [('mask', 'in_file')])
             ])
 
-            # add bet to threshold-based mask if necessary
+        # do threshold masking if necessary
+        if run_args.masking_algorithm == 'threshold' and not (fill_masks and run_args.filling_algorithm == 'bet'):
+            n_threshold_masking = Node(
+                interface=masking.MaskingInterface(
+                    threshold_algorithm=run_args.threshold_algorithm,
+                    threshold_algorithm_factor=run_args.threshold_algorithm_factor[index % len(run_args.threshold_algorithm_factor)],
+                    fill_masks=fill_masks,
+                    mask_suffix=name,
+                    num_erosions=run_args.mask_erosions[index % len(run_args.mask_erosions)] if run_args.mask_erosions else 0,
+                    filling_algorithm=run_args.filling_algorithm
+                ),
+                name='scipy_numpy_nibabel_threshold-masking'
+                # inputs : ['in_files']
+            )
+            if run_args.threshold_value:
+                n_threshold_masking.inputs.threshold = run_args.threshold_value[index % len(run_args.threshold_value)]
+            if bet_this_run:
+                wf.connect([
+                    (mn_bet_erode, n_threshold_masking, [('out_file', 'bet_masks')])
+                ])
+
+            if run_args.masking_input == 'phase':    
+                wf.connect([
+                    (mn_phaseweights, n_threshold_masking, [('quality_map', 'in_files')])
+                ])
+            elif run_args.masking_input == 'magnitude':
+                wf.connect([
+                    (n_inputs, n_threshold_masking, [('magnitude', 'in_files')])
+                ])
+            if not (add_bet or (run_args.filling_algorithm == 'bet' and fill_masks)):
+                wf.connect([
+                    (n_threshold_masking, n_outputs, [('mask', 'mask')])
+                ])
+
+        # add bet to threshold-based mask if necessary
+        if run_args.masking_algorithm in ['bet', 'bet-firstecho'] or add_bet or (run_args.filling_algorithm == 'bet' and fill_masks):
             if add_bet:
                 mn_mask_plus_bet = MapNode(
                     interface=twopass.TwopassNiftiInterface(),

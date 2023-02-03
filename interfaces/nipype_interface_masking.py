@@ -35,7 +35,7 @@ def _clean_histogram(image_histogram):
     return image_histogram
 
 # === THRESHOLD-BASED MASKING FOR TWO-PASS AND SINGLE-PASS QSM ===
-def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussian', threshold_algorithm_factor=1.0, filling_algorithm='both', num_erosions=0, mask_suffix="_mask", fill_masks=False):
+def threshold_masking(in_files, bet_masks=None, user_threshold=None, threshold_algorithm='gaussian', threshold_algorithm_factor=1.0, filling_algorithm='both', num_erosions=0, mask_suffix="_mask", fill_masks=False):
     # sort input filepaths
     in_files = sorted(in_files)
 
@@ -61,7 +61,7 @@ def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussi
 
     # do masking
     thresholds = [get_threshold(data) for data in all_float_data]
-    masks = [np.array(all_float_data[i] > thresholds[i], dtype=int) for i in range(len(all_float_data))]
+    masks = [np.array(all_float_data[i] > thresholds[i], dtype=np.int) for i in range(len(all_float_data))]
     masks = [fill_small_holes(mask) for mask in masks]
     if fill_masks:
         if filling_algorithm in ['gaussian', 'both']:
@@ -69,19 +69,26 @@ def threshold_masking(in_files, user_threshold=None, threshold_algorithm='gaussi
         if filling_algorithm in ['morphological', 'both']:
             masks = [fill_holes_morphological(mask) for mask in masks]
         if num_erosions:
-            masks = [binary_erosion(mask, iterations=num_erosions) for mask in masks]
+            masks = [np.array(binary_erosion(mask, iterations=num_erosions), dtype=np.int) for mask in masks]
     else:
         # clean up the mask
         masks = [binary_opening(mask) for mask in masks]
 
+        # erode the mask without expanding holes
         if num_erosions:
-            # identify holes in the mask
-            masks_filled = [fill_holes_morphological(mask) for mask in masks]
-            holes = [masks_filled[i] - masks[i] for i in range(len(masks))]
+            # use a bet masks to inform this, if available
+            if bet_masks:
+                bet_masks = [nib.load(bet_mask).get_fdata() for bet_mask in bet_masks]
+                masks_filled = [np.array((masks[i] + bet_masks[i]) >= 1, dtype=np.int) for i in range(len(masks))]
+            else:
+                masks_filled = [fill_holes_morphological(mask) for mask in masks]
 
             # erode the mask without expanding holes
-            masks_filled_ero = [binary_erosion(mask, iterations=num_erosions) for mask in masks_filled]
-            masks = [(masks_filled_ero[i] - holes[i]) == 1 for i in range(len(masks))]
+            masks_filled_ero = [np.array(binary_erosion(mask, iterations=num_erosions), dtype=np.int) for mask in masks_filled]
+            
+            holes = [np.array((masks_filled_ero[i] - masks[i]) == 1, np.int) for i in range(len(masks))]
+
+            masks = [np.array((masks_filled_ero[i] - holes[i]) >= 1, dtype=np.int) for i in range(len(masks))]
 
     # determine filenames
     mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}{mask_suffix}.nii" for in_file in in_files]
@@ -128,6 +135,7 @@ def fill_small_holes(mask):
 
 class MaskingInputSpec(BaseInterfaceInputSpec):
     in_files = InputMultiPath(mandatory=True, exists=True)
+    bet_masks = InputMultiPath(mandatory=False, exists=True)
     threshold = traits.Float(mandatory=False, default_value=None)
     fill_masks = traits.Bool(mandatory=False, default_value=True)
     mask_suffix = traits.String(mandatory=False, value="_mask")
@@ -149,6 +157,7 @@ class MaskingInterface(SimpleInterface):
     def _run_interface(self, runtime):
         mask, threshold = threshold_masking(
             in_files=self.inputs.in_files,
+            bet_masks=self.inputs.bet_masks,
             user_threshold=self.inputs.threshold,
             threshold_algorithm=self.inputs.threshold_algorithm,
             threshold_algorithm_factor=self.inputs.threshold_algorithm_factor,
