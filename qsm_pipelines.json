@@ -80,11 +80,11 @@
             1.7,
             1.0
         ],
-        "filling_algorithm": "both",
+        "filling_algorithm": "bet",
         "inhomogeneity_correction": true,
         "mask_erosions": [
             3,
-            0
+            3
         ],
         "add_bet": true
     },
