@@ -1025,10 +1025,8 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
                 args.two_pass = 'on' == get_option(
                     f"\nSelect on or off [default - {'on' if args.two_pass else 'off'}]: ",
                     options=['on', 'off'],
-                    default=args.two_pass
+                    default='on' if args.two_pass else 'off'
                 )
-                if len(args.threshold_value) == 2 and not args.two_pass:
-                    args.threshold_value = [args.threshold_value[0]]
 
                 print("\n== Threshold value ==")
                 print("Select an algorithm to automate threshold selection, or enter a custom threshold.\n")
@@ -1039,7 +1037,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
                 print(" - Use a floating-point value from 0-1 to indicate a percentile of the per-echo signal histogram")
                 if args.two_pass: print(" - Use two values to specify different thresholds for each pass in two-pass QSM")
                 while True:
-                    user_in = input(f"\nSelect threshold algorithm or value [default - {args.threshold_value if args.threshold_value != [None, None] else args.threshold_algorithm if args.threshold_algorithm else 'otsu'}]: ")
+                    user_in = input(f"\nSelect threshold algorithm or value [default - {args.threshold_value if args.threshold_value != None else args.threshold_algorithm if args.threshold_algorithm else 'otsu'}]: ")
                     if user_in == "":
                         break
                     elif user_in in ['otsu', 'gaussian']:
@@ -1221,25 +1219,24 @@ def process_args(args):
         if args.qsm_algorithm in ['nextqsm', 'rts']:
             args.unwrapping_algorithm = 'romeo'
 
-    # add_bet option only works with non-bet masking methods
+    # add_bet option only works with non-bet masking and filling methods
     args.add_bet &= 'bet' not in args.masking_algorithm
+    args.add_bet &= 'bet' != args.filling_algorithm
 
     # default two-pass settings for QSM algorithms
-    if not args.two_pass:
-        if args.qsm_algorithm in ['rts', 'tgv']:
+    if args.two_pass is None:
+        if args.qsm_algorithm in ['rts', 'tgv', 'tv']:
             args.two_pass = 'on'
         else:
             args.two_pass = 'off'
     
     # convert two_pass from on/off to True/False
-    args.two_pass = True if args.two_pass == 'on' else False
+    args.two_pass = args.two_pass in ['on', True]
 
-    # two-pass option only works with non-bet masking methods
+    # two-pass does not work with bet masking, nextqsm, or vsharp
     args.two_pass &= 'bet' not in args.masking_algorithm
-
-    # two-pass option does not work with nextqsm or v-sharp
     args.two_pass &= args.qsm_algorithm != 'nextqsm'
-    args.two_pass &= args.bf_algorithm != 'vsharp'
+    args.two_pass &= not (args.bf_algorithm == 'vsharp' and args.qsm_algorithm in ['tv', 'rts', 'nextqsm'])
 
     # single-pass variable once confirmed
     args.single_pass = not args.two_pass
