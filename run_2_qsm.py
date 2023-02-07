@@ -947,7 +947,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
             print(f"   - Erosions: {args.mask_erosions[0]}")
         
         print("\n(2) Phase processing:")
-        print(f" - Axial resampling: " + (f"Enabled (obliquity threshold = {args.obliquity_threshold})" if args.obliquity_threshold else " Disabled"))
+        print(f" - Axial resampling: " + (f"Enabled (obliquity threshold = {args.obliquity_threshold})" if args.obliquity_threshold != -1 else "Disabled"))
         print(f" - Multi-echo combination: " + ("B0 mapping (using ROMEO)" if args.combine_phase else "Susceptibility averaging"))
         if args.qsm_algorithm not in ['tgv']:
             print(f" - Phase unwrapping: {args.unwrapping_algorithm}")
