@@ -305,6 +305,14 @@ def init_run_workflow(run_args, subject, session, run):
                 (mn_inputs_canonical, mn_resample_inputs, [('mask', 'mask')])
             ])
 
+    # run homogeneity filter if necessary
+    if run_args.inhomogeneity_correction:
+        mn_inhomogeneity_correction = MapNode(
+            interface=makehomogeneous.MakeHomogeneousInterface(),
+            iterfield=['magnitude'],
+            name='mrt_correct-inhomogeneity'
+        )
+
     # combine phase data if necessary
     n_inputs_combine = Node(
         interface=IdentityInterface(
@@ -319,26 +327,32 @@ def init_run_workflow(run_args, subject, session, run):
         )
         wf.connect([
             (mn_json_params, n_romeo_combine, [('TE', 'TE')]),
-            (mn_resample_inputs, n_romeo_combine, [('phase', 'phase'), ('magnitude', 'magnitude')]),
-            (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency'), ('phase_wrapped', 'phase'), ('phase_unwrapped', 'phase_unwrapped'), ('magnitude', 'magnitude'), ('mask', 'mask'), ('TE', 'TE')])
+            (mn_resample_inputs, n_romeo_combine, [('phase', 'phase')]),
+            (mn_resample_inputs, n_romeo_combine, [('magnitude', 'magnitude')]),
+            (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency'), ('phase_wrapped', 'phase'), ('phase_unwrapped', 'phase_unwrapped'), ('mask', 'mask'), ('TE', 'TE')])
         ])
         if mask_files: wf.connect([(mn_resample_inputs, n_romeo_combine, [('out_mask', 'mask')])])
+        if run_args.inhomogeneity_correction:
+            wf.connect([
+                (n_romeo_combine, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
+                (mn_inhomogeneity_correction, n_inputs_combine, [('magnitude_corrected', 'magnitude')])
+            ])
+        else:
+            wf.connect([
+                (n_romeo_combine, n_inputs_combine, [('magnitude', 'magnitude')])
+            ])
+
     else:
         wf.connect([
-            (mn_resample_inputs, n_inputs_combine, [('phase', 'phase'), ('magnitude', 'magnitude'), ('mask', 'mask')]),
-            (mn_json_params, n_inputs_combine, [('TE', 'TE')])
+            (mn_json_params, n_inputs_combine, [('TE', 'TE')]),
+            (mn_resample_inputs, n_inputs_combine, [('phase', 'phase')]),
+            (mn_resample_inputs, n_inputs_combine, [('mask', 'mask')])
         ])
-
-    # run homogeneity filter if necessary
-    if run_args.inhomogeneity_correction:
-        mn_inhomogeneity_correction = MapNode(
-            interface=makehomogeneous.MakeHomogeneousInterface(),
-            iterfield=['magnitude'],
-            name='mrt_correct-inhomogeneity'
-        )
-        wf.connect([
-            (n_inputs_combine, mn_inhomogeneity_correction, [('magnitude', 'magnitude')])
-        ])
+        if run_args.inhomogeneity_correction:
+            wf.connect([
+                (mn_resample_inputs, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
+                (mn_inhomogeneity_correction, n_inputs_combine, [('magnitude_corrected', 'magnitude')])
+            ])
 
     # === MASKING ===
     wf_masking = masking_workflow(
@@ -350,15 +364,14 @@ def init_run_workflow(run_args, subject, session, run):
         name="mask",
         index=0
     )
-
-    if magnitude_files:
+    wf.connect([
+        (n_inputs_combine, wf_masking, [('phase', 'masking_inputs.phase')])
+    ])
+    if mask_files:
         wf.connect([
-            (n_inputs_combine, wf_masking, [('phase', 'masking_inputs.phase')])
+            (n_inputs_combine, wf_masking, [('mask', 'masking_inputs.mask')])
         ])
-        if mask_files:
-            wf.connect([
-                (n_inputs_combine, wf_masking, [('mask', 'masking_inputs.mask')])
-            ])
+    if magnitude_files:
         if run_args.inhomogeneity_correction:
             wf.connect([
                 (mn_inhomogeneity_correction, wf_masking, [('magnitude_corrected', 'masking_inputs.magnitude')])
@@ -367,15 +380,6 @@ def init_run_workflow(run_args, subject, session, run):
             wf.connect([
                 (n_inputs_combine, wf_masking, [('magnitude', 'masking_inputs.magnitude')])
             ])
-    else:
-        wf.connect([
-            (n_inputs_combine, wf_masking, [('phase', 'masking_inputs.phase')])
-        ])
-        if mask_files:
-            wf.connect([
-                (n_inputs_combine, wf_masking, [('mask', 'masking_inputs.mask')])
-            ])
-    
     wf.connect([
         (wf_masking, n_outputs, [('masking_outputs.mask', 'mask')])
     ])
@@ -428,9 +432,8 @@ def init_run_workflow(run_args, subject, session, run):
     if run_args.two_pass:
         wf_masking_intermediate = masking_workflow(run_args, mask_files, len(magnitude_files) > 0, fill_masks=False, add_bet=False, name="mask-intermediate", index=1)
         wf.connect([
-            (wf_masking, wf_masking_intermediate, [('masking_inputs.phase', 'masking_inputs.phase')]),
-            (wf_masking, wf_masking_intermediate, [('masking_inputs.mask', 'masking_inputs.mask')]),
-            (wf_masking, wf_masking_intermediate, [('masking_inputs.magnitude', 'masking_inputs.magnitude')])
+            (n_inputs_combine, wf_masking_intermediate, [('phase', 'masking_inputs.phase')]),
+            (n_inputs_combine, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')])
         ])
 
         wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate")
@@ -439,10 +442,10 @@ def init_run_workflow(run_args, subject, session, run):
             (n_inputs_combine, wf_qsm_intermediate, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
             (n_inputs_combine, wf_qsm_intermediate, [('frequency', 'qsm_inputs.frequency')]),
             (n_inputs_combine, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
-            (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.mask', 'qsm_inputs.mask')]),
             (n_inputs_combine, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
             (n_json_params, wf_qsm_intermediate, [('b0_strength', 'qsm_inputs.b0_strength')]),
-            (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')])
+            (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')]),
+            (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.mask', 'qsm_inputs.mask')])
         ])
         wf_qsm_intermediate.get_node('qsm_inputs').inputs.b0_direction = "(0,0,1)"
                 
@@ -1259,7 +1262,7 @@ def process_args(args):
         args.filling_algorithm == 'both'
 
     # decide on inhomogeneity correction
-    args.inhomogeneity_correction &= (args.add_bet or args.masking_input == 'magnitude')
+    args.inhomogeneity_correction &= (args.add_bet or args.masking_input == 'magnitude' or args.filling_algorithm == 'bet')
     
     # set number of concurrent processes to run depending on available resources
     if not args.n_procs:
@@ -1386,7 +1389,7 @@ if __name__ == "__main__":
 
     # write settings to file
     with open(os.path.join(args.output_dir, 'settings.json'), 'w') as settings_file:
-        json.dump({ "pipeline", : vars(args) }, settings_file)
+        json.dump({ "pipeline" : vars(args) }, settings_file)
     
     # set environment variables
     set_env_variables(args)

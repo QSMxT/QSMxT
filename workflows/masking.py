@@ -92,6 +92,12 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 (mn_bet, mn_bet_erode, [('mask', 'in_file')])
             ])
 
+            # output eroded bet mask if necessary
+            if run_args.masking_algorithm in ['bet', 'bet-firstecho'] or (fill_masks and run_args.filling_algorithm == 'bet'):
+                wf.connect([
+                    (mn_bet_erode, n_outputs, [('out_file', 'mask')])
+                ])
+
         # do threshold masking if necessary
         if run_args.masking_algorithm == 'threshold' and not (fill_masks and run_args.filling_algorithm == 'bet'):
             n_threshold_masking = Node(
@@ -112,8 +118,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 wf.connect([
                     (mn_bet_erode, n_threshold_masking, [('out_file', 'bet_masks')])
                 ])
-
-            if run_args.masking_input == 'phase':    
+            if run_args.masking_input == 'phase':
                 wf.connect([
                     (mn_phaseweights, n_threshold_masking, [('quality_map', 'in_files')])
                 ])
@@ -121,14 +126,11 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 wf.connect([
                     (n_inputs, n_threshold_masking, [('magnitude', 'in_files')])
                 ])
-            if not (add_bet or (run_args.filling_algorithm == 'bet' and fill_masks)):
+            if not add_bet:
                 wf.connect([
                     (n_threshold_masking, n_outputs, [('mask', 'mask')])
                 ])
-
-        # add bet to threshold-based mask if necessary
-        if run_args.masking_algorithm in ['bet', 'bet-firstecho'] or add_bet or (run_args.filling_algorithm == 'bet' and fill_masks):
-            if add_bet:
+            else:
                 mn_mask_plus_bet = MapNode(
                     interface=twopass.TwopassNiftiInterface(),
                     name='numpy_nibabel_mask-plus-bet',
@@ -138,10 +140,6 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                     (n_threshold_masking, mn_mask_plus_bet, [('mask', 'in_file1')]),
                     (mn_bet_erode, mn_mask_plus_bet, [('out_file', 'in_file2')]),
                     (mn_mask_plus_bet, n_outputs, [('out_file', 'mask')])
-                ])
-            else:
-                wf.connect([
-                    (mn_bet_erode, n_outputs, [('out_file', 'mask')])
                 ])
 
     # outputs
