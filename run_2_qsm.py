@@ -1383,6 +1383,10 @@ if __name__ == "__main__":
     # write command to file
     with open(os.path.join(args.output_dir, 'command.txt'), 'w') as command_file:
         command_file.write(f"{run_command}\n")
+
+    # write settings to file
+    with open(os.path.join(args.output_dir, 'settings.json'), 'w') as settings_file:
+        json.dump({ "pipeline", : vars(args) }, settings_file)
     
     # set environment variables
     set_env_variables(args)
