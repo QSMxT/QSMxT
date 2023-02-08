@@ -39,6 +39,7 @@ on:
       - .github/workflows/test_qsm_pipeline.yml
       - tests/run_test_qsm.sh
       - tests/run_test_qsm.py
+      - qsm_pipelines.json
   pull_request:
     branches: [ master ]
     paths:
@@ -75,6 +76,7 @@ on:
       - .github/workflows/test_qsm_pipeline.yml
       - tests/run_test_qsm.sh
       - tests/run_test_qsm.py
+      - qsm_pipelines.json
     
 jobs:
   test_qsm_pipeline:
