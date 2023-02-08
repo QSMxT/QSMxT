@@ -94,7 +94,19 @@ def threshold_masking(in_files, bet_masks=None, user_threshold=None, threshold_a
     mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}{mask_suffix}.nii" for in_file in in_files]
 
     for i in range(len(masks)):
+        # set mask datatype to uint8
         all_niis[i].header.set_data_dtype(np.uint8)
+
+        # add threshold information to nifti description
+        threshold_description = f"Threshold = {round(thresholds[i], 3)}"
+        description = str(all_niis[i].header['descrip'].astype(str)).strip()
+        print(description)
+        if description == "":
+            all_niis[i].header['descrip'] = threshold_description
+        else:
+            all_niis[i].header['descrip'] = f"{description}; {threshold_description}"
+        
+        # save mask to file
         nib.save(
             nib.Nifti1Image(
                 dataobj=masks[i],

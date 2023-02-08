@@ -19,9 +19,7 @@ from scripts.user_input import get_option, get_string, get_num, get_nums
 from interfaces import nipype_interface_romeo as romeo
 from interfaces import nipype_interface_scalephase as scalephase
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
-from interfaces import nipype_interface_json as np_json
 from interfaces import nipype_interface_axialsampling as sampling
-from interfaces import nipype_interface_addtojson as addtojson
 from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 
@@ -148,28 +146,6 @@ def init_run_workflow(run_args, subject, session, run):
     n_outputs = Node(
         interface=DataSink(base_directory=run_args.output_dir),
         name='nipype_datasink'
-    )
-
-    # create json header for this run
-    json_dict = {
-        "QSMxT version" : get_qsmxt_version(),
-        "Run command" : str.join(" ", sys.argv),
-        "Python interpreter" : sys.executable,
-        "Inhomogeneity correction" : run_args.inhomogeneity_correction,
-        "QSM algorithm" : f"{run_args.qsm_algorithm}",
-        "Masking algorithm" : (f"{run_args.masking_algorithm}" + (f" plus BET" if run_args.add_bet else "")) if not mask_files else ("Predefined (one mask)" if len(mask_files) == 1 else "Predefined (multi-echo mask)"),
-        "Two-pass algorithm" : "on" if run_args.two_pass else "off"
-    }
-    if run_args.qsm_algorithm not in ['tgv']: json_dict["Unwrapping algorithm"] = run_args.unwrapping_algorithm
-    if run_args.qsm_algorithm not in ['tgv']: json_dict["BF removal algorithm"] = run_args.bf_algorithm
-    n_json = Node(
-        interface=np_json.JsonInterface(
-            in_dict=json_dict,
-            out_file=f"{subject}_{session}_{run}_qsmxt-header.json"
-        ),
-        name="json_createheader"
-        # inputs : 'in_dict'
-        # outputs: 'out_file'
     )
 
     # get files
@@ -387,23 +363,6 @@ def init_run_workflow(run_args, subject, session, run):
             ])
     wf.connect([
         (wf_masking, n_outputs, [('masking_outputs.mask', 'mask')])
-    ])
-
-    # add threshold to json output
-    if run_args.masking_algorithm == 'threshold':
-        n_addtojson = Node(
-            interface=addtojson.AddToJsonInterface(
-                in_key = "Masking threshold"
-            ),
-            name="json_add-threshold"
-        )
-        wf.connect([
-            (n_json, n_addtojson, [('out_file', 'in_file')]),
-            (wf_masking, n_addtojson, [('masking_outputs.threshold', 'in_arr_value')])
-        ])
-        n_json = n_addtojson
-    wf.connect([
-        (n_json, n_outputs, [('out_file', 'qsm_headers')])
     ])
 
     # === QSM ===
