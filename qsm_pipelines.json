@@ -43,7 +43,7 @@
         "n_procs": null,
         "debug": false,
         "dry": false,
-        "non_interactive" : false
+        "auto_yes" : false
     },
     "gre": {
         "description": "Applies suggested settings for 3D-GRE images",
