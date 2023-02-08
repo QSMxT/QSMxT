@@ -100,7 +100,6 @@ def threshold_masking(in_files, bet_masks=None, user_threshold=None, threshold_a
         # add threshold information to nifti description
         threshold_description = f"Threshold = {round(thresholds[i], 3)}"
         description = str(all_niis[i].header['descrip'].astype(str)).strip()
-        print(description)
         if description == "":
             all_niis[i].header['descrip'] = threshold_description
         else:
