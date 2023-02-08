@@ -470,7 +470,7 @@ def test_two_pass(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--two_pass", "on",
+        "--two_pass",
         "--non_interactive"
     ]))
     

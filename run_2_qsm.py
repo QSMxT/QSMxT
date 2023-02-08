@@ -447,6 +447,14 @@ def parse_args(args, return_run_command=False):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
+    def argparse_bool(user_in):
+        if user_in is None: return None
+        if isinstance(user_in, bool): return user_in
+        user_in = user_in.strip().lower()
+        if user_in in ['on', 'true', 'yes']: return True
+        if user_in in ['off', 'false', 'no']: return False
+        raise ValueError(f"Invalid boolean value {user_in}; use on/yes/true or off/false/no")
+
     parser.add_argument(
         'bids_dir',
         type=os.path.abspath,
@@ -534,8 +542,11 @@ def parse_args(args, return_run_command=False):
 
     parser.add_argument(
         '--combine_phase',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
         default=None,
-        action='store_true'
+        help="Combines multi-echo phase images by generating a field map using ROMEO."
     )
 
     parser.add_argument(
@@ -669,7 +680,9 @@ def parse_args(args, return_run_command=False):
 
     parser.add_argument(
         '--inhomogeneity_correction',
-        action='store_true',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
         default=None,
         help='Applies an inhomogeneity correction to the magnitude prior to masking based on '+
              'https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html from Eckstein et al. This option '+
@@ -678,7 +691,9 @@ def parse_args(args, return_run_command=False):
 
     parser.add_argument(
         '--add_bet',
-        action='store_true',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
         default=None,
         help='Combines the chosen masking method with BET. This option is only relevant when the '+
              '--masking_algorithm is set to threshold.'
@@ -693,7 +708,9 @@ def parse_args(args, return_run_command=False):
     
     parser.add_argument(
         '--use_existing_masks',
-        action='store_true',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
         default=None,
         help='This option will use existing masks from the BIDS folder, where possible, instead of '+
              'generating new ones. The masks will be selected based on the --mask_pattern argument. '+
@@ -709,9 +726,12 @@ def parse_args(args, return_run_command=False):
              'is enabled.'
     )
 
+    
     parser.add_argument(
         '--two_pass',
-        choices=['on', 'off'],
+        nargs='?',
+        type=argparse_bool,
+        const=True,
         default=None,
         help='Setting this to \'on\' will perform a QSM reconstruction in a two-stage fashion to reduce '+
              'artefacts; combines the results from two QSM images reconstructed using masks that separate '+
@@ -838,8 +858,9 @@ def parse_args(args, return_run_command=False):
         if 'premade' in explicit_args and explicit_args['premade'] != 'default':
             run_command += f" --premade '{explicit_args['premade']}'"
         for key, value in explicit_args.items():
-            if key in ['bids_dir', 'output_dir', 'non_interactive', 'premade', 'multiproc', 'n_procs']: continue
-            if value == True: run_command += f' --{key}'
+            if key in ['bids_dir', 'output_dir', 'non_interactive', 'premade', 'multiproc', 'n_procs', 'single_pass']: continue
+            elif value == True: run_command += f' --{key}'
+            elif value == False: run_command += f' --{key} off'
             elif isinstance(value, str): run_command += f" --{key} '{value}'"
             elif isinstance(value, (int, float)) and value != False: run_command += f" --{key} {value}"
             elif isinstance(value, list):
@@ -1204,13 +1225,10 @@ def process_args(args):
     # default two-pass settings for QSM algorithms
     if args.two_pass is None:
         if args.qsm_algorithm in ['rts', 'tgv', 'tv']:
-            args.two_pass = 'on'
+            args.two_pass = True
         else:
-            args.two_pass = 'off'
+            args.two_pass = False
     
-    # convert two_pass from on/off to True/False
-    args.two_pass = args.two_pass in ['on', True]
-
     # two-pass does not work with bet masking, nextqsm, or vsharp
     args.two_pass &= 'bet' not in args.masking_algorithm
     args.two_pass &= args.qsm_algorithm != 'nextqsm'

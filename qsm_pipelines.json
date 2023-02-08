@@ -37,7 +37,7 @@
         "bet_fractional_intensity": 0.5,
         "use_existing_masks": false,
         "mask_pattern": "{subject}/{session}/extra_data/*{run}*mask*nii*",
-        "two_pass": "on",
+        "two_pass": true,
         "pbs": null,
         "slurm": null,
         "n_procs": null,
