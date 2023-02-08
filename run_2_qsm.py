@@ -353,6 +353,11 @@ def init_run_workflow(run_args, subject, session, run):
                 (mn_resample_inputs, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
                 (mn_inhomogeneity_correction, n_inputs_combine, [('magnitude_corrected', 'magnitude')])
             ])
+        else:
+            wf.connect([
+                (mn_resample_inputs, n_inputs_combine, [('magnitude', 'magnitude')])
+            ])
+
 
     # === MASKING ===
     wf_masking = masking_workflow(
@@ -966,7 +971,6 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
         if user_in == 'run': break
         
         if user_in == '1': # MASKING
-            os.system('clear')
             print("=== MASKING ===")
 
             print("\n== Existing masks ==")
@@ -1127,7 +1131,6 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
                 dtype=int
             )
         if user_in == '2': # PHASE PROCESSING
-            os.system('clear')
             print("== Resample to axial ==")
             print("This step will perform axial resampling for oblique acquisitions.")
             args.obliquity_threshold = get_num(
