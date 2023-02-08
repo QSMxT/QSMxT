@@ -201,7 +201,7 @@ def test_rts(bids_dir, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -236,7 +236,7 @@ def test_nextqsm(bids_dir, init_workflow, run_workflow, run_args):
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "nextqsm",
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -259,7 +259,7 @@ def test_tgv(bids_dir, init_workflow, run_workflow, run_args):
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--qsm_algorithm", "tgv",
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -288,7 +288,7 @@ def test_rts_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir_secret,
         os.path.join(tempfile.gettempdir(), "qsm-secret"),
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
@@ -302,7 +302,7 @@ def test_laplacian_unwrapping(bids_dir, init_workflow, run_workflow, run_args):
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--unwrapping_algorithm", "laplacian",
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -321,7 +321,7 @@ def test_masking_algo_bet(bids_dir, init_workflow, run_workflow, run_args):
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--masking_algorithm", "bet",
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -343,7 +343,7 @@ def test_masking_algo_bet_firstecho(bids_dir, init_workflow, run_workflow, run_a
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--masking_algorithm", "bet-firstecho",
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -365,7 +365,7 @@ def test_masking_input_magnitude(bids_dir, init_workflow, run_workflow, run_args
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--masking_input", "magnitude",
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -385,7 +385,7 @@ def test_add_bet(bids_dir, init_workflow, run_workflow, run_args):
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--add_bet",
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -406,7 +406,7 @@ def test_inhomogeneity_correction_invalid(bids_dir, init_workflow, run_workflow,
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--inhomogeneity_correction",
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -427,7 +427,7 @@ def test_inhomogeneity_correction(bids_dir, init_workflow, run_workflow, run_arg
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--masking_input", "magnitude",
         "--inhomogeneity_correction",
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.bids_dir == os.path.abspath(bids_dir))
@@ -447,7 +447,7 @@ def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--use_existing_masks",
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.masking_algorithm == "threshold")
@@ -471,7 +471,7 @@ def test_two_pass(bids_dir, init_workflow, run_workflow, run_args):
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--two_pass",
-        "--non_interactive"
+        "--auto_yes"
     ]))
     
     assert(args.two_pass == True)

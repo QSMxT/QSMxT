@@ -781,7 +781,7 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
-        '--non_interactive',
+        '--auto_yes',
         action='store_true',
         default=None,
         help='Runs the pipeline in non-interactive mode.'
@@ -814,7 +814,7 @@ def parse_args(args, return_run_command=False):
                     implicit_args[key] = value
         else:
             logger.log(LogLevel.ERROR.value, f"Chosen premade pipeline '{explicit_args['premade']}' not found!")
-            if args.non_interactive: exit(1)
+            if args.auto_yes: exit(1)
             del explicit_args['premade']
     elif 'premade' in implicit_args.keys():
         if implicit_args['premade'] in premades:
@@ -835,7 +835,7 @@ def parse_args(args, return_run_command=False):
         final_args[key] = value
 
     # get adjustments from the user
-    if not final_args['non_interactive']:
+    if not final_args['auto_yes']:
         final_args2, implicit_args = get_interactive_args(final_args.copy(), explicit_args, implicit_args, premades)
         for key, val in final_args2.items():
             if key not in implicit_args or implicit_args[key] != val:
@@ -858,7 +858,7 @@ def parse_args(args, return_run_command=False):
         if 'premade' in explicit_args and explicit_args['premade'] != 'default':
             run_command += f" --premade '{explicit_args['premade']}'"
         for key, value in explicit_args.items():
-            if key in ['bids_dir', 'output_dir', 'non_interactive', 'premade', 'multiproc', 'n_procs', 'single_pass']: continue
+            if key in ['bids_dir', 'output_dir', 'auto_yes', 'premade', 'multiproc', 'n_procs', 'single_pass']: continue
             elif value == True: run_command += f' --{key}'
             elif value == False: run_command += f' --{key} off'
             elif isinstance(value, str): run_command += f" --{key} '{value}'"
@@ -867,7 +867,7 @@ def parse_args(args, return_run_command=False):
                 run_command += f" --{key}"
                 for val in value:
                     run_command += f" {val}"
-        run_command += ' --non_interactive'
+        run_command += ' --auto_yes'
         return args, run_command
     return args
 
