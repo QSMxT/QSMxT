@@ -2,7 +2,7 @@
 
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File
 
-def scale_to_pi(in_file):
+def scale_to_pi(in_file, out_file=None):
     import os
     from math import pi
     import nibabel as nib
@@ -12,7 +12,7 @@ def scale_to_pi(in_file):
     if (np.round(np.min(data), 2)*-1) == np.round(np.max(data), 2) == 3.14:
         return in_file
     data = np.array(np.interp(data, (data.min(), data.max()), (-pi, +pi)), dtype=data.dtype)
-    out_file = os.path.abspath(os.path.split(in_file)[1].replace(".nii", "_scaled.nii"))
+    if not out_file: out_file = os.path.abspath(os.path.split(in_file)[1].replace(".nii", "_scaled.nii"))
     nib.save(nib.Nifti1Image(dataobj=data, header=nii.header, affine=nii.affine), out_file)
     return out_file
 
@@ -40,10 +40,14 @@ if __name__ == "__main__":
 
     parser.add_argument(
         'in_file',
-        required=True,
+        type=str
+    )
+
+    parser.add_argument(
+        'out_file',
         type=str
     )
 
     args = parser.parse_args()
-    out_file = scale_to_pi(args.in_file)
+    out_file = scale_to_pi(args.in_file, args.out_file)
 
