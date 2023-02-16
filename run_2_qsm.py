@@ -1217,6 +1217,8 @@ def process_args(args):
     if not args.unwrapping_algorithm:
         if args.qsm_algorithm in ['nextqsm', 'rts']:
             args.unwrapping_algorithm = 'romeo'
+    if args.qsm_algorithm == 'tgv':
+        args.unwrapping_algorithm = None
 
     # add_bet option only works with non-bet masking and filling methods
     args.add_bet &= 'bet' not in args.masking_algorithm
