@@ -34,7 +34,7 @@ def init_workflow(args):
         if not args.subjects or os.path.split(path)[1] in args.subjects
     ]
     if not subjects:
-        logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, args.session_pattern)}")
+        logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, args.subject_pattern)}")
         exit(1)
     wf = Workflow("workflow_qsm", base_dir=args.output_dir)
     wf.add_nodes([
