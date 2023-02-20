@@ -85,8 +85,7 @@
         "mask_erosions": [
             3,
             3
-        ],
-        "add_bet": true
+        ]
     },
     "bet": {
         "description": "Applies a traditional BET-masking approach (artefact reduction unavailable)",
