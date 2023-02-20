@@ -32,7 +32,11 @@ phase_nii = niread(args["phase"])
 mask_nii = niread(args["mask"])
 mask = !=(0).(mask_nii.raw)
 
+# convert types and input parameters
+phase = float(phase_nii.raw)
+vsz = Tuple{Float64, Float64, Float64}(map(Float64, vsz))
+
 # phase unwrapping
-uphase = unwrap_laplacian(phase_nii.raw, mask, vsz)
+uphase = unwrap_laplacian(phase, mask, vsz)
 savenii(uphase, args["unwrapped-phase-out"], header=phase_nii.header)
 
