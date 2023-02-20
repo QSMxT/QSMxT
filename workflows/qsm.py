@@ -133,7 +133,7 @@ def qsm_workflow(run_args, name):
                 'overwrite': True
             }
         if run_args.bf_algorithm == 'pdf':
-            pdf_threads = run_args.n_procs if run_args.multiproc else 8
+            pdf_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
             mn_pdf = MapNode(
                 interface=qsmjl.PdfInterface(num_threads=pdf_threads),
                 iterfield=['frequency', 'mask'],
