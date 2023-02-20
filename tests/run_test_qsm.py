@@ -155,6 +155,7 @@ def print_metrics(name, bids_path, qsm_path):
 
 def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=False):
     assert(not (run_workflow == True and init_workflow == False))
+    run_workflow &= not (run_args.qsm_algorithm == 'nextqsm')
     logger = create_logger(args.output_dir)
     logger.log(LogLevel.DEBUG.value, f"WORKFLOW DETAILS: {args}")
     if init_workflow:
