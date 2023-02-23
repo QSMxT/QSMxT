@@ -120,8 +120,7 @@ def init_run_workflow(subject, session, run):
     # convert segmentation to nii
     n_fastsurfer_aseg_nii = Node(
         interface=mgz2nii.Mgz2NiiInterface(),
-        name='numpy_numpy_nibabel_mgz2nii',
-        n_procs=
+        name='numpy_numpy_nibabel_mgz2nii'
     )
     wf.connect([
         (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
