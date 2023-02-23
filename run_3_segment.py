@@ -89,25 +89,28 @@ def init_run_workflow(subject, session, run):
     mag_file = mag_files[0]
 
     # register t1 to magnitude
+    n_registration_threads = min(args.n_procs, 6)
     n_registration = Node(
         interface=RegistrationSynQuick(
-            #num_threads=1,
+            num_threads=n_registration_threads,
             fixed_image=mag_file,
             moving_image=t1_file
         ),
-        # relevant outputs: out_matrix
-        name='ants_register-t1-to-qsm'
+        name='ants_register-t1-to-qsm',
+        n_procs=n_registration_threads,
+        mem_gb=4
     )
     
     # segment t1
+    n_fastsurfer_threads = min(args.n_procs, 8)
     n_fastsurfer = Node(
         interface=fastsurfer.FastSurferInterface(
             in_file=t1_file,
-            num_threads=args.n_procs
+            num_threads=n_fastsurfer_threads
         ),
         name='fastsurfer_segment-t1',
-        n_procs=min(args.n_procs, 6),
-        mem_gb=min(11, psutil.virtual_memory().available/10e8 * 0.9)
+        n_procs=n_fastsurfer_threads,
+        mem_gb=11
     )
     n_fastsurfer.plugin_args = {
         'qsub_args': f'-A {args.pbs} -l walltime=03:00:00 -l select=1:ncpus={args.n_procs}:mem=20gb:vmem=20gb',
@@ -118,6 +121,7 @@ def init_run_workflow(subject, session, run):
     n_fastsurfer_aseg_nii = Node(
         interface=mgz2nii.Mgz2NiiInterface(),
         name='numpy_numpy_nibabel_mgz2nii',
+        n_procs=
     )
     wf.connect([
         (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
@@ -127,7 +131,6 @@ def init_run_workflow(subject, session, run):
     n_transform_segmentation = Node(
         interface=ApplyTransforms(
             dimension=3,
-            #output_image=,
             reference_image=mag_file,
             interpolation="NearestNeighbor"
         ),
@@ -240,9 +243,6 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    # supplementary arguments
-    g_args = lambda:None
-
     # ensure directories are complete and absolute
     args.output_dir = os.path.abspath(args.output_dir)
     args.bids_dir = os.path.abspath(args.bids_dir)
@@ -301,12 +301,8 @@ if __name__ == "__main__":
 
     # set number of concurrent processes to run depending on
     if not args.n_procs:
-        n_cpus = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
-        args.n_procs = n_cpus
+        args.n_procs = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
         logger.log(LogLevel.INFO.value, f"Running with {args.n_procs} processors.")
-    
-    # set number of threads per CPU to use by FastSurfer/pytorch
-    os.environ["OMP_NUM_THREADS"] = str(args.n_procs)
     
     wf = init_workflow()
 
