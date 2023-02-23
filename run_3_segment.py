@@ -89,7 +89,7 @@ def init_run_workflow(subject, session, run):
     mag_file = mag_files[0]
 
     # register t1 to magnitude
-    n_registration_threads = min(args.n_procs, 6)
+    n_registration_threads = min(args.n_procs, 6) if args.multiproc else 6
     n_registration = Node(
         interface=RegistrationSynQuick(
             num_threads=n_registration_threads,
@@ -102,7 +102,7 @@ def init_run_workflow(subject, session, run):
     )
     
     # segment t1
-    n_fastsurfer_threads = min(args.n_procs, 8)
+    n_fastsurfer_threads = min(args.n_procs, 8) if args.multiproc else 8
     n_fastsurfer = Node(
         interface=fastsurfer.FastSurferInterface(
             in_file=t1_file,
@@ -247,6 +247,9 @@ if __name__ == "__main__":
     args.output_dir = os.path.abspath(args.output_dir)
     args.bids_dir = os.path.abspath(args.bids_dir)
     args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.output_dir)
+
+    # multiproc
+    args.multiproc = args.pbs is None
 
     # this script's directory
     this_dir = os.path.dirname(os.path.abspath(__file__))
