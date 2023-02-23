@@ -97,6 +97,7 @@
         "qsm_algorithm": "rts",
         "unwrapping_algorithm": "laplacian",
         "bf_algorithm": "vsharp",
+        "masking_input": "magnitude",
         "masking_algorithm": "bet",
         "mask_erosions": [
             3
