@@ -323,7 +323,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
     logger.log(LogLevel.INFO.value, 'Writing BIDS .bidsignore file...')
     with open(os.path.join(args.output_dir, '.bidsignore'), 'w', encoding='utf-8') as bidsignore_file:
         bidsignore_file.write('*dcm2niix_output.txt\n')
-        bidsignore_file.write('details_and_citations.txt\n')
+        bidsignore_file.write('references.txt\n')
 
     logger.log(LogLevel.INFO.value, 'Writing BIDS dataset README...')
     with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
