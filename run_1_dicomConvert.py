@@ -395,8 +395,8 @@ if __name__ == "__main__":
         diff_file.write(diff)
         diff_file.close()
 
-    # write "details_and_citations.txt" with the command used to invoke the script and any necessary citations
-    with open(os.path.join(args.output_dir, "details_and_citations.txt"), 'w', encoding='utf-8') as f:
+    # write "references.txt" with the command used to invoke the script and any necessary citations
+    with open(os.path.join(args.output_dir, "references.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
         f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
