@@ -181,20 +181,22 @@ def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
             logger.log(LogLevel.DEBUG.value, f"Deleting workflow folder {os.path.join(args.output_dir, 'workflow_qsm')}")
             shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"), ignore_errors=True)
 
-def upload_folder(folder, result_id):
-    # upload filename
+
+def compress_folder(folder, result_id):
     if os.environ.get('BRANCH'):
         results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_{result_id}.tar"
     else:
         results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{result_id}.tar"
     
-    # zip up results
     sys_cmd(f"tar -cf {results_tar} {folder}")
 
-    # upload results
+    return results_tar
+
+
+def upload_file(fname):
     try:
         cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
-        cs.upload(results_tar, results_tar)
+        cs.upload(fname, os.path.split(fname)[1])
     except KeyError:
         print("No UPLOAD_URL/DATA_PASS variable found... Skipping upload")
 
@@ -242,7 +244,7 @@ def test_premades(bids_dir, init_workflow, run_workflow, run_args):
             )
         
         # upload output folder
-        upload_folder(folder=args.output_dir, result_id=premade)
+        upload_file(compress_folder(folder=args.output_dir, result_id=premade))
         
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
@@ -257,7 +259,7 @@ def test_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
     ]))
     
     workflow(args, init_workflow, run_workflow, run_args)
-    upload_folder(folder=args.output_dir, result_id='realdata')
+    upload_file(compress_folder(folder=args.output_dir, result_id=premade))
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
