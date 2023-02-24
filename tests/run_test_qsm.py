@@ -228,7 +228,7 @@ def test_premades(bids_dir, init_workflow, run_workflow, run_args):
                 assert(premade_args[key] == args_dict[key])
         
         # create the workflow and run if necessary
-        workflow(args, init_workflow, run_workflow, run_args)
+        workflow(args, init_workflow, run_workflow, run_args, delete_workflow=False)
 
         # visualise results
         for nii_file in glob.glob(os.path.join(args.output_dir, "qsm_final", "*", "*.nii*")):
