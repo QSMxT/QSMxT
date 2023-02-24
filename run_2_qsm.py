@@ -264,6 +264,12 @@ def init_run_workflow(run_args, subject, session, run):
         ])
     
     # resample to axial
+    n_inputs_resampled = Node(
+        interface=IdentityInterface(
+            fields=['phase', 'magnitude', 'mask']
+        ),
+        name='nipype_inputs-resampled'
+    )
     if magnitude_files:
         mn_resample_inputs = MapNode(
             interface=sampling.AxialSamplingInterface(
@@ -274,11 +280,22 @@ def init_run_workflow(run_args, subject, session, run):
         )
         wf.connect([
             (mn_inputs_canonical, mn_resample_inputs, [('magnitude', 'magnitude')]),
-            (mn_inputs_canonical, mn_resample_inputs, [('phase', 'phase')])
+            (mn_inputs_canonical, mn_resample_inputs, [('phase', 'phase')]),
+            (mn_resample_inputs, n_inputs_resampled, [('magnitude', 'magnitude')]),
+            (mn_resample_inputs, n_inputs_resampled, [('phase', 'phase')])
         ])
         if mask_files:
             wf.connect([
-                (mn_inputs_canonical, mn_resample_inputs, [('mask', 'mask')])
+                (mn_inputs_canonical, mn_resample_inputs, [('mask', 'mask')]),
+                (mn_resample_inputs, n_inputs_resampled, [('mask', 'mask')])
+            ])
+    else:
+        wf.connect([
+            (mn_inputs_canonical, n_inputs_resampled, [('phase', 'phase')])
+        ])
+        if mask_files:
+            wf.connect([
+                (mn_inputs_canonical, n_inputs_resampled, [('mask', 'mask')])
             ])
 
     # run homogeneity filter if necessary
@@ -303,11 +320,11 @@ def init_run_workflow(run_args, subject, session, run):
         )
         wf.connect([
             (mn_json_params, n_romeo_combine, [('TE', 'TE')]),
-            (mn_resample_inputs, n_romeo_combine, [('phase', 'phase')]),
-            (mn_resample_inputs, n_romeo_combine, [('magnitude', 'magnitude')]),
+            (n_inputs_resampled, n_romeo_combine, [('phase', 'phase')]),
+            (n_inputs_resampled, n_romeo_combine, [('magnitude', 'magnitude')]),
             (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency'), ('phase_wrapped', 'phase'), ('phase_unwrapped', 'phase_unwrapped'), ('mask', 'mask'), ('TE', 'TE')])
         ])
-        if mask_files: wf.connect([(mn_resample_inputs, n_romeo_combine, [('out_mask', 'mask')])])
+        if mask_files: wf.connect([(n_inputs_resampled, n_romeo_combine, [('out_mask', 'mask')])])
         if run_args.inhomogeneity_correction:
             wf.connect([
                 (n_romeo_combine, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
@@ -321,17 +338,17 @@ def init_run_workflow(run_args, subject, session, run):
     else:
         wf.connect([
             (mn_json_params, n_inputs_combine, [('TE', 'TE')]),
-            (mn_resample_inputs, n_inputs_combine, [('phase', 'phase')]),
-            (mn_resample_inputs, n_inputs_combine, [('mask', 'mask')])
+            (n_inputs_resampled, n_inputs_combine, [('phase', 'phase')]),
+            (n_inputs_resampled, n_inputs_combine, [('mask', 'mask')])
         ])
         if run_args.inhomogeneity_correction:
             wf.connect([
-                (mn_resample_inputs, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
+                (n_inputs_resampled, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
                 (mn_inhomogeneity_correction, n_inputs_combine, [('magnitude_corrected', 'magnitude')])
             ])
         else:
             wf.connect([
-                (mn_resample_inputs, n_inputs_combine, [('magnitude', 'magnitude')])
+                (n_inputs_resampled, n_inputs_combine, [('magnitude', 'magnitude')])
             ])
 
 
