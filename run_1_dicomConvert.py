@@ -126,7 +126,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
 
     if not all_protocol_names:
         logger.log(LogLevel.ERROR.value, f"No valid protocol names found in JSON headers in '{output_dir}/.../extra_data' folders!")
-        exit(1)
+        script_exit(1)
 
     logger.log(LogLevel.INFO.value, f"All protocol names identified: {all_protocol_names}")
 
@@ -143,7 +143,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                     t2starw_protocol_names.append(protocol_name)
         if not t2starw_protocol_names:
             logger.log(LogLevel.ERROR.value, "No T2Star weighted protocols identified! Exiting...")
-            exit(1)
+            script_exit(1)
         logger.log(LogLevel.INFO.value, f"Identified the following protocols as t2starw: {t2starw_protocol_names}")
 
         logger.log(LogLevel.INFO.value, f"Enumerating t1w protocol names using match patterns {t1w_protocol_patterns}...")
@@ -180,7 +180,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                 print("Invalid input")
         if not t2starw_protocol_names:
             logger.log(LogLevel.ERROR.value, "No T2Star weighted protocols identified! Exiting...")
-            exit(1)
+            script_exit(1)
         logger.log(LogLevel.INFO.value, f"Identified the following protocols as t2starw: {t2starw_protocol_names}")
 
         # === T1W PROTOCOLS SELECTION ===
@@ -296,7 +296,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
         for f in all_session_details:
             print(f"{os.path.split(f['file_name'])[1]} \n\t -> {os.path.split(f['new_name'])[1]}")
         if input("Confirm renaming? (n for no): ").strip().lower() in ["n", "no"]:
-            exit()
+            script_exit(0)
 
     # rename all files
     logger.log(LogLevel.INFO.value, "Renaming files...")
@@ -329,6 +329,11 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
     with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
         readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
         readme_file.write(f"\nDescribe your dataset here.\n")
+
+def script_exit(exit_code=0):
+    show_warning_summary(logger)
+    logger.log(LogLevel.INFO.value, 'Finished')
+    exit(exit_code)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -420,7 +425,5 @@ if __name__ == "__main__":
         auto_yes=args.auto_yes
     )
 
-    show_warning_summary(logger)
-
-    logger.log(LogLevel.INFO.value, 'Finished')
+    script_exit()
 

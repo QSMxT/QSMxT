@@ -35,7 +35,7 @@ def init_workflow(args):
     ]
     if not subjects:
         logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, args.subject_pattern)}")
-        exit(1)
+        script_exit(1)
     wf = Workflow("workflow_qsm", base_dir=args.output_dir)
     wf.add_nodes([
         node for node in
@@ -53,7 +53,7 @@ def init_subject_workflow(args, subject):
     ]
     if not sessions:
         logger.log(LogLevel.ERROR.value, f"No sessions found in: {os.path.join(args.bids_dir, subject, args.session_pattern)}")
-        exit(1)
+        script_exit(1)
     wf = Workflow(subject, base_dir=os.path.join(args.output_dir, "workflow_qsm"))
     wf.add_nodes([
         node for node in
@@ -814,7 +814,7 @@ def parse_args(args, return_run_command=False):
                     implicit_args[key] = value
         else:
             logger.log(LogLevel.ERROR.value, f"Chosen premade pipeline '{explicit_args['premade']}' not found!")
-            if args.auto_yes: exit(1)
+            if args.auto_yes: script_exit(1)
             del explicit_args['premade']
     elif 'premade' in implicit_args.keys():
         if implicit_args['premade'] in premades:
@@ -1330,6 +1330,10 @@ def write_citations(wf):
         f.write("\n\n - Python package - Nipype: Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
         f.write("\n\n")
 
+def script_exit(error_code=0):
+    show_warning_summary(logger)
+    logger.log(LogLevel.INFO.value, 'Finished')
+    exit(error_code)
 
 if __name__ == "__main__":
     # create initial logger
@@ -1411,6 +1415,5 @@ if __name__ == "__main__":
                 plugin_args=plugin_args
             )
 
-    show_warning_summary(logger)
-    logger.log(LogLevel.INFO.value, 'Finished')
+    script_exit()
 

@@ -88,6 +88,11 @@ def init_workflow(magnitude_images, qsm_images):
 
     return wf
 
+def script_exit(exit_code=0):
+    show_warning_summary(logger)
+    logger.log(LogLevel.INFO.value, 'Finished')
+    exit(error_code)
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="QSMxT Template: Magnitude and QSM template and group space generator",
@@ -218,10 +223,10 @@ if __name__ == "__main__":
     qsm_images = sorted(glob.glob(qsm_pattern))
 
     if len(magnitude_images) != len(qsm_images):
-        print(f"QSMxT: Error: Number of QSM images ({len(qsm_images)}) and magnitude images ({len(magnitude_images)}) do not match.")
-        print(f"Final QSM pattern: {qsm_pattern}")
-        print(f"Final magnitude pattern: {magnitude_pattern}")
-        exit()
+        logger.log(LogLevel.ERROR.value, f"Number of QSM images ({len(qsm_images)}) and magnitude images ({len(magnitude_images)}) do not match.")
+        logger.log(LogLevel.INFO.value, f"Final QSM pattern: {qsm_pattern}")
+        logger.log(LogLevel.INFO.value, f"Final magnitude pattern: {magnitude_pattern}")
+        script_exit(1)
 
     wf = init_workflow(magnitude_images, qsm_images)
 
@@ -256,7 +261,5 @@ if __name__ == "__main__":
             }
         )
 
-    show_warning_summary(logger)
-
-    logger.log(LogLevel.INFO.value, 'Finished')
+    script_exit()
 

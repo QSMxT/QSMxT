@@ -37,8 +37,7 @@ def parse_num_or_exit(string, error_message, whole_number=False):
         return int(string) if whole_number else float(string)
     except:
         logger.log(LogLevel.ERROR.value, error_message)
-        show_warning_summary(logger)
-        exit(1)
+        script_exit(1)
 
 
 def flatten(a):
@@ -63,10 +62,10 @@ def get_details_from_csv(csv_file):
             line_contents = line.replace("\n", "").split(",")
             if len(line_contents) != 10:
                 logger.log(LogLevel.ERROR.value, 'Incorrect number of columns in CSV! Delete it or correct it and try again.')
-                exit(1)
+                script_exit(1)
             if '' in line_contents:
                 logger.log(LogLevel.ERROR.value, 'CSV file incomplete! Delete it or complete it and try again.')
-                exit(1)
+                script_exit(1)
             csv_contents.append(line_contents)
     csv_contents = csv_contents[1:]
     
@@ -106,11 +105,11 @@ def get_details_from_csv(csv_file):
         
         if details['multi-echo'] not in ['yes', 'no']:
             logger.log(LogLevel.ERROR.value, f"Could not parse multi-echo field contents '{details['multi-echo']}' on line {i+1} as 'yes' or 'no'")
-            exit(1)
+            script_exit(1)
 
         if details['part_type'] not in ['phase', 'mag']:
             logger.log(LogLevel.ERROR.value, f"Could not parse part type field contents '{details['part_type']}' on line {i+1} as 'mag' or 'phase'")
-            exit(1)
+            script_exit(1)
 
 
         all_details.append(details)
@@ -233,7 +232,7 @@ def nifti_to_bids(input_dir, output_dir):
         write_details_to_csv(all_details)
         logger.log(LogLevel.INFO.value, f"Done writing to CSV.")
         logger.log(LogLevel.INFO.value, f"PLEASE FILL IN SPREADSHEET '{csv_file}' WITH MISSING INFORMATION AND RUN AGAIN WITH THE SAME COMMAND.")
-        exit(0)
+        script_exit()
 
     logger.log(LogLevel.INFO.value, "Computing new NIfTI file names and locations...")
     for details in all_details:
@@ -253,7 +252,7 @@ def nifti_to_bids(input_dir, output_dir):
             print(f"{os.path.split(f['filename'])[1]} \n\t -> {os.path.split(f['new_name'])[1]}")
         print("Confirm copy + renames? (n for no): ")
         if input().strip().lower() in ["n", "no"]:
-            exit()
+            script_exit()
 
     # copy/rename all files
     logger.log(LogLevel.INFO.value, "Copying NIfTI files to new locations with new names...")
@@ -305,6 +304,11 @@ def nifti_to_bids(input_dir, output_dir):
     with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
         readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
         readme_file.write(f"\nDescribe your dataset here.\n")
+
+def script_exit(exit_code=0):
+    show_warning_summary(logger)
+    logger.log(LogLevel.INFO.value, 'Finished')
+    exit(exit_code)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -443,7 +447,5 @@ if __name__ == "__main__":
         output_dir=args.output_dir,
     )
 
-    show_warning_summary(logger)
-
-    logger.log(LogLevel.INFO.value, 'Finished')
+    script_exit()
 

@@ -79,10 +79,10 @@ def init_run_workflow(subject, session, run):
     mag_files = sorted(glob.glob(mag_pattern))
     if not t1_files:
         logger.log(LogLevel.ERROR.value, f"No T1w files matching pattern: {t1_pattern}")
-        exit(1)
+        script_exit(1)
     if not mag_files:
         logger.log(LogLevel.ERROR.value, f"No magnitude files matching pattern: {mag_files}")
-        exit(1)
+        script_exit(1)
     if len(t1_files) > 1:
         logger.log(LogLevel.WARNING.value, f"Multiple T1w files matching pattern {t1_pattern}")
     t1_file = t1_files[0]
@@ -154,6 +154,10 @@ def init_run_workflow(subject, session, run):
 
     return wf
 
+def script_exit(exit_code=0):
+    show_warning_summary(logger)
+    logger.log(LogLevel.INFO.value, 'Finished')
+    exit(exit_code)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -335,8 +339,6 @@ if __name__ == "__main__":
                 'n_procs': args.n_procs
             }
         )
-
-    show_warning_summary(logger)
-
-    logger.log(LogLevel.INFO.value, 'Finished')
+        
+    script_exit()
 
