@@ -244,7 +244,8 @@ def test_premades(bids_dir, init_workflow, run_workflow, run_args):
             )
         
         # upload output folder
-        upload_file(compress_folder(folder=args.output_dir, result_id=premade))
+        tar_file = compress_folder(folder=args.output_dir, result_id=premade)
+        os.rename(tar_file, os.path.join(tempfile.gettempdir(), "public-outputs", tar_file))
         
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
