@@ -33,7 +33,7 @@ mask_nii = niread(args["mask"])
 mask = !=(0).(mask_nii.raw)
 
 # convert types and input parameters
-phase = float(phase_nii.raw)
+phase = float(phase_nii)
 vsz = Tuple{Float64, Float64, Float64}(map(Float64, vsz))
 
 # phase unwrapping
