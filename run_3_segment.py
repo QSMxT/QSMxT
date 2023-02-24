@@ -16,7 +16,6 @@ import datetime
 import glob
 import os
 import argparse
-import psutil
 
 def init_workflow():
     subjects = [
