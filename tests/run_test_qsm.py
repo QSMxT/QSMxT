@@ -259,7 +259,7 @@ def test_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
     ]))
     
     workflow(args, init_workflow, run_workflow, run_args)
-    upload_file(compress_folder(folder=args.output_dir, result_id=premade))
+    upload_file(compress_folder(folder=args.output_dir, result_id='real'))
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
