@@ -298,7 +298,7 @@ def nifti_to_bids(input_dir, output_dir):
 
     logger.log(LogLevel.INFO.value, 'Writing BIDS .bidsignore file...')
     with open(os.path.join(args.output_dir, '.bidsignore'), 'w', encoding='utf-8') as bidsignore_file:
-        bidsignore_file.write('details_and_citations.txt\n')
+        bidsignore_file.write('references.txt\n')
         bidsignore_file.write('dataset_qsmxt.csv\n')
 
     logger.log(LogLevel.INFO.value, 'Writing BIDS dataset README...')
