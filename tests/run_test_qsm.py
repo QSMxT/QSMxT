@@ -237,7 +237,7 @@ def test_premades(bids_dir, init_workflow, run_workflow, run_args):
                 title=f"QSM using premade pipeline: {premade}\n({get_qsmxt_version()})",
                 colorbar=True,
                 cbar_label="Susceptibility (ppm)",
-                out_png=os.path.join(tempfile.gettempdir(), "public-outputs", f"{os.path.split(nii_file)[1].split('.')[0]}.png"),
+                out_png=os.path.join(tempfile.gettempdir(), "public-outputs", f"{premade}.png"),
                 cmap='gray',
                 vmin=-0.15,
                 vmax=+0.15
