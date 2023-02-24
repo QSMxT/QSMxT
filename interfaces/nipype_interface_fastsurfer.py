@@ -1,4 +1,5 @@
 from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec
+from nipype.interfaces.base.traits_extension import isdefined
 import os
 import shutil
 
