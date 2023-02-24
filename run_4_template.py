@@ -91,7 +91,7 @@ def init_workflow(magnitude_images, qsm_images):
 def script_exit(exit_code=0):
     show_warning_summary(logger)
     logger.log(LogLevel.INFO.value, 'Finished')
-    exit(error_code)
+    exit(exit_code)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
