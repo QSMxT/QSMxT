@@ -11,7 +11,7 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype import config, logging
-from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir, get_diff
+from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir, get_diff, print_qsm_premades
 from scripts.sys_cmd import sys_cmd
 from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logger
 from scripts.user_input import get_option, get_string, get_num, get_nums
@@ -457,6 +457,8 @@ def parse_args(args, return_run_command=False):
 
     parser.add_argument(
         'bids_dir',
+        nargs='?',
+        default=None,
         type=os.path.abspath,
         help='Input data folder generated using run_1_dicomConvert.py. You can also use a ' +
              'previously existing BIDS folder. In this case, ensure that the --subject_pattern, '+
@@ -465,6 +467,8 @@ def parse_args(args, return_run_command=False):
 
     parser.add_argument(
         'output_dir',
+        nargs='?',
+        default=None,
         type=os.path.abspath,
         help='Output QSM folder; will be created if it does not exist.'
     )
@@ -773,6 +777,13 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
+        '--list_premades',
+        action='store_true',
+        default=None,
+        help='List the possible premade pipelines only.'
+    )
+
+    parser.add_argument(
         '--dry',
         action='store_true',
         default=None,
@@ -791,6 +802,18 @@ def parse_args(args, return_run_command=False):
     
     # parse explicit arguments ONLY
     args = parser.parse_args(args)
+
+    # if listing premades, skip the rest
+    if args.list_premades:
+        if return_run_command:
+            return args, str.join(' ', sys.argv)
+        return args
+
+    # bids and output are required
+    if args.bids_dir is None or args.output_dir is None:
+        logger.log(LogLevel.ERROR.value, "Values for --bids_dir and --output_dir are required!")
+        script_exit(1)
+
     explicit_args = {}
     for k in args.__dict__:
         if args.__dict__[k] is not None:
@@ -1343,6 +1366,11 @@ if __name__ == "__main__":
     # parse explicit arguments
     logger.log(LogLevel.INFO.value, f"Parsing arguments...")
     args, run_command = parse_args(sys.argv[1:], return_run_command=True)
+
+    # list premade pipelines and exit if needed
+    if args.list_premades:
+        print_qsm_premades(args.pipeline_file)
+        script_exit()
 
     # create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)

@@ -1,5 +1,6 @@
 import os
 import shutil
+import json
 from scripts.sys_cmd import sys_cmd
 
 def get_qsmxt_dir():
@@ -11,6 +12,25 @@ def get_qsmxt_version():
     version = sys_cmd(f"git --git-dir {git_dir} describe --tags", False, False)
     date = sys_cmd(f"git --git-dir {git_dir} log -1 --format=%cd", False, False)
     return f"{version} (commit date: {date})"
+
+def get_qsm_premades(pipeline_file):
+    premades = json.load(open(f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')}", "r"))
+
+    if pipeline_file:    
+        user_premades = json.load(open(args.pipeline_file, "r"))
+        premades.update(user_premades)
+
+    return premades
+
+def print_qsm_premades(pipeline_file):
+    premades = get_qsm_premades(pipeline_file)
+    print("=== Premade pipelines ===")
+    for key, value in premades.items():
+        print(f"{key}", end="")
+        if "description" in value:
+            print(f": {value['description']}")
+        else:
+            print()
 
 def get_container_version(check_path=True):
     if os.environ.get('SINGULARITY_NAME') and 'qsmxt' in os.environ.get('SINGULARITY_NAME'):
