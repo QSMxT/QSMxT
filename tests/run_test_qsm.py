@@ -13,7 +13,7 @@ import pandas as pd
 import seaborn as sns
 import run_2_qsm as qsm
 import json
-from scripts.qsmxt_functions import get_qsmxt_dir
+from scripts.qsmxt_functions import get_qsmxt_dir, get_qsmxt_version
 from scripts.sys_cmd import sys_cmd
 from matplotlib import pyplot as plt
 from scripts.logger import LogLevel, make_logger
@@ -153,9 +153,10 @@ def print_metrics(name, bids_path, qsm_path):
 
     display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", f"{name}_slice.png")))
 
-def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=False):
+def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
     assert(not (run_workflow == True and init_workflow == False))
     run_workflow &= not (args.qsm_algorithm == 'nextqsm' != (run_args.get('qsm_algorithm') == 'nextqsm'))
+    shutil.rmtree(os.path.join(args.output_dir), ignore_errors=True)
     logger = create_logger(args.output_dir)
     logger.log(LogLevel.DEBUG.value, f"WORKFLOW DETAILS: {args}")
     if init_workflow:
@@ -204,9 +205,11 @@ def test_premades(bids_dir, init_workflow, run_workflow, run_args):
     pipeline_file = f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')}"
     with open(pipeline_file, "r") as json_file:
         premades = json.load(json_file)
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     for premade in premades.keys():
         if premade == 'default': continue
+        print(f"=== TESTING PREMADE {premade} ===")
 
         args = qsm.process_args(qsm.parse_args([
             bids_dir,
@@ -223,11 +226,24 @@ def test_premades(bids_dir, init_workflow, run_workflow, run_args):
                 assert(premade_args[key] == args_dict[key])
         
         # create the workflow and run if necessary
-        workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+        workflow(args, init_workflow, run_workflow, run_args)
+
+        # visualise results
+        for nii_file in glob.glob(os.path.join(args.output_dir, "qsm_final", "*", "*.nii*")):
+            display_nii(
+                nii_path=nii_file,
+                title=f"QSM using premade pipeline: {premade}\n({get_qsmxt_version()})",
+                colorbar=True,
+                cbar_label="Susceptibility (ppm)",
+                out_png=os.path.join(tempfile.gettempdir(), "public-outputs", f"{os.path.split(nii_file)[1].split('.')[0]}.png"),
+                cmap='gray',
+                vmin=-0.15,
+                vmax=+0.15
+            )
         
         # upload output folder
         upload_folder(folder=args.output_dir, result_id=premade)
-
+        
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
 ])
@@ -240,7 +256,7 @@ def test_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
         "--auto_yes"
     ]))
     
-    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+    workflow(args, init_workflow, run_workflow, run_args)
     upload_folder(folder=args.output_dir, result_id='realdata')
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
@@ -269,4 +285,3 @@ def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
 #    - use_existing_masks specified but number of masks > 1 and mismatches # of echoes 
 #    - use_existing_masks specified and masks found:
 #      - inhomogeneity_correction, two_pass, and add_bet should all disable
-
