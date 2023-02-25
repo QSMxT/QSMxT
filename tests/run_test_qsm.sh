@@ -8,9 +8,12 @@ echo "GITHUB_REF##*/: ${GITHUB_REF##*/}"
 if [ -n "${GITHUB_HEAD_REF}" ]; then
     echo "GITHUB_HEAD_REF DEFINED... USING IT."
     BRANCH=${GITHUB_HEAD_REF}
-else
+elif [ -n "${GITHUB_REF##*/}" ]; then
     echo "GITHUB_HEAD_REF UNDEFINED... USING GITHUB_REF##*/"
     BRANCH=${GITHUB_REF##*/}
+else
+    echo "NEITHER GITHUB_HEAD_REF NOR GITHUB_REF DEFINED. ASSUMING MASTER."
+    BRANCH=master
 fi
 
 echo "[DEBUG] Pulling QSMxT branch ${BRANCH}..."
