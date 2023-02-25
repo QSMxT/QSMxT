@@ -93,7 +93,7 @@
     },
     "fast": {
         "description": "Applies a set of fast algorithms",
-        "combine_phase": false,
+        "combine_phase": true,
         "qsm_algorithm": "rts",
         "unwrapping_algorithm": "laplacian",
         "bf_algorithm": "vsharp",
