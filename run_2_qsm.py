@@ -137,7 +137,9 @@ def init_run_workflow(run_args, subject, session, run):
         if run_args.add_bet:
             logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} cannot use --add_bet option - no magnitude files found matching pattern: {magnitude_pattern}.")
             run_args.add_bet = False
-        
+        if run_args.combine_phase:
+            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} cannot use --combine_phase option - no magnitude files found matching pattern: {magnitude_pattern}.")
+            run_args.combine_phase = False
     
     # create nipype workflow for this run
     wf = Workflow(run, base_dir=os.path.join(run_args.output_dir, "workflow_qsm", subject, session, run))
