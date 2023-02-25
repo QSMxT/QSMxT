@@ -383,7 +383,7 @@ def init_run_workflow(run_args, subject, session, run):
     ])
 
     # === QSM ===
-    wf_qsm = qsm_workflow(run_args, "qsm")
+    wf_qsm = qsm_workflow(run_args, "qsm", len(magnitude_files) > 0)
 
     wf.connect([
         (n_inputs_combine, wf_qsm, [('phase', 'qsm_inputs.phase')]),
@@ -417,7 +417,7 @@ def init_run_workflow(run_args, subject, session, run):
             (n_inputs_combine, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')])
         ])
 
-        wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate")
+        wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0)
         wf.connect([
             (n_inputs_combine, wf_qsm_intermediate, [('phase', 'qsm_inputs.phase')]),
             (n_inputs_combine, wf_qsm_intermediate, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),

@@ -10,7 +10,7 @@ from interfaces import nipype_interface_nextqsm as nextqsm
 
 import psutil
 
-def qsm_workflow(run_args, name):
+def qsm_workflow(run_args, name, magnitude_available):
     wf = Workflow(name=f"{name}_workflow")
 
     n_inputs = Node(
@@ -61,14 +61,19 @@ def qsm_workflow(run_args, name):
             else:
                 mn_romeo = MapNode(
                     interface=romeo.RomeoInterface(),
-                    iterfield=['phase', 'magnitude'],
+                    iterfield=['phase'] + (['magnitude'] if magnitude_available else []),
                     name='mrt_romeo',
                     mem_gb=3
                 )
                 wf.connect([
-                    (n_inputs, mn_romeo, [('phase', 'phase'), ('magnitude', 'magnitude')]),
+                    (n_inputs, mn_romeo, [('phase', 'phase')]),
                     (mn_romeo, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')])
                 ])
+                if magnitude_available:
+                    wf.connect([
+                        (n_inputs, mn_romeo, [('magnitude', 'magnitude')]),
+                    ])
+
 
     # === PHASE TO FREQUENCY ===
     n_frequency = Node(

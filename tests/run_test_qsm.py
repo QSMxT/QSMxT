@@ -248,6 +248,29 @@ def test_premades(bids_dir, init_workflow, run_workflow, run_args):
         shutil.move(tar_file, os.path.join(tempfile.gettempdir(), "public-outputs", tar_file))
         
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1 })
+])
+def test_nomagnitude(bids_dir, init_workflow, run_workflow, run_args):
+    # delete magnitude files from bids directory
+    for mag_file in glob.glob(os.path.join(bids_dir, "sub-1", "ses-1", "anat", "*mag*")):
+        os.remove(mag_file)
+    
+    # run pipeline and specifically choose magnitude-based masking
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--premade", "fast",
+        "--masking_input", "magnitude",
+        "--auto_yes"
+    ]))
+    
+    # create the workflow and run
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+
+    # delete modified bids directory so it can be reset in a future test
+    shutil.rmtree(bids_dir)
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
 ])
 def test_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
