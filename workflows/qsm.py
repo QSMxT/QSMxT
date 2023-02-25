@@ -83,30 +83,31 @@ def qsm_workflow(run_args, name, magnitude_available):
         name='frequency-inputs'
     )
     if run_args.qsm_algorithm in ['nextqsm', 'rts', 'tv']:
-        if not run_args.combine_phase:
-            phase_to_freq_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-            mn_phase_to_freq = MapNode(
-                interface=qsmjl.PhaseToFreqInterface(num_threads=phase_to_freq_threads),
-                name='qsmjl_phase-to-freq',
-                iterfield=['phase', 'TE'],
-                mem_gb=3,
-                n_procs=phase_to_freq_threads
-            )
-            wf.connect([
-                (n_unwrapping, mn_phase_to_freq, [('phase_unwrapped', 'phase')]),
-                (n_inputs, mn_phase_to_freq, [('TE', 'TE')]),
-                (n_inputs, mn_phase_to_freq, [('vsz', 'vsz')]),
-                (n_inputs, mn_phase_to_freq, [('b0_strength', 'b0_strength')]),
-                (mn_phase_to_freq, n_frequency, [('frequency', 'frequency')])
-            ])
-            mn_phase_to_freq.plugin_args = {
-                'qsub_args': f'-A {run_args.pbs} -N PhaToFreq -l walltime=01:00:00 -l select=1:ncpus={phase_to_freq_threads}:mem=5gb',
-                'overwrite': True
-            }
-        else:
-            wf.connect([
-                (n_inputs, n_frequency, [('frequency', 'frequency')])
-            ])
+        #TODO:RESOLVE SCALING PROBLEM IN FREQUENCY MAP - CURRENTLY WE NEED TO USE THE PHASE
+        #if not run_args.combine_phase:
+        phase_to_freq_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+        mn_phase_to_freq = MapNode(
+            interface=qsmjl.PhaseToFreqInterface(num_threads=phase_to_freq_threads),
+            name='qsmjl_phase-to-freq',
+            iterfield=['phase', 'TE'],
+            mem_gb=3,
+            n_procs=phase_to_freq_threads
+        )
+        wf.connect([
+            (n_unwrapping, mn_phase_to_freq, [('phase_unwrapped', 'phase')]),
+            (n_inputs, mn_phase_to_freq, [('TE', 'TE')]),
+            (n_inputs, mn_phase_to_freq, [('vsz', 'vsz')]),
+            (n_inputs, mn_phase_to_freq, [('b0_strength', 'b0_strength')]),
+            (mn_phase_to_freq, n_frequency, [('frequency', 'frequency')])
+        ])
+        mn_phase_to_freq.plugin_args = {
+            'qsub_args': f'-A {run_args.pbs} -N PhaToFreq -l walltime=01:00:00 -l select=1:ncpus={phase_to_freq_threads}:mem=5gb',
+            'overwrite': True
+        }
+        #else:
+        #    wf.connect([
+        #        (n_inputs, n_frequency, [('frequency', 'frequency')])
+        #    ])
         
     # === BACKGROUND FIELD REMOVAL ===
     if run_args.qsm_algorithm in ['rts', 'tv']:

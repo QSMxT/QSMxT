@@ -6,16 +6,21 @@ from scripts import qsmxt_functions
 import nibabel as nib
 import numpy as np
 
-def B0_unit_convert(B0_map, te):
+def B0_unit_convert(b0map_path, te):
     from math import pi
-    nii = nib.load(B0_map)
-    sim_phase = nii.get_fdata()
-    sim_phase_unwrapped = sim_phase * (2*pi * te)/(10**3) # shortest te in s
-    sim_phase_wrapped = (sim_phase_unwrapped + np.pi) % (2 * np.pi) - np.pi
-    out_file_unwrapped = os.path.abspath(os.path.split(B0_map)[1].replace(".nii", "_to-phase-unwrapped.nii"))
-    out_file_wrapped = os.path.abspath(os.path.split(B0_map)[1].replace(".nii", "_to-phase-wrapped.nii"))
-    nib.save(nib.Nifti1Image(dataobj=sim_phase_unwrapped, header=nii.header, affine=nii.affine), out_file_unwrapped)
-    nib.save(nib.Nifti1Image(dataobj=sim_phase_wrapped, header=nii.header, affine=nii.affine), out_file_wrapped)
+    
+    b0map_nii = nib.load(b0map_path)
+    b0map = b0map_nii.get_fdata()
+    
+    phase_unwrapped = b0map * (2*pi * te) / (10**3)
+    phase_wrapped = (phase_unwrapped + np.pi) % (2 * np.pi) - np.pi
+    
+    out_file_unwrapped = os.path.abspath(os.path.split(b0map_path)[1].replace(".nii", "_to-phase-unwrapped.nii"))
+    out_file_wrapped = os.path.abspath(os.path.split(b0map_path)[1].replace(".nii", "_to-phase-wrapped.nii"))
+    
+    nib.save(nib.Nifti1Image(dataobj=phase_unwrapped, header=b0map_nii.header, affine=b0map_nii.affine), out_file_unwrapped)
+    nib.save(nib.Nifti1Image(dataobj=phase_wrapped, header=b0map_nii.header, affine=b0map_nii.affine), out_file_wrapped)
+    
     return out_file_wrapped, out_file_unwrapped
 
 ## Romeo wrapper single-echo (MapNode)
