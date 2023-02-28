@@ -51,6 +51,7 @@ def qsm_workflow(run_args, name, magnitude_available):
             ])
             mn_laplacian.plugin_args = {
                 'qsub_args': f'-A {run_args.pbs} -N Laplacian -l walltime=01:00:00 -l select=1:ncpus={laplacian_threads}:mem=5gb',
+                'sbatch_args': f'--account={run_args.slurm} --job-name=Laplacian --time=01:00:00 --ntasks=1 --cpus-per-task={laplacian_threads} --mem=5gb',
                 'overwrite': True
             }
         if run_args.unwrapping_algorithm == 'romeo':
@@ -102,6 +103,7 @@ def qsm_workflow(run_args, name, magnitude_available):
         ])
         mn_phase_to_freq.plugin_args = {
             'qsub_args': f'-A {run_args.pbs} -N PhaToFreq -l walltime=01:00:00 -l select=1:ncpus={phase_to_freq_threads}:mem=5gb',
+            'sbatch_args': f'--account={run_args.slurm} --job-name=PhaToFreq --time=01:00:00 --ntasks=1 --cpus-per-task={phase_to_freq_threads} --mem=5gb',
             'overwrite': True
         }
         #else:
@@ -136,6 +138,7 @@ def qsm_workflow(run_args, name, magnitude_available):
             ])
             mn_vsharp.plugin_args = {
                 'qsub_args': f'-A {run_args.pbs} -N VSHARP -l walltime=01:00:00 -l select=1:ncpus={vsharp_threads}:mem=5gb',
+                'sbatch_args': f'--account={run_args.slurm} --job-name=VSHARP --time=01:00:00 --ntasks=1 --cpus-per-task={vsharp_threads} --mem=5gb',
                 'overwrite': True
             }
         if run_args.bf_algorithm == 'pdf':
@@ -156,6 +159,7 @@ def qsm_workflow(run_args, name, magnitude_available):
             ])
             mn_pdf.plugin_args = {
                 'qsub_args': f'-A {run_args.pbs} -N PDF -l walltime=01:00:00 -l select=1:ncpus={pdf_threads}:mem=8gb',
+                'sbatch_args': f'--account={run_args.slurm} --job-name=PDF --time=01:00:00 --ntasks=1 --cpus-per-task={pdf_threads} --mem=8gb',
                 'overwrite': True
             }
 
@@ -191,6 +195,7 @@ def qsm_workflow(run_args, name, magnitude_available):
         ])
         mn_qsm.plugin_args = {
             'qsub_args': f'-A {run_args.pbs} -N RTS -l walltime=01:00:00 -l select=1:ncpus={rts_threads}:mem=5gb',
+            'sbatch_args': f'--account={run_args.slurm} --job-name=RTS --time=01:00:00 --ntasks=1 --cpus-per-task={rts_threads} --mem=5gb',
             'overwrite': True
         }
     if run_args.qsm_algorithm == 'tv':
@@ -211,7 +216,8 @@ def qsm_workflow(run_args, name, magnitude_available):
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
         mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.pbs} -N RTS -l walltime=01:00:00 -l select=1:ncpus={tv_threads}:mem=5gb',
+            'qsub_args': f'-A {run_args.pbs} -N TV -l walltime=01:00:00 -l select=1:ncpus={tv_threads}:mem=5gb',
+            'sbatch_args': f'--account={run_args.slurm} --job-name=TV --time=01:00:00 --ntasks=1 --cpus-per-task={tv_threads} --mem=5gb',
             'overwrite': True
         }
     if run_args.qsm_algorithm == 'tgv':
@@ -232,6 +238,7 @@ def qsm_workflow(run_args, name, magnitude_available):
         )
         mn_qsm.plugin_args = {
             'qsub_args': f'-A {run_args.pbs} -N TGV -l walltime=01:00:00 -l select=1:ncpus={tgv_threads}:mem=6gb',
+            'sbatch_args': f'--account={run_args.slurm} --job-name=TGV --time=01:00:00 --ntasks=1 --cpus-per-task={tgv_threads} --mem=6gb',
             'overwrite': True
         }
         wf.connect([

@@ -1442,7 +1442,7 @@ if __name__ == "__main__":
             wf.run(
                 plugin='SLURM',
                 plugin_args={
-                    'sbatch_args': f'--account={args.slurm} --time=00:30:00 --nodes=1 --ntasks-per-node=1 --mem=5gb'
+                    'sbatch_args': f'--account={args.slurm} --job-name=QSMxT --time=00:30:00 --ntasks=1 --cpus-per-task=1 --mem=5gb'
                 }
             )
         if args.pbs:
