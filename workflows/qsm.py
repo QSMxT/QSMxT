@@ -221,7 +221,7 @@ def qsm_workflow(run_args, name, magnitude_available):
             'overwrite': True
         }
     if run_args.qsm_algorithm == 'tgv':
-        tgv_threads = min(6, run_args.n_procs) if run_args.multiproc else 6
+        tgv_threads = min(20, run_args.n_procs)
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
                 iterations=run_args.tgv_iterations,
