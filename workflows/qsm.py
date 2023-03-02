@@ -52,6 +52,7 @@ def qsm_workflow(run_args, name, magnitude_available):
                 (mn_laplacian, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')])
             ])
             mn_laplacian.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
                 slurm_account=run_args.slurm_account,
                 pbs_account=run_args.pbs,
                 slurm_partition=run_args.slurm_partition,
@@ -107,6 +108,7 @@ def qsm_workflow(run_args, name, magnitude_available):
             (mn_phase_to_freq, n_frequency, [('frequency', 'frequency')])
         ])
         mn_phase_to_freq.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
             slurm_account=run_args.slurm_account,
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm_partition,
@@ -145,6 +147,7 @@ def qsm_workflow(run_args, name, magnitude_available):
                 (mn_vsharp, mn_bf, [('vsharp_mask', 'mask')]),
             ])
             mn_vsharp.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
                 slurm_account=run_args.slurm_account,
                 pbs_account=run_args.pbs,
                 slurm_partition=run_args.slurm_partition,
@@ -169,6 +172,7 @@ def qsm_workflow(run_args, name, magnitude_available):
                 (n_inputs, mn_bf, [('mask', 'mask')]),
             ])
             mn_pdf.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
                 slurm_account=run_args.slurm_account,
                 pbs_account=run_args.pbs,
                 slurm_partition=run_args.slurm_partition,
@@ -209,6 +213,7 @@ def qsm_workflow(run_args, name, magnitude_available):
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
         mn_qsm.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
             slurm_account=run_args.slurm_account,
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm_partition,
@@ -234,6 +239,7 @@ def qsm_workflow(run_args, name, magnitude_available):
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
         mn_qsm.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
             slurm_account=run_args.slurm_account,
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm_partition,
@@ -259,6 +265,7 @@ def qsm_workflow(run_args, name, magnitude_available):
             n_procs=tgv_threads
         )
         mn_qsm.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
             slurm_account=run_args.slurm_account,
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm_partition,
