@@ -11,7 +11,7 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype import config, logging
-from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir, get_diff, print_qsm_premades
+from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir, get_diff, print_qsm_premades, gen_plugin_args
 from scripts.sys_cmd import sys_cmd
 from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logger
 from scripts.user_input import get_option, get_string, get_num, get_nums
@@ -466,6 +466,21 @@ def parse_args(args, return_run_command=False):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
+    class TwoValuesAction(argparse.Action):
+        def __init__(self, option_strings, dest, nargs=None, **kwargs):
+            self.dest = dest
+            self.dest2 = kwargs.pop('dest2')
+            super().__init__(option_strings, dest, nargs=nargs, **kwargs)
+
+        def __call__(self, parser, namespace, values, option_string=None):
+            if len(values) == 1:
+                setattr(namespace, self.dest, values)
+            elif len(values) == 2:
+                setattr(namespace, self.dest, values[0])
+                setattr(namespace, self.dest2, values[1])
+            else:
+                raise argparse.ArgumentError(self, 'Expected one or two values.')
+
     def argparse_bool(user_in):
         if user_in is None: return None
         if isinstance(user_in, bool): return user_in
@@ -775,8 +790,12 @@ def parse_args(args, return_run_command=False):
 
     parser.add_argument(
         '--slurm',
+        metavar=('ACCOUNT_STRING', 'PARITITON'),
+        nargs='+',
         default=None,
-        dest='slurm',
+        dest='slurm_account',
+        action=TwoValuesAction,
+        dest2='slurm_partition',
         help='Run the pipeline via SLURM and use the argument as the account string.'
     )
 
@@ -1293,7 +1312,7 @@ def process_args(args):
         args.n_procs = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
 
     # determine whether multiproc will be used
-    args.multiproc = not (args.pbs or args.slurm)
+    args.multiproc = not (args.pbs or args.slurm_account)
 
     # debug options
     if args.debug:
@@ -1438,19 +1457,15 @@ if __name__ == "__main__":
 
     # run workflow
     if not args.dry:
-        if args.slurm:
+        if args.slurm_account:
             wf.run(
                 plugin='SLURM',
-                plugin_args={
-                    'sbatch_args': f'--account={args.slurm} --job-name=QSMxT --time=00:30:00 --ntasks=1 --cpus-per-task=1 --mem=5gb'
-                }
+                plugin_args=gen_plugin_args(slurm_account=args.slurm_account, slurm_partition=args.slurm_partition)
             )
         if args.pbs:
             wf.run(
                 plugin='PBSGraph',
-                plugin_args={
-                    'qsub_args': f'-A {args.pbs} -N QSMxT -l walltime=00:30:00 -l select=1:ncpus=1:mem=5gb'
-                }
+                plugin_args=gen_plugin_args(pbs_account=args.pbs)
             )
         else:
             plugin_args = { 'n_procs' : args.n_procs }
