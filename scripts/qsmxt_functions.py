@@ -52,3 +52,8 @@ def get_diff():
     diff = sys_cmd(f"git --git-dir {os.path.join(get_qsmxt_dir(), '.git')} --work-tree {get_qsmxt_dir()} diff", False, False)
     return f"{diff}\n" if diff else ""
 
+def gen_plugin_args(pbs_account="", slurm_account="", plugin_args={}, time="00:30:00", num_cpus=1, mem_gb=5, job_name="QSMxT", slurm_partition=None):
+    plugin_args['sbatch_args'] = f"--account={slurm_account} {f'--partition {slurm_partition}' if slurm_partition else ''} --job-name={job_name} --time={time} --ntasks=1 --cpus-per-task={num_cpus} --mem={mem_gb}gb"
+    plugin_args['qsub_args'] = f'-A {pbs_account} -N {job_name} -l walltime={time} -l select=1:ncpus={num_cpus}:mem={mem_gb}gb'
+    return plugin_args
+    
