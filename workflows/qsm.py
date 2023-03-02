@@ -10,7 +10,7 @@ from interfaces import nipype_interface_nextqsm as nextqsm
 
 import psutil
 
-def qsm_workflow(run_args, name, magnitude_available):
+def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
     wf = Workflow(name=f"{name}_workflow")
 
     n_inputs = Node(
@@ -226,7 +226,7 @@ def qsm_workflow(run_args, name, magnitude_available):
             interface=tgv.QSMappingInterface(
                 iterations=run_args.tgv_iterations,
                 alpha=run_args.tgv_alphas,
-                erosions=run_args.tgv_erosions,
+                erosions=qsm_erosions,
                 num_threads=tgv_threads,
                 out_suffix='_tgv',
                 extra_arguments='--ignore-orientation --no-resampling'
