@@ -44,7 +44,7 @@ def find_dicoms(input_dir, check_all_files):
     unsortedList = []
     for root, dirs, files in os.walk(input_dir):
         for f in files:
-            file_extension = ".".join(f.split('.')[1:])
+            file_extension = ".".join(f.split('.')[-1:])
             if file_extension.lower() in ['ima', 'dcm']:
                 unsortedList.append(os.path.join(root, f))
     if not unsortedList or check_all_files:
