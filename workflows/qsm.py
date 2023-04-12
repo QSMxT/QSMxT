@@ -45,7 +45,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                 interface=qsmjl.LaplacianUnwrappingInterface(num_threads=laplacian_threads),
                 iterfield=['phase', 'mask'],
                 name='qsmjl_laplacian-unwrapping',
-                mem_gb=3,
+                mem_gb=min(3, run_args.mem_avail),
                 n_procs=laplacian_threads
             )
             wf.connect([
@@ -59,7 +59,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                 pbs_account=run_args.pbs,
                 slurm_partition=run_args.slurm[1],
                 name="Laplacian",
-                mem_gb=5,
+                mem_gb=3,
                 num_cpus=laplacian_threads
             )
         if run_args.unwrapping_algorithm == 'romeo':
@@ -72,7 +72,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                     interface=romeo.RomeoInterface(),
                     iterfield=['phase'] + (['magnitude'] if magnitude_available else []),
                     name='mrt_romeo',
-                    mem_gb=3
+                    mem_gb=min(3, run_args.mem_avail)
                 )
                 wf.connect([
                     (n_inputs, mn_romeo, [('phase', 'phase')]),
@@ -99,7 +99,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             ),
             name='nibabel-numpy_normalize-phase',
             iterfield=['phase', 'TE'],
-            mem_gb=3,
+            mem_gb=min(3, run_args.mem_avail),
             n_procs=normalize_phase_threads
         )
         wf.connect([
@@ -114,7 +114,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="PhaToNormalized",
-            mem_gb=5,
+            mem_gb=3,
             num_cpus=normalize_phase_threads
         )
     if run_args.qsm_algorithm in ['rts', 'tv', 'nextqsm'] and run_args.combine_phase:
@@ -125,7 +125,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             ),
             name='nibabel-numpy_normalize-freq',
             iterfield=['frequency'],
-            mem_gb=3,
+            mem_gb=min(3, run_args.mem_avail),
             n_procs=normalize_freq_threads
         )
         wf.connect([
@@ -139,7 +139,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="PhaToNormalized",
-            mem_gb=5,
+            mem_gb=3,
             num_cpus=normalize_freq_threads
         )
     if run_args.qsm_algorithm == 'tgv' and run_args.combine_phase:
@@ -148,7 +148,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             interface=process_phase.FreqToPhaseInterface(TE=0.005),
             name='nibabel-numpy_freq-to-phase',
             iterfield=['frequency'],
-            mem_gb=3,
+            mem_gb=min(3, run_args.mem_avail),
             n_procs=freq_to_phase_threads
         )
         wf.connect([
@@ -161,7 +161,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="FreqToPhase",
-            mem_gb=5,
+            mem_gb=3,
             num_cpus=freq_to_phase_threads
         )
         
@@ -181,7 +181,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                 iterfield=['frequency', 'mask'],
                 name='qsmjl_vsharp',
                 n_procs=vsharp_threads,
-                mem_gb=3
+                mem_gb=min(3, run_args.mem_avail)
             )
             wf.connect([
                 (n_phase_normalized, mn_vsharp, [('phase_normalized', 'frequency')]),
@@ -196,7 +196,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                 pbs_account=run_args.pbs,
                 slurm_partition=run_args.slurm[1],
                 name="VSHARP",
-                mem_gb=5,
+                mem_gb=3,
                 num_cpus=vsharp_threads
             )
         if run_args.bf_algorithm == 'pdf':
@@ -206,7 +206,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                 iterfield=['frequency', 'mask'],
                 name='qsmjl_pdf',
                 n_procs=pdf_threads,
-                mem_gb=5
+                mem_gb=min(5, run_args.mem_avail),
             )
             wf.connect([
                 (n_phase_normalized, mn_pdf, [('phase_normalized', 'frequency')]),
@@ -222,7 +222,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                 slurm_partition=run_args.slurm[1],
                 name="PDF",
                 time="01:00:00",
-                mem_gb=8,
+                mem_gb=5,
                 num_cpus=pdf_threads
             )
 
@@ -233,7 +233,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             interface=nextqsm.NextqsmInterface(),
             name='nextqsm',
             iterfield=['phase', 'mask'],
-            mem_gb=13,
+            mem_gb=min(13, run_args.mem_avail),
             n_procs=nextqsm_threads
         )
         wf.connect([
@@ -257,7 +257,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             name='qsmjl_rts',
             iterfield=['tissue_frequency', 'mask'],
             n_procs=rts_threads,
-            mem_gb=5,
+            mem_gb=min(5, run_args.mem_avail),
             terminal_output="file_split"
         )
         wf.connect([
@@ -283,7 +283,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             name='qsmjl_tv',
             iterfield=['tissue_frequency', 'mask'],
             n_procs=tv_threads,
-            mem_gb=5,
+            mem_gb=min(5, run_args.mem_avail),
             terminal_output="file_split"
         )
         wf.connect([
@@ -316,7 +316,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             ),
             iterfield=['phase', 'TE', 'mask'],
             name='tgv',
-            mem_gb=6,
+            mem_gb=min(6, run_args.mem_avail),
             n_procs=tgv_threads
         )
         mn_qsm.plugin_args = gen_plugin_args(
