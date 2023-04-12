@@ -1310,7 +1310,7 @@ def process_args(args):
         args.n_procs = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
 
     # determine whether multiproc will be used
-    args.multiproc = not (args.pbs or args.slurm)
+    args.multiproc = not (args.pbs or any(args.slurm))
 
     # debug options
     if args.debug:
