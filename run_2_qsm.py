@@ -11,13 +11,13 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype import config, logging
-from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir, get_diff, print_qsm_premades
+from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir, get_diff, print_qsm_premades, gen_plugin_args
 from scripts.sys_cmd import sys_cmd
 from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logger
 from scripts.user_input import get_option, get_string, get_num, get_nums
 
 from interfaces import nipype_interface_romeo as romeo
-from interfaces import nipype_interface_scalephase as scalephase
+from interfaces import nipype_interface_process_phase as process_phase
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_axialsampling as sampling
 from interfaces import nipype_interface_twopass as twopass
@@ -223,7 +223,7 @@ def init_run_workflow(run_args, subject, session, run):
 
     # scale phase data
     mn_phase_scaled = MapNode(
-        interface=scalephase.ScalePhaseInterface(),
+        interface=process_phase.ScalePhaseInterface(),
         iterfield=['phase'],
         name='nibabel_numpy_scale-phase'
         # outputs : 'out_file'
@@ -326,7 +326,7 @@ def init_run_workflow(run_args, subject, session, run):
             (n_inputs_resampled, n_romeo_combine, [('magnitude', 'magnitude')]),
             (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency'), ('phase_wrapped', 'phase'), ('phase_unwrapped', 'phase_unwrapped'), ('mask', 'mask'), ('TE', 'TE')])
         ])
-        if mask_files: wf.connect([(n_inputs_resampled, n_romeo_combine, [('out_mask', 'mask')])])
+        if mask_files: wf.connect([(n_inputs_resampled, n_romeo_combine, [('mask', 'mask')])])
         if run_args.inhomogeneity_correction:
             wf.connect([
                 (n_romeo_combine, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
@@ -385,7 +385,7 @@ def init_run_workflow(run_args, subject, session, run):
     ])
 
     # === QSM ===
-    wf_qsm = qsm_workflow(run_args, "qsm", len(magnitude_files) > 0)
+    wf_qsm = qsm_workflow(run_args, "qsm", len(magnitude_files) > 0, qsm_erosions=run_args.tgv_erosions)
 
     wf.connect([
         (n_inputs_combine, wf_qsm, [('phase', 'qsm_inputs.phase')]),
@@ -419,7 +419,7 @@ def init_run_workflow(run_args, subject, session, run):
             (n_inputs_combine, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')])
         ])
 
-        wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0)
+        wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0, qsm_erosions=0)
         wf.connect([
             (n_inputs_combine, wf_qsm_intermediate, [('phase', 'qsm_inputs.phase')]),
             (n_inputs_combine, wf_qsm_intermediate, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
@@ -465,6 +465,21 @@ def parse_args(args, return_run_command=False):
         description="QSMxT: QSM Reconstruction Pipeline",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
+
+    class TwoValuesAction(argparse.Action):
+        def __init__(self, option_strings, dest, nargs=None, **kwargs):
+            self.dest = dest
+            self.dest2 = kwargs.pop('dest2')
+            super().__init__(option_strings, dest, nargs=nargs, **kwargs)
+
+        def __call__(self, parser, namespace, values, option_string=None):
+            if len(values) == 1:
+                setattr(namespace, self.dest, values)
+            elif len(values) == 2:
+                setattr(namespace, self.dest, values[0])
+                setattr(namespace, self.dest2, values[1])
+            else:
+                raise argparse.ArgumentError(self, 'Expected one or two values.')
 
     def argparse_bool(user_in):
         if user_in is None: return None
@@ -775,7 +790,9 @@ def parse_args(args, return_run_command=False):
 
     parser.add_argument(
         '--slurm',
-        default=None,
+        metavar=('ACCOUNT_STRING', 'PARITITON'),
+        nargs=2,
+        default=(None, None),
         dest='slurm',
         help='Run the pipeline via SLURM and use the argument as the account string.'
     )
@@ -1438,19 +1455,15 @@ if __name__ == "__main__":
 
     # run workflow
     if not args.dry:
-        if args.slurm:
+        if args.slurm[0] is not None:
             wf.run(
                 plugin='SLURM',
-                plugin_args={
-                    'sbatch_args': f'--account={args.slurm} --job-name=QSMxT --time=00:30:00 --ntasks=1 --cpus-per-task=1 --mem=5gb'
-                }
+                plugin_args=gen_plugin_args(slurm_account=args.slurm[0], slurm_partition=args.slurm[1])
             )
         if args.pbs:
             wf.run(
                 plugin='PBSGraph',
-                plugin_args={
-                    'qsub_args': f'-A {args.pbs} -N QSMxT -l walltime=00:30:00 -l select=1:ncpus=1:mem=5gb'
-                }
+                plugin_args=gen_plugin_args(pbs_account=args.pbs)
             )
         else:
             plugin_args = { 'n_procs' : args.n_procs }

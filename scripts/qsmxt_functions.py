@@ -22,6 +22,11 @@ def get_qsm_premades(pipeline_file):
 
     return premades
 
+def extend_fname(original_path, append_text, ext=None, out_dir=None):
+    original_fname = os.path.split(original_path)[1].split('.')[0]
+    original_ext = ".".join(original_path.split('.')[1:])
+    return os.path.join(out_dir or os.getcwd(), f"{original_fname}{append_text}.{ext or original_ext}")
+
 def print_qsm_premades(pipeline_file):
     premades = get_qsm_premades(pipeline_file)
     print("=== Premade pipelines ===")
@@ -52,3 +57,8 @@ def get_diff():
     diff = sys_cmd(f"git --git-dir {os.path.join(get_qsmxt_dir(), '.git')} --work-tree {get_qsmxt_dir()} diff", False, False)
     return f"{diff}\n" if diff else ""
 
+def gen_plugin_args(pbs_account="", slurm_account="", plugin_args={}, time="00:30:00", num_cpus=1, mem_gb=5, name="QSMxT", slurm_partition=None):
+    plugin_args['sbatch_args'] = f"--account={slurm_account} {f'--partition {slurm_partition}' if slurm_partition else ''} --job-name={name} --time={time} --ntasks=1 --cpus-per-task={num_cpus} --mem={mem_gb}gb"
+    plugin_args['qsub_args'] = f'-A {pbs_account} -N {name} -l walltime={time} -l select=1:ncpus={num_cpus}:mem={mem_gb}gb'
+    return plugin_args
+    

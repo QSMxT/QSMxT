@@ -1,16 +1,20 @@
+import numpy as np
+
 from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype.interfaces.utility import IdentityInterface, Function
 
-import interfaces.nipype_interface_laplacian_unwrapping as laplacian
 import interfaces.nipype_interface_romeo as romeo
 
 from interfaces import nipype_interface_tgv_qsm as tgv
 from interfaces import nipype_interface_qsmjl as qsmjl
 from interfaces import nipype_interface_nextqsm as nextqsm
+from interfaces import nipype_interface_process_phase as process_phase
+
+from scripts.qsmxt_functions import gen_plugin_args
 
 import psutil
 
-def qsm_workflow(run_args, name, magnitude_available):
+def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
     wf = Workflow(name=f"{name}_workflow")
 
     n_inputs = Node(
@@ -49,11 +53,15 @@ def qsm_workflow(run_args, name, magnitude_available):
                 (n_inputs, mn_laplacian, [('mask', 'mask')]),
                 (mn_laplacian, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')])
             ])
-            mn_laplacian.plugin_args = {
-                'qsub_args': f'-A {run_args.pbs} -N Laplacian -l walltime=01:00:00 -l select=1:ncpus={laplacian_threads}:mem=5gb',
-                'sbatch_args': f'--account={run_args.slurm} --job-name=Laplacian --time=01:00:00 --ntasks=1 --cpus-per-task={laplacian_threads} --mem=5gb',
-                'overwrite': True
-            }
+            mn_laplacian.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
+                slurm_account=run_args.slurm[0],
+                pbs_account=run_args.pbs,
+                slurm_partition=run_args.slurm[1],
+                name="Laplacian",
+                mem_gb=5,
+                num_cpus=laplacian_threads
+            )
         if run_args.unwrapping_algorithm == 'romeo':
             if run_args.combine_phase:
                 wf.connect([
@@ -77,39 +85,85 @@ def qsm_workflow(run_args, name, magnitude_available):
 
 
     # === PHASE TO FREQUENCY ===
-    n_frequency = Node(
+    n_phase_normalized = Node(
         interface=IdentityInterface(
-            fields=['frequency']
+            fields=['phase_normalized']
         ),
-        name='frequency-inputs'
+        name='phase_normalized'
     )
-    if run_args.qsm_algorithm in ['nextqsm', 'rts', 'tv']:
-        #TODO:RESOLVE SCALING PROBLEM IN FREQUENCY MAP - CURRENTLY WE NEED TO USE THE PHASE
-        #if not run_args.combine_phase:
-        phase_to_freq_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-        mn_phase_to_freq = MapNode(
-            interface=qsmjl.PhaseToFreqInterface(num_threads=phase_to_freq_threads),
-            name='qsmjl_phase-to-freq',
+    if run_args.qsm_algorithm in ['rts', 'tv', 'nextqsm'] and not run_args.combine_phase:
+        normalize_phase_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+        mn_normalize_phase = MapNode(
+            interface=process_phase.PhaseToNormalizedInterface(
+                scale_factor=1e6 if run_args.qsm_algorithm == 'nextqsm' else 1e6/(2*np.pi)
+            ),
+            name='nibabel-numpy_normalize-phase',
             iterfield=['phase', 'TE'],
             mem_gb=3,
-            n_procs=phase_to_freq_threads
+            n_procs=normalize_phase_threads
         )
         wf.connect([
-            (n_unwrapping, mn_phase_to_freq, [('phase_unwrapped', 'phase')]),
-            (n_inputs, mn_phase_to_freq, [('TE', 'TE')]),
-            (n_inputs, mn_phase_to_freq, [('vsz', 'vsz')]),
-            (n_inputs, mn_phase_to_freq, [('b0_strength', 'b0_strength')]),
-            (mn_phase_to_freq, n_frequency, [('frequency', 'frequency')])
+            (n_unwrapping, mn_normalize_phase, [('phase_unwrapped', 'phase')]),
+            (n_inputs, mn_normalize_phase, [('TE', 'TE')]),
+            (n_inputs, mn_normalize_phase, [('b0_strength', 'B0')]),
+            (mn_normalize_phase, n_phase_normalized, [('phase_normalized', 'phase_normalized')])
         ])
-        mn_phase_to_freq.plugin_args = {
-            'qsub_args': f'-A {run_args.pbs} -N PhaToFreq -l walltime=01:00:00 -l select=1:ncpus={phase_to_freq_threads}:mem=5gb',
-            'sbatch_args': f'--account={run_args.slurm} --job-name=PhaToFreq --time=01:00:00 --ntasks=1 --cpus-per-task={phase_to_freq_threads} --mem=5gb',
-            'overwrite': True
-        }
-        #else:
-        #    wf.connect([
-        #        (n_inputs, n_frequency, [('frequency', 'frequency')])
-        #    ])
+        mn_normalize_phase.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="PhaToNormalized",
+            mem_gb=5,
+            num_cpus=normalize_phase_threads
+        )
+    if run_args.qsm_algorithm in ['rts', 'tv', 'nextqsm'] and run_args.combine_phase:
+        normalize_freq_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+        mn_normalize_freq = MapNode(
+            interface=process_phase.FreqToNormalizedInterface(
+                scale_factor=1e6 if run_args.qsm_algorithm == 'nextqsm' else 1e6/(2*np.pi)
+            ),
+            name='nibabel-numpy_normalize-freq',
+            iterfield=['frequency'],
+            mem_gb=3,
+            n_procs=normalize_freq_threads
+        )
+        wf.connect([
+            (n_inputs, mn_normalize_freq, [('frequency', 'frequency')]),
+            (n_inputs, mn_normalize_freq, [('b0_strength', 'B0')]),
+            (mn_normalize_freq, n_phase_normalized, [('phase_normalized', 'phase_normalized')])
+        ])
+        mn_normalize_freq.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="PhaToNormalized",
+            mem_gb=5,
+            num_cpus=normalize_freq_threads
+        )
+    if run_args.qsm_algorithm == 'tgv' and run_args.combine_phase:
+        freq_to_phase_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+        mn_freq_to_phase = MapNode(
+            interface=process_phase.FreqToPhaseInterface(TE=0.005),
+            name='nibabel-numpy_freq-to-phase',
+            iterfield=['frequency'],
+            mem_gb=3,
+            n_procs=freq_to_phase_threads
+        )
+        wf.connect([
+            (n_inputs, mn_freq_to_phase, [('frequency', 'frequency')]),
+            (mn_freq_to_phase, n_phase_normalized, [('phase', 'phase_normalized')])
+        ])
+        mn_freq_to_phase.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="FreqToPhase",
+            mem_gb=5,
+            num_cpus=freq_to_phase_threads
+        )
         
     # === BACKGROUND FIELD REMOVAL ===
     if run_args.qsm_algorithm in ['rts', 'tv']:
@@ -130,17 +184,21 @@ def qsm_workflow(run_args, name, magnitude_available):
                 mem_gb=3
             )
             wf.connect([
-                (n_frequency, mn_vsharp, [('frequency', 'frequency')]),
+                (n_phase_normalized, mn_vsharp, [('phase_normalized', 'frequency')]),
                 (n_inputs, mn_vsharp, [('mask', 'mask')]),
                 (n_inputs, mn_vsharp, [('vsz', 'vsz')]),
                 (mn_vsharp, mn_bf, [('tissue_frequency', 'tissue_frequency')]),
                 (mn_vsharp, mn_bf, [('vsharp_mask', 'mask')]),
             ])
-            mn_vsharp.plugin_args = {
-                'qsub_args': f'-A {run_args.pbs} -N VSHARP -l walltime=01:00:00 -l select=1:ncpus={vsharp_threads}:mem=5gb',
-                'sbatch_args': f'--account={run_args.slurm} --job-name=VSHARP --time=01:00:00 --ntasks=1 --cpus-per-task={vsharp_threads} --mem=5gb',
-                'overwrite': True
-            }
+            mn_vsharp.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
+                slurm_account=run_args.slurm[0],
+                pbs_account=run_args.pbs,
+                slurm_partition=run_args.slurm[1],
+                name="VSHARP",
+                mem_gb=5,
+                num_cpus=vsharp_threads
+            )
         if run_args.bf_algorithm == 'pdf':
             pdf_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
             mn_pdf = MapNode(
@@ -151,31 +209,47 @@ def qsm_workflow(run_args, name, magnitude_available):
                 mem_gb=5
             )
             wf.connect([
-                (n_frequency, mn_pdf, [('frequency', 'frequency')]),
+                (n_phase_normalized, mn_pdf, [('phase_normalized', 'frequency')]),
                 (n_inputs, mn_pdf, [('mask', 'mask')]),
                 (n_inputs, mn_pdf, [('vsz', 'vsz')]),
                 (mn_pdf, mn_bf, [('tissue_frequency', 'tissue_frequency')]),
                 (n_inputs, mn_bf, [('mask', 'mask')]),
             ])
-            mn_pdf.plugin_args = {
-                'qsub_args': f'-A {run_args.pbs} -N PDF -l walltime=01:00:00 -l select=1:ncpus={pdf_threads}:mem=8gb',
-                'sbatch_args': f'--account={run_args.slurm} --job-name=PDF --time=01:00:00 --ntasks=1 --cpus-per-task={pdf_threads} --mem=8gb',
-                'overwrite': True
-            }
+            mn_pdf.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
+                slurm_account=run_args.slurm[0],
+                pbs_account=run_args.pbs,
+                slurm_partition=run_args.slurm[1],
+                name="PDF",
+                time="01:00:00",
+                mem_gb=8,
+                num_cpus=pdf_threads
+            )
 
     # === DIPOLE INVERSION ===
     if run_args.qsm_algorithm == 'nextqsm':
+        nextqsm_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
         mn_qsm = MapNode(
             interface=nextqsm.NextqsmInterface(),
             name='nextqsm',
             iterfield=['phase', 'mask'],
-            mem_gb=min(13, psutil.virtual_memory().available/10e8 * 0.9)
+            mem_gb=13,
+            n_procs=nextqsm_threads
         )
         wf.connect([
-            (n_frequency, mn_qsm, [('frequency', 'phase')]),
+            (n_phase_normalized, mn_qsm, [('phase_normalized', 'phase')]),
             (n_inputs, mn_qsm, [('mask', 'mask')]),
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
+        mn_qsm.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="RTS",
+            mem_gb=13,
+            num_cpus=nextqsm_threads
+        )
     if run_args.qsm_algorithm == 'rts':
         rts_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
         mn_qsm = MapNode(
@@ -193,11 +267,15 @@ def qsm_workflow(run_args, name, magnitude_available):
             (n_inputs, mn_qsm, [('b0_direction', 'b0_direction')]),
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
-        mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.pbs} -N RTS -l walltime=01:00:00 -l select=1:ncpus={rts_threads}:mem=5gb',
-            'sbatch_args': f'--account={run_args.slurm} --job-name=RTS --time=01:00:00 --ntasks=1 --cpus-per-task={rts_threads} --mem=5gb',
-            'overwrite': True
-        }
+        mn_qsm.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="RTS",
+            mem_gb=5,
+            num_cpus=rts_threads
+        )
     if run_args.qsm_algorithm == 'tv':
         tv_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
         mn_qsm = MapNode(
@@ -215,18 +293,23 @@ def qsm_workflow(run_args, name, magnitude_available):
             (n_inputs, mn_qsm, [('b0_direction', 'b0_direction')]),
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
-        mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.pbs} -N TV -l walltime=01:00:00 -l select=1:ncpus={tv_threads}:mem=5gb',
-            'sbatch_args': f'--account={run_args.slurm} --job-name=TV --time=01:00:00 --ntasks=1 --cpus-per-task={tv_threads} --mem=5gb',
-            'overwrite': True
-        }
+        mn_qsm.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="TV",
+            time="01:00:00",
+            mem_gb=5,
+            num_cpus=tv_threads
+        )
     if run_args.qsm_algorithm == 'tgv':
         tgv_threads = min(20, run_args.n_procs)
         mn_qsm = MapNode(
             interface=tgv.QSMappingInterface(
                 iterations=run_args.tgv_iterations,
                 alpha=run_args.tgv_alphas,
-                erosions=run_args.tgv_erosions,
+                erosions=qsm_erosions,
                 num_threads=tgv_threads,
                 out_suffix='_tgv',
                 extra_arguments='--ignore-orientation --no-resampling'
@@ -236,24 +319,30 @@ def qsm_workflow(run_args, name, magnitude_available):
             mem_gb=6,
             n_procs=tgv_threads
         )
-        mn_qsm.plugin_args = {
-            'qsub_args': f'-A {run_args.pbs} -N TGV -l walltime=01:00:00 -l select=1:ncpus={tgv_threads}:mem=6gb',
-            'sbatch_args': f'--account={run_args.slurm} --job-name=TGV --time=01:00:00 --ntasks=1 --cpus-per-task={tgv_threads} --mem=6gb',
-            'overwrite': True
-        }
+        mn_qsm.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="TGV",
+            time="01:00:00",
+            mem_gb=6,
+            num_cpus=tgv_threads
+        )
         wf.connect([
             (n_inputs, mn_qsm, [('mask', 'mask')]),
-            (n_inputs, mn_qsm, [('TE', 'TE')]),
             (n_inputs, mn_qsm, [('b0_strength', 'b0_strength')]),
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
-        if run_args.unwrapping_algorithm:
+        if run_args.combine_phase:
+            mn_qsm.inputs.TE = [0.005]
             wf.connect([
-                (n_unwrapping, mn_qsm, [('phase_unwrapped', 'phase')])
+                (n_phase_normalized, mn_qsm, [('phase_normalized', 'phase')])
             ])
         else:
             wf.connect([
-                (n_inputs, mn_qsm, [('phase', 'phase')])
+                (n_inputs, mn_qsm, [('phase', 'phase')]),
+                (n_inputs, mn_qsm, [('TE', 'TE')])
             ])
 
     
