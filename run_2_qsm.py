@@ -1466,6 +1466,7 @@ if __name__ == "__main__":
                 plugin_args=gen_plugin_args(pbs_account=args.pbs)
             )
         else:
+            logger.log(LogLevel.INFO.value, f"Running using MultiProc plugin with n_procs={args.n_procs}")
             plugin_args = { 'n_procs' : args.n_procs }
             if os.environ.get("PBS_JOBID"):
                 jobid = os.environ.get("PBS_JOBID").split(".")[0]
