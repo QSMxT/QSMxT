@@ -462,16 +462,16 @@ def init_run_workflow(run_args, subject, session, run):
             ])
         if mask_files:
             wf.connect([
-                (n_inputs_combine, wf_masking, [('mask', 'masking_inputs.mask')])
+                (n_inputs_combine, wf_masking_intermediate, [('mask', 'masking_inputs.mask')])
             ])
         if magnitude_files:
             if run_args.inhomogeneity_correction:
                 wf.connect([
-                    (mn_inhomogeneity_correction, wf_masking, [('magnitude_corrected', 'masking_inputs.magnitude')])
+                    (mn_inhomogeneity_correction, wf_masking_intermediate, [('magnitude_corrected', 'masking_inputs.magnitude')])
                 ])
             else:
                 wf.connect([
-                    (n_inputs_combine, wf_masking, [('magnitude', 'masking_inputs.magnitude')])
+                    (n_inputs_combine, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')])
                 ])
 
         wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0, qsm_erosions=0)
@@ -1426,6 +1426,8 @@ def write_citations(wf):
         if any_string_matches_any_node(['qsmjl_laplacian-unwrapping']):
             f.write("\n\n - Unwrapping algorithm - Laplacian: Schofield MA, Zhu Y. Fast phase unwrapping algorithm for interferometric applications. Optics letters. 2003 Jul 15;28(14):1194-6. doi:10.1364/OL.28.001194")
             f.write("\n\n - Unwrapping algorithm - Laplacian: Zhou D, Liu T, Spincemaille P, Wang Y. Background field removal by solving the Laplacian boundary value problem. NMR in Biomedicine. 2014 Mar;27(3):312-9. doi:10.1002/nbm.3064")
+        if any_string_matches_any_node(['mrt_laplacian-unwrapping']):
+            f.write("\n\n - Unwrapping algorithm - Laplacian: Schofield MA, Zhu Y. Fast phase unwrapping algorithm for interferometric applications. Optics letters. 2003 Jul 15;28(14):1194-6. doi:10.1364/OL.28.001194")
         if any_string_matches_any_node(['romeo']):
             f.write("\n\n - Unwrapping algorithm - ROMEO: Dymerska B, Eckstein K, Bachrata B, et al. Phase unwrapping with a rapid opensource minimum spanning tree algorithm (ROMEO). Magnetic Resonance in Medicine. 2021;85(4):2294-2308. doi:10.1002/mrm.28563")
         if any_string_matches_any_node(['vsharp']):
