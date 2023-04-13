@@ -9,7 +9,7 @@
         "sessions": null,
         "num_echoes": null,
         "obliquity_threshold": 10,
-        "combine_phase": false,
+        "combine_phase": true,
         "qsm_algorithm": "rts",
         "tgv_iterations": 1000,
         "tgv_alphas": [
@@ -47,7 +47,7 @@
     },
     "gre": {
         "description": "Applies suggested settings for 3D-GRE images",
-        "combine_phase": false,
+        "combine_phase": true,
         "qsm_algorithm": "rts",
         "unwrapping_algorithm": "romeo",
         "bf_algorithm": "pdf",
@@ -95,7 +95,7 @@
         "description": "Applies a set of fast algorithms",
         "combine_phase": true,
         "qsm_algorithm": "rts",
-        "unwrapping_algorithm": "laplacian",
+        "unwrapping_algorithm": "romeo",
         "bf_algorithm": "vsharp",
         "masking_input": "magnitude",
         "masking_algorithm": "bet",
@@ -121,7 +121,7 @@
     },
     "nextqsm": {
         "description": "Applies suggested settings for running the NeXtQSM algorithm (assumes human brain)",
-        "combine_phase": false,
+        "combine_phase": true,
         "qsm_algorithm": "nextqsm",
         "masking_algorithm": "bet-firstecho",
         "mask_erosions": [
