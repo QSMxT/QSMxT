@@ -80,7 +80,7 @@ class PhaseToFreqInputSpec(CommandLineInputSpecJulia):
         default="(1,1,1)",
         position=3
     )
-    b0_strength = traits.Float(
+    B0 = traits.Float(
         argstr="--b0-str %s",
         default=3,
         position=4

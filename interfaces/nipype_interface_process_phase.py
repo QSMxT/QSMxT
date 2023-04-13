@@ -46,13 +46,16 @@ class FreqToNormalizedInterface(SimpleInterface):
         return runtime
 
 
-def frequency_to_phase(frequency_path, TE, out_path=None):
+def frequency_to_phase(frequency_path, TE, wraps=False, out_path=None):
     # load ΔB (Hz)
     frequency_nii = nib.load(frequency_path)
     ΔB = frequency_nii.get_fdata()
     
     # phase accumulation at TE (rads)
     Φ_acc = 2*np.pi * ΔB * TE
+
+    # add wraps if requested
+    if wraps: Φ_acc = (Φ_acc + np.pi) % (2 * np.pi) - np.pi
     
     # save results
     out_path = out_path or extend_fname(frequency_path, f"_phase-TE{int(TE*1000):0>3}")
@@ -63,6 +66,7 @@ def frequency_to_phase(frequency_path, TE, out_path=None):
 class FreqToPhaseInputSpec(BaseInterfaceInputSpec):
     frequency = File(mandatory=True, exists=True)
     TE = traits.Float(mandatory=True)
+    wraps = traits.Bool(default_value=False)
     
 
 class FreqToPhaseOutputSpec(TraitedSpec):
@@ -76,7 +80,8 @@ class FreqToPhaseInterface(SimpleInterface):
     def _run_interface(self, runtime):
         self._results['phase'] = frequency_to_phase(
             frequency_path=self.inputs.frequency,
-            TE=self.inputs.TE
+            TE=self.inputs.TE,
+            wraps=self.inputs.wraps
         )
         return runtime
 

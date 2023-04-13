@@ -1,13 +1,14 @@
 import numpy as np
 
 from nipype.pipeline.engine import Workflow, Node, MapNode
-from nipype.interfaces.utility import IdentityInterface, Function
+from nipype.interfaces.utility import IdentityInterface
 
 import interfaces.nipype_interface_romeo as romeo
 
 from interfaces import nipype_interface_tgv_qsm as tgv
 from interfaces import nipype_interface_qsmjl as qsmjl
 from interfaces import nipype_interface_nextqsm as nextqsm
+from interfaces import nipype_interface_laplacian_unwrapping as laplacian
 from interfaces import nipype_interface_process_phase as process_phase
 
 from scripts.qsmxt_functions import gen_plugin_args
@@ -19,7 +20,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
 
     n_inputs = Node(
         interface=IdentityInterface(
-            fields=['phase', 'phase_unwrapped', 'frequency', 'magnitude', 'mask', 'TE', 'b0_strength', 'b0_direction', 'vsz']
+            fields=['phase', 'phase_unwrapped', 'frequency', 'magnitude', 'mask', 'TE', 'B0', 'b0_direction', 'vsz']
         ),
         name='qsm_inputs'
     )
@@ -42,15 +43,22 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
         if run_args.unwrapping_algorithm == 'laplacian':
             laplacian_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
             mn_laplacian = MapNode(
-                interface=qsmjl.LaplacianUnwrappingInterface(num_threads=laplacian_threads),
-                iterfield=['phase', 'mask'],
-                name='qsmjl_laplacian-unwrapping',
+                interface=laplacian.LaplacianInterface(),
+                iterfield=['phase'],
+                name='mrt_laplacian-unwrapping',
                 mem_gb=min(3, run_args.mem_avail),
                 n_procs=laplacian_threads
             )
+            #mn_laplacian = MapNode(
+            #    interface=qsmjl.LaplacianUnwrappingInterface(num_threads=laplacian_threads),
+            #    iterfield=['phase', 'mask'],
+            #    name='qsmjl_laplacian-unwrapping',
+            #    mem_gb=min(3, run_args.mem_avail),
+            #    n_procs=laplacian_threads
+            #)
             wf.connect([
                 (n_inputs, mn_laplacian, [('phase', 'phase')]),
-                (n_inputs, mn_laplacian, [('mask', 'mask')]),
+                #(n_inputs, mn_laplacian, [('mask', 'mask')]),
                 (mn_laplacian, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')])
             ])
             mn_laplacian.plugin_args = gen_plugin_args(
@@ -68,14 +76,15 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                     (n_inputs, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')]),
                 ])
             else:
-                mn_romeo = MapNode(
-                    interface=romeo.RomeoInterface(),
-                    iterfield=['phase'] + (['magnitude'] if magnitude_available else []),
+                mn_romeo = Node(
+                    interface=romeo.RomeoB0Interface(),
+                    #iterfield=['phase'] + (['magnitude'] if magnitude_available else []),
                     name='mrt_romeo',
                     mem_gb=min(3, run_args.mem_avail)
                 )
                 wf.connect([
                     (n_inputs, mn_romeo, [('phase', 'phase')]),
+                    (n_inputs, mn_romeo, [('TE', 'TE')]),
                     (mn_romeo, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')])
                 ])
                 if magnitude_available:
@@ -105,7 +114,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
         wf.connect([
             (n_unwrapping, mn_normalize_phase, [('phase_unwrapped', 'phase')]),
             (n_inputs, mn_normalize_phase, [('TE', 'TE')]),
-            (n_inputs, mn_normalize_phase, [('b0_strength', 'B0')]),
+            (n_inputs, mn_normalize_phase, [('B0', 'B0')]),
             (mn_normalize_phase, n_phase_normalized, [('phase_normalized', 'phase_normalized')])
         ])
         mn_normalize_phase.plugin_args = gen_plugin_args(
@@ -130,7 +139,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
         )
         wf.connect([
             (n_inputs, mn_normalize_freq, [('frequency', 'frequency')]),
-            (n_inputs, mn_normalize_freq, [('b0_strength', 'B0')]),
+            (n_inputs, mn_normalize_freq, [('B0', 'B0')]),
             (mn_normalize_freq, n_phase_normalized, [('phase_normalized', 'phase_normalized')])
         ])
         mn_normalize_freq.plugin_args = gen_plugin_args(
@@ -145,7 +154,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
     if run_args.qsm_algorithm == 'tgv' and run_args.combine_phase:
         freq_to_phase_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
         mn_freq_to_phase = MapNode(
-            interface=process_phase.FreqToPhaseInterface(TE=0.005),
+            interface=process_phase.FreqToPhaseInterface(TE=0.005, wraps=True),
             name='nibabel-numpy_freq-to-phase',
             iterfield=['frequency'],
             mem_gb=min(3, run_args.mem_avail),
@@ -331,7 +340,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
         )
         wf.connect([
             (n_inputs, mn_qsm, [('mask', 'mask')]),
-            (n_inputs, mn_qsm, [('b0_strength', 'b0_strength')]),
+            (n_inputs, mn_qsm, [('B0', 'B0')]),
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
         if run_args.combine_phase:

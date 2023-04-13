@@ -2,6 +2,7 @@
 
 import sys
 import os
+import psutil
 import glob
 import copy
 import argparse
@@ -175,9 +176,9 @@ def init_run_workflow(run_args, subject, session, run):
         import json
         json_file = open(params_files[0], 'rt')
         data = json.load(json_file)
-        b0_strength = data['MagneticFieldStrength']
+        B0 = data['MagneticFieldStrength']
         json_file.close()
-        return b0_strength
+        return B0
     mn_json_params = MapNode(
         interface=Function(
             input_names=['params_file'],
@@ -193,7 +194,7 @@ def init_run_workflow(run_args, subject, session, run):
     n_json_params = Node(
         interface=Function(
             input_names=['params_files'],
-            output_names=['b0_strength'],
+            output_names=['B0'],
             function=read_json_se
         ),
         iterfield=['params_file'],
@@ -315,7 +316,11 @@ def init_run_workflow(run_args, subject, session, run):
         ),
         name='phase-combined'
     )
+    wf.connect([
+        (n_inputs_resampled, n_inputs_combine, [('phase', 'phase')])
+    ])
     if run_args.combine_phase:
+        # romeo for phase combination
         n_romeo_combine = Node(
             interface=romeo.RomeoB0Interface(),
             name='mrt_romeo_combine',
@@ -324,23 +329,43 @@ def init_run_workflow(run_args, subject, session, run):
             (mn_json_params, n_romeo_combine, [('TE', 'TE')]),
             (n_inputs_resampled, n_romeo_combine, [('phase', 'phase')]),
             (n_inputs_resampled, n_romeo_combine, [('magnitude', 'magnitude')]),
-            (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency'), ('phase_wrapped', 'phase'), ('phase_unwrapped', 'phase_unwrapped'), ('mask', 'mask'), ('TE', 'TE')])
+            (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency')]),
+            (n_romeo_combine, n_inputs_combine, [('phase_unwrapped', 'phase_unwrapped')]),
         ])
-        if mask_files: wf.connect([(n_inputs_resampled, n_romeo_combine, [('mask', 'mask')])])
+
+        # get first magnitude/mask images
+        def get_first(magnitude, mask=None):
+            magnitude = [magnitude[0]] if isinstance(magnitude, list) else [magnitude]
+            mask = [mask[0]] if isinstance(mask, list) else [mask] if mask is not None else None
+            return magnitude, mask
+        n_getfirst = Node(
+            interface=Function(
+                input_names=['magnitude', 'mask'],
+                output_names=['magnitude', 'mask'],
+                function=get_first
+            ),
+            name='func_get-first'
+        )
+        wf.connect([
+            (n_inputs_resampled, n_getfirst, [('magnitude', 'magnitude')]),
+            (n_inputs_resampled, n_getfirst, [('mask', 'mask')]),
+            (n_getfirst, n_inputs_combine, [('mask', 'mask')])
+        ])
+
+        # inhomogeneity correction
         if run_args.inhomogeneity_correction:
             wf.connect([
-                (n_romeo_combine, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
+                (n_getfirst, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
                 (mn_inhomogeneity_correction, n_inputs_combine, [('magnitude_corrected', 'magnitude')])
             ])
         else:
             wf.connect([
-                (n_romeo_combine, n_inputs_combine, [('magnitude', 'magnitude')])
+                (n_getfirst, n_inputs_combine, [('magnitude', 'magnitude')])
             ])
 
     else:
         wf.connect([
             (mn_json_params, n_inputs_combine, [('TE', 'TE')]),
-            (n_inputs_resampled, n_inputs_combine, [('phase', 'phase')]),
             (n_inputs_resampled, n_inputs_combine, [('mask', 'mask')])
         ])
         if run_args.inhomogeneity_correction:
@@ -364,9 +389,14 @@ def init_run_workflow(run_args, subject, session, run):
         name="mask",
         index=0
     )
-    wf.connect([
-        (n_inputs_combine, wf_masking, [('phase', 'masking_inputs.phase')])
-    ])
+    if run_args.combine_phase:
+        wf.connect([
+            (n_inputs_combine, wf_masking, [('frequency', 'masking_inputs.phase')])
+        ])
+    else:
+        wf.connect([
+            (n_inputs_combine, wf_masking, [('phase', 'masking_inputs.phase')])
+        ])
     if mask_files:
         wf.connect([
             (n_inputs_combine, wf_masking, [('mask', 'masking_inputs.mask')])
@@ -394,7 +424,7 @@ def init_run_workflow(run_args, subject, session, run):
         (n_inputs_combine, wf_qsm, [('magnitude', 'qsm_inputs.magnitude')]),
         (wf_masking, wf_qsm, [('masking_outputs.mask', 'qsm_inputs.mask')]),
         (n_inputs_combine, wf_qsm, [('TE', 'qsm_inputs.TE')]),
-        (n_json_params, wf_qsm, [('b0_strength', 'qsm_inputs.b0_strength')]),
+        (n_json_params, wf_qsm, [('B0', 'qsm_inputs.B0')]),
         (n_nii_params, wf_qsm, [('vsz', 'qsm_inputs.vsz')])
     ])
     wf_qsm.get_node('qsm_inputs').inputs.b0_direction = "(0,0,1)"
@@ -413,11 +443,36 @@ def init_run_workflow(run_args, subject, session, run):
 
     # two-pass algorithm
     if run_args.two_pass:
-        wf_masking_intermediate = masking_workflow(run_args, mask_files, len(magnitude_files) > 0, fill_masks=False, add_bet=False, name="mask-intermediate", index=1)
-        wf.connect([
-            (n_inputs_combine, wf_masking_intermediate, [('phase', 'masking_inputs.phase')]),
-            (n_inputs_combine, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')])
-        ])
+        wf_masking_intermediate = masking_workflow(
+            run_args=run_args,
+            mask_files=mask_files,
+            magnitude_available=len(magnitude_files) > 0,
+            fill_masks=False,
+            add_bet=False,
+            name="mask-intermediate",
+            index=1
+        )
+        if run_args.combine_phase:
+            wf.connect([
+                (n_inputs_combine, wf_masking_intermediate, [('frequency', 'masking_inputs.phase')])
+            ])
+        else:
+            wf.connect([
+                (n_inputs_combine, wf_masking_intermediate, [('phase', 'masking_inputs.phase')])
+            ])
+        if mask_files:
+            wf.connect([
+                (n_inputs_combine, wf_masking, [('mask', 'masking_inputs.mask')])
+            ])
+        if magnitude_files:
+            if run_args.inhomogeneity_correction:
+                wf.connect([
+                    (mn_inhomogeneity_correction, wf_masking, [('magnitude_corrected', 'masking_inputs.magnitude')])
+                ])
+            else:
+                wf.connect([
+                    (n_inputs_combine, wf_masking, [('magnitude', 'masking_inputs.magnitude')])
+                ])
 
         wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0, qsm_erosions=0)
         wf.connect([
@@ -426,7 +481,7 @@ def init_run_workflow(run_args, subject, session, run):
             (n_inputs_combine, wf_qsm_intermediate, [('frequency', 'qsm_inputs.frequency')]),
             (n_inputs_combine, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
             (n_inputs_combine, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
-            (n_json_params, wf_qsm_intermediate, [('b0_strength', 'qsm_inputs.b0_strength')]),
+            (n_json_params, wf_qsm_intermediate, [('B0', 'qsm_inputs.B0')]),
             (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')]),
             (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.mask', 'qsm_inputs.mask')])
         ])
@@ -917,7 +972,7 @@ def parse_args(args, return_run_command=False):
         if 'premade' in explicit_args and explicit_args['premade'] != 'default':
             run_command += f" --premade '{explicit_args['premade']}'"
         for key, value in explicit_args.items():
-            if key in ['bids_dir', 'output_dir', 'auto_yes', 'premade', 'multiproc', 'n_procs', 'single_pass']: continue
+            if key in ['bids_dir', 'output_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs', 'single_pass']: continue
             elif value == True: run_command += f' --{key}'
             elif value == False: run_command += f' --{key} off'
             elif isinstance(value, str): run_command += f" --{key} '{value}'"
@@ -982,7 +1037,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
                 print(f"   - Threshold algorithm: {args.threshold_algorithm}", end="")
                 if len(args.threshold_algorithm_factor) >= 2 and args.two_pass:
                     print(f" (x{args.threshold_algorithm_factor[0]} for single-pass; x{args.threshold_algorithm_factor[1]} for two-pass)")
-                elif len(args.threshold_algorithm_factor) == 1:
+                elif len(args.threshold_algorithm_factor):
                     print(f" (x{args.threshold_algorithm_factor[0]})")
                 else:
                     print()
@@ -1179,11 +1234,13 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
 
             print("\n== Combine phase ==")
             print("This step will combine multi-echo phase data by generating a field map using ROMEO.")
+            print("This will also force the use of ROMEO for the phase unwrapping step.")
             args.combine_phase = 'yes' == get_option(
                 prompt=f"\nCombine multi-echo phase data [default - {'yes' if args.combine_phase else 'no'}]: ",
                 options=['yes', 'no'],
                 default='yes' if args.combine_phase else 'no'
             )
+            if args.combine_phase: args.unwrapping_algorithm = 'romeo'
 
             print("\n== QSM Algorithm ==")
             print("rts: Rapid Two-Step QSM")
@@ -1208,7 +1265,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
                 default=args.qsm_algorithm
             )
 
-            if args.qsm_algorithm in ['rts', 'nextqsm']:
+            if args.qsm_algorithm in ['rts', 'nextqsm'] and not args.combine_phase:
                 print("\n== Unwrapping algorithm ==")
                 print("romeo: (https://doi.org/10.1002/mrm.28563)")
                 print(" - quantitative")
@@ -1274,8 +1331,11 @@ def process_args(args):
 
     # default unwrapping settings for QSM algorithms
     if not args.unwrapping_algorithm:
-        if args.qsm_algorithm in ['nextqsm', 'rts']:
+        if args.qsm_algorithm in ['nextqsm', 'rts', 'tv']:
             args.unwrapping_algorithm = 'romeo'
+    if args.combine_phase and args.unwrapping_algorithm != 'romeo':
+        args.unwrapping_algorithm = 'romeo'
+
     if args.qsm_algorithm == 'tgv':
         args.unwrapping_algorithm = None
 
@@ -1308,7 +1368,11 @@ def process_args(args):
     # set number of concurrent processes to run depending on available resources
     if not args.n_procs:
         args.n_procs = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
+    
 
+    # get rough estimate of available memory
+    args.mem_avail = psutil.virtual_memory().available / (1024 ** 3)
+    
     # determine whether multiproc will be used
     args.multiproc = not (args.pbs or any(args.slurm))
 
