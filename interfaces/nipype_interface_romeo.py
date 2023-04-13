@@ -35,12 +35,12 @@ def wrap_phase(phase_path):
 class RomeoB0InputSpec(BaseInterfaceInputSpec):
     # required inputs
     phase = InputMultiPath(mandatory=True, exists=True)
-    magnitude = InputMultiPath(mandatory=True, exists=True)
+    magnitude = InputMultiPath(mandatory=False, exists=True)
     TE = traits.ListFloat(mandatory=True, argstr="-t '[%s]'")
     
     # automatically filled
     combine_phase = File(exists=True, argstr="--phase %s", position=0)
-    combine_mag = File(exists=True, argstr="--mag %s", position=1)
+    combine_mag = File(mandatory=False, exists=True, argstr="--mag %s", position=1)
     
 
 class RomeoB0OutputSpec(TraitedSpec):
@@ -56,7 +56,8 @@ class RomeoB0Interface(CommandLine):
 
     def _run_interface(self, runtime):
         self.inputs.combine_phase = merge_multi_echo(self.inputs.phase, os.path.join(os.getcwd(), "multi-echo-phase.nii"))
-        self.inputs.combine_mag = merge_multi_echo(self.inputs.magnitude, os.path.join(os.getcwd(), "multi-echo-mag.nii"))
+        if self.inputs.combine_mag:
+            self.inputs.combine_mag = merge_multi_echo(self.inputs.magnitude, os.path.join(os.getcwd(), "multi-echo-mag.nii"))
         self.inputs.TE = [TE*1000 for TE in self.inputs.TE]
         return super(RomeoB0Interface, self)._run_interface(runtime)
         
