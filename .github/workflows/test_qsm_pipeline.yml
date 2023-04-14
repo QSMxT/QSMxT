@@ -132,12 +132,12 @@ jobs:
         echo "FULL_IMAGE_NAME=${FULL_IMAGE_NAME}"
         echo "docker save ${IMAGE_ID} -o /tmp/qsmxt-image.tar"
         docker save $IMAGE_ID -o /tmp/qsmxt-image.tar
-      - name: Cache QSMxT image for next step
-        uses: actions/cache@v2
-        with:
-          path: /tmp/qsmxt-image.tar
-          key: qsmxt-image-${{ env.FULL_IMAGE_NAME }}
-          restore-keys: qsmxt-image-
+    - name: Cache QSMxT image for next step
+      uses: actions/cache@v2
+      with:
+        path: /tmp/qsmxt-image.tar
+        key: qsmxt-image-${{ env.FULL_IMAGE_NAME }}
+        restore-keys: qsmxt-image-
   test_qsm_premades:
     needs: setup
     runs-on: ubuntu-latest
