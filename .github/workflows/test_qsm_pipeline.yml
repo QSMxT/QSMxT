@@ -114,6 +114,9 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
+    - name: Setup QSMxT
+      run: |
+        /bin/bash tests/setup_qsmxt.sh -k "not test_premade"
     - name: Test QSM premades
       env:
         DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
@@ -149,7 +152,10 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
-    - name: Test QSM premades
+    - name: Setup QSMxT
+      run: |
+        /bin/bash tests/setup_qsmxt.sh -k "not test_premade"
+    - name: Test QSM pipeline edge cases
       env:
         DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
         UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
