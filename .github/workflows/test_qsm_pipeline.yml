@@ -130,8 +130,8 @@ jobs:
         FULL_IMAGE_NAME=$(docker images --filter="reference=*/qsmxt*" --format "{{.Repository}}:{{.Tag}}")
         echo "FULL_IMAGE_NAME=$FULL_IMAGE_NAME" >> $GITHUB_ENV
         echo "FULL_IMAGE_NAME=${FULL_IMAGE_NAME}"
-        echo "docker save ${IMAGE_ID} -o /tmp/qsmxt-image.tar"
-        docker save $IMAGE_ID -o /tmp/qsmxt-image.tar
+        echo "docker save ${FULL_IMAGE_NAME} -o /tmp/qsmxt-image.tar"
+        docker save $FULL_IMAGE_NAME -o /tmp/qsmxt-image.tar
     - name: Cache QSMxT image for next step
       uses: actions/cache@v2
       with:
