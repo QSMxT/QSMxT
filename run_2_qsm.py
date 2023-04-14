@@ -18,7 +18,7 @@ from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logg
 from scripts.user_input import get_option, get_string, get_num, get_nums
 
 from interfaces import nipype_interface_romeo as romeo
-from interfaces import nipype_interface_process_phase as process_phase
+from interfaces import nipype_interface_processphase as processphase
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_axialsampling as sampling
 from interfaces import nipype_interface_twopass as twopass
@@ -224,10 +224,9 @@ def init_run_workflow(run_args, subject, session, run):
 
     # scale phase data
     mn_phase_scaled = MapNode(
-        interface=process_phase.ScalePhaseInterface(),
+        interface=processphase.ScalePhaseInterface(),
         iterfield=['phase'],
         name='nibabel_numpy_scale-phase'
-        # outputs : 'out_file'
     )
     wf.connect([
         (n_inputs, mn_phase_scaled, [('phase', 'phase')])

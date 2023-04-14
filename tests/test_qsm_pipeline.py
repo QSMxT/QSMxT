@@ -20,6 +20,24 @@ from scripts.logger import LogLevel, make_logger
 
 run_workflows = True
 
+def compress_folder(folder, result_id):
+    if os.environ.get('BRANCH'):
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_{result_id}.tar"
+    else:
+        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{result_id}.tar"
+    
+    sys_cmd(f"tar -cf {results_tar} {folder}")
+
+    return results_tar
+
+
+def upload_file(fname):
+    try:
+        cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
+        cs.upload(fname, os.path.split(fname)[1])
+    except KeyError:
+        print("No UPLOAD_URL/DATA_PASS variable found... Skipping upload")
+
 def create_logger(log_dir):
     os.makedirs(log_dir, exist_ok=True)
     return make_logger(
@@ -43,18 +61,6 @@ def bids_dir():
         sys_cmd(f"tar xf {os.path.join(tmp_dir, 'bids-osf.tar')} -C {tmp_dir}")
         sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-osf.tar')}")
     return os.path.join(tmp_dir, 'bids-osf')
-
-@pytest.fixture
-def bids_dir_secret():
-    tmp_dir = tempfile.gettempdir()
-    if not os.path.exists(os.path.join(tmp_dir, 'bids-secret')):
-        if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
-            print("Downloading test data...")
-            cloudstor.cloudstor(url=os.environ['DOWNLOAD_URL'], password=os.environ['DATA_PASS']).download('', os.path.join(tmp_dir, 'bids-secret.tar'))
-        print("Extracting test data...")
-        sys_cmd(f"tar xf {os.path.join(tmp_dir, 'bids-secret.tar')} -C {tmp_dir}")
-        sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-secret.tar')}")
-    return os.path.join(tmp_dir, 'bids-secret')
 
 def display_nii(
     nii_path=None, data=None, dim=0, title=None, slc=None, dpi=96, size=None, out_png=None, final_fig=True, title_fontsize=12,
@@ -182,70 +188,68 @@ def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
             shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"), ignore_errors=True)
 
 
-def compress_folder(folder, result_id):
-    if os.environ.get('BRANCH'):
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_{result_id}.tar"
-    else:
-        results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{result_id}.tar"
-    
-    sys_cmd(f"tar -cf {results_tar} {folder}")
-
-    return results_tar
-
-
-def upload_file(fname):
-    try:
-        cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
-        cs.upload(fname, os.path.split(fname)[1])
-    except KeyError:
-        print("No UPLOAD_URL/DATA_PASS variable found... Skipping upload")
-
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
-])
-def test_premades(bids_dir, init_workflow, run_workflow, run_args):
+def get_premades():
     pipeline_file = f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')}"
     with open(pipeline_file, "r") as json_file:
         premades = json.load(json_file)
+    return premades
+
+@pytest.fixture
+def bids_dir_secret():
+    tmp_dir = tempfile.gettempdir()
+    if not os.path.exists(os.path.join(tmp_dir, 'bids-secret')):
+        if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
+            print("Downloading test data...")
+            cloudstor.cloudstor(url=os.environ['DOWNLOAD_URL'], password=os.environ['DATA_PASS']).download('', os.path.join(tmp_dir, 'bids-secret.tar'))
+        print("Extracting test data...")
+        sys_cmd(f"tar xf {os.path.join(tmp_dir, 'bids-secret.tar')} -C {tmp_dir}")
+        sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-secret.tar')}")
+    return os.path.join(tmp_dir, 'bids-secret')
+
+
+@pytest.mark.parametrize("premade, init_workflow, run_workflow, run_args", [
+    (p, True, run_workflows, { 'num_echoes' : 1 })
+    for p in get_premades().keys() if p != 'default'
+])
+def test_premade(bids_dir, premade, init_workflow, run_workflow, run_args):
+    premades = get_premades()
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
-    for premade in premades.keys():
-        if premade == 'default': continue
-        print(f"=== TESTING PREMADE {premade} ===")
+    print(f"=== TESTING PREMADE {premade} ===")
 
-        args = qsm.process_args(qsm.parse_args([
-            bids_dir,
-            os.path.join(tempfile.gettempdir(), "qsm"),
-            "--premade", premade,
-            "--auto_yes"
-        ]))
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--premade", premade,
+        "--auto_yes"
+    ]))
 
-        # ensure the args match the appropriate premade
-        premade_args = premades[premade]
-        args_dict = vars(args)
-        for key in premade_args.keys():
-            if key not in ['description']:
-                assert(premade_args[key] == args_dict[key])
-        
-        # create the workflow and run if necessary
-        workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+    # ensure the args match the appropriate premade
+    premade_args = premades[premade]
+    args_dict = vars(args)
+    for key in premade_args.keys():
+        if key not in ['description']:
+            assert(premade_args[key] == args_dict[key])
+    
+    # create the workflow and run if necessary
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
 
-        # visualise results
-        for nii_file in glob.glob(os.path.join(args.output_dir, "qsm_final", "*", "*.nii*")):
-            display_nii(
-                nii_path=nii_file,
-                title=f"QSM using premade pipeline: {premade}\n({get_qsmxt_version()})",
-                colorbar=True,
-                cbar_label="Susceptibility (ppm)",
-                out_png=os.path.join(tempfile.gettempdir(), "public-outputs", f"{premade}.png"),
-                cmap='gray',
-                vmin=-0.15,
-                vmax=+0.15
-            )
-        
-        # upload output folder
-        tar_file = compress_folder(folder=args.output_dir, result_id=premade)
-        shutil.move(tar_file, os.path.join(tempfile.gettempdir(), "public-outputs", tar_file))
+    # visualise results
+    for nii_file in glob.glob(os.path.join(args.output_dir, "qsm_final", "*", "*.nii*")):
+        display_nii(
+            nii_path=nii_file,
+            title=f"QSM using premade pipeline: {premade}\n({get_qsmxt_version()})",
+            colorbar=True,
+            cbar_label="Susceptibility (ppm)",
+            out_png=os.path.join(tempfile.gettempdir(), "public-outputs", f"{premade}.png"),
+            cmap='gray',
+            vmin=-0.15,
+            vmax=+0.15
+        )
+    
+    # upload output folder
+    tar_file = compress_folder(folder=args.output_dir, result_id=premade)
+    shutil.move(tar_file, os.path.join(tempfile.gettempdir(), "public-outputs", tar_file))
         
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })

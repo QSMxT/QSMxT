@@ -9,7 +9,7 @@ from interfaces import nipype_interface_tgv_qsm as tgv
 from interfaces import nipype_interface_qsmjl as qsmjl
 from interfaces import nipype_interface_nextqsm as nextqsm
 from interfaces import nipype_interface_laplacian_unwrapping as laplacian
-from interfaces import nipype_interface_process_phase as process_phase
+from interfaces import nipype_interface_processphase as processphase
 
 from scripts.qsmxt_functions import gen_plugin_args
 
@@ -103,7 +103,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
     if run_args.qsm_algorithm in ['rts', 'tv', 'nextqsm'] and not run_args.combine_phase:
         normalize_phase_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
         mn_normalize_phase = MapNode(
-            interface=process_phase.PhaseToNormalizedInterface(
+            interface=processphase.PhaseToNormalizedInterface(
                 scale_factor=1e6 if run_args.qsm_algorithm == 'nextqsm' else 1e6/(2*np.pi)
             ),
             name='nibabel-numpy_normalize-phase',
@@ -129,7 +129,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
     if run_args.qsm_algorithm in ['rts', 'tv', 'nextqsm'] and run_args.combine_phase:
         normalize_freq_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
         mn_normalize_freq = MapNode(
-            interface=process_phase.FreqToNormalizedInterface(
+            interface=processphase.FreqToNormalizedInterface(
                 scale_factor=1e6 if run_args.qsm_algorithm == 'nextqsm' else 1e6/(2*np.pi)
             ),
             name='nibabel-numpy_normalize-freq',
@@ -154,7 +154,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
     if run_args.qsm_algorithm == 'tgv' and run_args.combine_phase:
         freq_to_phase_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
         mn_freq_to_phase = MapNode(
-            interface=process_phase.FreqToPhaseInterface(TE=0.005, wraps=True),
+            interface=processphase.FreqToPhaseInterface(TE=0.005, wraps=True),
             name='nibabel-numpy_freq-to-phase',
             iterfield=['frequency'],
             mem_gb=min(3, run_args.mem_avail),

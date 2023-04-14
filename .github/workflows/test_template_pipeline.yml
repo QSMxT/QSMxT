@@ -11,7 +11,7 @@ on:
       - run_1_dicomConvert.py
       - run_4_template.py
       - .github/workflows/test_template_pipeline.yml
-      - tests/run_test_template.sh
+      - tests/test_template.sh
   pull_request:
     branches: [ master ]
     paths:
@@ -20,7 +20,7 @@ on:
       - run_1_dicomConvert.py
       - run_4_template.py
       - .github/workflows/test_template_pipeline.yml
-      - tests/run_test_template.sh
+      - tests/test_template.sh
     
 jobs:
   test_template_pipeline:
@@ -46,4 +46,4 @@ jobs:
         python-version: 3.8
     - name: test template pipeline
       run: |
-        /bin/bash tests/run_test_template.sh
+        /bin/bash tests/test_template.sh
