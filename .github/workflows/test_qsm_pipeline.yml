@@ -87,89 +87,77 @@ on:
       - workflows/qsm.py
       - workflows/masking.py
 jobs:
-  setup:
-    runs-on: ubuntu-latest
-    outputs:
-      network-name: ${{ steps.create-network.outputs.network }}
-      container-name: ${{ steps.extract-container-name.outputs.container }}
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      
-      - name: Extract container name from README.md
-        id: extract-container-name
-        run: |
-          container_name=$(cat README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6)
-          echo "::set-output name=container::$container_name"
-
-      - name: Create Docker network
-        id: create-network
-        run: |
-          network_name="custom_network_$(date +%s)"
-          docker network create --driver bridge "$network_name"
-          echo "::set-output name=network::$network_name"
-
-      - name: Start Docker container
-        run: |
-          docker run -d --rm \
-            --name my-shared-container \
-            --network ${{ steps.create-network.outputs.network }} \
-            --network-alias shared-container \
-            ${{ steps.extract-container-name.outputs.container }}
   test_qsm_premades:
-    needs: setup
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        argument: ["gre", "epi", "bet", "fast", "body", "nextqsm"]
+        args: ['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm']
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-      - name: Test QSM premades
-        env:
-          BRANCH: ${{ github.ref }}
-          PYTHONPATH: /tmp/QSMxT
-          DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
-          DATA_PASS: ${{ secrets.DATA_PASS }}
-          UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
-        run: |
-          echo "/tmp/QSMxT:/tmp/QSMxT/scripts" >> $GITHUB_PATH
-          echo GITHUB_PATH="${GITHUB_PATH}"
-          echo PATH="${PATH}"
-          docker run \
-            --network ${{ needs.setup.outputs.network-name }} \
-            --env BRANCH="${BRANCH}" \
-            --env PYTHONPATH="${PYTHONPATH}" \
-            --env PATH="${GITHUB_PATH}" \
-            --env DOWNLOAD_URL="${DOWNLOAD_URL}" \
-            --env DATA_PASS="${DATA_PASS}" \
-            --env UPLOAD_URL="${UPLOAD_URL}" \
-            -v `pwd`:/tmp shared-container \
-            pytest tests/test_qsm_pipeline.py -s -k "premade and ${{ matrix.argument }}"
+    - name: Free up space
+      id: free_space
+      uses: easimon/maximize-build-space@master
+      with:
+        root-reserve-mb: 40000
+        swap-size-mb: 1024
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-haskell: 'true'
+        overprovision-lvm: 'true'
+    - name: Move docker installation
+      id: move_docker
+      run: |
+          sudo mv /var/lib/docker /home/runner/work/docker
+          sudo ln -s /home/runner/work/docker /var/lib/docker
+          sudo systemctl restart docker
+          echo "::set-output name=ready::true"
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+      with:
+        python-version: 3.8
+    - name: Test QSM premades
+      env:
+        DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
+        UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
+        DATA_PASS: ${{ secrets.DATA_PASS }}
+      run: |
+        /bin/bash tests/test_qsm_pipeline.sh -k "test_premade and ${{ matrix.args }}"
+    - uses: actions/upload-artifact@v3
+      with:
+        name: public-outputs
+        path: /tmp/public-outputs
   test_qsm_edgecases:
-    needs: setup
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        argument: ["gre", "epi", "bet", "fast", "body", "nextqsm"]
     steps:
-      - name: Test QSM edge cases
-        env:
-          BRANCH: ${{ github.ref }}
-          PYTHONPATH: /tmp/QSMxT
-          DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
-          DATA_PASS: ${{ secrets.DATA_PASS }}
-          UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
-        run: |
-          echo "/tmp/QSMxT:/tmp/QSMxT/scripts" >> $GITHUB_PATH
-          docker run \
-            --network ${{ needs.setup.outputs.network-name }} \
-            --env BRANCH="${BRANCH}" \
-            --env PYTHONPATH="${PYTHONPATH}" \
-            --env PATH="${GITHUB_PATH}" \
-            --env DOWNLOAD_URL="${DOWNLOAD_URL}" \
-            --env DATA_PASS="${DATA_PASS}" \
-            --env UPLOAD_URL="${UPLOAD_URL}" \
-            -v /tmp:/tmp shared-container \
-            pytest /tmp/QSMxT/tests/test_qsm_pipeline.py -s -k "not premade"
+    - name: Free up space
+      id: free_space
+      uses: easimon/maximize-build-space@master
+      with:
+        root-reserve-mb: 40000
+        swap-size-mb: 1024
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-haskell: 'true'
+        overprovision-lvm: 'true'
+    - name: Move docker installation
+      id: move_docker
+      run: |
+          sudo mv /var/lib/docker /home/runner/work/docker
+          sudo ln -s /home/runner/work/docker /var/lib/docker
+          sudo systemctl restart docker
+          echo "::set-output name=ready::true"
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+      with:
+        python-version: 3.8
+    - name: Test QSM premades
+      env:
+        DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
+        UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
+        DATA_PASS: ${{ secrets.DATA_PASS }}
+      run: |
+        /bin/bash tests/test_qsm_pipeline.sh -k "not test_premade"
+    - uses: actions/upload-artifact@v3
+      with:
+        name: public-outputs
+        path: /tmp/public-outputs
 
