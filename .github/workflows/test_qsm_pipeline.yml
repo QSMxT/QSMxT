@@ -116,6 +116,20 @@ jobs:
     - name: Setup QSMxT
       id: setup_qsmxt
       run: tests/setup_qsmxt.sh
+    - name: Cache QSMxT files
+      uses: actions/cache@v2
+      with:
+        path: /tmp/QSMxT
+        key: qsmxt-files-${{ github.run_id }}
+        restore-keys: qsmxt-files-
+    - name: Save QSMxT image to tar
+      run: docker save qsmxt -o /tmp/qsmxt-image.tar
+    - name: Cache QSMxT image for next step
+      uses: actions/cache@v2
+      with:
+        path: /tmp/qsmxt-image.tar
+        key: qsmxt-image-${{ github.run_id }}
+        restore-keys: qsmxt-image-
   test_qsm_premades:
     needs: setup
     runs-on: ubuntu-latest
@@ -130,6 +144,15 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
+    - name: Restore QSMxT image cache
+      uses: actions/cache@v2
+      with:
+        path: /tmp/qsmxt-image.tar
+        key: qsmxt-image-${{ github.run_id }}
+        restore-keys: qsmxt-image-
+    - name: Load QSMxT image from tar
+      run: |
+        docker load -i /tmp/qsmxt-image.tar
     - name: Test QSM premades
       env:
         DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
@@ -152,6 +175,15 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
+    - name: Restore QSMxT image cache
+      uses: actions/cache@v2
+      with:
+        path: /tmp/qsmxt-image.tar
+        key: qsmxt-image-${{ github.run_id }}
+        restore-keys: qsmxt-image-
+    - name: Load QSMxT image from tar
+      run: |
+        docker load -i /tmp/qsmxt-image.tar
     - name: Test QSM pipeline edge cases
       env:
         DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}

@@ -21,5 +21,11 @@ git clone -b "${BRANCH}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
 
 container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
 echo "[DEBUG] Pulling QSMxT container ${container}..."
-sudo docker pull "${container}"
+sudo docker pull "${container}" 
+
+# tag it with 'qsmxt'
+image_name="${container%%:*}"
+image_tag="${container#*:}"
+sudo docker tag "${container}" "${image_name}:qsmxt"
+sudo docker rmi "${container}"
 
