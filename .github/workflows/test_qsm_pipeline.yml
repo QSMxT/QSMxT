@@ -112,6 +112,9 @@ jobs:
           sudo ln -s /home/runner/work/docker /var/lib/docker
           sudo systemctl restart docker
           echo "::set-output name=ready::true"
+    - name: Setup QSMxT
+      id: setup_qsmxt
+      run: setup_qsmxt.sh
   test_qsm_premades:
     needs: setup
     runs-on: ubuntu-latest
