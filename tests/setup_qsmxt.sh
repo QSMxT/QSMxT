@@ -23,11 +23,3 @@ container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
 echo "[DEBUG] Pulling QSMxT container ${container}..."
 sudo docker pull "${container}" 
 
-# tag it with 'qsmxt'
-# Get the repository name and original tag
-repository_name=$(echo "${container}" | cut -d ':' -f 1)
-original_tag=$(echo "${container}" | cut -d ':' -f 2)
-sudo docker tag "${container}" "${repository_name}:qsmxt"
-sudo docker rmi "${container}"
-docker images
-

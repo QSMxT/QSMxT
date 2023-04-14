@@ -13,7 +13,7 @@ sudo docker run \
     --env DATA_PASS="${DATA_PASS}" \
     --env UPLOAD_URL="${UPLOAD_URL}" \
     -v /tmp:/tmp ${container} \
-    pytest /tmp/QSMxT/tests/test_qsm_pipeline.py -s $@
+    pytest /tmp/QSMxT/tests/test_qsm_pipeline.py -s -k "${@}"
 
 #echo "Testing summary (will add images here later)" >> $GITHUB_STEP_SUMMARY
 #echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
