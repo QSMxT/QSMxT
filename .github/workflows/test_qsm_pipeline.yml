@@ -127,7 +127,7 @@ jobs:
         env:
           BRANCH: ${{ github.ref }}
           PYTHONPATH: /tmp/QSMxT
-          PATH: /tmp/QSMxT:/tmp/QSMxT/scripts:${container_path}
+          PATH: /tmp/QSMxT:/tmp/QSMxT/scripts:${PATH}
           DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
           DATA_PASS: ${{ secrets.DATA_PASS }}
           UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
