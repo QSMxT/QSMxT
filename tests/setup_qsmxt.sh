@@ -29,4 +29,5 @@ repository_name=$(echo "${container}" | cut -d ':' -f 1)
 original_tag=$(echo "${container}" | cut -d ':' -f 2)
 sudo docker tag "${container}" "${repository_name}:qsmxt"
 sudo docker rmi "${container}"
+docker images
 
