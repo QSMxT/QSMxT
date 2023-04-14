@@ -112,6 +112,7 @@ jobs:
           sudo ln -s /home/runner/work/docker /var/lib/docker
           sudo systemctl restart docker
           echo "::set-output name=ready::true"
+    - uses: actions/checkout@v3
     - name: Setup QSMxT
       id: setup_qsmxt
       run: tests/setup_qsmxt.sh
