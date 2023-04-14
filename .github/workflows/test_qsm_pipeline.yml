@@ -120,10 +120,10 @@ jobs:
       uses: actions/cache@v2
       with:
         path: /tmp/QSMxT
-        key: qsmxt-files-${{ github.run_id }}
-        restore-keys: qsmxt-files-
+        key: qsmxt-repo-${{ github.run_id }}
+        restore-keys: qsmxt-repo
     - name: Save QSMxT image to tar
-      run: docker save qsmxt -o /tmp/qsmxt-image.tar
+      run: docker images && docker save qsmxt -o /tmp/qsmxt-image.tar
     - name: Cache QSMxT image for next step
       uses: actions/cache@v2
       with:
@@ -144,6 +144,12 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
+    - name: Restore QSMxT files cache
+      uses: actions/cache@v2
+      with:
+        path: /tmp/QSMxT
+        key: qsmxt-files-${{ github.run_id }}
+        restore-keys: qsmxt-files-
     - name: Restore QSMxT image cache
       uses: actions/cache@v2
       with:
@@ -175,6 +181,12 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
+    - name: Restore QSMxT files cache
+      uses: actions/cache@v2
+      with:
+        path: /tmp/QSMxT
+        key: qsmxt-files-${{ github.run_id }}
+        restore-keys: qsmxt-files-
     - name: Restore QSMxT image cache
       uses: actions/cache@v2
       with:
