@@ -113,8 +113,8 @@ jobs:
           sudo systemctl restart docker
           echo "::set-output name=ready::true"
     - name: Setup QSMxT
-      id: tests/setup_qsmxt
-      run: setup_qsmxt.sh
+      id: setup_qsmxt
+      run: tests/setup_qsmxt.sh
   test_qsm_premades:
     needs: setup
     runs-on: ubuntu-latest
