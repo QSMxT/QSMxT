@@ -123,7 +123,9 @@ jobs:
         key: qsmxt-repo-${{ github.run_id }}
         restore-keys: qsmxt-repo
     - name: Save QSMxT image to tar
-      run: docker images && docker save qsmxt -o /tmp/qsmxt-image.tar
+      run: |
+      IMAGE_ID=$(docker images --filter="reference=*/qsmxt:*" --format "{{.ID}}")
+      docker save $IMAGE_ID -o /tmp/qsmxt-image.tar
     - name: Cache QSMxT image for next step
       uses: actions/cache@v2
       with:
