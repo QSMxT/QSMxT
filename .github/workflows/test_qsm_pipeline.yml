@@ -116,30 +116,60 @@ jobs:
             --network ${{ steps.create-network.outputs.network }} \
             --network-alias shared-container \
             ${{ steps.extract-container-name.outputs.container }}
-  job_1:
+  test_qsm_premades:
     needs: setup
     runs-on: ubuntu-latest
     strategy:
       matrix:
         argument: ["gre", "epi", "bet", "fast", "body", "nextqsm"]
     steps:
-      - name: Run command using shared container
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      - name: Test QSM premades
         env:
           BRANCH: ${{ github.ref }}
           PYTHONPATH: /tmp/QSMxT
-          PATH: /tmp/QSMxT:/tmp/QSMxT/scripts:${PATH}
           DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
           DATA_PASS: ${{ secrets.DATA_PASS }}
           UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
         run: |
+          echo "/tmp/QSMxT:/tmp/QSMxT/scripts" >> $GITHUB_PATH
+          echo GITHUB_PATH="${GITHUB_PATH}"
+          echo PATH="${PATH}"
           docker run \
             --network ${{ needs.setup.outputs.network-name }} \
             --env BRANCH="${BRANCH}" \
             --env PYTHONPATH="${PYTHONPATH}" \
-            --env PATH="${PATH}" \
+            --env PATH="${GITHUB_PATH}" \
+            --env DOWNLOAD_URL="${DOWNLOAD_URL}" \
+            --env DATA_PASS="${DATA_PASS}" \
+            --env UPLOAD_URL="${UPLOAD_URL}" \
+            -v `pwd`:/tmp shared-container \
+            pytest tests/test_qsm_pipeline.py -s -k "premade and ${{ matrix.argument }}"
+  test_qsm_edgecases:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        argument: ["gre", "epi", "bet", "fast", "body", "nextqsm"]
+    steps:
+      - name: Test QSM edge cases
+        env:
+          BRANCH: ${{ github.ref }}
+          PYTHONPATH: /tmp/QSMxT
+          DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
+          DATA_PASS: ${{ secrets.DATA_PASS }}
+          UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
+        run: |
+          echo "/tmp/QSMxT:/tmp/QSMxT/scripts" >> $GITHUB_PATH
+          docker run \
+            --network ${{ needs.setup.outputs.network-name }} \
+            --env BRANCH="${BRANCH}" \
+            --env PYTHONPATH="${PYTHONPATH}" \
+            --env PATH="${GITHUB_PATH}" \
             --env DOWNLOAD_URL="${DOWNLOAD_URL}" \
             --env DATA_PASS="${DATA_PASS}" \
             --env UPLOAD_URL="${UPLOAD_URL}" \
             -v /tmp:/tmp shared-container \
-            pytest /tmp/QSMxT/tests/test_qsm_pipeline.py -s -k "premade and ${{ matrix.argument }}"
+            pytest /tmp/QSMxT/tests/test_qsm_pipeline.py -s -k "not premade"
 
