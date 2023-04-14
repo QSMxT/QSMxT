@@ -24,8 +24,9 @@ echo "[DEBUG] Pulling QSMxT container ${container}..."
 sudo docker pull "${container}" 
 
 # tag it with 'qsmxt'
-image_name="${container%%:*}"
-image_tag="${container#*:}"
-sudo docker tag "${container}" "${image_name}:qsmxt"
+# Get the repository name and original tag
+repository_name=$(echo "${container}" | cut -d ':' -f 1)
+original_tag=$(echo "${container}" | cut -d ':' -f 2)
+sudo docker tag "${container}" "${repository_name}:qsmxt"
 sudo docker rmi "${container}"
 
