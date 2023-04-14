@@ -135,7 +135,7 @@ jobs:
         UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
         DATA_PASS: ${{ secrets.DATA_PASS }}
       run: |
-        /bin/bash tests/test_qsm_pipeline.sh -k "test_premade and ${{ matrix.args }}"
+        /bin/bash tests/test_qsm_pipeline.sh -k \"test_premade and ${{ matrix.args }}\"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs
@@ -157,7 +157,7 @@ jobs:
         UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
         DATA_PASS: ${{ secrets.DATA_PASS }}
       run: |
-        /bin/bash tests/test_qsm_pipeline.sh -k "not test_premade"
+        /bin/bash tests/test_qsm_pipeline.sh -k \"not test_premade\"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs
