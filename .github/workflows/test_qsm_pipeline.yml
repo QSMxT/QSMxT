@@ -123,7 +123,7 @@ jobs:
         UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
         DATA_PASS: ${{ secrets.DATA_PASS }}
       run: |
-        /bin/bash tests/test_qsm_pipeline.sh -k "test_premade and ${{ matrix.args }}"
+        /bin/bash tests/test_qsm_pipeline.sh "test_premade and ${{ matrix.args }}"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs
@@ -154,7 +154,7 @@ jobs:
         python-version: 3.8
     - name: Setup QSMxT
       run: |
-        /bin/bash tests/setup_qsmxt.sh -k "not test_premade"
+        /bin/bash tests/setup_qsmxt.sh "not test_premade"
     - name: Test QSM pipeline edge cases
       env:
         DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
