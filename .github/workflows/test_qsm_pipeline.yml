@@ -91,7 +91,17 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       network-name: ${{ steps.create-network.outputs.network }}
+      container-name: ${{ steps.extract-container-name.outputs.container }}
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+      
+      - name: Extract container name from README.md
+        id: extract-container-name
+        run: |
+          container_name=$(cat README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6)
+          echo "::set-output name=container::$container_name"
+
       - name: Create Docker network
         id: create-network
         run: |
@@ -105,7 +115,7 @@ jobs:
             --name my-shared-container \
             --network ${{ steps.create-network.outputs.network }} \
             --network-alias shared-container \
-            my-docker-image:latest
+            ${{ steps.extract-container-name.outputs.container }}
   job_1:
     needs: setup
     runs-on: ubuntu-latest
