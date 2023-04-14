@@ -136,8 +136,8 @@ jobs:
       uses: actions/cache@v2
       with:
         path: /tmp/qsmxt-image.tar
-        key: ${{ env.FULL_IMAGE_NAME }}
-        restore-keys: vnmd/qsmxt
+        key: img-${{ env.FULL_IMAGE_NAME }}
+        restore-keys: img-vnmd/qsmxt
   test_qsm_premades:
     needs: setup
     runs-on: ubuntu-latest
@@ -163,7 +163,7 @@ jobs:
       with:
         path: /tmp/qsmxt-image.tar
         key: cache-not-found
-        restore-keys: vnmd/qsmxt
+        restore-keys: img-vnmd/qsmxt
     - name: Load QSMxT image from tar
       run: |
         docker load -i /tmp/qsmxt-image.tar
@@ -193,14 +193,14 @@ jobs:
       uses: actions/cache@v2
       with:
         path: /tmp/QSMxT
-        key: qsmxt-files-${{ github.run_id }}
-        restore-keys: qsmxt-files-
+        key: qsmxt-repo-${{ github.run_id }}
+        restore-keys: qsmxt-repo-
     - name: Restore QSMxT image cache
       uses: actions/cache@v2
       with:
         path: /tmp/qsmxt-image.tar
-        key: qsmxt-image-${{ github.run_id }}
-        restore-keys: qsmxt-image-
+        key: cache-not-found
+        restore-keys: img-vnmd/qsmxt
     - name: Load QSMxT image from tar
       run: |
         docker load -i /tmp/qsmxt-image.tar
