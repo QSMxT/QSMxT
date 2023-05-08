@@ -1,27 +1,17 @@
 #!/usr/bin/env python3
 
-import os, re
+import os
 from nipype.interfaces.base import  traits, CommandLine, BaseInterfaceInputSpec, TraitedSpec, File, InputMultiPath, OutputMultiPath
+from scripts.qsmxt_functions import extend_fname
 from scripts import qsmxt_functions
 import nibabel as nib
 import numpy as np
-
-def B0_unit_convert(b0map_path, te):
-    from math import pi
     
-    b0map_nii = nib.load(b0map_path)
-    b0map = b0map_nii.get_fdata()
-    
-    phase_unwrapped = b0map * (2*pi * te) / (10**3)
-    phase_wrapped = (phase_unwrapped + np.pi) % (2 * np.pi) - np.pi
-    
-    out_file_unwrapped = os.path.abspath(os.path.split(b0map_path)[1].replace(".nii", "_to-phase-unwrapped.nii"))
-    out_file_wrapped = os.path.abspath(os.path.split(b0map_path)[1].replace(".nii", "_to-phase-wrapped.nii"))
-    
-    nib.save(nib.Nifti1Image(dataobj=phase_unwrapped, header=b0map_nii.header, affine=b0map_nii.affine), out_file_unwrapped)
-    nib.save(nib.Nifti1Image(dataobj=phase_wrapped, header=b0map_nii.header, affine=b0map_nii.affine), out_file_wrapped)
-    
-    return out_file_wrapped, out_file_unwrapped
+def save_multi_echo(in_files, fn_path):
+    image4d = np.stack([nib.load(f).get_fdata() for f in in_files], -1)
+    sample_nii = nib.load(in_files[0])
+    nib.save(nib.nifti1.Nifti1Image(image4d, affine=sample_nii.affine, header=sample_nii.header), fn_path)
+    return fn_path
 
 ## Romeo wrapper single-echo (MapNode)
 class RomeoInputSpec(BaseInterfaceInputSpec):
@@ -45,15 +35,12 @@ class RomeoB0InputSpec(BaseInterfaceInputSpec):
     mask = InputMultiPath(mandatory=False, exists=True)
     combine_phase = File(exists=True, argstr="--phase %s", position=0)
     combine_mag = File(exists=True, argstr="--mag %s", position=1)
-    TE = traits.ListFloat(desc='Echo Time [sec]', mandatory=True, argstr="-t [%s]")
+    TE = traits.ListFloat(desc='Echo Time [sec]', mandatory=True, argstr="-t '[%s]'")
 
 class RomeoB0OutputSpec(TraitedSpec):
-    frequency = File('B0.nii', exists=True)
-    phase_wrapped = File(exists=True)
-    phase_unwrapped = File(exists=True)
+    frequency = File(exists=True)
     magnitude = File(exists=True)
     mask = File(exists=True)
-    TE = traits.Float()
     # B0s = OutputMultiPath(File(exists=False))
 
 class RomeoB0Interface(CommandLine):
@@ -70,41 +57,15 @@ class RomeoB0Interface(CommandLine):
     def _list_outputs(self):
         outputs = self.output_spec().get()
         
-        outfile_final = os.path.join(os.getcwd(), os.path.split(self.inputs.phase[0])[1].split(".")[0] + "_romeo-combined.nii")
+        # rename B0.nii to suitable output name
+        outfile_final = extend_fname(self.inputs.phase[0], "_romeo-b0map", ext="nii")
         os.rename(os.path.join(os.getcwd(), "B0.nii"), outfile_final)
         outputs['frequency'] = outfile_final
         
-        outputs['phase_wrapped'], outputs['phase_unwrapped'] = B0_unit_convert(outfile_final, np.min(self.inputs.TE))
+        # output first-echo magnitude and mask
         outputs['magnitude'] = self.inputs.magnitude[0]
-
-        outputs['TE'] = np.min(self.inputs.TE)/1000
         if self.inputs.mask: outputs['mask'] = self.inputs.mask[0]
 
         return outputs
-    
-def save_multi_echo(in_files, fn_path):
-    image4d = np.stack([nib.load(f).get_fdata() for f in in_files], -1)
-    sample_nii = nib.load(in_files[0])
-    nib.save(nib.nifti1.Nifti1Image(image4d, affine=sample_nii.affine, header=sample_nii.header), fn_path)
-    return fn_path
 
-
-if __name__ == "__main__":
-    combine = RomeoB0Interface(
-        phase=[
-            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-01_part-phase_MEGRE.nii.gz',
-            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-02_part-phase_MEGRE.nii.gz',
-            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-03_part-phase_MEGRE.nii.gz',
-            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-04_part-phase_MEGRE.nii.gz'
-        ],
-        magnitude=[
-            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-01_part-mag_MEGRE.nii.gz',
-            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-02_part-mag_MEGRE.nii.gz',
-            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-03_part-mag_MEGRE.nii.gz',
-            '/neurodesktop-storage/data/bids-osf/bids/sub-1/ses-1/anat/sub-1_ses-1_run-01_echo-04_part-mag_MEGRE.nii.gz'
-        ],
-        TE=[4,12,20,28]
-    )
-  
-    result = combine.run()
 

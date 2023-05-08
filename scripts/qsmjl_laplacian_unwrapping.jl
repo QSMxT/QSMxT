@@ -36,7 +36,7 @@ mask = !=(0).(mask_nii.raw)
 phase = phase_nii.raw
 vsz = Tuple{Float64, Float64, Float64}(map(Float64, vsz))
 
-# phase unwrapping
+# phase unwrapping #BUG: This is also background field removal
 uphase = unwrap_laplacian(phase, mask, vsz)
 savenii(uphase, args["unwrapped-phase-out"], header=phase_nii.header)
 

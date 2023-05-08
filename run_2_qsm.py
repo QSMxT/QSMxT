@@ -17,7 +17,7 @@ from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logg
 from scripts.user_input import get_option, get_string, get_num, get_nums
 
 from interfaces import nipype_interface_romeo as romeo
-from interfaces import nipype_interface_scalephase as scalephase
+from interfaces import nipype_interface_process_phase as process_phase
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_axialsampling as sampling
 from interfaces import nipype_interface_twopass as twopass
@@ -223,7 +223,7 @@ def init_run_workflow(run_args, subject, session, run):
 
     # scale phase data
     mn_phase_scaled = MapNode(
-        interface=scalephase.ScalePhaseInterface(),
+        interface=process_phase.ScalePhaseInterface(),
         iterfield=['phase'],
         name='nibabel_numpy_scale-phase'
         # outputs : 'out_file'
@@ -326,7 +326,7 @@ def init_run_workflow(run_args, subject, session, run):
             (n_inputs_resampled, n_romeo_combine, [('magnitude', 'magnitude')]),
             (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency'), ('phase_wrapped', 'phase'), ('phase_unwrapped', 'phase_unwrapped'), ('mask', 'mask'), ('TE', 'TE')])
         ])
-        if mask_files: wf.connect([(n_inputs_resampled, n_romeo_combine, [('out_mask', 'mask')])])
+        if mask_files: wf.connect([(n_inputs_resampled, n_romeo_combine, [('mask', 'mask')])])
         if run_args.inhomogeneity_correction:
             wf.connect([
                 (n_romeo_combine, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
@@ -791,11 +791,9 @@ def parse_args(args, return_run_command=False):
     parser.add_argument(
         '--slurm',
         metavar=('ACCOUNT_STRING', 'PARITITON'),
-        nargs='+',
-        default=None,
-        dest='slurm_account',
-        action=TwoValuesAction,
-        dest2='slurm_partition',
+        nargs=2,
+        default=(None, None),
+        dest='slurm',
         help='Run the pipeline via SLURM and use the argument as the account string.'
     )
 
@@ -1312,7 +1310,7 @@ def process_args(args):
         args.n_procs = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
 
     # determine whether multiproc will be used
-    args.multiproc = not (args.pbs or args.slurm_account)
+    args.multiproc = not (args.pbs or args.slurm)
 
     # debug options
     if args.debug:
@@ -1457,10 +1455,10 @@ if __name__ == "__main__":
 
     # run workflow
     if not args.dry:
-        if args.slurm_account:
+        if args.slurm[0] is not None:
             wf.run(
                 plugin='SLURM',
-                plugin_args=gen_plugin_args(slurm_account=args.slurm_account, slurm_partition=args.slurm_partition)
+                plugin_args=gen_plugin_args(slurm_account=args.slurm[0], slurm_partition=args.slurm[1])
             )
         if args.pbs:
             wf.run(
