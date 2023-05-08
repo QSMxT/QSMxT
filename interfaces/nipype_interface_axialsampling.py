@@ -46,21 +46,21 @@ def resample_to_axial(mag_nii, pha_nii, mask_nii=None):
 
 def resample_files(mag_file, pha_file, mask_file=None, obliquity_threshold=None):
     # load data
-    print(f"Loading mag={os.path.split(mag_file)[1]}...")
+    #print(f"Loading mag={os.path.split(mag_file)[1]}...")
     mag_nii = nib.load(mag_file)
-    print(f"Loading pha={os.path.split(pha_file)[1]}...")
+    #print(f"Loading pha={os.path.split(pha_file)[1]}...")
     pha_nii = nib.load(pha_file)
-    if mask_file:
-        print(f"Loading mask={os.path.split(mask_file)[1]}...")
+    #if mask_file:
+    #    print(f"Loading mask={os.path.split(mask_file)[1]}...")
     mask_nii = nib.load(mask_file) if mask_file else None        
 
     # check obliquity
     obliquity = np.rad2deg(nib.affines.obliquity(mag_nii.affine))
     obliquity_norm = np.linalg.norm(obliquity)
     if obliquity_threshold and obliquity_norm < obliquity_threshold:
-        print(f"Obliquity = {obliquity}; norm = {obliquity_norm} < {obliquity_threshold}; no resampling needed.")
+        #print(f"Obliquity = {obliquity}; norm = {obliquity_norm} < {obliquity_threshold}; no resampling needed.")
         return mag_file, pha_file, mask_file
-    print(f"Obliquity = {obliquity}; norm = {obliquity_norm} >= {obliquity_threshold}; resampling will commence.")
+    #print(f"Obliquity = {obliquity}; norm = {obliquity_norm} >= {obliquity_threshold}; resampling will commence.")
 
     # resample
     mag_rot_nii, pha_rot_nii, mask_rot_nii = resample_to_axial(mag_nii, pha_nii, mask_nii)
@@ -72,9 +72,9 @@ def resample_files(mag_file, pha_file, mask_file=None, obliquity_threshold=None)
     pha_extension = ".".join(pha_file.split('.')[1:])
     mag_resampled_fname = os.path.abspath(f"{mag_fname}_resampled.{mag_extension}")
     pha_resampled_fname = os.path.abspath(f"{pha_fname}_resampled.{pha_extension}")
-    print(f"Saving mag={mag_resampled_fname}")
+    #print(f"Saving mag={mag_resampled_fname}")
     nib.save(mag_rot_nii, mag_resampled_fname)
-    print(f"Saving pha={pha_resampled_fname}")
+    #print(f"Saving pha={pha_resampled_fname}")
     nib.save(pha_rot_nii, pha_resampled_fname)
     
     mask_resampled_fname = "placeholder"
@@ -82,7 +82,7 @@ def resample_files(mag_file, pha_file, mask_file=None, obliquity_threshold=None)
         mask_fname = os.path.split(mask_file)[1].split('.')[0]
         mask_extension = '.'.join(mask_file.split('.')[1:])
         mask_resampled_fname = os.path.abspath(f"{mask_fname}_resampled.{mask_extension}")
-        print(f"Saving mask={mask_resampled_fname}")
+        #print(f"Saving mask={mask_resampled_fname}")
         nib.save(mask_rot_nii, mask_resampled_fname)
 
     return mag_resampled_fname, pha_resampled_fname, mask_resampled_fname

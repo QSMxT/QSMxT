@@ -17,7 +17,7 @@ class QSMappingInputSpec(CommandLineInputSpec):
     mask = InputMultiPath(exists=True, desc='Image mask', mandatory=True, argstr="-m %s")
     num_threads = traits.Int(-1, usedefault=True, nohash=True, desc="Number of threads to use, by default $NCPUS")
     TE = traits.Float(desc='Echo Time [sec]', mandatory=True, argstr="-t %f")
-    b0_strength = traits.Float(desc='Field Strength [Tesla]', mandatory=True, argstr="-f %f")
+    B0 = traits.Float(desc='Field Strength [Tesla]', mandatory=True, argstr="-f %f")
     extra_arguments = traits.String(desc='Add extra arguments. E.G. --ignore-orientation --no-resampling will ignore orientation of files and do no resampling (for cases where resampling in tgv_qsm fails)',
                                argstr="%s")
     # Only support of one alpha here!

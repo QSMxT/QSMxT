@@ -1,6 +1,6 @@
 {
     "default": {
-        "description" : "Default QSMxT settings (GRE)",
+        "description" : "Default QSMxT settings (GRE; assumes human brain)",
         "subject_pattern": "sub*",
         "session_pattern": "ses*",
         "magnitude_pattern": "{subject}/{session}/anat/*{run}*mag*nii*",
@@ -9,7 +9,7 @@
         "sessions": null,
         "num_echoes": null,
         "obliquity_threshold": 10,
-        "combine_phase": false,
+        "combine_phase": true,
         "qsm_algorithm": "rts",
         "tgv_iterations": 1000,
         "tgv_alphas": [
@@ -47,7 +47,7 @@
     },
     "gre": {
         "description": "Applies suggested settings for 3D-GRE images",
-        "combine_phase": false,
+        "combine_phase": true,
         "qsm_algorithm": "rts",
         "unwrapping_algorithm": "romeo",
         "bf_algorithm": "pdf",
@@ -68,7 +68,7 @@
     },
     "epi": {
         "description": "Applies suggested settings for 3D-EPI images (assumes human brain)",
-        "combine_phase": false,
+        "combine_phase": true,
         "qsm_algorithm": "rts",
         "unwrapping_algorithm": "romeo",
         "bf_algorithm": "pdf",
@@ -88,14 +88,22 @@
         ]
     },
     "bet": {
-        "description": "Applies a traditional BET-masking approach (artefact reduction unavailable)",
-        "masking_algorithm": "bet"
+        "description": "Applies a traditional BET-masking approach (artefact reduction unavailable; assumes human brain)",
+        "combine_phase": true,
+        "qsm_algorithm": "rts",
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "pdf",
+        "masking_input": "magnitude",
+        "masking_algorithm": "bet",
+        "mask_erosions": [
+            3
+        ]
     },
     "fast": {
         "description": "Applies a set of fast algorithms",
         "combine_phase": true,
         "qsm_algorithm": "rts",
-        "unwrapping_algorithm": "laplacian",
+        "unwrapping_algorithm": "romeo",
         "bf_algorithm": "vsharp",
         "masking_input": "magnitude",
         "masking_algorithm": "bet",
@@ -121,7 +129,8 @@
     },
     "nextqsm": {
         "description": "Applies suggested settings for running the NeXtQSM algorithm (assumes human brain)",
-        "combine_phase": false,
+        "combine_phase": true,
+        "two_pass": false,
         "qsm_algorithm": "nextqsm",
         "masking_algorithm": "bet-firstecho",
         "mask_erosions": [

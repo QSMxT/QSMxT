@@ -38,7 +38,7 @@ on:
       - scripts/logger.py
       - scripts/qsmxt_functions.py
       - .github/workflows/test_transparent_singularity.yml
-      - tests/run_test_transparent_singularity.sh
+      - tests/test_transparent_singularity.sh
   pull_request:
     branches: [ master ]
     paths:
@@ -74,7 +74,7 @@ on:
       - scripts/logger.py
       - scripts/qsmxt_functions.py
       - .github/workflows/test_transparent_singularity.yml
-      - tests/run_test_transparent_singularity.sh
+      - tests/test_transparent_singularity.sh
     
 jobs:
   test_transparent_singularity_pipeline:
@@ -95,5 +95,5 @@ jobs:
         python-version: 3.8
     - name: test transparent singularity
       run: |
-        /bin/bash tests/run_test_transparent_singularity.sh
+        /bin/bash tests/test_transparent_singularity.sh
 

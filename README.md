@@ -41,7 +41,7 @@ A user friendly way of running QSMxT in Windows, Mac or Linux is via the Neurode
 To use the latest version of the QSMxT container within an older version of Neurodesk, use:
 
 ```
-bash /neurocommand/local/fetch_and_run.sh qsmxt 1.3.5 20230227
+bash /neurocommand/local/fetch_and_run.sh qsmxt 2.0.0 20230503
 ```
 
 ### Docker container
@@ -50,11 +50,11 @@ There is also a docker image available:
 
 For Windows:
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.3.5:20230227
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_2.0.0:20230503
 ```
 For Linux/Mac:
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.3.5:20230227
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_2.0.0:20230503
 ```
 
 ## QSMxT Usage
@@ -121,10 +121,10 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.3.5_20230227
-    cd qsmxt_1.3.5_20230227
-    ./run_transparent_singularity.sh --container qsmxt_1.3.5_20230227.simg
-    source activate_qsmxt_1.3.5_20230227.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_2.0.0_20230503
+    cd qsmxt_2.0.0_20230503
+    ./run_transparent_singularity.sh --container qsmxt_2.0.0_20230503.simg
+    source activate_qsmxt_2.0.0_20230503.simg.sh
     ```
     
     - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
@@ -174,7 +174,6 @@ Here is the detailed instruction that you could replicate: https://github.com/Ne
 - **Threshold selection algorithm - gaussian:** Balan AGR, Traina AJM, Ribeiro MX, Marques PMA, Traina Jr. C. Smart histogram analysis applied to the skull-stripping problem in T1-weighted MRI. Computers in Biology and Medicine. 2012;42(5):509-522. doi:10.1016/j.compbiomed.2012.01.004
 - **Threshold selection algorithm - Otsu:** Otsu, N. (1979). A threshold selection method from gray-level histograms. IEEE transactions on systems, man, and cybernetics, 9(1), 62-66. doi:10.1109/TSMC.1979.4310076
 - **Unwrapping algorithm - Laplacian:** Schofield MA, Zhu Y. Fast phase unwrapping algorithm for interferometric applications. Optics letters. 2003 Jul 15;28(14):1194-6. doi:10.1364/OL.28.001194
-- **Unwrapping algorithm - Laplacian:** Zhou D, Liu T, Spincemaille P, Wang Y. Background field removal by solving the Laplacian boundary value problem. NMR in Biomedicine. 2014 Mar;27(3):312-9. doi:10.1002/nbm.3064
 - **Unwrapping algorithm - ROMEO:** Dymerska B, Eckstein K, Bachrata B, et al. Phase unwrapping with a rapid opensource minimum spanning tree algorithm (ROMEO). Magnetic Resonance in Medicine. 2021;85(4):2294-2308. doi:10.1002/mrm.28563
 - **Background field removal - V-SHARP:** Wu B, Li W, Guidon A et al. Whole brain susceptibility mapping using compressed sensing. Magnetic resonance in medicine. 2012 Jan;67(1):137-47. doi:10.1002/mrm.23000
 - **Background field removal - PDF:** Liu, T., Khalidov, I., de Rochefort et al. A novel background field removal method for MRI using projection onto dipole fields. NMR in Biomedicine. 2011 Nov;24(9):1129-36. doi:10.1002/nbm.1670

@@ -1,5 +1,4 @@
 name: qsm pipeline test
-
 on:
   workflow_dispatch:
   repository_dispatch:
@@ -21,11 +20,14 @@ on:
       - interfaces/nipype_interface_nextqsm.py
       - interfaces/nipype_interface_nonzeroaverage.py
       - interfaces/nipype_interface_phaseweights.py
+      - interfaces/nipype_interface_processphase.py
+      - interfaces/nipype_interface_qsmjl.py
       - interfaces/nipype_interface_romeo.py
-      - interfaces/nipype_interface_scalephase.py
       - interfaces/nipype_interface_tgv_qsm.py
       - interfaces/nipype_interface_twopass.py
+      - scripts/logger.py
       - scripts/makehomogeneous.jl
+      - scripts/mrt_laplacian_unwrapping.jl
       - scripts/qsmjl_full.jl
       - scripts/qsmjl_laplacian_unwrapping.jl
       - scripts/qsmjl_pdf.jl
@@ -34,13 +36,14 @@ on:
       - scripts/qsmjl.vsharp.jl
       - scripts/romeo_unwrapping.jl
       - scripts/romeo_voxelquality.jl
-      - scripts/logger.py
       - scripts/qsmxt_functions.py
+      - scripts/qsmxt_version.py
       - .github/workflows/test_qsm_pipeline.yml
-      - tests/run_test_qsm.sh
-      - tests/run_test_qsm.py
+      - tests/test_qsm_pipeline.sh
+      - tests/test_qsm_pipeline.py
       - qsm_pipelines.json
       - workflows/qsm.py
+      - workflows/masking.py
   pull_request:
     branches: [ master ]
     paths:
@@ -59,11 +62,14 @@ on:
       - interfaces/nipype_interface_nextqsm.py
       - interfaces/nipype_interface_nonzeroaverage.py
       - interfaces/nipype_interface_phaseweights.py
+      - interfaces/nipype_interface_processphase.py
+      - interfaces/nipype_interface_qsmjl.py
       - interfaces/nipype_interface_romeo.py
-      - interfaces/nipype_interface_scalephase.py
       - interfaces/nipype_interface_tgv_qsm.py
       - interfaces/nipype_interface_twopass.py
+      - scripts/logger.py
       - scripts/makehomogeneous.jl
+      - scripts/mrt_laplacian_unwrapping.jl
       - scripts/qsmjl_full.jl
       - scripts/qsmjl_laplacian_unwrapping.jl
       - scripts/qsmjl_pdf.jl
@@ -72,19 +78,23 @@ on:
       - scripts/qsmjl.vsharp.jl
       - scripts/romeo_unwrapping.jl
       - scripts/romeo_voxelquality.jl
-      - scripts/logger.py
       - scripts/qsmxt_functions.py
+      - scripts/qsmxt_version.py
       - .github/workflows/test_qsm_pipeline.yml
-      - tests/run_test_qsm.sh
-      - tests/run_test_qsm.py
+      - tests/test_qsm_pipeline.sh
+      - tests/test_qsm_pipeline.py
       - qsm_pipelines.json
       - workflows/qsm.py
-    
+      - workflows/masking.py
 jobs:
-  test_qsm_pipeline:
+  test_qsm_premades:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        args: ['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm']
     steps:
     - name: Free up space
+      id: free_space
       uses: easimon/maximize-build-space@master
       with:
         root-reserve-mb: 40000
@@ -94,21 +104,64 @@ jobs:
         remove-haskell: 'true'
         overprovision-lvm: 'true'
     - name: Move docker installation
+      id: move_docker
       run: |
           sudo mv /var/lib/docker /home/runner/work/docker
           sudo ln -s /home/runner/work/docker /var/lib/docker
           sudo systemctl restart docker
+          echo "::set-output name=ready::true"
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
-    - name: Test QSM pipeline
+    - name: Setup QSMxT
+      run: |
+        /bin/bash tests/setup_qsmxt.sh -k "not test_premade"
+    - name: Test QSM premades
       env:
         DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
         UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
         DATA_PASS: ${{ secrets.DATA_PASS }}
       run: |
-        /bin/bash tests/run_test_qsm.sh
+        /bin/bash tests/test_qsm_pipeline.sh "test_premade and ${{ matrix.args }}"
+    - uses: actions/upload-artifact@v3
+      with:
+        name: public-outputs
+        path: /tmp/public-outputs
+  test_qsm_edgecases:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Free up space
+      id: free_space
+      uses: easimon/maximize-build-space@master
+      with:
+        root-reserve-mb: 40000
+        swap-size-mb: 1024
+        remove-dotnet: 'true'
+        remove-android: 'true'
+        remove-haskell: 'true'
+        overprovision-lvm: 'true'
+    - name: Move docker installation
+      id: move_docker
+      run: |
+          sudo mv /var/lib/docker /home/runner/work/docker
+          sudo ln -s /home/runner/work/docker /var/lib/docker
+          sudo systemctl restart docker
+          echo "::set-output name=ready::true"
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+      with:
+        python-version: 3.8
+    - name: Setup QSMxT
+      run: |
+        /bin/bash tests/setup_qsmxt.sh "not test_premade"
+    - name: Test QSM pipeline edge cases
+      env:
+        DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
+        UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
+        DATA_PASS: ${{ secrets.DATA_PASS }}
+      run: |
+        /bin/bash tests/test_qsm_pipeline.sh "not test_premade"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs

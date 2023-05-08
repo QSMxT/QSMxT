@@ -13,7 +13,7 @@ on:
       - run_5_analysis.py
       - interfaces/nipype_interface_fastsurfer.py
       - .github/workflows/test_segmentation_pipeline.yml
-      - tests/run_test_segment.sh
+      - tests/test_segment.sh
       - aseg_labels.csv
   pull_request:
     branches: [ master ]
@@ -25,7 +25,7 @@ on:
       - run_5_analysis.py
       - interfaces/nipype_interface_fastsurfer.py
       - .github/workflows/test_segmentation_pipeline.yml
-      - tests/run_test_segment.sh
+      - tests/test_segment.sh
       - aseg_labels.csv
     
 jobs:
@@ -36,4 +36,4 @@ jobs:
       run: |
         export timeStamp=`date +"%Y-%m-%d-%T"`
         git clone https://github.com/QSMxT/QSMxT.git /tmp/${timeStamp}/QSMxT
-        /bin/bash /tmp/${timeStamp}/QSMxT/tests/run_test_segment.sh
+        /bin/bash /tmp/${timeStamp}/QSMxT/tests/test_segment.sh

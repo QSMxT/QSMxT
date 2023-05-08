@@ -22,6 +22,11 @@ def get_qsm_premades(pipeline_file):
 
     return premades
 
+def extend_fname(original_path, append_text, ext=None, out_dir=None):
+    original_fname = os.path.split(original_path)[1].split('.')[0]
+    original_ext = ".".join(original_path.split('.')[1:])
+    return os.path.join(out_dir or os.getcwd(), f"{original_fname}{append_text}.{ext or original_ext}")
+
 def print_qsm_premades(pipeline_file):
     premades = get_qsm_premades(pipeline_file)
     print("=== Premade pipelines ===")
