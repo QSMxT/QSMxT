@@ -240,7 +240,7 @@ def init_run_workflow(run_args, subject, session, run):
         import nibabel as nib
         from scripts.qsmxt_functions import extend_fname
         out_phase = extend_fname(phase, "_canonical", out_dir=os.getcwd())
-        out_mag = extend_fname(magnitude, "_canonical", out_dir=os.getcwd())
+        out_mag = extend_fname(magnitude, "_canonical", out_dir=os.getcwd()) if magnitude else None
         out_mask = extend_fname(mask, "_canonical", out_dir=os.getcwd()) if mask else None
         if nib.aff2axcodes(nib.load(phase).affine) == ('R', 'A', 'S'): return phase, magnitude, mask
         nib.save(nib.as_closest_canonical(nib.load(phase)), out_phase)
