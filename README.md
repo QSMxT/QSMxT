@@ -2,7 +2,7 @@
 
 ![QSMxT Process Diagram](https://qsmxt.github.io/images/qsmxt-process-diagram.png)
 
-QSMxT is a complete QSM processing and analysis pipeline that excels at automatically reconstructing and processing QSM across large groups of participants. 
+QSMxT is an end-to-end software toolbox for QSM that excels at automatically reconstructing and processing QSM across large groups of participants using sensible defaults.
 
 QSMxT provides pipelines implemented in Python that:
 
