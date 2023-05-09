@@ -5,6 +5,7 @@ import nibabel as nib
 
 from nipype.interfaces.base import traits, SimpleInterface, CommandLine, BaseInterfaceInputSpec, TraitedSpec, File
 from nipype.utils.filemanip import fname_presuffix, split_filename
+from scripts.qsmxt_functions import extend_fname
 
 
 ## NeXtQSM wrapper
@@ -73,9 +74,7 @@ def normalizeB0(B0_file, fieldStrength, filename=None):
     normalized = B0 / centre_freq * 1e3
     
     if not filename:
-        filename = os.path.split(B0_file)[-1]
-        extension = ".".join(filename.split('.')[1:])
-        filename = f"{filename}_normalize.{extension}"
+        filename = extend_fname(B0_file, "_normalize", out_dir=os.getcwd())
 
     save_nii(normalized, filename, B0_nii)
 

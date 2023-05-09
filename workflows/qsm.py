@@ -15,8 +15,13 @@ from scripts.qsmxt_functions import gen_plugin_args
 
 import psutil
 
+import numpy as np
+
 def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
     wf = Workflow(name=f"{name}_workflow")
+
+    slurm_account = run_args.slurm[0] if run_args.slurm and len(run_args.slurm) else None
+    slurm_partition = run_args.slurm[1] if run_args.slurm and len(run_args.slurm) > 1 else None
 
     n_inputs = Node(
         interface=IdentityInterface(

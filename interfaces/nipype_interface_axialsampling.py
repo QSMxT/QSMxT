@@ -3,6 +3,7 @@ import nibabel as nib
 import numpy as np
 import nilearn.image
 import warnings
+from scripts.qsmxt_functions import extend_fname
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits
 
 def resample_to_axial(mag_nii, pha_nii, mask_nii=None):
@@ -66,22 +67,14 @@ def resample_files(mag_file, pha_file, mask_file=None, obliquity_threshold=None)
     mag_rot_nii, pha_rot_nii, mask_rot_nii = resample_to_axial(mag_nii, pha_nii, mask_nii)
     
     # save results
-    mag_fname = os.path.split(mag_file)[1].split('.')[0]
-    pha_fname = os.path.split(pha_file)[1].split('.')[0]
-    mag_extension = ".".join(mag_file.split('.')[1:])
-    pha_extension = ".".join(pha_file.split('.')[1:])
-    mag_resampled_fname = os.path.abspath(f"{mag_fname}_resampled.{mag_extension}")
-    pha_resampled_fname = os.path.abspath(f"{pha_fname}_resampled.{pha_extension}")
-    #print(f"Saving mag={mag_resampled_fname}")
+    mag_resampled_fname = extend_fname(mag_file, "_resampled", out_dir=os.getcwd())
+    pha_resampled_fname = extend_fname(pha_file, "_resampled", out_dir=os.getcwd())
     nib.save(mag_rot_nii, mag_resampled_fname)
-    #print(f"Saving pha={pha_resampled_fname}")
     nib.save(pha_rot_nii, pha_resampled_fname)
     
     mask_resampled_fname = "placeholder"
     if mask_rot_nii:
-        mask_fname = os.path.split(mask_file)[1].split('.')[0]
-        mask_extension = '.'.join(mask_file.split('.')[1:])
-        mask_resampled_fname = os.path.abspath(f"{mask_fname}_resampled.{mask_extension}")
+        mask_resampled_fname = extend_fname(mask_file, "_resampled", out_dir=os.getcwd())
         #print(f"Saving mask={mask_resampled_fname}")
         nib.save(mask_rot_nii, mask_resampled_fname)
 
@@ -94,9 +87,7 @@ def resample_like(in_file, in_like, interpolation='continuous'):
     if np.array_equal(in_nii.affine, in_like_nii.affine):
         return in_file
     in_nii_resampled = nilearn.image.resample_img(in_nii, target_affine=in_like_nii.affine, target_shape=np.array(in_like_nii.header.get_data_shape()), interpolation=interpolation)
-    in_fname = os.path.split(in_file)[1].split('.')[0]
-    in_extension = ".".join(in_file.split('.')[1:])
-    in_resampled_fname = os.path.abspath(f"{in_fname}_resampled.{in_extension}")
+    in_resampled_fname = extend_fname(in_file, "_resampled", out_dir=os.getcwd())
     nib.save(in_nii_resampled, in_resampled_fname)
     return in_resampled_fname
 

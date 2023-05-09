@@ -28,7 +28,7 @@ def wrap_phase(phase_path):
     phase_nii = nib.load(phase_path)
     phase = phase_nii.get_fdata()
     phase_wrapped = (phase + np.pi) % (2 * np.pi) - np.pi
-    phase_wrapped_path = extend_fname(phase_path, "_wrapped", ext="nii")
+    phase_wrapped_path = extend_fname(phase_path, "_wrapped", ext="nii", out_dir=os.getcwd())
     nib.save(img=nib.Nifti1Image(dataobj=phase_wrapped, affine=phase_nii.affine, header=phase_nii.header), filename=phase_wrapped_path)
     return phase_wrapped_path
 
@@ -65,12 +65,12 @@ class RomeoB0Interface(CommandLine):
         outputs = self.output_spec().trait_get()
         
         # rename B0.nii to suitable output name
-        frequency_path = extend_fname(self.inputs.phase[0], "_romeo-b0map", ext="nii")
+        frequency_path = extend_fname(self.inputs.phase[0], "_romeo-b0map", ext="nii", out_dir=os.getcwd())
         os.rename(os.path.join(os.getcwd(), "B0.nii"), frequency_path)
         outputs['frequency'] = frequency_path
 
         # rename unwrapped.nii to suitable output name
-        outputs['phase_unwrapped'] = split_multi_echo("unwrapped.nii", [extend_fname(f, "_romeo-unwrapped", ext="nii") for f in self.inputs.phase])
+        outputs['phase_unwrapped'] = split_multi_echo("unwrapped.nii", [extend_fname(f, "_romeo-unwrapped", ext="nii", out_dir=os.getcwd()) for f in self.inputs.phase])
 
         return outputs
 

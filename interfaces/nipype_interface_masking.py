@@ -6,6 +6,7 @@ import numpy as np
 from scipy.stats import norm
 from scipy.ndimage import binary_fill_holes, binary_dilation, binary_erosion, gaussian_filter, binary_opening, convolve
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath, OutputMultiPath
+from scripts.qsmxt_functions import extend_fname
 from skimage import filters
 
 # === HELPER FUNCTIONS ===
@@ -91,7 +92,7 @@ def threshold_masking(in_files, bet_masks=None, user_threshold=None, threshold_a
             masks = [np.array((masks_filled_ero[i] - holes[i]) >= 1, dtype=int) for i in range(len(masks))]
 
     # determine filenames
-    mask_filenames = [f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}{mask_suffix}.nii" for in_file in in_files]
+    mask_filenames = [extend_fname(in_file, mask_suffix, out_dir=os.getcwd()) for in_file in in_files]
 
     for i in range(len(masks)):
         # set mask datatype to uint8

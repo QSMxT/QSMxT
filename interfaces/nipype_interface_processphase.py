@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import nibabel as nib
 import numpy as np
+import os
 
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, traits, File
 from scripts.qsmxt_functions import extend_fname
@@ -18,7 +19,7 @@ def frequency_to_normalized(frequency_path, B0, scale_factor=1, out_path=None):
     Φ_norm = (2*np.pi * ΔB) / (γ * B0) * scale_factor
 
     # save result
-    out_path = out_path or extend_fname(frequency_path, f"_normalized")
+    out_path = out_path or extend_fname(frequency_path, f"_normalized", out_dir=os.getcwd())
     nib.save(img=nib.Nifti1Image(dataobj=Φ_norm, header=frequency_nii.header, affine=frequency_nii.affine), filename=out_path)
     return out_path
 
@@ -58,7 +59,7 @@ def frequency_to_phase(frequency_path, TE, wraps=False, out_path=None):
     if wraps: Φ_acc = (Φ_acc + np.pi) % (2 * np.pi) - np.pi
     
     # save results
-    out_path = out_path or extend_fname(frequency_path, f"_phase-TE{int(TE*1000):0>3}")
+    out_path = out_path or extend_fname(frequency_path, f"_phase-TE{int(TE*1000):0>3}", out_dir=os.getcwd())
     nib.save(img=nib.Nifti1Image(dataobj=Φ_acc, header=frequency_nii.header, affine=frequency_nii.affine), filename=out_path)
     return out_path
 
@@ -101,7 +102,7 @@ def phase_to_normalized(phase_path, B0, TE, scale_factor=1, out_path=None):
     Φ_norm = Φ_acc / (TE * γ * B0) * scale_factor
 
     # save result
-    out_path = out_path or extend_fname(phase_path, f"_normalized")
+    out_path = out_path or extend_fname(phase_path, f"_normalized", out_dir=os.getcwd())
     nib.save(img=nib.Nifti1Image(dataobj=Φ_norm, header=phase_nii.header, affine=phase_nii.affine), filename=out_path)
 
     return out_path
@@ -145,7 +146,7 @@ def scale_to_pi(phase_path, phase_scaled_path=None):
     Φ_acc_wrapped_scaled = np.array(np.interp(Φ_acc_wrapped, (Φ_acc_wrapped.min(), Φ_acc_wrapped.max()), (-np.pi, +np.pi)), dtype=Φ_acc_wrapped.dtype)
 
     # save result
-    phase_scaled_path = phase_scaled_path or extend_fname(phase_path, "_scaled")
+    phase_scaled_path = phase_scaled_path or extend_fname(phase_path, "_scaled", out_dir=os.getcwd())
     nib.save(nib.Nifti1Image(dataobj=Φ_acc_wrapped_scaled, header=phase_nii.header, affine=phase_nii.affine), phase_scaled_path)
     return phase_scaled_path
 

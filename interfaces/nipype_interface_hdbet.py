@@ -1,6 +1,7 @@
 import os
 import shutil
 from nipype.interfaces.base import CommandLine, TraitedSpec, traits, File, CommandLineInputSpec
+from scripts.qsmxt_functions import extend_fname
 
 
 class HDBETInputSpec(CommandLineInputSpec):
@@ -23,9 +24,8 @@ class HDBETInterface(CommandLine):
 
     def _list_outputs(self):
         outputs = self.output_spec().get()
-        
-        outfile_original = f"{self.inputs.in_file.split('.')[0]}_bet_mask.nii.gz"
-        outfile_final = os.path.abspath(os.path.split(outfile_original)[1])
+        outfile_original = extend_fname(self.inputs.in_file, "_bet_mask", ext="nii.gz")
+        outfile_final = extend_fname(self.inputs.in_file, "_bet_mask", ext="nii.gz", out_dir=os.getcwd())
         if not os.path.exists(outfile_final):
             shutil.move(outfile_original, outfile_final)
         

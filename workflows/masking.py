@@ -4,12 +4,18 @@ from nipype.interfaces.utility import IdentityInterface, Function
 from interfaces import nipype_interface_masking as masking
 from interfaces import nipype_interface_erode as erode
 from interfaces import nipype_interface_bet2 as bet2
+from interfaces import nipype_interface_hdbet as hdbet
 from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_twopass as twopass
+
+from scripts.qsmxt_functions import gen_plugin_args
 
 def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_bet, name, index):
 
     wf = Workflow(name=f"{name}_workflow")
+
+    slurm_account = run_args.slurm[0] if run_args.slurm and len(run_args.slurm) else None
+    slurm_partition = run_args.slurm[1] if run_args.slurm and len(run_args.slurm) > 1 else None
 
     n_inputs = Node(
         interface=IdentityInterface(
@@ -52,10 +58,30 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
 
         # do bet mask if necessary
         if bet_this_run:
+            bet_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
+            '''
+            mn_bet = MapNode(
+                interface=hdbet.HDBETInterface(),
+                iterfield=['in_file'],
+                name='hdbet',
+                mem_gb=20,
+                n_procs=bet_threads
+            )
+            '''
             mn_bet = MapNode(
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
                 name='fsl-bet'
+            )
+            mn_bet.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
+                slurm_account=slurm_account,
+                pbs_account=run_args.pbs,
+                slurm_partition=slurm_partition,
+                name="bet",
+                time="01:00:00",
+                mem_gb=20,
+                num_cpus=bet_threads
             )
             if run_args.masking_algorithm == 'bet-firstecho':
                 def get_first(magnitude):

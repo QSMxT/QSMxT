@@ -7,6 +7,7 @@ modified by Steffen.Bollmann@cai.uq.edu.au
 from __future__ import division
 from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec, InputMultiPath
 from nipype.interfaces.base.traits_extension import isdefined
+from scripts.qsmxt_functions import extend_fname
 import os, shutil
 
 THREAD_CONTROL_VARIABLE = "OMP_NUM_THREADS"
@@ -54,7 +55,7 @@ class QSMappingInterface(CommandLine):
         outputs = self.output_spec().get()
         
         # TGV-QSM doesn't output files in the current directory for some reason, so we should move it
-        outfile_original = f"{self.inputs.phase.split('.')[0]}{self.inputs.out_suffix}_000.nii.gz"
+        outfile_original = extend_fname(self.inputs.phase, "_tgv_000", ext="nii.gz")
         outfile_final = os.path.abspath(os.path.split(outfile_original)[1]).replace("_000.nii.gz", ".nii.gz")
         if not os.path.exists(outfile_final):
             shutil.move(outfile_original, outfile_final)

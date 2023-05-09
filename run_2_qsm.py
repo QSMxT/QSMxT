@@ -81,6 +81,8 @@ def init_session_workflow(args, subject, session):
         f"run-{os.path.split(path)[1][os.path.split(path)[1].find('run-') + 4: os.path.split(path)[1].find('_', os.path.split(path)[1].find('run-') + 4)]}"
         for path in phase_files
     ])))
+
+    if args.runs: runs = [run for run in runs if run in args.runs]
     
     wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow_qsm", subject, session))
     wf.add_nodes([
@@ -236,9 +238,10 @@ def init_run_workflow(run_args, subject, session, run):
     def as_closest_canonical(phase, magnitude=None, mask=None):
         import os
         import nibabel as nib
-        out_phase = os.path.abspath(f"{os.path.split(phase)[-1].split('.')[0]}_canonical.nii")
-        out_mag = os.path.abspath(f"{os.path.split(magnitude)[-1].split('.')[0]}_canonical.nii") if magnitude else None
-        out_mask = os.path.abspath(f"{os.path.split(mask)[-1].split('.')[0]}_canonical.nii") if mask else None
+        from scripts.qsmxt_functions import extend_fname
+        out_phase = extend_fname(phase, "_canonical", out_dir=os.getcwd())
+        out_mag = extend_fname(magnitude, "_canonical", out_dir=os.getcwd())
+        out_mask = extend_fname(mask, "_canonical", out_dir=os.getcwd()) if mask else None
         if nib.aff2axcodes(nib.load(phase).affine) == ('R', 'A', 'S'): return phase, magnitude, mask
         nib.save(nib.as_closest_canonical(nib.load(phase)), out_phase)
         if magnitude: nib.save(nib.as_closest_canonical(nib.load(magnitude)), out_mag)
@@ -520,21 +523,6 @@ def parse_args(args, return_run_command=False):
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
-    class TwoValuesAction(argparse.Action):
-        def __init__(self, option_strings, dest, nargs=None, **kwargs):
-            self.dest = dest
-            self.dest2 = kwargs.pop('dest2')
-            super().__init__(option_strings, dest, nargs=nargs, **kwargs)
-
-        def __call__(self, parser, namespace, values, option_string=None):
-            if len(values) == 1:
-                setattr(namespace, self.dest, values)
-            elif len(values) == 2:
-                setattr(namespace, self.dest, values[0])
-                setattr(namespace, self.dest2, values[1])
-            else:
-                raise argparse.ArgumentError(self, 'Expected one or two values.')
-
     def argparse_bool(user_in):
         if user_in is None: return None
         if isinstance(user_in, bool): return user_in
@@ -614,6 +602,13 @@ def parse_args(args, return_run_command=False):
         default=None,
         nargs='*',
         help='List of session folders to process; by default all sessions are processed.'
+    )
+
+    parser.add_argument(
+        '--runs',
+        default=None,
+        nargs='*',
+        help='List of runs to process; by default all runs are processed.'
     )
 
     parser.add_argument(

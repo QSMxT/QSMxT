@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-
+import os
+from scripts.qsmxt_functions import extend_fname
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, traits, File
 
 def erosion(in_file, num_erosions=1):
@@ -18,7 +19,7 @@ def erosion(in_file, num_erosions=1):
         data = binary_erosion(data).astype(int)
 
     # write to file
-    out_file = f"{os.path.abspath(os.path.split(in_file)[1].split('.')[0])}_ero.nii"
+    out_file = extend_fname(in_file, "_ero", out_dir=os.getcwd())
     nib.save(nib.Nifti1Image(dataobj=data, header=nii.header, affine=nii.affine), out_file)
 
     return out_file

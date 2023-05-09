@@ -1,5 +1,6 @@
 from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec
 from nipype.interfaces.base.traits_extension import isdefined
+from scripts.qsmxt_functions import extend_fname
 import os
 import shutil
 
@@ -38,9 +39,8 @@ class FastSurferInterface(CommandLine):
 
     def _list_outputs(self):
         outputs = self.output_spec().get()
-        infile_name = (os.path.split(self.inputs.in_file)[1]).split('.')[0]
         outfile_old = os.path.join('output', 'mri', 'aparc.DKTatlas+aseg.deep.mgz')
-        outfile_new = os.path.join('output', 'mri', infile_name + '_segmentation.mgz')
+        outfile_new = extend_fname(self.inputs.in_file, "_segmentation", ext="mgz", out_dir=os.getcwd())
         shutil.copy(outfile_old, outfile_new)
         outputs['out_file'] = outfile_new
         return outputs

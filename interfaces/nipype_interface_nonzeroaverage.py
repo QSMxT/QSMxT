@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, InputMultiPath, File
+from scripts.qsmxt_functions import extend_fname
 
 
-def nonzero_average(in_files, mask_files=None, save_result=True):
+def nonzero_average(in_files, mask_files=None, out_file=True):
     import os
     import nibabel as nib
     import numpy as np
@@ -33,10 +34,13 @@ def nonzero_average(in_files, mask_files=None, save_result=True):
     except ValueError:
         raise ValueError(f"Tried to average files of incompatible dimensions; data.shape[..]={[x.shape for x in data]}")
 
-    if save_result:
-        filename = f"{os.path.abspath(os.path.split(in_files[0])[1].split('.')[0])}_average.nii"
+    if isinstance(out_file, bool):
+        filename = extend_fname(in_files[0], "_average", out_dir=os.getcwd())
         nib.save(nib.nifti1.Nifti1Image(final, affine=in_data_nii.affine, header=in_data_nii.header), filename)
         return filename
+    elif isinstance(out_file, str):
+        nib.save(nib.nifti1.Nifti1Image(final, affine=in_data_nii.affine, header=in_data_nii.header), out_file)
+        return out_file
 
     return final
 
@@ -70,16 +74,17 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        'in_masks',
-        nargs='*',
-        type=str
-    )
-
-    parser.add_argument(
         'out_file',
         type=str
     )
 
+    parser.add_argument(
+        '--in_masks',
+        nargs='*',
+        default=None,
+        type=str
+    )
+
     args = parser.parse_args()
-    qsm_final = nonzero_average(args.in_files, args.in_masks, True);
+    qsm_final = nonzero_average(args.in_files, args.in_masks, args.out_file)
 
