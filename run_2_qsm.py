@@ -608,7 +608,7 @@ def parse_args(args, return_run_command=False):
         '--runs',
         default=None,
         nargs='*',
-        help='List of runs to process; by default all runs are processed.'
+        help='List of runs to process (e.g. \'run-1\'); by default all runs are processed.'
     )
 
     parser.add_argument(
