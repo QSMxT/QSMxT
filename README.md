@@ -150,7 +150,7 @@ pip install psutil datetime networkx==2.8.8 nipype nibabel nilearn scipy scikit-
 Although we do not recommend installing the dependencies manually and we advocate the use of software containers for reproducibility and ease-of-use, you can install everything by hand. These are the dependencies required and this was tested in Ubuntu 18.04: 
 
 You need:
-- TGV-QSM running in miniconda 2
+- TGV-QSM v1.0 running in miniconda 2
 - bet2 (https://github.com/liangfu/bet2)
 - ANTs version=2.3.4
 - dcm2niix (https://github.com/rordenlab/dcm2niix)
