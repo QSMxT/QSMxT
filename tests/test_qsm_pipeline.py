@@ -255,6 +255,8 @@ def test_premade(bids_dir, premade, init_workflow, run_workflow, run_args):
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
 def test_nomagnitude(bids_dir, init_workflow, run_workflow, run_args):
+    print(f"=== TESTING NO MAGNITUDE ===")
+
     # delete magnitude files from bids directory
     for mag_file in glob.glob(os.path.join(bids_dir, "sub-1", "ses-1", "anat", "*mag*")):
         os.remove(mag_file)
@@ -278,6 +280,8 @@ def test_nomagnitude(bids_dir, init_workflow, run_workflow, run_args):
     (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
 ])
 def test_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
+    print(f"=== TESTING REAL DATA ===")
+
     if not bids_dir_secret:
         pass
     args = qsm.process_args(qsm.parse_args([
@@ -293,6 +297,8 @@ def test_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
     (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
 ])
 def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
+    print(f"=== TESTING EXISTING MASKS ===")
+    
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
