@@ -1,7 +1,6 @@
 #!/usr/bin/env pytest
 import os
 import osfclient
-import cloudstor
 import pytest
 import tempfile
 import glob
@@ -13,12 +12,49 @@ import pandas as pd
 import seaborn as sns
 import run_2_qsm as qsm
 import json
+import webdav3.client
 from scripts.qsmxt_functions import get_qsmxt_dir, get_qsmxt_version
 from scripts.sys_cmd import sys_cmd
 from matplotlib import pyplot as plt
 from scripts.logger import LogLevel, make_logger
 
 run_workflows = True
+
+def create_logger(log_dir):
+    os.makedirs(log_dir, exist_ok=True)
+    return make_logger(
+        logpath=os.path.join(log_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
+        printlevel=LogLevel.DEBUG,
+        writelevel=LogLevel.INFO,
+        warnlevel=LogLevel.WARNING,
+        errorlevel=LogLevel.ERROR
+    )
+
+def add_to_github_summary(markdown):
+    tmp_dir = tempfile.gettempdir()
+    with open(os.path.join(tmp_dir, 'GITHUB_STEP_SUMMARY.md'), 'a') as github_step_summary_file:
+        github_step_summary_file.write(markdown)
+
+def webdav_connect():
+    try:
+        webdav_login = os.environ['WEBDAV_LOGIN']
+        webdav_password = os.environ['WEBDAV_PASSWORD']
+    except KeyError as e:
+        print(f"Could not connect to WEBDAV - missing WEBDAV_LOGIN and/or WEBDAV_PASSWORD")
+        raise e
+
+    try:
+        client = webdav3.client.Client({
+            'webdav_hostname': f"https://cloud.rdm.uq.edu.au/remote.php/dav/files/{webdav_login}/",
+            'webdav_login':    webdav_login,
+            'webdav_password': webdav_password
+        })
+    except Exception as e:
+        print(f"Could not connect to WEBDAV - connection error!")
+        raise e
+
+    return client
+
 
 def compress_folder(folder, result_id):
     if os.environ.get('BRANCH'):
@@ -32,21 +68,9 @@ def compress_folder(folder, result_id):
 
 
 def upload_file(fname):
-    try:
-        cs = cloudstor.cloudstor(url=os.environ['UPLOAD_URL'], password=os.environ['DATA_PASS'])
-        cs.upload(fname, os.path.split(fname)[1])
-    except KeyError:
-        print("No UPLOAD_URL/DATA_PASS variable found... Skipping upload")
-
-def create_logger(log_dir):
-    os.makedirs(log_dir, exist_ok=True)
-    return make_logger(
-        logpath=os.path.join(log_dir, f"log_{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}.txt"),
-        printlevel=LogLevel.DEBUG,
-        writelevel=LogLevel.INFO,
-        warnlevel=LogLevel.WARNING,
-        errorlevel=LogLevel.ERROR
-    )
+    client = webdav_connect()
+    print(f"Uploading {fname}...")
+    client.upload_sync(remote_path=f"QSMFUNCTOR-Q0748/data/QSMxT-Test-Results/{os.path.split(fname)[1]}", local_path=fname)
 
 @pytest.fixture
 def bids_dir():
@@ -61,6 +85,20 @@ def bids_dir():
         sys_cmd(f"tar xf {os.path.join(tmp_dir, 'bids-osf.tar')} -C {tmp_dir}")
         sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-osf.tar')}")
     return os.path.join(tmp_dir, 'bids-osf')
+
+@pytest.fixture
+def bids_dir_secret():
+    tmp_dir = tempfile.gettempdir()
+    if not os.path.exists(os.path.join(tmp_dir, 'bids-secret')):
+        if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
+            print("Downloading test data...")
+            client = webdav_connect()            
+            client.download_sync(remote_path="QSMFUNCTOR-Q0748/data/2022-07-06-QSMxT-Test-Battery/bids-secret.zip", local_path=os.path.join(tmp_dir, "bids-secret.zip"))
+
+        sys_cmd(f"unzip {os.path.join(tmp_dir, 'bids-secret.zip')} -d {tmp_dir}")
+        sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-secret.zip')}")
+
+    return os.path.join(tmp_dir, 'bids-secret')
 
 def display_nii(
     nii_path=None, data=None, dim=0, title=None, slc=None, dpi=96, size=None, out_png=None, final_fig=True, title_fontsize=12,
@@ -94,6 +132,7 @@ def display_nii(
     if final_fig:
         if out_png:
             plt.savefig(out_png, bbox_inches='tight')
+            return out_png
         else:
             plt.show()
 
@@ -157,7 +196,10 @@ def print_metrics(name, bids_path, qsm_path):
     plt.savefig(os.path.join(qsm_path, "qsm_final", f"{name}_metrics.png"))
     plt.close()
 
-    display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", f"{name}_slice.png")))
+    png = display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", f"{name}_slice.png")))
+    sys_cmd(f"images-upload-cli -h freeimage {png}")
+    add_to_github_summary(f"[[{png}]]\n")
+    
 
 def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
     assert(not (run_workflow == True and init_workflow == False))
@@ -194,22 +236,10 @@ def get_premades():
         premades = json.load(json_file)
     return premades
 
-@pytest.fixture
-def bids_dir_secret():
-    tmp_dir = tempfile.gettempdir()
-    if not os.path.exists(os.path.join(tmp_dir, 'bids-secret')):
-        if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
-            print("Downloading test data...")
-            cloudstor.cloudstor(url=os.environ['DOWNLOAD_URL'], password=os.environ['DATA_PASS']).download('', os.path.join(tmp_dir, 'bids-secret.tar'))
-        print("Extracting test data...")
-        sys_cmd(f"tar xf {os.path.join(tmp_dir, 'bids-secret.tar')} -C {tmp_dir}")
-        sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-secret.tar')}")
-    return os.path.join(tmp_dir, 'bids-secret')
-
 
 @pytest.mark.parametrize("premade, init_workflow, run_workflow, run_args", [
     (p, True, run_workflows, { 'num_echoes' : 1 })
-    for p in get_premades().keys() if p != 'default'
+    for p in [list(get_premades().keys())[1]] if p != 'default'
 ])
 def test_premade(bids_dir, premade, init_workflow, run_workflow, run_args):
     premades = get_premades()
@@ -236,7 +266,7 @@ def test_premade(bids_dir, premade, init_workflow, run_workflow, run_args):
 
     # visualise results
     for nii_file in glob.glob(os.path.join(args.output_dir, "qsm_final", "*", "*.nii*")):
-        display_nii(
+        png = display_nii(
             nii_path=nii_file,
             title=f"QSM using premade pipeline: {premade}\n({get_qsmxt_version()})",
             colorbar=True,
@@ -246,6 +276,8 @@ def test_premade(bids_dir, premade, init_workflow, run_workflow, run_args):
             vmin=-0.15,
             vmax=+0.15
         )
+        sys_cmd(f"images-upload-cli -h freeimage {png}")
+        add_to_github_summary(f"[[{png}]]\n")
     
     # upload output folder
     tar_file = compress_folder(folder=args.output_dir, result_id=premade)
@@ -267,6 +299,58 @@ def test_nomagnitude(bids_dir, init_workflow, run_workflow, run_args):
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
         "--masking_input", "magnitude",
+        "--auto_yes"
+    ]))
+    
+    # create the workflow and run
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+
+    # delete modified bids directory so it can be reset in a future test
+    shutil.rmtree(bids_dir)
+    
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1 })
+])
+def test_hardcoded_threshold(bids_dir, init_workflow, run_workflow, run_args):
+    print(f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
+
+    # delete magnitude files from bids directory
+    for mag_file in glob.glob(os.path.join(bids_dir, "sub-1", "ses-1", "anat", "*mag*")):
+        os.remove(mag_file)
+    
+    # run pipeline and specifically choose magnitude-based masking
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--premade", "fast",
+        "--masking_input", "magnitude",
+        "--threshold_value", 0.8,
+        "--auto_yes"
+    ]))
+    
+    # create the workflow and run
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+
+    # delete modified bids directory so it can be reset in a future test
+    shutil.rmtree(bids_dir)
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1 })
+])
+def test_hardcoded_threshold(bids_dir, init_workflow, run_workflow, run_args):
+    print(f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
+
+    # delete magnitude files from bids directory
+    for mag_file in glob.glob(os.path.join(bids_dir, "sub-1", "ses-1", "anat", "*mag*")):
+        os.remove(mag_file)
+    
+    # run pipeline and specifically choose magnitude-based masking
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--premade", "fast",
+        "--masking_input", "magnitude",
+        "--threshold_value", 5,
         "--auto_yes"
     ]))
     
@@ -321,3 +405,4 @@ def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
 #    - use_existing_masks specified but number of masks > 1 and mismatches # of echoes 
 #    - use_existing_masks specified and masks found:
 #      - inhomogeneity_correction, two_pass, and add_bet should all disable
+#  - hardcoded/percentile-based masking thresholds

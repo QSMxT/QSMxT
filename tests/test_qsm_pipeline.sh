@@ -9,11 +9,13 @@ sudo docker run \
     --env BRANCH="${BRANCH}" \
     --env PYTHONPATH=/tmp/QSMxT \
     --env PATH=/tmp/QSMxT:/tmp/QSMxT/scripts:${container_path} \
-    --env DOWNLOAD_URL="${DOWNLOAD_URL}" \
-    --env DATA_PASS="${DATA_PASS}" \
-    --env UPLOAD_URL="${UPLOAD_URL}" \
+    --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
+    --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
+    --env FREEIMAGE_API="${FREEIMAGE_API}" \
     -v /tmp:/tmp ${container} \
     pytest /tmp/QSMxT/tests/test_qsm_pipeline.py -s -k "${@}"
+
+cat /tmp/GITHUB_STEP_SUMMARY.md >> $GITHUB_STEP_SUMMARY
 
 #echo "Testing summary (will add images here later)" >> $GITHUB_STEP_SUMMARY
 #echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line

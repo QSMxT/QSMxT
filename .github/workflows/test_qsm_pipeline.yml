@@ -119,9 +119,9 @@ jobs:
         /bin/bash tests/setup_qsmxt.sh -k "not test_premade"
     - name: Test QSM premades
       env:
-        DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
-        UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
-        DATA_PASS: ${{ secrets.DATA_PASS }}
+        WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
+        WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
+        FREEIMAGE_API: ${{ secrets.FREEIMAGE_API }}
       run: |
         /bin/bash tests/test_qsm_pipeline.sh "test_premade and ${{ matrix.args }}"
     - uses: actions/upload-artifact@v3
@@ -157,9 +157,9 @@ jobs:
         /bin/bash tests/setup_qsmxt.sh "not test_premade"
     - name: Test QSM pipeline edge cases
       env:
-        DOWNLOAD_URL: ${{ secrets.DOWNLOAD_URL }}
-        UPLOAD_URL: ${{ secrets.UPLOAD_URL }}
-        DATA_PASS: ${{ secrets.DATA_PASS }}
+        WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
+        WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
+        FREEIMAGE_API: ${{ secrets.FREEIMAGE_API }}
       run: |
         /bin/bash tests/test_qsm_pipeline.sh "not test_premade"
     - uses: actions/upload-artifact@v3
