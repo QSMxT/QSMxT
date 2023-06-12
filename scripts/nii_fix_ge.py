@@ -34,7 +34,7 @@ def fix_ge_polar(mag_path, phase_path, delete_originals=True):
     complex_data_correct_image = np.fft.fftshift(np.fft.ifftn(np.fft.fftshift(complex_data_kspace))) * scaling        
 
     # compute corrected phase image
-    phase_corr_data = np.angle(complex_data_correct_image)
+    phase_corr_data = np.angle(complex_data_correct_image) * -1.0 # GE uses different handed-ness requiring inverting
 
     # create nifti image
     phase_nii.header.set_data_dtype(np.float16)
@@ -74,7 +74,7 @@ def fix_ge_complex(real_path, imag_path, delete_originals=False):
     complex_data_correct_image = np.fft.fftshift(np.fft.ifftn(np.fft.fftshift(complex_data_kspace))) * scaling        
 
     # compute magnitude and phase of complex image
-    phase_data = np.angle(complex_data_correct_image)
+    phase_data = np.angle(complex_data_correct_image) * -1.0 # GE uses different handed-ness requiring inverting
     mag_data = np.abs(complex_data_correct_image)
 
     # create nifti images
