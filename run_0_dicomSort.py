@@ -9,6 +9,7 @@ import os
 import sys
 import pydicom  # pydicom is using the gdcm package for decompression
 import datetime
+import re
 
 from scripts.qsmxt_functions import get_qsmxt_version, get_diff
 from scripts.logger import LogLevel, make_logger, show_warning_summary
@@ -35,10 +36,7 @@ def find_empty_dirs(root_dir='.', recursive=True):
     return list(empty_dirs(root_dir, recursive))
 
 def clean_text(string):
-    # clean and standardize text descriptions, which makes searching files easier
-    for symbol in ["*", ".", ",", "\"", "\\", "/", "|", "[", "]", ":", ";", " "]:
-        string = string.replace(str(symbol), "_") # replace everything with an underscore
-    return string.lower()  
+    return re.sub(r'[^a-zA-Z0-9_-]', '_', string)
 
 def find_dicoms(input_dir, check_all_files):
     unsortedList = []
