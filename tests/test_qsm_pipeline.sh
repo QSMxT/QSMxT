@@ -11,7 +11,7 @@ sudo docker run \
     --env PATH=/tmp/QSMxT:/tmp/QSMxT/scripts:${container_path} \
     --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
     --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
-    --env FREEIMAGE_API="${FREEIMAGE_API}" \
+    --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
     -v /tmp:/tmp ${container} \
     pytest /tmp/QSMxT/tests/test_qsm_pipeline.py -s -k "${@}"
 
