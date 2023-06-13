@@ -239,7 +239,7 @@ def get_premades():
 
 @pytest.mark.parametrize("premade, init_workflow, run_workflow, run_args", [
     (p, True, run_workflows, { 'num_echoes' : 1 })
-    for p in [list(get_premades().keys())] if p != 'default'
+    for p in get_premades().keys() if p != 'default'
 ])
 def test_premade(bids_dir, premade, init_workflow, run_workflow, run_args):
     premades = get_premades()
