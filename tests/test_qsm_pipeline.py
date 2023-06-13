@@ -13,7 +13,6 @@ import seaborn as sns
 import run_2_qsm as qsm
 import json
 import webdav3.client
-import qsm_forward
 from scripts.qsmxt_functions import get_qsmxt_dir, get_qsmxt_version
 from scripts.sys_cmd import sys_cmd
 from matplotlib import pyplot as plt
