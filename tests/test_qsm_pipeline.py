@@ -322,7 +322,7 @@ def test_hardcoded_threshold(bids_dir, init_workflow, run_workflow, run_args):
         "--premade", "fast",
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
-        "--threshold_value", 0.8,
+        "--threshold_value", "0.8",
         "--auto_yes"
     ]))
     
@@ -345,7 +345,7 @@ def test_hardcoded_threshold(bids_dir, init_workflow, run_workflow, run_args):
         "--premade", "fast",
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
-        "--threshold_value", 5,
+        "--threshold_value", "5",
         "--auto_yes"
     ]))
     
