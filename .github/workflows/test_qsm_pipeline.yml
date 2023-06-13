@@ -116,7 +116,7 @@ jobs:
         python-version: 3.8
     - name: Setup QSMxT
       run: |
-        /bin/bash tests/setup_qsmxt.sh -k "not test_premade"
+        /bin/bash tests/setup_qsmxt.sh
     - name: Test QSM premades
       env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
@@ -154,7 +154,7 @@ jobs:
         python-version: 3.8
     - name: Setup QSMxT
       run: |
-        /bin/bash tests/setup_qsmxt.sh "not test_premade"
+        /bin/bash tests/setup_qsmxt.sh
     - name: Test QSM pipeline edge cases
       env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
