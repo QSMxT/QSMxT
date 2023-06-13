@@ -13,6 +13,7 @@ import seaborn as sns
 import run_2_qsm as qsm
 import json
 import webdav3.client
+import qsm_forward
 from scripts.qsmxt_functions import get_qsmxt_dir, get_qsmxt_version
 from scripts.sys_cmd import sys_cmd
 from matplotlib import pyplot as plt
@@ -239,7 +240,7 @@ def get_premades():
 
 @pytest.mark.parametrize("premade, init_workflow, run_workflow, run_args", [
     (p, True, run_workflows, { 'num_echoes' : 1 })
-    for p in [list(get_premades().keys())[1]] if p != 'default'
+    for p in [list(get_premades().keys())] if p != 'default'
 ])
 def test_premade(bids_dir, premade, init_workflow, run_workflow, run_args):
     premades = get_premades()
