@@ -198,7 +198,8 @@ def print_metrics(name, bids_path, qsm_path):
 
     png = display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", f"{name}_slice.png")))
     png_url = sys_cmd(f"images-upload-cli -h freeimage {png}").strip()
-    add_to_github_summary(f"[[{png_url}]]\n")
+    add_to_github_summary(f"![image]({png_url})\n")
+    
     
 
 def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
@@ -277,7 +278,7 @@ def test_premade(bids_dir, premade, init_workflow, run_workflow, run_args):
             vmax=+0.15
         )
         png_url = sys_cmd(f"images-upload-cli -h freeimage {png}").strip()
-        add_to_github_summary(f"[[{png_url}]]\n")
+        add_to_github_summary(f"![image]({png_url})\n")
     
     # upload output folder
     tar_file = compress_folder(folder=args.output_dir, result_id=premade)
