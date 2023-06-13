@@ -15,7 +15,9 @@ sudo docker run \
     -v /tmp:/tmp ${container} \
     pytest /tmp/QSMxT/tests/test_qsm_pipeline.py -s -k "${@}"
 
-cat /tmp/GITHUB_STEP_SUMMARY.md >> $GITHUB_STEP_SUMMARY
+if [ -f /tmp/GITHUB_STEP_SUMMARY.md ]; then
+    cat /tmp/GITHUB_STEP_SUMMARY.md >> $GITHUB_STEP_SUMMARY
+fi
 
 #echo "Testing summary (will add images here later)" >> $GITHUB_STEP_SUMMARY
 #echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
