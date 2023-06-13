@@ -315,15 +315,12 @@ def test_nomagnitude(bids_dir, init_workflow, run_workflow, run_args):
 def test_hardcoded_threshold(bids_dir, init_workflow, run_workflow, run_args):
     print(f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
 
-    # delete magnitude files from bids directory
-    for mag_file in glob.glob(os.path.join(bids_dir, "sub-1", "ses-1", "anat", "*mag*")):
-        os.remove(mag_file)
-    
     # run pipeline and specifically choose magnitude-based masking
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
+        "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
         "--threshold_value", 0.8,
         "--auto_yes"
@@ -341,15 +338,12 @@ def test_hardcoded_threshold(bids_dir, init_workflow, run_workflow, run_args):
 def test_hardcoded_threshold(bids_dir, init_workflow, run_workflow, run_args):
     print(f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
 
-    # delete magnitude files from bids directory
-    for mag_file in glob.glob(os.path.join(bids_dir, "sub-1", "ses-1", "anat", "*mag*")):
-        os.remove(mag_file)
-    
     # run pipeline and specifically choose magnitude-based masking
     args = qsm.process_args(qsm.parse_args([
         bids_dir,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
+        "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
         "--threshold_value", 5,
         "--auto_yes"
