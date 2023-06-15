@@ -389,13 +389,13 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
 ])
-def test_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
+def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
     print(f"=== TESTING REAL DATA ===")
 
-    if not bids_dir_secret:
+    if not bids_dir_real:
         pass
     args = qsm.process_args(qsm.parse_args([
-        bids_dir_secret,
+        bids_dir_real,
         os.path.join(tempfile.gettempdir(), "qsm-secret"),
         "--auto_yes"
     ]))
