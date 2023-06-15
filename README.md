@@ -41,7 +41,7 @@ A user friendly way of running QSMxT in Windows, Mac or Linux is via the Neurode
 To use the latest version of the QSMxT container within an older version of Neurodesk, use:
 
 ```
-bash /neurocommand/local/fetch_and_run.sh qsmxt 2.1.0 20230612
+bash /neurocommand/local/fetch_and_run.sh qsmxt 2.1.0 20230615
 ```
 
 ### Docker container
@@ -50,11 +50,11 @@ There is also a docker image available:
 
 For Windows:
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_2.1.0:20230612
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_2.1.0:20230615
 ```
 For Linux/Mac:
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_2.1.0:20230612
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_2.1.0:20230615
 ```
 
 ## QSMxT Usage
@@ -121,10 +121,10 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_2.1.0_20230612
-    cd qsmxt_2.1.0_20230612
-    ./run_transparent_singularity.sh --container qsmxt_2.1.0_20230612.simg
-    source activate_qsmxt_2.1.0_20230612.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_2.1.0_20230615
+    cd qsmxt_2.1.0_20230615
+    ./run_transparent_singularity.sh --container qsmxt_2.1.0_20230615.simg
+    source activate_qsmxt_2.1.0_20230615.simg.sh
     ```
     
     - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
@@ -141,7 +141,7 @@ bash Miniconda3-4.7.12.1-Linux-x86_64.sh -b
 source ~/.bashrc
 conda create -n qsmxt python=3.8
 conda activate qsmxt
-pip install psutil datetime networkx==2.8.8 nipype nibabel nilearn scipy scikit-image pydicom osfclient pytest seaborn
+pip install psutil datetime networkx==2.8.8 nipype nibabel nilearn scipy scikit-image pydicom seaborn
 ```
 
 5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
@@ -154,7 +154,7 @@ You need:
 - bet2 (https://github.com/liangfu/bet2)
 - ANTs version=2.3.4
 - dcm2niix (https://github.com/rordenlab/dcm2niix)
-- miniconda version=4.7.12.1 with python3.8 and pip packages psutil, datetime, nipype, nibabel, nilearn, scipy, scikit-image, pydicom, osfclient, pytest and seaborn
+- miniconda version=4.7.12.1 with python3.8 and pip packages psutil, datetime, nipype, nibabel, nilearn, scipy, scikit-image, pydicom and seaborn
 - FastSurfer (https://github.com/Deep-MI/FastSurfer.git)
 - Bru2Nii v1.0.20180303 (https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip)
 - julia-1.6.1 with ArgParse, MriResearchTools, QSM.jl, FFTW and RomeoApp (see https://github.com/korbinian90/RomeoApp.jl)

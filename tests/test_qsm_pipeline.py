@@ -1,6 +1,5 @@
 #!/usr/bin/env pytest
 import os
-import osfclient
 import pytest
 import tempfile
 import glob
@@ -13,6 +12,7 @@ import seaborn as sns
 import run_2_qsm as qsm
 import json
 import webdav3.client
+import qsm_forward
 from scripts.qsmxt_functions import get_qsmxt_dir, get_qsmxt_version
 from scripts.sys_cmd import sys_cmd
 from matplotlib import pyplot as plt
@@ -55,7 +55,6 @@ def webdav_connect():
 
     return client
 
-
 def compress_folder(folder, result_id):
     if os.environ.get('BRANCH'):
         results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_{result_id}.tar"
@@ -66,32 +65,46 @@ def compress_folder(folder, result_id):
 
     return results_tar
 
-
 def upload_file(fname):
     client = webdav_connect()
     print(f"Uploading {fname}...")
     client.upload_sync(remote_path=f"QSMFUNCTOR-Q0748/data/QSMxT-Test-Results/{os.path.split(fname)[1]}", local_path=fname)
 
 @pytest.fixture
-def bids_dir():
+def bids_dir_public():
     tmp_dir = tempfile.gettempdir()
-    if not os.path.exists(os.path.join(tmp_dir, 'bids-osf')):
-        if not os.path.exists(os.path.join(tmp_dir, 'bids-osf.tar')):
-            print("Downloading test data...")
-            file_pointer = next(osfclient.OSF().project("9jc42").storage().files)
-            file_handle = open(os.path.join(tmp_dir, 'bids-osf.tar'), 'wb')
-            file_pointer.write_to(file_handle)
-        print("Extracting test data...")
-        sys_cmd(f"tar xf {os.path.join(tmp_dir, 'bids-osf.tar')} -C {tmp_dir}")
-        sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-osf.tar')}")
-    return os.path.join(tmp_dir, 'bids-osf')
+    bids_dir = os.path.join(tmp_dir, "bids-public")
+    if not os.path.exists(bids_dir):
+
+        head_phantom_maps_dir = os.path.join(tmp_dir, 'head-phantom-maps')
+        if not os.path.exists(head_phantom_maps_dir):
+            if not os.path.exists(os.path.join(tmp_dir, 'head-phantom-maps.tar')):
+                print("Downloading head phantom maps...")
+                client = webdav_connect()            
+                client.download_sync(remote_path="QSMFUNCTOR-Q0748/qsm-challenge-and-head-phantom/head-phantom-maps.tar", local_path=os.path.join(tmp_dir, "head-phantom-maps.tar"))
+
+            sys_cmd(f"tar xf {os.path.join(tmp_dir, 'head-phantom-maps.tar')} -C {tmp_dir}")
+            sys_cmd(f"rm {os.path.join(tmp_dir, 'head-phantom-maps.tar')}")
+
+        tissue_params = qsm_forward.default_tissue_params.copy()
+        recon_params = qsm_forward.default_recon_params.copy()
+        recon_params['peak_snr'] = 100
+
+        for key in tissue_params.keys():
+            tissue_params[key] = os.path.join(head_phantom_maps_dir, tissue_params[key])
+
+        bids_dir = os.path.join(tmp_dir, "bids-public")
+        qsm_forward.generate_bids(tissue_params=tissue_params, recon_params=recon_params, bids_dir=bids_dir)
+
+    return bids_dir
+
 
 @pytest.fixture
-def bids_dir_secret():
+def bids_dir_real():
     tmp_dir = tempfile.gettempdir()
     if not os.path.exists(os.path.join(tmp_dir, 'bids-secret')):
         if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
-            print("Downloading test data...")
+            print("Downloading real data...")
             client = webdav_connect()            
             client.download_sync(remote_path="QSMFUNCTOR-Q0748/data/2022-07-06-QSMxT-Test-Battery/bids-secret.zip", local_path=os.path.join(tmp_dir, "bids-secret.zip"))
 
@@ -242,14 +255,14 @@ def get_premades():
     (p, True, run_workflows, { 'num_echoes' : 1 })
     for p in get_premades().keys() if p != 'default'
 ])
-def test_premade(bids_dir, premade, init_workflow, run_workflow, run_args):
+def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args):
     premades = get_premades()
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     print(f"=== TESTING PREMADE {premade} ===")
 
     args = qsm.process_args(qsm.parse_args([
-        bids_dir,
+        bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", premade,
         "--auto_yes"
@@ -287,16 +300,16 @@ def test_premade(bids_dir, premade, init_workflow, run_workflow, run_args):
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
-def test_nomagnitude(bids_dir, init_workflow, run_workflow, run_args):
+def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING NO MAGNITUDE ===")
 
     # delete magnitude files from bids directory
-    for mag_file in glob.glob(os.path.join(bids_dir, "sub-1", "ses-1", "anat", "*mag*")):
+    for mag_file in glob.glob(os.path.join(bids_dir_public, "sub-1", "ses-1", "anat", "*mag*")):
         os.remove(mag_file)
     
     # run pipeline and specifically choose magnitude-based masking
     args = qsm.process_args(qsm.parse_args([
-        bids_dir,
+        bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
         "--masking_input", "magnitude",
@@ -307,17 +320,17 @@ def test_nomagnitude(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
 
     # delete modified bids directory so it can be reset in a future test
-    shutil.rmtree(bids_dir)
-    
+    shutil.rmtree(bids_dir_public)
+
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
-def test_hardcoded_threshold(bids_dir, init_workflow, run_workflow, run_args):
+def test_hardcoded_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
 
     # run pipeline and specifically choose magnitude-based masking
     args = qsm.process_args(qsm.parse_args([
-        bids_dir,
+        bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
         "--masking_algorithm", "threshold",
@@ -330,17 +343,17 @@ def test_hardcoded_threshold(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
 
     # delete modified bids directory so it can be reset in a future test
-    shutil.rmtree(bids_dir)
+    shutil.rmtree(bids_dir_public)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
-def test_hardcoded_threshold(bids_dir, init_workflow, run_workflow, run_args):
+def test_hardcoded_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
 
     # run pipeline and specifically choose magnitude-based masking
     args = qsm.process_args(qsm.parse_args([
-        bids_dir,
+        bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
         "--masking_algorithm", "threshold",
@@ -353,7 +366,24 @@ def test_hardcoded_threshold(bids_dir, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
 
     # delete modified bids directory so it can be reset in a future test
-    shutil.rmtree(bids_dir)
+    shutil.rmtree(bids_dir_public)
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
+])
+def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_args):
+    print(f"=== TESTING EXISTING MASKS ===")
+    
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir_public,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--use_existing_masks",
+        "--auto_yes"
+    ]))
+    
+    assert(args.use_existing_masks == True)
+    
+    workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
@@ -371,23 +401,6 @@ def test_realdata(bids_dir_secret, init_workflow, run_workflow, run_args):
     
     workflow(args, init_workflow, run_workflow, run_args)
     upload_file(compress_folder(folder=args.output_dir, result_id='real'))
-
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
-])
-def test_use_existing_masks(bids_dir, init_workflow, run_workflow, run_args):
-    print(f"=== TESTING EXISTING MASKS ===")
-    
-    args = qsm.process_args(qsm.parse_args([
-        bids_dir,
-        os.path.join(tempfile.gettempdir(), "qsm"),
-        "--use_existing_masks",
-        "--auto_yes"
-    ]))
-    
-    assert(args.use_existing_masks == True)
-    
-    workflow(args, init_workflow, run_workflow, run_args)
 
 # TODO
 #  - check file outputs
