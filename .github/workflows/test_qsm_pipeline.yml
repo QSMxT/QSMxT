@@ -93,23 +93,6 @@ jobs:
       matrix:
         args: ['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm']
     steps:
-    - name: Free up space
-      id: free_space
-      uses: easimon/maximize-build-space@master
-      with:
-        root-reserve-mb: 40000
-        swap-size-mb: 1024
-        remove-dotnet: 'true'
-        remove-android: 'true'
-        remove-haskell: 'true'
-        overprovision-lvm: 'true'
-    - name: Move docker installation
-      id: move_docker
-      run: |
-          sudo mv /var/lib/docker /home/runner/work/docker
-          sudo ln -s /home/runner/work/docker /var/lib/docker
-          sudo systemctl restart docker
-          echo "::set-output name=ready::true"
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
       with:
@@ -131,23 +114,6 @@ jobs:
   test_qsm_edgecases:
     runs-on: "cirun-oracle--${{ github.run_id }}"
     steps:
-    - name: Free up space
-      id: free_space
-      uses: easimon/maximize-build-space@master
-      with:
-        root-reserve-mb: 40000
-        swap-size-mb: 1024
-        remove-dotnet: 'true'
-        remove-android: 'true'
-        remove-haskell: 'true'
-        overprovision-lvm: 'true'
-    - name: Move docker installation
-      id: move_docker
-      run: |
-          sudo mv /var/lib/docker /home/runner/work/docker
-          sudo ln -s /home/runner/work/docker /var/lib/docker
-          sudo systemctl restart docker
-          echo "::set-output name=ready::true"
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
       with:
