@@ -47,7 +47,8 @@ def webdav_connect():
         client = webdav3.client.Client({
             'webdav_hostname': f"https://cloud.rdm.uq.edu.au/remote.php/dav/files/{webdav_login}/",
             'webdav_login':    webdav_login,
-            'webdav_password': webdav_password
+            'webdav_password': webdav_password,
+            'webdav_timeout': 120
         })
     except Exception as e:
         print(f"Could not connect to WEBDAV - connection error!")
