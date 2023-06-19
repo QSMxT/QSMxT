@@ -30,7 +30,7 @@ on:
     
 jobs:
   test_segmentation_pipeline:
-    runs-on: "cirun-nectar-medium--${{ github.run_id }}"
+    runs-on: "cirun-nectar-large--${{ github.run_id }}"
     steps:
     - name: segmentation pipeline
       run: |
