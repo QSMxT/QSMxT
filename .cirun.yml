@@ -9,14 +9,14 @@ runners:
   - name: "nectar-runner-medium"
     cloud: "openstack"
     instance_type: "r3.medium"
-    machine_image: "3fdc6cfa-f197-4dfd-a6b4-b0b9f7795b41"
+    machine_image: "4adcec13-2291-4bff-987f-d87f98d24379"
     region: Melbourne
     labels:
       - "cirun-nectar-medium"
   - name: "nectar-runner-small"
     cloud: "openstack"
     instance_type: "r3.small"
-    machine_image: "3fdc6cfa-f197-4dfd-a6b4-b0b9f7795b41"
+    machine_image: "4adcec13-2291-4bff-987f-d87f98d24379"
     region: Melbourne
     labels:
       - "cirun-nectar-small"
