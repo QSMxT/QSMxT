@@ -10,6 +10,6 @@ runners:
     cloud: "openstack"
     instance_type: "m3.medium"
     machine_image: "3fdc6cfa-f197-4dfd-a6b4-b0b9f7795b41"
-    region: QRIScloud
+    region: Melbourne
     labels:
       - "cirun-nectar"
