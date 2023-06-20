@@ -56,8 +56,8 @@
         "masking_input": "phase",
         "threshold_algorithm": "otsu",
         "threshold_algorithm_factor": [
-            1.7,
-            1.0
+            1.5,
+            1.5
         ],
         "filling_algorithm": "both",
         "inhomogeneity_correction": false,
@@ -103,7 +103,7 @@
         "description": "Applies a set of fast algorithms",
         "combine_phase": true,
         "qsm_algorithm": "rts",
-        "unwrapping_algorithm": "romeo",
+        "unwrapping_algorithm": "laplacian",
         "bf_algorithm": "vsharp",
         "masking_input": "magnitude",
         "masking_algorithm": "bet",
