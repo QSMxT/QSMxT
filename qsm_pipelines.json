@@ -103,7 +103,7 @@
         "description": "Applies a set of fast algorithms",
         "combine_phase": true,
         "qsm_algorithm": "rts",
-        "unwrapping_algorithm": "laplacian",
+        "unwrapping_algorithm": "romeo",
         "bf_algorithm": "vsharp",
         "masking_input": "magnitude",
         "masking_algorithm": "bet",
