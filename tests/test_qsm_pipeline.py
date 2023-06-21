@@ -218,7 +218,6 @@ def print_metrics(name, bids_path, qsm_path):
 
 def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
     assert(not (run_workflow == True and init_workflow == False))
-    run_workflow &= not (args.qsm_algorithm == 'nextqsm' != (run_args.get('qsm_algorithm') == 'nextqsm'))
     shutil.rmtree(os.path.join(args.output_dir), ignore_errors=True)
     logger = create_logger(args.output_dir)
     logger.log(LogLevel.DEBUG.value, f"WORKFLOW DETAILS: {args}")
