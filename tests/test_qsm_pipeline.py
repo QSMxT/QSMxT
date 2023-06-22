@@ -339,7 +339,7 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
         "--premade", "fast",
         "--masking_algorithm", "threshold",
         "--filling_algorithm", "bet",
-        "--inhomogeneity_correction"
+        "--inhomogeneity_correction",
         "--auto_yes"
     ]))
     
