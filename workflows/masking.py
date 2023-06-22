@@ -19,7 +19,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
 
     n_inputs = Node(
         interface=IdentityInterface(
-            fields=['phase', 'magnitude', 'mask']
+            fields=['phase', 'magnitude', 'mask', 'TE']
         ),
         name='masking_inputs'
     )
@@ -34,15 +34,23 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
     if not mask_files:
         # do phase weights if necessary
         if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase' and not (fill_masks and run_args.filling_algorithm == 'bet'):
-            mn_phaseweights = MapNode(
-                interface=phaseweights.RomeoMaskingInterface(),
-                iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
-                name='romeo-voxelquality',
-                mem_gb=3
-            )
+            if run_args.combine_phase:
+                mn_phaseweights = Node(
+                    interface=phaseweights.RomeoMaskingInterface(),
+                    name='romeo-voxelquality',
+                    mem_gb=3
+                )
+            else:
+                mn_phaseweights = MapNode(
+                    interface=phaseweights.RomeoMaskingInterface(),
+                    iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
+                    name='romeo-voxelquality',
+                    mem_gb=3
+                )
             mn_phaseweights.inputs.weight_type = "grad+second"
             wf.connect([
                 (n_inputs, mn_phaseweights, [('phase', 'phase')]),
+                (n_inputs, mn_phaseweights, [('TE', 'TE')])
             ])
             if magnitude_available:
                 mn_phaseweights.inputs.weight_type = "grad+second+mag"

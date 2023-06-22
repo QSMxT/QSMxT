@@ -83,7 +83,6 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             else:
                 mn_romeo = Node(
                     interface=romeo.RomeoB0Interface(),
-                    #iterfield=['phase'] + (['magnitude'] if magnitude_available else []),
                     name='mrt_romeo',
                     mem_gb=min(3, run_args.mem_avail)
                 )
