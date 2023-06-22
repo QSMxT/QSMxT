@@ -218,7 +218,6 @@ def print_metrics(name, bids_path, qsm_path):
 
 def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
     assert(not (run_workflow == True and init_workflow == False))
-    run_workflow &= not (args.qsm_algorithm == 'nextqsm' != (run_args.get('qsm_algorithm') == 'nextqsm'))
     shutil.rmtree(os.path.join(args.output_dir), ignore_errors=True)
     logger = create_logger(args.output_dir)
     logger.log(LogLevel.DEBUG.value, f"WORKFLOW DETAILS: {args}")
@@ -234,6 +233,7 @@ def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
                 arg_dict[key] = value
             logger.log(LogLevel.DEBUG.value, f"Initialising workflow with updated args...")
             wf = qsm.init_workflow(args)
+            assert len(wf.list_node_names()) > 0, "The generated workflow has no nodes! Something went wrong..."
         logger.log(LogLevel.DEBUG.value, f"Saving args to {os.path.join(args.output_dir, 'args.txt')}...")
         args_file = open(os.path.join(args.output_dir, "args.txt"), 'w')
         args_file.write(str(args))
@@ -253,7 +253,7 @@ def get_premades():
 
 
 @pytest.mark.parametrize("premade, init_workflow, run_workflow, run_args", [
-    (p, True, run_workflows, { 'num_echoes' : 1 })
+    (p, True, run_workflows, None)
     for p in get_premades().keys() if p != 'default'
 ])
 def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args):

@@ -56,8 +56,8 @@
         "masking_input": "phase",
         "threshold_algorithm": "otsu",
         "threshold_algorithm_factor": [
-            1.7,
-            1.0
+            1.5,
+            1.5
         ],
         "filling_algorithm": "both",
         "inhomogeneity_correction": false,
