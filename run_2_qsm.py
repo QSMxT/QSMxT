@@ -630,14 +630,11 @@ def parse_args(args, return_run_command=False):
     parser.add_argument(
         '--masking_algorithm',
         default=None,
-        choices=['threshold', 'bet', 'bet-firstecho'],
+        choices=['threshold', 'bet'],
         help='Masking algorithm. Threshold-based masking uses a simple binary threshold applied to the '+
              '--masking_input, followed by a hole-filling strategy determined by the --filling_algorithm. '+
              'BET masking generates a mask using the Brain Extraction Tool (BET) based on '+
-             'doi:10.1002/hbm.10062 from Smith SM., with the \'bet-firstecho\' option generating only a '+
-             'single BET mask based on the first echo. The default algorithm is \'threshold\' except for '+
-             'when the --qsm_algorithm is set to \'nextqsm\', which will change the default to '+
-             '\'bet-firstecho\'.'
+             'doi:10.1002/hbm.10062 from Smith SM. The default algorithm is \'threshold\'.'
     )
 
     parser.add_argument(
@@ -1020,12 +1017,10 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
             print("     - robust in healthy human brains")
             print("     - Paper: https://doi.org/10.1002/hbm.10062")
             print("     - Code: https://github.com/liangfu/bet2")
-            print("bet-firstecho: Applies BET to the first-echo magnitude only")
-            print("     - This setting is the same as BET for single-echo acquisitions or if multi-echo images are combined using B0 mapping")
             print("\nNOTE: Even if you are using premade masks, a masking method is required as a backup.\n")
             args.masking_algorithm = get_option(
                 prompt=f"Select masking algorithm [default - {args.masking_algorithm}]: ",
-                options=['bet', 'bet-firstecho', 'threshold'],
+                options=['bet', 'threshold'],
                 default=args.masking_algorithm
             )
 
@@ -1246,7 +1241,7 @@ def process_args(args):
     # default masking settings for QSM algorithms
     if not args.masking_algorithm:
         if args.qsm_algorithm == 'nextqsm':
-            args.masking_algorithm = 'bet-firstecho'
+            args.masking_algorithm = 'bet'
         else:
             args.masking_algorithm = 'threshold'
     

@@ -7,6 +7,8 @@ from interfaces import nipype_interface_bet2 as bet2
 from interfaces import nipype_interface_hdbet as hdbet
 from interfaces import nipype_interface_phaseweights as phaseweights
 from interfaces import nipype_interface_twopass as twopass
+from interfaces import nipype_interface_makehomogeneous as makehomogeneous
+from interfaces import nipype_interface_combinemagnitude as combinemagnitude
 
 from scripts.qsmxt_functions import gen_plugin_args
 
@@ -59,10 +61,40 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 ])
 
         bet_used = magnitude_available and (
-             run_args.masking_algorithm in ['bet', 'bet-firstecho']
+             run_args.masking_algorithm == 'bet'
              or run_args.add_bet
              or run_args.filling_algorithm == 'bet')
         bet_this_run = bet_used and (fill_masks or (run_args.mask_erosions and run_args.masking_algorithm == 'threshold' and not fill_masks))
+
+        # prepare magnitude if necessary
+        if bet_this_run or run_args.masking_input == 'magnitude':
+            
+            # combine magnitude if necessary
+            if run_args.combine_phase:
+                n_combine_magnitude = Node(
+                    interface=combinemagnitude.CombineMagnitudeInterface(),
+                    name='nibabal-numpy_combine-magnitude'
+                )
+                wf.connect([
+                    (n_inputs, n_combine_magnitude, [('magnitude', 'magnitude')])
+                ])
+
+            # correct magnitude if necessary
+            if run_args.inhomogeneity_correction:
+                mn_inhomogeneity_correction = MapNode(
+                    interface=makehomogeneous.MakeHomogeneousInterface(),
+                    iterfield=['magnitude'],
+                    name='mrt_correct-inhomogeneity'
+                )
+
+                if run_args.combine_phase:
+                    wf.connect([
+                        (n_combine_magnitude, mn_inhomogeneity_correction, [('magnitude_combined', 'magnitude')]),
+                    ])
+                else:
+                    wf.connect([
+                        (n_inputs, mn_inhomogeneity_correction, [('magnitude', 'magnitude')])
+                    ])
 
         # do bet mask if necessary
         if bet_this_run:
@@ -91,27 +123,17 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                 mem_gb=20,
                 num_cpus=bet_threads
             )
-            if run_args.masking_algorithm == 'bet-firstecho':
-                def get_first(magnitude):
-                    if isinstance(magnitude, list): return [magnitude[0] for f in magnitude]
-                    return [magnitude]
-                n_getfirst = Node(
-                    interface=Function(
-                        input_names=['magnitude'],
-                        output_names=['magnitude'],
-                        function=get_first
-                    ),
-                    name='func_get-first'
-                )
+            if run_args.inhomogeneity_correction:
                 wf.connect([
-                    (n_inputs, n_getfirst, [('magnitude', 'magnitude')])
+                    (mn_inhomogeneity_correction, mn_bet, [('magnitude_corrected', 'in_file')])
                 ])
+            elif run_args.combine_phase:
                 wf.connect([
-                    (n_getfirst, mn_bet, [('magnitude', 'in_file')])
+                    (n_combine_magnitude, mn_bet, [('magnitude_combined', 'in_file')])
                 ])
             else:
                 wf.connect([
-                    (n_inputs, mn_bet, [('magnitude', 'in_file')])
+                    (n_combine_magnitude, mn_bet, [('magnitude_combined', 'in_file')])
                 ])
 
             # erode bet mask
@@ -127,7 +149,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
             ])
 
             # output eroded bet mask if necessary
-            if run_args.masking_algorithm in ['bet', 'bet-firstecho'] or (fill_masks and run_args.filling_algorithm == 'bet'):
+            if run_args.masking_algorithm == 'bet' or (fill_masks and run_args.filling_algorithm == 'bet'):
                 wf.connect([
                     (mn_bet_erode, n_outputs, [('out_file', 'mask')])
                 ])
@@ -157,9 +179,18 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
                     (mn_phaseweights, n_threshold_masking, [('quality_map', 'in_files')])
                 ])
             elif run_args.masking_input == 'magnitude':
-                wf.connect([
-                    (n_inputs, n_threshold_masking, [('magnitude', 'in_files')])
-                ])
+                if run_args.inhomogeneity_correction:
+                    wf.connect([
+                        (mn_inhomogeneity_correction, n_threshold_masking, [('magnitude_corrected', 'in_files')])
+                    ])
+                elif run_args.combine_phase:
+                    wf.connect([
+                        (n_combine_magnitude, n_threshold_masking, [('magnitude_combined', 'in_files')])
+                    ])
+                else:
+                    wf.connect([
+                        (n_combine_magnitude, n_threshold_masking, [('magnitude_combined', 'in_files')])
+                    ])
             if not add_bet:
                 wf.connect([
                     (n_threshold_masking, n_outputs, [('mask', 'mask')])

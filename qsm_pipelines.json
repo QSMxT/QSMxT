@@ -132,7 +132,7 @@
         "combine_phase": true,
         "two_pass": false,
         "qsm_algorithm": "nextqsm",
-        "masking_algorithm": "bet-firstecho",
+        "masking_algorithm": "bet",
         "mask_erosions": [
             3
         ]

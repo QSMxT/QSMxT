@@ -235,9 +235,8 @@ def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
             wf = qsm.init_workflow(args)
             assert len(wf.list_node_names()) > 0, "The generated workflow has no nodes! Something went wrong..."
         logger.log(LogLevel.DEBUG.value, f"Saving args to {os.path.join(args.output_dir, 'args.txt')}...")
-        args_file = open(os.path.join(args.output_dir, "args.txt"), 'w')
-        args_file.write(str(args))
-        args_file.close()
+        with open(os.path.join(args.output_dir, "args.txt"), 'w') as args_file:
+            args_file.write(str(args))
         logger.log(LogLevel.DEBUG.value, f"Running workflow!")
         wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
         if delete_workflow:
@@ -304,8 +303,12 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
 def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING NO MAGNITUDE ===")
 
-    # delete magnitude files from bids directory
-    for mag_file in glob.glob(os.path.join(bids_dir_public, "sub-1", "ses-1", "anat", "*mag*")):
+    # create copy of bids directory
+    bids_dir_nomagnitude = os.path.join(os.path.split(bids_dir_public)[0], "bids-nomagnitude")
+    shutil.copytree(bids_dir_public, bids_dir_nomagnitude)
+
+    # delete magnitude files from modified directory
+    for mag_file in glob.glob(os.path.join(bids_dir_nomagnitude, "sub-1", "ses-1", "anat", "*mag*")):
         os.remove(mag_file)
     
     # run pipeline and specifically choose magnitude-based masking
@@ -317,16 +320,36 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
         "--auto_yes"
     ]))
     
-    # create the workflow and run
+    # create the workflow and run - it should fall back to phase-based masking with a warning
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
 
-    # delete modified bids directory so it can be reset in a future test
-    shutil.rmtree(bids_dir_public)
+    # delete the modified bids directory
+    shutil.rmtree(bids_dir_nomagnitude)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
-def test_hardcoded_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, run_args):
+    print(f"=== TESTING INHOMOGENEITY CORRECTION ===")
+
+    # run pipeline and specifically choose magnitude-based masking
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir_public,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--premade", "fast",
+        "--masking_algorithm", "threshold",
+        "--filling_algorithm", "bet",
+        "--inhomogeneity_correction"
+        "--auto_yes"
+    ]))
+    
+    # create the workflow and run
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1 })
+])
+def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
 
     # run pipeline and specifically choose magnitude-based masking
@@ -343,13 +366,11 @@ def test_hardcoded_threshold(bids_dir_public, init_workflow, run_workflow, run_a
     # create the workflow and run
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
 
-    # delete modified bids directory so it can be reset in a future test
-    shutil.rmtree(bids_dir_public)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
-def test_hardcoded_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
 
     # run pipeline and specifically choose magnitude-based masking
@@ -366,8 +387,6 @@ def test_hardcoded_threshold(bids_dir_public, init_workflow, run_workflow, run_a
     # create the workflow and run
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
 
-    # delete modified bids directory so it can be reset in a future test
-    shutil.rmtree(bids_dir_public)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
