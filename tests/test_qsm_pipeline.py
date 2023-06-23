@@ -13,7 +13,7 @@ import run_2_qsm as qsm
 import json
 import webdav3.client
 import qsm_forward
-from scripts.qsmxt_functions import get_qsmxt_dir, get_qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_dir, get_qsmxt_version, extend_fname
 from scripts.sys_cmd import sys_cmd
 from matplotlib import pyplot as plt
 from scripts.logger import LogLevel, make_logger
@@ -273,7 +273,7 @@ def get_premades():
 
 
 @pytest.mark.parametrize("premade, init_workflow, run_workflow, run_args", [
-    (p, True, run_workflows, None)
+    (p, True, run_workflows, { 'num_echoes' : 1 })
     for p in get_premades().keys() if p != 'default'
 ])
 def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args):
@@ -306,7 +306,7 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
             title=f"QSM using premade pipeline: {premade}\n({get_qsmxt_version()})",
             colorbar=True,
             cbar_label="Susceptibility (ppm)",
-            out_png=os.path.join(tempfile.gettempdir(), "public-outputs", f"{premade}.png"),
+            out_png=extend_fname(nii_file, f"_{premade}", ext='png', out_dir=os.path.join(tempfile.gettempdir(), "public-outputs")),
             cmap='gray',
             vmin=-0.15,
             vmax=+0.15,
