@@ -69,7 +69,10 @@ def compress_folder(folder, result_id):
 def upload_file(fname):
     client = webdav_connect()
     print(f"Uploading {fname}...")
-    client.upload_sync(remote_path=f"QSMFUNCTOR-Q0748/data/QSMxT-Test-Results/{os.path.split(fname)[1]}", local_path=fname)
+    client.upload_sync(
+        remote_path=f"QSMFUNCTOR-Q0748/data/QSMxT-Test-Results/{os.path.split(fname)[1]}",
+        local_path=fname
+    )
 
 @pytest.fixture
 def bids_dir_public():
@@ -82,7 +85,10 @@ def bids_dir_public():
             if not os.path.exists(os.path.join(tmp_dir, 'head-phantom-maps.tar')):
                 print("Downloading head phantom maps...")
                 client = webdav_connect()            
-                client.download_sync(remote_path="QSMFUNCTOR-Q0748/qsm-challenge-and-head-phantom/head-phantom-maps.tar", local_path=os.path.join(tmp_dir, "head-phantom-maps.tar"))
+                client.download_sync(
+                    remote_path="QSMFUNCTOR-Q0748/qsm-challenge-and-head-phantom/head-phantom-maps.tar",
+                    local_path=os.path.join(tmp_dir, "head-phantom-maps.tar")
+                )
 
             sys_cmd(f"tar xf {os.path.join(tmp_dir, 'head-phantom-maps.tar')} -C {tmp_dir}")
             sys_cmd(f"rm {os.path.join(tmp_dir, 'head-phantom-maps.tar')}")
@@ -107,7 +113,10 @@ def bids_dir_real():
         if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
             print("Downloading real data...")
             client = webdav_connect()            
-            client.download_sync(remote_path="QSMFUNCTOR-Q0748/data/2022-07-06-QSMxT-Test-Battery/bids-secret.zip", local_path=os.path.join(tmp_dir, "bids-secret.zip"))
+            client.download_sync(
+                remote_path="QSMFUNCTOR-Q0748/data/2022-07-06-QSMxT-Test-Battery/bids-secret.zip",
+                local_path=os.path.join(tmp_dir, "bids-secret.zip")
+            )
 
         sys_cmd(f"unzip {os.path.join(tmp_dir, 'bids-secret.zip')} -d {tmp_dir}")
         sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-secret.zip')}")
@@ -210,7 +219,19 @@ def print_metrics(name, bids_path, qsm_path):
     plt.savefig(os.path.join(qsm_path, "qsm_final", f"{name}_metrics.png"))
     plt.close()
 
-    png = display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", f"{name}_slice.png")))
+    png = display_nii(
+        data=qsm,
+        dim=0,
+        cmap='gray',
+        vmin=-0.1,
+        vmax=+0.1,
+        colorbar=True,
+        cbar_label='ppm',
+        cbar_orientation='horizontal',
+        cbar_nbins=3, 
+        out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", f"{name}_slice.png")),
+        interpolation='nearest'
+    )
     png_url = sys_cmd(f"images-upload-cli -h freeimage {png}").strip()
     add_to_github_summary(f"![image]({png_url})\n")
     
@@ -288,7 +309,8 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
             out_png=os.path.join(tempfile.gettempdir(), "public-outputs", f"{premade}.png"),
             cmap='gray',
             vmin=-0.15,
-            vmax=+0.15
+            vmax=+0.15,
+            interpolation='nearest'
         )
         png_url = sys_cmd(f"images-upload-cli -h freeimage {png}").strip()
         add_to_github_summary(f"![image]({png_url})\n")
