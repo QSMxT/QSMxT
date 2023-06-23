@@ -54,6 +54,7 @@ on:
       - interfaces/nipype_interface_addtojson.py
       - interfaces/nipype_interface_axialsampling.py
       - interfaces/nipype_interface_bet2.py
+      - interfaces/nipype_interface_combinemagnitude.py
       - interfaces/nipype_interface_erode.py
       - interfaces/nipype_interface_json.py
       - interfaces/nipype_interface_laplacian_unwrapping.py
