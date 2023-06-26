@@ -1,16 +1,10 @@
 #!/usr/bin/env bash
 set -e
 
-echo "[DEBUG] Install singularity 2.6.1 from neurodebian"
-wget -O- http://neuro.debian.net/lists/focal.us-nh.full | sudo tee /etc/apt/sources.list.d/neurodebian.sources.list
-# echo "[DEBUG] Install key"
-# sudo apt-key adv --recv-keys --keyserver hkp://pool.sks-keyservers.net:80 0xA5D32F012649A5A9
-# keyserver sometimes fails :( -> --allow-unauthenticated as a workaround?
-echo "[DEBUG] sudo apt-get update --allow-insecure-repositories"
-sudo apt-get update --allow-insecure-repositories > /dev/null 2>&1
-echo "[DEBUG] sudo apt-get update --allow-unauthenticated"
-sudo apt-get install --allow-unauthenticated singularity-container > /dev/null 2>&1
-sudo apt install singularity-container > /dev/null 2>&1
+sudo apt-get install -y software-properties-common
+sudo add-apt-repository -y ppa:apptainer/ppa
+sudo apt-get update
+sudo apt-get install -y apptainer
 
 cp -r . /tmp/QSMxT
 # git clone https://github.com/QSMxT/QSMxT.git /tmp/QSMxT
