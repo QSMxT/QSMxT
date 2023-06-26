@@ -24,9 +24,12 @@ cd_command=`cat /tmp/QSMxT/README.md | grep "cd qsmxt_"`
 echo $cd_command
 $cd_command
 
+df -h
 run_command=`cat /tmp/QSMxT/README.md | grep "run_transparent_singularity"`
 echo $run_command
 $run_command
+df -h
+sha256sum /home/runner/work/QSMxT/QSMxT/qsmxt_2.1.0_20230615/qsmxt_2.1.0_20230615.simg
 
 source_command=`cat /tmp/QSMxT/README.md | grep "source activate_qsmxt_"`
 echo $source_command
