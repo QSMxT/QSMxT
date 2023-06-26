@@ -17,7 +17,7 @@ def get_qsm_premades(pipeline_file):
     premades = json.load(open(f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')}", "r"))
 
     if pipeline_file:    
-        user_premades = json.load(open(args.pipeline_file, "r"))
+        user_premades = json.load(open(pipeline_file, "r"))
         premades.update(user_premades)
 
     return premades

@@ -1,4 +1,4 @@
-from nipype.interfaces.base import CommandLine, TraitedSpec, File, CommandLineInputSpec, traits
+from nipype.interfaces.base import CommandLine, TraitedSpec, File, CommandLineInputSpec, traits, InputMultiPath
 from scripts import qsmxt_functions
 import os
 
@@ -24,12 +24,16 @@ class PbMaskingInterface(CommandLine):
 
 
 class RomeoMaskingInputSpec(CommandLineInputSpec):
-    phase = File(
+    phase = InputMultiPath(
         exists=True,
         mandatory=True,
         argstr="--phase %s"
     )
-    magnitude = File(
+    TE = traits.ListFloat(
+        mandatory=True,
+        argstr="--TEs '[%s]'"
+    )
+    magnitude = InputMultiPath(
         exists=True,
         argstr="--mag %s"
     )
@@ -49,4 +53,5 @@ class RomeoMaskingOutputSpec(TraitedSpec):
 class RomeoMaskingInterface(CommandLine):
     input_spec = RomeoMaskingInputSpec
     output_spec = RomeoMaskingOutputSpec
-    _cmd = "romeo_voxelquality.jl"
+    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "romeo_voxelquality.jl")
+

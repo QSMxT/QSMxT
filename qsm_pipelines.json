@@ -26,7 +26,7 @@
         "threshold_value": null,
         "threshold_algorithm_factor": [
             1.7,
-            1.0
+            1.3
         ],
         "mask_erosions": [
             3,
@@ -57,7 +57,7 @@
         "threshold_algorithm": "otsu",
         "threshold_algorithm_factor": [
             1.7,
-            1.0
+            1.3
         ],
         "filling_algorithm": "both",
         "inhomogeneity_correction": false,
@@ -78,7 +78,7 @@
         "threshold_algorithm": "otsu",
         "threshold_algorithm_factor": [
             1.7,
-            1.0
+            1.3
         ],
         "filling_algorithm": "bet",
         "inhomogeneity_correction": true,
@@ -132,7 +132,7 @@
         "combine_phase": true,
         "two_pass": false,
         "qsm_algorithm": "nextqsm",
-        "masking_algorithm": "bet-firstecho",
+        "masking_algorithm": "bet",
         "mask_erosions": [
             3
         ]

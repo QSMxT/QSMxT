@@ -219,7 +219,6 @@ if __name__ == "__main__":
     magnitude_pattern = os.path.join(args.bids_dir, args.magnitude_pattern.format(subject=args.subject_pattern, session=args.session_pattern, run='*'))
     qsm_pattern = os.path.join(args.qsm_dir, args.qsm_pattern)
     magnitude_images = sorted(glob.glob(magnitude_pattern))
-    magnitude_images = [x for x in magnitude_images if 'echo-1' in x or '_T2starw' in x]
     qsm_images = sorted(glob.glob(qsm_pattern))
 
     if len(magnitude_images) != len(qsm_images):

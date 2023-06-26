@@ -13,7 +13,7 @@ import run_2_qsm as qsm
 import json
 import webdav3.client
 import qsm_forward
-from scripts.qsmxt_functions import get_qsmxt_dir, get_qsmxt_version
+from scripts.qsmxt_functions import get_qsmxt_dir, get_qsmxt_version, extend_fname
 from scripts.sys_cmd import sys_cmd
 from matplotlib import pyplot as plt
 from scripts.logger import LogLevel, make_logger
@@ -69,7 +69,10 @@ def compress_folder(folder, result_id):
 def upload_file(fname):
     client = webdav_connect()
     print(f"Uploading {fname}...")
-    client.upload_sync(remote_path=f"QSMFUNCTOR-Q0748/data/QSMxT-Test-Results/{os.path.split(fname)[1]}", local_path=fname)
+    client.upload_sync(
+        remote_path=f"QSMFUNCTOR-Q0748/data/QSMxT-Test-Results/{os.path.split(fname)[1]}",
+        local_path=fname
+    )
 
 @pytest.fixture
 def bids_dir_public():
@@ -82,7 +85,10 @@ def bids_dir_public():
             if not os.path.exists(os.path.join(tmp_dir, 'head-phantom-maps.tar')):
                 print("Downloading head phantom maps...")
                 client = webdav_connect()            
-                client.download_sync(remote_path="QSMFUNCTOR-Q0748/qsm-challenge-and-head-phantom/head-phantom-maps.tar", local_path=os.path.join(tmp_dir, "head-phantom-maps.tar"))
+                client.download_sync(
+                    remote_path="QSMFUNCTOR-Q0748/qsm-challenge-and-head-phantom/head-phantom-maps.tar",
+                    local_path=os.path.join(tmp_dir, "head-phantom-maps.tar")
+                )
 
             sys_cmd(f"tar xf {os.path.join(tmp_dir, 'head-phantom-maps.tar')} -C {tmp_dir}")
             sys_cmd(f"rm {os.path.join(tmp_dir, 'head-phantom-maps.tar')}")
@@ -107,7 +113,10 @@ def bids_dir_real():
         if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
             print("Downloading real data...")
             client = webdav_connect()            
-            client.download_sync(remote_path="QSMFUNCTOR-Q0748/data/2022-07-06-QSMxT-Test-Battery/bids-secret.zip", local_path=os.path.join(tmp_dir, "bids-secret.zip"))
+            client.download_sync(
+                remote_path="QSMFUNCTOR-Q0748/data/2022-07-06-QSMxT-Test-Battery/bids-secret.zip",
+                local_path=os.path.join(tmp_dir, "bids-secret.zip")
+            )
 
         sys_cmd(f"unzip {os.path.join(tmp_dir, 'bids-secret.zip')} -d {tmp_dir}")
         sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-secret.zip')}")
@@ -210,7 +219,19 @@ def print_metrics(name, bids_path, qsm_path):
     plt.savefig(os.path.join(qsm_path, "qsm_final", f"{name}_metrics.png"))
     plt.close()
 
-    png = display_nii(data=qsm, dim=0, cmap='gray', vmin=-0.1, vmax=+0.1, colorbar=True, cbar_label='ppm', cbar_orientation='horizontal', cbar_nbins=3, out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", f"{name}_slice.png")))
+    png = display_nii(
+        data=qsm,
+        dim=0,
+        cmap='gray',
+        vmin=-0.1,
+        vmax=+0.1,
+        colorbar=True,
+        cbar_label='ppm',
+        cbar_orientation='horizontal',
+        cbar_nbins=3, 
+        out_png=os.path.join(qsm_path, "qsm_final", os.path.join(qsm_path, "qsm_final", f"{name}_slice.png")),
+        interpolation='nearest'
+    )
     png_url = sys_cmd(f"images-upload-cli -h freeimage {png}").strip()
     add_to_github_summary(f"![image]({png_url})\n")
     
@@ -218,7 +239,6 @@ def print_metrics(name, bids_path, qsm_path):
 
 def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
     assert(not (run_workflow == True and init_workflow == False))
-    run_workflow &= not (args.qsm_algorithm == 'nextqsm' != (run_args.get('qsm_algorithm') == 'nextqsm'))
     shutil.rmtree(os.path.join(args.output_dir), ignore_errors=True)
     logger = create_logger(args.output_dir)
     logger.log(LogLevel.DEBUG.value, f"WORKFLOW DETAILS: {args}")
@@ -234,10 +254,10 @@ def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
                 arg_dict[key] = value
             logger.log(LogLevel.DEBUG.value, f"Initialising workflow with updated args...")
             wf = qsm.init_workflow(args)
+            assert len(wf.list_node_names()) > 0, "The generated workflow has no nodes! Something went wrong..."
         logger.log(LogLevel.DEBUG.value, f"Saving args to {os.path.join(args.output_dir, 'args.txt')}...")
-        args_file = open(os.path.join(args.output_dir, "args.txt"), 'w')
-        args_file.write(str(args))
-        args_file.close()
+        with open(os.path.join(args.output_dir, "args.txt"), 'w') as args_file:
+            args_file.write(str(args))
         logger.log(LogLevel.DEBUG.value, f"Running workflow!")
         wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
         if delete_workflow:
@@ -253,7 +273,7 @@ def get_premades():
 
 
 @pytest.mark.parametrize("premade, init_workflow, run_workflow, run_args", [
-    (p, True, run_workflows, { 'num_echoes' : 1 })
+    (p, True, run_workflows, None)
     for p in get_premades().keys() if p != 'default'
 ])
 def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args):
@@ -286,10 +306,11 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
             title=f"QSM using premade pipeline: {premade}\n({get_qsmxt_version()})",
             colorbar=True,
             cbar_label="Susceptibility (ppm)",
-            out_png=os.path.join(tempfile.gettempdir(), "public-outputs", f"{premade}.png"),
+            out_png=extend_fname(nii_file, f"_{premade}", ext='png', out_dir=os.path.join(tempfile.gettempdir(), "public-outputs")),
             cmap='gray',
             vmin=-0.15,
-            vmax=+0.15
+            vmax=+0.15,
+            interpolation='nearest'
         )
         png_url = sys_cmd(f"images-upload-cli -h freeimage {png}").strip()
         add_to_github_summary(f"![image]({png_url})\n")
@@ -304,8 +325,12 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
 def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING NO MAGNITUDE ===")
 
-    # delete magnitude files from bids directory
-    for mag_file in glob.glob(os.path.join(bids_dir_public, "sub-1", "ses-1", "anat", "*mag*")):
+    # create copy of bids directory
+    bids_dir_nomagnitude = os.path.join(os.path.split(bids_dir_public)[0], "bids-nomagnitude")
+    shutil.copytree(bids_dir_public, bids_dir_nomagnitude)
+
+    # delete magnitude files from modified directory
+    for mag_file in glob.glob(os.path.join(bids_dir_nomagnitude, "sub-1", "ses-1", "anat", "*mag*")):
         os.remove(mag_file)
     
     # run pipeline and specifically choose magnitude-based masking
@@ -317,16 +342,36 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
         "--auto_yes"
     ]))
     
-    # create the workflow and run
+    # create the workflow and run - it should fall back to phase-based masking with a warning
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
 
-    # delete modified bids directory so it can be reset in a future test
-    shutil.rmtree(bids_dir_public)
+    # delete the modified bids directory
+    shutil.rmtree(bids_dir_nomagnitude)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
-def test_hardcoded_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, run_args):
+    print(f"=== TESTING INHOMOGENEITY CORRECTION ===")
+
+    # run pipeline and specifically choose magnitude-based masking
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir_public,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--premade", "fast",
+        "--masking_algorithm", "threshold",
+        "--filling_algorithm", "bet",
+        "--inhomogeneity_correction",
+        "--auto_yes"
+    ]))
+    
+    # create the workflow and run
+    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1 })
+])
+def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
 
     # run pipeline and specifically choose magnitude-based masking
@@ -343,13 +388,11 @@ def test_hardcoded_threshold(bids_dir_public, init_workflow, run_workflow, run_a
     # create the workflow and run
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
 
-    # delete modified bids directory so it can be reset in a future test
-    shutil.rmtree(bids_dir_public)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
-def test_hardcoded_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
 
     # run pipeline and specifically choose magnitude-based masking
@@ -366,8 +409,6 @@ def test_hardcoded_threshold(bids_dir_public, init_workflow, run_workflow, run_a
     # create the workflow and run
     workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
 
-    # delete modified bids directory so it can be reset in a future test
-    shutil.rmtree(bids_dir_public)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })

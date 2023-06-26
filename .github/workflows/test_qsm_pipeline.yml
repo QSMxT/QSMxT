@@ -54,6 +54,7 @@ on:
       - interfaces/nipype_interface_addtojson.py
       - interfaces/nipype_interface_axialsampling.py
       - interfaces/nipype_interface_bet2.py
+      - interfaces/nipype_interface_combinemagnitude.py
       - interfaces/nipype_interface_erode.py
       - interfaces/nipype_interface_json.py
       - interfaces/nipype_interface_laplacian_unwrapping.py
@@ -113,6 +114,16 @@ jobs:
         path: /tmp/public-outputs
   test_qsm_edgecases:
     runs-on: "cirun-nectar-medium--${{ github.run_id }}"
+    strategy:
+      matrix:
+        args: [
+          'test_hardcoded_absolute_threshold',
+          'test_hardcoded_percentile_threshold',
+          'test_inhomogeneity_correction',
+          'test_nomagnitude',
+          'test_use_existing_masks',
+          'test_realdata'
+        ]
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
@@ -127,7 +138,7 @@ jobs:
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
       run: |
-        /bin/bash tests/test_qsm_pipeline.sh "not test_premade"
+        /bin/bash tests/test_qsm_pipeline.sh "${{ matrix.args }}"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs

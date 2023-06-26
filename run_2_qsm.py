@@ -303,26 +303,14 @@ def init_run_workflow(run_args, subject, session, run):
                 (mn_inputs_canonical, n_inputs_resampled, [('mask', 'mask')])
             ])
 
-    # run homogeneity filter if necessary
-    if run_args.inhomogeneity_correction:
-        mn_inhomogeneity_correction = MapNode(
-            interface=makehomogeneous.MakeHomogeneousInterface(),
-            iterfield=['magnitude'],
-            name='mrt_correct-inhomogeneity'
-        )
-
     # combine phase data if necessary
     n_inputs_combine = Node(
         interface=IdentityInterface(
-            fields=['phase', 'phase_unwrapped', 'frequency', 'mask', 'TE', 'magnitude']
+            fields=['phase_unwrapped', 'frequency']
         ),
         name='phase-combined'
     )
-    wf.connect([
-        (n_inputs_resampled, n_inputs_combine, [('phase', 'phase')])
-    ])
     if run_args.combine_phase:
-        # romeo for phase combination
         n_romeo_combine = Node(
             interface=romeo.RomeoB0Interface(),
             name='mrt_romeo_combine',
@@ -335,52 +323,6 @@ def init_run_workflow(run_args, subject, session, run):
             (n_romeo_combine, n_inputs_combine, [('phase_unwrapped', 'phase_unwrapped')]),
         ])
 
-        # get first magnitude/mask images
-        def get_first(magnitude, mask=None):
-            magnitude = [magnitude[0]] if isinstance(magnitude, list) else [magnitude]
-            mask = [mask[0]] if isinstance(mask, list) else [mask] if mask is not None else None
-            return magnitude, mask
-        n_getfirst = Node(
-            interface=Function(
-                input_names=['magnitude', 'mask'],
-                output_names=['magnitude', 'mask'],
-                function=get_first
-            ),
-            name='func_get-first'
-        )
-        wf.connect([
-            (n_inputs_resampled, n_getfirst, [('magnitude', 'magnitude')]),
-            (n_inputs_resampled, n_getfirst, [('mask', 'mask')]),
-            (n_getfirst, n_inputs_combine, [('mask', 'mask')])
-        ])
-
-        # inhomogeneity correction
-        if run_args.inhomogeneity_correction:
-            wf.connect([
-                (n_getfirst, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
-                (mn_inhomogeneity_correction, n_inputs_combine, [('magnitude_corrected', 'magnitude')])
-            ])
-        else:
-            wf.connect([
-                (n_getfirst, n_inputs_combine, [('magnitude', 'magnitude')])
-            ])
-
-    else:
-        wf.connect([
-            (mn_json_params, n_inputs_combine, [('TE', 'TE')]),
-            (n_inputs_resampled, n_inputs_combine, [('mask', 'mask')])
-        ])
-        if run_args.inhomogeneity_correction:
-            wf.connect([
-                (n_inputs_resampled, mn_inhomogeneity_correction, [('magnitude', 'magnitude')]),
-                (mn_inhomogeneity_correction, n_inputs_combine, [('magnitude_corrected', 'magnitude')])
-            ])
-        else:
-            wf.connect([
-                (n_inputs_resampled, n_inputs_combine, [('magnitude', 'magnitude')])
-            ])
-
-
     # === MASKING ===
     wf_masking = masking_workflow(
         run_args=run_args,
@@ -391,27 +333,22 @@ def init_run_workflow(run_args, subject, session, run):
         name="mask",
         index=0
     )
-    if run_args.combine_phase:
-        wf.connect([
-            (n_inputs_combine, wf_masking, [('frequency', 'masking_inputs.phase')])
-        ])
-    else:
-        wf.connect([
-            (n_inputs_combine, wf_masking, [('phase', 'masking_inputs.phase')])
-        ])
+    wf.connect([
+        (n_inputs_resampled, wf_masking, [('phase', 'masking_inputs.phase')]),
+        (n_inputs_resampled, wf_masking, [('magnitude', 'masking_inputs.magnitude')]),
+        (n_inputs_resampled, wf_masking, [('mask', 'masking_inputs.mask')]),
+        (mn_json_params, wf_masking, [('TE', 'masking_inputs.TE')])
+    ])
+    '''
     if mask_files:
         wf.connect([
             (n_inputs_combine, wf_masking, [('mask', 'masking_inputs.mask')])
         ])
     if magnitude_files:
-        if run_args.inhomogeneity_correction:
-            wf.connect([
-                (mn_inhomogeneity_correction, wf_masking, [('magnitude_corrected', 'masking_inputs.magnitude')])
-            ])
-        else:
-            wf.connect([
-                (n_inputs_combine, wf_masking, [('magnitude', 'masking_inputs.magnitude')])
-            ])
+        wf.connect([
+            (n_inputs_combine, wf_masking, [('magnitude', 'masking_inputs.magnitude')])
+        ])
+    '''
     wf.connect([
         (wf_masking, n_outputs, [('masking_outputs.mask', 'mask')])
     ])
@@ -420,12 +357,12 @@ def init_run_workflow(run_args, subject, session, run):
     wf_qsm = qsm_workflow(run_args, "qsm", len(magnitude_files) > 0, qsm_erosions=run_args.tgv_erosions)
 
     wf.connect([
-        (n_inputs_combine, wf_qsm, [('phase', 'qsm_inputs.phase')]),
+        (n_inputs_resampled, wf_qsm, [('phase', 'qsm_inputs.phase')]),
         (n_inputs_combine, wf_qsm, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
         (n_inputs_combine, wf_qsm, [('frequency', 'qsm_inputs.frequency')]),
-        (n_inputs_combine, wf_qsm, [('magnitude', 'qsm_inputs.magnitude')]),
+        (n_inputs_resampled, wf_qsm, [('magnitude', 'qsm_inputs.magnitude')]),
         (wf_masking, wf_qsm, [('masking_outputs.mask', 'qsm_inputs.mask')]),
-        (n_inputs_combine, wf_qsm, [('TE', 'qsm_inputs.TE')]),
+        (mn_json_params, wf_qsm, [('TE', 'qsm_inputs.TE')]),
         (n_json_params, wf_qsm, [('B0', 'qsm_inputs.B0')]),
         (n_nii_params, wf_qsm, [('vsz', 'qsm_inputs.vsz')])
     ])
@@ -454,14 +391,13 @@ def init_run_workflow(run_args, subject, session, run):
             name="mask-intermediate",
             index=1
         )
-        if run_args.combine_phase:
-            wf.connect([
-                (n_inputs_combine, wf_masking_intermediate, [('frequency', 'masking_inputs.phase')])
-            ])
-        else:
-            wf.connect([
-                (n_inputs_combine, wf_masking_intermediate, [('phase', 'masking_inputs.phase')])
-            ])
+        wf.connect([
+            (n_inputs_resampled, wf_masking_intermediate, [('phase', 'masking_inputs.phase')]),
+            (n_inputs_resampled, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')]),
+            (n_inputs_resampled, wf_masking_intermediate, [('mask', 'masking_inputs.mask')]),
+            (mn_json_params, wf_masking_intermediate, [('TE', 'masking_inputs.TE')])
+        ])
+        '''
         if mask_files:
             wf.connect([
                 (n_inputs_combine, wf_masking_intermediate, [('mask', 'masking_inputs.mask')])
@@ -475,14 +411,15 @@ def init_run_workflow(run_args, subject, session, run):
                 wf.connect([
                     (n_inputs_combine, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')])
                 ])
+        '''
 
         wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0, qsm_erosions=0)
         wf.connect([
-            (n_inputs_combine, wf_qsm_intermediate, [('phase', 'qsm_inputs.phase')]),
+            (n_inputs_resampled, wf_qsm_intermediate, [('phase', 'qsm_inputs.phase')]),
+            (n_inputs_resampled, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
             (n_inputs_combine, wf_qsm_intermediate, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
             (n_inputs_combine, wf_qsm_intermediate, [('frequency', 'qsm_inputs.frequency')]),
-            (n_inputs_combine, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
-            (n_inputs_combine, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
+            (mn_json_params, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
             (n_json_params, wf_qsm_intermediate, [('B0', 'qsm_inputs.B0')]),
             (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')]),
             (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.mask', 'qsm_inputs.mask')])
@@ -693,14 +630,11 @@ def parse_args(args, return_run_command=False):
     parser.add_argument(
         '--masking_algorithm',
         default=None,
-        choices=['threshold', 'bet', 'bet-firstecho'],
+        choices=['threshold', 'bet'],
         help='Masking algorithm. Threshold-based masking uses a simple binary threshold applied to the '+
              '--masking_input, followed by a hole-filling strategy determined by the --filling_algorithm. '+
              'BET masking generates a mask using the Brain Extraction Tool (BET) based on '+
-             'doi:10.1002/hbm.10062 from Smith SM., with the \'bet-firstecho\' option generating only a '+
-             'single BET mask based on the first echo. The default algorithm is \'threshold\' except for '+
-             'when the --qsm_algorithm is set to \'nextqsm\', which will change the default to '+
-             '\'bet-firstecho\'.'
+             'doi:10.1002/hbm.10062 from Smith SM. The default algorithm is \'threshold\'.'
     )
 
     parser.add_argument(
@@ -1083,12 +1017,10 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
             print("     - robust in healthy human brains")
             print("     - Paper: https://doi.org/10.1002/hbm.10062")
             print("     - Code: https://github.com/liangfu/bet2")
-            print("bet-firstecho: Applies BET to the first-echo magnitude only")
-            print("     - This setting is the same as BET for single-echo acquisitions or if multi-echo images are combined using B0 mapping")
             print("\nNOTE: Even if you are using premade masks, a masking method is required as a backup.\n")
             args.masking_algorithm = get_option(
                 prompt=f"Select masking algorithm [default - {args.masking_algorithm}]: ",
-                options=['bet', 'bet-firstecho', 'threshold'],
+                options=['bet', 'threshold'],
                 default=args.masking_algorithm
             )
 
@@ -1309,7 +1241,7 @@ def process_args(args):
     # default masking settings for QSM algorithms
     if not args.masking_algorithm:
         if args.qsm_algorithm == 'nextqsm':
-            args.masking_algorithm = 'bet-firstecho'
+            args.masking_algorithm = 'bet'
         else:
             args.masking_algorithm = 'threshold'
     
