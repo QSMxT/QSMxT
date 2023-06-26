@@ -53,4 +53,5 @@ class RomeoMaskingOutputSpec(TraitedSpec):
 class RomeoMaskingInterface(CommandLine):
     input_spec = RomeoMaskingInputSpec
     output_spec = RomeoMaskingOutputSpec
-    _cmd = "romeo_voxelquality.jl"
+    _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "romeo_voxelquality.jl")
+
