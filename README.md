@@ -121,10 +121,10 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_3.0.0_20230509
-    cd qsmxt_3.0.0_20230509
-    ./run_transparent_singularity.sh --container qsmxt_3.0.0_20230509.simg
-    source activate_qsmxt_3.0.0_20230509.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_3.0.0_20230628
+    cd qsmxt_3.0.0_20230628
+    ./run_transparent_singularity.sh --container qsmxt_3.0.0_20230628.simg
+    source activate_qsmxt_3.0.0_20230628.simg.sh
     ```
     
     - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
