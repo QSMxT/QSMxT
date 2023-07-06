@@ -281,7 +281,18 @@ def init_run_workflow(run_args, subject, session, run):
                 obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
             ),
             iterfield=['magnitude', 'phase', 'mask'] if mask_files else ['magnitude', 'phase'],
+            mem_gb=min(3, run_args.mem_avail),
             name='nibabel_numpy_nilearn_axial-resampling'
+        )
+        mn_resample_inputs.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="axial_resampling",
+            time="00:10:00",
+            mem_gb=10,
+            num_cpus=min(1, run_args.n_procs)
         )
         wf.connect([
             (mn_inputs_canonical, mn_resample_inputs, [('magnitude', 'magnitude')]),
@@ -314,6 +325,17 @@ def init_run_workflow(run_args, subject, session, run):
         n_romeo_combine = Node(
             interface=romeo.RomeoB0Interface(),
             name='mrt_romeo_combine',
+            mem_gb=min(4, run_args.mem_avail)
+        )
+        n_romeo_combine.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="romeo_combine",
+            time="00:10:00",
+            mem_gb=10,
+            num_cpus=min(1, run_args.n_procs)
         )
         wf.connect([
             (mn_json_params, n_romeo_combine, [('TE', 'TE')]),
@@ -1298,9 +1320,9 @@ def process_args(args):
     if not args.n_procs:
         args.n_procs = int(os.environ["NCPUS"] if "NCPUS" in os.environ else os.cpu_count())
     
+    # get rough estimate of 90% of the available memory
+    args.mem_avail = psutil.virtual_memory().available / (1024 ** 3) * 0.90
 
-    # get rough estimate of available memory
-    args.mem_avail = psutil.virtual_memory().available / (1024 ** 3)
     
     # determine whether multiproc will be used
     args.multiproc = not (args.pbs or any(args.slurm))

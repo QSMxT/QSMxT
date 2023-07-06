@@ -47,14 +47,14 @@ def masking_workflow(run_args, mask_files, magnitude_available, qualitymap_avail
                     mn_phaseweights = Node(
                         interface=phaseweights.RomeoMaskingInterface(),
                         name='romeo-voxelquality',
-                        mem_gb=3
+                        mem_gb=min(3, run_args.mem_avail)
                     )
                 else:
                     mn_phaseweights = MapNode(
                         interface=phaseweights.RomeoMaskingInterface(),
                         iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
                         name='romeo-voxelquality',
-                        mem_gb=3
+                        mem_gb=min(3, run_args.mem_avail)
                     )
                 mn_phaseweights.inputs.weight_type = "grad+second"
                 wf.connect([
@@ -128,7 +128,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, qualitymap_avail
                 slurm_partition=slurm_partition,
                 name="bet",
                 time="01:00:00",
-                mem_gb=20,
+                mem_gb=5,
                 num_cpus=bet_threads
             )
             if run_args.inhomogeneity_correction:

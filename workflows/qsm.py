@@ -81,10 +81,20 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                     (n_inputs, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')]),
                 ])
             else:
+                romeo_threads = min(1, run_args.n_procs) if run_args.multiproc else 1
                 mn_romeo = Node(
                     interface=romeo.RomeoB0Interface(),
                     name='mrt_romeo',
                     mem_gb=min(3, run_args.mem_avail)
+                )
+                mn_romeo.plugin_args = gen_plugin_args(
+                    plugin_args={ 'overwrite': True },
+                    slurm_account=run_args.slurm[0],
+                    pbs_account=run_args.pbs,
+                    slurm_partition=run_args.slurm[1],
+                    name="Romeo",
+                    mem_gb=3,
+                    num_cpus=romeo_threads
                 )
                 wf.connect([
                     (n_inputs, mn_romeo, [('phase', 'phase')]),
