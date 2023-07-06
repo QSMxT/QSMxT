@@ -55,7 +55,7 @@ if num_images > 1
     end
 
     # === MAGNITUDE ===
-    if !isnothing(args["mag"])
+    if length(args["mag"]) > 0
         mag_files = args["mag"]
 
         # determine dimensions and array size
@@ -73,7 +73,7 @@ if num_images > 1
 else
     phs_combined = Float32.(readphase(phs_files[1]))
 
-    if !isnothing(args["mag"])
+    if length(args["mag"]) > 0
         mag_combined = Float32.(readmag(mag_files[1]))
         optional_args[:mag] = mag_combined
     end
