@@ -328,6 +328,7 @@ def init_run_workflow(run_args, subject, session, run):
         run_args=run_args,
         mask_files=mask_files,
         magnitude_available=len(magnitude_files) > 0,
+        qualitymap_available=False,
         fill_masks=True,
         add_bet=run_args.add_bet and run_args.filling_algorithm != 'bet',
         name="mask",
@@ -386,6 +387,7 @@ def init_run_workflow(run_args, subject, session, run):
             run_args=run_args,
             mask_files=mask_files,
             magnitude_available=len(magnitude_files) > 0,
+            qualitymap_available=True,
             fill_masks=False,
             add_bet=False,
             name="mask-intermediate",
@@ -395,6 +397,7 @@ def init_run_workflow(run_args, subject, session, run):
             (n_inputs_resampled, wf_masking_intermediate, [('phase', 'masking_inputs.phase')]),
             (n_inputs_resampled, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')]),
             (n_inputs_resampled, wf_masking_intermediate, [('mask', 'masking_inputs.mask')]),
+            (wf_masking, wf_masking_intermediate, [('masking_outputs.quality_map', 'masking_inputs.quality_map')]),
             (mn_json_params, wf_masking_intermediate, [('TE', 'masking_inputs.TE')])
         ])
         '''

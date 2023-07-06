@@ -12,7 +12,7 @@ from interfaces import nipype_interface_combinemagnitude as combinemagnitude
 
 from scripts.qsmxt_functions import gen_plugin_args
 
-def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_bet, name, index):
+def masking_workflow(run_args, mask_files, magnitude_available, qualitymap_available, fill_masks, add_bet, name, index):
 
     wf = Workflow(name=f"{name}_workflow")
 
@@ -21,14 +21,14 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
 
     n_inputs = Node(
         interface=IdentityInterface(
-            fields=['phase', 'magnitude', 'mask', 'TE']
+            fields=['phase', 'quality_map', 'magnitude', 'mask', 'TE']
         ),
         name='masking_inputs'
     )
 
     n_outputs = Node(
         interface=IdentityInterface(
-            fields=['mask', 'threshold']
+            fields=['mask', 'threshold', 'quality_map']
         ),
         name='masking_outputs'
     )
@@ -36,29 +36,37 @@ def masking_workflow(run_args, mask_files, magnitude_available, fill_masks, add_
     if not mask_files:
         # do phase weights if necessary
         if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase' and not (fill_masks and run_args.filling_algorithm == 'bet'):
-            if run_args.combine_phase:
+            if qualitymap_available:
                 mn_phaseweights = Node(
-                    interface=phaseweights.RomeoMaskingInterface(),
-                    name='romeo-voxelquality',
-                    mem_gb=3
+                    interface=IdentityInterface(['quality_map']),
+                    name='romeo-voxelquality'
                 )
+                wf.connect([(n_inputs, mn_phaseweights, [('quality_map', 'quality_map')])])
             else:
-                mn_phaseweights = MapNode(
-                    interface=phaseweights.RomeoMaskingInterface(),
-                    iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
-                    name='romeo-voxelquality',
-                    mem_gb=3
-                )
-            mn_phaseweights.inputs.weight_type = "grad+second"
-            wf.connect([
-                (n_inputs, mn_phaseweights, [('phase', 'phase')]),
-                (n_inputs, mn_phaseweights, [('TE', 'TE')])
-            ])
-            if magnitude_available:
-                mn_phaseweights.inputs.weight_type = "grad+second+mag"
+                if run_args.combine_phase:
+                    mn_phaseweights = Node(
+                        interface=phaseweights.RomeoMaskingInterface(),
+                        name='romeo-voxelquality',
+                        mem_gb=3
+                    )
+                else:
+                    mn_phaseweights = MapNode(
+                        interface=phaseweights.RomeoMaskingInterface(),
+                        iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
+                        name='romeo-voxelquality',
+                        mem_gb=3
+                    )
+                mn_phaseweights.inputs.weight_type = "grad+second"
                 wf.connect([
-                    (n_inputs, mn_phaseweights, [('magnitude', 'magnitude')])
+                    (n_inputs, mn_phaseweights, [('phase', 'phase')]),
+                    (n_inputs, mn_phaseweights, [('TE', 'TE')]),
+                    (mn_phaseweights, n_outputs, [('quality_map', 'quality_map')])
                 ])
+                if magnitude_available:
+                    mn_phaseweights.inputs.weight_type = "grad+second+mag"
+                    wf.connect([
+                        (n_inputs, mn_phaseweights, [('magnitude', 'magnitude')])
+                    ])
 
         bet_used = magnitude_available and (
              run_args.masking_algorithm == 'bet'
