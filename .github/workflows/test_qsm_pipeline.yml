@@ -93,6 +93,7 @@ jobs:
     strategy:
       matrix:
         args: ['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm']
+      fail-fast: false
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
