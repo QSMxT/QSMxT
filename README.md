@@ -41,7 +41,7 @@ A user friendly way of running QSMxT in Windows, Mac or Linux is via the Neurode
 To use the latest version of the QSMxT container within an older version of Neurodesk, use:
 
 ```
-bash /neurocommand/local/fetch_and_run.sh qsmxt 3.0.0 20230628
+bash /neurocommand/local/fetch_and_run.sh qsmxt 3.0.1 20230706
 ```
 
 ### Docker container
@@ -50,11 +50,11 @@ There is also a docker image available:
 
 For Windows:
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_3.0.0:20230628
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_3.0.1:20230706
 ```
 For Linux/Mac:
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_3.0.0:20230628
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_3.0.1:20230706
 ```
 
 ## QSMxT Usage
@@ -121,10 +121,10 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_3.0.0_20230628
-    cd qsmxt_3.0.0_20230628
-    ./run_transparent_singularity.sh --container qsmxt_3.0.0_20230628.simg
-    source activate_qsmxt_3.0.0_20230628.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_3.0.1_20230706
+    cd qsmxt_3.0.1_20230706
+    ./run_transparent_singularity.sh --container qsmxt_3.0.1_20230706.simg
+    source activate_qsmxt_3.0.1_20230706.simg.sh
     ```
     
     - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
