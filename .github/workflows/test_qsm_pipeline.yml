@@ -114,7 +114,7 @@ jobs:
         name: public-outputs
         path: /tmp/public-outputs
   test_qsm_edgecases:
-    runs-on: "cirun-nectar-large--${{ github.run_id }}"
+    runs-on: "cirun-oracle--${{ github.run_id }}"
     strategy:
       matrix:
         args: [
