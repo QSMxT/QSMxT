@@ -123,6 +123,7 @@ jobs:
           'test_inhomogeneity_correction',
           'test_nomagnitude',
           'test_use_existing_masks',
+          'test_supplementary_images',
           'test_realdata'
         ]
       fail-fast: false

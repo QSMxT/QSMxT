@@ -428,6 +428,27 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
     workflow(args, init_workflow, run_workflow, run_args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
+])
+def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_args):
+    print(f"=== TESTING SUPPLEMENTARY IMAGES ===")
+    
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir_public,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--swi",
+        "--t2starmap",
+        "--r2starmap",
+        "--auto_yes"
+    ]))
+    
+    assert(args.swi == True)
+    assert(args.t2starmap == True)
+    assert(args.r2starmap == True)
+    
+    workflow(args, init_workflow, run_workflow, run_args)
+
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
 ])
 def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
