@@ -19,10 +19,11 @@ from scripts.user_input import get_option, get_string, get_num, get_nums
 
 from interfaces import nipype_interface_romeo as romeo
 from interfaces import nipype_interface_processphase as processphase
-from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_axialsampling as sampling
 from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
+from interfaces import nipype_interface_t2star_r2star as t2s_r2s
+from interfaces import nipype_interface_clearswi as swi
 
 from workflows.qsm import qsm_workflow
 from workflows.masking import masking_workflow
@@ -131,6 +132,15 @@ def init_run_workflow(run_args, subject, session, run):
             run_args.single_pass = True
             run_args.add_bet = False
     if not magnitude_files:
+        if run_args.r2starmap:
+            logger.log(LogLevel.WARNING.value, f"Cannot compute R2* for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
+            run_args.r2starmap = False
+        if run_args.t2starmap:
+            logger.log(LogLevel.WARNING.value, f"Cannot compute T2* for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
+            run_args.t2starmap = False
+        if run_args.swi:
+            logger.log(LogLevel.WARNING.value, f"Cannot compute SWI for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
+            run_args.swi = False
         if run_args.masking_input == 'magnitude':
             logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
             run_args.masking_input = 'phase'
@@ -224,6 +234,19 @@ def init_run_workflow(run_args, subject, session, run):
         (n_inputs, n_nii_params, [('phase', 'nii_file')])
     ])
 
+    # r2* and t2* mappping
+    if run_args.t2starmap or run_args.r2starmap:
+        n_t2s_r2s = Node(
+            interface=t2s_r2s.T2sR2sInterface(),
+            name='mrt_t2s-r2s'
+        )
+        wf.connect([
+            (n_inputs, n_t2s_r2s, [('magnitude', 'magnitude')]),
+            (mn_json_params, n_t2s_r2s, [('TE', 'TE')])
+        ])
+        if run_args.t2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('t2starmap', 't2starmap')])])
+        if run_args.r2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('r2starmap', 'r2starmap')])])
+        
     # scale phase data
     mn_phase_scaled = MapNode(
         interface=processphase.ScalePhaseInterface(),
@@ -232,7 +255,21 @@ def init_run_workflow(run_args, subject, session, run):
     )
     wf.connect([
         (n_inputs, mn_phase_scaled, [('phase', 'phase')])
-    ])    
+    ])
+
+    # swi
+    if run_args.swi:
+        n_swi = Node(
+            interface=swi.ClearSwiInterface(),
+            name='mrt_clearswi'
+        )
+        wf.connect([
+            (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
+            (n_inputs, n_swi, [('magnitude', 'magnitude')]),
+            (mn_json_params, n_swi, [('TE', 'TE')]),
+            (n_swi, n_outputs, [('swi', 'swi')]),
+            (n_swi, n_outputs, [('swi_mip', 'swi_mip')]),
+        ])
 
     # reorient to canonical
     def as_closest_canonical(phase, magnitude=None, mask=None):
@@ -790,6 +827,33 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
+        '--t2starmap',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
+        default=None,
+        help='Enables generation of T2* map.'
+    )
+
+    parser.add_argument(
+        '--r2starmap',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
+        default=None,
+        help='Enables generation of R2* map.'
+    )
+
+    parser.add_argument(
+        '--swi',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
+        default=None,
+        help='Enables generation SWI via CLEAR-SWI.'
+    )
+
+    parser.add_argument(
         '--pbs',
         default=None,
         dest='pbs',
@@ -1010,9 +1074,14 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
                 print(f" - Background field removal: {args.bf_algorithm}")
         print(f" - Dipole inversion: {args.qsm_algorithm}")
         
+        print("\n(3) Supplementary imaging:")
+        print(f" - Susceptibility Weighted Imaging (SWI): {'Yes' if args.swi else 'No'}")
+        print(f" - T2* mapping: {'Yes' if args.t2starmap else 'No'}")
+        print(f" - R2* mapping: {'Yes' if args.r2starmap else 'No'}")
+        
         user_in = get_option(
             prompt="\nEnter a number to customize; enter 'run' to run: ",
-            options=['1', '2', 'run'],
+            options=['1', '2', '3', 'run'],
             default=None
         )
         if user_in == 'run': break
@@ -1245,6 +1314,30 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
                     options=['vsharp', 'pdf'],
                     default=args.bf_algorithm
                 )
+        if user_in == '3': # T2* and R2*
+            print("=== Supplementary imaging ===")
+
+            print("\n== Susceptibility Weighted Imaging (SWI) ==")
+            args.swi = 'yes' == get_option(
+                prompt=f"Generate SWI maps [default: {'yes' if args.swi else 'no'}]: ",
+                options=['yes', 'no'],
+                default='yes' if args.swi else 'no'
+            )
+
+            print("\n== T2* mapping ==")
+            args.t2starmap = 'yes' == get_option(
+                prompt=f"Generate T2* maps [default: {'yes' if args.t2starmap else 'no'}]: ",
+                options=['yes', 'no'],
+                default='yes' if args.t2starmap else 'no'
+            )
+
+            print("\n== R2* mapping ==")
+            args.r2starmap = 'yes' == get_option(
+                prompt=f"Generate R2* maps [default: {'yes' if args.r2starmap else 'no'}]: ",
+                options=['yes', 'no'],
+                default='yes' if args.r2starmap else 'no'
+            )
+    
     return args.copy(), implicit_args
 
 def create_logger(name, logpath=None):
@@ -1315,6 +1408,11 @@ def process_args(args):
 
     # decide on inhomogeneity correction
     args.inhomogeneity_correction &= (args.add_bet or args.masking_input == 'magnitude' or args.filling_algorithm == 'bet')
+
+    # decide on supplementary imaging
+    if args.r2starmap is None: args.r2starmap = False
+    if args.t2starmap is None: args.t2starmap = False
+    if args.swi is None: args.swi = False
     
     # set number of concurrent processes to run depending on available resources
     if not args.n_procs:
@@ -1322,7 +1420,6 @@ def process_args(args):
     
     # get rough estimate of 90% of the available memory
     args.mem_avail = psutil.virtual_memory().available / (1024 ** 3) * 0.90
-
     
     # determine whether multiproc will be used
     args.multiproc = not (args.pbs or any(args.slurm))
