@@ -102,6 +102,7 @@ def bids_dir_public():
 
         bids_dir = os.path.join(tmp_dir, "bids-public")
         qsm_forward.generate_bids(tissue_params=tissue_params, recon_params=recon_params, bids_dir=bids_dir)
+        sys_cmd(f"rm {head_phantom_maps_dir}")
 
     return bids_dir
 
