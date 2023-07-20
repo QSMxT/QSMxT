@@ -31,10 +31,10 @@ then
 fi
 
 echo "[DEBUG] starting run_0_dicomSort.py"
-sudo docker run -v `pwd`:`pwd` $container python3 run_0_dicomSort.py dicoms dicoms-sorted
+sudo docker run -v `pwd`:/tmp $container python3 /tmp/run_0_dicomSort.py /tmp/dicoms /tmp/dicoms-sorted
 
 echo "[DEBUG] starting run_1_dicomConvert.py"
-sudo docker run -v `pwd`:`pwd` $container python3 run_1_dicomConvert.py dicoms-sorted bids --auto_yes
+sudo docker run -v `pwd`:/tmp $container python3 /tmp/run_1_dicomConvert.py /tmp/dicoms-sorted /tmp/bids --auto_yes
 
 if [[ ! -f sub-01_ses-01_7T_T1w_defaced.nii.gz ]]
 then
@@ -47,7 +47,7 @@ sudo cp sub-02_ses-01_7T_T1w_defaced.nii.gz bids/sub-170706160506STD131221107524
 
 
 echo "[DEBUG] starting run_3_segment.py"
-sudo docker run -v `pwd`:`pwd` $container python3 run_3_segment.py bids segmentation --t1_pattern '{subject}/{session}/anat/*{run}*T1w*nii*' --n_procs 2
+sudo docker run -v `pwd`:`pwd` $container python3 /tmp/run_3_segment.py /tmp/bids /tmp/segmentation --t1_pattern '{subject}/{session}/anat/*{run}*T1w*nii*' --n_procs 2
 
 echo "[DEBUG] checking output of run_3_segment.py"
 [ -f  segmentation/t1_segmentations/sub-170705134431STD1312211075243167001-1_run-01_T1w_segmentation_nii.nii ] && echo "sub-170705134431STD1312211075243167001-1_run-01_T1w_segmentation_nii.nii exists." || exit 1
@@ -62,7 +62,7 @@ then
 fi
 
 echo "[DEBUG] starting run_5_analysis.py"
-sudo docker run -v `pwd`:`pwd` $container python3 run_5_analysis.py --labels_file aseg_labels.csv --segmentations segmentation/qsm_segmentations/*.nii --qsm_files qsm_precomputed/qsm_final/*/*.nii* --output_dir analysis
+sudo docker run -v `pwd`:`pwd` $container python3 /tmp/run_5_analysis.py --labels_file /tmp/aseg_labels.csv --segmentations /tmp/segmentation/qsm_segmentations/*.nii --qsm_files /tmp/qsm_precomputed/qsm_final/*/*.nii* --output_dir analysis
 
 echo "[DEBUG] checking output of run_5_analysis.py"
 [ -f  analysis/sub-170705134431STD1312211075243167001-1_run-01_T1w_segmentation_nii_trans.csv ] && echo "FILE exists." || exit 1
