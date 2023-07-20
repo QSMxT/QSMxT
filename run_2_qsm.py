@@ -1425,8 +1425,11 @@ def process_args(args):
     args.multiproc = not (args.pbs or any(args.slurm))
 
     # debug options
+    #config.set('execution', 'remove_node_directories', 'true')
+    config.set('execution', 'try_hard_link_datasink', 'true')
+    config.set('monitoring', 'enabled', 'true')
+    config.set('monitoring', 'summary_file', os.path.join(args.output_dir, 'resource_monitor.json'))
     if args.debug:
-        from nipype import config
         config.enable_debug_mode()
         config.set('execution', 'stop_on_first_crash', 'true')
         config.set('execution', 'remove_unnecessary_outputs', 'false')
