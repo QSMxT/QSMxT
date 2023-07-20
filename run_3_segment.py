@@ -16,6 +16,7 @@ import datetime
 import glob
 import os
 import argparse
+import psutil
 
 def init_workflow():
     subjects = [
@@ -97,7 +98,7 @@ def init_run_workflow(subject, session, run):
         ),
         name='ants_register-t1-to-qsm',
         n_procs=n_registration_threads,
-        mem_gb=4
+        mem_gb=min(args.mem_avail, 4)
     )
     
     # segment t1
@@ -109,7 +110,7 @@ def init_run_workflow(subject, session, run):
         ),
         name='fastsurfer_segment-t1',
         n_procs=n_fastsurfer_threads,
-        mem_gb=11
+        mem_gb=min(args.mem_avail, 11)
     )
     n_fastsurfer.plugin_args = {
         'qsub_args': f'-A {args.pbs} -l walltime=03:00:00 -l select=1:ncpus={args.n_procs}:mem=20gb:vmem=20gb',
@@ -249,6 +250,9 @@ if __name__ == "__main__":
     args.output_dir = os.path.abspath(args.output_dir)
     args.bids_dir = os.path.abspath(args.bids_dir)
     args.work_dir = os.path.abspath(args.work_dir) if args.work_dir else os.path.abspath(args.output_dir)
+
+    # get rough estimate of 90% of the available memory
+    args.mem_avail = psutil.virtual_memory().available / (1024 ** 3) * 0.95
 
     # multiproc
     args.multiproc = args.pbs is None
