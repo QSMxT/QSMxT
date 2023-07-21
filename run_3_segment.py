@@ -308,9 +308,9 @@ if __name__ == "__main__":
         config.set('monitoring', 'summary_file', os.path.join(args.output_dir, 'resource_monitor.json'))
         #config.set('execution', 'remove_unnecessary_outputs', 'false')
         #config.set('execution', 'keep_inputs', 'true')
-        config.set('logging', 'workflow_level', 'DEBUG')
-        config.set('logging', 'interface_level', 'DEBUG')
-        config.set('logging', 'utils_level', 'DEBUG')
+        #config.set('logging', 'workflow_level', 'DEBUG')
+        #config.set('logging', 'interface_level', 'DEBUG')
+        #config.set('logging', 'utils_level', 'DEBUG')
 
     # set number of concurrent processes to run depending on
     if not args.n_procs:

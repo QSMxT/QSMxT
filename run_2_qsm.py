@@ -1436,9 +1436,9 @@ def process_args(args):
         config.set('monitoring', 'summary_file', os.path.join(args.output_dir, 'resource_monitor.json'))
         #config.set('execution', 'remove_unnecessary_outputs', 'false')
         #config.set('execution', 'keep_inputs', 'true')
-        config.set('logging', 'workflow_level', 'DEBUG')
-        config.set('logging', 'interface_level', 'DEBUG')
-        config.set('logging', 'utils_level', 'DEBUG')
+        #config.set('logging', 'workflow_level', 'DEBUG')
+        #config.set('logging', 'interface_level', 'DEBUG')
+        #config.set('logging', 'utils_level', 'DEBUG')
 
     return args
 
