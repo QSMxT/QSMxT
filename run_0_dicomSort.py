@@ -57,7 +57,7 @@ def find_dicoms(input_dir, check_all_files):
                     pass
     return unsortedList
 
-def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, check_all_files, delete_originals):
+def dicomsort(input_dir, output_dir, use_patient_names, use_session_incrementer, check_all_files, delete_originals):
     os.makedirs(output_dir, exist_ok=True)
     logger.log(LogLevel.INFO.value, "Reading file list...")
     unsortedList = find_dicoms(input_dir, check_all_files)
@@ -117,7 +117,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_dates, check
                 subjName_sessionNums[subj_name] = 1
             logger.log(LogLevel.INFO.value, f"Identified session: {subj_name} #{subjName_sessionNums[subj_name]} {studyDate}")
 
-        sesFolderName = f"ses-{subjName_sessionNums[subj_name]}" if not use_session_dates else f"ses-{studyDate}"
+        sesFolderName = f"ses-{subjName_sessionNums[subj_name]}" if use_session_incrementer else f"ses-{studyDate}"
         
         if not os.path.exists(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName)):
             logger.log(LogLevel.INFO.value, f"Identified series: {subjFolderName}/{sesFolderName}/{seriesFolderName}")
@@ -156,9 +156,9 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--use_session_dates',
+        '--use_session_incrementer',
         action='store_true',
-        help='Use the \'StudyDate\' field rather than an incrementer to identify scanning sessions.'
+        help='Use an incrementer to identify scanning sessions rather than the \'SessionDate\' DICOM field.'
     )
 
     parser.add_argument(
@@ -220,7 +220,7 @@ if __name__ == "__main__":
         input_dir=args.input_dir,
         output_dir=args.output_dir,
         use_patient_names=args.use_patient_names,
-        use_session_dates=args.use_session_dates,
+        use_session_incrementer=args.use_session_incrementer,
         check_all_files=args.check_all_files,
         delete_originals=args.input_dir == args.output_dir or args.delete_originals
     )
