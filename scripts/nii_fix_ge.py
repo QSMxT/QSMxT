@@ -7,6 +7,8 @@ import argparse
 import os
 import json
 
+from scripts.qsmxt_functions import extend_fname
+
 def load_json(path):
     f = open(path, encoding='utf-8')
     j = json.load(f)
@@ -38,7 +40,7 @@ def fix_ge_polar(mag_path, phase_path, delete_originals=True):
     phase_corr_data = np.angle(complex_data_correct_image) * -1.0 # GE uses different handed-ness requiring inverting
 
     # create nifti image
-    phase_nii.header.set_data_dtype(np.float16)
+    phase_nii.header.set_data_dtype(float)
     phase_corr_nii = nib.Nifti1Image(phase_corr_data, phase_nii.affine, phase_nii.header)
     
     # determine filename
