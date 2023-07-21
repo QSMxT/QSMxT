@@ -30,22 +30,8 @@ on:
     
 jobs:
   test_segmentation_pipeline:
-    runs-on: ubuntu-latest
+    runs-on: "cirun-oracle--${{ github.run_id }}"
     steps:
-    - name: Free up space
-      uses: easimon/maximize-build-space@master
-      with:
-        root-reserve-mb: 30000
-        swap-size-mb: 1024
-        remove-dotnet: 'true'
-        remove-android: 'true'
-        remove-haskell: 'true'
-        overprovision-lvm: 'true'
-    - name: Move docker installation
-      run: |
-          sudo mv /var/lib/docker /home/runner/work/docker
-          sudo ln -s /home/runner/work/docker /var/lib/docker
-          sudo systemctl restart docker
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
       with:
