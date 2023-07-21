@@ -47,7 +47,7 @@ sudo cp sub-02_ses-01_7T_T1w_defaced.nii.gz bids/sub-170706160506STD131221107524
 
 
 echo "[DEBUG] starting run_3_segment.py"
-sudo docker run -v `pwd`:/tmp $container python3 /tmp/run_3_segment.py /tmp/bids /tmp/segmentation --t1_pattern '{subject}/{session}/anat/*{run}*T1w*nii*' --n_procs 2
+sudo docker run -v `pwd`:/tmp $container python3 /tmp/run_3_segment.py /tmp/bids /tmp/segmentation --t1_pattern '{subject}/{session}/anat/*{run}*T1w*nii*' --n_procs 2 --debug
 
 echo "[DEBUG] checking output of run_3_segment.py"
 [ -f  segmentation/t1_segmentations/sub-170705134431STD1312211075243167001-1_run-01_T1w_segmentation_nii.nii ] && echo "sub-170705134431STD1312211075243167001-1_run-01_T1w_segmentation_nii.nii exists." || exit 1

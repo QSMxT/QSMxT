@@ -1427,13 +1427,13 @@ def process_args(args):
     # debug options
     #config.set('execution', 'remove_node_directories', 'true')
     config.set('execution', 'try_hard_link_datasink', 'true')
-    config.set('monitoring', 'enabled', 'true')
-    config.set('monitoring', 'summary_file', os.path.join(args.output_dir, 'resource_monitor.json'))
     if args.debug:
         config.enable_debug_mode()
         config.set('execution', 'stop_on_first_crash', 'true')
-        config.set('execution', 'remove_unnecessary_outputs', 'false')
-        config.set('execution', 'keep_inputs', 'true')
+        config.set('monitoring', 'enabled', 'true')
+        config.set('monitoring', 'summary_file', os.path.join(args.output_dir, 'resource_monitor.json'))
+        #config.set('execution', 'remove_unnecessary_outputs', 'false')
+        #config.set('execution', 'keep_inputs', 'true')
         config.set('logging', 'workflow_level', 'DEBUG')
         config.set('logging', 'interface_level', 'DEBUG')
         config.set('logging', 'utils_level', 'DEBUG')

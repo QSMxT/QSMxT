@@ -287,7 +287,8 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", premade,
-        "--auto_yes"
+        "--auto_yes",
+        "--debug"
     ]))
 
     # ensure the args match the appropriate premade
@@ -340,7 +341,8 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
         "--masking_input", "magnitude",
-        "--auto_yes"
+        "--auto_yes",
+        "--debug"
     ]))
     
     # create the workflow and run - it should fall back to phase-based masking with a warning
@@ -363,7 +365,8 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
         "--masking_algorithm", "threshold",
         "--filling_algorithm", "bet",
         "--inhomogeneity_correction",
-        "--auto_yes"
+        "--auto_yes",
+        "--debug"
     ]))
     
     # create the workflow and run
@@ -383,7 +386,8 @@ def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_work
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
         "--threshold_value", "0.8",
-        "--auto_yes"
+        "--auto_yes",
+        "--debug"
     ]))
     
     # create the workflow and run
@@ -404,7 +408,8 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
         "--threshold_value", "5",
-        "--auto_yes"
+        "--auto_yes",
+        "--debug"
     ]))
     
     # create the workflow and run
@@ -421,7 +426,8 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--use_existing_masks",
-        "--auto_yes"
+        "--auto_yes",
+        "--debug"
     ]))
     
     assert(args.use_existing_masks == True)
@@ -440,7 +446,8 @@ def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_
         "--swi",
         "--t2starmap",
         "--r2starmap",
-        "--auto_yes"
+        "--auto_yes",
+        "--debug"
     ]))
     
     assert(args.swi == True)
@@ -460,7 +467,8 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
     args = qsm.process_args(qsm.parse_args([
         bids_dir_real,
         os.path.join(tempfile.gettempdir(), "qsm-secret"),
-        "--auto_yes"
+        "--auto_yes",
+        "--debug"
     ]))
     
     workflow(args, init_workflow, run_workflow, run_args)
@@ -478,3 +486,4 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
 #    - use_existing_masks specified and masks found:
 #      - inhomogeneity_correction, two_pass, and add_bet should all disable
 #  - hardcoded/percentile-based masking thresholds
+
