@@ -40,8 +40,7 @@ def load_json(path):
 def rename(old, new, always_show=False):
     if always_show or not sys.__stdin__.isatty():
         logger.log(LogLevel.INFO.value, f'Renaming {old} -> {new}')
-    if not os.path.exists(os.path.split(new)[0]):
-        os.makedirs(os.path.split(new)[0], exist_ok=True)
+    os.makedirs(os.path.split(new)[0], exist_ok=True)
     os.rename(old, new)
 
 def clean(data): 
@@ -85,7 +84,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
     for i in range(len(json_datas)):
         if any([x in json_files[i] for x in ['_ph.json', '_real.json']]):
             if "Manufacturer" not in json_datas[i]:
-                logger.log(LogLevel.WARNING.value, f"'Manufacturer' missing from JSON header '{json_files[i]}'. Unable to determine whether any GE data requires correction. You may need to manually run nii-fix-ge.py to correct complex or four.")
+                logger.log(LogLevel.WARNING.value, f"'Manufacturer' missing from JSON header '{json_files[i]}'. Unable to determine whether any GE data requires correction. You may need to manually run nii-fix-ge.py.")
                 continue
             ge_corrections = True
             if json_datas[i]["Manufacturer"].upper().strip() in ["GE", "GE MEDICAL SYSTEMS"]:

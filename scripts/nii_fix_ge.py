@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 
+from scripts.qsmxt_functions import extend_fname, get_fname
 import nibabel as nib
 import numpy as np
 import argparse
@@ -41,8 +42,7 @@ def fix_ge_polar(mag_path, phase_path, delete_originals=True):
     phase_corr_nii = nib.Nifti1Image(phase_corr_data, phase_nii.affine, phase_nii.header)
     
     # determine filename
-    extension = ".".join(phase_path.split('.')[1:])
-    phase_corr_path = f"{phase_path.split('.')[0]}_corrected.{extension}"
+    phase_corr_path = extend_fname(phase_path, "_corrected")
 
     # save new images to file
     nib.save(phase_corr_nii, phase_corr_path)
@@ -53,18 +53,24 @@ def fix_ge_polar(mag_path, phase_path, delete_originals=True):
         os.rename(phase_corr_path, phase_path)
 
 
-def fix_ge_complex(real_path, imag_path, delete_originals=False):
+def fix_ge_complex(real_nii_path, imag_nii_path, delete_originals=False):
 
     # ensure paths are absolute
-    real_path = os.path.abspath(real_path)
-    imag_path = os.path.abspath(imag_path)
+    real_nii_path = os.path.abspath(real_nii_path)
+    imag_nii_path = os.path.abspath(imag_nii_path)
+    real_json_path = f"{get_fname(real_nii_path)}.json"
+    imag_json_path = f"{get_fname(imag_nii_path)}.json"
+    mag_nii_path = real_nii_path.replace('_real', '')
+    phase_nii_path = extend_fname(mag_nii_path, '_ph')
+    mag_json_path = f"{get_fname(mag_nii_path)}.json"
+    phase_json_path = f"{get_fname(phase_nii_path)}.json"
 
     # load real data
-    real_nii = nib.load(real_path)
+    real_nii = nib.load(real_nii_path)
     real_data = real_nii.get_fdata()
     
     # load imaginary data
-    imag_nii = nib.load(imag_path)
+    imag_nii = nib.load(imag_nii_path)
     imag_data = imag_nii.get_fdata()
 
     # compute complex result in the image domain
@@ -81,39 +87,33 @@ def fix_ge_complex(real_path, imag_path, delete_originals=False):
     mag_nii = nib.Nifti1Image(mag_data, real_nii.affine, real_nii.header)
     phase_nii = nib.Nifti1Image(phase_data, real_nii.affine, real_nii.header)
     
-    # determine filenames
-    extension = ".".join(real_path.split('.')[1:])
-    mag_path = f"{real_path.replace('_real', '').split('.')[0]}.{extension}"
-    phase_path =  f"{real_path.replace('_real', '').split('.')[0]}_ph.{extension}"
-    
     # save new images to file
-    nib.save(mag_nii, mag_path)
-    nib.save(phase_nii, phase_path)
+    nib.save(mag_nii, mag_nii_path)
+    nib.save(phase_nii, phase_nii_path)
     
     # delete original images
     if delete_originals:
-        os.remove(real_path)
-        os.remove(imag_path)
+        os.remove(real_nii_path)
+        os.remove(imag_nii_path)
 
     # create new json headers
-    if os.path.exists(f"{real_path.split('.')[0]}.json"):
-        mag_json_data = load_json(f"{real_path.split('.')[0]}.json")
-        mag_json_data["ImageType"] = ["MAGNITUDE" if x == "REAL" else x for x in mag_json_data["ImageType"]]
-        mag_json = open(f"{real_path.replace('_real', '').split('.')[0]}.json", 'w')
+    if os.path.exists(real_json_path):
+        mag_json_data = load_json(real_json_path)
+        mag_json_data["ImageType"] = ["MAGNITUDE" if x in ["REAL", "IMAGINARY"] else x for x in mag_json_data["ImageType"]]
+        mag_json = open(mag_json_path, 'w')
         json.dump(mag_json_data, mag_json)
         mag_json.close()
 
-        phase_json_data = load_json(f"{real_path.split('.')[0]}.json")
-        phase_json_data["ImageType"] = ["PHASE" if x == "REAL" else x for x in phase_json_data["ImageType"]]
-        phase_json = open(f"{real_path.replace('_real', '').split('.')[0]}_ph.json", 'w')
+        phase_json_data = load_json(real_json_path)
+        phase_json_data["ImageType"] = ["PHASE" if x in ["REAL", "IMAGINARY"] else x for x in phase_json_data["ImageType"]]
+        phase_json = open(phase_json_path, 'w')
         json.dump(phase_json_data, phase_json)
         phase_json.close()
 
         # delete original json headers
         if delete_originals:
-            os.remove(f"{real_path.split('.')[0]}.json")
-            os.remove(f"{imag_path.split('.')[0]}.json")
-
+            os.remove(real_json_path)
+            os.remove(imag_json_path)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
