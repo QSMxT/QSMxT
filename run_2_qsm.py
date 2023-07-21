@@ -117,6 +117,8 @@ def init_run_workflow(run_args, subject, session, run):
     if len(phase_files) != len(params_files):
         logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
         return
+    if len(phase_files) == 1 and run_args.combine_phase:
+        run_args.combine_phase = False
     if run_args.use_existing_masks:
         if not mask_files:
             logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking_algorithm} masking.")
