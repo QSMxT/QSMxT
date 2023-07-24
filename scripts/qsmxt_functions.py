@@ -58,8 +58,6 @@ def get_container_version(check_path=True):
     return "unknown"
     
 def get_diff():
-    this_dir = os.path.dirname(os.path.abspath(__file__))
-    qsmxt_dir = get_qsmxt_dir()
     diff = sys_cmd(f"git --git-dir {os.path.join(get_qsmxt_dir(), '.git')} --work-tree {get_qsmxt_dir()} diff", False, False)
     return f"{diff}\n" if diff else ""
 
