@@ -36,7 +36,18 @@ def _clean_histogram(image_histogram):
     return image_histogram
 
 # === THRESHOLD-BASED MASKING FOR TWO-PASS AND SINGLE-PASS QSM ===
-def threshold_masking(in_files, bet_masks=None, user_threshold=None, threshold_algorithm='gaussian', threshold_algorithm_factor=1.0, filling_algorithm='both', num_erosions=0, mask_suffix="_mask", fill_masks=False):
+def threshold_masking(
+        in_files,
+        bet_masks=None,
+        user_threshold=None,
+        threshold_algorithm='gaussian',
+        threshold_algorithm_factor=1.0,
+        filling_algorithm='both',
+        num_erosions=0,
+        mask_suffix="_mask",
+        fill_masks=False
+    ):
+    
     # sort input filepaths
     in_files = sorted(in_files)
 
