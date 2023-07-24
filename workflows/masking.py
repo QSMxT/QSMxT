@@ -35,7 +35,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, qualitymap_avail
 
     if not mask_files:
         # do phase weights if necessary
-        if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase' and not (fill_masks and run_args.filling_algorithm == 'bet'):
+        if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
             if qualitymap_available:
                 mn_phaseweights = Node(
                     interface=IdentityInterface(['quality_map']),
