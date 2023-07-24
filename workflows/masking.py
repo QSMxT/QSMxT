@@ -141,7 +141,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, qualitymap_avail
                 ])
             else:
                 wf.connect([
-                    (n_combine_magnitude, mn_bet, [('magnitude_combined', 'in_file')])
+                    (n_inputs, mn_bet, [('magnitude', 'in_file')])
                 ])
 
             # erode bet mask
@@ -197,7 +197,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, qualitymap_avail
                     ])
                 else:
                     wf.connect([
-                        (n_combine_magnitude, n_threshold_masking, [('magnitude_combined', 'in_files')])
+                        (n_inputs, n_threshold_masking, [('magnitude', 'in_files')])
                     ])
             if not add_bet:
                 wf.connect([
