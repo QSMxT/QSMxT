@@ -42,9 +42,17 @@ then
     osf -p bt4ez fetch TOMCAT_DIB/sub-01/ses-01_7T/anat/sub-01_ses-01_7T_T1w_defaced.nii.gz sub-01_ses-01_7T_T1w_defaced.nii.gz
     osf -p bt4ez fetch TOMCAT_DIB/sub-02/ses-01_7T/anat/sub-02_ses-01_7T_T1w_defaced.nii.gz sub-02_ses-01_7T_T1w_defaced.nii.gz
 fi
-echo "[DEBUG] START tree /tmp/bids"
-tree /tmp/bids
-echo "[DEBUG] END TREE"
+echo "[DEBUG] ls ."
+ls .
+echo "[DEBUG] ls /tmp/bids"
+ls /tmp/bids/
+echo "[DEBUG] ls /tmp/bids/sub-170705134431STD1312211075243167001/"
+ls /tmp/bids/sub-170705134431STD1312211075243167001/
+echo "[DEBUG] ls /tmp/bids/sub-170705134431STD1312211075243167001/ses-20170705/"
+ls /tmp/bids/sub-170705134431STD1312211075243167001/ses-20170705/
+echo "[DEBUG] ls /tmp/bids/sub-170705134431STD1312211075243167001/ses-20170705/anat/"
+ls /tmp/bids/sub-170705134431STD1312211075243167001/ses-20170705/anat/
+echo "Copying..."
 sudo cp sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/bids/sub-170705134431STD1312211075243167001/ses-20170705/anat/sub-170705134431STD1312211075243167001_ses-20170705_run-01_T1w.nii.gz
 sudo cp sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/bids/sub-170706160506STD1312211075243167001/ses-20170706/anat/sub-170706160506STD1312211075243167001_ses-20170706_run-01_T1w.nii.gz
 
