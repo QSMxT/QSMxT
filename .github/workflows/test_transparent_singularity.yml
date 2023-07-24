@@ -39,6 +39,8 @@ on:
       - scripts/qsmxt_functions.py
       - .github/workflows/test_transparent_singularity.yml
       - tests/test_transparent_singularity.sh
+      - workflows/masking.py
+      - workflows/qsm.py
   pull_request:
     branches: [ master ]
     paths:
@@ -75,6 +77,8 @@ on:
       - scripts/qsmxt_functions.py
       - .github/workflows/test_transparent_singularity.yml
       - tests/test_transparent_singularity.sh
+      - workflows/masking.py
+      - workflows/qsm.py
     
 jobs:
   test_transparent_singularity_pipeline:
