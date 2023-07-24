@@ -458,8 +458,8 @@ def init_run_workflow(run_args, subject, session, run):
             (n_inputs_resampled, wf_masking_intermediate, [('phase', 'masking_inputs.phase')]),
             (n_inputs_resampled, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')]),
             (n_inputs_resampled, wf_masking_intermediate, [('mask', 'masking_inputs.mask')]),
-            (wf_masking, wf_masking_intermediate, [('masking_outputs.quality_map', 'masking_inputs.quality_map')]),
-            (mn_json_params, wf_masking_intermediate, [('TE', 'masking_inputs.TE')])
+            (mn_json_params, wf_masking_intermediate, [('TE', 'masking_inputs.TE')]),
+            (wf_masking, wf_masking_intermediate, [('masking_outputs.quality_map', 'masking_inputs.quality_map')])
         ])
         '''
         if mask_files:
@@ -1568,17 +1568,20 @@ if __name__ == "__main__":
     # write citations to file
     write_citations(wf)
 
+    # set nipype logging options
     config.update_config({'logging': { 'log_directory': args.output_dir, 'log_to_file': True }})
     logging.update_logging(config)
 
     # run workflow
     if not args.dry:
         if args.slurm[0] is not None:
+            logger.log(LogLevel.INFO.value, f"Running using SLURM plugin with account={args.slurm[0]} and partition={args.slurm[1]}")
             wf.run(
                 plugin='SLURM',
                 plugin_args=gen_plugin_args(slurm_account=args.slurm[0], slurm_partition=args.slurm[1])
             )
         if args.pbs:
+            logger.log(LogLevel.INFO.value, f"Running using PBS Graph plugin with account={args.pbs}")
             wf.run(
                 plugin='PBSGraph',
                 plugin_args=gen_plugin_args(pbs_account=args.pbs)
@@ -1587,8 +1590,10 @@ if __name__ == "__main__":
             logger.log(LogLevel.INFO.value, f"Running using MultiProc plugin with n_procs={args.n_procs}")
             plugin_args = { 'n_procs' : args.n_procs }
             if os.environ.get("PBS_JOBID"):
+                logger.log(LogLevel.INFO.value, f"Detected PBS_JOBID! Identifying job memory limit...")
                 jobid = os.environ.get("PBS_JOBID").split(".")[0]
-                plugin_args['memory_gb'] = float(sys_cmd(f"qstat -f {jobid} | grep Resource_List.mem", print_output=False, print_command=False).split(" = ")[1].split("gb")[0])
+                plugin_args['memory_gb'] = round(float(sys_cmd(f"qstat -f {jobid} | grep Resource_List.mem", print_output=False, print_command=False).split(" = ")[1].split("gb")[0]), 2)
+                logger.log(LogLevel.INFO.value, f"Memory limit set to {plugin_args['memory_gb']} GB")
             wf.run(
                 plugin='MultiProc',
                 plugin_args=plugin_args
