@@ -302,7 +302,6 @@ if __name__ == "__main__":
     # debugging options
     config.set('execution', 'try_hard_link_datasink', 'true')
     if args.debug:
-        config.enable_debug_mode()
         config.set('execution', 'stop_on_first_crash', 'true')
         config.set('monitoring', 'enabled', 'true')
         config.set('monitoring', 'summary_file', os.path.join(args.output_dir, 'resource_monitor.json'))
