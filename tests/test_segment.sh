@@ -42,9 +42,8 @@ then
     osf -p bt4ez fetch TOMCAT_DIB/sub-01/ses-01_7T/anat/sub-01_ses-01_7T_T1w_defaced.nii.gz sub-01_ses-01_7T_T1w_defaced.nii.gz
     osf -p bt4ez fetch TOMCAT_DIB/sub-02/ses-01_7T/anat/sub-02_ses-01_7T_T1w_defaced.nii.gz sub-02_ses-01_7T_T1w_defaced.nii.gz
 fi
-sudo cp sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/bids/sub-170705134431STD1312211075243167001/ses-1/anat/sub-170705134431STD1312211075243167001-1_run-01_T1w.nii.gz
-sudo cp sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/bids/sub-170706160506STD1312211075243167001/ses-1/anat/sub-170706160506STD1312211075243167001-1_run-01_T1w.nii.gz
-
+sudo cp sub-01_ses-01_7T_T1w_defaced.nii.gz /tmp/bids/sub-170705134431STD1312211075243167001/ses-20170705/anat/sub-170705134431STD1312211075243167001-1_run-01_T1w.nii.gz
+sudo cp sub-02_ses-01_7T_T1w_defaced.nii.gz /tmp/bids/sub-170706160506STD1312211075243167001/ses-20170706/anat/sub-170706160506STD1312211075243167001-1_run-01_T1w.nii.gz
 
 echo "[DEBUG] starting run_3_segment.py"
 sudo docker run -v `pwd`:/tmp $container python3 /tmp/run_3_segment.py /tmp/bids /tmp/segmentation --t1_pattern '{subject}/{session}/anat/*{run}*T1w*nii*' --n_procs 2 --debug
