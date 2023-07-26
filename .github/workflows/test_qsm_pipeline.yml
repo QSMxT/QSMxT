@@ -124,7 +124,8 @@ jobs:
           'test_nomagnitude',
           'test_use_existing_masks',
           'test_supplementary_images',
-          'test_realdata'
+          'test_realdata',
+          'test_singleecho'
         ]
       fail-fast: false
     steps:
