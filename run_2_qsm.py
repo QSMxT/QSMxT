@@ -387,7 +387,7 @@ def init_run_workflow(run_args, subject, session, run):
     # === MASKING ===
     wf_masking = masking_workflow(
         run_args=run_args,
-        mask_files=mask_files,
+        mask_available=len(mask_files) > 0,
         magnitude_available=len(magnitude_files) > 0,
         qualitymap_available=False,
         fill_masks=True,
@@ -446,7 +446,7 @@ def init_run_workflow(run_args, subject, session, run):
     if run_args.two_pass:
         wf_masking_intermediate = masking_workflow(
             run_args=run_args,
-            mask_files=mask_files,
+            mask_available=len(mask_files) > 0,
             magnitude_available=len(magnitude_files) > 0,
             qualitymap_available=True,
             fill_masks=False,

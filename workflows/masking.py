@@ -12,7 +12,7 @@ from interfaces import nipype_interface_combinemagnitude as combinemagnitude
 
 from scripts.qsmxt_functions import gen_plugin_args
 
-def masking_workflow(run_args, mask_files, magnitude_available, qualitymap_available, fill_masks, add_bet, name, index):
+def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_available, fill_masks, add_bet, name, index):
 
     wf = Workflow(name=f"{name}_workflow")
 
@@ -33,7 +33,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, qualitymap_avail
         name='masking_outputs'
     )
 
-    if not mask_files:
+    if not mask_available:
         # do phase weights if necessary
         if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
             if qualitymap_available:
@@ -216,7 +216,7 @@ def masking_workflow(run_args, mask_files, magnitude_available, qualitymap_avail
                 ])
 
     # outputs
-    if mask_files:
+    if mask_available:
         wf.connect([
             (n_inputs, n_outputs, [('mask', 'mask')]),
         ])
