@@ -473,16 +473,23 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
     upload_file(compress_folder(folder=args.output_dir, result_id='real'))
 
-# TODO
-#  - check file outputs
-#  - test axial resampling / obliquity
-#  - test for errors that may occur within a run, including:
-#    - no phase files present
-#    - number of json files different from number of phase files
-#    - no magnitude files present - default to phase-based masking
-#    - use_existing_masks specified but none found - default to masking method
-#    - use_existing_masks specified but number of masks > 1 and mismatches # of echoes 
-#    - use_existing_masks specified and masks found:
-#      - inhomogeneity_correction, two_pass, and add_bet should all disable
-#  - hardcoded/percentile-based masking thresholds
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1 })
+])
+def test_singleecho(bids_dir_public, init_workflow, run_workflow, run_args):
+    print(f"=== TESTING SINGLE ECHO WITH PHASE COMBINATION / ROMEO ===")
+
+    # run pipeline and specifically choose magnitude-based masking
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir_public,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--combine_phase", "on",
+        "--unwrapping_algorithm", "romeo",
+        "--num_echoes", "1",
+        "--auto_yes",
+        "--debug"
+    ]))
+    
+    # create the workflow and run
+    workflow(args, init_workflow, run_workflow, run_args, "single-echo-with-phase-combination", delete_workflow=True, upload_png=True)
 
