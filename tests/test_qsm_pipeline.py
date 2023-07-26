@@ -238,7 +238,7 @@ def print_metrics(name, bids_path, qsm_path):
     
     
 
-def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
+def workflow(args, init_workflow, run_workflow, run_args, name, delete_workflow=True, upload_png=False):
     assert(not (run_workflow == True and init_workflow == False))
     shutil.rmtree(os.path.join(args.output_dir), ignore_errors=True)
     logger = create_logger(args.output_dir)
@@ -264,6 +264,21 @@ def workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True):
         if delete_workflow:
             logger.log(LogLevel.DEBUG.value, f"Deleting workflow folder {os.path.join(args.output_dir, 'workflow_qsm')}")
             shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"), ignore_errors=True)
+        # visualise results
+        for nii_file in glob.glob(os.path.join(args.output_dir, "qsm_final", "*", "*.nii*")):
+            png = display_nii(
+                nii_path=nii_file,
+                title=f"QSM: {name}\n({get_qsmxt_version()})",
+                colorbar=True,
+                cbar_label="Susceptibility (ppm)",
+                out_png=extend_fname(nii_file, f"_{name}", ext='png', out_dir=os.path.join(tempfile.gettempdir(), "public-outputs")),
+                cmap='gray',
+                vmin=-0.15,
+                vmax=+0.15,
+                interpolation='nearest'
+            )
+            png_url = sys_cmd(f"images-upload-cli -h freeimage {png}").strip()
+            add_to_github_summary(f"![image]({png_url})\n")
 
 
 def get_premades():
@@ -299,23 +314,7 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
             assert(premade_args[key] == args_dict[key])
     
     # create the workflow and run if necessary
-    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
-
-    # visualise results
-    for nii_file in glob.glob(os.path.join(args.output_dir, "qsm_final", "*", "*.nii*")):
-        png = display_nii(
-            nii_path=nii_file,
-            title=f"QSM using premade pipeline: {premade}\n({get_qsmxt_version()})",
-            colorbar=True,
-            cbar_label="Susceptibility (ppm)",
-            out_png=extend_fname(nii_file, f"_{premade}", ext='png', out_dir=os.path.join(tempfile.gettempdir(), "public-outputs")),
-            cmap='gray',
-            vmin=-0.15,
-            vmax=+0.15,
-            interpolation='nearest'
-        )
-        png_url = sys_cmd(f"images-upload-cli -h freeimage {png}").strip()
-        add_to_github_summary(f"![image]({png_url})\n")
+    workflow(args, init_workflow, run_workflow, run_args, premade, delete_workflow=True, upload_png=True)
     
     # upload output folder
     tar_file = compress_folder(folder=args.output_dir, result_id=premade)
@@ -346,7 +345,7 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
     ]))
     
     # create the workflow and run - it should fall back to phase-based masking with a warning
-    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+    workflow(args, init_workflow, run_workflow, run_args, "no-magnitude", delete_workflow=True, upload_png=True)
 
     # delete the modified bids directory
     shutil.rmtree(bids_dir_nomagnitude)
@@ -370,7 +369,7 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
     ]))
     
     # create the workflow and run
-    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+    workflow(args, init_workflow, run_workflow, run_args, "inhomogeneity-correction", delete_workflow=True, upload_png=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
@@ -391,7 +390,7 @@ def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_work
     ]))
     
     # create the workflow and run
-    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+    workflow(args, init_workflow, run_workflow, run_args, "percentile-threshold", delete_workflow=True, upload_png=True)
 
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
@@ -413,7 +412,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
     ]))
     
     # create the workflow and run
-    workflow(args, init_workflow, run_workflow, run_args, delete_workflow=True)
+    workflow(args, init_workflow, run_workflow, run_args, "absolute-threshold", delete_workflow=True, upload_png=True)
 
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
@@ -454,7 +453,7 @@ def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_
     assert(args.t2starmap == True)
     assert(args.r2starmap == True)
     
-    workflow(args, init_workflow, run_workflow, run_args)
+    workflow(args, init_workflow, run_workflow, run_args, "supplementary-images", upload_png=False)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
@@ -474,16 +473,23 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
     workflow(args, init_workflow, run_workflow, run_args)
     upload_file(compress_folder(folder=args.output_dir, result_id='real'))
 
-# TODO
-#  - check file outputs
-#  - test axial resampling / obliquity
-#  - test for errors that may occur within a run, including:
-#    - no phase files present
-#    - number of json files different from number of phase files
-#    - no magnitude files present - default to phase-based masking
-#    - use_existing_masks specified but none found - default to masking method
-#    - use_existing_masks specified but number of masks > 1 and mismatches # of echoes 
-#    - use_existing_masks specified and masks found:
-#      - inhomogeneity_correction, two_pass, and add_bet should all disable
-#  - hardcoded/percentile-based masking thresholds
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, { 'num_echoes' : 1 })
+])
+def test_singleecho(bids_dir_public, init_workflow, run_workflow, run_args):
+    print(f"=== TESTING SINGLE ECHO WITH PHASE COMBINATION / ROMEO ===")
+
+    # run pipeline and specifically choose magnitude-based masking
+    args = qsm.process_args(qsm.parse_args([
+        bids_dir_public,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--combine_phase", "on",
+        "--unwrapping_algorithm", "romeo",
+        "--num_echoes", "1",
+        "--auto_yes",
+        "--debug"
+    ]))
+    
+    # create the workflow and run
+    workflow(args, init_workflow, run_workflow, run_args, "single-echo-with-phase-combination", delete_workflow=True, upload_png=True)
 
