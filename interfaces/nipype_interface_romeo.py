@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import os
+import shutil
 from nipype.interfaces.base import  traits, CommandLine, BaseInterfaceInputSpec, TraitedSpec, File, InputMultiPath, OutputMultiPath
 from scripts.qsmxt_functions import extend_fname
 from scripts import qsmxt_functions
@@ -8,6 +9,7 @@ import nibabel as nib
 import numpy as np
     
 def merge_multi_echo(in_paths, out_path):
+    if len(in_paths) == 1: return in_paths[0]
     image4d = np.stack([nib.load(f).get_fdata() for f in in_paths], -1)
     sample_nii = nib.load(in_paths[0])
     nib.save(nib.nifti1.Nifti1Image(image4d, affine=sample_nii.affine, header=sample_nii.header), out_path)
@@ -15,6 +17,9 @@ def merge_multi_echo(in_paths, out_path):
 
 def split_multi_echo(in_path, out_paths):
     image4d = nib.load(in_path).get_fdata()
+    if len(image4d.shape) != 4 and len(out_paths) == 1:
+        shutil.copy(in_path, out_paths[0])
+        return out_paths
     sample_nii = nib.load(in_path)
 
     for i, out_path in enumerate(out_paths):
