@@ -93,8 +93,12 @@ def bids_dir_public():
             sys_cmd(f"tar xf {os.path.join(tmp_dir, 'head-phantom-maps.tar')} -C {tmp_dir}")
             sys_cmd(f"rm {os.path.join(tmp_dir, 'head-phantom-maps.tar')}")
 
-        tissue_params = qsm_forward.TissueParams(os.path.join(tmp_dir, 'head-phantom-maps'))
-        recon_params = qsm_forward.ReconParams()
+        tissue_params = qsm_forward.default_tissue_params.copy()
+        recon_params = qsm_forward.default_recon_params.copy()
+        recon_params['peak_snr'] = 100
+
+        for key in tissue_params.keys():
+            tissue_params[key] = os.path.join(head_phantom_maps_dir, tissue_params[key])
 
         bids_dir = os.path.join(tmp_dir, "bids-public")
         qsm_forward.generate_bids(tissue_params=tissue_params, recon_params=recon_params, bids_dir=bids_dir)
@@ -321,6 +325,7 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
 ])
 def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING NO MAGNITUDE ===")
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # create copy of bids directory
     bids_dir_nomagnitude = os.path.join(os.path.split(bids_dir_public)[0], "bids-nomagnitude")
@@ -351,6 +356,7 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
 ])
 def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING INHOMOGENEITY CORRECTION ===")
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
     args = qsm.process_args(qsm.parse_args([
@@ -372,6 +378,7 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
 ])
 def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
     args = qsm.process_args(qsm.parse_args([
@@ -394,6 +401,7 @@ def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_work
 ])
 def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
     args = qsm.process_args(qsm.parse_args([
@@ -416,6 +424,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
 ])
 def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING EXISTING MASKS ===")
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
     
     args = qsm.process_args(qsm.parse_args([
         bids_dir_public,
@@ -434,6 +443,7 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
 ])
 def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING SUPPLEMENTARY IMAGES ===")
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
     
     args = qsm.process_args(qsm.parse_args([
         bids_dir_public,
@@ -456,6 +466,7 @@ def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_
 ])
 def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
     print(f"=== TESTING REAL DATA ===")
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     if not bids_dir_real:
         pass
@@ -474,6 +485,7 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
 ])
 def test_singleecho(bids_dir_public, init_workflow, run_workflow, run_args):
     print(f"=== TESTING SINGLE ECHO WITH PHASE COMBINATION / ROMEO ===")
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
     args = qsm.process_args(qsm.parse_args([
