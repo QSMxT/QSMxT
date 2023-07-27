@@ -93,12 +93,8 @@ def bids_dir_public():
             sys_cmd(f"tar xf {os.path.join(tmp_dir, 'head-phantom-maps.tar')} -C {tmp_dir}")
             sys_cmd(f"rm {os.path.join(tmp_dir, 'head-phantom-maps.tar')}")
 
-        tissue_params = qsm_forward.default_tissue_params.copy()
-        recon_params = qsm_forward.default_recon_params.copy()
-        recon_params['peak_snr'] = 100
-
-        for key in tissue_params.keys():
-            tissue_params[key] = os.path.join(head_phantom_maps_dir, tissue_params[key])
+        tissue_params = qsm_forward.TissueParams(os.path.join(tmp_dir, 'head-phantom-maps'))
+        recon_params = qsm_forward.ReconParams()
 
         bids_dir = os.path.join(tmp_dir, "bids-public")
         qsm_forward.generate_bids(tissue_params=tissue_params, recon_params=recon_params, bids_dir=bids_dir)
