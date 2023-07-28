@@ -49,6 +49,8 @@ echo "[DEBUG] starting run_3_segment.py"
 sudo docker run -v $PWD:$PWD $container python3 $PWD/run_3_segment.py $PWD/bids $PWD/segmentation --t1_pattern '{subject}/{session}/anat/*{run}*T1w*nii*' --n_procs 2 --debug
 
 echo "[DEBUG] checking output of run_3_segment.py"
+ls segmentation/t1_segmentations/
+ls segmentation/qsm_segmentations/
 [ -f  segmentation/t1_segmentations/sub-170705134431STD1312211075243167001_ses-20170705_run-01_T1w_segmentation_nii.nii ] && echo "sub-170705134431STD1312211075243167001_ses-20170705_run-01_T1w_segmentation_nii.nii exists." || exit 1
 [ -f  segmentation/t1_segmentations/sub-170706160506STD1312211075243167001_ses-20170706_run-01_T1w_segmentation_nii.nii ] && echo "sub-170706160506STD1312211075243167001_ses-20170706_run-01_T1w_segmentation_nii.nii exists." || exit 1
 [ -f  segmentation/qsm_segmentations/sub-170705134431STD1312211075243167001_ses-20170705_run-01_T1w_segmentation_nii_trans.nii ] && echo "sub-170705134431STD1312211075243167001_ses-20170705_run-01_T1w_segmentation_nii_trans.nii exists." || exit 1
