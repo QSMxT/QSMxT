@@ -7,26 +7,21 @@ on:
     branches: [ master ]
     paths:
       - README.md
-      - run_0_dicomSort.py
-      - run_1_dicomConvert.py
-      - run_3_segment.py
-      - run_5_analysis.py
       - interfaces/nipype_interface_fastsurfer.py
       - .github/workflows/test_segmentation_pipeline.yml
       - tests/test_segment.sh
       - aseg_labels.csv
+      - workflows/segmentation.py
   pull_request:
     branches: [ master ]
     paths:
       - README.md
-      - run_0_dicomSort.py
-      - run_1_dicomConvert.py
       - run_3_segment.py
-      - run_5_analysis.py
       - interfaces/nipype_interface_fastsurfer.py
       - .github/workflows/test_segmentation_pipeline.yml
       - tests/test_segment.sh
       - aseg_labels.csv
+      - workflows/segmentation.py
     
 jobs:
   test_segmentation_pipeline:
@@ -36,6 +31,17 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
-    - name: segmentation pipeline
+    - name: Setup QSMxT
       run: |
-        /bin/bash tests/test_segment.sh
+        /bin/bash tests/setup_qsmxt.sh
+    - name: Run segmentation pipeline
+      env:
+        WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
+        WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
+        FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
+      run: |
+        /bin/bash tests/test_segmentation_pipeline.sh "test_main"
+    - uses: actions/upload-artifact@v3
+      with:
+        name: public-outputs
+        path: /tmp/public-outputs

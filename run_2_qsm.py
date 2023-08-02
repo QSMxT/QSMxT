@@ -8,25 +8,16 @@ import copy
 import argparse
 import json
 
-from nipype.interfaces.utility import IdentityInterface, Function
-from nipype.interfaces.io import DataSink
-from nipype.pipeline.engine import Workflow, Node, MapNode
+from nipype.pipeline.engine import Workflow
 from nipype import config, logging
+
 from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir, get_diff, print_qsm_premades, gen_plugin_args
 from scripts.sys_cmd import sys_cmd
 from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logger
 from scripts.user_input import get_option, get_string, get_num, get_nums
 
-from interfaces import nipype_interface_romeo as romeo
-from interfaces import nipype_interface_processphase as processphase
-from interfaces import nipype_interface_axialsampling as sampling
-from interfaces import nipype_interface_twopass as twopass
-from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
-from interfaces import nipype_interface_t2star_r2star as t2s_r2s
-from interfaces import nipype_interface_clearswi as swi
-
-from workflows.qsm import qsm_workflow
-from workflows.masking import masking_workflow
+from workflows.qsm import init_qsm_workflow
+from workflows.segmentation import init_segmentation_workflow
 
 def init_workflow(args):
     logger = get_logger('main')
@@ -38,7 +29,7 @@ def init_workflow(args):
     if not subjects:
         logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, args.subject_pattern)}")
         script_exit(1)
-    wf = Workflow("workflow_qsm", base_dir=args.output_dir)
+    wf = Workflow("workflow", base_dir=args.output_dir)
     wf.add_nodes([
         node for node in
         [init_subject_workflow(args, subject) for subject in subjects]
@@ -56,7 +47,7 @@ def init_subject_workflow(args, subject):
     if not sessions:
         logger.log(LogLevel.ERROR.value, f"No sessions found in: {os.path.join(args.bids_dir, subject, args.session_pattern)}")
         script_exit(1)
-    wf = Workflow(subject, base_dir=os.path.join(args.output_dir, "workflow_qsm"))
+    wf = Workflow(subject, base_dir=os.path.join(args.output_dir, "workflow"))
     wf.add_nodes([
         node for node in
         [init_session_workflow(args, subject, session) for session in sessions]
@@ -66,456 +57,43 @@ def init_subject_workflow(args, subject):
 
 def init_session_workflow(args, subject, session):
     logger = get_logger('main')
-    # exit if no runs found
-    phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
-    phase_files = glob.glob(phase_pattern)
-    if not phase_files:
-        logger.log(LogLevel.WARNING.value, f"No phase files found matching pattern: {phase_pattern}. Skipping {subject}/{session}")
-        return
-    for phase_file in phase_files:
-        if 'run-' not in phase_file:
-            logger.log(LogLevel.WARNING.value, f"No 'run-' identifier found in file: {phase_file}. Skipping {subject}/{session}")
-            return
+    wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow", subject, session))
 
-    # identify all runs
-    runs = sorted(list(set([
-        f"run-{os.path.split(path)[1][os.path.split(path)[1].find('run-') + 4: os.path.split(path)[1].find('_', os.path.split(path)[1].find('run-') + 4)]}"
-        for path in phase_files
-    ])))
+    def find_runs(pattern, args):
+        files = glob.glob(pattern)
+        if not files:
+            logger.log(LogLevel.WARNING.value, f"No files found matching pattern: {pattern}")
+            return None
+        if any('run' in file for file in files):
+            runs = sorted(list(set([
+                f"run-{os.path.split(path)[1][os.path.split(path)[1].find('run-') + 4: os.path.split(path)[1].find('_', os.path.split(path)[1].find('run-') + 4)]}"
+                for path in files
+            ])))
+            if not all('run' in file for file in files):
+                runs.append("")
+            if args.runs: runs = [run for run in runs if run in args.runs]
+        else:
+            runs = [""]
+        return runs
 
-    if args.runs: runs = [run for run in runs if run in args.runs]
-    
-    wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow_qsm", subject, session))
-    wf.add_nodes([
-        node for node in
-        [init_run_workflow(copy.deepcopy(args), subject, session, run) for run in runs]
-        if node
-    ])
-    return wf
-
-def init_run_workflow(run_args, subject, session, run):
-    logger = get_logger('main')
-    logger.log(LogLevel.INFO.value, f"Creating nipype workflow for {subject}/{session}/{run}...")
-
-    # get relevant files from this run
-    phase_pattern = os.path.join(run_args.bids_dir, run_args.phase_pattern.format(subject=subject, session=session, run=run))
-    phase_files = sorted(glob.glob(phase_pattern))[:run_args.num_echoes]
-    
-    magnitude_pattern = os.path.join(run_args.bids_dir, run_args.magnitude_pattern.format(subject=subject, session=session, run=run))
-    magnitude_files = sorted(glob.glob(magnitude_pattern))[:run_args.num_echoes]
-
-    params_pattern = os.path.join(run_args.bids_dir, run_args.phase_pattern.format(subject=subject, session=session, run=run).replace("nii.gz", "nii").replace("nii", "json"))
-    params_files = sorted(glob.glob(params_pattern))[:run_args.num_echoes]
-    
-    mask_pattern = os.path.join(run_args.bids_dir, run_args.mask_pattern.format(subject=subject, session=session, run=run))
-    mask_files = sorted(glob.glob(mask_pattern))[:run_args.num_echoes] if run_args.use_existing_masks else []
-    
-    # handle any errors related to files and adjust any settings if needed
-    if not phase_files:
-        logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - no phase files found matching pattern {phase_pattern}.")
-        return
-    if len(phase_files) != len(params_files):
-        logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
-        return
-    if len(phase_files) == 1 and run_args.combine_phase:
-        run_args.combine_phase = False
-    if run_args.use_existing_masks:
-        if not mask_files:
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking_algorithm} masking.")
-        if len(mask_files) > 1 and len(mask_files) != len(phase_files):
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but unequal number of mask and phase files present. Reverting to {run_args.masking_algorithm} masking.")
-            mask_files = []
-        if len(mask_files) > 1 and run_args.combine_phase:
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --combine_phase specified but multiple masks found with --use_existing_masks. The first mask will be used only.")
-            mask_files = [mask_files[0] for x in mask_files]
-        if mask_files:
-            run_args.inhomogeneity_correction = False
-            run_args.two_pass = False
-            run_args.single_pass = True
-            run_args.add_bet = False
-    if not magnitude_files:
-        if run_args.r2starmap:
-            logger.log(LogLevel.WARNING.value, f"Cannot compute R2* for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.r2starmap = False
-        if run_args.t2starmap:
-            logger.log(LogLevel.WARNING.value, f"Cannot compute T2* for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.t2starmap = False
-        if run_args.swi:
-            logger.log(LogLevel.WARNING.value, f"Cannot compute SWI for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.swi = False
-        if run_args.masking_input == 'magnitude':
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.masking_input = 'phase'
-            run_args.masking_algorithm = 'threshold'
-            run_args.inhomogeneity_correction = False
-            run_args.add_bet = False
-        if run_args.add_bet:
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} cannot use --add_bet option - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.add_bet = False
-        if run_args.combine_phase:
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} cannot use --combine_phase option - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.combine_phase = False
-    
-    # create nipype workflow for this run
-    wf = Workflow(run, base_dir=os.path.join(run_args.output_dir, "workflow_qsm", subject, session, run))
-
-    # datasink
-    n_outputs = Node(
-        interface=DataSink(base_directory=run_args.output_dir),
-        name='nipype_datasink'
-    )
-
-    # get files
-    n_inputs = Node(
-        IdentityInterface(
-            fields=['phase', 'magnitude', 'params_files', 'mask']
-        ),
-        name='nipype_getfiles'
-    )
-    n_inputs.inputs.phase = phase_files
-    n_inputs.inputs.magnitude = magnitude_files
-    n_inputs.inputs.params_files = params_files
-    if len(mask_files) == 1: mask_files = [mask_files[0] for _ in phase_files]
-    n_inputs.inputs.mask = mask_files
-
-    # read echotime and field strengths from json files
-    def read_json_me(params_file):
-        import json
-        json_file = open(params_file, 'rt')
-        data = json.load(json_file)
-        te = data['EchoTime']
-        json_file.close()
-        return te
-    def read_json_se(params_files):
-        import json
-        json_file = open(params_files[0], 'rt')
-        data = json.load(json_file)
-        B0 = data['MagneticFieldStrength']
-        json_file.close()
-        return B0
-    mn_json_params = MapNode(
-        interface=Function(
-            input_names=['params_file'],
-            output_names=['TE'],
-            function=read_json_me
-        ),
-        iterfield=['params_file'],
-        name='func_read-json-me'
-    )
-    wf.connect([
-        (n_inputs, mn_json_params, [('params_files', 'params_file')])
-    ])
-    n_json_params = Node(
-        interface=Function(
-            input_names=['params_files'],
-            output_names=['B0'],
-            function=read_json_se
-        ),
-        iterfield=['params_file'],
-        name='func_read-json-se'
-    )
-    wf.connect([
-        (n_inputs, n_json_params, [('params_files', 'params_files')])
-    ])
-
-    # read voxel size 'vsz' from nifti file
-    def read_nii(nii_file):
-        import nibabel as nib
-        if isinstance(nii_file, list): nii_file = nii_file[0]
-        nii = nib.load(nii_file)
-        return str(nii.header.get_zooms()).replace(" ", "")
-    n_nii_params = Node(
-        interface=Function(
-            input_names=['nii_file'],
-            output_names=['vsz'],
-            function=read_nii
-        ),
-        name='nibabel_read-nii'
-    )
-    wf.connect([
-        (n_inputs, n_nii_params, [('phase', 'nii_file')])
-    ])
-
-    # r2* and t2* mappping
-    if run_args.t2starmap or run_args.r2starmap:
-        n_t2s_r2s = Node(
-            interface=t2s_r2s.T2sR2sInterface(),
-            name='mrt_t2s-r2s'
-        )
-        wf.connect([
-            (n_inputs, n_t2s_r2s, [('magnitude', 'magnitude')]),
-            (mn_json_params, n_t2s_r2s, [('TE', 'TE')])
-        ])
-        if run_args.t2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('t2starmap', 't2starmap')])])
-        if run_args.r2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('r2starmap', 'r2starmap')])])
-        
-    # scale phase data
-    mn_phase_scaled = MapNode(
-        interface=processphase.ScalePhaseInterface(),
-        iterfield=['phase'],
-        name='nibabel_numpy_scale-phase'
-    )
-    wf.connect([
-        (n_inputs, mn_phase_scaled, [('phase', 'phase')])
-    ])
-
-    # swi
-    if run_args.swi:
-        n_swi = Node(
-            interface=swi.ClearSwiInterface(),
-            name='mrt_clearswi'
-        )
-        wf.connect([
-            (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
-            (n_inputs, n_swi, [('magnitude', 'magnitude')]),
-            (mn_json_params, n_swi, [('TE', 'TE')]),
-            (n_swi, n_outputs, [('swi', 'swi')]),
-            (n_swi, n_outputs, [('swi_mip', 'swi_mip')]),
-        ])
-
-    # reorient to canonical
-    def as_closest_canonical(phase, magnitude=None, mask=None):
-        import os
-        import nibabel as nib
-        from scripts.qsmxt_functions import extend_fname
-        out_phase = extend_fname(phase, "_canonical", out_dir=os.getcwd())
-        out_mag = extend_fname(magnitude, "_canonical", out_dir=os.getcwd()) if magnitude else None
-        out_mask = extend_fname(mask, "_canonical", out_dir=os.getcwd()) if mask else None
-        if nib.aff2axcodes(nib.load(phase).affine) == ('R', 'A', 'S'): return phase, magnitude, mask
-        nib.save(nib.as_closest_canonical(nib.load(phase)), out_phase)
-        if magnitude: nib.save(nib.as_closest_canonical(nib.load(magnitude)), out_mag)
-        if mask: nib.save(nib.as_closest_canonical(nib.load(mask)), out_mask)
-        return out_phase, out_mag, out_mask
-    mn_inputs_canonical = MapNode(
-        interface=Function(
-            input_names=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
-            output_names=['phase', 'magnitude', 'mask'],
-            function=as_closest_canonical
-        ),
-        iterfield=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
-        name='nibabel_as-canonical'
-    )
-    wf.connect([
-        (mn_phase_scaled, mn_inputs_canonical, [('phase_scaled', 'phase')])
-    ])
-    if magnitude_files:
-        wf.connect([
-            (n_inputs, mn_inputs_canonical, [('magnitude', 'magnitude')]),
-        ])
-    if mask_files:
-        wf.connect([
-            (n_inputs, mn_inputs_canonical, [('mask', 'mask')]),
-        ])
-    
-    # resample to axial
-    n_inputs_resampled = Node(
-        interface=IdentityInterface(
-            fields=['phase', 'magnitude', 'mask']
-        ),
-        name='nipype_inputs-resampled'
-    )
-    if magnitude_files:
-        mn_resample_inputs = MapNode(
-            interface=sampling.AxialSamplingInterface(
-                obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
-            ),
-            iterfield=['magnitude', 'phase', 'mask'] if mask_files else ['magnitude', 'phase'],
-            mem_gb=min(3, run_args.mem_avail),
-            name='nibabel_numpy_nilearn_axial-resampling'
-        )
-        mn_resample_inputs.plugin_args = gen_plugin_args(
-            plugin_args={ 'overwrite': True },
-            slurm_account=run_args.slurm[0],
-            pbs_account=run_args.pbs,
-            slurm_partition=run_args.slurm[1],
-            name="axial_resampling",
-            time="00:10:00",
-            mem_gb=10,
-            num_cpus=min(1, run_args.n_procs)
-        )
-        wf.connect([
-            (mn_inputs_canonical, mn_resample_inputs, [('magnitude', 'magnitude')]),
-            (mn_inputs_canonical, mn_resample_inputs, [('phase', 'phase')]),
-            (mn_resample_inputs, n_inputs_resampled, [('magnitude', 'magnitude')]),
-            (mn_resample_inputs, n_inputs_resampled, [('phase', 'phase')])
-        ])
-        if mask_files:
-            wf.connect([
-                (mn_inputs_canonical, mn_resample_inputs, [('mask', 'mask')]),
-                (mn_resample_inputs, n_inputs_resampled, [('mask', 'mask')])
-            ])
-    else:
-        wf.connect([
-            (mn_inputs_canonical, n_inputs_resampled, [('phase', 'phase')])
-        ])
-        if mask_files:
-            wf.connect([
-                (mn_inputs_canonical, n_inputs_resampled, [('mask', 'mask')])
+    def init_workflow_and_add_nodes(args, subject, session, runs, init_workflow_func):
+        if runs is not None:
+            wf.add_nodes([
+                node for node in
+                [init_workflow_func(copy.deepcopy(args), subject, session, run) for run in runs]
+                if node
             ])
 
-    # combine phase data if necessary
-    n_inputs_combine = Node(
-        interface=IdentityInterface(
-            fields=['phase_unwrapped', 'frequency']
-        ),
-        name='phase-combined'
-    )
-    if run_args.combine_phase:
-        n_romeo_combine = Node(
-            interface=romeo.RomeoB0Interface(),
-            name='mrt_romeo_combine',
-            mem_gb=min(4, run_args.mem_avail)
-        )
-        n_romeo_combine.plugin_args = gen_plugin_args(
-            plugin_args={ 'overwrite': True },
-            slurm_account=run_args.slurm[0],
-            pbs_account=run_args.pbs,
-            slurm_partition=run_args.slurm[1],
-            name="romeo_combine",
-            time="00:10:00",
-            mem_gb=10,
-            num_cpus=min(1, run_args.n_procs)
-        )
-        wf.connect([
-            (mn_json_params, n_romeo_combine, [('TE', 'TE')]),
-            (n_inputs_resampled, n_romeo_combine, [('phase', 'phase')]),
-            (n_inputs_resampled, n_romeo_combine, [('magnitude', 'magnitude')]),
-            (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency')]),
-            (n_romeo_combine, n_inputs_combine, [('phase_unwrapped', 'phase_unwrapped')]),
-        ])
+    if args.do_qsm:
+        phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
+        phase_runs = find_runs(phase_pattern, args)
+        init_workflow_and_add_nodes(args, subject, session, phase_runs, init_qsm_workflow)
 
-    # === MASKING ===
-    wf_masking = masking_workflow(
-        run_args=run_args,
-        mask_available=len(mask_files) > 0,
-        magnitude_available=len(magnitude_files) > 0,
-        qualitymap_available=False,
-        fill_masks=True,
-        add_bet=run_args.add_bet and run_args.filling_algorithm != 'bet',
-        name="mask",
-        index=0
-    )
-    wf.connect([
-        (n_inputs_resampled, wf_masking, [('phase', 'masking_inputs.phase')]),
-        (n_inputs_resampled, wf_masking, [('magnitude', 'masking_inputs.magnitude')]),
-        (n_inputs_resampled, wf_masking, [('mask', 'masking_inputs.mask')]),
-        (mn_json_params, wf_masking, [('TE', 'masking_inputs.TE')])
-    ])
-    '''
-    if mask_files:
-        wf.connect([
-            (n_inputs_combine, wf_masking, [('mask', 'masking_inputs.mask')])
-        ])
-    if magnitude_files:
-        wf.connect([
-            (n_inputs_combine, wf_masking, [('magnitude', 'masking_inputs.magnitude')])
-        ])
-    '''
-    wf.connect([
-        (wf_masking, n_outputs, [('masking_outputs.mask', 'mask')])
-    ])
+    if args.do_segmentation:
+        t1w_pattern = os.path.join(args.bids_dir, args.t1w_pattern.replace("{run}", "").format(subject=subject, session=session))
+        t1w_runs = find_runs(t1w_pattern, args)
+        init_workflow_and_add_nodes(args, subject, session, t1w_runs, init_segmentation_workflow)
 
-    # === QSM ===
-    wf_qsm = qsm_workflow(run_args, "qsm", len(magnitude_files) > 0, qsm_erosions=run_args.tgv_erosions)
-
-    wf.connect([
-        (n_inputs_resampled, wf_qsm, [('phase', 'qsm_inputs.phase')]),
-        (n_inputs_combine, wf_qsm, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
-        (n_inputs_combine, wf_qsm, [('frequency', 'qsm_inputs.frequency')]),
-        (n_inputs_resampled, wf_qsm, [('magnitude', 'qsm_inputs.magnitude')]),
-        (wf_masking, wf_qsm, [('masking_outputs.mask', 'qsm_inputs.mask')]),
-        (mn_json_params, wf_qsm, [('TE', 'qsm_inputs.TE')]),
-        (n_json_params, wf_qsm, [('B0', 'qsm_inputs.B0')]),
-        (n_nii_params, wf_qsm, [('vsz', 'qsm_inputs.vsz')])
-    ])
-    wf_qsm.get_node('qsm_inputs').inputs.b0_direction = "(0,0,1)"
-    
-    n_qsm_average = Node(
-        interface=nonzeroaverage.NonzeroAverageInterface(),
-        name="nibabel_numpy_qsm-average"
-    )
-    wf.connect([
-        (wf_qsm, n_qsm_average, [('qsm_outputs.qsm', 'in_files')]),
-        (wf_masking, n_qsm_average, [('masking_outputs.mask', 'in_masks')])
-    ])
-    wf.connect([
-        (n_qsm_average, n_outputs, [('out_file', 'qsm_final' if not run_args.two_pass else 'qsm_filled')])
-    ])
-
-    # two-pass algorithm
-    if run_args.two_pass:
-        wf_masking_intermediate = masking_workflow(
-            run_args=run_args,
-            mask_available=len(mask_files) > 0,
-            magnitude_available=len(magnitude_files) > 0,
-            qualitymap_available=True,
-            fill_masks=False,
-            add_bet=False,
-            name="mask-intermediate",
-            index=1
-        )
-        wf.connect([
-            (n_inputs_resampled, wf_masking_intermediate, [('phase', 'masking_inputs.phase')]),
-            (n_inputs_resampled, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')]),
-            (n_inputs_resampled, wf_masking_intermediate, [('mask', 'masking_inputs.mask')]),
-            (mn_json_params, wf_masking_intermediate, [('TE', 'masking_inputs.TE')]),
-            (wf_masking, wf_masking_intermediate, [('masking_outputs.quality_map', 'masking_inputs.quality_map')])
-        ])
-        '''
-        if mask_files:
-            wf.connect([
-                (n_inputs_combine, wf_masking_intermediate, [('mask', 'masking_inputs.mask')])
-            ])
-        if magnitude_files:
-            if run_args.inhomogeneity_correction:
-                wf.connect([
-                    (mn_inhomogeneity_correction, wf_masking_intermediate, [('magnitude_corrected', 'masking_inputs.magnitude')])
-                ])
-            else:
-                wf.connect([
-                    (n_inputs_combine, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')])
-                ])
-        '''
-
-        wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0, qsm_erosions=0)
-        wf.connect([
-            (n_inputs_resampled, wf_qsm_intermediate, [('phase', 'qsm_inputs.phase')]),
-            (n_inputs_resampled, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
-            (n_inputs_combine, wf_qsm_intermediate, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
-            (n_inputs_combine, wf_qsm_intermediate, [('frequency', 'qsm_inputs.frequency')]),
-            (mn_json_params, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
-            (n_json_params, wf_qsm_intermediate, [('B0', 'qsm_inputs.B0')]),
-            (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')]),
-            (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.mask', 'qsm_inputs.mask')])
-        ])
-        wf_qsm_intermediate.get_node('qsm_inputs').inputs.b0_direction = "(0,0,1)"
-                
-        # two-pass combination
-        mn_qsm_twopass = MapNode(
-            interface=twopass.TwopassNiftiInterface(),
-            name='numpy_nibabel_twopass',
-            iterfield=['in_file1', 'in_file2', 'mask']
-        )
-        wf.connect([
-            (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file1')]),
-            (wf_masking_intermediate, mn_qsm_twopass, [('masking_outputs.mask', 'mask')]),
-            (wf_qsm, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file2')])
-        ])
-
-        # averaging
-        n_qsm_twopass_average = Node(
-            interface=nonzeroaverage.NonzeroAverageInterface(),
-            name="nibabel_numpy_twopass-average"
-        )
-        wf.connect([
-            (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')]),
-            (wf_masking_intermediate, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
-        ])
-        wf.connect([
-            (n_qsm_twopass_average, n_outputs, [('out_file', 'qsm_final')])
-        ])
-        
-    
     return wf
 
 def parse_args(args, return_run_command=False):
@@ -575,6 +153,31 @@ def parse_args(args, return_run_command=False):
         '--session_pattern',
         default=None,
         help='Pattern used to match session folders in subject folders'
+    )
+
+    parser.add_argument(
+        '--do_qsm',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
+        default=None,
+        help="Whether or not to run the QSM pipeline."
+    )
+
+    parser.add_argument(
+        '--do_segmentation',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
+        default=None,
+        help="Whether or not to run the segmentation pipeline."
+    )
+
+    parser.add_argument(
+        '--t1w_pattern',
+        default=None,
+        help='Pattern to match T1-weighted files for segmentation within session folders. ' +
+             'The {subject}, {session} and {run} placeholders must be present.'
     )
 
     parser.add_argument(
@@ -1342,18 +945,10 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
     
     return args.copy(), implicit_args
 
-def create_logger(name, logpath=None):
-    logger = make_logger(
-        name=name,
-        logpath=logpath,
-        printlevel=LogLevel.INFO,
-        writelevel=LogLevel.INFO,
-        warnlevel=LogLevel.WARNING,
-        errorlevel=LogLevel.ERROR
-    )
-    return logger
-
 def process_args(args):
+    if not (args.do_qsm or args.do_segmentation):
+        args.do_qsm = True
+
     # default QSM algorithms
     if not args.qsm_algorithm:
         args.qsm_algorithm = 'rts'
@@ -1461,51 +1056,62 @@ def write_citations(wf):
 
     # write "references.txt" with the command used to invoke the script and any necessary references
     with open(os.path.join(args.output_dir, "references.txt"), 'w', encoding='utf-8') as f:
-        # qsmxt, nipype, numpy
-        f.write("== Citations ==")
-        f.write(f"\n\n - QSMxT{'' if not args.two_pass else ' and two-pass combination method'}: Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
-        f.write("\n\n - QSMxT: Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
-        
-        if any_string_matches_any_node(['correct-inhomogeneity']):
-            f.write("\n\n - Inhomogeneity correction: Eckstein K, Trattnig S, Simon DR. A Simple homogeneity correction for neuroimaging at 7T. In: Proc. Intl. Soc. Mag. Reson. Med. International Society for Magnetic Resonance in Medicine; 2019. Abstract 2716. https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html")
-        if any_string_matches_any_node(['bet']):
-            f.write("\n\n - Brain extraction: Smith SM. Fast robust automated brain extraction. Human Brain Mapping. 2002;17(3):143-155. doi:10.1002/hbm.10062")
-            f.write("\n\n - Brain extraction: Liangfu Chen. liangfu/bet2 - Standalone Brain Extraction Tool. GitHub; 2015. https://github.com/liangfu/bet2")
-        if any_string_matches_any_node(['threshold-masking']) and args.threshold_algorithm == 'gaussian':
-            f.write("\n\n - Threshold selection algorithm - gaussian: Balan AGR, Traina AJM, Ribeiro MX, Marques PMA, Traina Jr. C. Smart histogram analysis applied to the skull-stripping problem in T1-weighted MRI. Computers in Biology and Medicine. 2012;42(5):509-522. doi:10.1016/j.compbiomed.2012.01.004")
-        if any_string_matches_any_node(['threshold-masking']) and args.threshold_algorithm == 'otsu':
-            f.write("\n\n - Threshold selection algorithm - Otsu: Otsu, N. (1979). A threshold selection method from gray-level histograms. IEEE transactions on systems, man, and cybernetics, 9(1), 62-66. doi:10.1109/TSMC.1979.4310076")
-        if any_string_matches_any_node(['qsmjl_laplacian-unwrapping']):
-            f.write("\n\n - Unwrapping algorithm - Laplacian: Schofield MA, Zhu Y. Fast phase unwrapping algorithm for interferometric applications. Optics letters. 2003 Jul 15;28(14):1194-6. doi:10.1364/OL.28.001194")
-            f.write("\n\n - Unwrapping algorithm - Laplacian: Zhou D, Liu T, Spincemaille P, Wang Y. Background field removal by solving the Laplacian boundary value problem. NMR in Biomedicine. 2014 Mar;27(3):312-9. doi:10.1002/nbm.3064")
-        if any_string_matches_any_node(['mrt_laplacian-unwrapping']):
-            f.write("\n\n - Unwrapping algorithm - Laplacian: Schofield MA, Zhu Y. Fast phase unwrapping algorithm for interferometric applications. Optics letters. 2003 Jul 15;28(14):1194-6. doi:10.1364/OL.28.001194")
-        if any_string_matches_any_node(['romeo']):
-            f.write("\n\n - Unwrapping algorithm - ROMEO: Dymerska B, Eckstein K, Bachrata B, et al. Phase unwrapping with a rapid opensource minimum spanning tree algorithm (ROMEO). Magnetic Resonance in Medicine. 2021;85(4):2294-2308. doi:10.1002/mrm.28563")
-        if any_string_matches_any_node(['vsharp']):
-            f.write("\n\n - Background field removal - V-SHARP: Wu B, Li W, Guidon A et al. Whole brain susceptibility mapping using compressed sensing. Magnetic resonance in medicine. 2012 Jan;67(1):137-47. doi:10.1002/mrm.23000")
-        if any_string_matches_any_node(['pdf']):
-            f.write("\n\n - Background field removal - PDF: Liu, T., Khalidov, I., de Rochefort et al. A novel background field removal method for MRI using projection onto dipole fields. NMR in Biomedicine. 2011 Nov;24(9):1129-36. doi:10.1002/nbm.1670")
-        if any_string_matches_any_node(['nextqsm']):
-            f.write("\n\n - QSM algorithm - NeXtQSM: Cognolato, F., O'Brien, K., Jin, J. et al. (2022). NeXtQSM—A complete deep learning pipeline for data-consistent Quantitative Susceptibility Mapping trained with hybrid data. Medical Image Analysis, 102700. doi:10.1016/j.media.2022.102700")
-        if any_string_matches_any_node(['rts']):
-            f.write("\n\n - QSM algorithm - RTS: Kames C, Wiggermann V, Rauscher A. Rapid two-step dipole inversion for susceptibility mapping with sparsity priors. Neuroimage. 2018 Feb 15;167:276-83. doi:10.1016/j.neuroimage.2017.11.018")
-        if any_string_matches_any_node(['tv']):
-            f.write("\n\n - QSM algorithm - TV: Bilgic B, Fan AP, Polimeni JR, Cauley SF, Bianciardi M, Adalsteinsson E, Wald LL, Setsompop K. Fast quantitative susceptibility mapping with L1-regularization and automatic parameter selection. Magnetic resonance in medicine. 2014 Nov;72(5):1444-59")
-        if any_string_matches_any_node(['tgv']):
-            f.write("\n\n - QSM algorithm - TGV: Langkammer C, Bredies K, Poser BA, et al. Fast quantitative susceptibility mapping using 3D EPI and total generalized variation. NeuroImage. 2015;111:622-630. doi:10.1016/j.neuroimage.2015.02.041")
-        if any_string_matches_any_node(['qsmjl']):
-            f.write("\n\n - Julia package - QSM.jl: kamesy. GitHub; 2022. https://github.com/kamesy/QSM.jl")
-        if any_string_matches_any_node(['mrt']):
-            f.write("\n\n - Julia package - MriResearchTools: Eckstein K. korbinian90/MriResearchTools.jl. GitHub; 2022. https://github.com/korbinian90/MriResearchTools.jl")
-        if any_string_matches_any_node(['nibabel']):
-            f.write("\n\n - Python package - nibabel: Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
-        if any_string_matches_any_node(['scipy']):
-            f.write("\n\n - Python package - scipy: Virtanen P, Gommers R, Oliphant TE, et al. SciPy 1.0: fundamental algorithms for scientific computing in Python. Nat Methods. 2020;17(3):261-272. doi:10.1038/s41592-019-0686-2")
-        if any_string_matches_any_node(['numpy']):
+        if args.do_qsm:
+            f.write("== QSM References ==")
+            f.write(f"\n\n - QSMxT{'' if not args.two_pass else ' and two-pass combination method'}: Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+            f.write("\n\n - QSMxT: Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
+            
+            if any_string_matches_any_node(['correct-inhomogeneity']):
+                f.write("\n\n - Inhomogeneity correction: Eckstein K, Trattnig S, Simon DR. A Simple homogeneity correction for neuroimaging at 7T. In: Proc. Intl. Soc. Mag. Reson. Med. International Society for Magnetic Resonance in Medicine; 2019. Abstract 2716. https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html")
+            if any_string_matches_any_node(['bet']):
+                f.write("\n\n - Brain extraction: Smith SM. Fast robust automated brain extraction. Human Brain Mapping. 2002;17(3):143-155. doi:10.1002/hbm.10062")
+                f.write("\n\n - Brain extraction: Liangfu Chen. liangfu/bet2 - Standalone Brain Extraction Tool. GitHub; 2015. https://github.com/liangfu/bet2")
+            if any_string_matches_any_node(['threshold-masking']) and args.threshold_algorithm == 'gaussian':
+                f.write("\n\n - Threshold selection algorithm - gaussian: Balan AGR, Traina AJM, Ribeiro MX, Marques PMA, Traina Jr. C. Smart histogram analysis applied to the skull-stripping problem in T1-weighted MRI. Computers in Biology and Medicine. 2012;42(5):509-522. doi:10.1016/j.compbiomed.2012.01.004")
+            if any_string_matches_any_node(['threshold-masking']) and args.threshold_algorithm == 'otsu':
+                f.write("\n\n - Threshold selection algorithm - Otsu: Otsu, N. (1979). A threshold selection method from gray-level histograms. IEEE transactions on systems, man, and cybernetics, 9(1), 62-66. doi:10.1109/TSMC.1979.4310076")
+            if any_string_matches_any_node(['qsmjl_laplacian-unwrapping']):
+                f.write("\n\n - Unwrapping algorithm - Laplacian: Schofield MA, Zhu Y. Fast phase unwrapping algorithm for interferometric applications. Optics letters. 2003 Jul 15;28(14):1194-6. doi:10.1364/OL.28.001194")
+                f.write("\n\n - Unwrapping algorithm - Laplacian: Zhou D, Liu T, Spincemaille P, Wang Y. Background field removal by solving the Laplacian boundary value problem. NMR in Biomedicine. 2014 Mar;27(3):312-9. doi:10.1002/nbm.3064")
+            if any_string_matches_any_node(['mrt_laplacian-unwrapping']):
+                f.write("\n\n - Unwrapping algorithm - Laplacian: Schofield MA, Zhu Y. Fast phase unwrapping algorithm for interferometric applications. Optics letters. 2003 Jul 15;28(14):1194-6. doi:10.1364/OL.28.001194")
+            if any_string_matches_any_node(['romeo']):
+                f.write("\n\n - Unwrapping algorithm - ROMEO: Dymerska B, Eckstein K, Bachrata B, et al. Phase unwrapping with a rapid opensource minimum spanning tree algorithm (ROMEO). Magnetic Resonance in Medicine. 2021;85(4):2294-2308. doi:10.1002/mrm.28563")
+            if any_string_matches_any_node(['vsharp']):
+                f.write("\n\n - Background field removal - V-SHARP: Wu B, Li W, Guidon A et al. Whole brain susceptibility mapping using compressed sensing. Magnetic resonance in medicine. 2012 Jan;67(1):137-47. doi:10.1002/mrm.23000")
+            if any_string_matches_any_node(['pdf']):
+                f.write("\n\n - Background field removal - PDF: Liu, T., Khalidov, I., de Rochefort et al. A novel background field removal method for MRI using projection onto dipole fields. NMR in Biomedicine. 2011 Nov;24(9):1129-36. doi:10.1002/nbm.1670")
+            if any_string_matches_any_node(['nextqsm']):
+                f.write("\n\n - QSM algorithm - NeXtQSM: Cognolato, F., O'Brien, K., Jin, J. et al. (2022). NeXtQSM—A complete deep learning pipeline for data-consistent Quantitative Susceptibility Mapping trained with hybrid data. Medical Image Analysis, 102700. doi:10.1016/j.media.2022.102700")
+            if any_string_matches_any_node(['rts']):
+                f.write("\n\n - QSM algorithm - RTS: Kames C, Wiggermann V, Rauscher A. Rapid two-step dipole inversion for susceptibility mapping with sparsity priors. Neuroimage. 2018 Feb 15;167:276-83. doi:10.1016/j.neuroimage.2017.11.018")
+            if any_string_matches_any_node(['tv']):
+                f.write("\n\n - QSM algorithm - TV: Bilgic B, Fan AP, Polimeni JR, Cauley SF, Bianciardi M, Adalsteinsson E, Wald LL, Setsompop K. Fast quantitative susceptibility mapping with L1-regularization and automatic parameter selection. Magnetic resonance in medicine. 2014 Nov;72(5):1444-59")
+            if any_string_matches_any_node(['tgv']):
+                f.write("\n\n - QSM algorithm - TGV: Langkammer C, Bredies K, Poser BA, et al. Fast quantitative susceptibility mapping using 3D EPI and total generalized variation. NeuroImage. 2015;111:622-630. doi:10.1016/j.neuroimage.2015.02.041")
+            if any_string_matches_any_node(['qsmjl']):
+                f.write("\n\n - Julia package - QSM.jl: kamesy. GitHub; 2022. https://github.com/kamesy/QSM.jl")
+            if any_string_matches_any_node(['mrt']):
+                f.write("\n\n - Julia package - MriResearchTools: Eckstein K. korbinian90/MriResearchTools.jl. GitHub; 2022. https://github.com/korbinian90/MriResearchTools.jl")
+            if any_string_matches_any_node(['nibabel']):
+                f.write("\n\n - Python package - nibabel: Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
+            if any_string_matches_any_node(['scipy']):
+                f.write("\n\n - Python package - scipy: Virtanen P, Gommers R, Oliphant TE, et al. SciPy 1.0: fundamental algorithms for scientific computing in Python. Nat Methods. 2020;17(3):261-272. doi:10.1038/s41592-019-0686-2")
+            if any_string_matches_any_node(['numpy']):
+                f.write("\n\n - Python package - numpy: Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
+            f.write("\n\n - Python package - Nipype: Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
+            f.write("\n\n")
+
+        if args.do_segmentation:
+            f.write("== Segmentation References ==")
+            f.write("\n\n - QSMxT: Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+            f.write("\n\n - QSMxT: Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
+            f.write("\n\n - FastSurfer: Henschel L, Conjeti S, Estrada S, Diers K, Fischl B, Reuter M. FastSurfer - A fast and accurate deep learning based neuroimaging pipeline. NeuroImage. 2020;219:117012. doi:10.1016/j.neuroimage.2020.117012")
+            f.write("\n\n - ANTs: Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")
             f.write("\n\n - Python package - numpy: Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
-        f.write("\n\n - Python package - Nipype: Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
-        f.write("\n\n")
+            f.write("\n\n - Python package - nibabel: Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
+            f.write("\n\n - Python package - Nipype: Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
+            f.write("\n\n")
 
 def script_exit(error_code=0):
     show_warning_summary(logger)
@@ -1514,7 +1120,7 @@ def script_exit(error_code=0):
 
 if __name__ == "__main__":
     # create initial logger
-    logger = create_logger(name='pre')
+    logger = make_logger(name='pre')
     logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
 
     # parse explicit arguments
@@ -1532,7 +1138,7 @@ if __name__ == "__main__":
     # overwrite logger with one that logs to file
     logpath = os.path.join(args.output_dir, f"qsmxt_log.log")
     logger.log(LogLevel.INFO.value, f"Starting log file: {logpath}")
-    logger = create_logger(
+    logger = make_logger(
         name='main',
         logpath=logpath
     )
@@ -1564,7 +1170,12 @@ if __name__ == "__main__":
     
     # build workflow
     wf = init_workflow(args)
-    
+
+    # handle empty workflow
+    if len(wf._get_all_nodes()) == 0:
+        logger.log(LogLevel.ERROR.value, f"Workflow is empty! There is nothing to do.")
+        script_exit(1)
+
     # write citations to file
     write_citations(wf)
 

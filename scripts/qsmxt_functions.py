@@ -2,6 +2,13 @@ import os
 import shutil
 import json
 from scripts.sys_cmd import sys_cmd
+from nipype.pipeline.engine import Workflow, Node, MapNode
+
+def create_node(interface, name, iterfield=None, is_map=False, **kwargs):
+    if is_map:
+        return Node(interface=interface, name=name, kwargs=kwargs)
+    else:
+        return MapNode(interface=interface, name=name, iterfield=iterfield, kwargs=kwargs)
 
 def get_qsmxt_dir():
     return os.path.split(os.path.os.path.dirname(os.path.abspath(__file__)))[0]
@@ -13,7 +20,7 @@ def get_qsmxt_version():
     date = sys_cmd(f"git --git-dir {git_dir} log -1 --format=%cd", False, False)
     return f"{version} (commit date: {date})"
 
-def get_qsm_premades(pipeline_file):
+def get_qsm_premades(pipeline_file=None):
     premades = json.load(open(f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')}", "r"))
 
     if pipeline_file:    

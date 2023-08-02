@@ -10,7 +10,7 @@ from interfaces import nipype_interface_twopass as twopass
 from interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from interfaces import nipype_interface_combinemagnitude as combinemagnitude
 
-from scripts.qsmxt_functions import gen_plugin_args
+from scripts.qsmxt_functions import gen_plugin_args, create_node
 
 def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_available, fill_masks, add_bet, name, index):
 
@@ -50,11 +50,12 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                         mem_gb=min(3, run_args.mem_avail)
                     )
                 else:
-                    mn_phaseweights = MapNode(
+                    mn_phaseweights = create_node(
                         interface=phaseweights.RomeoMaskingInterface(),
                         iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
                         name='romeo-voxelquality',
-                        mem_gb=min(3, run_args.mem_avail)
+                        mem_gb=min(3, run_args.mem_avail),
+                        is_map=run_args.combine_phase
                     )
                 mn_phaseweights.inputs.weight_type = "grad+second"
                 wf.connect([
@@ -89,10 +90,11 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
             # correct magnitude if necessary
             if run_args.inhomogeneity_correction:
-                mn_inhomogeneity_correction = MapNode(
+                mn_inhomogeneity_correction = create_node(
                     interface=makehomogeneous.MakeHomogeneousInterface(),
                     iterfield=['magnitude'],
-                    name='mrt_correct-inhomogeneity'
+                    name='mrt_correct-inhomogeneity',
+                    is_map=run_args.combine_phase
                 )
 
                 if run_args.combine_phase:
@@ -116,10 +118,11 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 n_procs=bet_threads
             )
             '''
-            mn_bet = MapNode(
+            mn_bet = create_node(
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
-                name='fsl-bet'
+                name='fsl-bet',
+                is_map=run_args.combine_phase
             )
             mn_bet.plugin_args = gen_plugin_args(
                 plugin_args={ 'overwrite': True },
@@ -145,12 +148,13 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 ])
 
             # erode bet mask
-            mn_bet_erode = MapNode(
+            mn_bet_erode = create_node(
                 interface=erode.ErosionInterface(
                     num_erosions=run_args.mask_erosions[index % len(run_args.mask_erosions)] if run_args.mask_erosions else 0
                 ),
                 iterfield=['in_file'],
-                name='scipy_numpy_nibabel_bet_erode'
+                name='scipy_numpy_nibabel_bet_erode',
+                is_map=run_args.combine_phase
             )
             wf.connect([
                 (mn_bet, mn_bet_erode, [('mask', 'in_file')])
@@ -204,10 +208,11 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                     (n_threshold_masking, n_outputs, [('mask', 'mask')])
                 ])
             else:
-                mn_mask_plus_bet = MapNode(
+                mn_mask_plus_bet = create_node(
                     interface=twopass.TwopassNiftiInterface(),
                     name='numpy_nibabel_mask-plus-bet',
                     iterfield=['in_file1', 'in_file2'],
+                    is_map=run_args.combine_phase
                 )
                 wf.connect([
                     (n_threshold_masking, mn_mask_plus_bet, [('mask', 'in_file1')]),

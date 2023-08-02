@@ -11,8 +11,8 @@ def mgz2nii(in_file, out_file=None):
     # for some reason nibabel needs help converting the data type properly to numpy
     dtypes = { # https://surfer.nmr.mgh.harvard.edu/fswiki/FsTutorial/MghFormat
         0 : np.uint8, # UCHAR
-        1 : np.int,   # INT
-        3 : np.float, # FLOAT
+        1 : int,      # INT
+        3 : float,    # FLOAT
         4 : np.short  # SHORT
     }
 

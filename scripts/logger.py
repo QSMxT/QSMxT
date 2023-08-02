@@ -40,7 +40,7 @@ class _StringStream:
 def get_logger(name='main'):
     return _logging.getLogger(name=name)
 
-def make_logger(name='main', logpath=None, printlevel=LogLevel.INFO, warnlevel=LogLevel.WARNING, errorlevel=LogLevel.ERROR, writelevel=LogLevel.WARNING):
+def make_logger(name='main', logpath=None, printlevel=LogLevel.INFO, warnlevel=LogLevel.WARNING, errorlevel=LogLevel.ERROR, writelevel=LogLevel.INFO):
     # create/get logger
     logger = _logging.getLogger(name=name)
 
