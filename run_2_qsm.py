@@ -28,7 +28,7 @@ def init_workflow(args):
     ]
     if not subjects:
         logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, args.subject_pattern)}")
-        script_exit(1)
+        script_exit(1, logger=logger)
     wf = Workflow("workflow", base_dir=args.output_dir)
     wf.add_nodes([
         node for node in
@@ -46,7 +46,7 @@ def init_subject_workflow(args, subject):
     ]
     if not sessions:
         logger.log(LogLevel.ERROR.value, f"No sessions found in: {os.path.join(args.bids_dir, subject, args.session_pattern)}")
-        script_exit(1)
+        script_exit(1, logger=logger)
     wf = Workflow(subject, base_dir=os.path.join(args.output_dir, "workflow"))
     wf.add_nodes([
         node for node in
@@ -525,7 +525,7 @@ def parse_args(args, return_run_command=False):
     # bids and output are required
     if args.bids_dir is None or args.output_dir is None:
         logger.log(LogLevel.ERROR.value, "Values for --bids_dir and --output_dir are required!")
-        script_exit(1)
+        script_exit(1, logger=logger)
 
     explicit_args = {}
     for k in args.__dict__:
@@ -550,7 +550,7 @@ def parse_args(args, return_run_command=False):
                     implicit_args[key] = value
         else:
             logger.log(LogLevel.ERROR.value, f"Chosen premade pipeline '{explicit_args['premade']}' not found!")
-            if args.auto_yes: script_exit(1)
+            if args.auto_yes: script_exit(1, logger=logger)
             del explicit_args['premade']
     elif 'premade' in implicit_args.keys():
         if implicit_args['premade'] in premades:
@@ -1181,9 +1181,10 @@ def write_citations(wf):
             f.write("\n\n - ANTs: Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")
         f.write("\n\n")
 
-def script_exit(error_code=0):
-    show_warning_summary(logger)
-    logger.log(LogLevel.INFO.value, 'Finished')
+def script_exit(error_code=0, logger=None):
+    if logger:
+        show_warning_summary(logger)
+        logger.log(LogLevel.INFO.value, 'Finished')
     exit(error_code)
 
 if __name__ == "__main__":
@@ -1198,7 +1199,7 @@ if __name__ == "__main__":
     # list premade pipelines and exit if needed
     if args.list_premades:
         print_qsm_premades(args.pipeline_file)
-        script_exit()
+        script_exit(logger=logger)
 
     # create output directory if it doesn't exist
     os.makedirs(args.output_dir, exist_ok=True)
@@ -1242,7 +1243,7 @@ if __name__ == "__main__":
     # handle empty workflow
     if len(wf._get_all_nodes()) == 0:
         logger.log(LogLevel.ERROR.value, f"Workflow is empty! There is nothing to do.")
-        script_exit(1)
+        script_exit(1, logger=logger)
 
     # write citations to file
     write_citations(wf)
@@ -1278,5 +1279,5 @@ if __name__ == "__main__":
                 plugin_args=plugin_args
             )
 
-    script_exit()
+    script_exit(logger=logger)
 
