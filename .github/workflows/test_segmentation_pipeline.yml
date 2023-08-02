@@ -40,7 +40,7 @@ jobs:
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
       run: |
-        /bin/bash tests/test_segmentation_pipeline.sh "test_main"
+        /bin/bash tests/test_segmentation_pipeline.sh "test_segmentation"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs
