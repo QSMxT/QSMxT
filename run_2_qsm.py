@@ -607,6 +607,39 @@ def parse_args(args, return_run_command=False):
         return args, run_command
     return args
 
+def short_path(path):
+    rel_path = os.path.relpath(path)
+    return rel_path if len(rel_path) < len(path) else path
+
+def generate_run_command(all_args, implicit_args, explicit_args, short=True):
+    for key, val in all_args.items():
+        if key not in implicit_args or implicit_args[key] != val:
+            explicit_args[key] = val
+
+    # remove any unnecessary explicit args
+    for key, value in implicit_args.items():
+        if key in explicit_args and explicit_args[key] == value:
+            del explicit_args[key]
+    
+    # compute the minimum run command to re-execute the built pipeline non-interactively
+    os.path.relpath(explicit_args['bids_dir'])
+    run_command = f"run_2_qsm.py {short_path(explicit_args['bids_dir'])} {short_path(explicit_args['output_dir'])}"
+    if 'premade' in explicit_args and explicit_args['premade'] != 'default':
+        run_command += f" --premade '{explicit_args['premade']}'"
+    for key, value in explicit_args.items():
+        if key in ['bids_dir', 'output_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs', 'single_pass']: continue
+        elif value == True: run_command += f' --{key}'
+        elif value == False: run_command += f' --{key} off'
+        elif isinstance(value, str): run_command += f" --{key} '{value}'"
+        elif isinstance(value, (int, float)) and value != False: run_command += f" --{key} {value}"
+        elif isinstance(value, list):
+            run_command += f" --{key}"
+            for val in value:
+                run_command += f" {val}"
+    run_command += ' --auto_yes'
+
+    return run_command
+
 def get_interactive_args(args, explicit_args, implicit_args, premades):
     class dotdict(dict):
         """dot.notation access to dictionary attributes"""
@@ -616,6 +649,36 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
     args = dotdict(args)
         
     # allow user to update the premade if none was chosen
+    if not args.premade and not any([args.do_qsm, args.do_swi, args.do_t2starmap, args.do_r2starmap]):
+        print("\n=== Desired images ===")
+        print(" qsm: Quantitative Susceptibility Mapping (QSM)")
+        print(" swi: Susceptibility Weighted Imaging (SWI)")
+        print(" t2s: T2* maps")
+        print(" r2s: R2* maps")
+        print(" seg: Segmentations")
+
+        user_in = input("\nEnter desired images (space-separated) [default - 'qsm']: ").lower()
+        while not all(x in ['qsm', 'swi', 't2s', 'r2s', 'seg'] for x in user_in.split()):
+            user_in = input("Enter desired images (space-separated) [default - 'qsm']: ").lower()
+        if 'qsm' in user_in.split() or len(user_in) == 0:
+            args.do_qsm = True
+            if len(user_in) > 1:
+                explicit_args['do_qsm'] = True
+        if 'swi' in user_in.split():
+            args.do_swi = True
+            explicit_args['do_swi'] = True
+        if 't2s' in user_in.split():
+            args.do_t2starmap = True
+            explicit_args['do_t2starmap'] = True
+        if 'r2s' in user_in.split():
+            args.do_r2starmap = True
+            explicit_args['do_r2starmap'] = True
+        if 'seg' in user_in.split():
+            args.do_segmentation = True
+            explicit_args['do_segmentation'] = True
+    if not args.do_qsm:
+        return args.copy(), implicit_args
+
     if not args.premade:
         print("\n=== Premade pipelines ===")
 
@@ -684,9 +747,14 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
         print(f" - T2* mapping: {'Yes' if args.do_t2starmap else 'No'}")
         print(f" - R2* mapping: {'Yes' if args.do_r2starmap else 'No'}")
         
+        print("\n(4) Segmentations:")
+        print(f" - Generate segmentations (requires T1w images): {'Yes' if args.do_segmentation else 'No'}")
+
+        print(f"\nRun command: {generate_run_command(all_args=args, implicit_args=implicit_args, explicit_args=explicit_args)}")
+        
         user_in = get_option(
             prompt="\nEnter a number to customize; enter 'run' to run: ",
-            options=['1', '2', '3', 'run'],
+            options=['1', '2', '3', '4', 'run'],
             default=None
         )
         if user_in == 'run': break
@@ -942,7 +1010,14 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
                 options=['yes', 'no'],
                 default='yes' if args.do_r2starmap else 'no'
             )
-    
+        if user_in == '4': # SEGMENTATIONS
+            print("\n== Segmentations ==")
+            args.do_segmentation = 'yes' == get_option(
+                prompt=f"Generate segmentation [default: {'yes' if args.do_segmentation else 'no'}]: ",
+                options=['yes', 'no'],
+                default='yes' if args.do_segmentation else 'no'
+            )
+
     return args.copy(), implicit_args
 
 def process_args(args):
