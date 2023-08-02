@@ -7,21 +7,22 @@ on:
     branches: [ master ]
     paths:
       - README.md
-      - interfaces/nipype_interface_fastsurfer.py
-      - .github/workflows/test_segmentation_pipeline.yml
-      - tests/test_segment.sh
-      - aseg_labels.csv
+      - run_2_qsm.py
       - workflows/segmentation.py
+      - interfaces/nipype_interface_fastsurfer.py
+      - tests/test_segment.sh
+      - .github/workflows/test_segmentation_pipeline.yml
+      - aseg_labels.csv
   pull_request:
     branches: [ master ]
     paths:
       - README.md
-      - run_3_segment.py
-      - interfaces/nipype_interface_fastsurfer.py
-      - .github/workflows/test_segmentation_pipeline.yml
-      - tests/test_segment.sh
-      - aseg_labels.csv
+      - run_2_qsm.py
       - workflows/segmentation.py
+      - interfaces/nipype_interface_fastsurfer.py
+      - tests/test_segment.sh
+      - .github/workflows/test_segmentation_pipeline.yml
+      - aseg_labels.csv
     
 jobs:
   test_segmentation_pipeline:
