@@ -10,11 +10,11 @@ from nipype.interfaces.ants.resampling import ApplyTransforms
 from interfaces import nipype_interface_fastsurfer as fastsurfer
 from interfaces import nipype_interface_mgz2nii as mgz2nii
 
-from scripts.logger import LogLevel, get_logger
+from scripts.logger import LogLevel, make_logger
 
 def init_segmentation_workflow(run_args, subject, session, run):
 
-    logger = get_logger('main')
+    logger = make_logger('main')
 
     # get relevant files from this run
     t1w_pattern = os.path.join(run_args.bids_dir, run_args.t1w_pattern.format(subject=subject, session=session, run=run))

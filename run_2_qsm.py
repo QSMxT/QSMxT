@@ -13,14 +13,14 @@ from nipype import config, logging
 
 from scripts.qsmxt_functions import get_qsmxt_version, get_qsmxt_dir, get_diff, print_qsm_premades, gen_plugin_args
 from scripts.sys_cmd import sys_cmd
-from scripts.logger import LogLevel, make_logger, show_warning_summary, get_logger
+from scripts.logger import LogLevel, make_logger, show_warning_summary
 from scripts.user_input import get_option, get_string, get_num, get_nums
 
 from workflows.qsm import init_qsm_workflow
 from workflows.segmentation import init_segmentation_workflow
 
 def init_workflow(args):
-    logger = get_logger('main')
+    logger = make_logger('main')
     subjects = [
         os.path.split(path)[1]
         for path in glob.glob(os.path.join(args.bids_dir, args.subject_pattern))
@@ -38,7 +38,7 @@ def init_workflow(args):
     return wf
 
 def init_subject_workflow(args, subject):
-    logger = get_logger('main')
+    logger = make_logger('main')
     sessions = [
         os.path.split(path)[1]
         for path in glob.glob(os.path.join(args.bids_dir, subject, args.session_pattern))
@@ -56,7 +56,7 @@ def init_subject_workflow(args, subject):
     return wf
 
 def init_session_workflow(args, subject, session):
-    logger = get_logger('main')
+    logger = make_logger('main')
     wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow", subject, session))
 
     def find_runs(pattern):
@@ -511,7 +511,7 @@ def parse_args(args, return_run_command=False):
         help='Runs the pipeline in non-interactive mode.'
     )
 
-    logger = get_logger('pre')
+    logger = make_logger('pre')
     
     # parse explicit arguments ONLY
     args, unknown = parser.parse_known_args()

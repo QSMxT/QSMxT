@@ -17,14 +17,14 @@ from interfaces import nipype_interface_clearswi as swi
 from interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from interfaces import nipype_interface_twopass as twopass
 
-from scripts.logger import LogLevel, get_logger
+from scripts.logger import LogLevel, make_logger
 from scripts.qsmxt_functions import gen_plugin_args, create_node
 from workflows.masking import masking_workflow
 
 import numpy as np
 
 def init_qsm_workflow(run_args, subject, session, run):
-    logger = get_logger('main')
+    logger = make_logger('main')
     logger.log(LogLevel.INFO.value, f"Creating QSM workflow for {subject}/{session}/{run}...")
 
     # get relevant files from this run
