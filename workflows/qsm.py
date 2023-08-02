@@ -36,20 +36,24 @@ def init_qsm_workflow(run_args, subject, session, run):
 
     params_pattern = os.path.join(run_args.bids_dir, run_args.phase_pattern.format(subject=subject, session=session, run=run).replace("nii.gz", "nii").replace("nii", "json"))
     params_files = sorted(glob.glob(params_pattern))[:run_args.num_echoes]
+    if not params_files:
+        params_pattern = os.path.join(run_args.bids_dir, run_args.magnitude_pattern.format(subject=subject, session=session, run=run).replace("nii.gz", "nii").replace("nii", "json"))
+        params_files = sorted(glob.glob(params_pattern))[:run_args.num_echoes]
     
     mask_pattern = os.path.join(run_args.bids_dir, run_args.mask_pattern.format(subject=subject, session=session, run=run))
     mask_files = sorted(glob.glob(mask_pattern))[:run_args.num_echoes] if run_args.use_existing_masks else []
     
     # handle any errors related to files and adjust any settings if needed
-    if not phase_files:
-        logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - no phase files found matching pattern {phase_pattern}.")
-        return
+    if run_args.do_qsm and not phase_files:
+        logger.log(LogLevel.WARNING.value, f"Skipping QSM for {subject}/{session}/{run} - no phase files found matching pattern {phase_pattern}.")
+        run_args.do_qsm = False
+        run_args.do_swi = False
     if len(phase_files) != len(params_files):
-        logger.log(LogLevel.WARNING.value, f"Skipping run {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
+        logger.log(LogLevel.WARNING.value, f"Skipping {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
         return
     if len(phase_files) == 1 and run_args.combine_phase:
         run_args.combine_phase = False
-    if run_args.use_existing_masks:
+    if run_args.do_qsm and run_args.use_existing_masks:
         if not mask_files:
             logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking_algorithm} masking.")
         if len(mask_files) > 1 and len(mask_files) != len(phase_files):
@@ -64,30 +68,31 @@ def init_qsm_workflow(run_args, subject, session, run):
             run_args.single_pass = True
             run_args.add_bet = False
     if not magnitude_files:
-        if run_args.r2starmap:
+        if run_args.do_r2starmap:
             logger.log(LogLevel.WARNING.value, f"Cannot compute R2* for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.r2starmap = False
-        if run_args.t2starmap:
+            run_args.do_r2starmap = False
+        if run_args.do_t2starmap:
             logger.log(LogLevel.WARNING.value, f"Cannot compute T2* for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.t2starmap = False
-        if run_args.swi:
+            run_args.do_t2starmap = False
+        if run_args.do_swi:
             logger.log(LogLevel.WARNING.value, f"Cannot compute SWI for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.swi = False
-        if run_args.masking_input == 'magnitude':
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.masking_input = 'phase'
-            run_args.masking_algorithm = 'threshold'
-            run_args.inhomogeneity_correction = False
-            run_args.add_bet = False
-        if run_args.add_bet:
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} cannot use --add_bet option - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.add_bet = False
-        if run_args.combine_phase:
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} cannot use --combine_phase option - no magnitude files found matching pattern: {magnitude_pattern}.")
-            run_args.combine_phase = False
+            run_args.do_swi = False
+        if run_args.do_qsm:
+            if run_args.masking_input == 'magnitude':
+                logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
+                run_args.masking_input = 'phase'
+                run_args.masking_algorithm = 'threshold'
+                run_args.inhomogeneity_correction = False
+                run_args.add_bet = False
+            if run_args.add_bet:
+                logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} cannot use --add_bet option - no magnitude files found matching pattern: {magnitude_pattern}.")
+                run_args.add_bet = False
+            if run_args.combine_phase:
+                logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} cannot use --combine_phase option - no magnitude files found matching pattern: {magnitude_pattern}.")
+                run_args.combine_phase = False
     
     # create nipype workflow for this run
-    wf = Workflow(f"qsm_{run}", base_dir=os.path.join(run_args.output_dir, "workflow", "workflow_qsm", subject, session, run))
+    wf = Workflow(f"qsmxt_{run}", base_dir=os.path.join(run_args.output_dir, "workflow", "workflow_qsmxt", subject, session, run))
 
     # datasink
     n_outputs = Node(
@@ -167,7 +172,7 @@ def init_qsm_workflow(run_args, subject, session, run):
     ])
 
     # r2* and t2* mappping
-    if run_args.t2starmap or run_args.r2starmap:
+    if run_args.do_t2starmap or run_args.do_r2starmap:
         n_t2s_r2s = Node(
             interface=t2s_r2s.T2sR2sInterface(),
             name='mrt_t2s-r2s'
@@ -176,10 +181,12 @@ def init_qsm_workflow(run_args, subject, session, run):
             (n_inputs, n_t2s_r2s, [('magnitude', 'magnitude')]),
             (mn_json_params, n_t2s_r2s, [('TE', 'TE')])
         ])
-        if run_args.t2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('t2starmap', 't2starmap')])])
-        if run_args.r2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('r2starmap', 'r2starmap')])])
-        
-    # scale phase data
+        if run_args.do_t2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('t2starmap', 't2starmap')])])
+        if run_args.do_r2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('r2starmap', 'r2starmap')])])
+    
+    if not (run_args.do_swi or run_args.do_qsm):
+        return wf
+    
     mn_phase_scaled = MapNode(
         interface=processphase.ScalePhaseInterface(),
         iterfield=['phase'],
@@ -189,8 +196,7 @@ def init_qsm_workflow(run_args, subject, session, run):
         (n_inputs, mn_phase_scaled, [('phase', 'phase')])
     ])
 
-    # swi
-    if run_args.swi:
+    if run_args.do_swi:
         n_swi = Node(
             interface=swi.ClearSwiInterface(),
             name='mrt_clearswi'
@@ -202,6 +208,9 @@ def init_qsm_workflow(run_args, subject, session, run):
             (n_swi, n_outputs, [('swi', 'swi')]),
             (n_swi, n_outputs, [('swi_mip', 'swi.@swi_mip')]),
         ])
+
+    if not run_args.do_qsm:
+        return wf
 
     # reorient to canonical
     def as_closest_canonical(phase, magnitude=None, mask=None):

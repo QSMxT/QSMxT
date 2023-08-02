@@ -223,16 +223,16 @@ def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_
     args = qsm.process_args(qsm.parse_args([
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--swi",
-        "--t2starmap",
-        "--r2starmap",
+        "--do_swi",
+        "--do_t2starmap",
+        "--do_r2starmap",
         "--auto_yes",
         "--debug"
     ]))
     
-    assert(args.swi == True)
-    assert(args.t2starmap == True)
-    assert(args.r2starmap == True)
+    assert(args.do_swi == True)
+    assert(args.do_t2starmap == True)
+    assert(args.do_r2starmap == True)
     
     workflow(args, init_workflow, run_workflow, run_args, "supplementary-images", upload_png=False)
 

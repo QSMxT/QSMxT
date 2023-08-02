@@ -59,7 +59,7 @@ def init_session_workflow(args, subject, session):
     logger = get_logger('main')
     wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow", subject, session))
 
-    def find_runs(pattern, args):
+    def find_runs(pattern):
         files = glob.glob(pattern)
         if not files:
             logger.log(LogLevel.WARNING.value, f"No files found matching pattern: {pattern}")
@@ -84,14 +84,14 @@ def init_session_workflow(args, subject, session):
                 if node
             ])
 
-    if args.do_qsm:
+    if any([args.do_qsm, args.do_t2starmap, args.do_r2starmap, args.do_swi]):
         phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
-        phase_runs = find_runs(phase_pattern, args)
+        phase_runs = find_runs(phase_pattern)
         init_workflow_and_add_nodes(args, subject, session, phase_runs, init_qsm_workflow)
 
     if args.do_segmentation:
         t1w_pattern = os.path.join(args.bids_dir, args.t1w_pattern.replace("{run}", "").format(subject=subject, session=session))
-        t1w_runs = find_runs(t1w_pattern, args)
+        t1w_runs = find_runs(t1w_pattern)
         init_workflow_and_add_nodes(args, subject, session, t1w_runs, init_segmentation_workflow)
 
     return wf
@@ -129,33 +129,6 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
-        '--pipeline_file',
-        default=None,
-        help=f"Specify a JSON file to use from which custom premade pipelines will be made available. "+
-             f"See {os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')} for the default pipelines."
-    )
-    
-    parser.add_argument(
-        '--premade',
-        default=None,
-        help="Specify a premade pipeline to use as the default. By default, this is 'default'. The "+
-             "name of the pipeline must be present in either " +
-            f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')} or in --pipeline_file."
-    )
-    
-    parser.add_argument(
-        '--subject_pattern',
-        default=None,
-        help='Pattern used to match subject folders in bids_dir'
-    )
-
-    parser.add_argument(
-        '--session_pattern',
-        default=None,
-        help='Pattern used to match session folders in subject folders'
-    )
-
-    parser.add_argument(
         '--do_qsm',
         nargs='?',
         type=argparse_bool,
@@ -174,24 +147,42 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
-        '--t1w_pattern',
+        '--do_t2starmap',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
         default=None,
-        help='Pattern to match T1-weighted files for segmentation within session folders. ' +
-             'The {subject}, {session} and {run} placeholders must be present.'
+        help='Enables generation of T2* map.'
     )
 
     parser.add_argument(
-        '--magnitude_pattern',
+        '--do_r2starmap',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
         default=None,
-        help='Pattern to match magnitude files within the BIDS directory. ' +
-             'The {subject}, {session} and {run} placeholders must be present.'
+        help='Enables generation of R2* map.'
     )
 
     parser.add_argument(
-        '--phase_pattern',
+        '--do_swi',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
         default=None,
-        help='Pattern to match phase files for qsm within session folders. ' +
-             'The {subject}, {session} and {run} placeholders must be present.'
+        help='Enables generation SWI via CLEAR-SWI.'
+    )
+
+    parser.add_argument(
+        '--subject_pattern',
+        default=None,
+        help='Pattern used to match subject folders in bids_dir'
+    )
+
+    parser.add_argument(
+        '--session_pattern',
+        default=None,
+        help='Pattern used to match session folders in subject folders'
     )
 
     parser.add_argument(
@@ -214,6 +205,13 @@ def parse_args(args, return_run_command=False):
         nargs='*',
         help='List of runs to process (e.g. \'run-1\'); by default all runs are processed.'
     )
+    
+    parser.add_argument(
+        '--magnitude_pattern',
+        default=None,
+        help='Pattern to match magnitude files within the BIDS directory. ' +
+            'The {subject}, {session} and {run} placeholders must be present.'
+    )
 
     parser.add_argument(
         '--num_echoes',
@@ -222,13 +220,28 @@ def parse_args(args, return_run_command=False):
         type=int,
         help='The number of echoes to process; by default all echoes are processed.'
     )
+    
+    parser.add_argument(
+        '--pipeline_file',
+        default=None,
+        help=f"Specify a JSON file to use from which custom premade pipelines will be made available. "+
+            f"See {os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')} for the default pipelines."
+    )
+    
+    parser.add_argument(
+        '--premade',
+        default=None,
+        help="Specify a premade pipeline to use as the default. By default, this is 'default'. The "+
+            "name of the pipeline must be present in either " +
+            f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')} or in --pipeline_file."
+    )
 
     parser.add_argument(
         '--obliquity_threshold',
         type=int,
         default=None,
         help="The 'obliquity' as measured by nilearn from which oblique-acquired acqisitions should be " +
-             "axially resampled. Use -1 to disable resampling completely."
+            "axially resampled. Use -1 to disable resampling completely."
     )
 
     parser.add_argument(
@@ -245,13 +258,13 @@ def parse_args(args, return_run_command=False):
         default=None,
         choices=['tgv', 'tv', 'nextqsm', 'rts'],
         help="QSM algorithm. The tgv algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 from "+
-             "Langkammer et al., and includes unwrapping and background field removal steps as part of a "+
-             "combined optimisation. The NeXtQSM option requires NeXtQSM installed (available by default in the "+
-             "QSMxT container) and uses a deep learning model implemented in Tensorflow based on "+
-             "doi:10.48550/arXiv.2107.07752 from Cognolato et al., and combines the QSM inversion with a "+
-             "background field removal step. The RTS algorithm is based on doi:10.1016/j.neuroimage.2017.11.018 "+
-             "from Kames C. et al., and solves only the dipole-inversion step, requiring separate unwrapping and "+
-             "background field removal steps. "
+            "Langkammer et al., and includes unwrapping and background field removal steps as part of a "+
+            "combined optimisation. The NeXtQSM option requires NeXtQSM installed (available by default in the "+
+            "QSMxT container) and uses a deep learning model implemented in Tensorflow based on "+
+            "doi:10.48550/arXiv.2107.07752 from Cognolato et al., and combines the QSM inversion with a "+
+            "background field removal step. The RTS algorithm is based on doi:10.1016/j.neuroimage.2017.11.018 "+
+            "from Kames C. et al., and solves only the dipole-inversion step, requiring separate unwrapping and "+
+            "background field removal steps. "
     )
 
     parser.add_argument(
@@ -275,15 +288,16 @@ def parse_args(args, return_run_command=False):
         default=None,
         help='Number of erosions applied by tgv.'
     )
-    
+
+         
     parser.add_argument(
         '--unwrapping_algorithm',
         default=None,
         choices=['romeo', 'romeo-combined', 'laplacian'],
         help="Phase unwrapping algorithm. ROMEO is based on doi:10.1002/mrm.28563 from Eckstein et al. "+
-             "Laplacian is based on doi:10.1364/OL.28.001194 and doi:10.1002/nbm.3064 from Schofield MA. "+
-             "et al. and Zhou D. et al., respectively. ROMEO is the default when --qsm_algorithm is set to "+
-             "rts or nextqsm, and no unwrapping is applied by default when --qsm_algorithm is set to tgv."
+            "Laplacian is based on doi:10.1364/OL.28.001194 and doi:10.1002/nbm.3064 from Schofield MA. "+
+            "et al. and Zhou D. et al., respectively. ROMEO is the default when --qsm_algorithm is set to "+
+            "rts or nextqsm, and no unwrapping is applied by default when --qsm_algorithm is set to tgv."
     )
 
     parser.add_argument(
@@ -291,79 +305,23 @@ def parse_args(args, return_run_command=False):
         default=None,
         choices=['vsharp', 'pdf'],
         help='Background field correction algorithm. V-SHARP is based on doi:10.1002/mrm.23000 PDF is '+
-             'based on doi:10.1002/nbm.1670.'
+            'based on doi:10.1002/nbm.1670.'
     )
 
-    parser.add_argument(
-        '--masking_algorithm',
+    parser.add_argument( # TODO
+        '--two_pass',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
         default=None,
-        choices=['threshold', 'bet'],
-        help='Masking algorithm. Threshold-based masking uses a simple binary threshold applied to the '+
-             '--masking_input, followed by a hole-filling strategy determined by the --filling_algorithm. '+
-             'BET masking generates a mask using the Brain Extraction Tool (BET) based on '+
-             'doi:10.1002/hbm.10062 from Smith SM. The default algorithm is \'threshold\'.'
-    )
-
-    parser.add_argument(
-        '--masking_input',
-        default=None,
-        choices=['phase', 'magnitude'],
-        help='Input to the masking algorithm. Phase-based masking may reduce artefacts near the ROI '+
-             'boundary (see doi:10.1002/mrm.29368 from Hagberg et al.). Phase-based masking creates a '+
-             'quality map based on the second-order spatial phase gradients using ROMEO '+
-             '(doi:10.1002/mrm.28563 from Eckstein et al.). The default masking input is the phase, '+
-             'but is forcibly set to the magnitude if BET-masking is used.'
-    )
-
-    parser.add_argument(
-        '--threshold_value',
-        type=float,
-        nargs='+',
-        default=None,
-        help='Masking threshold for when --masking_algorithm is set to threshold. Values between 0 and 1'+
-             'represent a percentage of the multi-echo input range. Values greater than 1 represent an '+
-             'absolute threshold value. Lower values will result in larger masks. If no threshold is '+
-             'provided, the --threshold_algorithm is used to select one automatically.'
-    )
-
-    parser.add_argument(
-        '--threshold_algorithm',
-        default=None,
-        choices=['otsu', 'gaussian'],
-        help='Algorithm used to select a threshold for threshold-based masking if --threshold_value is '+
-             'left unspecified. The gaussian method is based on doi:10.1016/j.compbiomed.2012.01.004 '+
-             'from Balan AGR. et al. The otsu method is based on doi:10.1109/TSMC.1979.4310076 from Otsu '+
-             'et al.'
-    )
-
-    parser.add_argument(
-        '--filling_algorithm',
-        default=None,
-        choices=['morphological', 'gaussian', 'both', 'bet'],
-        help='Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing '+
-             'operation is applied first prior to a morphological hole-filling operation. Note that gaussian '+
-             'smoothing may fill some unwanted regions (e.g. connecting the skull and brain tissue), whereas '+
-             'morphological hole-filling alone may fail to fill desired regions if they are not fully enclosed.'+
-             'The BET option is applicable to two-pass QSM only, and will use ONLY a BET mask as the filled '+
-             'version of the mask.'
-    )
-
-    parser.add_argument(
-        '--threshold_algorithm_factor',
-        default=None,
-        nargs='+',
-        type=float,
-        help='Factor to multiply the algorithmically-determined threshold by. Larger factors will create '+
-             'smaller masks.'
-    )
-
-    parser.add_argument(
-        '--mask_erosions',
-        type=int,
-        nargs='+',
-        default=None,
-        help='Number of erosions applied to masks prior to QSM processing steps. Note that some algorithms '+
-             'may erode the mask further (e.g. V-SHARP and TGV-QSM).'
+        help='Setting this to \'on\' will perform a QSM reconstruction in a two-stage fashion to reduce '+
+            'artefacts; combines the results from two QSM images reconstructed using masks that separate '+
+            'more reliable and less reliable phase regions. Note that this option requires threshold-based '+
+            'masking, doubles reconstruction time, and in some cases can deteriorate QSM contrast in some '+
+            'regions, depending on other parameters such as the threshold. Applications where two-pass QSM '+
+            'may improve results include body imaging, lesion imaging, and imaging of other strong '+
+            'susceptibility sources. This method is based on doi:10.1002/mrm.29048 from Stewart et al. By '+
+            'default, two-pass is enabled for the RTS algorithm only.'
     )
 
     parser.add_argument(
@@ -373,8 +331,100 @@ def parse_args(args, return_run_command=False):
         const=True,
         default=None,
         help='Applies an inhomogeneity correction to the magnitude prior to masking based on '+
-             'https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html from Eckstein et al. This option '+
-             'is only relevant when the --masking_input is the magnitude.'
+            'https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html from Eckstein et al. This option '+
+            'is only relevant when the --masking_input is the magnitude.'
+    )
+
+    parser.add_argument(
+        '--masking_algorithm',
+        default=None,
+        choices=['threshold', 'bet'],
+        help='Masking algorithm. Threshold-based masking uses a simple binary threshold applied to the '+
+            '--masking_input, followed by a hole-filling strategy determined by the --filling_algorithm. '+
+            'BET masking generates a mask using the Brain Extraction Tool (BET) based on '+
+            'doi:10.1002/hbm.10062 from Smith SM. The default algorithm is \'threshold\'.'
+    )
+
+    parser.add_argument(
+        '--mask_erosions',
+        type=int,
+        nargs='+',
+        default=None,
+        help='Number of erosions applied to masks prior to QSM processing steps. Note that some algorithms '+
+            'may erode the mask further (e.g. V-SHARP and TGV-QSM).'
+    )
+
+    parser.add_argument(
+        '--use_existing_masks',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
+        default=None,
+        help='This option will use existing masks from the BIDS folder, where possible, instead of '+
+            'generating new ones. The masks will be selected based on the --mask_pattern argument. '+
+            'A single mask may be present (and will be applied to all echoes), or a mask for each '+
+            'echo can be used. When existing masks cannot be found, the --masking_algorithm will '+
+            'be used as a fallback.'
+    )
+
+    parser.add_argument(
+        '--mask_pattern',
+        default=None,
+        help='Pattern used to identify mask files to be used when the --use_existing_masks option '+
+            'is enabled.'
+    )
+
+    parser.add_argument(
+        '--masking_input',
+        default=None,
+        choices=['phase', 'magnitude'],
+        help='Input to the masking algorithm. Phase-based masking may reduce artefacts near the ROI '+
+            'boundary (see doi:10.1002/mrm.29368 from Hagberg et al.). Phase-based masking creates a '+
+            'quality map based on the second-order spatial phase gradients using ROMEO '+
+            '(doi:10.1002/mrm.28563 from Eckstein et al.). The default masking input is the phase, '+
+            'but is forcibly set to the magnitude if BET-masking is used.'
+    )
+
+    parser.add_argument(
+        '--threshold_value',
+        type=float,
+        nargs='+',
+        default=None,
+        help='Masking threshold for when --masking_algorithm is set to threshold. Values between 0 and 1'+
+            'represent a percentage of the multi-echo input range. Values greater than 1 represent an '+
+            'absolute threshold value. Lower values will result in larger masks. If no threshold is '+
+            'provided, the --threshold_algorithm is used to select one automatically.'
+    )
+
+    parser.add_argument(
+        '--threshold_algorithm',
+        default=None,
+        choices=['otsu', 'gaussian'],
+        help='Algorithm used to select a threshold for threshold-based masking if --threshold_value is '+
+            'left unspecified. The gaussian method is based on doi:10.1016/j.compbiomed.2012.01.004 '+
+            'from Balan AGR. et al. The otsu method is based on doi:10.1109/TSMC.1979.4310076 from Otsu '+
+            'et al.'
+    )
+
+    parser.add_argument(
+        '--filling_algorithm',
+        default=None,
+        choices=['morphological', 'gaussian', 'both', 'bet'],
+        help='Algorithm used to fill holes for threshold-based masking. By default, a gaussian smoothing '+
+            'operation is applied first prior to a morphological hole-filling operation. Note that gaussian '+
+            'smoothing may fill some unwanted regions (e.g. connecting the skull and brain tissue), whereas '+
+            'morphological hole-filling alone may fail to fill desired regions if they are not fully enclosed.'+
+            'The BET option is applicable to two-pass QSM only, and will use ONLY a BET mask as the filled '+
+            'version of the mask.'
+    )
+
+    parser.add_argument(
+        '--threshold_algorithm_factor',
+        default=None,
+        nargs='+',
+        type=float,
+        help='Factor to multiply the algorithmically-determined threshold by. Larger factors will create '+
+            'smaller masks.'
     )
 
     parser.add_argument(
@@ -384,7 +434,7 @@ def parse_args(args, return_run_command=False):
         const=True,
         default=None,
         help='Combines the chosen masking method with BET. This option is only relevant when the '+
-             '--masking_algorithm is set to threshold.'
+            '--masking_algorithm is set to threshold.'
     )
 
     parser.add_argument(
@@ -395,67 +445,17 @@ def parse_args(args, return_run_command=False):
     )
     
     parser.add_argument(
-        '--use_existing_masks',
-        nargs='?',
-        type=argparse_bool,
-        const=True,
+        '--t1w_pattern',
         default=None,
-        help='This option will use existing masks from the BIDS folder, where possible, instead of '+
-             'generating new ones. The masks will be selected based on the --mask_pattern argument. '+
-             'A single mask may be present (and will be applied to all echoes), or a mask for each '+
-             'echo can be used. When existing masks cannot be found, the --masking_algorithm will '+
-             'be used as a fallback.'
-    )
-    
-    parser.add_argument(
-        '--mask_pattern',
-        default=None,
-        help='Pattern used to identify mask files to be used when the --use_existing_masks option '+
-             'is enabled.'
-    )
-
-    
-    parser.add_argument(
-        '--two_pass',
-        nargs='?',
-        type=argparse_bool,
-        const=True,
-        default=None,
-        help='Setting this to \'on\' will perform a QSM reconstruction in a two-stage fashion to reduce '+
-             'artefacts; combines the results from two QSM images reconstructed using masks that separate '+
-             'more reliable and less reliable phase regions. Note that this option requires threshold-based '+
-             'masking, doubles reconstruction time, and in some cases can deteriorate QSM contrast in some '+
-             'regions, depending on other parameters such as the threshold. Applications where two-pass QSM '+
-             'may improve results include body imaging, lesion imaging, and imaging of other strong '+
-             'susceptibility sources. This method is based on doi:10.1002/mrm.29048 from Stewart et al. By '+
-             'default, two-pass is enabled for the RTS algorithm only.'
+        help='Pattern to match T1-weighted files for segmentation within session folders. ' +
+            'The {subject}, {session} and {run} placeholders must be present.'
     )
 
     parser.add_argument(
-        '--t2starmap',
-        nargs='?',
-        type=argparse_bool,
-        const=True,
+        '--phase_pattern',
         default=None,
-        help='Enables generation of T2* map.'
-    )
-
-    parser.add_argument(
-        '--r2starmap',
-        nargs='?',
-        type=argparse_bool,
-        const=True,
-        default=None,
-        help='Enables generation of R2* map.'
-    )
-
-    parser.add_argument(
-        '--swi',
-        nargs='?',
-        type=argparse_bool,
-        const=True,
-        default=None,
-        help='Enables generation SWI via CLEAR-SWI.'
+        help='Pattern to match phase files for qsm within session folders. ' +
+            'The {subject}, {session} and {run} placeholders must be present.'
     )
 
     parser.add_argument(
@@ -514,7 +514,7 @@ def parse_args(args, return_run_command=False):
     logger = get_logger('pre')
     
     # parse explicit arguments ONLY
-    args = parser.parse_args(args)
+    args, unknown = parser.parse_known_args()
 
     # if listing premades, skip the rest
     if args.list_premades:
@@ -680,9 +680,9 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
         print(f" - Dipole inversion: {args.qsm_algorithm}")
         
         print("\n(3) Supplementary imaging:")
-        print(f" - Susceptibility Weighted Imaging (SWI): {'Yes' if args.swi else 'No'}")
-        print(f" - T2* mapping: {'Yes' if args.t2starmap else 'No'}")
-        print(f" - R2* mapping: {'Yes' if args.r2starmap else 'No'}")
+        print(f" - Susceptibility Weighted Imaging (SWI): {'Yes' if args.do_swi else 'No'}")
+        print(f" - T2* mapping: {'Yes' if args.do_t2starmap else 'No'}")
+        print(f" - R2* mapping: {'Yes' if args.do_r2starmap else 'No'}")
         
         user_in = get_option(
             prompt="\nEnter a number to customize; enter 'run' to run: ",
@@ -923,30 +923,30 @@ def get_interactive_args(args, explicit_args, implicit_args, premades):
             print("=== Supplementary imaging ===")
 
             print("\n== Susceptibility Weighted Imaging (SWI) ==")
-            args.swi = 'yes' == get_option(
-                prompt=f"Generate SWI maps [default: {'yes' if args.swi else 'no'}]: ",
+            args.do_swi = 'yes' == get_option(
+                prompt=f"Generate SWI maps [default: {'yes' if args.do_swi else 'no'}]: ",
                 options=['yes', 'no'],
-                default='yes' if args.swi else 'no'
+                default='yes' if args.do_swi else 'no'
             )
 
             print("\n== T2* mapping ==")
-            args.t2starmap = 'yes' == get_option(
-                prompt=f"Generate T2* maps [default: {'yes' if args.t2starmap else 'no'}]: ",
+            args.do_t2starmap = 'yes' == get_option(
+                prompt=f"Generate T2* maps [default: {'yes' if args.do_t2starmap else 'no'}]: ",
                 options=['yes', 'no'],
-                default='yes' if args.t2starmap else 'no'
+                default='yes' if args.do_t2starmap else 'no'
             )
 
             print("\n== R2* mapping ==")
-            args.r2starmap = 'yes' == get_option(
-                prompt=f"Generate R2* maps [default: {'yes' if args.r2starmap else 'no'}]: ",
+            args.do_r2starmap = 'yes' == get_option(
+                prompt=f"Generate R2* maps [default: {'yes' if args.do_r2starmap else 'no'}]: ",
                 options=['yes', 'no'],
-                default='yes' if args.r2starmap else 'no'
+                default='yes' if args.do_r2starmap else 'no'
             )
     
     return args.copy(), implicit_args
 
 def process_args(args):
-    if not (args.do_qsm or args.do_segmentation):
+    if not any([args.do_qsm, args.do_segmentation, args.do_swi, args.do_t2starmap, args.do_r2starmap]):
         args.do_qsm = True
 
     # default QSM algorithms
@@ -1007,9 +1007,9 @@ def process_args(args):
     args.inhomogeneity_correction &= (args.add_bet or args.masking_input == 'magnitude' or args.filling_algorithm == 'bet')
 
     # decide on supplementary imaging
-    if args.r2starmap is None: args.r2starmap = False
-    if args.t2starmap is None: args.t2starmap = False
-    if args.swi is None: args.swi = False
+    if args.do_r2starmap is None: args.do_r2starmap = False
+    if args.do_t2starmap is None: args.do_t2starmap = False
+    if args.do_swi is None: args.do_swi = False
     
     # set number of concurrent processes to run depending on available resources
     if not args.n_procs:
@@ -1056,11 +1056,11 @@ def write_citations(wf):
 
     # write "references.txt" with the command used to invoke the script and any necessary references
     with open(os.path.join(args.output_dir, "references.txt"), 'w', encoding='utf-8') as f:
+        f.write("== References ==")
+        f.write(f"\n\n - QSMxT{'' if not args.two_pass else ' and two-pass combination method'}: Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
+        f.write("\n\n - QSMxT: Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
+        f.write("\n\n - Python package - Nipype: Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
         if args.do_qsm:
-            f.write("== QSM References ==")
-            f.write(f"\n\n - QSMxT{'' if not args.two_pass else ' and two-pass combination method'}: Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
-            f.write("\n\n - QSMxT: Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
-            
             if any_string_matches_any_node(['correct-inhomogeneity']):
                 f.write("\n\n - Inhomogeneity correction: Eckstein K, Trattnig S, Simon DR. A Simple homogeneity correction for neuroimaging at 7T. In: Proc. Intl. Soc. Mag. Reson. Med. International Society for Magnetic Resonance in Medicine; 2019. Abstract 2716. https://index.mirasmart.com/ISMRM2019/PDFfiles/2716.html")
             if any_string_matches_any_node(['bet']):
@@ -1091,6 +1091,8 @@ def write_citations(wf):
                 f.write("\n\n - QSM algorithm - TGV: Langkammer C, Bredies K, Poser BA, et al. Fast quantitative susceptibility mapping using 3D EPI and total generalized variation. NeuroImage. 2015;111:622-630. doi:10.1016/j.neuroimage.2015.02.041")
             if any_string_matches_any_node(['qsmjl']):
                 f.write("\n\n - Julia package - QSM.jl: kamesy. GitHub; 2022. https://github.com/kamesy/QSM.jl")
+            if any_string_matches_any_node(['clearswi']):
+                f.write("\n\n - SWI - CLEARSWI: Eckstein, K., Bachrata, B., Hangel, G., et al. Improved susceptibility weighted imaging at ultra-high field using bipolar multi-echo acquisition and optimized image processing: CLEAR-SWI. Neuroimage, 237, 118175. doi:10.1016/j.neuroimage.2021.118175")
             if any_string_matches_any_node(['mrt']):
                 f.write("\n\n - Julia package - MriResearchTools: Eckstein K. korbinian90/MriResearchTools.jl. GitHub; 2022. https://github.com/korbinian90/MriResearchTools.jl")
             if any_string_matches_any_node(['nibabel']):
@@ -1099,19 +1101,10 @@ def write_citations(wf):
                 f.write("\n\n - Python package - scipy: Virtanen P, Gommers R, Oliphant TE, et al. SciPy 1.0: fundamental algorithms for scientific computing in Python. Nat Methods. 2020;17(3):261-272. doi:10.1038/s41592-019-0686-2")
             if any_string_matches_any_node(['numpy']):
                 f.write("\n\n - Python package - numpy: Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
-            f.write("\n\n - Python package - Nipype: Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
-            f.write("\n\n")
-
         if args.do_segmentation:
-            f.write("== Segmentation References ==")
-            f.write("\n\n - QSMxT: Stewart AW, Robinson SD, O'Brien K, et al. QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping. Magnetic Resonance in Medicine. 2022;87(3):1289-1300. doi:10.1002/mrm.29048")
-            f.write("\n\n - QSMxT: Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
             f.write("\n\n - FastSurfer: Henschel L, Conjeti S, Estrada S, Diers K, Fischl B, Reuter M. FastSurfer - A fast and accurate deep learning based neuroimaging pipeline. NeuroImage. 2020;219:117012. doi:10.1016/j.neuroimage.2020.117012")
             f.write("\n\n - ANTs: Avants BB, Tustison NJ, Johnson HJ. Advanced Normalization Tools. GitHub; 2022. https://github.com/ANTsX/ANTs")
-            f.write("\n\n - Python package - numpy: Harris CR, Millman KJ, van der Walt SJ, et al. Array programming with NumPy. Nature. 2020;585(7825):357-362. doi:10.1038/s41586-020-2649-2")
-            f.write("\n\n - Python package - nibabel: Brett M, Markiewicz CJ, Hanke M, et al. nipy/nibabel. GitHub; 2019. https://github.com/nipy/nibabel")
-            f.write("\n\n - Python package - Nipype: Gorgolewski K, Burns C, Madison C, et al. Nipype: A Flexible, Lightweight and Extensible Neuroimaging Data Processing Framework in Python. Frontiers in Neuroinformatics. 2011;5. Accessed April 20, 2022. doi:10.3389/fninf.2011.00013")
-            f.write("\n\n")
+        f.write("\n\n")
 
 def script_exit(error_code=0):
     show_warning_summary(logger)
