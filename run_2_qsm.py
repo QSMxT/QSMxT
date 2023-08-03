@@ -514,7 +514,7 @@ def parse_args(args, return_run_command=False):
     logger = make_logger('pre')
     
     # parse explicit arguments ONLY
-    args, unknown = parser.parse_known_args()
+    args, unknown = parser.parse_known_args(args)
 
     # if listing premades, skip the rest
     if args.list_premades:
