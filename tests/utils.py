@@ -170,7 +170,7 @@ def workflow(args, init_workflow, run_workflow, run_args, name, delete_workflow=
             logger.log(LogLevel.DEBUG.value, f"Deleting workflow folder {os.path.join(args.output_dir, 'workflow_qsm')}")
             shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"), ignore_errors=True)
         # visualise results
-        for nii_file in glob.glob(os.path.join(args.output_dir, "qsm", "qsm_final", "*.nii*")) + glob.glob(os.path.join(args.output_dir, "qsm", "*.nii*")):
+        for nii_file in glob.glob(os.path.join(args.output_dir, "qsm", "*.nii*")):
             png = display_nii(
                 nii_path=nii_file,
                 title=f"QSM: {name}\n({get_qsmxt_version()})",

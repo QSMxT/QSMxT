@@ -365,7 +365,7 @@ def init_qsm_workflow(run_args, subject, session, run):
         (wf_masking, n_qsm_average, [('masking_outputs.mask', 'in_masks')])
     ])
     wf.connect([
-        (n_qsm_average, n_outputs, [('out_file', 'qsm.@final' if not run_args.two_pass else 'qsm.filled')])
+        (n_qsm_average, n_outputs, [('out_file', 'qsm.@final' if not run_args.two_pass else 'qsm.singlepass')])
     ])
 
     # two-pass algorithm
@@ -424,7 +424,7 @@ def init_qsm_workflow(run_args, subject, session, run):
             (wf_masking_intermediate, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
         ])
         wf.connect([
-            (n_qsm_twopass_average, n_outputs, [('out_file', 'qsm.final')])
+            (n_qsm_twopass_average, n_outputs, [('out_file', 'qsm.@final')])
         ])
         
     return wf

@@ -125,9 +125,8 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--qsm_patterns',
-        default=[os.path.join('qsm', 'qsm_final', '*.nii*'), os.path.join('qsm', '*.nii*')],
-        nargs='+',
+        '--qsm_pattern',
+        default=os.path.join('qsm', '*.nii*'),
         help='Pattern used to match QSM images in qsm_dir'
     )
 
@@ -219,14 +218,12 @@ if __name__ == "__main__":
     # find input images
     magnitude_pattern = os.path.join(args.bids_dir, args.magnitude_pattern.format(subject=args.subject_pattern, session=args.session_pattern, run='*'))
     magnitude_images = sorted(glob.glob(magnitude_pattern))
-    
-    qsm_images = []
-    for qsm_pattern in args.qsm_patterns:
-        qsm_images += sorted(glob.glob(os.path.join(args.qsm_dir, qsm_pattern)))
+    qsm_pattern = os.path.join(args.qsm_dir, args.qsm_pattern)
+    qsm_images = sorted(glob.glob(qsm_pattern))
 
     if len(magnitude_images) != len(qsm_images):
         logger.log(LogLevel.ERROR.value, f"Number of QSM images ({len(qsm_images)}) and magnitude images ({len(magnitude_images)}) do not match.")
-        logger.log(LogLevel.INFO.value, f"Final QSM patterns: {[os.path.join(args.qsm_dir, qsm_pattern) for qsm_pattern in args.qsm_patterns]}")
+        logger.log(LogLevel.INFO.value, f"Final QSM pattern: {qsm_pattern}")
         logger.log(LogLevel.INFO.value, f"Final magnitude pattern: {magnitude_pattern}")
         script_exit(1)
 
