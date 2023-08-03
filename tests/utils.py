@@ -33,7 +33,7 @@ def add_to_github_summary(markdown):
     with open(os.path.join(tmp_dir, 'GITHUB_STEP_SUMMARY.md'), 'a') as github_step_summary_file:
         github_step_summary_file.write(markdown)
 
-def upload_png(png_path):
+def _upload_png(png_path):
     png_url = sys_cmd(f"images-upload-cli -h freeimage {png_path}").strip()
     return png_url
 
@@ -182,5 +182,5 @@ def workflow(args, init_workflow, run_workflow, run_args, name, delete_workflow=
                 vmax=+0.15,
                 interpolation='nearest'
             )
-            add_to_github_summary(f"![image]({upload_png(png)})\n")
+            add_to_github_summary(f"![image]({_upload_png(png)})\n")
 
