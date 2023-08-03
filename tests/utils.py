@@ -1,6 +1,8 @@
 import os
 import datetime
+from random import randint
 import tempfile
+from time import sleep
 import webdav3.client
 import shutil
 import glob
@@ -55,19 +57,42 @@ def webdav_connect():
 
 def upload_to_rdm(local_path, remote_path):
     client = webdav_connect()
-    print(f"Uploading {local_path}...")
-    client.upload_sync(
-        remote_path=remote_path,
-        local_path=local_path
-    )
+    exception = None
+    for i in range(5):
+        print(f"Uploading {local_path}...")
+        try:
+            client.upload_sync(
+                remote_path=remote_path,
+                local_path=local_path
+            )
+        except webdav3.exceptions.ConnectionException as e:
+            print(f"Connection failed! {e}")
+            sleep(randint(120, 300))
+            exception = e
+            continue
+        break
+    else:
+        raise exception
+
 
 def download_from_rdm(remote_path, local_path):
     client = webdav_connect()
-    print(f"Downloading {remote_path}...")
-    client.download_sync(
-        remote_path=remote_path,
-        local_path=local_path
-    )
+    exception = None
+    for i in range(5):
+        print(f"Downloading {remote_path}...")
+        try:
+            client.download_sync(
+                remote_path=remote_path,
+                local_path=local_path,
+            )
+        except webdav3.exceptions.ConnectionException as e:
+            print(f"Connection failed! {e}")
+            sleep(randint(120, 300))
+            exception = e
+            continue
+        break
+    else:
+        raise exception
 
 def compress_folder(folder, result_id):
     if os.environ.get('BRANCH'):
