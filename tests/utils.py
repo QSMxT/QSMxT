@@ -1,11 +1,14 @@
 import os
 import datetime
-from random import randint
 import tempfile
-from time import sleep
-import webdav3.client
-import shutil
 import glob
+import shutil
+from time import sleep
+from random import randint
+
+import webdav3.client
+import nibabel as nib
+import numpy as np
 
 from matplotlib import pyplot as plt
 
