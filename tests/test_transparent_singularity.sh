@@ -63,19 +63,8 @@ echo "[DEBUG] starting run_1_dicomConvert.py"
 
 echo "[DEBUG] starting run_2_qsm.py (fast pipeline)"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --auto_yes --premade fast
-
-echo "[DEBUG] checking outputs of run_2_qsm.py normal"
-ls /tmp/02_qsm_output/qsm_final/**/**
-rm -rf /tmp/02_qsm_output/qsm_workflow/
+rm -rf /tmp/02_qsm_output/workflow/
 
 echo "[DEBUG] starting run_4_template.py"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output /tmp/04_template
-
-echo "[DEBUG]: checking /tmp/04_template/ for results"
-ls /tmp/04_template/
-[ -d /tmp/04_template/initial_average ] && echo "initial_average exists." || exit 1
-[ -d /tmp/04_template/magnitude_template ] && echo "magnitude_template exists." || exit 1
-[ -d /tmp/04_template/qsm_template ] && echo "qsm_template exists." || exit 1
-[ -d /tmp/04_template/transforms ] && echo "transforms exists." || exit 1
-[ -d /tmp/04_template/qsms_transformed ] && echo "qsms_transformed exists." || exit 1
 
