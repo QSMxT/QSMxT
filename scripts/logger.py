@@ -40,15 +40,15 @@ class _StringStream:
 def make_logger(name='main', logpath=None, printlevel=LogLevel.INFO, warnlevel=LogLevel.WARNING, errorlevel=LogLevel.ERROR, writelevel=LogLevel.INFO):
     # create/get logger
     logger = _logging.getLogger(name=name)
-
-    # return logger if it already has handlers
-    if logger.hasHandlers():
-        return logger
     
     # check level names if needed
     for log_level in LogLevel:
         if log_level.value not in _logging._levelToName.values():
             _logging.addLevelName(log_level.value, log_level.name)
+
+    # return logger if it already has handlers
+    if logger.hasHandlers() and len(logger.handlers) >= 3:
+        return logger
 
     # create console handler and set level to my level
     console_handler = _logging.StreamHandler(stream=_StringStream())
@@ -92,8 +92,8 @@ def show_log(logger):
         print(message, end='')
 
 def show_warning_summary(logger):
-    if logger.handlers[1].stream.items:
+    if len(logger.handlers) > 1 and logger.handlers[1].stream.items:
         logger.log(LogLevel.INFO.value, "Warnings occurred!")
-    if logger.handlers[2].stream.items:
+    if len(logger.handlers) > 2 and logger.handlers[2].stream.items:
         logger.log(LogLevel.INFO.value, "Errors occurred!")
 
