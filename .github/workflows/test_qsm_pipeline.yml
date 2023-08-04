@@ -145,8 +145,4 @@ jobs:
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
       run: |
         /bin/bash tests/test_qsm_pipeline.sh "${{ matrix.args }}"
-    - uses: actions/upload-artifact@v3
-      with:
-        name: public-outputs
-        path: /tmp/public-outputs
 
