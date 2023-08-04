@@ -1,3 +1,4 @@
+import os
 import logging as _logging
 from enum import Enum
 
@@ -40,39 +41,43 @@ class _StringStream:
 def make_logger(name='main', logpath=None, printlevel=LogLevel.INFO, warnlevel=LogLevel.WARNING, errorlevel=LogLevel.ERROR, writelevel=LogLevel.INFO):
     # create/get logger
     logger = _logging.getLogger(name=name)
-    
+
     # check level names if needed
     for log_level in LogLevel:
         if log_level.value not in _logging._levelToName.values():
             _logging.addLevelName(log_level.value, log_level.name)
 
     # return logger if it already has handlers
-    if logger.hasHandlers() and len(logger.handlers) >= 3:
+    if logpath: logpath = os.path.abspath(logpath)
+    if logger.hasHandlers() and ((len(logger.handlers) == 3 and logpath is None) or (len(logger.handlers) == 4 and logger.handlers[3].baseFilename == logpath)):
         return logger
 
     # create console handler and set level to my level
-    console_handler = _logging.StreamHandler(stream=_StringStream())
-    warnings_handler = _logging.StreamHandler(stream=_StringStream(print_new_records=False))
-    errors_handler = _logging.StreamHandler(stream=_StringStream(print_new_records=False))
+    if logger.hasHandlers() and len(logger.handlers) == 3:
+        console_handler = _logging.StreamHandler(stream=_StringStream())
+        warnings_handler = _logging.StreamHandler(stream=_StringStream(print_new_records=False))
+        errors_handler = _logging.StreamHandler(stream=_StringStream(print_new_records=False))
     if logpath:
         file_handler = _logging.FileHandler(logpath, mode='w')
 
     # create formatter
     # formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     # https://docs.python.org/3.7/library/logging.html#logrecord-attributes
-    formatter = _logging.Formatter('%(levelname)s: %(message)s')
+    formatter = _logging.Formatter('[%(levelname)s]: %(message)s')
 
     # add formatters to handlers
-    console_handler.setFormatter(formatter)
-    warnings_handler.setFormatter(formatter)
-    errors_handler.setFormatter(formatter)
+    if logger.hasHandlers() and len(logger.handlers) == 3:
+        console_handler.setFormatter(formatter)
+        warnings_handler.setFormatter(formatter)
+        errors_handler.setFormatter(formatter)
     if logpath:
         file_handler.setFormatter(formatter)
 
     # add handlers to logger
-    logger.addHandler(console_handler)
-    logger.addHandler(warnings_handler)
-    logger.addHandler(errors_handler)
+    if logger.hasHandlers() and len(logger.handlers) == 3:
+        logger.addHandler(console_handler)
+        logger.addHandler(warnings_handler)
+        logger.addHandler(errors_handler)
     if logpath:
         logger.addHandler(file_handler)
 

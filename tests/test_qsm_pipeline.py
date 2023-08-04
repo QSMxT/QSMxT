@@ -73,7 +73,8 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
     premades = get_qsm_premades()
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
-    print(f"=== TESTING PREMADE {premade} ===")
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING PREMADE {premade} ===")
 
     args = qsm.process_args(qsm.parse_args([
         bids_dir_public,
@@ -101,7 +102,8 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
 def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
-    print(f"=== TESTING NO MAGNITUDE ===")
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING NO MAGNITUDE ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # create copy of bids directory
@@ -132,7 +134,8 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
 def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, run_args):
-    print(f"=== TESTING INHOMOGENEITY CORRECTION ===")
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING INHOMOGENEITY CORRECTION ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
@@ -154,7 +157,8 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
 def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
-    print(f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
@@ -176,7 +180,8 @@ def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_work
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
 def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
-    print(f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
@@ -198,7 +203,8 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
     (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
 ])
 def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_args):
-    print(f"=== TESTING EXISTING MASKS ===")
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING EXISTING MASKS ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
     
     args = qsm.process_args(qsm.parse_args([
@@ -217,7 +223,8 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
     (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
 ])
 def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_args):
-    print(f"=== TESTING SUPPLEMENTARY IMAGES ===")
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING SUPPLEMENTARY IMAGES ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
     
     args = qsm.process_args(qsm.parse_args([
@@ -240,7 +247,8 @@ def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_
     (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
 ])
 def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
-    print(f"=== TESTING REAL DATA ===")
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING REAL DATA ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     if not bids_dir_real:
@@ -263,7 +271,8 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
     (True, run_workflows, { 'num_echoes' : 1 })
 ])
 def test_singleecho(bids_dir_public, init_workflow, run_workflow, run_args):
-    print(f"=== TESTING SINGLE ECHO WITH PHASE COMBINATION / ROMEO ===")
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING SINGLE ECHO WITH PHASE COMBINATION / ROMEO ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking

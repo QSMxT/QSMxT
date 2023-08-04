@@ -34,17 +34,22 @@ def add_to_github_summary(markdown):
         github_step_summary_file.write(markdown)
 
 def _upload_png(png_path):
-    png_url = sys_cmd(f"images-upload-cli -h freeimage {png_path}").strip()
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"Uploading png {png_path}")
+    png_url = sys_cmd(f"images-upload-cli --no-clipboard --hosting freeimage {png_path}").strip()
     return png_url
 
 def webdav_connect():
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, "Retrieving WEBDAV details...")
     try:
         webdav_login = os.environ['WEBDAV_LOGIN']
         webdav_password = os.environ['WEBDAV_PASSWORD']
     except KeyError as e:
-        print(f"Could not connect to WEBDAV - missing WEBDAV_LOGIN and/or WEBDAV_PASSWORD")
+        logger.log(LogLevel.ERROR.value, f"Could not connect to WEBDAV - missing WEBDAV_LOGIN and/or WEBDAV_PASSWORD")
         raise e
 
+    logger.log(LogLevel.INFO.value, f"Establishing WEBDAV connection...")
     try:
         client = webdav3.client.Client({
             'webdav_hostname': f"https://cloud.rdm.uq.edu.au/remote.php/dav/files/{webdav_login}/",
@@ -53,24 +58,28 @@ def webdav_connect():
             'webdav_timeout': 120
         })
     except Exception as e:
-        print(f"Could not connect to WEBDAV - connection error!")
+        logger.log(LogLevel.ERROR.value, f"Could not connect to WEBDAV - connection error!")
         raise e
 
+    logger.log(LogLevel.INFO.value, "Connection successful!")
     return client
 
 def upload_to_rdm(local_path, remote_path):
+    logger = make_logger()
     client = webdav_connect()
     exception = None
     for i in range(5):
-        print(f"Uploading {local_path}...")
+        logger.log(LogLevel.INFO.value, f"Uploading {local_path} to {remote_path}")
         try:
             client.upload_sync(
                 remote_path=remote_path,
                 local_path=local_path
             )
         except webdav3.exceptions.ConnectionException as e:
-            print(f"Connection failed! {e}")
-            sleep(randint(120, 300))
+            logger.log(LogLevel.ERROR.value, f"Connection failed! {e}")
+            sleeptime = randint(120, 300)
+            logger.log(LogLevel.INFO.value, f"Sleeping for {sleeptime} seconds...")
+            sleep(sleeptime)
             exception = e
             continue
         break
@@ -79,18 +88,21 @@ def upload_to_rdm(local_path, remote_path):
 
 
 def download_from_rdm(remote_path, local_path):
+    logger = make_logger()
     client = webdav_connect()
     exception = None
     for i in range(5):
-        print(f"Downloading {remote_path}...")
+        logger.log(LogLevel.INFO.value, f"Downloading {remote_path} to {local_path}")
         try:
             client.download_sync(
                 remote_path=remote_path,
                 local_path=local_path,
             )
         except webdav3.exceptions.ConnectionException as e:
-            print(f"Connection failed! {e}")
-            sleep(randint(120, 300))
+            logger.log(LogLevel.ERROR.value, f"Connection failed! {e}")
+            sleeptime = randint(120, 300)
+            logger.log(LogLevel.INFO.value, f"Sleeping for {sleeptime} seconds...")
+            sleep(sleeptime)
             exception = e
             continue
         break
@@ -98,11 +110,13 @@ def download_from_rdm(remote_path, local_path):
         raise exception
 
 def compress_folder(folder, result_id):
+    logger = make_logger()
     if os.environ.get('BRANCH'):
         results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{os.environ['BRANCH']}_{result_id}.tar"
     else:
         results_tar = f"{str(datetime.datetime.now()).replace(':', '-').replace(' ', '_').replace('.', '')}_{result_id}.tar"
-    
+
+    logger.log(LogLevel.INFO.value, f"Compressing folder {folder} with suffix '{result_id}'")
     sys_cmd(f"tar -cf {results_tar} {folder}")
 
     return results_tar
@@ -147,40 +161,41 @@ def workflow(args, init_workflow, run_workflow, run_args, name, delete_workflow=
     assert(not (run_workflow == True and init_workflow == False))
     shutil.rmtree(os.path.join(args.output_dir), ignore_errors=True)
     logger = create_logger(args.output_dir)
-    logger.log(LogLevel.DEBUG.value, f"WORKFLOW DETAILS: {args}")
+    logger.log(LogLevel.INFO.value, f"WORKFLOW DETAILS: {args}")
     if init_workflow:
-        logger.log(LogLevel.DEBUG.value, f"Initialising workflow...")
+        logger.log(LogLevel.INFO.value, f"Initialising workflow...")
         wf = qsm.init_workflow(args)
     if init_workflow and run_workflow:
         qsm.set_env_variables(args)
         if run_args:
-            logger.log(LogLevel.DEBUG.value, f"Updating args with run_args: {run_args}")
+            logger.log(LogLevel.INFO.value, f"Updating args with run_args: {run_args}")
             arg_dict = vars(args)
             for key, value in run_args.items():
                 arg_dict[key] = value
-            logger.log(LogLevel.DEBUG.value, f"Initialising workflow with updated args...")
+            logger.log(LogLevel.INFO.value, f"Initialising workflow with updated args...")
             wf = qsm.init_workflow(args)
             assert len(wf.list_node_names()) > 0, "The generated workflow has no nodes! Something went wrong..."
-        logger.log(LogLevel.DEBUG.value, f"Saving args to {os.path.join(args.output_dir, 'args.txt')}...")
+        logger.log(LogLevel.INFO.value, f"Saving args to {os.path.join(args.output_dir, 'args.txt')}...")
         with open(os.path.join(args.output_dir, "args.txt"), 'w') as args_file:
             args_file.write(str(args))
-        logger.log(LogLevel.DEBUG.value, f"Running workflow!")
+        logger.log(LogLevel.INFO.value, f"Running workflow!")
         wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
         if delete_workflow:
-            logger.log(LogLevel.DEBUG.value, f"Deleting workflow folder {os.path.join(args.output_dir, 'workflow_qsm')}")
+            logger.log(LogLevel.INFO.value, f"Deleting workflow folder {os.path.join(args.output_dir, 'workflow_qsm')}")
             shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"), ignore_errors=True)
         # visualise results
-        for nii_file in glob.glob(os.path.join(args.output_dir, "qsm", "*.nii*")):
-            png = display_nii(
-                nii_path=nii_file,
-                title=f"QSM: {name}\n({get_qsmxt_version()})",
-                colorbar=True,
-                cbar_label="Susceptibility (ppm)",
-                out_png=extend_fname(nii_file, f"_{name}", ext='png', out_dir=os.path.join(tempfile.gettempdir(), "public-outputs")),
-                cmap='gray',
-                vmin=-0.15,
-                vmax=+0.15,
-                interpolation='nearest'
-            )
-            add_to_github_summary(f"![image]({_upload_png(png)})\n")
+        if upload_png:
+            for nii_file in glob.glob(os.path.join(args.output_dir, "qsm", "*.nii*")):
+                png = display_nii(
+                    nii_path=nii_file,
+                    title=f"QSM: {name}\n({get_qsmxt_version()})",
+                    colorbar=True,
+                    cbar_label="Susceptibility (ppm)",
+                    out_png=extend_fname(nii_file, f"_{name}", ext='png', out_dir=os.path.join(tempfile.gettempdir(), "public-outputs")),
+                    cmap='gray',
+                    vmin=-0.15,
+                    vmax=+0.15,
+                    interpolation='nearest'
+                )
+                add_to_github_summary(f"![image]({_upload_png(png)})\n")
 

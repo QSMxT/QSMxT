@@ -51,7 +51,8 @@ def bids_dir_public():
     (True, run_workflows, None)
 ])
 def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
-    print(f"=== TESTING SEGMENTATION PIPELINE ===")
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING SEGMENTATION PIPELINE ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
