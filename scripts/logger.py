@@ -77,7 +77,7 @@ def make_logger(name='main', logpath=None, printlevel=LogLevel.INFO, warnlevel=L
         file_handler.setFormatter(formatter)
 
     # add handlers to logger
-    if logger.hasHandlers() and len(logger.handlers) == 0:
+    if logger.hasHandlers() == False or len(logger.handlers) == 0:
         logger.addHandler(console_handler)
         logger.addHandler(warnings_handler)
         logger.addHandler(errors_handler)
