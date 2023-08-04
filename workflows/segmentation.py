@@ -32,7 +32,7 @@ def init_segmentation_workflow(run_args, subject, session, run):
     t1w_file = t1w_files[0]
     mag_file = mag_files[0]
 
-    wf = Workflow(f"segmentation_{run}", base_dir=os.path.join(run_args.output_dir, "workflow", "workflow_segmentation", subject, session, run))
+    wf = Workflow(f"segmentation_{run}", base_dir=os.path.join(run_args.output_dir, "workflow", subject, session, run))
 
     # register t1 to magnitude
     n_registration_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6

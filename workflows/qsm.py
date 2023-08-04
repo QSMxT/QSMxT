@@ -92,7 +92,7 @@ def init_qsm_workflow(run_args, subject, session, run):
                 run_args.combine_phase = False
     
     # create nipype workflow for this run
-    wf = Workflow(f"qsmxt_{run}", base_dir=os.path.join(run_args.output_dir, "workflow", "workflow_qsmxt", subject, session, run))
+    wf = Workflow(f"qsmxt_{run}", base_dir=os.path.join(run_args.output_dir, "workflow", subject, session, run))
 
     # datasink
     n_outputs = Node(
