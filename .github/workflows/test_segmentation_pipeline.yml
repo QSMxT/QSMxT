@@ -11,8 +11,12 @@ on:
       - workflows/segmentation.py
       - interfaces/nipype_interface_fastsurfer.py
       - tests/test_segment.sh
+      - tests/utils.py
+      - tests/test_segmentation_pipeline.py
+      - tests/test_segmentation_pipeline.sh
       - .github/workflows/test_segmentation_pipeline.yml
       - aseg_labels.csv
+      - scripts/logger.py
   pull_request:
     branches: [ master ]
     paths:
@@ -21,8 +25,12 @@ on:
       - workflows/segmentation.py
       - interfaces/nipype_interface_fastsurfer.py
       - tests/test_segment.sh
+      - tests/utils.py
+      - tests/test_segmentation_pipeline.py
+      - tests/test_segmentation_pipeline.sh
       - .github/workflows/test_segmentation_pipeline.yml
       - aseg_labels.csv
+      - scripts/logger.py
     
 jobs:
   test_segmentation_pipeline:
