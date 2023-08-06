@@ -56,7 +56,7 @@ def bids_dir_real():
     if not os.path.exists(os.path.join(tmp_dir, 'bids-secret')):
         if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
             download_from_osf(
-                project="n9uqk",
+                project="n6uqk",
                 local_path=os.path.join(tmp_dir, "bids-secret.zip")
             )
 
