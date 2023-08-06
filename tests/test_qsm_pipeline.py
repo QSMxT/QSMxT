@@ -262,10 +262,15 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
     
     workflow(args, init_workflow, run_workflow, run_args, "realdata", delete_workflow=True)
     local_path = compress_folder(folder=args.output_dir, result_id='real')
-    upload_to_rdm(
-        local_path=local_path,
-        remote_path=f"QSMFUNCTOR-Q0748/data/QSMxT-Test-Results/{os.path.split(local_path)[1]}"
-    )
+
+    try:
+        upload_to_rdm(
+            local_path=local_path,
+            remote_path=f"QSMFUNCTOR-Q0748/data/QSMxT-Test-Results/{os.path.split(local_path)[1]}"
+        )
+        add_to_github_summary("Results uploaded to RDM")
+    except:
+        add_to_github_summary("Result upload to RDM failed!")
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
