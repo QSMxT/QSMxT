@@ -22,8 +22,8 @@ def bids_dir_public():
         head_phantom_maps_dir = os.path.join(tmp_dir, 'head-phantom-maps')
         if not os.path.exists(head_phantom_maps_dir):
             if not os.path.exists(os.path.join(tmp_dir, 'head-phantom-maps.tar')):
-                download_from_rdm(
-                    remote_path="QSMFUNCTOR-Q0748/qsm-challenge-and-head-phantom/head-phantom-maps.tar",
+                download_from_osf(
+                    project="9jc42",
                     local_path=os.path.join(tmp_dir, "head-phantom-maps.tar")
                 )
 
