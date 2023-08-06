@@ -109,6 +109,7 @@ jobs:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
+        OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
       run: |
         /bin/bash tests/test_qsm_pipeline.sh "test_premade and ${{ matrix.args }}"
     - uses: actions/upload-artifact@v3
@@ -143,6 +144,7 @@ jobs:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
+        OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
       run: |
         /bin/bash tests/test_qsm_pipeline.sh "${{ matrix.args }}"
 

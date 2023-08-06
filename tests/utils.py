@@ -6,6 +6,7 @@ import shutil
 from time import sleep
 from random import randint
 
+import osfclient
 import webdav3.client
 import nibabel as nib
 import numpy as np
@@ -109,6 +110,19 @@ def download_from_rdm(remote_path, local_path):
     else:
         raise exception
 
+def download_from_osf(project, local_path):
+    logger = make_logger()
+    try:
+        osf_token = os.environ['OSF_TOKEN']
+    except KeyError as e:
+        logger.log(LogLevel.ERROR.value, f"Cannot connect to OSF - missing OSF_TOKEN environment variable!")
+        raise e
+
+    osf = osfclient.OSF(token=osf_token)
+    osf_file = list(osf.project(project).storage().files)[0]
+    with open(local_path, 'wb') as fpr:
+        osf_file.write_to(fpr)
+
 def compress_folder(folder, result_id):
     logger = make_logger()
     if os.environ.get('BRANCH'):
@@ -198,4 +212,3 @@ def workflow(args, init_workflow, run_workflow, run_args, name, delete_workflow=
                     interpolation='nearest'
                 )
                 add_to_github_summary(f"![image]({_upload_png(png)})\n")
-

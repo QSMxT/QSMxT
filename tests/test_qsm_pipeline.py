@@ -25,8 +25,8 @@ def bids_dir_public():
         head_phantom_maps_dir = os.path.join(tmp_dir, 'head-phantom-maps')
         if not os.path.exists(head_phantom_maps_dir):
             if not os.path.exists(os.path.join(tmp_dir, 'head-phantom-maps.tar')):
-                download_from_rdm(
-                    remote_path="QSMFUNCTOR-Q0748/qsm-challenge-and-head-phantom/head-phantom-maps.tar",
+                download_from_osf(
+                    project="9jc42",
                     local_path=os.path.join(tmp_dir, "head-phantom-maps.tar")
                 )
 
@@ -55,8 +55,8 @@ def bids_dir_real():
     tmp_dir = tempfile.gettempdir()
     if not os.path.exists(os.path.join(tmp_dir, 'bids-secret')):
         if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
-            download_from_rdm(
-                remote_path="QSMFUNCTOR-Q0748/data/2022-07-06-QSMxT-Test-Battery/bids-secret.zip",
+            download_from_osf(
+                project="n9uqk",
                 local_path=os.path.join(tmp_dir, "bids-secret.zip")
             )
 

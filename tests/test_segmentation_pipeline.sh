@@ -12,6 +12,7 @@ sudo docker run \
     --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
     --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
     --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
+    --env OSF_TOKEN="${OSF_TOKEN}" \
     -v /tmp:/tmp ${container} \
     pytest -o log_cli=true --log-cli-level=DEBUG \
         /tmp/QSMxT/tests/test_segmentation_pipeline.py -s -k "${@}"
