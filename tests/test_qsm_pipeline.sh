@@ -14,7 +14,7 @@ sudo docker run \
     --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
     --env OSF_TOKEN="${OSF_TOKEN}" \
     -v /tmp:/tmp ${container} \
-    pytest -o log_cli=true --log-cli-level=DEBUG \
+    pytest -o log_cli=true --log-cli-level=INFO \
         /tmp/QSMxT/tests/test_qsm_pipeline.py -s -k "${@}"
 
 if [ -f /tmp/GITHUB_STEP_SUMMARY.md ]; then
