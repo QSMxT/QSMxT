@@ -7,6 +7,7 @@ import glob
 import json
 import fnmatch
 import datetime
+import re
 
 from scripts.qsmxt_functions import get_qsmxt_version, get_diff
 from scripts.logger import LogLevel, make_logger, show_warning_summary 
@@ -44,7 +45,7 @@ def rename(old, new, always_show=False):
     os.rename(old, new)
 
 def clean(data): 
-    return data.replace('_', '')
+    return re.sub(r'[^a-zA-Z0-9]', '', data).lower()
 
 def get_folders_in(folder, full_path=False):
     folders = list(filter(os.path.isdir, [os.path.join(folder, d) for d in os.listdir(folder)]))
@@ -58,7 +59,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
     for subject in subjects:
         sessions = get_folders_in(os.path.join(input_dir, subject))
         for session in sessions:
-            session_extra_folder = os.path.join(output_dir, clean(subject), session, "extra_data")
+            session_extra_folder = os.path.join(output_dir, f"sub-{clean(subject)}", f"ses-{clean(session)}", "extra_data")
             os.makedirs(session_extra_folder, exist_ok=True)
             if 'dcm2niix_output.txt' in os.listdir(session_extra_folder):
                 logger.log(LogLevel.WARNING.value, f'{session_extra_folder} already has dcm2niix conversion output! Skipping...')
@@ -232,6 +233,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                     details['subject'] = subject
                     details['session'] = session
                     details['protocol_type'] = None
+                    details['protocol_name'] = clean(json_data['ProtocolName'].lower())
                     if json_data['ProtocolName'].lower() in t2starw_protocol_names:
                         details['protocol_type'] = 't2starw'
                     elif json_data['ProtocolName'].lower() in t1w_protocol_names:
@@ -252,16 +254,19 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                     session_details.append(details)
 
             if session_details:
-                session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['protocol_type'], f['acquisition_time'], f['series_num'], 0 if 'phase' in f['part_type'] else 1, f['echo_time']))
+                session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['protocol_type'], f['protocol_name'], f['acquisition_time'], f['series_num'], 0 if 'phase' in f['part_type'] else 1, f['echo_time']))
 
                 # update run numbers
                 run_num = 1
                 series_num = session_details[0]['series_num']
                 protocol_type = session_details[0]['protocol_type']
+                protocol_name = session_details[0]['protocol_name']
                 acquisition_time = session_details[0]['acquisition_time']
                 for i in range(len(session_details)):
-                    if ((acquisition_time and session_details[i]['acquisition_time'] and abs(acquisition_time - session_details[i]['acquisition_time']) > datetime.timedelta(seconds=5)) or
-                        (not (acquisition_time and session_details[i]['acquisition_time']) and session_details[i]['series_num'] != series_num)):
+                    if ((protocol_name == session_details[i]) and 
+                        ((acquisition_time and session_details[i]['acquisition_time'] and abs(acquisition_time - session_details[i]['acquisition_time']) > datetime.timedelta(seconds=5)) or
+                        (not (acquisition_time and session_details[i]['acquisition_time']) and session_details[i]['series_num'] != series_num))):
+                        
                         if session_details[i]['protocol_type'] != session_details[i-1]['protocol_type']:
                             run_num = 1
                         elif session_details[i]['protocol_type'] == 't2starw' and session_details[i]['part_type'] == 'phase':
@@ -271,28 +276,31 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                         
                     series_num = session_details[i]['series_num']
                     acquisition_time = session_details[i]['acquisition_time']
-                    protocol_type = session_details[0]['protocol_type']
+                    protocol_name = session_details[i]['protocol_name']
+                    protocol_type = session_details[i]['protocol_type']
                     session_details[i]['run_num'] = run_num
 
                 # update echo numbers and number of echoes
                 t2starw_details = [details for details in session_details if details['protocol_type'] == 't2starw']
-                t2starw_run_nums = sorted(list(set(details['run_num'] for details in t2starw_details)))
-                for run_num in t2starw_run_nums:
-                    echo_times = sorted(list(set([details['echo_time'] for details in t2starw_details if details['run_num'] == run_num])))
-                    num_echoes = len(echo_times)
-                    for details in t2starw_details:
-                        if details['run_num'] == run_num:
-                            details['num_echoes'] = num_echoes
-                            details['echo_num'] = echo_times.index(details['echo_time']) + 1
+                t2starw_acq_names = sorted(list(set(details['protocol_name'] for details in t2starw_details)))
+                for acq in t2starw_acq_names:
+                    acq_runs = sorted(list(set(details['run_num'] for details in t2starw_details if details['protocol_name'] == acq)))
+                    for run_num in acq_runs:
+                        echo_times = sorted(list(set([details['echo_time'] for details in t2starw_details if details['run_num'] == run_num and details['protocol_name'] == acq])))
+                        num_echoes = len(echo_times)
+                        for details in t2starw_details:
+                            if details['run_num'] == run_num and details['protocol_name'] == acq:
+                                details['num_echoes'] = num_echoes
+                                details['echo_num'] = echo_times.index(details['echo_time']) + 1
 
                 # update names
                 for details in session_details:
                     if details['protocol_type'] == 't1w':
-                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(details['run_num']).zfill(2)}_T1w")
+                        details['new_name'] = os.path.join(session_anat_folder, f"{subject}_{session}_acq-{str(details['protocol_name'])}_run-{str(details['run_num']).zfill(2)}_T1w")
                     elif details['num_echoes'] == 1:
-                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(str(details['run_num']).zfill(2)).zfill(2)}_part-{details['part_type']}_T2starw")
+                        details['new_name'] = os.path.join(session_anat_folder, f"{subject}_{session}_acq-{str(details['protocol_name'])}_run-{str(details['run_num']).zfill(2)}_part-{details['part_type']}_T2starw")
                     else:
-                        details['new_name'] = os.path.join(session_anat_folder, f"{clean(subject)}_{clean(session)}_run-{str(str(details['run_num']).zfill(2)).zfill(2)}_echo-{str(str(details['echo_num']).zfill(2)).zfill(2)}_part-{details['part_type']}_MEGRE")
+                        details['new_name'] = os.path.join(session_anat_folder, f"{subject}_{session}_acq-{str(details['protocol_name'])}_run-{str(details['run_num']).zfill(2)}_echo-{str(details['echo_num']).zfill(2)}_part-{details['part_type']}_MEGRE")
 
                 # store session details
                 all_session_details.extend(session_details)

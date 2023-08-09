@@ -7,6 +7,7 @@ import glob
 import copy
 import argparse
 import json
+import re
 
 from nipype.pipeline.engine import Workflow
 from nipype import config, logging
@@ -61,38 +62,52 @@ def init_session_workflow(args, subject, session):
 
     def find_runs(pattern):
         files = glob.glob(pattern)
+
         if not files:
             logger.log(LogLevel.WARNING.value, f"No files found matching pattern: {pattern}")
             return None
-        if any('run' in file for file in files):
-            runs = sorted(list(set([
-                f"run-{os.path.split(path)[1][os.path.split(path)[1].find('run-') + 4: os.path.split(path)[1].find('_', os.path.split(path)[1].find('run-') + 4)]}"
-                for path in files
-            ])))
-            if not all('run' in file for file in files):
-                runs.append("")
-            if args.runs: runs = [run for run in runs if run in args.runs]
-        else:
-            runs = [""]
-        return runs
 
-    def init_workflow_and_add_nodes(args, subject, session, runs, init_workflow_func):
-        if runs is not None:
+        run_details = {}
+
+        acquisitions = sorted(list(set([
+            re.search("_acq-([a-zA-Z0-9]+)_", path).group(1)
+            for path in files
+            if '_acq-' in path
+        ])))
+
+        for acquisition in acquisitions:
+            runs = sorted(list(set([
+                re.search("_run-([a-zA-Z0-9]+)_", path).group(1)
+                for path in files
+                if acquisition in path
+            ])))
+            run_details[acquisition] = runs if len(runs) else None
+        
+        run_details[None] = sorted(list(set([
+            re.search("_run-([a-zA-Z0-9]+)_", path).group(1)
+            for path in files
+            if '_acq-' not in path
+        ])))
+
+        return run_details
+
+    def init_workflow_and_add_nodes(args, subject, session, run_details, init_workflow_func):
+        if run_details:
             wf.add_nodes([
-                node for node in
-                [init_workflow_func(copy.deepcopy(args), subject, session, run) for run in runs]
+                node for node in 
+                [init_workflow_func(copy.deepcopy(args), subject, session, acq, run) for acq, runs in run_details.items() for run in runs]
                 if node
             ])
 
     if any([args.do_qsm, args.do_t2starmap, args.do_r2starmap, args.do_swi]):
         phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
-        phase_runs = find_runs(phase_pattern)
-        init_workflow_and_add_nodes(args, subject, session, phase_runs, init_qsm_workflow)
+        phase_run_details = find_runs(phase_pattern)
+        init_workflow_and_add_nodes(args, subject, session, phase_run_details, init_qsm_workflow)
 
     if args.do_segmentation:
         t1w_pattern = os.path.join(args.bids_dir, args.t1w_pattern.replace("{run}", "").format(subject=subject, session=session))
-        t1w_runs = find_runs(t1w_pattern)
-        init_workflow_and_add_nodes(args, subject, session, t1w_runs, init_segmentation_workflow)
+        t1w_run_details = find_runs(t1w_pattern)
+        init_workflow_and_add_nodes(args, subject, session, t1w_run_details, init_segmentation_workflow)
 
     return wf
 

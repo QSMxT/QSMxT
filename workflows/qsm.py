@@ -23,44 +23,47 @@ from workflows.masking import masking_workflow
 
 import numpy as np
 
-def init_qsm_workflow(run_args, subject, session, run):
+def get_matching_files(bids_dir, subject, session, suffixes, part=None, acq=None, run=None):
+    pattern = f"{bids_dir}/{subject}/{session}/anat/{subject}_{session}*"
+    if acq:
+        pattern += f"acq-{acq}_*"
+    if run:
+        pattern += f"run-{run}_*"
+    if part:
+        pattern += f"part-{part}_*"
+    matching_files = [glob.glob(f"{pattern}{suffix}.nii*") for suffix in suffixes]
+    return sorted([item for sublist in matching_files for item in sublist])
+
+def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     logger = make_logger('main')
-    logger.log(LogLevel.INFO.value, f"Creating QSM workflow for {subject}/{session}/{run}...")
+    run_id = f"{subject}.{session}.acq-{acq}.run-{run}"
+    logger.log(LogLevel.INFO.value, f"Creating QSM workflow for {run_id}...")
 
     # get relevant files from this run
-    phase_pattern = os.path.join(run_args.bids_dir, run_args.phase_pattern.format(subject=subject, session=session, run=run))
-    phase_files = sorted(glob.glob(phase_pattern))[:run_args.num_echoes]
-    
-    magnitude_pattern = os.path.join(run_args.bids_dir, run_args.magnitude_pattern.format(subject=subject, session=session, run=run))
-    magnitude_files = sorted(glob.glob(magnitude_pattern))[:run_args.num_echoes]
-
-    params_pattern = os.path.join(run_args.bids_dir, run_args.phase_pattern.format(subject=subject, session=session, run=run).replace("nii.gz", "nii").replace("nii", "json"))
-    params_files = sorted(glob.glob(params_pattern))[:run_args.num_echoes]
-    if not params_files:
-        params_pattern = os.path.join(run_args.bids_dir, run_args.magnitude_pattern.format(subject=subject, session=session, run=run).replace("nii.gz", "nii").replace("nii", "json"))
-        params_files = sorted(glob.glob(params_pattern))[:run_args.num_echoes]
-    
+    phase_files = get_matching_files(run_args.bids_dir, subject, session, ["T2starw", "MEGRE"], "phase", acq, run)[:run_args.num_echoes]
+    magnitude_files = get_matching_files(run_args.bids_dir, subject, session, ["T2starw", "MEGRE"], "mag", acq, run)[:run_args.num_echoes]
+    params_files = [path.replace('.nii.gz', '.nii').replace('.nii', '.json') for path in (phase_files if len(phase_files) else magnitude_files)]
     mask_pattern = os.path.join(run_args.bids_dir, run_args.mask_pattern.format(subject=subject, session=session, run=run))
     mask_files = sorted(glob.glob(mask_pattern))[:run_args.num_echoes] if run_args.use_existing_masks else []
     
     # handle any errors related to files and adjust any settings if needed
     if run_args.do_qsm and not phase_files:
-        logger.log(LogLevel.WARNING.value, f"Skipping QSM for {subject}/{session}/{run} - no phase files found matching pattern {phase_pattern}.")
+        logger.log(LogLevel.WARNING.value, f"Skipping QSM for {run_id} - no phase files found!.")
         run_args.do_qsm = False
         run_args.do_swi = False
     if len(phase_files) != len(params_files):
-        logger.log(LogLevel.WARNING.value, f"Skipping {subject}/{session}/{run} - an unequal number of JSON and phase files are present.")
+        logger.log(LogLevel.WARNING.value, f"Skipping {run_id} - an unequal number of JSON and phase files are present.")
         return
     if len(phase_files) == 1 and run_args.combine_phase:
         run_args.combine_phase = False
     if run_args.do_qsm and run_args.use_existing_masks:
         if not mask_files:
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking_algorithm} masking.")
+            logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking_algorithm} masking.")
         if len(mask_files) > 1 and len(mask_files) != len(phase_files):
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --use_existing_masks specified but unequal number of mask and phase files present. Reverting to {run_args.masking_algorithm} masking.")
+            logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but unequal number of mask and phase files present. Reverting to {run_args.masking_algorithm} masking.")
             mask_files = []
         if len(mask_files) > 1 and run_args.combine_phase:
-            logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run}: --combine_phase specified but multiple masks found with --use_existing_masks. The first mask will be used only.")
+            logger.log(LogLevel.WARNING.value, f"Run {run_id}: --combine_phase specified but multiple masks found with --use_existing_masks. The first mask will be used only.")
             mask_files = [mask_files[0] for x in mask_files]
         if mask_files:
             run_args.inhomogeneity_correction = False
@@ -69,30 +72,30 @@ def init_qsm_workflow(run_args, subject, session, run):
             run_args.add_bet = False
     if not magnitude_files:
         if run_args.do_r2starmap:
-            logger.log(LogLevel.WARNING.value, f"Cannot compute R2* for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
+            logger.log(LogLevel.WARNING.value, f"Cannot compute R2* for {run_id} - no magnitude files found.")
             run_args.do_r2starmap = False
         if run_args.do_t2starmap:
-            logger.log(LogLevel.WARNING.value, f"Cannot compute T2* for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
+            logger.log(LogLevel.WARNING.value, f"Cannot compute T2* for {run_id} - no magnitude files found.")
             run_args.do_t2starmap = False
         if run_args.do_swi:
-            logger.log(LogLevel.WARNING.value, f"Cannot compute SWI for {subject}/{session}/{run} - no magnitude files found matching pattern: {magnitude_pattern}.")
+            logger.log(LogLevel.WARNING.value, f"Cannot compute SWI for {run_id} - no magnitude files found.")
             run_args.do_swi = False
         if run_args.do_qsm:
             if run_args.masking_input == 'magnitude':
-                logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} will use phase-based masking - no magnitude files found matching pattern: {magnitude_pattern}.")
+                logger.log(LogLevel.WARNING.value, f"Run {run_id} will use phase-based masking - no magnitude files found.")
                 run_args.masking_input = 'phase'
                 run_args.masking_algorithm = 'threshold'
                 run_args.inhomogeneity_correction = False
                 run_args.add_bet = False
             if run_args.add_bet:
-                logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} cannot use --add_bet option - no magnitude files found matching pattern: {magnitude_pattern}.")
+                logger.log(LogLevel.WARNING.value, f"Run {run_id} cannot use --add_bet option - no magnitude files found.")
                 run_args.add_bet = False
             if run_args.combine_phase:
-                logger.log(LogLevel.WARNING.value, f"Run {subject}/{session}/{run} cannot use --combine_phase option - no magnitude files found matching pattern: {magnitude_pattern}.")
+                logger.log(LogLevel.WARNING.value, f"Run {run_id} cannot use --combine_phase option - no magnitude files found.")
                 run_args.combine_phase = False
     
     # create nipype workflow for this run
-    wf = Workflow(f"qsmxt_{run}", base_dir=os.path.join(run_args.output_dir, "workflow", subject, session, run))
+    wf = Workflow(f"qsmxt" + (f"_acq-{acq}" if acq else "") + (f"_run-{run}" if run else ""), base_dir=os.path.join(run_args.output_dir, "workflow", subject, session, acq or "", run or ""))
 
     # datasink
     n_outputs = Node(

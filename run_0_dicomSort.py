@@ -102,7 +102,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_incrementer,
             logger.log(LogLevel.WARNING.value, f"An exception occurred while decompressing {dicom_loc}! {e}.")
         
         # save files to a 3-tier nested folder structure
-        subjFolderName = f"sub-{subj_name}"
+        subjFolderName = f"{subj_name}"
         seriesFolderName = f"{seriesNumber}_{protocolName}"
         subjName_date = f"{subj_name}_{studyDate}"
 
@@ -117,7 +117,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_incrementer,
                 subjName_sessionNums[subj_name] = 1
             logger.log(LogLevel.INFO.value, f"Identified session: {subj_name} #{subjName_sessionNums[subj_name]} {studyDate}")
 
-        sesFolderName = f"ses-{subjName_sessionNums[subj_name]}" if use_session_incrementer else f"ses-{studyDate}"
+        sesFolderName = f"{subjName_sessionNums[subj_name]}" if use_session_incrementer else f"{studyDate}"
         
         if not os.path.exists(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName)):
             logger.log(LogLevel.INFO.value, f"Identified series: {subjFolderName}/{sesFolderName}/{seriesFolderName}")

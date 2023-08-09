@@ -12,27 +12,39 @@ from interfaces import nipype_interface_mgz2nii as mgz2nii
 
 from scripts.logger import LogLevel, make_logger
 
-def init_segmentation_workflow(run_args, subject, session, run):
+def get_matching_files(bids_dir, subject, session, suffixes, part=None, acq=None, run=None):
+    pattern = f"{bids_dir}/{subject}/{session}/anat/{subject}_{session}*"
+    if acq:
+        pattern += f"acq-{acq}_*"
+    if run:
+        pattern += f"run-{run}_*"
+    if part:
+        pattern += f"part-{part}_*"
+    matching_files = [glob.glob(f"{pattern}{suffix}.nii*") for suffix in suffixes]
+    return sorted([item for sublist in matching_files for item in sublist])
+
+def init_segmentation_workflow(run_args, subject, session, acq=None, run=None):
 
     logger = make_logger('main')
+    logger.log(LogLevel.INFO.value, f"Creating segmentation workflow for {subject}/{session}/acq-{acq}_run-{run}...")
 
     # get relevant files from this run
-    t1w_pattern = os.path.join(run_args.bids_dir, run_args.t1w_pattern.format(subject=subject, session=session, run=run))
-    mag_pattern = os.path.join(run_args.bids_dir, run_args.magnitude_pattern.format(subject=subject, session=session, run=run))
-    t1w_files = sorted(glob.glob(t1w_pattern))
-    mag_files = sorted(glob.glob(mag_pattern))
+    t1w_files = get_matching_files(run_args.bids_dir, subject, session, ["T1w"], None, acq, run)
+    mag_files = get_matching_files(run_args.bids_dir, subject, session, ["MEGRE", "T2starw"], "mag", None, None)
     
     if not t1w_files:
-        logger.log(LogLevel.ERROR.value, f"No T1w files matching pattern: {t1w_pattern}")
+        logger.log(LogLevel.ERROR.value, f"No T1w files found for {subject}")
         return
     if not mag_files:
         logger.log(LogLevel.ERROR.value, f"No magnitude files matching pattern: {mag_files}")
         return
+    if len(t1w_files) > 1:
+        logger.log(LogLevel.WARNING.value, f"Multiple T1w files found! Using {t1w_files[0]}")
     
     t1w_file = t1w_files[0]
     mag_file = mag_files[0]
 
-    wf = Workflow(f"segmentation_{run}", base_dir=os.path.join(run_args.output_dir, "workflow", subject, session, run))
+    wf = Workflow(f"segmentation" + (f"_acq-{acq}" if acq else "") + (f"_run-{run}" if run else ""), base_dir=os.path.join(run_args.output_dir, "workflow", subject, session, acq or "", run or ""))
 
     # register t1 to magnitude
     n_registration_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6
