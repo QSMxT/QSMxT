@@ -223,9 +223,11 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                 json_data = load_json(json_file)
                 if 'Modality' not in json_data:
                     logger.log(LogLevel.WARNING.value, f"'Modality' missing from JSON header '{json_file}'! Skipping...")
-                elif 'ProtocolName' not in json_data:
+                    continue
+                if 'ProtocolName' not in json_data:
                     logger.log(LogLevel.WARNING.value, f"'ProtocolName' missing from JSON header '{json_file}'! Skipping...")
-                elif json_data['Modality'] == 'MR' and json_data['ProtocolName'].lower() in t2starw_protocol_names + t1w_protocol_names:
+                    continue
+                if json_data['Modality'] == 'MR' and json_data['ProtocolName'].lower() in t2starw_protocol_names + t1w_protocol_names:
                     details = {}
                     details['subject'] = subject
                     details['session'] = session
@@ -235,6 +237,9 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                     elif json_data['ProtocolName'].lower() in t1w_protocol_names:
                         details['protocol_type'] = 't1w'
                     details['series_num'] = json_data['SeriesNumber']
+                    details['acquisition_time'] = None
+                    if 'AcquisitionTime' in json_data:
+                        details['acquisition_time'] = datetime.datetime.strptime(json_data['AcquisitionTime'], "%H:%M:%S.%f")
                     details['part_type'] = 'mag'
                     if 'ImageType' in json_data.keys() and any(x in json_data['ImageType'] for x in ['P', 'PHASE', 'phase', 'p']):
                         details['part_type'] = 'phase'
@@ -247,22 +252,25 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                     session_details.append(details)
 
             if session_details:
-                session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['protocol_type'], f['series_num'], 0 if 'phase' in f['part_type'] else 1, f['echo_time']))
+                session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['protocol_type'], f['acquisition_time'], f['series_num'], 0 if 'phase' in f['part_type'] else 1, f['echo_time']))
 
                 # update run numbers
                 run_num = 1
                 series_num = session_details[0]['series_num']
                 protocol_type = session_details[0]['protocol_type']
+                acquisition_time = session_details[0]['acquisition_time']
                 for i in range(len(session_details)):
-                    if session_details[i]['series_num'] != series_num:
-                        if session_details[i]['protocol_type'] == 't2starw' and session_details[i-1]['part_type'] == 'phase':
-                            run_num += 1
-                        elif session_details[i]['protocol_type'] == 't1w' and session_details[i-1]['protocol_type'] == 't1w':
-                            run_num += 1
-                        elif session_details[i]['protocol_type'] != session_details[i-1]['protocol_type']:
+                    if ((acquisition_time and session_details[i]['acquisition_time'] and abs(acquisition_time - session_details[i]['acquisition_time']) > datetime.timedelta(seconds=5)) or
+                        (not (acquisition_time and session_details[i]['acquisition_time']) and session_details[i]['series_num'] != series_num)):
+                        if session_details[i]['protocol_type'] != session_details[i-1]['protocol_type']:
                             run_num = 1
+                        elif session_details[i]['protocol_type'] == 't2starw' and session_details[i]['part_type'] == 'phase':
+                            run_num += 1
+                        elif session_details[i]['protocol_type'] == 't1w':
+                            run_num += 1
                         
                     series_num = session_details[i]['series_num']
+                    acquisition_time = session_details[i]['acquisition_time']
                     protocol_type = session_details[0]['protocol_type']
                     session_details[i]['run_num'] = run_num
 
