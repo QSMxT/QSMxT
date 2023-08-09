@@ -119,7 +119,8 @@ def download_from_osf(project, local_path):
         raise e
 
     osf = osfclient.OSF(token=osf_token)
-    osf_file = list(osf.project(project).storage().files)[0]
+    osf_project = osf.project(project)
+    osf_file = list(osf_project.storage().files)[0]
     with open(local_path, 'wb') as fpr:
         osf_file.write_to(fpr)
 
