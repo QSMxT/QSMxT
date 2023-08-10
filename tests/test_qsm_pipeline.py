@@ -220,7 +220,7 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
     workflow(args, init_workflow, run_workflow, run_args, "use-existing-masks", delete_workflow=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
+    (True, run_workflows, { 'num_echoes' : 2 })
 ])
 def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
