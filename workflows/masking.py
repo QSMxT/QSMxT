@@ -105,7 +105,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 mn_phaseweights.inputs.weight_type = "grad+second"
                 wf.connect([
                     (n_inputs if use_maps else n_getfirst_phase, mn_phaseweights, [('phase', 'phase')]),
-                    (n_inputs if use_maps else n_getfirst_phase, mn_phaseweights, [('TE', 'TE')]),
+                    (n_inputs if use_maps else n_getfirst_phase, mn_phaseweights, [('TE', 'TEs' if use_maps else 'TE')]),
                     (mn_phaseweights, n_outputs, [('quality_map', 'quality_map')])
                 ])
                 if magnitude_available:
