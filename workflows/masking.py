@@ -53,7 +53,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
             ])
 
         # get first phase image if necessary
-        if run_args.combine_phase and (run_args.masking_input == 'phase'):
+        if run_args.combine_phase and run_args.masking_input == 'phase':
             n_getfirst_phase = Node(
                 interface=Function(
                     input_names=['phase', 'TE', 'is_list'],
@@ -104,8 +104,8 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 )
                 mn_phaseweights.inputs.weight_type = "grad+second"
                 wf.connect([
-                    (n_inputs if use_maps else n_getfirst_phase, mn_phaseweights, [('phase', 'phase')]),
-                    (n_inputs if use_maps else n_getfirst_phase, mn_phaseweights, [('TE', 'TEs' if use_maps else 'TE')]),
+                    (n_getfirst_phase if (run_args.combine_phase and run_args.masking_input == 'phase') else n_inputs, mn_phaseweights, [('phase', 'phase')]),
+                    (n_getfirst_phase if (run_args.combine_phase and run_args.masking_input == 'phase') else n_inputs, mn_phaseweights, [('TE', 'TEs' if use_maps else 'TE')]),
                     (mn_phaseweights, n_outputs, [('quality_map', 'quality_map')])
                 ])
                 if magnitude_available:
