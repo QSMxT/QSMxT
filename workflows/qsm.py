@@ -93,6 +93,13 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             if run_args.combine_phase:
                 logger.log(LogLevel.WARNING.value, f"Run {run_id} cannot use --combine_phase option - no magnitude files found.")
                 run_args.combine_phase = False
+    if len(magnitude_files) == 1:
+        if run_args.do_r2starmap:
+            logger.log(LogLevel.WARNING.value, f"Cannot compute R2* for {run_id} - at least two echoes are needed.")
+            run_args.do_r2starmap = False
+        if run_args.do_t2starmap:
+            logger.log(LogLevel.WARNING.value, f"Cannot compute T2* for {run_id} - at least two echoes are needed.")
+            run_args.do_t2starmap = False
     
     # create nipype workflow for this run
     wf = Workflow(f"qsmxt" + (f"_acq-{acq}" if acq else "") + (f"_run-{run}" if run else ""), base_dir=os.path.join(run_args.output_dir, "workflow", subject, session, acq or "", run or ""))
@@ -208,7 +215,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
         wf.connect([
             (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
             (n_inputs, n_swi, [('magnitude', 'magnitude')]),
-            (mn_json_params, n_swi, [('TE', 'TE')]),
+            (mn_json_params, n_swi, [('TE', 'TEs' if len(phase_files) > 1 else 'TE')]),
             (n_swi, n_outputs, [('swi', 'swi')]),
             (n_swi, n_outputs, [('swi_mip', 'swi.@swi_mip')]),
         ])

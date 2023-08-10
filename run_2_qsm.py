@@ -1308,13 +1308,3 @@ if __name__ == "__main__":
 
     script_exit(logger=logger)
 
-# test_singleecho traits.trait_errors.TraitError: 
-#   The 'TE' trait of a PhaseToNormalizedInputSpec instance must be a float, 
-#   but a value of [0.004] <class 'list'> was specified
-
-# test_qsm_premades body 
-#   traits.trait_errors.TraitError: The 'phase' trait of a QSMappingInputSpec 
-#   instance must be a pathlike object or string representing an existing file, 
-#   but a value of "['/tmp/bids-public/sub-1/ses-1/anat/sub-1_ses-1_run-1_echo-1_part-phase_MEGRE.nii', 
-#   '/tmp/bids-public/sub-1/ses-1/anat/sub-1_ses-1_run-1_echo-2_part-phase_MEGRE.nii']" 
-#   <class 'str'> was specified.

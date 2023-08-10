@@ -29,6 +29,11 @@ class RomeoMaskingInputSpec(CommandLineInputSpec):
         mandatory=True,
         argstr="--phase %s"
     )
+    magnitude = InputMultiPath(
+        mandatory=False,
+        exists=True,
+        argstr="--mag %s"
+    )
     TEs = traits.ListFloat(
         mandatory=False,
         argstr="--TEs '[%s]'"
@@ -36,10 +41,6 @@ class RomeoMaskingInputSpec(CommandLineInputSpec):
     TE = traits.Float(
         mandatory=False,
         argstr="--TEs '[%s]'"
-    )
-    magnitude = InputMultiPath(
-        exists=True,
-        argstr="--mag %s"
     )
     weight_type = traits.Str(
         default_value="grad+second",
@@ -64,3 +65,4 @@ class RomeoMaskingInterface(CommandLine):
             if self.inputs.TEs is None and self.inputs.TE is None:
                 raise ValueError("Either TEs or TE must be provided")
         return super(RomeoMaskingInterface, self)._format_arg(name, trait_spec, value)
+    

@@ -14,8 +14,12 @@ class ClearSwiInputSpec(CommandLineInputSpec):
         mandatory=True,
         argstr="--magnitude %s"
     )
-    TE = traits.ListFloat(
-        mandatory=True,
+    TEs = traits.ListFloat(
+        mandatory=False,
+        argstr="--TEs '[%s]'"
+    )
+    TE = traits.Float(
+        mandatory=False,
         argstr="--TEs '[%s]'"
     )
     swi = File(
@@ -37,4 +41,10 @@ class ClearSwiInterface(CommandLine):
     input_spec = ClearSwiInputSpec
     output_spec = ClearSwiOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "mrt_clearswi.jl")
+
+    def _format_arg(self, name, trait_spec, value):
+        if name == 'TEs' or name == 'TE':
+            if self.inputs.TEs is None and self.inputs.TE is None:
+                raise ValueError("Either TEs or TE must be provided")
+        return super(ClearSwiInterface, self)._format_arg(name, trait_spec, value)
 

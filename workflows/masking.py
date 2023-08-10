@@ -34,6 +34,58 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
     )
 
     if not mask_available:
+
+        # determine whether bet will be used this run
+        bet_used = magnitude_available and (
+             run_args.masking_algorithm == 'bet'
+             or run_args.add_bet
+             or run_args.filling_algorithm == 'bet')
+        bet_this_run = bet_used and (fill_masks or (run_args.mask_erosions and run_args.masking_algorithm == 'threshold' and not fill_masks))
+
+        # combine magnitude if necessary
+        if run_args.combine_phase and (bet_this_run or run_args.masking_input == 'magnitude'):
+            n_combine_magnitude = Node(
+                interface=combinemagnitude.CombineMagnitudeInterface(),
+                name='nibabal-numpy_combine-magnitude'
+            )
+            wf.connect([
+                (n_inputs, n_combine_magnitude, [('magnitude', 'magnitude')])
+            ])
+
+        # get first phase image if necessary
+        if run_args.combine_phase and (run_args.masking_input == 'phase'):
+            n_getfirst_phase = Node(
+                interface=Function(
+                    input_names=['phase', 'TE', 'is_list'],
+                    output_names=['phase', 'TE'],
+                    function=lambda phase, TE, is_list: [phase[0], TE[0]] if is_list else [phase, TE]
+                ),
+                name='func_get-first-phase'
+            )
+            n_getfirst_phase.inputs.is_list = True
+            wf.connect([
+                (n_inputs, n_getfirst_phase, [('phase', 'phase')]),
+                (n_inputs, n_getfirst_phase, [('TE', 'TE')])
+            ])
+
+        # correct magnitude if necessary
+        if run_args.inhomogeneity_correction and (bet_this_run or run_args.masking_input == 'magnitude'):
+            mn_inhomogeneity_correction = create_node(
+                interface=makehomogeneous.MakeHomogeneousInterface(),
+                iterfield=['magnitude'],
+                name='mrt_correct-inhomogeneity',
+                is_map=use_maps
+            )
+
+            if run_args.combine_phase:
+                wf.connect([
+                    (n_combine_magnitude, mn_inhomogeneity_correction, [('magnitude_combined', 'magnitude')]),
+                ])
+            else:
+                wf.connect([
+                    (n_inputs, mn_inhomogeneity_correction, [('magnitude', 'magnitude')])
+                ])
+
         # do phase weights if necessary
         if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
             if qualitymap_available:
@@ -43,67 +95,23 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 )
                 wf.connect([(n_inputs, mn_phaseweights, [('quality_map', 'quality_map')])])
             else:
-                if run_args.combine_phase:
-                    mn_phaseweights = Node(
-                        interface=phaseweights.RomeoMaskingInterface(),
-                        name='romeo-voxelquality',
-                        mem_gb=min(3, run_args.mem_avail)
-                    )
-                else:
-                    mn_phaseweights = create_node(
-                        interface=phaseweights.RomeoMaskingInterface(),
-                        iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
-                        name='romeo-voxelquality',
-                        mem_gb=min(3, run_args.mem_avail),
-                        is_map=use_maps
-                    )
+                mn_phaseweights = create_node(
+                    interface=phaseweights.RomeoMaskingInterface(),
+                    iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
+                    name='romeo-voxelquality',
+                    mem_gb=min(3, run_args.mem_avail),
+                    is_map=use_maps
+                )
                 mn_phaseweights.inputs.weight_type = "grad+second"
                 wf.connect([
-                    (n_inputs, mn_phaseweights, [('phase', 'phase')]),
-                    (n_inputs, mn_phaseweights, [('TE', 'TEs' if use_maps else 'TE')]),
+                    (n_inputs if use_maps else n_getfirst_phase, mn_phaseweights, [('phase', 'phase')]),
+                    (n_inputs if use_maps else n_getfirst_phase, mn_phaseweights, [('TE', 'TE')]),
                     (mn_phaseweights, n_outputs, [('quality_map', 'quality_map')])
                 ])
                 if magnitude_available:
                     mn_phaseweights.inputs.weight_type = "grad+second+mag"
                     wf.connect([
                         (n_inputs, mn_phaseweights, [('magnitude', 'magnitude')])
-                    ])
-
-        bet_used = magnitude_available and (
-             run_args.masking_algorithm == 'bet'
-             or run_args.add_bet
-             or run_args.filling_algorithm == 'bet')
-        bet_this_run = bet_used and (fill_masks or (run_args.mask_erosions and run_args.masking_algorithm == 'threshold' and not fill_masks))
-
-        # prepare magnitude if necessary
-        if bet_this_run or run_args.masking_input == 'magnitude':
-            
-            # combine magnitude if necessary
-            if run_args.combine_phase:
-                n_combine_magnitude = Node(
-                    interface=combinemagnitude.CombineMagnitudeInterface(),
-                    name='nibabal-numpy_combine-magnitude'
-                )
-                wf.connect([
-                    (n_inputs, n_combine_magnitude, [('magnitude', 'magnitude')])
-                ])
-
-            # correct magnitude if necessary
-            if run_args.inhomogeneity_correction:
-                mn_inhomogeneity_correction = create_node(
-                    interface=makehomogeneous.MakeHomogeneousInterface(),
-                    iterfield=['magnitude'],
-                    name='mrt_correct-inhomogeneity',
-                    is_map=use_maps
-                )
-
-                if run_args.combine_phase:
-                    wf.connect([
-                        (n_combine_magnitude, mn_inhomogeneity_correction, [('magnitude_combined', 'magnitude')]),
-                    ])
-                else:
-                    wf.connect([
-                        (n_inputs, mn_inhomogeneity_correction, [('magnitude', 'magnitude')])
                     ])
 
         # do bet mask if necessary
