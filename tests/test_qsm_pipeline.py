@@ -168,7 +168,7 @@ def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_work
         "--premade", "fast",
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
-        "--threshold_value", "0.8",
+        "--threshold_value", "0.25",
         "--auto_yes",
         "--debug"
     ]))
@@ -191,7 +191,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
         "--premade", "fast",
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
-        "--threshold_value", "5",
+        "--threshold_value", "15",
         "--auto_yes",
         "--debug"
     ]))
