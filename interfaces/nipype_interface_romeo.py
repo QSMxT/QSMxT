@@ -41,7 +41,8 @@ class RomeoB0InputSpec(BaseInterfaceInputSpec):
     # required inputs
     phase = InputMultiPath(mandatory=True, exists=True)
     magnitude = InputMultiPath(mandatory=False, exists=True)
-    TE = traits.ListFloat(mandatory=True, argstr="-t '[%s]'")
+    TEs = traits.ListFloat(mandatory=False, argstr="-t '[%s]'")
+    TE = traits.Float(mandatory=False, argstr="-t '[%s]'")
     
     # automatically filled
     combine_phase = File(exists=True, argstr="--phase %s", position=0)
@@ -59,11 +60,25 @@ class RomeoB0Interface(CommandLine):
     output_spec = RomeoB0OutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "romeo_unwrapping.jl -B --no-rescale --phase-offset-correction")
 
+    def _format_arg(self, name, trait_spec, value):
+        if name == 'TEs' or name == 'TE':
+            if self.inputs.TEs is None and self.inputs.TE is None:
+                raise ValueError("Either TEs or TE must be provided")
+        return super(RomeoB0Interface, self)._format_arg(name, trait_spec, value)
+
     def _run_interface(self, runtime):
-        self.inputs.combine_phase = merge_multi_echo(self.inputs.phase, os.path.join(os.getcwd(), "multi-echo-phase.nii"))
-        if self.inputs.combine_mag:
+        if len(self.inputs.phase) > 1:
+            self.inputs.combine_phase = merge_multi_echo(self.inputs.phase, os.path.join(os.getcwd(), "multi-echo-phase.nii"))
             self.inputs.combine_mag = merge_multi_echo(self.inputs.magnitude, os.path.join(os.getcwd(), "multi-echo-mag.nii"))
-        self.inputs.TE = [TE*1000 for TE in self.inputs.TE]
+        else:
+            self.inputs.combine_phase = self.inputs.phase[0]
+            self.inputs.combine_mag = self.inputs.magnitude[0]
+        
+        if self.inputs.TEs:
+            self.inputs.TEs = [TE*1000 for TE in self.inputs.TEs]
+        if self.inputs.TE:
+            self.inputs.TE = self.inputs.TE*1000
+        
         return super(RomeoB0Interface, self)._run_interface(runtime)
         
     def _list_outputs(self):

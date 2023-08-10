@@ -12,7 +12,7 @@ from interfaces import nipype_interface_combinemagnitude as combinemagnitude
 
 from scripts.qsmxt_functions import gen_plugin_args, create_node
 
-def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_available, fill_masks, add_bet, name, index):
+def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_available, fill_masks, add_bet, use_maps, name, index):
 
     wf = Workflow(name=f"{name}_workflow")
 
@@ -55,12 +55,12 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                         iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
                         name='romeo-voxelquality',
                         mem_gb=min(3, run_args.mem_avail),
-                        is_map=run_args.combine_phase
+                        is_map=use_maps
                     )
                 mn_phaseweights.inputs.weight_type = "grad+second"
                 wf.connect([
                     (n_inputs, mn_phaseweights, [('phase', 'phase')]),
-                    (n_inputs, mn_phaseweights, [('TE', 'TE')]),
+                    (n_inputs, mn_phaseweights, [('TE', 'TEs' if use_maps else 'TE')]),
                     (mn_phaseweights, n_outputs, [('quality_map', 'quality_map')])
                 ])
                 if magnitude_available:
@@ -94,7 +94,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                     interface=makehomogeneous.MakeHomogeneousInterface(),
                     iterfield=['magnitude'],
                     name='mrt_correct-inhomogeneity',
-                    is_map=run_args.combine_phase
+                    is_map=use_maps
                 )
 
                 if run_args.combine_phase:
@@ -122,7 +122,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
                 name='fsl-bet',
-                is_map=run_args.combine_phase
+                is_map=use_maps
             )
             mn_bet.plugin_args = gen_plugin_args(
                 plugin_args={ 'overwrite': True },
@@ -154,7 +154,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 ),
                 iterfield=['in_file'],
                 name='scipy_numpy_nibabel_bet_erode',
-                is_map=run_args.combine_phase
+                is_map=use_maps
             )
             wf.connect([
                 (mn_bet, mn_bet_erode, [('mask', 'in_file')])
@@ -212,7 +212,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                     interface=twopass.TwopassNiftiInterface(),
                     name='numpy_nibabel_mask-plus-bet',
                     iterfield=['in_file1', 'in_file2'],
-                    is_map=run_args.combine_phase
+                    is_map=use_maps
                 )
                 wf.connect([
                     (n_threshold_masking, mn_mask_plus_bet, [('mask', 'in_file1')]),

@@ -29,8 +29,12 @@ class RomeoMaskingInputSpec(CommandLineInputSpec):
         mandatory=True,
         argstr="--phase %s"
     )
-    TE = traits.ListFloat(
-        mandatory=True,
+    TEs = traits.ListFloat(
+        mandatory=False,
+        argstr="--TEs '[%s]'"
+    )
+    TE = traits.Float(
+        mandatory=False,
         argstr="--TEs '[%s]'"
     )
     magnitude = InputMultiPath(
@@ -55,3 +59,8 @@ class RomeoMaskingInterface(CommandLine):
     output_spec = RomeoMaskingOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "romeo_voxelquality.jl")
 
+    def _format_arg(self, name, trait_spec, value):
+        if name == 'TEs' or name == 'TE':
+            if self.inputs.TEs is None and self.inputs.TE is None:
+                raise ValueError("Either TEs or TE must be provided")
+        return super(RomeoMaskingInterface, self)._format_arg(name, trait_spec, value)

@@ -110,11 +110,10 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
         ),
         name='nipype_getfiles'
     )
-    n_inputs.inputs.phase = phase_files
-    n_inputs.inputs.magnitude = magnitude_files
-    n_inputs.inputs.params_files = params_files
-    if len(mask_files) == 1: mask_files = [mask_files[0] for _ in phase_files]
-    n_inputs.inputs.mask = mask_files
+    n_inputs.inputs.phase = phase_files[0] if len(phase_files) == 1 else phase_files
+    n_inputs.inputs.magnitude = magnitude_files[0] if len(magnitude_files) == 1 else magnitude_files
+    n_inputs.inputs.params_files = params_files[0] if len(params_files) == 1 else params_files
+    n_inputs.inputs.mask = mask_files[0] if len(mask_files) == 1 else mask_files
 
     # read echotime and field strengths from json files
     def read_json_me(params_file):
@@ -126,19 +125,20 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
         return te
     def read_json_se(params_files):
         import json
-        json_file = open(params_files[0], 'rt')
+        json_file = open(params_files[0] if isinstance(params_files, list) else params_files, 'rt')
         data = json.load(json_file)
         B0 = data['MagneticFieldStrength']
         json_file.close()
         return B0
-    mn_json_params = MapNode(
+    mn_json_params = create_node(
         interface=Function(
             input_names=['params_file'],
             output_names=['TE'],
             function=read_json_me
         ),
         iterfield=['params_file'],
-        name='func_read-json-me'
+        name='func_read-json-me',
+        is_map=len(params_files) > 1
     )
     wf.connect([
         (n_inputs, mn_json_params, [('params_files', 'params_file')])
@@ -190,10 +190,11 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     if not (run_args.do_swi or run_args.do_qsm):
         return wf
     
-    mn_phase_scaled = MapNode(
+    mn_phase_scaled = create_node(
         interface=processphase.ScalePhaseInterface(),
         iterfield=['phase'],
-        name='nibabel_numpy_scale-phase'
+        name='nibabel_numpy_scale-phase',
+        is_map=len(phase_files) > 1
     )
     wf.connect([
         (n_inputs, mn_phase_scaled, [('phase', 'phase')])
@@ -228,14 +229,15 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
         if magnitude: nib.save(nib.as_closest_canonical(nib.load(magnitude)), out_mag)
         if mask: nib.save(nib.as_closest_canonical(nib.load(mask)), out_mask)
         return out_phase, out_mag, out_mask
-    mn_inputs_canonical = MapNode(
+    mn_inputs_canonical = create_node(
         interface=Function(
             input_names=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
             output_names=['phase', 'magnitude', 'mask'],
             function=as_closest_canonical
         ),
         iterfield=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
-        name='nibabel_as-canonical'
+        name='nibabel_as-canonical',
+        is_map=len(phase_files) > 1
     )
     wf.connect([
         (mn_phase_scaled, mn_inputs_canonical, [('phase_scaled', 'phase')])
@@ -257,13 +259,14 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
         name='nipype_inputs-resampled'
     )
     if magnitude_files:
-        mn_resample_inputs = MapNode(
+        mn_resample_inputs = create_node(
             interface=sampling.AxialSamplingInterface(
                 obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
             ),
             iterfield=['magnitude', 'phase', 'mask'] if mask_files else ['magnitude', 'phase'],
             mem_gb=min(3, run_args.mem_avail),
-            name='nibabel_numpy_nilearn_axial-resampling'
+            name='nibabel_numpy_nilearn_axial-resampling',
+            is_map=len(phase_files) > 1
         )
         mn_resample_inputs.plugin_args = gen_plugin_args(
             plugin_args={ 'overwrite': True },
@@ -319,7 +322,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             num_cpus=min(1, run_args.n_procs)
         )
         wf.connect([
-            (mn_json_params, n_romeo_combine, [('TE', 'TE')]),
+            (mn_json_params, n_romeo_combine, [('TE', 'TEs')]),
             (n_inputs_resampled, n_romeo_combine, [('phase', 'phase')]),
             (n_inputs_resampled, n_romeo_combine, [('magnitude', 'magnitude')]),
             (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency')]),
@@ -334,6 +337,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
         qualitymap_available=False,
         fill_masks=True,
         add_bet=run_args.add_bet and run_args.filling_algorithm != 'bet',
+        use_maps=len(phase_files) > 1 and not run_args.combine_phase,
         name="mask",
         index=0
     )
@@ -345,7 +349,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     ])
 
     # === QSM ===
-    wf_qsm = qsm_workflow(run_args, "qsm", len(magnitude_files) > 0, qsm_erosions=run_args.tgv_erosions)
+    wf_qsm = qsm_workflow(run_args, "qsm", len(magnitude_files) > 0, len(phase_files) > 1 and not run_args.combine_phase, qsm_erosions=run_args.tgv_erosions)
 
     wf.connect([
         (n_inputs_resampled, wf_qsm, [('phase', 'qsm_inputs.phase')]),
@@ -380,6 +384,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             qualitymap_available=True,
             fill_masks=False,
             add_bet=False,
+            use_maps=len(phase_files) > 1 and not run_args.combine_phase,
             name="mask-intermediate",
             index=1
         )
@@ -391,7 +396,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             (wf_masking, wf_masking_intermediate, [('masking_outputs.quality_map', 'masking_inputs.quality_map')])
         ])
 
-        wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0, qsm_erosions=0)
+        wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0, len(phase_files) > 1 and not run_args.combine_phase, qsm_erosions=0)
         wf.connect([
             (n_inputs_resampled, wf_qsm_intermediate, [('phase', 'qsm_inputs.phase')]),
             (n_inputs_resampled, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
@@ -432,7 +437,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
         
     return wf
 
-def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
+def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
     wf = Workflow(name=f"{name}_workflow")
 
     slurm_account = run_args.slurm[0] if run_args.slurm and len(run_args.slurm) else None
@@ -463,7 +468,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
         if run_args.unwrapping_algorithm == 'laplacian':
             laplacian_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
             mn_laplacian = create_node(
-                is_map=run_args.combine_phase,
+                is_map=use_maps,
                 interface=laplacian.LaplacianInterface(),
                 iterfield=['phase'],
                 name='mrt_laplacian-unwrapping',
@@ -506,7 +511,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                 )
                 wf.connect([
                     (n_inputs, mn_romeo, [('phase', 'phase')]),
-                    (n_inputs, mn_romeo, [('TE', 'TE')]),
+                    (n_inputs, mn_romeo, [('TE', 'TEs' if use_maps else 'TE')]),
                     (mn_romeo, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')])
                 ])
                 if magnitude_available:
@@ -532,7 +537,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             iterfield=['phase', 'TE'],
             mem_gb=min(3, run_args.mem_avail),
             n_procs=normalize_phase_threads,
-            is_map=run_args.combine_phase
+            is_map=use_maps
         )
         wf.connect([
             (n_unwrapping, mn_normalize_phase, [('phase_unwrapped', 'phase')]),
@@ -559,7 +564,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             iterfield=['frequency'],
             mem_gb=min(3, run_args.mem_avail),
             n_procs=normalize_freq_threads,
-            is_map=run_args.combine_phase
+            is_map=use_maps
         )
         wf.connect([
             (n_inputs, mn_normalize_freq, [('frequency', 'frequency')]),
@@ -583,7 +588,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             iterfield=['frequency'],
             mem_gb=min(3, run_args.mem_avail),
             n_procs=freq_to_phase_threads,
-            is_map=run_args.combine_phase
+            is_map=use_maps
         )
         wf.connect([
             (n_inputs, mn_freq_to_phase, [('frequency', 'frequency')]),
@@ -607,7 +612,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             ),
             iterfield=['tissue_frequency', 'mask'],
             name='bf-removal',
-            is_map=run_args.combine_phase
+            is_map=use_maps
         )
         if run_args.bf_algorithm == 'vsharp':
             vsharp_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
@@ -617,7 +622,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                 name='qsmjl_vsharp',
                 n_procs=vsharp_threads,
                 mem_gb=min(3, run_args.mem_avail),
-                is_map=run_args.combine_phase
+                is_map=use_maps
             )
             wf.connect([
                 (n_phase_normalized, mn_vsharp, [('phase_normalized', 'frequency')]),
@@ -643,7 +648,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
                 name='qsmjl_pdf',
                 n_procs=pdf_threads,
                 mem_gb=min(5, run_args.mem_avail),
-                is_map=run_args.combine_phase
+                is_map=use_maps
             )
             wf.connect([
                 (n_phase_normalized, mn_pdf, [('phase_normalized', 'frequency')]),
@@ -672,7 +677,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             iterfield=['phase', 'mask'],
             mem_gb=min(13, run_args.mem_avail),
             n_procs=nextqsm_threads,
-            is_map=run_args.combine_phase
+            is_map=use_maps
         )
         wf.connect([
             (n_phase_normalized, mn_qsm, [('phase_normalized', 'phase')]),
@@ -697,7 +702,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             n_procs=rts_threads,
             mem_gb=min(5, run_args.mem_avail),
             terminal_output="file_split",
-            is_map=run_args.combine_phase
+            is_map=use_maps
         )
         wf.connect([
             (mn_bf, mn_qsm, [('tissue_frequency', 'tissue_frequency')]),
@@ -724,7 +729,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             n_procs=tv_threads,
             mem_gb=min(5, run_args.mem_avail),
             terminal_output="file_split",
-            is_map=run_args.combine_phase
+            is_map=use_maps
         )
         wf.connect([
             (mn_bf, mn_qsm, [('tissue_frequency', 'tissue_frequency')]),
@@ -758,7 +763,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             name='tgv',
             mem_gb=min(6, run_args.mem_avail),
             n_procs=tgv_threads,
-            is_map=run_args.combine_phase
+            is_map=use_maps
         )
         mn_qsm.plugin_args = gen_plugin_args(
             plugin_args={ 'overwrite': True },
@@ -776,7 +781,7 @@ def qsm_workflow(run_args, name, magnitude_available, qsm_erosions=0):
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
         if run_args.combine_phase:
-            mn_qsm.inputs.TE = [0.005]
+            mn_qsm.inputs.TE = 0.005
             wf.connect([
                 (n_phase_normalized, mn_qsm, [('phase_normalized', 'phase')])
             ])
