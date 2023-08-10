@@ -76,28 +76,40 @@ def init_session_workflow(args, subject, session):
         ])))
 
         for acquisition in acquisitions:
-            runs = sorted(list(set([
+            acquisition_runs = sorted(list(set([
                 re.search("_run-([a-zA-Z0-9]+)_", path).group(1)
                 for path in files
                 if acquisition in path
+                and '_run-' in path
             ])))
-            run_details[acquisition] = runs if len(runs) else None
-        
-        run_details[None] = sorted(list(set([
+            run_details[acquisition] = acquisition_runs if len(acquisition_runs) else None
+
+        other_runs = sorted(list(set([
             re.search("_run-([a-zA-Z0-9]+)_", path).group(1)
             for path in files
             if '_acq-' not in path
+            and '_run-' in path
         ])))
+        
+        if other_runs:
+            run_details[None] = other_runs
+
+        others = any(all(x not in path for x in ['_acq-', '_run-']) for path in files)
+        if others:
+            if None in run_details.keys(): run_details[None].append(None)
+            run_details[None] = [None]
 
         return run_details
 
     def init_workflow_and_add_nodes(args, subject, session, run_details, init_workflow_func):
-        if run_details:
-            wf.add_nodes([
-                node for node in 
-                [init_workflow_func(copy.deepcopy(args), subject, session, acq, run) for acq, runs in run_details.items() for run in runs]
-                if node
-            ])
+        nodes = [
+            init_workflow_func(copy.deepcopy(args), subject, session, acq, run)
+            for acq, runs in (run_details.items() if run_details else [(None, [None])])
+            for run in (runs if runs is not None else [None])
+            if run_details
+        ]
+        wf.add_nodes([node for node in nodes if node])
+
 
     if any([args.do_qsm, args.do_t2starmap, args.do_r2starmap, args.do_swi]):
         phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
@@ -1116,8 +1128,8 @@ def process_args(args):
     config.set('execution', 'try_hard_link_datasink', 'true')
     if args.debug:
         config.set('execution', 'stop_on_first_crash', 'true')
-        config.set('monitoring', 'enabled', 'true')
-        config.set('monitoring', 'summary_file', os.path.join(args.output_dir, 'resource_monitor.json'))
+        #config.set('monitoring', 'enabled', 'true')
+        #config.set('monitoring', 'summary_file', os.path.join(args.output_dir, 'resource_monitor.json'))
         #config.set('execution', 'remove_unnecessary_outputs', 'false')
         #config.set('execution', 'keep_inputs', 'true')
         #config.set('logging', 'workflow_level', 'DEBUG')
@@ -1296,3 +1308,13 @@ if __name__ == "__main__":
 
     script_exit(logger=logger)
 
+# test_singleecho traits.trait_errors.TraitError: 
+#   The 'TE' trait of a PhaseToNormalizedInputSpec instance must be a float, 
+#   but a value of [0.004] <class 'list'> was specified
+
+# test_qsm_premades body 
+#   traits.trait_errors.TraitError: The 'phase' trait of a QSMappingInputSpec 
+#   instance must be a pathlike object or string representing an existing file, 
+#   but a value of "['/tmp/bids-public/sub-1/ses-1/anat/sub-1_ses-1_run-1_echo-1_part-phase_MEGRE.nii', 
+#   '/tmp/bids-public/sub-1/ses-1/anat/sub-1_ses-1_run-1_echo-2_part-phase_MEGRE.nii']" 
+#   <class 'str'> was specified.
