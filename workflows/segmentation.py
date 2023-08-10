@@ -106,8 +106,8 @@ def init_segmentation_workflow(run_args, subject, session, acq=None, run=None):
         name='nipype_datasink'
     )
     wf.connect([
-        (n_fastsurfer_aseg_nii, n_outputs, [('out_file', 'segmentations.@t1w')]),
-        (n_transform_segmentation, n_outputs, [('output_image', 'segmentations.@qsm')])
+        (n_fastsurfer_aseg_nii, n_outputs, [('out_file', 'segmentations.t1w')]),
+        (n_transform_segmentation, n_outputs, [('output_image', 'segmentations.qsm')])
     ])
 
     return wf
