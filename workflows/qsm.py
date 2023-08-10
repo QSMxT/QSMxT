@@ -421,7 +421,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             interface=twopass.TwopassNiftiInterface(),
             name='numpy_nibabel_twopass',
             iterfield=['in_file1', 'in_file2', 'mask'],
-            is_map=run_args.combine_phase
+            is_map=len(phase_files) > 1 and not run_args.combine_phase
         )
         wf.connect([
             (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file1')]),
