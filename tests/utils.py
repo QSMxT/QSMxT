@@ -1,10 +1,11 @@
 import os
 import datetime
+import signal
+from random import randint
 import tempfile
 import glob
 import shutil
 from time import sleep
-from random import randint
 
 import osfclient
 import webdav3.client
@@ -16,7 +17,6 @@ from matplotlib import pyplot as plt
 import run_2_qsm as qsm
 from scripts.sys_cmd import sys_cmd
 from scripts.logger import LogLevel, make_logger
-from scripts.logger import LogLevel
 from scripts.qsmxt_functions import get_qsmxt_version, extend_fname
 
 def create_logger(log_dir):
@@ -69,22 +69,41 @@ def upload_to_rdm(local_path, remote_path):
     logger = make_logger()
     client = webdav_connect()
     exception = None
+
+    # Signal handler for the alarm
+    def handler(signum, frame):
+        raise TimeoutError("Upload took too long!")
+
+    # Set the signal handler for the alarm signal
+    signal.signal(signal.SIGALRM, handler)
+
     for i in range(5):
         logger.log(LogLevel.INFO.value, f"Uploading {local_path} to {remote_path}")
         try:
+            # Set an alarm for 10 minutes
+            signal.alarm(10 * 60)
+
             client.upload_sync(
                 remote_path=remote_path,
                 local_path=local_path
             )
+            
+            # Cancel the alarm if the upload is successful
+            signal.alarm(0)
+
         except webdav3.exceptions.ConnectionException as e:
-            logger.log(LogLevel.ERROR.value, f"Connection failed! {e}")
+            logger.log(LogLevel.WARNING.value, f"Connection failed! {e}")
             sleeptime = randint(120, 300)
             logger.log(LogLevel.INFO.value, f"Sleeping for {sleeptime} seconds...")
             sleep(sleeptime)
             exception = e
             continue
+        except TimeoutError as e:
+            logger.log(LogLevel.WARNING.value, f"{e}")
+            return
         break
     else:
+        logger.log(LogLevel.ERROR.value, f"Upload failed after 5 attempts!")
         raise exception
 
 
@@ -100,7 +119,7 @@ def download_from_rdm(remote_path, local_path):
                 local_path=local_path,
             )
         except webdav3.exceptions.ConnectionException as e:
-            logger.log(LogLevel.ERROR.value, f"Connection failed! {e}")
+            logger.log(LogLevel.WARNING.value, f"Connection failed! {e}")
             sleeptime = randint(120, 300)
             logger.log(LogLevel.INFO.value, f"Sleeping for {sleeptime} seconds...")
             sleep(sleeptime)
@@ -108,6 +127,7 @@ def download_from_rdm(remote_path, local_path):
             continue
         break
     else:
+        logger.log(LogLevel.ERROR.value, f"Download failed after 5 attempts!")
         raise exception
 
 def download_from_osf(project, local_path):

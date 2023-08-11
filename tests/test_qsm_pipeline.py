@@ -10,6 +10,7 @@ import qsm_forward
 
 import run_2_qsm as qsm
 
+from scripts.logger import LogLevel, make_logger
 from scripts.qsmxt_functions import get_qsm_premades
 from scripts.sys_cmd import sys_cmd
 from tests.utils import *
@@ -70,11 +71,11 @@ def bids_dir_real():
     for p in get_qsm_premades().keys() if p != 'default'
 ])
 def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args):
-    premades = get_qsm_premades()
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
-
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING PREMADE {premade} ===")
+
+    premades = get_qsm_premades()
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     args = qsm.process_args(qsm.parse_args([
         bids_dir_public,

@@ -8,6 +8,7 @@ import qsm_forward
 
 import run_2_qsm as qsm
 
+from scripts.logger import LogLevel, make_logger
 from scripts.sys_cmd import sys_cmd
 from tests.utils import *
 
