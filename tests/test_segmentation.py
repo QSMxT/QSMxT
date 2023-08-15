@@ -59,8 +59,10 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
     args = qsmxt.process_args(qsmxt.parse_args([
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "output"),
-        "--do_qsm", "no",
-        "--do_segmentation", "yes",
+        "--do_qsm",
+        "--premade", "fast",
+        "--do_segmentation",
+        "--do_analysis",
         "--auto_yes",
         "--debug",
     ]))
