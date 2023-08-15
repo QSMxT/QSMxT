@@ -55,12 +55,12 @@ pip_command=`cat /tmp/QSMxT/README.md | grep "pip install "`
 echo $pip_command
 $pip_command
 
-echo "[DEBUG] starting dicom_sort.py"
+echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_sort.py /tmp/dicoms /tmp/dicoms-sorted"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_sort.py /tmp/dicoms /tmp/dicoms-sorted
 
-echo "[DEBUG] starting dicom_convert.py"
+echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_convert.py /tmp/dicoms-sorted /tmp/bids --auto_yes"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_convert.py /tmp/dicoms-sorted /tmp/bids --auto_yes
 
-echo "[DEBUG] starting qsmxt.py"
-/usr/share/miniconda/bin/python3 /tmp/QSMxT/qsmxt.py /tmp/bids /tmp/out --premade fast --do_qsm --do_template
+echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/qsmxt.py /tmp/bids /tmp/out --premade fast --do_qsm --do_template --auto_yes"
+/usr/share/miniconda/bin/python3 /tmp/QSMxT/qsmxt.py /tmp/bids /tmp/out --premade fast --do_qsm --do_template --auto_yes
 
