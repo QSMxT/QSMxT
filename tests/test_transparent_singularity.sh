@@ -61,6 +61,6 @@ echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_sort.py /tmp/dic
 echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_convert.py /tmp/dicoms-sorted /tmp/bids --auto_yes"
 /usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_convert.py /tmp/dicoms-sorted /tmp/bids --auto_yes
 
-echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/qsmxt.py /tmp/bids /tmp/out --premade fast --do_qsm --do_template --auto_yes"
-/usr/share/miniconda/bin/python3 /tmp/QSMxT/qsmxt.py /tmp/bids /tmp/out --premade fast --do_qsm --do_template --auto_yes
+echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/qsmxt.py /tmp/bids /tmp/out --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes"
+/usr/share/miniconda/bin/python3 /tmp/QSMxT/qsmxt.py /tmp/bids /tmp/out --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes
 

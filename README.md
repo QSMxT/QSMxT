@@ -2,43 +2,25 @@
 
 ![QSMxT Process Diagram](https://qsmxt.github.io/images/qsmxt-process-diagram.png)
 
-QSMxT is an end-to-end software toolbox for QSM that excels at automatically reconstructing and processing QSM across large groups of participants using sensible defaults.
+QSMxT is an end-to-end software toolbox for QSM that excels at automatically reconstructing and processing large groups of participants using sensible defaults.
 
-QSMxT provides pipelines implemented in Python that:
+QSMxT produces:
 
-1. Automatically convert unorganised DICOM or NIfTI data to the Brain Imaging Data Structure (BIDS)
-2. Automatically reconstruct QSM, including steps for:
-   1. Masking
-   2. Phase unwrapping
-   3. Background field removal
-   4. Dipole inversion
-   5. Multi-echo combination
-3. Automatically generate a common group space for the cohort, as well as average magnitude and QSM images that facilitate group-level analyses.
-4. Automatically segment T1w data and register them to the QSM space to extract quantitative values in anatomical regions of interest.
-5. Export quantitative data to CSV for all subjects using the automated segmentations, or a custom segmentation in the group space (we recommend [ITK-SNAP](http://www.itksnap.org/pmwiki/pmwiki.php) to perform manual segmenations).
+ - Quantative Susceptibility Maps (QSM)
+ - Anatomical segmentations in both the GRE/QSM and T1w spaces
+ - Spreadsheets in CSV format with susceptibility statistics across brain regions of interest
+ - A group space/template, including average QSM and GRE images across your cohort
 
-For a list of algorithms QSMxT uses, see the [Reference List](#references-and-algorithm-list).
-
-QSMxT's containerised implementation via Docker and Singularity makes all required external dependencies available in a reproducible and scalable way, supporting MacOS, Windows and Linux, and with options for parallel processing via multiple processors, or via HPC systems using the Singularity container. QSMxT is also available on [Neurodesk](https://neurodesk.org), which makes the Singularity container available from the applications menu without installing anything. Neurodesk containers such as QSMxT can be pulled into Google Colab to write and share reproducible QSM notebooks ([example](https://bit.ly/qsmxt)).
-
-If you use QSMxT for a study, please cite https://onlinelibrary.wiley.com/doi/10.1002/mrm.29048 (or the preprint https://doi.org/10.1101/2021.05.05.442850), along with the list of citations provided in the `references.txt` file that is created alongside the QSMxT outputs.
-
+QSMxT requires gradient-echo MRI images converted to the Brain Imaging Data Structure (BIDS). QSMxT also includes tools to convert DICOM or NIfTI images to BIDS.
 
 ## Installation
-### Install and start via Neurodesk project
+### Quickstart via Neurodesk
 
-A user friendly way of running QSMxT in Windows, Mac or Linux is via the Neurodesk project:
+QSMxT can be accessed via [Neurodesk](https://neurodesk.org/), including for free without any installation via [Neurodesk Play](https://play.neurodesk.org/). Once started, QSMxT is available in Neurodesk's module system and via the applications menu.
 
-1. Install [Docker](https://www.docker.com/)
-2. Install [Neurodesktop](https://neurodesk.github.io)
-3. Run the Neurodesktop container and access the interface through your browser
-4. Start QSMxT from the applications menu in the desktop
-   (*Neurodesk* > *Quantitative Imaging* > *qsmxt*)
-3. Follow the QSMxT usage instructions in the section below. Note that the `/neurodesktop-storage` folder is shared with the host OS for data sharing purposes (usually in `~/neurodesktop-storage` or `C:/neurodesktop-storage`). Begin by copying your DICOM data (or NIfTI data) into a folder in this directory on the host OS, then reach the folder by entering `cd /neurodesktop-storage` into the QSMxT window.
+#### Updating QSMxT in Neurodesk
 
-#### Updating QSMxT within Neurodesk
-
-To use the latest version of the QSMxT container within an older version of Neurodesk, use:
+To use the latest version of QSMxT within an older version of Neurodesk, use:
 
 ```
 bash /neurocommand/local/fetch_and_run.sh qsmxt 3.2.1 20230806
@@ -46,73 +28,60 @@ bash /neurocommand/local/fetch_and_run.sh qsmxt 3.2.1 20230806
 
 ### Docker container
 
-There is also a docker image available:
+If you prefer to use a Docker container, the following commands will install QSMxT locally:
 
-For Windows:
+**Windows:**
 ```
 docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_3.2.1:20230806
 ```
-For Linux/Mac:
+
+**Linux/Mac:**
 ```
 docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_3.2.1:20230806
 ```
 
 ## QSMxT Usage
-1. Convert DICOM or NIfTI data to BIDS:
-    ```bash
-    # DICOM TO BIDS (recommended)
-    run_0_dicomSort.py REPLACE_WITH_YOUR_DICOM_INPUT_DATA_DIRECTORY 00_dicom
-    run_1_dicomConvert.py 00_dicom 01_bids
 
-    # NIFTI TO BIDS (if DICOMs are not available)
-    run_1_niftiConvert.py REPLACE_WITH_YOUR_NIFTI_INPUT_DATA_DIRECTORY 01_bids
-    ```
-    - If converting from DICOMs, carefully read the output of the `run_1_dicomConvert.py` script to ensure data were correctly recognized and converted. You can also pass command line arguments to identify the acquisition protocol names, e.g. `run_1_dicomConvert.py 00_dicom 01_bids --t2starw_protocol_patterns *gre* --t1w_protocol_patterns *mp2rage*`.
+### Data conversion
 
-    - If converting from NIfTI, carefully read the output of the `run_1_niftiConvert.py` script to ensure data were correctly recognized and converted. The script will try to identify any important details from the filenames and from adjacent JSON header files, if available. It retrieves this information using customisable patterns and regular expressions which can be overridden using command-line arguments (see the output using the `--help` flag). If any information is missing, you will be prompted to fill out a CSV spreadsheet with the missing information before running the conversion script again using the same command. You can open the CSV file in a spreadsheet reader such as Microsoft Excel or LibreOffice Calc.
+QSMxT requires data conforming to the Brain Imaging Data Structure (BIDS). 
 
-2. Run QSM pipeline:
-    ```bash
-    run_2_qsm.py 01_bids 02_qsm_output
-    ```
-3. Segment data (T1 and GRE):
-    ```bash
-    run_3_segment.py 01_bids 03_segmentation
-    ```
-4. Build magnitude and QSM group template (only makes sense when you have more than about 30 participants):
-    ```bash
-    run_4_template.py 01_bids 02_qsm_output 04_template
-    ```
-5. Export quantitative data to CSV using segmentations
-    ```bash
-    run_5_analysis.py --labels_file /opt/QSMxT/aseg_labels.csv --segmentations 03_segmentation/qsm_segmentations/*.nii --qsm_files 02_qsm_output/qsm_final/*/*.nii --out_dir 06_analysis
-    ```
-6. Export quantitative data to CSV using a custom segmentation
-    ```bash
-    run_5_analysis.py --segmentations my_segmentation.nii --qsm_files 04_qsm_template/qsm_transformed/*/*.nii --out_dir 07_analysis
-    ```
-
-## Common errors and workarounds
-1. Return code: 137
-
-If you run `run_2_qsm.py 01_bids 02_qsm_output` and you get this error:
-```
-Resampling phase data...
-Killed
-Return code: 137
-``` 
-This indicates insufficient memory for the pipeline to run. Check in your Docker settings if you provided sufficent RAM to your containers (e.g. a 0.75mm dataset requires around 20GB of memory)
-
-2. RuntimeError: Insufficient resources available for job
-This also indicates that there is not enough memory for the job to run. Try limiting the CPUs to about 6GB RAM per CPU. You can try inserting the option `--n_procs 1` into the commands to limit the processing to one thread, e.g.:
+Use the `dicom_sort.py` and `dicom_convert.py` scripts to convert DICOMs to BIDS:
 ```bash
-run_2_qsm.py 01_bids 02_qsm_output --n_procs 1
+dicom_sort.py YOUR_DICOM_DIR/ dicoms-sorted/
+dicom_convert.py dicoms-sorted/ bids/
+```
+Carefully read the output to ensure data were correctly recognized and converted. Crucially, the `dicom_convert.py` script needs to know which of your acquisitions are T2*-weighted and suitable for QSM, as well as which are T1-weighted and suitable for segmentation. It identifies this based on the DICOM `ProtocolName` field and looks for the patterns `*qsm*` and `*t2starw*` for T2*-weighted series and `t1w` for T1-weighted series. You can specify your own patterns using command-line arguments e.g.:
+
+```bash
+dicom_convert.py dicoms-sorted/ bids/ --t2starw_protocol_patterns '*gre*' --t1w_protocol_patterns '*mp2rage*'
 ```
 
-3. If you are getting the error "Insufficient memory to run QSMxT (xxx GB available; 6GB needed)
-This means there is not enough memory available. Troubleshoot advice when running this via Neurodesk is here: https://neurodesk.github.io/docs/neurodesktop/troubleshooting/#i-got-an-error-message-x-killed-or-not-enough-memory
+To convert NIfTI to BIDS, use `nifti_convert.py`:
+```bash
+nifti_convert.py YOUR_NIFTI_DIR/ bids/
+```
+Carefully read the output to ensure data were correctly recognized and converted. The script will try to identify any important details from the filenames and from adjacent JSON header files, if available. It retrieves this information using customisable patterns and regular expressions which can be overridden using command-line arguments (see the output using the `--help` flag). If any information is missing, you will be prompted to fill out a CSV spreadsheet with the missing information before running the conversion script again using the same command. You can open the CSV file in a spreadsheet reader such as Microsoft Excel or LibreOffice Calc.
 
-### Linux installation via Transparent Singularity (supports PBS and High Performance Computing)
+### Running QSMxT
+
+Run the following to start QSMxT and interactively choose your pipeline settings:
+
+```bash
+qsmxt bids/ output_dir/
+```
+
+By default, QSMxT runs interactively to make choosing pipeline settings straightforward. 
+
+If you wish to run QSMxT non-interactively, you may specify all settings via command-line arguments and run non-interactively via `--auto_yes`. For help with building the one-line command, start QSMxT interactively first. Before the pipeline runs, it will display the one-line command such as:
+
+```bash
+qsmxt bids/ output_dir/ --do_qsm --premade fast --do_segmentations --auto_yes
+```
+
+This example will run QSMxT non-interactively and produce QSM using the fast pipeline and segmentations.
+
+### HPC installation via Transparent Singularity
 
 The tools provided by the QSMxT container can be exposed and used using the QSMxT Singularity container coupled with the transparent singularity software provided by the Neurodesk project. Transparent singularity allows the QSMxT Python scripts to be run directly within the host OS's environment. This mode of execution is necessary for parallel execution via PBS.
 
@@ -147,19 +116,8 @@ pip install psutil datetime networkx==2.8.8 nipype nibabel nilearn scipy scikit-
 5. Invoke QSMxT python scripts directly (see QSMxT Usage above). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
 
 ### Bare metal installation
-Although we do not recommend installing the dependencies manually and we advocate the use of software containers for reproducibility and ease-of-use, you can install everything by hand. These are the dependencies required and this was tested in Ubuntu 18.04: 
 
-You need:
-- TGV-QSM v1.0 running in miniconda 2
-- bet2 (https://github.com/liangfu/bet2)
-- ANTs version=2.3.4
-- dcm2niix (https://github.com/rordenlab/dcm2niix)
-- miniconda version=4.7.12.1 with python3.8 and pip packages psutil, datetime, nipype, nibabel, nilearn, scipy, scikit-image, pydicom and seaborn
-- FastSurfer (https://github.com/Deep-MI/FastSurfer.git)
-- Bru2Nii v1.0.20180303 (https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip)
-- julia-1.6.1 with ArgParse, MriResearchTools, QSM.jl, FFTW and RomeoApp (see https://github.com/korbinian90/RomeoApp.jl)
-
-Here is the detailed instruction that you could replicate: https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxtbase/build.sh and then on top https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxt/build.sh
+We recommend the use of software containers for reproducibility and ease-of-use. However, QSMxT can be installed manually. Please see the detailed instructions used to generate the container [here](https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxt/build.sh).
 
 
 # References and algorithm list
