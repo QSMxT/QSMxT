@@ -14,7 +14,7 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 
-import run_2_qsm as qsm
+import qsmxt
 from scripts.sys_cmd import sys_cmd
 from scripts.logger import LogLevel, make_logger
 from scripts.qsmxt_functions import get_qsmxt_version, extend_fname
@@ -199,16 +199,16 @@ def workflow(args, init_workflow, run_workflow, run_args, name, delete_workflow=
     logger.log(LogLevel.INFO.value, f"WORKFLOW DETAILS: {args}")
     if init_workflow:
         logger.log(LogLevel.INFO.value, f"Initialising workflow...")
-        wf = qsm.init_workflow(args)
+        wf = qsmxt.init_workflow(args)
     if init_workflow and run_workflow:
-        qsm.set_env_variables(args)
+        qsmxt.set_env_variables(args)
         if run_args:
             logger.log(LogLevel.INFO.value, f"Updating args with run_args: {run_args}")
             arg_dict = vars(args)
             for key, value in run_args.items():
                 arg_dict[key] = value
             logger.log(LogLevel.INFO.value, f"Initialising workflow with updated args...")
-            wf = qsm.init_workflow(args)
+            wf = qsmxt.init_workflow(args)
             assert len(wf.list_node_names()) > 0, "The generated workflow has no nodes! Something went wrong..."
         logger.log(LogLevel.INFO.value, f"Saving args to {os.path.join(args.output_dir, 'args.txt')}...")
         with open(os.path.join(args.output_dir, "args.txt"), 'w') as args_file:

@@ -9,8 +9,8 @@ on:
       - .github/workflows/test_transparent_singularity.yml
       - README.md
       - dicom_sort.py
-      - dicom_to_bids.py
-      - nifti_to_bids.py
+      - dicom_convert.py
+      - nifti_convert.py
       - qsmxt.py
       - tests/test_transparent_singularity.sh
       - tests/utils.py
@@ -23,8 +23,8 @@ on:
       - .github/workflows/test_transparent_singularity.yml
       - README.md
       - dicom_sort.py
-      - dicom_to_bids.py
-      - nifti_to_bids.py
+      - dicom_convert.py
+      - nifti_convert.py
       - qsmxt.py
       - tests/test_transparent_singularity.sh
       - tests/utils.py

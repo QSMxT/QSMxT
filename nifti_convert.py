@@ -211,7 +211,7 @@ def write_details_to_csv(all_details):
     f.close()
 
 
-def nifti_to_bids(input_dir, output_dir):
+def nifti_convert(input_dir, output_dir):
     if os.path.exists(csv_file):
         logger.log(LogLevel.INFO.value, f"CSV spreadsheet '{csv_file}' found! Reading...")
         all_details = get_details_from_csv(csv_file)
@@ -442,7 +442,7 @@ if __name__ == "__main__":
         f.write("\n\n - Gorgolewski KJ, Auer T, Calhoun VD, et al. The brain imaging data structure, a format for organizing and describing outputs of neuroimaging experiments. Sci Data. 2016;3(1):160044. doi:10.1038/sdata.2016.44")
         f.write("\n\n")
 
-    nifti_to_bids(
+    nifti_convert(
         input_dir=args.input_dir,
         output_dir=args.output_dir,
     )
