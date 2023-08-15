@@ -37,7 +37,7 @@ def get_matching_files(bids_dir, subject, session, suffixes, part=None, acq=None
 def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     logger = make_logger('main')
     run_id = f"{subject}.{session}.acq-{acq}.run-{run}"
-    logger.log(LogLevel.INFO.value, f"Creating QSM workflow for {run_id}...")
+    logger.log(LogLevel.INFO.value, f"Creating QSMxT workflow for {run_id}...")
 
     # get relevant files from this run
     phase_files = get_matching_files(run_args.bids_dir, subject, session, ["T2starw", "MEGRE"], "phase", acq, run)[:run_args.num_echoes]
@@ -68,7 +68,6 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
         if mask_files:
             run_args.inhomogeneity_correction = False
             run_args.two_pass = False
-            run_args.single_pass = True
             run_args.add_bet = False
     if not magnitude_files:
         if run_args.do_r2starmap:
@@ -104,13 +103,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     # create nipype workflow for this run
     wf = Workflow(f"qsmxt" + (f"_acq-{acq}" if acq else "") + (f"_run-{run}" if run else ""), base_dir=os.path.join(run_args.output_dir, "workflow", subject, session, acq or "", run or ""))
 
-    # datasink
-    n_outputs = Node(
-        interface=DataSink(base_directory=run_args.output_dir),
-        name='nipype_datasink'
-    )
-
-    # get files
+    # inputs and outputs
     n_inputs = Node(
         IdentityInterface(
             fields=['phase', 'magnitude', 'params_files', 'mask']
@@ -122,6 +115,25 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     n_inputs.inputs.params_files = params_files[0] if len(params_files) == 1 else params_files
     n_inputs.inputs.mask = mask_files[0] if len(mask_files) == 1 else mask_files
 
+    n_outputs = Node(
+        IdentityInterface(
+            fields=['qsm', 'qsm_singlepass', 'swi', 'swi_mip', 't2s', 'r2s']
+        ),
+        name='qsmxt_outputs'
+    )
+    n_datasink = Node(
+        interface=DataSink(base_directory=run_args.output_dir),
+        name='qsmxt_datasink'
+    )
+    wf.connect([
+        (n_outputs, n_datasink, [('qsm', 'qsm')]),
+        (n_outputs, n_datasink, [('qsm_singlepass', 'qsm.singlepass')]),
+        (n_outputs, n_datasink, [('swi', 'swi.@swi')]),
+        (n_outputs, n_datasink, [('swi_mip', 'swi.@mip')]),
+        (n_outputs, n_datasink, [('t2s', 't2s')]),
+        (n_outputs, n_datasink, [('r2s', 'r2s')])
+    ])
+    
     # read echotime and field strengths from json files
     def read_json_me(params_file):
         import json
@@ -191,8 +203,8 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             (n_inputs, n_t2s_r2s, [('magnitude', 'magnitude')]),
             (mn_json_params, n_t2s_r2s, [('TE', 'TE')])
         ])
-        if run_args.do_t2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('t2starmap', 't2starmap')])])
-        if run_args.do_r2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('r2starmap', 'r2starmap')])])
+        if run_args.do_t2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('t2starmap', 't2s')])])
+        if run_args.do_r2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('r2starmap', 'r2s')])])
     
     if not (run_args.do_swi or run_args.do_qsm):
         return wf
@@ -216,8 +228,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
             (n_inputs, n_swi, [('magnitude', 'magnitude')]),
             (mn_json_params, n_swi, [('TE', 'TEs' if len(phase_files) > 1 else 'TE')]),
-            (n_swi, n_outputs, [('swi', 'swi')]),
-            (n_swi, n_outputs, [('swi_mip', 'swi.@swi_mip')]),
+            (n_swi, n_outputs, [('swi', 'swi_mip')])
         ])
 
     if not run_args.do_qsm:
@@ -379,7 +390,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
         (wf_masking, n_qsm_average, [('masking_outputs.mask', 'in_masks')])
     ])
     wf.connect([
-        (n_qsm_average, n_outputs, [('out_file', 'qsm.@final' if not run_args.two_pass else 'qsm.singlepass')])
+        (n_qsm_average, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
     ])
 
     # two-pass algorithm
@@ -439,7 +450,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             (wf_masking_intermediate, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
         ])
         wf.connect([
-            (n_qsm_twopass_average, n_outputs, [('out_file', 'qsm.@final')])
+            (n_qsm_twopass_average, n_outputs, [('out_file', 'qsm')])
         ])
         
     return wf

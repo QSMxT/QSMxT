@@ -14,6 +14,8 @@
         "do_t2starmap": false,
         "do_r2starmap": false,
         "do_segmentation": false,
+        "do_template": false,
+        "do_analysis": false,
         "obliquity_threshold": 10,
         "combine_phase": true,
         "qsm_algorithm": "rts",
@@ -45,7 +47,7 @@
         "mask_pattern": "{subject}/{session}/extra_data/*{run}*mask*nii*",
         "two_pass": true,
         "pbs": null,
-        "slurm": null,
+        "slurm": [null, null],
         "n_procs": null,
         "debug": false,
         "dry": false,
@@ -96,6 +98,7 @@
     "bet": {
         "description": "Applies a traditional BET-masking approach (artefact reduction unavailable; assumes human brain)",
         "combine_phase": true,
+        "two_pass": false,
         "qsm_algorithm": "rts",
         "unwrapping_algorithm": "romeo",
         "bf_algorithm": "pdf",
@@ -108,6 +111,7 @@
     "fast": {
         "description": "Applies a set of fast algorithms",
         "combine_phase": true,
+        "two_pass": false,
         "qsm_algorithm": "rts",
         "unwrapping_algorithm": "romeo",
         "bf_algorithm": "vsharp",
