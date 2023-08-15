@@ -1,0 +1,55 @@
+name: segmentation pipeline test
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+  push:
+    branches: [ master ]
+    paths:
+      - .github/workflows/test_segmentation.yml
+      - README.md
+      - qsmxt.py
+      - aseg_labels.csv
+      - workflows/segmentation.py
+      - tests/test_segmentation.py
+      - tests/test_segmentation.sh
+      - tests/utils.py
+      - interfaces/nipype_interface_fastsurfer.py
+      - scripts/logger.py
+  pull_request:
+    branches: [ master ]
+    paths:
+      - .github/workflows/test_segmentation.yml
+      - README.md
+      - qsmxt.py
+      - aseg_labels.csv
+      - workflows/segmentation.py
+      - tests/test_segmentation.py
+      - tests/test_segmentation.sh
+      - tests/utils.py
+      - interfaces/nipype_interface_fastsurfer.py
+      - scripts/logger.py
+    
+jobs:
+  test_segmentation:
+    runs-on: "cirun-oracle--${{ github.run_id }}"
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+      with:
+        python-version: 3.8
+    - name: Setup QSMxT
+      run: |
+        /bin/bash tests/setup_qsmxt.sh
+    - name: Run segmentation pipeline
+      env:
+        WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
+        WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
+        FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
+        OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
+      run: |
+        /bin/bash tests/test_segmentation.sh "test_segmentation"
+    - uses: actions/upload-artifact@v3
+      with:
+        name: public-outputs
+        path: /tmp/public-outputs

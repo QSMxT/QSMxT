@@ -1,4 +1,4 @@
-name: segmentation pipeline test
+name: template pipeline test
 
 on:
   workflow_dispatch:
@@ -6,34 +6,26 @@ on:
   push:
     branches: [ master ]
     paths:
+      - .github/workflows/test_template.yml
       - README.md
-      - run_2_qsm.py
-      - workflows/segmentation.py
-      - interfaces/nipype_interface_fastsurfer.py
-      - tests/test_segment.sh
+      - qsmxt.py
+      - tests/test_template.sh
+      - tests/test_template.py
       - tests/utils.py
-      - tests/test_segmentation_pipeline.py
-      - tests/test_segmentation_pipeline.sh
-      - .github/workflows/test_segmentation_pipeline.yml
-      - aseg_labels.csv
       - scripts/logger.py
   pull_request:
     branches: [ master ]
     paths:
+      - .github/workflows/test_template.yml
       - README.md
-      - run_2_qsm.py
-      - workflows/segmentation.py
-      - interfaces/nipype_interface_fastsurfer.py
-      - tests/test_segment.sh
+      - qsmxt.py
+      - tests/test_template.sh
+      - tests/test_template.py
       - tests/utils.py
-      - tests/test_segmentation_pipeline.py
-      - tests/test_segmentation_pipeline.sh
-      - .github/workflows/test_segmentation_pipeline.yml
-      - aseg_labels.csv
       - scripts/logger.py
     
 jobs:
-  test_segmentation_pipeline:
+  test_template:
     runs-on: "cirun-oracle--${{ github.run_id }}"
     steps:
     - uses: actions/checkout@v3
@@ -43,15 +35,16 @@ jobs:
     - name: Setup QSMxT
       run: |
         /bin/bash tests/setup_qsmxt.sh
-    - name: Run segmentation pipeline
+    - name: Run template pipeline
       env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
       run: |
-        /bin/bash tests/test_segmentation_pipeline.sh "test_segmentation"
+        /bin/bash tests/test_template.sh "test_template"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs
         path: /tmp/public-outputs
+

@@ -7,8 +7,7 @@ import shutil
 
 import numpy as np
 import qsm_forward
-
-import run_2_qsm as qsm
+import qsmxt
 
 from scripts.logger import LogLevel, make_logger
 from scripts.qsmxt_functions import get_qsm_premades
@@ -77,7 +76,7 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
     premades = get_qsm_premades()
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
-    args = qsm.process_args(qsm.parse_args([
+    args = qsmxt.process_args(qsmxt.parse_args([
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", premade,
@@ -116,7 +115,7 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
         os.remove(mag_file)
     
     # run pipeline and specifically choose magnitude-based masking
-    args = qsm.process_args(qsm.parse_args([
+    args = qsmxt.process_args(qsmxt.parse_args([
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
@@ -140,7 +139,7 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
-    args = qsm.process_args(qsm.parse_args([
+    args = qsmxt.process_args(qsmxt.parse_args([
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
@@ -163,7 +162,7 @@ def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_work
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
-    args = qsm.process_args(qsm.parse_args([
+    args = qsmxt.process_args(qsmxt.parse_args([
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
@@ -186,7 +185,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
-    args = qsm.process_args(qsm.parse_args([
+    args = qsmxt.process_args(qsmxt.parse_args([
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
@@ -208,7 +207,7 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
     logger.log(LogLevel.INFO.value, f"=== TESTING EXISTING MASKS ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
     
-    args = qsm.process_args(qsm.parse_args([
+    args = qsmxt.process_args(qsmxt.parse_args([
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--use_existing_masks",
@@ -228,7 +227,7 @@ def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_
     logger.log(LogLevel.INFO.value, f"=== TESTING SUPPLEMENTARY IMAGES ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
     
-    args = qsm.process_args(qsm.parse_args([
+    args = qsmxt.process_args(qsmxt.parse_args([
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--do_swi",
@@ -254,7 +253,7 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
 
     if not bids_dir_real:
         pass
-    args = qsm.process_args(qsm.parse_args([
+    args = qsmxt.process_args(qsmxt.parse_args([
         bids_dir_real,
         os.path.join(tempfile.gettempdir(), "qsm-secret"),
         "--auto_yes",
@@ -282,7 +281,7 @@ def test_singleecho(bids_dir_public, init_workflow, run_workflow, run_args):
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
-    args = qsm.process_args(qsm.parse_args([
+    args = qsmxt.process_args(qsmxt.parse_args([
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--combine_phase", "on",

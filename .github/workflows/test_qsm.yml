@@ -5,10 +5,15 @@ on:
   push:
     branches: [ master ]
     paths:
+      - .github/workflows/test_qsm.yml
       - README.md
-      - run_0_dicomSort.py
-      - run_1_dicomConvert.py
-      - run_2_qsm.py
+      - qsmxt.py
+      - qsm_pipelines.json
+      - workflows/qsm.py
+      - workflows/masking.py
+      - tests/test_qsm.sh
+      - tests/test_qsm.py
+      - tests/utils.py
       - interfaces/nipype_interface_addtojson.py
       - interfaces/nipype_interface_axialsampling.py
       - interfaces/nipype_interface_bet2.py
@@ -38,24 +43,21 @@ on:
       - scripts/romeo_voxelquality.jl
       - scripts/qsmxt_functions.py
       - scripts/qsmxt_version.py
-      - .github/workflows/test_qsm_pipeline.yml
-      - tests/test_qsm_pipeline.sh
-      - tests/test_qsm_pipeline.py
-      - tests/utils.py
-      - qsm_pipelines.json
-      - workflows/qsm.py
-      - workflows/masking.py
   pull_request:
     branches: [ master ]
     paths:
+      - .github/workflows/test_qsm.yml
       - README.md
-      - run_0_dicomSort.py
-      - run_1_dicomConvert.py
-      - run_2_qsm.py
+      - qsmxt.py
+      - qsm_pipelines.json
+      - workflows/qsm.py
+      - workflows/masking.py
+      - tests/test_qsm.sh
+      - tests/test_qsm.py
+      - tests/utils.py
       - interfaces/nipype_interface_addtojson.py
       - interfaces/nipype_interface_axialsampling.py
       - interfaces/nipype_interface_bet2.py
-      - interfaces/nipype_interface_combinemagnitude.py
       - interfaces/nipype_interface_erode.py
       - interfaces/nipype_interface_json.py
       - interfaces/nipype_interface_laplacian_unwrapping.py
@@ -82,13 +84,6 @@ on:
       - scripts/romeo_voxelquality.jl
       - scripts/qsmxt_functions.py
       - scripts/qsmxt_version.py
-      - .github/workflows/test_qsm_pipeline.yml
-      - tests/test_qsm_pipeline.sh
-      - tests/test_qsm_pipeline.py
-      - tests/utils.py
-      - qsm_pipelines.json
-      - workflows/qsm.py
-      - workflows/masking.py
 jobs:
   test_qsm_premades:
     runs-on: "cirun-oracle--${{ github.run_id }}"
@@ -111,7 +106,7 @@ jobs:
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
       run: |
-        /bin/bash tests/test_qsm_pipeline.sh "test_premade and ${{ matrix.args }}"
+        /bin/bash tests/test_qsm.sh "test_premade and ${{ matrix.args }}"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs
@@ -146,5 +141,5 @@ jobs:
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
       run: |
-        /bin/bash tests/test_qsm_pipeline.sh "${{ matrix.args }}"
+        /bin/bash tests/test_qsm.sh "${{ matrix.args }}"
 

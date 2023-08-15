@@ -14,7 +14,7 @@ sudo docker run \
     --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
     --env OSF_TOKEN="${OSF_TOKEN}" \
     -v /tmp:/tmp ${container} \
-    pytest /tmp/QSMxT/tests/test_qsm_pipeline.py -s -k "${@}"
+    pytest /tmp/QSMxT/tests/test_segmentation.py -s -k "${@}"
 
 if [ -f /tmp/GITHUB_STEP_SUMMARY.md ]; then
     cat /tmp/GITHUB_STEP_SUMMARY.md >> $GITHUB_STEP_SUMMARY

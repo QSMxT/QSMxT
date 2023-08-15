@@ -358,7 +358,7 @@ if __name__ == "__main__":
 
     parser.add_argument(
         'input_dir',
-        help='Sorted DICOM directory generated using run_0_dicomSort.py of the format {subject}/{session}/{series}'
+        help='Sorted DICOM directory generated using dicom_sort.py of the format {subject}/{session}/{series}'
     )
 
     parser.add_argument(
@@ -386,7 +386,7 @@ if __name__ == "__main__":
         default=['*t1w*'],
         nargs='*',
         help='Patterns used to identify series containing T1-weighted brain images. These series may be used during the '+
-             'run_3_segment.py script for automated brain segmentation and registration to the QSM space.'
+             'qsmxt.py script for automated brain segmentation and registration to the QSM space.'
     )
 
     args = parser.parse_args()

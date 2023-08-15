@@ -55,16 +55,12 @@ pip_command=`cat /tmp/QSMxT/README.md | grep "pip install "`
 echo $pip_command
 $pip_command
 
-echo "[DEBUG] starting run_0_dicomSort.py"
-/usr/share/miniconda/bin/python3 /tmp/QSMxT/run_0_dicomSort.py /tmp/dicoms /tmp/00_dicom
+echo "[DEBUG] starting dicom_sort.py"
+/usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_sort.py /tmp/dicoms /tmp/dicoms-sorted
 
-echo "[DEBUG] starting run_1_dicomConvert.py"
-/usr/share/miniconda/bin/python3 /tmp/QSMxT/run_1_dicomConvert.py /tmp/00_dicom /tmp/01_bids --auto_yes
+echo "[DEBUG] starting dicom_convert.py"
+/usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_convert.py /tmp/dicoms-sorted /tmp/bids --auto_yes
 
-echo "[DEBUG] starting run_2_qsm.py (fast pipeline)"
-/usr/share/miniconda/bin/python3 /tmp/QSMxT/run_2_qsm.py /tmp/01_bids /tmp/02_qsm_output --auto_yes --premade fast
-rm -rf /tmp/02_qsm_output/workflow/
-
-echo "[DEBUG] starting run_4_template.py"
-/usr/share/miniconda/bin/python3 /tmp/QSMxT/run_4_template.py /tmp/01_bids /tmp/02_qsm_output /tmp/04_template
+echo "[DEBUG] starting qsmxt.py"
+/usr/share/miniconda/bin/python3 /tmp/QSMxT/qsmxt.py /tmp/bids /tmp/out --premade fast --do_qsm --do_template
 

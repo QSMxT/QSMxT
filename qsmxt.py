@@ -206,7 +206,7 @@ def parse_args(args, return_run_command=False):
         nargs='?',
         default=None,
         type=os.path.abspath,
-        help='Input data folder generated using run_1_dicomConvert.py. You can also use a ' +
+        help='Input data folder generated using dicom_convert.py. You can also use a ' +
              'previously existing BIDS folder. In this case, ensure that the --subject_pattern, '+
              '--session_pattern, --magnitude_pattern and --phase_pattern are correct for your data.'
     )
@@ -742,7 +742,7 @@ def parse_args(args, return_run_command=False):
     
     # compute the minimum run command to re-execute the built pipeline non-interactively
     if return_run_command:
-        run_command = f"run_2_qsm.py {explicit_args['bids_dir']} {explicit_args['output_dir']}"
+        run_command = f"qsmxt.py {explicit_args['bids_dir']} {explicit_args['output_dir']}"
         if 'premade' in explicit_args and explicit_args['premade'] != 'default':
             run_command += f" --premade '{explicit_args['premade']}'"
         for key, value in explicit_args.items():
@@ -779,7 +779,7 @@ def generate_run_command(all_args, implicit_args, explicit_args, short=True):
     
     # compute the minimum run command to re-execute the built pipeline non-interactively
     os.path.relpath(explicit_args['bids_dir'])
-    run_command = f"run_2_qsm.py {short_path(explicit_args['bids_dir'])} {short_path(explicit_args['output_dir'])}"
+    run_command = f"qsmxt.py {short_path(explicit_args['bids_dir'])} {short_path(explicit_args['output_dir'])}"
     if 'premade' in explicit_args and explicit_args['premade'] != 'default':
         run_command += f" --premade '{explicit_args['premade']}'"
     for key, value in explicit_args.items():

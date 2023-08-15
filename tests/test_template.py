@@ -5,8 +5,7 @@ import pytest
 
 import numpy as np
 import qsm_forward
-
-import run_2_qsm as qsm
+import qsmxt
 
 from scripts.logger import LogLevel, make_logger
 from scripts.sys_cmd import sys_cmd
@@ -34,10 +33,10 @@ def bids_dir_public():
         tissue_params = qsm_forward.TissueParams(os.path.join(tmp_dir, 'head-phantom-maps'))
         
         recon_params_all = [
-            qsm_forward.ReconParams(voxel_size=np.array([1.0, 1.0, 1.0]), session=session, TEs=TEs, TR=TR, flip_angle=flip_angle, weighting_suffix=weighting_suffix, export_phase=export_phase)
-            for (session, TEs, TR, flip_angle, weighting_suffix, export_phase) in [
-                ("1", np.array([3.5e-3]), 7.5e-3, 40, "T1w", False),
+            qsm_forward.ReconParams(voxel_size=np.array([1.0, 1.0, 1.0]), subject=subject, TEs=TEs, TR=TR, flip_angle=flip_angle, weighting_suffix=weighting_suffix, export_phase=export_phase)
+            for (subject, TEs, TR, flip_angle, weighting_suffix, export_phase) in [
                 ("1", np.array([0.004, 0.012]), 0.05, 15, "T2starw", True),
+                ("2", np.array([0.004, 0.012]), 0.05, 15, "T2starw", True)
             ]
         ]
 
@@ -51,21 +50,22 @@ def bids_dir_public():
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, None)
 ])
-def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
-    logger.log(LogLevel.INFO.value, f"=== TESTING SEGMENTATION PIPELINE ===")
+    logger.log(LogLevel.INFO.value, f"=== TESTING TEMPLATE PIPELINE ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
-    args = qsm.process_args(qsm.parse_args([
+    args = qsmxt.process_args(qsmxt.parse_args([
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "output"),
-        "--do_qsm", "no",
-        "--do_segmentation", "yes",
+        "--do_qsm", "yes",
+        "--premade", "fast",
+        "--do_template", "yes",
         "--auto_yes",
         "--debug",
     ]))
     
     # create the workflow and run - it should fall back to phase-based masking with a warning
-    workflow(args, init_workflow, run_workflow, run_args, "segmentation", delete_workflow=True, upload_png=False)
+    workflow(args, init_workflow, run_workflow, run_args, "template", delete_workflow=True, upload_png=False)
 
