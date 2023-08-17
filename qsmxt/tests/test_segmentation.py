@@ -9,7 +9,7 @@ import qsmxt
 
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.sys_cmd import sys_cmd
-from tests.utils import *
+from qsmxt.tests.utils import *
 
 run_workflows = True
 
