@@ -8,3 +8,4 @@ debug/*
 testdata
 data
 *.proc*
+qsmxt.egg-info/
