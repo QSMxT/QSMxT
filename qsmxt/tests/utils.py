@@ -14,7 +14,7 @@ import numpy as np
 
 from matplotlib import pyplot as plt
 
-import qsmxt
+from qsmxt.cli.main import *
 from qsmxt.scripts.sys_cmd import sys_cmd
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.qsmxt_functions import get_qsmxt_version, extend_fname
@@ -192,44 +192,5 @@ def display_nii(
         else:
             plt.show()
 
-def workflow(args, init_workflow, run_workflow, run_args, name, delete_workflow=True, upload_png=False):
-    assert(not (run_workflow == True and init_workflow == False))
-    shutil.rmtree(os.path.join(args.output_dir), ignore_errors=True)
-    logger = create_logger(args.output_dir)
-    logger.log(LogLevel.INFO.value, f"WORKFLOW DETAILS: {args}")
-    if init_workflow:
-        logger.log(LogLevel.INFO.value, f"Initialising workflow...")
-        wf = qsmxt.init_workflow(args)
-    if init_workflow and run_workflow:
-        qsmxt.set_env_variables(args)
-        if run_args:
-            logger.log(LogLevel.INFO.value, f"Updating args with run_args: {run_args}")
-            arg_dict = vars(args)
-            for key, value in run_args.items():
-                arg_dict[key] = value
-            logger.log(LogLevel.INFO.value, f"Initialising workflow with updated args...")
-            wf = qsmxt.init_workflow(args)
-            assert len(wf.list_node_names()) > 0, "The generated workflow has no nodes! Something went wrong..."
-        logger.log(LogLevel.INFO.value, f"Saving args to {os.path.join(args.output_dir, 'args.txt')}...")
-        with open(os.path.join(args.output_dir, "args.txt"), 'w') as args_file:
-            args_file.write(str(args))
-        logger.log(LogLevel.INFO.value, f"Running workflow!")
-        wf.run(plugin='MultiProc', plugin_args={'n_procs': args.n_procs})
-        if delete_workflow:
-            logger.log(LogLevel.INFO.value, f"Deleting workflow folder {os.path.join(args.output_dir, 'workflow_qsm')}")
-            shutil.rmtree(os.path.join(args.output_dir, "workflow_qsm"), ignore_errors=True)
-        # visualise results
-        if upload_png:
-            for nii_file in glob.glob(os.path.join(args.output_dir, "qsm", "*.nii*")):
-                png = display_nii(
-                    nii_path=nii_file,
-                    title=f"QSM: {name}\n({get_qsmxt_version()})",
-                    colorbar=True,
-                    cbar_label="Susceptibility (ppm)",
-                    out_png=extend_fname(nii_file, f"_{name}", ext='png', out_dir=os.path.join(tempfile.gettempdir(), "public-outputs")),
-                    cmap='gray',
-                    vmin=-0.15,
-                    vmax=+0.15,
-                    interpolation='nearest'
-                )
-                add_to_github_summary(f"![image]({_upload_png(png)})\n")
+def workflow(args, do_init_workflow, run_workflow, run_args, name, delete_workflow=True, upload_png=False):
+    return main(argv=args)

@@ -74,7 +74,8 @@ def init_subject_workflow(args, subject):
     # Add each session workflow to the subject workflow
     for session in sessions:
         session_wf = init_session_workflow(args, subject, session)
-        wf.add_nodes([session_wf])
+        if session_wf:
+            wf.add_nodes([session_wf])
 
     return wf
 
@@ -589,7 +590,7 @@ def parse_args(args, return_run_command=False):
     # if listing premades or displaying the version, skip the rest
     if args.list_premades or args.version:
         if return_run_command:
-            return args, str.join(' ', sys.argv), {}
+            return args, str.join(' ', vars(args)), {}
         return args
 
     # bids and output are required
@@ -606,22 +607,21 @@ def parse_args(args, return_run_command=False):
     # load previous explicit arguments if they exist already
     using_json_settings = False
     if os.path.exists(os.path.join(args.output_dir, 'settings.json')):
-        logger.log(LogLevel.INFO.value, "Previous QSMxT settings found! Reading...")
-        with open(os.path.join(args.output_dir, 'settings.json'), 'r') as settings_file:
-            json_settings = json.load(settings_file)['pipeline']
-        if all(x in ['output_dir'] for x in explicit_args.keys()):
+        if len(explicit_args.keys()) == 1 and all(x in explicit_args.keys() for x in ['output_dir']):
             using_json_settings = True
-        if all(x in ['bids_dir', 'output_dir'] for x in explicit_args.keys()):
+        if len(explicit_args.keys()) == 2 and all(x in explicit_args.keys() for x in ['bids_dir', 'output_dir']):
             print(f"Previous QSMxT settings detected in {args.output_dir}!")
             using_json_settings = 'yes' == get_option(
                 prompt=f"Load previous settings? [default: 'yes']: ",
                 options=['yes', 'no'],
                 default='yes'
             )
-        if all(x in ['bids_dir', 'output_dir', 'auto_yes'] for x in explicit_args.keys()):
+        if len(explicit_args.keys()) == 3 and all(x in explicit_args.keys() for x in ['bids_dir', 'output_dir', 'auto_yes']):
             using_json_settings = True
         if using_json_settings:
             logger.log(LogLevel.INFO.value, "Loading previous QSMxT settings...")
+            with open(os.path.join(args.output_dir, 'settings.json'), 'r') as settings_file:
+                json_settings = json.load(settings_file)['pipeline']
             keys = set(vars(args)) & set(json_settings)
             for key in keys:
                 if key == 'auto_yes': continue
@@ -717,7 +717,7 @@ def parse_args(args, return_run_command=False):
     
     # compute the minimum run command to re-execute the built pipeline non-interactively
     if return_run_command:
-        run_command = f"qsmxt.py {explicit_args['bids_dir']} {explicit_args['output_dir']}"
+        run_command = f"qsmxt {explicit_args['bids_dir']} {explicit_args['output_dir']}"
         if 'premade' in explicit_args and explicit_args['premade'] != 'default':
             run_command += f" --premade '{explicit_args['premade']}'"
         for key, value in explicit_args.items():
@@ -754,7 +754,7 @@ def generate_run_command(all_args, implicit_args, explicit_args, short=True):
     
     # compute the minimum run command to re-execute the built pipeline non-interactively
     os.path.relpath(explicit_args['bids_dir'])
-    run_command = f"qsmxt.py {short_path(explicit_args['bids_dir'])} {short_path(explicit_args['output_dir'])}"
+    run_command = f"qsmxt {short_path(explicit_args['bids_dir'])} {short_path(explicit_args['output_dir'])}"
     if 'premade' in explicit_args and explicit_args['premade'] != 'default':
         run_command += f" --premade '{explicit_args['premade']}'"
     for key, value in explicit_args.items():
@@ -800,26 +800,30 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
             while not all(x in ['qsm', 'swi', 't2s', 'r2s', 'seg', 'analysis', 'template'] for x in user_in.split()):
                 user_in = input("Enter desired images (space-separated) [default - qsm]: ").lower()
 
-            if 'qsm' in user_in.split():
+            if 'qsm' in user_in.split() or len(user_in.split()) == 0:
                 args.do_qsm = True
                 if len(user_in.split()) > 1:
                     explicit_args['do_qsm'] = True
-                else:
-                    implicit_args['do_qsm'] = True
+            if 'qsm' not in user_in.split() and len(user_in.split()) > 0:
+                args.do_qsm = False
+                del explicit_args['do_qsm']
             if 'swi' in user_in.split():
                 args.do_swi = True
                 explicit_args['do_swi'] = True
             else:
+                if 'do_swi' in explicit_args: del explicit_args['do_swi']
                 args.do_swi = False
             if 't2s' in user_in.split():
                 args.do_t2starmap = True
                 explicit_args['do_t2starmap'] = True
             else:
+                if 'do_t2starmap' in explicit_args: del explicit_args['do_t2starmap']
                 args.do_t2starmap = False
             if 'r2s' in user_in.split():
                 args.do_r2starmap = True
                 explicit_args['do_r2starmap'] = True
             else:
+                if 'do_r2starmap' in explicit_args: del explicit_args['do_r2starmap']
                 args.do_r2starmap = False
             if 'seg' in user_in.split():
                 if args.do_qsm:
@@ -829,6 +833,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                     print("\nSegmentation requires QSM")
                     continue
             else:
+                if 'do_segmentation' in explicit_args: del explicit_args['do_segmentation']
                 args.do_segmentation = False
             if 'analysis' in user_in.split():
                 if args.do_qsm and args.do_segmentation:
@@ -838,6 +843,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                     print("\nAnalysis requires QSM and segmentations")
                     continue
             else:
+                if 'do_analysis' in explicit_args: del explicit_args['do_analysis']
                 args.do_analysis = False
             if 'template' in user_in.split():
                 if args.do_qsm:
@@ -847,6 +853,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                     print("GRE/QSM template-building requires QSM and segmentations")
                     continue
             else:
+                if 'do_template' in explicit_args: del explicit_args['do_template']
                 args.do_template = False
             
             break
@@ -858,25 +865,27 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
     if not args.do_qsm and not using_json_settings:
         return args.copy(), implicit_args
 
+    def select_premade():
+            print("\n=== Premade QSM pipelines ===")
+
+            for key, value in premades.items():
+                print(f"{key}", end="")
+                if "description" in value:
+                    print(f": {value['description']}")
+                else:
+                    print()
+
+            args.premade = get_option(
+                prompt="\nSelect a premade to begin [default - 'default']: ",
+                options=premades.keys(),
+                default='default'
+            )
+            for key, value in premades[args.premade].items():
+                if key not in explicit_args and key != 'premade':
+                    args[key] = value
+                implicit_args[key] = value
     if args.do_qsm and 'premade' not in explicit_args.keys() and not using_json_settings:
-        print("\n=== Premade QSM pipelines ===")
-
-        for key, value in premades.items():
-            print(f"{key}", end="")
-            if "description" in value:
-                print(f": {value['description']}")
-            else:
-                print()
-
-        args.premade = get_option(
-            prompt="\nSelect a premade to begin [default - 'default']: ",
-            options=premades.keys(),
-            default='default'
-        )
-        for key, value in premades[args.premade].items():
-            if key not in explicit_args and key != 'premade':
-                args[key] = value
-            implicit_args[key] = value
+        select_premade()
 
     # pipeline customisation
     while True:
@@ -892,7 +901,8 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
         print(f" - GRE/QSM template space: {'Yes' if args.do_template else 'No'}")
 
         if args.do_qsm:
-            print("\n(2) QSM masking:")
+            print(f"\n(2) QSM pipeline: {args.premade}")
+            print("\n(3) [ADVANCED] QSM masking:")
             print(f" - Use existing masks if available: {'Yes' if args.use_existing_masks else 'No'}")
             if args.masking_algorithm == 'threshold':
                 print(f" - Masking algorithm: threshold ({args.masking_input}-based{('; inhomogeneity-corrected)' if args.masking_input == 'magnitude' and args.inhomogeneity_correction else ')')}")
@@ -923,7 +933,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                 print(f" - Masking algorithm: {args.masking_algorithm}{f' (fractional intensity = {args.bet_fractional_intensity})' if 'bet' in args.masking_algorithm else ''}")
                 print(f"   - Erosions: {args.mask_erosions[0]}")
             
-            print("\n(3) QSM phase processing:")
+            print("\n(4) [ADVANCED] QSM phase processing:")
             print(f" - Axial resampling: " + (f"Enabled (obliquity threshold = {args.obliquity_threshold})" if args.obliquity_threshold != -1 else "Disabled"))
             print(f" - Multi-echo combination: " + ("B0 mapping (using ROMEO)" if args.combine_phase else "Susceptibility averaging"))
             if args.qsm_algorithm not in ['tgv']:
@@ -936,14 +946,16 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
         
         user_in = get_option(
             prompt="\nEnter a number to customize; enter 'run' to run: ",
-            options=['run', '1', '2'] + (['3'] if args.do_qsm else []),
+            options=['run', '1'] + (['2', '3', '4'] if args.do_qsm else []),
             default=None
         )
         if user_in == 'run': break
         
         if user_in == '1':
             update_desired_images()
-        if user_in == '2': # MASKING
+        if user_in == '2': # PREMADE
+            select_premade()
+        if user_in == '3': # MASKING
             print("=== MASKING ===")
 
             print("\n== Existing masks ==")
@@ -1101,7 +1113,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                 max_n=2,
                 dtype=int
             )
-        if user_in == '3': # PHASE PROCESSING
+        if user_in == '4': # PHASE PROCESSING
             print("== Resample to axial ==")
             print("This step will perform axial resampling for oblique acquisitions.")
             args.obliquity_threshold = get_num(
@@ -1342,19 +1354,24 @@ def script_exit(error_code=0, logger=None):
     if logger:
         show_warning_summary(logger)
         logger.log(LogLevel.INFO.value, 'Finished')
+    if error_code == 0 and 'pytest' in sys.modules:
+        return
     exit(error_code)
 
-def main():
+def main(argv=None):
+    # get run arguments
+    argv = argv or sys.argv[1:]
+
     # create initial logger
     logger = make_logger(name='pre')
-    logger.log(LogLevel.INFO.value, f"QSMxT {get_qsmxt_version()}")
+    logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
 
     # parse explicit arguments
-    if any(x in sys.argv for x in ['-v', '--version']):
+    if any(x in argv for x in ['-v', '--version']):
         script_exit(0)
     
     logger.log(LogLevel.INFO.value, f"Parsing arguments...")
-    args, run_command, explicit_args = parse_args(sys.argv[1:], return_run_command=True)
+    args, run_command, explicit_args = parse_args(argv, return_run_command=True)
 
     # list premade pipelines and exit if needed
     if args.list_premades:
@@ -1371,7 +1388,6 @@ def main():
         name='main',
         logpath=logpath
     )
-    logger.log(LogLevel.INFO.value, f"Running QSMxT {get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
     logger.log(LogLevel.INFO.value, f"Command: {run_command}")
 
@@ -1440,4 +1456,7 @@ def main():
             )
 
     script_exit(logger=logger)
+    return args
 
+if __name__ == "__main__":
+    main()

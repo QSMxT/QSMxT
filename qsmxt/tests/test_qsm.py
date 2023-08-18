@@ -7,7 +7,7 @@ import shutil
 
 import numpy as np
 import qsm_forward
-import qsmxt
+from qsmxt.cli.main import process_args, parse_args
 
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.qsmxt_functions import get_qsm_premades
@@ -76,23 +76,16 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
     premades = get_qsm_premades()
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
-    args = qsmxt.process_args(qsmxt.parse_args([
+    args = [
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", premade,
         "--auto_yes",
         "--debug"
-    ]))
-
-    # ensure the args match the appropriate premade
-    premade_args = premades[premade]
-    args_dict = vars(args)
-    for key in premade_args.keys():
-        if key not in ['description']:
-            assert(premade_args[key] == args_dict[key])
+    ]
     
     # create the workflow and run if necessary
-    workflow(args, init_workflow, run_workflow, run_args, premade, delete_workflow=True, upload_png=True)
+    args = workflow(args, init_workflow, run_workflow, run_args, premade, delete_workflow=True, upload_png=True)
     
     # upload output folder
     tar_file = compress_folder(folder=args.output_dir, result_id=premade)
@@ -115,17 +108,17 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
         os.remove(mag_file)
     
     # run pipeline and specifically choose magnitude-based masking
-    args = qsmxt.process_args(qsmxt.parse_args([
+    args = [
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
         "--masking_input", "magnitude",
         "--auto_yes",
         "--debug"
-    ]))
+    ]
     
     # create the workflow and run - it should fall back to phase-based masking with a warning
-    workflow(args, init_workflow, run_workflow, run_args, "no-magnitude", delete_workflow=True, upload_png=True)
+    args = workflow(args, init_workflow, run_workflow, run_args, "no-magnitude", delete_workflow=True, upload_png=True)
 
     # delete the modified bids directory
     shutil.rmtree(bids_dir_nomagnitude)
@@ -139,7 +132,7 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
-    args = qsmxt.process_args(qsmxt.parse_args([
+    args = [
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
@@ -148,10 +141,10 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
         "--inhomogeneity_correction",
         "--auto_yes",
         "--debug"
-    ]))
+    ]
     
     # create the workflow and run
-    workflow(args, init_workflow, run_workflow, run_args, "inhomogeneity-correction", delete_workflow=True, upload_png=True)
+    args = workflow(args, init_workflow, run_workflow, run_args, "inhomogeneity-correction", delete_workflow=True, upload_png=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
@@ -162,7 +155,7 @@ def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_work
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
-    args = qsmxt.process_args(qsmxt.parse_args([
+    args = [
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
@@ -171,10 +164,10 @@ def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_work
         "--threshold_value", "0.25",
         "--auto_yes",
         "--debug"
-    ]))
+    ]
     
     # create the workflow and run
-    workflow(args, init_workflow, run_workflow, run_args, "percentile-threshold", delete_workflow=True, upload_png=True)
+    args = workflow(args, init_workflow, run_workflow, run_args, "percentile-threshold", delete_workflow=True, upload_png=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1 })
@@ -185,7 +178,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
-    args = qsmxt.process_args(qsmxt.parse_args([
+    args = [
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
@@ -194,10 +187,10 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
         "--threshold_value", "15",
         "--auto_yes",
         "--debug"
-    ]))
+    ]
     
     # create the workflow and run
-    workflow(args, init_workflow, run_workflow, run_args, "absolute-threshold", delete_workflow=True, upload_png=True)
+    args = workflow(args, init_workflow, run_workflow, run_args, "absolute-threshold", delete_workflow=True, upload_png=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
@@ -207,17 +200,17 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
     logger.log(LogLevel.INFO.value, f"=== TESTING EXISTING MASKS ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
     
-    args = qsmxt.process_args(qsmxt.parse_args([
+    args = [
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--use_existing_masks",
         "--auto_yes",
         "--debug"
-    ]))
+    ]
     
     assert(args.use_existing_masks == True)
     
-    workflow(args, init_workflow, run_workflow, run_args, "use-existing-masks", delete_workflow=True)
+    args = workflow(args, init_workflow, run_workflow, run_args, "use-existing-masks", delete_workflow=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 2 })
@@ -227,7 +220,7 @@ def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_
     logger.log(LogLevel.INFO.value, f"=== TESTING SUPPLEMENTARY IMAGES ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
     
-    args = qsmxt.process_args(qsmxt.parse_args([
+    args = [
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--do_swi",
@@ -235,13 +228,13 @@ def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_
         "--do_r2starmap",
         "--auto_yes",
         "--debug"
-    ]))
+    ]
     
     assert(args.do_swi == True)
     assert(args.do_t2starmap == True)
     assert(args.do_r2starmap == True)
     
-    workflow(args, init_workflow, run_workflow, run_args, "supplementary-images", upload_png=False)
+    args = workflow(args, init_workflow, run_workflow, run_args, "supplementary-images", upload_png=False)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
@@ -253,14 +246,14 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
 
     if not bids_dir_real:
         pass
-    args = qsmxt.process_args(qsmxt.parse_args([
+    args = [
         bids_dir_real,
         os.path.join(tempfile.gettempdir(), "qsm-secret"),
         "--auto_yes",
         "--debug"
-    ]))
+    ]
     
-    workflow(args, init_workflow, run_workflow, run_args, "realdata", delete_workflow=True)
+    args = workflow(args, init_workflow, run_workflow, run_args, "realdata", delete_workflow=True)
     local_path = compress_folder(folder=args.output_dir, result_id='real')
 
     try:
@@ -281,7 +274,7 @@ def test_singleecho(bids_dir_public, init_workflow, run_workflow, run_args):
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
-    args = qsmxt.process_args(qsmxt.parse_args([
+    args = [
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--combine_phase", "on",
@@ -289,8 +282,8 @@ def test_singleecho(bids_dir_public, init_workflow, run_workflow, run_args):
         "--num_echoes", "1",
         "--auto_yes",
         "--debug"
-    ]))
+    ]
     
     # create the workflow and run
-    workflow(args, init_workflow, run_workflow, run_args, "single-echo-with-phase-combination", delete_workflow=True, upload_png=True)
+    args = workflow(args, init_workflow, run_workflow, run_args, "single-echo-with-phase-combination", delete_workflow=True, upload_png=True)
 

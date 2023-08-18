@@ -5,7 +5,7 @@ import pytest
 
 import numpy as np
 import qsm_forward
-import qsmxt
+from qsmxt.cli.main import process_args, parse_args
 
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.sys_cmd import sys_cmd
@@ -56,7 +56,7 @@ def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # run pipeline and specifically choose magnitude-based masking
-    args = qsmxt.process_args(qsmxt.parse_args([
+    args = [
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "output"),
         "--do_qsm", "yes",
@@ -64,8 +64,8 @@ def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
         "--do_template", "yes",
         "--auto_yes",
         "--debug",
-    ]))
+    ]
     
     # create the workflow and run - it should fall back to phase-based masking with a warning
-    workflow(args, init_workflow, run_workflow, run_args, "template", delete_workflow=True, upload_png=False)
+    args = workflow(args, init_workflow, run_workflow, run_args, "template", delete_workflow=True, upload_png=False)
 

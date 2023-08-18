@@ -8,21 +8,21 @@ on:
     paths:
       - .github/workflows/test_template.yml
       - README.md
-      - qsmxt.py
-      - tests/test_template.sh
-      - tests/test_template.py
-      - tests/utils.py
-      - scripts/logger.py
+      - qsmxt/cli/qsmxt.py
+      - qsmxt/tests/test_template.sh
+      - qsmxt/tests/test_template.py
+      - qsmxt/tests/utils.py
+      - qsmxt/scripts/logger.py
   pull_request:
     branches: [ master ]
     paths:
       - .github/workflows/test_template.yml
       - README.md
-      - qsmxt.py
-      - tests/test_template.sh
-      - tests/test_template.py
-      - tests/utils.py
-      - scripts/logger.py
+      - qsmxt/cli/qsmxt.py
+      - qsmxt/tests/test_template.sh
+      - qsmxt/tests/test_template.py
+      - qsmxt/tests/utils.py
+      - qsmxt/scripts/logger.py
     
 jobs:
   test_template:

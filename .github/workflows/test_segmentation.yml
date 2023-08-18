@@ -8,27 +8,27 @@ on:
     paths:
       - .github/workflows/test_segmentation.yml
       - README.md
-      - qsmxt.py
+      - qsmxt/cli/qsmxt.py
       - aseg_labels.csv
-      - workflows/segmentation.py
-      - tests/test_segmentation.py
-      - tests/test_segmentation.sh
-      - tests/utils.py
-      - interfaces/nipype_interface_fastsurfer.py
-      - scripts/logger.py
+      - qsmxt/workflows/segmentation.py
+      - qsmxt/tests/test_segmentation.py
+      - qsmxt/tests/test_segmentation.sh
+      - qsmxt/tests/utils.py
+      - qsmxt/interfaces/nipype_interface_fastsurfer.py
+      - qsmxt/scripts/logger.py
   pull_request:
     branches: [ master ]
     paths:
       - .github/workflows/test_segmentation.yml
       - README.md
-      - qsmxt.py
+      - qsmxt/cli/qsmxt.py
       - aseg_labels.csv
-      - workflows/segmentation.py
-      - tests/test_segmentation.py
-      - tests/test_segmentation.sh
-      - tests/utils.py
-      - interfaces/nipype_interface_fastsurfer.py
-      - scripts/logger.py
+      - qsmxt/workflows/segmentation.py
+      - qsmxt/tests/test_segmentation.py
+      - qsmxt/tests/test_segmentation.sh
+      - qsmxt/tests/utils.py
+      - qsmxt/interfaces/nipype_interface_fastsurfer.py
+      - qsmxt/scripts/logger.py
     
 jobs:
   test_segmentation:
