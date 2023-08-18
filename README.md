@@ -46,20 +46,20 @@ docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_3.2.1:
 
 QSMxT requires data conforming to the Brain Imaging Data Structure (BIDS). 
 
-Use the `dicom_sort.py` and `dicom_convert.py` scripts to convert DICOMs to BIDS:
+Use `dicom-sort` and `dicom-convert` to convert DICOMs to BIDS:
 ```bash
-dicom_sort.py YOUR_DICOM_DIR/ dicoms-sorted/
-dicom_convert.py dicoms-sorted/ bids/
+dicom-sort YOUR_DICOM_DIR/ dicoms-sorted/
+dicom-convert dicoms-sorted/ bids/
 ```
-Carefully read the output to ensure data were correctly recognized and converted. Crucially, the `dicom_convert.py` script needs to know which of your acquisitions are T2*-weighted and suitable for QSM, as well as which are T1-weighted and suitable for segmentation. It identifies this based on the DICOM `ProtocolName` field and looks for the patterns `*qsm*` and `*t2starw*` for T2*-weighted series and `t1w` for T1-weighted series. You can specify your own patterns using command-line arguments e.g.:
+Carefully read the output to ensure data were correctly recognized and converted. Crucially, the `dicom-convert` script needs to know which of your acquisitions are T2*-weighted and suitable for QSM, as well as which are T1-weighted and suitable for segmentation. It identifies this based on the DICOM `ProtocolName` field and looks for the patterns `*qsm*` and `*t2starw*` for T2*-weighted series and `t1w` for T1-weighted series. You can specify your own patterns using command-line arguments e.g.:
 
 ```bash
-dicom_convert.py dicoms-sorted/ bids/ --t2starw_protocol_patterns '*gre*' --t1w_protocol_patterns '*mp2rage*'
+dicom-convert dicoms-sorted/ bids/ --t2starw_protocol_patterns '*gre*' --t1w_protocol_patterns '*mp2rage*'
 ```
 
-To convert NIfTI to BIDS, use `nifti_convert.py`:
+To convert NIfTI to BIDS, use `nifti-convert`:
 ```bash
-nifti_convert.py YOUR_NIFTI_DIR/ bids/
+nifti-convert YOUR_NIFTI_DIR/ bids/
 ```
 Carefully read the output to ensure data were correctly recognized and converted. The script will try to identify any important details from the filenames and from adjacent JSON header files, if available. It retrieves this information using customisable patterns and regular expressions which can be overridden using command-line arguments (see the output using the `--help` flag). If any information is missing, you will be prompted to fill out a CSV spreadsheet with the missing information before running the conversion script again using the same command. You can open the CSV file in a spreadsheet reader such as Microsoft Excel or LibreOffice Calc.
 
