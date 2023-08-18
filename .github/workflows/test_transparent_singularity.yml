@@ -46,5 +46,5 @@ jobs:
         python-version: 3.8
     - name: test transparent singularity
       run: |
-        /bin/bash tests/test_transparent_singularity.sh
+        /bin/bash qsmxt/tests/test_transparent_singularity.sh
 

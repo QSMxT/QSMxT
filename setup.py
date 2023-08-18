@@ -38,6 +38,7 @@ setup(
             'dicom-convert = qsmxt.cli.dicom_convert:main',
             'dicom-sort = qsmxt.cli.dicom_sort:main',
             'nifti-convert = qsmxt.cli.nifti_convert:main',
+            'get-qsmxt-dir = qsmxt.scripts.qsmxt_functions:get_qsmxt_dir'
         ],
     },
     # other metadata
