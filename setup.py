@@ -4,6 +4,10 @@ setup(
     name='qsmxt',
     version='4.0.0',
     packages=find_packages(),
+    package_dir={'qsmxt': 'qsmxt'},
+    package_data={
+        'qsmxt': ['aseg_labels.csv', 'qsm_pipelines.json', 'scripts/*.jl', 'scripts/*.py']
+    },
     install_requires=[
         'psutil',
         'datetime',
@@ -30,7 +34,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'qsmxt = qsmxt.cli.qsmxt:main',
+            'qsmxt = qsmxt.cli.main:main',
             'dicom-convert = qsmxt.cli.dicom_convert:main',
             'dicom-sort = qsmxt.cli.dicom_sort:main',
             'nifti-convert = qsmxt.cli.nifti_convert:main',
