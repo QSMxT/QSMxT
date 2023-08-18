@@ -41,5 +41,4 @@ setup(
             'get-qsmxt-dir = qsmxt.scripts.qsmxt_functions:get_qsmxt_dir'
         ],
     },
-    # other metadata
 )
