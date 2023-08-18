@@ -21,7 +21,7 @@ def get_qsmxt_dir():
         return os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(path))), 'qsmxt')
     else:
         # Return the directory up one level from the current file if running from source
-        return os.path.dirname(os.path.dirname(os.path.dirname(path)))
+        return os.path.dirname(os.path.dirname(path))
 
 def get_qsmxt_version():
     return pkg_resources.get_distribution('qsmxt').version
