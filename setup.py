@@ -30,7 +30,7 @@ setup(
         'niflow-nipype1-workflows',
         'tensorflow',
         'packaging',
-        'scikit-sparse @ git+https://github.com/scikit-sparse/scikit-sparse.git@v0.4.9'
+        'scikit-sparse==0.4.12',#scikit-sparse @ git+https://github.com/scikit-sparse/scikit-sparse.git@v0.4.9'
     ],
     entry_points={
         'console_scripts': [
