@@ -10,3 +10,4 @@ data
 *.proc*
 qsmxt.egg-info/
 dist/
+build/
