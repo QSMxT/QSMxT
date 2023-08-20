@@ -16,10 +16,20 @@ else
     BRANCH=master
 fi
 
-echo "[DEBUG] Pulling QSMxT branch ${BRANCH}..."
+echo "[DEBUG] Pulling QSMxT repository (branch=${BRANCH})..."
 git clone -b "${BRANCH}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
 
-container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
 echo "[DEBUG] Pulling QSMxT container ${container}..."
+container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
 sudo docker pull "${container}" 
+
+# Create and start the container with a bash shell
+echo "[DEBUG] Starting QSMxT container"
+docker create --name qsmxt-container -it -v /tmp/:/tmp ${container} /bin/bash
+docker start qsmxt-container
+
+# Run the commands inside the container using docker exec
+echo "[DEBUG] Replacing qsmxt pip package with repository version"
+docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
+docker exec qsmxt-container bash -c "pip install -e /tmp/QSMxT"
 

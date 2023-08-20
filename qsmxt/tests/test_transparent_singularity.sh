@@ -55,12 +55,12 @@ pip_command=`cat /tmp/QSMxT/README.md | grep "pip install "`
 echo $pip_command
 $pip_command
 
-echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_sort.py /tmp/dicoms /tmp/dicoms-sorted"
-/usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_sort.py /tmp/dicoms /tmp/dicoms-sorted
+echo "[DEBUG] dicom-sort /tmp/dicoms /tmp/dicoms-sorted"
+dicom-sort /tmp/dicoms /tmp/dicoms-sorted
 
 echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_convert.py /tmp/dicoms-sorted /tmp/bids --auto_yes"
-/usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_convert.py /tmp/dicoms-sorted /tmp/bids --auto_yes
+dicom-convert /tmp/dicoms-sorted /tmp/bids --auto_yes
 
 echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/qsmxt.py /tmp/bids /tmp/out --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes"
-/usr/share/miniconda/bin/python3 /tmp/QSMxT/qsmxt.py /tmp/bids /tmp/out --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug
+qsmxt /tmp/bids /tmp/out --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug
 

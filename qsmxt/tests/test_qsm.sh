@@ -1,36 +1,18 @@
 #!/usr/bin/env bash
 set -e
 
-container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
-container_path=`sudo docker run ${container} python -c "import os; print(os.environ['PATH'])"`
-
-echo "[DEBUG] Getting QSMxT dir..."
-QSMXT_DIR=`sudo docker run \
-    --env BRANCH="${BRANCH}" \
-    --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
-    --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
-    --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
-    --env OSF_TOKEN="${OSF_TOKEN}" \
-    -v /tmp:/tmp ${container} \
-    get-qsmxt-dir`
-
+# Run the tests
 echo "[DEBUG] Running QSM pipeline tests..."
-sudo docker run \
-    --env BRANCH="${BRANCH}" \
-    --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
-    --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
-    --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
-    --env OSF_TOKEN="${OSF_TOKEN}" \
-    -v /tmp:/tmp ${container} \
-    pytest ${QSMXT_DIR}/tests/test_qsm.py -s -k "${@}"
+docker exec qsmxt-container bash -c "pytest /tmp/QSMxT/qsmxt/tests/test_qsm.py -s -k ${@}"
 
+# Write test summary
 if [ -f /tmp/GITHUB_STEP_SUMMARY.md ]; then
+    echo "[DEBUG] Writing test summary..."
     cat /tmp/GITHUB_STEP_SUMMARY.md >> $GITHUB_STEP_SUMMARY
 fi
 
-#echo "Testing summary (will add images here later)" >> $GITHUB_STEP_SUMMARY
-#echo "" >> $GITHUB_STEP_SUMMARY # this is a blank line
-#echo "- Lets add a bullet point" >> $GITHUB_STEP_SUMMARY
-#echo "- Lets add a second bullet point" >> $GITHUB_STEP_SUMMARY
-#echo "- How about a third one?" >> $GITHUB_STEP_SUMMARY
+# Stop and remove the container when you're done
+echo "[DEBUG] Stopping and removing QSMxT container"
+docker stop qsmxt-container
+docker rm qsmxt-container
 
