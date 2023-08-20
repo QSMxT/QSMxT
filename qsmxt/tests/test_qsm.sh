@@ -3,7 +3,7 @@ set -e
 
 # Run the tests
 echo "[DEBUG] Running QSM pipeline tests..."
-docker exec qsmxt-container bash -c "pytest /tmp/QSMxT/qsmxt/tests/test_qsm.py -s -k ${@}"
+docker exec qsmxt-container bash -c "pytest /tmp/QSMxT/qsmxt/tests/test_qsm.py -s -k \"${@}\""
 
 # Write test summary
 if [ -f /tmp/GITHUB_STEP_SUMMARY.md ]; then
