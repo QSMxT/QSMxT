@@ -13,7 +13,7 @@ elif [ -n "${GITHUB_REF##*/}" ]; then
     BRANCH=${GITHUB_REF##*/}
 else
     echo "NEITHER GITHUB_HEAD_REF NOR GITHUB_REF DEFINED. ASSUMING MASTER."
-    BRANCH=refactor
+    BRANCH=master
 fi
 
 echo "[DEBUG] Pulling QSMxT repository (branch=${BRANCH})..."
@@ -31,6 +31,8 @@ docker create --name qsmxt-container -it \
     --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
     --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
     --env OSF_TOKEN="${OSF_TOKEN}" \
+    --env OSF_USER="${OSF_USER}" \
+    --env OSF_PASS="${OSF_PASS}" \
     ${container} \
     /bin/bash
 docker start qsmxt-container
