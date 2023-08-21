@@ -25,7 +25,12 @@ sudo docker pull "${container}"
 
 # Create and start the container with a bash shell
 echo "[DEBUG] Starting QSMxT container"
-docker create --name qsmxt-container -it -v /tmp/:/tmp ${container} /bin/bash
+docker create --name qsmxt-container -it \
+    -v /tmp/:/tmp ${container} \
+    --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
+    --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
+    --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
+    --env OSF_TOKEN="${OSF_TOKEN}" /bin/bash
 docker start qsmxt-container
 
 # Run the commands inside the container using docker exec
