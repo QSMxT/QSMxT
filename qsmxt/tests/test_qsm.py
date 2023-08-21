@@ -18,10 +18,12 @@ run_workflows = True
 
 @pytest.fixture
 def bids_dir_public():
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== Generating BIDS dataset ===")
+
     tmp_dir = tempfile.gettempdir()
     bids_dir = os.path.join(tmp_dir, "bids-public")
     if not os.path.exists(bids_dir):
-
         head_phantom_maps_dir = os.path.join(tmp_dir, 'head-phantom-maps')
         if not os.path.exists(head_phantom_maps_dir):
             if not os.path.exists(os.path.join(tmp_dir, 'head-phantom-maps.tar')):
@@ -29,12 +31,12 @@ def bids_dir_public():
                     project="9jc42",
                     local_path=os.path.join(tmp_dir, "head-phantom-maps.tar")
                 )
-
+            logger.log(LogLevel.INFO.value, f"Extracting then deleting head-phantom-maps.tar...")
             sys_cmd(f"tar xf {os.path.join(tmp_dir, 'head-phantom-maps.tar')} -C {tmp_dir}")
             sys_cmd(f"rm {os.path.join(tmp_dir, 'head-phantom-maps.tar')}")
 
+        logger.log(LogLevel.INFO.value, "Preparing simulation information...")
         tissue_params = qsm_forward.TissueParams(os.path.join(tmp_dir, 'head-phantom-maps'))
-        
         recon_params_all = [
             qsm_forward.ReconParams(voxel_size=np.array([1.0, 1.0, 1.0]), session=session, TEs=TEs, TR=TR, flip_angle=flip_angle, weighting_suffix=weighting_suffix, export_phase=export_phase)
             for (session, TEs, TR, flip_angle, weighting_suffix, export_phase) in [
@@ -43,6 +45,7 @@ def bids_dir_public():
             ]
         ]
 
+        logger.log(LogLevel.INFO.value, "Generating BIDS dataset...")
         bids_dir = os.path.join(tmp_dir, "bids-public")
         for recon_params in recon_params_all:
             qsm_forward.generate_bids(tissue_params=tissue_params, recon_params=recon_params, bids_dir=bids_dir)
