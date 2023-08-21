@@ -134,13 +134,18 @@ def download_from_osf(project, local_path):
     logger = make_logger()
     try:
         osf_token = os.environ['OSF_TOKEN']
+        osf_user = os.environ['OSF_USER']
+        osf_pass = os.environ['OSF_PASS']
     except KeyError as e:
-        logger.log(LogLevel.ERROR.value, f"Cannot connect to OSF - missing OSF_TOKEN environment variable!")
+        logger.log(LogLevel.ERROR.value, f"Cannot connect to OSF - missing environment variable/s! Need OSF_TOKEN, OSF_USER and OSF_PASS.")
         raise e
-
-    osf = osfclient.OSF(token=osf_token)
+    
+    logger.log(LogLevel.INFO.value, "Connecting to OSF...")
+    osf = osfclient.OSF(username=osf_user, password=osf_pass, token=osf_token)
     osf_project = osf.project(project)
     osf_file = list(osf_project.storage().files)[0]
+
+    logger.log(LogLevel.INFO.value, f"Downloading from {project} to {local_path}")
     with open(local_path, 'wb') as fpr:
         osf_file.write_to(fpr)
 
