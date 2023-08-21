@@ -1,6 +1,7 @@
 import os
 import shutil
 import json
+import site
 import pkg_resources
 import subprocess
 
@@ -23,8 +24,35 @@ def get_qsmxt_dir():
         # Return the directory up one level from the current file if running from source
         return os.path.dirname(os.path.dirname(path))
 
+def is_editable_package(package_name):
+    """
+    Determine if a package was installed in "editable" mode.
+    
+    :param package_name: The name of the package.
+    :return: True if the package was installed in editable mode, False otherwise.
+    """
+    
+    # Get the site-packages directory
+    site_packages = site.getsitepackages()[0]
+    
+    # Look for the package's metadata directory
+    for item in os.listdir(site_packages):
+        if item.startswith(package_name) and item.endswith(".egg-link"):
+            return True
+        if item.startswith(package_name) and item.endswith(".dist-info"):
+            dist_info_dir = os.path.join(site_packages, item)
+            direct_url_path = os.path.join(dist_info_dir, "direct_url.json")
+            
+            # If direct_url.json exists, parse it and check for "editable"
+            if os.path.exists(direct_url_path):
+                with open(direct_url_path, 'r') as f:
+                    data = json.load(f)
+                    return data.get("editable", False)
+    
+    return False
+
 def get_qsmxt_version():
-    return pkg_resources.get_distribution('qsmxt').version
+    return f"{pkg_resources.get_distribution('qsmxt').version}" + (" (editable)" if is_editable_package('qsmxt') else "")
 
 def get_qsm_premades(pipeline_file=None):
     premades = json.load(open(f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')}", "r"))
