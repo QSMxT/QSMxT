@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
   repository_dispatch:
   push:
-    branches: [ master ]
+    branches: [ '**' ]
     paths:
       - .github/workflows/test_qsm.yml
       - README.md
@@ -44,7 +44,7 @@ on:
       - qsmxt/scripts/qsmxt_functions.py
       - qsmxt/scripts/qsmxt_version.py
   pull_request:
-    branches: [ master ]
+    branches: [ '**' ]
     paths:
       - .github/workflows/test_qsm.yml
       - README.md

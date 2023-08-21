@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   repository_dispatch:
   push:
-    branches: [ master ]
+    branches: [ '**' ]
     paths:
       - .github/workflows/test_transparent_singularity.yml
       - README.md
@@ -20,7 +20,7 @@ on:
       - qsmxt/scripts/*
       - qsmxt/workflows/*
   pull_request:
-    branches: [ master ]
+    branches: [ '**' ]
     paths:
       - .github/workflows/test_transparent_singularity.yml
       - README.md

@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   repository_dispatch:
   push:
-    branches: [ master ]
+    branches: [ '**' ]
     paths:
       - .github/workflows/test_segmentation.yml
       - README.md
@@ -17,7 +17,7 @@ on:
       - qsmxt/interfaces/nipype_interface_fastsurfer.py
       - qsmxt/scripts/logger.py
   pull_request:
-    branches: [ master ]
+    branches: [ '**' ]
     paths:
       - .github/workflows/test_segmentation.yml
       - README.md
