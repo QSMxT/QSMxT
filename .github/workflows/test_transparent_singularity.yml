@@ -19,22 +19,6 @@ on:
       - qsmxt/interfaces/*
       - qsmxt/scripts/*
       - qsmxt/workflows/*
-  pull_request:
-    branches: [ '**' ]
-    paths:
-      - .github/workflows/test_transparent_singularity.yml
-      - README.md
-      - aseg_labels.csv
-      - qsmxt/qsm_pipelines.json
-      - qsmxt/cli/dicom_sort.py
-      - qsmxt/cli/dicom_convert.py
-      - qsmxt/cli/nifti_convert.py
-      - qsmxt/cli/qsmxt.py
-      - qsmxt/tests/test_transparent_singularity.sh
-      - qsmxt/tests/utils.py
-      - qsmxt/interfaces/*
-      - qsmxt/scripts/*
-      - qsmxt/workflows/*
     
 jobs:
   test_transparent_singularity_pipeline:

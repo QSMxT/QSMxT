@@ -42,3 +42,7 @@ echo "[DEBUG] Replacing qsmxt pip package with repository version"
 docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
 docker exec qsmxt-container bash -c "pip install -e /tmp/QSMxT"
 
+# Test environment variables
+echo "[DEBUG] Testing environment variables"
+docker exec qsmxt-container bash -c "echo \"${OSF_TOKEN}\""
+
