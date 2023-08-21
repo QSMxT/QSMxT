@@ -92,7 +92,7 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
     shutil.move(tar_file, os.path.join(tempfile.gettempdir(), "public-outputs", tar_file))
         
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, run_workflows, None)
 ])
 def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
@@ -113,6 +113,7 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--premade", "fast",
         "--masking_input", "magnitude",
+        "--num_echoes", "1",
         "--auto_yes",
         "--debug"
     ]
@@ -124,7 +125,7 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
     shutil.rmtree(bids_dir_nomagnitude)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, run_workflows, None)
 ])
 def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
@@ -139,6 +140,7 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
         "--masking_algorithm", "threshold",
         "--filling_algorithm", "bet",
         "--inhomogeneity_correction",
+        "--num_echoes", "1",
         "--auto_yes",
         "--debug"
     ]
@@ -147,7 +149,7 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
     args = workflow(args, init_workflow, run_workflow, run_args, "inhomogeneity-correction", delete_workflow=True, upload_png=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, run_workflows, None)
 ])
 def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
@@ -162,15 +164,16 @@ def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_work
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
         "--threshold_value", "0.25",
+        "--num_echoes", "1",
         "--auto_yes",
-        "--debug"
+        "--debug",
     ]
     
     # create the workflow and run
     args = workflow(args, init_workflow, run_workflow, run_args, "percentile-threshold", delete_workflow=True, upload_png=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, run_workflows, None)
 ])
 def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
@@ -185,6 +188,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
         "--threshold_value", "15",
+        "--num_echoes", "1",
         "--auto_yes",
         "--debug"
     ]
@@ -193,7 +197,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
     args = workflow(args, init_workflow, run_workflow, run_args, "absolute-threshold", delete_workflow=True, upload_png=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1, 'bf_algorithm' : 'vsharp', 'two_pass' : False })
+    (True, run_workflows, None)
 ])
 def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
@@ -204,6 +208,7 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--use_existing_masks",
+        "--premade", "fast"
         "--auto_yes",
         "--debug"
     ]
@@ -213,7 +218,7 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
     args = workflow(args, init_workflow, run_workflow, run_args, "use-existing-masks", delete_workflow=True)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 2 })
+    (True, run_workflows, None)
 ])
 def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
@@ -237,7 +242,7 @@ def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_
     args = workflow(args, init_workflow, run_workflow, run_args, "supplementary-images", upload_png=False)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 2, 'two_pass' : False, 'bf_algorithm' : 'vsharp' })
+    (True, run_workflows, None)
 ])
 def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
     logger = make_logger()
@@ -249,6 +254,7 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
     args = [
         bids_dir_real,
         os.path.join(tempfile.gettempdir(), "qsm-secret"),
+        "--premade", "fast",
         "--auto_yes",
         "--debug"
     ]
@@ -266,7 +272,7 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
         add_to_github_summary("Result upload to RDM failed!")
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, { 'num_echoes' : 1 })
+    (True, run_workflows, None)
 ])
 def test_singleecho(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
