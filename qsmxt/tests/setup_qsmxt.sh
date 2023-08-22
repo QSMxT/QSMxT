@@ -44,5 +44,6 @@ docker exec qsmxt-container bash -c "pip install -e /tmp/QSMxT"
 
 # Test environment variables
 echo "[DEBUG] Testing environment variables"
-docker exec qsmxt-container bash -c "echo \"${OSF_TOKEN}\""
+echo "--${OSF_TOKEN}--"
+docker exec qsmxt-container bash -c "echo --\"${OSF_TOKEN}\"--"
 
