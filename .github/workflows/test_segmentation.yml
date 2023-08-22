@@ -14,6 +14,7 @@ on:
       - qsmxt/tests/test_segmentation.py
       - qsmxt/tests/test_segmentation.sh
       - qsmxt/tests/utils.py
+      - qsmxt/tests/setup_qsmxt.sh
       - qsmxt/interfaces/nipype_interface_fastsurfer.py
       - qsmxt/scripts/logger.py
     

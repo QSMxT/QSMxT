@@ -12,6 +12,7 @@ on:
       - qsmxt/tests/test_template.sh
       - qsmxt/tests/test_template.py
       - qsmxt/tests/utils.py
+      - qsmxt/tests/setup_qsmxt.sh
       - qsmxt/scripts/logger.py
     
 jobs:

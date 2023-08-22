@@ -11,6 +11,7 @@ on:
       - qsmxt/qsm_pipelines.json
       - qsmxt/workflows/qsm.py
       - qsmxt/workflows/masking.py
+      - qsmxt/tests/setup_qsmxt.sh
       - qsmxt/tests/test_qsm.sh
       - qsmxt/tests/test_qsm.py
       - qsmxt/tests/utils.py
