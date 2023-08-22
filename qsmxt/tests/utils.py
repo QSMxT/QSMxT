@@ -140,6 +140,15 @@ def download_from_osf(project, local_path):
         logger.log(LogLevel.ERROR.value, f"Cannot connect to OSF - missing environment variable/s! Need OSF_TOKEN, OSF_USER and OSF_PASS.")
         raise e
     
+    if any(len(x) == 0 for x in [osf_token, osf_user, osf_pass]):
+        if len(osf_token) == 0:
+            logger.log(LogLevel.ERROR.value, f"OSF_TOKEN length is zero")
+        if len(osf_user) == 0:
+            logger.log(LogLevel.ERROR.value, f"OSF_USER length is zero")
+        if len(osf_pass) == 0:
+            logger.log(LogLevel.ERROR.value, f"OSF_PASS length is zero")
+        raise ValueError("OSF_TOKEN, OSF_USER and/or OSF_PASS not initialised properly!")
+    
     logger.log(LogLevel.INFO.value, "Connecting to OSF...")
     osf = osfclient.OSF(username=osf_user, password=osf_pass, token=osf_token)
     osf_project = osf.project(project)
