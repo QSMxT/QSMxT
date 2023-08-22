@@ -73,6 +73,6 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
     args = main(args, init_workflow, run_workflow, run_args, "segmentation", delete_workflow=True, upload_png=False)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1))}")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'segmentations', 'qsm', '*'))[0], title='Segmentation', colorbar=True, vmin=0, vmax=+16))}")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'segmentations', 'qsm', '*'))[0], title='Segmentation', colorbar=True, vmin=0, vmax=+16))})")
 
