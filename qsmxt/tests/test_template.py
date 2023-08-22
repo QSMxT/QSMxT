@@ -5,7 +5,7 @@ import pytest
 
 import numpy as np
 import qsm_forward
-from qsmxt.cli.main import process_args, parse_args
+from qsmxt.cli.main import main
 
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.sys_cmd import sys_cmd
@@ -67,5 +67,8 @@ def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
     ]
     
     # create the workflow and run - it should fall back to phase-based masking with a warning
-    args = workflow(args, init_workflow, run_workflow, run_args, "template", delete_workflow=True, upload_png=False)
+    args = main(args, init_workflow, run_workflow, run_args, "template", delete_workflow=True, upload_png=False)
+
+    # generate image
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'template', 'qsm_template', '*'))[0], title='QSM template', colorbar=True, vmin=-0.1, vmax=+0.1))}")
 

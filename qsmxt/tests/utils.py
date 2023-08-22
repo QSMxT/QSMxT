@@ -34,7 +34,7 @@ def add_to_github_summary(markdown):
     with open(os.path.join(tmp_dir, 'GITHUB_STEP_SUMMARY.md'), 'a') as github_step_summary_file:
         github_step_summary_file.write(markdown)
 
-def _upload_png(png_path):
+def upload_png(png_path):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"Uploading png {png_path}")
     png_url = sys_cmd(f"images-upload-cli --no-clipboard --hosting freeimage {png_path}").strip()
@@ -206,5 +206,3 @@ def display_nii(
         else:
             plt.show()
 
-def workflow(args, do_init_workflow, run_workflow, run_args, name, delete_workflow=True, upload_png=False):
-    return main(argv=args)

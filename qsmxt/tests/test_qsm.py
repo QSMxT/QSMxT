@@ -7,8 +7,7 @@ import shutil
 
 import numpy as np
 import qsm_forward
-from qsmxt.cli.main import process_args, parse_args
-
+from qsmxt.cli.main import main
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.qsmxt_functions import get_qsm_premades
 from qsmxt.scripts.sys_cmd import sys_cmd
@@ -88,11 +87,14 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
     ]
     
     # create the workflow and run if necessary
-    args = workflow(args, init_workflow, run_workflow, run_args, premade, delete_workflow=True, upload_png=True)
+    args = main(args)
     
     # upload output folder
     tar_file = compress_folder(folder=args.output_dir, result_id=premade)
     shutil.move(tar_file, os.path.join(tempfile.gettempdir(), "public-outputs", tar_file))
+
+    # generate image
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1))})")
         
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, None)
@@ -122,10 +124,13 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
     ]
     
     # create the workflow and run - it should fall back to phase-based masking with a warning
-    args = workflow(args, init_workflow, run_workflow, run_args, "no-magnitude", delete_workflow=True, upload_png=True)
+    args = main(args)
 
     # delete the modified bids directory
     shutil.rmtree(bids_dir_nomagnitude)
+
+    # generate image
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='No magnitude', colorbar=True, vmin=-0.1, vmax=+0.1))}")
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, None)
@@ -149,7 +154,10 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
     ]
     
     # create the workflow and run
-    args = workflow(args, init_workflow, run_workflow, run_args, "inhomogeneity-correction", delete_workflow=True, upload_png=True)
+    args = main(args)
+
+    # generate image
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='Inhomogeneity correction', colorbar=True, vmin=-0.1, vmax=+0.1))}")
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, None)
@@ -173,7 +181,10 @@ def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_work
     ]
     
     # create the workflow and run
-    args = workflow(args, init_workflow, run_workflow, run_args, "percentile-threshold", delete_workflow=True, upload_png=True)
+    args = main(args)
+
+    # generate image
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='Hardcoded percentile threshold (0.25)', colorbar=True, vmin=-0.1, vmax=+0.1))}")
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, None)
@@ -197,7 +208,10 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
     ]
     
     # create the workflow and run
-    args = workflow(args, init_workflow, run_workflow, run_args, "absolute-threshold", delete_workflow=True, upload_png=True)
+    args = main(args)
+
+    # generate image
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='Hardcoded absolute threshold (15)', colorbar=True, vmin=-0.1, vmax=+0.1))}")
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, None)
@@ -216,9 +230,7 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
         "--debug"
     ]
     
-    assert(args.use_existing_masks == True)
-    
-    args = workflow(args, init_workflow, run_workflow, run_args, "use-existing-masks", delete_workflow=True)
+    args = main(args)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, None)
@@ -238,11 +250,14 @@ def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_
         "--debug"
     ]
     
-    assert(args.do_swi == True)
-    assert(args.do_t2starmap == True)
-    assert(args.do_r2starmap == True)
+    args = main(args)
+
+    # generate image
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi', '*'))[0], title='SWI'))}")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi_mip', '*'))[0], title='SWI MIP'))}")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 't2starmap', '*'))[0], title='T2* map'))}")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'r2starmap', '*'))[0], title='R2* map'))}")
     
-    args = workflow(args, init_workflow, run_workflow, run_args, "supplementary-images", upload_png=False)
 
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, None)
@@ -252,8 +267,6 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
     logger.log(LogLevel.INFO.value, f"=== TESTING REAL DATA ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
-    if not bids_dir_real:
-        pass
     args = [
         bids_dir_real,
         os.path.join(tempfile.gettempdir(), "qsm-secret"),
@@ -262,7 +275,7 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
         "--debug"
     ]
     
-    args = workflow(args, init_workflow, run_workflow, run_args, "realdata", delete_workflow=True)
+    args = main(args)
     local_path = compress_folder(folder=args.output_dir, result_id='real')
 
     try:
@@ -294,5 +307,9 @@ def test_singleecho(bids_dir_public, init_workflow, run_workflow, run_args):
     ]
     
     # create the workflow and run
-    args = workflow(args, init_workflow, run_workflow, run_args, "single-echo-with-phase-combination", delete_workflow=True, upload_png=True)
+    args = main(args)
+
+    # generate image
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='Single echo', colorbar=True, vmin=-0.1, vmax=+0.1))}")
+
 
