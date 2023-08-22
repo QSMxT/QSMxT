@@ -70,7 +70,7 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
     if not run_workflows: args += ['--dry']
     
     # create the workflow and run - it should fall back to phase-based masking with a warning
-    args = main(args, init_workflow, run_workflow, run_args, "segmentation", delete_workflow=True, upload_png=False)
+    args = main(args)
 
     # generate image
     add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1))})")
