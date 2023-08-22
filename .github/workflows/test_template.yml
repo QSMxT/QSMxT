@@ -24,9 +24,6 @@ jobs:
       with:
         python-version: 3.8
     - name: Setup QSMxT
-      run: |
-        /bin/bash qsmxt/tests/setup_qsmxt.sh
-    - name: Run template pipeline
       env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
@@ -34,6 +31,9 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
+      run: |
+        /bin/bash qsmxt/tests/setup_qsmxt.sh
+    - name: Run template pipeline
       run: |
         /bin/bash qsmxt/tests/test_template.sh "test_template"
     - uses: actions/upload-artifact@v3
