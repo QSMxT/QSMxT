@@ -8,9 +8,8 @@ from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, Trai
 # get labels dictionary by parsing a labels CSV file
 def load_labels(label_filepath):
     # read label file
-    label_file = open(label_filepath, encoding='utf-8')
-    lines = label_file.readlines()
-    label_file.close()
+    with open(label_filepath, encoding='utf-8') as label_file:
+        lines = label_file.readlines()
 
     # get all labels numbers and names
     label_nums = []

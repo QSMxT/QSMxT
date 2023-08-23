@@ -76,7 +76,10 @@ def resample_files(mag_file, pha_file, mask_file=None, obliquity_threshold=None)
     if mask_rot_nii:
         mask_resampled_fname = extend_fname(mask_file, "_resampled", out_dir=os.getcwd())
         #print(f"Saving mask={mask_resampled_fname}")
-        nib.save(mask_rot_nii, mask_resampled_fname)
+        if os.path.exists(mask_resampled_fname):
+            mask_resampled_fname = None
+        else:
+            nib.save(mask_rot_nii, mask_resampled_fname)
 
     return mag_resampled_fname, pha_resampled_fname, mask_resampled_fname
 
@@ -118,7 +121,7 @@ class AxialSamplingInterface(SimpleInterface):
         )
         self._results['magnitude'] = magnitude
         self._results['phase'] = phase
-        self._results['mask'] = mask
+        if mask: self._results['mask'] = mask
         
         return runtime
 

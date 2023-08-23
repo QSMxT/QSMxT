@@ -5,9 +5,8 @@ import os
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, traits, File
 
 def load_json(path):
-    f = open(path, encoding='utf-8')
-    j = json.load(f)
-    f.close()
+    with open(path, encoding='utf-8') as f:
+        j = json.load(f)
     return j
 
 

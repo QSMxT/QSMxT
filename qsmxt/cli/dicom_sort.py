@@ -199,9 +199,8 @@ def main():
     diff = get_diff()
     if diff:
         logger.log(LogLevel.WARNING.value, f"Working directory not clean! Writing diff to {os.path.join(args.output_dir, 'diff.txt')}...")
-        diff_file = open(os.path.join(args.output_dir, "diff.txt"), "w")
-        diff_file.write(diff)
-        diff_file.close()
+        with open(os.path.join(args.output_dir, "diff.txt"), "w") as diff_file:
+            diff_file.write(diff)
 
     with open(os.path.join(args.output_dir, "references.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter

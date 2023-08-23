@@ -35,9 +35,8 @@ def sys_cmd(cmd):
     return return_code
 
 def load_json(path):
-    f = open(path, encoding='utf-8')
-    j = json.load(f)
-    f.close()
+    with open(path, encoding='utf-8') as f:
+        j = json.load(f)
     return j
 
 def rename(old, new, always_show=False):
@@ -416,9 +415,8 @@ def main():
     diff = get_diff()
     if diff:
         logger.log(LogLevel.WARNING.value, f"Working directory not clean! Writing diff to {os.path.join(args.output_dir, 'diff.txt')}...")
-        diff_file = open(os.path.join(args.output_dir, "diff.txt"), "w")
-        diff_file.write(diff)
-        diff_file.close()
+        with open(os.path.join(args.output_dir, "diff.txt"), "w") as diff_file:
+            diff_file.write(diff)
 
     # write "references.txt" with the command used to invoke the script and any necessary citations
     with open(os.path.join(args.output_dir, "references.txt"), 'w', encoding='utf-8') as f:

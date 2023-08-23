@@ -158,15 +158,15 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     # read echotime and field strengths from json files
     def read_json_me(params_file):
         import json
-        json_file = open(params_file, 'rt')
-        data = json.load(json_file)
+        with open(params_file, 'rt') as json_file:
+            data = json.load(json_file)
         te = data['EchoTime']
         json_file.close()
         return te
     def read_json_se(params_files):
         import json
-        json_file = open(params_files[0] if isinstance(params_files, list) else params_files, 'rt')
-        data = json.load(json_file)
+        with open(params_files[0] if isinstance(params_files, list) else params_files, 'rt') as json_file:
+            data = json.load(json_file)
         B0 = data['MagneticFieldStrength']
         json_file.close()
         return B0

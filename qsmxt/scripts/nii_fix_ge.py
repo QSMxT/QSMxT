@@ -10,9 +10,8 @@ import json
 from qsmxt.scripts.qsmxt_functions import extend_fname
 
 def load_json(path):
-    f = open(path, encoding='utf-8')
-    j = json.load(f)
-    f.close()
+    with open(path, encoding='utf-8') as f:
+        j = json.load(f)
     return j
 
 def fix_ge_polar(mag_path, phase_path, delete_originals=True):
@@ -102,15 +101,13 @@ def fix_ge_complex(real_nii_path, imag_nii_path, delete_originals=False):
     if os.path.exists(real_json_path):
         mag_json_data = load_json(real_json_path)
         mag_json_data["ImageType"] = ["MAGNITUDE" if x in ["REAL", "IMAGINARY"] else x for x in mag_json_data["ImageType"]]
-        mag_json = open(mag_json_path, 'w')
-        json.dump(mag_json_data, mag_json)
-        mag_json.close()
+        with open(mag_json_path, 'w') as mag_json:
+            json.dump(mag_json_data, mag_json)
 
         phase_json_data = load_json(real_json_path)
         phase_json_data["ImageType"] = ["PHASE" if x in ["REAL", "IMAGINARY"] else x for x in phase_json_data["ImageType"]]
-        phase_json = open(phase_json_path, 'w')
-        json.dump(phase_json_data, phase_json)
-        phase_json.close()
+        with open(phase_json_path, 'w') as phase_json:
+            json.dump(phase_json_data, phase_json)
 
         # delete original json headers
         if delete_originals:

@@ -55,10 +55,12 @@ def get_qsmxt_version():
     return f"{pkg_resources.get_distribution('qsmxt').version}" + (" (editable)" if is_editable_package('qsmxt') else "")
 
 def get_qsm_premades(pipeline_file=None):
-    premades = json.load(open(f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')}", "r"))
+    with open(f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')}", "r") as fh:
+        premades = json.load(fh)
 
-    if pipeline_file:    
-        user_premades = json.load(open(pipeline_file, "r"))
+    if pipeline_file:
+        with open(pipeline_file, "r") as fh:
+            user_premades = json.load(fh)
         premades.update(user_premades)
 
     return premades

@@ -23,9 +23,8 @@ def copy(old, new, always_show=False):
 
 
 def load_json(path):
-    f = open(path, encoding='utf-8')
-    j = json.load(f)
-    f.close()
+    with open(path, encoding='utf-8') as f:
+        j = json.load(f)
     return j
 
 
@@ -204,14 +203,13 @@ def update_details_with_jsons(all_details, args):
 
 
 def write_details_to_csv(all_details, csv_file):
-    f = open(csv_file, 'w', encoding='utf-8')
-    f.write('filename,subject id,session id,run number,echo number,echo_time (s),multi-echo (yes or no),field_strength (T),series_type (t2starw or t1w),part_type (mag or phase)\n')
-    all_details.sort(key=lambda d: d['filename'])
-    for d in all_details:
-        line = f"{d['filename']},{d['subject_id']},{d['session_id']},{d['run_num']},{d['echo_num']},{d['echo_time']},{d['multi-echo']},{d['field_strength']},{d['series_type']},{d['part_type']}\n"
-        line = line.replace(",None", ",").replace("None,", ",")
-        f.write(line)
-    f.close()
+    with open(csv_file, 'w', encoding='utf-8') as f:
+        f.write('filename,subject id,session id,run number,echo number,echo_time (s),multi-echo (yes or no),field_strength (T),series_type (t2starw or t1w),part_type (mag or phase)\n')
+        all_details.sort(key=lambda d: d['filename'])
+        for d in all_details:
+            line = f"{d['filename']},{d['subject_id']},{d['session_id']},{d['run_num']},{d['echo_num']},{d['echo_time']},{d['multi-echo']},{d['field_strength']},{d['series_type']},{d['part_type']}\n"
+            line = line.replace(",None", ",").replace("None,", ",")
+            f.write(line)
 
 
 def nifti_convert(input_dir, output_dir, args):
@@ -430,9 +428,8 @@ def main():
     diff = get_diff()
     if diff:
         logger.log(LogLevel.WARNING.value, f"Working directory not clean! Writing diff to {os.path.join(args.output_dir, 'diff.txt')}...")
-        diff_file = open(os.path.join(args.output_dir, "diff.txt"), "w")
-        diff_file.write(diff)
-        diff_file.close()
+        with open(os.path.join(args.output_dir, "diff.txt"), "w") as diff_file:
+            diff_file.write(diff)
 
     with open(os.path.join(args.output_dir, "references.txt"), 'w', encoding='utf-8') as f:
         # output QSMxT version, run command, and python interpreter
