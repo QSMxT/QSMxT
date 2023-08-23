@@ -1354,8 +1354,10 @@ def script_exit(error_code=0, logger=None):
     if logger:
         show_warning_summary(logger)
         logger.log(LogLevel.INFO.value, 'Finished')
-    if error_code == 0 and 'pytest' in sys.modules:
-        return
+    if 'pytest' in sys.modules:
+        if error_code == 0:
+            return
+        raise RuntimeError(f"Error code {error_code}")
     exit(error_code)
 
 def main(argv=None):
