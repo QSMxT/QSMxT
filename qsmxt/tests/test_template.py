@@ -72,5 +72,5 @@ def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
     # generate image - index out of range
     files = glob.glob(os.path.join(args.output_dir, 'template', 'qsm_template', '*.*'))
     print(f"Found {files}")
-    add_to_github_summary(f"![result]({upload_png(display_nii(files[0], title='QSM template', colorbar=True, vmin=-0.1, vmax=+0.1))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(files[0], title='QSM template', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm_template.png'))})")
 
