@@ -76,16 +76,19 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     if run_args.do_qsm and run_args.use_existing_masks:
         if not mask_files:
             logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking_algorithm} masking.")
-        if len(mask_files) > 1 and len(mask_files) != len(phase_files):
-            logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but unequal number of mask and phase files present. Reverting to {run_args.masking_algorithm} masking.")
-            mask_files = []
-        if len(mask_files) > 1 and run_args.combine_phase:
-            logger.log(LogLevel.WARNING.value, f"Run {run_id}: --combine_phase specified but multiple masks found with --use_existing_masks. The first mask will be used only.")
-            mask_files = [mask_files[0] for x in mask_files]
-        if mask_files:
-            run_args.inhomogeneity_correction = False
-            run_args.two_pass = False
-            run_args.add_bet = False
+            run_args.use_existing_masks = False
+        else:
+            if len(mask_files) > 1:
+                if run_args.combine_phase:
+                    logger.log(LogLevel.WARNING.value, f"Run {run_id}: --combine_phase specified but multiple masks found with --use_existing_masks. Using the first mask only.")
+                    mask_files = [mask_files[0] for x in phase_files]
+                elif len(mask_files) != len(phase_files):
+                    logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but unequal number of mask and phase files present. Using the first mask only.")
+                    mask_files = [mask_files[0]]
+            if mask_files:
+                run_args.inhomogeneity_correction = False
+                run_args.two_pass = False
+                run_args.add_bet = False
     if not magnitude_files:
         if run_args.do_r2starmap:
             logger.log(LogLevel.WARNING.value, f"Cannot compute R2* for {run_id} - no magnitude files found.")
@@ -326,23 +329,39 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
         import os
         import nibabel as nib
         from qsmxt.scripts.qsmxt_functions import extend_fname
-        out_phase = extend_fname(phase, "_canonical", out_dir=os.getcwd())
-        out_mag = extend_fname(magnitude, "_canonical", out_dir=os.getcwd()) if magnitude else None
-        out_mask = extend_fname(mask, "_canonical", out_dir=os.getcwd()) if mask else None
-        if nib.aff2axcodes(nib.load(phase).affine) == ('R', 'A', 'S'): return phase, magnitude, mask
-        nib.save(nib.as_closest_canonical(nib.load(phase)), out_phase)
-        if magnitude: nib.save(nib.as_closest_canonical(nib.load(magnitude)), out_mag)
-        if mask: nib.save(nib.as_closest_canonical(nib.load(mask)), out_mask)
+
+        def as_closest_canonical_i(in_file):
+            if nib.aff2axcodes(nib.load(in_file).affine) == ('R', 'A', 'S'):
+                return in_file
+            else:
+                out_file = extend_fname(in_file, "_canonical", out_dir=os.getcwd())
+                nib.save(nib.as_closest_canonical(nib.load(in_file)), out_file)
+                return out_file
+        
+        out_phase = as_closest_canonical_i(phase) if not isinstance(phase, list) else [as_closest_canonical_i(phase_i) for phase_i in phase]
+        out_mag = None
+        out_mask = None
+        if magnitude:
+            if isinstance(magnitude, list):
+                out_mag = [as_closest_canonical_i(magnitude_i) for magnitude_i in magnitude]
+            else:
+                out_mag = as_closest_canonical_i(magnitude)
+        if mask:
+            if isinstance(mask, list):
+                out_mask = [as_closest_canonical_i(mask_i) for mask_i in mask]
+            else:
+                out_mask = as_closest_canonical_i(mask)
+        
         return out_phase, out_mag, out_mask
-    mn_inputs_canonical = create_node(
+    mn_inputs_canonical = Node(
         interface=Function(
-            input_names=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
+            input_names=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files and run_args.use_existing_masks else []),
             output_names=['phase', 'magnitude', 'mask'],
             function=as_closest_canonical
         ),
-        iterfield=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
+        #iterfield=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
         name='nibabel_as-canonical',
-        is_map=len(phase_files) > 1
+        #is_map=len(phase_files) > 1
     )
     wf.connect([
         (mn_phase_scaled, mn_inputs_canonical, [('phase_scaled', 'phase')])
@@ -351,7 +370,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
         wf.connect([
             (n_inputs, mn_inputs_canonical, [('magnitude', 'magnitude')]),
         ])
-    if mask_files:
+    if mask_files and run_args.use_existing_masks:
         wf.connect([
             (n_inputs, mn_inputs_canonical, [('mask', 'mask')]),
         ])
@@ -368,7 +387,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             interface=sampling.AxialSamplingInterface(
                 obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
             ),
-            iterfield=['magnitude', 'phase', 'mask'] if mask_files else ['magnitude', 'phase'],
+            iterfield=['magnitude', 'phase', 'mask'] if isinstance(mask_files, list) and len(mask_files) > 1 else ['magnitude', 'phase'],
             mem_gb=min(3, run_args.mem_avail),
             name='nibabel_numpy_nilearn_axial-resampling',
             is_map=len(phase_files) > 1
