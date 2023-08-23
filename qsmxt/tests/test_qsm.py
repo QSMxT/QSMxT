@@ -210,7 +210,6 @@ def test_use_existing_masks(bids_dir_public):
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--use_existing_masks",
         "--premade", "fast",
-        "--combine_phase", "off",
         "--auto_yes",
         "--debug"
     ]
