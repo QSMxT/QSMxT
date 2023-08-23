@@ -133,7 +133,11 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     n_inputs.inputs.phase = phase_files[0] if len(phase_files) == 1 else phase_files
     n_inputs.inputs.magnitude = magnitude_files[0] if len(magnitude_files) == 1 else magnitude_files
     n_inputs.inputs.params_files = params_files[0] if len(params_files) == 1 else params_files
-    n_inputs.inputs.mask = mask_files[0] if len(mask_files) == 1 else mask_files
+    if not run_args.combine_phase and len(n_inputs.inputs.phase) > 1 and len(mask_files) == 1:
+        mask_files = [mask_files[0] for x in n_inputs.inputs.phase]
+        n_inputs.inputs.mask = mask_files
+    else:
+        n_inputs.inputs.mask = mask_files[0] if len(mask_files) == 1 else mask_files
 
     n_outputs = Node(
         IdentityInterface(
@@ -387,7 +391,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             interface=sampling.AxialSamplingInterface(
                 obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
             ),
-            iterfield=['magnitude', 'phase', 'mask'] if isinstance(mask_files, list) and len(mask_files) > 1 else ['magnitude', 'phase'],
+            iterfield=['magnitude', 'phase'] + (['mask'] if isinstance(mask_files, list) and len(mask_files) > 1 else []),
             mem_gb=min(3, run_args.mem_avail),
             name='nibabel_numpy_nilearn_axial-resampling',
             is_map=len(phase_files) > 1
