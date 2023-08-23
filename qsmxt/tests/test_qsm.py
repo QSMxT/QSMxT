@@ -235,7 +235,7 @@ def test_supplementary_images(bids_dir_public):
 
     # generate image
     add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi', '*swi.*'))[0], title='SWI'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi', '*swi-mip.*'))[0], title='SWI MIP'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi', '*swi_mip.*'))[0], title='SWI MIP'))})")
     add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 't2starmap', '*.*'))[0], title='T2* map'))})")
     add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'r2starmap', '*.*'))[0], title='R2* map'))})")
     

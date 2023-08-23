@@ -1368,10 +1368,11 @@ def main(argv=None):
     logger = make_logger(name='pre')
     logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
 
-    # parse explicit arguments
+    # display version and exit if needed
     if any(x in argv for x in ['-v', '--version']):
         script_exit(0)
     
+    # parse explicit arguments
     logger.log(LogLevel.INFO.value, f"Parsing arguments...")
     args, run_command, explicit_args = parse_args(argv, return_run_command=True)
 
@@ -1384,7 +1385,7 @@ def main(argv=None):
     os.makedirs(args.output_dir, exist_ok=True)
     
     # overwrite logger with one that logs to file
-    logpath = os.path.join(args.output_dir, f"qsmxt_log.log")
+    logpath = os.path.join(args.output_dir, f"qsmxt.log")
     logger.log(LogLevel.INFO.value, f"Starting log file: {logpath}")
     logger = make_logger(
         name='main',

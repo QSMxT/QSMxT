@@ -133,8 +133,8 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     n_inputs.inputs.phase = phase_files[0] if len(phase_files) == 1 else phase_files
     n_inputs.inputs.magnitude = magnitude_files[0] if len(magnitude_files) == 1 else magnitude_files
     n_inputs.inputs.params_files = params_files[0] if len(params_files) == 1 else params_files
-    if not run_args.combine_phase and len(n_inputs.inputs.phase) > 1 and len(mask_files) == 1:
-        mask_files = [mask_files[0] for x in n_inputs.inputs.phase]
+    if not run_args.combine_phase and len(phase_files) > 1 and len(mask_files) == 1:
+        mask_files = [mask_files[0] for x in phase_files]
         n_inputs.inputs.mask = mask_files
     else:
         n_inputs.inputs.mask = mask_files[0] if len(mask_files) == 1 else mask_files
@@ -391,7 +391,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             interface=sampling.AxialSamplingInterface(
                 obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
             ),
-            iterfield=['magnitude', 'phase'] + (['mask'] if isinstance(mask_files, list) and len(mask_files) > 1 else []),
+            iterfield=['magnitude', 'phase'],
             mem_gb=min(3, run_args.mem_avail),
             name='nibabel_numpy_nilearn_axial-resampling',
             is_map=len(phase_files) > 1
@@ -413,9 +413,28 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             (mn_resample_inputs, n_inputs_resampled, [('phase', 'phase')])
         ])
         if mask_files:
+            mn_resample_mask = create_node(
+                interface=sampling.AxialSamplingInterface(
+                    obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
+                ),
+                iterfield=['mask'],
+                mem_gb=min(3, run_args.mem_avail),
+                name='nibabel_numpy_nilearn_axial-resampling-mask',
+                is_map=len(n_inputs.inputs.mask) > 1 and isinstance(n_inputs.inputs.mask, list)
+            )
+            mn_resample_mask.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
+                slurm_account=run_args.slurm[0],
+                pbs_account=run_args.pbs,
+                slurm_partition=run_args.slurm[1],
+                name="axial_resampling",
+                time="00:10:00",
+                mem_gb=10,
+                num_cpus=min(1, run_args.n_procs)
+            )
             wf.connect([
-                (mn_inputs_canonical, mn_resample_inputs, [('mask', 'mask')]),
-                (mn_resample_inputs, n_inputs_resampled, [('mask', 'mask')])
+                (mn_inputs_canonical, mn_resample_mask, [('mask', 'mask')]),
+                (mn_resample_mask, n_inputs_resampled, [('mask', 'mask')])
             ])
     else:
         wf.connect([
@@ -752,9 +771,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             interface=IdentityInterface(
                 fields=['tissue_frequency', 'mask']
             ),
-            iterfield=['tissue_frequency', 'mask'],
-            name='bf-removal',
-            is_map=use_maps
+            name='bf-removal'
         )
         if run_args.bf_algorithm == 'vsharp':
             vsharp_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
