@@ -67,11 +67,10 @@ def bids_dir_real():
 
     return os.path.join(tmp_dir, 'bids-secret')
 
-@pytest.mark.parametrize("premade, init_workflow, run_workflow, run_args", [
-    (p, True, run_workflows, None)
-    for p in get_qsm_premades().keys() if p != 'default'
+@pytest.mark.parametrize("premade", [
+    p for p in get_qsm_premades().keys() if p != 'default'
 ])
-def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args):
+def test_premade(bids_dir_public, premade):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING PREMADE {premade} ===")
 
@@ -94,12 +93,9 @@ def test_premade(bids_dir_public, premade, init_workflow, run_workflow, run_args
     shutil.move(tar_file, os.path.join(tempfile.gettempdir(), "public-outputs", tar_file))
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1))})")
         
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, None)
-])
-def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_nomagnitude(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING NO MAGNITUDE ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
@@ -130,12 +126,9 @@ def test_nomagnitude(bids_dir_public, init_workflow, run_workflow, run_args):
     shutil.rmtree(bids_dir_nomagnitude)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='No magnitude', colorbar=True, vmin=-0.1, vmax=+0.1))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='No magnitude', colorbar=True, vmin=-0.1, vmax=+0.1))})")
 
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, None)
-])
-def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_inhomogeneity_correction(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING INHOMOGENEITY CORRECTION ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
@@ -157,12 +150,9 @@ def test_inhomogeneity_correction(bids_dir_public, init_workflow, run_workflow, 
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='Inhomogeneity correction', colorbar=True, vmin=-0.1, vmax=+0.1))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Inhomogeneity correction', colorbar=True, vmin=-0.1, vmax=+0.1))})")
 
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, None)
-])
-def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_hardcoded_percentile_threshold(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
@@ -184,12 +174,9 @@ def test_hardcoded_percentile_threshold(bids_dir_public, init_workflow, run_work
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='Hardcoded percentile threshold (0.25)', colorbar=True, vmin=-0.1, vmax=+0.1))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Hardcoded percentile threshold (0.25)', colorbar=True, vmin=-0.1, vmax=+0.1))})")
 
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, None)
-])
-def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_hardcoded_absolute_threshold(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
@@ -211,12 +198,9 @@ def test_hardcoded_absolute_threshold(bids_dir_public, init_workflow, run_workfl
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='Hardcoded absolute threshold (15)', colorbar=True, vmin=-0.1, vmax=+0.1))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Hardcoded absolute threshold (15)', colorbar=True, vmin=-0.1, vmax=+0.1))})")
 
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, None)
-])
-def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_use_existing_masks(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING EXISTING MASKS ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
@@ -226,16 +210,14 @@ def test_use_existing_masks(bids_dir_public, init_workflow, run_workflow, run_ar
         os.path.join(tempfile.gettempdir(), "qsm"),
         "--use_existing_masks",
         "--premade", "fast",
+        "--combine_phase", "off",
         "--auto_yes",
         "--debug"
     ]
     
     args = main(args)
 
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, None)
-])
-def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_supplementary_images(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING SUPPLEMENTARY IMAGES ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
@@ -253,16 +235,13 @@ def test_supplementary_images(bids_dir_public, init_workflow, run_workflow, run_
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi', '*'))[0], title='SWI'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi_mip', '*'))[0], title='SWI MIP'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 't2starmap', '*'))[0], title='T2* map'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'r2starmap', '*'))[0], title='R2* map'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', '*swi.*', '*.*'))[0], title='SWI'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', '*mip*.*'))[0], title='SWI MIP'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 't2starmap', '*.*'))[0], title='T2* map'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'r2starmap', '*.*'))[0], title='R2* map'))})")
     
 
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, None)
-])
-def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
+def test_realdata(bids_dir_real):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING REAL DATA ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
@@ -287,10 +266,7 @@ def test_realdata(bids_dir_real, init_workflow, run_workflow, run_args):
     except:
         add_to_github_summary("Result upload to RDM failed!")
 
-@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
-    (True, run_workflows, None)
-])
-def test_singleecho(bids_dir_public, init_workflow, run_workflow, run_args):
+def test_singleecho(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING SINGLE ECHO WITH PHASE COMBINATION / ROMEO ===")
     os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
@@ -310,6 +286,6 @@ def test_singleecho(bids_dir_public, init_workflow, run_workflow, run_args):
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*'))[0], title='Single echo', colorbar=True, vmin=-0.1, vmax=+0.1))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Single echo', colorbar=True, vmin=-0.1, vmax=+0.1))})")
 
 
