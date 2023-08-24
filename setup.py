@@ -2,6 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='qsmxt',
+    long_description="QSMxT is an end-to-end software toolbox for Quantitative Susceptibility Mapping",
     version='4.0.1',
     packages=find_packages(),
     package_dir={'qsmxt': 'qsmxt'},
