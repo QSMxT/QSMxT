@@ -806,7 +806,9 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                     explicit_args['do_qsm'] = True
             if 'qsm' not in user_in.split() and len(user_in.split()) > 0:
                 args.do_qsm = False
-                del explicit_args['do_qsm']
+                if 'do_qsm' in explicit_args: del explicit_args['do_qsm']
+                if 'premade' in explicit_args: del explicit_args['premade']
+                args.premade = 'default'
             if 'swi' in user_in.split():
                 args.do_swi = True
                 explicit_args['do_swi'] = True
@@ -880,12 +882,18 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                 options=premades.keys(),
                 default='default'
             )
+            if args.premade == 'default':
+                if 'premade' in explicit_args: del explicit_args['premade']
+            else:
+                explicit_args['premade'] = args.premade
             for key, value in premades[args.premade].items():
                 if key not in explicit_args and key != 'premade':
                     args[key] = value
                 implicit_args[key] = value
     if args.do_qsm and 'premade' not in explicit_args.keys() and not using_json_settings:
         select_premade()
+
+    args = process_args(args)
 
     # pipeline customisation
     while True:
