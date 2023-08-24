@@ -1,0 +1,43 @@
+name: template pipeline test
+
+on:
+  workflow_dispatch:
+  repository_dispatch:
+  push:
+    branches: [ '**' ]
+    paths:
+      - .github/workflows/test_template.yml
+      - README.md
+      - qsmxt/cli/main.py
+      - qsmxt/tests/test_template.sh
+      - qsmxt/tests/test_template.py
+      - qsmxt/tests/utils.py
+      - qsmxt/tests/setup_qsmxt.sh
+      - qsmxt/scripts/logger.py
+    
+jobs:
+  test_template:
+    runs-on: "cirun-oracle--${{ github.run_id }}"
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+      with:
+        python-version: 3.8
+    - name: Setup QSMxT
+      env:
+        WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
+        WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
+        FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
+        OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
+        OSF_USER: ${{ secrets.OSF_USER }}
+        OSF_PASS: ${{ secrets.OSF_PASS }}
+      run: |
+        /bin/bash qsmxt/tests/setup_qsmxt.sh
+    - name: Run template pipeline
+      run: |
+        /bin/bash qsmxt/tests/test_template.sh "test_template"
+    - uses: actions/upload-artifact@v3
+      with:
+        name: public-outputs
+        path: /tmp/public-outputs
+

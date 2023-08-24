@@ -1,0 +1,150 @@
+{
+    "default": {
+        "description" : "Default QSMxT settings (GRE; assumes human brain)",
+        "subject_pattern": "sub*",
+        "session_pattern": "ses*",
+        "magnitude_pattern": "{subject}/{session}/anat/*{run}*mag*nii*",
+        "phase_pattern": "{subject}/{session}/anat/*{run}*phase*nii*",
+        "t1w_pattern": "{subject}/{session}/anat/*{run}*T1w*nii*",
+        "subjects": null,
+        "sessions": null,
+        "num_echoes": null,
+        "do_qsm": false,
+        "do_swi": false,
+        "do_t2starmap": false,
+        "do_r2starmap": false,
+        "do_segmentation": false,
+        "do_template": false,
+        "do_analysis": false,
+        "obliquity_threshold": 10,
+        "combine_phase": true,
+        "qsm_algorithm": "rts",
+        "tgv_iterations": 1000,
+        "tgv_alphas": [
+            0.0015,
+            0.0005
+        ],
+        "tgv_erosions": 3,
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "pdf",
+        "masking_algorithm": "threshold",
+        "masking_input": "phase",
+        "threshold_algorithm": "otsu",
+        "filling_algorithm": "both",
+        "threshold_value": null,
+        "threshold_algorithm_factor": [
+            1.5,
+            1.3
+        ],
+        "mask_erosions": [
+            2,
+            0
+        ],
+        "inhomogeneity_correction": false,
+        "add_bet": false,
+        "bet_fractional_intensity": 0.5,
+        "use_existing_masks": false,
+        "mask_pattern": "{subject}/{session}/extra_data/*{run}*mask*nii*",
+        "two_pass": true,
+        "pbs": null,
+        "slurm": [null, null],
+        "n_procs": null,
+        "debug": false,
+        "dry": false,
+        "auto_yes" : false
+    },
+    "gre": {
+        "description": "Applies suggested settings for 3D-GRE images",
+        "combine_phase": true,
+        "qsm_algorithm": "rts",
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "pdf",
+        "masking_algorithm": "threshold",
+        "two_pass": true,
+        "masking_input": "phase",
+        "threshold_algorithm": "otsu",
+        "threshold_algorithm_factor": [
+            1.5,
+            1.3
+        ],
+        "filling_algorithm": "both",
+        "inhomogeneity_correction": false,
+        "mask_erosions": [
+            2,
+            0
+        ]
+    },
+    "epi": {
+        "description": "Applies suggested settings for 3D-EPI images (assumes human brain)",
+        "combine_phase": true,
+        "qsm_algorithm": "rts",
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "pdf",
+        "masking_algorithm": "threshold",
+        "two_pass": true,
+        "masking_input": "phase",
+        "threshold_algorithm": "otsu",
+        "threshold_algorithm_factor": [
+            1.7,
+            1.3
+        ],
+        "filling_algorithm": "bet",
+        "inhomogeneity_correction": true,
+        "mask_erosions": [
+            3,
+            3
+        ]
+    },
+    "bet": {
+        "description": "Applies a traditional BET-masking approach (artefact reduction unavailable; assumes human brain)",
+        "combine_phase": true,
+        "two_pass": false,
+        "qsm_algorithm": "rts",
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "pdf",
+        "masking_input": "magnitude",
+        "masking_algorithm": "bet",
+        "mask_erosions": [
+            3
+        ]
+    },
+    "fast": {
+        "description": "Applies a set of fast algorithms",
+        "combine_phase": true,
+        "two_pass": false,
+        "qsm_algorithm": "rts",
+        "unwrapping_algorithm": "romeo",
+        "bf_algorithm": "vsharp",
+        "masking_input": "magnitude",
+        "masking_algorithm": "bet",
+        "mask_erosions": [
+            3
+        ]
+    },
+    "body": {
+        "description": "Applies suggested settings for non-brain applications",
+        "combine_phase": false,
+        "qsm_algorithm": "tgv",
+        "masking_algorithm": "threshold",
+        "two_pass": true,
+        "masking_input": "phase",
+        "threshold_value": [
+            0.25
+        ],
+        "filling_algorithm": "both",
+        "mask_erosions": [
+            3,
+            0
+        ]
+    },
+    "nextqsm": {
+        "description": "Applies suggested settings for running the NeXtQSM algorithm (assumes human brain)",
+        "combine_phase": true,
+        "two_pass": false,
+        "qsm_algorithm": "nextqsm",
+        "masking_algorithm": "bet",
+        "mask_erosions": [
+            3
+        ]
+    }
+}

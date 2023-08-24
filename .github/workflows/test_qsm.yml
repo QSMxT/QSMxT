@@ -1,0 +1,109 @@
+name: qsm pipeline test
+on:
+  workflow_dispatch:
+  repository_dispatch:
+  push:
+    branches: [ '**' ]
+    paths:
+      - .github/workflows/test_qsm.yml
+      - README.md
+      - qsmxt/cli/main.py
+      - qsmxt/qsm_pipelines.json
+      - qsmxt/workflows/qsm.py
+      - qsmxt/workflows/masking.py
+      - qsmxt/tests/setup_qsmxt.sh
+      - qsmxt/tests/test_qsm.sh
+      - qsmxt/tests/test_qsm.py
+      - qsmxt/tests/utils.py
+      - qsmxt/interfaces/nipype_interface_addtojson.py
+      - qsmxt/interfaces/nipype_interface_axialsampling.py
+      - qsmxt/interfaces/nipype_interface_bet2.py
+      - qsmxt/interfaces/nipype_interface_erode.py
+      - qsmxt/interfaces/nipype_interface_json.py
+      - qsmxt/interfaces/nipype_interface_laplacian_unwrapping.py
+      - qsmxt/interfaces/nipype_interface_makehomogeneous.py
+      - qsmxt/interfaces/nipype_interface_masking.py
+      - qsmxt/interfaces/nipype_interface_nextqsm.py
+      - qsmxt/interfaces/nipype_interface_nonzeroaverage.py
+      - qsmxt/interfaces/nipype_interface_phaseweights.py
+      - qsmxt/interfaces/nipype_interface_processphase.py
+      - qsmxt/interfaces/nipype_interface_qsmjl.py
+      - qsmxt/interfaces/nipype_interface_romeo.py
+      - qsmxt/interfaces/nipype_interface_tgv_qsm.py
+      - qsmxt/interfaces/nipype_interface_twopass.py
+      - qsmxt/scripts/logger.py
+      - qsmxt/scripts/makehomogeneous.jl
+      - qsmxt/scripts/mrt_laplacian_unwrapping.jl
+      - qsmxt/scripts/qsmjl_full.jl
+      - qsmxt/scripts/qsmjl_laplacian_unwrapping.jl
+      - qsmxt/scripts/qsmjl_pdf.jl
+      - qsmxt/scripts/qsmjl_rts.jl
+      - qsmxt/scripts/qsmjl_tv.jl
+      - qsmxt/scripts/qsmjl.vsharp.jl
+      - qsmxt/scripts/romeo_unwrapping.jl
+      - qsmxt/scripts/romeo_voxelquality.jl
+      - qsmxt/scripts/qsmxt_functions.py
+      - qsmxt/scripts/qsmxt_version.py
+jobs:
+  test_qsm_premades:
+    runs-on: "cirun-oracle--${{ github.run_id }}"
+    strategy:
+      matrix:
+        args: ['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm']
+      fail-fast: false
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+      with:
+        python-version: 3.8
+    - name: Setup QSMxT
+      env:
+        WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
+        WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
+        FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
+        OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
+        OSF_USER: ${{ secrets.OSF_USER }}
+        OSF_PASS: ${{ secrets.OSF_PASS }}
+      run: |
+        /bin/bash qsmxt/tests/setup_qsmxt.sh
+    - name: Test QSM premades
+      run: |
+        /bin/bash qsmxt/tests/test_qsm.sh "test_premade and ${{ matrix.args }}"
+    - uses: actions/upload-artifact@v3
+      with:
+        name: public-outputs
+        path: /tmp/public-outputs
+  test_qsm_edgecases:
+    runs-on: "cirun-oracle--${{ github.run_id }}"
+    strategy:
+      matrix:
+        args: [
+          'test_hardcoded_absolute_threshold',
+          'test_hardcoded_percentile_threshold',
+          'test_inhomogeneity_correction',
+          'test_nomagnitude',
+          'test_use_existing_masks',
+          'test_supplementary_images',
+          'test_realdata',
+          'test_singleecho'
+        ]
+      fail-fast: false
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+      with:
+        python-version: 3.8
+    - name: Setup QSMxT
+      env:
+        WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
+        WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
+        FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
+        OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
+        OSF_USER: ${{ secrets.OSF_USER }}
+        OSF_PASS: ${{ secrets.OSF_PASS }}
+      run: |
+        /bin/bash qsmxt/tests/setup_qsmxt.sh
+    - name: Test QSM pipeline edge cases
+      run: |
+        /bin/bash qsmxt/tests/test_qsm.sh "${{ matrix.args }}"
+

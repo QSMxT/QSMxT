@@ -4,81 +4,21 @@ on:
   workflow_dispatch:
   repository_dispatch:
   push:
-    branches: [ master ]
+    branches: [ '**' ]
     paths:
-      - README.md
-      - run_0_dicomSort.py
-      - run_1_dicomConvert.py
-      - run_2_qsm.py
-      - run_4_template.py
-      - interfaces/nipype_interface_addtojson.py
-      - interfaces/nipype_interface_axialsampling.py
-      - interfaces/nipype_interface_bet2.py
-      - interfaces/nipype_interface_erode.py
-      - interfaces/nipype_interface_json.py
-      - interfaces/nipype_interface_laplacian_unwrapping.py
-      - interfaces/nipype_interface_makehomogeneous.py
-      - interfaces/nipype_interface_masking.py
-      - interfaces/nipype_interface_nextqsm.py
-      - interfaces/nipype_interface_nonzeroaverage.py
-      - interfaces/nipype_interface_phaseweights.py
-      - interfaces/nipype_interface_romeo.py
-      - interfaces/nipype_interface_scalephase.py
-      - interfaces/nipype_interface_tgv_qsm.py
-      - interfaces/nipype_interface_twopass.py
-      - scripts/makehomogeneous.jl
-      - scripts/qsmjl_full.jl
-      - scripts/qsmjl_laplacian_unwrapping.jl
-      - scripts/qsmjl_pdf.jl
-      - scripts/qsmjl_rts.jl
-      - scripts/qsmjl_tv.jl
-      - scripts/qsmjl.vsharp.jl
-      - scripts/romeo_unwrapping.jl
-      - scripts/romeo_voxelquality.jl
-      - scripts/logger.py
-      - scripts/qsmxt_functions.py
       - .github/workflows/test_transparent_singularity.yml
-      - tests/test_transparent_singularity.sh
-      - workflows/masking.py
-      - workflows/qsm.py
-  pull_request:
-    branches: [ master ]
-    paths:
       - README.md
-      - run_0_dicomSort.py
-      - run_1_dicomConvert.py
-      - run_2_qsm.py
-      - run_4_template.py
-      - interfaces/nipype_interface_addtojson.py
-      - interfaces/nipype_interface_axialsampling.py
-      - interfaces/nipype_interface_bet2.py
-      - interfaces/nipype_interface_erode.py
-      - interfaces/nipype_interface_json.py
-      - interfaces/nipype_interface_laplacian_unwrapping.py
-      - interfaces/nipype_interface_makehomogeneous.py
-      - interfaces/nipype_interface_masking.py
-      - interfaces/nipype_interface_nextqsm.py
-      - interfaces/nipype_interface_nonzeroaverage.py
-      - interfaces/nipype_interface_phaseweights.py
-      - interfaces/nipype_interface_romeo.py
-      - interfaces/nipype_interface_scalephase.py
-      - interfaces/nipype_interface_tgv_qsm.py
-      - interfaces/nipype_interface_twopass.py
-      - scripts/makehomogeneous.jl
-      - scripts/qsmjl_full.jl
-      - scripts/qsmjl_laplacian_unwrapping.jl
-      - scripts/qsmjl_pdf.jl
-      - scripts/qsmjl_rts.jl
-      - scripts/qsmjl_tv.jl
-      - scripts/qsmjl.vsharp.jl
-      - scripts/romeo_unwrapping.jl
-      - scripts/romeo_voxelquality.jl
-      - scripts/logger.py
-      - scripts/qsmxt_functions.py
-      - .github/workflows/test_transparent_singularity.yml
-      - tests/test_transparent_singularity.sh
-      - workflows/masking.py
-      - workflows/qsm.py
+      - aseg_labels.csv
+      - qsmxt/qsm_pipelines.json
+      - qsmxt/cli/dicom_sort.py
+      - qsmxt/cli/dicom_convert.py
+      - qsmxt/cli/nifti_convert.py
+      - qsmxt/cli/main.py
+      - qsmxt/tests/test_transparent_singularity.sh
+      - qsmxt/tests/utils.py
+      - qsmxt/interfaces/*
+      - qsmxt/scripts/*
+      - qsmxt/workflows/*
     
 jobs:
   test_transparent_singularity_pipeline:
@@ -90,5 +30,5 @@ jobs:
         python-version: 3.8
     - name: test transparent singularity
       run: |
-        /bin/bash tests/test_transparent_singularity.sh
+        /bin/bash qsmxt/tests/test_transparent_singularity.sh
 
