@@ -93,7 +93,7 @@ def test_premade(bids_dir_public, premade):
     shutil.move(tar_file, os.path.join(tempfile.gettempdir(), "public-outputs", tar_file))
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
         
 def test_nomagnitude(bids_dir_public):
     logger = make_logger()
@@ -126,7 +126,7 @@ def test_nomagnitude(bids_dir_public):
     shutil.rmtree(bids_dir_nomagnitude)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='No magnitude', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='No magnitude', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 def test_inhomogeneity_correction(bids_dir_public):
     logger = make_logger()
@@ -150,7 +150,7 @@ def test_inhomogeneity_correction(bids_dir_public):
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Inhomogeneity correction', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Inhomogeneity correction', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 def test_hardcoded_percentile_threshold(bids_dir_public):
     logger = make_logger()
@@ -174,7 +174,7 @@ def test_hardcoded_percentile_threshold(bids_dir_public):
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Hardcoded percentile threshold (0.25)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Hardcoded percentile threshold (0.25)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 def test_hardcoded_absolute_threshold(bids_dir_public):
     logger = make_logger()
@@ -198,7 +198,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public):
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Hardcoded absolute threshold (15)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Hardcoded absolute threshold (15)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 def test_use_existing_masks(bids_dir_public):
     logger = make_logger()
@@ -234,10 +234,10 @@ def test_supplementary_images(bids_dir_public):
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi', '*swi.*'))[0], title='SWI', out_png='swi.png'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi', '*swi_mip.*'))[0], title='SWI MIP', out_png='swi_mip.png'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 't2starmap', '*.*'))[0], title='T2* map', out_png='t2starmap.png'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'r2starmap', '*.*'))[0], title='R2* map', out_png='r2starmap.png'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi', '*swi.*'))[0], title='SWI', out_png='swi.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi', '*swi-mip.*'))[0], dim=2, title='SWI MIP', out_png='swi_mip.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 't2s', '*.*'))[0], title='T2* map', out_png='t2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='T2* (ms)'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'r2s', '*.*'))[0], title='R2* map', out_png='r2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='R2* (ms)'))})")
     
 
 def test_realdata(bids_dir_real):
@@ -285,6 +285,6 @@ def test_singleecho(bids_dir_public):
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Single echo', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Single echo', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 

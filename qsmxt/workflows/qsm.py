@@ -257,7 +257,8 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
             (n_inputs, n_swi, [('magnitude', 'magnitude')]),
             (mn_json_params, n_swi, [('TE', 'TEs' if len(phase_files) > 1 else 'TE')]),
-            (n_swi, n_outputs, [('swi', 'swi_mip')])
+            (n_swi, n_outputs, [('swi', 'swi')]),
+            (n_swi, n_outputs, [('swi_mip', 'swi_mip')])
         ])
 
     # segmentation

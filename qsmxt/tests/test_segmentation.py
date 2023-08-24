@@ -2,6 +2,7 @@
 import os
 import tempfile
 import pytest
+import csv
 
 import numpy as np
 import qsm_forward
@@ -47,6 +48,33 @@ def bids_dir_public():
 
     return bids_dir
 
+def csv_to_markdown(csv_file_path):
+    markdown_table = ""
+    
+    # Open the CSV file
+    with open(csv_file_path, 'r') as csvfile:
+        reader = csv.reader(csvfile)
+        
+        # Initialize headers
+        headers = next(reader)
+        markdown_table += "| " + " | ".join(headers) + " |\n"
+        markdown_table += "| " + "--- |" * (len(headers)-1) + "--- |\n"
+        
+        # Iterate through rows
+        for row in reader:
+            # Round the floating-point values to 5 decimals
+            rounded_row = [str(round(float(cell), 5)) if is_float(cell) else cell for cell in row]
+            markdown_table += "| " + " | ".join(rounded_row) + " |\n"
+            
+    return markdown_table
+
+def is_float(value):
+    try:
+        float(value)
+        return True
+    except ValueError:
+        return False
+
 @pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
     (True, run_workflows, None)
 ])
@@ -73,8 +101,9 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
     args = main(args)
 
     # generate image
-    qsm_files = glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))
-    segmentation_files = glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'segmentations', 'qsm', '*.*'))
-    add_to_github_summary(f"![result]({upload_png(display_nii(qsm_files[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png'))})") # index out of range
-    add_to_github_summary(f"![result]({upload_png(display_nii(segmentation_files[0], title='Segmentation', colorbar=True, vmin=0, vmax=+16, out_png='seg.png'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(args.output_dir, 'qsm', '*.*'))[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(args.output_dir, 'segmentations', 'qsm', '*.*'))[0], title='Segmentation', colorbar=True, vmin=0, vmax=+16, out_png='seg.png'))})")
+    
+    csv_file = glob.glob(os.path.join(args.output_dir, 'analysis', '*.*'))[0]
+    add_to_github_summary(csv_to_markdown(csv_file))
 
