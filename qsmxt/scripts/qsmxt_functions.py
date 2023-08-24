@@ -52,7 +52,7 @@ def is_editable_package(package_name):
     return False
 
 def get_qsmxt_version():
-    return f"{pkg_resources.get_distribution('qsmxt').version}" + (" (editable)" if is_editable_package('qsmxt') else "")
+    return f"{pkg_resources.get_distribution('qsmxt').version}" + (" (linked installation)" if is_editable_package('qsmxt') else "")
 
 def get_qsm_premades(pipeline_file=None):
     with open(f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')}", "r") as fh:
