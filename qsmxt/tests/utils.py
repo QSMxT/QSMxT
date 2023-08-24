@@ -37,8 +37,7 @@ def add_to_github_summary(markdown):
 def upload_png(png_path):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"Uploading png {png_path}")
-    #png_url = sys_cmd(f"images-upload-cli --no-clipboard --hosting freeimage {png_path}").strip()
-    png_url = png_path
+    png_url = sys_cmd(f"images-upload-cli --no-clipboard --hosting freeimage {png_path}").strip()
     return png_url
 
 def webdav_connect():
