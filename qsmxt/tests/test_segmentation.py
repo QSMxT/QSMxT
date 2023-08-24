@@ -37,7 +37,7 @@ def bids_dir_public():
             qsm_forward.ReconParams(voxel_size=np.array([1.0, 1.0, 1.0]), session=session, TEs=TEs, TR=TR, flip_angle=flip_angle, weighting_suffix=weighting_suffix, export_phase=export_phase)
             for (session, TEs, TR, flip_angle, weighting_suffix, export_phase) in [
                 ("1", np.array([3.5e-3]), 7.5e-3, 40, "T1w", False),
-                ("1", np.array([0.004, 0.012]), 0.05, 15, "T2starw", True),
+                ("1", np.array([0.012, 0.020]), 0.05, 15, "T2starw", True),
             ]
         ]
 
@@ -101,8 +101,8 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(args.output_dir, 'qsm', '*.*'))[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(args.output_dir, 'segmentations', 'qsm', '*.*'))[0], title='Segmentation', colorbar=True, vmin=0, vmax=+16, out_png='seg.png'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(args.output_dir, 'qsm', '*.*'))[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='grey'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(args.output_dir, 'segmentations', 'qsm', '*.*'))[0], title='Segmentation', colorbar=True, vmin=0, vmax=+16, out_png='seg.png', cmap='tab10'))})")
     
     csv_file = glob.glob(os.path.join(args.output_dir, 'analysis', '*.*'))[0]
     add_to_github_summary(csv_to_markdown(csv_file))
