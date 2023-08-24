@@ -8,7 +8,7 @@ on:
     paths:
       - .github/workflows/test_template.yml
       - README.md
-      - qsmxt/cli/qsmxt.py
+      - qsmxt/cli/main.py
       - qsmxt/tests/test_template.sh
       - qsmxt/tests/test_template.py
       - qsmxt/tests/utils.py

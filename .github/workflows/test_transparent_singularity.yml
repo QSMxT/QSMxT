@@ -13,7 +13,7 @@ on:
       - qsmxt/cli/dicom_sort.py
       - qsmxt/cli/dicom_convert.py
       - qsmxt/cli/nifti_convert.py
-      - qsmxt/cli/qsmxt.py
+      - qsmxt/cli/main.py
       - qsmxt/tests/test_transparent_singularity.sh
       - qsmxt/tests/utils.py
       - qsmxt/interfaces/*

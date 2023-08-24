@@ -7,7 +7,7 @@ on:
     paths:
       - .github/workflows/test_qsm.yml
       - README.md
-      - qsmxt/cli/qsmxt.py
+      - qsmxt/cli/main.py
       - qsmxt/qsm_pipelines.json
       - qsmxt/workflows/qsm.py
       - qsmxt/workflows/masking.py
