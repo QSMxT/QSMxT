@@ -113,7 +113,7 @@ class AnalyseInterface(SimpleInterface):
         self._results['out_csv'] = analyse(
             in_file=self.inputs.in_file,
             in_segmentation=self.inputs.in_segmentation,
-            out_csv=extend_fname(self.inputs.in_file, "_csv"),
+            out_csv=extend_fname(self.inputs.in_file, "_csv", ext='csv'),
             labels_file=self.inputs.in_labels
         )
         return runtime
