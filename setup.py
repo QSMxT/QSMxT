@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='qsmxt',
-    version='4.0.0',
+    version='4.0.0-2',
     packages=find_packages(),
     package_dir={'qsmxt': 'qsmxt'},
     package_data={
