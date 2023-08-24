@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='qsmxt',
-    version='4.0.0-2',
+    version='4.0.1',
     packages=find_packages(),
     package_dir={'qsmxt': 'qsmxt'},
     package_data={
@@ -29,8 +29,7 @@ setup(
         'osfclient',
         'niflow-nipype1-workflows',
         'tensorflow',
-        'packaging',
-        'scikit-sparse==0.4.12',#scikit-sparse @ git+https://github.com/scikit-sparse/scikit-sparse.git@v0.4.9'
+        'packaging'
     ],
     entry_points={
         'console_scripts': [

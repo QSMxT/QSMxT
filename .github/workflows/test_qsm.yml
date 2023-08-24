@@ -5,6 +5,7 @@ on:
   push:
     branches: [ '**' ]
     paths:
+      - setup.py
       - .github/workflows/test_qsm.yml
       - README.md
       - qsmxt/cli/main.py
