@@ -6,8 +6,8 @@ QSMxT is an end-to-end software toolbox for QSM that excels at automatically rec
 
 QSMxT produces:
 
- - Quantative Susceptibility Maps (QSM)
- - Anatomical segmentations in both the GRE/QSM and T1w spaces
+ - Quantitative Susceptibility Maps (QSM)
+ - Anatomical segmentation in both the GRE/QSM and T1w spaces
  - Spreadsheets in CSV format with susceptibility statistics across brain regions of interest
  - A group space/template, including average QSM and GRE images across your cohort
 
@@ -16,14 +16,14 @@ QSMxT requires gradient-echo MRI images converted to the Brain Imaging Data Stru
 ## Installation
 ### Quickstart via Neurodesk
 
-QSMxT can be accessed via [Neurodesk](https://neurodesk.org/), including for free without any installation via [Neurodesk Play](https://play.neurodesk.org/). Once started, QSMxT is available in Neurodesk's module system and via the applications menu.
+QSMxT can be accessed via [Neurodesk](https://neurodesk.org/), including for free, without any installation via [Neurodesk Play](https://play.neurodesk.org/). Once started, QSMxT is available in Neurodesk's module system and via the applications menu.
 
 #### Updating QSMxT in Neurodesk
 
 To use the latest version of QSMxT within an older version of Neurodesk, use:
 
 ```
-bash /neurocommand/local/fetch_and_run.sh qsmxt 4.0.0.post2 20230824
+bash /neurocommand/local/fetch_and_run.sh qsmxt 4.0.1 20230824
 ```
 
 ### Docker container
@@ -32,12 +32,12 @@ If you prefer to use a Docker container, the following commands will install QSM
 
 **Windows:**
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_4.0.0.post2:20230824
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_4.0.1:20230824
 ```
 
 **Linux/Mac:**
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_4.0.0.post2:20230824
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_4.0.1:20230824
 ```
 
 ## QSMxT Usage
@@ -51,7 +51,7 @@ Use `dicom-sort` and `dicom-convert` to convert DICOMs to BIDS:
 dicom-sort YOUR_DICOM_DIR/ dicoms-sorted/
 dicom-convert dicoms-sorted/ bids/
 ```
-Carefully read the output to ensure data were correctly recognized and converted. Crucially, the `dicom-convert` script needs to know which of your acquisitions are T2*-weighted and suitable for QSM, as well as which are T1-weighted and suitable for segmentation. It identifies this based on the DICOM `ProtocolName` field and looks for the patterns `*qsm*` and `*t2starw*` for T2*-weighted series and `t1w` for T1-weighted series. You can specify your own patterns using command-line arguments e.g.:
+Carefully read the output to ensure data were correctly recognized and converted. Crucially, the `dicom-convert` script needs to know which of your acquisitions are T2*-weighted and suitable for QSM and which are T1-weighted and suitable for segmentation. It identifies this based on the DICOM `ProtocolName` field and looks for the patterns `*qsm*` and `*t2starw*` for the T2*-weighted series and `t1w` for the T1-weighted series. You can specify your patterns using command-line arguments, e.g.:
 
 ```bash
 dicom-convert dicoms-sorted/ bids/ --t2starw_protocol_patterns '*gre*' --t1w_protocol_patterns '*mp2rage*'
@@ -61,7 +61,7 @@ To convert NIfTI to BIDS, use `nifti-convert`:
 ```bash
 nifti-convert YOUR_NIFTI_DIR/ bids/
 ```
-Carefully read the output to ensure data were correctly recognized and converted. The script will try to identify any important details from the filenames and from adjacent JSON header files, if available. It retrieves this information using customisable patterns and regular expressions which can be overridden using command-line arguments (see the output using the `--help` flag). If any information is missing, you will be prompted to fill out a CSV spreadsheet with the missing information before running the conversion script again using the same command. You can open the CSV file in a spreadsheet reader such as Microsoft Excel or LibreOffice Calc.
+Carefully read the output to ensure data were correctly recognized and converted. The script will try to identify essential details from the filenames and adjacent JSON header files, if available. It retrieves this information using customisable patterns and regular expressions, which can be overridden using command-line arguments (see the output using the `--help` flag). If any information is missing, you will be prompted to fill out a CSV spreadsheet with the missing information before rerunning the conversion script using the same command. You can open the CSV file in a spreadsheet reader like Microsoft Excel or LibreOffice Calc.
 
 ### Running QSMxT
 
@@ -90,10 +90,10 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_4.0.0.post2_20230824
-    cd qsmxt_4.0.0.post2_20230824
-    ./run_transparent_singularity.sh --container qsmxt_4.0.0.post2_20230824.simg
-    source activate_qsmxt_4.0.0.post2_20230824.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_4.0.1_20230824
+    cd qsmxt_4.0.1_20230824
+    ./run_transparent_singularity.sh --container qsmxt_4.0.1_20230824.simg
+    source activate_qsmxt_4.0.1_20230824.simg.sh
     ```
     
     - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
@@ -117,7 +117,7 @@ pip install qsmxt
 
 ### Bare metal installation
 
-We recommend the use of software containers for reproducibility and ease-of-use. However, QSMxT can be installed manually. Please see the detailed instructions used to generate the container [here](https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxt/build.sh).
+We recommend the use of software containers for reproducibility and ease of use. However, QSMxT can be installed manually. Please see the detailed instructions for generating the container [here](https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxt/build.sh).
 
 
 # References and algorithm list
