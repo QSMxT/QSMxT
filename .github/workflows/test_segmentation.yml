@@ -6,6 +6,7 @@ on:
   push:
     branches: [ '**' ]
     paths:
+      - setup.py
       - .github/workflows/test_segmentation.yml
       - README.md
       - qsmxt/cli/main.py
