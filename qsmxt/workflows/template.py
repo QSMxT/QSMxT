@@ -6,6 +6,7 @@ from nipype.pipeline.engine import Workflow, Node
 from nipype.interfaces.utility import IdentityInterface, Function
 import nipype.interfaces.ants as ants
 
+from qsmxt.scripts.qsmxt_functions import gen_plugin_args
 from qsmxt.scripts.antsBuildTemplate import ANTSTemplateBuildSingleIterationWF
 from qsmxt.scripts.logger import LogLevel, make_logger
 
@@ -22,10 +23,6 @@ def get_matching_files(bids_dir, subject='*', session='*', suffixes=None, part=N
     return sorted([item for sublist in matching_files for item in sublist])
 
 def init_template_workflow(args):
-    # TODO     # environment variables for multi-threading
-    #os.environ["OMP_NUM_THREADS"] = "6"
-    #os.environ["ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS"] = "6"
-    
     logger = make_logger('main')
     logger.log(LogLevel.INFO.value, f"Creating QSM/GRE template workflow...")
 
@@ -110,10 +107,22 @@ def init_template_workflow(args):
         (n_inputs, buildTemplateIteration1, [('magnitude', 'inputspec.images')]),
         (n_qsmdict, buildTemplateIteration1, [('qsm_dict', 'inputspec.ListOfPassiveImagesDictionaries')]),
     ])
+    n_ants_threads = min(6, args.n_procs) if args.multiproc else 6
+    n_ants_mem_gb = min(8, args.mem_avail) if args.multiproc else 8
     BeginANTS1 = buildTemplateIteration1.get_node("BeginANTS")
-    BeginANTS1.plugin_args = {
-        'qsub_args': f'-A {args.pbs} -l walltime=04:00:00 -l select=1:ncpus=10:mem=8gb',
-        'overwrite': True
+    BeginANTS1.plugin_args = gen_plugin_args(
+        plugin_args={ 'overwrite': True },
+        slurm_account=args.slurm[0],
+        pbs_account=args.pbs,
+        slurm_partition=args.slurm[1],
+        name="ANTS",
+        time="04:00:00",
+        mem_gb=n_ants_mem_gb,
+        num_cpus=n_ants_threads
+    )
+    BeginANTS1.environ = {
+        'OMP_NUM_THREADS': str(n_ants_threads),
+        'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS': str(n_ants_threads)
     }
 
     # second iteration
@@ -124,9 +133,19 @@ def init_template_workflow(args):
         (n_qsmdict, buildTemplateIteration2, [('qsm_dict', 'inputspec.ListOfPassiveImagesDictionaries')])
     ])
     BeginANTS2 = buildTemplateIteration2.get_node("BeginANTS")
-    BeginANTS2.plugin_args = {
-        'qsub_args': f'-A {args.pbs} -l walltime=04:00:00 -l select=1:ncpus=10:mem=8gb',
-        'overwrite': True
+    BeginANTS2.plugin_args = gen_plugin_args(
+        plugin_args={ 'overwrite': True },
+        slurm_account=args.slurm[0],
+        pbs_account=args.pbs,
+        slurm_partition=args.slurm[1],
+        name="ANTS",
+        time="04:00:00",
+        mem_gb=n_ants_mem_gb,
+        num_cpus=n_ants_threads
+    )
+    BeginANTS2.environ = {
+        'OMP_NUM_THREADS': str(n_ants_threads),
+        'ITK_GLOBAL_DEFAULT_NUMBER_OF_THREADS': str(n_ants_threads)
     }
 
     # datasink

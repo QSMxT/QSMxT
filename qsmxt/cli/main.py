@@ -371,7 +371,7 @@ def parse_args(args, return_run_command=False):
             'based on doi:10.1002/nbm.1670.'
     )
 
-    parser.add_argument( # TODO
+    parser.add_argument(
         '--two_pass',
         nargs='?',
         type=argparse_bool,
