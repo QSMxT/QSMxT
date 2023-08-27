@@ -60,30 +60,33 @@ def init_workflow(args):
 
 def init_subject_workflow(args, subject):
     logger = make_logger('main')
+    subject_path = os.path.join(args.bids_dir, subject)
+
     sessions = [
         os.path.split(path)[1]
-        for path in glob.glob(os.path.join(args.bids_dir, subject, args.session_pattern))
+        for path in glob.glob(os.path.join(subject_path, args.session_pattern))
         if not args.sessions or os.path.split(path)[1] in args.sessions
     ]
-    if not sessions:
-        logger.log(LogLevel.ERROR.value, f"No sessions found in: {os.path.join(args.bids_dir, subject, args.session_pattern)}")
+
+    if not sessions and not glob.glob(os.path.join(subject_path, "*.*")):
+        logger.log(LogLevel.ERROR.value, f"No imaging data found in: {subject_path} including with session pattern {args.session_pattern}")
         script_exit(1, logger=logger)
+        return
 
     wf = Workflow(name=subject, base_dir=os.path.join(args.output_dir, "workflow"))
 
-    # Add each session workflow to the subject workflow
-    for session in sessions:
+    for session in sessions or [None]:
         session_wf = init_session_workflow(args, subject, session)
         if session_wf:
             wf.add_nodes([session_wf])
 
     return wf
 
-def init_session_workflow(args, subject, session):
+def init_session_workflow(args, subject, session=None):
     logger = make_logger('main')
-    wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow", subject, session))
+    wf = Workflow(session or subject, base_dir=os.path.join(args.output_dir, "workflow", subject, session or ""))
 
-    phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
+    phase_pattern = os.path.join(args.bids_dir, session or subject, f"{subject}_*phase*.nii*")
     files = glob.glob(phase_pattern)
 
     if not files:
@@ -92,12 +95,14 @@ def init_session_workflow(args, subject, session):
 
     run_details = {}
 
+    # get all unique acquisition names
     acquisitions = sorted(list(set([
         re.search("_acq-([a-zA-Z0-9]+)_", path).group(1)
         for path in files
         if '_acq-' in path
     ])))
 
+    # handle multiple runs associated with each acquisition name
     for acquisition in acquisitions:
         acquisition_runs = sorted(list(set([
             re.search("_run-([a-zA-Z0-9]+)_", path).group(1)
@@ -107,16 +112,17 @@ def init_session_workflow(args, subject, session):
         ])))
         run_details[acquisition] = acquisition_runs if len(acquisition_runs) else None
 
+    # handle runs not associated with any acquisition name
     other_runs = sorted(list(set([
         re.search("_run-([a-zA-Z0-9]+)_", path).group(1)
         for path in files
         if '_acq-' not in path
         and '_run-' in path
     ])))
-    
     if other_runs:
         run_details[None] = other_runs
 
+    # handle the final case where there may be no run or acquisition identifier
     others = any(all(x not in path for x in ['_acq-', '_run-']) for path in files)
     if others:
         if None in run_details.keys(): run_details[None].append(None)
