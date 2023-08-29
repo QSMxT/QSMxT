@@ -68,7 +68,7 @@ def init_subject_workflow(args, subject):
         if not args.sessions or os.path.split(path)[1] in args.sessions
     ]
 
-    if not sessions and not glob.glob(os.path.join(subject_path, "*.*")):
+    if not sessions and not glob.glob(os.path.join(subject_path, "anat", "*.*")):
         logger.log(LogLevel.ERROR.value, f"No imaging data found in: {subject_path} including with session pattern {args.session_pattern}")
         script_exit(1, logger=logger)
         return
@@ -84,9 +84,9 @@ def init_subject_workflow(args, subject):
 
 def init_session_workflow(args, subject, session=None):
     logger = make_logger('main')
-    wf = Workflow(session or subject, base_dir=os.path.join(args.output_dir, "workflow", subject, session or ""))
+    wf = Workflow(session or subject, base_dir=os.path.join(args.output_dir, "workflow", os.path.join(subject, session) if session else subject))
 
-    phase_pattern = os.path.join(args.bids_dir, session or subject, f"{subject}_*phase*.nii*")
+    phase_pattern = os.path.join(args.bids_dir, session or subject, "anat", f"sub-*_*phase*.nii*")
     files = glob.glob(phase_pattern)
 
     if not files:

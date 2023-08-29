@@ -28,29 +28,35 @@ from qsmxt.workflows.masking import masking_workflow
 
 import numpy as np
 
-def get_matching_files(bids_dir, subject, session, suffixes, part=None, acq=None, run=None):
-    pattern = f"{bids_dir}/{subject}/{session}/anat/{subject}_{session}*"
+def get_matching_files(bids_dir, subject, dtype="anat", suffixes=[], ext="nii*", session=None, run=None, part=None, acq=None):
+    pattern = os.path.join(bids_dir, subject)
+    if session:
+        pattern = os.path.join(pattern, session)
+    pattern = os.path.join(pattern, dtype)
+    pattern = os.path.join(pattern, f"sub-*_*")
     if acq:
         pattern += f"acq-{acq}_*"
     if run:
         pattern += f"run-{run}_*"
     if part:
         pattern += f"part-{part}_*"
-    matching_files = [glob.glob(f"{pattern}{suffix}.nii*") for suffix in suffixes]
+    if suffixes:
+        matching_files = [glob.glob(f"{pattern}_{suffix}.{ext}") for suffix in suffixes]
+    else:
+        matching_files = [glob.glob(f"{pattern}.{ext}")]
     return sorted([item for sublist in matching_files for item in sublist])
 
-def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
+def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     logger = make_logger('main')
-    run_id = f"{subject}.{session}.acq-{acq}.run-{run}"
+    run_id = f"{subject}" + (f".{session}" if session else "") + (f".acq-{acq}" if acq else "") + (f".run-{run}" if run else "")
     logger.log(LogLevel.INFO.value, f"Creating QSMxT workflow for {run_id}...")
 
     # get relevant files from this run
-    t1w_files = get_matching_files(run_args.bids_dir, subject, session, ["T1w"], None, None, None)
-    phase_files = get_matching_files(run_args.bids_dir, subject, session, ["T2starw", "MEGRE"], "phase", acq, run)[:run_args.num_echoes]
-    magnitude_files = get_matching_files(run_args.bids_dir, subject, session, ["T2starw", "MEGRE"], "mag", acq, run)[:run_args.num_echoes]
-    params_files = [path.replace('.nii.gz', '.nii').replace('.nii', '.json') for path in (phase_files if len(phase_files) else magnitude_files)]
-    mask_pattern = os.path.join(run_args.bids_dir, run_args.mask_pattern.format(subject=subject, session=session, run=run))
-    mask_files = sorted(glob.glob(mask_pattern))[:run_args.num_echoes] if run_args.use_existing_masks else []
+    t1w_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=["T1w"], ext="nii*", session=session, run=None, part=None, acq=None)
+    phase_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=[], session=session, run=run, part="phase", acq=acq)[:run_args.num_echoes]
+    magnitude_files = [path.replace("part-phase", "part-mag") for path in phase_files if os.path.exists(path.replace("_part-phase", "_part-mag"))]
+    params_files = [path.replace('.nii.gz', '.nii').replace('.nii', '.json') for path in (phase_files if len(phase_files) else magnitude_files) if os.path.exists(path.replace('.nii.gz', '.nii').replace('.nii', '.json'))]
+    mask_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="extra_data", suffixes=["mask"], session=session, run=None, part=None, acq=None)[:run_args.num_echoes]
     
     # handle any errors related to files and adjust any settings if needed
     if run_args.do_segmentation and not t1w_files:
@@ -112,6 +118,12 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             if run_args.combine_phase:
                 logger.log(LogLevel.WARNING.value, f"Run {run_id} cannot use --combine_phase option - no magnitude files found.")
                 run_args.combine_phase = False
+    elif len(magnitude_files) != len(phase_files) and run_args.do_qsm and run_args.masking_input == 'magnitude':
+        logger.log(LogLevel.WARNING.value, f"Run {run_id} will use phase-based masking - unequal number of phase and magnitude files found.")
+        run_args.masking_input = 'phase'
+        run_args.masking_algorithm = 'threshold'
+        run_args.inhomogeneity_correction = False
+        run_args.add_bet = False
     if len(magnitude_files) == 1:
         if run_args.do_r2starmap:
             logger.log(LogLevel.WARNING.value, f"Cannot compute R2* for {run_id} - at least two echoes are needed.")
@@ -121,7 +133,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             run_args.do_t2starmap = False
     
     # create nipype workflow for this run
-    wf = Workflow(f"qsmxt" + (f"_acq-{acq}" if acq else "") + (f"_run-{run}" if run else ""), base_dir=os.path.join(run_args.output_dir, "workflow", subject, session, acq or "", run or ""))
+    wf = Workflow(f"qsmxt" + (f"_acq-{acq}" if acq else "") + (f"_run-{run}" if run else ""), base_dir=os.path.join(run_args.output_dir, "workflow", os.path.join(subject, session) if session else subject, acq or "", run or ""))
 
     # inputs and outputs
     n_inputs = Node(
@@ -413,7 +425,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
             (mn_resample_inputs, n_inputs_resampled, [('magnitude', 'magnitude')]),
             (mn_resample_inputs, n_inputs_resampled, [('phase', 'phase')])
         ])
-        if mask_files:
+        if mask_files and run_args.use_existing_masks:
             mn_resample_mask = create_node(
                 interface=sampling.AxialSamplingInterface(
                     obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
@@ -421,7 +433,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
                 iterfield=['mask'],
                 mem_gb=min(3, run_args.mem_avail),
                 name='nibabel_numpy_nilearn_axial-resampling-mask',
-                is_map=len(n_inputs.inputs.mask) > 1 and isinstance(n_inputs.inputs.mask, list)
+                is_map=isinstance(n_inputs.inputs.mask, list) and len(n_inputs.inputs.mask) > 1
             )
             mn_resample_mask.plugin_args = gen_plugin_args(
                 plugin_args={ 'overwrite': True },
@@ -480,7 +492,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     # === MASKING ===
     wf_masking = masking_workflow(
         run_args=run_args,
-        mask_available=len(mask_files) > 0,
+        mask_available=len(mask_files) > 0 and run_args.use_existing_masks,
         magnitude_available=len(magnitude_files) > 0,
         qualitymap_available=False,
         fill_masks=True,
@@ -527,7 +539,7 @@ def init_qsm_workflow(run_args, subject, session, acq=None, run=None):
     if run_args.two_pass:
         wf_masking_intermediate = masking_workflow(
             run_args=run_args,
-            mask_available=len(mask_files) > 0,
+            mask_available=len(mask_files) > 0 and run_args.use_existing_masks,
             magnitude_available=len(magnitude_files) > 0,
             qualitymap_available=True,
             fill_masks=False,
