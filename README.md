@@ -11,7 +11,9 @@ QSMxT produces:
  - Spreadsheets in CSV format with susceptibility statistics across brain regions of interest
  - A group space/template, including average QSM and GRE images across your cohort
 
-QSMxT requires gradient-echo MRI images converted to the Brain Imaging Data Structure (BIDS). QSMxT also includes tools to convert DICOM or NIfTI images to BIDS.
+QSMxT requires gradient-echo MR images converted to the Brain Imaging Data Structure (BIDS). QSMxT also includes tools to convert DICOM or NIfTI images to BIDS.
+
+[See an interactive notebook applying QSMxT here!](https://www.neurodesk.org/example-notebooks/structural_imaging/qsmxt_example.html)
 
 ## Installation
 ### Quickstart via Neurodesk
