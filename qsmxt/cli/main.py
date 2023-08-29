@@ -86,7 +86,7 @@ def init_session_workflow(args, subject, session=None):
     logger = make_logger('main')
     wf = Workflow(session or subject, base_dir=os.path.join(args.output_dir, "workflow", os.path.join(subject, session) if session else subject))
 
-    phase_pattern = os.path.join(args.bids_dir, session or subject, "anat", f"sub-*_*phase*.nii*")
+    phase_pattern = os.path.join(args.bids_dir, os.path.join(subject, session) if session else subject, "anat", f"sub-*_*phase*.nii*")
     files = glob.glob(phase_pattern)
 
     if not files:
