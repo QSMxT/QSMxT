@@ -25,11 +25,11 @@ def init_workflow(args):
     logger = make_logger('main')
     subjects = [
         os.path.split(path)[1]
-        for path in glob.glob(os.path.join(args.bids_dir, args.subject_pattern))
+        for path in glob.glob(os.path.join(args.bids_dir, "sub*"))
         if not args.subjects or os.path.split(path)[1] in args.subjects
     ]
     if not subjects:
-        logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, args.subject_pattern)}")
+        logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, 'sub*')}")
         script_exit(1, logger=logger)
     wf = Workflow("workflow", base_dir=args.output_dir)
     wf.add_nodes([
@@ -64,14 +64,13 @@ def init_subject_workflow(args, subject):
 
     sessions = [
         os.path.split(path)[1]
-        for path in glob.glob(os.path.join(subject_path, args.session_pattern))
+        for path in glob.glob(os.path.join(subject_path, "ses*"))
         if not args.sessions or os.path.split(path)[1] in args.sessions
     ]
 
     if not sessions and not glob.glob(os.path.join(subject_path, "anat", "*.*")):
-        logger.log(LogLevel.ERROR.value, f"No imaging data found in: {subject_path} including with session pattern {args.session_pattern}")
-        script_exit(1, logger=logger)
-        return
+        logger.log(LogLevel.WARNING.value, f"No imaging data or sessions found in {subject_path}")
+        return None
 
     wf = Workflow(name=subject, base_dir=os.path.join(args.output_dir, "workflow"))
 
@@ -158,9 +157,7 @@ def parse_args(args, return_run_command=False):
         nargs='?',
         default=None,
         type=os.path.abspath,
-        help='Input data folder generated using dicom_convert.py. You can also use a ' +
-             'previously existing BIDS folder. In this case, ensure that the --subject_pattern, '+
-             '--session_pattern, --magnitude_pattern and --phase_pattern are correct for your data.'
+        help='Input BIDS directory. Can be generated using dicom-convert or nifti-convert.'
     )
 
     parser.add_argument(
@@ -243,18 +240,6 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
-        '--subject_pattern',
-        default=None,
-        help='Pattern used to match subject folders in bids_dir'
-    )
-
-    parser.add_argument(
-        '--session_pattern',
-        default=None,
-        help='Pattern used to match session folders in subject folders'
-    )
-
-    parser.add_argument(
         '--subjects',
         default=None,
         nargs='*',
@@ -273,13 +258,6 @@ def parse_args(args, return_run_command=False):
         default=None,
         nargs='*',
         help='List of runs to process (e.g. \'run-1\'); by default all runs are processed.'
-    )
-    
-    parser.add_argument(
-        '--magnitude_pattern',
-        default=None,
-        help='Pattern to match magnitude files within the BIDS directory. ' +
-            'The {subject}, {session} and {run} placeholders must be present.'
     )
 
     parser.add_argument(
@@ -511,20 +489,6 @@ def parse_args(args, return_run_command=False):
         type=float,
         default=None,
         help='Fractional intensity for BET masking operations.'
-    )
-    
-    parser.add_argument(
-        '--t1w_pattern',
-        default=None,
-        help='Pattern to match T1-weighted files for segmentation within session folders. ' +
-            'The {subject}, {session} and {run} placeholders must be present.'
-    )
-
-    parser.add_argument(
-        '--phase_pattern',
-        default=None,
-        help='Pattern to match phase files for qsm within session folders. ' +
-            'The {subject}, {session} and {run} placeholders must be present.'
     )
 
     parser.add_argument(

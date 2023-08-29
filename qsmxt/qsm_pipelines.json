@@ -1,11 +1,6 @@
 {
     "default": {
         "description" : "Default QSMxT settings (GRE; assumes human brain)",
-        "subject_pattern": "sub*",
-        "session_pattern": "ses*",
-        "magnitude_pattern": "{subject}/{session}/anat/*{run}*mag*nii*",
-        "phase_pattern": "{subject}/{session}/anat/*{run}*phase*nii*",
-        "t1w_pattern": "{subject}/{session}/anat/*{run}*T1w*nii*",
         "subjects": null,
         "sessions": null,
         "num_echoes": null,
