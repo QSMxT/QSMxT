@@ -25,7 +25,7 @@ def init_workflow(args):
     logger = make_logger('main')
     subjects = [
         os.path.split(path)[1]
-        for path in glob.glob(os.path.join(args.bids_dir, "sub*"))
+        for path in sorted(glob.glob(os.path.join(args.bids_dir, "sub*")))
         if not args.subjects or os.path.split(path)[1] in args.subjects
     ]
     if not subjects:
@@ -64,7 +64,7 @@ def init_subject_workflow(args, subject):
 
     sessions = [
         os.path.split(path)[1]
-        for path in glob.glob(os.path.join(subject_path, "ses*"))
+        for path in sorted(glob.glob(os.path.join(subject_path, "ses*")))
         if not args.sessions or os.path.split(path)[1] in args.sessions
     ]
 
@@ -86,7 +86,7 @@ def init_session_workflow(args, subject, session=None):
     wf = Workflow(session or subject, base_dir=os.path.join(args.output_dir, "workflow", os.path.join(subject, session) if session else subject))
 
     phase_pattern = os.path.join(args.bids_dir, os.path.join(subject, session) if session else subject, "anat", f"sub-*_*phase*.nii*")
-    files = glob.glob(phase_pattern)
+    files = sorted(glob.glob(phase_pattern))
 
     if not files:
         logger.log(LogLevel.WARNING.value, f"No files found matching pattern: {phase_pattern}")
