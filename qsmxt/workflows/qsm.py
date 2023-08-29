@@ -62,8 +62,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     if run_args.do_segmentation and not t1w_files:
         logger.log(LogLevel.WARNING.value, f"Skipping segmentation for {run_id} - no T1w files found!")
         run_args.do_segmentation = False
-    if run_args.do_analysis and not t1w_files:
-        logger.log(LogLevel.WARNING.value, f"Skipping analysis for {run_id} - no T1w files found!")
+    if run_args.do_analysis and not (t1w_files and phase_files):
+        logger.log(LogLevel.WARNING.value, f"Skipping analysis for {run_id} - phase and T1w files required!")
         run_args.do_analysis = False
     if run_args.do_segmentation and not magnitude_files:
         logger.log(LogLevel.WARNING.value, f"Skipping segmentation for {run_id} - no GRE magnitude files found to register T1w segmentations to!")
@@ -81,13 +81,13 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         run_args.combine_phase = False
     if run_args.do_qsm and run_args.use_existing_masks:
         if not mask_files:
-            logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but no masks found matching pattern: {mask_pattern}. Reverting to {run_args.masking_algorithm} masking.")
+            logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but no masks found matching pattern: {run_args.mask_pattern}. Reverting to {run_args.masking_algorithm} masking algorithm.")
             run_args.use_existing_masks = False
         else:
             if len(mask_files) > 1:
                 if run_args.combine_phase:
                     logger.log(LogLevel.WARNING.value, f"Run {run_id}: --combine_phase specified but multiple masks found with --use_existing_masks. Using the first mask only.")
-                    mask_files = [mask_files[0] for x in phase_files]
+                    mask_files = [mask_files[0]]
                 elif len(mask_files) != len(phase_files):
                     logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but unequal number of mask and phase files present. Using the first mask only.")
                     mask_files = [mask_files[0]]
