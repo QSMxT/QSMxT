@@ -28,7 +28,7 @@ def init_template_workflow(args):
 
     subjects = [
         os.path.split(path)[1]
-        for path in glob.glob(os.path.join(args.bids_dir, args.subject_pattern))
+        for path in glob.glob(os.path.join(args.bids_dir, "sub*"))
         if not args.subjects or os.path.split(path)[1] in args.subjects
     ]
 
