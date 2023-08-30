@@ -114,7 +114,7 @@ def test_nocombine(bids_dir_public, premade):
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title="No multi-echo combination", colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='No multi-echo combination', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 
 def test_nomagnitude(bids_dir_public):
