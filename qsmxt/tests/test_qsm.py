@@ -95,7 +95,7 @@ def test_premade(bids_dir_public, premade):
     # generate image
     add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
-def test_nocombine(bids_dir_public, premade):
+def test_nocombine(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING NO PHASE COMBINATION ===")
 
