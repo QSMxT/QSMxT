@@ -79,6 +79,7 @@ jobs:
     strategy:
       matrix:
         args: [
+          'test_nocombine',
           'test_hardcoded_absolute_threshold',
           'test_hardcoded_percentile_threshold',
           'test_inhomogeneity_correction',
