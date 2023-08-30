@@ -1344,14 +1344,13 @@ def main(argv=None):
 
     # create initial logger
     logger = make_logger(name='pre')
-    logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
 
     # display version and exit if needed
     if any(x in argv for x in ['-v', '--version']):
+        logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
         script_exit(0)
     
     # parse explicit arguments
-    logger.log(LogLevel.INFO.value, f"Parsing arguments...")
     args, run_command, explicit_args = parse_args(argv, return_run_command=True)
 
     # list premade pipelines and exit if needed
@@ -1364,11 +1363,11 @@ def main(argv=None):
     
     # overwrite logger with one that logs to file
     logpath = os.path.join(args.output_dir, f"qsmxt.log")
-    logger.log(LogLevel.INFO.value, f"Starting log file: {logpath}")
     logger = make_logger(
         name='main',
         logpath=logpath
     )
+    logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
     logger.log(LogLevel.INFO.value, f"Command: {run_command}")
 
