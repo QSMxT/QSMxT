@@ -109,6 +109,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             logger.log(LogLevel.WARNING.value, f"Cannot compute SWI for {run_id} - no magnitude files found.")
             run_args.do_swi = False
         if run_args.do_qsm:
+            logger.log(LogLevel.WARNING.value, f"Run {run_id} cannot be resampled axially since no magnitude files were found - expect poor results from oblique acquisitions.")
             if run_args.masking_input == 'magnitude':
                 logger.log(LogLevel.WARNING.value, f"Run {run_id} will use phase-based masking - no magnitude files found.")
                 run_args.masking_input = 'phase'
