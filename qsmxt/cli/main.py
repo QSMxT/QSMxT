@@ -735,10 +735,10 @@ def generate_run_command(all_args, implicit_args, explicit_args, short=True):
             continue
         if key == 'do_qsm' and value == False and any(x in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
             continue
-        elif value == True: run_command += f' --{key}'
-        elif value == False: run_command += f' --{key} off'
+        elif value == True and isinstance(value, bool): run_command += f' --{key}'
+        elif value == False and isinstance(value, bool): run_command += f' --{key} off'
         elif isinstance(value, str): run_command += f" --{key} '{value}'"
-        elif isinstance(value, (int, float)) and value != False: run_command += f" --{key} {value}"
+        elif isinstance(value, (int, float)): run_command += f" --{key} {value}"
         elif isinstance(value, list):
             run_command += f" --{key}"
             for val in value:
