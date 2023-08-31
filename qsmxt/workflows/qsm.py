@@ -540,7 +540,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     if run_args.two_pass:
         wf_masking_intermediate = masking_workflow(
             run_args=run_args,
-            mask_available=len(mask_files) > 0 and run_args.use_existing_masks,
+            mask_available=False,
             magnitude_available=len(magnitude_files) > 0,
             qualitymap_available=True,
             fill_masks=False,
