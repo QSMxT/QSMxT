@@ -63,7 +63,7 @@ To convert NIfTI to BIDS, use `nifti-convert`:
 ```bash
 nifti-convert YOUR_NIFTI_DIR/ bids/
 ```
-Carefully read the output to ensure data were correctly recognized and converted. The script will try to identify essential details from the filenames and adjacent JSON header files, if available. It retrieves this information using customisable patterns and regular expressions, which can be overridden using command-line arguments (see the output using the `--help` flag). If any information is missing, you will be prompted to fill out a CSV spreadsheet with the missing information before rerunning the conversion script using the same command. You can open the CSV file in a spreadsheet reader like Microsoft Excel or LibreOffice Calc.
+Carefully read the output to ensure data were correctly recognized. The script will write a .CSV spreadsheet to file to be filled with BIDS entity information and NIfTI JSON information. If you are unsure how to complete the spreadsheet, please see [anatomical imaging data](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#anatomy-imaging-data) section on the BIDS specification for details about each entity in the `anat` datatype. Note that `nifti-convert` currently only supports the BIDS `anat` datatype, which is sufficient for studies in QSM. Ensure you also fill the `MagneticFieldStrength` and `EchoTime` fields, which are necessary for QSM calculation. Once you have filled the spreadsheet, run the script again to complete the conversion.
 
 ### Running QSMxT
 
