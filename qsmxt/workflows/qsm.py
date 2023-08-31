@@ -118,9 +118,6 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             if run_args.add_bet:
                 logger.log(LogLevel.WARNING.value, f"Run {run_id} cannot use --add_bet option - no magnitude files found.")
                 run_args.add_bet = False
-            if run_args.combine_phase:
-                logger.log(LogLevel.WARNING.value, f"Run {run_id} cannot use --combine_phase option - no magnitude files found.")
-                run_args.combine_phase = False
     elif len(magnitude_files) != len(phase_files) and run_args.do_qsm and run_args.masking_input == 'magnitude':
         logger.log(LogLevel.WARNING.value, f"Run {run_id} will use phase-based masking - unequal number of phase and magnitude files found.")
         run_args.masking_input = 'phase'
