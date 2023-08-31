@@ -28,9 +28,11 @@ def nonzero_average(in_files, mask_files=None, out_file=True):
         mask *= abs(data) >= 5e-5
     else:
         mask = abs(data) >= 5e-5
+
+    mask_sum = mask.sum(0)
     
     try:
-        final = data.sum(0) / mask.sum(0)
+        final = np.where(mask_sum == 0, 0, data.sum(0) / mask_sum)
     except ValueError:
         raise ValueError(f"Tried to average files of incompatible dimensions; data.shape[..]={[x.shape for x in data]}")
 
