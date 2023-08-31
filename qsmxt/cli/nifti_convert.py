@@ -8,9 +8,6 @@ import json
 import shutil
 import datetime
 
-from fnmatch import fnmatch
-from re import findall
-
 from qsmxt.scripts.qsmxt_functions import get_qsmxt_version, get_diff
 from qsmxt.scripts.logger import LogLevel, make_logger, show_warning_summary 
 
@@ -33,18 +30,11 @@ def json_filename(nifti_filename):
     return nifti_filename.split('.')[0] + '.json'
 
 
-def parse_num_or_exit(string, error_message, whole_number=False):
-    logger = make_logger()
-    try:
-        return int(string) if whole_number else float(string)
-    except:
-        logger.log(LogLevel.ERROR.value, error_message)
-        script_exit(1)
-
-
 def flatten(a):
     return [i for g in a for i in g]
 
+def get_bids_entities():
+    return ['sub', 'ses', 'acq', 'ce', 'rec', 'run', 'mod', 'echo', 'flip', 'inv', 'mt', 'part', 'suffix']
 
 def find_files_with_extension(input_dir, extension):
     file_list = []
@@ -56,163 +46,114 @@ def find_files_with_extension(input_dir, extension):
                 file_list.append(os.path.join(root, f))
     return file_list
 
+def splitext(path):
+    head, tail = os.path.split(path)
+
+    if tail.endswith('.nii.gz'):
+        ext = '.nii.gz'
+        filename = tail.split('.nii.gz')[0]
+    else:
+        filename, ext = os.path.splitext(tail)
+
+    return head, filename, ext
+
+
+import csv
 
 def get_details_from_csv(csv_file):
     logger = make_logger()
     all_details = []
     
     with open(csv_file, "r", encoding='utf-8') as f:
-        csv_reader = csv.reader(f)
-        header = next(csv_reader)  # Skip header row
+        csv_reader = csv.DictReader(f)
         
         for i, line_contents in enumerate(csv_reader):
-            if len(line_contents) != 10:
-                logger.log(LogLevel.ERROR.value, 'Incorrect number of columns in CSV! Delete it or correct it and try again.')
-                script_exit(1)
-            
-            if '' in line_contents:
-                logger.log(LogLevel.ERROR.value, 'CSV file incomplete! Delete it or complete it and try again.')
-                script_exit(1)
-            
             details = {}
-            details['filename'] = line_contents[0]
-            details['subject_id'] = line_contents[1]
-            details['session_id'] = line_contents[2]
-            details['series_type'] = line_contents[8]
-            details['multi-echo'] = line_contents[6].strip().lower()
-            details['part_type'] = line_contents[9].strip().lower()
+            details['filename'] = line_contents['filename']
 
-            details['run_num'] = parse_num_or_exit(
-                line_contents[3],
-                error_message=f"Could not parse run number '{line_contents[3]}' on line {i+1} as int",
-                whole_number=True
-            )
-
-            details['echo_num'] = parse_num_or_exit(
-                line_contents[4],
-                error_message=f"Could not parse echo number '{line_contents[4]}' on line {i+1} as int",
-                whole_number=True
-            )
-
-            details['echo_time'] = parse_num_or_exit(
-                line_contents[5],
-                error_message=f"Could not parse echo time '{line_contents[5]}' on line {i+1} as float",
-                whole_number=False
-            )
-            
-            details['field_strength'] = parse_num_or_exit(
-                line_contents[7],
-                error_message=f"Could not parse field strength '{line_contents[7]}' on line {i+1} as float",
-                whole_number=False
-            )
-            
-            if details['multi-echo'] not in ['yes', 'no']:
-                logger.log(LogLevel.ERROR.value, f"Could not parse multi-echo field contents '{details['multi-echo']}' on line {i+1} as 'yes' or 'no'")
-                script_exit(1)
-
-            if details['part_type'] not in ['phase', 'mag']:
-                logger.log(LogLevel.ERROR.value, f"Could not parse part type field contents '{details['part_type']}' on line {i+1} as 'mag' or 'phase'")
-                script_exit(1)
+            for field in line_contents:
+                if line_contents[field]: details[field] = line_contents[field]
 
             all_details.append(details)
-            
+
     return all_details
 
 
-def get_details_from_filenames(file_list, args):
+def get_bids_entity(path, entity):
+    head, filename, ext = splitext(path)
+    entity_pairs = filename.split('_')
+    if entity == 'suffix':
+        return entity_pairs[-1]
+    for entity_pair in entity_pairs:
+        entity_pair_tuple = entity_pair.split('-')
+        if len(entity_pair_tuple) == 2:
+            entity_i, label_i = entity_pair_tuple
+            if entity_i == entity:
+                return label_i
+
+    return None
+
+
+def get_details_from_filenames(file_list):
     all_details = []
+
     for nifti_file in file_list:
         details = {}
         details['filename'] = nifti_file
-        details['directory'] = os.path.split(nifti_file)[0]
 
-        subject_matches = findall(args.subject_pattern, nifti_file) if args.subject_pattern else None
-        session_matches = findall(args.session_pattern, nifti_file) if args.session_pattern else None
-        run_matches = findall(args.run_pattern, nifti_file) if args.run_pattern else None
-        echo_matches = findall(args.echo_pattern, nifti_file) if args.echo_pattern else None
-        protocol_matches = findall(args.protocol_pattern, nifti_file) if args.protocol_pattern else None
-
-        details['subject_id'] = subject_matches[0] if subject_matches else None
-        details['session_id'] = session_matches[0] if session_matches else None
-        details['run_num'] = run_matches[0] if run_matches else None
-        details['echo_num'] = echo_matches[0] if echo_matches else None
-        details['protocol_name'] = protocol_matches[0] if protocol_matches else None
-
-        details['echo_time'] = None
-        details['multi-echo'] = None
-        details['field_strength'] = None
-        details['protocol_name'] = None
-        details['series_type'] = None
-        details['part_type'] = None
-
-        if details['protocol_name']:
-            if args.t1w_protocol_patterns and any([fnmatch(details['protocol_name'], pattern) for pattern in args.t1w_protocol_patterns]):
-                details['series_type'] = 't1w'
-            if args.t2starw_protocol_patterns and any([fnmatch(details['protocol_name'], pattern) for pattern in args.t2starw_protocol_patterns]):
-                details['series_type'] = 't2starw'
-
-        magnitude = fnmatch(nifti_file, args.magnitude_pattern) if args.magnitude_pattern else None
-        phase = fnmatch(nifti_file, args.phase_pattern) if args.phase_pattern else None
-        t1 = fnmatch(nifti_file, args.t1w_pattern) if args.t1w_pattern else None
-
-        if t1: 
-            details['series_type'] = 't1w'
-            details['echo_num'] = 1
-            details['multi-echo'] = 'no'
-        if magnitude or phase: details['series_type'] = 't2starw'
-        if magnitude: details['part_type'] = 'mag'
-        if phase: details['part_type'] = 'phase'
+        for entity in get_bids_entities():
+            label = get_bids_entity(path=nifti_file, entity=entity)
+            if label:
+                details[entity] = label
 
         all_details.append(details)
 
     return all_details
 
 
-def update_details_with_jsons(all_details, args):
+def update_details_with_jsons(all_details):
     for details in all_details:
         json_file = json_filename(details['filename'])
         if os.path.exists(json_file):
             json_data = load_json(json_file)
-            if 'EchoTime' in json_data:
-                try: details['echo_time'] = float(json_data['EchoTime'])
-                except: pass
-            if 'MagneticFieldStrength' in json_data:
-                try: details['field_strength'] = float(json_data['MagneticFieldStrength'])
-                except: pass
-            if 'EchoNumber' in json_data:
-                try: details['echo_num'] = int(json_data['EchoNumber'])
-                except: pass
-            if 'ProtocolName' in json_data:
-                details['protocol_name'] = json_data['ProtocolName']
-                if args.t1w_protocol_patterns and any([fnmatch(details['protocol_name'], pattern) for pattern in args.t1w_protocol_patterns]):
-                    details['series_type'] = 't1w'
-                if args.t2starw_protocol_patterns and any([fnmatch(details['protocol_name'], pattern) for pattern in args.t2starw_protocol_patterns]):
-                    details['series_type'] = 't2starw'
-            if 'ImageType' in json_data:
-                details['part_type'] = 'phase' if 'P' in json_data['ImageType'] else 'mag'
-            if 'EchoTrainLength' in json_data:
-                try:
-                    num_echoes = int(json_data['EchoTrainLength'])
-                    if num_echoes > 1: details['multi-echo'] = 'yes'
-                    if num_echoes == 1: details['multi-echo'] = 'no'
-                    if not details['multi-echo'] and details['echo_num'] not in [None, '1']:
-                        details['multi-echo'] = 'yes'
-                except:
-                    pass
+            for field in ['MagneticFieldStrength', 'EchoTime', 'ImageType']:
+                if field in json_data:
+                    details[field] = json_data[field]
     return all_details
 
 
 def write_details_to_csv(all_details, csv_file):
-    with open(csv_file, 'w', encoding='utf-8') as f:
-        f.write('filename,subject id,session id,run number,echo number,echo_time (s),multi-echo (yes or no),field_strength (T),series_type (t2starw or t1w),part_type (mag or phase)\n')
+    bids_entities = get_bids_entities()
+    json_fields = ['MagneticFieldStrength', 'EchoTime']
+    all_fields = ['filename'] + bids_entities + json_fields
+
+    with open(csv_file, 'w', encoding='utf-8', newline='') as f:
+        csv_writer = csv.DictWriter(f, fieldnames=all_fields)
+        
+        # Write header
+        csv_writer.writeheader()
+        
+        # Sort all_details by filename
         all_details.sort(key=lambda d: d['filename'])
+        
+        # Write rows
         for d in all_details:
-            line = f"{d['filename']},{d['subject_id']},{d['session_id']},{d['run_num']},{d['echo_num']},{d['echo_time']},{d['multi-echo']},{d['field_strength']},{d['series_type']},{d['part_type']}\n"
-            line = line.replace(",None", ",").replace("None,", ",")
-            f.write(line)
+            row_dict = {}
+            for field in all_fields:
+                if field == 'ImageType':
+                    if 'part' not in all_fields:
+                        row_dict['part'] = 'phase' if any(x.upper() in d.get(field, '') for x in ['P', 'PHASE']) else 'mag'
+                if field == 'suffix':
+                    if 'part' not in d and d.get(field, '') == 'ph':
+                        row_dict['part'] = 'phase'
+                if field == 'EchoNumber':
+                    if 'echo' not in all_fields:
+                        row_dict['echo'] = d.get(field, '')
+                row_dict[field] = d.get(field, '')  # If the key doesn't exist in `d`, it will return an empty string
+            csv_writer.writerow(row_dict)
 
 
-def nifti_convert(input_dir, output_dir, args):
+def nifti_convert(args):
     logger = make_logger()
     if os.path.exists(args.csv_file):
         logger.log(LogLevel.INFO.value, f"CSV spreadsheet '{args.csv_file}' found! Reading...")
@@ -222,36 +163,51 @@ def nifti_convert(input_dir, output_dir, args):
         logger.log(LogLevel.INFO.value, f"Finding NIfTI files...")
         nifti_files = find_files_with_extension(args.input_dir, ['.nii', '.nii.gz'])
         logger.log(LogLevel.INFO.value, f"{len(nifti_files)} NIfTI files found.")
-        logger.log(LogLevel.INFO.value, f"Extracting details from filenames using patterns...")
-        all_details = get_details_from_filenames(nifti_files, args)
+        logger.log(LogLevel.INFO.value, f"Extracting details from filenames...")
+        all_details = get_details_from_filenames(nifti_files)
         logger.log(LogLevel.INFO.value, f"Done reading details.")
         logger.log(LogLevel.INFO.value, f"Updating details with JSON header information...")
-        all_details = update_details_with_jsons(all_details, args)
+        all_details = update_details_with_jsons(all_details)
         logger.log(LogLevel.INFO.value, f"Done reading JSON header files.")
-
-    if any(value is None for value in flatten([list(details.values()) for details in all_details])):
-        logger.log(LogLevel.INFO.value, f"Some information is missing! Writing all details to CSV spreadsheet '{args.csv_file}'...")
         write_details_to_csv(all_details, args.csv_file)
-        logger.log(LogLevel.INFO.value, f"Done writing to CSV.")
-        logger.log(LogLevel.INFO.value, f"PLEASE FILL IN SPREADSHEET '{args.csv_file}' WITH MISSING INFORMATION AND RUN AGAIN WITH THE SAME COMMAND.")
-        script_exit()
-
+        logger.log(LogLevel.INFO.value, f"RUN AGAIN AFTER ENTERING RELEVANT BIDS INFORMATION TO {args.csv_file}.")
+        script_exit(0)
+    
     logger.log(LogLevel.INFO.value, "Computing new NIfTI file names and locations...")
     for details in all_details:
-        ext = 'nii.gz' if details['filename'].endswith('nii.gz') else 'nii'
-        if details['series_type'] == 't1w':
-            details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject_id']}", f"ses-{details['session_id']}", "anat", f"sub-{details['subject_id']}_ses-{details['session_id']}_run-{str(details['run_num']).zfill(2)}_T1w.{ext}")
-        elif details['multi-echo'] and details['multi-echo'].lower() == 'no':
-            details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject_id']}", f"ses-{details['session_id']}", "anat", f"sub-{details['subject_id']}_ses-{details['session_id']}_run-{str(details['run_num']).zfill(2)}_part-{details['part_type']}_T2starw.{ext}")
-        else:
-            details['new_name'] = os.path.join(args.output_dir, f"sub-{details['subject_id']}", f"ses-{details['session_id']}", "anat", f"sub-{details['subject_id']}_ses-{details['session_id']}_run-{str(details['run_num']).zfill(2)}_echo-{str(details['echo_num']).zfill(2)}_part-{details['part_type']}_MEGRE.{ext}")
+        head, filename, ext = splitext(details['filename'])
+
+        if any(x not in details for x in ['sub', 'suffix']):
+            logger.log(LogLevel.ERROR.value, f"File '{filename}' is missing BIDS-critical information! At least 'sub' and 'suffix' entities are required!")
+            script_exit(1)
+        
+        new_name = ""
+
+        for entity in get_bids_entities():
+            if entity in details:
+                new_name += "_" if new_name else ""
+                new_name += f"{entity}-{details[entity]}" if entity != 'suffix' else details[entity]
+
+        new_name += ext
+
+        new_dir = os.path.join(args.output_dir, f"sub-{details['sub']}")
+        if 'ses' in details:
+            new_dir = os.path.join(new_dir, f"ses-{details['ses']}")
+        new_dir = os.path.join(new_dir, "anat")
+        
+        details['new_name'] = os.path.join(new_dir, new_name)
     logger.log(LogLevel.INFO.value, "New NIfTI file names and locations determined.")
 
+    print("Summary of identified files and proposed new names (following BIDS standard):")
+    for f in all_details:
+        print(f"{os.path.split(f['filename'])[1]} \n\t -> {os.path.split(f['new_name'])[1]}")
+
+    if len(all_details) != len(set(details['new_name'] for details in all_details)):
+        logger.log(LogLevel.ERROR.value, "Resultant BIDS data contains name conflicts! Correct CSV and run again.")
+        script_exit(1)
+    
     # if running interactively, show a summary of the renames prior to actioning
     if sys.__stdin__.isatty() and not args.auto_yes:
-        print("Summary of identified files and proposed new names (following BIDS standard):")
-        for f in all_details:
-            print(f"{os.path.split(f['filename'])[1]} \n\t -> {os.path.split(f['new_name'])[1]}")
         print("Confirm copy + renames? (n for no): ")
         if input().strip().lower() in ["n", "no"]:
             script_exit()
@@ -268,14 +224,18 @@ def nifti_convert(input_dir, output_dir, args):
         if os.path.exists(f):
             copy(f, json_filename(details['new_name']), always_show=args.auto_yes)
         else:
-            dictionary = { 
-                "EchoTime" : details['echo_time'],
-                "MagneticFieldStrength" : details['field_strength'],
-                "EchoNumber" : details['echo_num'],
-                "ImageType" : ["P", "PHASE"] if details['part_type'] == 'phase' else ["M", "MAGNITUDE"],
-                "ProtocolName" : details['series_type'],
-                "ConversionSoftware" : "dcm2niix"
-            }
+            dictionary = {}
+            for field in details:
+                if field not in get_bids_entities():
+                    dictionary[field] = details[field]
+
+            if 'ImageType' not in dictionary and 'part' in details:
+                dictionary['ImageType'] = ["P", "PHASE"] if details['part'] == 'phase' else ["M", "MAGNITUDE"]
+            if 'EchoNumber' not in dictionary and 'echo' in details:
+                dictionary['EchoNumber'] = int(details['echo'])
+            if 'ProtocolName' not in dictionary and 'acq' in details:
+                dictionary['ProtocolName'] = details['acq']
+            
             with open(json_filename(details['new_name']), 'w', encoding='utf-8') as json_file:
                 json.dump(dictionary, json_file)
             logger.log(LogLevel.INFO.value, f"Automatically generated JSON header file '{json_filename(details['new_name'])}'")
@@ -330,76 +290,6 @@ def main():
     )
 
     parser.add_argument(
-        '--magnitude_pattern',
-        type=str,
-        default='*mag*',
-        help='Pattern used to identify T2*-weighted magnitude files to be used for QSM based on filenames.'
-    )
-
-    parser.add_argument(
-        '--phase_pattern',
-        type=str,
-        default='*phase*',
-        help='Pattern used to identify T2*-weighted phase files to be used for QSM based on filenames.'
-    )
-
-    parser.add_argument(
-        '--t1w_pattern',
-        type=str,
-        default='*T1w*',
-        help='Pattern used to identify T1-weighted files for segmentation purposes based on filenames.'
-    )
-
-    parser.add_argument(
-        '--t1w_protocol_patterns',
-        type=str,
-        default=['*t1w*'],
-        help='Patterns used to identify T1-weighted files for segmentation purposes based on the \'ProtocolName\' in adjacent JSON headers.'
-    )
-
-    parser.add_argument(
-        '--t2starw_protocol_patterns',
-        type=str,
-        default=['*qsm*', '*t2starw*'],
-        help='Patterns used to identify T2*-weighted files to be used for QSM based on the \'ProtocolName\' in adjacent JSON headers.'
-    )
-
-    parser.add_argument(
-        '--subject_pattern',
-        type=str,
-        default='sub-([^_/\\\\]+)',
-        help='Regular expression to capture the subject ID from NIfTI filepaths.'
-    )
-
-    parser.add_argument(
-        '--session_pattern',
-        type=str,
-        default='ses-([^_/\\\\]+)',
-        help='Regular expression to capture the session ID from NIfTI filepaths.'
-    )
-
-    parser.add_argument(
-        '--protocol_pattern',
-        type=str,
-        default=None,
-        help='Regular expression to capture the \'ProtocolName\' from NIfTI filepaths (used in place of JSON headers if unavailable).'
-    )
-
-    parser.add_argument(
-        '--run_pattern',
-        type=str,
-        default='run-([0-9]+)',
-        help='Regular expression to capture the run number from NIfTI filepaths (one scanning session may have multiple runs of the same sequence).'
-    )
-
-    parser.add_argument(
-        '--echo_pattern',
-        type=str,
-        default='echo-([0-9]+)',
-        help='Regular expression to capture the echo number from NIfTI filepaths.'
-    )
-
-    parser.add_argument(
         '--auto_yes',
         action='store_true',
         help='Force running non-interactively. This is useful when used as part of a script or on a testing server.'
@@ -444,8 +334,6 @@ def main():
         f.write("\n\n")
 
     nifti_convert(
-        input_dir=args.input_dir,
-        output_dir=args.output_dir,
         args=args
     )
 
