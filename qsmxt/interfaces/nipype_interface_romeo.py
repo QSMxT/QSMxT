@@ -69,9 +69,12 @@ class RomeoB0Interface(CommandLine):
     def _run_interface(self, runtime):
         if len(self.inputs.phase) > 1:
             self.inputs.combine_phase = merge_multi_echo(self.inputs.phase, os.path.join(os.getcwd(), "multi-echo-phase.nii"))
-            self.inputs.combine_mag = merge_multi_echo(self.inputs.magnitude, os.path.join(os.getcwd(), "multi-echo-mag.nii"))
         else:
             self.inputs.combine_phase = self.inputs.phase[0]
+
+        if len(self.inputs.magnitude) > 1:
+            self.inputs.combine_mag = merge_multi_echo(self.inputs.magnitude, os.path.join(os.getcwd(), "multi-echo-mag.nii"))
+        elif self.inputs.magnitude:
             self.inputs.combine_mag = self.inputs.magnitude[0]
         
         if self.inputs.TEs:
