@@ -25,11 +25,11 @@ def init_workflow(args):
     logger = make_logger('main')
     subjects = [
         os.path.split(path)[1]
-        for path in glob.glob(os.path.join(args.bids_dir, args.subject_pattern))
+        for path in sorted(glob.glob(os.path.join(args.bids_dir, "sub*")))
         if not args.subjects or os.path.split(path)[1] in args.subjects
     ]
     if not subjects:
-        logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, args.subject_pattern)}")
+        logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, 'sub*')}")
         script_exit(1, logger=logger)
     wf = Workflow("workflow", base_dir=args.output_dir)
     wf.add_nodes([
@@ -60,31 +60,33 @@ def init_workflow(args):
 
 def init_subject_workflow(args, subject):
     logger = make_logger('main')
+    subject_path = os.path.join(args.bids_dir, subject)
+
     sessions = [
         os.path.split(path)[1]
-        for path in glob.glob(os.path.join(args.bids_dir, subject, args.session_pattern))
+        for path in sorted(glob.glob(os.path.join(subject_path, "ses*")))
         if not args.sessions or os.path.split(path)[1] in args.sessions
     ]
-    if not sessions:
-        logger.log(LogLevel.ERROR.value, f"No sessions found in: {os.path.join(args.bids_dir, subject, args.session_pattern)}")
-        script_exit(1, logger=logger)
+
+    if not sessions and not glob.glob(os.path.join(subject_path, "anat", "*.*")):
+        logger.log(LogLevel.WARNING.value, f"No imaging data or sessions found in {subject_path}")
+        return None
 
     wf = Workflow(name=subject, base_dir=os.path.join(args.output_dir, "workflow"))
 
-    # Add each session workflow to the subject workflow
-    for session in sessions:
+    for session in sessions or [None]:
         session_wf = init_session_workflow(args, subject, session)
         if session_wf:
             wf.add_nodes([session_wf])
 
     return wf
 
-def init_session_workflow(args, subject, session):
+def init_session_workflow(args, subject, session=None):
     logger = make_logger('main')
-    wf = Workflow(session, base_dir=os.path.join(args.output_dir, "workflow", subject, session))
+    wf = Workflow(session or subject, base_dir=os.path.join(args.output_dir, "workflow", os.path.join(subject, session) if session else subject))
 
-    phase_pattern = os.path.join(args.bids_dir, args.phase_pattern.replace("{run}", "").format(subject=subject, session=session))
-    files = glob.glob(phase_pattern)
+    phase_pattern = os.path.join(args.bids_dir, os.path.join(subject, session) if session else subject, "anat", f"sub-*_*phase*.nii*")
+    files = sorted(glob.glob(phase_pattern))
 
     if not files:
         logger.log(LogLevel.WARNING.value, f"No files found matching pattern: {phase_pattern}")
@@ -92,12 +94,14 @@ def init_session_workflow(args, subject, session):
 
     run_details = {}
 
+    # get all unique acquisition names
     acquisitions = sorted(list(set([
         re.search("_acq-([a-zA-Z0-9]+)_", path).group(1)
         for path in files
         if '_acq-' in path
     ])))
 
+    # handle multiple runs associated with each acquisition name
     for acquisition in acquisitions:
         acquisition_runs = sorted(list(set([
             re.search("_run-([a-zA-Z0-9]+)_", path).group(1)
@@ -107,16 +111,17 @@ def init_session_workflow(args, subject, session):
         ])))
         run_details[acquisition] = acquisition_runs if len(acquisition_runs) else None
 
+    # handle runs not associated with any acquisition name
     other_runs = sorted(list(set([
         re.search("_run-([a-zA-Z0-9]+)_", path).group(1)
         for path in files
         if '_acq-' not in path
         and '_run-' in path
     ])))
-    
     if other_runs:
         run_details[None] = other_runs
 
+    # handle the final case where there may be no run or acquisition identifier
     others = any(all(x not in path for x in ['_acq-', '_run-']) for path in files)
     if others:
         if None in run_details.keys(): run_details[None].append(None)
@@ -152,9 +157,7 @@ def parse_args(args, return_run_command=False):
         nargs='?',
         default=None,
         type=os.path.abspath,
-        help='Input data folder generated using dicom_convert.py. You can also use a ' +
-             'previously existing BIDS folder. In this case, ensure that the --subject_pattern, '+
-             '--session_pattern, --magnitude_pattern and --phase_pattern are correct for your data.'
+        help='Input BIDS directory. Can be generated using dicom-convert or nifti-convert.'
     )
 
     parser.add_argument(
@@ -237,18 +240,6 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
-        '--subject_pattern',
-        default=None,
-        help='Pattern used to match subject folders in bids_dir'
-    )
-
-    parser.add_argument(
-        '--session_pattern',
-        default=None,
-        help='Pattern used to match session folders in subject folders'
-    )
-
-    parser.add_argument(
         '--subjects',
         default=None,
         nargs='*',
@@ -267,13 +258,6 @@ def parse_args(args, return_run_command=False):
         default=None,
         nargs='*',
         help='List of runs to process (e.g. \'run-1\'); by default all runs are processed.'
-    )
-    
-    parser.add_argument(
-        '--magnitude_pattern',
-        default=None,
-        help='Pattern to match magnitude files within the BIDS directory. ' +
-            'The {subject}, {session} and {run} placeholders must be present.'
     )
 
     parser.add_argument(
@@ -505,20 +489,6 @@ def parse_args(args, return_run_command=False):
         type=float,
         default=None,
         help='Fractional intensity for BET masking operations.'
-    )
-    
-    parser.add_argument(
-        '--t1w_pattern',
-        default=None,
-        help='Pattern to match T1-weighted files for segmentation within session folders. ' +
-            'The {subject}, {session} and {run} placeholders must be present.'
-    )
-
-    parser.add_argument(
-        '--phase_pattern',
-        default=None,
-        help='Pattern to match phase files for qsm within session folders. ' +
-            'The {subject}, {session} and {run} placeholders must be present.'
     )
 
     parser.add_argument(
@@ -765,10 +735,10 @@ def generate_run_command(all_args, implicit_args, explicit_args, short=True):
             continue
         if key == 'do_qsm' and value == False and any(x in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
             continue
-        elif value == True: run_command += f' --{key}'
-        elif value == False: run_command += f' --{key} off'
+        elif value == True and isinstance(value, bool): run_command += f' --{key}'
+        elif value == False and isinstance(value, bool): run_command += f' --{key} off'
         elif isinstance(value, str): run_command += f" --{key} '{value}'"
-        elif isinstance(value, (int, float)) and value != False: run_command += f" --{key} {value}"
+        elif isinstance(value, (int, float)): run_command += f" --{key} {value}"
         elif isinstance(value, list):
             run_command += f" --{key}"
             for val in value:
@@ -1374,14 +1344,13 @@ def main(argv=None):
 
     # create initial logger
     logger = make_logger(name='pre')
-    logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
 
     # display version and exit if needed
     if any(x in argv for x in ['-v', '--version']):
+        logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
         script_exit(0)
     
     # parse explicit arguments
-    logger.log(LogLevel.INFO.value, f"Parsing arguments...")
     args, run_command, explicit_args = parse_args(argv, return_run_command=True)
 
     # list premade pipelines and exit if needed
@@ -1394,11 +1363,11 @@ def main(argv=None):
     
     # overwrite logger with one that logs to file
     logpath = os.path.join(args.output_dir, f"qsmxt.log")
-    logger.log(LogLevel.INFO.value, f"Starting log file: {logpath}")
     logger = make_logger(
         name='main',
         logpath=logpath
     )
+    logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
     logger.log(LogLevel.INFO.value, f"Command: {run_command}")
 

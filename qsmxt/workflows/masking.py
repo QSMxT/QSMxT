@@ -43,7 +43,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
         bet_this_run = bet_used and (fill_masks or (run_args.mask_erosions and run_args.masking_algorithm == 'threshold' and not fill_masks))
 
         # combine magnitude if necessary
-        if run_args.combine_phase and (bet_this_run or run_args.masking_input == 'magnitude'):
+        if magnitude_available and run_args.combine_phase:
             n_combine_magnitude = Node(
                 interface=combinemagnitude.CombineMagnitudeInterface(),
                 name='nibabal-numpy_combine-magnitude'
@@ -110,9 +110,14 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 ])
                 if magnitude_available:
                     mn_phaseweights.inputs.weight_type = "grad+second+mag"
-                    wf.connect([
-                        (n_inputs, mn_phaseweights, [('magnitude', 'magnitude')])
-                    ])
+                    if run_args.combine_phase:
+                        wf.connect([
+                            (n_combine_magnitude, mn_phaseweights, [('magnitude_combined', 'magnitude')])
+                        ])
+                    else:
+                        wf.connect([
+                            (n_inputs, mn_phaseweights, [('magnitude', 'magnitude')])
+                        ])
 
         # do bet mask if necessary
         if bet_this_run:

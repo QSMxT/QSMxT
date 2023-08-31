@@ -3,6 +3,7 @@
 import argparse
 import os
 import sys
+import csv
 import json
 import shutil
 import datetime
@@ -58,64 +59,63 @@ def find_files_with_extension(input_dir, extension):
 
 def get_details_from_csv(csv_file):
     logger = make_logger()
-    csv_contents = []
+    all_details = []
+    
     with open(csv_file, "r", encoding='utf-8') as f:
-        for line in f:
-            line_contents = line.replace("\n", "").split(",")
+        csv_reader = csv.reader(f)
+        header = next(csv_reader)  # Skip header row
+        
+        for i, line_contents in enumerate(csv_reader):
             if len(line_contents) != 10:
                 logger.log(LogLevel.ERROR.value, 'Incorrect number of columns in CSV! Delete it or correct it and try again.')
                 script_exit(1)
+            
             if '' in line_contents:
                 logger.log(LogLevel.ERROR.value, 'CSV file incomplete! Delete it or complete it and try again.')
                 script_exit(1)
-            csv_contents.append(line_contents)
-    csv_contents = csv_contents[1:]
-    
-    all_details = []
-    for i, line_contents in enumerate(csv_contents):
-        details = {}
-        details['filename'] = line_contents[0]
-        details['subject_id'] = line_contents[1]
-        details['session_id'] = line_contents[2]
-        details['series_type'] = line_contents[8]
-        details['multi-echo'] = line_contents[6].strip().lower()
-        details['part_type'] = line_contents[9].strip().lower()
-        
-        details['run_num'] = parse_num_or_exit(
-            line_contents[3],
-            error_message=f"Could not parse run number '{line_contents[3]}' on line {i+1} as int",
-            whole_number=True
-        )
-        
-        details['echo_num'] = parse_num_or_exit(
-            line_contents[4],
-            error_message=f"Could not parse echo number '{line_contents[4]}' on line {i+1} as int",
-            whole_number=True
-        )
+            
+            details = {}
+            details['filename'] = line_contents[0]
+            details['subject_id'] = line_contents[1]
+            details['session_id'] = line_contents[2]
+            details['series_type'] = line_contents[8]
+            details['multi-echo'] = line_contents[6].strip().lower()
+            details['part_type'] = line_contents[9].strip().lower()
 
-        details['echo_time'] = parse_num_or_exit(
-            line_contents[5],
-            error_message=f"Could not parse echo time '{line_contents[5]}' on line {i+1} as float",
-            whole_number=False
-        )
-        
-        details['field_strength'] = parse_num_or_exit(
-            line_contents[7],
-            error_message=f"Could not parse field strength '{line_contents[7]}' on line {i+1} as float",
-            whole_number=False
-        )
-        
-        if details['multi-echo'] not in ['yes', 'no']:
-            logger.log(LogLevel.ERROR.value, f"Could not parse multi-echo field contents '{details['multi-echo']}' on line {i+1} as 'yes' or 'no'")
-            script_exit(1)
+            details['run_num'] = parse_num_or_exit(
+                line_contents[3],
+                error_message=f"Could not parse run number '{line_contents[3]}' on line {i+1} as int",
+                whole_number=True
+            )
 
-        if details['part_type'] not in ['phase', 'mag']:
-            logger.log(LogLevel.ERROR.value, f"Could not parse part type field contents '{details['part_type']}' on line {i+1} as 'mag' or 'phase'")
-            script_exit(1)
+            details['echo_num'] = parse_num_or_exit(
+                line_contents[4],
+                error_message=f"Could not parse echo number '{line_contents[4]}' on line {i+1} as int",
+                whole_number=True
+            )
 
+            details['echo_time'] = parse_num_or_exit(
+                line_contents[5],
+                error_message=f"Could not parse echo time '{line_contents[5]}' on line {i+1} as float",
+                whole_number=False
+            )
+            
+            details['field_strength'] = parse_num_or_exit(
+                line_contents[7],
+                error_message=f"Could not parse field strength '{line_contents[7]}' on line {i+1} as float",
+                whole_number=False
+            )
+            
+            if details['multi-echo'] not in ['yes', 'no']:
+                logger.log(LogLevel.ERROR.value, f"Could not parse multi-echo field contents '{details['multi-echo']}' on line {i+1} as 'yes' or 'no'")
+                script_exit(1)
 
-        all_details.append(details)
-        
+            if details['part_type'] not in ['phase', 'mag']:
+                logger.log(LogLevel.ERROR.value, f"Could not parse part type field contents '{details['part_type']}' on line {i+1} as 'mag' or 'phase'")
+                script_exit(1)
+
+            all_details.append(details)
+            
     return all_details
 
 
@@ -231,7 +231,7 @@ def nifti_convert(input_dir, output_dir, args):
 
     if any(value is None for value in flatten([list(details.values()) for details in all_details])):
         logger.log(LogLevel.INFO.value, f"Some information is missing! Writing all details to CSV spreadsheet '{args.csv_file}'...")
-        write_details_to_csv(all_details)
+        write_details_to_csv(all_details, args.csv_file)
         logger.log(LogLevel.INFO.value, f"Done writing to CSV.")
         logger.log(LogLevel.INFO.value, f"PLEASE FILL IN SPREADSHEET '{args.csv_file}' WITH MISSING INFORMATION AND RUN AGAIN WITH THE SAME COMMAND.")
         script_exit()

@@ -231,6 +231,12 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                 if 'ProtocolName' not in json_data:
                     logger.log(LogLevel.WARNING.value, f"'ProtocolName' missing from JSON header '{json_file}'! Skipping...")
                     continue
+                if 'SeriesNumber' not in json_data:
+                    logger.log(LogLevel.WARNING.value, f"'SeriesNumber' missing from JSON header '{json_file}'! Skipping...")
+                    continue
+                if 'EchoTime' not in json_data:
+                    logger.log(LogLevel.WARNING.value, f"'EchoTime' missing from JSON header '{json_file}'! Skipping...")
+                    continue
                 if json_data['Modality'] == 'MR' and json_data['ProtocolName'].lower() in t2starw_protocol_names + t1w_protocol_names:
                     details = {}
                     details['subject'] = subject

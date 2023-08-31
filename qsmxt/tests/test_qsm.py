@@ -94,7 +94,29 @@ def test_premade(bids_dir_public, premade):
 
     # generate image
     add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
-        
+
+def test_nocombine(bids_dir_public):
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING NO PHASE COMBINATION ===")
+
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
+
+    args = [
+        bids_dir_public,
+        os.path.join(tempfile.gettempdir(), "qsm"),
+        "--premade", "fast",
+        "--combine_phase", "off",
+        "--auto_yes",
+        "--debug"
+    ]
+    
+    # create the workflow and run if necessary
+    args = main(args)
+
+    # generate image
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='No multi-echo combination', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+
+
 def test_nomagnitude(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING NO MAGNITUDE ===")
@@ -274,7 +296,6 @@ def test_singleecho(bids_dir_public):
     args = [
         bids_dir_public,
         os.path.join(tempfile.gettempdir(), "qsm"),
-        "--combine_phase", "on",
         "--unwrapping_algorithm", "romeo",
         "--num_echoes", "1",
         "--auto_yes",
