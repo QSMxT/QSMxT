@@ -44,7 +44,7 @@ def get_matching_files(bids_dir, subject, dtype="anat", suffixes=[], ext="nii*",
         if fname:
             matching_files = [glob.glob(f"{pattern}_{suffix}.{ext}") for suffix in suffixes]
         else:
-            matching_files = [glob.glob(os.path.join(dir, f"{suffix}.{ext}")) for suffix in suffixes]
+            matching_files = [glob.glob(os.path.join(dir, f"*{suffix}.{ext}")) for suffix in suffixes]
     else:
         matching_files = [glob.glob(f"{pattern}.{ext}")]
     return sorted([item for sublist in matching_files for item in sublist])
@@ -65,8 +65,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     if run_args.do_segmentation and not t1w_files:
         logger.log(LogLevel.WARNING.value, f"Skipping segmentation for {run_id} - no T1w files found!")
         run_args.do_segmentation = False
-    if run_args.do_analysis and not (t1w_files and phase_files):
-        logger.log(LogLevel.WARNING.value, f"Skipping analysis for {run_id} - phase and T1w files required!")
+    if run_args.do_analysis and not run_args.do_segmentation:
+        logger.log(LogLevel.WARNING.value, f"Skipping analysis for {run_id} - segmentations required!")
         run_args.do_analysis = False
     if run_args.do_segmentation and not magnitude_files:
         logger.log(LogLevel.WARNING.value, f"Skipping segmentation for {run_id} - no GRE magnitude files found to register T1w segmentations to!")
