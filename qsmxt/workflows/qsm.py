@@ -32,16 +32,19 @@ def get_matching_files(bids_dir, subject, dtype="anat", suffixes=[], ext="nii*",
     pattern = os.path.join(bids_dir, subject)
     if session:
         pattern = os.path.join(pattern, session)
-    pattern = os.path.join(pattern, dtype)
-    pattern = os.path.join(pattern, f"sub-*_*")
+    pattern = os.path.join(pattern, dtype) + os.path.sep
     if acq:
-        pattern += f"acq-{acq}_*"
+        pattern += f"*acq-{acq}_*"
     if run:
-        pattern += f"run-{run}_*"
+        pattern += f"*run-{run}_*"
     if part:
-        pattern += f"part-{part}_*"
+        pattern += f"*part-{part}_*"
+    dir, fname = os.path.split(pattern)
     if suffixes:
-        matching_files = [glob.glob(f"{pattern}_{suffix}.{ext}") for suffix in suffixes]
+        if fname:
+            matching_files = [glob.glob(f"{pattern}_{suffix}.{ext}") for suffix in suffixes]
+        else:
+            matching_files = [glob.glob(os.path.join(dir, f"{suffix}.{ext}")) for suffix in suffixes]
     else:
         matching_files = [glob.glob(f"{pattern}.{ext}")]
     return sorted([item for sublist in matching_files for item in sublist])
