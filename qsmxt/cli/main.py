@@ -407,18 +407,20 @@ def parse_args(args, return_run_command=False):
         type=argparse_bool,
         const=True,
         default=None,
-        help='This option will use existing masks from the BIDS folder, where possible, instead of '+
-            'generating new ones. The masks will be selected based on the --mask_pattern argument. '+
-            'A single mask may be present (and will be applied to all echoes), or a mask for each '+
-            'echo can be used. When existing masks cannot be found, the --masking_algorithm will '+
-            'be used as a fallback.'
+        help='Instead of generating new masks for each subject, this option will prioritize using existing '+
+            'masks from the BIDS folder in the --existing_masks_pipeline derivatives directory. A single mask may be '+
+            'present (and will be applied to all echoes), or a mask for each echo can be used. When existing '+
+            'masks cannot be found, the --masking_algorithm will be used as a fallback. See '+
+            'https://bids-specification.readthedocs.io/en/stable/05-derivatives/03-imaging.html#masks. '+
+            'Valid paths fit '+
+            'BIDS_DIR/derivatives/EXISTING_MASK_PIPELINE/sub-<SUBJECT_ID>/anat/sub-<SUBJECT_ID>*_mask.nii'
     )
 
     parser.add_argument(
-        '--mask_pattern',
+        '--existing_masks_pipeline',
         default=None,
-        help='Pattern used to identify mask files to be used when the --use_existing_masks option '+
-            'is enabled.'
+        help='A pattern matching the name of the software pipeline used to derive input masks to be used when '+
+             '--use_existing_masks is enabled. Defaults to \'*\' to match any.'
     )
 
     parser.add_argument(
@@ -881,7 +883,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
         if args.do_qsm:
             print(f"\n(2) QSM pipeline: {args.premade}")
             print("\n(3) [ADVANCED] QSM masking:")
-            print(f" - Use existing masks if available: {'Yes' if args.use_existing_masks else 'No'}")
+            print(f" - Use existing masks if available: {'Yes' if args.use_existing_masks else 'No'}" + (f" (using PIPELINE_NAME={args.existing_masks_pipeline})" if args.use_existing_masks else ""))
             if args.masking_algorithm == 'threshold':
                 print(f" - Masking algorithm: threshold ({args.masking_input}-based{('; inhomogeneity-corrected)' if args.masking_input == 'magnitude' and args.inhomogeneity_correction else ')')}")
                 print(f"   - Two-pass artefact reduction: {'Enabled' if args.two_pass else 'Disabled'}")
@@ -943,9 +945,9 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                 default='yes' if args.use_existing_masks else 'no'
             )
             if args.use_existing_masks:
-                args.mask_pattern = get_string(
-                    prompt=f"Enter mask file pattern [default: {args.mask_pattern}]: ",
-                    default=args.mask_pattern
+                args.existing_masks_pipeline = get_string(
+                    prompt=f"Enter pattern to match the software pipeline name from which masks were derived or '*' to match any [default: {args.existing_masks_pipeline}]: ",
+                    default=args.existing_masks_pipeline
                 )
             
             print("\n== Masking algorithm ==")

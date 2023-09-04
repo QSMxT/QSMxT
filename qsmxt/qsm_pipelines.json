@@ -39,7 +39,7 @@
         "add_bet": false,
         "bet_fractional_intensity": 0.5,
         "use_existing_masks": false,
-        "mask_pattern": "{subject}/{session}/extra_data/*{run}*mask*nii*",
+        "existing_masks_pipeline": "*",
         "two_pass": true,
         "pbs": null,
         "slurm": [null, null],

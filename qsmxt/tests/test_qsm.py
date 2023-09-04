@@ -37,8 +37,8 @@ def bids_dir_public():
         logger.log(LogLevel.INFO.value, "Preparing simulation information...")
         tissue_params = qsm_forward.TissueParams(os.path.join(tmp_dir, 'head-phantom-maps'))
         recon_params_all = [
-            qsm_forward.ReconParams(voxel_size=np.array([1.0, 1.0, 1.0]), session=session, TEs=TEs, TR=TR, flip_angle=flip_angle, weighting_suffix=weighting_suffix, export_phase=export_phase)
-            for (session, TEs, TR, flip_angle, weighting_suffix, export_phase) in [
+            qsm_forward.ReconParams(voxel_size=np.array([1.0, 1.0, 1.0]), session=session, TEs=TEs, TR=TR, flip_angle=flip_angle, suffix=suffix, export_phase=export_phase)
+            for (session, TEs, TR, flip_angle, suffix, export_phase) in [
                 #("1", np.array([3.5e-3]), 7.5e-3, 40, "T1w", False),
                 ("1", np.array([0.012, 0.020]), 0.05, 15, "T2starw", True),
             ]

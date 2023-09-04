@@ -59,7 +59,11 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     phase_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=[], session=session, run=run, part="phase", acq=acq)[:run_args.num_echoes]
     magnitude_files = [path.replace("part-phase", "part-mag") for path in phase_files if os.path.exists(path.replace("_part-phase", "_part-mag"))]
     params_files = [path.replace('.nii.gz', '.nii').replace('.nii', '.json') for path in (phase_files if len(phase_files) else magnitude_files) if os.path.exists(path.replace('.nii.gz', '.nii').replace('.nii', '.json'))]
-    mask_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="extra_data", suffixes=["mask"], session=session, run=None, part=None, acq=None)[:run_args.num_echoes]
+    mask_files = [
+        mask_file for mask_file in get_matching_files(os.path.join(run_args.bids_dir, "derivatives", run_args.existing_masks_pipeline), subject=subject, dtype="anat", suffixes=["mask"], session=session, run=None, part=None, acq=None)[:run_args.num_echoes]
+        if ('_space-orig' in mask_file or '_space-' not in mask_file)
+        and ('_label-brain' in mask_file or '_label-' not in mask_file)
+    ]
     
     # handle any errors related to files and adjust any settings if needed
     if run_args.do_segmentation and not t1w_files:
@@ -84,7 +88,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         run_args.combine_phase = False
     if run_args.do_qsm and run_args.use_existing_masks:
         if not mask_files:
-            logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but no masks found matching pattern: {run_args.mask_pattern}. Reverting to {run_args.masking_algorithm} masking algorithm.")
+            logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but no masks found in {run_args.use_existing_masks} derivatives. Reverting to {run_args.masking_algorithm} masking algorithm.")
             run_args.use_existing_masks = False
         else:
             if len(mask_files) > 1:
