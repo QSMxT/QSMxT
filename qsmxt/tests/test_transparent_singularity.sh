@@ -53,7 +53,7 @@ echo $pip_command
 $pip_command
 
 echo "[DEBUG] dicom-sort /tmp/dicoms-unsorted /tmp/dicoms-sorted"
-dicom-sort /tmp/dicoms /tmp/dicoms-sorted
+dicom-sort /tmp/dicoms-unsorted /tmp/dicoms-sorted
 
 echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_convert.py /tmp/dicoms-sorted /tmp/bids --auto_yes"
 dicom-convert /tmp/dicoms-sorted /tmp/bids --auto_yes --t2starw_protocol_patterns '*qsm*' --t1w_protocol_patterns '*mp2rage*'
