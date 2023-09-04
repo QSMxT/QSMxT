@@ -94,7 +94,7 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     ```bash
     git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_5.0.0_20230904
     cd qsmxt_5.0.0_20230904
-    ./run_transparent_singularity.sh --container qsmxt_4.0.1_20230824.simg
+    ./run_transparent_singularity.sh --container qsmxt_5.0.0_20230904.simg
     source activate_qsmxt_5.0.0_20230904.simg.sh
     ```
     
