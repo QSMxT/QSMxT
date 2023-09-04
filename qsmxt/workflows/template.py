@@ -43,13 +43,8 @@ def init_template_workflow(args):
 
     magnitude_files = []
     for subject in subjects:
-        subject_magfiles = get_matching_files(args.bids_dir, subject=subject, part="mag")
-        subject_phasefiles = get_matching_files(args.bids_dir, subject=subject, part="phase")
-        if len(subject_magfiles) and len(subject_magfiles) != len(subject_phasefiles):
-            logger.log(LogLevel.ERROR.value, f"Number of phase files does not match the number of magnitude files for {subject}! Template-building will not be possible.")
-            return
-        if len(subject_magfiles):
-            magnitude_files.append(subject_magfiles[0])
+        subject_magfiles = get_matching_files(args.bids_dir, subject=subject, dtype="anat", part="mag")
+        if len(subject_magfiles): magnitude_files.append(subject_magfiles[0])
     if not magnitude_files:
         logger.log(LogLevel.ERROR.value, "No GRE magnitude images found! Template-building will not be possible.")
         return
