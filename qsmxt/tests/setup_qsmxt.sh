@@ -12,8 +12,8 @@ elif [ -n "${GITHUB_REF##*/}" ]; then
     echo "GITHUB_HEAD_REF UNDEFINED... USING GITHUB_REF##*/"
     BRANCH=${GITHUB_REF##*/}
 else
-    echo "NEITHER GITHUB_HEAD_REF NOR GITHUB_REF DEFINED. ASSUMING MASTER."
-    BRANCH=master
+    echo "NEITHER GITHUB_HEAD_REF NOR GITHUB_REF DEFINED. ASSUMING MAIN."
+    BRANCH=main
 fi
 
 echo "[DEBUG] Pulling QSMxT repository (branch=${BRANCH})..."
