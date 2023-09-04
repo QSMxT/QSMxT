@@ -10,16 +10,25 @@ from qsmxt.scripts.qsmxt_functions import gen_plugin_args
 from qsmxt.scripts.antsBuildTemplate import ANTSTemplateBuildSingleIterationWF
 from qsmxt.scripts.logger import LogLevel, make_logger
 
-def get_matching_files(bids_dir, subject='*', session='*', suffixes=None, part=None, acq=None, run=None):
-    pattern = f"{bids_dir}/{subject}/{session}/anat/{subject}_{session}*"
+def get_matching_files(bids_dir, subject, dtype="anat", suffixes=[], ext="nii*", session=None, run=None, part=None, acq=None):
+    pattern = os.path.join(bids_dir, subject)
+    if session:
+        pattern = os.path.join(pattern, session)
+    pattern = os.path.join(pattern, dtype) + os.path.sep
     if acq:
-        pattern += f"acq-{acq}_*"
+        pattern += f"*acq-{acq}_*"
     if run:
-        pattern += f"run-{run}_*"
+        pattern += f"*run-{run}_*"
     if part:
-        pattern += f"part-{part}_*"
+        pattern += f"*part-{part}_*"
+    dir, fname = os.path.split(pattern)
     if suffixes:
-        matching_files = [glob.glob(f"{pattern}{suffix}.nii*") for suffix in suffixes]
+        if fname:
+            matching_files = [glob.glob(f"{pattern}_{suffix}.{ext}") for suffix in suffixes]
+        else:
+            matching_files = [glob.glob(os.path.join(dir, f"*{suffix}.{ext}")) for suffix in suffixes]
+    else:
+        matching_files = [glob.glob(f"{pattern}.{ext}")]
     return sorted([item for sublist in matching_files for item in sublist])
 
 def init_template_workflow(args):
@@ -34,10 +43,10 @@ def init_template_workflow(args):
 
     magnitude_files = []
     for subject in subjects:
-        subject_magfiles = get_matching_files(args.bids_dir, subject=subject, session='*', suffixes=["T2starw", "MEGRE"], part="mag")
-        subject_phasefiles = get_matching_files(args.bids_dir, subject=subject, session='*', suffixes=["T2starw", "MEGRE"], part="phase")
+        subject_magfiles = get_matching_files(args.bids_dir, subject=subject, part="mag")
+        subject_phasefiles = get_matching_files(args.bids_dir, subject=subject, part="phase")
         if len(subject_magfiles) and len(subject_magfiles) != len(subject_phasefiles):
-            logger.log(LogLevel.ERROR.value, f"Number of phase files does not match the number of magnitude files for {subject}! QSM template-building will not be possible.")
+            logger.log(LogLevel.ERROR.value, f"Number of phase files does not match the number of magnitude files for {subject}! Template-building will not be possible.")
             return
         if len(subject_magfiles):
             magnitude_files.append(subject_magfiles[0])
