@@ -32,10 +32,7 @@ cat julia
 echo "[DEBUG]: download test data"
 pip install osfclient > /dev/null 2>&1
 osf -p ru43c clone /tmp > /dev/null 2>&1
-unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_M_5_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms > /dev/null 2>&1
-unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub1/GR_P_6_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms > /dev/null 2>&1
-unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub2/GR_M_5_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms > /dev/null 2>&1
-unzip /tmp/osfstorage/GRE_2subj_1mm_TE20ms/sub2/GR_P_6_QSM_p2_1mmIso_TE20.zip -d /tmp/dicoms > /dev/null 2>&1
+tar xf /tmp/osfstorage/dicoms-unsorted.tar -C /tmp 
 
 echo "[DEBUG]: testing the python setup commands from the README:"
 
@@ -55,11 +52,11 @@ pip_command=`cat /tmp/QSMxT/README.md | grep "pip install "`
 echo $pip_command
 $pip_command
 
-echo "[DEBUG] dicom-sort /tmp/dicoms /tmp/dicoms-sorted"
+echo "[DEBUG] dicom-sort /tmp/dicoms-unsorted /tmp/dicoms-sorted"
 dicom-sort /tmp/dicoms /tmp/dicoms-sorted
 
 echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/dicom_convert.py /tmp/dicoms-sorted /tmp/bids --auto_yes"
-dicom-convert /tmp/dicoms-sorted /tmp/bids --auto_yes
+dicom-convert /tmp/dicoms-sorted /tmp/bids --auto_yes --t2starw_protocol_patterns '*qsm*' --t1w_protocol_patterns '*mp2rage*'
 
 echo "[DEBUG] /usr/share/miniconda/bin/python3 /tmp/QSMxT/qsmxt.py /tmp/bids /tmp/out --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes"
 qsmxt /tmp/bids /tmp/out --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug
