@@ -314,11 +314,16 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                 # store session details
                 all_session_details.extend(session_details)
 
+    print("Summary of identified files and proposed renames (following BIDS standard):")
+    for f in all_session_details:
+        print(f"{os.path.split(f['file_name'])[1]} \n\t -> {os.path.split(f['new_name'])[1]}")
+
+    if len(all_session_details) != len(set(details['new_name'] for details in all_session_details)):
+        logger.log(LogLevel.ERROR.value, f"Resultant BIDS data contains name conflicts! Try running `nifti-convert {output_dir} {output_dir}`.")
+        script_exit(1)
+
     # if running interactively, show a summary of the renames prior to actioning
     if sys.__stdin__.isatty() and not auto_yes:
-        print("Summary of identified files and proposed renames (following BIDS standard):")
-        for f in all_session_details:
-            print(f"{os.path.split(f['file_name'])[1]} \n\t -> {os.path.split(f['new_name'])[1]}")
         if input("Confirm renaming? (n for no): ").strip().lower() in ["n", "no"]:
             script_exit(0)
 
