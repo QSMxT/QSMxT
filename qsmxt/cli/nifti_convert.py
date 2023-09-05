@@ -34,7 +34,7 @@ def flatten(a):
     return [i for g in a for i in g]
 
 def get_bids_entities():
-    return ['sub', 'ses', 'acq', 'ce', 'rec', 'run', 'mod', 'echo', 'flip', 'inv', 'mt', 'part', 'suffix']
+    return ['sub', 'ses', 'acq', 'ce', 'rec', 'run', 'mod', 'echo', 'flip', 'inv', 'mt', 'part', 'desc', 'suffix']
 
 def find_files_with_extension(input_dir, extension):
     file_list = []
@@ -69,6 +69,7 @@ def get_details_from_csv(csv_file):
         
         for i, line_contents in enumerate(csv_reader):
             details = {}
+            details['filedir'] = line_contents['filedir']
             details['filename'] = line_contents['filename']
 
             for field in line_contents:
@@ -99,7 +100,9 @@ def get_details_from_filenames(file_list):
 
     for nifti_file in file_list:
         details = {}
-        details['filename'] = nifti_file
+        head, filename, ext = splitext(nifti_file)
+        details['filename'] = filename + ext
+        details['filedir'] = head
 
         for entity in get_bids_entities():
             label = get_bids_entity(path=nifti_file, entity=entity)
@@ -113,7 +116,7 @@ def get_details_from_filenames(file_list):
 
 def update_details_with_jsons(all_details):
     for details in all_details:
-        json_file = json_filename(details['filename'])
+        json_file = json_filename(os.path.join(details['filedir'], details['filename']))
         if os.path.exists(json_file):
             json_data = load_json(json_file)
             for field in ['MagneticFieldStrength', 'EchoTime', 'ImageType']:
@@ -125,7 +128,7 @@ def update_details_with_jsons(all_details):
 def write_details_to_csv(all_details, csv_file):
     bids_entities = get_bids_entities()
     json_fields = ['MagneticFieldStrength', 'EchoTime']
-    all_fields = ['filename'] + bids_entities + json_fields
+    all_fields = ['filedir', 'filename', 'DerivativePipeline'] + bids_entities + json_fields
 
     with open(csv_file, 'w', encoding='utf-8', newline='') as f:
         csv_writer = csv.DictWriter(f, fieldnames=all_fields)
@@ -134,7 +137,7 @@ def write_details_to_csv(all_details, csv_file):
         csv_writer.writeheader()
         
         # Sort all_details by filename
-        all_details.sort(key=lambda d: d['filename'])
+        all_details.sort(key=lambda d: (d['filedir'], d['filename']))
         
         # Write rows
         for d in all_details:
@@ -175,10 +178,13 @@ def nifti_convert(args):
     
     logger.log(LogLevel.INFO.value, "Computing new NIfTI file names and locations...")
     for details in all_details:
-        head, filename, ext = splitext(details['filename'])
+        filedir = details['filedir']
+        filename = details['filename']
+        _, filename, ext = splitext(filename)
+        filename = os.path.join(filedir, filename)
 
         if any(x not in details for x in ['sub', 'suffix']):
-            logger.log(LogLevel.ERROR.value, f"File '{filename}' is missing BIDS-critical information! At least 'sub' and 'suffix' entities are required!")
+            logger.log(LogLevel.ERROR.value, f"File '{filename + ext}' is missing BIDS-critical information! At least 'sub' and 'suffix' entities are required!")
             script_exit(1)
         
         new_name = ""
@@ -190,7 +196,10 @@ def nifti_convert(args):
 
         new_name += ext
 
-        new_dir = os.path.join(args.output_dir, f"sub-{details['sub']}")
+        new_dir = os.path.join(args.output_dir)
+        if 'DerivativePipeline' in details:
+            new_dir = os.path.join(new_dir, 'derivatives', details['DerivativePipeline'])
+        new_dir = os.path.join(new_dir, f"sub-{details['sub']}")
         if 'ses' in details:
             new_dir = os.path.join(new_dir, f"ses-{details['ses']}")
         new_dir = os.path.join(new_dir, "anat")
@@ -215,12 +224,12 @@ def nifti_convert(args):
     # copy/rename all files
     logger.log(LogLevel.INFO.value, "Copying NIfTI files to new locations with new names...")
     for details in all_details:
-        copy(details['filename'], details['new_name'], always_show=args.auto_yes)
+        copy(os.path.join(details['filedir'], details['filename']), details['new_name'], always_show=args.auto_yes)
     logger.log(LogLevel.INFO.value, "Done copying NIfTI files.")
 
     logger.log(LogLevel.INFO.value, "Copying JSON header files if present and generating them if needed...")
     for details in all_details:
-        f = json_filename(details['filename'])
+        f = json_filename(os.path.join(details['filedir'], details['filename']))
         if os.path.exists(f):
             copy(f, json_filename(details['new_name']), always_show=args.auto_yes)
         else:
@@ -229,6 +238,10 @@ def nifti_convert(args):
                 if field not in get_bids_entities():
                     dictionary[field] = details[field]
 
+            if 'EchoTime' in dictionary:
+                dictionary['EchoTime'] = float(dictionary['EchoTime'])
+            if 'MagneticFieldStrength' in dictionary:
+                dictionary['MagneticFieldStrength'] = float(dictionary['MagneticFieldStrength'])
             if 'ImageType' not in dictionary and 'part' in details:
                 dictionary['ImageType'] = ["P", "PHASE"] if details['part'] == 'phase' else ["M", "MAGNITUDE"]
             if 'EchoNumber' not in dictionary and 'echo' in details:
