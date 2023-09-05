@@ -16,6 +16,7 @@ def resample_to_axial(mag_nii=None, pha_nii=None, mask_nii=None):
     np.fill_diagonal(base_affine, voxel_size * np.sign(np.diag(nii.affine))[:3])
     base_affine[3,3] = 1
     base_affine[:3,3] = origin * -np.sign(np.diag(nii.affine)[:3])
+    base_affine = base_affine[:3,:3]
 
     mag_rot_nii = None
     pha_rot_nii = None
