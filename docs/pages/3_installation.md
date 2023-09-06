@@ -13,84 +13,72 @@ permalink: /installation
 
 # Installation
 
-## Quick-start via Neurodesk (Windows, MacOS and Linux)
+## Quickstart via Neurodesk
 
-QSMxT is bundled with <a href="https://neurodesk.org/" target="_blank" data-placement="top" data-toggle="popover" data-trigger="hover focus" data-content="An interactive analysis environment for Neuroimaging. Click to navigate.">Neurodesk</a>, which runs on Windows, MacOS, and Linux. We recommend this method for most users. 
-
-Once Neurodesktop is installed an open, QSMxT can be accessed through the Applications menu:
+QSMxT can be accessed via [Neurodesk](https://neurodesk.org/), including for free, without any installation via [Neurodesk Play](https://play.neurodesk.org/). Once started, QSMxT is available in Neurodesk's module system and via the applications menu.
 
 ![Neurodesktop applications menu with QSMxT](/images/neurodesktop-applications-menu.jpg)
 
-## Docker container (Windows, MacOS and Linux)
+### Updating QSMxT in Neurodesk
 
-You can run QSMxT via a Docker container, which is also compatible with Windows, MacOS and Linux. You will first need to install Docker, before running the following command:
+To use the latest version of QSMxT within an older version of Neurodesk, use:
 
-### Windows users
+```
+bash /neurocommand/local/fetch_and_run.sh qsmxt 5.1.0 20230905
+```
 
- ```bash
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.11:20220526
- ```
+## Docker container
 
-### MacOS and Linux users
+If you prefer to use a Docker container, the following commands will install QSMxT locally:
 
- ```bash
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_1.1.11:20220526
- ```
+**Windows:**
+```
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_5.1.0:20230905
+```
 
-## Transparent Singularity (Linux and HPCs)
+**Linux/Mac:**
+```
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_5.1.0:20230905
+```
 
-An alternative installation for Linux users that also supports HPCs is described in this section.
+## HPC installation via Transparent Singularity
 
-A singularity container is provided for Linux and HPC use, which coupled with the transparent singularity software provided by the Neurodesk project, allows QSMxT and its dependencies to be invoked <a href="https://neurodesk.org/" target="_blank" data-placement="top" data-toggle="popover" data-trigger="hover focus" data-content="Outside of the container's environment; as though QSMxT and its dependencies were installed natively.">transparently</a>. This mode of execution is necessary for parallel execution via PBS.
+The tools provided by the QSMxT container can be exposed and used using the QSMxT Singularity container coupled with the transparent singularity software provided by the Neurodesk project. Transparent singularity allows the QSMxT Python scripts to be run directly within the host OS's environment. This mode of execution is necessary for parallel execution via PBS.
 
-1. Install singularity
+1. Install [singularity](https://sylabs.io/guides/3.0/user-guide/quick_start.html)
+   
+2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
-2. Install the QSMxT container via transparent singularity:
-
-  ```bash
-  git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_1.1.11_20220526
-  cd qsmxt_1.1.11_20220526
-  ./run_transparent_singularity.sh --container qsmxt_1.1.11_20220526.simg
-  source activate_qsmxt_1.1.11_20220526.simg.sh
-  ```
+    ```bash
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_5.1.0_20230905
+    cd qsmxt_5.1.0_20230905
+    ./run_transparent_singularity.sh --container qsmxt_5.1.0_20230905.simg
+    source activate_qsmxt_5.1.0_20230905.simg.sh
+    ```
+    
+    - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
 
 3. Clone the QSMxT repository:
+    ```bash
+    git clone https://github.com/QSMxT/QSMxT.git
+    ```
 
-  ```bash
-  git clone https://github.com/QSMxT/QSMxT.git
-  ```
+4. Install miniconda with QSMxT:
+```bash
+wget https://repo.anaconda.com/miniconda/Miniconda3-4.7.12.1-Linux-x86_64.sh	
+bash Miniconda3-4.7.12.1-Linux-x86_64.sh -b
+source ~/.bashrc
+conda create -n qsmxt python=3.8
+conda activate qsmxt
+pip install qsmxt
+```
 
-4. Install miniconda with nipype:
-
-  ```bash
-  wget https://repo.anaconda.com/miniconda/Miniconda3-4.7.12.1-Linux-x86_64.sh	
-  bash Miniconda3-4.7.12.1-Linux-x86_64.sh -b
-  source ~/.bashrc
-  conda create -n qsmxt python=3.6
-  conda activate qsmxt
-  conda install -c conda-forge nipype=1.6.0 scipy=1.8.0
-  pip install bidscoin
-  ```
-
-5. Invoke QSMxT python scripts directly (see [QSMxT Usage](/using-qsmxt)). Use the `--pbs` flag with your account string to run on an HPC supporting PBS.
+5. Invoke QSMxT python commands directly (see QSMxT Usage above). Use the `--pbs` and `--slurm` flags with your account string and group to run on an HPCs supporting PBS and SLURM.
 
 
 ## Bare metal installation
 
-We do not recommend installing QSMxT's dependencies manually, and we instead advocate for the use of software containers for reproducibility and ease-of-use. However, we provide a list of the dependencies below if you wish to run QSMxT natively. This was tested in Ubuntu 18.04.
-
-You need:
-
-- TGV-QSM running in miniconda 2
-- fsl version=6.0.4
-- ants version=2.3.4
-- dcm2niix latest version from github
-- miniconda version=4.7.12.1 with python 3.6 for nipype 1.6.0 pytorch 1.2.0 and torchvision 0.4.0 niflow-nipype1-workflows
-- FastSurfer https://github.com/Deep-MI/FastSurfer.git
-- Bru2Nii v1.0.20180303 https://github.com/neurolabusc/Bru2Nii/releases/download/v1.0.20180303/Bru2_Linux.zip
-- julia-1.6.1 with ArgParse and MriResearchTools
-
-Here is the detailed instruction that you could replicate: https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxtbase/build.sh and then on top https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxt/build.sh
+We recommend the use of software containers for reproducibility and ease of use. However, QSMxT can be installed manually. Please see the detailed instructions for generating the container [here](https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxt/build.sh).
 
 <script>
 $(document).ready(function(){
