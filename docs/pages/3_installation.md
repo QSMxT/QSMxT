@@ -19,7 +19,7 @@ QSMxT is available via [Neurodesk](https://neurodesk.org/). Using [Neurodesk Pla
 
 Once started, QSMxT is available in Neurodesk's module system and via the applications menu:
 
-![Neurodesktop applications menu with QSMxT](/QSMxT/docs/images/neurodesktop-applications-menu.jpg)
+![Neurodesktop applications menu with QSMxT](/QSMxT/images/neurodesktop-applications-menu.jpg)
 
 ### Updating QSMxT in Neurodesk
 
