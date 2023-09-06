@@ -8,7 +8,7 @@ on:
     paths:
       - setup.py
       - .github/workflows/test_transparent_singularity.yml
-      - README.md
+      - docs/_config.yml
       - aseg_labels.csv
       - qsmxt/qsm_pipelines.json
       - qsmxt/cli/dicom_sort.py

@@ -7,7 +7,7 @@ on:
     paths:
       - setup.py
       - .github/workflows/test_qsm.yml
-      - README.md
+      - docs/_config.yml
       - qsmxt/cli/main.py
       - qsmxt/qsm_pipelines.json
       - qsmxt/workflows/qsm.py
