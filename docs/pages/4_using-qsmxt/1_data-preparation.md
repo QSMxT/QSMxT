@@ -1,7 +1,7 @@
 ---
 layout: default
 title: Data preparation
-nav_order: 2
+nav_order: 1
 parent: Using QSMxT
 permalink: /using-qsmxt/data-preparation
 ---
@@ -14,14 +14,35 @@ permalink: /using-qsmxt/data-preparation
 
 # Data preparation
 
-QSMxT requires <a href="https://bids.neuroimaging.io/" target="_blank" data-placement="top" data-toggle="popover" data-trigger="hover focus" data-content="Click to read about BIDS at https://bids.neuroimaging.io/.">BIDS</a>-organised data. If your data does not conform to BIDS, you can use the tools `dicom-sort`, `dicom-convert` and `nifti-convert` to bring your images into this format, depending on whether you have DICOMs or NIfTI images.
+QSMxT requires <a href="https://bids.neuroimaging.io/" target="_blank" data-placement="top" data-toggle="popover" data-trigger="hover focus" data-content="Click to read about BIDS at https://bids.neuroimaging.io/.">BIDS</a>-conforming data. You can use `dicom-sort`, `dicom-convert` and `nifti-convert` to convert your data to BIDS, depending on whether you have DICOM or NIfTI images.
 
-## I have DICOMs
+## DICOM to BIDS
 
-Use `dicom-sort` and `dicom-convert` to convert DICOMs to BIDS:
+To convert DICOM to BIDS using `dicom-convert`, your data must first be organized into folders by subject, session, and series. For example:
+
+```bash
+dicoms/
+├── sub-1
+│   └── ses-20190606
+│       ├── 3_t1_mprage_sag_p2
+│       ├── 6_gre_qsm_5echoes_Iso1mm
+│       └── 7_gre_qsm_5echoes_Iso1mm
+├── sub-2
+│   └── ses-20190528
+│       ├── 10_gre_qsm_5echoes_Iso1mm
+│       ├── 11_gre_qsm_5echoes_Iso1mm
+│       └── 3_t1_mprage_sag_p2
+```
+
+To automatically sort your DICOM images, use `dicom-sort`:
 
 ```bash
 dicom-sort YOUR_DICOM_DIR/ dicoms-sorted/
+```
+
+To convert to BIDS, use `dicom-convert`:
+
+```bash
 dicom-convert dicoms-sorted/ bids/
 ```
 

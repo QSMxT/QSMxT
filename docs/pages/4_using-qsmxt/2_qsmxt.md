@@ -1,9 +1,9 @@
 ---
 layout: default
-title: QSM Reconstruction
-nav_order: 3
+title: Using QSMxT
+nav_order: 2
 parent: Using QSMxT
-permalink: /using-qsmxt/qsm-reconstruction
+permalink: /using-qsmxt/qsmxt
 ---
 
 <head>

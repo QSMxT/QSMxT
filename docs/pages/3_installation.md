@@ -15,7 +15,7 @@ permalink: /installation
 
 ## Quickstart via Neurodesk
 
-QSMxT is available via [Neurodesk](https://neurodesk.org/). Using [Neurodesk Play](https://play.neurodesk.org/), you can access QSMxT in your browser without any installation via.
+QSMxT is available via [Neurodesk](https://neurodesk.org/). Using [Neurodesk Play](https://play.neurodesk.org/), you can access QSMxT in your browser without any installation.
 
 Once started, QSMxT is available in Neurodesk's module system and via the applications menu:
 
@@ -43,12 +43,12 @@ docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ si
 docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ site.software_version }}:{{ site.build_date }}
 ```
 
-## HPC installation via Transparent Singularity
+## HPC installation
 
-The tools provided by the QSMxT container can be exposed and used using the QSMxT Singularity container coupled with the transparent singularity software provided by the Neurodesk project. Transparent singularity allows the QSMxT Python scripts to be run directly within the host OS's environment. This mode of execution is necessary for parallel execution via PBS.
+QSMxT can be installed on an HPC or Linux machine using [transparent singularity](https://github.com/neurodesk/transparent-singularity). Transparent singularity installs QSMxT using a singularity container and exposes the underlying tools to the host environment, which is necessary for HPCs using PBS Graph or SLURM. 
 
-1. Install [singularity](https://sylabs.io/guides/3.0/user-guide/quick_start.html)
-   
+1. Install or load [singularity](https://sylabs.io/guides/3.0/user-guide/quick_start.html) on your HPC
+
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
   {% capture code_block_content %}{% include transparent_singularity_install.sh %}{% endcapture %}
@@ -58,18 +58,13 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 
   - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
 
-3. Clone the QSMxT repository:
-    ```bash
-    git clone https://github.com/QSMxT/QSMxT.git
-    ```
+3. Install miniconda with QSMxT:
+  {% capture code_block_content %}{% include miniconda_install.sh %}{% endcapture %}
+  ```bash
+  {{ code_block_content | strip }}
+  ```
 
-4. Install miniconda with QSMxT:
-{% capture code_block_content %}{% include miniconda_install.sh %}{% endcapture %}
-```bash
-{{ code_block_content | strip }}
-```
-
-5. Invoke QSMxT python commands directly (see [using QSMxT](/QSMxT/using-qsmxt)). Use the `--pbs` and `--slurm` flags with your account string and group to run on an HPCs supporting PBS and SLURM.
+4. Run QSMxT commands directly (see [using QSMxT](/QSMxT/using-qsmxt)). Use the `--pbs` and `--slurm` flags with your account string and group to run on an HPCs supporting PBS and SLURM.
 
 ## Bare metal installation
 
