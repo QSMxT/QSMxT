@@ -49,7 +49,7 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
    
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
-    {% capture code_block_content %}{% include /docs/code_blocks/transparent_singularity_install.sh %}{% endcapture %}
+    {% capture code_block_content %}{% include transparent_singularity_install.sh %}{% endcapture %}
     ```bash
     {{ code_block_content | strip }}
     ```
