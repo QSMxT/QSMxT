@@ -49,12 +49,12 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
    
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
-    {% capture code_block_content %}{% include transparent_singularity_install.sh %}{% endcapture %}
-    ```bash
-    {{ code_block_content | strip }}
-    ```
+{% capture code_block_content %}{% include transparent_singularity_install.sh %}{% endcapture %}
+```bash
+{{ code_block_content | strip }}
+```
 
-    - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
+- **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
 
 3. Clone the QSMxT repository:
     ```bash
@@ -62,13 +62,9 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
     ```
 
 4. Install miniconda with QSMxT:
+{% capture code_block_content %}{% include miniconda_install.sh %}{% endcapture %}
 ```bash
-wget https://repo.anaconda.com/miniconda/Miniconda3-4.7.12.1-Linux-x86_64.sh	
-bash Miniconda3-4.7.12.1-Linux-x86_64.sh -b
-source ~/.bashrc
-conda create -n qsmxt python=3.8
-conda activate qsmxt
-pip install qsmxt
+{{ code_block_content | strip }}
 ```
 
 5. Invoke QSMxT python commands directly (see QSMxT Usage above). Use the `--pbs` and `--slurm` flags with your account string and group to run on an HPCs supporting PBS and SLURM.

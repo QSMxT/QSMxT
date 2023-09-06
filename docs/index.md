@@ -14,7 +14,6 @@ nav_order: 1
 
 QSMxT is an end-to-end software toolbox for QSM that automatically reconstructs and processes large datasets in parallel using sensible defaults.
 
-![QSMxT Process Diagram](/images/qsmxt-process-diagram.png)
 
 QSMxT produces:
 
@@ -24,6 +23,8 @@ QSMxT produces:
  - A group space/template, including average QSM and GRE images across your cohort
 
 QSMxT requires gradient-recalled echo (GRE) MR images converted to the Brain Imaging Data Structure (BIDS). QSMxT also includes tools to convert DICOM or NIfTI images to BIDS.
+
+![QSMxT Process Diagram](/images/qsmxt-process-diagram.png)
 
 [See an interactive notebook applying QSMxT here!](https://www.neurodesk.org/example-notebooks/structural_imaging/qsmxt_example.html)
 
