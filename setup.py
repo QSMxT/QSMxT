@@ -1,9 +1,22 @@
+import os
 from setuptools import setup, find_packages
+
+def read_version_from_config():
+    setup_file_path = os.path.abspath(__file__)
+    setup_dir = os.path.dirname(setup_file_path)
+    config_path = os.path.join(setup_dir, 'docs', '_config.yml')
+
+    with open(config_path, 'r') as f:
+        for line in f:
+            if line.startswith('software_version:'):
+                return line.split(":")[1].strip()
+
+    raise ValueError('QSMxT version not found in docs/_config.yml!')
 
 setup(
     name='qsmxt',
     long_description="QSMxT is an end-to-end software toolbox for Quantitative Susceptibility Mapping",
-    version='5.1.0',
+    version=read_version_from_config(),
     packages=find_packages(),
     package_dir={'qsmxt': 'qsmxt'},
     package_data={

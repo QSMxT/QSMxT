@@ -17,14 +17,14 @@ permalink: /installation
 
 QSMxT can be accessed via [Neurodesk](https://neurodesk.org/), including for free, without any installation via [Neurodesk Play](https://play.neurodesk.org/). Once started, QSMxT is available in Neurodesk's module system and via the applications menu.
 
-![Neurodesktop applications menu with QSMxT](/images/neurodesktop-applications-menu.jpg)
+![Neurodesktop applications menu with QSMxT](/docs/images/neurodesktop-applications-menu.jpg)
 
 ### Updating QSMxT in Neurodesk
 
 To use the latest version of QSMxT within an older version of Neurodesk, use:
 
 ```
-bash /neurocommand/local/fetch_and_run.sh qsmxt 5.1.0 20230905
+bash /neurocommand/local/fetch_and_run.sh qsmxt {{ site.software_version }} {{ site.build_date }}
 ```
 
 ## Docker container
@@ -33,12 +33,12 @@ If you prefer to use a Docker container, the following commands will install QSM
 
 **Windows:**
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_5.1.0:20230905
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ site.software_version }}:{{ site.build_date }}
 ```
 
 **Linux/Mac:**
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_5.1.0:20230905
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ site.software_version }}:{{ site.build_date }}
 ```
 
 ## HPC installation via Transparent Singularity
@@ -50,10 +50,10 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
     ```bash
-    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_5.1.0_20230905
-    cd qsmxt_5.1.0_20230905
-    ./run_transparent_singularity.sh --container qsmxt_5.1.0_20230905.simg
-    source activate_qsmxt_5.1.0_20230905.simg.sh
+    git clone https://github.com/NeuroDesk/transparent-singularity qsmxt_{{ site.software_version }}_{{ site.build_date }}
+    cd qsmxt_{{ site.software_version }}_{{ site.build_date }}
+    ./run_transparent_singularity.sh --container qsmxt_{{ site.software_version }}_{{ site.build_date }}.simg
+    source activate_qsmxt_{{ site.software_version }}_{{ site.build_date }}.simg.sh
     ```
     
     - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
@@ -74,7 +74,6 @@ pip install qsmxt
 ```
 
 5. Invoke QSMxT python commands directly (see QSMxT Usage above). Use the `--pbs` and `--slurm` flags with your account string and group to run on an HPCs supporting PBS and SLURM.
-
 
 ## Bare metal installation
 

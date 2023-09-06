@@ -11,11 +11,11 @@ nav_order: 2
   <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
 </head>
 
-# Acquiring data for QSM
+# Data acquisition
 
 Data acquisition for QSM largely depends on your application, imaging goals, and constraints. This page provides some general guidelines. For more detailed recommendations, see the [2023 QSM Consensus Paper](https://arxiv.org/abs/2307.02306) from Bilgic et al.
 
-**Acquisition type**: QSM reconstruction requires a gradient-echo (GRE) acquisition with phase images exported. The T2\* effects retained by the GRE provide sensitivity to susceptibility variations, which is necessary to derive magnetic susceptibility. Fast imaging techniques such as 3D-EPI and others are sometimes employed.
+**Acquisition type**: QSM reconstruction requires a gradient-recalled echo (GRE) MRI acquisition with phase images exported. The T2\* weighting of a GRE acquisition provide phase contrast that retains variations due to susceptibility effects. Fast imaging techniques such as 3D-EPI and others are sometimes employed.
 
 **Coil combination**: A complex-domain coil combination method must be used for QSM, rather than the popular *sum of squares* technique. While *sum of squares* works well for magnitude images and may be used with some success for Susceptibility-Weighted Imaging (SWI), it results in phase singularities that lead to an unresolvable magnetic field and *wormhole artefacts* that render QSM results unusable.
 

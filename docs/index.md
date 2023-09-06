@@ -10,11 +10,11 @@ nav_order: 1
   <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
 </head>
 
-# QSMxT: A Complete QSM Processing and Analysis Pipeline
-
-![QSMxT Process Diagram](/images/qsmxt-process-diagram.png)
+# QSMxT
 
 QSMxT is an end-to-end software toolbox for QSM that automatically reconstructs and processes large datasets in parallel using sensible defaults.
+
+![QSMxT Process Diagram](/images/qsmxt-process-diagram.png)
 
 QSMxT produces:
 
@@ -23,7 +23,7 @@ QSMxT produces:
  - Spreadsheets in CSV format with susceptibility statistics across brain regions of interest
  - A group space/template, including average QSM and GRE images across your cohort
 
-QSMxT requires gradient-echo MR images converted to the Brain Imaging Data Structure (BIDS). QSMxT also includes tools to convert DICOM or NIfTI images to BIDS.
+QSMxT requires gradient-recalled echo (GRE) MR images converted to the Brain Imaging Data Structure (BIDS). QSMxT also includes tools to convert DICOM or NIfTI images to BIDS.
 
 [See an interactive notebook applying QSMxT here!](https://www.neurodesk.org/example-notebooks/structural_imaging/qsmxt_example.html)
 
@@ -41,7 +41,7 @@ In addition, since each processing step automated by QSMxT uses a range of under
 
 ## What algorithms does QSMxT use and how were they chosen?
 
-See the [using QSMxT](/using-qsmxt) page for the underlying algorithms used for each step.
+See the [algorithms](/algorithms) page for the underlying algorithms used for each step.
 
 Many QSM algorithms have been proposed in recent years, with each having unique advantages and disadvantages. However, most algorithms are written in languages that are difficult to automate across large and varied datasets, and/or require proprietary licensing. We chose algorithms implemented in languages that were possible to run within open-source and containerised environments.
 
