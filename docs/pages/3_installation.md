@@ -15,9 +15,11 @@ permalink: /installation
 
 ## Quickstart via Neurodesk
 
-QSMxT can be accessed via [Neurodesk](https://neurodesk.org/), including for free, without any installation via [Neurodesk Play](https://play.neurodesk.org/). Once started, QSMxT is available in Neurodesk's module system and via the applications menu.
+QSMxT is available via [Neurodesk](https://neurodesk.org/). Using [Neurodesk Play](https://play.neurodesk.org/), you can access QSMxT in your browser without any installation via.
 
-![Neurodesktop applications menu with QSMxT](/docs/images/neurodesktop-applications-menu.jpg)
+Once started, QSMxT is available in Neurodesk's module system and via the applications menu:
+
+![Neurodesktop applications menu with QSMxT](/QSMxT/docs/images/neurodesktop-applications-menu.jpg)
 
 ### Updating QSMxT in Neurodesk
 
@@ -49,12 +51,12 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
    
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
 
-{% capture code_block_content %}{% include transparent_singularity_install.sh %}{% endcapture %}
-```bash
-{{ code_block_content | strip }}
-```
+  {% capture code_block_content %}{% include transparent_singularity_install.sh %}{% endcapture %}
+  ```bash
+  {{ code_block_content | strip }}
+  ```
 
-- **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
+  - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
 
 3. Clone the QSMxT repository:
     ```bash
@@ -67,7 +69,7 @@ The tools provided by the QSMxT container can be exposed and used using the QSMx
 {{ code_block_content | strip }}
 ```
 
-5. Invoke QSMxT python commands directly (see QSMxT Usage above). Use the `--pbs` and `--slurm` flags with your account string and group to run on an HPCs supporting PBS and SLURM.
+5. Invoke QSMxT python commands directly (see [using QSMxT](/QSMxT/using-qsmxt)). Use the `--pbs` and `--slurm` flags with your account string and group to run on an HPCs supporting PBS and SLURM.
 
 ## Bare metal installation
 

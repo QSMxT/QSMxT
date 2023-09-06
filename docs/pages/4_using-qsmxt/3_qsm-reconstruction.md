@@ -12,21 +12,23 @@ permalink: /using-qsmxt/qsm-reconstruction
   <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
 </head>
 
-# QSM Reconstruction
+# Running QSMxT
 
-To run the QSM pipeline, data must first conform to the BIDS specification (see [data preparation](/using-qsmxt/data-preparation)). Each subject must have correctly combined T2\*-weighted phase images available.
-
-Use the following command to initiate the QSM pipeline:
+Run the following to start QSMxT and interactively choose your pipeline settings:
 
 ```bash
-python3 /opt/QSMxT/run_2_qsm.py YOUR_BIDS_DIR qsm
+qsmxt bids/ output_dir/
 ```
 
-For details about the underlying algorithm used in the reconstruction, see [QSMxT Algorithms](/algorithms#qsm-reconstruction).
+By default, QSMxT runs interactively to make choosing pipeline settings straightforward. 
 
-## Parameter information
+If you wish to run QSMxT non-interactively, you may specify all settings via command-line arguments and run non-interactively via `--auto_yes`. For help with building the one-line command, start QSMxT interactively first. Before the pipeline runs, it will display the one-line command such as:
 
-Several parameters can be customised for the reconstruction (see `python3 /opt/QSMxT/run_2_qsm.py --help`).
+```bash
+qsmxt bids/ output_dir/ --do_qsm --premade fast --do_segmentations --auto_yes
+```
+
+This example will run QSMxT non-interactively and produce QSM using the fast pipeline and segmentations.
 
 <script>
 $(document).ready(function(){

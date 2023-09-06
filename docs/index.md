@@ -36,13 +36,14 @@ QSMxT requires gradient-recalled echo (GRE) MR images converted to the Brain Ima
 
 Please cite our paper:
 
+{: .highlight }
 Stewart AW, Robinson SD, O’Brien K, Jin J, Widhalm G, Hangel G, Walls A, Goodwin J, Eckstein K, Tourell M, Morgan C. "QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping". *Magnetic resonance in medicine* 87.3 (2022): 1289-1300. https://doi.org/10.1002/mrm.29048
 
 In addition, since each processing step automated by QSMxT uses a range of underlying technologies and software, we provide a `references.txt` file in the output directory which lists citations for the methods used. These citations adapt depending on your input data and parameters so they reflect the methods that were actually used.
 
 ## What algorithms does QSMxT use and how were they chosen?
 
-See the [algorithms](/algorithms) page for the underlying algorithms used for each step.
+See the [algorithms](/QSMxT/algorithms) page for the underlying algorithms used for each step.
 
 Many QSM algorithms have been proposed in recent years, with each having unique advantages and disadvantages. However, most algorithms are written in languages that are difficult to automate across large and varied datasets, and/or require proprietary licensing. We chose algorithms implemented in languages that were possible to run within open-source and containerised environments.
 
