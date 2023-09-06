@@ -1,3 +1,18 @@
 remote_theme: just-the-docs/just-the-docs
 software_version: 5.1.0
 build_date: 20230905
+callouts:
+  highlight:
+    color: yellow
+  warning:
+    title: Warning
+    color: red
+  note:
+    title: note
+    color: purple
+  important:
+    title: Important
+    color: blue
+  new:
+    title: New
+    color: green

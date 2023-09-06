@@ -52,7 +52,7 @@ Carefully read the output to ensure data were correctly recognized and converted
 dicom-convert dicoms-sorted/ bids/ --t2starw_protocol_patterns '*gre*' --t1w_protocol_patterns '*mp2rage*'
 ```
 
-## I have NIfTI files
+## NIfTI to BIDS
 
 To convert NIfTI to BIDS, use `nifti-convert`:
 
