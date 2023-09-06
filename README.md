@@ -1,6 +1,6 @@
 # QSMxT: A Complete QSM Processing and Analysis Pipeline
 
-![QSMxT Process Diagram](docs/images/qsmxt-process-diagram.png)
+![QSMxT Process Diagram](/docs/images/qsmxt-process-diagram.png)
 
 QSMxT is an end-to-end software toolbox for QSM that excels at automatically reconstructing and processing large groups of participants using sensible defaults.
 
