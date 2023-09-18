@@ -35,12 +35,11 @@ jobs:
       id: vars
       run: |
         SOFTWARE_VERSION=$(cat docs/_config.yml | grep 'SOFTWARE_VERSION' | awk '{print $2}')
-        SOFTWARE_VERSION=$(cat docs/_config.yml | grep 'BUILD_DATE' | awk '{print $2}')
+        BUILD_DATE=$(cat docs/_config.yml | grep 'BUILD_DATE' | awk '{print $2}')
         echo "${SOFTWARE_VERSION}_${BUILD_DATE}"
         echo "SOFTWARE_VERSION=${SOFTWARE_VERSION}" >> ${GITHUB_ENV}
         echo "BUILD_DATE=${BUILD_DATE}" >> ${GITHUB_ENV}
     - name: test transparent singularity
       run: |
-        sed "s/#SOFTWARE_VERSION#/$SOFTWARE_VERSION/g; s/#BUILD_DATE#/$BUILD_DATE/g" qsmxt/tests/test_transparent_singularity.sh > qsmxt/tests/test_transparent_singularity.sh
         /bin/bash qsmxt/tests/test_transparent_singularity.sh
 
