@@ -11,7 +11,12 @@ cp -r . /tmp/QSMxT
 
 echo "[DEBUG]: Install QSMxT via transparent-singularity"
 /tmp/QSMxT/docs/_includes/transparent_singularity_install.sh
-export PATH=`pwd`/qsmxt_*:${PATH}
+
+echo "[DEBUG]: Source .bashrc"
+source ~/.bashrc
+
+echo "[DEBUG]: which tgv_qsm"
+which tgv_qsm
 
 echo "[DEBUG]: Download test data"
 pip install osfclient > /dev/null 2>&1
