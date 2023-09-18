@@ -26,7 +26,7 @@ Once started, QSMxT is available in Neurodesk's module system and via the applic
 To use the latest version of QSMxT within an older version of Neurodesk, use:
 
 ```
-bash /neurocommand/local/fetch_and_run.sh qsmxt {{ site.software_version }} {{ site.build_date }}
+bash /neurocommand/local/fetch_and_run.sh qsmxt {{ site.SOFTWARE_VERSION }} {{ site.BUILD_DATE }}
 ```
 
 ## Docker container
@@ -35,12 +35,12 @@ If you prefer to use a Docker container, the following commands will install QSM
 
 **Windows:**
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ site.software_version }}:{{ site.build_date }}
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ site.SOFTWARE_VERSION }}:{{ site.BUILD_DATE }}
 ```
 
 **Linux/Mac:**
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ site.software_version }}:{{ site.build_date }}
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ site.SOFTWARE_VERSION }}:{{ site.BUILD_DATE }}
 ```
 
 ## HPC installation
