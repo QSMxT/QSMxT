@@ -31,11 +31,15 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
+    - name: Install yq for YAML parsing
+      run: sudo apt-get install -y yq
     - name: Extract software_version and build_date from docs/_config.yml
       id: vars
       run: |
+        ls docs/_config.yml
         SOFTWARE_VERSION=$(yq eval '.SOFTWARE_VERSION' docs/_config.yml)
         BUILD_DATE=$(yq eval '.BUILD_DATE' docs/_config.yml)
+        echo "${SOFTWARE_VERSION}_${BUILD_DATE}"
         echo "SOFTWARE_VERSION=$SOFTWARE_VERSION" >> $GITHUB_ENV
         echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
     - name: test transparent singularity
