@@ -8,6 +8,8 @@ on:
     paths:
       - setup.py
       - .github/workflows/test_transparent_singularity.yml
+      - docs/_includes/miniconda_install.sh
+      - docs/_includes/transparent_singularity_install.sh
       - docs/_config.yml
       - aseg_labels.csv
       - qsmxt/qsm_pipelines.json
