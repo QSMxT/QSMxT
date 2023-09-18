@@ -39,7 +39,7 @@ Please cite our paper:
 {: .highlight }
 Stewart AW, Robinson SD, O’Brien K, Jin J, Widhalm G, Hangel G, Walls A, Goodwin J, Eckstein K, Tourell M, Morgan C. "QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping". *Magnetic resonance in medicine* 87.3 (2022): 1289-1300. https://doi.org/10.1002/mrm.29048
 
-In addition, since each processing step automated by QSMxT uses a range of underlying technologies and software, we provide a `references.txt` file in the output directory which lists citations for the methods used. These citations adapt depending on your input data and parameters so they reflect the methods that were actually used.
+In addition, since each processing step automated by QSMxT uses a range of underlying technologies and software, we provide a `references.txt` file in the output directory which lists citations for the methods used. These citations adapt depending on your input data and parameters so they reflect the methods that were actually used. For a full list of references, see [algorithms](/QSMxT/algorithms).
 
 <script>
 $(document).ready(function(){
