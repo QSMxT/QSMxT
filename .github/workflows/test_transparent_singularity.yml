@@ -31,7 +31,15 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
+    - name: Extract software_version and build_date from docs/_config.yml
+      id: vars
+      run: |
+        SOFTWARE_VERSION=$(yq eval '.SOFTWARE_VERSION' docs/_config.yml)
+        BUILD_DATE=$(yq eval '.BUILD_DATE' docs/_config.yml)
+        echo "SOFTWARE_VERSION=$SOFTWARE_VERSION" >> $GITHUB_ENV
+        echo "BUILD_DATE=$BUILD_DATE" >> $GITHUB_ENV
     - name: test transparent singularity
       run: |
+        sed "s/#SOFTWARE_VERSION#/$SOFTWARE_VERSION/g; s/#BUILD_DATE#/$BUILD_DATE/g" qsmxt/tests/test_transparent_singularity.sh > qsmxt/tests/test_transparent_singularity.sh
         /bin/bash qsmxt/tests/test_transparent_singularity.sh
 

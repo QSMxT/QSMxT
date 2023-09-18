@@ -50,6 +50,8 @@ QSMxT can be installed on an HPC or Linux machine using [transparent singularity
 1. Install or load [singularity](https://sylabs.io/guides/3.0/user-guide/quick_start.html) on your HPC
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
   {% capture code_block_content %}{% include transparent_singularity_install.sh %}{% endcapture %}
+  {% assign code_block_content = code_block_content | replace: '#SOFTWARE_VERSION#', site.SOFTWARE_VERSION %}
+  {% assign code_block_content = code_block_content | replace: '#BUILD_DATE#', site.BUILD_DATE %}
   ```bash
   {{ code_block_content | strip }}
   ```
