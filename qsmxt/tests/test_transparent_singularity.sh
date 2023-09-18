@@ -12,6 +12,9 @@ cp -r . /tmp/QSMxT
 echo "[DEBUG]: Install QSMxT via transparent-singularity"
 /tmp/QSMxT/docs/_includes/transparent_singularity_install.sh
 
+echo "[DEBUG]: Sourcing ~/.bashrc to update paths after transparent-singularity install"
+source ~/.bashrc
+
 echo "[DEBUG]: Download test data"
 pip install osfclient > /dev/null 2>&1
 osf -p ru43c clone /tmp > /dev/null 2>&1
