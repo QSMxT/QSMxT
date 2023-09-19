@@ -4,6 +4,7 @@ Created on Sun Aug  3 11:46:42 2014
 @author: epracht
 modified by Steffen.Bollmann@cai.uq.edu.au
 """
+
 from __future__ import division
 from nipype.interfaces.base import CommandLine, traits, TraitedSpec, File, CommandLineInputSpec, InputMultiPath
 from nipype.interfaces.base.traits_extension import isdefined
@@ -13,7 +14,7 @@ import os, shutil
 THREAD_CONTROL_VARIABLE = "OMP_NUM_THREADS"
 
 
-class QSMappingInputSpec(CommandLineInputSpec):
+class TGVQSMInputSpec(CommandLineInputSpec):
     phase = File(exists=True, desc='Phase image', mandatory=True, argstr="-p %s")
     mask = InputMultiPath(exists=True, desc='Image mask', mandatory=True, argstr="-m %s")
     num_threads = traits.Int(-1, usedefault=True, nohash=True, desc="Number of threads to use, by default $NCPUS")
@@ -31,19 +32,19 @@ class QSMappingInputSpec(CommandLineInputSpec):
                                usedefault=True, argstr="-o %s")
 
 
-class QSMappingOutputSpec(TraitedSpec):
+class TGVQSMOutputSpec(TraitedSpec):
     qsm = File(desc='Computed susceptibility map')
 
 
-class QSMappingInterface(CommandLine):
-    input_spec = QSMappingInputSpec
-    output_spec = QSMappingOutputSpec
+class TGVQSMInterface(CommandLine):
+    input_spec = TGVQSMInputSpec
+    output_spec = TGVQSMOutputSpec
 
     # We use here an interface to the CLI utility
     _cmd = "tgv_qsm"
 
     def __init__(self, **inputs):
-        super(QSMappingInterface, self).__init__(**inputs)
+        super(TGVQSMInterface, self).__init__(**inputs)
         self.inputs.on_trait_change(self._num_threads_update, 'num_threads')
 
         if not isdefined(self.inputs.num_threads):

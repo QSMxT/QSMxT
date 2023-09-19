@@ -119,7 +119,7 @@
     "body": {
         "description": "Applies suggested settings for non-brain applications",
         "combine_phase": false,
-        "qsm_algorithm": "tgv",
+        "qsm_algorithm": "tgvjl",
         "masking_algorithm": "threshold",
         "two_pass": true,
         "masking_input": "phase",

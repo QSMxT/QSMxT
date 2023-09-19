@@ -12,6 +12,7 @@ from qsmxt.interfaces import nipype_interface_mgz2nii as mgz2nii
 from qsmxt.interfaces import nipype_interface_analyse as analyse
 from qsmxt.interfaces import nipype_interface_romeo as romeo
 from qsmxt.interfaces import nipype_interface_tgv_qsm as tgv
+from qsmxt.interfaces import nipype_interface_tgv_qsm_jl as tgvjl
 from qsmxt.interfaces import nipype_interface_qsmjl as qsmjl
 from qsmxt.interfaces import nipype_interface_nextqsm as nextqsm
 from qsmxt.interfaces import nipype_interface_laplacian_unwrapping as laplacian
@@ -802,7 +803,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             mem_gb=3,
             num_cpus=normalize_freq_threads
         )
-    if run_args.qsm_algorithm == 'tgv' and run_args.combine_phase:
+    if run_args.qsm_algorithm in ['tgv', 'tgvjl'] and run_args.combine_phase:
         freq_to_phase_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
         mn_freq_to_phase = create_node(
             interface=processphase.FreqToPhaseInterface(TE=0.005, wraps=True),
@@ -968,10 +969,46 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             mem_gb=5,
             num_cpus=tv_threads
         )
+        
+    if run_args.qsm_algorithm == 'tgvjl':
+        tgv_threads = min(20, run_args.n_procs)
+        mn_qsm = create_node(
+            interface=tgvjl.TGVQSMJlInterface(),
+            iterfield=['phase', 'TE', 'mask'],
+            name='tgv',
+            mem_gb=min(6, run_args.mem_avail),
+            n_procs=tgv_threads,
+            is_map=use_maps
+        )
+        mn_qsm.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="TGV",
+            time="01:00:00",
+            mem_gb=6,
+            num_cpus=tgv_threads
+        )
+        wf.connect([
+            (n_inputs, mn_qsm, [('mask', 'mask')]),
+            (n_inputs, mn_qsm, [('B0', 'B0')]),
+            (mn_qsm, n_outputs, [('qsm', 'qsm')]),
+        ])
+        if run_args.combine_phase:
+            mn_qsm.inputs.TE = 0.005
+            wf.connect([
+                (n_phase_normalized, mn_qsm, [('phase_normalized', 'phase')])
+            ])
+        else:
+            wf.connect([
+                (n_inputs, mn_qsm, [('phase', 'phase')]),
+                (n_inputs, mn_qsm, [('TE', 'TE')])
+            ])
     if run_args.qsm_algorithm == 'tgv':
         tgv_threads = min(20, run_args.n_procs)
         mn_qsm = create_node(
-            interface=tgv.QSMappingInterface(
+            interface=tgv.TGVQSMInterface(
                 iterations=run_args.tgv_iterations,
                 alpha=run_args.tgv_alphas,
                 erosions=qsm_erosions,
