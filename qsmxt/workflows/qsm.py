@@ -622,13 +622,13 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         mn_qsm_twopass = create_node(
             interface=twopass.TwopassNiftiInterface(),
             name='numpy_nibabel_twopass',
-            iterfield=['in_file1', 'in_file2', 'mask'],
+            iterfield=['in_file', 'in_filled', 'mask'],
             is_map=len(phase_files) > 1 and not run_args.combine_phase
         )
         wf.connect([
-            (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file1')]),
+            (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file')]),
             (wf_masking_intermediate, mn_qsm_twopass, [('masking_outputs.mask', 'mask')]),
-            (wf_qsm, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file2')])
+            (wf_qsm, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_filled')])
         ])
 
         # averaging
