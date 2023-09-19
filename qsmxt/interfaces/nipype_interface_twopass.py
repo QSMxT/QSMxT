@@ -31,8 +31,8 @@ def twopass_nifti(in_file, in_filled, mask=None, save_result=True, out_name=None
 
 
 class TwopassNiftiInputSpec(BaseInterfaceInputSpec):
-    in_file1 = File(mandatory=True, exists=True)
-    in_file2 = File(mandatory=True, exists=True)
+    in_file = File(mandatory=True, exists=True)
+    in_filled = File(mandatory=True, exists=True)
     mask = File(mandatory=False, exists=True)
 
 
