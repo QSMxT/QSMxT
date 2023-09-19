@@ -36,11 +36,6 @@ jobs:
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
       run: |
-        SOFTWARE_VERSION=$(cat docs/_config.yml | grep 'SOFTWARE_VERSION' | awk '{print $2}')
-        BUILD_DATE=$(cat docs/_config.yml | grep 'BUILD_DATE' | awk '{print $2}')
-        echo "${SOFTWARE_VERSION}_${BUILD_DATE}"
-        echo "SOFTWARE_VERSION=${SOFTWARE_VERSION}" >> ${GITHUB_ENV}
-        echo "BUILD_DATE=${BUILD_DATE}" >> ${GITHUB_ENV}
         /bin/bash qsmxt/tests/setup_qsmxt.sh
     - name: Run segmentation pipeline
       run: |
