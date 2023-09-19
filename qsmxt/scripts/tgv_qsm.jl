@@ -12,6 +12,10 @@ s = ArgParseSettings()
     "--mask"
         help = "input - mask filename"
         required = true
+    "--erosions"
+        help = "input - erosions"
+        required = false
+        default = "3"
     "--TE"
         help = "input - echo time (s)"
         required = true
@@ -30,11 +34,12 @@ args = parse_args(ARGS, s)
 
 phase = readphase(args["phase"])
 mask = niread(args["mask"]) .!= 0
+erosions = eval(Meta.parse(args["erosions"]))
 TE = eval(Meta.parse(args["TE"]))
 vsz = eval(Meta.parse(args["vsz"]))
 B0 = eval(Meta.parse(args["b0-str"]))
 output = args["output"]
 
-@time chi = qsm_tgv(phase, mask, vsz; TE=TE, fieldstrength=B0, laplacian=get_laplace_phase3);
+@time chi = qsm_tgv(phase, mask, vsz; TE=TE, fieldstrength=B0, erosions=erosions);
 savenii(chi, args["output"]; header=header(phase))
 

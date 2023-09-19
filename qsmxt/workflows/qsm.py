@@ -973,7 +973,9 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
     if run_args.qsm_algorithm == 'tgvjl':
         tgv_threads = min(20, run_args.n_procs)
         mn_qsm = create_node(
-            interface=tgvjl.TGVQSMJlInterface(),
+            interface=tgvjl.TGVQSMJlInterface(
+                erosions=qsm_erosions
+            ),
             iterfield=['phase', 'TE', 'mask'],
             name='tgv',
             mem_gb=min(6, run_args.mem_avail),
