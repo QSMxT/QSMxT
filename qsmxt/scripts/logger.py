@@ -100,8 +100,24 @@ def show_log(logger):
         print(message, end='')
 
 def show_warning_summary(logger):
-    if len(logger.handlers) > 1 and logger.handlers[1].stream.items:
+    warnings_occurred = False
+    errors_occurred = False
+    
+    if len(logger.handlers) > 1:
+        for message in logger.handlers[1].stream.items:
+            if "WARNING" in message:
+                warnings_occurred = True
+                break
+    
+    if len(logger.handlers) > 2:
+        for message in logger.handlers[2].stream.items:
+            if "ERROR" in message:
+                errors_occurred = True
+                break
+                
+    if warnings_occurred:
         logger.log(LogLevel.INFO.value, "Warnings occurred!")
-    if len(logger.handlers) > 2 and logger.handlers[2].stream.items:
+        
+    if errors_occurred:
         logger.log(LogLevel.INFO.value, "Errors occurred!")
 
