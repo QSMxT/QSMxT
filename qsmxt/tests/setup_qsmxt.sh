@@ -19,9 +19,8 @@ fi
 echo "[DEBUG] Pulling QSMxT repository (branch=${BRANCH})..."
 git clone -b "${BRANCH}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
 
-echo "[DEBUG] Pulling QSMxT container ${container}..."
-container=`cat /tmp/QSMxT/README.md | grep -m 1 vnmd/qsmxt | cut -d ' ' -f 6`
-sudo docker pull "${container}" 
+echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt_${SOFTWARE_VERSION}_${BUILD_DATE}..."
+sudo docker pull "vnmd/qsmxt_${SOFTWARE_VERSION}_${BUILD_DATE}"
 
 # Create and start the container with a bash shell
 echo "[DEBUG] Starting QSMxT container"
@@ -33,7 +32,7 @@ docker create --name qsmxt-container -it \
     --env OSF_TOKEN="${OSF_TOKEN}" \
     --env OSF_USER="${OSF_USER}" \
     --env OSF_PASS="${OSF_PASS}" \
-    ${container} \
+    "vnmd/qsmxt_${SOFTWARE_VERSION}_${BUILD_DATE}" \
     /bin/bash
 docker start qsmxt-container
 

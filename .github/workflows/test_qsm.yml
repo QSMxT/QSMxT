@@ -57,6 +57,14 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
+    - name: Extract software_version and build_date from docs/_config.yml
+      id: vars
+      run: |
+        SOFTWARE_VERSION=$(cat docs/_config.yml | grep 'SOFTWARE_VERSION' | awk '{print $2}')
+        BUILD_DATE=$(cat docs/_config.yml | grep 'BUILD_DATE' | awk '{print $2}')
+        echo "${SOFTWARE_VERSION}_${BUILD_DATE}"
+        echo "SOFTWARE_VERSION=${SOFTWARE_VERSION}" >> ${GITHUB_ENV}
+        echo "BUILD_DATE=${BUILD_DATE}" >> ${GITHUB_ENV}
     - name: Setup QSMxT
       env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
