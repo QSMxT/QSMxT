@@ -23,8 +23,8 @@ echo "[DEBUG] Extracting SOFTWARE_VERSION and BUILD_DATE from docs/_config.yml"
 SOFTWARE_VERSION=$(cat /tmp/QSMxT/docs/_config.yml | grep 'SOFTWARE_VERSION' | awk '{print $2}')
 BUILD_DATE=$(cat /tmp/QSMxT/docs/_config.yml | grep 'BUILD_DATE' | awk '{print $2}')
 
-echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt_${SOFTWARE_VERSION}_${BUILD_DATE}..."
-sudo docker pull "vnmd/qsmxt_${SOFTWARE_VERSION}_${BUILD_DATE}"
+echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt:${SOFTWARE_VERSION}_${BUILD_DATE}..."
+sudo docker pull "vnmd/qsmxt_${SOFTWARE_VERSION}:${BUILD_DATE}"
 
 # Create and start the container with a bash shell
 echo "[DEBUG] Starting QSMxT container"
