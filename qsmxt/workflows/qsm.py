@@ -27,6 +27,7 @@ from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
 from qsmxt.workflows.masking import masking_workflow
 
 import numpy as np
+import nibabel as nib
 
 def get_matching_files(bids_dir, subject, dtype="anat", suffixes=[], ext="nii*", session=None, run=None, part=None, acq=None):
     pattern = os.path.join(bids_dir, subject)
@@ -67,36 +68,36 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     
     # handle any errors related to files and adjust any settings if needed
     if run_args.do_segmentation and not t1w_files:
-        logger.log(LogLevel.WARNING.value, f"Skipping segmentation for {run_id} - no T1w files found!")
+        logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping segmentation - no T1w files found!")
         run_args.do_segmentation = False
     if run_args.do_analysis and not run_args.do_segmentation:
-        logger.log(LogLevel.WARNING.value, f"Skipping analysis for {run_id} - segmentations required!")
+        logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping analysis - segmentations required!")
         run_args.do_analysis = False
     if run_args.do_segmentation and not magnitude_files:
-        logger.log(LogLevel.WARNING.value, f"Skipping segmentation for {run_id} - no GRE magnitude files found to register T1w segmentations to!")
+        logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping segmentation - no GRE magnitude files found to register T1w segmentations to!")
         run_args.do_segmentation = False
     if run_args.do_segmentation and len(t1w_files) > 1:
-        logger.log(LogLevel.WARNING.value, f"Multiple T1w files found! Using {t1w_files[0]}")
+        logger.log(LogLevel.WARNING.value, f"{run_id}: Using {t1w_files[0]} for segmentation - multiple T1w files found!")
     if run_args.do_qsm and not phase_files:
-        logger.log(LogLevel.WARNING.value, f"Skipping QSM for {run_id} - no phase files found!")
+        logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping QSM - No phase files found!")
         run_args.do_qsm = False
         run_args.do_swi = False
     if len(phase_files) != len(params_files):
-        logger.log(LogLevel.WARNING.value, f"Skipping {run_id} - an unequal number of JSON and phase files are present.")
+        logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot process this run - an unequal number of JSON and phase files are present!")
         return
     if len(phase_files) == 1 and run_args.combine_phase:
         run_args.combine_phase = False
     if run_args.do_qsm and run_args.use_existing_masks:
         if not mask_files:
-            logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but no masks found in {run_args.use_existing_masks} derivatives. Reverting to {run_args.masking_algorithm} masking algorithm.")
+            logger.log(LogLevel.WARNING.value, f"{run_id}: --use_existing_masks specified but no masks found in {run_args.use_existing_masks} derivatives. Reverting to {run_args.masking_algorithm} masking algorithm.")
             run_args.use_existing_masks = False
         else:
             if len(mask_files) > 1:
                 if run_args.combine_phase:
-                    logger.log(LogLevel.WARNING.value, f"Run {run_id}: --combine_phase specified but multiple masks found with --use_existing_masks. Using the first mask only.")
+                    logger.log(LogLevel.WARNING.value, f"{run_id}: --combine_phase specified but multiple masks found with --use_existing_masks. Using the first mask only.")
                     mask_files = [mask_files[0]]
                 elif len(mask_files) != len(phase_files):
-                    logger.log(LogLevel.WARNING.value, f"Run {run_id}: --use_existing_masks specified but unequal number of mask and phase files present. Using the first mask only.")
+                    logger.log(LogLevel.WARNING.value, f"{run_id}: --use_existing_masks specified but unequal number of mask and phase files present. Using the first mask only.")
                     mask_files = [mask_files[0]]
             if mask_files:
                 run_args.inhomogeneity_correction = False
@@ -104,38 +105,80 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 run_args.add_bet = False
     if not magnitude_files:
         if run_args.do_r2starmap:
-            logger.log(LogLevel.WARNING.value, f"Cannot compute R2* for {run_id} - no magnitude files found.")
+            logger.log(LogLevel.WARNING.value, f"{run_id}: Cannot compute R2* - no magnitude files found.")
             run_args.do_r2starmap = False
         if run_args.do_t2starmap:
-            logger.log(LogLevel.WARNING.value, f"Cannot compute T2* for {run_id} - no magnitude files found.")
+            logger.log(LogLevel.WARNING.value, f"{run_id}: Cannot compute T2* - no magnitude files found.")
             run_args.do_t2starmap = False
         if run_args.do_swi:
-            logger.log(LogLevel.WARNING.value, f"Cannot compute SWI for {run_id} - no magnitude files found.")
+            logger.log(LogLevel.WARNING.value, f"{run_id}: Cannot compute SWI - no magnitude files found.")
             run_args.do_swi = False
         if run_args.do_qsm:
-            logger.log(LogLevel.WARNING.value, f"Run {run_id} cannot be resampled axially since no magnitude files were found - expect poor results from oblique acquisitions.")
+            logger.log(LogLevel.WARNING.value, f"{run_id}: Cannot resample axially - no magnitude files were found (expect poor results only from oblique acquisitions)!")
             if run_args.masking_input == 'magnitude':
-                logger.log(LogLevel.WARNING.value, f"Run {run_id} will use phase-based masking - no magnitude files found.")
+                logger.log(LogLevel.WARNING.value, f"{run_id}: Cannot use magnitude-based masking - no magnitude files found!")
                 run_args.masking_input = 'phase'
                 run_args.masking_algorithm = 'threshold'
                 run_args.inhomogeneity_correction = False
                 run_args.add_bet = False
             if run_args.add_bet:
-                logger.log(LogLevel.WARNING.value, f"Run {run_id} cannot use --add_bet option - no magnitude files found.")
+                logger.log(LogLevel.WARNING.value, f"{run_id}: Cannot use --add_bet - no magnitude files found!")
                 run_args.add_bet = False
     elif len(magnitude_files) != len(phase_files) and run_args.do_qsm and run_args.masking_input == 'magnitude':
-        logger.log(LogLevel.WARNING.value, f"Run {run_id} will use phase-based masking - unequal number of phase and magnitude files found.")
+        logger.log(LogLevel.WARNING.value, f"{run_id}: Cannot use magnitude-based masking - unequal number of phase and magnitude files found!")
         run_args.masking_input = 'phase'
         run_args.masking_algorithm = 'threshold'
         run_args.inhomogeneity_correction = False
         run_args.add_bet = False
     if len(magnitude_files) == 1:
         if run_args.do_r2starmap:
-            logger.log(LogLevel.WARNING.value, f"Cannot compute R2* for {run_id} - at least two echoes are needed.")
+            logger.log(LogLevel.WARNING.value, f"{run_id}: Cannot compute R2* - at least two echoes are needed!")
             run_args.do_r2starmap = False
         if run_args.do_t2starmap:
-            logger.log(LogLevel.WARNING.value, f"Cannot compute T2* for {run_id} - at least two echoes are needed.")
+            logger.log(LogLevel.WARNING.value, f"{run_id}: Cannot compute T2* - at least two echoes are needed!")
             run_args.do_t2starmap = False
+
+    if run_args.do_qsm or run_args.do_swi:
+        if not all(all(nib.load(phase_files[i]).header['dim'] == nib.load(phase_files[0]).header['dim']) for i in range(len(phase_files))):
+            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do QSM or SWI - dimensions of phase files are unequal!")
+            run_args.do_qsm = False
+            run_args.do_swi = False
+    if run_args.do_qsm and (run_args.masking_input == 'magnitude' or run_args.inhomogeneity_correction or run_args.add_bet):
+        if not all(all(nib.load(magnitude_files[i]).header['dim'] == nib.load(phase_files[0]).header['dim']) for i in range(len(magnitude_files))):
+            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use magnitude for masking - dimensions of magnitude files are not all equal to phase files!")
+            run_args.masking_input = 'phase'
+            run_args.inhomogeneity_correction = False
+            run_args.add_bet = False
+        if run_args.use_existing_masks:
+            if not all(all(nib.load(mask_files[i]).header['dim'] == nib.load(phase_files[0]).header['dim']) for i in range(len(mask_files))):
+                logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use existing masks - mask dimensions are not all equal to phase files!")
+                run_args.use_existing_masks = False
+    elif run_args.do_r2starmap or run_args.do_t2starmap:
+        if not all(all(nib.load(magnitude_files[i]).header['dim'] == nib.load(magnitude_files[0]).header['dim']) for i in range(len(magnitude_files))):
+            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do T2*/R2* mapping - magnitude dimensions are not all equal!")
+            run_args.do_r2starmap = False
+            run_args.do_t2starmap = False
+
+    if run_args.do_qsm or run_args.do_swi:
+        if any(nib.load(phase_files[i]).header['dim'][0] > 3 for i in range(len(phase_files))):
+            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do QSM or SWI - >3D MEGRE phase files detected! Each volume must be 3D, coil-combined, and represent a single echo for BIDS-compliance.")
+            run_args.do_qsm = False
+            run_args.do_swi = False
+    if (run_args.do_qsm and (run_args.masking_input == 'magnitude' or run_args.inhomogeneity_correction or run_args.add_bet)) or run_args.do_r2starmap or run_args.do_t2starmap:
+        if any(nib.load(magnitude_files[i]).header['dim'][0] > 3 for i in range(len(magnitude_files))):
+            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do magnitude-based masking - >3D MEGRE magnitude files detected! Each volume must be 3D, coil-combined, and represent a single echo for BIDS-compliance.")
+            run_args.masking_input = 'phase'
+            run_args.inhomogeneity_correction = False
+            run_args.add_bet = False
+            run_args.do_r2starmap = False
+            run_args.do_t2starmap = False
+    if (run_args.do_qsm and run_args.use_existing_masks):
+        if any(nib.load(mask_files[i]).header['dim'][0] > 3 for i in range(len(mask_files))):
+            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use existing masks - >3D masks detected! Each mask must be 3D only for BIDS-compliance.")
+            run_args.use_existing_masks = False
+
+    if not any([run_args.do_qsm, run_args.do_swi, run_args.do_t2starmap, run_args.do_r2starmap, run_args.do_segmentation]):
+        return
     
     # create nipype workflow for this run
     wf = Workflow(f"qsmxt" + (f"_acq-{acq}" if acq else "") + (f"_run-{run}" if run else ""), base_dir=os.path.join(run_args.output_dir, "workflow", os.path.join(subject, session) if session else subject, acq or "", run or ""))
