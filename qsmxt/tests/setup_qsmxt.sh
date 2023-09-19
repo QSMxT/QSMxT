@@ -36,7 +36,7 @@ docker create --name qsmxt-container -it \
     --env OSF_TOKEN="${OSF_TOKEN}" \
     --env OSF_USER="${OSF_USER}" \
     --env OSF_PASS="${OSF_PASS}" \
-    "vnmd/qsmxt_${SOFTWARE_VERSION}_${BUILD_DATE}" \
+    "vnmd/qsmxt_${SOFTWARE_VERSION}:${BUILD_DATE}" \
     /bin/bash
 docker start qsmxt-container
 
