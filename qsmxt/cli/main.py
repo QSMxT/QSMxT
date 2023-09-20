@@ -1423,7 +1423,7 @@ def main(argv=None):
                 plugin='SLURM',
                 plugin_args=gen_plugin_args(slurm_account=args.slurm[0], slurm_partition=args.slurm[1])
             )
-        if args.pbs:
+        elif args.pbs:
             logger.log(LogLevel.INFO.value, f"Running using PBS Graph plugin with account={args.pbs}")
             wf.run(
                 plugin='PBSGraph',
