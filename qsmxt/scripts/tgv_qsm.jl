@@ -1,6 +1,6 @@
 #!/usr/bin/env julia
 
-using QuantitativeSusceptibilityMappingTgv
+using QuantitativeSusceptibilityMappingTGV
 using MriResearchTools
 using ArgParse
 
