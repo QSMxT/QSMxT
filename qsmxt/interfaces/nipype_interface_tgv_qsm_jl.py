@@ -2,22 +2,33 @@
 
 import os
 
-from nipype.interfaces.base import  traits, CommandLine, BaseInterfaceInputSpec, TraitedSpec, File
-from qsmxt.scripts.qsmxt_functions import extend_fname, get_qsmxt_dir
+from nipype.interfaces.base import (
+    traits,
+    CommandLine,
+    BaseInterfaceInputSpec,
+    TraitedSpec,
+    File,
+)
+from qsmxt.scripts.qsmxt_functions import get_qsmxt_dir
 
 class TGVQSMJlInputSpec(BaseInterfaceInputSpec):
+    """Input specification for TGVQSMJlInterface."""
     phase = File(mandatory=True, exists=True, argstr="--phase '%s'")
     mask = File(mandatory=True, exists=True, argstr="--mask '%s'")
     erosions = traits.Int(mandatory=True, argstr="--erosions %s")
     TE = traits.Float(mandatory=True, argstr="--TE %s")
-    vsz = traits.String(value="(1,1,1)", argstr="--vsz \"%s\"")
-    B0 = traits.Float(default_value=3, argstr="--b0-str %s")
-    qsm = File(name_source=['phase'], name_template='%s_tgvqsmjl.nii', argstr="--output %s")
+    qsm = File(name_source=["phase"], name_template="%s_tgvqsmjl.nii", argstr="--output %s")
+    B0 = traits.Float(default_value=3.0, argstr="--b0-str %s")
+    regularization = traits.Float(2.0, argstr="--regularization %s")
+    alpha = traits.ListFloat(minlen=2, maxlen=2, argstr="--alphas '[%s]'")
+    iterations = traits.Int(argstr="--iterations %s")
 
 class TGVQSMJlOutputSpec(TraitedSpec):
+    """Output specification for TGVQSMJlInterface."""
     qsm = File()
 
 class TGVQSMJlInterface(CommandLine):
+    """Nipype interface for TGV QSM Julia implementation."""
     input_spec = TGVQSMJlInputSpec
     output_spec = TGVQSMJlOutputSpec
     _cmd = os.path.join(get_qsmxt_dir(), "scripts", "tgv_qsm.jl")
