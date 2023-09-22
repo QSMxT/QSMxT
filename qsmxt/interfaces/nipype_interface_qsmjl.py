@@ -20,7 +20,7 @@ class LaplacianUnwrappingInputSpec(CommandLineInputSpecJulia):
         position=1
     )
     vsz = traits.ListFloat(
-        argstr="--vsz '%s'",
+        argstr="--vsz '[%s]'",
         default=[1, 1, 1],
         position=2
     )
@@ -56,7 +56,7 @@ class PhaseToFreqInputSpec(CommandLineInputSpecJulia):
         position=2
     )
     vsz = traits.ListFloat(
-        argstr="--vsz '%s'",
+        argstr="--vsz '[%s]'",
         default=[1, 1, 1],
         position=2
     )
@@ -99,7 +99,7 @@ class VsharpInputSpec(CommandLineInputSpecJulia):
         position=1
     )
     vsz = traits.ListFloat(
-        argstr="--vsz '%s'",
+        argstr="--vsz '[%s]'",
         default=[1, 1, 1],
         position=2
     )
@@ -144,7 +144,7 @@ class PdfInputSpec(CommandLineInputSpecJulia):
         position=1
     )
     vsz = traits.ListFloat(
-        argstr="--vsz '%s'",
+        argstr="--vsz '[%s]'",
         default=[1, 1, 1],
         position=2
     )
@@ -182,12 +182,12 @@ class RtsQsmInputSpec(CommandLineInputSpecJulia):
         position=1
     )
     vsz = traits.ListFloat(
-        argstr="--vsz '%s'",
+        argstr="--vsz '[%s]'",
         default=[1, 1, 1],
         position=2
     )
     b0_direction = traits.ListFloat(
-        argstr="--b0-dir '%s'",
+        argstr="--b0-dir '[%s]'",
         default=[0,0,1],
         position=3
     )
@@ -225,12 +225,12 @@ class TvQsmInputSpec(CommandLineInputSpecJulia):
         position=1
     )
     vsz = traits.ListFloat(
-        argstr="--vsz '%s'",
+        argstr="--vsz '[%s]'",
         default=[1, 1, 1],
         position=2
     )
     b0_direction = traits.ListFloat(
-        argstr="--b0-dir '%s'",
+        argstr="--b0-dir '[%s]'",
         default=[0,0,1],
         position=3
     )
