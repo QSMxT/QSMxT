@@ -20,7 +20,7 @@ class CommandLineJulia(CommandLine):
         self._num_threads = self.inputs.num_threads
         if self.inputs.num_threads == -1:
             cpu_count = max(4, int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-            self.inputs.environ.update({ "JULIA_NUM_THREADS" : int(cpu_count), "JULIA_CPU_THREADS" : int(cpu_count) })
+            self.inputs.environ.update({ "JULIA_NUM_THREADS" : str(cpu_count), "JULIA_CPU_THREADS" : str(cpu_count) })
         else:
             self.inputs.environ.update({ "JULIA_NUM_THREADS" : f"{self.inputs.num_threads}", "JULIA_CPU_THREADS" : f"{self.inputs.num_threads}" })
 
