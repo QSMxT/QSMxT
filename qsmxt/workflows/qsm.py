@@ -571,7 +571,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         (n_json_params, wf_qsm, [('B0', 'qsm_inputs.B0')]),
         (n_nii_params, wf_qsm, [('vsz', 'qsm_inputs.vsz')])
     ])
-    wf_qsm.get_node('qsm_inputs').inputs.b0_direction = "(0,0,1)"
+    wf_qsm.get_node('qsm_inputs').inputs.b0_direction = [0, 0, 1]
     
     n_qsm_average = Node(
         interface=nonzeroaverage.NonzeroAverageInterface(),
@@ -617,7 +617,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')]),
             (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.mask', 'qsm_inputs.mask')])
         ])
-        wf_qsm_intermediate.get_node('qsm_inputs').inputs.b0_direction = "(0,0,1)"
+        wf_qsm_intermediate.get_node('qsm_inputs').inputs.b0_direction = [0, 0, 1]
                 
         # two-pass combination
         mn_qsm_twopass = create_node(
