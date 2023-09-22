@@ -267,9 +267,10 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     # read voxel size 'vsz' from nifti file
     def read_nii(nii_file):
         import nibabel as nib
+        import numpy as np
         if isinstance(nii_file, list): nii_file = nii_file[0]
         nii = nib.load(nii_file)
-        return str(nii.header.get_zooms()).replace(" ", "")
+        return np.array(nii.header.get_zooms()).tolist()
     n_nii_params = Node(
         interface=Function(
             input_names=['nii_file'],
