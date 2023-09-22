@@ -19,9 +19,9 @@ class LaplacianUnwrappingInputSpec(CommandLineInputSpecJulia):
         argstr="--mask %s",
         position=1
     )
-    vsz = traits.String(
-        argstr="--vsz \"%s\"",
-        default="(1,1,1)",
+    vsz = traits.ListFloat(
+        argstr="--vsz '%s'",
+        default=[1, 1, 1],
         position=2
     )
     phase_unwrapped = File(
@@ -55,10 +55,10 @@ class PhaseToFreqInputSpec(CommandLineInputSpecJulia):
         argstr="--TEs [%s]",
         position=2
     )
-    vsz = traits.String(
-        argstr="--vsz \"%s\"",
-        default="(1,1,1)",
-        position=3
+    vsz = traits.ListFloat(
+        argstr="--vsz '%s'",
+        default=[1, 1, 1],
+        position=2
     )
     B0 = traits.Float(
         argstr="--b0-str %s",
@@ -98,9 +98,9 @@ class VsharpInputSpec(CommandLineInputSpecJulia):
         argstr="--mask %s",
         position=1
     )
-    vsz = traits.String(
-        argstr="--vsz \"%s\"",
-        default="(1,1,1)",
+    vsz = traits.ListFloat(
+        argstr="--vsz '%s'",
+        default=[1, 1, 1],
         position=2
     )
     tissue_frequency = File(
@@ -143,9 +143,9 @@ class PdfInputSpec(CommandLineInputSpecJulia):
         argstr="--mask %s",
         position=1
     )
-    vsz = traits.String(
-        argstr="--vsz \"%s\"",
-        default="(1,1,1)",
+    vsz = traits.ListFloat(
+        argstr="--vsz '%s'",
+        default=[1, 1, 1],
         position=2
     )
     tissue_frequency = File(
@@ -181,14 +181,14 @@ class RtsQsmInputSpec(CommandLineInputSpecJulia):
         argstr="--mask %s",
         position=1
     )
-    vsz = traits.String(
-        argstr="--vsz \"%s\"",
-        default="(1,1,1)",
+    vsz = traits.ListFloat(
+        argstr="--vsz '%s'",
+        default=[1, 1, 1],
         position=2
     )
-    b0_direction = traits.String(
-        argstr="--b0-dir \"%s\"",
-        default="(0,0,1)",
+    b0_direction = traits.ListFloat(
+        argstr="--b0-dir '%s'",
+        default=[0,0,1],
         position=3
     )
     qsm = File(
@@ -224,14 +224,14 @@ class TvQsmInputSpec(CommandLineInputSpecJulia):
         argstr="--mask %s",
         position=1
     )
-    vsz = traits.String(
-        argstr="--vsz \"%s\"",
-        default="(1,1,1)",
+    vsz = traits.ListFloat(
+        argstr="--vsz '%s'",
+        default=[1, 1, 1],
         position=2
     )
-    b0_direction = traits.String(
-        argstr="--b0-dir \"%s\"",
-        default="(0,0,1)",
+    b0_direction = traits.ListFloat(
+        argstr="--b0-dir '%s'",
+        default=[0,0,1],
         position=3
     )
     qsm = File(
