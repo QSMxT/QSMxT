@@ -50,6 +50,11 @@ class RomeoB0InputSpec(CommandLineInputSpecJulia):
     combine_phase = File(exists=True, argstr="--phase %s", position=0)
     combine_mag = File(mandatory=False, exists=True, argstr="--mag %s", position=1)
     
+    frequency = File(
+        argstr="--compute-B0 %s",
+        name_source=['phase'],
+        name_template='%s_B0.nii'
+    )
 
 class RomeoB0OutputSpec(TraitedSpec):
     frequency = File(exists=True)
@@ -89,11 +94,6 @@ class RomeoB0Interface(CommandLineJulia):
         
     def _list_outputs(self):
         outputs = self.output_spec().trait_get()
-        
-        # rename B0.nii to suitable output name
-        frequency_path = extend_fname(self.inputs.phase[0], "_romeo-b0map", ext="nii", out_dir=os.getcwd())
-        os.rename(os.path.join(os.getcwd(), "B0.nii"), frequency_path)
-        outputs['frequency'] = frequency_path
 
         # rename unwrapped.nii to suitable output name
         outputs['phase_unwrapped'] = split_multi_echo("unwrapped.nii", [extend_fname(f, "_romeo-unwrapped", ext="nii", out_dir=os.getcwd()) for f in self.inputs.phase])
