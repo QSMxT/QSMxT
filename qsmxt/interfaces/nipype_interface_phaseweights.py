@@ -1,8 +1,10 @@
-from nipype.interfaces.base import CommandLine, TraitedSpec, File, CommandLineInputSpec, traits, InputMultiPath
+from nipype.interfaces.base import TraitedSpec, File, traits, InputMultiPath
+from qsmxt.interfaces.utils import CommandLineInputSpecJulia, CommandLineJulia
 from qsmxt.scripts import qsmxt_functions
 import os
 
-class PbMaskingInputSpec(CommandLineInputSpec):
+class PbMaskingInputSpec(CommandLineInputSpecJulia):
+    def __init__(self, **inputs): super(PbMaskingInputSpec, self).__init__(**inputs)
     phase = File(
         exists=True,
         mandatory=True,
@@ -17,13 +19,15 @@ class PbMaskingInputSpec(CommandLineInputSpec):
 class PbMaskingOutputSpec(TraitedSpec):
     mask = File()
 
-class PbMaskingInterface(CommandLine):
+class PbMaskingInterface(CommandLineJulia):
+    def __init__(self, **inputs): super(PbMaskingInterface, self).__init__(**inputs)
     input_spec = PbMaskingInputSpec
     output_spec = PbMaskingOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "hagberg_pb_masking.jl")
 
 
-class RomeoMaskingInputSpec(CommandLineInputSpec):
+class RomeoMaskingInputSpec(CommandLineInputSpecJulia):
+    def __init__(self, **inputs): super(RomeoMaskingInputSpec, self).__init__(**inputs)
     phase = InputMultiPath(
         exists=True,
         mandatory=True,
@@ -55,7 +59,8 @@ class RomeoMaskingInputSpec(CommandLineInputSpec):
 class RomeoMaskingOutputSpec(TraitedSpec):
     quality_map = File()
 
-class RomeoMaskingInterface(CommandLine):
+class RomeoMaskingInterface(CommandLineJulia):
+    def __init__(self, **inputs): super(RomeoMaskingInterface, self).__init__(**inputs)
     input_spec = RomeoMaskingInputSpec
     output_spec = RomeoMaskingOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "romeo_voxelquality.jl")

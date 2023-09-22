@@ -1,9 +1,11 @@
-from nipype.interfaces.base import CommandLine, TraitedSpec, File, CommandLineInputSpec, traits, InputMultiPath
+from qsmxt.interfaces.utils import CommandLineInputSpecJulia, CommandLineJulia
+from nipype.interfaces.base import TraitedSpec, File, traits, InputMultiPath
 from qsmxt.scripts import qsmxt_functions
 import os
 
 
-class ClearSwiInputSpec(CommandLineInputSpec):
+class ClearSwiInputSpec(CommandLineInputSpecJulia):
+    def __init__(self, **inputs): super(ClearSwiInputSpec, self).__init__(**inputs)
     phase = InputMultiPath(
         exists=True,
         mandatory=True,
@@ -37,7 +39,8 @@ class ClearSwiOutputSpec(TraitedSpec):
     swi = File()
     swi_mip = File()
 
-class ClearSwiInterface(CommandLine):
+class ClearSwiInterface(CommandLineJulia):
+    def __init__(self, **inputs): super(ClearSwiInterface, self).__init__(**inputs)
     input_spec = ClearSwiInputSpec
     output_spec = ClearSwiOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "mrt_clearswi.jl")

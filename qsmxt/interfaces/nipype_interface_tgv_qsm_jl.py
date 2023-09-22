@@ -4,15 +4,16 @@ import os
 
 from nipype.interfaces.base import (
     traits,
-    CommandLine,
-    BaseInterfaceInputSpec,
     TraitedSpec,
     File,
 )
 from qsmxt.scripts.qsmxt_functions import get_qsmxt_dir
+from qsmxt.interfaces.utils import CommandLineInputSpecJulia, CommandLineJulia
 
-class TGVQSMJlInputSpec(BaseInterfaceInputSpec):
+
+class TGVQSMJlInputSpec(CommandLineInputSpecJulia):
     """Input specification for TGVQSMJlInterface."""
+    def __init__(self, **inputs): super(TGVQSMJlInputSpec, self).__init__(**inputs)
     phase = File(mandatory=True, exists=True, argstr="--phase '%s'")
     mask = File(mandatory=True, exists=True, argstr="--mask '%s'")
     erosions = traits.Int(mandatory=True, argstr="--erosions %s")
@@ -27,8 +28,9 @@ class TGVQSMJlOutputSpec(TraitedSpec):
     """Output specification for TGVQSMJlInterface."""
     qsm = File()
 
-class TGVQSMJlInterface(CommandLine):
+class TGVQSMJlInterface(CommandLineJulia):
     """Nipype interface for TGV QSM Julia implementation."""
+    def __init__(self, **inputs): super(TGVQSMJlInterface, self).__init__(**inputs)
     input_spec = TGVQSMJlInputSpec
     output_spec = TGVQSMJlOutputSpec
     _cmd = os.path.join(get_qsmxt_dir(), "scripts", "tgv_qsm.jl")

@@ -5,7 +5,8 @@ import shutil
 import nibabel as nib
 import numpy as np
 
-from nipype.interfaces.base import  traits, CommandLine, BaseInterfaceInputSpec, TraitedSpec, File, InputMultiPath, OutputMultiPath
+from qsmxt.interfaces.utils import CommandLineInputSpecJulia, CommandLineJulia
+from nipype.interfaces.base import  traits, TraitedSpec, File, InputMultiPath, OutputMultiPath
 from qsmxt.scripts.qsmxt_functions import extend_fname, get_qsmxt_dir
     
 def merge_multi_echo(in_paths, out_path):
@@ -37,7 +38,8 @@ def wrap_phase(phase_path):
     nib.save(img=nib.Nifti1Image(dataobj=phase_wrapped, affine=phase_nii.affine, header=phase_nii.header), filename=phase_wrapped_path)
     return phase_wrapped_path
 
-class RomeoB0InputSpec(BaseInterfaceInputSpec):
+class RomeoB0InputSpec(CommandLineInputSpecJulia):
+    def __init__(self, **inputs): super(RomeoB0InputSpec, self).__init__(**inputs)
     # required inputs
     phase = InputMultiPath(mandatory=True, exists=True)
     magnitude = InputMultiPath(mandatory=False, exists=True)
@@ -55,7 +57,8 @@ class RomeoB0OutputSpec(TraitedSpec):
     #phase_unwrapped = File(exists=True)
     #phase_wrapped = File(exists=True)
 
-class RomeoB0Interface(CommandLine):
+class RomeoB0Interface(CommandLineJulia):
+    def __init__(self, **inputs): super(RomeoB0Interface, self).__init__(**inputs)
     input_spec = RomeoB0InputSpec
     output_spec = RomeoB0OutputSpec
     _cmd = os.path.join(get_qsmxt_dir(), "scripts", "romeo_unwrapping.jl -B --no-rescale --phase-offset-correction")

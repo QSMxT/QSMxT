@@ -1,8 +1,10 @@
-from nipype.interfaces.base import CommandLine, TraitedSpec, File, CommandLineInputSpec
+from qsmxt.interfaces.utils import CommandLineInputSpecJulia, CommandLineJulia
+from nipype.interfaces.base import TraitedSpec, File
 from qsmxt.scripts import qsmxt_functions
 import os
 
-class MakeHomogeneousInputSpec(CommandLineInputSpec):
+class MakeHomogeneousInputSpec(CommandLineInputSpecJulia):
+    def __init__(self, **inputs): super(MakeHomogeneousInputSpec, self).__init__(**inputs)
     magnitude = File(
         exists=True,
         mandatory=True,
@@ -21,7 +23,8 @@ class MakeHomogeneousOutputSpec(TraitedSpec):
     magnitude_corrected = File()
 
 
-class MakeHomogeneousInterface(CommandLine):
+class MakeHomogeneousInterface(CommandLineJulia):
+    def __init__(self, **inputs): super(MakeHomogeneousInterface, self).__init__(**inputs)
     input_spec = MakeHomogeneousInputSpec
     output_spec = MakeHomogeneousOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "makehomogeneous.jl")
