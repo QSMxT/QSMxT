@@ -49,12 +49,6 @@ class RomeoB0InputSpec(CommandLineInputSpecJulia):
     # automatically filled
     combine_phase = File(exists=True, argstr="--phase %s", position=0)
     combine_mag = File(mandatory=False, exists=True, argstr="--mag %s", position=1)
-    
-    frequency = File(
-        argstr="--compute-B0 %s",
-        name_source=['phase'],
-        name_template='%s_B0.nii'
-    )
 
 class RomeoB0OutputSpec(TraitedSpec):
     frequency = File(exists=True)
@@ -66,7 +60,7 @@ class RomeoB0Interface(CommandLineJulia):
     def __init__(self, **inputs): super(RomeoB0Interface, self).__init__(**inputs)
     input_spec = RomeoB0InputSpec
     output_spec = RomeoB0OutputSpec
-    _cmd = os.path.join(get_qsmxt_dir(), "scripts", "romeo_unwrapping.jl --no-rescale --phase-offset-correction")
+    _cmd = os.path.join(get_qsmxt_dir(), "scripts", "romeo_unwrapping.jl --no-rescale --phase-offset-correction --compute-B0 B0.nii")
 
     def _format_arg(self, name, trait_spec, value):
         if name == 'TEs' or name == 'TE':
@@ -97,6 +91,11 @@ class RomeoB0Interface(CommandLineJulia):
 
         # rename unwrapped.nii to suitable output name
         outputs['phase_unwrapped'] = split_multi_echo("unwrapped.nii", [extend_fname(f, "_romeo-unwrapped", ext="nii", out_dir=os.getcwd()) for f in self.inputs.phase])
+
+        frequency_path = extend_fname(self.inputs.phase[0], "_B0", ext="nii", out_dir=os.getcwd())
+        if os.path.exists('B0.nii'):
+            os.rename('B0.nii', frequency_path)
+        outputs['frequency'] = frequency_path
 
         return outputs
 
