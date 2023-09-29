@@ -20,6 +20,8 @@ which tgv_qsm
 
 echo "[DEBUG]: Install miniconda (excluding pip install qsmxt)"
 (cat /tmp/QSMxT/docs/_includes/miniconda_install.sh | head -n -1 && echo "pip install -e . -y") | bash
+source ~/.bashrc
+conda activate qsmxt
 
 echo "[DEBUG]: Install QSMxT via pip linked installation"
 cd /tmp/QSMxT && pip install -e . && cd -
