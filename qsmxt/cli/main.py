@@ -303,7 +303,7 @@ def parse_args(args, return_run_command=False):
     parser.add_argument(
         '--qsm_algorithm',
         default=None,
-        choices=['tgv', 'tgvjl', 'tv', 'nextqsm', 'rts'],
+        choices=['tgv', 'tv', 'nextqsm', 'rts'],
         help="QSM algorithm. The tgv algorithm is based on doi:10.1016/j.neuroimage.2015.02.041 from "+
             "Langkammer et al., and includes unwrapping and background field removal steps as part of a "+
             "combined optimisation. The NeXtQSM option requires NeXtQSM installed (available by default in the "+
@@ -916,7 +916,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
             print("\n(4) [ADVANCED] QSM phase processing:")
             print(f" - Axial resampling: " + (f"Enabled (obliquity threshold = {args.obliquity_threshold})" if args.obliquity_threshold != -1 else "Disabled"))
             print(f" - Multi-echo combination: " + ("B0 mapping (using ROMEO)" if args.combine_phase else "Susceptibility averaging"))
-            if args.qsm_algorithm not in ['tgv', 'tgvjl']:
+            if args.qsm_algorithm not in ['tgv']:
                 print(f" - Phase unwrapping: {args.unwrapping_algorithm}")
                 if args.qsm_algorithm not in ['nextqsm']:
                     print(f" - Background field removal: {args.bf_algorithm}")
@@ -1124,19 +1124,19 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
             print("   - Most stable with custom masks")
             print("   - Long runtime")
             print("   - Compatible with two-pass artefact reduction algorithm")
-            print("tgvjl: Total Generalized Variation (JULIA VERSION)")
-            print("   - https://doi.org/10.1016/j.neuroimage.2015.02.041")
-            print("   - Combined unwrapping, background field removal and dipole inversion")
-            print("   - Most stable with custom masks")
-            print("   - Long runtime - fast with GPU")
-            print("   - Compatible with two-pass artefact reduction algorithm")
+            #print("tgvjl: Total Generalized Variation (JULIA VERSION)")
+            #print("   - https://doi.org/10.1016/j.neuroimage.2015.02.041")
+            #print("   - Combined unwrapping, background field removal and dipole inversion")
+            #print("   - Most stable with custom masks")
+            #print("   - Long runtime - fast with GPU")
+            #print("   - Compatible with two-pass artefact reduction algorithm")
             print("nextqsm: NeXtQSM")
             print("   - https://doi.org/10.1016/j.media.2022.102700")
             print('   - Uses deep learning to solve the background field removal and dipole inversion steps')
             print('   - High memory requirements (>=12gb recommended)')
             args.qsm_algorithm = get_option(
                 prompt=f"\nSelect QSM algorithm [default - {args.qsm_algorithm}]: ",
-                options=['rts', 'tv', 'tgv', 'tgvjl', 'nextqsm'],
+                options=['rts', 'tv', 'tgv', 'nextqsm'],
                 default=args.qsm_algorithm
             )
 
@@ -1206,7 +1206,7 @@ def process_args(args):
     if args.combine_phase and args.unwrapping_algorithm != 'romeo':
         args.unwrapping_algorithm = 'romeo'
 
-    if args.qsm_algorithm in ['tgv', 'tgvjl']:
+    if args.qsm_algorithm in ['tgv']:
         args.unwrapping_algorithm = None
 
     # add_bet option only works with non-bet masking and filling methods
@@ -1215,7 +1215,7 @@ def process_args(args):
 
     # default two-pass settings for QSM algorithms
     if args.two_pass is None:
-        if args.qsm_algorithm in ['rts', 'tgv', 'tgvjl', 'tv']:
+        if args.qsm_algorithm in ['rts', 'tgv', 'tv']:
             args.two_pass = True
         else:
             args.two_pass = False
@@ -1316,7 +1316,7 @@ def write_citations(wf, args):
                 f.write("\n\n - QSM algorithm - RTS: Kames C, Wiggermann V, Rauscher A. Rapid two-step dipole inversion for susceptibility mapping with sparsity priors. Neuroimage. 2018 Feb 15;167:276-83. doi:10.1016/j.neuroimage.2017.11.018")
             if any_string_matches_any_node(['tv']):
                 f.write("\n\n - QSM algorithm - TV: Bilgic B, Fan AP, Polimeni JR, Cauley SF, Bianciardi M, Adalsteinsson E, Wald LL, Setsompop K. Fast quantitative susceptibility mapping with L1-regularization and automatic parameter selection. Magnetic resonance in medicine. 2014 Nov;72(5):1444-59")
-            if any_string_matches_any_node(['tgv', 'tgvjl']):
+            if any_string_matches_any_node(['tgv']):
                 f.write("\n\n - QSM algorithm - TGV: Langkammer C, Bredies K, Poser BA, et al. Fast quantitative susceptibility mapping using 3D EPI and total generalized variation. NeuroImage. 2015;111:622-630. doi:10.1016/j.neuroimage.2015.02.041")
             if any_string_matches_any_node(['qsmjl']):
                 f.write("\n\n - Julia package - QSM.jl: kamesy. GitHub; 2022. https://github.com/kamesy/QSM.jl")
