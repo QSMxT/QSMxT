@@ -31,13 +31,13 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
-    - name: Extract software_version and build_date from docs/_config.yml
+    - name: Extract CONTAINER_VERSION and BUILD_DATE from docs/_config.yml
       id: vars
       run: |
-        SOFTWARE_VERSION=$(cat docs/_config.yml | grep 'SOFTWARE_VERSION' | awk '{print $2}')
+        CONTAINER_VERSION=$(cat docs/_config.yml | grep 'CONTAINER_VERSION' | awk '{print $2}')
         BUILD_DATE=$(cat docs/_config.yml | grep 'BUILD_DATE' | awk '{print $2}')
-        echo "${SOFTWARE_VERSION}_${BUILD_DATE}"
-        echo "SOFTWARE_VERSION=${SOFTWARE_VERSION}" >> ${GITHUB_ENV}
+        echo "${CONTAINER_VERSION}_${BUILD_DATE}"
+        echo "CONTAINER_VERSION=${CONTAINER_VERSION}" >> ${GITHUB_ENV}
         echo "BUILD_DATE=${BUILD_DATE}" >> ${GITHUB_ENV}
     - name: test transparent singularity
       run: |

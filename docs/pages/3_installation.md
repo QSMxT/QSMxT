@@ -26,7 +26,7 @@ Once started, QSMxT is available in Neurodesk's module system and via the applic
 To use the latest version of QSMxT within an older version of Neurodesk, use:
 
 ```
-bash /neurocommand/local/fetch_and_run.sh qsmxt {{ site.SOFTWARE_VERSION }} {{ site.BUILD_DATE }}
+bash /neurocommand/local/fetch_and_run.sh qsmxt {{ site.CONTAINER_VERSION }} {{ site.BUILD_DATE }}
 ```
 
 ## Docker container
@@ -35,12 +35,12 @@ If you prefer to use a Docker container, the following commands will install QSM
 
 **Windows:**
 ```
-docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ site.SOFTWARE_VERSION }}:{{ site.BUILD_DATE }}
+docker run -it -v C:/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ site.CONTAINER_VERSION }}:{{ site.BUILD_DATE }}
 ```
 
 **Linux/Mac:**
 ```
-docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ site.SOFTWARE_VERSION }}:{{ site.BUILD_DATE }}
+docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ site.CONTAINER_VERSION }}:{{ site.BUILD_DATE }}
 ```
 
 ## HPC installation
@@ -50,7 +50,7 @@ QSMxT can be installed on an HPC or Linux machine using [transparent singularity
 1. Install or load [singularity](https://sylabs.io/guides/3.0/user-guide/quick_start.html) on your HPC
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
   {% capture code_block_content %}{% include transparent_singularity_install.sh %}{% endcapture %}
-  {% assign code_block_content = code_block_content | replace: '${SOFTWARE_VERSION}', site.SOFTWARE_VERSION %}
+  {% assign code_block_content = code_block_content | replace: '${CONTAINER_VERSION}', site.CONTAINER_VERSION %}
   {% assign code_block_content = code_block_content | replace: '${BUILD_DATE}', site.BUILD_DATE %}
   ```bash
   {{ code_block_content | strip }}
