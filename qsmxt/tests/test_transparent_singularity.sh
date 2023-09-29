@@ -26,7 +26,16 @@ source ~/.bashrc
 
 echo "[DEBUG] Print active conda environment"
 conda info --envs
-export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
+#export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
+
+echo "[DEBUG]: conda activate qsmxt"
+conda activate qsmxt
+
+echo "[DEBUG]: which pip"
+which pip
+
+echo "[DEBUG]: which python"
+which python
 
 echo "[DEBUG]: Install QSMxT via pip linked installation"
 pip uninstall qsmxt -y
