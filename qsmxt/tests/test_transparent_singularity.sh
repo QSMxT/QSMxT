@@ -19,7 +19,7 @@ echo "[DEBUG]: which tgv_qsm"
 which tgv_qsm
 
 echo "[DEBUG]: remove executables we are replacing"
-for f in {python,pip,qsmxt,dicom-sort,dicom-convert}; do rm qsmxt_*/${f}; done
+for f in {python,qsmxt,dicom-sort,dicom-convert}; do rm qsmxt_*/${f}; done
 
 echo "[DEBUG]: Install miniconda (excluding pip install qsmxt)"
 /tmp/QSMxT/docs/_includes/miniconda_install.sh
