@@ -32,9 +32,6 @@ echo "[DEBUG]: conda init bash"
 conda init bash
 source ~/.bashrc
 
-echo "[DEBUG]: conda activate qsmxt"
-conda activate qsmxt
-
 echo "[DEBUG]: which pip"
 which pip
 
