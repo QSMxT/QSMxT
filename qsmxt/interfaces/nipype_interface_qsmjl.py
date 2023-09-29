@@ -141,7 +141,7 @@ class VsharpInterface(CommandLineJulia):
     def _list_outputs(self):
         outputs = self._outputs().get()
         outputs["tissue_frequency"] = qsmxt_functions.extend_fname(self.inputs.frequency, "_vsharp", ext="nii", out_dir=os.getcwd())
-        outputs["vsharp_mask"] = qsmxt_functions.extend_fname(self.inputs.vsharp_mask, "_vsharp-mask", ext="nii", out_dir=os.getcwd())
+        outputs["vsharp_mask"] = qsmxt_functions.extend_fname(self.inputs.mask, "_vsharp-mask", ext="nii", out_dir=os.getcwd())
         return outputs
 
 
