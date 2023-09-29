@@ -28,6 +28,9 @@ echo "[DEBUG] Print active conda environment"
 conda info --envs
 #export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
 
+echo "[DEBUG]: conda init bash"
+conda init bash
+
 echo "[DEBUG]: conda activate qsmxt"
 conda activate qsmxt
 
