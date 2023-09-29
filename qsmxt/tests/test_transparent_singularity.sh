@@ -19,7 +19,7 @@ echo "[DEBUG]: which tgv_qsm"
 which tgv_qsm
 
 echo "[DEBUG]: Install miniconda (excluding pip install qsmxt)"
-(cat /tmp/QSMxT/docs/_includes/miniconda_install.sh | head -n -1 && echo "pip install -e .") | bash
+(cat /tmp/QSMxT/docs/_includes/miniconda_install.sh | head -n -1 && echo "pip install -e . -y") | bash
 
 echo "[DEBUG]: Install QSMxT via pip linked installation"
 cd /tmp/QSMxT && pip install -e . && cd -
