@@ -18,6 +18,9 @@ cd qsmxt_* && source activate_qsmxt_${SOFTWARE_VERSION}_${BUILD_DATE}.simg.sh &&
 echo "[DEBUG]: which tgv_qsm"
 which tgv_qsm
 
+echo "[DEBUG]: remove executables we are replacing"
+for f in {python,pip,qsmxt,dicom-sort,dicom-convert}; do rm "qsmxt_*/${f}"; done
+
 echo "[DEBUG]: Install miniconda (excluding pip install qsmxt)"
 /tmp/QSMxT/docs/_includes/miniconda_install.sh
 
@@ -26,7 +29,7 @@ source ~/.bashrc
 
 echo "[DEBUG] Print active conda environment"
 conda info --envs
-#export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
+export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
 
 echo "[DEBUG]: conda init bash"
 conda init bash
