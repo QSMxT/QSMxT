@@ -42,6 +42,11 @@ class LaplacianUnwrappingInterface(CommandLineJulia):
     output_spec = LaplacianUnwrappingOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_laplacian_unwrapping.jl")
 
+    def _list_outputs(self):
+        outputs = self._outputs().get()
+        outputs["phase_unwrapped"] = qsmxt_functions.extend_fname(self.inputs.phase, "_unwrapped-laplacian", ext="nii", out_dir=os.getcwd())
+        return outputs
+
 
 class PhaseToFreqInputSpec(CommandLineInputSpecJulia):
     def __init__(self, **inputs): super(PhaseToFreqInputSpec, self).__init__(**inputs)
@@ -74,7 +79,7 @@ class PhaseToFreqInputSpec(CommandLineInputSpecJulia):
 
 
 class PhaseToFreqOutputSpec(TraitedSpec):
-    frequency = File()
+    frequency = File(exists=True)
 
 
 class PhaseToFreqInterface(CommandLineJulia):
@@ -82,6 +87,11 @@ class PhaseToFreqInterface(CommandLineJulia):
     input_spec = PhaseToFreqInputSpec
     output_spec = PhaseToFreqOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_phase_to_frequency.jl")
+
+    def _list_outputs(self):
+        outputs = self._outputs().get()
+        outputs["frequency"] = qsmxt_functions.extend_fname(self.inputs.frequency, "_freq", ext="nii", out_dir=os.getcwd())
+        return outputs
 
 
 class VsharpInputSpec(CommandLineInputSpecJulia):
@@ -128,6 +138,12 @@ class VsharpInterface(CommandLineJulia):
     output_spec = VsharpOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_vsharp.jl")
 
+    def _list_outputs(self):
+        outputs = self._outputs().get()
+        outputs["tissue_frequency"] = qsmxt_functions.extend_fname(self.inputs.frequency, "_vsharp", ext="nii", out_dir=os.getcwd())
+        outputs["vsharp_mask"] = qsmxt_functions.extend_fname(self.inputs.vsharp_mask, "_vsharp-mask", ext="nii", out_dir=os.getcwd())
+        return outputs
+
 
 class PdfInputSpec(CommandLineInputSpecJulia):
     def __init__(self, **inputs): super(PdfInputSpec, self).__init__(**inputs)
@@ -165,6 +181,11 @@ class PdfInterface(CommandLineJulia):
     input_spec = PdfInputSpec
     output_spec = PdfOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_pdf.jl")
+
+    def _list_outputs(self):
+        outputs = self._outputs().get()
+        outputs["tissue_frequency"] = qsmxt_functions.extend_fname(self.inputs.frequency, "_pdf", ext="nii", out_dir=os.getcwd())
+        return outputs
 
 
 class RtsQsmInputSpec(CommandLineInputSpecJulia):
@@ -209,6 +230,10 @@ class RtsQsmInterface(CommandLineJulia):
     output_spec = RtsQsmOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_rts.jl")
 
+    def _list_outputs(self):
+        outputs = self._outputs().get()
+        outputs["qsm"] = qsmxt_functions.extend_fname(self.inputs.tissue_frequency, "_rts", ext="nii", out_dir=os.getcwd())
+        return outputs
 
 class TvQsmInputSpec(CommandLineInputSpecJulia):
     def __init__(self, **inputs): super(TvQsmInputSpec, self).__init__(**inputs)
@@ -237,7 +262,7 @@ class TvQsmInputSpec(CommandLineInputSpecJulia):
     qsm = File(
         argstr="--qsm-out %s",
         name_source=['tissue_frequency'],
-        name_template='%s_rts.nii',
+        name_template='%s_tv.nii',
         position=4
     )
 
@@ -251,4 +276,9 @@ class TvQsmInterface(CommandLineJulia):
     input_spec = TvQsmInputSpec
     output_spec = TvQsmOutputSpec
     _cmd = os.path.join(qsmxt_functions.get_qsmxt_dir(), "scripts", "qsmjl_tv.jl")
+
+    def _list_outputs(self):
+        outputs = self._outputs().get()
+        outputs["qsm"] = qsmxt_functions.extend_fname(self.inputs.tissue_frequency, "_tv", ext="nii", out_dir=os.getcwd())
+        return outputs
 
