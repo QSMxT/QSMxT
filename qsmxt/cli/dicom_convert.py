@@ -55,10 +55,11 @@ def get_folders_in(folder, full_path=False):
     folders = [os.path.split(folder)[1] for folder in folders]
     return folders
 
-def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_protocol_patterns, auto_yes):
+def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_patterns, auto_yes):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, 'Converting all DICOMs to NIfTI...')
     subjects = get_folders_in(input_dir)
+
     for subject in subjects:
         sessions = get_folders_in(os.path.join(input_dir, subject))
         for session in sessions:
@@ -134,32 +135,31 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
     logger.log(LogLevel.INFO.value, f"All protocol names identified: {all_protocol_names}")
 
     # identify protocol names using patterns if not interactive or auto_yes is enabled
-    t2starw_protocol_names = []
+    qsm_protocol_names = []
     t1w_protocol_names = []
 
     if not sys.__stdin__.isatty() or auto_yes:
-        logger.log(LogLevel.INFO.value, f"Enumerating t2starw protocol names using match patterns {t2starw_protocol_patterns}...")
-        t2starw_protocol_names = []
-        for t2starw_protocol_pattern in t2starw_protocol_patterns:
+        logger.log(LogLevel.INFO.value, f"Enumerating protocol names with QSM intention using match patterns {qsm_protocol_patterns}...")
+        qsm_protocol_names = []
+        for qsm_protocol_pattern in qsm_protocol_patterns:
             for protocol_name in all_protocol_names:
-                if fnmatch.fnmatch(protocol_name, t2starw_protocol_pattern):
-                    t2starw_protocol_names.append(protocol_name)
-        if not t2starw_protocol_names:
-            logger.log(LogLevel.ERROR.value, "No T2Star weighted protocols identified! Exiting...")
+                if fnmatch.fnmatch(protocol_name, qsm_protocol_pattern):
+                    qsm_protocol_names.append(protocol_name)
+        if not qsm_protocol_names:
+            logger.log(LogLevel.ERROR.value, "No QSM-intended protocols identified! Exiting...")
             script_exit(1)
-        logger.log(LogLevel.INFO.value, f"Identified the following protocols as t2starw: {t2starw_protocol_names}")
+        logger.log(LogLevel.INFO.value, f"Identified the following protocols intended for QSM: {qsm_protocol_names}")
 
-        logger.log(LogLevel.INFO.value, f"Enumerating t1w protocol names using match patterns {t1w_protocol_patterns}...")
+        logger.log(LogLevel.INFO.value, f"Enumerating T1w protocol names using match patterns {t1w_protocol_patterns}...")
         t1w_protocol_names = []
         for t1w_protocol_pattern in t1w_protocol_patterns:
             for protocol_name in all_protocol_names:
                 if fnmatch.fnmatch(protocol_name, t1w_protocol_pattern):
                     t1w_protocol_names.append(protocol_name)
         if not t1w_protocol_names:
-            logger.log(LogLevel.WARNING.value, f"No t1w protocols found matching patterns {t1w_protocol_patterns}! Automated segmentation will not be possible.")
+            logger.log(LogLevel.WARNING.value, f"No T1w protocols found matching patterns {t1w_protocol_patterns}! Automated segmentation will not be possible.")
         else:
-            logger.log(LogLevel.INFO.value, f"Identified the following protocols as t1w: {t1w_protocol_names}")
-
+            logger.log(LogLevel.INFO.value, f"Identified the following protocols as T1w: {t1w_protocol_names}")
 
     else: # manually identify protocols using selection if interactive
 
@@ -168,32 +168,32 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
         for i in range(len(all_protocol_names)):
             print(f"{i+1}. {all_protocol_names[i]}")
         while True:
-            user_input = input("Identify T2Starw scans for QSM (comma-separated numbers): ")
-            t2starw_scans_idx = user_input.split(",")
+            user_input = input("Identify protocols intended for QSM (comma-separated numbers): ")
+            qsm_scans_idx = user_input.split(",")
             try:
-                t2starw_scans_idx = [int(j)-1 for j in t2starw_scans_idx]
+                qsm_scans_idx = [int(j)-1 for j in qsm_scans_idx]
             except:
                 print("Invalid input")
                 continue
-            t2starw_scans_idx = sorted(list(set(t2starw_scans_idx)))
+            qsm_scans_idx = sorted(list(set(qsm_scans_idx)))
             try:
-                t2starw_protocol_names = [all_protocol_names[j] for j in t2starw_scans_idx]
+                qsm_protocol_names = [all_protocol_names[j] for j in qsm_scans_idx]
                 break
             except:
                 print("Invalid input")
-        if not t2starw_protocol_names:
-            logger.log(LogLevel.ERROR.value, "No T2Star weighted protocols identified! Exiting...")
+        if not qsm_protocol_names:
+            logger.log(LogLevel.ERROR.value, "No QSM-intended protocols identified! Exiting...")
             script_exit(1)
-        logger.log(LogLevel.INFO.value, f"Identified the following protocols as t2starw: {t2starw_protocol_names}")
+        logger.log(LogLevel.INFO.value, f"Identified the following protocols intended for QSM: {qsm_protocol_names}")
 
         # === T1W PROTOCOLS SELECTION ===
-        remaining_protocol_names = [protocol_name for protocol_name in all_protocol_names if protocol_name not in t2starw_protocol_names]
+        remaining_protocol_names = [protocol_name for protocol_name in all_protocol_names if protocol_name not in qsm_protocol_names]
         if remaining_protocol_names:
             print("== PROTOCOL NAMES ==")
             for i in range(len(remaining_protocol_names)):
                 print(f"{i+1}. {remaining_protocol_names[i]}")
             while True:
-                user_input = input("Identify t1w scans for automated segmentation (comma-separated numbers; enter nothing to ignore): ").strip()
+                user_input = input("Identify T1w scans for automated segmentation (comma-separated numbers; enter nothing to ignore): ").strip()
                 if user_input == "":
                     break
                 t1w_scans_idx = user_input.split(",")
@@ -208,9 +208,9 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                 except:
                     print("Invalid input")
         if not t1w_protocol_names:
-            logger.log(LogLevel.WARNING.value, f"No t1w protocols found matching patterns {t1w_protocol_patterns}! Automated segmentation will not be possible.")
+            logger.log(LogLevel.WARNING.value, f"No T1w protocols found matching patterns {t1w_protocol_patterns}! Automated segmentation will not be possible.")
         else:
-            logger.log(LogLevel.INFO.value, f"Identified the following protocols as t1w: {t1w_protocol_names}")
+            logger.log(LogLevel.INFO.value, f"Identified the following protocols as T1w: {t1w_protocol_names}")
 
     logger.log(LogLevel.INFO.value, 'Parsing relevant details from JSON headers...')
     all_session_details = []
@@ -237,23 +237,22 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                 if 'EchoTime' not in json_data:
                     logger.log(LogLevel.WARNING.value, f"'EchoTime' missing from JSON header '{json_file}'! Skipping...")
                     continue
-                if json_data['Modality'] == 'MR' and json_data['ProtocolName'].lower() in t2starw_protocol_names + t1w_protocol_names:
+                if json_data['Modality'] == 'MR' and json_data['ProtocolName'].lower() in qsm_protocol_names + t1w_protocol_names:
                     details = {}
                     details['subject'] = subject
                     details['session'] = session
+                    details['series_description'] = json_data['SeriesDescription'] if 'SeriesDescription' in json_data else None
                     details['protocol_type'] = None
                     details['protocol_name'] = clean(json_data['ProtocolName'].lower())
-                    if json_data['ProtocolName'].lower() in t2starw_protocol_names:
-                        details['protocol_type'] = 't2starw'
+                    if json_data['ProtocolName'].lower() in qsm_protocol_names:
+                        details['protocol_type'] = 'qsm'
                     elif json_data['ProtocolName'].lower() in t1w_protocol_names:
                         details['protocol_type'] = 't1w'
                     details['series_num'] = json_data['SeriesNumber']
                     details['acquisition_time'] = None
                     if 'AcquisitionTime' in json_data:
                         details['acquisition_time'] = datetime.datetime.strptime(json_data['AcquisitionTime'], "%H:%M:%S.%f")
-                    details['part_type'] = 'mag'
-                    if 'ImageType' in json_data.keys() and any(x in json_data['ImageType'] for x in ['P', 'PHASE', 'phase', 'p']):
-                        details['part_type'] = 'phase'
+                    if 'ImageType' in json_data.keys(): details['image_type'] = [t.upper() for t in json_data['ImageType']]
                     details['echo_time'] = json_data['EchoTime']
                     details['file_name'] = json_file.split('.json')[0]
                     details['run_num'] = None
@@ -263,7 +262,11 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                     session_details.append(details)
 
             if session_details:
-                session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['protocol_type'], f['protocol_name'], f['acquisition_time'], f['series_num'], 0 if 'phase' in f['part_type'] else 1, f['echo_time']))
+                session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['protocol_type'], f['protocol_name'], f['acquisition_time'], f['series_num'], 0 if any(t in f['image_type'] for t in ['P', 'PHASE']) else 1, f['echo_time']))
+
+                # prune details based on known issues
+                session_details = [details for details in session_details if not any(t in details['image_type'] for t in ['SWI', 'MASK', 'QSM'])]
+                session_details = [details for details in session_details if details['series_description'] not in ['Pha_Images', 'SWI_Images', 't2star_wip_tra_p2_tgv_Mask', 't2star_wip_tra_p2_tgv_Qsm']]
 
                 # update run numbers
                 run_num = 1
@@ -278,7 +281,7 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                         
                         if session_details[i]['protocol_type'] != session_details[i-1]['protocol_type']:
                             run_num = 1
-                        elif session_details[i]['protocol_type'] == 't2starw' and session_details[i]['part_type'] == 'phase':
+                        elif session_details[i]['protocol_type'] == 'qsm' and any(t in session_details[i]['image_type'] for t in ['P', 'PHASE']):
                             run_num += 1
                         elif session_details[i]['protocol_type'] == 't1w':
                             run_num += 1
@@ -290,18 +293,36 @@ def convert_to_nifti(input_dir, output_dir, t2starw_protocol_patterns, t1w_proto
                     session_details[i]['run_num'] = run_num
 
                 # update echo numbers and number of echoes
-                t2starw_details = [details for details in session_details if details['protocol_type'] == 't2starw']
-                t2starw_acq_names = sorted(list(set(details['protocol_name'] for details in t2starw_details)))
-                for acq in t2starw_acq_names:
-                    acq_runs = sorted(list(set(details['run_num'] for details in t2starw_details if details['protocol_name'] == acq)))
+                qsm_details = [details for details in session_details if details['protocol_type'] == 'qsm']
+                qsm_acq_names = sorted(list(set(details['protocol_name'] for details in qsm_details)))
+                for acq in qsm_acq_names:
+                    acq_runs = sorted(list(set(details['run_num'] for details in qsm_details if details['protocol_name'] == acq)))
                     for run_num in acq_runs:
-                        echo_times = sorted(list(set([details['echo_time'] for details in t2starw_details if details['run_num'] == run_num and details['protocol_name'] == acq])))
+                        echo_times = sorted(list(set([details['echo_time'] for details in qsm_details if details['run_num'] == run_num and details['protocol_name'] == acq])))
                         num_echoes = len(echo_times)
-                        for details in t2starw_details:
+                        for details in qsm_details:
                             if details['run_num'] == run_num and details['protocol_name'] == acq:
                                 details['num_echoes'] = num_echoes
                                 details['echo_num'] = echo_times.index(details['echo_time']) + 1
 
+                # update part types
+                for details in session_details:
+                    if details['protocol_type'] == 'qsm' and any(t in details['image_type'] for t in ['P', 'PHASE']):
+                        details['part_type'] = 'phase'
+                    elif details['protocol_type'] == 'qsm' and any(t in details['image_type'] for t in ['M', 'MAGNITUDE']):
+                        details['part_type'] = 'mag'
+
+
+                # verify runs
+                for run in sorted(list(set(details['run_num'] for details in session_details))):
+                    qsm_run_details = [details for details in session_details if details['run_num'] == run and details['protocol_type'] == 'qsm']
+                    series_descriptions = sorted(list(set(details['series_description'] for details in qsm_run_details)))
+                    if all(name in series_descriptions for name in ['Mag_Images', 't2star_wip_tra_p2_tgv_Mag']):
+                        logger.log(LogLevel.INFO.value, f"Run {run} contains 'Mag_Images' and 't2star_wip_tra_p2_tgv_Mag' which are known duplicate series! Ignoring 'Mag_Images'...")
+                        to_remove = [d for d in qsm_run_details if d['series_description'] == 'Mag_Images']
+                        for details in to_remove:
+                            session_details.remove(details)
+                
                 # update names
                 for details in session_details:
                     if details['protocol_type'] == 't1w':
@@ -388,12 +409,12 @@ def main():
     )
 
     parser.add_argument(
-        '--t2starw_protocol_patterns',
+        '--qsm_protocol_patterns',
         default=['*t2starw*', '*qsm*'],
         nargs='*',
-        help='Patterns used to identify series acquired for QSM, which must be T2*-weighted. These patterns will be used '+
-             'to match the \'ProtocolName\' field. If no series are found matching these protocols, you will be prompted '+
-             'to select the appropriate series\' interactively.'
+        help='Patterns used to identify series acquired for QSM. These patterns will be used to match the \'ProtocolName\' '+
+             'field. If no series are found matching these protocols, you will be prompted to select the appropriate '+
+             'series\' interactively.'
     )
 
     parser.add_argument(
@@ -449,7 +470,7 @@ def main():
     convert_to_nifti(
         input_dir=args.input_dir,
         output_dir=args.output_dir,
-        t2starw_protocol_patterns=[pattern.lower() for pattern in args.t2starw_protocol_patterns],
+        qsm_protocol_patterns=[pattern.lower() for pattern in args.qsm_protocol_patterns],
         t1w_protocol_patterns=[pattern.lower() for pattern in args.t1w_protocol_patterns],
         auto_yes=args.auto_yes
     )
