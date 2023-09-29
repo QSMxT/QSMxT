@@ -18,13 +18,16 @@ cd qsmxt_* && source activate_qsmxt_${SOFTWARE_VERSION}_${BUILD_DATE}.simg.sh &&
 echo "[DEBUG]: which tgv_qsm"
 which tgv_qsm
 
+echo "[DEBUG]: Install miniconda (excluding pip install qsmxt)"
+(cat /tmp/QSMxT/docs/_includes/miniconda_install.sh | head -n -1 && echo "pip install -e .") | bash
+
+echo "[DEBUG]: Install QSMxT via pip linked installation"
+cd /tmp/QSMxT && pip install -e . && cd -
+
 echo "[DEBUG]: Download test data"
 pip install osfclient > /dev/null 2>&1
 osf -p ru43c clone /tmp > /dev/null 2>&1
 tar xf /tmp/osfstorage/dicoms-unsorted.tar -C /tmp 
-
-echo "[DEBUG]: Install miniconda"
-/tmp/QSMxT/docs/_includes/miniconda_install.sh
 
 echo "[DEBUG] dicom-sort /tmp/dicoms-unsorted /tmp/dicoms-sorted"
 dicom-sort /tmp/dicoms-unsorted /tmp/dicoms-sorted
