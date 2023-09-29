@@ -21,25 +21,9 @@ which tgv_qsm
 echo "[DEBUG]: remove executables we are replacing"
 for f in {python,qsmxt,dicom-sort,dicom-convert}; do rm qsmxt_*/${f}; done
 
-echo "[DEBUG]: Install miniconda (excluding pip install qsmxt)"
+echo "[DEBUG]: Install miniconda"
 /tmp/QSMxT/docs/_includes/miniconda_install.sh
-
-echo "[DEBUG]: source ~/.bashrc"
-source ~/.bashrc
-
-echo "[DEBUG] Print active conda environment"
-conda info --envs
 export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
-
-echo "[DEBUG]: conda init bash"
-conda init bash
-source ~/.bashrc
-
-echo "[DEBUG]: which pip"
-which pip
-
-echo "[DEBUG]: which python"
-which python
 
 echo "[DEBUG]: Install QSMxT via pip linked installation"
 pip uninstall qsmxt -y
