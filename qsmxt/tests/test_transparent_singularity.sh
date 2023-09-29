@@ -22,8 +22,8 @@ echo "[DEBUG]: Install miniconda (excluding pip install qsmxt)"
 /tmp/QSMxT/docs/_includes/miniconda_install.sh
 
 echo "[DEBUG]: Install QSMxT via pip linked installation"
-pip uninstall qsmxt -y
-pip install -e /tmp/QSMxT -y
+pip uninstall qsmxt
+pip install -e /tmp/QSMxT
 
 echo "[DEBUG]: Download test data"
 pip install osfclient > /dev/null 2>&1
