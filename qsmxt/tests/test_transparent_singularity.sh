@@ -19,10 +19,11 @@ echo "[DEBUG]: which tgv_qsm"
 which tgv_qsm
 
 echo "[DEBUG]: Install miniconda (excluding pip install qsmxt)"
-`cat /tmp/QSMxT/docs/_includes/miniconda_install.sh | head -n -1`
+/tmp/QSMxT/docs/_includes/miniconda_install.sh
 
 echo "[DEBUG]: Install QSMxT via pip linked installation"
-cd /tmp/QSMxT && pip install -e . && cd -
+pip uninstall qsmxt -y
+pip install -e /tmp/QSMxT -y
 
 echo "[DEBUG]: Download test data"
 pip install osfclient > /dev/null 2>&1
