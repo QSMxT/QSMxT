@@ -1,1 +1,2 @@
 recursive-include qsmxt/tests *
+include docs/_config.yml
