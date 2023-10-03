@@ -2,8 +2,8 @@
 PACKAGE_VERSION: 6.1.0
 
 # This is the container version that is used for the docs and GitHub Actions
-CONTAINER_VERSION: 6.0.0
-BUILD_DATE: 20231002
+CONTAINER_VERSION: 6.1.0
+BUILD_DATE: 20231003
 
 remote_theme: just-the-docs/just-the-docs
 baseurl: "/QSMxT" # the subpath of your site, e.g. /blog
