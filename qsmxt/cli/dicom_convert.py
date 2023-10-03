@@ -312,17 +312,6 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                     elif details['protocol_type'] == 'qsm' and any(t in details['image_type'] for t in ['M', 'MAGNITUDE']):
                         details['part_type'] = 'mag'
 
-
-                # verify runs
-                for run in sorted(list(set(details['run_num'] for details in session_details))):
-                    qsm_run_details = [details for details in session_details if details['run_num'] == run and details['protocol_type'] == 'qsm']
-                    series_descriptions = sorted(list(set(details['series_description'] for details in qsm_run_details)))
-                    if all(name in series_descriptions for name in ['Mag_Images', 't2star_wip_tra_p2_tgv_Mag']):
-                        logger.log(LogLevel.INFO.value, f"Run {run} contains 'Mag_Images' and 't2star_wip_tra_p2_tgv_Mag' which are known duplicate series! Ignoring 'Mag_Images'...")
-                        to_remove = [d for d in qsm_run_details if d['series_description'] == 'Mag_Images']
-                        for details in to_remove:
-                            session_details.remove(details)
-                
                 # update names
                 for details in session_details:
                     if details['protocol_type'] == 't1w':
@@ -334,6 +323,80 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
 
                 # store session details
                 all_session_details.extend(session_details)
+    
+    # check for extra mag/phase series
+    for qsm_protocol_name in list(set(details['protocol_name'] for details in all_session_details if details['protocol_type'] == 'qsm')):
+        num_mag_series = len(set(details['series_num'] for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['part_type'] == 'mag'))
+        num_phs_series = len(set(details['series_num'] for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['part_type'] == 'phase'))
+
+        if num_mag_series > 1:
+            if sys.__stdin__.isatty() and not auto_yes:
+                logger.log(LogLevel.INFO.value, f"Multiple magnitude series found for protocol {qsm_protocol_name}!")
+                run_1_details = [details for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['run_num'] == 1 and details['part_type'] == 'mag']
+                run_1_series_nums = sorted(list(set([details['series_num'] for details in run_1_details])))
+                run_1_series_nums_idxs = [i for i in range(len(run_1_series_nums))]
+                run_1_image_types = [next(details['image_type'] for details in run_1_details if details['series_num'] == series_num) for series_num in run_1_series_nums]
+                run_1_descriptions = [next(details['series_description'] for details in run_1_details if details['series_num'] == series_num) for series_num in run_1_series_nums]
+                
+                # user selects which series idx to keep
+                print(f"== MULTIPLE MAGNITUDE SERIES FOUND FOR {qsm_protocol_name} ==")
+                for i in range(len(run_1_series_nums)):
+                    print(f"{i+1}. IMAGE_TYPE={run_1_image_types[i]}; SeriesDescription={run_1_descriptions[i]}")
+                while True:
+                    mag_series_idx = input("Select magnitude series to use for QSM: ")
+                    try:
+                        mag_series_idx = int(mag_series_idx)-1
+                        if mag_series_idx not in run_1_series_nums_idxs:
+                            raise Exception()
+                        break
+                    except:
+                        print("Invalid input")
+            else:
+                logger.log(LogLevel.WARNING.value, f"Multiple magnitude series found for protocol {qsm_protocol_name}! Using whichever series comes first! Run interactively to select.")
+                mag_series_idx = 0
+                
+            # remove all magnitude series except the mag_series_idx-th from each run with qsm_protocol_name
+            for run_num in sorted(list(set(details['run_num'] for details in all_session_details if details['protocol_name'] == qsm_protocol_name))):
+                run_details = [details for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['run_num'] == run_num and details['part_type'] == 'mag']
+                series_num_to_keep = sorted(list(set([details['series_num'] for details in run_details])))[mag_series_idx]
+                to_remove = [details for details in run_details if details['series_num'] != series_num_to_keep]
+                for details in to_remove:
+                    all_session_details.remove(details)
+
+        if num_phs_series > 1:
+            if sys.__stdin__.isatty() and not auto_yes:
+                logger.log(LogLevel.INFO.value, f"Multiple phase series found for protocol {qsm_protocol_name}!")
+                run_1_details = [details for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['run_num'] == 1 and details['part_type'] == 'phase']
+                run_1_series_nums = sorted(list(set([details['series_num'] for details in run_1_details])))
+                run_1_series_nums_idxs = [i for i in range(len(run_1_series_nums))]
+                run_1_image_types = [next(details['image_type'] for details in run_1_details if details['series_num'] == series_num) for series_num in run_1_series_nums]
+                run_1_descriptions = [next(details['series_description'] for details in run_1_details if details['series_num'] == series_num) for series_num in run_1_series_nums]
+                
+                # user selects which series idx to keep
+                print(f"== MULTIPLE PHASE SERIES FOUND FOR {qsm_protocol_name} ==")
+                for i in range(len(run_1_series_nums)):
+                    print(f"{i+1}. IMAGE_TYPE={run_1_image_types[i]}; SeriesDescription={run_1_descriptions[i]}")
+                while True:
+                    phs_series_idx = input("Select phase series to use for QSM: ")
+                    try:
+                        phs_series_idx = int(phs_series_idx)-1
+                        if phs_series_idx not in run_1_series_nums_idxs:
+                            raise Exception()
+                        break
+                    except:
+                        print("Invalid input")
+            else:
+                logger.log(LogLevel.WARNING.value, f"Multiple phase series found for protocol {qsm_protocol_name}! Using whichever series comes first! Run interactively to select.")
+                phs_series_idx = 0
+                
+            # remove all magnitude series except the phs_series_idx-th from each run with qsm_protocol_name
+            for run_num in sorted(list(set(details['run_num'] for details in all_session_details if details['protocol_name'] == qsm_protocol_name))):
+                run_details = [details for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['run_num'] == run_num and details['part_type'] == 'mag']
+                series_num_to_keep = sorted(list(set([details['series_num'] for details in run_details])))[phs_series_idx]
+                to_remove = [details for details in run_details if details['series_num'] != series_num_to_keep]
+                for details in to_remove:
+                    all_session_details.remove(details)
+
 
     print("Summary of identified files and proposed renames (following BIDS standard):")
     for f in all_session_details:
@@ -476,4 +539,7 @@ def main():
     )
 
     script_exit()
+
+if __name__ == "__main__":
+    main()
 
