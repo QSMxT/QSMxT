@@ -45,9 +45,9 @@ docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ sit
 
 ## HPC installation
 
-QSMxT can be installed on an HPC or Linux machine using [transparent singularity](https://github.com/neurodesk/transparent-singularity). Transparent singularity installs QSMxT using a singularity container and exposes the underlying tools to the host environment, which is necessary for HPCs using PBS Graph or SLURM. 
+QSMxT can be installed on an HPC or Linux machine using [transparent singularity](https://github.com/neurodesk/transparent-singularity). Transparent singularity installs QSMxT using an Apptainer container and exposes the underlying tools to the host environment, which is necessary for HPCs using PBS Graph or SLURM. 
 
-1. Install or load [singularity](https://sylabs.io/guides/3.0/user-guide/quick_start.html) on your HPC
+1. Install or load [Apptainer](https://apptainer.org/docs/user/1.0/quick_start.html#quick-start) on your HPC
 2. Install the QSMxT container via [transparent singularity](https://github.com/neurodesk/transparent-singularity):
   {% capture code_block_content %}{% include transparent_singularity_install.sh %}{% endcapture %}
   {% assign code_block_content = code_block_content | replace: '${CONTAINER_VERSION}', site.CONTAINER_VERSION %}
@@ -55,7 +55,7 @@ QSMxT can be installed on an HPC or Linux machine using [transparent singularity
   ```bash
   {{ code_block_content | strip }}
   ```
-  - **NOTE:** You must have sufficient storage available in `$SINGULARITY_TMPDIR` (by default `/tmp`), `$SINGULARITY_CACHEDIR` (by default `$HOME/.singularity/cache`), and the repository directory to store the QSMxT container.
+  - **NOTE:** You must have sufficient storage available in `$APPTAINER_TMPDIR` (by default `/tmp`), `$APPTAINER_CACHEDIR` (by default `$HOME/.apptainer/cache`), and the repository directory to store the QSMxT container.
 3. Install miniconda with QSMxT:
   {% capture code_block_content %}{% include miniconda_install.sh %}{% endcapture %}
   ```bash
