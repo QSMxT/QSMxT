@@ -162,12 +162,12 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
     if run_args.do_qsm or run_args.do_swi:
         if any(nib.load(phase_files[i]).header['dim'][0] > 3 for i in range(len(phase_files))):
-            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do QSM or SWI - >3D MEGRE phase files detected! Each volume must be 3D, coil-combined, and represent a single echo for BIDS-compliance.")
+            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do QSM or SWI - >3D phase files detected! Each volume must be 3D, coil-combined, and represent a single echo for BIDS-compliance.")
             run_args.do_qsm = False
             run_args.do_swi = False
     if (run_args.do_qsm and (run_args.masking_input == 'magnitude' or run_args.inhomogeneity_correction or run_args.add_bet)) or run_args.do_r2starmap or run_args.do_t2starmap:
         if any(nib.load(magnitude_files[i]).header['dim'][0] > 3 for i in range(len(magnitude_files))):
-            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do magnitude-based masking - >3D MEGRE magnitude files detected! Each volume must be 3D, coil-combined, and represent a single echo for BIDS-compliance.")
+            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do magnitude-based masking - >3D magnitude files detected! Each volume must be 3D, coil-combined, and represent a single echo for BIDS-compliance.")
             run_args.masking_input = 'phase'
             run_args.inhomogeneity_correction = False
             run_args.add_bet = False
@@ -519,7 +519,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         n_romeo_combine = Node(
             interface=romeo.RomeoB0Interface(),
             name='mrt_romeo_combine',
-            mem_gb=min(4, run_args.mem_avail)
+            mem_gb=min(6, run_args.mem_avail)
         )
         n_romeo_combine.plugin_args = gen_plugin_args(
             plugin_args={ 'overwrite': True },
