@@ -323,6 +323,125 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             (n_swi, n_outputs, [('swi_mip', 'swi_mip')])
         ])
 
+    # segmentation
+    if run_args.do_segmentation:
+        n_registration_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6
+        n_registration = Node(
+            interface=RegistrationSynQuick(
+                num_threads=n_registration_threads,
+                fixed_image=magnitude_files[0],
+                moving_image=t1w_files[0],
+                output_prefix=f"{subject}_{session}" + ("_acq-{acq}" if acq else "") + (f"_run-{run}" if run else "") + "_"
+            ),
+            name='ants_register-t1-to-qsm',
+            n_procs=n_registration_threads,
+            mem_gb=min(run_args.mem_avail, 4)
+        )
+
+        # segment t1
+        n_fastsurfer_threads = min(run_args.n_procs, 8) if run_args.multiproc else 8
+        n_fastsurfer = Node(
+            interface=fastsurfer.FastSurferInterface(
+                in_file=t1w_files[0],
+                num_threads=n_fastsurfer_threads
+            ),
+            name='fastsurfer_segment-t1',
+            n_procs=n_fastsurfer_threads,
+            mem_gb=min(run_args.mem_avail, 12)
+        )
+        n_fastsurfer.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="FASTSURFER",
+            mem_gb=12,
+            num_cpus=n_fastsurfer_threads
+        )
+
+        # convert segmentation to nii
+        n_fastsurfer_aseg_nii = Node(
+            interface=mgz2nii.Mgz2NiiInterface(),
+            name='numpy_numpy_nibabel_mgz2nii'
+        )
+        wf.connect([
+            (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
+        ])
+
+        # apply transforms to segmentation
+        n_transform_segmentation = Node(
+            interface=ApplyTransforms(
+                dimension=3,
+                reference_image=magnitude_files[0],
+                interpolation="NearestNeighbor"
+            ),
+            name='ants_transform-segmentation-to-qsm'
+        )
+        wf.connect([
+            (n_fastsurfer_aseg_nii, n_transform_segmentation, [('out_file', 'input_image')]),
+            (n_registration, n_transform_segmentation, [('out_matrix', 'transforms')])
+        ])
+
+        wf.connect([
+            (n_fastsurfer_aseg_nii, n_outputs, [('out_file', 't1w_segmentation')]),
+            (n_transform_segmentation, n_outputs, [('output_image', 'qsm_segmentation')]),
+            (n_registration, n_outputs, [('out_matrix', 'transform')])
+        ])
+
+    if not run_args.do_qsm:
+        return wf
+
+    # reorient to canonical
+    def as_closest_canonical(phase, magnitude=None, mask=None):
+        import os
+        import nibabel as nib
+        from qsmxt.scripts.qsmxt_functions import extend_fname
+
+        def as_closest_canonical_i(in_file):
+            if nib.aff2axcodes(nib.load(in_file).affine) == ('R', 'A', 'S'):
+                return in_file
+            else:
+                out_file = extend_fname(in_file, "_canonical", out_dir=os.getcwd())
+                nib.save(nib.as_closest_canonical(nib.load(in_file)), out_file)
+                return out_file
+        
+        out_phase = as_closest_canonical_i(phase) if not isinstance(phase, list) else [as_closest_canonical_i(phase_i) for phase_i in phase]
+        out_mag = None
+        out_mask = None
+        if magnitude:
+            if isinstance(magnitude, list):
+                out_mag = [as_closest_canonical_i(magnitude_i) for magnitude_i in magnitude]
+            else:
+                out_mag = as_closest_canonical_i(magnitude)
+        if mask:
+            if isinstance(mask, list):
+                out_mask = [as_closest_canonical_i(mask_i) for mask_i in mask]
+            else:
+                out_mask = as_closest_canonical_i(mask)
+        
+        return out_phase, out_mag, out_mask
+    mn_inputs_canonical = Node(
+        interface=Function(
+            input_names=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files and run_args.use_existing_masks else []),
+            output_names=['phase', 'magnitude', 'mask'],
+            function=as_closest_canonical
+        ),
+        #iterfield=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
+        name='nibabel_as-canonical',
+        #is_map=len(phase_files) > 1
+    )
+    wf.connect([
+        (mn_phase_scaled, mn_inputs_canonical, [('phase_scaled', 'phase')])
+    ])
+    if magnitude_files:
+        wf.connect([
+            (n_inputs, mn_inputs_canonical, [('magnitude', 'magnitude')]),
+        ])
+    if mask_files and run_args.use_existing_masks:
+        wf.connect([
+            (n_inputs, mn_inputs_canonical, [('mask', 'mask')]),
+        ])
+    
     # resample to axial
     n_inputs_resampled = Node(
         interface=IdentityInterface(
@@ -388,138 +507,6 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             wf.connect([
                 (mn_inputs_canonical, n_inputs_resampled, [('mask', 'mask')])
             ])
-
-    # segmentation
-    if run_args.do_segmentation:
-        n_registration_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6
-        n_registration = Node(
-            interface=RegistrationSynQuick(
-                num_threads=n_registration_threads,
-                fixed_image=magnitude_files[0],
-                moving_image=t1w_files[0],
-                output_prefix=f"{subject}_{session}" + ("_acq-{acq}" if acq else "") + (f"_run-{run}" if run else "") + "_"
-            ),
-            name='ants_register-t1-to-qsm',
-            n_procs=n_registration_threads,
-            mem_gb=min(run_args.mem_avail, 4)
-        )
-
-        # segment t1
-        n_fastsurfer_threads = min(run_args.n_procs, 8) if run_args.multiproc else 8
-        n_fastsurfer = Node(
-            interface=fastsurfer.FastSurferInterface(
-                in_file=t1w_files[0],
-                num_threads=n_fastsurfer_threads
-            ),
-            name='fastsurfer_segment-t1',
-            n_procs=n_fastsurfer_threads,
-            mem_gb=min(run_args.mem_avail, 12)
-        )
-        n_fastsurfer.plugin_args = gen_plugin_args(
-            plugin_args={ 'overwrite': True },
-            slurm_account=run_args.slurm[0],
-            pbs_account=run_args.pbs,
-            slurm_partition=run_args.slurm[1],
-            name="FASTSURFER",
-            mem_gb=12,
-            num_cpus=n_fastsurfer_threads
-        )
-
-        # convert segmentation to nii
-        n_fastsurfer_aseg_nii = Node(
-            interface=mgz2nii.Mgz2NiiInterface(),
-            name='numpy_numpy_nibabel_mgz2nii'
-        )
-        wf.connect([
-            (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
-        ])
-
-        # get first phage image
-        n_getfirst_phase = Node(
-            interface=Function(
-                input_names=['phase'],
-                output_names=['phase'],
-                function=lambda phase: phase[0] if isinstance(phase, list) else phase
-            ),
-            name='func_getfirst-phase'
-        )
-        wf.connect([
-            (n_inputs_resampled, n_getfirst_phase, [('phase', 'phase')])
-        ])
-
-        # apply transforms to segmentation
-        n_transform_segmentation = Node(
-            interface=ApplyTransforms(
-                dimension=3,
-                interpolation="NearestNeighbor"
-            ),
-            name='ants_transform-segmentation-to-qsm'
-        )
-        wf.connect([
-            (n_getfirst_phase, n_transform_segmentation, [('phase', 'reference_image')]),
-            (n_fastsurfer_aseg_nii, n_transform_segmentation, [('out_file', 'input_image')]),
-            (n_registration, n_transform_segmentation, [('out_matrix', 'transforms')])
-        ])
-
-        wf.connect([
-            (n_fastsurfer_aseg_nii, n_outputs, [('out_file', 't1w_segmentation')]),
-            (n_transform_segmentation, n_outputs, [('output_image', 'qsm_segmentation')]),
-            (n_registration, n_outputs, [('out_matrix', 'transform')])
-        ])
-
-    if not run_args.do_qsm:
-        return wf
-
-    # reorient to canonical
-    def as_closest_canonical(phase, magnitude=None, mask=None):
-        import os
-        import nibabel as nib
-        from qsmxt.scripts.qsmxt_functions import extend_fname
-
-        def as_closest_canonical_i(in_file):
-            if nib.aff2axcodes(nib.load(in_file).affine) == ('R', 'A', 'S'):
-                return in_file
-            else:
-                out_file = extend_fname(in_file, "_canonical", out_dir=os.getcwd())
-                nib.save(nib.as_closest_canonical(nib.load(in_file)), out_file)
-                return out_file
-        
-        out_phase = as_closest_canonical_i(phase) if not isinstance(phase, list) else [as_closest_canonical_i(phase_i) for phase_i in phase]
-        out_mag = None
-        out_mask = None
-        if magnitude:
-            if isinstance(magnitude, list):
-                out_mag = [as_closest_canonical_i(magnitude_i) for magnitude_i in magnitude]
-            else:
-                out_mag = as_closest_canonical_i(magnitude)
-        if mask:
-            if isinstance(mask, list):
-                out_mask = [as_closest_canonical_i(mask_i) for mask_i in mask]
-            else:
-                out_mask = as_closest_canonical_i(mask)
-        
-        return out_phase, out_mag, out_mask
-    mn_inputs_canonical = Node(
-        interface=Function(
-            input_names=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files and run_args.use_existing_masks else []),
-            output_names=['phase', 'magnitude', 'mask'],
-            function=as_closest_canonical
-        ),
-        #iterfield=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
-        name='nibabel_as-canonical',
-        #is_map=len(phase_files) > 1
-    )
-    wf.connect([
-        (mn_phase_scaled, mn_inputs_canonical, [('phase_scaled', 'phase')])
-    ])
-    if magnitude_files:
-        wf.connect([
-            (n_inputs, mn_inputs_canonical, [('magnitude', 'magnitude')]),
-        ])
-    if mask_files and run_args.use_existing_masks:
-        wf.connect([
-            (n_inputs, mn_inputs_canonical, [('mask', 'mask')]),
-        ])
 
     # combine phase data if necessary
     n_inputs_combine = Node(
