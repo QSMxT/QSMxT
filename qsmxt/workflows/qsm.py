@@ -22,6 +22,7 @@ from qsmxt.interfaces import nipype_interface_t2star_r2star as t2s_r2s
 from qsmxt.interfaces import nipype_interface_clearswi as swi
 from qsmxt.interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from qsmxt.interfaces import nipype_interface_twopass as twopass
+from qsmxt.interfaces import nipype_interface_resample_like as resample_like
 
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
@@ -220,7 +221,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         (n_outputs, n_datasink, [('t1w_segmentation', 'segmentations.t1w')]),
         (n_outputs, n_datasink, [('qsm_segmentation', 'segmentations.qsm')]),
         (n_outputs, n_datasink, [('transform', 'segmentations.transforms')]),
-        (n_outputs, n_datasink, [('analysis_csv', 'analysis')]),
+        (n_outputs, n_datasink, [('analysis_csv', 'analysis')])
     ])
     
     # read echotime and field strengths from json files
@@ -283,22 +284,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         (n_inputs, n_nii_params, [('phase', 'nii_file')])
     ])
 
-    # r2* and t2* mappping
-    if run_args.do_t2starmap or run_args.do_r2starmap:
-        n_t2s_r2s = Node(
-            interface=t2s_r2s.T2sR2sInterface(),
-            name='mrt_t2s-r2s'
-        )
-        wf.connect([
-            (n_inputs, n_t2s_r2s, [('magnitude', 'magnitude')]),
-            (mn_json_params, n_t2s_r2s, [('TE', 'TE')])
-        ])
-        if run_args.do_t2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('t2starmap', 't2s')])])
-        if run_args.do_r2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('r2starmap', 'r2s')])])
-    
-    if not (run_args.do_swi or run_args.do_qsm):
-        return wf
-    
+    # scale phase
     mn_phase_scaled = create_node(
         interface=processphase.ScalePhaseInterface(),
         iterfield=['phase'],
@@ -308,88 +294,6 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     wf.connect([
         (n_inputs, mn_phase_scaled, [('phase', 'phase')])
     ])
-
-    # swi
-    if run_args.do_swi:
-        n_swi = Node(
-            interface=swi.ClearSwiInterface(),
-            name='mrt_clearswi'
-        )
-        wf.connect([
-            (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
-            (n_inputs, n_swi, [('magnitude', 'magnitude')]),
-            (mn_json_params, n_swi, [('TE', 'TEs' if len(phase_files) > 1 else 'TE')]),
-            (n_swi, n_outputs, [('swi', 'swi')]),
-            (n_swi, n_outputs, [('swi_mip', 'swi_mip')])
-        ])
-
-    # segmentation
-    if run_args.do_segmentation:
-        n_registration_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6
-        n_registration = Node(
-            interface=RegistrationSynQuick(
-                num_threads=n_registration_threads,
-                fixed_image=magnitude_files[0],
-                moving_image=t1w_files[0],
-                output_prefix=f"{subject}_{session}" + ("_acq-{acq}" if acq else "") + (f"_run-{run}" if run else "") + "_"
-            ),
-            name='ants_register-t1-to-qsm',
-            n_procs=n_registration_threads,
-            mem_gb=min(run_args.mem_avail, 4)
-        )
-
-        # segment t1
-        n_fastsurfer_threads = min(run_args.n_procs, 8) if run_args.multiproc else 8
-        n_fastsurfer = Node(
-            interface=fastsurfer.FastSurferInterface(
-                in_file=t1w_files[0],
-                num_threads=n_fastsurfer_threads
-            ),
-            name='fastsurfer_segment-t1',
-            n_procs=n_fastsurfer_threads,
-            mem_gb=min(run_args.mem_avail, 12)
-        )
-        n_fastsurfer.plugin_args = gen_plugin_args(
-            plugin_args={ 'overwrite': True },
-            slurm_account=run_args.slurm[0],
-            pbs_account=run_args.pbs,
-            slurm_partition=run_args.slurm[1],
-            name="FASTSURFER",
-            mem_gb=12,
-            num_cpus=n_fastsurfer_threads
-        )
-
-        # convert segmentation to nii
-        n_fastsurfer_aseg_nii = Node(
-            interface=mgz2nii.Mgz2NiiInterface(),
-            name='numpy_numpy_nibabel_mgz2nii'
-        )
-        wf.connect([
-            (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
-        ])
-
-        # apply transforms to segmentation
-        n_transform_segmentation = Node(
-            interface=ApplyTransforms(
-                dimension=3,
-                reference_image=magnitude_files[0],
-                interpolation="NearestNeighbor"
-            ),
-            name='ants_transform-segmentation-to-qsm'
-        )
-        wf.connect([
-            (n_fastsurfer_aseg_nii, n_transform_segmentation, [('out_file', 'input_image')]),
-            (n_registration, n_transform_segmentation, [('out_matrix', 'transforms')])
-        ])
-
-        wf.connect([
-            (n_fastsurfer_aseg_nii, n_outputs, [('out_file', 't1w_segmentation')]),
-            (n_transform_segmentation, n_outputs, [('output_image', 'qsm_segmentation')]),
-            (n_registration, n_outputs, [('out_matrix', 'transform')])
-        ])
-
-    if not run_args.do_qsm:
-        return wf
 
     # reorient to canonical
     def as_closest_canonical(phase, magnitude=None, mask=None):
@@ -433,6 +337,118 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     wf.connect([
         (mn_phase_scaled, mn_inputs_canonical, [('phase_scaled', 'phase')])
     ])
+
+    # r2* and t2* mappping
+    if run_args.do_t2starmap or run_args.do_r2starmap:
+        n_t2s_r2s = Node(
+            interface=t2s_r2s.T2sR2sInterface(),
+            name='mrt_t2s-r2s'
+        )
+        wf.connect([
+            (mn_inputs_canonical, n_t2s_r2s, [('magnitude', 'magnitude')]),
+            (mn_json_params, n_t2s_r2s, [('TE', 'TE')])
+        ])
+        if run_args.do_t2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('t2starmap', 't2s')])])
+        if run_args.do_r2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('r2starmap', 'r2s')])])
+    
+    if not (run_args.do_swi or run_args.do_qsm):
+        return wf
+
+    # swi
+    if run_args.do_swi:
+        n_swi = Node(
+            interface=swi.ClearSwiInterface(),
+            name='mrt_clearswi'
+        )
+        wf.connect([
+            (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
+            (mn_inputs_canonical, n_swi, [('magnitude', 'magnitude')]),
+            (mn_json_params, n_swi, [('TE', 'TEs' if len(phase_files) > 1 else 'TE')]),
+            (n_swi, n_outputs, [('swi', 'swi')]),
+            (n_swi, n_outputs, [('swi_mip', 'swi_mip')])
+        ])
+
+    # segmentation
+    if run_args.do_segmentation:
+        n_registration_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6
+        n_registration = Node(
+            interface=RegistrationSynQuick(
+                num_threads=n_registration_threads,
+                fixed_image=magnitude_files[0],
+                moving_image=t1w_files[0],
+                output_prefix=f"{subject}_{session}" + (f"_acq-{acq}" if acq else "") + (f"_run-{run}" if run else "") + "_"
+            ),
+            name='ants_register-t1-to-qsm',
+            n_procs=n_registration_threads,
+            mem_gb=min(run_args.mem_avail, 8)
+        )
+
+        # segment t1
+        n_fastsurfer_threads = min(run_args.n_procs, 8) if run_args.multiproc else 8
+        n_fastsurfer = Node(
+            interface=fastsurfer.FastSurferInterface(
+                in_file=t1w_files[0],
+                num_threads=n_fastsurfer_threads
+            ),
+            name='fastsurfer_segment-t1',
+            n_procs=n_fastsurfer_threads,
+            mem_gb=min(run_args.mem_avail, 12)
+        )
+        n_fastsurfer.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="FASTSURFER",
+            mem_gb=12,
+            num_cpus=n_fastsurfer_threads
+        )
+
+        # convert segmentation to nii
+        n_fastsurfer_aseg_nii = Node(
+            interface=mgz2nii.Mgz2NiiInterface(),
+            name='numpy_numpy_nibabel_mgz2nii'
+        )
+        wf.connect([
+            (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
+        ])
+
+        # get first canonical magnitude
+        n_getfirst_canonical_magnitude = Node(
+            interface=Function(
+                input_names=['magnitude'],
+                output_names=['magnitude'],
+                function=lambda magnitude: magnitude[0] if isinstance(magnitude, list) else magnitude
+            ),
+            name='func_getfirst-canonical-magnitude'
+        )
+        wf.connect([
+            (mn_inputs_canonical, n_getfirst_canonical_magnitude, [('magnitude', 'magnitude')])
+        ])
+
+        # apply transforms to segmentation
+        n_transform_segmentation = Node(
+            interface=ApplyTransforms(
+                dimension=3,
+                interpolation="NearestNeighbor"
+            ),
+            name='ants_transform-segmentation-to-qsm'
+        )
+        wf.connect([
+            (n_fastsurfer_aseg_nii, n_transform_segmentation, [('out_file', 'input_image')]),
+            (n_getfirst_canonical_magnitude, n_transform_segmentation, [('magnitude', 'reference_image')]),
+            (n_registration, n_transform_segmentation, [('out_matrix', 'transforms')])
+        ])
+
+        wf.connect([
+            (n_fastsurfer_aseg_nii, n_outputs, [('out_file', 't1w_segmentation')]),
+            (n_transform_segmentation, n_outputs, [('output_image', 'qsm_segmentation')]),
+            (n_registration, n_outputs, [('out_matrix', 'transform')])
+        ])
+
+    if not run_args.do_qsm:
+        return wf
+
     if magnitude_files:
         wf.connect([
             (n_inputs, mn_inputs_canonical, [('magnitude', 'magnitude')]),
@@ -519,7 +535,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         n_romeo_combine = Node(
             interface=romeo.RomeoB0Interface(),
             name='mrt_romeo_combine',
-            mem_gb=min(4, run_args.mem_avail)
+            mem_gb=min(5, run_args.mem_avail)
         )
         n_romeo_combine.plugin_args = gen_plugin_args(
             plugin_args={ 'overwrite': True },
@@ -581,8 +597,14 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         (wf_qsm, n_qsm_average, [('qsm_outputs.qsm', 'in_files')]),
         (wf_masking, n_qsm_average, [('masking_outputs.mask', 'in_masks')])
     ])
+    n_resample_qsm = Node(
+        interface=resample_like.ResampleLikeInterface(),
+        name='resample_qsm'
+    )
     wf.connect([
-        (n_qsm_average, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
+        (n_qsm_average, n_resample_qsm, [('out_file', 'in_file')]),
+        (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')]),
+        (n_resample_qsm, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
     ])
 
     # two-pass algorithm
@@ -641,20 +663,28 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')]),
             (wf_masking_intermediate, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
         ])
+
+        n_resample_qsm = Node(
+            interface=resample_like.ResampleLikeInterface(),
+            name='resample_twopass-qsm'
+        )
         wf.connect([
-            (n_qsm_twopass_average, n_outputs, [('out_file', 'qsm')])
+            (n_qsm_twopass_average, n_resample_qsm, [('out_file', 'in_file')]),
+            (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')]),
+            (n_resample_qsm, n_outputs, [('out_file', 'qsm')])
         ])
-        
+
     if run_args.do_segmentation and run_args.do_analysis:
         n_analyse_qsm = Node(
             interface=analyse.AnalyseInterface(
                 in_labels=run_args.labels_file
             ),
-            name='analyse_qsm'
+            name='analyse_qsm',
+            mem_gb=2
         )
         wf.connect([
             (n_transform_segmentation, n_analyse_qsm, [('output_image', 'in_segmentation')]),
-            (n_qsm_average if not run_args.two_pass else n_qsm_twopass_average, n_analyse_qsm, [('out_file', 'in_file')]),
+            (n_resample_qsm, n_analyse_qsm, [('out_file', 'in_file')]),
             (n_analyse_qsm, n_outputs, [('out_csv', 'analysis_csv')])
         ])
 
@@ -722,7 +752,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
                 mn_romeo = Node(
                     interface=romeo.RomeoB0Interface(),
                     name='mrt_romeo',
-                    mem_gb=min(3, run_args.mem_avail)
+                    mem_gb=min(5, run_args.mem_avail)
                 )
                 mn_romeo.plugin_args = gen_plugin_args(
                     plugin_args={ 'overwrite': True },
@@ -730,7 +760,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
                     pbs_account=run_args.pbs,
                     slurm_partition=run_args.slurm[1],
                     name="Romeo",
-                    mem_gb=3,
+                    mem_gb=5,
                     num_cpus=romeo_threads
                 )
                 wf.connect([
