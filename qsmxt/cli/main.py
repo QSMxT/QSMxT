@@ -96,7 +96,7 @@ def init_session_workflow(args, subject, session=None):
 
     # get all unique acquisition names
     acquisitions = sorted(list(set([
-        re.search("_acq-([a-zA-Z0-9]+)_", path).group(1)
+        re.search("_acq-([a-zA-Z0-9-]+)_", path).group(1)
         for path in files
         if '_acq-' in path
     ])))
