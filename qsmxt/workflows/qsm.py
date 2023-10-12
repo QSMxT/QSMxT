@@ -284,17 +284,6 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         (n_inputs, n_nii_params, [('phase', 'nii_file')])
     ])
 
-    # scale phase
-    mn_phase_scaled = create_node(
-        interface=processphase.ScalePhaseInterface(),
-        iterfield=['phase'],
-        name='nibabel_numpy_scale-phase',
-        is_map=len(phase_files) > 1
-    )
-    wf.connect([
-        (n_inputs, mn_phase_scaled, [('phase', 'phase')])
-    ])
-
     # reorient to canonical
     def as_closest_canonical(phase, magnitude=None, mask=None):
         import os
@@ -326,7 +315,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         return out_phase, out_mag, out_mask
     mn_inputs_canonical = Node(
         interface=Function(
-            input_names=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files and run_args.use_existing_masks else []),
+            input_names=[] + (['phase'] if phase_files else []) + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files and run_args.use_existing_masks else []),
             output_names=['phase', 'magnitude', 'mask'],
             function=as_closest_canonical
         ),
@@ -334,8 +323,28 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         name='nibabel_as-canonical',
         #is_map=len(phase_files) > 1
     )
+    if phase_files and (run_args.do_swi or run_args.do_qsm):
+        wf.connect([
+            (n_inputs, mn_inputs_canonical, [('phase', 'phase')]),
+        ])
+    if magnitude_files:
+        wf.connect([
+            (n_inputs, mn_inputs_canonical, [('magnitude', 'magnitude')]),
+        ])
+    if mask_files and run_args.use_existing_masks:
+        wf.connect([
+            (n_inputs, mn_inputs_canonical, [('mask', 'mask')]),
+        ])
+
+    # scale phase
+    mn_phase_scaled = create_node(
+        interface=processphase.ScalePhaseInterface(),
+        iterfield=['phase'],
+        name='nibabel_numpy_scale-phase',
+        is_map=len(phase_files) > 1
+    )
     wf.connect([
-        (mn_phase_scaled, mn_inputs_canonical, [('phase_scaled', 'phase')])
+        (mn_inputs_canonical, mn_phase_scaled, [('phase', 'phase')])
     ])
 
     # r2* and t2* mappping
@@ -358,7 +367,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     if run_args.do_swi:
         n_swi = Node(
             interface=swi.ClearSwiInterface(),
-            name='mrt_clearswi'
+            name='mrt_clearswi',
+            mem_gb=4
         )
         wf.connect([
             (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
@@ -448,15 +458,6 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
     if not run_args.do_qsm:
         return wf
-
-    if magnitude_files:
-        wf.connect([
-            (n_inputs, mn_inputs_canonical, [('magnitude', 'magnitude')]),
-        ])
-    if mask_files and run_args.use_existing_masks:
-        wf.connect([
-            (n_inputs, mn_inputs_canonical, [('mask', 'mask')]),
-        ])
     
     # resample to axial
     n_inputs_resampled = Node(
@@ -471,7 +472,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
             ),
             iterfield=['magnitude', 'phase'],
-            mem_gb=min(3, run_args.mem_avail),
+            mem_gb=min(4, run_args.mem_avail),
             name='nibabel_numpy_nilearn_axial-resampling',
             is_map=len(phase_files) > 1
         )
