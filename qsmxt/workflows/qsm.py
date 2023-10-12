@@ -461,7 +461,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         n_transform_segmentation = Node(
             interface=ApplyTransforms(
                 dimension=3,
-                interpolation="NearestNeighbor"
+                interpolation="NearestNeighbor",
+                output_image=f"{run_id.replace('.', '_')}_segmentation_trans.nii"
             ),
             name='ants_transform-segmentation-to-qsm'
         )
