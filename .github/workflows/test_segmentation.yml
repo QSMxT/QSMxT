@@ -12,6 +12,7 @@ on:
       - qsmxt/cli/main.py
       - aseg_labels.csv
       - qsmxt/workflows/segmentation.py
+      - qsmxt/workflows/qsm.py
       - qsmxt/tests/test_segmentation.py
       - qsmxt/tests/test_segmentation.sh
       - qsmxt/tests/utils.py
