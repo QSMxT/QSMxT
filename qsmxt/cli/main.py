@@ -96,7 +96,7 @@ def init_session_workflow(args, subject, session=None):
 
     # get all unique acquisition names
     acquisitions = sorted(list(set([
-        re.search("_acq-([a-zA-Z0-9]+)_", path).group(1)
+        re.search("_acq-([a-zA-Z0-9-]+)_", path).group(1)
         for path in files
         if '_acq-' in path
     ])))
@@ -763,7 +763,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
         print(" swi: Susceptibility Weighted Imaging (SWI)")
         print(" t2s: T2* maps")
         print(" r2s: R2* maps")
-        print(" seg: Segmentations")
+        print(" seg: Segmentations (requires qsm)")
         print(" analysis: QSM across segmented ROIs (requires qsm+seg)")
         print(" template: GRE group space + GRE/QSM templates (requires qsm)")
 

@@ -22,6 +22,7 @@ from qsmxt.interfaces import nipype_interface_t2star_r2star as t2s_r2s
 from qsmxt.interfaces import nipype_interface_clearswi as swi
 from qsmxt.interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from qsmxt.interfaces import nipype_interface_twopass as twopass
+from qsmxt.interfaces import nipype_interface_resample_like as resample_like
 
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
@@ -220,7 +221,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         (n_outputs, n_datasink, [('t1w_segmentation', 'segmentations.t1w')]),
         (n_outputs, n_datasink, [('qsm_segmentation', 'segmentations.qsm')]),
         (n_outputs, n_datasink, [('transform', 'segmentations.transforms')]),
-        (n_outputs, n_datasink, [('analysis_csv', 'analysis')]),
+        (n_outputs, n_datasink, [('analysis_csv', 'analysis')])
     ])
     
     # read echotime and field strengths from json files
@@ -283,22 +284,59 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         (n_inputs, n_nii_params, [('phase', 'nii_file')])
     ])
 
-    # r2* and t2* mappping
-    if run_args.do_t2starmap or run_args.do_r2starmap:
-        n_t2s_r2s = Node(
-            interface=t2s_r2s.T2sR2sInterface(),
-            name='mrt_t2s-r2s'
-        )
+    # reorient to canonical
+    def as_closest_canonical(phase, magnitude=None, mask=None):
+        import os
+        import nibabel as nib
+        from qsmxt.scripts.qsmxt_functions import extend_fname
+
+        def as_closest_canonical_i(in_file):
+            if nib.aff2axcodes(nib.load(in_file).affine) == ('R', 'A', 'S'):
+                return in_file
+            else:
+                out_file = extend_fname(in_file, "_canonical", out_dir=os.getcwd())
+                nib.save(nib.as_closest_canonical(nib.load(in_file)), out_file)
+                return out_file
+        
+        out_phase = as_closest_canonical_i(phase) if not isinstance(phase, list) else [as_closest_canonical_i(phase_i) for phase_i in phase]
+        out_mag = None
+        out_mask = None
+        if magnitude:
+            if isinstance(magnitude, list):
+                out_mag = [as_closest_canonical_i(magnitude_i) for magnitude_i in magnitude]
+            else:
+                out_mag = as_closest_canonical_i(magnitude)
+        if mask:
+            if isinstance(mask, list):
+                out_mask = [as_closest_canonical_i(mask_i) for mask_i in mask]
+            else:
+                out_mask = as_closest_canonical_i(mask)
+        
+        return out_phase, out_mag, out_mask
+    mn_inputs_canonical = Node(
+        interface=Function(
+            input_names=[] + (['phase'] if phase_files else []) + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files and run_args.use_existing_masks else []),
+            output_names=['phase', 'magnitude', 'mask'],
+            function=as_closest_canonical
+        ),
+        #iterfield=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
+        name='nibabel_as-canonical',
+        #is_map=len(phase_files) > 1
+    )
+    if phase_files and (run_args.do_swi or run_args.do_qsm):
         wf.connect([
-            (n_inputs, n_t2s_r2s, [('magnitude', 'magnitude')]),
-            (mn_json_params, n_t2s_r2s, [('TE', 'TE')])
+            (n_inputs, mn_inputs_canonical, [('phase', 'phase')]),
         ])
-        if run_args.do_t2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('t2starmap', 't2s')])])
-        if run_args.do_r2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('r2starmap', 'r2s')])])
-    
-    if not (run_args.do_swi or run_args.do_qsm):
-        return wf
-    
+    if magnitude_files:
+        wf.connect([
+            (n_inputs, mn_inputs_canonical, [('magnitude', 'magnitude')]),
+        ])
+    if mask_files and run_args.use_existing_masks:
+        wf.connect([
+            (n_inputs, mn_inputs_canonical, [('mask', 'mask')]),
+        ])
+
+    # scale phase
     mn_phase_scaled = create_node(
         interface=processphase.ScalePhaseInterface(),
         iterfield=['phase'],
@@ -306,18 +344,47 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         is_map=len(phase_files) > 1
     )
     wf.connect([
-        (n_inputs, mn_phase_scaled, [('phase', 'phase')])
+        (mn_inputs_canonical, mn_phase_scaled, [('phase', 'phase')])
     ])
+
+    # r2* and t2* mappping
+    if run_args.do_t2starmap or run_args.do_r2starmap:
+        n_t2s_r2s = Node(
+            interface=t2s_r2s.T2sR2sInterface(),
+            name='mrt_t2s-r2s'
+        )
+        wf.connect([
+            (mn_inputs_canonical, n_t2s_r2s, [('magnitude', 'magnitude')]),
+            (mn_json_params, n_t2s_r2s, [('TE', 'TE')])
+        ])
+        if run_args.do_t2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('t2starmap', 't2s')])])
+        if run_args.do_r2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('r2starmap', 'r2s')])])
+    
+    if not (run_args.do_swi or run_args.do_qsm):
+        return wf
 
     # swi
     if run_args.do_swi:
+        n_swi_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6
         n_swi = Node(
-            interface=swi.ClearSwiInterface(),
-            name='mrt_clearswi'
+            interface=swi.ClearSwiInterface(
+                num_threads=n_swi_threads
+            ),
+            name='mrt_clearswi',
+            mem_gb=9
+        )
+        n_swi.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="SWI",
+            mem_gb=9,
+            num_cpus=n_swi_threads
         )
         wf.connect([
             (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
-            (n_inputs, n_swi, [('magnitude', 'magnitude')]),
+            (mn_inputs_canonical, n_swi, [('magnitude', 'magnitude')]),
             (mn_json_params, n_swi, [('TE', 'TEs' if len(phase_files) > 1 else 'TE')]),
             (n_swi, n_outputs, [('swi', 'swi')]),
             (n_swi, n_outputs, [('swi_mip', 'swi_mip')])
@@ -331,11 +398,20 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 num_threads=n_registration_threads,
                 fixed_image=magnitude_files[0],
                 moving_image=t1w_files[0],
-                output_prefix=f"{subject}_{session}" + ("_acq-{acq}" if acq else "") + (f"_run-{run}" if run else "") + "_"
+                output_prefix=f"{subject}_{session}" + (f"_acq-{acq}" if acq else "") + (f"_run-{run}" if run else "") + "_"
             ),
             name='ants_register-t1-to-qsm',
             n_procs=n_registration_threads,
-            mem_gb=min(run_args.mem_avail, 4)
+            mem_gb=min(run_args.mem_avail, 8)
+        )
+        n_registration.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="ANTS",
+            mem_gb=8,
+            num_cpus=n_registration_threads
         )
 
         # segment t1
@@ -368,17 +444,31 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
         ])
 
+        # get first canonical magnitude
+        n_getfirst_canonical_magnitude = Node(
+            interface=Function(
+                input_names=['magnitude'],
+                output_names=['magnitude'],
+                function=lambda magnitude: magnitude[0] if isinstance(magnitude, list) else magnitude
+            ),
+            name='func_getfirst-canonical-magnitude'
+        )
+        wf.connect([
+            (mn_inputs_canonical, n_getfirst_canonical_magnitude, [('magnitude', 'magnitude')])
+        ])
+
         # apply transforms to segmentation
         n_transform_segmentation = Node(
             interface=ApplyTransforms(
                 dimension=3,
-                reference_image=magnitude_files[0],
-                interpolation="NearestNeighbor"
+                interpolation="NearestNeighbor",
+                output_image=f"{run_id.replace('.', '_')}_segmentation_trans.nii"
             ),
             name='ants_transform-segmentation-to-qsm'
         )
         wf.connect([
             (n_fastsurfer_aseg_nii, n_transform_segmentation, [('out_file', 'input_image')]),
+            (n_getfirst_canonical_magnitude, n_transform_segmentation, [('magnitude', 'reference_image')]),
             (n_registration, n_transform_segmentation, [('out_matrix', 'transforms')])
         ])
 
@@ -390,57 +480,6 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
     if not run_args.do_qsm:
         return wf
-
-    # reorient to canonical
-    def as_closest_canonical(phase, magnitude=None, mask=None):
-        import os
-        import nibabel as nib
-        from qsmxt.scripts.qsmxt_functions import extend_fname
-
-        def as_closest_canonical_i(in_file):
-            if nib.aff2axcodes(nib.load(in_file).affine) == ('R', 'A', 'S'):
-                return in_file
-            else:
-                out_file = extend_fname(in_file, "_canonical", out_dir=os.getcwd())
-                nib.save(nib.as_closest_canonical(nib.load(in_file)), out_file)
-                return out_file
-        
-        out_phase = as_closest_canonical_i(phase) if not isinstance(phase, list) else [as_closest_canonical_i(phase_i) for phase_i in phase]
-        out_mag = None
-        out_mask = None
-        if magnitude:
-            if isinstance(magnitude, list):
-                out_mag = [as_closest_canonical_i(magnitude_i) for magnitude_i in magnitude]
-            else:
-                out_mag = as_closest_canonical_i(magnitude)
-        if mask:
-            if isinstance(mask, list):
-                out_mask = [as_closest_canonical_i(mask_i) for mask_i in mask]
-            else:
-                out_mask = as_closest_canonical_i(mask)
-        
-        return out_phase, out_mag, out_mask
-    mn_inputs_canonical = Node(
-        interface=Function(
-            input_names=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files and run_args.use_existing_masks else []),
-            output_names=['phase', 'magnitude', 'mask'],
-            function=as_closest_canonical
-        ),
-        #iterfield=['phase'] + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files else []),
-        name='nibabel_as-canonical',
-        #is_map=len(phase_files) > 1
-    )
-    wf.connect([
-        (mn_phase_scaled, mn_inputs_canonical, [('phase_scaled', 'phase')])
-    ])
-    if magnitude_files:
-        wf.connect([
-            (n_inputs, mn_inputs_canonical, [('magnitude', 'magnitude')]),
-        ])
-    if mask_files and run_args.use_existing_masks:
-        wf.connect([
-            (n_inputs, mn_inputs_canonical, [('mask', 'mask')]),
-        ])
     
     # resample to axial
     n_inputs_resampled = Node(
@@ -455,7 +494,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
             ),
             iterfield=['magnitude', 'phase'],
-            mem_gb=min(3, run_args.mem_avail),
+            mem_gb=min(4, run_args.mem_avail),
             name='nibabel_numpy_nilearn_axial-resampling',
             is_map=len(phase_files) > 1
         )
@@ -519,7 +558,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         n_romeo_combine = Node(
             interface=romeo.RomeoB0Interface(),
             name='mrt_romeo_combine',
-            mem_gb=min(6, run_args.mem_avail)
+            mem_gb=min(8, run_args.mem_avail)
         )
         n_romeo_combine.plugin_args = gen_plugin_args(
             plugin_args={ 'overwrite': True },
@@ -581,8 +620,14 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         (wf_qsm, n_qsm_average, [('qsm_outputs.qsm', 'in_files')]),
         (wf_masking, n_qsm_average, [('masking_outputs.mask', 'in_masks')])
     ])
+    n_resample_qsm = Node(
+        interface=resample_like.ResampleLikeInterface(),
+        name='resample_qsm'
+    )
     wf.connect([
-        (n_qsm_average, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
+        (n_qsm_average, n_resample_qsm, [('out_file', 'in_file')]),
+        (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')]),
+        (n_resample_qsm, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
     ])
 
     # two-pass algorithm
@@ -641,20 +686,28 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')]),
             (wf_masking_intermediate, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
         ])
+
+        n_resample_qsm = Node(
+            interface=resample_like.ResampleLikeInterface(),
+            name='resample_twopass-qsm'
+        )
         wf.connect([
-            (n_qsm_twopass_average, n_outputs, [('out_file', 'qsm')])
+            (n_qsm_twopass_average, n_resample_qsm, [('out_file', 'in_file')]),
+            (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')]),
+            (n_resample_qsm, n_outputs, [('out_file', 'qsm')])
         ])
-        
+
     if run_args.do_segmentation and run_args.do_analysis:
         n_analyse_qsm = Node(
             interface=analyse.AnalyseInterface(
                 in_labels=run_args.labels_file
             ),
-            name='analyse_qsm'
+            name='analyse_qsm',
+            mem_gb=2
         )
         wf.connect([
             (n_transform_segmentation, n_analyse_qsm, [('output_image', 'in_segmentation')]),
-            (n_qsm_average if not run_args.two_pass else n_qsm_twopass_average, n_analyse_qsm, [('out_file', 'in_file')]),
+            (n_resample_qsm, n_analyse_qsm, [('out_file', 'in_file')]),
             (n_analyse_qsm, n_outputs, [('out_csv', 'analysis_csv')])
         ])
 
@@ -722,7 +775,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
                 mn_romeo = Node(
                     interface=romeo.RomeoB0Interface(),
                     name='mrt_romeo',
-                    mem_gb=min(3, run_args.mem_avail)
+                    mem_gb=min(8, run_args.mem_avail)
                 )
                 mn_romeo.plugin_args = gen_plugin_args(
                     plugin_args={ 'overwrite': True },
@@ -730,7 +783,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
                     pbs_account=run_args.pbs,
                     slurm_partition=run_args.slurm[1],
                     name="Romeo",
-                    mem_gb=3,
+                    mem_gb=5,
                     num_cpus=romeo_threads
                 )
                 wf.connect([
@@ -911,7 +964,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             slurm_account=run_args.slurm[0],
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
-            name="RTS",
+            name="NEXTQSM",
             mem_gb=13,
             num_cpus=nextqsm_threads
         )

@@ -51,8 +51,8 @@ class RomeoB0InputSpec(CommandLineInputSpecJulia):
     combine_mag = File(mandatory=False, exists=True, argstr="--mag %s", position=1)
 
 class RomeoB0OutputSpec(TraitedSpec):
-    frequency = File(exists=True)
-    phase_unwrapped = OutputMultiPath(File(exists=True))
+    frequency = File()
+    phase_unwrapped = OutputMultiPath(File())
     #phase_unwrapped = File(exists=True)
     #phase_wrapped = File(exists=True)
 
