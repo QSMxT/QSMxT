@@ -87,8 +87,8 @@ def print_qsm_premades(pipeline_file):
             print()
 
 def get_container_version(check_path=True):
-    if os.environ.get('SINGULARITY_NAME') and 'qsmxt' in os.environ.get('SINGULARITY_NAME'):
-        return f"{os.environ.get('SINGULARITY_NAME')} (singularity)"
+    if os.environ.get('APPTAINER_NAME') and 'qsmxt' in os.environ.get('APPTAINER_NAME'):
+        return f"{os.environ.get('APPTAINER_NAME')} (apptainer)"
     if os.path.exists("/README.md"):
         with open("/README.md", 'r') as readme_handle:
             lines = readme_handle.readlines()
