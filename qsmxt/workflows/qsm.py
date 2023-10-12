@@ -368,7 +368,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         n_swi = Node(
             interface=swi.ClearSwiInterface(),
             name='mrt_clearswi',
-            mem_gb=4
+            mem_gb=9
         )
         wf.connect([
             (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
@@ -536,7 +536,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         n_romeo_combine = Node(
             interface=romeo.RomeoB0Interface(),
             name='mrt_romeo_combine',
-            mem_gb=min(5, run_args.mem_avail)
+            mem_gb=min(8, run_args.mem_avail)
         )
         n_romeo_combine.plugin_args = gen_plugin_args(
             plugin_args={ 'overwrite': True },
@@ -753,7 +753,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
                 mn_romeo = Node(
                     interface=romeo.RomeoB0Interface(),
                     name='mrt_romeo',
-                    mem_gb=min(5, run_args.mem_avail)
+                    mem_gb=min(8, run_args.mem_avail)
                 )
                 mn_romeo.plugin_args = gen_plugin_args(
                     plugin_args={ 'overwrite': True },
@@ -942,7 +942,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             slurm_account=run_args.slurm[0],
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
-            name="RTS",
+            name="NEXTQSM",
             mem_gb=13,
             num_cpus=nextqsm_threads
         )
