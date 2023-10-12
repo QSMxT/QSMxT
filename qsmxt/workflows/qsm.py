@@ -365,10 +365,22 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
     # swi
     if run_args.do_swi:
+        n_swi_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6
         n_swi = Node(
-            interface=swi.ClearSwiInterface(),
+            interface=swi.ClearSwiInterface(
+                num_threads=n_swi_threads
+            ),
             name='mrt_clearswi',
             mem_gb=9
+        )
+        n_swi.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="SWI",
+            mem_gb=9,
+            num_cpus=n_swi_threads
         )
         wf.connect([
             (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
@@ -391,6 +403,15 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             name='ants_register-t1-to-qsm',
             n_procs=n_registration_threads,
             mem_gb=min(run_args.mem_avail, 8)
+        )
+        n_registration.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="ANTS",
+            mem_gb=8,
+            num_cpus=n_registration_threads
         )
 
         # segment t1
