@@ -23,6 +23,7 @@ from qsmxt.interfaces import nipype_interface_clearswi as swi
 from qsmxt.interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from qsmxt.interfaces import nipype_interface_twopass as twopass
 from qsmxt.interfaces import nipype_interface_resample_like as resample_like
+from qsmxt.interfaces import nipype_interface_qsm_referencing as qsm_referencing
 
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
@@ -620,15 +621,35 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         (wf_qsm, n_qsm_average, [('qsm_outputs.qsm', 'in_files')]),
         (wf_masking, n_qsm_average, [('masking_outputs.mask', 'in_masks')])
     ])
+
     n_resample_qsm = Node(
         interface=resample_like.ResampleLikeInterface(),
-        name='resample_qsm'
+        name='nibabel_numpy_nilearn_resample-qsm'
     )
     wf.connect([
         (n_qsm_average, n_resample_qsm, [('out_file', 'in_file')]),
-        (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')]),
-        (n_resample_qsm, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
+        (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')])
     ])
+
+    if run_args.qsm_reference:
+        n_qsm_referenced = Node(
+            interface=qsm_referencing.ReferenceQSMInterface(
+                in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else [1]
+            ),
+            name='nibabel_numpy_qsm-referenced'
+        )
+        wf.connect([
+            (n_resample_qsm, n_qsm_referenced, [('out_file', 'in_qsm')]),
+            (n_qsm_referenced, n_outputs, [('out_file', 'qsm')])
+        ])
+        if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation:
+            wf.connect([
+                (n_transform_segmentation, n_qsm_referenced, [('output_image', 'in_seg')])
+            ])
+    else:
+        wf.connect([
+            (n_resample_qsm, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
+        ])
 
     # two-pass algorithm
     if run_args.two_pass:
@@ -689,13 +710,32 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
         n_resample_qsm = Node(
             interface=resample_like.ResampleLikeInterface(),
-            name='resample_twopass-qsm'
+            name='resample_qsm-twopass'
         )
         wf.connect([
             (n_qsm_twopass_average, n_resample_qsm, [('out_file', 'in_file')]),
-            (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')]),
-            (n_resample_qsm, n_outputs, [('out_file', 'qsm')])
+            (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')])
         ])
+
+        if run_args.qsm_reference:
+            n_qsm_twopass_referenced = Node(
+                interface=qsm_referencing.ReferenceQSMInterface(
+                    in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else [1]
+                ),
+                name='nibabel_numpy_qsm-referenced-twopass'
+            )
+            wf.connect([
+                (n_resample_qsm, n_qsm_twopass_referenced, [('out_file', 'in_qsm')]),
+                (n_qsm_twopass_referenced, n_outputs, [('out_file', 'qsm')])
+            ])
+            if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation:
+                wf.connect([
+                    (n_transform_segmentation, n_qsm_twopass_referenced, [('output_image', 'in_seg')])
+                ])
+        else:
+            wf.connect([
+                (n_resample_qsm, n_outputs, [('out_file', 'qsm')])
+            ])
 
     if run_args.do_segmentation and run_args.do_analysis:
         n_analyse_qsm = Node(

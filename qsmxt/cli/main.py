@@ -314,6 +314,26 @@ def parse_args(args, return_run_command=False):
             "background field removal steps. "
     )
 
+    def is_valid_reference(value):
+        """Custom validation for the referencing method."""
+        if value.lower() in ["mean", "none"]:
+            return value
+        try:
+            seg_id = int(value)
+            if seg_id < 0:
+                raise argparse.ArgumentTypeError(f"Invalid segmentation ID: {value}")
+            return seg_id
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"Invalid reference value: {value}. Expected 'mean', 'none', or a segmentation ID.")
+
+    parser.add_argument(
+        "--qsm_reference",
+        type=is_valid_reference,
+        default=None,
+        nargs='+',
+        help="Referencing method for QSM. Options are: 'mean', or a segmentation ID (integer). Default is no referencing."
+    )
+
     parser.add_argument(
         '--tgv_iterations',
         type=int,
@@ -567,8 +587,14 @@ def parse_args(args, return_run_command=False):
 
     # bids and output are required
     if args.bids_dir is None or args.output_dir is None:
-        logger.log(LogLevel.ERROR.value, "Values for --bids_dir and --output_dir are required!")
-        script_exit(1, logger=logger)
+        parser.error("--bids_dir and --output_dir are required!")
+
+    # Checking the combined qsm_reference values
+    if args.qsm_reference is not None:
+        if any(x.lower() in args.qsm_reference for x in ['mean', 'none']) and len(args.qsm_reference) > 1:
+            parser.error("--qsm_reference must be either 'mean', 'none', or a series of one or more integers")
+        if len(args.qsm_reference) == 1:
+            args.qsm_reference = args.qsm_reference[0]
 
     # get explicitly set arguments
     explicit_args = {}
@@ -749,6 +775,51 @@ def generate_run_command(all_args, implicit_args, explicit_args, short=True):
 
     return run_command
 
+def get_compliance_message(args):
+
+    if not args.do_qsm:
+        return
+
+    compliant = True
+    message = ""
+
+    # ✅ Phase-quality-based masking
+    if args.masking_input != 'phase' or args.masking_algorithm == 'bet':
+        compliant = False
+        message += "\n - Phase-quality-based masking recommended"
+
+    if args.use_existing_masks:
+        compliant = False
+        message += "\n - The existing masks may not be phase-quality-based"
+    
+    # ✅ Multi-echo images should be combined before background removal
+    if not args.combine_phase:
+        compliant = False
+        message += "\n - B0 mapping recommended on phase images"
+    
+    # ✅ SHARP/PDF
+    if not any(x in args.bf_algorithm for x in ['sharp', 'pdf']) or args.qsm_algorithm in ['nextqsm', 'tgv']:
+        compliant = False
+        message += "\n - SHARP/PDF based background field removal recommended"
+    
+    # ✅ Sparsity-based dipole inversion
+    if not any(x in args.qsm_algorithm for x in ['rts']):
+        compliant = False
+        message += "\n - Sparsity-based dipole inversion recommended"
+    
+    # ✅ Susceptibility values should be referenced
+    if args.qsm_reference is None:
+        compliant = False
+        message += "\n - Susceptibility values should be referenced"
+
+    if not compliant:
+        message = "WARNING: Pipeline is NOT guidelines compliant (see https://arxiv.org/abs/2307.02306):" + message
+    else:
+        message = "Guidelines compliant! (see https://arxiv.org/abs/2307.02306))"
+
+    return message
+
+
 def get_interactive_args(args, explicit_args, implicit_args, premades, using_json_settings):
     class dotdict(dict):
         """dot.notation access to dictionary attributes"""
@@ -921,6 +992,11 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                 if args.qsm_algorithm not in ['nextqsm']:
                     print(f" - Background field removal: {args.bf_algorithm}")
             print(f" - Dipole inversion: {args.qsm_algorithm}")
+            print(f" - Referencing: {args.qsm_reference}")
+
+        message = get_compliance_message(args=args)
+        if message:
+            print(f"\n{message}")
 
         print(f"\nRun command: {generate_run_command(all_args=args, implicit_args=implicit_args, explicit_args=explicit_args)}")
         
@@ -1169,6 +1245,29 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                     options=['vsharp', 'pdf'],
                     default=args.bf_algorithm
                 )
+
+            print("\n== QSM reference ==")
+            print("Select a QSM reference:\n")
+            print("mean: QSM will be relative to the subject-level mean of the non-zero QSM values")
+            print("segmentation ID (enter int; requires segmentation pipeline): QSM will be relative to the subject-level mean of the QSM within the segmentation mask")
+            print("none: No QSM referencing")
+
+            user_in = None
+            while True:
+                user_in = input(f"\nSelect QSM reference [default - {args.qsm_reference}]: ")
+                if user_in == "":
+                    user_in = args.qsm_reference
+                    break
+                elif user_in in ['mean', 'none']:
+                    break
+                elif user_in.isnumeric() and args.do_segmentation:
+                    user_in = int(user_in)
+                    break
+                elif user_in.isnumeric():
+                    print("Segmentation pipeline must be enabled for that option.")
+                elif user_in not in ['mean', 'none', ''] and not user_in.isnumeric():
+                    print("Invalid input")
+            args.qsm_reference = user_in
         
     return args.copy(), implicit_args
 
