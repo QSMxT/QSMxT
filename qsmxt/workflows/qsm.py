@@ -1068,8 +1068,8 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
         mn_qsm = create_node(
             interface=tgvjl.TGVQSMJlInterface(
                 erosions=qsm_erosions,
-                alpha=run_args.tgv_alphas
-                #iterations=run_args.tgv_iterations,
+                alpha=run_args.tgv_alphas,
+                iterations=run_args.tgv_iterations
             ),
             iterfield=['phase', 'TE', 'mask'],
             name='tgv',
