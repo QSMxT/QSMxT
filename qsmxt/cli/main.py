@@ -712,7 +712,7 @@ def parse_args(args, return_run_command=False):
     keys = set(vars(args)) & set(final_args)
     for key in keys:
         vars(args)[key] = final_args[key]
-    
+
     # compute the minimum run command to re-execute the built pipeline non-interactively
     if return_run_command:
         run_command = f"qsmxt {explicit_args['bids_dir']} {explicit_args['output_dir']}"
@@ -815,7 +815,7 @@ def get_compliance_message(args):
     if not compliant:
         message = "WARNING: Pipeline is NOT guidelines compliant (see https://arxiv.org/abs/2307.02306):" + message
     else:
-        message = "Guidelines compliant! (see https://arxiv.org/abs/2307.02306))"
+        message = "Guidelines compliant! (see https://arxiv.org/abs/2307.02306)"
 
     return message
 
@@ -1477,6 +1477,14 @@ def main(argv=None):
     logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
     logger.log(LogLevel.INFO.value, f"Command: {run_command}")
+
+    # display compliance message
+    message = get_compliance_message(args)
+    if message:
+        if 'warning' in message.lower():
+            logger.log(LogLevel.WARNING.value, message.replace('WARNING: ', '').replace('\n - ', '; '))
+        else:
+            logger.log(LogLevel.INFO.value, message)
 
     # print diff if needed
     diff = get_diff()
