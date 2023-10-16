@@ -47,28 +47,28 @@ function main(args)
     TE::Float64 = eval(Meta.parse(args["TE"]))
     B0::Float64 = eval(Meta.parse(args["b0-str"]))
     regularization::Float64 = eval(Meta.parse(args["regularization"]))
-    alpha::Tuple{Float64,Float64} = args["alphas"] !== nothing ? eval(Meta.parse(args["alphas"])) : get_default_alpha(regularization)
-    iterations::Int = args["iterations"] !== nothing ? eval(Meta.parse(args["iterations"])) : get_default_iterations(vsz, step_size)
 
-    println(vsz)
-    println(erosions)
-    println(TE)
-    println(B0)
-    println(regularization)
-    println(alpha)
-    println(iterations)
+    # Parsing alpha and iterations values
+    alpha = args["alphas"] !== nothing ? Tuple(map(x -> parse(Float64, String(x)), split(replace(args["alphas"], ['[', ']'] => "")))) : nothing
+    iterations = args["iterations"] !== nothing ? parse(Int, args["iterations"]) : nothing
 
-    @time chi = qsm_tgv(
-        phase, 
-        mask, 
-        vsz;
-        TE = TE,
-        fieldstrength = B0,
-        alpha = alpha,
-        iterations = iterations,
-        erosions = erosions,
-        laplacian = get_laplace_phase3
+    # Build the set of named arguments dynamically
+    kwargs = Dict(
+        :TE => TE,
+        :fieldstrength => B0,
+        :erosions => erosions,
+        :laplacian => get_laplace_phase3,
+        :regularization => regularization
     )
+    if alpha !== nothing
+        kwargs[:alpha] = alpha
+    end
+    if iterations !== nothing
+        kwargs[:iterations] = iterations
+    end
+
+    # Use splatting to pass the named arguments to the function
+    @time chi = qsm_tgv(phase, mask, vsz; pairs(kwargs)...)
 
     savenii(chi, args["output"]; header = header(phase))
 end
