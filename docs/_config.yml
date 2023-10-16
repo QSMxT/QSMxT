@@ -1,5 +1,5 @@
 # This is the pip package version that is used for package deployment
-PACKAGE_VERSION: 6.2.0
+PACKAGE_VERSION: 6.3.0
 
 # This is the container version that is used for the docs and GitHub Actions
 CONTAINER_VERSION: 6.2.0
