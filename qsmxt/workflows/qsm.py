@@ -640,7 +640,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         )
         wf.connect([
             (n_resample_qsm, n_qsm_referenced, [('out_file', 'in_qsm')]),
-            (n_qsm_referenced, n_outputs, [('out_file', 'qsm')])
+            (n_qsm_referenced, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
         ])
         if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation:
             wf.connect([
