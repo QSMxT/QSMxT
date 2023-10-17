@@ -20,7 +20,7 @@ echo "[DEBUG]: which julia"
 which julia
 
 echo "[DEBUG]: remove executables we are replacing"
-for f in {python,qsmxt,dicom-sort,dicom-convert}; do rm qsmxt_*/${f}; done
+for f in {python3,qsmxt,dicom-sort,dicom-convert}; do rm qsmxt_*/${f}; done
 
 echo "[DEBUG]: Install miniconda"
 /tmp/QSMxT/docs/_includes/miniconda_install.sh
