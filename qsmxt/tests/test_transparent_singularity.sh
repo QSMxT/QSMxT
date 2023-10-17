@@ -13,8 +13,8 @@ cp -r . /tmp/QSMxT
 echo "[DEBUG]: Install QSMxT via transparent-singularity"
 /tmp/QSMxT/docs/_includes/transparent_singularity_install.sh
 
-echo "[DEBUG]: cd qsmxt_* && source activate_qsmxt_${CONTAINER_VERSION}_${BUILD_DATE}.simg.sh && cd ../"
-cd qsmxt_* && source activate_qsmxt_${CONTAINER_VERSION}_${BUILD_DATE}.simg.sh && cd ../
+echo "[DEBUG]: cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
+cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../
 
 echo "[DEBUG]: which tgv_qsm"
 which tgv_qsm

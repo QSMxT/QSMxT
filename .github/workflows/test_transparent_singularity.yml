@@ -31,14 +31,13 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
-    - name: Extract CONTAINER_VERSION and BUILD_DATE from docs/_config.yml
+    - name: Extract versions from docs/_config.yml
       id: vars
       run: |
-        CONTAINER_VERSION=$(cat docs/_config.yml | grep 'CONTAINER_VERSION' | awk '{print $2}')
-        BUILD_DATE=$(cat docs/_config.yml | grep 'BUILD_DATE' | awk '{print $2}')
-        echo "${CONTAINER_VERSION}_${BUILD_DATE}"
-        echo "CONTAINER_VERSION=${CONTAINER_VERSION}" >> ${GITHUB_ENV}
-        echo "BUILD_DATE=${BUILD_DATE}" >> ${GITHUB_ENV}
+        TEST_CONTAINER_VERSION=$(cat docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
+        TEST_CONTAINER_DATE=$(cat docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
+        echo "TEST_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}" >> ${GITHUB_ENV}
+        echo "TEST_CONTAINER_DATE=${TEST_CONTAINER_DATE}" >> ${GITHUB_ENV}
     - name: test transparent singularity
       run: |
         /bin/bash qsmxt/tests/test_transparent_singularity.sh

@@ -1,9 +1,11 @@
-# This is the pip package version that is used for package deployment
-PACKAGE_VERSION: 6.3.0
+# TEST VERSION (GitHub Actions)
+TEST_CONTAINER_VERSION: 6.3.0
+TEST_CONTAINER_DATE: 20231016
 
-# This is the container version that is used for the docs and GitHub Actions
-CONTAINER_VERSION: 6.2.0
-BUILD_DATE: 20231012
+# PRODUCTION VERSION (Documentation)
+PROD_PACKAGE_VERSION: 6.2.0
+PROD_CONTAINER_VERSION: 6.2.0
+PROD_CONTAINER_DATE: 20231012
 
 remote_theme: just-the-docs/just-the-docs
 baseurl: "/QSMxT" # the subpath of your site, e.g. /blog
