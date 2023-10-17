@@ -16,8 +16,8 @@ echo "[DEBUG]: Install QSMxT via transparent-singularity"
 echo "[DEBUG]: cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
 cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../
 
-echo "[DEBUG]: which tgv_qsm"
-which tgv_qsm
+echo "[DEBUG]: which julia"
+which julia
 
 echo "[DEBUG]: remove executables we are replacing"
 for f in {python,qsmxt,dicom-sort,dicom-convert}; do rm qsmxt_*/${f}; done
