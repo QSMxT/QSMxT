@@ -11,6 +11,8 @@ sudo apt-get install -y apptainer
 cp -r . /tmp/QSMxT
 
 echo "[DEBUG]: Install QSMxT via transparent-singularity"
+export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
+export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
 /tmp/QSMxT/docs/_includes/transparent_singularity_install.sh
 
 echo "[DEBUG]: cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
@@ -20,7 +22,7 @@ echo "[DEBUG]: which julia"
 which julia
 
 echo "[DEBUG]: remove executables we are replacing"
-for f in {python3,qsmxt,dicom-sort,dicom-convert}; do rm qsmxt_*/${f}; done
+for f in {python3,python,qsmxt,dicom-sort,dicom-convert}; do rm qsmxt_*/${f}; done
 
 echo "[DEBUG]: Install miniconda"
 /tmp/QSMxT/docs/_includes/miniconda_install.sh
