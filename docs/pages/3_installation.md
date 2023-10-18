@@ -58,6 +58,7 @@ QSMxT can be installed on an HPC or Linux machine using [transparent singularity
   - **NOTE:** You must have sufficient storage available in `$APPTAINER_TMPDIR` (by default `/tmp`), `$APPTAINER_CACHEDIR` (by default `$HOME/.apptainer/cache`), and the repository directory to store the QSMxT container.
 3. Install miniconda with QSMxT:
   {% capture code_block_content %}{% include miniconda_install.sh %}{% endcapture %}
+  {% assign code_block_content = code_block_content | replace: '${PROD_PACKAGE_VERSION}', site.PROD_PACKAGE_VERSION %}
   ```bash
   {{ code_block_content | strip }}
   ```
