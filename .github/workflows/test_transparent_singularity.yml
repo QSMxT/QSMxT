@@ -36,8 +36,10 @@ jobs:
       run: |
         TEST_CONTAINER_VERSION=$(cat docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
         TEST_CONTAINER_DATE=$(cat docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
+        TEST_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'TEST_PACKAGE_VERSION' | awk '{print $2}')
         echo "TEST_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}" >> ${GITHUB_ENV}
         echo "TEST_CONTAINER_DATE=${TEST_CONTAINER_DATE}" >> ${GITHUB_ENV}
+        echo "TEST_PACKAGE_VERSION=${TEST_PACKAGE_VERSION}" >> ${GITHUB_ENV}
     - name: test transparent singularity
       run: |
         /bin/bash qsmxt/tests/test_transparent_singularity.sh
