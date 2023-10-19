@@ -52,8 +52,9 @@ def find_dicoms(input_dir, check_all_files):
         for root, dirs, files in os.walk(input_dir):
             for f in files:
                 try:
-                    ds = pydicom.read_file(os.path.join(root, f))
-                    unsortedList.append(os.path.join(root, f))
+                    ds = pydicom.read_file(os.path.join(root, f), force=True)
+                    if len(ds) > 1:
+                        unsortedList.append(os.path.join(root, f))
                 except:
                     pass
     return unsortedList
@@ -73,7 +74,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_incrementer,
     for dicom_loc in unsortedList:
         # read the file
         try:
-            ds = pydicom.read_file(dicom_loc)
+            ds = pydicom.read_file(dicom_loc, force=True)
         except:
             logger.log(LogLevel.WARNING.value, f"Failed to read file as DICOM: {dicom_loc}. Skipping...")
             continue
@@ -119,7 +120,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_incrementer,
                 subjName_sessionNums[subj_name] = 1
             logger.log(LogLevel.INFO.value, f"Identified session: {subj_name} #{subjName_sessionNums[subj_name]} {studyDate}")
 
-        sesFolderName = f"{subjName_sessionNums[subj_name]}" if use_session_incrementer else f"{studyDate}"
+        sesFolderName = f"{subjName_sessionNums[subj_name]}" if (use_session_incrementer or studyDate == "") else f"{studyDate}"
         
         if not os.path.exists(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName)):
             logger.log(LogLevel.INFO.value, f"Identified series: {subjFolderName}/{sesFolderName}/{seriesFolderName}")
