@@ -2,6 +2,7 @@
 import nibabel as nib
 import numpy as np
 import os
+import hashlib
 
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, traits, File
 from qsmxt.scripts.qsmxt_functions import extend_fname
@@ -132,14 +133,30 @@ class PhaseToNormalizedInterface(SimpleInterface):
         )
         return runtime
 
+def seed_from_filename(filename):
+    hash_obj = hashlib.md5(filename.encode('utf-8'))
+    hash_num = int(hash_obj.hexdigest(), 16)
+    seed = hash_num % (2**32)  # Make seed 32-bit integer.
+    return seed
 
 def scale_to_pi(phase_path, phase_scaled_path=None):
     # load input phase
     phase_nii = nib.load(phase_path)
     Φ_acc_wrapped = phase_nii.get_fdata()
+
+    # if a significant portion is exactly pi, replace with noise (GE data uses pi as the background)
+    noise_added = False
+    mask = np.logical_or((abs(abs(Φ_acc_wrapped) - np.pi)) < 1e-3, Φ_acc_wrapped == 0)
+    print(mask.sum(), mask.size)
+    if mask.sum() / mask.size >= 0.1:
+        seed_value = seed_from_filename(phase_path)
+        np.random.seed(seed_value)
+        noise = np.random.uniform(-np.pi, np.pi, Φ_acc_wrapped.shape)
+        Φ_acc_wrapped[mask] = noise[mask]
+        noise_added = True
     
     # return the original if it is already scaled correctly
-    if (np.round(np.min(Φ_acc_wrapped), 2)*-1) == np.round(np.max(Φ_acc_wrapped), 2) == 3.14:
+    if not noise_added and (np.round(np.min(Φ_acc_wrapped), 2)*-1) == np.round(np.max(Φ_acc_wrapped), 2) == 3.14:
         return phase_path
     
     # scale to -pi,+pi
@@ -156,7 +173,7 @@ class ScalePhaseInputSpec(BaseInterfaceInputSpec):
     
 
 class ScalePhaseOutputSpec(TraitedSpec):
-    phase_scaled = File(mandatory=True, exists=True)
+    phase = File(mandatory=True, exists=True)
 
 
 class ScalePhaseInterface(SimpleInterface):
@@ -164,7 +181,7 @@ class ScalePhaseInterface(SimpleInterface):
     output_spec = ScalePhaseOutputSpec
 
     def _run_interface(self, runtime):
-        self._results['phase_scaled'] = scale_to_pi(self.inputs.phase)
+        self._results['phase'] = scale_to_pi(self.inputs.phase)
         return runtime
 
 

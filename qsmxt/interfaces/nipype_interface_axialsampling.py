@@ -46,6 +46,13 @@ def resample_to_axial(mag_nii=None, pha_nii=None, mask_nii=None):
         mag_rot = np.array(np.round(np.hypot(real_rot, imag_rot, dtype=np.float32), 0), dtype=np.int32)
         pha_rot = np.arctan2(imag_rot, real_rot, dtype=np.float32)
 
+        # add noise to zero values
+        mask = pha_rot == 0
+        if mask.sum() / mask.size >= 0.1:
+            np.random.seed()
+            noise = np.random.uniform(-np.pi, np.pi, pha_rot.shape)
+            pha_rot[mask] = noise[mask]
+
         # create nifti objects
         mag_rot_nii = nib.Nifti1Image(mag_rot, affine=real_rot_nii.affine, header=mag_nii.header)
         pha_rot_nii = nib.Nifti1Image(pha_rot, affine=real_rot_nii.affine, header=pha_nii.header)
