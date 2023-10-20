@@ -10,6 +10,7 @@ import sys
 import pydicom  # pydicom is using the gdcm package for decompression
 import datetime
 import re
+import shutil
 
 from qsmxt.scripts.qsmxt_functions import get_qsmxt_version, get_diff
 from qsmxt.scripts.logger import LogLevel, make_logger, show_warning_summary
@@ -86,7 +87,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_incrementer,
         studyDescription = clean_text(ds.get("StudyDescription", "NA"))
         protocolName = clean_text(ds.get("ProtocolName", "NA"))
         seriesNumber = clean_text(str(ds.get("SeriesNumber", "NA")))
-    
+        
         # generate new, standardized file name
         modality = ds.get("Modality","NA")
         studyInstanceUID = ds.get("StudyInstanceUID","NA")
@@ -97,12 +98,6 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_incrementer,
         subj_name = patientName if use_patient_names else patientID
         subj_name = subj_name.replace('-', '').replace('_', '')
         subj_name = subj_name.replace('-', '').replace('_', '')
-        
-        # uncompress files (using the gdcm package)
-        try:
-            ds.decompress()
-        except Exception as e:
-            logger.log(LogLevel.WARNING.value, f"An exception occurred while decompressing {dicom_loc}! {e}.")
         
         # save files to a 3-tier nested folder structure
         subjFolderName = f"{subj_name}"
@@ -125,8 +120,9 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_incrementer,
         if not os.path.exists(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName)):
             logger.log(LogLevel.INFO.value, f"Identified series: {subjFolderName}/{sesFolderName}/{seriesFolderName}")
             os.makedirs(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName), exist_ok=True)
-        
-        ds.save_as(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName, fileName))
+
+        # copy the file to the new location, retaining all metadata
+        shutil.copy2(dicom_loc, os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName, fileName))
 
         if not os.path.exists(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName, fileName)):
             fail = True
