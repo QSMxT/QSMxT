@@ -13,7 +13,6 @@ cp -r . /tmp/QSMxT
 echo "[DEBUG]: Install QSMxT via transparent-singularity"
 export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
 export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
-export PROD_PACKAGE_VERSION=${TEST_PACKAGE_VERSION}
 /tmp/QSMxT/docs/_includes/transparent_singularity_install.sh
 
 echo "[DEBUG]: cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"

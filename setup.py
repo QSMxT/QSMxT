@@ -8,7 +8,7 @@ def read_version_from_config():
 
     with open(config_path, 'r') as f:
         for line in f:
-            if line.startswith('PROD_PACKAGE_VERSION:'):
+            if line.startswith('DEPLOY_PACKAGE_VERSION:'):
                 return line.split(":")[1].strip()
 
     raise ValueError('QSMxT version not found in docs/_config.yml!')
