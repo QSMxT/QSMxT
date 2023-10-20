@@ -383,7 +383,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             num_cpus=n_swi_threads
         )
         wf.connect([
-            (mn_phase_scaled, n_swi, [('phase_scaled', 'phase')]),
+            (mn_phase_scaled, n_swi, [('phase', 'phase')]),
             (mn_inputs_canonical, n_swi, [('magnitude', 'magnitude')]),
             (mn_json_params, n_swi, [('TE', 'TEs' if len(phase_files) > 1 else 'TE')]),
             (n_swi, n_outputs, [('swi', 'swi')]),
@@ -510,7 +510,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         )
         wf.connect([
             (mn_inputs_canonical, mn_resample_inputs, [('magnitude', 'magnitude')]),
-            (mn_inputs_canonical, mn_resample_inputs, [('phase', 'phase')]),
+            (mn_phase_scaled, mn_resample_inputs, [('phase', 'phase')]),
             (mn_resample_inputs, n_inputs_resampled, [('magnitude', 'magnitude')]),
             (mn_resample_inputs, n_inputs_resampled, [('phase', 'phase')])
         ])
@@ -540,7 +540,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             ])
     else:
         wf.connect([
-            (mn_inputs_canonical, n_inputs_resampled, [('phase', 'phase')])
+            (mn_phase_scaled, n_inputs_resampled, [('phase', 'phase')])
         ])
         if mask_files:
             wf.connect([
