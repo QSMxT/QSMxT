@@ -10,9 +10,9 @@ from nipype.pipeline.engine import Node, MapNode
 
 def create_node(interface, name, iterfield=None, is_map=False, **kwargs):
     if is_map:
-        return MapNode(interface=interface, name=name, iterfield=iterfield, kwargs=kwargs)
+        return MapNode(interface=interface, name=name, iterfield=iterfield, **kwargs)
     else:
-        return Node(interface=interface, name=name, kwargs=kwargs)
+        return Node(interface=interface, name=name, **kwargs)
 
 def get_qsmxt_dir():
     path = os.path.abspath(__file__)
