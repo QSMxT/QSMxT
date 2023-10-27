@@ -9,6 +9,7 @@ import json
 import fnmatch
 import datetime
 import re
+import ast
 
 from qsmxt.scripts.qsmxt_functions import get_qsmxt_version, get_diff
 from qsmxt.scripts.logger import LogLevel, make_logger, show_warning_summary 
@@ -60,6 +61,8 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
     logger.log(LogLevel.INFO.value, 'Converting all DICOMs to NIfTI...')
     subjects = get_folders_in(input_dir)
 
+    already_converted = False
+
     for subject in subjects:
         sessions = get_folders_in(os.path.join(input_dir, subject))
         for session in sessions:
@@ -67,6 +70,7 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
             os.makedirs(session_extra_folder, exist_ok=True)
             if 'dcm2niix_output.txt' in os.listdir(session_extra_folder):
                 logger.log(LogLevel.WARNING.value, f'{session_extra_folder} already has dcm2niix conversion output! Skipping...')
+                already_converted = True
                 continue
             series = get_folders_in(os.path.join(input_dir, subject, session))
             for s in series:
@@ -90,6 +94,9 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
         if any([x in json_files[i] for x in ['_ph.json', '_real.json']]):
             if "Manufacturer" not in json_datas[i]:
                 logger.log(LogLevel.WARNING.value, f"'Manufacturer' missing from JSON header '{json_files[i]}'. Unable to determine whether any GE data requires correction. You may need to manually run nii-fix-ge.py.")
+                continue
+            if already_converted:
+                logger.log(LogLevel.WARNING.value, f"GE data detected in '{json_files[i]}', is possibly already converted. Skipping...")
                 continue
             ge_corrections = True
             if json_datas[i]["Manufacturer"].upper().strip() in ["GE", "GE MEDICAL SYSTEMS"]:
@@ -163,7 +170,7 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
 
     else: # manually identify protocols using selection if interactive
 
-        # === T2*W PROTOCOLS SELECTION ===
+        # === QSM PROTOCOLS SELECTION ===
         print("== PROTOCOL NAMES ==")
         for i in range(len(all_protocol_names)):
             print(f"{i+1}. {all_protocol_names[i]}")
@@ -218,7 +225,6 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
         sessions = get_folders_in(os.path.join(output_dir, subject))
         for session in sessions:
             logger.log(LogLevel.INFO.value, f"Parsing relevant JSON data from {subject}/{session}...")
-            logger.log(LogLevel.INFO.value, f"Parsing relevant JSON data from {subject}/{session}...")
             session_extra_folder = os.path.join(output_dir, subject, session, "extra_data")
             session_anat_folder = os.path.join(output_dir, subject, session, "anat")
             json_files = sorted(glob.glob(os.path.join(session_extra_folder, "*json")))
@@ -264,9 +270,13 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
             if session_details:
                 session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['protocol_type'], f['protocol_name'], f['acquisition_time'], f['series_num'], 0 if any(t in f['image_type'] for t in ['P', 'PHASE']) else 1, f['echo_time']))
 
+                print(len(session_details))
+
                 # prune details based on known issues
-                session_details = [details for details in session_details if not any(t in details['image_type'] for t in ['SWI', 'MASK', 'QSM'])]
-                session_details = [details for details in session_details if details['series_description'] not in ['Pha_Images', 'SWI_Images', 't2star_wip_tra_p2_tgv_Mask', 't2star_wip_tra_p2_tgv_Qsm']]
+                #session_details = [details for details in session_details if not any(t in details['image_type'] for t in ['SWI', 'MASK', 'QSM'])]
+                #session_details = [details for details in session_details if details['series_description'] not in ['Pha_Images', 'SWI_Images', 't2star_wip_tra_p2_tgv_Mask', 't2star_wip_tra_p2_tgv_Qsm']]
+
+                print(len(session_details))
 
                 # update run numbers
                 run_num = 1
@@ -275,35 +285,21 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                 protocol_name = session_details[0]['protocol_name']
                 acquisition_time = session_details[0]['acquisition_time']
                 for i in range(len(session_details)):
-                    if ((protocol_name == session_details[i]) and 
-                        ((acquisition_time and session_details[i]['acquisition_time'] and abs(acquisition_time - session_details[i]['acquisition_time']) > datetime.timedelta(seconds=5)) or
-                        (not (acquisition_time and session_details[i]['acquisition_time']) and session_details[i]['series_num'] != series_num))):
-                        
-                        if session_details[i]['protocol_type'] != session_details[i-1]['protocol_type']:
-                            run_num = 1
-                        elif session_details[i]['protocol_type'] == 'qsm' and any(t in session_details[i]['image_type'] for t in ['P', 'PHASE']):
+                    
+                    if protocol_type != session_details[i]['protocol_type'] or protocol_name != session_details[i]['protocol_name']:
+                        run_num = 1
+                    elif ((acquisition_time and session_details[i]['acquisition_time'] and abs(acquisition_time - session_details[i]['acquisition_time']) > datetime.timedelta(seconds=5)) or
+                        (not (acquisition_time or session_details[i]['acquisition_time']) and session_details[i]['series_num'] != series_num)):
+                        if session_details[i]['protocol_type'] == 'qsm' and any(t in session_details[i]['image_type'] for t in ['P', 'PHASE']):
                             run_num += 1
                         elif session_details[i]['protocol_type'] == 't1w':
                             run_num += 1
-                        
+                    
                     series_num = session_details[i]['series_num']
                     acquisition_time = session_details[i]['acquisition_time']
                     protocol_name = session_details[i]['protocol_name']
                     protocol_type = session_details[i]['protocol_type']
                     session_details[i]['run_num'] = run_num
-
-                # update echo numbers and number of echoes
-                qsm_details = [details for details in session_details if details['protocol_type'] == 'qsm']
-                qsm_acq_names = sorted(list(set(details['protocol_name'] for details in qsm_details)))
-                for acq in qsm_acq_names:
-                    acq_runs = sorted(list(set(details['run_num'] for details in qsm_details if details['protocol_name'] == acq)))
-                    for run_num in acq_runs:
-                        echo_times = sorted(list(set([details['echo_time'] for details in qsm_details if details['run_num'] == run_num and details['protocol_name'] == acq])))
-                        num_echoes = len(echo_times)
-                        for details in qsm_details:
-                            if details['run_num'] == run_num and details['protocol_name'] == acq:
-                                details['num_echoes'] = num_echoes
-                                details['echo_num'] = echo_times.index(details['echo_time']) + 1
 
                 # update part types
                 for details in session_details:
@@ -311,99 +307,171 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                         details['part_type'] = 'phase'
                     elif details['protocol_type'] == 'qsm' and any(t in details['image_type'] for t in ['M', 'MAGNITUDE']):
                         details['part_type'] = 'mag'
-
-                # update names
-                for details in session_details:
-                    if details['protocol_type'] == 't1w':
-                        details['new_name'] = os.path.join(session_anat_folder, f"{subject}_{session}_acq-{str(details['protocol_name'])}_run-{str(details['run_num']).zfill(2)}_T1w")
-                    elif details['num_echoes'] == 1:
-                        details['new_name'] = os.path.join(session_anat_folder, f"{subject}_{session}_acq-{str(details['protocol_name'])}_run-{str(details['run_num']).zfill(2)}_part-{details['part_type']}_T2starw")
+                    elif details['protocol_type'] == 't1w':
+                        details['part_type'] = 'mag'
                     else:
-                        details['new_name'] = os.path.join(session_anat_folder, f"{subject}_{session}_acq-{str(details['protocol_name'])}_run-{str(details['run_num']).zfill(2)}_echo-{str(details['echo_num']).zfill(2)}_part-{details['part_type']}_MEGRE")
+                        likely_part_types = list(set([d['part_type'] for d in session_details if d['protocol_name'] == details['protocol_name'] and d['series_description'] == details['series_description'] and d['image_type'] == details['image_type'] and 'part_type' in d]))
+                        print(likely_part_types)
+                        if len(likely_part_types) == 1:
+                            details['part_type'] = likely_part_types[0]
+                        elif sys.__stdin__.isatty() and not auto_yes:
+                            logger.log(LogLevel.INFO.value, f"Unable to determine part type for {details['file_name']}")
+                            print(f"== PART TYPE SELECTION FOR {details['file_name']} ==")
+                            print(f"ProtocolName: {details['protocol_name']}")
+                            print(f"SeriesDescription: {details['series_description']}")
+                            print(f"ImageType: {details['image_type']}")
+                            print(f"1. MAGNITUDE")
+                            print(f"2. PHASE")
+                            while True:
+                                part_type = input("Select part type (ENTER to skip): ")
+                                if part_type == "":
+                                    details['part_type'] = None
+                                    break
+                                try:
+                                    part_type = int(part_type)
+                                    if part_type not in [1, 2]:
+                                        raise Exception()
+                                    break
+                                except:
+                                    print("Invalid input")
+                            if part_type == 1:
+                                details['part_type'] = 'mag'
+                            elif part_type == 2:
+                                details['part_type'] = 'phase'
+                        else:
+                            details['part_type'] = 'mag'
+
+                session_details = [details for details in session_details if 'part_type' in details and details['part_type'] is not None]
 
                 # store session details
                 all_session_details.extend(session_details)
-    
-    # check for extra mag/phase series
-    for qsm_protocol_name in list(set(details['protocol_name'] for details in all_session_details if details['protocol_type'] == 'qsm')):
-        num_mag_series = len(set(details['series_num'] for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['part_type'] == 'mag'))
-        num_phs_series = len(set(details['series_num'] for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['part_type'] == 'phase'))
 
-        if num_mag_series > 1:
-            if sys.__stdin__.isatty() and not auto_yes:
-                logger.log(LogLevel.INFO.value, f"Multiple magnitude series found for protocol {qsm_protocol_name}!")
-                run_1_details = [details for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['run_num'] == 1 and details['part_type'] == 'mag']
-                run_1_series_nums = sorted(list(set([details['series_num'] for details in run_1_details])))
-                run_1_series_nums_idxs = [i for i in range(len(run_1_series_nums))]
-                run_1_image_types = [next(details['image_type'] for details in run_1_details if details['series_num'] == series_num) for series_num in run_1_series_nums]
-                run_1_descriptions = [next(details['series_description'] for details in run_1_details if details['series_num'] == series_num) for series_num in run_1_series_nums]
-                
-                # user selects which series idx to keep
-                print(f"== MULTIPLE MAGNITUDE SERIES FOUND FOR {qsm_protocol_name} ==")
-                for i in range(len(run_1_series_nums)):
-                    print(f"{i+1}. IMAGE_TYPE={run_1_image_types[i]}; SeriesDescription={run_1_descriptions[i]}")
-                while True:
-                    mag_series_idx = input("Select magnitude series to use for QSM: ")
-                    try:
-                        mag_series_idx = int(mag_series_idx)-1
-                        if mag_series_idx not in run_1_series_nums_idxs:
-                            raise Exception()
-                        break
-                    except:
-                        print("Invalid input")
-            else:
-                logger.log(LogLevel.WARNING.value, f"Multiple magnitude series found for protocol {qsm_protocol_name}! Using whichever series comes first! Run interactively to select.")
-                mag_series_idx = 0
-                
-            # remove all magnitude series except the mag_series_idx-th from each run with qsm_protocol_name
-            for run_num in sorted(list(set(details['run_num'] for details in all_session_details if details['protocol_name'] == qsm_protocol_name))):
-                run_details = [details for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['run_num'] == run_num and details['part_type'] == 'mag']
-                series_num_to_keep = sorted(list(set([details['series_num'] for details in run_details])))[mag_series_idx]
-                to_remove = [details for details in run_details if details['series_num'] != series_num_to_keep]
-                for details in to_remove:
-                    all_session_details.remove(details)
+    # get all unique acq-run pairs
+    for subject in subjects:
+        for session in list(set(details['session'] for details in all_session_details if details['subject'] == subject)):
+            for acq in list(set(details['protocol_name'] for details in all_session_details if details['protocol_type'] == 'qsm' and details['subject'] == subject and details['session'] == session)):
+                for run_num in sorted(list(set(details['run_num'] for details in all_session_details if details['protocol_name'] == acq and details['subject'] == subject and details['session'] == session))):
+                    max_run_num = max(details['run_num'] for details in all_session_details if details['protocol_name'] == acq and details['subject'] == subject and details['session'] == session)
+                    num_mag_series = len(set(details['series_num'] for details in all_session_details if details['protocol_name'] == acq and details['part_type'] == 'mag' and details['run_num'] == run_num and details['subject'] == subject and details['session'] == session))
+                    num_phs_series = len(set(details['series_num'] for details in all_session_details if details['protocol_name'] == acq and details['part_type'] == 'phase' and details['run_num'] == run_num and details['subject'] == subject and details['session'] == session))
 
-        if num_phs_series > 1:
-            if sys.__stdin__.isatty() and not auto_yes:
-                logger.log(LogLevel.INFO.value, f"Multiple phase series found for protocol {qsm_protocol_name}!")
-                run_1_details = [details for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['run_num'] == 1 and details['part_type'] == 'phase']
-                run_1_series_nums = sorted(list(set([details['series_num'] for details in run_1_details])))
-                run_1_series_nums_idxs = [i for i in range(len(run_1_series_nums))]
-                run_1_image_types = [next(details['image_type'] for details in run_1_details if details['series_num'] == series_num) for series_num in run_1_series_nums]
-                run_1_descriptions = [next(details['series_description'] for details in run_1_details if details['series_num'] == series_num) for series_num in run_1_series_nums]
-                
-                # user selects which series idx to keep
-                print(f"== MULTIPLE PHASE SERIES FOUND FOR {qsm_protocol_name} ==")
-                for i in range(len(run_1_series_nums)):
-                    print(f"{i+1}. IMAGE_TYPE={run_1_image_types[i]}; SeriesDescription={run_1_descriptions[i]}")
-                while True:
-                    phs_series_idx = input("Select phase series to use for QSM: ")
-                    try:
-                        phs_series_idx = int(phs_series_idx)-1
-                        if phs_series_idx not in run_1_series_nums_idxs:
-                            raise Exception()
-                        break
-                    except:
-                        print("Invalid input")
-            else:
-                logger.log(LogLevel.WARNING.value, f"Multiple phase series found for protocol {qsm_protocol_name}! Using whichever series comes first! Run interactively to select.")
-                phs_series_idx = 0
-                
-            # remove all magnitude series except the phs_series_idx-th from each run with qsm_protocol_name
-            for run_num in sorted(list(set(details['run_num'] for details in all_session_details if details['protocol_name'] == qsm_protocol_name))):
-                run_details = [details for details in all_session_details if details['protocol_name'] == qsm_protocol_name and details['run_num'] == run_num and details['part_type'] == 'mag']
-                series_num_to_keep = sorted(list(set([details['series_num'] for details in run_details])))[phs_series_idx]
-                to_remove = [details for details in run_details if details['series_num'] != series_num_to_keep]
-                for details in to_remove:
-                    all_session_details.remove(details)
+                    if num_mag_series > 1 or num_phs_series > 1:
+                        if not sys.__stdin__.isatty() or auto_yes:
+                            run_details = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['subject'] == subject and details['session'] == session]
+                            run_mag_series = sorted(list(set([details['series_num'] for details in run_details if details['part_type'] == 'mag'])))
+                            run_phs_series = sorted(list(set([details['series_num'] for details in run_details if details['part_type'] == 'phase'])))
+                            if len(run_mag_series) > 1 or len(run_phs_series) > 1:
+                                logger.log(LogLevel.WARNING.value, f"Multiple magnitude and/or phase series found for protocol {acq}!")
+                                logger.log(LogLevel.WARNING.value, f"Removing all but the first series from each run.")
+                                to_remove = [details for details in run_details if details['series_num'] not in [run_mag_series[0], run_phs_series[0]]]
+                                for details in to_remove:
+                                    all_session_details.remove(details)
+                        
+                        else:
+                            mag_details = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'mag' and details['subject'] == subject and details['session'] == session]
+                            mag_series_nums = sorted(list(set([details['series_num'] for details in mag_details])))
+                            mag_series_nums_idxs = [i for i in range(len(mag_series_nums))]
+                            mag_image_types = [details['image_type'] for details in mag_details for series_num in mag_series_nums if details['series_num'] == series_num]
+                            mag_descriptions = [details['series_description'] for details in mag_details for series_num in mag_series_nums if details['series_num'] == series_num]
+                            
+                            phs_details = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'phase' and details['subject'] == subject and details['session'] == session]
+                            phs_series_nums = sorted(list(set([details['series_num'] for details in phs_details])))
+                            phs_series_nums_idxs = [i for i in range(len(phs_series_nums))]
+                            phs_image_types = [details['image_type'] for details in phs_details for series_num in phs_series_nums if details['series_num'] == series_num]
+                            phs_descriptions = [details['series_description'] for details in phs_details for series_num in phs_series_nums if details['series_num'] == series_num]
 
+                            logger.log(LogLevel.INFO.value, f"Multiple magnitude and/or phase series found for protocol {acq}!")
+                            # user selects which series idx to keep
+                            print(f"== MAGNITUDE SERIES FOUND FOR {subject}.{session}.acq-{acq}.run-{run_num} ==")
+                            for i in range(len(mag_series_nums)):
+                                print(f"{i+1}. IMAGE_TYPE={mag_image_types[i]}; SeriesDescription={mag_descriptions[i]}; NumFiles={len([details for details in mag_details if details['series_num'] == mag_series_nums[i]])}")
+                            print(f"== PHASE SERIES FOUND FOR {subject}.{session}.acq-{acq}.run-{run_num} ==")
+                            for i in range(len(phs_series_nums)):
+                                print(f"{i+1}. IMAGE_TYPE={phs_image_types[i]}; SeriesDescription={phs_descriptions[i]}; NumFiles={len([details for details in phs_details if details['series_num'] == phs_series_nums[i]])}")
+                            
+                            # the user must match mag-phase pairs e.g. (1, 1), (2, 2), (3, 4), (4, 3)
+                            while True:
+                                user_in = input("Identify magnitude-phase series pairs to use for QSM as tuples e.g. (1, 1), (2, 2): ")
+
+                                try:
+                                    user_in = ast.literal_eval(f"[{user_in}]")
+                                    if not all(isinstance(t, tuple) for t in user_in):
+                                        print("Input has an invalid format.")
+                                        continue
+                                except (ValueError, SyntaxError):
+                                    print("Input has an invalid format.")
+                                    continue
+
+                                # subtract 1 from all elements in user_in
+                                matched_series = [(t[0]-1, t[1]-1) for t in user_in]
+
+                                # there must be no duplicate assignments
+                                if len(user_in) != len(set(user_in)):
+                                    print("Duplicate assignments detected.")
+                                    continue
+
+                                # all magnitude series must be assigned to a unique phase series
+                                if len(set([t[0] for t in user_in])) != len(set([t[1] for t in user_in])):
+                                    print("All magnitude series must be assigned to a unique phase series.")
+                                    continue
+
+                                break
+
+                            for index, (mag_series, phase_series) in enumerate(matched_series):
+                                # give new run numbers to all but the first mag-phase pair
+                                if index > 0:
+                                    mag_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'mag' and details['series_num'] == mag_series_nums[mag_series] and details['subject'] == subject and details['session'] == session]
+                                    phs_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'phase' and details['series_num'] == phs_series_nums[phase_series] and details['subject'] == subject and details['session'] == session]
+
+                                    for details in mag_details_i:
+                                        details['run_num'] = max_run_num + index
+                                    for details in phs_details_i:
+                                        details['run_num'] = max_run_num + index
+
+                            # remove all unmatched series
+                            for i in range(len(mag_series_nums)):
+                                if i not in [t[0] for t in matched_series]:
+                                    mag_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'mag' and details['series_num'] == mag_series_nums[i] and details['subject'] == subject and details['session'] == session]
+                                    for details in mag_details_i:
+                                        all_session_details.remove(details)
+                            for i in range(len(phs_series_nums)):
+                                if i not in [t[1] for t in matched_series]:
+                                    phs_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'phase' and details['series_num'] == phs_series_nums[i] and details['subject'] == subject and details['session'] == session]
+                                    for details in phs_details_i:
+                                        all_session_details.remove(details)
+
+    # update echo numbers and number of echoes
+    for subject in list(set(details['subject'] for details in all_session_details)):
+        for session in list(set(details['session'] for details in all_session_details if details['subject'] == subject)):
+            for acq in list(set(details['protocol_name'] for details in all_session_details if details['protocol_type'] == 'qsm' and details['subject'] == subject and details['session'] == session)):
+                    for run_num in sorted(list(set(details['run_num'] for details in all_session_details if details['protocol_name'] == acq and details['subject'] == subject and details['session'] == session))):
+                        echo_times = sorted(list(set([details['echo_time'] for details in all_session_details if details['run_num'] == run_num and details['protocol_name'] == acq and details['part_type'] == 'phase' and details['subject'] == subject and details['session'] == session])))
+                        num_echoes = len(echo_times)
+                        for index, details in enumerate(sorted([details for details in all_session_details if details['run_num'] == run_num and details['protocol_name'] == acq and details['part_type'] == 'phase' and details['subject'] == subject and details['session'] == session], key=lambda x: x['echo_time'])):
+                            details['num_echoes'] = num_echoes
+                            details['echo_num'] = index+1
+                        for index, details in enumerate(sorted([details for details in all_session_details if details['run_num'] == run_num and details['protocol_name'] == acq and details['part_type'] == 'mag' and details['subject'] == subject and details['session'] == session], key=lambda x: x['echo_time'])):
+                            details['num_echoes'] = num_echoes
+                            details['echo_num'] = index+1
+
+    # update names
+    for details in all_session_details:
+        if details['protocol_type'] == 't1w':
+            details['new_name'] = os.path.join(os.path.join(output_dir, details['subject'], details['session'], "anat"), f"{details['subject']}_{details['session']}_acq-{str(details['protocol_name'])}_run-{str(details['run_num']).zfill(2)}_T1w")
+        elif details['num_echoes'] == 1:
+            details['new_name'] = os.path.join(os.path.join(output_dir, details['subject'], details['session'], "anat"), f"{details['subject']}_{details['session']}_acq-{str(details['protocol_name'])}_run-{str(details['run_num']).zfill(2)}_part-{details['part_type']}_T2starw")
+        else:
+            details['new_name'] = os.path.join(os.path.join(output_dir, details['subject'], details['session'], "anat"), f"{details['subject']}_{details['session']}_acq-{str(details['protocol_name'])}_run-{str(details['run_num']).zfill(2)}_echo-{str(details['echo_num']).zfill(2)}_part-{details['part_type']}_MEGRE")
 
     print("Summary of identified files and proposed renames (following BIDS standard):")
-    for f in all_session_details:
+    for f in sorted(all_session_details, key=lambda x: (x['subject'], x['session'], x['protocol_type'], x['protocol_name'], x['run_num'], x['echo_num'])):
         print(f"{os.path.split(f['file_name'])[1]} \n\t -> {os.path.split(f['new_name'])[1]}")
 
     if len(all_session_details) != len(set(details['new_name'] for details in all_session_details)):
-        logger.log(LogLevel.ERROR.value, f"Resultant BIDS data contains name conflicts! Try running `nifti-convert {output_dir} {output_dir}`.")
+        # log each name conflict as an error
+        for details in all_session_details:
+            if len([d for d in all_session_details if d['new_name'] == details['new_name']]) > 1:
+                logger.log(LogLevel.ERROR.value, f"Name conflict detected: {details['new_name']}")
         script_exit(1)
 
     # if running interactively, show a summary of the renames prior to actioning
