@@ -270,14 +270,6 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
             if session_details:
                 session_details = sorted(session_details, key=lambda f: (f['subject'], f['session'], f['protocol_type'], f['protocol_name'], f['acquisition_time'], f['series_num'], 0 if any(t in f['image_type'] for t in ['P', 'PHASE']) else 1, f['echo_time']))
 
-                print(len(session_details))
-
-                # prune details based on known issues
-                #session_details = [details for details in session_details if not any(t in details['image_type'] for t in ['SWI', 'MASK', 'QSM'])]
-                #session_details = [details for details in session_details if details['series_description'] not in ['Pha_Images', 'SWI_Images', 't2star_wip_tra_p2_tgv_Mask', 't2star_wip_tra_p2_tgv_Qsm']]
-
-                print(len(session_details))
-
                 # update run numbers
                 run_num = 1
                 series_num = session_details[0]['series_num']
