@@ -1064,18 +1064,21 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
         )
 
     if run_args.qsm_algorithm == 'tgv':
-        tgv_threads = min(20, run_args.n_procs)
+        tgv_threads = min(4, run_args.n_procs)
+        tgv_mem = min(4, run_args.mem_avail) if run_args.multiproc else 6
+        print("TGV")
         mn_qsm = create_node(
             interface=tgvjl.TGVQSMJlInterface(
                 erosions=qsm_erosions,
                 alpha=run_args.tgv_alphas,
-                iterations=run_args.tgv_iterations
+                iterations=run_args.tgv_iterations,
+                num_threads=tgv_threads
             ),
-            iterfield=['phase', 'TE', 'mask'],
             name='tgv',
-            mem_gb=min(6, run_args.mem_avail),
-            n_procs=tgv_threads,
-            is_map=use_maps
+            iterfield=['phase', 'TE', 'mask'],
+            is_map=use_maps,
+            mem_gb=tgv_mem,
+            n_procs=tgv_threads
         )
         mn_qsm.plugin_args = gen_plugin_args(
             plugin_args={ 'overwrite': True },
@@ -1084,7 +1087,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             slurm_partition=run_args.slurm[1],
             name='TGV',
             time="01:00:00",
-            mem_gb=6,
+            mem_gb=tgv_mem,
             num_cpus=tgv_threads
         )
         wf.connect([
