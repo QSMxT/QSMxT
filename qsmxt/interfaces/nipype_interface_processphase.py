@@ -147,7 +147,6 @@ def scale_to_pi(phase_path, phase_scaled_path=None):
     # if a significant portion is exactly pi, replace with noise (GE data uses pi as the background)
     noise_added = False
     mask = np.logical_or((abs(abs(Φ_acc_wrapped) - np.pi)) < 1e-3, Φ_acc_wrapped == 0)
-    print(mask.sum(), mask.size)
     if mask.sum() / mask.size >= 0.1:
         seed_value = seed_from_filename(phase_path)
         np.random.seed(seed_value)
