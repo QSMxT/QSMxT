@@ -45,6 +45,7 @@ class RomeoB0InputSpec(CommandLineInputSpecJulia):
     magnitude = InputMultiPath(mandatory=False, exists=True)
     TEs = traits.ListFloat(mandatory=False, argstr="-t '[%s]'")
     TE = traits.Float(mandatory=False, argstr="-t '[%s]'")
+    phase_offset_correction = traits.Enum("bipolar", "monopolar", usedefault=True, default="bipolar", argstr="--phase-offset-correction %s")
     
     # automatically filled
     combine_phase = File(exists=True, argstr="--phase %s", position=0)
@@ -60,7 +61,7 @@ class RomeoB0Interface(CommandLineJulia):
     def __init__(self, **inputs): super(RomeoB0Interface, self).__init__(**inputs)
     input_spec = RomeoB0InputSpec
     output_spec = RomeoB0OutputSpec
-    _cmd = os.path.join(get_qsmxt_dir(), "scripts", "romeo_unwrapping.jl --no-rescale --phase-offset-correction monopolar --compute-B0 B0.nii")
+    _cmd = os.path.join(get_qsmxt_dir(), "scripts", "romeo_unwrapping.jl --no-rescale --compute-B0 B0.nii")
 
     def _format_arg(self, name, trait_spec, value):
         if name == 'TEs' or name == 'TE':
@@ -69,6 +70,9 @@ class RomeoB0Interface(CommandLineJulia):
         return super(RomeoB0Interface, self)._format_arg(name, trait_spec, value)
 
     def _run_interface(self, runtime):
+        num_phase_files = len(self.inputs.phase)
+        self.inputs.phase_offset_correction = "bipolar" if num_phase_files >= 3 else "monopolar"
+
         if len(self.inputs.phase) > 1:
             self.inputs.combine_phase = merge_multi_echo(self.inputs.phase, os.path.join(os.getcwd(), "multi-echo-phase.nii"))
         else:
