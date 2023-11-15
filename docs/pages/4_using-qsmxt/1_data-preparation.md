@@ -14,7 +14,9 @@ permalink: /using-qsmxt/data-preparation
 
 # Data preparation
 
-QSMxT requires <a href="https://bids.neuroimaging.io/" target="_blank" data-placement="top" data-toggle="popover" data-trigger="hover focus" data-content="Click to read about BIDS at https://bids.neuroimaging.io/.">BIDS</a>-conforming data. You can use `dicom-sort`, `dicom-convert` and `nifti-convert` to convert your data to BIDS, depending on whether you have DICOM or NIfTI images.
+QSMxT requires <a href="https://bids.neuroimaging.io/" target="_blank" data-placement="top" data-toggle="popover" data-trigger="hover focus" data-content="Click to read about BIDS at https://bids.neuroimaging.io/.">BIDS</a>-conforming data. You can use `dicom-sort`, `dicom-convert` and `nifti-convert` to convert your data to BIDS, depending on whether you have DICOM or NIfTI images. 
+
+The data conversion tools packaged in QSMxT are only intended to work with a subset of BIDS. This subset represents the minimum BIDS specification to enable QSM post-processing. The tools are not designed to convert, for example, Diffusion-Weighted Imaging (DWI), functional MRI (fMRI), T2-weighted imaging, or other imaging modalities. Any images not needed for QSM will be left in the extra_data directory for the relevant subject-session folder. For QSM, relevant BIDS suffixes include T2starw and MEGRE, including magnitude and phase parts. T1-weighted imaging is also supported to enable segmentation and registration to the QSM space. Some derived data including brain masks may be used in some QSM pipelines and are also supported.
 
 For example BIDS structures, see [BIDS Examples](#bids-examples).
 
@@ -48,7 +50,7 @@ To convert to BIDS, use `dicom-convert`:
 dicom-convert dicoms-sorted/ bids/
 ```
 
-Carefully read the output to ensure data were correctly recognized and converted. Crucially, the `dicom-convert` script needs to know which of your acquisitions are T2\*-weighted and suitable for QSM, and which are T1-weighted and suitable for segmentation. It identifies this based on the DICOM `ProtocolName` field and looks for the patterns `*qsm*` and `*t2starw*` for the T2\*-weighted series and `t1w` for the T1-weighted series. You can specify your patterns using command-line arguments, e.g.:
+Carefully read the output to ensure data were correctly recognized and converted. Crucially, the `dicom-convert` script needs to know which of your acquisitions are intended for QSM, and which are T1-weighted and suitable for segmentation. It identifies this based on the DICOM `ProtocolName` field and looks for the patterns `*qsm*` and `*t2starw*` for the QSM-intended series and `t1w` for the T1-weighted series. You can specify your patterns using command-line arguments, e.g.:
 
 ```bash
 dicom-convert dicoms-sorted/ bids/ --t2starw_protocol_patterns '*gre*' --t1w_protocol_patterns '*mp2rage*'
