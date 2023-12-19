@@ -661,7 +661,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             add_bet=False,
             use_maps=len(phase_files) > 1 and not run_args.combine_phase,
             name="mask-intermediate",
-            index=1
+            index=0 if run_args.frangi_filter else 1
         )
         wf.connect([
             (n_inputs_resampled, wf_masking_intermediate, [('phase', 'masking_inputs.phase')]),

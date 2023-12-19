@@ -204,13 +204,13 @@ def FrangiFilter3D(I, FrangiScaleRange=np.array([1, 10]), FrangiScaleRatio=2,
     # Apply Frangi filter to each slice
     for z in range(I.shape[2]):
         outIm[:, :, z], _, _ = FrangiFilter2D(I[:, :, z], FrangiScaleRange, FrangiScaleRatio,
-                                              FrangiBetaOne, FrangiBetaTwo, BlackWhite)
+                                              FrangiBetaOne, FrangiBetaTwo, False, BlackWhite)
 
     return outIm
 
 class FrangiFilterInputSpec(BaseInterfaceInputSpec):
     in_file = File(mandatory=True, exists=True)
-    scale_range = InputMultiPath(float, default=[1, 10])
+    scale_range = traits.ListFloat(default=[1, 10])
     scale_ratio = traits.Float(default=2)
     beta_one = traits.Float(default=0.5)
     beta_two = traits.Float(default=15)
@@ -229,12 +229,14 @@ class FrangiFilterInterface(SimpleInterface):
         data = img.get_fdata()
 
         # Apply the 3D Frangi filter
-        out_data = FrangiFilter3D(data, 
-                                  np.array(self.inputs.scale_range), 
-                                  self.inputs.scale_ratio, 
-                                  self.inputs.beta_one, 
-                                  self.inputs.beta_two, 
-                                  self.inputs.black_white)
+        out_data = FrangiFilter3D(
+            data, 
+            FrangiScaleRange=np.array([1, 10]), 
+            FrangiScaleRatio=2, 
+            FrangiBetaOne=0.5, 
+            FrangiBetaTwo=15, 
+            BlackWhite=True
+        )
 
         # Save the output
         out_file = os.path.join(runtime.cwd, 'frangi_filtered.nii')
@@ -256,11 +258,13 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
 
-    frangi_filter = FrangiFilterInterface(in_file=args.in_file,
-                                          scale_range=args.scale_range,
-                                          scale_ratio=args.scale_ratio,
-                                          beta_one=args.beta_one,
-                                          beta_two=args.beta_two,
-                                          black_white=args.black_white)
+    frangi_filter = FrangiFilterInterface(
+        in_file=args.in_file,
+        scale_range=args.scale_range,
+        scale_ratio=args.scale_ratio,
+        beta_one=args.beta_one,
+        beta_two=args.beta_two,
+        black_white=args.black_white
+    )
     frangi_filter.run()
 
