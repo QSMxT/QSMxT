@@ -244,22 +244,24 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # subtract vessels if necessary
         if run_args.frangi_filter and magnitude_available and not fill_masks:
+            frangi_threads = 1
             n_frangi = create_node(
                 interface=frangi.FrangiFilterInterface(),
                 name='n_frangi',
                 iterfield=['in_file'],
+                is_map=use_maps,
                 mem_gb=min(6, run_args.mem_avail),
-                n_procs=1,
-                is_map=use_maps
+                n_procs=frangi_threads,
             )
             n_frangi.plugin_args = gen_plugin_args(
                 plugin_args={ 'overwrite': True },
-                slurm_account=run_args.slurm[0],
+                slurm_account=slurm_account,
                 pbs_account=run_args.pbs,
-                slurm_partition=run_args.slurm[1],
-                name="Frangi",
+                slurm_partition=slurm_partition,
+                name="frangi",
+                time="01:00:00",
                 mem_gb=8,
-                num_cpus=1
+                num_cpus=frangi_threads
             )
             wf.connect([
                 (n_inputs, n_frangi, [('magnitude', 'in_file')])
@@ -286,8 +288,8 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                     output_names=['mask'],
                     function=subtract_vessels
                 ),
-                name='n_subtract_vessels',
                 iterfield=['mask', 'vessel_map'],
+                name='n_subtract_vessels',
                 is_map=use_maps
             )
             wf.connect([
