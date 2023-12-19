@@ -116,8 +116,8 @@ def get_diff():
     else:
         return ""
 
-def gen_plugin_args(pbs_account="", slurm_account="", plugin_args={}, time="00:30:00", num_cpus=1, mem_gb=5, name="QSMxT", slurm_partition=None):
-    plugin_args['sbatch_args'] = f"--account={slurm_account} {f'--partition {slurm_partition}' if slurm_partition else ''} --job-name={name} --time={time} --ntasks=1 --cpus-per-task={num_cpus} --mem={mem_gb}gb"
+def gen_plugin_args(pbs_account="", slurm_account="", plugin_args={}, time="00:30:00", num_cpus=1, mem_gb=5, name="QSMxT", slurm_partition=None, gpu=False):
+    plugin_args['sbatch_args'] = f"--account={slurm_account} {f'--partition {slurm_partition}' if slurm_partition else ''} --job-name={name} --time={time} --ntasks=1 --cpus-per-task={num_cpus} {f'--gres=gpu:1:1' if gpu else ''} --mem={mem_gb}gb"
     plugin_args['qsub_args'] = f'-A {pbs_account} -N {name} -l walltime={time} -l select=1:ncpus={num_cpus}:mem={mem_gb}gb'
     return plugin_args
     
