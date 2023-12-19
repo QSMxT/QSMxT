@@ -10,7 +10,6 @@ from qsmxt.interfaces import nipype_interface_twopass as twopass
 from qsmxt.interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from qsmxt.interfaces import nipype_interface_combinemagnitude as combinemagnitude
 from qsmxt.interfaces import nipype_interface_frangi as frangi
-from qsmxt.interfaces import nipype_interface_threshold as threshold
 
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
 
