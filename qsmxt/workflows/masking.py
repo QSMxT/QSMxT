@@ -14,7 +14,6 @@ from qsmxt.interfaces import nipype_interface_frangi as frangi
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
 
 def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_available, fill_masks, add_bet, use_maps, name, index):
-
     wf = Workflow(name=f"{name}_workflow")
 
     slurm_account = run_args.slurm[0] if run_args.slurm and len(run_args.slurm) else None
@@ -262,9 +261,18 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 mem_gb=8,
                 num_cpus=frangi_threads
             )
-            wf.connect([
-                (n_inputs, n_frangi, [('magnitude', 'in_file')])
-            ])
+            if run_args.inhomogeneity_correction:
+                wf.connect([
+                    (mn_inhomogeneity_correction, n_frangi, [('magnitude_corrected', 'in_file')])
+                ])
+            elif run_args.combine_phase:
+                wf.connect([
+                    (n_combine_magnitude, n_frangi, [('magnitude_combined', 'in_file')])
+                ])
+            else:
+                wf.connect([
+                    (n_inputs, n_frangi, [('magnitude', 'in_file')])
+                ])
 
             def subtract_vessels(mask, vessel_map):
                 import nibabel as nib
