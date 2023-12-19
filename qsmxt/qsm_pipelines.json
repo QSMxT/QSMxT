@@ -88,7 +88,7 @@
         "inhomogeneity_correction": true,
         "mask_erosions": [
             3,
-            3
+            0
         ]
     },
     "bet": {
