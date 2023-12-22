@@ -3,7 +3,19 @@
 using QuantitativeSusceptibilityMappingTGV
 using MriResearchTools
 using ArgParse
+using Pkg
 
+# Function to load the required GPU package, installing it if necessary
+function ensure_package_loaded(pkg_name)
+    try
+        eval(Meta.parse("using $pkg_name"))
+    catch
+        Pkg.add(pkg_name)
+        eval(Meta.parse("using $pkg_name"))
+    end
+end
+
+# Function to parse command line arguments
 function parse_cli_args()
     s = ArgParseSettings()
     @add_arg_table! s begin
@@ -34,6 +46,9 @@ function parse_cli_args()
         "--output"
             help = "output - qsm filename"
             default = "chi.nii"
+        "--gpu"
+            help = "input - GPU type (CUDA, AMDGPU, oneAPI, or Metal)"
+            default = nothing
     end
     return parse_args(ARGS, s)
 end
@@ -52,7 +67,14 @@ function main(args)
     alpha = args["alphas"] !== nothing ? Tuple(map(x -> parse(Float64, String(x)), split(replace(args["alphas"], ['[', ']'] => "")))) : nothing
     iterations = args["iterations"] !== nothing ? parse(Int, args["iterations"]) : nothing
 
-    # Build the set of named arguments dynamically
+    # Handling GPU package loading
+    gpu = nothing
+    if args["gpu"] !== nothing
+        ensure_package_loaded(args["gpu"])
+        gpu = eval(Meta.parse(args["gpu"]))
+    end
+
+    # Building the set of named arguments dynamically
     kwargs = Dict(
         :TE => TE,
         :fieldstrength => B0,
@@ -60,6 +82,8 @@ function main(args)
         :laplacian => get_laplace_phase3,
         :regularization => regularization
     )
+
+    # Adding optional arguments if present
     if alpha !== nothing
         kwargs[:alpha] = alpha
     end
@@ -67,12 +91,17 @@ function main(args)
         kwargs[:iterations] = iterations
     end
 
-    # Use splatting to pass the named arguments to the function
-    @time chi = qsm_tgv(phase, mask, vsz; pairs(kwargs)...)
+    # Using splatting to pass named arguments to the function
+    @time chi = if gpu !== nothing
+                    qsm_tgv(phase, mask, vsz; gpu=gpu, pairs(kwargs)...)
+                else
+                    qsm_tgv(phase, mask, vsz; pairs(kwargs)...)
+                end
 
+    # Saving the output
     savenii(chi, args["output"]; header = header(phase))
 end
 
-# Entry point
+# Script entry point
 args = parse_cli_args()
 main(args)
