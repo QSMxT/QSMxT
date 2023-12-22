@@ -192,7 +192,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 interface=masking.MaskingInterface(
                     threshold_algorithm='otsu' or run_args.threshold_algorithm,
                     threshold_algorithm_factor=run_args.threshold_algorithm_factor[index % len(run_args.threshold_algorithm_factor)],
-                    fill_masks=fill_masks or run_args.frangi_filter,
+                    fill_masks=bool(fill_masks or run_args.frangi_filter),
                     mask_suffix=name,
                     num_erosions=run_args.mask_erosions[index % len(run_args.mask_erosions)] if run_args.mask_erosions else 0,
                     filling_algorithm=run_args.filling_algorithm
