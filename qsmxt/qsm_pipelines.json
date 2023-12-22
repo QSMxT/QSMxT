@@ -80,10 +80,7 @@
         "two_pass": true,
         "masking_input": "phase",
         "threshold_algorithm": "otsu",
-        "threshold_algorithm_factor": [
-            1.7,
-            1.3
-        ],
+        "threshold_value": 0.2,
         "filling_algorithm": "bet",
         "inhomogeneity_correction": true,
         "mask_erosions": [
