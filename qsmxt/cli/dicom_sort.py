@@ -98,6 +98,8 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_incrementer,
         subj_name = patientName if use_patient_names else patientID
         subj_name = subj_name.replace('-', '').replace('_', '')
         subj_name = subj_name.replace('-', '').replace('_', '')
+        if not subj_name:
+            subj_name = "NA"
         
         # save files to a 3-tier nested folder structure
         subjFolderName = f"sub-{subj_name}"
