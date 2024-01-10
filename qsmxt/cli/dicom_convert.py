@@ -65,10 +65,19 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
     logger.log(LogLevel.INFO.value, 'Converting all DICOMs to NIfTI...')
     subjects = get_folders_in(input_dir)
 
+    if not subjects:
+        logger.log(LogLevel.ERROR.value, f"No subjects found in '{input_dir}'!")
+        script_exit(1)
+
     already_converted = False
 
     for subject in subjects:
         sessions = get_folders_in(os.path.join(input_dir, subject))
+
+        if not sessions:
+            logger.log(LogLevel.WARNING.value, f"No sessions found in '{input_dir}/{subject}'!")
+            continue
+
         for session in sessions:
             session_extra_folder = os.path.join(output_dir, f"{clean(subject)}", f"{clean(session)}", "extra_data")
             os.makedirs(session_extra_folder, exist_ok=True)
@@ -77,6 +86,9 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                 already_converted = True
                 continue
             series = get_folders_in(os.path.join(input_dir, subject, session))
+            if not series:
+                logger.log(LogLevel.WARNING.value, f"No series found in '{input_dir}/{subject}/{session}'!")
+                continue
             for s in series:
                 series_dicom_folder = os.path.join(input_dir, subject, session, s)
                 sys_cmd(f"dcm2niix -z n -o \"{session_extra_folder}\" \"{series_dicom_folder}\" >> \"{os.path.join(session_extra_folder, 'dcm2niix_output.txt')}\"")
