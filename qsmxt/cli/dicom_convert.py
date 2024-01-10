@@ -48,7 +48,11 @@ def rename(old, new, always_show=False):
     os.rename(old, new)
 
 def clean(data): 
-    return re.sub(r'[^a-zA-Z0-9]', '', data).lower()
+    cleaned = re.sub(r'[^a-zA-Z0-9]', '', data).lower()
+    if data.startswith('sub-'):
+        return f'sub-{cleaned[3:]}'
+    elif data.startswith('ses-'):
+        return f'ses-{cleaned[3:]}'
 
 def get_folders_in(folder, full_path=False):
     folders = list(filter(os.path.isdir, [os.path.join(folder, d) for d in os.listdir(folder)]))
@@ -66,7 +70,7 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
     for subject in subjects:
         sessions = get_folders_in(os.path.join(input_dir, subject))
         for session in sessions:
-            session_extra_folder = os.path.join(output_dir, f"sub-{clean(subject)}", f"ses-{clean(session)}", "extra_data")
+            session_extra_folder = os.path.join(output_dir, f"{clean(subject)}", f"{clean(session)}", "extra_data")
             os.makedirs(session_extra_folder, exist_ok=True)
             if 'dcm2niix_output.txt' in os.listdir(session_extra_folder):
                 logger.log(LogLevel.WARNING.value, f'{session_extra_folder} already has dcm2niix conversion output! Skipping...')
@@ -280,8 +284,7 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                     
                     if protocol_type != session_details[i]['protocol_type'] or protocol_name != session_details[i]['protocol_name']:
                         run_num = 1
-                    elif ((acquisition_time and session_details[i]['acquisition_time'] and abs(acquisition_time - session_details[i]['acquisition_time']) > datetime.timedelta(seconds=5)) or
-                        (not (acquisition_time or session_details[i]['acquisition_time']) and session_details[i]['series_num'] != series_num)):
+                    elif ((acquisition_time and session_details[i]['acquisition_time'] and abs(acquisition_time - session_details[i]['acquisition_time']) > datetime.timedelta(seconds=5))):
                         if session_details[i]['protocol_type'] == 'qsm' and any(t in session_details[i]['image_type'] for t in ['P', 'PHASE']):
                             run_num += 1
                         elif session_details[i]['protocol_type'] == 't1w':
@@ -376,10 +379,10 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                             # user selects which series idx to keep
                             print(f"== MAGNITUDE SERIES FOUND FOR {subject}.{session}.acq-{acq}.run-{run_num} ==")
                             for i in range(len(mag_series_nums)):
-                                print(f"{i+1}. IMAGE_TYPE={mag_image_types[i]}; SeriesDescription={mag_descriptions[i]}; NumFiles={len([details for details in mag_details if details['series_num'] == mag_series_nums[i]])}")
+                                print(f"{i+1}. SERIES {mag_series_nums[i]}; IMAGE_TYPE={mag_image_types[i]}; SeriesDescription={mag_descriptions[i]}; NumFiles={len([details for details in mag_details if details['series_num'] == mag_series_nums[i]])}")
                             print(f"== PHASE SERIES FOUND FOR {subject}.{session}.acq-{acq}.run-{run_num} ==")
                             for i in range(len(phs_series_nums)):
-                                print(f"{i+1}. IMAGE_TYPE={phs_image_types[i]}; SeriesDescription={phs_descriptions[i]}; NumFiles={len([details for details in phs_details if details['series_num'] == phs_series_nums[i]])}")
+                                print(f"{i+1}. SERIES {phs_series_nums[i]}; IMAGE_TYPE={phs_image_types[i]}; SeriesDescription={phs_descriptions[i]}; NumFiles={len([details for details in phs_details if details['series_num'] == phs_series_nums[i]])}")
                             
                             # the user must match mag-phase pairs e.g. (1, 1), (2, 2), (3, 4), (4, 3)
                             while True:
