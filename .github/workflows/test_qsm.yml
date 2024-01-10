@@ -48,7 +48,7 @@ on:
       - qsmxt/scripts/qsmxt_version.py
 jobs:
   test_qsm_premades:
-    runs-on: "cirun-oracle--${{ github.run_id }}"
+    runs-on: "self-hosted"
     strategy:
       matrix:
         args: ['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm']

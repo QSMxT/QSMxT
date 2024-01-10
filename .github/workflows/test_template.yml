@@ -18,7 +18,7 @@ on:
     
 jobs:
   test_template:
-    runs-on: "cirun-oracle--${{ github.run_id }}"
+    runs-on: "self-hosted"
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
