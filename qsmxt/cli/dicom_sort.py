@@ -100,8 +100,8 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_incrementer,
         subj_name = subj_name.replace('-', '').replace('_', '')
         
         # save files to a 3-tier nested folder structure
-        subjFolderName = f"{subj_name}"
-        seriesFolderName = f"{seriesNumber}_{protocolName}"
+        subjFolderName = f"sub-{subj_name}"
+        seriesFolderName = f"series-{seriesNumber}_{protocolName}"
         subjName_date = f"{subj_name}_{studyDate}"
 
         if not any(subj_name in x for x in subjName_dates):
@@ -115,7 +115,7 @@ def dicomsort(input_dir, output_dir, use_patient_names, use_session_incrementer,
                 subjName_sessionNums[subj_name] = 1
             logger.log(LogLevel.INFO.value, f"Identified session: {subj_name} #{subjName_sessionNums[subj_name]} {studyDate}")
 
-        sesFolderName = f"{subjName_sessionNums[subj_name]}" if (use_session_incrementer or studyDate == "") else f"{studyDate}"
+        sesFolderName = f"ses-{subjName_sessionNums[subj_name]}" if (use_session_incrementer or studyDate == "") else f"ses-{studyDate}"
         
         if not os.path.exists(os.path.join(output_dir, subjFolderName, sesFolderName, seriesFolderName)):
             logger.log(LogLevel.INFO.value, f"Identified series: {subjFolderName}/{sesFolderName}/{seriesFolderName}")
