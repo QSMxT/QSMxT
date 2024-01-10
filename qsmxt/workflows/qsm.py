@@ -1066,7 +1066,6 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
     if run_args.qsm_algorithm == 'tgv':
         tgv_threads = min(4, run_args.n_procs)
         tgv_mem = min(4, run_args.mem_avail) if run_args.multiproc else 6
-        print("TGV")
         mn_qsm = create_node(
             interface=tgvjl.TGVQSMJlInterface(
                 erosions=qsm_erosions,

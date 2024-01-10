@@ -109,7 +109,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                     (mn_phaseweights, n_outputs, [('quality_map', 'quality_map')])
                 ])
                 if magnitude_available:
-                    mn_phaseweights.inputs.weight_type = "grad+second+mag"
+                    mn_phaseweights.inputs.weight_type = "grad+second+mag_weight+mag_coherence"
                     if run_args.combine_phase:
                         wf.connect([
                             (n_combine_magnitude, mn_phaseweights, [('magnitude_combined', 'magnitude')])
