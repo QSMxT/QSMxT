@@ -22,10 +22,8 @@ To begin, simply run:
 qsmxt bids/ output_dir/
 ```
 
-{: .new-title }
-> Tip
->
-> Most prompts will simply accept ENTER to use the default value.
+{: .note }
+Most prompts will simply accept ENTER to use the default value.
 
 {: .note }
 QSMxT can also be run [non-interactively](#non-interactive-usage).
@@ -53,12 +51,6 @@ If you need QSM and SWI, for example, you could enter `qsm swi`.
 
 This page asks you to select which premade QSM pipeline you would like to use.
 
-{: .note }
-You can still change any specific [settings](#step-3-settings-menu) later.
-
-{: .note }
-Pipelines with *assumes human brain* apply masking techniques optimized for human brain imaging only and should not be applied in other regions. You may also adjust the masking algorithm in the [settings](#step-3-settings-menu).
-
 ```
 === Premade QSM pipelines ===
 default: Default QSMxT settings (GRE)
@@ -71,6 +63,12 @@ nextqsm: Applies suggested settings for running the NeXtQSM algorithm (assumes h
 
 Select a premade to begin [default - 'default']: 
 ```
+
+{: .note }
+You can still change any specific [settings](#step-3-settings-menu) later.
+
+{: .note }
+Pipelines with *assumes human brain* apply masking techniques optimized for human brain imaging only and should not be applied in other regions. You may also adjust the masking algorithm in the [settings](#step-3-settings-menu).
 
 ## Step 3: Settings menu
 
@@ -117,11 +115,11 @@ Run command: qsmxt in out --auto_yes
 Enter a number to customize; enter 'run' to run: 
 ```
 
-### Settings for QSM masking
+## Settings for QSM masking
 
-#### Use existing masks if available
+### Use existing masks if available
 
-QSMxT can use pre-existing masks if they are available and desired. Masks must be included in a valid BIDS derivatives directory. You will be prompted to enter the name of the software used to generate the mask, and this must match the derivatives folder name (e.g. `my-masking-software`), or match using a pattern. The default pattern `*` will match any folder to find a mask. If multiple masks are found, the one whose path is alphabetically first will be chosen.
+QSMxT can use pre-existing masks if they are available and desired (`--use_existing_masks`). Masks must be included in a valid BIDS derivatives directory. You will be prompted to enter the name of the software used to generate the mask, and this must match the derivatives folder name (e.g. `my-masking-software`), or match using a pattern. The default pattern `*` will match any folder to find a mask. If multiple masks are found, the one whose path is alphabetically first will be chosen.
 
 An example of a valid BIDS directory with a mask is as follows:
 
@@ -142,118 +140,151 @@ bids/
 │       └── sub-1_T1w.json
 ```
 
-#### Masking algorithm
+### Masking algorithm
 
 There are two choices of masking algorithm:
 
-```
-threshold: 
-     - required for the two-pass artefact reduction algorithm (https://doi.org/10.1002/mrm.29048)
-     - required for applications other than in vivo human brain
-     - more robust to severe pathology
-bet: Applies the Brain Extraction Tool (standalone version)
-     - the standard in most QSM pipelines
-     - robust in healthy human brains
-     - Paper: https://doi.org/10.1002/hbm.10062
-     - Code: https://github.com/liangfu/bet2
-```
+- **Threshold-based** (`--masking_algorithm threshold`)
+  - required for the two-pass artefact reduction algorithm (https://doi.org/10.1002/mrm.29048)
+  - required for applications other than in vivo human brain
+  - more robust to severe pathology
+- **BET (brain extraction tool)** (`--masking_algorithm bet`)
+  - the standard in most QSM pipelines
+  - robust in healthy human brains
+  - paper: https://doi.org/10.1002/hbm.10062
+  - code: https://github.com/liangfu/bet2
 
-##### Thresholding input
+### Thresholding input
 
-```
-== Threshold input ==
-Select the input to be used in the thresholding algorithm.
+For the threshold-based [masking algorithm](#masking-algorithm), a mask can be generated from two possible inputs:
 
-magnitude: use the MRI signal magnitude
+- **Magnitude** - use the MRI signal magnitude (`--masking_input magnitude`)
   - standard approach
   - requires magnitude images
-phase: use a phase quality map
+- **Phase** - use a phase quality map (`--masking_input phase`)
   - phase quality map produced by ROMEO (https://doi.org/10.1002/mrm.28563)
   - measured between 0 and 100
   - some evidence that phase-based masks are more reliable near the brain boundary (https://doi.org/10.1002/mrm.29368)
-```
 
-##### Two-pass artifact reduction
+### Two-pass artifact reduction
 
-```
-== Two-pass Artefact Reduction ==
-Select whether to use the two-pass artefact reduction algorithm (https://doi.org/10.1002/mrm.29048).
+For the threshold-based [masking algorithm](#masking-algorithm), a two-pass artifact-reduction technique can be applied (`--two_pass on`; https://doi.org/10.1002/mrm.29048).
 
-  - reduces artefacts, particularly near strong susceptibility sources
-  - sometimes requires tweaking of the mask to maintain accuracy in high-susceptibility regions
-  - single-pass results will still be included in the output
-  - doubles the runtime of the pipeline
-```
+The two-pass algorithm performs two QSM reconstructions - one using a threshold-based mask (with holes in high-susceptibility regions), and another using the same mask after applying a hole-filling algorithm. The final susceptibility map is a superposition of both results - the susceptibility map with holes is filled using values from the filled susceptibility map.
 
-##### Threshold value
+The two-pass algorithm:
+- reduces artefacts, particularly near strong susceptibility sources
+- sometimes requires tweaking of the mask to maintain accuracy in high-susceptibility regions
+- single-pass results will still be included in the output
+- doubles the runtime of the pipeline
 
-```
-== Threshold value ==
-Select an algorithm to automate threshold selection, or enter a custom threshold.
+### Threshold selection
 
-otsu: Automate threshold selection using the Otsu algorithm (https://doi.org/10.1109/TSMC.1979.4310076)
-gaussian: Automate threshold selection using a Gaussian algorithm (https://doi.org/10.1016/j.compbiomed.2012.01.004)
+For the threshold-based [masking algorithm](#masking-algorithm), a threshold must be determined.
 
-Hardcoded threshold:
- - Use an integer to indicate an absolute signal intensity
- - Use a floating-point value from 0-1 to indicate a percentile of the per-echo signal histogram
- - Use two values to specify different thresholds for each pass in two-pass QSM
-```
+A threshold can be hardcoded:
+ - Use an integer to indicate an absolute signal intensity (e.g. `--threshold_value 20`)
+ - Use a floating-point value from 0-1 to indicate a percentile of the per-echo signal histogram (e.g. `--threshold_value 0.3`)
+ - Use two values to specify different thresholds for each pass in [two-pass QSM](#two-pass-artifact-reduction) (e.g. `--threshold_value 50 40`); the first value is used for the filled pass, and the second value is used for the mask with holes
 
-##### Threshold algorithm factors
+A threshold may also be determined automatically using one of two algorithms:
+  - **otsu**: Automate threshold selection using the Otsu algorithm (https://doi.org/10.1109/TSMC.1979.4310076) (`--threshold_algorithm otsu`)
+  - **gaussian**: Automate threshold selection using a Gaussian algorithm (https://doi.org/10.1016/j.compbiomed.2012.01.004) (`--threshold_algorithm gaussian`)
 
-```
-== Threshold algorithm factors ==
-The threshold algorithm can be tweaked by multiplying it by some factor.
-Use two values to specify different factors for each pass in two-pass QSM
-```
+### Threshold algorithm factors
 
-##### Filled mask algorithm
+For the threshold-based [masking algorithm](#masking-algorithm) with [threshold values](#threshold-value) chosen using an algorithm, the thresholds can be multiplied by some factor. If [two-pass QSM](#two-pass-artifact-reduction) is enabled, two factors may be given - one for the filled susceptibility map and another for the unfilled map (e.g. `--threshold_algorithm_factor 1.5 1.3`).
 
-```
-== Filled mask algorithm ==
-Threshold-based masking requires an algorithm to create a filled mask.
+### Hole-filling algorithm
 
-gaussian:
- - applies the scipy gaussian_filter function to the threshold mask
- - may fill some unwanted regions (e.g. connecting skull to brain)
-morphological:
- - applies the scipy binary_fill_holes function to the threshold mask
-both:
- - applies both methods (gaussian followed by morphological) to the threshold mask
-bet:
- - uses a BET mask as the filled mask
-```
+For the threshold-based [masking algorithm](#masking-algorithm), holes can be filled using one of several options:
 
-##### Include a BET mask in hole-filling
+- **gaussian** (`--filling_algorithm gaussian`):
+  - applies the scipy gaussian_filter function to the threshold mask
+  - may fill some unwanted regions (e.g. connecting skull to brain)
+- **morphological** (`--filling_algorithm morphological`):
+  - applies the scipy binary_fill_holes function to the threshold mask
+- **both** (`--filling_algorithm both`):
+  - applies gaussian followed by morphological hole-filling to the threshold mask
+- **bet** (`--filling_algorithm bet`):
+  - uses a BET-derived mask as the filled mask
 
-```
-Include a BET mask in the hole-filling operation (yes or no) [default - no]: yes
-```
+### Include a BET mask in hole-filling
 
-##### BET fractional intensity
+For the threshold-based [masking algorithm](#masking-algorithm) using gaussian and/or morphological [hole-filling](#hole-filling-algorithm), a BET mask can also be generated and combined to ensure stubborn regions are filled (`--add_bet`).
 
-##### Erosions
+### BET fractional intensity
 
-```
-== Erosions ==
-The number of times to erode the mask.
-Use two values to specify different erosion for each pass in two-pass QSM
-```
+The BET fractional intensity parameter can be customized (e.g. `--bet_fractional_intensity 0.5`).
 
-### Settings for QSM phase processing
+### Erosions
 
-#### Axial resampling
+The number of erosions applied to masks can be adjusted. Two values may be given if [two-pass QSM](#two-pass-artifact-reduction) is enabled (e.g. `--mask_erosions 3 0`). If two values are given, the first is for the filled mask and the second is for the unfilled mask.
 
-#### Multi-echo combination
+## Settings for QSM phase processing
 
-#### Phase unwrapping
+### Axial resampling
 
-#### Background field removal
+Most QSM algorithms require the slice direction to align with the magnetic field direction for optimal accuracy. Oblique acquisitions can be rotated and resampled to a true axial orientation to ensure this assumption holds (see https://doi.org/10.1002/mrm.29550).
 
-#### Dipole inversion
+QSMxT can perform this axial resampling if the measured obliquity is beyond some threshold. Obliquity is measured using [nibabel](https://nipy.org/nibabel/reference/nibabel.affines.html#nibabel.affines.obliquity), which uses a measure derived from [AFNI's definition](https://github.com/afni/afni/blob/b6a9f7a21c1f3231ff09efbd861f8975ad48e525/src/thd_coords.c#L660-L698). If the measured obliquity is beyond the threshold, the volume will be resampled to axial (e.g. `--obliquity_threshold 10`). To disable axial resampling, set the threshold to -1.
 
-#### Susceptibility referencing
+### Multi-echo combination
+
+Multi-echo acquisitions require a combination step. Data can be combined prior to QSM calculation by generating a field map using [ROMEO](https://doi.org/10.1002/mrm.28563) (`--combine_phase true`), or susceptibility maps can be averaged (`--combine_phase false`). 
+
+### QSM Algorithm
+
+Multiple QSM algorithms are available in QSMxT (e.g. `--qsm_algorithm rts`). Some QSM algorithms solve only the final dipole inversion step, while others include phase unwrapping and background field correction.
+
+- **rts**: Rapid Two-Step QSM
+  - https://doi.org/10.1016/j.neuroimage.2017.11.018
+  - Compatible with two-pass artefact reduction algorithm
+  - Fast runtime
+- **tv**: Fast quantitative susceptibility mapping with L1-regularization and automatic parameter selection
+  - https://doi.org/10.1002/mrm.25029
+  - Compatible with two-pass artefact reduction algorithm
+- **tgv**: Total Generalized Variation
+  - https://doi.org/10.1016/j.neuroimage.2015.02.041
+  - Combined unwrapping, background field removal and dipole inversion
+  - Compatible with two-pass artefact reduction algorithm
+- **nextqsm**: NeXtQSM
+  - https://doi.org/10.1016/j.media.2022.102700
+  - Uses deep learning to solve the background field removal and dipole inversion steps
+  - High memory requirements (>=12gb recommended)
+
+### Phase unwrapping
+
+Multiple phase unwraping algorithms are available in QSMxT (e.g. `--unwrapping_algorithm romeo`).
+
+{: .note }
+Laplacian phase unwrapping is only available if `--combine_phase` is disabled. This is because the phase combination technique is based on the field map derived from ROMEO.
+
+- **romeo**: (https://doi.org/10.1002/mrm.28563)
+  - quantitative
+- **laplacian**: (https://doi.org/10.1364/OL.28.001194; https://doi.org/10.1002/nbm.3064)
+  - non-quantitative
+  - popular for its numerical simplicity
+
+### Background field removal
+
+Multiple background field removal algorithms are available in QSMxT (e.g. `--bf_algorithm vsharp`).
+
+- **vsharp**: V-SHARP algorithm (https://doi.org/10.1002/mrm.23000)
+  - fast
+  - involves a mask erosion step that impacts the next steps
+  - less reliable with threshold-based masks
+  - not compatible with artefact reduction algorithm
+- **pdf**: Projection onto Dipole Fields algorithm (https://doi.org/10.1002/nbm.1670)
+  - slower
+  - more accurate
+  - does not require an additional erosion step
+
+### Susceptibility referencing
+
+QSM is only able to estimate susceptibility in reference to some value. It is standard practice to choose a region whose mean value will serve as the reference susceptibility. By default, QSMxT uses the average susceptibility value of the whole volume, ignoring zero-values (`--qsm_reference mean`).
+
+Alternatively, if segmentations are included in the [desired outputs](#step-1-select-desired-outputs), you can also select a set of segmentation IDs from which the average susceptibility will serve as the reference (e.g. `--qsm_reference 3 13 25`; see the [full list](https://github.com/QSMxT/QSMxT/blob/main/qsmxt/aseg_labels.csv) of possible labels).
 
 # Example outputs
 
