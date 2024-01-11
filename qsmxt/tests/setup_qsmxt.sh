@@ -17,7 +17,7 @@ else
 fi
 
 echo "[DEBUG] Pulling QSMxT repository (branch=${BRANCH})..."
-rm -rf "/tmp/QSMxT"
+sudo rm -rf "/tmp/QSMxT"
 git clone -b "${BRANCH}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
 
 echo "[DEBUG] Extracting TEST_CONTAINER_VERSION and TEST_CONTAINER_DATE from docs/_config.yml"
