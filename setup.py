@@ -39,7 +39,7 @@ setup(
         'seaborn',
         'webdavclient3',
         'images-upload-cli',
-        'qsm-forward==0.16',
+        'qsm-forward==0.19',
         'osfclient',
         'niflow-nipype1-workflows',
         'tensorflow',
