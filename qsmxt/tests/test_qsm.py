@@ -27,7 +27,7 @@ def bids_dir_public():
         if not os.path.exists(head_phantom_maps_dir):
             if not os.path.exists(os.path.join(tmp_dir, 'head-phantom-maps.tar')):
                 download_from_osf(
-                    project="x9fnz",
+                    project="9jc42",
                     local_path=os.path.join(tmp_dir, "head-phantom-maps.tar")
                 )
             logger.log(LogLevel.INFO.value, f"Extracting then deleting head-phantom-maps.tar...")
