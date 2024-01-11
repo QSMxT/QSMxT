@@ -28,6 +28,7 @@ echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt:${TEST_CONTAINER_VERSION}_${TES
 sudo docker pull "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
 
 # Create and start the container with a bash shell
+sudo docker rm qsmxt-container || true
 echo "[DEBUG] Starting QSMxT container"
 docker create --name qsmxt-container -it \
     -v /tmp/:/tmp \
