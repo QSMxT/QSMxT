@@ -23,7 +23,7 @@ def bids_dir_public():
     tmp_dir = tempfile.gettempdir()
     bids_dir = os.path.join(tmp_dir, "bids-public")
     if not os.path.exists(bids_dir):
-        head_phantom_maps_dir = os.path.join(tmp_dir, 'head-phantom-maps')
+        head_phantom_maps_dir = os.path.join(tmp_dir, 'data')
         if not os.path.exists(head_phantom_maps_dir):
             if not os.path.exists(os.path.join(tmp_dir, 'head-phantom-maps.tar')):
                 download_from_osf(
@@ -35,7 +35,7 @@ def bids_dir_public():
             sys_cmd(f"rm {os.path.join(tmp_dir, 'head-phantom-maps.tar')}")
 
         logger.log(LogLevel.INFO.value, "Preparing simulation information...")
-        tissue_params = qsm_forward.TissueParams(os.path.join(tmp_dir, 'head-phantom-maps'))
+        tissue_params = qsm_forward.TissueParams(os.path.join(tmp_dir, 'data'))
         recon_params_all = [
             qsm_forward.ReconParams(voxel_size=np.array([1.0, 1.0, 1.0]), session=session, TEs=TEs, TR=TR, flip_angle=flip_angle, suffix=suffix, export_phase=export_phase)
             for (session, TEs, TR, flip_angle, suffix, export_phase) in [
