@@ -68,6 +68,12 @@ QSMxT can be installed on an HPC or Linux machine using [transparent singularity
 
 We recommend the use of software containers for reproducibility and ease of use. However, QSMxT can be installed manually. Please see the detailed instructions for generating the container [here](https://github.com/NeuroDesk/neurocontainers/blob/master/recipes/qsmxt/build.sh).
 
+## Older versions and release notes
+
+You can find the software versions and container dates on our Docker page [here](https://hub.docker.com/search?q=qsmxt&sort=updated_at&order=desc). 
+
+You can find detailed release notes on the GitHub releases page [here](https://github.com/QSMxT/QSMxT/releases).
+
 <script>
 $(document).ready(function(){
     $('[data-toggle="popover"]').popover();   

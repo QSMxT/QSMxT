@@ -75,7 +75,7 @@ Crucially, distinct groups of files suitable for a single QSM reconstruction are
 
 ## Minimal example (single subject, single session, single echo)
 
-```bash
+```
 bids/
 ├── sub-1
 │   └── anat
@@ -87,7 +87,7 @@ bids/
 
 ## Minimal example including T1-weighted imaging for segmentation
 
-```bash
+```
 bids/
 ├── sub-1
 │   └── anat
@@ -101,7 +101,7 @@ bids/
 
 ## Minimal example including brain mask (for QSMxT's --use_existing_masks option)
 
-```bash
+```
 bids/
 ├── derivatives
 │   └── qsm-forward
@@ -120,7 +120,7 @@ bids/
 
 ## Multi-echo example
 
-```bash
+```
 bids/
 ├── sub-1
 │   └── anat
@@ -136,7 +136,7 @@ bids/
 
 ## Multiple runs and acquisitions example
 
-```bash
+```
 bids/
 ├── sub-1
 │   └── anat
@@ -168,7 +168,7 @@ bids/
 
 ## Multiple sessions example
 
-```bash
+```
 bids/
 ├── sub-2
 │   ├── ses-20231020
