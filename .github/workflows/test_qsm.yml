@@ -76,7 +76,7 @@ jobs:
         name: public-outputs
         path: /tmp/public-outputs
   test_qsm_edgecases:
-    runs-on: "cirun-oracle--${{ github.run_id }}"
+    runs-on: "self-hosted"
     strategy:
       matrix:
         args: [
