@@ -39,8 +39,9 @@ def bids_dir_public():
         recon_params_all = [
             qsm_forward.ReconParams(voxel_size=np.array([1.0, 1.0, 1.0]), session=session, TEs=TEs, TR=TR, flip_angle=flip_angle, suffix=suffix, export_phase=export_phase)
             for (session, TEs, TR, flip_angle, suffix, export_phase) in [
-                #("1", np.array([3.5e-3]), 7.5e-3, 40, "T1w", False),
+                ("1", np.array([3.5e-3]), 7.5e-3, 40, "T1w", False),
                 ("1", np.array([0.012, 0.020]), 0.05, 15, "T2starw", True),
+                ("2", np.array([0.012, 0.020]), 0.05, 15, "T2starw", True)
             ]
         ]
 
@@ -48,7 +49,6 @@ def bids_dir_public():
         bids_dir = os.path.join(tmp_dir, "bids-public")
         for recon_params in recon_params_all:
             qsm_forward.generate_bids(tissue_params=tissue_params, recon_params=recon_params, bids_dir=bids_dir)
-        sys_cmd(f"rm {head_phantom_maps_dir}")
 
     return bids_dir
 
@@ -74,15 +74,15 @@ def test_premade(bids_dir_public, premade):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING PREMADE {premade} ===")
 
-    premades = get_qsm_premades()
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
+    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     args = [
         bids_dir_public,
-        os.path.join(tempfile.gettempdir(), "qsm"),
+        out_dir,
         "--premade", premade,
         "--auto_yes",
-        "--debug"
+        "--debug",
+        "--subjects", "*1*"
     ]
     
     # create the workflow and run if necessary
@@ -90,37 +90,39 @@ def test_premade(bids_dir_public, premade):
     
     # upload output folder
     tar_file = compress_folder(folder=args.output_dir, result_id=premade)
+    sys_cmd(f"rm -rf {os.path.join(tempfile.gettempdir(), 'public-outputs')}")
+    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
     shutil.move(tar_file, os.path.join(tempfile.gettempdir(), "public-outputs", tar_file))
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 def test_nocombine(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING NO PHASE COMBINATION ===")
 
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
+    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     args = [
         bids_dir_public,
-        os.path.join(tempfile.gettempdir(), "qsm"),
+        out_dir,
         "--premade", "fast",
         "--combine_phase", "off",
         "--auto_yes",
-        "--debug"
+        "--debug",
+        "--subjects", "*1*"
     ]
     
     # create the workflow and run if necessary
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='No multi-echo combination', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='No multi-echo combination', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 
 def test_nomagnitude(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING NO MAGNITUDE ===")
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
 
     # create copy of bids directory
     bids_dir_nomagnitude = os.path.join(os.path.split(bids_dir_public)[0], "bids-nomagnitude")
@@ -129,16 +131,19 @@ def test_nomagnitude(bids_dir_public):
     # delete magnitude files from modified directory
     for mag_file in glob.glob(os.path.join(bids_dir_nomagnitude, "sub-1", "ses-1", "anat", "*mag*")):
         os.remove(mag_file)
+
+    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
     
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir_public,
-        os.path.join(tempfile.gettempdir(), "qsm"),
+        out_dir,
         "--premade", "fast",
         "--masking_input", "magnitude",
         "--num_echoes", "1",
         "--auto_yes",
-        "--debug"
+        "--debug",
+        "--subjects", "*1*"
     ]
     
     # create the workflow and run - it should fall back to phase-based masking with a warning
@@ -148,41 +153,44 @@ def test_nomagnitude(bids_dir_public):
     shutil.rmtree(bids_dir_nomagnitude)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='No magnitude', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='No magnitude', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 def test_inhomogeneity_correction(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING INHOMOGENEITY CORRECTION ===")
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
+
+    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir_public,
-        os.path.join(tempfile.gettempdir(), "qsm"),
+        out_dir,
         "--premade", "fast",
         "--masking_algorithm", "threshold",
         "--filling_algorithm", "bet",
         "--inhomogeneity_correction",
         "--num_echoes", "1",
         "--auto_yes",
-        "--debug"
+        "--debug",
+        "--subjects", "*1*"
     ]
     
     # create the workflow and run
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Inhomogeneity correction', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='Inhomogeneity correction', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 def test_hardcoded_percentile_threshold(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
+
+    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir_public,
-        os.path.join(tempfile.gettempdir(), "qsm"),
+        out_dir,
         "--premade", "fast",
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
@@ -190,50 +198,55 @@ def test_hardcoded_percentile_threshold(bids_dir_public):
         "--num_echoes", "1",
         "--auto_yes",
         "--debug",
+        "--subjects", "*1*"
     ]
     
     # create the workflow and run
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Hardcoded percentile threshold (0.25)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='Hardcoded percentile threshold (0.25)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 def test_hardcoded_absolute_threshold(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
+
+    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir_public,
-        os.path.join(tempfile.gettempdir(), "qsm"),
+        out_dir,
         "--premade", "fast",
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
         "--threshold_value", "15",
         "--num_echoes", "1",
         "--auto_yes",
-        "--debug"
+        "--debug",
+        "--subjects", "*1*"
     ]
     
     # create the workflow and run
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Hardcoded absolute threshold (15)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='Hardcoded absolute threshold (15)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 def test_use_existing_masks(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING EXISTING MASKS ===")
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
+
+    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
     
     args = [
         bids_dir_public,
-        os.path.join(tempfile.gettempdir(), "qsm"),
+        out_dir,
         "--use_existing_masks",
         "--premade", "fast",
         "--auto_yes",
-        "--debug"
+        "--debug",
+        "--subjects", "*1*"
     ]
     
     args = main(args)
@@ -241,16 +254,18 @@ def test_use_existing_masks(bids_dir_public):
 def test_supplementary_images(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING SUPPLEMENTARY IMAGES ===")
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
+
+    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
     
     args = [
         bids_dir_public,
-        os.path.join(tempfile.gettempdir(), "qsm"),
+        out_dir,
         "--do_swi",
         "--do_t2starmap",
         "--do_r2starmap",
         "--auto_yes",
-        "--debug"
+        "--debug",
+        "--subjects", "*1*"
     ]
     
     args = main(args)
@@ -265,7 +280,8 @@ def test_supplementary_images(bids_dir_public):
 def test_realdata(bids_dir_real):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING REAL DATA ===")
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
+
+    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     args = [
         bids_dir_real,
@@ -290,22 +306,24 @@ def test_realdata(bids_dir_real):
 def test_singleecho(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING SINGLE ECHO WITH PHASE COMBINATION / ROMEO ===")
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
+
+    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir_public,
-        os.path.join(tempfile.gettempdir(), "qsm"),
+        out_dir,
         "--unwrapping_algorithm", "romeo",
         "--num_echoes", "1",
         "--auto_yes",
-        "--debug"
+        "--debug",
+        "--subjects", "*1*"
     ]
     
     # create the workflow and run
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'qsm', '*.*'))[0], title='Single echo', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='Single echo', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
 

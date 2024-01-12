@@ -16,9 +16,19 @@ else
     BRANCH=main
 fi
 
-echo "[DEBUG] Pulling QSMxT repository (branch=${BRANCH})..."
-sudo rm -rf "/tmp/QSMxT"
-git clone -b "${BRANCH}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
+echo "[DEBUG] Checking for existing QSMxT repository in /tmp/QSMxT..."
+
+if [ -d "/tmp/QSMxT" ]; then
+    echo "[DEBUG] Repository already exists. Switching to the correct branch and pulling latest changes."
+    cd /tmp/QSMxT
+    git fetch --all
+    git reset --hard
+    git checkout "${BRANCH}"
+    git pull origin "${BRANCH}"
+else
+    echo "[DEBUG] Repository does not exist. Cloning..."
+    git clone -b "${BRANCH}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
+fi
 
 echo "[DEBUG] Extracting TEST_CONTAINER_VERSION and TEST_CONTAINER_DATE from docs/_config.yml"
 TEST_CONTAINER_VERSION=$(cat /tmp/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
@@ -27,21 +37,38 @@ TEST_CONTAINER_DATE=$(cat /tmp/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DAT
 echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt:${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}..."
 sudo docker pull "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
 
-# Create and start the container with a bash shell
-sudo docker stop qsmxt-container || true
-sudo docker rm qsmxt-container || true
-echo "[DEBUG] Starting QSMxT container"
-docker create --name qsmxt-container -it \
-    -v /tmp/:/tmp \
-    --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
-    --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
-    --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
-    --env OSF_TOKEN="${OSF_TOKEN}" \
-    --env OSF_USER="${OSF_USER}" \
-    --env OSF_PASS="${OSF_PASS}" \
-    "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}" \
-    /bin/bash
-docker start qsmxt-container
+# Check if the container exists and its image version
+CONTAINER_EXISTS=$(docker ps -a -q -f name=qsmxt-container)
+if [ -n "${CONTAINER_EXISTS}" ]; then
+    echo "[DEBUG] qsmxt-container already exists."
+    CONTAINER_IMAGE=$(docker inspect qsmxt-container --format='{{.Config.Image}}' 2>/dev/null || echo "")
+    if [ "${CONTAINER_IMAGE}" != "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}" ]; then
+        echo "[DEBUG] Existing container has a different version. Stopping, removing it, and its image."
+        docker stop qsmxt-container
+        docker rm qsmxt-container
+        docker rmi "${CONTAINER_IMAGE}"
+    fi
+fi
+
+CONTAINER_EXISTS=$(docker ps -a -q -f name=qsmxt-container)
+if [ ! -n "${CONTAINER_EXISTS}" ]; then
+    docker create --name qsmxt-container -it \
+        -v /tmp/:/tmp \
+        --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
+        --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
+        --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
+        --env OSF_TOKEN="${OSF_TOKEN}" \
+        --env OSF_USER="${OSF_USER}" \
+        --env OSF_PASS="${OSF_PASS}" \
+        "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}" \
+        /bin/bash
+fi
+
+CONTAINER_RUNNING=$(docker ps -q -f name=qsmxt-container)
+if [ ! -n "${CONTAINER_RUNNING}" ]; then
+    echo "[DEBUG] Starting QSMxT container"
+    docker start qsmxt-container
+fi
 
 # Run the commands inside the container using docker exec
 echo "[DEBUG] Replacing qsmxt pip package with repository version"

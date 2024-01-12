@@ -4,8 +4,6 @@ set -e
 # Run the tests
 echo "[DEBUG] Running QSM pipeline tests..."
 
-sudo rm -rf /tmp/public-outputs /tmp/qsm /tmp/qsm-secret /tmp/bids-secret /tmp/bids-public /tmp/output
-
 docker exec qsmxt-container bash -c "pytest /tmp/QSMxT/qsmxt/tests/test_qsm.py -s -k \"${@}\""
 
 # Write test summary

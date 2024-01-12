@@ -15,10 +15,12 @@ run_workflows = True
 
 @pytest.fixture
 def bids_dir_public():
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== Generating BIDS dataset ===")
+
     tmp_dir = tempfile.gettempdir()
     bids_dir = os.path.join(tmp_dir, "bids-public")
     if not os.path.exists(bids_dir):
-
         head_phantom_maps_dir = os.path.join(tmp_dir, 'data')
         if not os.path.exists(head_phantom_maps_dir):
             if not os.path.exists(os.path.join(tmp_dir, 'head-phantom-maps.tar')):
@@ -26,24 +28,25 @@ def bids_dir_public():
                     project="9jc42",
                     local_path=os.path.join(tmp_dir, "head-phantom-maps.tar")
                 )
-
+            logger.log(LogLevel.INFO.value, f"Extracting then deleting head-phantom-maps.tar...")
             sys_cmd(f"tar xf {os.path.join(tmp_dir, 'head-phantom-maps.tar')} -C {tmp_dir}")
             sys_cmd(f"rm {os.path.join(tmp_dir, 'head-phantom-maps.tar')}")
 
+        logger.log(LogLevel.INFO.value, "Preparing simulation information...")
         tissue_params = qsm_forward.TissueParams(os.path.join(tmp_dir, 'data'))
-        
         recon_params_all = [
-            qsm_forward.ReconParams(voxel_size=np.array([1.0, 1.0, 1.0]), subject=subject, TEs=TEs, TR=TR, flip_angle=flip_angle, suffix=suffix, export_phase=export_phase)
-            for (subject, TEs, TR, flip_angle, suffix, export_phase) in [
-                ("1", np.array([0.004, 0.012]), 0.05, 15, "T2starw", True),
-                ("2", np.array([0.004, 0.012]), 0.05, 15, "T2starw", True)
+            qsm_forward.ReconParams(voxel_size=np.array([1.0, 1.0, 1.0]), session=session, TEs=TEs, TR=TR, flip_angle=flip_angle, suffix=suffix, export_phase=export_phase)
+            for (session, TEs, TR, flip_angle, suffix, export_phase) in [
+                ("1", np.array([3.5e-3]), 7.5e-3, 40, "T1w", False),
+                ("1", np.array([0.012, 0.020]), 0.05, 15, "T2starw", True),
+                ("2", np.array([0.012, 0.020]), 0.05, 15, "T2starw", True)
             ]
         ]
 
+        logger.log(LogLevel.INFO.value, "Generating BIDS dataset...")
         bids_dir = os.path.join(tmp_dir, "bids-public")
         for recon_params in recon_params_all:
             qsm_forward.generate_bids(tissue_params=tissue_params, recon_params=recon_params, bids_dir=bids_dir)
-        sys_cmd(f"rm {head_phantom_maps_dir}")
 
     return bids_dir
 
@@ -53,7 +56,8 @@ def bids_dir_public():
 def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING TEMPLATE PIPELINE ===")
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
+
+    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
@@ -70,6 +74,6 @@ def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
     args = main(args)
 
     # generate image - index out of range
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(args.output_dir, 'template', 'qsm_template', '*', '*.*'))[0], title='QSM template', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm_template.png', cmap='gray'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(args.output_dir, 'template', 'magnitude_template', '*.*'))[0], title='Magnitude template', out_png='mag_template.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'template', 'qsm_template', '*', '*.*'))[0], title='QSM template', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm_template.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'template', 'magnitude_template', '*.*'))[0], title='Magnitude template', out_png='mag_template.png', cmap='gray'))})")
 
