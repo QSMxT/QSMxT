@@ -17,7 +17,7 @@ else
 fi
 
 echo "[DEBUG] Checking for existing QSMxT repository in /tmp/QSMxT..."
-rm -rf /tmp/QSMxT
+sudo rm -rf /tmp/QSMxT
 if [ -d "/tmp/QSMxT" ]; then
     echo "[DEBUG] Repository already exists. Switching to the correct branch and pulling latest changes."
     cd /tmp/QSMxT
