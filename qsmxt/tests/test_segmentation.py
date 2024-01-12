@@ -17,21 +17,23 @@ run_workflows = True
 @pytest.fixture
 def bids_dir_public():
     logger = make_logger()
-    logger.log(LogLevel.INFO.value, f"=== Generating BIDS dataset ===")
+    logger.log(LogLevel.INFO.value, f"=== BIDS Preparation ===")
 
     tmp_dir = tempfile.gettempdir()
     bids_dir = os.path.join(tmp_dir, "bids-public")
-    if not os.path.exists(bids_dir):
+    if not glob.glob(os.path.join(bids_dir, "sub*2")):
+        logger.log(LogLevel.INFO.value, f"No subjects in BIDS directory yet")
         head_phantom_maps_dir = os.path.join(tmp_dir, 'data')
         if not os.path.exists(head_phantom_maps_dir):
+            logger.log(LogLevel.INFO.value, f"Head phantom maps directory does not exist yet")
             if not os.path.exists(os.path.join(tmp_dir, 'head-phantom-maps.tar')):
+                logger.log(LogLevel.INFO.value, f"Head phantom maps tar file does not exist - downloading...")
                 download_from_osf(
                     project="9jc42",
                     local_path=os.path.join(tmp_dir, "head-phantom-maps.tar")
                 )
             logger.log(LogLevel.INFO.value, f"Extracting then deleting head-phantom-maps.tar...")
             sys_cmd(f"tar xf {os.path.join(tmp_dir, 'head-phantom-maps.tar')} -C {tmp_dir}")
-            sys_cmd(f"rm {os.path.join(tmp_dir, 'head-phantom-maps.tar')}")
 
         logger.log(LogLevel.INFO.value, "Preparing simulation information...")
         tissue_params = qsm_forward.TissueParams(os.path.join(tmp_dir, 'data'))
