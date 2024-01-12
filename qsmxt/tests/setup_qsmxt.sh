@@ -72,9 +72,9 @@ fi
 
 # Run the commands inside the container using docker exec
 echo "[DEBUG] Checking if qsmxt is already installed as a linked installation"
-QSMXT_LINKED_INSTALL=$(docker exec qsmxt-container pip list --format=freeze | grep 'qsmxt @' || echo "")
+QSMXT_INSTALL_PATH=$(docker exec qsmxt-container pip show qsmxt | grep 'Location:' | awk '{print $2}')
 
-if [ -n "${QSMXT_LINKED_INSTALL}" ]; then
+if [ "${QSMXT_INSTALL_PATH}" = "/tmp/QSMxT" ]; then
     echo "[DEBUG] qsmxt is already installed as a linked installation. No need to reinstall."
 else
     echo "[DEBUG] qsmxt is not installed as a linked installation. Reinstalling..."
