@@ -47,7 +47,6 @@ def bids_dir_public():
         ]
 
         logger.log(LogLevel.INFO.value, "Generating BIDS dataset...")
-        bids_dir = os.path.join(tmp_dir, "bids-public")
         for recon_params in recon_params_all:
             qsm_forward.generate_bids(tissue_params=tissue_params, recon_params=recon_params, bids_dir=bids_dir)
 
@@ -99,7 +98,7 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
         "--do_analysis",
         "--auto_yes",
         "--debug",
-        "--subjects", "*1*"
+        "--subjects", "sub-1"
     ]
 
     if not run_workflows: args += ['--dry']

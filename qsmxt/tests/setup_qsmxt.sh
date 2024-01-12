@@ -71,9 +71,16 @@ if [ ! -n "${CONTAINER_RUNNING}" ]; then
 fi
 
 # Run the commands inside the container using docker exec
-echo "[DEBUG] Replacing qsmxt pip package with repository version"
-docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
-docker exec qsmxt-container bash -c "pip install -e /tmp/QSMxT"
+echo "[DEBUG] Checking if qsmxt is already installed as a linked installation"
+QSMXT_LINKED_INSTALL=$(docker exec qsmxt-container pip list --format=freeze | grep 'qsmxt @' || echo "")
+
+if [ -n "${QSMXT_LINKED_INSTALL}" ]; then
+    echo "[DEBUG] qsmxt is already installed as a linked installation. No need to reinstall."
+else
+    echo "[DEBUG] qsmxt is not installed as a linked installation. Reinstalling..."
+    docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
+    docker exec qsmxt-container bash -c "pip install -e /tmp/QSMxT"
+fi
 
 # Test environment variables
 echo "[DEBUG] Testing environment variables"

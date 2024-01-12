@@ -48,7 +48,6 @@ def bids_dir_public():
         ]
 
         logger.log(LogLevel.INFO.value, "Generating BIDS dataset...")
-        bids_dir = os.path.join(tmp_dir, "bids-public")
         for recon_params in recon_params_all:
             qsm_forward.generate_bids(tissue_params=tissue_params, recon_params=recon_params, bids_dir=bids_dir)
 
@@ -84,7 +83,7 @@ def test_premade(bids_dir_public, premade):
         "--premade", premade,
         "--auto_yes",
         "--debug",
-        "--subjects", "*1*"
+        "--subjects", "sub-1"
     ]
     
     # create the workflow and run if necessary
@@ -112,7 +111,7 @@ def test_nocombine(bids_dir_public):
         "--combine_phase", "off",
         "--auto_yes",
         "--debug",
-        "--subjects", "*1*"
+        "--subjects", "sub-1"
     ]
     
     # create the workflow and run if necessary
@@ -145,7 +144,7 @@ def test_nomagnitude(bids_dir_public):
         "--num_echoes", "1",
         "--auto_yes",
         "--debug",
-        "--subjects", "*1*"
+        "--subjects", "sub-1"
     ]
     
     # create the workflow and run - it should fall back to phase-based masking with a warning
@@ -174,7 +173,7 @@ def test_inhomogeneity_correction(bids_dir_public):
         "--num_echoes", "1",
         "--auto_yes",
         "--debug",
-        "--subjects", "*1*"
+        "--subjects", "sub-1"
     ]
     
     # create the workflow and run
@@ -200,7 +199,7 @@ def test_hardcoded_percentile_threshold(bids_dir_public):
         "--num_echoes", "1",
         "--auto_yes",
         "--debug",
-        "--subjects", "*1*"
+        "--subjects", "sub-1"
     ]
     
     # create the workflow and run
@@ -226,7 +225,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public):
         "--num_echoes", "1",
         "--auto_yes",
         "--debug",
-        "--subjects", "*1*"
+        "--subjects", "sub-1"
     ]
     
     # create the workflow and run
@@ -248,7 +247,7 @@ def test_use_existing_masks(bids_dir_public):
         "--premade", "fast",
         "--auto_yes",
         "--debug",
-        "--subjects", "*1*"
+        "--subjects", "sub-1"
     ]
     
     args = main(args)
@@ -267,7 +266,7 @@ def test_supplementary_images(bids_dir_public):
         "--do_r2starmap",
         "--auto_yes",
         "--debug",
-        "--subjects", "*1*"
+        "--subjects", "sub-1"
     ]
     
     args = main(args)
@@ -319,7 +318,7 @@ def test_singleecho(bids_dir_public):
         "--num_echoes", "1",
         "--auto_yes",
         "--debug",
-        "--subjects", "*1*"
+        "--subjects", "sub-1"
     ]
     
     # create the workflow and run

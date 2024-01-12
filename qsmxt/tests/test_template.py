@@ -46,7 +46,6 @@ def bids_dir_public():
         ]
 
         logger.log(LogLevel.INFO.value, "Generating BIDS dataset...")
-        bids_dir = os.path.join(tmp_dir, "bids-public")
         for recon_params in recon_params_all:
             qsm_forward.generate_bids(tissue_params=tissue_params, recon_params=recon_params, bids_dir=bids_dir)
 
