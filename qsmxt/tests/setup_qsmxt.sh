@@ -17,7 +17,7 @@ else
 fi
 
 echo "[DEBUG] Checking for existing QSMxT repository in /tmp/QSMxT..."
-
+rm -rf /tmp/QSMxT
 if [ -d "/tmp/QSMxT" ]; then
     echo "[DEBUG] Repository already exists. Switching to the correct branch and pulling latest changes."
     cd /tmp/QSMxT
@@ -27,7 +27,7 @@ if [ -d "/tmp/QSMxT" ]; then
     git pull origin "${BRANCH}"
 else
     echo "[DEBUG] Repository does not exist. Cloning..."
-    git clone -b "${BRANCH}" "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
+    git clone "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
 fi
 
 echo "[DEBUG] Extracting TEST_CONTAINER_VERSION and TEST_CONTAINER_DATE from docs/_config.yml"
