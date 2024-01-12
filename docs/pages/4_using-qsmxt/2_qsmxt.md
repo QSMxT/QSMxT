@@ -22,6 +22,8 @@ To begin, simply run:
 qsmxt bids/ output_dir/
 ```
 
+Then, follow the steps outlined below.
+
 {: .note }
 Most prompts will simply accept ENTER to use the default value.
 
@@ -30,7 +32,7 @@ QSMxT can also be run [non-interactively](#non-interactive-usage).
 
 ## Step 1: Select desired outputs
 
-This page asks you to select which outputs you would like QSMxT to generate (space-separated). 
+The first page will prompt you to select which outputs to generate (space-separated). 
 
 ```
 === Desired outputs ===
@@ -45,11 +47,11 @@ This page asks you to select which outputs you would like QSMxT to generate (spa
 Enter desired images (space-separated) [default - qsm]: 
 ```
 
-If you need QSM and SWI, for example, you could enter `qsm swi`.
+If you need QSM and SWI, for example, you would enter `qsm swi`.
 
 ## Step 2: Select desired QSM pipeline
 
-This page asks you to select which premade QSM pipeline you would like to use.
+This page asks you to select which premade QSM pipeline you would like to start with.
 
 ```
 === Premade QSM pipelines ===
@@ -145,14 +147,14 @@ bids/
 There are two choices of masking algorithm:
 
 - **Threshold-based** (`--masking_algorithm threshold`)
-  - required for the two-pass artefact reduction algorithm (https://doi.org/10.1002/mrm.29048)
+  - required for the two-pass artefact reduction algorithm ([https://doi.org/10.1002/mrm.29048](https://doi.org/10.1002/mrm.29048))
   - required for applications other than in vivo human brain
   - more robust to severe pathology
 - **BET (brain extraction tool)** (`--masking_algorithm bet`)
   - the standard in most QSM pipelines
   - robust in healthy human brains
-  - paper: https://doi.org/10.1002/hbm.10062
-  - code: https://github.com/liangfu/bet2
+  - paper: [https://doi.org/10.1002/hbm.10062](https://doi.org/10.1002/hbm.10062)
+  - code: [https://github.com/liangfu/bet2](https://github.com/liangfu/bet2)
 
 ### Thresholding input
 
@@ -162,13 +164,13 @@ For the threshold-based [masking algorithm](#masking-algorithm), a mask can be g
   - standard approach
   - requires magnitude images
 - **Phase** - use a phase quality map (`--masking_input phase`)
-  - phase quality map produced by ROMEO (https://doi.org/10.1002/mrm.28563)
+  - phase quality map produced by ROMEO ([https://doi.org/10.1002/mrm.28563](https://doi.org/10.1002/mrm.28563))
   - measured between 0 and 100
-  - some evidence that phase-based masks are more reliable near the brain boundary (https://doi.org/10.1002/mrm.29368)
+  - some evidence that phase-based masks are more reliable near the brain boundary ([https://doi.org/10.1002/mrm.29368](https://doi.org/10.1002/mrm.29368))
 
 ### Two-pass artifact reduction
 
-For the threshold-based [masking algorithm](#masking-algorithm), a two-pass artifact-reduction technique can be applied (`--two_pass on`; https://doi.org/10.1002/mrm.29048).
+For the threshold-based [masking algorithm](#masking-algorithm), a two-pass artifact-reduction technique can be applied (`--two_pass on`; [https://doi.org/10.1002/mrm.29048](https://doi.org/10.1002/mrm.29048)).
 
 The two-pass algorithm performs two QSM reconstructions - one using a threshold-based mask (with holes in high-susceptibility regions), and another using the same mask after applying a hole-filling algorithm. The final susceptibility map is a superposition of both results - the susceptibility map with holes is filled using values from the filled susceptibility map.
 
@@ -188,8 +190,8 @@ A threshold can be hardcoded:
  - Use two values to specify different thresholds for each pass in [two-pass QSM](#two-pass-artifact-reduction) (e.g. `--threshold_value 50 40`); the first value is used for the filled pass, and the second value is used for the mask with holes
 
 A threshold may also be determined automatically using one of two algorithms:
-  - **otsu**: Automate threshold selection using the Otsu algorithm (https://doi.org/10.1109/TSMC.1979.4310076) (`--threshold_algorithm otsu`)
-  - **gaussian**: Automate threshold selection using a Gaussian algorithm (https://doi.org/10.1016/j.compbiomed.2012.01.004) (`--threshold_algorithm gaussian`)
+  - **otsu**: Automate threshold selection using the Otsu algorithm ([https://doi.org/10.1109/TSMC.1979.4310076](https://doi.org/10.1109/TSMC.1979.4310076)) (`--threshold_algorithm otsu`)
+  - **gaussian**: Automate threshold selection using a Gaussian algorithm ([https://doi.org/10.1016/j.compbiomed.2012.01.004](https://doi.org/10.1016/j.compbiomed.2012.01.004)) (`--threshold_algorithm gaussian`)
 
 ### Threshold algorithm factors
 
@@ -227,7 +229,7 @@ The number of erosions applied to masks can be adjusted. Two values may be given
 
 Most QSM algorithms require the slice direction to align with the magnetic field direction for optimal accuracy. Oblique acquisitions can be rotated and resampled to a true axial orientation to ensure this assumption holds (see https://doi.org/10.1002/mrm.29550).
 
-QSMxT can perform this axial resampling if the measured obliquity is beyond some threshold. Obliquity is measured using [nibabel](https://nipy.org/nibabel/reference/nibabel.affines.html#nibabel.affines.obliquity), which uses a measure derived from [AFNI's definition](https://github.com/afni/afni/blob/b6a9f7a21c1f3231ff09efbd861f8975ad48e525/src/thd_coords.c#L660-L698). If the measured obliquity is beyond the threshold, the volume will be resampled to axial (e.g. `--obliquity_threshold 10`). To disable axial resampling, set the threshold to -1.
+QSMxT can perform this axial resampling when the measured obliquity is beyond a chosen threshold. Obliquity is measured using [nibabel](https://nipy.org/nibabel/reference/nibabel.affines.html#nibabel.affines.obliquity), which uses a measure derived from [AFNI's definition](https://github.com/afni/afni/blob/b6a9f7a21c1f3231ff09efbd861f8975ad48e525/src/thd_coords.c#L660-L698). If the measured obliquity is beyond the threshold, the volume will be resampled to axial (e.g. `--obliquity_threshold 10`). To disable axial resampling, set the threshold to -1.
 
 ### Multi-echo combination
 
@@ -238,18 +240,18 @@ Multi-echo acquisitions require a combination step. Data can be combined prior t
 Multiple QSM algorithms are available in QSMxT (e.g. `--qsm_algorithm rts`). Some QSM algorithms solve only the final dipole inversion step, while others include phase unwrapping and background field correction.
 
 - **rts**: Rapid Two-Step QSM
-  - https://doi.org/10.1016/j.neuroimage.2017.11.018
+  - [https://doi.org/10.1016/j.neuroimage.2017.11.018](https://doi.org/10.1016/j.neuroimage.2017.11.018)
   - Compatible with two-pass artefact reduction algorithm
   - Fast runtime
 - **tv**: Fast quantitative susceptibility mapping with L1-regularization and automatic parameter selection
-  - https://doi.org/10.1002/mrm.25029
+  - [https://doi.org/10.1002/mrm.25029](https://doi.org/10.1002/mrm.25029)
   - Compatible with two-pass artefact reduction algorithm
 - **tgv**: Total Generalized Variation
-  - https://doi.org/10.1016/j.neuroimage.2015.02.041
+  - [https://doi.org/10.1016/j.neuroimage.2015.02.041](https://doi.org/10.1016/j.neuroimage.2015.02.041)
   - Combined unwrapping, background field removal and dipole inversion
   - Compatible with two-pass artefact reduction algorithm
 - **nextqsm**: NeXtQSM
-  - https://doi.org/10.1016/j.media.2022.102700
+  - [https://doi.org/10.1016/j.media.2022.102700](https://doi.org/10.1016/j.media.2022.102700)
   - Uses deep learning to solve the background field removal and dipole inversion steps
   - High memory requirements (>=12gb recommended)
 
@@ -258,11 +260,11 @@ Multiple QSM algorithms are available in QSMxT (e.g. `--qsm_algorithm rts`). Som
 Multiple phase unwraping algorithms are available in QSMxT (e.g. `--unwrapping_algorithm romeo`).
 
 {: .note }
-Laplacian phase unwrapping is only available if `--combine_phase` is disabled. This is because the phase combination technique is based on the field map derived from ROMEO.
+Laplacian phase unwrapping is forced to ROMEO if the multi-echo [`--combine_phase`](#multi-echo-combination) is enabled. This is because the phase combination technique is based on the field map derived from ROMEO.
 
-- **romeo**: (https://doi.org/10.1002/mrm.28563)
+- **romeo**: ([https://doi.org/10.1002/mrm.28563](https://doi.org/10.1002/mrm.28563))
   - quantitative
-- **laplacian**: (https://doi.org/10.1364/OL.28.001194; https://doi.org/10.1002/nbm.3064)
+- **laplacian**: ([https://doi.org/10.1364/OL.28.001194](https://doi.org/10.1364/OL.28.001194); [https://doi.org/10.1002/nbm.3064](https://doi.org/10.1002/nbm.3064))
   - non-quantitative
   - popular for its numerical simplicity
 
@@ -270,12 +272,12 @@ Laplacian phase unwrapping is only available if `--combine_phase` is disabled. T
 
 Multiple background field removal algorithms are available in QSMxT (e.g. `--bf_algorithm vsharp`).
 
-- **vsharp**: V-SHARP algorithm (https://doi.org/10.1002/mrm.23000)
+- **vsharp**: V-SHARP algorithm ([https://doi.org/10.1002/mrm.23000](https://doi.org/10.1002/mrm.23000))
   - fast
   - involves a mask erosion step that impacts the next steps
   - less reliable with threshold-based masks
   - not compatible with artefact reduction algorithm
-- **pdf**: Projection onto Dipole Fields algorithm (https://doi.org/10.1002/nbm.1670)
+- **pdf**: Projection onto Dipole Fields algorithm ([https://doi.org/10.1002/nbm.1670](https://doi.org/10.1002/nbm.1670))
   - slower
   - more accurate
   - does not require an additional erosion step
