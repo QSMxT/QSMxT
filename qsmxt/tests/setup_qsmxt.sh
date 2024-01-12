@@ -17,18 +17,18 @@ else
 fi
 
 echo "[DEBUG] Checking for existing QSMxT repository in /tmp/QSMxT..."
-sudo rm -rf /tmp/QSMxT
 if [ -d "/tmp/QSMxT" ]; then
-    echo "[DEBUG] Repository already exists. Switching to the correct branch and pulling latest changes."
+    echo "[DEBUG] Repository already exists. Switching to the correct branch and resetting changes..."
     cd /tmp/QSMxT
     git fetch --all
     git reset --hard
-    git checkout "${BRANCH}"
-    git pull origin "${BRANCH}"
 else
     echo "[DEBUG] Repository does not exist. Cloning..."
     git clone "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
 fi
+echo "[DEBUG] Switching to branch ${BRANCH} and pulling latest changes"
+git checkout "${BRANCH}"
+git pull origin "${BRANCH}"
 
 echo "[DEBUG] Extracting TEST_CONTAINER_VERSION and TEST_CONTAINER_DATE from docs/_config.yml"
 TEST_CONTAINER_VERSION=$(cat /tmp/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
