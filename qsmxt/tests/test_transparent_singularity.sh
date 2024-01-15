@@ -16,26 +16,26 @@ else
     BRANCH=main
 fi
 
-echo "[DEBUG] Checking for existing QSMxT repository in /storage/tmp/QSMxT..."
-if [ -d "/storage/tmp/QSMxT" ]; then
+echo "[DEBUG] Checking for existing QSMxT repository in /tmp/QSMxT..."
+if [ -d "/tmp/QSMxT" ]; then
     echo "[DEBUG] Repository already exists. Switching to the correct branch and resetting changes..."
-    cd /storage/tmp/QSMxT
+    cd /tmp/QSMxT
     git fetch --all
     git reset --hard
 else
     echo "[DEBUG] Repository does not exist. Cloning..."
-    git clone "https://github.com/QSMxT/QSMxT.git" "/storage/tmp/QSMxT"
+    git clone "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
 fi
 echo "[DEBUG] Switching to branch ${BRANCH} and pulling latest changes"
 git checkout "${BRANCH}"
 git pull origin "${BRANCH}"
 
 echo "[DEBUG] Install QSMxT via transparent-singularity"
-mkdir -p /storage/tmp/test-transparent-singularity
-cd /storage/tmp/test-transparent-singularity
+mkdir -p /tmp/test-transparent-singularity
+cd /tmp/test-transparent-singularity
 export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
 export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
-/storage/tmp/QSMxT/docs/_includes/transparent_singularity_install.sh
+/tmp/QSMxT/docs/_includes/transparent_singularity_install.sh
 
 echo "[DEBUG] cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
 cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../
@@ -50,12 +50,12 @@ done
 
 echo "[DEBUG] Install miniconda"
 sudo rm -rf ~/miniconda3
-/storage/tmp/QSMxT/docs/_includes/miniconda_install.sh
+/tmp/QSMxT/docs/_includes/miniconda_install.sh
 export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
 
 echo "[DEBUG] Install QSMxT via pip linked installation"
 pip uninstall qsmxt -y
-pip install -e /storage/tmp/QSMxT
+pip install -e /tmp/QSMxT
 
 echo "[DEBUG] Download test data"
 pip install osfclient > /dev/null 2>&1
