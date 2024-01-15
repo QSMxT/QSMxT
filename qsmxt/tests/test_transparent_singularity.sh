@@ -30,6 +30,12 @@ echo "[DEBUG] Switching to branch ${BRANCH} and pulling latest changes"
 git checkout "${BRANCH}"
 git pull origin "${BRANCH}"
 
+sudo apt-get update
+sudo apt-get install -y software-properties-common
+sudo add-apt-repository -y ppa:apptainer/ppa
+sudo apt-get update
+sudo apt-get install -y apptainer
+
 echo "[DEBUG] Install QSMxT via transparent-singularity"
 mkdir -p /tmp/test-transparent-singularity
 cd /tmp/test-transparent-singularity
