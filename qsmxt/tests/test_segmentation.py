@@ -102,7 +102,8 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
         "--do_analysis",
         "--auto_yes",
         "--debug",
-        "--subjects", "sub-1"
+        "--subjects", "sub-1",
+        "--sessions", "ses-1"
     ]
 
     if not run_workflows: args += ['--dry']
