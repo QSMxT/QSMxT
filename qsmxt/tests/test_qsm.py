@@ -15,12 +15,16 @@ from qsmxt.tests.utils import *
 
 run_workflows = True
 
+def gettempdir():
+    #return tempfile.gettempdir()
+    return "/storage/tmp"
+
 @pytest.fixture
 def bids_dir_public():
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== BIDS Preparation ===")
 
-    tmp_dir = tempfile.gettempdir()
+    tmp_dir = gettempdir()
     bids_dir = os.path.join(tmp_dir, "bids-public")
     if not glob.glob(os.path.join(bids_dir, "sub*2")):
         logger.log(LogLevel.INFO.value, f"No subjects in BIDS directory yet")
@@ -55,7 +59,7 @@ def bids_dir_public():
 
 @pytest.fixture
 def bids_dir_real():
-    tmp_dir = tempfile.gettempdir()
+    tmp_dir = gettempdir()
     if not os.path.exists(os.path.join(tmp_dir, 'bids-secret')):
         if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
             download_from_osf(
@@ -75,7 +79,7 @@ def test_premade(bids_dir_public, premade):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING PREMADE {premade} ===")
 
-    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     args = [
         bids_dir_public,
@@ -91,9 +95,9 @@ def test_premade(bids_dir_public, premade):
     
     # upload output folder
     tar_file = compress_folder(folder=args.output_dir, result_id=premade)
-    sys_cmd(f"rm -rf {os.path.join(tempfile.gettempdir(), 'public-outputs')}")
-    os.makedirs(os.path.join(tempfile.gettempdir(), "public-outputs"), exist_ok=True)
-    shutil.move(tar_file, os.path.join(tempfile.gettempdir(), "public-outputs", tar_file))
+    sys_cmd(f"rm -rf {os.path.join(gettempdir(), 'public-outputs')}")
+    os.makedirs(os.path.join(gettempdir(), "public-outputs"), exist_ok=True)
+    shutil.move(tar_file, os.path.join(gettempdir(), "public-outputs", tar_file))
 
     # generate image
     add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
@@ -102,7 +106,7 @@ def test_nocombine(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING NO PHASE COMBINATION ===")
 
-    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     args = [
         bids_dir_public,
@@ -133,7 +137,7 @@ def test_nomagnitude(bids_dir_public):
     for mag_file in glob.glob(os.path.join(bids_dir_nomagnitude, "sub-1", "ses-1", "anat", "*mag*")):
         os.remove(mag_file)
 
-    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
     
     # run pipeline and specifically choose magnitude-based masking
     args = [
@@ -160,7 +164,7 @@ def test_inhomogeneity_correction(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING INHOMOGENEITY CORRECTION ===")
 
-    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
@@ -186,7 +190,7 @@ def test_hardcoded_percentile_threshold(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
 
-    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
@@ -212,7 +216,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
 
-    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
@@ -238,7 +242,7 @@ def test_use_existing_masks(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING EXISTING MASKS ===")
 
-    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
     
     args = [
         bids_dir_public,
@@ -256,7 +260,7 @@ def test_supplementary_images(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING SUPPLEMENTARY IMAGES ===")
 
-    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
     
     args = [
         bids_dir_public,
@@ -272,21 +276,21 @@ def test_supplementary_images(bids_dir_public):
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi', '*swi.*'))[0], title='SWI', out_png='swi.png', cmap='gray'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'swi', '*swi-mip.*'))[0], dim=2, title='SWI MIP', out_png='swi_mip.png', cmap='gray'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 't2s', '*.*'))[0], title='T2* map', out_png='t2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='T2* (ms)'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(tempfile.gettempdir(), 'qsm', 'r2s', '*.*'))[0], title='R2* map', out_png='r2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='R2* (ms)'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(gettempdir(), 'qsm', 'swi', '*swi.*'))[0], title='SWI', out_png='swi.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(gettempdir(), 'qsm', 'swi', '*swi-mip.*'))[0], dim=2, title='SWI MIP', out_png='swi_mip.png', cmap='gray'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(gettempdir(), 'qsm', 't2s', '*.*'))[0], title='T2* map', out_png='t2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='T2* (ms)'))})")
+    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(gettempdir(), 'qsm', 'r2s', '*.*'))[0], title='R2* map', out_png='r2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='R2* (ms)'))})")
     
 
 def test_realdata(bids_dir_real):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING REAL DATA ===")
 
-    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     args = [
         bids_dir_real,
-        os.path.join(tempfile.gettempdir(), "qsm-secret"),
+        os.path.join(gettempdir(), "qsm-secret"),
         "--premade", "fast",
         "--auto_yes",
         "--debug"
@@ -308,7 +312,7 @@ def test_singleecho(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING SINGLE ECHO WITH PHASE COMBINATION / ROMEO ===")
 
-    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     # run pipeline and specifically choose magnitude-based masking
     args = [

@@ -40,5 +40,5 @@ jobs:
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs
-        path: /tmp/public-outputs
+        path: /storage/tmp/public-outputs
 

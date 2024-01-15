@@ -16,23 +16,23 @@ else
     BRANCH=main
 fi
 
-echo "[DEBUG] Checking for existing QSMxT repository in /tmp/QSMxT..."
-if [ -d "/tmp/QSMxT" ]; then
+echo "[DEBUG] Checking for existing QSMxT repository in /storage/tmp/QSMxT..."
+if [ -d "/storage/tmp/QSMxT" ]; then
     echo "[DEBUG] Repository already exists. Switching to the correct branch and resetting changes..."
-    cd /tmp/QSMxT
+    cd /storage/tmp/QSMxT
     git fetch --all
     git reset --hard
 else
     echo "[DEBUG] Repository does not exist. Cloning..."
-    git clone "https://github.com/QSMxT/QSMxT.git" "/tmp/QSMxT"
+    git clone "https://github.com/QSMxT/QSMxT.git" "/storage/tmp/QSMxT"
 fi
 echo "[DEBUG] Switching to branch ${BRANCH} and pulling latest changes"
 git checkout "${BRANCH}"
 git pull origin "${BRANCH}"
 
 echo "[DEBUG] Extracting TEST_CONTAINER_VERSION and TEST_CONTAINER_DATE from docs/_config.yml"
-TEST_CONTAINER_VERSION=$(cat /tmp/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
-TEST_CONTAINER_DATE=$(cat /tmp/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
+TEST_CONTAINER_VERSION=$(cat /storage/tmp/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
+TEST_CONTAINER_DATE=$(cat /storage/tmp/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
 
 echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt:${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}..."
 sudo docker pull "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
@@ -53,7 +53,7 @@ fi
 CONTAINER_EXISTS=$(docker ps -a -q -f name=qsmxt-container)
 if [ ! -n "${CONTAINER_EXISTS}" ]; then
     docker create --name qsmxt-container -it \
-        -v /tmp/:/tmp \
+        -v /storage/tmp/:/storage/tmp \
         --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
         --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
         --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
@@ -75,12 +75,12 @@ echo "[DEBUG] Checking if qsmxt is already installed as a linked installation"
 QSMXT_INSTALL_PATH=$(docker exec qsmxt-container pip show qsmxt | grep 'Location:' | awk '{print $2}')
 echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
 
-if [ "${QSMXT_INSTALL_PATH}" = "/tmp/QSMxT" ]; then
+if [ "${QSMXT_INSTALL_PATH}" = "/storage/tmp/QSMxT" ]; then
     echo "[DEBUG] QSMxT is already installed as a linked installation."
 else
     echo "[DEBUG] QSMxT is not installed as a linked installation. Reinstalling..."
     docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
-    docker exec qsmxt-container bash -c "pip install -e /tmp/QSMxT"
+    docker exec qsmxt-container bash -c "pip install -e /storage/tmp/QSMxT"
 fi
 
 # Test environment variables

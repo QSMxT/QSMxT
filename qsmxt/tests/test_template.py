@@ -13,12 +13,16 @@ from qsmxt.tests.utils import *
 
 run_workflows = True
 
+def gettempdir():
+    #return tempfile.gettempdir()
+    return "/storage/tmp"
+
 @pytest.fixture
 def bids_dir_public():
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== BIDS Preparation ===")
 
-    tmp_dir = tempfile.gettempdir()
+    tmp_dir = gettempdir()
     bids_dir = os.path.join(tmp_dir, "bids-public")
     if not glob.glob(os.path.join(bids_dir, "sub*2")):
         logger.log(LogLevel.INFO.value, f"No subjects in BIDS directory yet")
@@ -58,12 +62,12 @@ def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING TEMPLATE PIPELINE ===")
 
-    out_dir = os.path.join(tempfile.gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir_public,
-        os.path.join(tempfile.gettempdir(), "output"),
+        os.path.join(gettempdir(), "output"),
         "--do_qsm", "yes",
         "--premade", "fast",
         "--do_template", "yes",

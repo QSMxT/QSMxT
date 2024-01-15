@@ -74,7 +74,7 @@ jobs:
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs
-        path: /tmp/public-outputs
+        path: /storage/tmp/public-outputs
   test_qsm_edgecases:
     runs-on: "self-hosted"
     strategy:

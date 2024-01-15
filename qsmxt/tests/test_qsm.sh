@@ -4,12 +4,12 @@ set -e
 # Run the tests
 echo "[DEBUG] Running QSM pipeline tests..."
 
-docker exec qsmxt-container bash -c "pytest /tmp/QSMxT/qsmxt/tests/test_qsm.py -s -k \"${@}\""
+docker exec qsmxt-container bash -c "pytest /storage/tmp/QSMxT/qsmxt/tests/test_qsm.py -s -k \"${@}\""
 
 # Write test summary
-if [ -f /tmp/GITHUB_STEP_SUMMARY.md ]; then
+if [ -f /storage/tmp/GITHUB_STEP_SUMMARY.md ]; then
     echo "[DEBUG] Writing test summary..."
-    cat /tmp/GITHUB_STEP_SUMMARY.md >> $GITHUB_STEP_SUMMARY
+    cat /storage/tmp/GITHUB_STEP_SUMMARY.md >> $GITHUB_STEP_SUMMARY
 fi
 
 # Stop and remove the container when you're done
