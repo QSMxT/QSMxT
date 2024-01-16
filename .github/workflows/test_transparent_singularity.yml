@@ -39,6 +39,7 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
+        TEST_DIR: "/tmp"
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh apptainer
     - name: Extract versions from docs/_config.yml

@@ -66,6 +66,7 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
+        TEST_DIR: "/storage/tmp"
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh docker
     - name: Test QSM premades
@@ -104,6 +105,7 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
+        TEST_DIR: "/storage/tmp"
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh docker
     - name: Test QSM pipeline edge cases

@@ -4,13 +4,12 @@ set -e
 # === ACQUIRE LOCK ===
 
 # Set a trap to ensure the lock file is removed even if the script exits unexpectedly
-trap 'rm -f "/storage/tmp/qsmxt.lock"; echo "[DEBUG] Lock released due to script exit"; exit' INT TERM EXIT
-
-LOCK_FILE="/storage/tmp/qsmxt.lock"
-MAX_WAIT_TIME=10
-MIN_WAIT_TIME=5
+LOCK_FILE="${TEST_DIR}/qsmxt.lock"
+trap 'rm -f ${LOCK_FILE}; echo "[DEBUG] Lock released due to script exit"; exit' INT TERM EXIT
 
 # Function to generate a random sleep time between MIN_WAIT_TIME and MAX_WAIT_TIME
+MAX_WAIT_TIME=10
+MIN_WAIT_TIME=5
 function random_sleep_time() {
     echo $((RANDOM % (MAX_WAIT_TIME - MIN_WAIT_TIME + 1) + MIN_WAIT_TIME))
 }
@@ -50,23 +49,23 @@ else
     BRANCH=main
 fi
 
-echo "[DEBUG] Checking for existing QSMxT repository in /storage/tmp/QSMxT..."
-if [ -d "/storage/tmp/QSMxT" ]; then
+echo "[DEBUG] Checking for existing QSMxT repository in ${TEST_DIR}/QSMxT..."
+if [ -d "${TEST_DIR}/QSMxT" ]; then
     echo "[DEBUG] Repository already exists. Switching to the correct branch and resetting changes..."
-    cd /storage/tmp/QSMxT
+    cd ${TEST_DIR}/QSMxT
     git fetch --all
     git reset --hard
 else
     echo "[DEBUG] Repository does not exist. Cloning..."
-    git clone "https://github.com/QSMxT/QSMxT.git" "/storage/tmp/QSMxT"
+    git clone "https://github.com/QSMxT/QSMxT.git" "${TEST_DIR}/QSMxT"
 fi
 echo "[DEBUG] Switching to branch ${BRANCH} and pulling latest changes"
 git checkout "${BRANCH}"
 git pull origin "${BRANCH}"
 
 echo "[DEBUG] Extracting TEST_CONTAINER_VERSION and TEST_CONTAINER_DATE from docs/_config.yml"
-TEST_CONTAINER_VERSION=$(cat /storage/tmp/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
-TEST_CONTAINER_DATE=$(cat /storage/tmp/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
+TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
+TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
 
 # docker container setup
 if [ "${CONTAINER_TYPE}" = "docker" ]; then
@@ -89,7 +88,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     CONTAINER_EXISTS=$(docker ps -a -q -f name=qsmxt-container)
     if [ ! -n "${CONTAINER_EXISTS}" ]; then
         docker create --name qsmxt-container -it \
-            -v /storage/tmp/:/storage/tmp \
+            -v ${TEST_DIR}/:${TEST_DIR} \
             --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
             --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
             --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
@@ -111,12 +110,12 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     QSMXT_INSTALL_PATH=$(docker exec qsmxt-container pip show qsmxt | grep 'Location:' | awk '{print $2}')
     echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
 
-    if [ "${QSMXT_INSTALL_PATH}" = "/storage/tmp/QSMxT" ]; then
+    if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ]; then
         echo "[DEBUG] QSMxT is already installed as a linked installation."
     else
         echo "[DEBUG] QSMxT is not installed as a linked installation. Reinstalling..."
         docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
-        docker exec qsmxt-container bash -c "pip install -e /storage/tmp/QSMxT"
+        docker exec qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
     fi
 
     # Test environment variables
@@ -135,9 +134,9 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     sudo apt-get install -y apptainer
 
     echo "[DEBUG] Install QSMxT via transparent-singularity"
-    sudo rm -rf /storage/tmp/test-transparent-singularity
-    mkdir -p /storage/tmp/test-transparent-singularity
-    cd /storage/tmp/test-transparent-singularity
+    sudo rm -rf ${TEST_DIR}/test-transparent-singularity
+    mkdir -p ${TEST_DIR}/test-transparent-singularity
+    cd ${TEST_DIR}/test-transparent-singularity
     export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
     export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
     /tmp/QSMxT/docs/_includes/transparent_singularity_install.sh
