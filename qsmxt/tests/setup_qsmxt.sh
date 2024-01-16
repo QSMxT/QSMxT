@@ -139,7 +139,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     cd ${TEST_DIR}/test-transparent-singularity
     export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
     export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
-    /tmp/QSMxT/docs/_includes/transparent_singularity_install.sh
+    ${TEST_DIR}/QSMxT/docs/_includes/transparent_singularity_install.sh
 
     echo "[DEBUG] cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
     cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../
@@ -154,12 +154,12 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 
     echo "[DEBUG] Install miniconda"
     sudo rm -rf ~/miniconda3
-    /tmp/QSMxT/docs/_includes/miniconda_install.sh
+    ${TEST_DIR}/QSMxT/docs/_includes/miniconda_install.sh
     export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
 
     echo "[DEBUG] Install QSMxT via pip linked installation"
     pip uninstall qsmxt -y
-    pip install -e /tmp/QSMxT
+    pip install -e ${TEST_DIR}/QSMxT
 fi
 
 rm -f "${LOCK_FILE}"
