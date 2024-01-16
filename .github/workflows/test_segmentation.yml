@@ -37,7 +37,7 @@ jobs:
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
       run: |
-        /bin/bash qsmxt/tests/setup_qsmxt.sh
+        /bin/bash qsmxt/tests/setup_qsmxt.sh docker
     - name: Run segmentation pipeline
       run: |
         /bin/bash qsmxt/tests/test_segmentation.sh "test_segmentation"

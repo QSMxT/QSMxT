@@ -33,7 +33,7 @@ jobs:
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
       run: |
-        /bin/bash qsmxt/tests/setup_qsmxt.sh
+        /bin/bash qsmxt/tests/setup_qsmxt.sh docker
     - name: Run template pipeline
       run: |
         /bin/bash qsmxt/tests/test_template.sh "test_template"
