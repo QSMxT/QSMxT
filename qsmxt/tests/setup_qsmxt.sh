@@ -15,6 +15,8 @@ function random_sleep_time() {
 }
 
 # Loop until the lock file can be acquired
+echo "[DEBUG] Create ${TEST_DIR}..."
+sudo mkdir -p "${TEST_DIR}"
 echo "[DEBUG] ls ${TEST_DIR}..."
 ls ${TEST_DIR}
 
