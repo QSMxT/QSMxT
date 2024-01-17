@@ -15,6 +15,9 @@ function random_sleep_time() {
 }
 
 # Loop until the lock file can be acquired
+echo "[DEBUG] ls ${TEMP_DIR}..."
+ls ${TEMP_DIR}
+
 echo "[DEBUG] Checking for ${LOCK_FILE}..."
 while true; do
     if [ ! -f "${LOCK_FILE}" ]; then
