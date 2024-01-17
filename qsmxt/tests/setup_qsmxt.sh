@@ -22,6 +22,7 @@ ls ${TEST_DIR}
 
 echo "[DEBUG] Checking for ${LOCK_FILE}..."
 while true; do
+    ls ${TEST_DIR}
     if [ ! -f "${LOCK_FILE}" ]; then
         touch "${LOCK_FILE}"
         echo "[DEBUG] ${LOCK_FILE} acquired"
