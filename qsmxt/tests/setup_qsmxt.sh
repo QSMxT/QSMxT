@@ -174,5 +174,5 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     echo "[DEBUG] `qsmxt --version`"
 fi
 
-rm -f "${LOCK_FILE}"
+sudo rm -f "${LOCK_FILE}"
 
