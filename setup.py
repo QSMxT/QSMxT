@@ -5,10 +5,10 @@ def read_version_from_config():
     setup_file_path = os.path.abspath(__file__)
     setup_dir = os.path.dirname(setup_file_path)
     config_path = os.path.join(setup_dir, 'docs', '_config.yml')
-
+    package_version_type = os.environ.get('PACKAGE_VERSION_TYPE')
     with open(config_path, 'r') as f:
         for line in f:
-            if line.startswith('DEPLOY_PACKAGE_VERSION:'):
+            if line.startswith(package_version_type):
                 return line.split(":")[1].strip()
 
     raise ValueError('QSMxT version not found in docs/_config.yml!')

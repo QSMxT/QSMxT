@@ -67,6 +67,7 @@ echo "[DEBUG] Extracting version information from docs/_config.yml"
 TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
 TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
 DEPLOY_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'DEPLOY_PACKAGE_VERSION' | awk '{print $2}')
+TEST_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'TEST_PACKAGE_VERSION' | awk '{print $2}')
 PROD_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'PROD_PACKAGE_VERSION' | awk '{print $2}')
 
 # docker container setup
