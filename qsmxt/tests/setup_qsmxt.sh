@@ -69,6 +69,11 @@ TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAI
 DEPLOY_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'DEPLOY_PACKAGE_VERSION' | awk '{print $2}')
 TEST_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'TEST_PACKAGE_VERSION' | awk '{print $2}')
 PROD_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'PROD_PACKAGE_VERSION' | awk '{print $2}')
+echo "[DEBUG] TEST_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}"
+echo "[DEBUG] TEST_CONTAINER_DATE=${TEST_CONTAINER_DATE}"
+echo "[DEBUG] DEPLOY_PACKAGE_VERSION=${DEPLOY_PACKAGE_VERSION}"
+echo "[DEBUG] TEST_PACKAGE_VERSION=${TEST_PACKAGE_VERSION}"
+echo "[DEBUG] PROD_PACKAGE_VERSION=${PROD_PACKAGE_VERSION}"
 
 # docker container setup
 if [ "${CONTAINER_TYPE}" = "docker" ]; then
@@ -120,11 +125,6 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
         docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
         docker exec qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
     fi
-
-    # Test environment variables
-    echo "[DEBUG] Testing environment variables"
-    echo "--${OSF_TOKEN}--"
-    docker exec qsmxt-container bash -c "echo --\"${OSF_TOKEN}\"--"
 fi
 
 # apptainer container setup
