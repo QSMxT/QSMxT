@@ -5,7 +5,7 @@ set -e
 
 # Set a trap to ensure the lock file is removed even if the script exits unexpectedly
 LOCK_FILE="${TEST_DIR}/qsmxt.lock"
-trap 'rm -f ${LOCK_FILE}; echo "[DEBUG] Lock released due to script exit"; exit' INT TERM EXIT
+trap 'rm -f ${LOCK_FILE}; echo "[DEBUG] Lock ${LOCK_FILE} released due to script exit"; exit' INT TERM EXIT
 
 # Function to generate a random sleep time between MIN_WAIT_TIME and MAX_WAIT_TIME
 MAX_WAIT_TIME=10
@@ -18,10 +18,10 @@ function random_sleep_time() {
 while true; do
     if [ ! -f "${LOCK_FILE}" ]; then
         touch "${LOCK_FILE}"
-        echo "[DEBUG] Lock acquired"
+        echo "[DEBUG] ${LOCK_FILE} acquired"
         break
     else
-        echo "[DEBUG] Another process is using the resources, waiting..."
+        echo "[DEBUG] Another process is using resources, waiting for ${LOCK_FILE}..."
         sleep $(random_sleep_time)
     fi
 done
@@ -39,10 +39,10 @@ echo "GITHUB_REF: ${GITHUB_REF}"
 echo "GITHUB_REF##*/: ${GITHUB_REF##*/}"
 
 if [ -n "${GITHUB_HEAD_REF}" ]; then
-    echo "GITHUB_HEAD_REF DEFINED... USING IT."
+    echo "GITHUB_HEAD_REF DEFINED: ${GITHUB_HEAD_REF}"
     BRANCH=${GITHUB_HEAD_REF}
 elif [ -n "${GITHUB_REF##*/}" ]; then
-    echo "GITHUB_HEAD_REF UNDEFINED... USING GITHUB_REF##*/"
+    echo "GITHUB_HEAD_REF UNDEFINED... USING GITHUB_REF##*/: ${GITHUB_REF##*/}"
     BRANCH=${GITHUB_REF##*/}
 else
     echo "NEITHER GITHUB_HEAD_REF NOR GITHUB_REF DEFINED. ASSUMING MAIN."
@@ -95,6 +95,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
 
     CONTAINER_EXISTS=$(docker ps -a -q -f name=qsmxt-container)
     if [ ! -n "${CONTAINER_EXISTS}" ]; then
+        echo "[DEBUG] Creating qsmxt-container..."
         docker create --name qsmxt-container -it \
             -v ${TEST_DIR}/:${TEST_DIR} \
             --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
