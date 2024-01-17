@@ -26,16 +26,17 @@ jobs:
         python-version: 3.8
     - name: Setup QSMxT
       env:
+        TEST_DIR: "/storage/tmp"
+      run: |
+        /bin/bash qsmxt/tests/setup_qsmxt.sh docker
+    - name: Run template pipeline
+      env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
-        TEST_DIR: "/storage/tmp"
-      run: |
-        /bin/bash qsmxt/tests/setup_qsmxt.sh docker
-    - name: Run template pipeline
       run: |
         /bin/bash qsmxt/tests/test_template.sh "test_template"
     - uses: actions/upload-artifact@v3

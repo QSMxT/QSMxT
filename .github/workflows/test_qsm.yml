@@ -60,16 +60,17 @@ jobs:
         python-version: 3.8
     - name: Setup QSMxT
       env:
+        TEST_DIR: "/storage/tmp"
+      run: |
+        /bin/bash qsmxt/tests/setup_qsmxt.sh docker
+    - name: Test QSM premades
+      env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
-        TEST_DIR: "/storage/tmp"
-      run: |
-        /bin/bash qsmxt/tests/setup_qsmxt.sh docker
-    - name: Test QSM premades
       run: |
         /bin/bash qsmxt/tests/test_qsm.sh "test_premade and ${{ matrix.args }}"
     - uses: actions/upload-artifact@v3
@@ -99,16 +100,17 @@ jobs:
         python-version: 3.8
     - name: Setup QSMxT
       env:
+        TEST_DIR: "/storage/tmp"
+      run: |
+        /bin/bash qsmxt/tests/setup_qsmxt.sh docker
+    - name: Test QSM pipeline edge cases
+      env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
-        TEST_DIR: "/storage/tmp"
-      run: |
-        /bin/bash qsmxt/tests/setup_qsmxt.sh docker
-    - name: Test QSM pipeline edge cases
       run: |
         /bin/bash qsmxt/tests/test_qsm.sh "${{ matrix.args }}"
 

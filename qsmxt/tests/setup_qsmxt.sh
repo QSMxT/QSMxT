@@ -63,9 +63,11 @@ echo "[DEBUG] Switching to branch ${BRANCH} and pulling latest changes"
 git checkout "${BRANCH}"
 git pull origin "${BRANCH}"
 
-echo "[DEBUG] Extracting TEST_CONTAINER_VERSION and TEST_CONTAINER_DATE from docs/_config.yml"
+echo "[DEBUG] Extracting version information from docs/_config.yml"
 TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
 TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
+DEPLOY_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'DEPLOY_PACKAGE_VERSION' | awk '{print $2}')
+PROD_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'PROD_PACKAGE_VERSION' | awk '{print $2}')
 
 # docker container setup
 if [ "${CONTAINER_TYPE}" = "docker" ]; then
@@ -139,6 +141,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     cd ${TEST_DIR}/test-transparent-singularity
     export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
     export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
+    export PROD_PACKAGE_VERSION=${TEST_CONTAINER_VERSION}
     ${TEST_DIR}/QSMxT/docs/_includes/transparent_singularity_install.sh
 
     echo "[DEBUG] cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
