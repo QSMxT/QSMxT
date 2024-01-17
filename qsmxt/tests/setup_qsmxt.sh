@@ -5,7 +5,7 @@ set -e
 
 # Set a trap to ensure the lock file is removed even if the script exits unexpectedly
 LOCK_FILE="${TEST_DIR}/qsmxt.lock"
-trap 'rm -f ${LOCK_FILE}; echo "[DEBUG] Lock ${LOCK_FILE} released due to script exit"; exit' INT TERM EXIT
+trap 'sudo rm -f ${LOCK_FILE}; echo "[DEBUG] Lock ${LOCK_FILE} released due to script exit"; exit' INT TERM EXIT
 
 # Function to generate a random sleep time between MIN_WAIT_TIME and MAX_WAIT_TIME
 MAX_WAIT_TIME=10
@@ -59,15 +59,15 @@ echo "[DEBUG] Checking for existing QSMxT repository in ${TEST_DIR}/QSMxT..."
 if [ -d "${TEST_DIR}/QSMxT" ]; then
     echo "[DEBUG] Repository already exists. Switching to the correct branch and resetting changes..."
     cd ${TEST_DIR}/QSMxT
-    git fetch --all
-    git reset --hard
+    sudo git fetch --all
+    sudo git reset --hard
 else
     echo "[DEBUG] Repository does not exist. Cloning..."
-    git clone "https://github.com/QSMxT/QSMxT.git" "${TEST_DIR}/QSMxT"
+    sudo git clone "https://github.com/QSMxT/QSMxT.git" "${TEST_DIR}/QSMxT"
 fi
 echo "[DEBUG] Switching to branch ${BRANCH} and pulling latest changes"
-git checkout "${BRANCH}"
-git pull origin "${BRANCH}"
+sudo git checkout "${BRANCH}"
+sudo git pull origin "${BRANCH}"
 
 echo "[DEBUG] Extracting version information from docs/_config.yml"
 TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
@@ -84,7 +84,7 @@ echo "[DEBUG] PROD_PACKAGE_VERSION=${PROD_PACKAGE_VERSION}"
 # docker container setup
 if [ "${CONTAINER_TYPE}" = "docker" ]; then
     echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt:${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}..."
-    sudo docker pull "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
+    docker pull "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
 
     # Check if the container exists and its image version
     CONTAINER_EXISTS=$(docker ps -a -q -f name=qsmxt-container)
