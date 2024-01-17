@@ -5,7 +5,7 @@ set -e
 
 # Set a trap to ensure the lock file is removed even if the script exits unexpectedly
 LOCK_FILE="${TEST_DIR}/qsmxt.lock"
-trap 'sudo rm -f ${LOCK_FILE}; echo "[DEBUG] Lock ${LOCK_FILE} released due to script exit"; exit' INT TERM EXIT
+trap 'rm -f ${LOCK_FILE}; echo "[DEBUG] Lock ${LOCK_FILE} released due to script exit"; exit' INT TERM EXIT
 
 # Function to generate a random sleep time between MIN_WAIT_TIME and MAX_WAIT_TIME
 MAX_WAIT_TIME=10
@@ -16,14 +16,14 @@ function random_sleep_time() {
 
 # Loop until the lock file can be acquired
 echo "[DEBUG] Create ${TEST_DIR}..."
-sudo mkdir -p "${TEST_DIR}"
+mkdir -p "${TEST_DIR}"
 echo "[DEBUG] ls ${TEST_DIR}..."
 ls ${TEST_DIR}
 
 echo "[DEBUG] Checking for ${LOCK_FILE}..."
 while true; do
     if [ ! -f "${LOCK_FILE}" ]; then
-        sudo touch "${LOCK_FILE}"
+        touch "${LOCK_FILE}"
         echo "[DEBUG] ${LOCK_FILE} acquired"
         break
     else
@@ -59,15 +59,15 @@ echo "[DEBUG] Checking for existing QSMxT repository in ${TEST_DIR}/QSMxT..."
 if [ -d "${TEST_DIR}/QSMxT" ]; then
     echo "[DEBUG] Repository already exists. Switching to the correct branch and resetting changes..."
     cd ${TEST_DIR}/QSMxT
-    sudo git fetch --all
-    sudo git reset --hard
+    git fetch --all
+    git reset --hard
 else
     echo "[DEBUG] Repository does not exist. Cloning..."
-    sudo git clone "https://github.com/QSMxT/QSMxT.git" "${TEST_DIR}/QSMxT"
+    git clone "https://github.com/QSMxT/QSMxT.git" "${TEST_DIR}/QSMxT"
 fi
 echo "[DEBUG] Switching to branch ${BRANCH} and pulling latest changes"
-sudo git checkout "${BRANCH}"
-sudo git pull origin "${BRANCH}"
+git checkout "${BRANCH}"
+git pull origin "${BRANCH}"
 
 echo "[DEBUG] Extracting version information from docs/_config.yml"
 TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
@@ -146,7 +146,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     sudo apt-get install -y apptainer
 
     echo "[DEBUG] Install QSMxT via transparent-singularity"
-    sudo rm -rf ${TEST_DIR}/test-transparent-singularity
+    rm -rf ${TEST_DIR}/test-transparent-singularity
     mkdir -p ${TEST_DIR}/test-transparent-singularity
     cd ${TEST_DIR}/test-transparent-singularity
     export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
@@ -162,11 +162,11 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 
     echo "[DEBUG] remove executables we are replacing"
     for f in {python3,python,qsmxt,dicom-sort,dicom-convert}; do
-        sudo rm -rf qsmxt_*/${f}
+        rm -rf qsmxt_*/${f}
     done
 
     echo "[DEBUG] Install miniconda"
-    sudo rm -rf ~/miniconda3
+    rm -rf ~/miniconda3
     ${TEST_DIR}/QSMxT/docs/_includes/miniconda_install.sh
     export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
 
@@ -176,5 +176,5 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     echo "[DEBUG] `qsmxt --version`"
 fi
 
-sudo rm -f "${LOCK_FILE}"
+rm -f "${LOCK_FILE}"
 
