@@ -15,13 +15,14 @@ function random_sleep_time() {
 }
 
 # Loop until the lock file can be acquired
+echo "[DEBUG] Checking for ${LOCK_FILE}..."
 while true; do
     if [ ! -f "${LOCK_FILE}" ]; then
         touch "${LOCK_FILE}"
         echo "[DEBUG] ${LOCK_FILE} acquired"
         break
     else
-        echo "[DEBUG] Another process is using resources, waiting for ${LOCK_FILE}..."
+        echo "[DEBUG] Another process is using resources, waiting..."
         sleep $(random_sleep_time)
     fi
 done
@@ -126,6 +127,8 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
         docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
         docker exec qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
     fi
+
+    echo "[DEBUG] `docker exec qsmxt-container bash -c 'qsmxt --version'`"
 fi
 
 # apptainer container setup
@@ -165,6 +168,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     echo "[DEBUG] Install QSMxT via pip linked installation"
     pip uninstall qsmxt -y
     pip install -e ${TEST_DIR}/QSMxT
+    echo "[DEBUG] `qsmxt --version`"
 fi
 
 rm -f "${LOCK_FILE}"
