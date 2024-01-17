@@ -59,14 +59,19 @@ def bids_dir_public():
 
 @pytest.fixture
 def bids_dir_real():
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== BIDS Preparation ===")
     tmp_dir = gettempdir()
     if not os.path.exists(os.path.join(tmp_dir, 'bids-secret')):
-        if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.tar')):
+        logger.log(LogLevel.INFO.value, f"Secret BIDS directory doesn not exist!")
+        if not os.path.exists(os.path.join(tmp_dir, 'bids-secret.zip')):
+            logger.log(LogLevel.INFO.value, f"bids-secret.zip does not exist! Downloading...")
             download_from_osf(
                 project="n6uqk",
                 local_path=os.path.join(tmp_dir, "bids-secret.zip")
             )
-
+        
+        logger.log(LogLevel.INFO.value, f"Extracting bids-secret.zip...")
         sys_cmd(f"unzip {os.path.join(tmp_dir, 'bids-secret.zip')} -d {tmp_dir}")
         sys_cmd(f"rm {os.path.join(tmp_dir, 'bids-secret.zip')}")
 

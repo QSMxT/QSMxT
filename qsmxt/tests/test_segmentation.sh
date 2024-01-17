@@ -12,8 +12,3 @@ if [ -f /storage/tmp/GITHUB_STEP_SUMMARY.md ]; then
     cat /storage/tmp/GITHUB_STEP_SUMMARY.md >> $GITHUB_STEP_SUMMARY
 fi
 
-# Stop and remove the container when you're done
-echo "[DEBUG] Stopping and removing QSMxT container"
-docker stop qsmxt-container
-docker rm qsmxt-container
-
