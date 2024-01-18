@@ -202,11 +202,11 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     export PATH="${PROD_MINICONDA_PATH}/envs/qsmxt/bin:${PROD_MINICONDA_PATH}/bin:${PATH}"
     echo "[DEBUG] Updated path: ${PATH}"
 
-    echo "[DEBUG] which conda"
-    which conda
+    echo "[DEBUG] which conda && which python && which pip"
+    which conda && which python && which pip
     
-    echo "[DEBUG] conda activate qsmxt"
-    conda activate qsmxt
+    echo "[DEBUG] source ${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh"
+    source "${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh"
     
     echo "[DEBUG] which pip && which python"
     which pip && which python
