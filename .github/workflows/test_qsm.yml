@@ -61,7 +61,7 @@ jobs:
     - name: Setup QSMxT
       env:
         TEST_DIR: "/storage/tmp"
-        PACKAGE_VERSION_TYPE: "TEST_PACKAGE_VERSION"
+        REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh docker
     - name: Test QSM premades
@@ -102,7 +102,7 @@ jobs:
     - name: Setup QSMxT
       env:
         TEST_DIR: "/storage/tmp"
-        PACKAGE_VERSION_TYPE: "TEST_PACKAGE_VERSION"
+        REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh docker
     - name: Test QSM pipeline edge cases

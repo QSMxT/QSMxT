@@ -78,11 +78,14 @@ TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAI
 DEPLOY_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'DEPLOY_PACKAGE_VERSION' | awk '{print $2}')
 TEST_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'TEST_PACKAGE_VERSION' | awk '{print $2}')
 PROD_PACKAGE_VERSION=$(cat docs/_config.yml | grep 'PROD_PACKAGE_VERSION' | awk '{print $2}')
+REQUIRED_PACKAGE_VERSION="${!REQUIRED_VERSION_TYPE}"
 echo "[DEBUG] TEST_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}"
 echo "[DEBUG] TEST_CONTAINER_DATE=${TEST_CONTAINER_DATE}"
 echo "[DEBUG] DEPLOY_PACKAGE_VERSION=${DEPLOY_PACKAGE_VERSION}"
 echo "[DEBUG] TEST_PACKAGE_VERSION=${TEST_PACKAGE_VERSION}"
 echo "[DEBUG] PROD_PACKAGE_VERSION=${PROD_PACKAGE_VERSION}"
+echo "[DEBUG] REQUIRED_PACKAGE_TYPE=${REQUIRED_VERSION_TYPE}"
+echo "[DEBUG] REQUIRED_PACKAGE_VERSION=${REQUIRED_PACKAGE_VERSION}"
 
 # docker container setup
 if [ "${CONTAINER_TYPE}" = "docker" ]; then
@@ -130,7 +133,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
     echo "[DEBUG] ${QSMXT_VERSION}"
 
-    if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ] && [[ "${QSMXT_VERSION}" == *"${TEST_PACKAGE_VERSION}"* ]]; then
+    if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ] && [[ "${QSMXT_VERSION}" == *"${REQUIRED_PACKAGE_VERSION}"* ]]; then
         echo "[DEBUG] QSMxT is already installed as a linked installation and version matches."
     else
         echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling..."
@@ -189,7 +192,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
     echo "[DEBUG] ${QSMXT_VERSION}"
 
-    if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ] && [[ "${QSMXT_VERSION}" == *"${TEST_PACKAGE_VERSION}"* ]]; then
+    if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ] && [[ "${QSMXT_VERSION}" == *"${REQUIRED_PACKAGE_VERSION}"* ]]; then
         echo "[DEBUG] QSMxT is already installed as a linked installation and version matches."
     else
         echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling..."

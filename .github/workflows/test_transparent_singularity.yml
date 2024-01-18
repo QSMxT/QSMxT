@@ -34,7 +34,7 @@ jobs:
     - name: Setup QSMxT
       env:
         TEST_DIR: "/tmp"
-        PACKAGE_VERSION_TYPE: "TEST_PACKAGE_VERSION"
+        REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh apptainer
     - name: test transparent singularity
