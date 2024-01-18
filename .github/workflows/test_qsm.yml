@@ -74,7 +74,7 @@ jobs:
         OSF_PASS: ${{ secrets.OSF_PASS }}
         TEST_DIR: "/storage/tmp"
       run: |
-        sudo docker exec -e WEBDAV_LOGIN -e WEBDAV_PASSWORD -e FREEIMAGE_KEY -e OSF_TOKEN -e OSF_USER -e OSF_PASS -e TEST_DIR qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_qsm.py -s -k 'test_premade and ${{ matrix.args }}'"
+        sudo docker exec -e WEBDAV_LOGIN=$WEBDAV_LOGIN -e WEBDAV_PASSWORD=$WEBDAV_PASSWORD -e FREEIMAGE_KEY=$FREEIMAGE_KEY -e OSF_TOKEN=$OSF_TOKEN -e OSF_USER=$OSF_USER -e OSF_PASS=$OSF_PASS -e TEST_DIR=$TEST_DIR qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_qsm.py -s -k 'test_premade and ${{ matrix.args }}'"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs
@@ -116,5 +116,5 @@ jobs:
         OSF_PASS: ${{ secrets.OSF_PASS }}
         TEST_DIR: "/storage/tmp"
       run: |
-        sudo docker exec -e WEBDAV_LOGIN -e WEBDAV_PASSWORD -e FREEIMAGE_KEY -e OSF_TOKEN -e OSF_USER -e OSF_PASS -e TEST_DIR qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_qsm.py -s -k '${{ matrix.args }}'"
+        sudo docker exec -e WEBDAV_LOGIN=$WEBDAV_LOGIN -e WEBDAV_PASSWORD=$WEBDAV_PASSWORD -e FREEIMAGE_KEY=$FREEIMAGE_KEY -e OSF_TOKEN=$OSF_TOKEN -e OSF_USER=$OSF_USER -e OSF_PASS=$OSF_PASS -e TEST_DIR=$TEST_DIR qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_qsm.py -s -k '${{ matrix.args }}'"
 
