@@ -33,6 +33,7 @@ while true; do
     fi
 done
 
+echo "[DEBUG] TEST_DIR=${TEST_DIR}"
 cd "${TEST_DIR}"
 
 # === DETERMINE INSTALL TYPE ===
@@ -89,7 +90,7 @@ echo "[DEBUG] REQUIRED_PACKAGE_VERSION=${REQUIRED_PACKAGE_VERSION}"
 
 # docker container setup
 if [ "${CONTAINER_TYPE}" = "docker" ]; then
-    echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt:${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}..."
+    echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}..."
     docker pull "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
 
     # Check if the container exists and its image version
@@ -127,12 +128,12 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     fi
 
     # Run the commands inside the container using docker exec
-    echo "[DEBUG] Checking if qsmxt is already installed as a linked installation"
+    echo "[DEBUG] Checking if qsmxt is already installed"
     QSMXT_INSTALL_CHECK=$(docker exec qsmxt-container pip list | grep 'qsmxt')
 
     if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
         echo "[DEBUG] QSMxT is not installed. Installing..."
-        docker exec qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
+        docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
     else
         echo "[DEBUG] QSMxT is installed, checking for linked installation and version"
         QSMXT_INSTALL_PATH=$(docker exec qsmxt-container pip show qsmxt | grep 'Location:' | awk '{print $2}')
@@ -146,7 +147,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
         else
             echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling..."
             docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
-            docker exec qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
+            docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
         fi
     fi
 fi
