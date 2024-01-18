@@ -97,7 +97,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     CONTAINER_EXISTS=$(sudo docker ps -a -q -f name=qsmxt-container)
     if [ -n "${CONTAINER_EXISTS}" ]; then
         echo "[DEBUG] qsmxt-container already exists."
-        CONTAINER_IMAGE=$(docker inspect qsmxt-container --format='{{.Config.Image}}' 2>/dev/null || echo "")
+        CONTAINER_IMAGE=$(sudo docker inspect qsmxt-container --format='{{.Config.Image}}' 2>/dev/null || echo "")
         if [ "${CONTAINER_IMAGE}" != "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}" ]; then
             echo "[DEBUG] Existing container image ${CONTAINER_IMAGE} has a different version than required version vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}. Stopping, removing it, and its image."
             sudo docker stop qsmxt-container
