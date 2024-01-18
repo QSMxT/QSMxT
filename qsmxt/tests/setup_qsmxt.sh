@@ -160,28 +160,27 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     sudo apt-get update
     sudo apt-get install -y apptainer
 
-    export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
-    export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
-    export PROD_PACKAGE_VERSION=${TEST_CONTAINER_VERSION}
+    echo "[DEBUG] Requires transparent-singularity installation ${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}"
 
-    echo "[DEBUG] Requires transparent-singularity installation ${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}"
-
-    if [ ! -f "${TEST_DIR}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}.simg" ]; then
+    if [ ! -f "${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg" ]; then
         echo "[DEBUG] Install QSMxT via transparent singularity..."
+        export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
+        export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
+        export PROD_PACKAGE_VERSION=${TEST_CONTAINER_VERSION}
         ${TEST_DIR}/QSMxT/docs/_includes/transparent_singularity_install.sh
     else
         echo "[DEBUG] Existing installation found"
     fi
 
-    echo "[DEBUG] cd ${TEST_DIR}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE} && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
-    cd ${TEST_DIR}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE} && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../
+    echo "[DEBUG] cd ${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE} && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
+    cd ${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE} && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../
 
     echo "[DEBUG] which julia"
     which julia
 
     echo "[DEBUG] remove executables we are replacing"
     for f in {python3,python,qsmxt,dicom-sort,dicom-convert}; do
-        rm -rf ${TEST_DIR}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}/${f}
+        rm -rf ${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}/${f}
     done
 
     if [ ! -n "~/miniconda3" ]; then
