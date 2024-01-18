@@ -192,9 +192,12 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
         echo "[DEBUG] Existing miniconda installation found!"
     fi
 
+    echo "[DEBUG] which pip && which python"
+    which pip && which python
+
     # Run the commands inside the container using docker exec
     echo "[DEBUG] Checking if qsmxt is already installed"
-    QSMXT_INSTALL_CHECK=$(pip list | grep 'qsmxt')
+    QSMXT_INSTALL_CHECK=$(which qsmxt)
 
     if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
         echo "[DEBUG] QSMxT is not installed. Installing..."
