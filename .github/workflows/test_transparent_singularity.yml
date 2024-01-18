@@ -19,6 +19,7 @@ on:
       - qsmxt/cli/main.py
       - qsmxt/tests/test_transparent_singularity.sh
       - qsmxt/tests/utils.py
+      - qsmxt/tests/setup_qsmxt.sh
       - qsmxt/interfaces/*
       - qsmxt/scripts/*
       - qsmxt/workflows/*
