@@ -183,7 +183,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
         rm -rf ${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}/${f}
     done
 
-    if [ ! -n "~/miniconda3" ]; then
+    if [ ! -d "~/miniconda3" ]; then
         echo "[DEBUG] Install miniconda..."
         ${TEST_DIR}/QSMxT/docs/_includes/miniconda_install.sh
     else
