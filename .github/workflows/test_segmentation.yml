@@ -44,7 +44,7 @@ jobs:
         OSF_PASS: ${{ secrets.OSF_PASS }}
         TEST_DIR: "/storage/tmp"
       run: |
-        docker exec qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_segmentation.py -s"
+        docker exec -e WEBDAV_LOGIN -e WEBDAV_PASSWORD -e FREEIMAGE_KEY -e OSF_TOKEN -e OSF_USER -e OSF_PASS -e TEST_DIR qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_segmentation.py -s"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs
