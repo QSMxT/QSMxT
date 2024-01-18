@@ -15,3 +15,5 @@ dicom-convert dicoms-sorted bids --auto_yes --qsm_protocol_patterns '*qsm*' --t1
 echo "[DEBUG] bids qsm --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug"
 qsmxt bids qsm --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug
 
+rm -rf dicoms-unsorted/ dicoms-sorted/ bids/ qsm/
+

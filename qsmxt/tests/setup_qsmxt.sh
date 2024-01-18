@@ -163,7 +163,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     sudo apt-get update
     sudo apt-get install -y apptainer
 
-    echo "[DEBUG] Requires transparent-singularity installation ${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}"
+    echo "[DEBUG] Requires transparent-singularity installation qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}"
     export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
     export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
     export PROD_PACKAGE_VERSION=${TEST_CONTAINER_VERSION}
@@ -178,6 +178,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     echo "[DEBUG] cd ${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE} && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
     cd ${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE} && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../
     export PATH="${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}:${PATH}"
+    echo "[DEBUG] Updated path: ${PATH}"
 
     echo "[DEBUG] which julia"
     which julia
@@ -195,8 +196,8 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
         echo "[DEBUG] Activating conda environment"
         conda activate qsmxt
     fi
-    export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
-    echo "[DEBUG] Updated path: $PATH"
+    export PATH="~/miniconda3/envs/qsmxt/bin:~/miniconda3/bin:${PATH}"
+    echo "[DEBUG] Updated path: ${PATH}"
 
     echo "[DEBUG] which pip && which python"
     which pip && which python
