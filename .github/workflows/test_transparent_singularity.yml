@@ -33,7 +33,7 @@ jobs:
         python-version: 3.8
     - name: Setup QSMxT
       env:
-        TEST_DIR: "/tmp"
+        TEST_DIR: "/storage/tmp"
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh apptainer
