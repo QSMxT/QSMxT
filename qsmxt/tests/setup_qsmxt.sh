@@ -17,12 +17,9 @@ function random_sleep_time() {
 # Loop until the lock file can be acquired
 echo "[DEBUG] Create ${TEST_DIR}..."
 mkdir -p "${TEST_DIR}"
-echo "[DEBUG] ls ${TEST_DIR}..."
-ls ${TEST_DIR}
 
 echo "[DEBUG] Checking for ${LOCK_FILE}..."
 while true; do
-    ls ${TEST_DIR}
     if [ ! -f "${LOCK_FILE}" ]; then
         touch "${LOCK_FILE}"
         echo "[DEBUG] ${LOCK_FILE} acquired"
@@ -70,8 +67,10 @@ else
     git clone "https://github.com/QSMxT/QSMxT.git" "${TEST_DIR}/QSMxT"
 fi
 echo "[DEBUG] Switching to branch ${BRANCH} and pulling latest changes"
+cd ${TEST_DIR}/QSMxT
 git checkout "${BRANCH}"
 git pull origin "${BRANCH}"
+cd "${TEST_DIR}"
 
 echo "[DEBUG] Extracting version information from docs/_config.yml"
 TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')

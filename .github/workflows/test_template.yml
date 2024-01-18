@@ -38,6 +38,7 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
+        TEST_DIR: "/storage/tmp"
       run: |
         docker exec qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_template.py -s"
     - uses: actions/upload-artifact@v3

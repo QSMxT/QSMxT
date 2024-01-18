@@ -72,6 +72,7 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
+        TEST_DIR: "/storage/tmp"
       run: |
         docker exec qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_qsm.py -s -k 'test_premade and ${{ matrix.args }}'"
     - uses: actions/upload-artifact@v3
@@ -113,6 +114,7 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
+        TEST_DIR: "/storage/tmp"
       run: |
         docker exec qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_qsm.py -s -k '${{ matrix.args }}'"
 
