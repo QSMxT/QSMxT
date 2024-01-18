@@ -213,7 +213,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 
     # Run the commands inside the container using docker exec
     echo "[DEBUG] Checking if qsmxt is already installed"
-    QSMXT_INSTALL_CHECK=$(which qsmxt)
+    QSMXT_INSTALL_CHECK=$(pip show qsmxt)
 
     if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
         echo "[DEBUG] QSMxT is not installed. Installing."
