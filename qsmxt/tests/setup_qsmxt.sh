@@ -173,15 +173,15 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
         echo "[DEBUG] Existing installation found with correct version"
     fi
 
-    echo "[DEBUG] cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
-    cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../
+    echo "[DEBUG] cd ${TEST_DIR}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE} && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
+    cd ${TEST_DIR}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE} && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../
 
     echo "[DEBUG] which julia"
     which julia
 
     echo "[DEBUG] remove executables we are replacing"
     for f in {python3,python,qsmxt,dicom-sort,dicom-convert}; do
-        rm -rf qsmxt_*/${f}
+        rm -rf ${TEST_DIR}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}/${f}
     done
 
     if [ ! -n "~/miniconda3" ]; then
