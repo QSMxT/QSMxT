@@ -93,22 +93,24 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     sudo docker pull "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
 
     # Check if the container exists and its image version
-    CONTAINER_EXISTS=$(docker ps -a -q -f name=qsmxt-container)
+    echo "[DEBUG] Checking if container name qsmxt-container already exists..."
+    CONTAINER_EXISTS=$(sudo docker ps -a -q -f name=qsmxt-container)
     if [ -n "${CONTAINER_EXISTS}" ]; then
         echo "[DEBUG] qsmxt-container already exists."
         CONTAINER_IMAGE=$(docker inspect qsmxt-container --format='{{.Config.Image}}' 2>/dev/null || echo "")
         if [ "${CONTAINER_IMAGE}" != "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}" ]; then
             echo "[DEBUG] Existing container has a different version. Stopping, removing it, and its image."
-            docker stop qsmxt-container
-            docker rm qsmxt-container
-            docker rmi "${CONTAINER_IMAGE}"
+            sudo docker stop qsmxt-container
+            sudo docker rm qsmxt-container
+            sudo docker rmi "${CONTAINER_IMAGE}"
         fi
     fi
 
-    CONTAINER_EXISTS=$(docker ps -a -q -f name=qsmxt-container)
+    echo "[DEBUG] Checking if qsmxt-container already exists..."
+    CONTAINER_EXISTS=$(sudo docker ps -a -q -f name=qsmxt-container)
     if [ ! -n "${CONTAINER_EXISTS}" ]; then
         echo "[DEBUG] Creating qsmxt-container..."
-        docker create --name qsmxt-container -it \
+        sudo docker create --name qsmxt-container -it \
             -v ${TEST_DIR}/:${TEST_DIR} \
             --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
             --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
@@ -120,23 +122,24 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
             /bin/bash
     fi
 
-    CONTAINER_RUNNING=$(docker ps -q -f name=qsmxt-container)
+    echo "[DEBUG] Checking if qsmxt-container is running..."
+    CONTAINER_RUNNING=$(sudo docker ps -q -f name=qsmxt-container)
     if [ ! -n "${CONTAINER_RUNNING}" ]; then
         echo "[DEBUG] Starting QSMxT container"
-        docker start qsmxt-container
+        sudo docker start qsmxt-container
     fi
 
     # Run the commands inside the container using docker exec
     echo "[DEBUG] Checking if qsmxt is already installed"
-    QSMXT_INSTALL_CHECK=$(docker exec qsmxt-container pip list | grep 'qsmxt')
+    QSMXT_INSTALL_CHECK=$(sudo docker exec qsmxt-container pip list | grep 'qsmxt')
 
     if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
         echo "[DEBUG] QSMxT is not installed. Installing..."
-        docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
+        sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
     else
         echo "[DEBUG] QSMxT is installed, checking for linked installation and version"
-        QSMXT_INSTALL_PATH=$(docker exec qsmxt-container pip show qsmxt | grep 'Location:' | awk '{print $2}')
-        QSMXT_VERSION=$(docker exec qsmxt-container bash -c "qsmxt --version")
+        QSMXT_INSTALL_PATH=$(sudo docker exec qsmxt-container pip show qsmxt | grep 'Location:' | awk '{print $2}')
+        QSMXT_VERSION=$(sudo docker exec qsmxt-container bash -c "qsmxt --version")
 
         echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
         echo "[DEBUG] ${QSMXT_VERSION}"
@@ -145,8 +148,8 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
             echo "[DEBUG] QSMxT is already installed as a linked installation and version matches."
         else
             echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling..."
-            docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
-            docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
+            sudo docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
+            sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
         fi
     fi
 fi
