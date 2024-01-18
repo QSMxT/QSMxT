@@ -90,7 +90,7 @@ echo "[DEBUG] REQUIRED_PACKAGE_VERSION=${REQUIRED_PACKAGE_VERSION}"
 # docker container setup
 if [ "${CONTAINER_TYPE}" = "docker" ]; then
     echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}..."
-    docker pull "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
+    sudo docker pull "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
 
     # Check if the container exists and its image version
     CONTAINER_EXISTS=$(docker ps -a -q -f name=qsmxt-container)
@@ -161,12 +161,12 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     sudo apt-get install -y apptainer
 
     echo "[DEBUG] Requires transparent-singularity installation ${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}"
+    export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
+    export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
+    export PROD_PACKAGE_VERSION=${TEST_CONTAINER_VERSION}
 
     if [ ! -f "${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg" ]; then
         echo "[DEBUG] Install QSMxT via transparent singularity..."
-        export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
-        export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
-        export PROD_PACKAGE_VERSION=${TEST_CONTAINER_VERSION}
         ${TEST_DIR}/QSMxT/docs/_includes/transparent_singularity_install.sh
     else
         echo "[DEBUG] Existing installation found"
@@ -188,8 +188,11 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
         ${TEST_DIR}/QSMxT/docs/_includes/miniconda_install.sh
     else
         echo "[DEBUG] Existing miniconda installation found!"
+        echo "[DEBUG] Activating conda environment"
+        conda activate qsmxt
     fi
     export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
+    echo "[DEBUG] Updated path: $PATH"
 
     echo "[DEBUG] which pip && which python"
     which pip && which python
