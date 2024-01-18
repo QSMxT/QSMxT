@@ -187,10 +187,10 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     if [ ! -n "~/miniconda3" ]; then
         echo "[DEBUG] Install miniconda..."
         ${TEST_DIR}/QSMxT/docs/_includes/miniconda_install.sh
-        export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
     else
         echo "[DEBUG] Existing miniconda installation found!"
     fi
+    export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
 
     echo "[DEBUG] which pip && which python"
     which pip && which python
