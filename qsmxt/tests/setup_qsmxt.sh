@@ -211,30 +211,27 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     echo "[DEBUG] which pip && which python"
     which pip && which python
 
-    # Run the commands inside the container using docker exec
     echo "[DEBUG] Checking if qsmxt is already installed"
     QSMXT_INSTALL_CHECK=$(pip list | grep qsmxt)
 
     if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
         echo "[DEBUG] QSMxT is not installed. Installing."
-        pip install -e ${TEST_DIR}/QSMxT
+        pip install -e ${TEST_DIR}/qsmxt
     else
-        echo "[DEBUG] QSMxT is installed, checking for linked installation and version"
+        echo "[DEBUG] Getting QSMxT location and version"
         QSMXT_INSTALL_PATH=$(pip show qsmxt | grep 'Location:' | awk '{print $2}')
         QSMXT_VERSION=$(qsmxt --version)
-
         echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
         echo "[DEBUG] ${QSMXT_VERSION}"
 
-        if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ] && [[ "${QSMXT_VERSION}" == *"${REQUIRED_PACKAGE_VERSION}"* ]]; then
-            echo "[DEBUG] QSMxT is already installed as a linked installation and version matches"
-        else
-            echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. ReInstalling."
+        if [[ ! "${QSMXT_VERSION}" == *"${REQUIRED_PACKAGE_VERSION}"* ]]; then
+            echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling."
             pip uninstall qsmxt -y
-            pip install -e ${TEST_DIR}/QSMxT
+            pip install -e ${TEST_DIR}/qsmxt
             echo "[DEBUG] `qsmxt --version`"
         fi
     fi
+
 fi
 
 rm -f "${LOCK_FILE}"
