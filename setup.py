@@ -5,7 +5,7 @@ def read_version_from_config():
     setup_file_path = os.path.abspath(__file__)
     setup_dir = os.path.dirname(setup_file_path)
     config_path = os.path.join(setup_dir, 'docs', '_config.yml')
-    REQUIRED_VERSION_TYPE = os.environ.get('REQUIRED_VERSION_TYPE')
+    REQUIRED_VERSION_TYPE = os.environ.get('REQUIRED_VERSION_TYPE') or 'DEPLOY_PACKAGE_VERSION'
     with open(config_path, 'r') as f:
         for line in f:
             if line.startswith(REQUIRED_VERSION_TYPE):
