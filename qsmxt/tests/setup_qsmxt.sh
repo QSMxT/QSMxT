@@ -166,11 +166,11 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 
     echo "[DEBUG] Requires transparent-singularity installation ${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}"
 
-    if [ ! -n "${TEST_DIR}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}.simg" ]; then
+    if [ ! -f "${TEST_DIR}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}.simg" ]; then
         echo "[DEBUG] Install QSMxT via transparent singularity..."
         ${TEST_DIR}/QSMxT/docs/_includes/transparent_singularity_install.sh
     else
-        echo "[DEBUG] Existing installation found with correct version"
+        echo "[DEBUG] Existing installation found"
     fi
 
     echo "[DEBUG] cd ${TEST_DIR}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE} && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
