@@ -112,9 +112,11 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
     args = main(args)
 
     # generate image
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'segmentations', 'qsm', '*.*'))[0], title='Segmentation', colorbar=True, vmin=0, vmax=+16, out_png='seg.png', cmap='tab10'))})")
-    
-    csv_file = glob.glob(os.path.join(out_dir, 'analysis', '*.*'))[0]
-    add_to_github_summary(csv_to_markdown(csv_file))
+    github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if github_step_summary:
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'segmentations', 'qsm', '*.*'))[0], title='Segmentation', colorbar=True, vmin=0, vmax=+16, out_png='seg.png', cmap='tab10'))})")
+
+        csv_file = glob.glob(os.path.join(out_dir, 'analysis', '*.*'))[0]
+        write_to_file(github_step_summary, csv_to_markdown(csv_file))
 

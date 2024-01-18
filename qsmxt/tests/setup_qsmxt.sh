@@ -33,6 +33,8 @@ while true; do
     fi
 done
 
+cd "${TEST_DIR}"
+
 # === DETERMINE INSTALL TYPE ===
 if [ "$#" -ne 1 ]; then
     echo "Usage: $0 [docker|apptainer]"
@@ -124,17 +126,19 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     # Run the commands inside the container using docker exec
     echo "[DEBUG] Checking if qsmxt is already installed as a linked installation"
     QSMXT_INSTALL_PATH=$(docker exec qsmxt-container pip show qsmxt | grep 'Location:' | awk '{print $2}')
+    QSMXT_VERSION=$(docker exec qsmxt-container bash -c "qsmxt --version")
     echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
+    echo "[DEBUG] ${QSMXT_VERSION}"
 
-    if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ]; then
-        echo "[DEBUG] QSMxT is already installed as a linked installation."
+    if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ] && [[ "${QSMXT_VERSION}" == *"${TEST_PACKAGE_VERSION}"* ]]; then
+        echo "[DEBUG] QSMxT is already installed as a linked installation and version matches."
     else
-        echo "[DEBUG] QSMxT is not installed as a linked installation. Reinstalling..."
+        echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling..."
         docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
         docker exec qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
+        echo "[DEBUG] `docker exec qsmxt-container bash -c 'qsmxt --version'`"
     fi
 
-    echo "[DEBUG] `docker exec qsmxt-container bash -c 'qsmxt --version'`"
 fi
 
 # apptainer container setup
@@ -146,14 +150,18 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     sudo apt-get update
     sudo apt-get install -y apptainer
 
-    echo "[DEBUG] Install QSMxT via transparent-singularity"
-    rm -rf ${TEST_DIR}/test-transparent-singularity
-    mkdir -p ${TEST_DIR}/test-transparent-singularity
-    cd ${TEST_DIR}/test-transparent-singularity
     export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
     export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
     export PROD_PACKAGE_VERSION=${TEST_CONTAINER_VERSION}
-    ${TEST_DIR}/QSMxT/docs/_includes/transparent_singularity_install.sh
+
+    echo "[DEBUG] Requires transparent-singularity installation ${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}"
+
+    if [ ! -n "${TEST_DIR}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}/qsmxt_${PROD_CONTAINER_VERSION}_${PROD_CONTAINER_DATE}.simg" ]; then
+        echo "[DEBUG] Install QSMxT via transparent singularity..."
+        ${TEST_DIR}/QSMxT/docs/_includes/transparent_singularity_install.sh
+    else
+        echo "[DEBUG] Existing installation found with correct version"
+    fi
 
     echo "[DEBUG] cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../"
     cd qsmxt_* && source activate_qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg.sh && cd ../
@@ -166,15 +174,30 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
         rm -rf qsmxt_*/${f}
     done
 
-    echo "[DEBUG] Install miniconda"
-    rm -rf ~/miniconda3
-    ${TEST_DIR}/QSMxT/docs/_includes/miniconda_install.sh
-    export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
+    if [ ! -n "~/miniconda3" ]; then
+        echo "[DEBUG] Install miniconda..."
+        ${TEST_DIR}/QSMxT/docs/_includes/miniconda_install.sh
+        export PATH="~/miniconda3/envs/qsmxt/bin:${PATH}"
+    else
+        echo "[DEBUG] Existing miniconda installation found!"
+    fi
 
-    echo "[DEBUG] Install QSMxT via pip linked installation"
-    pip uninstall qsmxt -y
-    pip install -e ${TEST_DIR}/QSMxT
-    echo "[DEBUG] `qsmxt --version`"
+    # Run the commands inside the container using docker exec
+    echo "[DEBUG] Checking if qsmxt is already installed as a linked installation"
+    QSMXT_INSTALL_PATH=$(pip show qsmxt | grep 'Location:' | awk '{print $2}')
+    QSMXT_VERSION=$(qsmxt --version)
+    echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
+    echo "[DEBUG] ${QSMXT_VERSION}"
+
+    if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ] && [[ "${QSMXT_VERSION}" == *"${TEST_PACKAGE_VERSION}"* ]]; then
+        echo "[DEBUG] QSMxT is already installed as a linked installation and version matches."
+    else
+        echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling..."
+        pip uninstall qsmxt -y
+        pip install -e ${TEST_DIR}/QSMxT
+        echo "[DEBUG] `qsmxt --version`"
+    fi
+
 fi
 
 rm -f "${LOCK_FILE}"

@@ -79,6 +79,8 @@ def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
     args = main(args)
 
     # generate image - index out of range
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'template', 'qsm_template', '*', '*.*'))[0], title='QSM template', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm_template.png', cmap='gray'))})")
-    add_to_github_summary(f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'template', 'magnitude_template', '*.*'))[0], title='Magnitude template', out_png='mag_template.png', cmap='gray'))})")
+    github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if github_step_summary:
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'template', 'qsm_template', '*', '*.*'))[0], title='QSM template', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm_template.png', cmap='gray'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'template', 'magnitude_template', '*.*'))[0], title='Magnitude template', out_png='mag_template.png', cmap='gray'))})")
 

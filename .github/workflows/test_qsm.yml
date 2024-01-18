@@ -73,7 +73,7 @@ jobs:
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
       run: |
-        /bin/bash qsmxt/tests/test_qsm.sh "test_premade and ${{ matrix.args }}"
+        docker exec qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_qsm.py -s -k 'test_premade and ${{ matrix.args }}'"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs
@@ -114,5 +114,5 @@ jobs:
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
       run: |
-        /bin/bash qsmxt/tests/test_qsm.sh "${{ matrix.args }}"
+        docker exec qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_qsm.py -s -k '${{ matrix.args }}'"
 
