@@ -109,6 +109,8 @@ def test_premade(bids_dir_public, premade):
     if github_step_summary:
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
+    shutil.rmtree(out_dir)
+
 
 def test_nocombine(bids_dir_public):
     logger = make_logger()
@@ -134,6 +136,8 @@ def test_nocombine(bids_dir_public):
     github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if github_step_summary:
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='No multi-echo combination', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+
+    shutil.rmtree(out_dir)
 
 
 def test_nomagnitude(bids_dir_public):
@@ -173,6 +177,8 @@ def test_nomagnitude(bids_dir_public):
     if github_step_summary:
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='No magnitude', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
+    shutil.rmtree(out_dir)
+
 def test_inhomogeneity_correction(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING INHOMOGENEITY CORRECTION ===")
@@ -201,6 +207,8 @@ def test_inhomogeneity_correction(bids_dir_public):
     github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if github_step_summary:
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='Inhomogeneity correction', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+
+    shutil.rmtree(out_dir)
 
 def test_hardcoded_percentile_threshold(bids_dir_public):
     logger = make_logger()
@@ -231,6 +239,8 @@ def test_hardcoded_percentile_threshold(bids_dir_public):
     if github_step_summary:
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='Hardcoded percentile threshold (0.25)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
+    shutil.rmtree(out_dir)
+
 def test_hardcoded_absolute_threshold(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
@@ -260,6 +270,8 @@ def test_hardcoded_absolute_threshold(bids_dir_public):
     if github_step_summary:
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='Hardcoded absolute threshold (15)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
 
+    shutil.rmtree(out_dir)
+
 def test_use_existing_masks(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING EXISTING MASKS ===")
@@ -278,6 +290,8 @@ def test_use_existing_masks(bids_dir_public):
     ]
     
     args = main(args)
+
+    shutil.rmtree(out_dir)
 
 def test_supplementary_images(bids_dir_public):
     logger = make_logger()
@@ -306,6 +320,8 @@ def test_supplementary_images(bids_dir_public):
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'swi', '*swi-mip.*'))[0], dim=2, title='SWI MIP', out_png='swi_mip.png', cmap='gray'))})")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 't2s', '*.*'))[0], title='T2* map', out_png='t2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='T2* (ms)'))})")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'r2s', '*.*'))[0], title='R2* map', out_png='r2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='R2* (ms)'))})")
+
+    shutil.rmtree(out_dir)
     
 
 def test_realdata(bids_dir_real):
@@ -316,7 +332,7 @@ def test_realdata(bids_dir_real):
 
     args = [
         bids_dir_real,
-        os.path.join(gettempdir(), "qsm-secret"),
+        out_dir,
         "--premade", "fast",
         "--auto_yes",
         "--debug"
@@ -337,6 +353,8 @@ def test_realdata(bids_dir_real):
         github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
         if github_step_summary:
             write_to_file(github_step_summary, "Result upload to RDM failed!")
+
+    shutil.rmtree(out_dir)
 
 def test_singleecho(bids_dir_public):
     logger = make_logger()
@@ -363,5 +381,7 @@ def test_singleecho(bids_dir_public):
     github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if github_step_summary:
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='Single echo', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+
+    shutil.rmtree(out_dir)
 
 

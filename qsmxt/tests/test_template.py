@@ -84,3 +84,5 @@ def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'template', 'qsm_template', '*', '*.*'))[0], title='QSM template', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm_template.png', cmap='gray'))})")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'template', 'magnitude_template', '*.*'))[0], title='Magnitude template', out_png='mag_template.png', cmap='gray'))})")
 
+    shutil.rmtree(out_dir)
+

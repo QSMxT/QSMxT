@@ -59,6 +59,7 @@ QSMxT can be installed on an HPC or Linux machine using [transparent singularity
 3. Install miniconda with QSMxT:
   {% capture code_block_content %}{% include miniconda_install.sh %}{% endcapture %}
   {% assign code_block_content = code_block_content | replace: '${PROD_PACKAGE_VERSION}', site.PROD_PACKAGE_VERSION %}
+  {% assign code_block_content = code_block_content | replace: '${PROD_MINICONDA_PATH}', site.PROD_MINICONDA_PATH %}
   ```bash
   {{ code_block_content | strip }}
   ```

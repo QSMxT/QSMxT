@@ -120,3 +120,5 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
         csv_file = glob.glob(os.path.join(out_dir, 'analysis', '*.*'))[0]
         write_to_file(github_step_summary, csv_to_markdown(csv_file))
 
+    shutil.rmtree(out_dir)
+

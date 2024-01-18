@@ -15,17 +15,17 @@ function random_sleep_time() {
 }
 
 # Loop until the lock file can be acquired
-echo "[DEBUG] Create ${TEST_DIR}..."
+echo "[DEBUG] Create ${TEST_DIR}"
 mkdir -p "${TEST_DIR}"
 
-echo "[DEBUG] Checking for ${LOCK_FILE}..."
+echo "[DEBUG] Checking for ${LOCK_FILE}"
 while true; do
     if [ ! -f "${LOCK_FILE}" ]; then
         touch "${LOCK_FILE}"
         echo "[DEBUG] ${LOCK_FILE} acquired"
         break
     else
-        echo "[DEBUG] Another process is using resources, waiting..."
+        echo "[DEBUG] Another process is using resources, waiting"
         sleep $(random_sleep_time)
     fi
 done
@@ -56,14 +56,14 @@ else
     BRANCH=main
 fi
 
-echo "[DEBUG] Checking for existing QSMxT repository in ${TEST_DIR}/QSMxT..."
+echo "[DEBUG] Checking for existing QSMxT repository in ${TEST_DIR}/QSMxT"
 if [ -d "${TEST_DIR}/QSMxT" ]; then
-    echo "[DEBUG] Repository already exists. Switching to the correct branch and resetting changes..."
+    echo "[DEBUG] Repository already exists. Switching to the correct branch and resetting changes"
     cd ${TEST_DIR}/QSMxT
     git fetch --all
     git reset --hard
 else
-    echo "[DEBUG] Repository does not exist. Cloning..."
+    echo "[DEBUG] Repository does not exist. Cloning"
     git clone "https://github.com/QSMxT/QSMxT.git" "${TEST_DIR}/QSMxT"
 fi
 echo "[DEBUG] Switching to branch ${BRANCH} and pulling latest changes"
@@ -89,27 +89,30 @@ echo "[DEBUG] REQUIRED_PACKAGE_VERSION=${REQUIRED_PACKAGE_VERSION}"
 
 # docker container setup
 if [ "${CONTAINER_TYPE}" = "docker" ]; then
-    echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}..."
+    echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
     sudo docker pull "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
 
     # Check if the container exists and its image version
-    echo "[DEBUG] Checking if container name qsmxt-container already exists..."
+    echo "[DEBUG] Checking if container name qsmxt-container already exists"
     CONTAINER_EXISTS=$(sudo docker ps -a -q -f name=qsmxt-container)
     if [ -n "${CONTAINER_EXISTS}" ]; then
         echo "[DEBUG] qsmxt-container already exists."
         CONTAINER_IMAGE=$(sudo docker inspect qsmxt-container --format='{{.Config.Image}}' 2>/dev/null || echo "")
         if [ "${CONTAINER_IMAGE}" != "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}" ]; then
-            echo "[DEBUG] Existing container image ${CONTAINER_IMAGE} has a different version than required version vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}. Stopping, removing it, and its image."
+            echo "[DEBUG] Existing container image ${CONTAINER_IMAGE} has a different version than required version vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
+            echo "[DEBUG] Stopping container"
             sudo docker stop qsmxt-container
+            echo "[DEBUG] Removing container"
             sudo docker rm qsmxt-container
+            echo "[DEBUG] Removing image ${CONTAINER_IMAGE}"
             sudo docker rmi "${CONTAINER_IMAGE}"
         fi
     fi
 
-    echo "[DEBUG] Checking if qsmxt-container already exists..."
+    echo "[DEBUG] Checking if qsmxt-container already exists"
     CONTAINER_EXISTS=$(sudo docker ps -a -q -f name=qsmxt-container)
     if [ ! -n "${CONTAINER_EXISTS}" ]; then
-        echo "[DEBUG] Creating qsmxt-container..."
+        echo "[DEBUG] Creating qsmxt-container"
         sudo docker create --name qsmxt-container -it \
             -v ${TEST_DIR}/:${TEST_DIR} \
             --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
@@ -122,7 +125,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
             /bin/bash
     fi
 
-    echo "[DEBUG] Checking if qsmxt-container is running..."
+    echo "[DEBUG] Checking if qsmxt-container is running"
     CONTAINER_RUNNING=$(sudo docker ps -q -f name=qsmxt-container)
     if [ ! -n "${CONTAINER_RUNNING}" ]; then
         echo "[DEBUG] Starting QSMxT container"
@@ -134,7 +137,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     QSMXT_INSTALL_CHECK=$(sudo docker exec qsmxt-container pip list | grep 'qsmxt')
 
     if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
-        echo "[DEBUG] QSMxT is not installed. Installing..."
+        echo "[DEBUG] QSMxT is not installed. Installing."
         sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
     else
         echo "[DEBUG] QSMxT is installed, checking for linked installation and version"
@@ -147,7 +150,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
         if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ] && [[ "${QSMXT_VERSION}" == *"${TEST_PACKAGE_VERSION}"* ]]; then
             echo "[DEBUG] QSMxT is already installed as a linked installation and version matches."
         else
-            echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling..."
+            echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling."
             sudo docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
             sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
         fi
@@ -156,7 +159,7 @@ fi
 
 # apptainer container setup
 if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
-    echo "[DEBUG] Installing apptainer..."
+    echo "[DEBUG] Installing apptainer"
     sudo apt-get update
     sudo apt-get install -y software-properties-common
     sudo add-apt-repository -y ppa:apptainer/ppa
@@ -169,7 +172,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     export PROD_PACKAGE_VERSION=${TEST_CONTAINER_VERSION}
 
     if [ ! -f "${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg" ]; then
-        echo "[DEBUG] Install QSMxT via transparent singularity..."
+        echo "[DEBUG] Install QSMxT via transparent singularity"
         ${TEST_DIR}/QSMxT/docs/_includes/transparent_singularity_install.sh
     else
         echo "[DEBUG] Existing installation found"
@@ -188,17 +191,23 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
         rm -rf ${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}/${f}
     done
 
-    if [ ! -d "~/miniconda3" ]; then
-        echo "[DEBUG] Install miniconda..."
+    export PROD_MINICONDA_PATH="${TEST_DIR}/miniconda3"
+    echo "[DEBUG] Checking for existing miniconda installation"
+    if [ ! -d ${PROD_MINICONDA_PATH} ]; then
+        echo "[DEBUG] Install miniconda"
         ${TEST_DIR}/QSMxT/docs/_includes/miniconda_install.sh
     else
         echo "[DEBUG] Existing miniconda installation found!"
-        echo "[DEBUG] Activating conda environment"
-        conda activate qsmxt
     fi
-    export PATH="~/miniconda3/envs/qsmxt/bin:~/miniconda3/bin:${PATH}"
+    export PATH="${PROD_MINICONDA_PATH}/envs/qsmxt/bin:${PROD_MINICONDA_PATH}/bin:${PATH}"
     echo "[DEBUG] Updated path: ${PATH}"
 
+    echo "[DEBUG] which conda"
+    which conda
+    
+    echo "[DEBUG] conda activate qsmxt"
+    conda activate qsmxt
+    
     echo "[DEBUG] which pip && which python"
     which pip && which python
 
@@ -207,7 +216,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     QSMXT_INSTALL_CHECK=$(which qsmxt)
 
     if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
-        echo "[DEBUG] QSMxT is not installed. Installing..."
+        echo "[DEBUG] QSMxT is not installed. Installing."
         pip install -e ${TEST_DIR}/QSMxT
     else
         echo "[DEBUG] QSMxT is installed, checking for linked installation and version"
@@ -218,9 +227,9 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
         echo "[DEBUG] ${QSMXT_VERSION}"
 
         if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ] && [[ "${QSMXT_VERSION}" == *"${REQUIRED_PACKAGE_VERSION}"* ]]; then
-            echo "[DEBUG] QSMxT is already installed as a linked installation and version matches."
+            echo "[DEBUG] QSMxT is already installed as a linked installation and version matches"
         else
-            echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling..."
+            echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. ReInstalling."
             pip uninstall qsmxt -y
             pip install -e ${TEST_DIR}/QSMxT
             echo "[DEBUG] `qsmxt --version`"
