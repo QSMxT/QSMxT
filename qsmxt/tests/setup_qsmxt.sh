@@ -217,7 +217,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 
     if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
         echo "[DEBUG] QSMxT is not installed. Installing."
-        pip install -e ${TEST_DIR}/qsmxt
+        pip install -e ${TEST_DIR}/QSMxT
     else
         echo "[DEBUG] Getting QSMxT location and version"
         QSMXT_INSTALL_PATH=$(pip show qsmxt | grep 'Location:' | awk '{print $2}')
@@ -228,7 +228,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
         if [[ ! "${QSMXT_VERSION}" == *"${REQUIRED_PACKAGE_VERSION}"* ]]; then
             echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling."
             pip uninstall qsmxt -y
-            pip install -e ${TEST_DIR}/qsmxt
+            pip install -e ${TEST_DIR}/QSMxT
             echo "[DEBUG] `qsmxt --version`"
         fi
     fi
