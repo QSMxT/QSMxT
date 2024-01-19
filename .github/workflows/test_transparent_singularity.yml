@@ -56,5 +56,5 @@ jobs:
         echo "[DEBUG] conda activate qsmxt"
         conda activate qsmxt
 
-        /bin/bash qsmxt/tests/test_transparent_singularity.sh
+        ./qsmxt/tests/test_transparent_singularity.sh
 
