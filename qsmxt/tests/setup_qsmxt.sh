@@ -204,11 +204,11 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 
     echo "[DEBUG] which conda && which python && which pip"
     which conda && which python && which pip
-    
+        
     echo "[DEBUG] source ${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh"
     source "${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh"
-    export PATH="${PROD_MINICONDA_PATH}/envs/qsmxt/bin:${PATH}"
-    
+    conda activate qsmxt
+
     echo "[DEBUG] which conda && which python && which pip"
     which conda && which python && which pip
 
