@@ -50,8 +50,8 @@ jobs:
         source ${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh
         export PATH=${PROD_MINICONDA_PATH}/bin:${PATH}
     
-        echo "[DEBUG] which conda && which python && which pip"
-        which conda && which python && which pip
+        echo "[DEBUG] which conda && which python && which pip && which qsmxt && which julia"
+        which conda && which python && which pip && which qsmxt && which julia
     
         echo "[DEBUG] conda activate qsmxt"
         conda activate qsmxt
