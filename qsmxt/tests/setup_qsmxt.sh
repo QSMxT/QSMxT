@@ -191,6 +191,9 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
         rm -rf ${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}/${f}
     done
 
+    echo "[DEBUG] which conda && which python && which pip"
+    which conda && which python && which pip
+
     export PROD_MINICONDA_PATH="${TEST_DIR}/miniconda3"
     echo "[DEBUG] Checking for existing miniconda installation"
     if [ ! -d ${PROD_MINICONDA_PATH} ]; then
@@ -207,6 +210,9 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 
     echo "[DEBUG] conda activate qsmxt"
     conda activate qsmxt
+
+    echo "[DEBUG] which conda && which python && which pip"
+    which conda && which python && which pip
     
     echo "[DEBUG] python --version && pip --version"
     python --version && pip --version

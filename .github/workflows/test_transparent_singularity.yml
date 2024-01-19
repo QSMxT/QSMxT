@@ -45,5 +45,16 @@ jobs:
         OSF_PASS: ${{ secrets.OSF_PASS }}
         TEST_DIR: "/tmp"
       run: |
+        export PROD_MINICONDA_PATH="${TEST_DIR}/miniconda3"
+
+        source ${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh
+        export PATH=${PROD_MINICONDA_PATH}/bin:${PATH}
+    
+        echo "[DEBUG] which conda && which python && which pip"
+        which conda && which python && which pip
+    
+        echo "[DEBUG] conda activate qsmxt"
+        conda activate qsmxt
+
         /bin/bash qsmxt/tests/test_transparent_singularity.sh
 
