@@ -213,7 +213,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     which pip && which python
 
     echo "[DEBUG] Checking if qsmxt is already installed"
-    QSMXT_INSTALL_CHECK=$(pip list | grep qsmxt)
+    QSMXT_INSTALL_CHECK=$(pip list | grep qsmxt || true)
 
     if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
         echo "[DEBUG] QSMxT is not installed. Installing."
