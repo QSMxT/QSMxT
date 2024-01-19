@@ -45,8 +45,8 @@ jobs:
         OSF_PASS: ${{ secrets.OSF_PASS }}
         TEST_DIR: "/tmp"
       run: |
+        export PATH="${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}:${PATH}"
         export PROD_MINICONDA_PATH="${TEST_DIR}/miniconda3"
-
         source ${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh
         export PATH=${PROD_MINICONDA_PATH}/bin:${PATH}
     
