@@ -209,8 +209,14 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     source "${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh"
     export PATH="${PROD_MINICONDA_PATH}/envs/qsmxt/bin:${PATH}"
     
-    echo "[DEBUG] which pip && which python"
-    which pip && which python
+    echo "[DEBUG] which conda && which python && which pip"
+    which conda && which python && which pip
+
+    echo "[DEBUG] python --version && pip --version"
+    python --version && pip --version
+
+    echo "[DEBUG] pip install --upgrade pip"
+    pip install --upgrade pip
 
     echo "[DEBUG] Checking if qsmxt is already installed"
     QSMXT_INSTALL_CHECK=$(pip list | grep qsmxt || true)
