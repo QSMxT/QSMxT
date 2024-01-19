@@ -199,19 +199,12 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     else
         echo "[DEBUG] Existing miniconda installation found!"
     fi
-    export PATH="${PROD_MINICONDA_PATH}/bin:${PATH}"
-    echo "[DEBUG] Updated path: ${PATH}"
+    #export PATH="${PROD_MINICONDA_PATH}/bin:${PATH}"
+    #echo "[DEBUG] Updated path: ${PATH}"
 
     echo "[DEBUG] which conda && which python && which pip"
     which conda && which python && which pip
         
-    echo "[DEBUG] source ${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh"
-    source "${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh"
-    conda activate qsmxt
-
-    echo "[DEBUG] which conda && which python && which pip"
-    which conda && which python && which pip
-
     echo "[DEBUG] python --version && pip --version"
     python --version && pip --version
 
