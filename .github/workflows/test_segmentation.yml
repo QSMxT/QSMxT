@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   repository_dispatch:
   push:
-    branches: [ '**' ]
+    branches: [ 'main' ]
     paths:
       - setup.py
       - .github/workflows/test_segmentation.yml
