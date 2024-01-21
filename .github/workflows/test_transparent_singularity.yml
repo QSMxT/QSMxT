@@ -50,6 +50,12 @@ jobs:
         source ${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh
         export PATH="${PROD_MINICONDA_PATH}/bin:${PATH}"
 
+        echo "[DEBUG] echo ${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}:${PATH}"
+        echo "${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}:${PATH}"
+
+        echo "[DEBUG] echo ${PATH}"
+        echo "${PATH}"
+
         echo "[DEBUG] which dcm2niix"
         which dcm2niix
     
