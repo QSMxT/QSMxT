@@ -183,8 +183,8 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     export PATH="${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}:${PATH}"
     echo "[DEBUG] Updated path: ${PATH}"
 
-    echo "[DEBUG] which julia"
-    which julia
+    echo "[DEBUG] which julia && which dcm2niix"
+    which julia && which dcm2niix
 
     echo "[DEBUG] remove executables we are replacing"
     for f in {python3,python,qsmxt,dicom-sort,dicom-convert}; do
@@ -240,6 +240,9 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
             echo "[DEBUG] `qsmxt --version`"
         fi
     fi
+
+    echo "[DEBUG] which julia && which dcm2niix"
+    which julia && dcm2niix
 
 fi
 
