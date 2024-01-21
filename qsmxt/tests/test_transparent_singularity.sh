@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -e 
 
+echo "[DEBUG] which dcm2niix"
+which dcm2niix
+
 echo "[DEBUG] Download test data"
 pip install osfclient > /dev/null 2>&1
 osf -p ru43c clone . > /dev/null 2>&1

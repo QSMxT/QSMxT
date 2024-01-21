@@ -48,7 +48,10 @@ jobs:
         export PATH="${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}:${PATH}"
         export PROD_MINICONDA_PATH="${TEST_DIR}/miniconda3"
         source ${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh
-        export PATH=${PROD_MINICONDA_PATH}/bin:${PATH}
+        export PATH="${PROD_MINICONDA_PATH}/bin:${PATH}"
+
+        echo "[DEBUG] which dcm2niix"
+        which dcm2niix
     
         echo "[DEBUG] which conda && which python && which pip && which qsmxt && which julia"
         which conda && which python && which pip && which qsmxt && which julia
