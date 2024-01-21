@@ -45,6 +45,8 @@ jobs:
         OSF_PASS: ${{ secrets.OSF_PASS }}
         TEST_DIR: "/tmp"
       run: |
+        TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
+        TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
         export PATH="${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}:${PATH}"
         export PROD_MINICONDA_PATH="${TEST_DIR}/miniconda3"
         source ${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh
