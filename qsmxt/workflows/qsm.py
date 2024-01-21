@@ -146,13 +146,13 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             run_args.do_qsm = False
             run_args.do_swi = False
     if run_args.do_qsm and (run_args.masking_input == 'magnitude' or run_args.inhomogeneity_correction or run_args.add_bet):
-        if not all(all(nib.load(magnitude_files[i]).header['dim'] == nib.load(phase_files[0]).header['dim']) for i in range(len(magnitude_files))):
+        if not all(all(nib.load(magnitude_files[i]).header['dim'][1:4] == nib.load(phase_files[0]).header['dim'][1:4]) for i in range(len(magnitude_files))):
             logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use magnitude for masking - dimensions of magnitude files are not all equal to phase files!")
             run_args.masking_input = 'phase'
             run_args.inhomogeneity_correction = False
             run_args.add_bet = False
         if run_args.use_existing_masks:
-            if not all(all(nib.load(mask_files[i]).header['dim'] == nib.load(phase_files[0]).header['dim']) for i in range(len(mask_files))):
+            if not all(all(nib.load(mask_files[i]).header['dim'][1:4] == nib.load(phase_files[0]).header['dim'][1:4]) for i in range(len(mask_files))):
                 logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use existing masks - mask dimensions are not all equal to phase files!")
                 run_args.use_existing_masks = False
     elif run_args.do_r2starmap or run_args.do_t2starmap:
