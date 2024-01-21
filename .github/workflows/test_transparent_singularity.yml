@@ -34,7 +34,7 @@ jobs:
         TEST_DIR: "/tmp"
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
       run: |
-        /bin/bash qsmxt/tests/setup_qsmxt.sh apptainer
+        ./qsmxt/tests/setup_qsmxt.sh apptainer
     - name: test transparent singularity
       env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
