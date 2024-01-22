@@ -18,6 +18,9 @@ def gettempdir():
     #return tempfile.gettempdir()
     return "/storage/tmp"
 
+def getrunid():
+    return os.environ.get('RUN_ID') or ''
+
 @pytest.fixture
 def bids_dir_public():
     logger = make_logger()
@@ -90,7 +93,7 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING SEGMENTATION PIPELINE ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
