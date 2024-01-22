@@ -43,7 +43,8 @@ setup(
         'osfclient',
         'niflow-nipype1-workflows',
         'tensorflow',
-        'packaging'
+        'packaging',
+        'nii2dcm @ git+https://github.com/astewartau/nii2dcm.git@main#egg=nii2dcm'
     ],
     entry_points={
         'console_scripts': [

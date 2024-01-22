@@ -514,6 +514,13 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
+        '--export_dicoms',
+        action='store_true',
+        default=None,
+        help='Exports outputs to DICOM format in addition to NIfTI.'
+    )
+
+    parser.add_argument(
         '--pbs',
         default=None,
         dest='pbs',
@@ -837,10 +844,11 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
         print(" seg: Segmentations (requires qsm)")
         print(" analysis: QSM across segmented ROIs (requires qsm+seg)")
         print(" template: GRE group space + GRE/QSM templates (requires qsm)")
+        print(" dicoms: Output DICOMs where possible (compatible image types include QSM, SWI and SWI-MIP)")
 
         while True:
             user_in = input("\nEnter desired images (space-separated) [default - qsm]: ").lower()
-            while not all(x in ['qsm', 'swi', 't2s', 'r2s', 'seg', 'analysis', 'template'] for x in user_in.split()):
+            while not all(x in ['qsm', 'swi', 't2s', 'r2s', 'seg', 'analysis', 'template', 'dicoms'] for x in user_in.split()):
                 user_in = input("Enter desired images (space-separated) [default - qsm]: ").lower()
 
             if 'qsm' in user_in.split() or len(user_in.split()) == 0:
@@ -900,6 +908,12 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
             else:
                 if 'do_template' in explicit_args: del explicit_args['do_template']
                 args.do_template = False
+            if 'dicoms' in user_in.split():
+                args.export_dicoms = True
+                explicit_args['export_dicoms'] = True
+            else:
+                if 'export_dicoms' in explicit_args: del explicit_args['export_dicoms']
+                args.export_dicoms = False
             
             break
         
@@ -950,6 +964,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
         print(f" - Segmentations: {'Yes' if args.do_segmentation else 'No'}")
         print(f" - Analysis CSVs: {'Yes' if args.do_analysis else 'No'}")
         print(f" - GRE/QSM template space: {'Yes' if args.do_template else 'No'}")
+        print(f" - DICOM outputs: {'Yes' if args.export_dicoms else 'No'}")
 
         if args.do_qsm:
             print(f"\n(2) QSM pipeline: {args.premade}")

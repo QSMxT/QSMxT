@@ -25,7 +25,7 @@ def bids_dir_public():
 
     tmp_dir = gettempdir()
     bids_dir = os.path.join(tmp_dir, "bids-public")
-    if not glob.glob(os.path.join(bids_dir, "sub*2")):
+    if not glob.glob(os.path.join(bids_dir, "sub*1")):
         logger.log(LogLevel.INFO.value, f"No subjects in BIDS directory yet")
         head_phantom_maps_dir = os.path.join(tmp_dir, 'data')
         if not os.path.exists(head_phantom_maps_dir):

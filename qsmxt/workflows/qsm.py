@@ -1,7 +1,7 @@
 import glob
 import os
 
-from nipype.pipeline.engine import Workflow, Node, MapNode
+from nipype.pipeline.engine import Workflow, Node
 from nipype.interfaces.utility import IdentityInterface, Function
 from nipype.interfaces.io import DataSink
 
@@ -23,6 +23,7 @@ from qsmxt.interfaces import nipype_interface_nonzeroaverage as nonzeroaverage
 from qsmxt.interfaces import nipype_interface_twopass as twopass
 from qsmxt.interfaces import nipype_interface_resample_like as resample_like
 from qsmxt.interfaces import nipype_interface_qsm_referencing as qsm_referencing
+from qsmxt.interfaces import nipype_interface_nii2dcm as nii2dcm
 
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
@@ -30,6 +31,59 @@ from qsmxt.workflows.masking import masking_workflow
 
 import numpy as np
 import nibabel as nib
+
+
+def insert_before(wf, target_node_name, new_node, target_attribute):
+    """
+    Inserts a new node before a specified target node in a Nipype workflow, updating existing connections.
+
+    :param wf: The workflow object.
+    :param target_node_name: The name of the target node.
+    :param new_node: The new Node object to insert.
+    :param target_attribute: The target attribute in the target node to which connections are made.
+    """
+    target_node = wf.get_node(target_node_name)
+
+    # Find all source nodes connected to the target attribute of the target node
+    source_edges = [(u, v, d) for u, v, d in wf._graph.edges(data=True) if v._name == target_node_name and d['connect'][0][1] == target_attribute]
+
+    # Disconnect the source nodes from the target node
+    for u, v, d in source_edges:
+        source_attribute = d['connect'][0][0]
+        wf.disconnect([(u, v, [(source_attribute, target_attribute)])])
+
+    # Add the new node to the workflow
+    wf.add_nodes([new_node])
+
+    # Connect the source nodes to the new node and the new node to the target node
+    for u, _, _ in source_edges:
+        source_attribute = d['connect'][0][0]
+        wf.connect([(u, new_node, [(source_attribute, target_attribute)])])
+        wf.connect([(new_node, target_node, [(target_attribute, target_attribute)])])
+
+def get_node(wf, node_name):
+    for node in wf._get_all_nodes():
+        if node_name in node._name:
+            return node
+    return None
+
+def get_preceding_node_and_attribute(wf, target_node_name, target_attribute):
+    """
+    Retrieves the input node and its output attribute name connected to a specific attribute 
+    of a target node in a Nipype workflow.
+
+    :param wf: The workflow object.
+    :param target_node_name: The name of the target node.
+    :param target_attribute: The target attribute in the target node.
+    :return: A tuple (input node, output attribute name) if found, otherwise (None, None).
+    """
+    # Search for an edge where the target node and attribute match
+    for u, v, d in wf._graph.edges(data=True):
+        for source_attribute, target_attr in d['connect']:
+            if v._name == target_node_name and target_attr == target_attribute:
+                return u, source_attribute
+
+    return None, None
 
 def get_matching_files(bids_dir, subject, dtype="anat", suffixes=[], ext="nii*", session=None, run=None, part=None, acq=None):
     pattern = os.path.join(bids_dir, subject)
@@ -203,7 +257,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
     n_outputs = Node(
         IdentityInterface(
-            fields=['qsm', 'qsm_singlepass', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 'transform', 'analysis_csv']
+            fields=['qsm', 'qsm_singlepass', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 'transform', 'analysis_csv', 'qsm_dicoms', 'swi_dicoms', 'swi_mip_dicoms']
         ),
         name='qsmxt_outputs'
     )
@@ -221,7 +275,10 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         (n_outputs, n_datasink, [('t1w_segmentation', 'segmentations.t1w')]),
         (n_outputs, n_datasink, [('qsm_segmentation', 'segmentations.qsm')]),
         (n_outputs, n_datasink, [('transform', 'segmentations.transforms')]),
-        (n_outputs, n_datasink, [('analysis_csv', 'analysis')])
+        (n_outputs, n_datasink, [('analysis_csv', 'analysis')]),
+        (n_outputs, n_datasink, [('qsm_dicoms', 'qsm.@dicoms')]),
+        (n_outputs, n_datasink, [('swi_dicoms', 'swi.@dicoms')]),
+        (n_outputs, n_datasink, [('swi_mip_dicoms', 'swi.@mip_dicoms')])
     ])
     
     # read echotime and field strengths from json files
@@ -478,53 +535,26 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             (n_registration, n_outputs, [('out_matrix', 'transform')])
         ])
 
-    if not run_args.do_qsm:
-        return wf
-    
-    # resample to axial
-    n_inputs_resampled = Node(
-        interface=IdentityInterface(
-            fields=['phase', 'magnitude', 'mask']
-        ),
-        name='nipype_inputs-resampled'
-    )
-    if magnitude_files:
-        mn_resample_inputs = create_node(
-            interface=sampling.AxialSamplingInterface(
-                obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
+    if run_args.do_qsm:
+        
+        # resample to axial
+        n_inputs_resampled = Node(
+            interface=IdentityInterface(
+                fields=['phase', 'magnitude', 'mask']
             ),
-            iterfield=['magnitude', 'phase'],
-            mem_gb=min(4, run_args.mem_avail),
-            name='nibabel_numpy_nilearn_axial-resampling',
-            is_map=len(phase_files) > 1
+            name='nipype_inputs-resampled'
         )
-        mn_resample_inputs.plugin_args = gen_plugin_args(
-            plugin_args={ 'overwrite': True },
-            slurm_account=run_args.slurm[0],
-            pbs_account=run_args.pbs,
-            slurm_partition=run_args.slurm[1],
-            name="axial_resampling",
-            time="00:10:00",
-            mem_gb=10,
-            num_cpus=min(1, run_args.n_procs)
-        )
-        wf.connect([
-            (mn_inputs_canonical, mn_resample_inputs, [('magnitude', 'magnitude')]),
-            (mn_phase_scaled, mn_resample_inputs, [('phase', 'phase')]),
-            (mn_resample_inputs, n_inputs_resampled, [('magnitude', 'magnitude')]),
-            (mn_resample_inputs, n_inputs_resampled, [('phase', 'phase')])
-        ])
-        if mask_files and run_args.use_existing_masks:
-            mn_resample_mask = create_node(
+        if magnitude_files:
+            mn_resample_inputs = create_node(
                 interface=sampling.AxialSamplingInterface(
                     obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
                 ),
-                iterfield=['mask'],
-                mem_gb=min(3, run_args.mem_avail),
-                name='nibabel_numpy_nilearn_axial-resampling-mask',
-                is_map=isinstance(n_inputs.inputs.mask, list) and len(n_inputs.inputs.mask) > 1
+                iterfield=['magnitude', 'phase'],
+                mem_gb=min(4, run_args.mem_avail),
+                name='nibabel_numpy_nilearn_axial-resampling',
+                is_map=len(phase_files) > 1
             )
-            mn_resample_mask.plugin_args = gen_plugin_args(
+            mn_resample_inputs.plugin_args = gen_plugin_args(
                 plugin_args={ 'overwrite': True },
                 slurm_account=run_args.slurm[0],
                 pbs_account=run_args.pbs,
@@ -535,221 +565,261 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 num_cpus=min(1, run_args.n_procs)
             )
             wf.connect([
-                (mn_inputs_canonical, mn_resample_mask, [('mask', 'mask')]),
-                (mn_resample_mask, n_inputs_resampled, [('mask', 'mask')])
+                (mn_inputs_canonical, mn_resample_inputs, [('magnitude', 'magnitude')]),
+                (mn_phase_scaled, mn_resample_inputs, [('phase', 'phase')]),
+                (mn_resample_inputs, n_inputs_resampled, [('magnitude', 'magnitude')]),
+                (mn_resample_inputs, n_inputs_resampled, [('phase', 'phase')])
             ])
-    else:
-        wf.connect([
-            (mn_phase_scaled, n_inputs_resampled, [('phase', 'phase')])
-        ])
-        if mask_files:
+            if mask_files and run_args.use_existing_masks:
+                mn_resample_mask = create_node(
+                    interface=sampling.AxialSamplingInterface(
+                        obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
+                    ),
+                    iterfield=['mask'],
+                    mem_gb=min(3, run_args.mem_avail),
+                    name='nibabel_numpy_nilearn_axial-resampling-mask',
+                    is_map=isinstance(n_inputs.inputs.mask, list) and len(n_inputs.inputs.mask) > 1
+                )
+                mn_resample_mask.plugin_args = gen_plugin_args(
+                    plugin_args={ 'overwrite': True },
+                    slurm_account=run_args.slurm[0],
+                    pbs_account=run_args.pbs,
+                    slurm_partition=run_args.slurm[1],
+                    name="axial_resampling",
+                    time="00:10:00",
+                    mem_gb=10,
+                    num_cpus=min(1, run_args.n_procs)
+                )
+                wf.connect([
+                    (mn_inputs_canonical, mn_resample_mask, [('mask', 'mask')]),
+                    (mn_resample_mask, n_inputs_resampled, [('mask', 'mask')])
+                ])
+        else:
             wf.connect([
-                (mn_inputs_canonical, n_inputs_resampled, [('mask', 'mask')])
+                (mn_phase_scaled, n_inputs_resampled, [('phase', 'phase')])
             ])
+            if mask_files:
+                wf.connect([
+                    (mn_inputs_canonical, n_inputs_resampled, [('mask', 'mask')])
+                ])
 
-    # combine phase data if necessary
-    n_inputs_combine = Node(
-        interface=IdentityInterface(
-            fields=['phase_unwrapped', 'frequency']
-        ),
-        name='phase-combined'
-    )
-    if run_args.combine_phase:
-        n_romeo_combine = Node(
-            interface=romeo.RomeoB0Interface(),
-            name='mrt_romeo_combine',
-            mem_gb=min(8, run_args.mem_avail)
-        )
-        n_romeo_combine.plugin_args = gen_plugin_args(
-            plugin_args={ 'overwrite': True },
-            slurm_account=run_args.slurm[0],
-            pbs_account=run_args.pbs,
-            slurm_partition=run_args.slurm[1],
-            name="romeo_combine",
-            time="00:10:00",
-            mem_gb=10,
-            num_cpus=min(1, run_args.n_procs)
-        )
-        wf.connect([
-            (mn_json_params, n_romeo_combine, [('TE', 'TEs')]),
-            (n_inputs_resampled, n_romeo_combine, [('phase', 'phase')]),
-            (n_inputs_resampled, n_romeo_combine, [('magnitude', 'magnitude')]),
-            (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency')]),
-            (n_romeo_combine, n_inputs_combine, [('phase_unwrapped', 'phase_unwrapped')]),
-        ])
-
-    # === MASKING ===
-    wf_masking = masking_workflow(
-        run_args=run_args,
-        mask_available=len(mask_files) > 0 and run_args.use_existing_masks,
-        magnitude_available=len(magnitude_files) > 0,
-        qualitymap_available=False,
-        fill_masks=True,
-        add_bet=run_args.add_bet and run_args.filling_algorithm != 'bet',
-        use_maps=len(phase_files) > 1 and not run_args.combine_phase,
-        name="mask",
-        index=0
-    )
-    wf.connect([
-        (n_inputs_resampled, wf_masking, [('phase', 'masking_inputs.phase')]),
-        (n_inputs_resampled, wf_masking, [('magnitude', 'masking_inputs.magnitude')]),
-        (n_inputs_resampled, wf_masking, [('mask', 'masking_inputs.mask')]),
-        (mn_json_params, wf_masking, [('TE', 'masking_inputs.TE')])
-    ])
-
-    # === QSM ===
-    wf_qsm = qsm_workflow(run_args, "qsm", len(magnitude_files) > 0, len(phase_files) > 1 and not run_args.combine_phase, qsm_erosions=run_args.tgv_erosions)
-
-    wf.connect([
-        (n_inputs_resampled, wf_qsm, [('phase', 'qsm_inputs.phase')]),
-        (n_inputs_combine, wf_qsm, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
-        (n_inputs_combine, wf_qsm, [('frequency', 'qsm_inputs.frequency')]),
-        (n_inputs_resampled, wf_qsm, [('magnitude', 'qsm_inputs.magnitude')]),
-        (wf_masking, wf_qsm, [('masking_outputs.mask', 'qsm_inputs.mask')]),
-        (mn_json_params, wf_qsm, [('TE', 'qsm_inputs.TE')]),
-        (n_json_params, wf_qsm, [('B0', 'qsm_inputs.B0')]),
-        (n_nii_params, wf_qsm, [('vsz', 'qsm_inputs.vsz')])
-    ])
-    wf_qsm.get_node('qsm_inputs').inputs.b0_direction = [0, 0, 1]
-    
-    n_qsm_average = Node(
-        interface=nonzeroaverage.NonzeroAverageInterface(),
-        name="nibabel_numpy_qsm-average"
-    )
-    wf.connect([
-        (wf_qsm, n_qsm_average, [('qsm_outputs.qsm', 'in_files')]),
-        (wf_masking, n_qsm_average, [('masking_outputs.mask', 'in_masks')])
-    ])
-
-    n_resample_qsm = Node(
-        interface=resample_like.ResampleLikeInterface(),
-        name='nibabel_numpy_nilearn_resample-qsm'
-    )
-    wf.connect([
-        (n_qsm_average, n_resample_qsm, [('out_file', 'in_file')]),
-        (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')])
-    ])
-
-    if run_args.qsm_reference:
-        n_qsm_referenced = Node(
-            interface=qsm_referencing.ReferenceQSMInterface(
-                in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else [1]
+        # combine phase data if necessary
+        n_inputs_combine = Node(
+            interface=IdentityInterface(
+                fields=['phase_unwrapped', 'frequency']
             ),
-            name='nibabel_numpy_qsm-referenced'
+            name='phase-combined'
         )
-        wf.connect([
-            (n_resample_qsm, n_qsm_referenced, [('out_file', 'in_qsm')]),
-            (n_qsm_referenced, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
-        ])
-        if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation:
+        if run_args.combine_phase:
+            n_romeo_combine = Node(
+                interface=romeo.RomeoB0Interface(),
+                name='mrt_romeo_combine',
+                mem_gb=min(8, run_args.mem_avail)
+            )
+            n_romeo_combine.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
+                slurm_account=run_args.slurm[0],
+                pbs_account=run_args.pbs,
+                slurm_partition=run_args.slurm[1],
+                name="romeo_combine",
+                time="00:10:00",
+                mem_gb=10,
+                num_cpus=min(1, run_args.n_procs)
+            )
             wf.connect([
-                (n_transform_segmentation, n_qsm_referenced, [('output_image', 'in_seg')])
+                (mn_json_params, n_romeo_combine, [('TE', 'TEs')]),
+                (n_inputs_resampled, n_romeo_combine, [('phase', 'phase')]),
+                (n_inputs_resampled, n_romeo_combine, [('magnitude', 'magnitude')]),
+                (n_romeo_combine, n_inputs_combine, [('frequency', 'frequency')]),
+                (n_romeo_combine, n_inputs_combine, [('phase_unwrapped', 'phase_unwrapped')]),
             ])
-    else:
-        wf.connect([
-            (n_resample_qsm, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
-        ])
 
-    # two-pass algorithm
-    if run_args.two_pass:
-        wf_masking_intermediate = masking_workflow(
+        # === MASKING ===
+        wf_masking = masking_workflow(
             run_args=run_args,
-            mask_available=False,
+            mask_available=len(mask_files) > 0 and run_args.use_existing_masks,
             magnitude_available=len(magnitude_files) > 0,
-            qualitymap_available=True,
-            fill_masks=False,
-            add_bet=False,
+            qualitymap_available=False,
+            fill_masks=True,
+            add_bet=run_args.add_bet and run_args.filling_algorithm != 'bet',
             use_maps=len(phase_files) > 1 and not run_args.combine_phase,
-            name="mask-intermediate",
-            index=1
+            name="mask",
+            index=0
         )
         wf.connect([
-            (n_inputs_resampled, wf_masking_intermediate, [('phase', 'masking_inputs.phase')]),
-            (n_inputs_resampled, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')]),
-            (n_inputs_resampled, wf_masking_intermediate, [('mask', 'masking_inputs.mask')]),
-            (mn_json_params, wf_masking_intermediate, [('TE', 'masking_inputs.TE')]),
-            (wf_masking, wf_masking_intermediate, [('masking_outputs.quality_map', 'masking_inputs.quality_map')])
+            (n_inputs_resampled, wf_masking, [('phase', 'masking_inputs.phase')]),
+            (n_inputs_resampled, wf_masking, [('magnitude', 'masking_inputs.magnitude')]),
+            (n_inputs_resampled, wf_masking, [('mask', 'masking_inputs.mask')]),
+            (mn_json_params, wf_masking, [('TE', 'masking_inputs.TE')])
         ])
 
-        wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0, len(phase_files) > 1 and not run_args.combine_phase, qsm_erosions=0)
-        wf.connect([
-            (n_inputs_resampled, wf_qsm_intermediate, [('phase', 'qsm_inputs.phase')]),
-            (n_inputs_resampled, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
-            (n_inputs_combine, wf_qsm_intermediate, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
-            (n_inputs_combine, wf_qsm_intermediate, [('frequency', 'qsm_inputs.frequency')]),
-            (mn_json_params, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
-            (n_json_params, wf_qsm_intermediate, [('B0', 'qsm_inputs.B0')]),
-            (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')]),
-            (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.mask', 'qsm_inputs.mask')])
-        ])
-        wf_qsm_intermediate.get_node('qsm_inputs').inputs.b0_direction = [0, 0, 1]
-                
-        # two-pass combination
-        mn_qsm_twopass = create_node(
-            interface=twopass.TwopassNiftiInterface(),
-            name='numpy_nibabel_twopass',
-            iterfield=['in_file', 'in_filled', 'mask'],
-            is_map=len(phase_files) > 1 and not run_args.combine_phase
-        )
-        wf.connect([
-            (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file')]),
-            (wf_masking_intermediate, mn_qsm_twopass, [('masking_outputs.mask', 'mask')]),
-            (wf_qsm, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_filled')])
-        ])
+        # === QSM ===
+        wf_qsm = qsm_workflow(run_args, "qsm", len(magnitude_files) > 0, len(phase_files) > 1 and not run_args.combine_phase, qsm_erosions=run_args.tgv_erosions)
 
-        # averaging
-        n_qsm_twopass_average = Node(
+        wf.connect([
+            (n_inputs_resampled, wf_qsm, [('phase', 'qsm_inputs.phase')]),
+            (n_inputs_combine, wf_qsm, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
+            (n_inputs_combine, wf_qsm, [('frequency', 'qsm_inputs.frequency')]),
+            (n_inputs_resampled, wf_qsm, [('magnitude', 'qsm_inputs.magnitude')]),
+            (wf_masking, wf_qsm, [('masking_outputs.mask', 'qsm_inputs.mask')]),
+            (mn_json_params, wf_qsm, [('TE', 'qsm_inputs.TE')]),
+            (n_json_params, wf_qsm, [('B0', 'qsm_inputs.B0')]),
+            (n_nii_params, wf_qsm, [('vsz', 'qsm_inputs.vsz')]),
+        ])
+        wf_qsm.get_node('qsm_inputs').inputs.b0_direction = [0, 0, 1]
+        
+        n_qsm_average = Node(
             interface=nonzeroaverage.NonzeroAverageInterface(),
-            name="nibabel_numpy_twopass-average"
+            name="nibabel_numpy_qsm-average"
         )
         wf.connect([
-            (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')]),
-            (wf_masking_intermediate, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
+            (wf_qsm, n_qsm_average, [('qsm_outputs.qsm', 'in_files')]),
+            (wf_masking, n_qsm_average, [('masking_outputs.mask', 'in_masks')])
         ])
 
         n_resample_qsm = Node(
             interface=resample_like.ResampleLikeInterface(),
-            name='resample_qsm-twopass'
+            name='nibabel_numpy_nilearn_resample-qsm'
         )
         wf.connect([
-            (n_qsm_twopass_average, n_resample_qsm, [('out_file', 'in_file')]),
+            (n_qsm_average, n_resample_qsm, [('out_file', 'in_file')]),
             (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')])
         ])
 
         if run_args.qsm_reference:
-            n_qsm_twopass_referenced = Node(
+            n_qsm_referenced = Node(
                 interface=qsm_referencing.ReferenceQSMInterface(
                     in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else [1]
                 ),
-                name='nibabel_numpy_qsm-referenced-twopass'
+                name='nibabel_numpy_qsm-referenced'
             )
             wf.connect([
-                (n_resample_qsm, n_qsm_twopass_referenced, [('out_file', 'in_qsm')]),
-                (n_qsm_twopass_referenced, n_outputs, [('out_file', 'qsm')])
+                (n_resample_qsm, n_qsm_referenced, [('out_file', 'in_qsm')]),
+                (n_qsm_referenced, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
             ])
             if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation:
                 wf.connect([
-                    (n_transform_segmentation, n_qsm_twopass_referenced, [('output_image', 'in_seg')])
+                    (n_transform_segmentation, n_qsm_referenced, [('output_image', 'in_seg')])
                 ])
         else:
             wf.connect([
-                (n_resample_qsm, n_outputs, [('out_file', 'qsm')])
+                (n_resample_qsm, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
             ])
 
-    if run_args.do_segmentation and run_args.do_analysis:
-        n_analyse_qsm = Node(
-            interface=analyse.AnalyseInterface(
-                in_labels=run_args.labels_file
-            ),
-            name='analyse_qsm',
-            mem_gb=2
-        )
-        wf.connect([
-            (n_transform_segmentation, n_analyse_qsm, [('output_image', 'in_segmentation')]),
-            (n_resample_qsm, n_analyse_qsm, [('out_file', 'in_file')]),
-            (n_analyse_qsm, n_outputs, [('out_csv', 'analysis_csv')])
-        ])
+        # two-pass algorithm
+        if run_args.two_pass:
+            wf_masking_intermediate = masking_workflow(
+                run_args=run_args,
+                mask_available=False,
+                magnitude_available=len(magnitude_files) > 0,
+                qualitymap_available=True,
+                fill_masks=False,
+                add_bet=False,
+                use_maps=len(phase_files) > 1 and not run_args.combine_phase,
+                name="mask-intermediate",
+                index=1
+            )
+            wf.connect([
+                (n_inputs_resampled, wf_masking_intermediate, [('phase', 'masking_inputs.phase')]),
+                (n_inputs_resampled, wf_masking_intermediate, [('magnitude', 'masking_inputs.magnitude')]),
+                (n_inputs_resampled, wf_masking_intermediate, [('mask', 'masking_inputs.mask')]),
+                (mn_json_params, wf_masking_intermediate, [('TE', 'masking_inputs.TE')]),
+                (wf_masking, wf_masking_intermediate, [('masking_outputs.quality_map', 'masking_inputs.quality_map')])
+            ])
 
+            wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0, len(phase_files) > 1 and not run_args.combine_phase, qsm_erosions=0)
+            wf.connect([
+                (n_inputs_resampled, wf_qsm_intermediate, [('phase', 'qsm_inputs.phase')]),
+                (n_inputs_resampled, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
+                (n_inputs_combine, wf_qsm_intermediate, [('phase_unwrapped', 'qsm_inputs.phase_unwrapped')]),
+                (n_inputs_combine, wf_qsm_intermediate, [('frequency', 'qsm_inputs.frequency')]),
+                (mn_json_params, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
+                (n_json_params, wf_qsm_intermediate, [('B0', 'qsm_inputs.B0')]),
+                (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')]),
+                (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.mask', 'qsm_inputs.mask')])
+            ])
+            wf_qsm_intermediate.get_node('qsm_inputs').inputs.b0_direction = [0, 0, 1]
+                    
+            # two-pass combination
+            mn_qsm_twopass = create_node(
+                interface=twopass.TwopassNiftiInterface(),
+                name='numpy_nibabel_twopass',
+                iterfield=['in_file', 'in_filled', 'mask'],
+                is_map=len(phase_files) > 1 and not run_args.combine_phase
+            )
+            wf.connect([
+                (wf_qsm_intermediate, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_file')]),
+                (wf_masking_intermediate, mn_qsm_twopass, [('masking_outputs.mask', 'mask')]),
+                (wf_qsm, mn_qsm_twopass, [('qsm_outputs.qsm', 'in_filled')])
+            ])
+
+            # averaging
+            n_qsm_twopass_average = Node(
+                interface=nonzeroaverage.NonzeroAverageInterface(),
+                name="nibabel_numpy_twopass-average"
+            )
+            wf.connect([
+                (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')]),
+                (wf_masking_intermediate, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
+            ])
+
+            n_resample_qsm = Node(
+                interface=resample_like.ResampleLikeInterface(),
+                name='resample_qsm-twopass'
+            )
+            wf.connect([
+                (n_qsm_twopass_average, n_resample_qsm, [('out_file', 'in_file')]),
+                (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')])
+            ])
+
+            if run_args.qsm_reference:
+                n_qsm_twopass_referenced = Node(
+                    interface=qsm_referencing.ReferenceQSMInterface(
+                        in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else [1]
+                    ),
+                    name='nibabel_numpy_qsm-referenced-twopass'
+                )
+                wf.connect([
+                    (n_resample_qsm, n_qsm_twopass_referenced, [('out_file', 'in_qsm')]),
+                    (n_qsm_twopass_referenced, n_outputs, [('out_file', 'qsm')])
+                ])
+                if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation:
+                    wf.connect([
+                        (n_transform_segmentation, n_qsm_twopass_referenced, [('output_image', 'in_seg')])
+                    ])
+            else:
+                wf.connect([
+                    (n_resample_qsm, n_outputs, [('out_file', 'qsm')])
+                ])
+
+        if run_args.do_segmentation and run_args.do_analysis:
+            n_analyse_qsm = Node(
+                interface=analyse.AnalyseInterface(
+                    in_labels=run_args.labels_file
+                ),
+                name='analyse_qsm',
+                mem_gb=2
+            )
+            wf.connect([
+                (n_transform_segmentation, n_analyse_qsm, [('output_image', 'in_segmentation')]),
+                (n_resample_qsm, n_analyse_qsm, [('out_file', 'in_file')]),
+                (n_analyse_qsm, n_outputs, [('out_csv', 'analysis_csv')])
+            ])
+
+    # insert DICOM conversion step
+    if run_args.export_dicoms:
+        for target_attribute in ['qsm', 'swi', 'swi_mip']:
+            node, node_attribute = get_preceding_node_and_attribute(wf, target_node_name='qsmxt_outputs', target_attribute=target_attribute)
+            if node:
+                logger.log(LogLevel.DEBUG.value, f"Found node {node._name}")
+                n_nii2dcm = Node(
+                    interface=nii2dcm.Nii2DcmInterface(centered=True if 'qsm' in target_attribute else False),
+                    name=f'n_nii2dcm_{target_attribute}'
+                )
+                wf.connect([
+                    (node, n_nii2dcm, [(node_attribute, 'in_file')]),
+                    (n_nii2dcm, n_outputs, [('out_dir', f"{target_attribute}_dicoms")])
+                ])
     
     return wf
 
@@ -768,7 +838,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
 
     n_outputs = Node(
         interface=IdentityInterface(
-            fields=['qsm']
+            fields=['qsm', 'qsm_dicoms']
         ),
         name='qsm_outputs'
     )

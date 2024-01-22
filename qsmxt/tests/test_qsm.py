@@ -25,7 +25,7 @@ def bids_dir_public():
 
     tmp_dir = gettempdir()
     bids_dir = os.path.join(tmp_dir, "bids-public")
-    if not glob.glob(os.path.join(bids_dir, "sub*2")):
+    if not glob.glob(os.path.join(bids_dir, "sub*1")):
         logger.log(LogLevel.INFO.value, f"No subjects in BIDS directory yet")
         head_phantom_maps_dir = os.path.join(tmp_dir, 'data')
         if not os.path.exists(head_phantom_maps_dir):
@@ -295,20 +295,22 @@ def test_use_existing_masks(bids_dir_public):
 
 def test_supplementary_images(bids_dir_public):
     logger = make_logger()
-    logger.log(LogLevel.INFO.value, f"=== TESTING SUPPLEMENTARY IMAGES ===")
+    logger.log(LogLevel.INFO.value, f"=== TESTING SUPPLEMENTARY IMAGES AND DICOMS ===")
 
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-qsm")
     
     args = [
         bids_dir_public,
         out_dir,
+        "--do_qsm",
         "--do_swi",
         "--do_t2starmap",
         "--do_r2starmap",
         "--auto_yes",
         "--debug",
         "--subjects", "sub-1",
-        "--sessions", "ses-1"
+        "--sessions", "ses-1",
+        "--export_dicoms"
     ]
     
     args = main(args)

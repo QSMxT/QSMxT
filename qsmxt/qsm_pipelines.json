@@ -11,6 +11,7 @@
         "do_segmentation": false,
         "do_template": false,
         "do_analysis": false,
+        "export_dicoms": false,
         "obliquity_threshold": 10,
         "combine_phase": true,
         "qsm_algorithm": "rts",
