@@ -47,12 +47,10 @@ on:
       - qsmxt/scripts/qsmxt_functions.py
       - qsmxt/scripts/qsmxt_version.py
 jobs:
-  test_qsm_premades:
+  setup_qsmxt:
     runs-on: "self-hosted"
-    strategy:
-      matrix:
-        args: ['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm']
-      fail-fast: false
+    outputs:
+      setup-complete: 'true'
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
@@ -64,6 +62,18 @@ jobs:
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh docker
+  test_qsm_premades:
+    needs: setup_qsmxt
+    runs-on: "self-hosted"
+    strategy:
+      matrix:
+        args: ['gre', 'epi', 'bet', 'fast', 'body', 'nextqsm']
+      fail-fast: false
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+      with:
+        python-version: 3.8
     - name: Test QSM premades
       env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
@@ -80,6 +90,7 @@ jobs:
         name: public-outputs
         path: /storage/tmp/public-outputs
   test_qsm_edgecases:
+    needs: setup_qsmxt
     runs-on: "self-hosted"
     strategy:
       matrix:
@@ -100,12 +111,6 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
-    - name: Setup QSMxT
-      env:
-        TEST_DIR: "/storage/tmp"
-        REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
-      run: |
-        /bin/bash qsmxt/tests/setup_qsmxt.sh docker
     - name: Test QSM pipeline edge cases
       env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}

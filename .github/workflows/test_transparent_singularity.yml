@@ -22,8 +22,10 @@ on:
       - qsmxt/workflows/*
     
 jobs:
-  test_transparent_singularity_pipeline:
+  setup_qsmxt:
     runs-on: ubuntu-20.04
+    outputs:
+      setup-complete: 'true'
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
@@ -31,11 +33,15 @@ jobs:
         python-version: 3.8
     - name: Setup QSMxT
       env:
-        TEST_DIR: "/tmp"
+        TEST_DIR: "/storage/tmp"
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
       run: |
-        ./qsmxt/tests/setup_qsmxt.sh apptainer
-    - name: test transparent singularity
+        /bin/bash qsmxt/tests/setup_qsmxt.sh apptainer
+  test_transparent_singularity_pipeline:
+    needs: setup_qsmxt
+    runs-on: ubuntu-20.04
+    steps:
+    - name: Run transparent-singularity pipeline
       env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}

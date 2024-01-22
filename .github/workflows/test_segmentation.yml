@@ -21,7 +21,23 @@ on:
       - qsmxt/scripts/logger.py
     
 jobs:
+  setup_qsmxt:
+    runs-on: "self-hosted"
+    outputs:
+      setup-complete: 'true'
+    steps:
+    - uses: actions/checkout@v3
+    - uses: actions/setup-python@v3
+      with:
+        python-version: 3.8
+    - name: Setup QSMxT
+      env:
+        TEST_DIR: "/storage/tmp"
+        REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
+      run: |
+        /bin/bash qsmxt/tests/setup_qsmxt.sh docker
   test_segmentation:
+    needs: setup_qsmxt
     runs-on: "self-hosted"
     steps:
     - uses: actions/checkout@v3
