@@ -134,7 +134,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
 
     # Run the commands inside the container using docker exec
     echo "[DEBUG] Checking if qsmxt is already installed"
-    QSMXT_INSTALL_CHECK=$(sudo docker exec qsmxt-container pip list | grep 'qsmxt')
+    QSMXT_INSTALL_CHECK=$(sudo docker exec qsmxt-container pip list | grep 'qsmxt' || true)
 
     if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
         echo "[DEBUG] QSMxT is not installed. Installing."
