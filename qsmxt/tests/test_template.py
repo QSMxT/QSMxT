@@ -67,7 +67,7 @@ def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir_public,
-        os.path.join(gettempdir(), "output"),
+        out_dir,
         "--do_qsm", "yes",
         "--premade", "fast",
         "--do_template", "yes",
