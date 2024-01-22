@@ -8,7 +8,6 @@ on:
     paths:
       - setup.py
       - .github/workflows/test_segmentation.yml
-      - docs/_config.yml
       - qsmxt/cli/main.py
       - aseg_labels.csv
       - qsmxt/workflows/segmentation.py
