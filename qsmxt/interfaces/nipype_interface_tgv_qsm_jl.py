@@ -23,6 +23,7 @@ class TGVQSMJlInputSpec(CommandLineInputSpecJulia):
     regularization = traits.Float(2.0, argstr="--regularization %s")
     alpha = traits.ListFloat(minlen=2, maxlen=2, argstr="--alphas '[%s]'")
     iterations = traits.Int(argstr="--iterations %s")
+    gpu = traits.Enum("CUDA", "AMDGPU", "oneAPI", "Metal", argstr="--gpu %s")
 
 class TGVQSMJlOutputSpec(TraitedSpec):
     """Output specification for TGVQSMJlInterface."""

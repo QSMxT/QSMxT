@@ -521,6 +521,14 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
+        '--gpu',
+        default=None,
+        choices=['CUDA', 'AMDGPU', 'oneAPI', 'Metal'],
+        help='Uses the specified GPU driver where applicable. Currently this works for the TGV QSM '+
+             'algorithm. By default, the CPU will be used.'
+    )
+
+    parser.add_argument(
         '--pbs',
         default=None,
         dest='pbs',

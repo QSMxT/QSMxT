@@ -1157,7 +1157,8 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             name='TGV',
             time="01:00:00",
             mem_gb=tgv_mem,
-            num_cpus=tgv_threads
+            num_cpus=tgv_threads,
+            gpu=True
         )
         wf.connect([
             (n_inputs, mn_qsm, [('mask', 'mask')]),
