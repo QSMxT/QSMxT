@@ -9,11 +9,11 @@ from qsmxt.interfaces import nipype_interface_phaseweights as phaseweights
 from qsmxt.interfaces import nipype_interface_twopass as twopass
 from qsmxt.interfaces import nipype_interface_makehomogeneous as makehomogeneous
 from qsmxt.interfaces import nipype_interface_combinemagnitude as combinemagnitude
+from qsmxt.interfaces import nipype_interface_frangi as frangi
 
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
 
 def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_available, fill_masks, add_bet, use_maps, name, index):
-
     wf = Workflow(name=f"{name}_workflow")
 
     slurm_account = run_args.slurm[0] if run_args.slurm and len(run_args.slurm) else None
@@ -35,12 +35,19 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
     if not mask_available:
 
+        n_mask = Node(
+            interface=IdentityInterface(
+                fields=['mask']
+            ),
+            name='mask'
+        )
+
         # determine whether bet will be used this run
         bet_used = magnitude_available and (
              run_args.masking_algorithm == 'bet'
              or run_args.add_bet
              or run_args.filling_algorithm == 'bet')
-        bet_this_run = bet_used and (fill_masks or (run_args.mask_erosions and run_args.masking_algorithm == 'threshold' and not fill_masks))
+        bet_this_run = bet_used and ((fill_masks == False and run_args.frangi_filter) or (fill_masks or (run_args.mask_erosions and run_args.masking_algorithm == 'threshold' and not fill_masks)))
 
         # combine magnitude if necessary
         if magnitude_available and run_args.combine_phase:
@@ -176,7 +183,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
             # output eroded bet mask if necessary
             if run_args.masking_algorithm == 'bet' or (fill_masks and run_args.filling_algorithm == 'bet'):
                 wf.connect([
-                    (mn_bet_erode, n_outputs, [('out_file', 'mask')])
+                    (mn_bet_erode, n_mask, [('out_file', 'mask')])
                 ])
 
         # do threshold masking if necessary
@@ -185,7 +192,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 interface=masking.MaskingInterface(
                     threshold_algorithm='otsu' or run_args.threshold_algorithm,
                     threshold_algorithm_factor=run_args.threshold_algorithm_factor[index % len(run_args.threshold_algorithm_factor)],
-                    fill_masks=fill_masks,
+                    fill_masks=bool(fill_masks or run_args.frangi_filter),
                     mask_suffix=name,
                     num_erosions=run_args.mask_erosions[index % len(run_args.mask_erosions)] if run_args.mask_erosions else 0,
                     filling_algorithm=run_args.filling_algorithm
@@ -218,7 +225,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                     ])
             if not add_bet:
                 wf.connect([
-                    (n_threshold_masking, n_outputs, [('mask', 'mask')])
+                    (n_threshold_masking, n_mask, [('mask', 'mask')])
                 ])
             else:
                 mn_mask_plus_bet = create_node(
@@ -230,8 +237,78 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 wf.connect([
                     (n_threshold_masking, mn_mask_plus_bet, [('mask', 'in_file')]),
                     (mn_bet_erode, mn_mask_plus_bet, [('out_file', 'in_filled')]),
-                    (mn_mask_plus_bet, n_outputs, [('out_file', 'mask')])
+                    (mn_mask_plus_bet, n_mask, [('out_file', 'mask')])
                 ])
+
+        # subtract vessels if necessary
+        if run_args.frangi_filter and magnitude_available and not fill_masks:
+            frangi_threads = 1
+            n_frangi = create_node(
+                interface=frangi.FrangiFilterInterface(),
+                name='n_frangi',
+                iterfield=['in_file'],
+                is_map=use_maps,
+                mem_gb=min(6, run_args.mem_avail),
+                n_procs=frangi_threads,
+            )
+            n_frangi.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
+                slurm_account=slurm_account,
+                pbs_account=run_args.pbs,
+                slurm_partition=slurm_partition,
+                name="frangi",
+                time="01:00:00",
+                mem_gb=8,
+                num_cpus=frangi_threads
+            )
+            if run_args.inhomogeneity_correction:
+                wf.connect([
+                    (mn_inhomogeneity_correction, n_frangi, [('magnitude_corrected', 'in_file')])
+                ])
+            elif run_args.combine_phase:
+                wf.connect([
+                    (n_combine_magnitude, n_frangi, [('magnitude_combined', 'in_file')])
+                ])
+            else:
+                wf.connect([
+                    (n_inputs, n_frangi, [('magnitude', 'in_file')])
+                ])
+
+            def subtract_vessels(mask, vessel_map):
+                import nibabel as nib
+                import numpy as np
+                import os
+                from qsmxt.scripts.qsmxt_functions import extend_fname
+                mask_nii = nib.load(mask)
+                vessel_map_nii = nib.load(vessel_map)
+                mask_data = mask_nii.get_fdata()
+                vessel_map_data = vessel_map_nii.get_fdata()
+                vessel_mask = (vessel_map_data > 0.007).astype(np.int16)
+                mask_data = ((mask_data - vessel_mask > 0)).astype(np.int16)
+                out_file = extend_fname(mask, "_frangi", out_dir=os.getcwd())
+                nib.save(nib.Nifti1Image(mask_data, affine=mask_nii.affine, header=mask_nii.header), out_file)
+                return out_file
+
+            n_subtract_vessels = create_node(
+                interface=Function(
+                    input_names=['mask', 'vessel_map'],
+                    output_names=['mask'],
+                    function=subtract_vessels
+                ),
+                iterfield=['mask', 'vessel_map'],
+                name='n_subtract_vessels',
+                is_map=use_maps
+            )
+            wf.connect([
+                (n_frangi, n_subtract_vessels, [('out_file', 'vessel_map')]),
+                (n_mask, n_subtract_vessels, [('mask', 'mask')]),
+                (n_subtract_vessels, n_outputs, [('mask', 'mask')]),
+            ])
+        else:
+            wf.connect([
+                (n_mask, n_outputs, [('mask', 'mask')])
+            ])
+        
 
     # outputs
     if mask_available:

@@ -644,7 +644,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             add_bet=run_args.add_bet and run_args.filling_algorithm != 'bet',
             use_maps=len(phase_files) > 1 and not run_args.combine_phase,
             name="mask",
-            index=0
+            index=0 if run_args.frangi_filter else 1
         )
         wf.connect([
             (n_inputs_resampled, wf_masking, [('phase', 'masking_inputs.phase')]),

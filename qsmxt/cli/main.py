@@ -383,12 +383,23 @@ def parse_args(args, return_run_command=False):
         default=None,
         help='Setting this to \'on\' will perform a QSM reconstruction in a two-stage fashion to reduce '+
             'artefacts; combines the results from two QSM images reconstructed using masks that separate '+
-            'more reliable and less reliable phase regions. Note that this option requires threshold-based '+
-            'masking, doubles reconstruction time, and in some cases can deteriorate QSM contrast in some '+
-            'regions, depending on other parameters such as the threshold. Applications where two-pass QSM '+
-            'may improve results include body imaging, lesion imaging, and imaging of other strong '+
-            'susceptibility sources. This method is based on doi:10.1002/mrm.29048 from Stewart et al. By '+
-            'default, two-pass is enabled for the RTS algorithm only.'
+            'more reliable and less reliable phase regions. Note that this option requires either '+
+            'threshold-based masking or Frangi vessel filltering. It also doubles reconstruction time, '+
+            'and in some cases can deteriorate QSM contrast in some regions, depending on other parameters '+
+            'such as the threshold. Applications where two-pass QSM may improve results include body '+
+            'imaging, lesion imaging, and imaging of other strong susceptibility sources. This method is '+
+            'based on doi:10.1002/mrm.29048 from Stewart et al. By default, two-pass is enabled for the '+
+            'RTS algorithm only.'
+    )
+
+    parser.add_argument(
+        '--frangi_filter',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
+        default=None,
+        help='This option will remove vessels from brain masks using a Frangi vessel filter '+
+        '(Frangi AF. et al., MICCAI\'98, https://link.springer.com/chapter/10.1007/bfb0056195).'
     )
 
     parser.add_argument(
@@ -970,11 +981,11 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
             print(f"\n(2) QSM pipeline: {args.premade}")
             print("\n(3) [ADVANCED] QSM masking:")
             print(f" - Use existing masks if available: {'Yes' if args.use_existing_masks else 'No'}" + (f" (using PIPELINE_NAME={args.existing_masks_pipeline})" if args.use_existing_masks else ""))
+            print(f" - Two-pass artefact reduction: {'Enabled' if args.two_pass else 'Disabled'} {'(vessel subtraction via Frangi filter)' if args.frangi_filter and args.two_pass else '(threshold-based masks)' if args.two_pass else ''}")
             if args.masking_algorithm == 'threshold':
                 print(f" - Masking algorithm: threshold ({args.masking_input}-based{('; inhomogeneity-corrected)' if args.masking_input == 'magnitude' and args.inhomogeneity_correction else ')')}")
-                print(f"   - Two-pass artefact reduction: {'Enabled' if args.two_pass else 'Disabled'}")
                 if args.threshold_value:
-                    if len(args.threshold_value) >= 2 and all(args.threshold_value) and args.two_pass:
+                    if len(args.threshold_value) >= 2 and all(args.threshold_value) and args.two_pass and not args.frangi_filter:
                         if int(args.threshold_value[0]) == float(args.threshold_value[0]) and int(args.threshold_value[1]) == float(args.threshold_value[1]):
                             print(f"   - Threshold: {int(args.threshold_value[0])}, {int(args.threshold_value[1])} (hardcoded voxel intensities)")
                         else:
@@ -986,14 +997,14 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                             print(f"   - Threshold: {float(args.threshold_value[0])}% (hardcoded percentile of per-echo histogram)")
                 else:
                     print(f"   - Threshold algorithm: {args.threshold_algorithm}", end="")
-                    if len(args.threshold_algorithm_factor) >= 2 and args.two_pass:
+                    if len(args.threshold_algorithm_factor) >= 2 and args.two_pass and not args.frangi_filter:
                         print(f" (x{args.threshold_algorithm_factor[0]} for single-pass; x{args.threshold_algorithm_factor[1]} for two-pass)")
                     elif len(args.threshold_algorithm_factor):
                         print(f" (x{args.threshold_algorithm_factor[0]})")
                     else:
                         print()
                 print(f"   - Hole-filling algorithm: {'morphological+gaussian' if args.filling_algorithm == 'both' else args.filling_algorithm}{'+bet' if args.add_bet else ''}{f' (bet fractional intensity = {args.bet_fractional_intensity})' if args.add_bet else ''}")
-                if args.two_pass and len(args.mask_erosions) == 2:
+                if args.two_pass and len(args.mask_erosions) == 2 and not args.frangi_filter:
                     print(f"   - Erosions: {args.mask_erosions[0]} erosions for single-pass; {args.mask_erosions[1]} erosions for two-pass")
             else:
                 print(f" - Masking algorithm: {args.masking_algorithm}{f' (fractional intensity = {args.bet_fractional_intensity})' if 'bet' in args.masking_algorithm else ''}")
@@ -1327,10 +1338,12 @@ def process_args(args):
         else:
             args.two_pass = False
     
-    # two-pass does not work with bet masking, nextqsm, or vsharp
-    args.two_pass &= 'bet' not in args.masking_algorithm
+    # two-pass does not work with nextqsm or vsharp
     args.two_pass &= args.qsm_algorithm != 'nextqsm'
     args.two_pass &= not (args.bf_algorithm == 'vsharp' and args.qsm_algorithm in ['tv', 'rts', 'nextqsm'])
+
+    # two-pass requires either threshold-based masking or the frangi vessel filter
+    args.two_pass &= (not ('bet' in args.masking_algorithm and not args.frangi_filter))
 
     # 'bet' hole-filling not applicable for single-pass
     if not args.two_pass and args.filling_algorithm == 'bet':
