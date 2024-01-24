@@ -103,7 +103,8 @@ jobs:
           'test_use_existing_masks',
           'test_supplementary_images',
           'test_realdata',
-          'test_singleecho'
+          'test_singleecho',
+          'test_laplacian_and_tv'
         ]
       fail-fast: false
     steps:

@@ -112,7 +112,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     echo "[DEBUG] Checking if qsmxt-container already exists"
     CONTAINER_EXISTS=$(sudo docker ps -a -q -f name=qsmxt-container)
     if [ ! -n "${CONTAINER_EXISTS}" ]; then
-        echo "[DEBUG] Creating qsmxt-container"
+        echo "[DEBUG] Creating qsmxt-container using image vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
         sudo docker create --name qsmxt-container -it \
             -v ${TEST_DIR}/:${TEST_DIR} \
             --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \

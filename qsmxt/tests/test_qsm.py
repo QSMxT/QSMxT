@@ -389,4 +389,32 @@ def test_singleecho(bids_dir_public):
 
     shutil.rmtree(out_dir)
 
+def test_laplacian_and_tv(bids_dir_public):
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING LAPLACIAN UNWRAPPING AND TV ALGO ===")
+
+    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+
+    # run pipeline and specifically choose magnitude-based masking
+    args = [
+        bids_dir_public,
+        out_dir,
+        "--unwrapping_algorithm", "laplacian",
+        "--qsm_algorithm", "tv",
+        "--auto_yes",
+        "--debug",
+        "--subjects", "sub-1",
+        "--sessions", "ses-1"
+    ]
+    
+    # create the workflow and run
+    args = main(args)
+
+    # generate image
+    github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if github_step_summary:
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='Single echo', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+
+    shutil.rmtree(out_dir)
+
 
