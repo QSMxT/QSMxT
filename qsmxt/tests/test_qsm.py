@@ -401,6 +401,7 @@ def test_laplacian_and_tv(bids_dir_public):
         out_dir,
         "--unwrapping_algorithm", "laplacian",
         "--qsm_algorithm", "tv",
+        "--combine_phase", "off",
         "--auto_yes",
         "--debug",
         "--subjects", "sub-1",
