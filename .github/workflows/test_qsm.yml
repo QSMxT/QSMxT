@@ -63,7 +63,6 @@ jobs:
         OSF_USER: ${{ secrets.OSF_USER }}
         OSF_PASS: ${{ secrets.OSF_PASS }}
       run: |
-        rm "${TEST_DIR}/qsmxt.lock"
         /bin/bash qsmxt/tests/setup_qsmxt.sh docker
   test_qsm_premades:
     needs: setup_qsmxt
