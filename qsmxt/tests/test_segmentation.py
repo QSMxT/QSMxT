@@ -27,7 +27,7 @@ def bids_dir_public():
     logger.log(LogLevel.INFO.value, f"=== BIDS Preparation ===")
 
     tmp_dir = gettempdir()
-    bids_dir = os.path.join(tmp_dir, "bids-public")
+    bids_dir = os.path.join(tmp_dir, "bids")
     if not glob.glob(os.path.join(bids_dir, "sub*1")):
         logger.log(LogLevel.INFO.value, f"No subjects in BIDS directory yet")
         head_phantom_maps_dir = os.path.join(tmp_dir, 'data')
