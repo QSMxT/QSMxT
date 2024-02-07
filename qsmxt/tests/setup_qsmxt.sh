@@ -247,14 +247,29 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 fi
 
 # === GENERATE TEST DATA ===
-pip install qsm-forward==0.20 osfclient
-osf --project "9jc42" fetch data.tar "${TEST_DIR}/data.tar"
-tar xf "${TEST_DIR}/data.tar"
+if [ -d "${TEST_DIR}/bids" ]; then
+    echo "[DEBUG] BIDS directory ${TEST_DIR}/bids exists."
+else
+    echo "[DEBUG] BIDS directory ${TEST_DIR}/bids does not exist. Downloading dependencies..."
+    pip install qsm-forward==0.20 osfclient
 
-qsm-forward head "${TEST_DIR}/data" "${TEST_DIR}/bids" --subject 1 --session 1 --TR 0.0075 --TEs 0.0035 --flip_angle 40 --suffix T1w
-qsm-forward head "${TEST_DIR}/data" "${TEST_DIR}/bids" --subject 1 --session 1 --TR 0.05 --TEs 0.012 0.020 --flip_angle 15 --suffix MEGRE --save-phase
-qsm-forward head "${TEST_DIR}/data" "${TEST_DIR}/bids" --subject 1 --session 2 --TR 0.05 --TEs 0.012 0.020 --flip_angle 15 --suffix MEGRE --save-phase
+    echo "[DEBUG] Pulling head phantom data from OSF..."
+    osf --project "9jc42" fetch data.tar "${TEST_DIR}/data.tar"
+
+    echo "[DEBUG] Extracting..."
+    tar xf "${TEST_DIR}/data.tar"
+
+    echo "[DEBUG] Removing tar file..."
+    rm "${TEST_DIR}/data.tar"
+
+    echo "[DEBUG] Running forward model..."
+    qsm-forward head "${TEST_DIR}/data" "${TEST_DIR}/bids" --subject 1 --session 1 --TR 0.0075 --TEs 0.0035 --flip_angle 40 --suffix T1w
+    qsm-forward head "${TEST_DIR}/data" "${TEST_DIR}/bids" --subject 1 --session 1 --TR 0.05 --TEs 0.012 0.020 --flip_angle 15 --suffix MEGRE --save-phase
+    qsm-forward head "${TEST_DIR}/data" "${TEST_DIR}/bids" --subject 1 --session 2 --TR 0.05 --TEs 0.012 0.020 --flip_angle 15 --suffix MEGRE --save-phase
+    echo "[DEBUG] Data generation complete!"
+fi
 
 # === REMOVE LOCK FILE ===
+echo "[DEBUG] Removing lockfile..."
 rm -f "${LOCK_FILE}"
 
