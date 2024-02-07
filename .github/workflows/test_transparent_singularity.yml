@@ -32,6 +32,9 @@ jobs:
       env:
         TEST_DIR: "/tmp"
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
+        OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
+        OSF_USER: ${{ secrets.OSF_USER }}
+        OSF_PASS: ${{ secrets.OSF_PASS }}
       run: |
         ./qsmxt/tests/setup_qsmxt.sh apptainer
     - name: test transparent singularity

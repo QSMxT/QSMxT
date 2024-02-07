@@ -47,6 +47,9 @@ jobs:
       env:
         TEST_DIR: "/storage/tmp"
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
+        OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
+        OSF_USER: ${{ secrets.OSF_USER }}
+        OSF_PASS: ${{ secrets.OSF_PASS }}
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh docker
     - name: Run segmentation pipeline
