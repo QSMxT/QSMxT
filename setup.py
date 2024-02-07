@@ -39,12 +39,11 @@ setup(
         'seaborn',
         'webdavclient3',
         'images-upload-cli',
-        'qsm-forward==0.19',
+        'qsm-forward==0.20',
         'osfclient',
         'niflow-nipype1-workflows',
         'tensorflow',
-        'packaging',
-        'nii2dcm @ git+https://github.com/astewartau/nii2dcm.git@main#egg=nii2dcm'
+        'packaging'
     ],
     entry_points={
         'console_scripts': [
