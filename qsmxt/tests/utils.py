@@ -2,9 +2,6 @@ import os
 import datetime
 import signal
 from random import randint
-import tempfile
-import glob
-import shutil
 from time import sleep
 
 import osfclient
@@ -17,7 +14,6 @@ from matplotlib import pyplot as plt
 from qsmxt.cli.main import *
 from qsmxt.scripts.sys_cmd import sys_cmd
 from qsmxt.scripts.logger import LogLevel, make_logger
-from qsmxt.scripts.qsmxt_functions import get_qsmxt_version, extend_fname
 
 def create_logger(log_dir):
     os.makedirs(log_dir, exist_ok=True)

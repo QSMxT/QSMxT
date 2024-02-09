@@ -43,7 +43,8 @@ setup(
         'osfclient',
         'niflow-nipype1-workflows',
         'tensorflow',
-        'packaging'
+        'packaging',
+        'nextqsm'
     ],
     entry_points={
         'console_scripts': [

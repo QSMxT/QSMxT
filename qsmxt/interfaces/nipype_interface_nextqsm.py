@@ -22,7 +22,7 @@ class NextqsmOutputSpec(TraitedSpec):
 class NextqsmInterface(CommandLine):
     input_spec = NextqsmInputSpec
     output_spec = NextqsmOutputSpec
-    _cmd = "predict_all.py"
+    _cmd = "nextqsm"
 
 
 ## Normalize input data for NeXtQSM
