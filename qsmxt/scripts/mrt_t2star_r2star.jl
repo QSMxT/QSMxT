@@ -1,6 +1,12 @@
 #!/usr/bin/env julia
-using MriResearchTools
-using ArgParse
+import Pkg
+Pkg.activate(@__DIR__)
+try
+    using MriResearchTools, ArgParse
+catch
+    Pkg.add(["MriResearchTools", "ArgParse"])
+    using MriResearchTools, ArgParse
+end
 
 s = ArgParseSettings()
 @add_arg_table! s begin

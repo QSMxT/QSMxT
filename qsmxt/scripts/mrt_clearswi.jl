@@ -1,8 +1,12 @@
 #!/usr/bin/env julia
-
-using CLEARSWI
-using MriResearchTools
-using ArgParse
+import Pkg
+Pkg.activate(@__DIR__)
+try
+    using CLEARSWI, MriResearchTools, ArgParse
+catch
+    Pkg.add(["CLEARSWI", "MriResearchTools", "ArgParse"])
+    using CLEARSWI, MriResearchTools, ArgParse
+end
 
 s = ArgParseSettings()
 @add_arg_table! s begin

@@ -1,5 +1,12 @@
 #!/usr/bin/env julia
-using MriResearchTools
+import Pkg
+Pkg.activate(@__DIR__)
+try
+    using MriResearchTools
+catch
+    Pkg.add(["MriResearchTools"])
+    using MriResearchTools
+end
 
 in_path = ARGS[1];
 out_path = ARGS[2];
