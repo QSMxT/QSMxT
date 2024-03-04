@@ -319,7 +319,6 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                         details['part_type'] = 'mag'
                     else:
                         likely_part_types = list(set([d['part_type'] for d in session_details if d['protocol_name'] == details['protocol_name'] and d['series_description'] == details['series_description'] and d['image_type'] == details['image_type'] and 'part_type' in d]))
-                        print(likely_part_types)
                         if len(likely_part_types) == 1:
                             details['part_type'] = likely_part_types[0]
                         elif sys.__stdin__.isatty() and not auto_yes:
@@ -379,14 +378,14 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                             mag_details = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'mag' and details['subject'] == subject and details['session'] == session]
                             mag_series_nums = sorted(list(set([details['series_num'] for details in mag_details])))
                             mag_series_nums_idxs = [i for i in range(len(mag_series_nums))]
-                            mag_image_types = [details['image_type'] for details in mag_details for series_num in mag_series_nums if details['series_num'] == series_num]
-                            mag_descriptions = [details['series_description'] for details in mag_details for series_num in mag_series_nums if details['series_num'] == series_num]
+                            mag_image_types = [list(set().union(*(detail['image_type'] for detail in mag_details if detail['series_num'] == series_num))) for series_num in sorted(set(detail['series_num'] for detail in mag_details))]
+                            mag_descriptions = [descriptions[0] if len(descriptions) == 1 else tuple(descriptions) for descriptions in [list(set(detail['series_description'] for detail in mag_details if detail['series_num'] == series_num)) for series_num in set(detail['series_num'] for detail in mag_details)]]
                             
                             phs_details = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'phase' and details['subject'] == subject and details['session'] == session]
                             phs_series_nums = sorted(list(set([details['series_num'] for details in phs_details])))
                             phs_series_nums_idxs = [i for i in range(len(phs_series_nums))]
-                            phs_image_types = [details['image_type'] for details in phs_details for series_num in phs_series_nums if details['series_num'] == series_num]
-                            phs_descriptions = [details['series_description'] for details in phs_details for series_num in phs_series_nums if details['series_num'] == series_num]
+                            phs_image_types = [list(set().union(*(detail['image_type'] for detail in phs_details if detail['series_num'] == series_num))) for series_num in sorted(set(detail['series_num'] for detail in phs_details))]
+                            phs_descriptions = [descriptions[0] if len(descriptions) == 1 else tuple(descriptions) for descriptions in [list(set(detail['series_description'] for detail in phs_details if detail['series_num'] == series_num)) for series_num in set(detail['series_num'] for detail in phs_details)]]
 
                             logger.log(LogLevel.INFO.value, f"Multiple magnitude and/or phase series found for protocol {acq}!")
                             # user selects which series idx to keep
