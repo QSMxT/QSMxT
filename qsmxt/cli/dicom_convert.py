@@ -53,6 +53,7 @@ def clean(data):
         return f'sub-{cleaned[3:]}'
     elif data.startswith('ses-'):
         return f'ses-{cleaned[3:]}'
+    return cleaned
 
 def get_folders_in(folder, full_path=False):
     folders = list(filter(os.path.isdir, [os.path.join(folder, d) for d in os.listdir(folder)]))
