@@ -1,8 +1,11 @@
 #!/usr/bin/env julia
-
-using MriResearchTools
-using ArgParse
-using QSM
+import Pkg
+try
+    using MriResearchTools, ArgParse, QSM
+catch
+    Pkg.add(["MriResearchTools", "ArgParse", "QSM"])
+    using MriResearchTools, ArgParse, QSM
+end
 
 QSM.FFTW_NTHREADS[] = Threads.nthreads()
 

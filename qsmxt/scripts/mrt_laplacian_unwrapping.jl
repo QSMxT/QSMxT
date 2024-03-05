@@ -1,6 +1,11 @@
 #!/usr/bin/env julia
-using MriResearchTools
-using FFTW
+import Pkg
+try
+    using MriResearchTools, FFTW
+catch
+    Pkg.add(["MriResearchTools", "FFTW"])
+    using MriResearchTools, FFTW
+end
 
 phase_path, phase_unwrapped_path = ARGS
 

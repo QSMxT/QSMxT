@@ -53,6 +53,7 @@ def clean(data):
         return f'sub-{cleaned[3:]}'
     elif data.startswith('ses-'):
         return f'ses-{cleaned[3:]}'
+    return cleaned
 
 def get_folders_in(folder, full_path=False):
     folders = list(filter(os.path.isdir, [os.path.join(folder, d) for d in os.listdir(folder)]))
@@ -237,6 +238,7 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
 
     logger.log(LogLevel.INFO.value, 'Parsing relevant details from JSON headers...')
     all_session_details = []
+    series_part_types = {}
     for subject in subjects:
         sessions = get_folders_in(os.path.join(output_dir, subject))
         for session in sessions:
@@ -316,9 +318,10 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                         details['part_type'] = 'mag'
                     elif details['protocol_type'] == 't1w':
                         details['part_type'] = 'mag'
+                    elif details['series_description'] in series_part_types:
+                        details['part_type'] = series_part_types[details['series_description']]
                     else:
                         likely_part_types = list(set([d['part_type'] for d in session_details if d['protocol_name'] == details['protocol_name'] and d['series_description'] == details['series_description'] and d['image_type'] == details['image_type'] and 'part_type' in d]))
-                        print(likely_part_types)
                         if len(likely_part_types) == 1:
                             details['part_type'] = likely_part_types[0]
                         elif sys.__stdin__.isatty() and not auto_yes:
@@ -333,6 +336,7 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                                 part_type = input("Select part type (ENTER to skip): ")
                                 if part_type == "":
                                     details['part_type'] = None
+                                    series_part_types[details['series_description']] = None
                                     break
                                 try:
                                     part_type = int(part_type)
@@ -343,7 +347,9 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                                     print("Invalid input")
                             if part_type == 1:
                                 details['part_type'] = 'mag'
+                                series_part_types[details['series_description']] = 'mag'
                             elif part_type == 2:
+                                series_part_types[details['series_description']] = 'phase'
                                 details['part_type'] = 'phase'
                         else:
                             details['part_type'] = 'mag'
@@ -378,74 +384,99 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                             mag_details = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'mag' and details['subject'] == subject and details['session'] == session]
                             mag_series_nums = sorted(list(set([details['series_num'] for details in mag_details])))
                             mag_series_nums_idxs = [i for i in range(len(mag_series_nums))]
-                            mag_image_types = [details['image_type'] for details in mag_details for series_num in mag_series_nums if details['series_num'] == series_num]
-                            mag_descriptions = [details['series_description'] for details in mag_details for series_num in mag_series_nums if details['series_num'] == series_num]
+                            mag_image_types = [list(set().union(*(detail['image_type'] for detail in mag_details if detail['series_num'] == series_num))) for series_num in sorted(set(detail['series_num'] for detail in mag_details))]
+                            mag_descriptions = [descriptions[0] if len(descriptions) == 1 else tuple(descriptions) for descriptions in [list(set(detail['series_description'] for detail in mag_details if detail['series_num'] == series_num)) for series_num in set(detail['series_num'] for detail in mag_details)]]
                             
                             phs_details = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'phase' and details['subject'] == subject and details['session'] == session]
                             phs_series_nums = sorted(list(set([details['series_num'] for details in phs_details])))
                             phs_series_nums_idxs = [i for i in range(len(phs_series_nums))]
-                            phs_image_types = [details['image_type'] for details in phs_details for series_num in phs_series_nums if details['series_num'] == series_num]
-                            phs_descriptions = [details['series_description'] for details in phs_details for series_num in phs_series_nums if details['series_num'] == series_num]
+                            phs_image_types = [list(set().union(*(detail['image_type'] for detail in phs_details if detail['series_num'] == series_num))) for series_num in sorted(set(detail['series_num'] for detail in phs_details))]
+                            phs_descriptions = [descriptions[0] if len(descriptions) == 1 else tuple(descriptions) for descriptions in [list(set(detail['series_description'] for detail in phs_details if detail['series_num'] == series_num)) for series_num in set(detail['series_num'] for detail in phs_details)]]
 
-                            logger.log(LogLevel.INFO.value, f"Multiple magnitude and/or phase series found for protocol {acq}!")
-                            # user selects which series idx to keep
-                            print(f"== MAGNITUDE SERIES FOUND FOR {subject}.{session}.acq-{acq}.run-{run_num} ==")
-                            for i in range(len(mag_series_nums)):
-                                print(f"{i+1}. SERIES {mag_series_nums[i]}; IMAGE_TYPE={mag_image_types[i]}; SeriesDescription={mag_descriptions[i]}; NumFiles={len([details for details in mag_details if details['series_num'] == mag_series_nums[i]])}")
-                            print(f"== PHASE SERIES FOUND FOR {subject}.{session}.acq-{acq}.run-{run_num} ==")
-                            for i in range(len(phs_series_nums)):
-                                print(f"{i+1}. SERIES {phs_series_nums[i]}; IMAGE_TYPE={phs_image_types[i]}; SeriesDescription={phs_descriptions[i]}; NumFiles={len([details for details in phs_details if details['series_num'] == phs_series_nums[i]])}")
-                            
-                            # the user must match mag-phase pairs e.g. (1, 1), (2, 2), (3, 4), (4, 3)
-                            while True:
-                                user_in = input("Identify magnitude-phase series pairs to use for QSM as tuples e.g. (1, 1), (2, 2): ")
+                            if (len(mag_details) == len(phs_details)
+                                and len(set([details['series_num'] for details in mag_details])) == len(mag_details)
+                                and len(set([details['series_num'] for details in phs_details])) == len(phs_details)
+                                and all(details['series_description'] == mag_details[0]['series_description'] for details in mag_details)
+                                and all(details['series_description'] == phs_details[0]['series_description'] for details in phs_details)
+                                and all(image_type == mag_image_types[0] for image_type in mag_image_types)
+                                and all(image_type == phs_image_types[0] for image_type in phs_image_types)):
 
-                                try:
-                                    user_in = ast.literal_eval(f"[{user_in}]")
-                                    if not all(isinstance(t, tuple) for t in user_in):
+                                if (len(set([details['echo_time'] for details in mag_details])) != len(mag_details)
+                                    and len(set([details['echo_time'] for details in phs_details])) != len(phs_details)):
+
+                                    mag_details_sorted = sorted(mag_details, key=lambda x: x['acquisition_time'])
+                                    for i in range(1, len(mag_details_sorted)):
+                                        if mag_details_sorted[i]['echo_time'] < mag_details_sorted[i - 1]['echo_time']:
+                                            for j in range(i, len(mag_details_sorted)):
+                                                mag_details_sorted[j]['run_num'] += 1
+
+                                    phs_details_sorted = sorted(phs_details, key=lambda x: x['acquisition_time'])
+                                    for i in range(1, len(phs_details_sorted)):
+                                        if phs_details_sorted[i]['echo_time'] < phs_details_sorted[i - 1]['echo_time']:
+                                            for j in range(i, len(phs_details_sorted)):
+                                                phs_details_sorted[j]['run_num'] += 1
+                                
+                            else:
+
+                                logger.log(LogLevel.INFO.value, f"Multiple magnitude and/or phase series found for protocol {acq}!")
+                                # user selects which series idx to keep
+                                print(f"== MAGNITUDE SERIES FOUND FOR {subject}.{session}.acq-{acq}.run-{run_num} ==")
+                                for i in range(len(mag_series_nums)):
+                                    print(f"{i+1}. SERIES {mag_series_nums[i]}; IMAGE_TYPE={mag_image_types[i]}; SeriesDescription={mag_descriptions[i]}; NumFiles={len([details for details in mag_details if details['series_num'] == mag_series_nums[i]])}")
+                                print(f"== PHASE SERIES FOUND FOR {subject}.{session}.acq-{acq}.run-{run_num} ==")
+                                for i in range(len(phs_series_nums)):
+                                    print(f"{i+1}. SERIES {phs_series_nums[i]}; IMAGE_TYPE={phs_image_types[i]}; SeriesDescription={phs_descriptions[i]}; NumFiles={len([details for details in phs_details if details['series_num'] == phs_series_nums[i]])}")
+                                
+                                # the user must match mag-phase pairs e.g. (1, 1), (2, 2), (3, 4), (4, 3)
+                                while True:
+                                    user_in = input("Identify magnitude-phase series pairs to use for QSM as tuples e.g. (1, 1), (2, 2): ")
+
+                                    try:
+                                        user_in = ast.literal_eval(f"[{user_in}]")
+                                        if not all(isinstance(t, tuple) for t in user_in):
+                                            print("Input has an invalid format.")
+                                            continue
+                                    except (ValueError, SyntaxError):
                                         print("Input has an invalid format.")
                                         continue
-                                except (ValueError, SyntaxError):
-                                    print("Input has an invalid format.")
-                                    continue
 
-                                # subtract 1 from all elements in user_in
-                                matched_series = [(t[0]-1, t[1]-1) for t in user_in]
+                                    # subtract 1 from all elements in user_in
+                                    matched_series = [(t[0]-1, t[1]-1) for t in user_in]
 
-                                # there must be no duplicate assignments
-                                if len(user_in) != len(set(user_in)):
-                                    print("Duplicate assignments detected.")
-                                    continue
+                                    # there must be no duplicate assignments
+                                    if len(user_in) != len(set(user_in)):
+                                        print("Duplicate assignments detected.")
+                                        continue
 
-                                # all magnitude series must be assigned to a unique phase series
-                                if len(set([t[0] for t in user_in])) != len(set([t[1] for t in user_in])):
-                                    print("All magnitude series must be assigned to a unique phase series.")
-                                    continue
+                                    # all magnitude series must be assigned to a unique phase series
+                                    if len(set([t[0] for t in user_in])) != len(set([t[1] for t in user_in])):
+                                        print("All magnitude series must be assigned to a unique phase series.")
+                                        continue
 
-                                break
+                                    break
 
-                            for index, (mag_series, phase_series) in enumerate(matched_series):
-                                # give new run numbers to all but the first mag-phase pair
-                                if index > 0:
-                                    mag_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'mag' and details['series_num'] == mag_series_nums[mag_series] and details['subject'] == subject and details['session'] == session]
-                                    phs_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'phase' and details['series_num'] == phs_series_nums[phase_series] and details['subject'] == subject and details['session'] == session]
+                                for index, (mag_series, phase_series) in enumerate(matched_series):
+                                    # give new run numbers to all but the first mag-phase pair
+                                    if index > 0:
+                                        mag_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'mag' and details['series_num'] == mag_series_nums[mag_series] and details['subject'] == subject and details['session'] == session]
+                                        phs_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'phase' and details['series_num'] == phs_series_nums[phase_series] and details['subject'] == subject and details['session'] == session]
 
-                                    for details in mag_details_i:
-                                        details['run_num'] = max_run_num + index
-                                    for details in phs_details_i:
-                                        details['run_num'] = max_run_num + index
+                                        for details in mag_details_i:
+                                            details['run_num'] = max_run_num + index
+                                        for details in phs_details_i:
+                                            details['run_num'] = max_run_num + index
 
-                            # remove all unmatched series
-                            for i in range(len(mag_series_nums)):
-                                if i not in [t[0] for t in matched_series]:
-                                    mag_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'mag' and details['series_num'] == mag_series_nums[i] and details['subject'] == subject and details['session'] == session]
-                                    for details in mag_details_i:
-                                        all_session_details.remove(details)
-                            for i in range(len(phs_series_nums)):
-                                if i not in [t[1] for t in matched_series]:
-                                    phs_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'phase' and details['series_num'] == phs_series_nums[i] and details['subject'] == subject and details['session'] == session]
-                                    for details in phs_details_i:
-                                        all_session_details.remove(details)
+                                # remove all unmatched series
+                                for i in range(len(mag_series_nums)):
+                                    if i not in [t[0] for t in matched_series]:
+                                        mag_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'mag' and details['series_num'] == mag_series_nums[i] and details['subject'] == subject and details['session'] == session]
+                                        for details in mag_details_i:
+                                            all_session_details.remove(details)
+                                for i in range(len(phs_series_nums)):
+                                    if i not in [t[1] for t in matched_series]:
+                                        phs_details_i = [details for details in all_session_details if details['protocol_name'] == acq and details['run_num'] == run_num and details['part_type'] == 'phase' and details['series_num'] == phs_series_nums[i] and details['subject'] == subject and details['session'] == session]
+                                        for details in phs_details_i:
+                                            all_session_details.remove(details)
 
     # update echo numbers and number of echoes
     for subject in list(set(details['subject'] for details in all_session_details)):

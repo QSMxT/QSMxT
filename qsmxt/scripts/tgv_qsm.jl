@@ -1,8 +1,11 @@
 #!/usr/bin/env julia
-
-using QuantitativeSusceptibilityMappingTGV
-using MriResearchTools
-using ArgParse
+import Pkg
+try
+    using QuantitativeSusceptibilityMappingTGV, MriResearchTools, ArgParse
+catch
+    Pkg.add(["QuantitativeSusceptibilityMappingTGV", "MriResearchTools", "ArgParse"])
+    using QuantitativeSusceptibilityMappingTGV, MriResearchTools, ArgParse
+end
 
 function parse_cli_args()
     s = ArgParseSettings()
