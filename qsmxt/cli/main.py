@@ -978,12 +978,12 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                         if int(args.threshold_value[0]) == float(args.threshold_value[0]) and int(args.threshold_value[1]) == float(args.threshold_value[1]):
                             print(f"   - Threshold: {int(args.threshold_value[0])}, {int(args.threshold_value[1])} (hardcoded voxel intensities)")
                         else:
-                            print(f"   - Threshold: {float(args.threshold_value[0])}%, {float(args.threshold_value[1])}% (hardcoded percentiles of the signal histogram)")
+                            print(f"   - Threshold: {float(args.threshold_value[0])*100}%, {float(args.threshold_value[1])*100}% (hardcoded percentiles of the signal histogram)")
                     elif len(args.threshold_value) == 1 and all(args.threshold_value):
                         if int(args.threshold_value[0]) == float(args.threshold_value[0]):
                             print(f"   - Threshold: {int(args.threshold_value[0])} (hardcoded voxel intensity)")
                         else:
-                            print(f"   - Threshold: {float(args.threshold_value[0])}% (hardcoded percentile of per-echo histogram)")
+                            print(f"   - Threshold: {float(args.threshold_value[0])*100}% (hardcoded percentile of per-echo histogram)")
                 else:
                     print(f"   - Threshold algorithm: {args.threshold_algorithm}", end="")
                     if len(args.threshold_algorithm_factor) >= 2 and args.two_pass:
