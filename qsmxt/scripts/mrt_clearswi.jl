@@ -1,6 +1,5 @@
 #!/usr/bin/env julia
 import Pkg
-Pkg.activate(@__DIR__)
 try
     using CLEARSWI, MriResearchTools, ArgParse
 catch
