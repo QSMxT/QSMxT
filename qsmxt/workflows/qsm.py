@@ -760,7 +760,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             )
             wf.connect([
                 (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')]),
-                (wf_masking_intermediate, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
+                #(wf_masking, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
             ])
 
             n_resample_qsm = Node(
