@@ -1533,10 +1533,12 @@ def main(argv=None):
     # run workflow
     if not args.dry:
         if args.slurm[0] is not None:
-            logger.log(LogLevel.INFO.value, f"Running using SLURM plugin with account={args.slurm[0]} and partition={args.slurm[1]}")
+            logger.log(LogLevel.INFO.value, f"Running using SLURMGraph plugin with account={args.slurm[0]} and partition={args.slurm[1]}")
+            slurm_args = gen_plugin_args(slurm_account=args.slurm[0], slurm_partition=args.slurm[1])
+            slurm_args['dont_resubmit_completed_jobs'] = True
             wf.run(
-                plugin='SLURM',
-                plugin_args=gen_plugin_args(slurm_account=args.slurm[0], slurm_partition=args.slurm[1])
+                plugin='SLURMGraph',
+                plugin_args=slurm_args
             )
         elif args.pbs:
             logger.log(LogLevel.INFO.value, f"Running using PBS Graph plugin with account={args.pbs}")
