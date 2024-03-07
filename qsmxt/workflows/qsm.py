@@ -551,6 +551,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 ),
                 iterfield=['magnitude', 'phase'],
                 mem_gb=min(4, run_args.mem_avail),
+                n_procs=1,
                 name='nibabel_numpy_nilearn_axial-resampling',
                 is_map=len(phase_files) > 1
             )
