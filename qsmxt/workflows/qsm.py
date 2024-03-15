@@ -617,7 +617,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         if run_args.combine_phase:
             n_romeo_combine = Node(
                 interface=romeo.RomeoB0Interface(),
-                name='mrt_romeo_combine',
+                name='mrt_romeo_combine-phase',
                 mem_gb=min(8, run_args.mem_avail)
             )
             n_romeo_combine.plugin_args = gen_plugin_args(
@@ -683,7 +683,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
         n_resample_qsm = Node(
             interface=resample_like.ResampleLikeInterface(),
-            name='nibabel_numpy_nilearn_resample-qsm'
+            name='nibabel_numpy_nilearn_qsm-resampled'
         )
         wf.connect([
             (n_qsm_average, n_resample_qsm, [('out_file', 'in_file')]),
@@ -769,7 +769,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
             n_resample_qsm = Node(
                 interface=resample_like.ResampleLikeInterface(),
-                name='resample_qsm-twopass'
+                name='nibabel_numpy_nilearn_twopass-qsm-resampled'
             )
             wf.connect([
                 (n_qsm_twopass_average, n_resample_qsm, [('out_file', 'in_file')]),
@@ -781,7 +781,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                     interface=qsm_referencing.ReferenceQSMInterface(
                         in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else None
                     ),
-                    name='nibabel_numpy_qsm-referenced-twopass'
+                    name='nibabel_numpy_qsm-twopass-referenced'
                 )
                 wf.connect([
                     (n_resample_qsm, n_qsm_twopass_referenced, [('out_file', 'in_qsm')]),
@@ -801,7 +801,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 interface=analyse.AnalyseInterface(
                     in_labels=run_args.labels_file
                 ),
-                name='analyse_qsm',
+                name='nibabel_numpy_analyse-qsm',
                 mem_gb=2
             )
             wf.connect([
