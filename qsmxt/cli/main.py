@@ -746,13 +746,19 @@ def short_path(path):
     return rel_path if len(rel_path) < len(path) else path
 
 def generate_run_command(all_args, implicit_args, explicit_args, short=True):
+    # identify any added explicit arguments
     for key, val in all_args.items():
         if key not in implicit_args or implicit_args[key] != val:
             explicit_args[key] = val
 
-    # remove any unnecessary explicit args
+    # remove unnecessary explicit args that are already implied by implicit args
     for key, value in implicit_args.items():
         if key in explicit_args and explicit_args[key] == value:
+            del explicit_args[key]
+
+    # remove unnecessary explicit args that are selected by args
+    for key, value in all_args.items():
+        if key in implicit_args and key in explicit_args and all_args[key] == implicit_args[key]:
             del explicit_args[key]
     
     # compute the minimum run command to re-execute the built pipeline non-interactively
