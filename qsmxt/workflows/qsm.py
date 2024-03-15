@@ -200,21 +200,25 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             run_args.do_qsm = False
             run_args.do_swi = False
     if run_args.do_qsm and (run_args.masking_input == 'magnitude' or run_args.inhomogeneity_correction or run_args.add_bet):
-        if not all(all(nib.load(magnitude_files[i]).header['dim'][1:4] == nib.load(phase_files[0]).header['dim'][1:4]) for i in range(len(magnitude_files))):
-            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use magnitude for masking - dimensions of magnitude files are not all equal to phase files!")
+        mag_dims = [nib.load(magnitude_files[i]).header['dim'][1:4].tolist() for i in range(len(magnitude_files))]
+        phs_dims = [nib.load(magnitude_files[i]).header['dim'][1:4].tolist() for i in range(len(phase_files))]
+        if not all(x == phs_dims[0] for x in mag_dims):
+            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use magnitude for masking - dimensions of magnitude files are not all equal to phase files! magnitude={mag_dims}; phase={phs_dims}.")
             run_args.masking_input = 'phase'
             run_args.inhomogeneity_correction = False
             run_args.add_bet = False
         if run_args.use_existing_masks:
-            if not all(all(nib.load(mask_files[i]).header['dim'][1:4] == nib.load(phase_files[0]).header['dim'][1:4]) for i in range(len(mask_files))):
-                logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use existing masks - mask dimensions are not all equal to phase files!")
+            mask_dims = [nib.load(mask_files[i]).header['dim'][1:4].tolist() for i in range(len(mask_files))]
+            phs_dims = [nib.load(magnitude_files[i]).header['dim'][1:4].tolist() for i in range(len(phase_files))]
+            if not all(x == phs_dims[0] for x in mask_dims):
+                logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use existing masks - mask dimensions are not all equal to phase files! mask={mask_dims}; phase={phs_dims}.")
                 run_args.use_existing_masks = False
     elif run_args.do_r2starmap or run_args.do_t2starmap:
-        if not all(all(nib.load(magnitude_files[i]).header['dim'] == nib.load(magnitude_files[0]).header['dim']) for i in range(len(magnitude_files))):
-            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do T2*/R2* mapping - magnitude dimensions are not all equal!")
+        mag_dims = [nib.load(magnitude_files[i]).header['dim'][1:4].tolist() for i in range(len(magnitude_files))]
+        if not all(x == mag_dims[0] for x in mag_dims):
+            logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do T2*/R2* mapping - magnitude dimensions are not all equal! magnitude={mag_dims}.")
             run_args.do_r2starmap = False
             run_args.do_t2starmap = False
-
     if run_args.do_qsm or run_args.do_swi:
         if any(nib.load(phase_files[i]).header['dim'][0] > 3 for i in range(len(phase_files))):
             logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do QSM or SWI - >3D phase files detected! Each volume must be 3D, coil-combined, and represent a single echo for BIDS-compliance.")
@@ -613,7 +617,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         if run_args.combine_phase:
             n_romeo_combine = Node(
                 interface=romeo.RomeoB0Interface(),
-                name='mrt_romeo_combine',
+                name='mrt_romeo_combine-phase',
                 mem_gb=min(8, run_args.mem_avail)
             )
             n_romeo_combine.plugin_args = gen_plugin_args(
@@ -679,7 +683,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
         n_resample_qsm = Node(
             interface=resample_like.ResampleLikeInterface(),
-            name='nibabel_numpy_nilearn_resample-qsm'
+            name='nibabel_numpy_nilearn_qsm-resampled'
         )
         wf.connect([
             (n_qsm_average, n_resample_qsm, [('out_file', 'in_file')]),
@@ -689,7 +693,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         if run_args.qsm_reference:
             n_qsm_referenced = Node(
                 interface=qsm_referencing.ReferenceQSMInterface(
-                    in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else [1]
+                    in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else None
                 ),
                 name='nibabel_numpy_qsm-referenced'
             )
@@ -760,12 +764,12 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             )
             wf.connect([
                 (mn_qsm_twopass, n_qsm_twopass_average, [('out_file', 'in_files')]),
-                (wf_masking_intermediate, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
+                #(wf_masking, n_qsm_twopass_average, [('masking_outputs.mask', 'in_masks')])
             ])
 
             n_resample_qsm = Node(
                 interface=resample_like.ResampleLikeInterface(),
-                name='resample_qsm-twopass'
+                name='nibabel_numpy_nilearn_twopass-qsm-resampled'
             )
             wf.connect([
                 (n_qsm_twopass_average, n_resample_qsm, [('out_file', 'in_file')]),
@@ -775,9 +779,9 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             if run_args.qsm_reference:
                 n_qsm_twopass_referenced = Node(
                     interface=qsm_referencing.ReferenceQSMInterface(
-                        in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else [1]
+                        in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else None
                     ),
-                    name='nibabel_numpy_qsm-referenced-twopass'
+                    name='nibabel_numpy_qsm-twopass-referenced'
                 )
                 wf.connect([
                     (n_resample_qsm, n_qsm_twopass_referenced, [('out_file', 'in_qsm')]),
@@ -797,7 +801,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 interface=analyse.AnalyseInterface(
                     in_labels=run_args.labels_file
                 ),
-                name='analyse_qsm',
+                name='nibabel_numpy_analyse-qsm',
                 mem_gb=2
             )
             wf.connect([

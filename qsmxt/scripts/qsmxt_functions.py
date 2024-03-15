@@ -8,11 +8,11 @@ import subprocess
 from qsmxt.scripts.sys_cmd import sys_cmd
 from nipype.pipeline.engine import Node, MapNode
 
-def create_node(interface, name, iterfield=None, is_map=False, **kwargs):
+def create_node(interface, name, n_procs=1, iterfield=None, is_map=False, **kwargs):
     if is_map:
-        return MapNode(interface=interface, name=name, iterfield=iterfield, **kwargs)
+        return MapNode(interface=interface, name=name, iterfield=iterfield, n_procs=n_procs, **kwargs)
     else:
-        return Node(interface=interface, name=name, **kwargs)
+        return Node(interface=interface, name=name, n_procs=n_procs, **kwargs)
 
 def get_qsmxt_dir():
     path = os.path.abspath(__file__)

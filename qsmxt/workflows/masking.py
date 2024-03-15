@@ -91,7 +91,8 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
             if qualitymap_available:
                 mn_phaseweights = Node(
                     interface=IdentityInterface(['quality_map']),
-                    name='romeo-voxelquality'
+                    name='romeo-voxelquality',
+                    n_procs=1
                 )
                 wf.connect([(n_inputs, mn_phaseweights, [('quality_map', 'quality_map')])])
             else:
@@ -100,6 +101,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                     iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
                     name='romeo-voxelquality',
                     mem_gb=min(3, run_args.mem_avail),
+                    n_procs=1,
                     is_map=use_maps
                 )
                 mn_phaseweights.inputs.weight_type = "grad+second"

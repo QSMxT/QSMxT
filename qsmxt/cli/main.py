@@ -598,10 +598,8 @@ def parse_args(args, return_run_command=False):
 
     # Checking the combined qsm_reference values
     if args.qsm_reference is not None:
-        if any(x.lower() in args.qsm_reference for x in ['mean', 'none']) and len(args.qsm_reference) > 1:
+        if not (args.qsm_reference in ['mean', 'none'] or (isinstance(args.qsm_reference, list) and all(isinstance(x, int) for x in args.qsm_reference))):
             parser.error("--qsm_reference must be either 'mean', 'none', or a series of one or more integers")
-        if len(args.qsm_reference) == 1:
-            args.qsm_reference = args.qsm_reference[0]
 
     # get explicitly set arguments
     explicit_args = {}
@@ -748,13 +746,19 @@ def short_path(path):
     return rel_path if len(rel_path) < len(path) else path
 
 def generate_run_command(all_args, implicit_args, explicit_args, short=True):
+    # identify any added explicit arguments
     for key, val in all_args.items():
         if key not in implicit_args or implicit_args[key] != val:
             explicit_args[key] = val
 
-    # remove any unnecessary explicit args
+    # remove unnecessary explicit args that are already implied by implicit args
     for key, value in implicit_args.items():
         if key in explicit_args and explicit_args[key] == value:
+            del explicit_args[key]
+
+    # remove unnecessary explicit args that are selected by args
+    for key, value in all_args.items():
+        if key in implicit_args and key in explicit_args and all_args[key] == implicit_args[key]:
             del explicit_args[key]
     
     # compute the minimum run command to re-execute the built pipeline non-interactively
@@ -1269,7 +1273,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                 elif user_in in ['mean', 'none']:
                     break
                 elif user_in.isnumeric() and args.do_segmentation:
-                    user_in = int(user_in)
+                    user_in = [int(user_in)]
                     break
                 elif user_in.isnumeric():
                     print("Segmentation pipeline must be enabled for that option.")
@@ -1533,10 +1537,12 @@ def main(argv=None):
     # run workflow
     if not args.dry:
         if args.slurm[0] is not None:
-            logger.log(LogLevel.INFO.value, f"Running using SLURM plugin with account={args.slurm[0]} and partition={args.slurm[1]}")
+            logger.log(LogLevel.INFO.value, f"Running using SLURMGraph plugin with account={args.slurm[0]} and partition={args.slurm[1]}")
+            slurm_args = gen_plugin_args(slurm_account=args.slurm[0], slurm_partition=args.slurm[1])
+            slurm_args['dont_resubmit_completed_jobs'] = True
             wf.run(
-                plugin='SLURM',
-                plugin_args=gen_plugin_args(slurm_account=args.slurm[0], slurm_partition=args.slurm[1])
+                plugin='SLURMGraph',
+                plugin_args=slurm_args
             )
         elif args.pbs:
             logger.log(LogLevel.INFO.value, f"Running using PBS Graph plugin with account={args.pbs}")
