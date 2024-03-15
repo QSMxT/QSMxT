@@ -200,21 +200,21 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             run_args.do_qsm = False
             run_args.do_swi = False
     if run_args.do_qsm and (run_args.masking_input == 'magnitude' or run_args.inhomogeneity_correction or run_args.add_bet):
-        mag_dims = [nib.load(magnitude_files[i]).header['dim'][1:4] for i in range(len(magnitude_files))]
-        phs_dims = [nib.load(magnitude_files[i]).header['dim'][1:4] for i in range(len(phase_files))]
+        mag_dims = [nib.load(magnitude_files[i]).header['dim'][1:4].tolist() for i in range(len(magnitude_files))]
+        phs_dims = [nib.load(magnitude_files[i]).header['dim'][1:4].tolist() for i in range(len(phase_files))]
         if not all(x == phs_dims[0] for x in mag_dims):
             logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use magnitude for masking - dimensions of magnitude files are not all equal to phase files! magnitude={mag_dims}; phase={phs_dims}.")
             run_args.masking_input = 'phase'
             run_args.inhomogeneity_correction = False
             run_args.add_bet = False
         if run_args.use_existing_masks:
-            mask_dims = [nib.load(mask_files[i]).header['dim'][1:4] for i in range(len(mask_files))]
-            phs_dims = [nib.load(magnitude_files[i]).header['dim'][1:4] for i in range(len(phase_files))]
+            mask_dims = [nib.load(mask_files[i]).header['dim'][1:4].tolist() for i in range(len(mask_files))]
+            phs_dims = [nib.load(magnitude_files[i]).header['dim'][1:4].tolist() for i in range(len(phase_files))]
             if not all(x == phs_dims[0] for x in mask_dims):
                 logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use existing masks - mask dimensions are not all equal to phase files! mask={mask_dims}; phase={phs_dims}.")
                 run_args.use_existing_masks = False
     elif run_args.do_r2starmap or run_args.do_t2starmap:
-        mag_dims = [nib.load(magnitude_files[i]).header['dim'][1:4] for i in range(len(magnitude_files))]
+        mag_dims = [nib.load(magnitude_files[i]).header['dim'][1:4].tolist() for i in range(len(magnitude_files))]
         if not all(x == mag_dims[0] for x in mag_dims):
             logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot do T2*/R2* mapping - magnitude dimensions are not all equal! magnitude={mag_dims}.")
             run_args.do_r2starmap = False
