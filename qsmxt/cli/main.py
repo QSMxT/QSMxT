@@ -598,10 +598,8 @@ def parse_args(args, return_run_command=False):
 
     # Checking the combined qsm_reference values
     if args.qsm_reference is not None:
-        if any(x.lower() in args.qsm_reference for x in ['mean', 'none']) and len(args.qsm_reference) > 1:
+        if not (args.qsm_reference in ['mean', 'none'] or (isinstance(args.qsm_reference, list) and all(isinstance(x, int) for x in args.qsm_reference))):
             parser.error("--qsm_reference must be either 'mean', 'none', or a series of one or more integers")
-        if len(args.qsm_reference) == 1:
-            args.qsm_reference = args.qsm_reference[0]
 
     # get explicitly set arguments
     explicit_args = {}
@@ -1269,7 +1267,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                 elif user_in in ['mean', 'none']:
                     break
                 elif user_in.isnumeric() and args.do_segmentation:
-                    user_in = int(user_in)
+                    user_in = [int(user_in)]
                     break
                 elif user_in.isnumeric():
                     print("Segmentation pipeline must be enabled for that option.")

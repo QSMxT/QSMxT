@@ -32,7 +32,7 @@ def reference_susceptibility(in_qsm, in_seg=None, in_seg_values=None, out_qsm=No
 class ReferenceQSMInputSpec(BaseInterfaceInputSpec):
     in_qsm = File(mandatory=True, exists=True)
     in_seg = File(mandatory=False, exists=True)
-    in_seg_values = traits.Either(traits.ListInt, None, mandatory=False, default=[1])
+    in_seg_values = traits.Either(traits.ListInt, None, mandatory=False, default=None)
 
 
 class ReferenceQSMOutputSpec(TraitedSpec):
@@ -44,16 +44,11 @@ class ReferenceQSMInterface(SimpleInterface):
     output_spec = ReferenceQSMOutputSpec
 
     def _run_interface(self, runtime):
-        if self.inputs.in_seg_values is None:
-            self._results['out_file'] = self.inputs.in_qsm
-            return runtime
-        
         self._results['out_file'] = reference_susceptibility(
             in_qsm=self.inputs.in_qsm,
             in_seg=self.inputs.in_seg,
             in_seg_values=self.inputs.in_seg_values
         )
-
         return runtime
 
 

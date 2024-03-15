@@ -689,7 +689,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         if run_args.qsm_reference:
             n_qsm_referenced = Node(
                 interface=qsm_referencing.ReferenceQSMInterface(
-                    in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else [1]
+                    in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else None
                 ),
                 name='nibabel_numpy_qsm-referenced'
             )
@@ -775,7 +775,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             if run_args.qsm_reference:
                 n_qsm_twopass_referenced = Node(
                     interface=qsm_referencing.ReferenceQSMInterface(
-                        in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else [1]
+                        in_seg_values=run_args.qsm_reference if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation else None
                     ),
                     name='nibabel_numpy_qsm-referenced-twopass'
                 )
