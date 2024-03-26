@@ -27,7 +27,8 @@ def load_json(path):
 
 
 def json_filename(nifti_filename):
-    return nifti_filename.split('.')[0] + '.json'
+    head, filename, ext = splitext(nifti_filename)
+    return os.path.join(head, filename + '.json')
 
 
 def flatten(a):
