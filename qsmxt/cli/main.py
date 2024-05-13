@@ -1289,8 +1289,18 @@ def process_args(args):
     if not any([args.do_qsm, args.do_segmentation, args.do_swi, args.do_t2starmap, args.do_r2starmap]):
         args.do_qsm = True
 
+    if args.do_analysis:
+        if not args.do_segmentation:
+            logger.log(LogLevel.WARNING.value, f"--do_analysis requires --do_segmentation. Enabling --do_segmentation.")
+            args.do_segmentation = True
+    if args.do_segmentation:
+        if not args.do_qsm:
+            logger.log(LogLevel.WARNING.value, f"--do_segmentation requires --do_qsm. Enabling --do_qsm.")
+            args.do_qsm = True
+
     # default QSM algorithms
     if not args.qsm_algorithm:
+        logger.log(LogLevel.WARNING.value, 'No QSM algorithm selected! Defaulting to RTS.')
         args.qsm_algorithm = 'rts'
 
     # default masking settings for QSM algorithms
@@ -1299,49 +1309,74 @@ def process_args(args):
             args.masking_algorithm = 'bet'
         else:
             args.masking_algorithm = 'threshold'
+        logger.log(LogLevel.WARNING.value, f"No --masking_algorithm set! Defaulting to {args.masking_algorithm}.")
     
     # force masking input to magnitude if bet is the masking method
-    args.masking_input = 'magnitude' if 'bet' in args.masking_algorithm else args.masking_input
+    if 'bet' in args.masking_algorithm and args.masking_input != 'magnitude':
+        logger.log(LogLevel.WARNING.value, f"Switching --masking_input to 'magnitude' which is required for --masking_algorithm 'bet'.")
+        args.masking_input = 'magnitude'
 
     # default threshold settings
     if args.masking_algorithm == 'threshold':
         if not (args.threshold_value or args.threshold_algorithm):
+            logger.log(LogLevel.WARNING.value, f"--masking_algorithm set to 'threshold' but no --threshold_value or --threshold_algorithm set! Defaulting --threshold_algorithm to otsu.")
             args.threshold_algorithm = 'otsu'
         if not args.filling_algorithm:
+            logger.log(LogLevel.WARNING.value, f"--masking_algorithm set to 'threshold' but no --filling_algorithm set! Defaulting to 'both'.")
             args.filling_algorithm = 'both'
 
     # default unwrapping settings for QSM algorithms
     if not args.unwrapping_algorithm:
         if args.qsm_algorithm in ['nextqsm', 'rts', 'tv']:
             args.unwrapping_algorithm = 'romeo'
+            logger.log(LogLevel.WARNING.value, f"Unwrapping is required for --qsm_algorithm {args.qsm_algorithm} but none is selected! Defaulting to --unwrapping_algorithm {args.unwrapping_algorithm}.")
     if args.combine_phase and args.unwrapping_algorithm != 'romeo':
+        logger.log(LogLevel.WARNING.value, f"--combine_phase option requires --unwrapping_algorithm 'romeo'. Switching to --unwrapping_algorithm 'romeo'.")
         args.unwrapping_algorithm = 'romeo'
 
     if args.qsm_algorithm in ['tgv']:
+        logger.log(LogLevel.WARNING.value, f"--unwrapping_algorithm {args.unwrapping_algorithm} selected, but unwrapping is already handled by --qsm_algorithm 'tgv'. Disabling unwrapping.")
         args.unwrapping_algorithm = None
 
     # add_bet option only works with non-bet masking and filling methods
-    args.add_bet &= 'bet' not in args.masking_algorithm
-    args.add_bet &= 'bet' != args.filling_algorithm
+    if 'bet' in args.masking_algorithm:
+        logger.log(LogLevel.WARNING.value, f"--add_bet option does not work with --masking_algorithm bet. Disabling --add_bet.")
+        args.add_bet = False
+    if args.filling_algorithm == 'bet':
+        logger.log(LogLevel.WARNING.value, f"--add_bet option does not work with --filling_algorithm bet. Disabling --add_bet.")
+        args.add_bet = False
 
     # default two-pass settings for QSM algorithms
     if args.two_pass is None:
         if args.qsm_algorithm in ['rts', 'tgv', 'tv']:
             args.two_pass = True
+            logger.log(LogLevel.WARNING.value, f"--two_pass setting not selected. Defaulting to 'on' for --qsm_algorithm {args.qsm_algorithm}.")
         else:
             args.two_pass = False
+            logger.log(LogLevel.WARNING.value, f"--two_pass setting not selected. Defaulting to 'off' for --qsm_algorithm {args.qsm_algorithm}.")
     
     # two-pass does not work with bet masking, nextqsm, or vsharp
-    args.two_pass &= 'bet' not in args.masking_algorithm
-    args.two_pass &= args.qsm_algorithm != 'nextqsm'
-    args.two_pass &= not (args.bf_algorithm == 'vsharp' and args.qsm_algorithm in ['tv', 'rts', 'nextqsm'])
+    if args.two_pass and 'bet' in args.masking_algorithm:
+        logger.log(LogLevel.WARNING.value, f"--two_pass setting incompatible with --masking_algorithm bet. Disabling --two_pass.")
+        args.two_pass = False
+    
+    if args.two_pass and args.qsm_algorithm == 'nextqsm':
+        logger.log(LogLevel.WARNING.value, f"--two_pass setting incompatible with --qsm_algorithm nextqsm. Disabling --two_pass.")
+        args.two_pass = False
+    
+    if args.two_pass and (args.bf_algorithm == 'vsharp' and args.qsm_algorithm in ['tv', 'rts', 'nextqsm']):
+        logger.log(LogLevel.WARNING.value, f"--two_pass setting incompatible with --bf_algorithm vsharp. Disabling --two_pass.")
+        args.two_pass = False
 
     # 'bet' hole-filling not applicable for single-pass
     if not args.two_pass and args.filling_algorithm == 'bet':
         args.filling_algorithm == 'both'
+        logger.log(LogLevel.WARNING.value, f"--filling_algorithm 'bet' is not applicable for --two_pass off. Setting --filling_algorithm to 'both'.")
 
     # decide on inhomogeneity correction
-    args.inhomogeneity_correction &= (args.add_bet or args.masking_input == 'magnitude' or args.filling_algorithm == 'bet')
+    if args.inhomogeneity_correction and not (args.add_bet or args.masking_input == 'magnitude' or args.filling_algorithm == 'bet'):
+        logger.log(LogLevel.WARNING.value, f"--inhomogeneity_correction requries either --add_bet, --masking_input 'magnitude', or --filling_algorithm 'bet'.")
+        args.inhomogeneity_correction = False
 
     # decide on supplementary imaging
     if args.do_r2starmap is None: args.do_r2starmap = False
