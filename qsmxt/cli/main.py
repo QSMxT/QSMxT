@@ -647,7 +647,7 @@ def parse_args(args, return_run_command=False):
     if 'premade' in explicit_args.keys():
         if explicit_args['premade'] in premades:
             for key, value in premades[explicit_args['premade']].items():
-                if key not in explicit_args:# or explicit_args[key] == value:
+                if key not in explicit_args and value is not None:# or explicit_args[key] == value:
                     implicit_args[key] = value
         else:
             logger.log(LogLevel.ERROR.value, f"Chosen premade pipeline '{explicit_args['premade']}' not found!")
@@ -656,7 +656,8 @@ def parse_args(args, return_run_command=False):
     elif 'premade' in implicit_args.keys():
         if implicit_args['premade'] in premades:
             for key, value in premades[implicit_args['premade']].items():
-                implicit_args[key] = value
+                if value is not None:
+                    implicit_args[key] = value
         else:
             logger.log(LogLevel.ERROR.value, f"Chosen premade pipeline '{implicit_args['premade']}' not found!")
             del implicit_args['premade']
@@ -1368,11 +1369,6 @@ def process_args(args):
     if args.two_pass and (args.bf_algorithm == 'vsharp' and args.qsm_algorithm in ['tv', 'rts', 'nextqsm']):
         logger.log(LogLevel.WARNING.value, f"--two_pass setting incompatible with --bf_algorithm vsharp. Disabling --two_pass.")
         args.two_pass = False
-
-    # 'bet' hole-filling not applicable for single-pass
-    if not args.two_pass and args.filling_algorithm == 'bet':
-        args.filling_algorithm == 'both'
-        logger.log(LogLevel.WARNING.value, f"--filling_algorithm 'bet' is not applicable for --two_pass off. Setting --filling_algorithm to 'both'.")
 
     # decide on inhomogeneity correction
     if args.inhomogeneity_correction and not (args.add_bet or args.masking_input == 'magnitude' or args.filling_algorithm == 'bet'):

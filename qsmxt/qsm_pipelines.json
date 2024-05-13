@@ -138,6 +138,7 @@
         "two_pass": false,
         "qsm_algorithm": "nextqsm",
         "masking_algorithm": "bet",
+        "masking_input": "magnitude",
         "mask_erosions": [
             3
         ]
