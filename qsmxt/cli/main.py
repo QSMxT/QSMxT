@@ -1328,15 +1328,14 @@ def process_args(args):
             args.filling_algorithm = 'both'
 
     # default unwrapping settings for QSM algorithms
-    if not args.unwrapping_algorithm:
-        if args.qsm_algorithm in ['nextqsm', 'rts', 'tv']:
-            args.unwrapping_algorithm = 'romeo'
-            logger.log(LogLevel.WARNING.value, f"Unwrapping is required for --qsm_algorithm {args.qsm_algorithm} but none is selected! Defaulting to --unwrapping_algorithm {args.unwrapping_algorithm}.")
+    if not args.unwrapping_algorithm and args.qsm_algorithm in ['nextqsm', 'rts', 'tv']:
+        args.unwrapping_algorithm = 'romeo'
+        logger.log(LogLevel.WARNING.value, f"Unwrapping is required for --qsm_algorithm {args.qsm_algorithm} but none is selected! Defaulting to --unwrapping_algorithm {args.unwrapping_algorithm}.")
     if args.combine_phase and args.unwrapping_algorithm != 'romeo':
         logger.log(LogLevel.WARNING.value, f"--combine_phase option requires --unwrapping_algorithm 'romeo'. Switching to --unwrapping_algorithm 'romeo'.")
         args.unwrapping_algorithm = 'romeo'
 
-    if args.qsm_algorithm in ['tgv']:
+    if args.unwrapping_algorithm and args.qsm_algorithm in ['tgv']:
         logger.log(LogLevel.WARNING.value, f"--unwrapping_algorithm {args.unwrapping_algorithm} selected, but unwrapping is already handled by --qsm_algorithm 'tgv'. Disabling unwrapping.")
         args.unwrapping_algorithm = None
 
