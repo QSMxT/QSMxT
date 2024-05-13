@@ -647,8 +647,10 @@ def parse_args(args, return_run_command=False):
     if 'premade' in explicit_args.keys():
         if explicit_args['premade'] in premades:
             for key, value in premades[explicit_args['premade']].items():
-                if key not in explicit_args and value is not None:# or explicit_args[key] == value:
+                if key not in explicit_args:# or explicit_args[key] == value:
                     implicit_args[key] = value
+                    if value is None:
+                        del implicit_args[key]
         else:
             logger.log(LogLevel.ERROR.value, f"Chosen premade pipeline '{explicit_args['premade']}' not found!")
             if args.auto_yes: script_exit(1, logger=logger)
@@ -656,8 +658,9 @@ def parse_args(args, return_run_command=False):
     elif 'premade' in implicit_args.keys():
         if implicit_args['premade'] in premades:
             for key, value in premades[implicit_args['premade']].items():
-                if value is not None:
-                    implicit_args[key] = value
+                implicit_args[key] = value
+                if value is None:
+                    del implicit_args[key]
         else:
             logger.log(LogLevel.ERROR.value, f"Chosen premade pipeline '{implicit_args['premade']}' not found!")
             del implicit_args['premade']
