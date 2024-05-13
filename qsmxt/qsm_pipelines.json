@@ -119,6 +119,7 @@
         "description": "Applies suggested settings for non-brain applications",
         "combine_phase": false,
         "qsm_algorithm": "tgv",
+        "unwrapping_algorithm": null,
         "masking_algorithm": "threshold",
         "two_pass": true,
         "masking_input": "phase",

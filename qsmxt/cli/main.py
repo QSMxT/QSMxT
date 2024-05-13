@@ -1340,10 +1340,10 @@ def process_args(args):
         args.unwrapping_algorithm = None
 
     # add_bet option only works with non-bet masking and filling methods
-    if 'bet' in args.masking_algorithm:
+    if 'bet' in args.masking_algorithm and args.add_bet:
         logger.log(LogLevel.WARNING.value, f"--add_bet option does not work with --masking_algorithm bet. Disabling --add_bet.")
         args.add_bet = False
-    if args.filling_algorithm == 'bet':
+    if args.filling_algorithm == 'bet' and args.add_bet:
         logger.log(LogLevel.WARNING.value, f"--add_bet option does not work with --filling_algorithm bet. Disabling --add_bet.")
         args.add_bet = False
 
