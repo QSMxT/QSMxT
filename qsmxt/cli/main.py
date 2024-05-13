@@ -1285,6 +1285,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
 
 def process_args(args):
     run_args = {}
+    logger = make_logger('main')
 
     if not any([args.do_qsm, args.do_segmentation, args.do_swi, args.do_t2starmap, args.do_r2starmap]):
         args.do_qsm = True
