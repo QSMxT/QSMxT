@@ -646,8 +646,9 @@ def parse_args(args, return_run_command=False):
     # update implicit arguments based on the explicitly selected premade
     if 'premade' in explicit_args.keys():
         if explicit_args['premade'] in premades:
-            for key, value in premades[explicit_args['premade']].items():
-                if key not in explicit_args:# or explicit_args[key] == value:
+            for key in list(premades[explicit_args['premade']].keys()):
+                value = premades[explicit_args['premade']][key]
+                if key not in explicit_args:
                     implicit_args[key] = value
                     if value is None:
                         del implicit_args[key]
@@ -657,7 +658,8 @@ def parse_args(args, return_run_command=False):
             del explicit_args['premade']
     elif 'premade' in implicit_args.keys():
         if implicit_args['premade'] in premades:
-            for key, value in premades[implicit_args['premade']].items():
+            for key in list(premades[implicit_args['premade']].keys()):
+                value = premades[implicit_args['premade']][key]
                 implicit_args[key] = value
                 if value is None:
                     del implicit_args[key]
