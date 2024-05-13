@@ -105,7 +105,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
             echo "[DEBUG] Removing container"
             sudo docker rm qsmxt-container
             echo "[DEBUG] Removing image ${CONTAINER_IMAGE}"
-            sudo docker rmi "${CONTAINER_IMAGE}"
+            sudo docker rmi -f "${CONTAINER_IMAGE}"
         fi
     fi
 
