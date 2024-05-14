@@ -237,6 +237,33 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use existing masks - >3D masks detected! Each mask must be 3D only for BIDS-compliance.")
             run_args.use_existing_masks = False
 
+    # ensure that all input files dimensions match and are 3d
+    if phase_files and any([run_args.do_qsm, run_args.do_swi]):
+        dims = nib.load(phase_files[0]).header.get_data_shape()
+        if len(dims) != 3 or any(dim == 1 for dim in dims[:3]):
+            logger.log(LogLevel.ERROR.value, f"{run_id}: Input dimensions must be 3D! Got {phase_files[0]}={dims}.")
+        for i in range(1, len(phase_files)):
+            dims_i = nib.load(phase_files[i]).header.get_data_shape()
+            if dims != dims_i:
+                logger.log(LogLevel.ERROR.value, f"{run_id}: Incompatible dimensions detected! {phase_files[0]}={dims}; {phase_files[i]}={dims}.")
+        
+        if any([run_args.do_t2starmap, run_args.do_r2starmap, run_args.do_segmentation, run_args.masking_input == 'magnitude', run_args.inhomogeneity_correction, run_args.add_bet]):
+            if not run_args.do_qsm:
+                dims = nib.load(magnitude_files[0]).header.get_data_shape()
+            if len(dims) != 3 or any(dim == 1 for dim in dims[:3]):
+                logger.log(LogLevel.ERROR.value, f"{run_id}: Input dimensions must be 3D! Got {magnitude_files[0]}={dims}.")
+            for i in range(len(magnitude_files)):
+                dims_i = nib.load(magnitude_files[i]).header.get_data_shape()
+                if dims != dims_i:
+                    logger.log(LogLevel.ERROR.value, f"{run_id}: Incompatible dimensions detected! {phase_files[0] if run_args.do_qsm else magnitude_files[0]}={dims}; {magnitude_files[i]}={dims}.")
+        
+        if run_args.do_qsm and run_args.use_existing_masks and mask_files:
+            dims = nib.load(phase_files[0]).header.get_data_shape()
+            for i in range(len(mask_files)):
+                dims_i = nib.load(mask_files[i]).header.get_data_shape()
+                if dims != dims_i:
+                    logger.log(LogLevel.ERROR.value, f"{run_id}: Incompatible dimensions detected! {phase_files[0]}={dims}; {mask_files[i]}={dims}.")
+    
     if not any([run_args.do_qsm, run_args.do_swi, run_args.do_t2starmap, run_args.do_r2starmap, run_args.do_segmentation]):
         return
     
