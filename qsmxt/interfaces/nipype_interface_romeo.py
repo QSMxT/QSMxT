@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 
+import argparse
 import os
 import shutil
+import sys
 import nibabel as nib
 import numpy as np
 
@@ -103,3 +105,29 @@ class RomeoB0Interface(CommandLineJulia):
 
         return outputs
 
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Process multi-echo phase and magnitude images to compute unwrapped phase and B0 map.")
+    
+    parser.add_argument("--phase", nargs='+', required=True, help="Path(s) to the phase image(s).")
+    parser.add_argument("--magnitude", nargs='*', default=[], help="Path(s) to the magnitude image(s). Optional.")
+    parser.add_argument("--TEs", nargs='*', type=float, default=None, help="Echo times in seconds for multi-echo sequences. Provide multiple values if using multiple echoes.")
+    parser.add_argument("--TE", type=float, required=False, help="Echo time in seconds if using a single echo.")
+    parser.add_argument("--phase-offset-correction", choices=["bipolar", "monopolar"], default="bipolar", help="Type of phase offset correction to apply.")
+    
+    args = parser.parse_args()
+
+    try:
+        romeo_interface = RomeoB0Interface(phase=args.phase,
+                                           magnitude=args.magnitude if args.magnitude else None,
+                                           TEs=args.TEs if args.TEs else None,
+                                           phase_offset_correction=args.phase_offset_correction)
+        romeo_interface.run()
+        outputs = romeo_interface.aggregate_outputs()
+        print(f"Processing complete. Unwrapped phase and B0 map generated.")
+        print(f"Unwrapped Phase Path(s): {outputs.phase_unwrapped}")
+        print(f"B0 Map Path: {outputs.frequency}")
+        
+    except Exception as e:
+        sys.stderr.write(f"Error running RomeoB0Interface: {e}")
+        sys.exit(1)
