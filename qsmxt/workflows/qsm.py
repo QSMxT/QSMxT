@@ -453,13 +453,14 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
     # swi
     if run_args.do_swi:
+        n_swi_mem = 9
         n_swi_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6
         n_swi = Node(
             interface=swi.ClearSwiInterface(
                 num_threads=n_swi_threads
             ),
             name='mrt_clearswi',
-            mem_gb=9
+            mem_gb=n_swi_mem
         )
         n_swi.plugin_args = gen_plugin_args(
             plugin_args={ 'overwrite': True },
@@ -467,7 +468,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="SWI",
-            mem_gb=9,
+            mem_gb=n_swi_mem,
             num_cpus=n_swi_threads
         )
         wf.connect([
@@ -481,6 +482,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     # segmentation
     if run_args.do_segmentation:
         n_registration_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6
+        n_registration_mem = 8
         n_registration = Node(
             interface=RegistrationSynQuick(
                 num_threads=n_registration_threads,
@@ -490,7 +492,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             ),
             name='ants_register-t1-to-qsm',
             n_procs=n_registration_threads,
-            mem_gb=min(run_args.mem_avail, 8)
+            mem_gb=min(run_args.mem_avail, n_registration_mem)
         )
         n_registration.plugin_args = gen_plugin_args(
             plugin_args={ 'overwrite': True },
@@ -498,12 +500,13 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="ANTS",
-            mem_gb=8,
+            mem_gb=n_registration_mem,
             num_cpus=n_registration_threads
         )
 
         # segment t1
         n_fastsurfer_threads = min(run_args.n_procs, 8) if run_args.multiproc else 8
+        n_fastsurfer_mem = 12
         n_fastsurfer = Node(
             interface=fastsurfer.FastSurferInterface(
                 in_file=t1w_files[0],
@@ -511,7 +514,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             ),
             name='fastsurfer_segment-t1',
             n_procs=n_fastsurfer_threads,
-            mem_gb=min(run_args.mem_avail, 12)
+            mem_gb=min(run_args.mem_avail, n_fastsurfer_mem)
         )
         n_fastsurfer.plugin_args = gen_plugin_args(
             plugin_args={ 'overwrite': True },
@@ -519,7 +522,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="FASTSURFER",
-            mem_gb=12,
+            mem_gb=n_fastsurfer_mem,
             num_cpus=n_fastsurfer_threads
         )
 
@@ -576,12 +579,13 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             name='nipype_inputs-resampled'
         )
         if magnitude_files:
+            mn_resample_mem = 10
             mn_resample_inputs = create_node(
                 interface=sampling.AxialSamplingInterface(
                     obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
                 ),
                 iterfield=['magnitude', 'phase'],
-                mem_gb=min(4, run_args.mem_avail),
+                mem_gb=min(mn_resample_mem, run_args.mem_avail),
                 name='nibabel_numpy_nilearn_axial-resampling',
                 is_map=len(phase_files) > 1
             )
@@ -592,7 +596,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 slurm_partition=run_args.slurm[1],
                 name="axial_resampling",
                 time="00:10:00",
-                mem_gb=10,
+                mem_gb=mn_resample_mem,
                 num_cpus=min(1, run_args.n_procs)
             )
             wf.connect([
@@ -602,12 +606,13 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 (mn_resample_inputs, n_inputs_resampled, [('phase', 'phase')])
             ])
             if mask_files and run_args.use_existing_masks:
+                mn_resample_mask_mem = 10
                 mn_resample_mask = create_node(
                     interface=sampling.AxialSamplingInterface(
                         obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
                     ),
                     iterfield=['mask'],
-                    mem_gb=min(3, run_args.mem_avail),
+                    mem_gb=min(mn_resample_mask_mem, run_args.mem_avail),
                     name='nibabel_numpy_nilearn_axial-resampling-mask',
                     is_map=isinstance(n_inputs.inputs.mask, list) and len(n_inputs.inputs.mask) > 1
                 )
@@ -618,7 +623,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                     slurm_partition=run_args.slurm[1],
                     name="axial_resampling",
                     time="00:10:00",
-                    mem_gb=10,
+                    mem_gb=mn_resample_mask_mem,
                     num_cpus=min(1, run_args.n_procs)
                 )
                 wf.connect([
@@ -642,10 +647,11 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             name='phase-combined'
         )
         if run_args.combine_phase:
+            n_romeo_mem = 12
             n_romeo_combine = Node(
                 interface=romeo.RomeoB0Interface(),
                 name='mrt_romeo_combine-phase',
-                mem_gb=min(8, run_args.mem_avail)
+                mem_gb=min(n_romeo_mem, run_args.mem_avail)
             )
             n_romeo_combine.plugin_args = gen_plugin_args(
                 plugin_args={ 'overwrite': True },
@@ -654,7 +660,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 slurm_partition=run_args.slurm[1],
                 name="romeo_combine",
                 time="00:10:00",
-                mem_gb=10,
+                mem_gb=n_romeo_mem,
                 num_cpus=min(1, run_args.n_procs)
             )
             wf.connect([
@@ -824,12 +830,13 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 ])
 
         if run_args.do_segmentation and run_args.do_analysis:
+            n_analyse_mem = 2
             n_analyse_qsm = Node(
                 interface=analyse.AnalyseInterface(
                     in_labels=run_args.labels_file
                 ),
                 name='nibabel_numpy_analyse-qsm',
-                mem_gb=2
+                mem_gb=n_analyse_mem
             )
             wf.connect([
                 (n_transform_segmentation, n_analyse_qsm, [('output_image', 'in_segmentation')]),
@@ -884,12 +891,13 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
         )
         if run_args.unwrapping_algorithm == 'laplacian':
             laplacian_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+            laplacian_mem = 4
             mn_laplacian = create_node(
                 is_map=use_maps,
                 interface=laplacian.LaplacianInterface(),
                 iterfield=['phase'],
                 name='mrt_laplacian-unwrapping',
-                mem_gb=min(3, run_args.mem_avail),
+                mem_gb=min(laplacian_mem, run_args.mem_avail),
                 n_procs=laplacian_threads
             )
             wf.connect([
@@ -902,7 +910,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
                 pbs_account=run_args.pbs,
                 slurm_partition=run_args.slurm[1],
                 name="Laplacian",
-                mem_gb=3,
+                mem_gb=laplacian_mem,
                 num_cpus=laplacian_threads
             )
         if run_args.unwrapping_algorithm == 'romeo':
@@ -912,10 +920,11 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
                 ])
             else:
                 romeo_threads = min(1, run_args.n_procs) if run_args.multiproc else 1
+                romeo_mem = 8
                 mn_romeo = Node(
                     interface=romeo.RomeoB0Interface(),
                     name='mrt_romeo',
-                    mem_gb=min(8, run_args.mem_avail)
+                    mem_gb=min(romeo_mem, run_args.mem_avail)
                 )
                 mn_romeo.plugin_args = gen_plugin_args(
                     plugin_args={ 'overwrite': True },
@@ -923,7 +932,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
                     pbs_account=run_args.pbs,
                     slurm_partition=run_args.slurm[1],
                     name="Romeo",
-                    mem_gb=5,
+                    mem_gb=romeo_mem,
                     num_cpus=romeo_threads
                 )
                 wf.connect([
@@ -946,13 +955,14 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
     )
     if run_args.qsm_algorithm in ['rts', 'tv', 'nextqsm'] and not run_args.combine_phase:
         normalize_phase_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+        normalize_phase_mem = 4
         mn_normalize_phase = create_node(
             interface=processphase.PhaseToNormalizedInterface(
                 scale_factor=1e6 if run_args.qsm_algorithm == 'nextqsm' else 1e6/(2*np.pi)
             ),
             name='nibabel-numpy_normalize-phase',
             iterfield=['phase', 'TE'],
-            mem_gb=min(3, run_args.mem_avail),
+            mem_gb=min(normalize_phase_mem, run_args.mem_avail),
             n_procs=normalize_phase_threads,
             is_map=use_maps
         )
@@ -968,18 +978,19 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="PhaToNormalized",
-            mem_gb=3,
+            mem_gb=normalize_phase_mem,
             num_cpus=normalize_phase_threads
         )
     if run_args.qsm_algorithm in ['rts', 'tv', 'nextqsm'] and run_args.combine_phase:
         normalize_freq_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+        normalize_freq_mem = 4
         mn_normalize_freq = create_node(
             interface=processphase.FreqToNormalizedInterface(
                 scale_factor=1e6 if run_args.qsm_algorithm == 'nextqsm' else 1e6/(2*np.pi)
             ),
             name='nibabel-numpy_normalize-freq',
             iterfield=['frequency'],
-            mem_gb=min(3, run_args.mem_avail),
+            mem_gb=min(normalize_freq_mem, run_args.mem_avail),
             n_procs=normalize_freq_threads,
             is_map=use_maps
         )
@@ -994,16 +1005,17 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="PhaToNormalized",
-            mem_gb=3,
+            mem_gb=normalize_freq_mem,
             num_cpus=normalize_freq_threads
         )
     if run_args.qsm_algorithm in ['tgv', 'tgvjl'] and run_args.combine_phase:
         freq_to_phase_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+        freq_to_phase_mem = 4
         mn_freq_to_phase = create_node(
             interface=processphase.FreqToPhaseInterface(TE=0.005, wraps=True),
             name='nibabel-numpy_freq-to-phase',
             iterfield=['frequency'],
-            mem_gb=min(3, run_args.mem_avail),
+            mem_gb=min(freq_to_phase_mem, run_args.mem_avail),
             n_procs=freq_to_phase_threads,
             is_map=use_maps
         )
@@ -1017,7 +1029,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="FreqToPhase",
-            mem_gb=3,
+            mem_gb=freq_to_phase_mem,
             num_cpus=freq_to_phase_threads
         )
         
@@ -1031,12 +1043,13 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
         )
         if run_args.bf_algorithm == 'vsharp':
             vsharp_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+            vsharp_mem = 4
             mn_vsharp = create_node(
                 interface=qsmjl.VsharpInterface(num_threads=vsharp_threads),
                 iterfield=['frequency', 'mask'],
                 name='qsmjl_vsharp',
                 n_procs=vsharp_threads,
-                mem_gb=min(3, run_args.mem_avail),
+                mem_gb=min(vsharp_mem, run_args.mem_avail),
                 is_map=use_maps
             )
             wf.connect([
@@ -1052,17 +1065,18 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
                 pbs_account=run_args.pbs,
                 slurm_partition=run_args.slurm[1],
                 name="VSHARP",
-                mem_gb=3,
+                mem_gb=vsharp_mem,
                 num_cpus=vsharp_threads
             )
         if run_args.bf_algorithm == 'pdf':
             pdf_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
+            pdf_mem = 8
             mn_pdf = create_node(
                 interface=qsmjl.PdfInterface(num_threads=pdf_threads),
                 iterfield=['frequency', 'mask'],
                 name='qsmjl_pdf',
                 n_procs=pdf_threads,
-                mem_gb=min(5, run_args.mem_avail),
+                mem_gb=min(pdf_mem, run_args.mem_avail),
                 is_map=use_maps
             )
             wf.connect([
@@ -1079,18 +1093,19 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
                 slurm_partition=run_args.slurm[1],
                 name="PDF",
                 time="01:00:00",
-                mem_gb=5,
+                mem_gb=pdf_mem,
                 num_cpus=pdf_threads
             )
 
     # === DIPOLE INVERSION ===
     if run_args.qsm_algorithm == 'nextqsm':
         nextqsm_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
+        nextqsm_mem = 13
         mn_qsm = create_node(
             interface=nextqsm.NextqsmInterface(),
             name='nextqsm',
             iterfield=['phase', 'mask'],
-            mem_gb=min(13, run_args.mem_avail),
+            mem_gb=min(nextqsm_mem, run_args.mem_avail),
             n_procs=nextqsm_threads,
             is_map=use_maps
         )
@@ -1105,17 +1120,18 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="NEXTQSM",
-            mem_gb=13,
+            mem_gb=nextqsm_mem,
             num_cpus=nextqsm_threads
         )
     if run_args.qsm_algorithm == 'rts':
         rts_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+        rts_mem = 8
         mn_qsm = create_node(
             interface=qsmjl.RtsQsmInterface(num_threads=rts_threads),
             name='qsmjl_rts',
             iterfield=['tissue_frequency', 'mask'],
             n_procs=rts_threads,
-            mem_gb=min(5, run_args.mem_avail),
+            mem_gb=min(rts_mem, run_args.mem_avail),
             terminal_output="file_split",
             is_map=use_maps
         )
@@ -1132,17 +1148,18 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="RTS",
-            mem_gb=5,
+            mem_gb=rts_mem,
             num_cpus=rts_threads
         )
     if run_args.qsm_algorithm == 'tv':
         tv_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+        tv_mem = 8
         mn_qsm = create_node(
             interface=qsmjl.TvQsmInterface(num_threads=tv_threads),
             name='qsmjl_tv',
             iterfield=['tissue_frequency', 'mask'],
             n_procs=tv_threads,
-            mem_gb=min(5, run_args.mem_avail),
+            mem_gb=min(tv_mem, run_args.mem_avail),
             terminal_output="file_split",
             is_map=use_maps
         )
@@ -1160,13 +1177,13 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             slurm_partition=run_args.slurm[1],
             name="TV",
             time="01:00:00",
-            mem_gb=5,
+            mem_gb=tv_mem,
             num_cpus=tv_threads
         )
 
     if run_args.qsm_algorithm == 'tgv':
         tgv_threads = min(4, run_args.n_procs)
-        tgv_mem = min(4, run_args.mem_avail) if run_args.multiproc else 6
+        tgv_mem = 8
         mn_qsm = create_node(
             interface=tgvjl.TGVQSMJlInterface(
                 erosions=qsm_erosions,
@@ -1177,7 +1194,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, qsm_erosions=0):
             name='tgv',
             iterfield=['phase', 'TE', 'mask'],
             is_map=use_maps,
-            mem_gb=tgv_mem,
+            mem_gb=min(tgv_mem, run_args.mem_avail),
             n_procs=tgv_threads
         )
         mn_qsm.plugin_args = gen_plugin_args(

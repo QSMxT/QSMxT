@@ -88,11 +88,14 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # do phase weights if necessary
         if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
+            mn_phaseweights_mem = 4
+            mn_phaseweights_threads = 1
             if qualitymap_available:
                 mn_phaseweights = Node(
                     interface=IdentityInterface(['quality_map']),
                     name='romeo-voxelquality',
-                    n_procs=1
+                    n_procs=mn_phaseweights_threads,
+                    mem_gb=min(mn_phaseweights_mem, run_args.mem_avail)
                 )
                 wf.connect([(n_inputs, mn_phaseweights, [('quality_map', 'quality_map')])])
             else:
@@ -100,8 +103,8 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                     interface=phaseweights.RomeoMaskingInterface(),
                     iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
                     name='romeo-voxelquality',
-                    mem_gb=min(3, run_args.mem_avail),
-                    n_procs=1,
+                    mem_gb=min(mn_phaseweights_mem, run_args.mem_avail),
+                    n_procs=mn_phaseweights_threads,
                     is_map=use_maps
                 )
                 mn_phaseweights.inputs.weight_type = "grad+second"
@@ -120,10 +123,22 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                         wf.connect([
                             (n_inputs, mn_phaseweights, [('magnitude', 'magnitude')])
                         ])
+            
+            mn_phaseweights.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
+                slurm_account=slurm_account,
+                pbs_account=run_args.pbs,
+                slurm_partition=slurm_partition,
+                name="voxelquality",
+                time="01:00:00",
+                mem_gb=mn_phaseweights_mem,
+                num_cpus=mn_phaseweights_threads
+            )
 
         # do bet mask if necessary
         if bet_this_run:
             bet_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
+            bet_mem = 5
             '''
             mn_bet = MapNode(
                 interface=hdbet.HDBETInterface(),
@@ -137,6 +152,8 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
                 name='fsl-bet',
+                mem_gb=min(bet_mem, run_args.mem_avail),
+                n_procs=bet_threads,
                 is_map=use_maps
             )
             mn_bet.plugin_args = gen_plugin_args(
@@ -146,7 +163,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 slurm_partition=slurm_partition,
                 name="bet",
                 time="01:00:00",
-                mem_gb=5,
+                mem_gb=bet_mem,
                 num_cpus=bet_threads
             )
             if run_args.inhomogeneity_correction:
