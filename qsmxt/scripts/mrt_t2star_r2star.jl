@@ -50,6 +50,10 @@ for i in 1:num_images
     mag_combined[:, :, :, i] = mag
 end
 
+# Free memory used by t2starmap before computing r2starmap
+t2starmap = nothing
+GC.gc()
+
 # create and save t2starmap
 t2starmap = NumART2star(mag_combined, TEs)
 savenii(t2starmap, args["t2starmap"]; header=header(mag_nii))

@@ -1,4 +1,4 @@
-from nipype.pipeline.engine import Workflow, Node, MapNode
+from nipype.pipeline.engine import Workflow
 from nipype.interfaces.utility import IdentityInterface, Function
 
 from qsmxt.interfaces import nipype_interface_masking as masking
@@ -19,14 +19,14 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
     slurm_account = run_args.slurm[0] if run_args.slurm and len(run_args.slurm) else None
     slurm_partition = run_args.slurm[1] if run_args.slurm and len(run_args.slurm) > 1 else None
 
-    n_inputs = Node(
+    n_inputs = create_node(
         interface=IdentityInterface(
             fields=['phase', 'quality_map', 'magnitude', 'mask', 'TE']
         ),
         name='masking_inputs'
     )
 
-    n_outputs = Node(
+    n_outputs = create_node(
         interface=IdentityInterface(
             fields=['mask', 'threshold', 'quality_map']
         ),
@@ -44,7 +44,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # combine magnitude if necessary
         if magnitude_available and run_args.combine_phase:
-            n_combine_magnitude = Node(
+            n_combine_magnitude = create_node(
                 interface=combinemagnitude.CombineMagnitudeInterface(),
                 name='nibabal-numpy_combine-magnitude'
             )
@@ -54,7 +54,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # get first phase image if necessary
         if run_args.combine_phase and run_args.masking_input == 'phase':
-            n_getfirst_phase = Node(
+            n_getfirst_phase = create_node(
                 interface=Function(
                     input_names=['phase', 'TE', 'is_list'],
                     output_names=['phase', 'TE'],
@@ -91,11 +91,11 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
             mn_phaseweights_mem = 4
             mn_phaseweights_threads = 1
             if qualitymap_available:
-                mn_phaseweights = Node(
+                mn_phaseweights = create_node(
                     interface=IdentityInterface(['quality_map']),
                     name='romeo-voxelquality',
                     n_procs=mn_phaseweights_threads,
-                    mem_gb=min(mn_phaseweights_mem, run_args.mem_avail)
+                    mem_gb=mn_phaseweights_mem,
                 )
                 wf.connect([(n_inputs, mn_phaseweights, [('quality_map', 'quality_map')])])
             else:
@@ -103,7 +103,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                     interface=phaseweights.RomeoMaskingInterface(),
                     iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
                     name='romeo-voxelquality',
-                    mem_gb=min(mn_phaseweights_mem, run_args.mem_avail),
+                    mem_gb=mn_phaseweights_mem,
                     n_procs=mn_phaseweights_threads,
                     is_map=use_maps
                 )
@@ -152,7 +152,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
                 name='fsl-bet',
-                mem_gb=min(bet_mem, run_args.mem_avail),
+                mem_gb=bet_mem,
                 n_procs=bet_threads,
                 is_map=use_maps
             )
@@ -200,7 +200,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # do threshold masking if necessary
         if run_args.masking_algorithm == 'threshold' and not (fill_masks and run_args.filling_algorithm == 'bet'):
-            n_threshold_masking = Node(
+            n_threshold_masking = create_node(
                 interface=masking.MaskingInterface(
                     threshold_algorithm='otsu' or run_args.threshold_algorithm,
                     threshold_algorithm_factor=run_args.threshold_algorithm_factor[index % len(run_args.threshold_algorithm_factor)],

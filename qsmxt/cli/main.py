@@ -1402,8 +1402,8 @@ def process_args(args):
     config.set('execution', 'try_hard_link_datasink', 'true')
     if args.debug:
         config.set('execution', 'stop_on_first_crash', 'true')
-        #config.set('monitoring', 'enabled', 'true')
-        #config.set('monitoring', 'summary_file', os.path.join(args.output_dir, 'resource_monitor.json'))
+        config.set('monitoring', 'enabled', 'true')
+        config.set('monitoring', 'summary_file', os.path.join(args.output_dir, 'resource_monitor.json'))
         #config.set('execution', 'remove_unnecessary_outputs', 'false')
         #config.set('execution', 'keep_inputs', 'true')
         #config.set('logging', 'workflow_level', 'DEBUG')
@@ -1498,7 +1498,7 @@ def main(argv=None):
     argv = argv or sys.argv[1:]
 
     # create initial logger
-    logger = make_logger(name='pre')
+    logger = make_logger(name='pre', printlevel=LogLevel.DEBUG if '--debug' in argv else LogLevel.INFO, writelevel=LogLevel.DEBUG if '--debug' in argv else LogLevel.INFO)
 
     # display version and exit if needed
     if any(x in argv for x in ['-v', '--version']):
@@ -1520,11 +1520,14 @@ def main(argv=None):
     logpath = os.path.join(args.output_dir, f"qsmxt.log")
     logger = make_logger(
         name='main',
-        logpath=logpath
+        logpath=logpath,
+        printlevel=LogLevel.DEBUG if '--debug' in argv else LogLevel.INFO,
+        writelevel=LogLevel.DEBUG if '--debug' in argv else LogLevel.INFO
     )
     logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
     logger.log(LogLevel.INFO.value, f"Command: {run_command}")
+    logger.log(LogLevel.INFO.value, f"Available memory: {round(args.mem_avail, 3)} GB")
 
     # display compliance message
     message = get_compliance_message(args)

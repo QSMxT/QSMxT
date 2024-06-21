@@ -4,11 +4,22 @@ import json
 import site
 import pkg_resources
 import subprocess
+import psutil
 
+from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.sys_cmd import sys_cmd
 from nipype.pipeline.engine import Node, MapNode
 
 def create_node(interface, name, n_procs=1, mem_gb=2, iterfield=None, is_map=False, **kwargs):
+    logger = make_logger('main')
+    mem_gb = round(mem_gb, 3)
+    mem_avail = round(psutil.virtual_memory().available / (1024 ** 3) * 0.90, 3)
+    logger.log(LogLevel.DEBUG.value, f"Node {name} has requested {mem_gb} GB.")
+    if mem_gb < 2:
+        mem_gb = 2
+    if mem_gb > mem_avail:
+        logger.log(LogLevel.WARNING.value, f"Node {name} has requested {mem_gb} GB of memory, which is greater than the available memory {mem_avail} GB! Segmentation faults may occur.")
+        mem_gb = mem_avail
     if is_map:
         return MapNode(interface=interface, name=name, iterfield=iterfield, n_procs=n_procs, mem_gb=mem_gb, **kwargs)
     else:
