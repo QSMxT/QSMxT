@@ -1497,8 +1497,8 @@ def visualize_resource_usage(json_file, wf):
     bar_width = 0.25  # Smaller bar width
     positions = range(len(grouped['name']))  # Positions for the bars
 
-    ax.bar([p - bar_width for p in positions], grouped['rss_GiB'], width=bar_width, label='Max rss_GiB', color='b', align='center')
-    ax.bar([p + bar_width for p in positions], grouped['mem_requested'], width=bar_width, label='Memory Requested', color='g', align='center')
+    ax.bar([p - bar_width/2 for p in positions], grouped['rss_GiB'], width=bar_width, label='Max rss_GiB', color='b', align='center')
+    ax.bar([p + bar_width/2 for p in positions], grouped['mem_requested'], width=bar_width, label='Memory Requested', color='g', align='center')
 
     # Labels and legend
     ax.set_xlabel('Process Name')
