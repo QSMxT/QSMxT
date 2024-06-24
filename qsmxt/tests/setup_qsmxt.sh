@@ -115,6 +115,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
         echo "[DEBUG] Creating qsmxt-container using image vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
         sudo docker create --name qsmxt-container -it \
             -v ${TEST_DIR}/:${TEST_DIR} \
+            -v /storage:/storage \
             --env WEBDAV_LOGIN="${WEBDAV_LOGIN}" \
             --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
             --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
