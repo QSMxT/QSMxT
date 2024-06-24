@@ -1461,9 +1461,9 @@ def visualize_resource_usage(json_file, wf):
     plt.figure(figsize=(24, 8))
     for name in df['name'].unique():
         subset = df[df['name'] == name]
-        plt.plot(subset.index.values, subset['rss_GiB'], label=f"{name} RSS used")
-        plt.plot(subset.index.values, subset['vms_GiB'], label=f"{name} VMS used")
-    plt.title("Memory Usage Over Time")
+        plt.plot(subset.index.values.ravel(), subset['rss_GiB'].values.ravel(), label=f"{name} RSS used")
+        plt.plot(subset.index.values.ravel(), subset['vms_GiB'].values.ravel(), label=f"{name} VMS used")
+    plt.title('Memory Usage Over Time')
     plt.ylabel('Memory (GiB)')
     plt.xlabel('Time')
     plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
@@ -1474,7 +1474,7 @@ def visualize_resource_usage(json_file, wf):
     plt.figure(figsize=(24, 8))
     for name in df['name'].unique():
         subset = df[df['name'] == name]
-        plt.plot(subset.index.values, subset['cpus'], label=f"{name} CPU used")
+        plt.plot(subset.index.values.ravel(), subset['cpus'].values.ravel(), label=f"{name} CPU used")
     plt.title('CPU Usage Over Time')
     plt.ylabel('CPU Usage (%)')
     plt.xlabel('Time')
@@ -1488,8 +1488,9 @@ def visualize_resource_usage(json_file, wf):
     plt.figure(figsize=(12, 6))
     bar_width = 0.25
     n = len(df['name'].unique())
-    index = np.arange(n)
+    index = np.arange(n)  # Create an array of indices for bar placement
 
+    # Loop through each resource to plot
     for i, resource in enumerate(resources):
         max_usage = df.groupby('name')[resource].max()
         plt.bar(index + i * bar_width, max_usage, bar_width, label=f"Max {resource}", color='blue' if resource == 'rss_GiB' else 'green')
