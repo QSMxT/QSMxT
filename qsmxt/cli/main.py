@@ -1426,6 +1426,7 @@ def set_env_variables(args):
 
 def visualize_resource_usage(json_file, wf):
     import pandas as pd
+    import numpy as np
     from matplotlib import pyplot as plt
 
     json_dir = os.path.split(json_file)[0]
@@ -1460,9 +1461,9 @@ def visualize_resource_usage(json_file, wf):
     plt.figure(figsize=(24, 8))
     for name in df['name'].unique():
         subset = df[df['name'] == name]
-        plt.plot(subset.index, subset['rss_GiB'], label=f"{name} RSS used")
-        plt.plot(subset.index, subset['vms_GiB'], label=f"{name} VMS used")
-    plt.title('Memory Usage Over Time')
+        plt.plot(subset.index.values, subset['rss_GiB'], label=f"{name} RSS used")
+        plt.plot(subset.index.values, subset['vms_GiB'], label=f"{name} VMS used")
+    plt.title("Memory Usage Over Time")
     plt.ylabel('Memory (GiB)')
     plt.xlabel('Time')
     plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
@@ -1473,7 +1474,7 @@ def visualize_resource_usage(json_file, wf):
     plt.figure(figsize=(24, 8))
     for name in df['name'].unique():
         subset = df[df['name'] == name]
-        plt.plot(subset.index, subset['cpus'], label=f"{name} CPU used")
+        plt.plot(subset.index.values, subset['cpus'], label=f"{name} CPU used")
     plt.title('CPU Usage Over Time')
     plt.ylabel('CPU Usage (%)')
     plt.xlabel('Time')
@@ -1485,17 +1486,21 @@ def visualize_resource_usage(json_file, wf):
     # Plotting resource usages
     resources = ['rss_GiB', 'vms_GiB']
     plt.figure(figsize=(12, 6))
+    bar_width = 0.25
+    n = len(df['name'].unique())
+    index = np.arange(n)
+
     for i, resource in enumerate(resources):
         max_usage = df.groupby('name')[resource].max()
-        max_usage.plot(kind='bar', position=i+1, width=0.25, color='blue' if resource == 'rss_GiB' else 'green', label=f"Max {resource}")
+        plt.bar(index + i * bar_width, max_usage, bar_width, label=f"Max {resource}", color='blue' if resource == 'rss_GiB' else 'green')
 
     max_mem_req = df.groupby('name')['mem_requested'].max()
-    max_mem_req.plot(kind='bar', color='red', position=i+2, width=0.25, label='Memory Requested')
+    plt.bar(index + len(resources) * bar_width, max_mem_req, bar_width, color='red', label='Memory Requested')
 
     plt.title('Maximum Memory Usage by Name')
     plt.ylabel('Memory (GiB)')
     plt.xlabel('Name')
-    plt.xticks(rotation=90)
+    plt.xticks(index + bar_width, df['name'].unique(), rotation=90)
     plt.legend()
     plt.grid(True)
     plt.tight_layout()
