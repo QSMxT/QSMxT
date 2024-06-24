@@ -1424,9 +1424,9 @@ def set_env_variables(args):
     else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
 
 
-def visualize_resource_usage(json_file):
+def visualize_resource_usage(json_file, wf):
     import pandas as pd
-    import matplotlib.pyplot as plt
+    from matplotlib import pyplot as plt
 
     json_dir = os.path.split(json_file)[0]
 
@@ -1443,70 +1443,63 @@ def visualize_resource_usage(json_file):
     # Set time as the index
     df.set_index('time', inplace=True)
     
+    # Simplify name entries
     df['name'] = df['name'].apply(lambda x: x.split('.')[-1])
 
-    # Plot RSS memory usage over time
-    plt.figure(figsize=(12, 6))
+    # Create a dictionary from workflow with node names and requested memory
+    mem_requested = {node.name: node.mem_gb for node in wf._get_all_nodes()}
+
+    # Map the requested memory to the DataFrame
+    df['mem_requested'] = df['name'].map(mem_requested)
+
+    csv_file_path = os.path.join(json_dir, 'resource_usage.csv')
+    df.to_csv(csv_file_path)
+    print(f"DataFrame saved as CSV at: {csv_file_path}")
+
+    # Plotting all resource usages
+    plt.figure(figsize=(24, 8))
     for name in df['name'].unique():
         subset = df[df['name'] == name]
-        plt.plot(subset.index, subset['rss_GiB'], label=name)
-    plt.title('RSS Memory Usage Over Time')
-    plt.ylabel('RSS GiB')
+        plt.plot(subset.index, subset['rss_GiB'], label=f"{name} RSS used")
+        plt.plot(subset.index, subset['vms_GiB'], label=f"{name} VMS used")
+    plt.title('Memory Usage Over Time')
+    plt.ylabel('Memory (GiB)')
     plt.xlabel('Time')
     plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(json_dir, "rss-mem-usage.png"))
+    plt.savefig(os.path.join(json_dir, "mem-usage.png"))
 
-    # Plot VMS memory usage over time
-    plt.figure(figsize=(12, 6))
+    plt.figure(figsize=(24, 8))
     for name in df['name'].unique():
         subset = df[df['name'] == name]
-        plt.plot(subset.index, subset['vms_GiB'], label=name)
-    plt.title('VMS Memory Usage Over Time')
-    plt.ylabel('VMS GiB')
-    plt.xlabel('Time')
-    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
-    plt.tight_layout()
-    plt.savefig(os.path.join(json_dir, "vms-mem-usage.png"))
-
-    # Plot CPU usage over time
-    plt.figure(figsize=(12, 6))
-    for name in df['name'].unique():
-        subset = df[df['name'] == name]
-        plt.plot(subset.index, subset['cpus'], label=name)
+        plt.plot(subset.index, subset['cpus'], label=f"{name} CPU used")
     plt.title('CPU Usage Over Time')
     plt.ylabel('CPU Usage (%)')
     plt.xlabel('Time')
     plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    plt.grid(True)
     plt.tight_layout()
     plt.savefig(os.path.join(json_dir, "cpu-usage.png"))
 
-
-    # Calculate max memory usage for each name type
-    max_rss = df.groupby('name')['rss_GiB'].max()
-    max_vms = df.groupby('name')['vms_GiB'].max()
-
-    # Plotting max RSS memory usage by name
+    # Plotting resource usages
+    resources = ['rss_GiB', 'vms_GiB']
     plt.figure(figsize=(12, 6))
-    max_rss.plot(kind='bar', color='blue')
-    plt.title('Maximum RSS Memory Usage by name')
-    plt.ylabel('RSS GiB')
+    for i, resource in enumerate(resources):
+        max_usage = df.groupby('name')[resource].max()
+        max_usage.plot(kind='bar', position=i+1, width=0.25, color='blue' if resource == 'rss_GiB' else 'green', label=f"Max {resource}")
+
+    max_mem_req = df.groupby('name')['mem_requested'].max()
+    max_mem_req.plot(kind='bar', color='red', position=i+2, width=0.25, label='Memory Requested')
+
+    plt.title('Maximum Memory Usage by Name')
+    plt.ylabel('Memory (GiB)')
     plt.xlabel('Name')
     plt.xticks(rotation=90)
-    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    plt.legend()
+    plt.grid(True)
     plt.tight_layout()
-    plt.savefig(os.path.join(json_dir, "max-rss-mem-usage.png"))
-
-    # Plotting max VMS memory usage by name
-    plt.figure(figsize=(12, 6))
-    max_vms.plot(kind='bar', color='green')
-    plt.title('Maximum VMS Memory Usage by name')
-    plt.ylabel('VMS GiB')
-    plt.xlabel('Name')
-    plt.xticks(rotation=90)
-    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
-    plt.tight_layout()
-    plt.savefig(os.path.join(json_dir, "max-vms-mem-usage.png"))
+    plt.savefig(os.path.join(json_dir, "max-mem-usage.png"))
 
 def write_citations(wf, args):
     # get all node names
@@ -1689,7 +1682,7 @@ def main(argv=None):
 
     if args.debug:
         logger.log(LogLevel.DEBUG.value, f"Plotting resource monitor summaries...")
-        visualize_resource_usage(os.path.join(args.output_dir, "resource_monitor.json"))
+        visualize_resource_usage(os.path.join(args.output_dir, "resource_monitor.json"), wf)
 
     script_exit(logger=logger)
     return args
