@@ -1484,25 +1484,33 @@ def visualize_resource_usage(json_file, wf):
     plt.savefig(os.path.join(json_dir, "cpu-usage.png"))
 
     # Plotting resource usages
-    resources = ['rss_GiB', 'vms_GiB']
-    plt.figure(figsize=(12, 6))
-    bar_width = 0.25
-    n = len(df['name'].unique())
-    index = np.arange(n)  # Create an array of indices for bar placement
+    # Group by 'name' and calculate the maximum rss_GiB, vms_GiB and get mem_requested (assuming it's the same for each group)
+    grouped = df.groupby('name').agg({
+        'rss_GiB': 'max',
+        'vms_GiB': 'max',
+        'mem_requested': 'mean'  # Using mean here assuming all entries per group are the same
+    }).reset_index()
 
-    # Loop through each resource to plot
-    for i, resource in enumerate(resources):
-        max_usage = df.groupby('name')[resource].max()
-        plt.bar(index + i * bar_width, max_usage, bar_width, label=f"Max {resource}", color='blue' if resource == 'rss_GiB' else 'green')
+    # Plotting
+    fig, ax = plt.subplots(figsize=(10, 6))
 
-    max_mem_req = df.groupby('name')['mem_requested'].max()
-    plt.bar(index + len(resources) * bar_width, max_mem_req, bar_width, color='red', label='Memory Requested')
+    # Adjust bar positions
+    bar_width = 0.25  # Smaller bar width
+    positions = range(len(grouped['name']))  # Positions for the bars
 
-    plt.title('Maximum Memory Usage by Name')
-    plt.ylabel('Memory (GiB)')
-    plt.xlabel('Name')
-    plt.xticks(index + bar_width, df['name'].unique(), rotation=90)
-    plt.legend()
+    ax.bar([p - bar_width for p in positions], grouped['rss_GiB'], width=bar_width, label='Max rss_GiB', color='b', align='center')
+    ax.bar(positions, grouped['vms_GiB'], width=bar_width, label='Max vms_GiB', color='r', align='center')
+    ax.bar([p + bar_width for p in positions], grouped['mem_requested'], width=bar_width, label='Memory Requested', color='g', align='center')
+
+    # Labels and legend
+    ax.set_xlabel('Process Name')
+    ax.set_ylabel('Memory in GiB')
+    ax.set_xticks(positions)
+    ax.set_xticklabels(grouped['name'], rotation=90)
+
+    ax.legend(loc='upper left')
+
+    plt.title('Memory Usage Metrics by Process')
     plt.grid(True)
     plt.tight_layout()
     plt.savefig(os.path.join(json_dir, "max-mem-usage.png"))
