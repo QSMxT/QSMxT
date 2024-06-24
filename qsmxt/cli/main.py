@@ -1423,6 +1423,91 @@ def set_env_variables(args):
     if "PYTHONPATH" in os.environ: os.environ["PYTHONPATH"] += os.pathsep + get_qsmxt_dir()
     else:                          os.environ["PYTHONPATH"]  = get_qsmxt_dir()
 
+
+def visualize_resource_usage(json_file):
+    import pandas as pd
+    import matplotlib.pyplot as plt
+
+    json_dir = os.path.split(json_file)[0]
+
+    # Load JSON data from file
+    with open(json_file, 'r') as file:
+        data = json.load(file)
+    
+    # Convert JSON data to DataFrame
+    df = pd.DataFrame(data)
+    
+    # Convert Unix timestamps to datetime
+    df['time'] = pd.to_datetime(df['time'], unit='s')
+    
+    # Set time as the index
+    df.set_index('time', inplace=True)
+    
+    df['name'] = df['name'].apply(lambda x: x.split('.')[-1])
+
+    # Plot RSS memory usage over time
+    plt.figure(figsize=(12, 6))
+    for name in df['name'].unique():
+        subset = df[df['name'] == name]
+        plt.plot(subset.index, subset['rss_GiB'], label=name)
+    plt.title('RSS Memory Usage Over Time')
+    plt.ylabel('RSS GiB')
+    plt.xlabel('Time')
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    plt.tight_layout()
+    plt.savefig(os.path.join(json_dir, "rss-mem-usage.png"))
+
+    # Plot VMS memory usage over time
+    plt.figure(figsize=(12, 6))
+    for name in df['name'].unique():
+        subset = df[df['name'] == name]
+        plt.plot(subset.index, subset['vms_GiB'], label=name)
+    plt.title('VMS Memory Usage Over Time')
+    plt.ylabel('VMS GiB')
+    plt.xlabel('Time')
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    plt.tight_layout()
+    plt.savefig(os.path.join(json_dir, "vms-mem-usage.png"))
+
+    # Plot CPU usage over time
+    plt.figure(figsize=(12, 6))
+    for name in df['name'].unique():
+        subset = df[df['name'] == name]
+        plt.plot(subset.index, subset['cpus'], label=name)
+    plt.title('CPU Usage Over Time')
+    plt.ylabel('CPU Usage (%)')
+    plt.xlabel('Time')
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    plt.tight_layout()
+    plt.savefig(os.path.join(json_dir, "cpu-usage.png"))
+
+
+    # Calculate max memory usage for each name type
+    max_rss = df.groupby('name')['rss_GiB'].max()
+    max_vms = df.groupby('name')['vms_GiB'].max()
+
+    # Plotting max RSS memory usage by name
+    plt.figure(figsize=(12, 6))
+    max_rss.plot(kind='bar', color='blue')
+    plt.title('Maximum RSS Memory Usage by name')
+    plt.ylabel('RSS GiB')
+    plt.xlabel('Name')
+    plt.xticks(rotation=90)
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    plt.tight_layout()
+    plt.savefig(os.path.join(json_dir, "max-rss-mem-usage.png"))
+
+    # Plotting max VMS memory usage by name
+    plt.figure(figsize=(12, 6))
+    max_vms.plot(kind='bar', color='green')
+    plt.title('Maximum VMS Memory Usage by name')
+    plt.ylabel('VMS GiB')
+    plt.xlabel('Name')
+    plt.xticks(rotation=90)
+    plt.legend(loc='upper left', bbox_to_anchor=(1, 1))
+    plt.tight_layout()
+    plt.savefig(os.path.join(json_dir, "max-vms-mem-usage.png"))
+
 def write_citations(wf, args):
     # get all node names
     node_names = [node._name.lower() for node in wf._get_all_nodes()]
@@ -1521,8 +1606,8 @@ def main(argv=None):
     logger = make_logger(
         name='main',
         logpath=logpath,
-        printlevel=LogLevel.DEBUG if '--debug' in argv else LogLevel.INFO,
-        writelevel=LogLevel.DEBUG if '--debug' in argv else LogLevel.INFO
+        printlevel=LogLevel.DEBUG if args.debug else LogLevel.INFO,
+        writelevel=LogLevel.DEBUG if args.debug else LogLevel.INFO
     )
     logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
@@ -1602,8 +1687,13 @@ def main(argv=None):
                 plugin_args=plugin_args
             )
 
+    if args.debug:
+        logger.log(LogLevel.DEBUG.INFO, f"Plotting resource monitor summaries...")
+        visualize_resource_usage(os.path.join(args.output_dir, "resource_monitor.json"))
+
     script_exit(logger=logger)
     return args
 
 if __name__ == "__main__":
     main()
+

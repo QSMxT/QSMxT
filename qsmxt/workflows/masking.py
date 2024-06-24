@@ -1,3 +1,5 @@
+import numpy as np
+
 from nipype.pipeline.engine import Workflow
 from nipype.interfaces.utility import IdentityInterface, Function
 
@@ -12,7 +14,7 @@ from qsmxt.interfaces import nipype_interface_combinemagnitude as combinemagnitu
 
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
 
-def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_available, fill_masks, add_bet, use_maps, name, index):
+def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_available, fill_masks, add_bet, use_maps, name, dimensions_phase, bytepix_phase, num_echoes, index):
 
     wf = Workflow(name=f"{name}_workflow")
 
@@ -44,9 +46,11 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # combine magnitude if necessary
         if magnitude_available and run_args.combine_phase:
+            n_combine_magnitude_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * num_echoes * 1.5
             n_combine_magnitude = create_node(
                 interface=combinemagnitude.CombineMagnitudeInterface(),
-                name='nibabal-numpy_combine-magnitude'
+                name='nibabal-numpy_combine-magnitude',
+                mem_gb=n_combine_magnitude_mem
             )
             wf.connect([
                 (n_inputs, n_combine_magnitude, [('magnitude', 'magnitude')])
@@ -88,7 +92,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # do phase weights if necessary
         if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
-            mn_phaseweights_mem = 4
+            mn_phaseweights_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 16
             mn_phaseweights_threads = 1
             if qualitymap_available:
                 mn_phaseweights = create_node(
@@ -139,15 +143,6 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
         if bet_this_run:
             bet_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
             bet_mem = 5
-            '''
-            mn_bet = MapNode(
-                interface=hdbet.HDBETInterface(),
-                iterfield=['in_file'],
-                name='hdbet',
-                mem_gb=20,
-                n_procs=bet_threads
-            )
-            '''
             mn_bet = create_node(
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],

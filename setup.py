@@ -45,6 +45,8 @@ setup(
         'tensorflow',
         'packaging',
         'nextqsm'
+        'matplotlib',
+        'pandas'
     ],
     entry_points={
         'console_scripts': [

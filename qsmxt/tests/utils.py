@@ -26,6 +26,8 @@ def create_logger(log_dir):
     )
 
 def write_to_file(path, text, mode='a', end="\n"):
+    logger = make_logger()
+    logger.log(LogLevel.DEBUG.value, f"Writing to {path}: {text}")
     with open(path, mode) as filehandle:
         filehandle.write(text + end)
 

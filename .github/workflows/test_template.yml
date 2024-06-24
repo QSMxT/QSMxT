@@ -59,7 +59,7 @@ jobs:
         RUN_ID: ${{ github.run_id }}
         TEST_DIR: "/storage/tmp"
       run: |
-        sudo docker exec -e RUN_ID=$RUN_ID -e WEBDAV_LOGIN -e WEBDAV_PASSWORD -e FREEIMAGE_KEY -e OSF_TOKEN -e OSF_USER -e OSF_PASS -e TEST_DIR qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_template.py -s"
+        sudo docker exec -e RUN_ID=$RUN_ID -e WEBDAV_LOGIN -e WEBDAV_PASSWORD -e FREEIMAGE_KEY -e OSF_TOKEN -e OSF_USER -e OSF_PASS -e TEST_DIR -e GITHUB_STEP_SUMMARY qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_template.py -s"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs

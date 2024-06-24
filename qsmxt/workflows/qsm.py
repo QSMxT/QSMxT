@@ -269,27 +269,27 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         header = nifti.header
         dimensions = header.get_data_shape()
         num_voxels = np.prod(dimensions)
-        bitpix = header.get_data_dtype().itemsize
-        memory_usage_bytes = num_voxels * bitpix
+        bytepix = header.get_data_dtype().itemsize
+        memory_usage_bytes = num_voxels * bytepix
         mem_gb = memory_usage_bytes / (1024 ** 3)
-        return mem_gb, dimensions, bitpix
+        return mem_gb, dimensions, bytepix
     
     if phase_files:
-        mem_phase, dimensions_phase, bitpix_phase = calculate_memory_usage(phase_files[0])
-        mem_phase_64 = np.prod(dimensions_phase) * 64 / (1024 ** 3)
-        logger.log(LogLevel.INFO.value, f"GRE phase files are {dimensions_phase} * {len(phase_files)} echoes * {bitpix_phase} bits/voxel == {round(mem_phase * len(phase_files), 3)} GB ({round(mem_phase_64, 3)} GB at 64-bit)")
+        mem_phase, dimensions_phase, bytepix_phase = calculate_memory_usage(phase_files[0])
+        mem_phase_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
+        logger.log(LogLevel.INFO.value, f"GRE phase files are {dimensions_phase} * {len(phase_files)} echoes * {bytepix_phase} bytes/voxel == {round(mem_phase * len(phase_files), 3)} GB ({round(mem_phase_64 * len(phase_files), 3)} GB at 64-bit)")
     if magnitude_files:
-        mem_mag, dimensions_mag, bitpix_mag = calculate_memory_usage(magnitude_files[0])
-        mem_mag_64 = np.prod(dimensions_phase) * 64 / (1024 ** 3)
-        logger.log(LogLevel.INFO.value, f"GRE magnitude files are {dimensions_mag} * {len(magnitude_files)} echoes * {bitpix_mag} bits/voxel == {round(mem_mag * len(magnitude_files), 3)} GB ({round(mem_mag_64, 3)} GB at 64-bit)")
+        mem_mag, dimensions_mag, bytepix_mag = calculate_memory_usage(magnitude_files[0])
+        mem_mag_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
+        logger.log(LogLevel.INFO.value, f"GRE magnitude files are {dimensions_mag} * {len(magnitude_files)} echoes * {bytepix_mag} bytes/voxel == {round(mem_mag * len(magnitude_files), 3)} GB ({round(mem_mag_64 * len(magnitude_files), 3)} GB at 64-bit)")
     if t1w_files:
-        mem_t1w, dimensions_t1w, bitpix_t1w = calculate_memory_usage(t1w_files[0])
-        mem_t1w_64 = np.prod(dimensions_phase) * 64 / (1024 ** 3)
-        logger.log(LogLevel.INFO.value, f"T1w files are {dimensions_t1w} * {bitpix_t1w} bits/voxel == {round(mem_t1w, 3)} GB ({round(mem_t1w_64, 3)} at 64-bit)")
+        mem_t1w, dimensions_t1w, bytepix_t1w = calculate_memory_usage(t1w_files[0])
+        mem_t1w_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
+        logger.log(LogLevel.INFO.value, f"T1w files are {dimensions_t1w} * {bytepix_t1w} bytes/voxel == {round(mem_t1w, 3)} GB ({round(mem_t1w_64, 3)} GB at 64-bit)")
     if mask_files and run_args.use_existing_masks:
-        mem_mask, dimensions_mask, bitpix_mask = calculate_memory_usage(mask_files[0])
-        mem_mask_64 = np.prod(dimensions_phase) * 64 / (1024 ** 3)
-        logger.log(LogLevel.INFO.value, f"Mask files are {dimensions_mask} * {bitpix_mask} bits/voxel == {round(mem_mask, 3)} GB ({round(mem_mask_64, 3)} at 64-bit)")
+        mem_mask, dimensions_mask, bytepix_mask = calculate_memory_usage(mask_files[0])
+        mem_mask_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
+        logger.log(LogLevel.INFO.value, f"Mask files are {dimensions_mask} * {bytepix_mask} bytes/voxel == {round(mem_mask, 3)} GB ({round(mem_mask_64 * len(mask_files), 3)} GB at 64-bit)")
 
     if not any([run_args.do_qsm, run_args.do_swi, run_args.do_t2starmap, run_args.do_r2starmap, run_args.do_segmentation]):
         return
@@ -607,7 +607,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             name='nipype_inputs-resampled'
         )
         if magnitude_files:
-            mn_resample_mem = (mem_phase_64 * len(phase_files)) * 2.5
+            mn_resample_mem = (np.product(dimensions_phase) * bytepix_phase) / (1024 ** 3) * 2 * 16
             mn_resample_inputs = create_node(
                 interface=sampling.AxialSamplingInterface(
                     obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
@@ -634,7 +634,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 (mn_resample_inputs, n_inputs_resampled, [('phase', 'phase')])
             ])
             if mask_files and run_args.use_existing_masks:
-                mn_resample_mask_mem = (mem_mask * len(mask_files)) * 2.5
+                mn_resample_mask_mem = (np.product(dimensions_phase) * bytepix_phase) / (1024 ** 3) * 16
                 mn_resample_mask = create_node(
                     interface=sampling.AxialSamplingInterface(
                         obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
@@ -675,7 +675,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             name='phase-combined'
         )
         if run_args.combine_phase:
-            n_romeo_mem = mem_mag_64 * len(magnitude_files) + mem_phase_64 * len(phase_files) + mem_phase_64 * 2
+            n_romeo_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 2 * 32
             n_romeo_combine = create_node(
                 interface=romeo.RomeoB0Interface(),
                 name='mrt_romeo_combine-phase',
@@ -709,6 +709,9 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             add_bet=run_args.add_bet and run_args.filling_algorithm != 'bet',
             use_maps=len(phase_files) > 1 and not run_args.combine_phase,
             name="mask",
+            dimensions_phase=dimensions_phase,
+            bytepix_phase=bytepix_phase,
+            num_echoes=len(magnitude_files),
             index=0
         )
         wf.connect([
@@ -719,7 +722,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         ])
 
         # === QSM ===
-        wf_qsm = qsm_workflow(run_args, "qsm", len(magnitude_files) > 0, len(phase_files) > 1 and not run_args.combine_phase, dimensions_phase, bitpix_phase, qsm_erosions=run_args.tgv_erosions)
+        wf_qsm = qsm_workflow(run_args, "qsm", len(magnitude_files) > 0, len(phase_files) > 1 and not run_args.combine_phase, dimensions_phase, bytepix_phase, qsm_erosions=run_args.tgv_erosions)
 
         wf.connect([
             (n_inputs_resampled, wf_qsm, [('phase', 'qsm_inputs.phase')]),
@@ -782,6 +785,9 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 add_bet=False,
                 use_maps=len(phase_files) > 1 and not run_args.combine_phase,
                 name="mask-intermediate",
+                dimensions_phase=dimensions_phase,
+                bytepix_phase=bytepix_phase,
+                num_echoes=len(magnitude_files),
                 index=1
             )
             wf.connect([
@@ -792,7 +798,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 (wf_masking, wf_masking_intermediate, [('masking_outputs.quality_map', 'masking_inputs.quality_map')])
             ])
 
-            wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0, len(phase_files) > 1 and not run_args.combine_phase, dimensions_phase, bitpix_phase, qsm_erosions=0)
+            wf_qsm_intermediate = qsm_workflow(run_args, "qsm-intermediate", len(magnitude_files) > 0, len(phase_files) > 1 and not run_args.combine_phase, dimensions_phase, bytepix_phase, qsm_erosions=0)
             wf.connect([
                 (n_inputs_resampled, wf_qsm_intermediate, [('phase', 'qsm_inputs.phase')]),
                 (n_inputs_resampled, wf_qsm_intermediate, [('magnitude', 'qsm_inputs.magnitude')]),
@@ -887,7 +893,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     
     return wf
 
-def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase, bitpix_phase, qsm_erosions=0):
+def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase, bytepix_phase, qsm_erosions=0):
     wf = Workflow(name=f"{name}_workflow")
 
     slurm_account = run_args.slurm[0] if run_args.slurm and len(run_args.slurm) else None
@@ -917,7 +923,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
         if run_args.unwrapping_algorithm == 'laplacian':
             laplacian_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-            laplacian_mem = (64 * np.product(dimensions_phase)) / (1024 ** 3) * 1.5
+            laplacian_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 1.5
             mn_laplacian = create_node(
                 is_map=use_maps,
                 interface=laplacian.LaplacianInterface(),
@@ -946,7 +952,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
                 ])
             else:
                 romeo_threads = min(1, run_args.n_procs) if run_args.multiproc else 1
-                romeo_mem = (np.product(dimensions_phase) * 64 * (2 if magnitude_available else 1)) / (1024 ** 3) * 1.5
+                romeo_mem = (np.product(dimensions_phase) * 8 * (2 if magnitude_available else 1)) / (1024 ** 3) * 1.5
                 mn_romeo = create_node(
                     interface=romeo.RomeoB0Interface(),
                     name='mrt_romeo',
@@ -1030,12 +1036,10 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
     if run_args.qsm_algorithm in ['tgv', 'tgvjl'] and run_args.combine_phase:
         freq_to_phase_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-        freq_to_phase_mem = (np.product(dimensions_phase) * bitpix_phase) / (1024 ** 3) * 1.5
         mn_freq_to_phase = create_node(
             interface=processphase.FreqToPhaseInterface(TE=0.005, wraps=True),
             name='nibabel-numpy_freq-to-phase',
             iterfield=['frequency'],
-            mem_gb=freq_to_phase_mem,
             n_procs=freq_to_phase_threads,
             is_map=use_maps
         )
@@ -1049,7 +1053,6 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
             pbs_account=run_args.pbs,
             slurm_partition=run_args.slurm[1],
             name="FreqToPhase",
-            mem_gb=freq_to_phase_mem,
             num_cpus=freq_to_phase_threads
         )
         
@@ -1063,7 +1066,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
         if run_args.bf_algorithm == 'vsharp':
             vsharp_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-            vsharp_mem = (np.product(dimensions_phase) * 64 * 2) / (1024 ** 3) * 5
+            vsharp_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 16
             mn_vsharp = create_node(
                 interface=qsmjl.VsharpInterface(num_threads=vsharp_threads),
                 iterfield=['frequency', 'mask'],
@@ -1090,7 +1093,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
             )
         if run_args.bf_algorithm == 'pdf':
             pdf_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
-            pdf_mem = (np.product(dimensions_phase) * 64 * 2) / (1024 ** 3) * 8
+            pdf_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 32
             mn_pdf = create_node(
                 interface=qsmjl.PdfInterface(num_threads=pdf_threads),
                 iterfield=['frequency', 'mask'],
@@ -1120,7 +1123,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
     # === DIPOLE INVERSION ===
     if run_args.qsm_algorithm == 'nextqsm':
         nextqsm_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
-        nextqsm_mem = (np.product(dimensions_phase) * 64 * 2) / (1024 ** 3) * 13
+        nextqsm_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 90
         mn_qsm = create_node(
             interface=nextqsm.NextqsmInterface(),
             name='nextqsm',
@@ -1145,7 +1148,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
     if run_args.qsm_algorithm == 'rts':
         rts_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-        rts_mem = (np.product(dimensions_phase) * 64 * 2) / (1024 ** 3) * 8
+        rts_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 32
         mn_qsm = create_node(
             interface=qsmjl.RtsQsmInterface(num_threads=rts_threads),
             name='qsmjl_rts',
@@ -1173,7 +1176,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
     if run_args.qsm_algorithm == 'tv':
         tv_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-        tv_mem = (np.product(dimensions_phase) * 64 * 2) / (1024 ** 3) * 8
+        tv_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 32
         mn_qsm = create_node(
             interface=qsmjl.TvQsmInterface(num_threads=tv_threads),
             name='qsmjl_tv',
@@ -1203,7 +1206,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
 
     if run_args.qsm_algorithm == 'tgv':
         tgv_threads = min(4, run_args.n_procs)
-        tgv_mem = (np.product(dimensions_phase) * 64 * 2) / (1024 ** 3) * 8
+        tgv_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 32
         mn_qsm = create_node(
             interface=tgvjl.TGVQSMJlInterface(
                 erosions=qsm_erosions,
