@@ -1688,7 +1688,7 @@ def main(argv=None):
             )
 
     if args.debug:
-        logger.log(LogLevel.DEBUG.INFO, f"Plotting resource monitor summaries...")
+        logger.log(LogLevel.DEBUG.value, f"Plotting resource monitor summaries...")
         visualize_resource_usage(os.path.join(args.output_dir, "resource_monitor.json"))
 
     script_exit(logger=logger)
