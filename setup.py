@@ -44,7 +44,7 @@ setup(
         'niflow-nipype1-workflows',
         'tensorflow',
         'packaging',
-        'nextqsm'
+        'nextqsm',
         'matplotlib',
         'pandas'
     ],
