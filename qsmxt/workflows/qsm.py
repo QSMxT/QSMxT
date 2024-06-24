@@ -952,7 +952,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
                 ])
             else:
                 romeo_threads = min(1, run_args.n_procs) if run_args.multiproc else 1
-                romeo_mem = (np.product(dimensions_phase) * 8 * (2 if magnitude_available else 1)) / (1024 ** 3) * 1.5
+                romeo_mem = (np.product(dimensions_phase) * 8 * (2 if magnitude_available else 1)) / (1024 ** 3) * 2.5
                 mn_romeo = create_node(
                     interface=romeo.RomeoB0Interface(),
                     name='mrt_romeo',
@@ -1148,7 +1148,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
     if run_args.qsm_algorithm == 'rts':
         rts_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-        rts_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 40
+        rts_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 44
         mn_qsm = create_node(
             interface=qsmjl.RtsQsmInterface(num_threads=rts_threads),
             name='qsmjl_rts',
@@ -1206,7 +1206,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
 
     if run_args.qsm_algorithm == 'tgv':
         tgv_threads = min(4, run_args.n_procs)
-        tgv_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 32
+        tgv_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 36
         mn_qsm = create_node(
             interface=tgvjl.TGVQSMJlInterface(
                 erosions=qsm_erosions,
