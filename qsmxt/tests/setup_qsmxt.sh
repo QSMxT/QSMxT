@@ -121,7 +121,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
             --env OSF_TOKEN="${OSF_TOKEN}" \
             --env OSF_USER="${OSF_USER}" \
             --env OSF_PASS="${OSF_PASS}" \
-            --env GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY} \
+            --env GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY}" \
             "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}" \
             /bin/bash
     fi
