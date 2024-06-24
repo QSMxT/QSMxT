@@ -1123,7 +1123,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
     # === DIPOLE INVERSION ===
     if run_args.qsm_algorithm == 'nextqsm':
         nextqsm_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
-        nextqsm_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 90
+        nextqsm_mem = 11
         mn_qsm = create_node(
             interface=nextqsm.NextqsmInterface(),
             name='nextqsm',
@@ -1148,7 +1148,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
     if run_args.qsm_algorithm == 'rts':
         rts_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-        rts_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 32
+        rts_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 36
         mn_qsm = create_node(
             interface=qsmjl.RtsQsmInterface(num_threads=rts_threads),
             name='qsmjl_rts',

@@ -1487,8 +1487,7 @@ def visualize_resource_usage(json_file, wf):
     # Group by 'name' and calculate the maximum rss_GiB, vms_GiB and get mem_requested (assuming it's the same for each group)
     grouped = df.groupby('name').agg({
         'rss_GiB': 'max',
-        'vms_GiB': 'max',
-        'mem_requested': 'mean'  # Using mean here assuming all entries per group are the same
+        'mem_requested': 'max'
     }).reset_index()
 
     # Plotting
@@ -1499,7 +1498,6 @@ def visualize_resource_usage(json_file, wf):
     positions = range(len(grouped['name']))  # Positions for the bars
 
     ax.bar([p - bar_width for p in positions], grouped['rss_GiB'], width=bar_width, label='Max rss_GiB', color='b', align='center')
-    ax.bar(positions, grouped['vms_GiB'], width=bar_width, label='Max vms_GiB', color='r', align='center')
     ax.bar([p + bar_width for p in positions], grouped['mem_requested'], width=bar_width, label='Memory Requested', color='g', align='center')
 
     # Labels and legend

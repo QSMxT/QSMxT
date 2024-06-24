@@ -142,7 +142,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
         # do bet mask if necessary
         if bet_this_run:
             bet_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
-            bet_mem = 5
+            bet_mem = (np.product(dimensions_phase) * bytepix_phase) / (1024 ** 3) * 10
             mn_bet = create_node(
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
