@@ -13,7 +13,7 @@ from nipype.pipeline.engine import Node, MapNode
 def create_node(interface, name, n_procs=1, mem_gb=2, iterfield=None, is_map=False, **kwargs):
     logger = make_logger('main')
     mem_gb = math.ceil(mem_gb)
-    mem_avail = math.ceil(psutil.virtual_memory().available / (1024 ** 3) * 0.90, 3)
+    mem_avail = math.ceil(psutil.virtual_memory().available / (1024 ** 3) * 0.90)
     logger.log(LogLevel.DEBUG.value, f"Node {name} has requested {mem_gb} GB.")
     if mem_gb < 2:
         mem_gb = 2
