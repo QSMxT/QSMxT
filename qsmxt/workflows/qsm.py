@@ -277,19 +277,19 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     if phase_files:
         mem_phase, dimensions_phase, bytepix_phase = calculate_memory_usage(phase_files[0])
         mem_phase_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
-        logger.log(LogLevel.INFO.value, f"GRE phase files are {dimensions_phase} * {len(phase_files)} echoes * {bytepix_phase} bytes/voxel == {round(mem_phase * len(phase_files), 3)} GB ({round(mem_phase_64 * len(phase_files), 3)} GB at 64-bit)")
+        logger.log(LogLevel.DEBUG.value, f"GRE phase files are {dimensions_phase} * {len(phase_files)} echoes * {bytepix_phase} bytes/voxel == {round(mem_phase * len(phase_files), 3)} GB ({round(mem_phase_64 * len(phase_files), 3)} GB at 64-bit)")
     if magnitude_files:
         mem_mag, dimensions_mag, bytepix_mag = calculate_memory_usage(magnitude_files[0])
         mem_mag_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
-        logger.log(LogLevel.INFO.value, f"GRE magnitude files are {dimensions_mag} * {len(magnitude_files)} echoes * {bytepix_mag} bytes/voxel == {round(mem_mag * len(magnitude_files), 3)} GB ({round(mem_mag_64 * len(magnitude_files), 3)} GB at 64-bit)")
+        logger.log(LogLevel.DEBUG.value, f"GRE magnitude files are {dimensions_mag} * {len(magnitude_files)} echoes * {bytepix_mag} bytes/voxel == {round(mem_mag * len(magnitude_files), 3)} GB ({round(mem_mag_64 * len(magnitude_files), 3)} GB at 64-bit)")
     if t1w_files:
         mem_t1w, dimensions_t1w, bytepix_t1w = calculate_memory_usage(t1w_files[0])
         mem_t1w_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
-        logger.log(LogLevel.INFO.value, f"T1w files are {dimensions_t1w} * {bytepix_t1w} bytes/voxel == {round(mem_t1w, 3)} GB ({round(mem_t1w_64, 3)} GB at 64-bit)")
+        logger.log(LogLevel.DEBUG.value, f"T1w files are {dimensions_t1w} * {bytepix_t1w} bytes/voxel == {round(mem_t1w, 3)} GB ({round(mem_t1w_64, 3)} GB at 64-bit)")
     if mask_files and run_args.use_existing_masks:
         mem_mask, dimensions_mask, bytepix_mask = calculate_memory_usage(mask_files[0])
         mem_mask_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
-        logger.log(LogLevel.INFO.value, f"Mask files are {dimensions_mask} * {bytepix_mask} bytes/voxel == {round(mem_mask, 3)} GB ({round(mem_mask_64 * len(mask_files), 3)} GB at 64-bit)")
+        logger.log(LogLevel.DEBUG.value, f"Mask files are {dimensions_mask} * {bytepix_mask} bytes/voxel == {round(mem_mask, 3)} GB ({round(mem_mask_64 * len(mask_files), 3)} GB at 64-bit)")
 
     if not any([run_args.do_qsm, run_args.do_swi, run_args.do_t2starmap, run_args.do_r2starmap, run_args.do_segmentation]):
         return
@@ -482,13 +482,14 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     # swi
     if run_args.do_swi:
         n_swi_mem = mem_mag_64 * (len(magnitude_files) + 2) + mem_phase_64 * len(phase_files)
-        n_swi_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6
+        n_swi_threads = min(6, run_args.n_procs) if run_args.multiproc else 6
         n_swi = create_node(
             interface=swi.ClearSwiInterface(
                 num_threads=n_swi_threads
             ),
             name='mrt_clearswi',
-            mem_gb=n_swi_mem
+            mem_gb=n_swi_mem,
+            n_procs=n_swi_threads
         )
         n_swi.plugin_args = gen_plugin_args(
             plugin_args={ 'overwrite': True },
@@ -509,7 +510,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
     # segmentation
     if run_args.do_segmentation:
-        n_registration_threads = min(run_args.n_procs, 6) if run_args.multiproc else 6
+        n_registration_threads = min(6, run_args.n_procs) if run_args.multiproc else 6
         n_registration_mem = 8
         n_registration = create_node(
             interface=RegistrationSynQuick(
@@ -533,7 +534,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         )
 
         # segment t1
-        n_fastsurfer_threads = min(run_args.n_procs, 8) if run_args.multiproc else 8
+        n_fastsurfer_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
         n_fastsurfer_mem = 12
         n_fastsurfer = create_node(
             interface=fastsurfer.FastSurferInterface(
@@ -624,8 +625,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 slurm_partition=run_args.slurm[1],
                 name="axial_resampling",
                 time="00:10:00",
-                mem_gb=mn_resample_mem,
-                num_cpus=min(1, run_args.n_procs)
+                mem_gb=mn_resample_mem
             )
             wf.connect([
                 (mn_inputs_canonical, mn_resample_inputs, [('magnitude', 'magnitude')]),
@@ -652,7 +652,6 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                     name="axial_resampling",
                     time="00:10:00",
                     mem_gb=mn_resample_mask_mem,
-                    num_cpus=min(1, run_args.n_procs)
                 )
                 wf.connect([
                     (mn_inputs_canonical, mn_resample_mask, [('mask', 'mask')]),
@@ -689,7 +688,6 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 name="romeo_combine",
                 time="00:10:00",
                 mem_gb=n_romeo_mem,
-                num_cpus=min(1, run_args.n_procs)
             )
             wf.connect([
                 (mn_json_params, n_romeo_combine, [('TE', 'TEs')]),
@@ -951,7 +949,6 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
                     (n_inputs, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')]),
                 ])
             else:
-                romeo_threads = min(1, run_args.n_procs) if run_args.multiproc else 1
                 romeo_mem = (np.product(dimensions_phase) * 8 * (2 if magnitude_available else 1)) / (1024 ** 3) * 2.5
                 mn_romeo = create_node(
                     interface=romeo.RomeoB0Interface(),
@@ -965,7 +962,6 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
                     slurm_partition=run_args.slurm[1],
                     name="Romeo",
                     mem_gb=romeo_mem,
-                    num_cpus=romeo_threads
                 )
                 wf.connect([
                     (n_inputs, mn_romeo, [('phase', 'phase')]),

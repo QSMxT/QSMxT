@@ -830,9 +830,9 @@ def get_compliance_message(args):
         message += "\n - Susceptibility values should be referenced"
 
     if not compliant:
-        message = "WARNING: Pipeline is NOT guidelines compliant (see https://arxiv.org/abs/2307.02306):" + message
+        message = "WARNING: Pipeline is NOT guidelines compliant (see https://doi.org/10.1002/mrm.30006):" + message
     else:
-        message = "Guidelines compliant! (see https://arxiv.org/abs/2307.02306)"
+        message = "Guidelines compliant! (see https://doi.org/10.1002/mrm.30006)"
 
     return message
 
@@ -1617,15 +1617,10 @@ def main(argv=None):
     logger.log(LogLevel.INFO.value, f"QSMxT v{get_qsmxt_version()}")
     logger.log(LogLevel.INFO.value, f"Python interpreter: {sys.executable}")
     logger.log(LogLevel.INFO.value, f"Command: {run_command}")
-    logger.log(LogLevel.INFO.value, f"Available memory: {round(args.mem_avail, 3)} GB")
 
-    # display compliance message
-    message = get_compliance_message(args)
-    if message:
-        if 'warning' in message.lower():
-            logger.log(LogLevel.WARNING.value, message.replace('WARNING: ', '').replace('\n - ', '; '))
-        else:
-            logger.log(LogLevel.INFO.value, message)
+    # write command to file
+    with open(os.path.join(args.output_dir, 'command.txt'), 'w') as command_file:
+        command_file.write(f"{run_command}\n")
 
     # print diff if needed
     diff = get_diff()
@@ -1636,10 +1631,18 @@ def main(argv=None):
     
     # process args and make any necessary corrections
     args = process_args(args)
+    
+    # display compliance message
+    message = get_compliance_message(args)
+    if message:
+        if 'warning' in message.lower():
+            logger.log(LogLevel.WARNING.value, message.replace('WARNING: ', '').replace('\n - ', '; '))
+        else:
+            logger.log(LogLevel.INFO.value, message)
 
-    # write command to file
-    with open(os.path.join(args.output_dir, 'command.txt'), 'w') as command_file:
-        command_file.write(f"{run_command}\n")
+    # display available memory
+    if args.multiproc:
+        logger.log(LogLevel.INFO.value, f"Available memory: {round(args.mem_avail, 3)} GB")
 
     # write settings to file
     with open(os.path.join(args.output_dir, 'settings.json'), 'w') as settings_file:
@@ -1691,10 +1694,9 @@ def main(argv=None):
                 plugin='MultiProc',
                 plugin_args=plugin_args
             )
-
-    if args.debug:
-        logger.log(LogLevel.DEBUG.value, f"Plotting resource monitor summaries...")
-        visualize_resource_usage(os.path.join(args.output_dir, "resource_monitor.json"), wf)
+            if args.debug:
+                logger.log(LogLevel.DEBUG.value, f"Plotting resource monitor summaries...")
+                visualize_resource_usage(os.path.join(args.output_dir, "resource_monitor.json"), wf)
 
     script_exit(logger=logger)
     return args
