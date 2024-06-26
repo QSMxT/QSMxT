@@ -49,7 +49,16 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
             n_combine_magnitude_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * num_echoes * 1.5
             n_combine_magnitude = create_node(
                 interface=combinemagnitude.CombineMagnitudeInterface(),
-                name='nibabal-numpy_combine-magnitude',
+                name='nibabel-numpy_combine-magnitude',
+                mem_gb=n_combine_magnitude_mem
+            )
+            n_combine_magnitude.plugin_args = gen_plugin_args(
+                plugin_args={ 'overwrite': True },
+                slurm_account=slurm_account,
+                pbs_account=run_args.pbs,
+                slurm_partition=slurm_partition,
+                name="comb-mag",
+                time="01:00:00",
                 mem_gb=n_combine_magnitude_mem
             )
             wf.connect([

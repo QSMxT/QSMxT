@@ -464,10 +464,20 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
     # r2* and t2* mappping
     if run_args.do_t2starmap or run_args.do_r2starmap:
+        n_t2s_r2s_mem = mem_mag_64 * (len(magnitude_files) + 2)
         n_t2s_r2s = create_node(
             interface=t2s_r2s.T2sR2sInterface(),
-            mem_gb=mem_mag_64 * (len(magnitude_files) + 2),
+            mem_gb=n_t2s_r2s_mem,
             name='mrt_t2s-r2s'
+        )
+        n_t2s_r2s.plugin_args = gen_plugin_args(
+            plugin_args={ 'overwrite': True },
+            slurm_account=run_args.slurm[0],
+            pbs_account=run_args.pbs,
+            slurm_partition=run_args.slurm[1],
+            name="t2s-r2s",
+            time="01:00:00",
+            mem_gb=n_t2s_r2s_mem
         )
         wf.connect([
             (mn_inputs_canonical, n_t2s_r2s, [('magnitude', 'magnitude')]),
