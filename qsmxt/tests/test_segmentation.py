@@ -119,10 +119,10 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
     if not github_step_summary:
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'qsm', '*.*'))[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(glob.glob(os.path.join(out_dir, 'segmentations', 'qsm', '*.*'))[0], title='Segmentation', colorbar=True, vmin=0, vmax=+16, out_png='seg.png', cmap='tab10'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), "*_Chimap.nii*")[0], title="QSM", colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")        
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), "*_dseg.nii*")[0], title="Segmentation", colorbar=True, vmin=0, vmax=+16, out_png='seg.png', cmap='tab10'))})")        
 
-        csv_file = glob.glob(os.path.join(out_dir, 'analysis', '*.*'))[0]
+        csv_file = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*analysis*.csv')[0]
         write_to_file(github_step_summary, csv_to_markdown(csv_file))
 
         for png_file in glob.glob(os.path.join(out_dir, '*.png')):
