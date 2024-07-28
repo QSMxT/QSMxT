@@ -24,6 +24,7 @@ from qsmxt.interfaces import nipype_interface_twopass as twopass
 from qsmxt.interfaces import nipype_interface_resample_like as resample_like
 from qsmxt.interfaces import nipype_interface_qsm_referencing as qsm_referencing
 from qsmxt.interfaces import nipype_interface_nii2dcm as nii2dcm
+from qsmxt.interfaces import nipype_interface_copyfile as copyfile
 
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
@@ -85,17 +86,19 @@ def get_preceding_node_and_attribute(wf, target_node_name, target_attribute):
 
     return None, None
 
-def get_matching_files(bids_dir, subject, dtype="anat", suffixes=[], ext="nii*", session=None, run=None, part=None, acq=None):
+def get_matching_files(bids_dir, subject, dtype="anat", suffixes=[], ext="nii*", session=None, space=None, run=None, part=None, acq=None):
     pattern = os.path.join(bids_dir, subject)
     if session:
         pattern = os.path.join(pattern, session)
     pattern = os.path.join(pattern, dtype) + os.path.sep
+    if space:
+        pattern += f"*space-{space}*"
     if acq:
-        pattern += f"*acq-{acq}_*"
+        pattern += f"*acq-{acq}*"
     if run:
-        pattern += f"*run-{run}_*"
+        pattern += f"*run-{run}*"
     if part:
-        pattern += f"*part-{part}_*"
+        pattern += f"*part-{part}*"
     dir, fname = os.path.split(pattern)
     if suffixes:
         if fname:
@@ -121,14 +124,17 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         if ('_space-orig' in mask_file or '_space-' not in mask_file)
         and ('_label-brain' in mask_file or '_label-' not in mask_file)
     ]
+    qsm_files = [
+        qsm_file for qsm_file in get_matching_files(os.path.join(run_args.bids_dir, "derivatives", run_args.existing_qsm_pipeline), subject=subject, dtype="anat", suffixes=["Chimap"], session=session, run=None, part=None, acq=None)
+    ]
+    seg_files = [
+        seg_file for seg_file in get_matching_files(os.path.join(run_args.bids_dir, "derivatives", run_args.existing_seg_pipeline), subject=subject, dtype="anat", suffixes=["dseg"], session=session, space="qsm", run=None, part=None, acq=None)
+    ]
     
     # handle any errors related to files and adjust any settings if needed
     if run_args.do_segmentation and not t1w_files:
         logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping segmentation - no T1w files found!")
         run_args.do_segmentation = False
-    if run_args.do_analysis and not run_args.do_segmentation:
-        logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping analysis - segmentations required!")
-        run_args.do_analysis = False
     if run_args.do_segmentation and not magnitude_files:
         logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping segmentation - no GRE magnitude files found to register T1w segmentations to!")
         run_args.do_segmentation = False
@@ -236,6 +242,12 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         if any(nib.load(mask_files[i]).header['dim'][0] > 3 for i in range(len(mask_files))):
             logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use existing masks - >3D masks detected! Each mask must be 3D only for BIDS-compliance.")
             run_args.use_existing_masks = False
+    if run_args.do_analysis and not (qsm_files or run_args.do_qsm):
+        logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping analysis - no QSM files found or --do_qsm not selected!")
+        run_args.do_analysis = False
+    if run_args.do_analysis and not (seg_files or run_args.do_segmentation):
+        logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping analysis - no segmentations found or --do_segmentation not selected!")
+        run_args.do_analysis = False
 
     # ensure that all input files dimensions match and are 3d
     if phase_files and any([run_args.do_qsm, run_args.do_swi]):
@@ -319,26 +331,49 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         ),
         name='qsmxt_outputs'
     )
-    n_datasink = create_node(
-        interface=DataSink(base_directory=run_args.output_dir),
-        name='qsmxt_datasink'
-    )
-    wf.connect([
-        (n_outputs, n_datasink, [('qsm', 'qsm')]),
-        (n_outputs, n_datasink, [('qsm_singlepass', 'qsm.singlepass')]),
-        (n_outputs, n_datasink, [('swi', 'swi.@swi')]),
-        (n_outputs, n_datasink, [('swi_mip', 'swi.@mip')]),
-        (n_outputs, n_datasink, [('t2s', 't2s')]),
-        (n_outputs, n_datasink, [('r2s', 'r2s')]),
-        (n_outputs, n_datasink, [('t1w_segmentation', 'segmentations.t1w')]),
-        (n_outputs, n_datasink, [('qsm_segmentation', 'segmentations.qsm')]),
-        (n_outputs, n_datasink, [('transform', 'segmentations.transforms')]),
-        (n_outputs, n_datasink, [('analysis_csv', 'analysis')]),
-        (n_outputs, n_datasink, [('qsm_dicoms', 'qsm.@dicoms')]),
-        (n_outputs, n_datasink, [('swi_dicoms', 'swi.@dicoms')]),
-        (n_outputs, n_datasink, [('swi_mip_dicoms', 'swi.@mip_dicoms')])
-    ])
+    n_copyfile = Node(copyfile.DynamicCopyFiles(infields=[
+        'qsm', 'qsm_singlepass', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 'transform', 'analysis_csv', 'qsm_dicoms', 'swi_dicoms', 'swi_mip_dicoms'
+    ]), name="copyfile")
     
+    basedir = os.path.join(run_args.bids_dir, 'derivatives', 'qsmxt', subject, session if session else '')
+    basename = f"{subject}"
+    if session: basename += f"_{session}"
+    if run: basename += f"_run-{run}"
+    if acq: basename += f"_acq-{acq}"
+    
+    n_copyfile.inputs.output_map = {
+        'qsm': os.path.join(basedir, 'anat', f"{basename}_Chimap"),
+        'qsm_singlepass': os.path.join(basedir, 'anat', f"{basename}_desc-singlepass_Chimap"),
+        'swi': os.path.join(basedir, 'anat', f"{basename}_swi"),
+        'swi_mip': os.path.join(basedir, 'anat', f"{basename}_minIP"),
+        't2s': os.path.join(basedir, 'anat', f"{basename}_T2starmap"),
+        'r2s': os.path.join(basedir, 'anat', f"{basename}_R2starmap"),
+        't1w_segmentation': os.path.join(basedir, 'anat', f"{basename}_space-orig_dseg"),
+        'qsm_segmentation': os.path.join(basedir, 'anat', f"{basename}_space-qsm_dseg"),
+        'transform': os.path.join(basedir, 'extra_data', f"{basename}_desc-t1w-to-qsm_transform"),
+        'analysis_csv': os.path.join(basedir, 'extra_data', f"{basename}_desc-qsm_analysis"),
+        'qsm_dicoms': os.path.join(basedir, 'extra_data', f"{basename}_desc-dicoms_Chimap"),
+        'swi_dicoms': os.path.join(basedir, 'extra_data', f"{basename}_desc-dicoms_swi"),
+        'swi_mip_dicoms': os.path.join(basedir, 'extra_data', f"{basename}_desc-dicoms_minIP")
+    }
+    
+    wf.connect([
+        (n_outputs, n_copyfile, [
+            ('qsm', 'qsm'),
+            ('qsm_singlepass', 'qsm_singlepass'),
+            ('swi', 'swi'),
+            ('swi_mip', 'swi_mip'),
+            ('t2s', 't2s'),
+            ('r2s', 'r2s'),
+            ('t1w_segmentation', 't1w_segmentation'),
+            ('qsm_segmentation', 'qsm_segmentation'),
+            ('transform', 'transform'),
+            ('analysis_csv', 'analysis_csv'),
+            ('qsm_dicoms', 'qsm_dicoms'),
+            ('swi_dicoms', 'swi_dicoms'),
+            ('swi_mip_dicoms', 'swi_mip_dicoms')
+        ])
+    ])
     # read echotime and field strengths from json files
     def read_json_me(params_file):
         import json
@@ -400,10 +435,12 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     ])
 
     # reorient to canonical
-    def as_closest_canonical(phase, magnitude=None, mask=None):
+    def as_closest_canonical(phase=None, magnitude=None, mask=None):
         import os
         import nibabel as nib
         from qsmxt.scripts.qsmxt_functions import extend_fname
+
+        assert(phase or magnitude or mask)
 
         def as_closest_canonical_i(in_file):
             if nib.aff2axcodes(nib.load(in_file).affine) == ('R', 'A', 'S'):
@@ -413,9 +450,15 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                 nib.save(nib.as_closest_canonical(nib.load(in_file)), out_file)
                 return out_file
         
-        out_phase = as_closest_canonical_i(phase) if not isinstance(phase, list) else [as_closest_canonical_i(phase_i) for phase_i in phase]
+        out_phase = None
         out_mag = None
         out_mask = None
+
+        if phase:
+            if isinstance(phase, list):
+                out_phase = [as_closest_canonical_i(phase_i) for phase_i in phase]
+            else:
+                out_phase = as_closest_canonical_i(phase)
         if magnitude:
             if isinstance(magnitude, list):
                 out_mag = [as_closest_canonical_i(magnitude_i) for magnitude_i in magnitude]
@@ -430,7 +473,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         return out_phase, out_mag, out_mask
     mn_inputs_canonical = create_node(
         interface=Function(
-            input_names=[] + (['phase'] if phase_files else []) + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files and run_args.use_existing_masks else []),
+            input_names=[] + (['phase'] if (phase_files and (run_args.do_swi or run_args.do_qsm)) else []) + (['magnitude'] if magnitude_files else []) + (['mask'] if mask_files and run_args.use_existing_masks else []),
             output_names=['phase', 'magnitude', 'mask'],
             function=as_closest_canonical
         ),
@@ -452,15 +495,16 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         ])
 
     # scale phase
-    mn_phase_scaled = create_node(
-        interface=processphase.ScalePhaseInterface(),
-        iterfield=['phase'],
-        name='nibabel_numpy_scale-phase',
-        is_map=len(phase_files) > 1
-    )
-    wf.connect([
-        (mn_inputs_canonical, mn_phase_scaled, [('phase', 'phase')])
-    ])
+    if phase_files and (run_args.do_swi or run_args.do_qsm):
+        mn_phase_scaled = create_node(
+            interface=processphase.ScalePhaseInterface(),
+            iterfield=['phase'],
+            name='nibabel_numpy_scale-phase',
+            is_map=len(phase_files) > 1
+        )
+        wf.connect([
+            (mn_inputs_canonical, mn_phase_scaled, [('phase', 'phase')])
+        ])
 
     # r2* and t2* mappping
     if run_args.do_t2starmap or run_args.do_r2starmap:
@@ -486,9 +530,6 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         if run_args.do_t2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('t2starmap', 't2s')])])
         if run_args.do_r2starmap: wf.connect([(n_t2s_r2s, n_outputs, [('r2starmap', 'r2s')])])
     
-    if not (run_args.do_swi or run_args.do_qsm):
-        return wf
-
     # swi
     if run_args.do_swi:
         n_swi_mem = mem_mag_64 * (len(magnitude_files) + 2) + mem_phase_64 * len(phase_files)
@@ -574,6 +615,18 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
         ])
 
+        # resample segmentation in T1w space
+        n_fastsurfer_aseg_nii_resampled = create_node(
+            interface=resample_like.ResampleLikeInterface(
+                ref_file=t1w_files[0],
+                interpolation='nearest'
+            ),
+            name='nibabel_numpy_nilearn_t1w-seg-resampled'
+        )
+        wf.connect([
+            (n_fastsurfer_aseg_nii, n_fastsurfer_aseg_nii_resampled, [('out_file', 'in_file')])
+        ])
+
         # get first canonical magnitude
         n_getfirst_canonical_magnitude = create_node(
             interface=Function(
@@ -603,7 +656,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         ])
 
         wf.connect([
-            (n_fastsurfer_aseg_nii, n_outputs, [('out_file', 't1w_segmentation')]),
+            (n_fastsurfer_aseg_nii_resampled, n_outputs, [('out_file', 't1w_segmentation')]),
             (n_transform_segmentation, n_outputs, [('output_image', 'qsm_segmentation')]),
             (n_registration, n_outputs, [('out_matrix', 'transform')])
         ])
@@ -871,18 +924,59 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
                     (n_resample_qsm, n_outputs, [('out_file', 'qsm')])
                 ])
 
-        if run_args.do_segmentation and run_args.do_analysis:
-            n_analyse_qsm = create_node(
-                interface=analyse.AnalyseInterface(
-                    in_labels=run_args.labels_file
-                ),
-                name='nibabel_numpy_analyse-qsm'
-            )
+    if run_args.do_analysis:
+        def combine_lists(list1=None, list2=None):
+            if list1 is None:
+                return list2
+            if list2 is None:
+                return list1
+            if not isinstance(list1, list): list1 = [list1]
+            if not isinstance(list2, list): list2 = [list2]
+            return list1 + list2
+        n_combine_qsm_files = create_node(
+            interface=Function(input_names=['list1', 'list2'], output_names=['qsm_files'], function=combine_lists),
+            name='combine_lists1'
+        )
+        n_combine_seg_files = create_node(
+            interface=Function(input_names=['list1', 'list2'], output_names=['seg_files'], function=combine_lists),
+            name='combine_lists2'
+        )
+        n_combine_qsm_files.inputs.list1 = qsm_files
+        n_combine_seg_files.inputs.list1 = seg_files
+        if run_args.do_qsm:
             wf.connect([
-                (n_transform_segmentation, n_analyse_qsm, [('output_image', 'in_segmentation')]),
-                (n_resample_qsm, n_analyse_qsm, [('out_file', 'in_file')]),
-                (n_analyse_qsm, n_outputs, [('out_csv', 'analysis_csv')])
+                (n_resample_qsm, n_combine_qsm_files, [('out_file', 'list2')]),
             ])
+        if run_args.do_segmentation:
+            wf.connect([
+                (n_transform_segmentation, n_combine_seg_files, [('output_image', 'list2')]),
+            ])
+
+        def create_combinations(list1, list2):
+            import itertools
+            combinations = list(itertools.product(list1, list2))
+            in_files, in_segmentations = zip(*combinations)
+            return list(in_files), list(in_segmentations)
+        n_create_permutations = create_node(
+            interface=Function(input_names=['list1', 'list2'], output_names=['qsm_files', 'seg_files'], function=create_combinations),
+            name='create_permutations'
+        )
+        wf.connect(n_combine_qsm_files, 'qsm_files', n_create_permutations, 'list1')
+        wf.connect(n_combine_seg_files, 'seg_files', n_create_permutations, 'list2')
+
+
+        n_analyse_qsm = create_node(
+            interface=analyse.AnalyseInterface(
+                in_labels=run_args.labels_file
+            ),
+            name='nibabel_numpy_analyse-qsm',
+            iterfield=['in_file', 'in_segmentation'],
+            is_map=True
+        )
+        wf.connect(n_create_permutations, 'qsm_files', n_analyse_qsm, 'in_file')
+        wf.connect(n_create_permutations, 'seg_files', n_analyse_qsm, 'in_segmentation')
+        wf.connect(n_analyse_qsm, 'out_csv', n_outputs, 'analysis_csv')
+
 
     # insert DICOM conversion step
     if run_args.export_dicoms:

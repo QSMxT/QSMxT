@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import nibabel as nib
 import numpy as np
+import os
 
 from qsmxt.scripts.qsmxt_functions import extend_fname
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File
@@ -110,10 +111,12 @@ class AnalyseInterface(SimpleInterface):
     output_spec = AnalyseOutputSpec
 
     def _run_interface(self, runtime):
+        fname = os.path.abspath(os.path.splitext(os.path.split(self.inputs.in_file)[1])[0].replace('.nii', '') + '_' + os.path.splitext(os.path.split(self.inputs.in_segmentation)[1])[0].replace('.nii', '') + '_analysis.csv')
+
         self._results['out_csv'] = analyse(
             in_file=self.inputs.in_file,
             in_segmentation=self.inputs.in_segmentation,
-            out_csv=extend_fname(self.inputs.in_file, "_csv", ext='csv'),
+            out_csv=fname,
             labels_file=self.inputs.in_labels
         )
         return runtime

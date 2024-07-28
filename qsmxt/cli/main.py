@@ -127,7 +127,7 @@ def init_session_workflow(args, subject, session=None):
         if None in run_details.keys(): run_details[None].append(None)
         run_details[None] = [None]
 
-    if any([args.do_qsm, args.do_t2starmap, args.do_r2starmap, args.do_swi]):
+    if any([args.do_qsm, args.do_segmentation, args.do_t2starmap, args.do_r2starmap, args.do_swi]):
         wfs = [
             init_qsm_workflow(copy.deepcopy(args), subject, session, acq, run)
             for acq, runs in (run_details.items() if run_details else [(None, [None])])
@@ -419,6 +419,18 @@ def parse_args(args, return_run_command=False):
         default=None,
         help='Number of erosions applied to masks prior to QSM processing steps. Note that some algorithms '+
             'may erode the mask further (e.g. V-SHARP and TGV-QSM).'
+    )
+
+    parser.add_argument(
+        '--existing_qsm_pipeline',
+        default=None,
+        help='A pattern matching the name of the software pipeline used to derive pre-existing QSM images.'
+    )
+
+    parser.add_argument(
+        '--existing_seg_pipeline',
+        default=None,
+        help='A pattern matching the name of the software pipeline used to derive pre-existing segmentations in the QSM space.'
     )
 
     parser.add_argument(
@@ -889,32 +901,20 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                 if 'do_r2starmap' in explicit_args: del explicit_args['do_r2starmap']
                 args.do_r2starmap = False
             if 'seg' in user_in.split():
-                if args.do_qsm:
-                    args.do_segmentation = True
-                    explicit_args['do_segmentation'] = True
-                else:
-                    print("\nSegmentation requires QSM")
-                    continue
+                args.do_segmentation = True
+                explicit_args['do_segmentation'] = True
             else:
                 if 'do_segmentation' in explicit_args: del explicit_args['do_segmentation']
                 args.do_segmentation = False
             if 'analysis' in user_in.split():
-                if args.do_qsm and args.do_segmentation:
-                    args.do_analysis = True
-                    explicit_args['do_analysis'] = True
-                else:
-                    print("\nAnalysis requires QSM and segmentations")
-                    continue
+                args.do_analysis = True
+                explicit_args['do_analysis'] = True
             else:
                 if 'do_analysis' in explicit_args: del explicit_args['do_analysis']
                 args.do_analysis = False
             if 'template' in user_in.split():
-                if args.do_qsm:
-                    args.do_template = True
-                    explicit_args['do_template'] = True
-                else:
-                    print("GRE/QSM template-building requires QSM and segmentations")
-                    continue
+                args.do_template = True
+                explicit_args['do_template'] = True
             else:
                 if 'do_template' in explicit_args: del explicit_args['do_template']
                 args.do_template = False
@@ -1295,15 +1295,6 @@ def process_args(args):
 
     if not any([args.do_qsm, args.do_segmentation, args.do_swi, args.do_t2starmap, args.do_r2starmap]):
         args.do_qsm = True
-
-    if args.do_analysis:
-        if not args.do_segmentation:
-            logger.log(LogLevel.WARNING.value, f"--do_analysis requires --do_segmentation. Enabling --do_segmentation.")
-            args.do_segmentation = True
-    if args.do_segmentation:
-        if not args.do_qsm:
-            logger.log(LogLevel.WARNING.value, f"--do_segmentation requires --do_qsm. Enabling --do_qsm.")
-            args.do_qsm = True
 
     # default QSM algorithms
     if not args.qsm_algorithm:
