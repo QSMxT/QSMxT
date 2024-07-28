@@ -684,7 +684,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
             name='phase-combined'
         )
         if run_args.combine_phase:
-            n_romeo_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 2 * 32
+            n_romeo_mem = (54.0860 * (np.product(dimensions_phase) * 8 / (1024**3)) + 3.9819) # DONE
             n_romeo_combine = create_node(
                 interface=romeo.RomeoB0Interface(),
                 name='mrt_romeo_combine-phase',
@@ -931,7 +931,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
         if run_args.unwrapping_algorithm == 'laplacian':
             laplacian_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-            laplacian_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 1.5
+            laplacian_mem = 16.32256 * (np.product(dimensions_phase) * 8 / (1024 ** 3)) + 1.12836 # DONE
             mn_laplacian = create_node(
                 is_map=use_maps,
                 interface=laplacian.LaplacianInterface(),
@@ -959,7 +959,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
                     (n_inputs, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')]),
                 ])
             else:
-                romeo_mem = (np.product(dimensions_phase) * 8 * (2 if magnitude_available else 1)) / (1024 ** 3) * 2.5
+                romeo_mem = 9.81512 * (np.product(dimensions_phase) * 8 / (1024 ** 3)) + 1.15907 # DONE
                 mn_romeo = create_node(
                     interface=romeo.RomeoB0Interface(),
                     name='mrt_romeo',
@@ -1072,7 +1072,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
         if run_args.bf_algorithm == 'vsharp':
             vsharp_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-            vsharp_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 16
+            vsharp_mem = (8.15059 * (np.product(dimensions_phase) * 8 / (1024 ** 3)) + 1.0839) # DONE
             mn_vsharp = create_node(
                 interface=qsmjl.VsharpInterface(num_threads=vsharp_threads),
                 iterfield=['frequency', 'mask'],
@@ -1099,7 +1099,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
             )
         if run_args.bf_algorithm == 'pdf':
             pdf_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
-            pdf_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 32
+            pdf_mem = 9.23275 * (np.product(dimensions_phase) * 8) / (1024 ** 3) + 1.46 # DONE
             mn_pdf = create_node(
                 interface=qsmjl.PdfInterface(num_threads=pdf_threads),
                 iterfield=['frequency', 'mask'],
@@ -1129,7 +1129,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
     # === DIPOLE INVERSION ===
     if run_args.qsm_algorithm == 'nextqsm':
         nextqsm_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
-        nextqsm_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * (65.99 + 551863761 / np.product(dimensions_phase)) * 1.1
+        nextqsm_mem = 69.64824 * (np.product(dimensions_phase) * 8 / (1024 ** 3)) + 5.6689 # DONE
         mn_qsm = create_node(
             interface=nextqsm.NextqsmInterface(),
             name='nextqsm',
@@ -1154,7 +1154,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
     if run_args.qsm_algorithm == 'rts':
         rts_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-        rts_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 44
+        rts_mem = (18.19 * (np.product(dimensions_phase) * 3 / (1024 ** 3)) + 1.643) # DONE
         mn_qsm = create_node(
             interface=qsmjl.RtsQsmInterface(num_threads=rts_threads),
             name='qsmjl_rts',
@@ -1182,7 +1182,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
     if run_args.qsm_algorithm == 'tv':
         tv_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-        tv_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 32
+        tv_mem = 4.5365 * (np.product(dimensions_phase) * 8 / (1024 ** 3)) + 2 # DONE
         mn_qsm = create_node(
             interface=qsmjl.TvQsmInterface(num_threads=tv_threads),
             name='qsmjl_tv',
@@ -1212,7 +1212,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
 
     if run_args.qsm_algorithm == 'tgv':
         tgv_threads = min(4, run_args.n_procs)
-        tgv_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 36
+        tgv_mem = 50.9915 * (np.product(dimensions_phase) * 8 / (1024**3)) + 1.2 # DONE
         mn_qsm = create_node(
             interface=tgvjl.TGVQSMJlInterface(
                 erosions=qsm_erosions,
