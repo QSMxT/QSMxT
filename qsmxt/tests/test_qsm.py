@@ -104,7 +104,7 @@ def test_premade(bids_dir_public, premade):
     args = main(args)
     
     # upload output folder
-    tar_file = compress_folder(folder=os.path.join(args.output_dir, "derivatives"), result_id=premade)
+    tar_file = compress_folder(folder=os.path.join(args.bids_dir, "derivatives"), result_id=premade)
     sys_cmd(f"rm -rf {os.path.join(gettempdir(), 'public-outputs')}")
     os.makedirs(os.path.join(gettempdir(), "public-outputs"), exist_ok=True)
     shutil.move(tar_file, os.path.join(gettempdir(), "public-outputs", tar_file))
@@ -115,8 +115,7 @@ def test_premade(bids_dir_public, premade):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"Premade {premade}")
-        qsm_result = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0]
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=qsm_result, title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
         for png_file in glob.glob(os.path.join(out_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
@@ -133,7 +132,7 @@ def test_nocombine(bids_dir_public):
     shutil.copytree(bids_dir_public, bids_dir)
 
     args = [
-        bids_dir_public,
+        bids_dir,
         out_dir,
         "--premade", "fast",
         "--combine_phase", "off",
@@ -172,7 +171,7 @@ def test_nomagnitude(bids_dir_public):
     
     # run pipeline and specifically choose magnitude-based masking
     args = [
-        bids_dir_public,
+        bids_dir,
         out_dir,
         "--premade", "fast",
         "--masking_input", "magnitude",
