@@ -87,9 +87,11 @@ def test_premade(bids_dir_public, premade):
     logger.log(LogLevel.INFO.value, f"=== TESTING PREMADE {premade} ===")
 
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
 
     args = [
-        bids_dir_public,
+        bids_dir,
         out_dir,
         "--premade", premade,
         "--auto_yes",
@@ -119,7 +121,7 @@ def test_premade(bids_dir_public, premade):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
 
 
 def test_nocombine(bids_dir_public):
@@ -127,6 +129,8 @@ def test_nocombine(bids_dir_public):
     logger.log(LogLevel.INFO.value, f"=== TESTING NO PHASE COMBINATION ===")
 
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
 
     args = [
         bids_dir_public,
@@ -153,24 +157,18 @@ def test_nocombine(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
 
 
 def test_nomagnitude(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING NO MAGNITUDE ===")
 
-    # create copy of bids directory
-    bids_dir_nomagnitude = os.path.join(os.path.split(bids_dir_public)[0], "bids-nomagnitude")
-    if os.path.exists(bids_dir_nomagnitude):
-        shutil.rmtree(bids_dir_nomagnitude)
-    shutil.copytree(bids_dir_public, bids_dir_nomagnitude)
-
-    # delete magnitude files from modified directory
-    for mag_file in glob.glob(os.path.join(bids_dir_nomagnitude, "sub-1", "ses-1", "anat", "*mag*")):
-        os.remove(mag_file)
-
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
+    for mag_file in glob.glob(os.path.join(bids_dir, "sub-1", "ses-1", "anat", "*mag*")):
+        os.remove(mag_file)
     
     # run pipeline and specifically choose magnitude-based masking
     args = [
@@ -200,17 +198,19 @@ def test_nomagnitude(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
 
 def test_inhomogeneity_correction(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING INHOMOGENEITY CORRECTION ===")
 
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
-        bids_dir_public,
+        bids_dir,
         out_dir,
         "--premade", "fast",
         "--masking_algorithm", "threshold",
@@ -238,17 +238,19 @@ def test_inhomogeneity_correction(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
 
 def test_hardcoded_percentile_threshold(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
 
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
-        bids_dir_public,
+        bids_dir,
         out_dir,
         "--premade", "fast",
         "--masking_algorithm", "threshold",
@@ -276,17 +278,19 @@ def test_hardcoded_percentile_threshold(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
 
 def test_hardcoded_absolute_threshold(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
 
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
-        bids_dir_public,
+        bids_dir,
         out_dir,
         "--premade", "fast",
         "--masking_algorithm", "threshold",
@@ -314,16 +318,18 @@ def test_hardcoded_absolute_threshold(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
 
 def test_use_existing_masks(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING EXISTING MASKS ===")
 
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
     
     args = [
-        bids_dir_public,
+        bids_dir,
         out_dir,
         "--use_existing_masks",
         "--premade", "fast",
@@ -344,7 +350,7 @@ def test_use_existing_masks(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
 
 
 def test_supplementary_images(bids_dir_public):
@@ -352,9 +358,11 @@ def test_supplementary_images(bids_dir_public):
     logger.log(LogLevel.INFO.value, f"=== TESTING SUPPLEMENTARY IMAGES AND DICOMS ===")
 
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
     
     args = [
-        bids_dir_public,
+        bids_dir,
         out_dir,
         "--do_qsm",
         "--do_swi",
@@ -383,7 +391,7 @@ def test_supplementary_images(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
     
 
 def test_realdata(bids_dir_real):
@@ -425,17 +433,19 @@ def test_realdata(bids_dir_real):
                 write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
 
 def test_singleecho(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING SINGLE ECHO WITH PHASE COMBINATION / ROMEO ===")
 
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
-        bids_dir_public,
+        bids_dir,
         out_dir,
         "--unwrapping_algorithm", "romeo",
         "--num_echoes", "1",
@@ -459,17 +469,19 @@ def test_singleecho(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
 
 def test_laplacian_and_tv(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING LAPLACIAN UNWRAPPING AND TV ALGO ===")
 
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
-        bids_dir_public,
+        bids_dir,
         out_dir,
         "--unwrapping_algorithm", "laplacian",
         "--qsm_algorithm", "tv",
@@ -494,6 +506,6 @@ def test_laplacian_and_tv(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
 
 

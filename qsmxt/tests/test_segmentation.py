@@ -94,10 +94,12 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
     logger.log(LogLevel.INFO.value, f"=== TESTING SEGMENTATION PIPELINE ===")
 
     out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
-        bids_dir_public,
+        bids_dir,
         out_dir,
         "--do_qsm",
         "--premade", "fast",
@@ -129,5 +131,5 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
-    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
+    shutil.rmtree(args.bids_dir)
 
