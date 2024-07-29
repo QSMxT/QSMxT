@@ -129,4 +129,5 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
 

@@ -119,6 +119,7 @@ def test_premade(bids_dir_public, premade):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
 
 
 def test_nocombine(bids_dir_public):
@@ -152,6 +153,7 @@ def test_nocombine(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
 
 
 def test_nomagnitude(bids_dir_public):
@@ -198,6 +200,7 @@ def test_nomagnitude(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
 
 def test_inhomogeneity_correction(bids_dir_public):
     logger = make_logger()
@@ -235,6 +238,7 @@ def test_inhomogeneity_correction(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
 
 def test_hardcoded_percentile_threshold(bids_dir_public):
     logger = make_logger()
@@ -272,6 +276,7 @@ def test_hardcoded_percentile_threshold(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
 
 def test_hardcoded_absolute_threshold(bids_dir_public):
     logger = make_logger()
@@ -309,6 +314,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
 
 def test_use_existing_masks(bids_dir_public):
     logger = make_logger()
@@ -329,8 +335,6 @@ def test_use_existing_masks(bids_dir_public):
     
     args = main(args)
 
-    shutil.rmtree(out_dir)
-
     github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if not github_step_summary:
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
@@ -338,6 +342,9 @@ def test_use_existing_masks(bids_dir_public):
         write_to_file(github_step_summary, f"test_use_existing_masks")
         for png_file in glob.glob(os.path.join(out_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
+
+    shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
 
 
 def test_supplementary_images(bids_dir_public):
@@ -376,6 +383,7 @@ def test_supplementary_images(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
     
 
 def test_realdata(bids_dir_real):
@@ -417,6 +425,7 @@ def test_realdata(bids_dir_real):
                 write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
 
 def test_singleecho(bids_dir_public):
     logger = make_logger()
@@ -450,6 +459,7 @@ def test_singleecho(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
 
 def test_laplacian_and_tv(bids_dir_public):
     logger = make_logger()
@@ -484,5 +494,6 @@ def test_laplacian_and_tv(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(out_dir)
+    shutil.rmtree(os.path.join(args.bids_dir, "derivatives", "qsmxt"))
 
 
