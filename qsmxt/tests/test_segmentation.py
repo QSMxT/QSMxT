@@ -130,3 +130,68 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
 
     shutil.rmtree(args.bids_dir)
 
+def test_separate_qsm_seg_analysis(bids_dir_public, init_workflow, run_workflow, run_args):
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING SEPARASTE QSM, SEGMENTATION, AND ANALYSIS EXECUTIONS ===")
+
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
+
+    # run pipeline and specifically choose magnitude-based masking
+    args = [
+        bids_dir,
+        "--do_qsm",
+        "--premade", "fast",
+        "--use_existing_masks",
+        "--auto_yes",
+        "--debug",
+        "--subjects", "sub-1",
+        "--sessions", "ses-1"
+    ]
+    
+    args = main(args)
+
+    args = [
+        bids_dir,
+        "--do_segmentation",
+        "--auto_yes",
+        "--debug",
+        "--subjects", "sub-1",
+        "--sessions", "ses-1"
+    ]
+
+    args = main(args)
+
+    args = [
+        bids_dir,
+        "--do_analysis",
+        "--auto_yes",
+        "--debug",
+        "--subjects", "sub-1",
+        "--sessions", "ses-1"
+    ]
+
+    args = main(args)
+
+    # generate image
+    github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if not github_step_summary:
+        logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
+    else:
+        chi_files = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')
+        seg_files = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_dseg.nii*')
+
+        for chi_file in chi_files:
+            write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=chi_file, title=f'QSM ({chi_file})', colorbar=True, vmin=-0.1, vmax=+0.1, out_png=f'qsm_{chi_file}.png', cmap='gray'))})")
+        for seg_file in seg_files:
+            write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=seg_file, title=f'Segmentation ({seg_file})', colorbar=True, vmin=0, vmax=+16, out_png=f'seg_{seg_file}.png', cmap='tab10'))})")
+
+        csv_files = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*analysis*.csv')
+        for csv_file in csv_files:
+            write_to_file(github_step_summary, f'{csv_file}\n{csv_to_markdown(csv_file)}')
+
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
+            write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
+
+    shutil.rmtree(args.bids_dir)
+
