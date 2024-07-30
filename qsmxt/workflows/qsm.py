@@ -1053,7 +1053,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
                     (n_inputs, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')]),
                 ])
             else:
-                romeo_mem = 9.81512 * (np.product(dimensions_phase) * 8 / (1024 ** 3)) + 1.5 # DONE
+                romeo_mem = 9.81512 * (np.product(dimensions_phase) * 8 / (1024 ** 3)) + 1.75 # DONE
                 mn_romeo = create_node(
                     interface=romeo.RomeoB0Interface(),
                     name='mrt_romeo',
