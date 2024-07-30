@@ -1053,7 +1053,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
                     (n_inputs, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')]),
                 ])
             else:
-                romeo_mem = 9.81512 * (np.product(dimensions_phase) * 8 / (1024 ** 3)) + 1.15907 # DONE
+                romeo_mem = 9.81512 * (np.product(dimensions_phase) * 8 / (1024 ** 3)) + 1.5 # DONE
                 mn_romeo = create_node(
                     interface=romeo.RomeoB0Interface(),
                     name='mrt_romeo',
@@ -1248,7 +1248,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
     if run_args.qsm_algorithm == 'rts':
         rts_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-        rts_mem = (18.19 * (np.product(dimensions_phase) * 3 / (1024 ** 3)) + 1.643) # DONE
+        rts_mem = (18.19 * (np.product(dimensions_phase) * 3 / (1024 ** 3)) + 2) # DONE
         mn_qsm = create_node(
             interface=qsmjl.RtsQsmInterface(num_threads=rts_threads),
             name='qsmjl_rts',

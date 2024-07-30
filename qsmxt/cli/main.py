@@ -161,14 +161,6 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
-        'output_dir',
-        nargs='?',
-        default=None,
-        type=os.path.abspath,
-        help='Output QSM folder; will be created if it does not exist.'
-    )
-
-    parser.add_argument(
         '--do_qsm',
         nargs='?',
         type=argparse_bool,
@@ -605,8 +597,9 @@ def parse_args(args, return_run_command=False):
         return args
 
     # bids and output are required
-    if args.bids_dir is None or args.output_dir is None:
-        parser.error("--bids_dir and --output_dir are required!")
+    if args.bids_dir is None:
+        parser.error("bids_dir is required!")
+    args.output_dir = os.path.join(args.bids_dir, 'derivatives', 'qsmxt')
 
     # Checking the combined qsm_reference values
     if args.qsm_reference is not None:

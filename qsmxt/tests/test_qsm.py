@@ -86,13 +86,11 @@ def test_premade(bids_dir_public, premade):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING PREMADE {premade} ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
     shutil.copytree(bids_dir_public, bids_dir)
 
     args = [
         bids_dir,
-        out_dir,
         "--premade", premade,
         "--auto_yes",
         "--debug",
@@ -116,10 +114,9 @@ def test_premade(bids_dir_public, premade):
     else:
         write_to_file(github_step_summary, f"Premade {premade}")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
-        for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
-    shutil.rmtree(out_dir)
     shutil.rmtree(args.bids_dir)
 
 
@@ -127,13 +124,11 @@ def test_nocombine(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING NO PHASE COMBINATION ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
     shutil.copytree(bids_dir_public, bids_dir)
 
     args = [
         bids_dir,
-        out_dir,
         "--premade", "fast",
         "--combine_phase", "off",
         "--auto_yes",
@@ -152,10 +147,9 @@ def test_nocombine(bids_dir_public):
     else:
         write_to_file(github_step_summary, f"test_nocombine")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0], title='No combine', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
-        for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
-    shutil.rmtree(out_dir)
     shutil.rmtree(args.bids_dir)
 
 
@@ -163,7 +157,6 @@ def test_nomagnitude(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING NO MAGNITUDE ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
     shutil.copytree(bids_dir_public, bids_dir)
     for mag_file in glob.glob(os.path.join(bids_dir, "sub-1", "ses-1", "anat", "*mag*")):
@@ -172,7 +165,6 @@ def test_nomagnitude(bids_dir_public):
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir,
-        out_dir,
         "--premade", "fast",
         "--masking_input", "magnitude",
         "--num_echoes", "1",
@@ -193,24 +185,21 @@ def test_nomagnitude(bids_dir_public):
         write_to_file(github_step_summary, f"test_nomagnitude")
         qsm_result = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0]
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=qsm_result, title='No magnitude', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
-        for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
-    shutil.rmtree(out_dir)
     shutil.rmtree(args.bids_dir)
 
 def test_inhomogeneity_correction(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING INHOMOGENEITY CORRECTION ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
     shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir,
-        out_dir,
         "--premade", "fast",
         "--masking_algorithm", "threshold",
         "--filling_algorithm", "bet",
@@ -233,24 +222,21 @@ def test_inhomogeneity_correction(bids_dir_public):
         write_to_file(github_step_summary, f"test_inhomogeneity_correction")
         qsm_result = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0]
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=qsm_result, title='Inhomogeneity correction', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
-        for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
-    shutil.rmtree(out_dir)
     shutil.rmtree(args.bids_dir)
 
 def test_hardcoded_percentile_threshold(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED PERCENTILE THRESHOLD ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
     shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir,
-        out_dir,
         "--premade", "fast",
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
@@ -273,24 +259,21 @@ def test_hardcoded_percentile_threshold(bids_dir_public):
         write_to_file(github_step_summary, f"test_hardcoded_percentile_threshold")
         qsm_result = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0]
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=qsm_result, title='Hardcoded percentile threshold (0.25)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
-        for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
-    shutil.rmtree(out_dir)
     shutil.rmtree(args.bids_dir)
 
 def test_hardcoded_absolute_threshold(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING HARDCODED ABSOLUTE THRESHOLD ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
     shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir,
-        out_dir,
         "--premade", "fast",
         "--masking_algorithm", "threshold",
         "--masking_input", "magnitude",
@@ -313,23 +296,20 @@ def test_hardcoded_absolute_threshold(bids_dir_public):
         write_to_file(github_step_summary, f"test_hardcoded_absolute_threshold")
         qsm_result = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0]
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=qsm_result, title='Hardcoded absolute threshold (15)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
-        for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
-    shutil.rmtree(out_dir)
     shutil.rmtree(args.bids_dir)
 
 def test_use_existing_masks(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING EXISTING MASKS ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
     shutil.copytree(bids_dir_public, bids_dir)
     
     args = [
         bids_dir,
-        out_dir,
         "--use_existing_masks",
         "--premade", "fast",
         "--auto_yes",
@@ -345,10 +325,9 @@ def test_use_existing_masks(bids_dir_public):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"test_use_existing_masks")
-        for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
-    shutil.rmtree(out_dir)
     shutil.rmtree(args.bids_dir)
 
 
@@ -356,13 +335,11 @@ def test_supplementary_images(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING SUPPLEMENTARY IMAGES AND DICOMS ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
     shutil.copytree(bids_dir_public, bids_dir)
     
     args = [
         bids_dir,
-        out_dir,
         "--do_qsm",
         "--do_swi",
         "--do_t2starmap",
@@ -386,10 +363,9 @@ def test_supplementary_images(bids_dir_public):
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_minIP.nii*')[0], title='SWI MIP', out_png='swi_mip.png', cmap='gray'))})")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_T2starmap.nii*')[0], title='T2* map', out_png='t2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='T2* (ms)'))})")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_R2starmap.nii*')[0], title='R2* map', out_png='r2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='R2* (ms)'))})")
-        for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
-    shutil.rmtree(out_dir)
     shutil.rmtree(args.bids_dir)
     
 
@@ -397,11 +373,8 @@ def test_realdata(bids_dir_real):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING REAL DATA ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
-
     args = [
         bids_dir_real,
-        out_dir,
         "--premade", "fast",
         "--auto_yes",
         "--debug"
@@ -419,7 +392,7 @@ def test_realdata(bids_dir_real):
         if github_step_summary:
             write_to_file(github_step_summary, f"test_realdata")
             write_to_file(github_step_summary, "Results uploaded to RDM")
-            for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+            for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
                 write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
     except:
         github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
@@ -428,24 +401,21 @@ def test_realdata(bids_dir_real):
         else:
             write_to_file(github_step_summary, f"test_realdata")
             write_to_file(github_step_summary, "Result upload to RDM failed!")
-            for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+            for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
                 write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
-    shutil.rmtree(out_dir)
     shutil.rmtree(args.bids_dir)
 
 def test_singleecho(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING SINGLE ECHO WITH PHASE COMBINATION / ROMEO ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
     shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir,
-        out_dir,
         "--unwrapping_algorithm", "romeo",
         "--num_echoes", "1",
         "--auto_yes",
@@ -464,24 +434,21 @@ def test_singleecho(bids_dir_public):
     else:
         write_to_file(github_step_summary, f"test_singleecho")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0], title='Single echo', out_png='qsm.png', cmap='gray', colorbar=True, vmin=-0.1, vmax=+0.1))})")
-        for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
-    shutil.rmtree(out_dir)
     shutil.rmtree(args.bids_dir)
 
 def test_laplacian_and_tv(bids_dir_public):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING LAPLACIAN UNWRAPPING AND TV ALGO ===")
 
-    out_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-qsm")
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
     shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
     args = [
         bids_dir,
-        out_dir,
         "--unwrapping_algorithm", "laplacian",
         "--qsm_algorithm", "tv",
         "--combine_phase", "off",
@@ -501,10 +468,9 @@ def test_laplacian_and_tv(bids_dir_public):
     else:
         write_to_file(github_step_summary, f"test_laplacian_and_tv")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0], title='Laplacian + TV', out_png='qsm.png', cmap='gray', colorbar=True, vmin=-0.1, vmax=+0.1))})")
-        for png_file in glob.glob(os.path.join(out_dir, '*.png')):
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
-    shutil.rmtree(out_dir)
     shutil.rmtree(args.bids_dir)
 
 
