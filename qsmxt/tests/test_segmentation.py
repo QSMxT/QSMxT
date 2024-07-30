@@ -130,6 +130,9 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
 
     shutil.rmtree(args.bids_dir)
 
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, None)
+])
 def test_separate_qsm_seg_analysis(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING SEPARASTE QSM, SEGMENTATION, AND ANALYSIS EXECUTIONS ===")
