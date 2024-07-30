@@ -55,7 +55,7 @@ class DynamicCopyFiles(BaseInterface):
 
                 if os.path.exists(value):
                     if os.path.isfile(value):
-                        file_extension = os.path.splitext(value)[1]
+                        file_extension = '.' + '.'.join(os.path.split(value)[1].split('.')[1:])
                         dst_with_extension = f"{dst}{file_extension}"
                         shutil.copy2(value, dst_with_extension)
                         copied_files.append(dst_with_extension)
