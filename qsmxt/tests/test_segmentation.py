@@ -185,10 +185,10 @@ def test_separate_qsm_seg_analysis(bids_dir_public, init_workflow, run_workflow,
         seg_files = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_dseg.nii*')
 
         for chi_file in chi_files:
-            chi_png = display_nii(nii_path=chi_file, title=f'QSM ({chi_file})', colorbar=True, vmin=-0.1, vmax=+0.1, out_png=f"qsm_{chi_file.replace('.', '_')}.png", cmap='gray')
+            chi_png = display_nii(nii_path=chi_file, title=f'QSM ({chi_file})', colorbar=True, vmin=-0.1, vmax=+0.1, out_png=f"qsm_{os.path.split(chi_file)[1].replace('.', '_')}.png", cmap='gray')
             write_to_file(github_step_summary, f"![result]({upload_png(chi_png)})")
         for seg_file in seg_files:
-            seg_png = display_nii(nii_path=seg_file, title=f'Segmentation ({seg_file})', colorbar=True, vmin=0, vmax=+16, out_png=f"seg_{seg_file.replace('.', '_')}.png", cmap='tab10')
+            seg_png = display_nii(nii_path=seg_file, title=f'Segmentation ({seg_file})', colorbar=True, vmin=0, vmax=+16, out_png=f"seg_{os.path.split(seg_file)[1].replace('.', '_')}.png", cmap='tab10')
             write_to_file(github_step_summary, f"![result]({upload_png(seg_png)})")
 
         csv_files = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*analysis*.csv')
