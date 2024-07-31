@@ -181,8 +181,8 @@ def test_separate_qsm_seg_analysis(bids_dir_public, init_workflow, run_workflow,
     if not github_step_summary:
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
-        chi_files = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')
-        seg_files = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_dseg.nii*')
+        chi_files = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt', 'sub-*'), '*_Chimap.nii*')
+        seg_files = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt', 'sub-*'), '*_dseg.nii*')
 
         for chi_file in chi_files:
             chi_png = display_nii(nii_path=chi_file, title=f'QSM ({chi_file})', colorbar=True, vmin=-0.1, vmax=+0.1, out_png=f"qsm_{os.path.split(chi_file)[1].replace('.', '_')}.png", cmap='gray')
