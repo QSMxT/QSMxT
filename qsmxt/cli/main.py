@@ -731,7 +731,7 @@ def parse_args(args, return_run_command=False):
 
     # compute the minimum run command to re-execute the built pipeline non-interactively
     if return_run_command:
-        run_command = f"qsmxt {explicit_args['bids_dir']} {explicit_args['output_dir']}"
+        run_command = f"qsmxt {explicit_args['bids_dir']}"
         if 'premade' in explicit_args and explicit_args['premade'] != 'default':
             run_command += f" --premade '{explicit_args['premade']}'"
         for key, value in explicit_args.items():
@@ -774,7 +774,7 @@ def generate_run_command(all_args, implicit_args, explicit_args, short=True):
     
     # compute the minimum run command to re-execute the built pipeline non-interactively
     os.path.relpath(explicit_args['bids_dir'])
-    run_command = f"qsmxt {short_path(explicit_args['bids_dir'])} {short_path(explicit_args['output_dir'])}"
+    run_command = f"qsmxt {short_path(explicit_args['bids_dir'])}"
     if 'premade' in explicit_args and explicit_args['premade'] != 'default':
         run_command += f" --premade '{explicit_args['premade']}'"
     for key, value in explicit_args.items():

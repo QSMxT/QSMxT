@@ -15,8 +15,8 @@ dicom-sort dicoms-unsorted dicoms-sorted
 echo "[DEBUG] dicom-convert dicoms-sorted bids --auto_yes --qsm_protocol_patterns '*qsm*' --t1w_protocol_patterns '*mp2rage*'"
 dicom-convert dicoms-sorted bids --auto_yes --qsm_protocol_patterns '*qsm*' --t1w_protocol_patterns '*mp2rage*'
 
-echo "[DEBUG] bids qsm --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug"
-qsmxt bids qsm --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug
+echo "[DEBUG] bids --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug"
+qsmxt bids --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug
 
-rm -rf dicoms-unsorted/ dicoms-sorted/ bids/ qsm/
+rm -rf dicoms-unsorted/ dicoms-sorted/ bids/ 
 

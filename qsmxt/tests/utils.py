@@ -1,4 +1,5 @@
 import os
+import glob
 import datetime
 import signal
 import fnmatch
@@ -156,12 +157,13 @@ def download_from_osf(project, local_path):
     with open(local_path, 'wb') as fpr:
         osf_file.write_to(fpr)
 
-def find_files(directory, pattern):
+def find_files(directory_pattern, search_pattern):
     matching_files = []
-    
-    for root, dirs, files in os.walk(directory):
-        for filename in fnmatch.filter(files, pattern):
-            matching_files.append(os.path.join(root, filename))
+
+    for directory in glob.glob(directory_pattern):    
+        for root, dirs, files in os.walk(os.path.abspath(directory)):
+            for filename in fnmatch.filter(files, search_pattern):
+                matching_files.append(os.path.join(root, filename))
     
     return matching_files
 
