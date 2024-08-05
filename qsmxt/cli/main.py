@@ -8,6 +8,7 @@ import copy
 import argparse
 import json
 import re
+import datetime
 
 from nipype import config, logging
 from nipype.pipeline.engine import Workflow, Node
@@ -31,7 +32,7 @@ def init_workflow(args):
     if not subjects:
         logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, 'sub*')}")
         script_exit(1, logger=logger)
-    wf = Workflow("workflow", base_dir=args.output_dir)
+    wf = Workflow(f'qsmxt-workflow', base_dir=args.workflow_dir)
     wf.add_nodes([
         node for node in
         [init_subject_workflow(args, subject) for subject in subjects]
@@ -599,7 +600,8 @@ def parse_args(args, return_run_command=False):
     # bids and output are required
     if args.bids_dir is None:
         parser.error("bids_dir is required!")
-    args.output_dir = os.path.join(args.bids_dir, 'derivatives', 'qsmxt')
+    args.output_dir = os.path.join(args.bids_dir, 'derivatives', f"qsmxt-{datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')}")
+    args.workflow_dir = os.path.join(args.bids_dir, 'derivatives')
 
     # Checking the combined qsm_reference values
     if args.qsm_reference is not None:
@@ -735,7 +737,7 @@ def parse_args(args, return_run_command=False):
         if 'premade' in explicit_args and explicit_args['premade'] != 'default':
             run_command += f" --premade '{explicit_args['premade']}'"
         for key, value in explicit_args.items():
-            if key in ['bids_dir', 'output_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs']: continue
+            if key in ['bids_dir', 'output_dir', 'workflow_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs']: continue
             if key == 'do_qsm' and value == True and all(x not in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
                 continue
             if key == 'do_qsm' and value == False and any(x in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
@@ -778,7 +780,7 @@ def generate_run_command(all_args, implicit_args, explicit_args, short=True):
     if 'premade' in explicit_args and explicit_args['premade'] != 'default':
         run_command += f" --premade '{explicit_args['premade']}'"
     for key, value in explicit_args.items():
-        if key in ['bids_dir', 'output_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs']: continue
+        if key in ['bids_dir', 'output_dir', 'workflow_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs']: continue
         if key == 'labels_file' and value == os.path.join(get_qsmxt_dir(), 'aseg_labels.csv'):
             continue
         if key == 'do_qsm' and value == True and all(x not in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):

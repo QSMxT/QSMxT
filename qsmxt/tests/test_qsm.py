@@ -102,7 +102,7 @@ def test_premade(bids_dir_public, premade):
     args = main(args)
     
     # upload output folder
-    tar_file = compress_folder(folder=os.path.join(args.bids_dir, "derivatives"), result_id=premade)
+    tar_file = compress_folder(folder=args.output_dir, result_id=premade)
     sys_cmd(f"rm -rf {os.path.join(gettempdir(), 'public-outputs')}")
     os.makedirs(os.path.join(gettempdir(), "public-outputs"), exist_ok=True)
     shutil.move(tar_file, os.path.join(gettempdir(), "public-outputs", tar_file))
@@ -113,7 +113,7 @@ def test_premade(bids_dir_public, premade):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"Premade {premade}")
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_Chimap.nii*')[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
         for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
@@ -146,7 +146,7 @@ def test_nocombine(bids_dir_public):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"test_nocombine")
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0], title='No combine', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_Chimap.nii*')[0], title='No combine', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
         for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
@@ -183,7 +183,7 @@ def test_nomagnitude(bids_dir_public):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"test_nomagnitude")
-        qsm_result = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0]
+        qsm_result = find_files(os.path.join(args.output_dir), '*_Chimap.nii*')[0]
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=qsm_result, title='No magnitude', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
         for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
@@ -220,7 +220,7 @@ def test_inhomogeneity_correction(bids_dir_public):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"test_inhomogeneity_correction")
-        qsm_result = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0]
+        qsm_result = find_files(args.output_dir, '*_Chimap.nii*')[0]
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=qsm_result, title='Inhomogeneity correction', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
         for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
@@ -257,7 +257,7 @@ def test_hardcoded_percentile_threshold(bids_dir_public):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"test_hardcoded_percentile_threshold")
-        qsm_result = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0]
+        qsm_result = find_files(args.output_dir, '*_Chimap.nii*')[0]
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=qsm_result, title='Hardcoded percentile threshold (0.25)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
         for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
@@ -294,7 +294,7 @@ def test_hardcoded_absolute_threshold(bids_dir_public):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"test_hardcoded_absolute_threshold")
-        qsm_result = find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0]
+        qsm_result = find_files(args.output_dir, '*_Chimap.nii*')[0]
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=qsm_result, title='Hardcoded absolute threshold (15)', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
         for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
@@ -359,10 +359,10 @@ def test_supplementary_images(bids_dir_public):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"test_supplementary_images")
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_swi.nii*')[0], title='SWI', out_png='swi.png', cmap='gray'))})")
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_minIP.nii*')[0], title='SWI MIP', out_png='swi_mip.png', cmap='gray'))})")
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_T2starmap.nii*')[0], title='T2* map', out_png='t2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='T2* (ms)'))})")
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_R2starmap.nii*')[0], title='R2* map', out_png='r2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='R2* (ms)'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_swi.nii*')[0], title='SWI', out_png='swi.png', cmap='gray'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_minIP.nii*')[0], title='SWI MIP', out_png='swi_mip.png', cmap='gray'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_T2starmap.nii*')[0], title='T2* map', out_png='t2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='T2* (ms)'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_R2starmap.nii*')[0], title='R2* map', out_png='r2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='R2* (ms)'))})")
         for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
@@ -381,7 +381,7 @@ def test_realdata(bids_dir_real):
     ]
     
     args = main(args)
-    local_path = compress_folder(folder=os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), result_id='real')
+    local_path = compress_folder(folder=args.output_dir, result_id='real')
 
     try:
         upload_to_rdm(
@@ -433,7 +433,7 @@ def test_singleecho(bids_dir_public):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"test_singleecho")
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0], title='Single echo', out_png='qsm.png', cmap='gray', colorbar=True, vmin=-0.1, vmax=+0.1))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_Chimap.nii*')[0], title='Single echo', out_png='qsm.png', cmap='gray', colorbar=True, vmin=-0.1, vmax=+0.1))})")
         for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
@@ -467,7 +467,7 @@ def test_laplacian_and_tv(bids_dir_public):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"test_laplacian_and_tv")
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(os.path.join(args.bids_dir, 'derivatives', 'qsmxt'), '*_Chimap.nii*')[0], title='Laplacian + TV', out_png='qsm.png', cmap='gray', colorbar=True, vmin=-0.1, vmax=+0.1))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_Chimap.nii*')[0], title='Laplacian + TV', out_png='qsm.png', cmap='gray', colorbar=True, vmin=-0.1, vmax=+0.1))})")
         for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 

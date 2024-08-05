@@ -41,7 +41,7 @@ class FastSurferInterface(CommandLine):
     def _list_outputs(self):
         outputs = self.output_spec().get()
         outfile_old = os.path.join('output', 'mri', 'aparc.DKTatlas+aseg.deep.mgz')
-        outfile_new = extend_fname(self.inputs.in_file, "_segmentation", ext="mgz", out_dir=os.getcwd())
+        outfile_new = extend_fname(self.inputs.in_file, "_dseg", ext="mgz", out_dir=os.getcwd())
         try:
             shutil.copy(outfile_old, outfile_new)
         except FileNotFoundError:

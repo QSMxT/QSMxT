@@ -123,12 +123,15 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         mask_file for mask_file in get_matching_files(os.path.join(run_args.bids_dir, "derivatives", run_args.existing_masks_pipeline), subject=subject, dtype="anat", suffixes=["mask"], session=session, run=None, part=None, acq=None)[:run_args.num_echoes]
         if ('_space-orig' in mask_file or '_space-' not in mask_file)
         and ('_label-brain' in mask_file or '_label-' not in mask_file)
+        and ('qsmxt-workflow' not in mask_file)
     ]
     qsm_files = [
         qsm_file for qsm_file in get_matching_files(os.path.join(run_args.bids_dir, "derivatives", run_args.existing_qsm_pipeline), subject=subject, dtype="anat", suffixes=["Chimap"], session=session, run=None, part=None, acq=None)
+        if ('qsmxt-workflow' not in qsm_file)
     ]
     seg_files = [
         seg_file for seg_file in get_matching_files(os.path.join(run_args.bids_dir, "derivatives", run_args.existing_seg_pipeline), subject=subject, dtype="anat", suffixes=["dseg"], session=session, space="qsm", run=None, part=None, acq=None)
+        if ('qsmxt-workflow' not in seg_file)
     ]
     
     # handle any errors related to files and adjust any settings if needed
@@ -335,7 +338,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         'qsm', 'qsm_singlepass', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 'transform', 'analysis_csv', 'qsm_dicoms', 'swi_dicoms', 'swi_mip_dicoms'
     ]), name="copyfile")
     
-    basedir = os.path.join(run_args.bids_dir, 'derivatives', 'qsmxt', subject, session if session else '')
+    basedir = os.path.join(run_args.output_dir, subject, session if session else '')
     basename = f"{subject}"
     if session: basename += f"_{session}"
     if run: basename += f"_run-{run}"
@@ -351,7 +354,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         't1w_segmentation': os.path.join(basedir, 'anat', f"{basename}_space-orig_dseg"),
         'qsm_segmentation': os.path.join(basedir, 'anat', f"{basename}_space-qsm_dseg"),
         'transform': os.path.join(basedir, 'extra_data', f"{basename}_desc-t1w-to-qsm_transform"),
-        'analysis_csv': os.path.join(basedir, 'extra_data', f"{basename}_desc-qsm_analysis"),
+        'analysis_csv': os.path.join(basedir, 'extra_data', f"{basename}_qsm-analysis"),
         'qsm_dicoms': os.path.join(basedir, 'extra_data', f"{basename}_desc-dicoms_Chimap"),
         'swi_dicoms': os.path.join(basedir, 'extra_data', f"{basename}_desc-dicoms_swi"),
         'swi_mip_dicoms': os.path.join(basedir, 'extra_data', f"{basename}_desc-dicoms_minIP")
@@ -967,7 +970,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
 
         n_analyse_qsm = create_node(
             interface=analyse.AnalyseInterface(
-                in_labels=run_args.labels_file
+                in_labels=run_args.labels_file,
+                in_pipeline_name=os.path.split(run_args.output_dir)[1]
             ),
             name='nibabel_numpy_analyse-qsm',
             iterfield=['in_file', 'in_segmentation'],
