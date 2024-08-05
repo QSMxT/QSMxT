@@ -306,7 +306,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         mem_mask_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
         logger.log(LogLevel.DEBUG.value, f"Mask files are {dimensions_mask} * {bytepix_mask} bytes/voxel == {round(mem_mask, 3)} GB ({round(mem_mask_64 * len(mask_files), 3)} GB at 64-bit)")
 
-    if not any([run_args.do_qsm, run_args.do_swi, run_args.do_t2starmap, run_args.do_r2starmap, run_args.do_segmentation]):
+    if not any([run_args.do_qsm, run_args.do_swi, run_args.do_t2starmap, run_args.do_r2starmap, run_args.do_segmentation, run_args.do_analysis]):
         return
     
     # create nipype workflow for this run

@@ -128,7 +128,7 @@ def init_session_workflow(args, subject, session=None):
         if None in run_details.keys(): run_details[None].append(None)
         run_details[None] = [None]
 
-    if any([args.do_qsm, args.do_segmentation, args.do_t2starmap, args.do_r2starmap, args.do_swi]):
+    if any([args.do_qsm, args.do_segmentation, args.do_t2starmap, args.do_r2starmap, args.do_swi, args.do_analysis]):
         wfs = [
             init_qsm_workflow(copy.deepcopy(args), subject, session, acq, run)
             for acq, runs in (run_details.items() if run_details else [(None, [None])])
@@ -738,9 +738,9 @@ def parse_args(args, return_run_command=False):
             run_command += f" --premade '{explicit_args['premade']}'"
         for key, value in explicit_args.items():
             if key in ['bids_dir', 'output_dir', 'workflow_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs']: continue
-            if key == 'do_qsm' and value == True and all(x not in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
+            if key == 'do_qsm' and value == True and all(x not in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation', 'do_analysis']):
                 continue
-            if key == 'do_qsm' and value == False and any(x in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
+            if key == 'do_qsm' and value == False and any(x in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation', 'do_analysis']):
                 continue
             elif value == True: run_command += f' --{key}'
             elif value == False: run_command += f' --{key} off'
@@ -783,9 +783,9 @@ def generate_run_command(all_args, implicit_args, explicit_args, short=True):
         if key in ['bids_dir', 'output_dir', 'workflow_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs']: continue
         if key == 'labels_file' and value == os.path.join(get_qsmxt_dir(), 'aseg_labels.csv'):
             continue
-        if key == 'do_qsm' and value == True and all(x not in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
+        if key == 'do_qsm' and value == True and all(x not in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation', 'do_analysis']):
             continue
-        if key == 'do_qsm' and value == False and any(x in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
+        if key == 'do_qsm' and value == False and any(x in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation', 'do_analysis']):
             continue
         elif value == True and isinstance(value, bool): run_command += f' --{key}'
         elif value == False and isinstance(value, bool): run_command += f' --{key} off'
@@ -914,8 +914,12 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                 if 'do_template' in explicit_args: del explicit_args['do_template']
                 args.do_template = False
             if 'dicoms' in user_in.split():
-                args.export_dicoms = True
-                explicit_args['export_dicoms'] = True
+                if any([args.do_qsm, args.do_swi]):
+                    args.export_dicoms = True
+                    explicit_args['export_dicoms'] = True
+                else:
+                    print("dicoms requires one of either qsm or swi.")
+                    continue
             else:
                 if 'export_dicoms' in explicit_args: del explicit_args['export_dicoms']
                 args.export_dicoms = False
@@ -923,7 +927,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
             break
         
     # allow user to update the premade if none was chosen
-    if not using_json_settings and 'premade' not in explicit_args.keys() and not any(x in explicit_args.keys() for x in ["do_qsm", "do_swi", "do_t2starmap", "do_r2starmap", "do_segmentations"]):
+    if not using_json_settings and 'premade' not in explicit_args.keys() and not any(x in explicit_args.keys() for x in ["do_qsm", "do_swi", "do_t2starmap", "do_r2starmap", "do_segmentations", "do_analysis"]):
         update_desired_images()
     
     if not args.do_qsm and not using_json_settings:
@@ -1288,7 +1292,7 @@ def process_args(args):
     run_args = {}
     logger = make_logger('main')
 
-    if not any([args.do_qsm, args.do_segmentation, args.do_swi, args.do_t2starmap, args.do_r2starmap]):
+    if not any([args.do_qsm, args.do_segmentation, args.do_swi, args.do_t2starmap, args.do_r2starmap, args.do_analysis]):
         args.do_qsm = True
 
     # default QSM algorithms
