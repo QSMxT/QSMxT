@@ -8,6 +8,7 @@ import copy
 import argparse
 import json
 import re
+import datetime
 
 from nipype import config, logging
 from nipype.pipeline.engine import Workflow, Node
@@ -31,7 +32,7 @@ def init_workflow(args):
     if not subjects:
         logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, 'sub*')}")
         script_exit(1, logger=logger)
-    wf = Workflow("workflow", base_dir=args.output_dir)
+    wf = Workflow(f'qsmxt-workflow', base_dir=args.workflow_dir)
     wf.add_nodes([
         node for node in
         [init_subject_workflow(args, subject) for subject in subjects]
@@ -127,7 +128,7 @@ def init_session_workflow(args, subject, session=None):
         if None in run_details.keys(): run_details[None].append(None)
         run_details[None] = [None]
 
-    if any([args.do_qsm, args.do_t2starmap, args.do_r2starmap, args.do_swi]):
+    if any([args.do_qsm, args.do_segmentation, args.do_t2starmap, args.do_r2starmap, args.do_swi, args.do_analysis]):
         wfs = [
             init_qsm_workflow(copy.deepcopy(args), subject, session, acq, run)
             for acq, runs in (run_details.items() if run_details else [(None, [None])])
@@ -158,14 +159,6 @@ def parse_args(args, return_run_command=False):
         default=None,
         type=os.path.abspath,
         help='Input BIDS directory. Can be generated using dicom-convert or nifti-convert.'
-    )
-
-    parser.add_argument(
-        'output_dir',
-        nargs='?',
-        default=None,
-        type=os.path.abspath,
-        help='Output QSM folder; will be created if it does not exist.'
     )
 
     parser.add_argument(
@@ -422,6 +415,18 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
+        '--existing_qsm_pipeline',
+        default=None,
+        help='A pattern matching the name of the software pipeline used to derive pre-existing QSM images.'
+    )
+
+    parser.add_argument(
+        '--existing_seg_pipeline',
+        default=None,
+        help='A pattern matching the name of the software pipeline used to derive pre-existing segmentations in the QSM space.'
+    )
+
+    parser.add_argument(
         '--use_existing_masks',
         nargs='?',
         type=argparse_bool,
@@ -593,8 +598,10 @@ def parse_args(args, return_run_command=False):
         return args
 
     # bids and output are required
-    if args.bids_dir is None or args.output_dir is None:
-        parser.error("--bids_dir and --output_dir are required!")
+    if args.bids_dir is None:
+        parser.error("bids_dir is required!")
+    args.output_dir = os.path.join(args.bids_dir, 'derivatives', f"qsmxt-{datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')}")
+    args.workflow_dir = os.path.join(args.bids_dir, 'derivatives')
 
     # Checking the combined qsm_reference values
     if args.qsm_reference is not None:
@@ -726,14 +733,14 @@ def parse_args(args, return_run_command=False):
 
     # compute the minimum run command to re-execute the built pipeline non-interactively
     if return_run_command:
-        run_command = f"qsmxt {explicit_args['bids_dir']} {explicit_args['output_dir']}"
+        run_command = f"qsmxt {explicit_args['bids_dir']}"
         if 'premade' in explicit_args and explicit_args['premade'] != 'default':
             run_command += f" --premade '{explicit_args['premade']}'"
         for key, value in explicit_args.items():
-            if key in ['bids_dir', 'output_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs']: continue
-            if key == 'do_qsm' and value == True and all(x not in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
+            if key in ['bids_dir', 'output_dir', 'workflow_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs']: continue
+            if key == 'do_qsm' and value == True and all(x not in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation', 'do_analysis']):
                 continue
-            if key == 'do_qsm' and value == False and any(x in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
+            if key == 'do_qsm' and value == False and any(x in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation', 'do_analysis']):
                 continue
             elif value == True: run_command += f' --{key}'
             elif value == False: run_command += f' --{key} off'
@@ -769,16 +776,16 @@ def generate_run_command(all_args, implicit_args, explicit_args, short=True):
     
     # compute the minimum run command to re-execute the built pipeline non-interactively
     os.path.relpath(explicit_args['bids_dir'])
-    run_command = f"qsmxt {short_path(explicit_args['bids_dir'])} {short_path(explicit_args['output_dir'])}"
+    run_command = f"qsmxt {short_path(explicit_args['bids_dir'])}"
     if 'premade' in explicit_args and explicit_args['premade'] != 'default':
         run_command += f" --premade '{explicit_args['premade']}'"
     for key, value in explicit_args.items():
-        if key in ['bids_dir', 'output_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs']: continue
+        if key in ['bids_dir', 'output_dir', 'workflow_dir', 'auto_yes', 'premade', 'multiproc', 'mem_avail', 'n_procs']: continue
         if key == 'labels_file' and value == os.path.join(get_qsmxt_dir(), 'aseg_labels.csv'):
             continue
-        if key == 'do_qsm' and value == True and all(x not in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
+        if key == 'do_qsm' and value == True and all(x not in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation', 'do_analysis']):
             continue
-        if key == 'do_qsm' and value == False and any(x in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation']):
+        if key == 'do_qsm' and value == False and any(x in explicit_args.keys() for x in ['do_swi', 'do_r2starmap', 'do_t2starmap', 'do_segmentation', 'do_analysis']):
             continue
         elif value == True and isinstance(value, bool): run_command += f' --{key}'
         elif value == False and isinstance(value, bool): run_command += f' --{key} off'
@@ -889,38 +896,30 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                 if 'do_r2starmap' in explicit_args: del explicit_args['do_r2starmap']
                 args.do_r2starmap = False
             if 'seg' in user_in.split():
-                if args.do_qsm:
-                    args.do_segmentation = True
-                    explicit_args['do_segmentation'] = True
-                else:
-                    print("\nSegmentation requires QSM")
-                    continue
+                args.do_segmentation = True
+                explicit_args['do_segmentation'] = True
             else:
                 if 'do_segmentation' in explicit_args: del explicit_args['do_segmentation']
                 args.do_segmentation = False
             if 'analysis' in user_in.split():
-                if args.do_qsm and args.do_segmentation:
-                    args.do_analysis = True
-                    explicit_args['do_analysis'] = True
-                else:
-                    print("\nAnalysis requires QSM and segmentations")
-                    continue
+                args.do_analysis = True
+                explicit_args['do_analysis'] = True
             else:
                 if 'do_analysis' in explicit_args: del explicit_args['do_analysis']
                 args.do_analysis = False
             if 'template' in user_in.split():
-                if args.do_qsm:
-                    args.do_template = True
-                    explicit_args['do_template'] = True
-                else:
-                    print("GRE/QSM template-building requires QSM and segmentations")
-                    continue
+                args.do_template = True
+                explicit_args['do_template'] = True
             else:
                 if 'do_template' in explicit_args: del explicit_args['do_template']
                 args.do_template = False
             if 'dicoms' in user_in.split():
-                args.export_dicoms = True
-                explicit_args['export_dicoms'] = True
+                if any([args.do_qsm, args.do_swi]):
+                    args.export_dicoms = True
+                    explicit_args['export_dicoms'] = True
+                else:
+                    print("dicoms requires one of either qsm or swi.")
+                    continue
             else:
                 if 'export_dicoms' in explicit_args: del explicit_args['export_dicoms']
                 args.export_dicoms = False
@@ -928,7 +927,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
             break
         
     # allow user to update the premade if none was chosen
-    if not using_json_settings and 'premade' not in explicit_args.keys() and not any(x in explicit_args.keys() for x in ["do_qsm", "do_swi", "do_t2starmap", "do_r2starmap", "do_segmentations"]):
+    if not using_json_settings and 'premade' not in explicit_args.keys() and not any(x in explicit_args.keys() for x in ["do_qsm", "do_swi", "do_t2starmap", "do_r2starmap", "do_segmentations", "do_analysis"]):
         update_desired_images()
     
     if not args.do_qsm and not using_json_settings:
@@ -1293,17 +1292,8 @@ def process_args(args):
     run_args = {}
     logger = make_logger('main')
 
-    if not any([args.do_qsm, args.do_segmentation, args.do_swi, args.do_t2starmap, args.do_r2starmap]):
+    if not any([args.do_qsm, args.do_segmentation, args.do_swi, args.do_t2starmap, args.do_r2starmap, args.do_analysis]):
         args.do_qsm = True
-
-    if args.do_analysis:
-        if not args.do_segmentation:
-            logger.log(LogLevel.WARNING.value, f"--do_analysis requires --do_segmentation. Enabling --do_segmentation.")
-            args.do_segmentation = True
-    if args.do_segmentation:
-        if not args.do_qsm:
-            logger.log(LogLevel.WARNING.value, f"--do_segmentation requires --do_qsm. Enabling --do_qsm.")
-            args.do_qsm = True
 
     # default QSM algorithms
     if not args.qsm_algorithm:

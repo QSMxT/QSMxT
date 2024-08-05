@@ -9,13 +9,18 @@ from qsmxt.scripts.qsmxt_functions import extend_fname
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath
 
 def resample_to_reference(in_file, ref_file, out_file=None, interpolation='continuous'):
+    print(f"Resampling {in_file} to {ref_file} with interpolation {interpolation}")
+
     # Load NIfTI files
     in_nii = nib.load(in_file)
     ref_nii = nib.load(ref_file)
 
+    print("Loaded input and reference files")
+
     # Check if the input image is already aligned with the reference image
     if np.array_equal(in_nii.affine, ref_nii.affine):
-        return None
+        print("Input image is already aligned with the reference image")
+        return in_file
 
     # Resample the source image to match the reference image
     resampled_nii = nilearn.image.resample_img(
@@ -24,21 +29,23 @@ def resample_to_reference(in_file, ref_file, out_file=None, interpolation='conti
         target_shape=np.array(ref_nii.header.get_data_shape()),
         interpolation=interpolation
     )
-    
+
+    print("Resampled the image")
+
     # Save the resampled image
     out_file = out_file or extend_fname(in_file, "_resampled", out_dir=os.getcwd())
     nib.save(resampled_nii, out_file)
-    return out_file
+    print(f"Saved resampled image to {out_file}")
 
+    return out_file
 
 class ResampleLikeInputSpec(BaseInterfaceInputSpec):
     in_file = File(mandatory=True, exists=True)
-    ref_file = InputMultiPath(mandatory=True, exists=True)
-
+    ref_file = InputMultiPath(File, mandatory=True, exists=True)
+    interpolation = traits.Enum("continuous", "nearest", usedefault=True, default="continuous")
 
 class ResampleLikeOutputSpec(TraitedSpec):
     out_file = File()
-
 
 class ResampleLikeInterface(SimpleInterface):
     input_spec = ResampleLikeInputSpec
@@ -47,20 +54,22 @@ class ResampleLikeInterface(SimpleInterface):
     def _run_interface(self, runtime):
         if isinstance(self.inputs.ref_file, list):
             ref_file = self.inputs.ref_file[0]
-
-        if 'resampled' in self.inputs.in_file:
-
-            out_file = resample_to_reference(
-                in_file=self.inputs.in_file,
-                ref_file=ref_file,
-            )
-
-            if out_file is not None:
-                self._results['out_file'] = out_file
         else:
-            self._results['out_file'] = self.inputs.in_file
-        
+            ref_file = self.inputs.ref_file
+
+        out_file = resample_to_reference(
+            in_file=self.inputs.in_file,
+            ref_file=ref_file,
+            interpolation=self.inputs.interpolation
+        )
+
+        if out_file is not None:
+            self._results['out_file'] = out_file
+        else:
+            raise RuntimeError("Resampling failed, out_file is None")
+
         return runtime
+
 
 
 if __name__ == "__main__":

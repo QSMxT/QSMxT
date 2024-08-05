@@ -10,7 +10,7 @@ To convert sorted DICOMs to BIDS, use:
     $ dicom-convert dicoms-sorted bids
 
 To run QSMxT, use:
-    $ qsmxt bids qsm
+    $ qsmxt bids
 
 For full documentation, see https://qsmxt.github.io/
 

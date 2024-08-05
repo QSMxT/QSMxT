@@ -19,7 +19,7 @@ This section will guide you through each of the steps needed to run QSMxT on a [
 To begin, simply run:
 
 ```bash
-qsmxt bids/ output_dir/
+qsmxt YOUR_BIDS_DIRECTORY/
 ```
 
 Then, follow the steps outlined below.
@@ -112,7 +112,7 @@ See the sections below for more details about the advanced settings in menus [3]
 
 Guidelines compliant! (see https://arxiv.org/abs/2307.02306)
 
-Run command: qsmxt in out --auto_yes
+Run command: qsmxt bids/ --auto_yes
 
 Enter a number to customize; enter 'run' to run: 
 ```
@@ -290,56 +290,33 @@ Alternatively, if segmentations are included in the [desired outputs](#step-1-se
 
 # Example outputs
 
-Given a BIDSs directory with various subjects, sessions, acquisitions and runs, the following is an example of the output from QSMxT.
+Given a BIDSs directory with various subjects, sessions, acquisitions and runs, the following is an example of the output from QSMxT, which is integrated within the existing BIDS directory as [BIDS derivatives](https://bids-specification.readthedocs.io/en/stable/derivatives/introduction.html).
 
-This particular example includes outputs for QSM, R2\* maps, T2\* maps, segmentations and analyses.
+This particular example includes QSM, R2\* maps, T2\* maps, segmentations and analyses:
 
 ```bash
-qsm
+bids/derivatives/qsmxt-2024-08-05-144311/
 ├── command.txt
 ├── pypeline.log
 ├── qsmxt.log
 ├── references.txt
 ├── settings.json
-├── qsm
-│   ├── sub-1_ses-20231020_part-phase_T2Starw_romeo-unwrapped_normalized_vsharp_rts_ref.nii
-│   ├── sub-2_ses-20231020_part-phase_T2Starw_romeo-unwrapped_normalized_vsharp_rts_ref.nii
-│   ├── sub-2_ses-20231025_echo-1_part-phase_MEGRE_B0_normalized_vsharp_rts_ref.nii
-│   ├── sub-3_acq-mygre1_run-1_echo-1_part-phase_MEGRE_B0_normalized_vsharp_rts_ref.nii
-│   ├── sub-3_acq-mygre1_run-2_echo-1_part-phase_MEGRE_B0_normalized_vsharp_rts_ref.nii
-│   └── sub-3_acq-mygre2_echo-1_part-phase_MEGRE_B0_normalized_vsharp_rts_ref.nii
-├── r2s
-│   ├── sub-2_ses-20231025_echo-1_part-mag_MEGRE_r2s.nii
-│   ├── sub-3_acq-mygre1_run-1_echo-1_part-mag_MEGRE_r2s.nii
-│   ├── sub-3_acq-mygre1_run-2_echo-1_part-mag_MEGRE_r2s.nii
-│   └── sub-3_acq-mygre2_echo-1_part-mag_MEGRE_r2s.nii
-├── t2s
-│   ├── sub-2_ses-20231025_echo-1_part-mag_MEGRE_t2s.nii
-│   ├── sub-3_acq-mygre1_run-1_echo-1_part-mag_MEGRE_t2s.nii
-│   ├── sub-3_acq-mygre1_run-2_echo-1_part-mag_MEGRE_t2s.nii
-│   └── sub-3_acq-mygre2_echo-1_part-mag_MEGRE_t2s.nii
-├── segmentations
-│   ├── qsm
-│   │   ├── sub-1_ses-20231020_segmentation_trans.nii
-│   │   ├── sub-2_ses-20231020_segmentation_trans.nii
-│   │   ├── sub-2_ses-20231025_segmentation_trans.nii
-│   │   ├── sub-3_acq-mygre1_run-1_segmentation_trans.nii
-│   │   ├── sub-3_acq-mygre1_run-2_segmentation_trans.nii
-│   │   └── sub-3_acq-mygre1_segmentation_trans.nii
-│   └── t1w
-│       ├── sub-1_ses-20231020_segmentation.nii
-│       ├── sub-2_ses-20231020_segmentation.nii
-│       ├── sub-2_ses-20231025_segmentation.nii
-│       ├── sub-3_acq-mygre1_run-1_segmentation.nii
-│       ├── sub-3_acq-mygre1_run-2_segmentation.nii
-│       └── sub-3_acq-mygre1_segmentation.nii
-└── analysis
-    ├── sub-1_ses-20231020_part-phase_T2Starw_romeo-unwrapped_normalized_vsharp_rts_ref_csv.csv
-    ├── sub-2_ses-20231020_part-phase_T2Starw_romeo-unwrapped_normalized_vsharp_rts_ref_csv.csv
-    ├── sub-2_ses-20231025_echo-1_part-phase_MEGRE_B0_normalized_vsharp_rts_ref_csv.csv
-    ├── sub-3_acq-mygre1_run-1_echo-1_part-phase_MEGRE_B0_normalized_vsharp_rts_csv.csv
-    ├── sub-3_acq-mygre1_run-2_echo-1_part-phase_MEGRE_B0_normalized_vsharp_rts_csv.csv
-    └── sub-3_acq-mygre2_echo-1_part-phase_MEGRE_B0_normalized_vsharp_rts_csv.csv
+├── sub-1
+│   ├── anat
+│   │   ├── sub-1_Chimap.nii
+│   │   ├── sub-1_minIP.nii
+│   │   ├── sub-1_R2starmap.nii
+│   │   ├── sub-1_space-orig_dseg.nii
+│   │   ├── sub-1_space-qsm_dseg.nii
+│   │   ├── sub-1_swi.nii
+│   │   └── sub-1_T2starmap.nii
+│   └── extra_data
+│       ├── sub-1_desc-t1w-to-qsm_transform.mat
+│       └── sub-1_qsm-analysis
+│           ├── sub-1_desc-qsm-forward_Chimap_sub-1_space-qsm_desc-qsmxt-2024-08-05-144311_dseg_analysis.csv
+│           └── sub-1_desc-qsmxt-2024-08-05-144311_Chimap_sub-1_space-qsm_desc-qsmxt-2024-08-05-144311_dseg_analysis.csv
+└── template
+    └── 
 ```
 
 # Non-interactive usage
@@ -349,7 +326,7 @@ If you wish to run QSMxT non-interactively, you may specify all settings via com
 This example will run QSMxT non-interactively and produce QSM using the fast pipeline and segmentations.
 
 ```bash
-qsmxt bids/ output_dir/ --do_qsm --premade fast --do_segmentations --auto_yes
+qsmxt bids/ --do_qsm --premade fast --do_segmentations --auto_yes
 ```
 
 <script>

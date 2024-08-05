@@ -101,7 +101,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # do phase weights if necessary
         if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
-            mn_phaseweights_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * 16
+            mn_phaseweights_mem = 2.80122 * (np.product(dimensions_phase) * 8 / (1024 ** 3)) + 0.95 # DONE
             mn_phaseweights_threads = 1
             if qualitymap_available:
                 mn_phaseweights = create_node(

@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
 import nibabel as nib
 import numpy as np
+import os
 
 from qsmxt.scripts.qsmxt_functions import extend_fname
-from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File
+from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits
 
 # get labels dictionary by parsing a labels CSV file
 def load_labels(label_filepath):
@@ -99,6 +100,7 @@ class AnalyseInputSpec(BaseInterfaceInputSpec):
     in_file = File(mandatory=True, exists=True)
     in_segmentation = File(mandatory=True, exists=True)
     in_labels = File(mandatory=False, exists=True)
+    in_pipeline_name = traits.String(mandatory=False, value="qsmxt")
 
 
 class AnalyseOutputSpec(TraitedSpec):
@@ -110,10 +112,51 @@ class AnalyseInterface(SimpleInterface):
     output_spec = AnalyseOutputSpec
 
     def _run_interface(self, runtime):
+        in_qname = os.path.splitext(os.path.split(self.inputs.in_file)[1].replace('.nii.gz', '.nii'))[0]
+        in_sname = os.path.splitext(os.path.split(self.inputs.in_segmentation)[1].replace('.nii.gz', '.nii'))[0]
+
+        if 'derivatives' in self.inputs.in_file.split(os.path.sep):
+            if 'qsmxt-workflow' in self.inputs.in_file.split(os.path.sep):
+                if 'ses-' in in_qname:
+                    out_qname = f"{'_'.join(in_qname.split('_')[:2])}_desc-{self.inputs.in_pipeline_name}_Chimap"
+                else:
+                    out_qname = f"{in_qname.split('_')[0]}_desc-{self.inputs.in_pipeline_name}_Chimap"
+            else:
+                path_items = self.inputs.in_file.split(os.path.sep)
+                for i, path_item in enumerate(path_items):
+                    if path_item == 'derivatives' and i < len(path_items) - 1:
+                        if in_qname.endswith('_Chimap'):
+                            out_qname = in_qname.replace('_Chimap', f'_desc-{path_items[i+1]}_Chimap')
+                        else:
+                            out_qname = f'{in_qname}_desc-{path_items[i+1]}_Chimap'
+                        break
+        else:
+            out_qname = in_qname
+        
+        if 'derivatives' in self.inputs.in_segmentation.split(os.path.sep):
+            if 'qsmxt-workflow' in self.inputs.in_segmentation.split(os.path.sep):
+                if 'ses-' in in_sname:
+                    out_sname = f"{'_'.join(in_sname.split('_')[:2])}_space-qsm_desc-{self.inputs.in_pipeline_name}_dseg"
+                else:
+                    out_sname = f"{in_sname.split('_')[0]}_space-qsm_desc-{self.inputs.in_pipeline_name}_dseg"
+            else:
+                path_items = self.inputs.in_segmentation.split(os.path.sep)
+                for i, path_item in enumerate(path_items):
+                    if path_item == 'derivatives' and i < len(path_items) - 1:
+                        if in_sname.endswith('_dseg'):
+                            out_sname = in_sname.replace('_dseg', f'_desc-{path_items[i+1]}_dseg')
+                        else:
+                            out_sname = f'{in_sname}_desc-{path_items[i+1]}_dseg'
+                        break
+        else:
+            out_sname = in_sname
+
+        out_name = os.path.abspath(f'{out_qname}_{out_sname}_analysis.csv')
+                
         self._results['out_csv'] = analyse(
             in_file=self.inputs.in_file,
             in_segmentation=self.inputs.in_segmentation,
-            out_csv=extend_fname(self.inputs.in_file, "_csv", ext='csv'),
+            out_csv=out_name,
             labels_file=self.inputs.in_labels
         )
         return runtime

@@ -42,6 +42,8 @@
         "bet_fractional_intensity": 0.5,
         "use_existing_masks": false,
         "existing_masks_pipeline": "*",
+        "existing_qsm_pipeline": "*",
+        "existing_seg_pipeline": "*",
         "two_pass": true,
         "pbs": null,
         "slurm": [null, null],
