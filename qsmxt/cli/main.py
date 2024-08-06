@@ -415,13 +415,39 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
+        '--use_existing_qsms',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
+        default=None,
+        help='Instead of generating new QSMs for each subject, this option will prioritize using existing '+
+            'QSM images from the BIDS folder in the --existing_qsm_pipeline derivatives directory. When existing '+
+            'QSMs cannot be found, the QSM will be generated using the selected settings. '+
+            'Valid paths fit '+
+            'BIDS_DIR/derivatives/EXISTING_QSM_PIPELINE/sub-<SUBJECT_ID>/[ses-<SESSION_ID>]/anat/sub-<SUBJECT_ID>[_ses-<SESSION_ID>]*_Chimap.nii'
+    )
+
+    parser.add_argument(
         '--existing_qsm_pipeline',
         default=None,
         help='A pattern matching the name of the software pipeline used to derive pre-existing QSM images.'
     )
 
     parser.add_argument(
-        '--existing_seg_pipeline',
+        '--use_existing_segmentations',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
+        default=None,
+        help='Instead of generating new segmentations for each subject, this option will prioritize using existing '+
+            'segmentations images from the BIDS folder in the --existing_segmentation_pipeline derivatives directory. When existing '+
+            'segmentations cannot be found, the segmentations will be generated using FastSurfer. '+
+            'Valid paths fit '+
+            'BIDS_DIR/derivatives/existing_segmentation_pipeline/sub-<SUBJECT_ID>/[ses-<SESSION_ID>]/anat/sub-<SUBJECT_ID>[_ses-<SESSION_ID>]*_dseg.nii'
+    )
+
+    parser.add_argument(
+        '--existing_segmentation_pipeline',
         default=None,
         help='A pattern matching the name of the software pipeline used to derive pre-existing segmentations in the QSM space.'
     )
@@ -438,7 +464,7 @@ def parse_args(args, return_run_command=False):
             'masks cannot be found, the --masking_algorithm will be used as a fallback. See '+
             'https://bids-specification.readthedocs.io/en/stable/05-derivatives/03-imaging.html#masks. '+
             'Valid paths fit '+
-            'BIDS_DIR/derivatives/EXISTING_MASK_PIPELINE/sub-<SUBJECT_ID>/anat/sub-<SUBJECT_ID>*_mask.nii'
+            'BIDS_DIR/derivatives/EXISTING_MASK_PIPELINE/sub-<SUBJECT_ID>/[ses-<SESSION_ID>]/anat/sub-<SUBJECT_ID>[_ses-<SESSION_ID>]*_mask.nii'
     )
 
     parser.add_argument(
@@ -929,9 +955,6 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
     # allow user to update the premade if none was chosen
     if not using_json_settings and 'premade' not in explicit_args.keys() and not any(x in explicit_args.keys() for x in ["do_qsm", "do_swi", "do_t2starmap", "do_r2starmap", "do_segmentations", "do_analysis"]):
         update_desired_images()
-    
-    if not args.do_qsm and not using_json_settings:
-        return args.copy(), implicit_args
 
     def select_premade():
             print("\n=== Premade QSM pipelines ===")
@@ -1018,6 +1041,24 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
             print(f" - Dipole inversion: {args.qsm_algorithm}")
             print(f" - Referencing: {args.qsm_reference}")
 
+        if args.do_analysis:
+            print("\n(5) Analysis")
+            if args.do_qsm:
+                if args.use_existing_qsms:
+                    print(f" - QSM inputs: QSMxT-generated and pre-existing (from derived pipeline matching '{args.existing_qsm_pipeline}')")
+                else:
+                    print(f" - QSM inputs: QSMxT-generated")
+            else:
+                print(f" - QSM inputs: Pre-existing (from derived pipeline matching '{args.existing_qsm_pipeline}')")
+
+            if args.do_segmentation:
+                if args.use_existing_segmentations:
+                    print(f" - Segmentation inputs: QSMxT-generated and pre-existing (from derived pipeline matching '{args.existing_segmentation_pipeline}')")
+                else:
+                    print(f" - Segmentation inputs: QSMxT-generated")
+            else:
+                print(f" - Segmentation inputs: Pre-existing (from derived pipeline matching '{args.existing_segmentation_pipeline}')")
+
         message = get_compliance_message(args=args)
         if message:
             print(f"\n{message}")
@@ -1026,7 +1067,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
         
         user_in = get_option(
             prompt="\nEnter a number to customize; enter 'run' to run: ",
-            options=['run', '1'] + (['2', '3', '4'] if args.do_qsm else []),
+            options=['run', '1'] + (['2', '3', '4'] if args.do_qsm else []) + (['5'] if args.do_analysis else []),
             default=None
         )
         if user_in == 'run': break
@@ -1285,7 +1326,58 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
                 elif user_in not in ['mean', 'none', ''] and not user_in.isnumeric():
                     print("Invalid input")
             args.qsm_reference = user_in
-        
+        if user_in == '5': # ANALYSIS
+            
+            if args.do_qsm:
+                print("\n== QSM images for analysis ==")
+                args.use_existing_qsms == 'yes' == get_option(
+                    prompt=f"\nInclude pre-existing QSMs in analyses? [default - {'yes' if args.use_existing_qsms else 'no'}]: ",
+                    options=['yes', 'no'],
+                    default='yes' if args.use_existing_qsms else 'no'
+                )
+            
+            derived_dirs = [item.split(os.path.sep)[-1] for item in glob.glob(os.path.join(args.bids_dir, "derivatives", "*")) if 'qsmxt-workflow' not in item and glob.glob(os.path.join(item, "sub*"))]
+            if args.use_existing_qsms and derived_dirs:
+                print("\n== QSM derived pipeline ==")
+                print("\nDetected the following pipelines:")
+                for i, derived_dir in enumerate(derived_dirs):
+                    print(f"{i+1}. {derived_dir}")
+                
+                user_in = get_string(
+                    prompt=f"Select one of the derived pipelines or enter a pattern [default - '{args.existing_qsm_pipeline}']: ",
+                    default=args.existing_qsm_pipeline
+                )
+
+                try:
+                    args.existing_qsm_pipeline = derived_dirs[int(user_in)-1]
+                except:
+                    args.existing_qsm_pipeline = user_in
+
+            if args.do_segmentation:
+                print("\n== Segmentations for analysis ==")
+                args.use_existing_segmentations == 'yes' == get_option(
+                    prompt=f"\nInclude pre-existing segmentations in analyses? [default - {'yes' if args.use_existing_segmentations else 'no'}]: ",
+                    options=['yes', 'no'],
+                    default='yes' if args.use_existing_segmentations else 'no'
+                )
+            
+            derived_dirs = [item.split(os.path.sep)[-1] for item in glob.glob(os.path.join(args.bids_dir, "derivatives", "*")) if 'qsmxt-workflow' not in item and glob.glob(os.path.join(item, "sub*"))]
+            if args.use_existing_qsms and derived_dirs:
+                print("\n== Segmentations derived pipeline ==")
+                print("\nDetected the following pipelines:")
+                for i, derived_dir in enumerate(derived_dirs):
+                    print(f"{i+1}. {derived_dir}")
+                
+                user_in = get_string(
+                    prompt=f"Select one of the derived pipelines or enter a pattern [default - '{args.existing_segmentation_pipeline}']: ",
+                    default=args.existing_segmentation_pipeline
+                )
+
+                try:
+                    args.existing_segmentation_pipeline = derived_dirs[int(user_in)-1]
+                except:
+                    args.existing_segmentation_pipeline = user_in
+
     return args.copy(), implicit_args
 
 def process_args(args):
@@ -1294,6 +1386,11 @@ def process_args(args):
 
     if not any([args.do_qsm, args.do_segmentation, args.do_swi, args.do_t2starmap, args.do_r2starmap, args.do_analysis]):
         args.do_qsm = True
+
+    if args.do_analysis and not args.do_qsm:
+        args.use_existing_qsms = True
+    if args.do_analysis and not args.do_segmentation:
+        args.use_existing_segmentations = True
 
     # default QSM algorithms
     if not args.qsm_algorithm:

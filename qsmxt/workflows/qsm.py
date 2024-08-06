@@ -130,10 +130,10 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         if ('qsmxt-workflow' not in qsm_file)
     ]
     seg_files = [
-        seg_file for seg_file in get_matching_files(os.path.join(run_args.bids_dir, "derivatives", run_args.existing_seg_pipeline), subject=subject, dtype="anat", suffixes=["dseg"], session=session, space="qsm", run=None, part=None, acq=None)
+        seg_file for seg_file in get_matching_files(os.path.join(run_args.bids_dir, "derivatives", run_args.existing_segmentation_pipeline), subject=subject, dtype="anat", suffixes=["dseg"], session=session, space="qsm", run=None, part=None, acq=None)
         if ('qsmxt-workflow' not in seg_file)
     ]
-    
+
     # handle any errors related to files and adjust any settings if needed
     if run_args.do_segmentation and not t1w_files:
         logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping segmentation - no T1w files found!")
