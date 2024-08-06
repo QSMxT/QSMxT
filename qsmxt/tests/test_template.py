@@ -65,9 +65,12 @@ def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING TEMPLATE PIPELINE ===")
 
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
+
     # run pipeline and specifically choose magnitude-based masking
     args = [
-        bids_dir_public,
+        bids_dir,
         "--do_qsm", "yes",
         "--premade", "fast",
         "--do_template", "yes",
