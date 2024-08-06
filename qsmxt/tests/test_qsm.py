@@ -373,8 +373,11 @@ def test_realdata(bids_dir_real):
     logger = make_logger()
     logger.log(LogLevel.INFO.value, f"=== TESTING REAL DATA ===")
 
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids-real")
+    shutil.copytree(bids_dir_real, bids_dir)
+
     args = [
-        bids_dir_real,
+        bids_dir,
         "--premade", "fast",
         "--auto_yes",
         "--debug"
