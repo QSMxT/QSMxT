@@ -301,22 +301,20 @@ bids/derivatives/qsmxt-2024-08-05-144311/
 ├── qsmxt.log
 ├── references.txt
 ├── settings.json
-├── sub-1
-│   ├── anat
-│   │   ├── sub-1_Chimap.nii
-│   │   ├── sub-1_minIP.nii
-│   │   ├── sub-1_R2starmap.nii
-│   │   ├── sub-1_space-orig_dseg.nii
-│   │   ├── sub-1_space-qsm_dseg.nii
-│   │   ├── sub-1_swi.nii
-│   │   └── sub-1_T2starmap.nii
-│   └── extra_data
-│       ├── sub-1_desc-t1w-to-qsm_transform.mat
-│       └── sub-1_qsm-analysis
-│           ├── sub-1_desc-qsm-forward_Chimap_sub-1_space-qsm_desc-qsmxt-2024-08-05-144311_dseg_analysis.csv
-│           └── sub-1_desc-qsmxt-2024-08-05-144311_Chimap_sub-1_space-qsm_desc-qsmxt-2024-08-05-144311_dseg_analysis.csv
-└── template
-    └── 
+└── sub-1
+    ├── anat
+    │   ├── sub-1_Chimap.nii
+    │   ├── sub-1_minIP.nii
+    │   ├── sub-1_R2starmap.nii
+    │   ├── sub-1_space-orig_dseg.nii
+    │   ├── sub-1_space-qsm_dseg.nii
+    │   ├── sub-1_swi.nii
+    │   └── sub-1_T2starmap.nii
+    └── extra_data
+        ├── sub-1_desc-t1w-to-qsm_transform.mat
+        └── sub-1_qsm-analysis
+            ├── sub-1_desc-qsm-forward_Chimap_sub-1_space-qsm_desc-qsmxt-2024-08-05-144311_dseg_analysis.csv
+            └── sub-1_desc-qsmxt-2024-08-05-144311_Chimap_sub-1_space-qsm_desc-qsmxt-2024-08-05-144311_dseg_analysis.csv
 ```
 
 # Non-interactive usage
