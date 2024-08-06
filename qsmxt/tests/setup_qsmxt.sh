@@ -253,7 +253,7 @@ if [ -d "${TEST_DIR}/bids" ]; then
     echo "[DEBUG] BIDS directory ${TEST_DIR}/bids exists."
 else
     echo "[DEBUG] BIDS directory ${TEST_DIR}/bids does not exist. Downloading dependencies..."
-    pip install qsm-forward==0.20 osfclient
+    pip install qsm-forward==0.22 osfclient
 
     echo "[DEBUG] Pulling head phantom data from OSF..."
     osf --project "9jc42" fetch data.tar "${TEST_DIR}/data.tar"
