@@ -162,6 +162,14 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
+        'output_dir',
+        nargs='?',
+        default=None,
+        type=os.path.abspath,
+        help='Input output directory. By default, the output will be integrated into the BIDS directory as a BIDS derivative.'
+    )
+
+    parser.add_argument(
         '--do_qsm',
         nargs='?',
         type=argparse_bool,
@@ -626,8 +634,11 @@ def parse_args(args, return_run_command=False):
     # bids and output are required
     if args.bids_dir is None:
         parser.error("bids_dir is required!")
-    args.output_dir = os.path.join(args.bids_dir, 'derivatives', f"qsmxt-{datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')}")
-    args.workflow_dir = os.path.join(args.bids_dir, 'derivatives')
+    if args.output_dir is None:
+        args.output_dir = os.path.join(args.bids_dir, 'derivatives', f"qsmxt-{datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')}")
+        args.workflow_dir = os.path.join(args.bids_dir, 'derivatives')
+    else:
+        args.workflow_dir = args.output_dir
 
     # Checking the combined qsm_reference values
     if args.qsm_reference is not None:
