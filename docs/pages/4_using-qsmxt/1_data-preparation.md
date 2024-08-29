@@ -143,30 +143,30 @@ bids/
 bids/
 ├── sub-1
 │   └── anat
-│       ├── sub-1_acq-mygrea_echo-1_run-1_part-mag_MEGRE.json
-│       ├── sub-1_acq-mygrea_echo-1_run-1_part-mag_MEGRE.nii
-│       ├── sub-1_acq-mygrea_echo-1_run-1_part-phase_MEGRE.json
-│       ├── sub-1_acq-mygrea_echo-1_run-1_part-phase_MEGRE.nii
-│       ├── sub-1_acq-mygrea_echo-2_run-1_part-mag_MEGRE.json
-│       ├── sub-1_acq-mygrea_echo-2_run-1_part-mag_MEGRE.nii
-│       ├── sub-1_acq-mygrea_echo-2_run-1_part-phase_MEGRE.json
-│       ├── sub-1_acq-mygrea_echo-2_run-1_part-phase_MEGRE.nii
-│       ├── sub-1_acq-mygrea_echo-1_run-2_part-mag_MEGRE.json
-│       ├── sub-1_acq-mygrea_echo-1_run-2_part-mag_MEGRE.nii
-│       ├── sub-1_acq-mygrea_echo-1_run-2_part-phase_MEGRE.json
-│       ├── sub-1_acq-mygrea_echo-1_run-2_part-phase_MEGRE.nii
-│       ├── sub-1_acq-mygrea_echo-2_run-2_part-mag_MEGRE.json
-│       ├── sub-1_acq-mygrea_echo-2_run-2_part-mag_MEGRE.nii
-│       ├── sub-1_acq-mygrea_echo-2_run-2_part-phase_MEGRE.json
-│       ├── sub-1_acq-mygrea_echo-2_run-2_part-phase_MEGRE.nii
-│       ├── sub-1_acq-mygreb_echo-1_run-1_part-mag_MEGRE.json
-│       ├── sub-1_acq-mygreb_echo-1_run-1_part-mag_MEGRE.nii
-│       ├── sub-1_acq-mygreb_echo-1_run-1_part-phase_MEGRE.json
-│       ├── sub-1_acq-mygreb_echo-1_run-1_part-phase_MEGRE.nii
-│       ├── sub-1_acq-mygreb_echo-2_run-1_part-mag_MEGRE.json
-│       ├── sub-1_acq-mygreb_echo-2_run-1_part-mag_MEGRE.nii
-│       ├── sub-1_acq-mygreb_echo-2_run-1_part-phase_MEGRE.json
-│       └── sub-1_acq-mygreb_echo-2_run-1_part-phase_MEGRE.nii
+│       ├── sub-1_acq-mygrea_run-1_echo-1_part-mag_MEGRE.json
+│       ├── sub-1_acq-mygrea_run-1_echo-1_part-mag_MEGRE.nii
+│       ├── sub-1_acq-mygrea_run-1_echo-1_part-phase_MEGRE.json
+│       ├── sub-1_acq-mygrea_run-1_echo-1_part-phase_MEGRE.nii
+│       ├── sub-1_acq-mygrea_run-1_echo-2_part-mag_MEGRE.json
+│       ├── sub-1_acq-mygrea_run-1_echo-2_part-mag_MEGRE.nii
+│       ├── sub-1_acq-mygrea_run-1_echo-2_part-phase_MEGRE.json
+│       ├── sub-1_acq-mygrea_run-1_echo-2_part-phase_MEGRE.nii
+│       ├── sub-1_acq-mygrea_run-2_echo-1_part-mag_MEGRE.json
+│       ├── sub-1_acq-mygrea_run-2_echo-1_part-mag_MEGRE.nii
+│       ├── sub-1_acq-mygrea_run-2_echo-1_part-phase_MEGRE.json
+│       ├── sub-1_acq-mygrea_run-2_echo-1_part-phase_MEGRE.nii
+│       ├── sub-1_acq-mygrea_run-2_echo-2_part-mag_MEGRE.json
+│       ├── sub-1_acq-mygrea_run-2_echo-2_part-mag_MEGRE.nii
+│       ├── sub-1_acq-mygrea_run-2_echo-2_part-phase_MEGRE.json
+│       ├── sub-1_acq-mygrea_run-2_echo-2_part-phase_MEGRE.nii
+│       ├── sub-1_acq-mygreb_run-1_echo-1_part-mag_MEGRE.json
+│       ├── sub-1_acq-mygreb_run-1_echo-1_part-mag_MEGRE.nii
+│       ├── sub-1_acq-mygreb_run-1_echo-1_part-phase_MEGRE.json
+│       ├── sub-1_acq-mygreb_run-1_echo-1_part-phase_MEGRE.nii
+│       ├── sub-1_acq-mygreb_run-1_echo-2_part-mag_MEGRE.json
+│       ├── sub-1_acq-mygreb_run-1_echo-2_part-mag_MEGRE.nii
+│       ├── sub-1_acq-mygreb_run-1_echo-2_part-phase_MEGRE.json
+│       └── sub-1_acq-mygreb_run-1_echo-2_part-phase_MEGRE.nii
 ```
 
 ## Multiple sessions example
