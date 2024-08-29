@@ -117,8 +117,10 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     # get relevant files from this run
     t1w_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=["T1w"], ext="nii*", session=session, run=None, part=None, acq=None)
     phase_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=[], session=session, run=run, part="phase", acq=acq)[:run_args.num_echoes]
-    magnitude_files = [path.replace("part-phase", "part-mag") for path in phase_files if os.path.exists(path.replace("_part-phase", "_part-mag"))]
-    params_files = [path.replace('.nii.gz', '.nii').replace('.nii', '.json') for path in (phase_files if len(phase_files) else magnitude_files) if os.path.exists(path.replace('.nii.gz', '.nii').replace('.nii', '.json'))]
+    magnitude_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=[], session=session, run=run, part="mag", acq=acq)[:run_args.num_echoes]
+    phase_params_files = [path.replace('.nii.gz', '.nii').replace('.nii', '.json') for path in phase_files]
+    mag_params_files = [path.replace('.nii.gz', '.nii').replace('.nii', '.json') for path in magnitude_files]
+    params_files = phase_params_files if len(phase_params_files) else mag_params_files
     mask_files = [
         mask_file for mask_file in get_matching_files(os.path.join(run_args.bids_dir, "derivatives", run_args.existing_masks_pipeline), subject=subject, dtype="anat", suffixes=["mask"], session=session, run=None, part=None, acq=None)[:run_args.num_echoes]
         if ('_space-orig' in mask_file or '_space-' not in mask_file)
@@ -147,9 +149,16 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping QSM - No phase files found!")
         run_args.do_qsm = False
         run_args.do_swi = False
-    if len(phase_files) != len(params_files):
-        logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot process this run - an unequal number of JSON and phase files are present!")
-        return
+    if len(phase_files) != len(phase_params_files) and any([run_args.do_qsm, run_args.do_swi]):
+        logger.log(LogLevel.ERROR.value, f"{run_id}: An unequal number of JSON and phase files are present - QSM and SWI are not possible!")
+        run_args.do_qsm = False
+        run_args.do_swi = False
+    if len(magnitude_files) != len(mag_params_files) and any([run_args.do_swi, run_args.do_r2starmap, run_args.do_t2starmap, run_args.do_segmentation]):
+        logger.log(LogLevel.ERROR.value, f"{run_id}: An unequal number of JSON and magnitude files are present - SWI, R2* mapping, T2* mapping, and segmentation are not possible!")
+        run_args.do_swi = False
+        run_args.do_r2starmap = False
+        run_args.do_t2starmap = False
+        run_args.do_segmentation = False
     if len(phase_files) == 1 and run_args.combine_phase:
         run_args.combine_phase = False
     if run_args.do_qsm and run_args.use_existing_masks:
@@ -321,7 +330,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     )
     n_inputs.inputs.phase = phase_files[0] if len(phase_files) == 1 else phase_files
     n_inputs.inputs.magnitude = magnitude_files[0] if len(magnitude_files) == 1 else magnitude_files
-    n_inputs.inputs.params_files = params_files[0] if len(params_files) == 1 else params_files
+    n_inputs.inputs.params_files = params_files[0]
     if not run_args.combine_phase and len(phase_files) > 1 and len(mask_files) == 1:
         mask_files = [mask_files[0] for x in phase_files]
         n_inputs.inputs.mask = mask_files
@@ -400,7 +409,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         ),
         iterfield=['params_file'],
         name='func_read-json-me',
-        is_map=len(params_files) > 1
+        is_map=len(phase_params_files) > 1
     )
     wf.connect([
         (n_inputs, mn_json_params, [('params_files', 'params_file')])
@@ -434,7 +443,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         name='nibabel_read-nii'
     )
     wf.connect([
-        (n_inputs, n_nii_params, [('phase', 'nii_file')])
+        (n_inputs, n_nii_params, [('phase' if phase_files else 'magnitude', 'nii_file')])
     ])
 
     # reorient to canonical

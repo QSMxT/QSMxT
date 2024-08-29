@@ -40,7 +40,7 @@ jobs:
     runs-on: "self-hosted"
     strategy:
       matrix:
-        args: ['test_segmentation', 'test_separate_qsm_seg_analysis']
+        args: ['test_segmentation', 'test_separate_qsm_seg_analysis', 'test_seg_analysis_only']
       fail-fast: false
     steps:
     - uses: actions/checkout@v3
