@@ -295,15 +295,15 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         logger.log(LogLevel.DEBUG.value, f"GRE phase files are {dimensions_phase} * {len(phase_files)} echoes * {bytepix_phase} bytes/voxel == {round(mem_phase * len(phase_files), 3)} GB ({round(mem_phase_64 * len(phase_files), 3)} GB at 64-bit)")
     if magnitude_files:
         mem_mag, dimensions_mag, bytepix_mag = calculate_memory_usage(magnitude_files[0])
-        mem_mag_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
+        mem_mag_64 = np.prod(dimensions_mag) * 8 / (1024 ** 3)
         logger.log(LogLevel.DEBUG.value, f"GRE magnitude files are {dimensions_mag} * {len(magnitude_files)} echoes * {bytepix_mag} bytes/voxel == {round(mem_mag * len(magnitude_files), 3)} GB ({round(mem_mag_64 * len(magnitude_files), 3)} GB at 64-bit)")
     if t1w_files:
         mem_t1w, dimensions_t1w, bytepix_t1w = calculate_memory_usage(t1w_files[0])
-        mem_t1w_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
+        mem_t1w_64 = np.prod(dimensions_t1w) * 8 / (1024 ** 3)
         logger.log(LogLevel.DEBUG.value, f"T1w files are {dimensions_t1w} * {bytepix_t1w} bytes/voxel == {round(mem_t1w, 3)} GB ({round(mem_t1w_64, 3)} GB at 64-bit)")
     if mask_files and run_args.use_existing_masks:
         mem_mask, dimensions_mask, bytepix_mask = calculate_memory_usage(mask_files[0])
-        mem_mask_64 = np.prod(dimensions_phase) * 8 / (1024 ** 3)
+        mem_mask_64 = np.prod(dimensions_mask) * 8 / (1024 ** 3)
         logger.log(LogLevel.DEBUG.value, f"Mask files are {dimensions_mask} * {bytepix_mask} bytes/voxel == {round(mem_mask, 3)} GB ({round(mem_mask_64 * len(mask_files), 3)} GB at 64-bit)")
 
     if not any([run_args.do_qsm, run_args.do_swi, run_args.do_t2starmap, run_args.do_r2starmap, run_args.do_segmentation, run_args.do_analysis]):
