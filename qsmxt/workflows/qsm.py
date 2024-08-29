@@ -330,7 +330,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     )
     n_inputs.inputs.phase = phase_files[0] if len(phase_files) == 1 else phase_files
     n_inputs.inputs.magnitude = magnitude_files[0] if len(magnitude_files) == 1 else magnitude_files
-    n_inputs.inputs.params_files = params_files[0]
+    n_inputs.inputs.params_files = params_files[0] if len(params_files) == 1 else params_files
     if not run_args.combine_phase and len(phase_files) > 1 and len(mask_files) == 1:
         mask_files = [mask_files[0] for x in phase_files]
         n_inputs.inputs.mask = mask_files
@@ -409,7 +409,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
         ),
         iterfield=['params_file'],
         name='func_read-json-me',
-        is_map=len(phase_params_files) > 1
+        is_map=len(params_files) > 1
     )
     wf.connect([
         (n_inputs, mn_json_params, [('params_files', 'params_file')])
