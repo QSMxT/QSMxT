@@ -52,8 +52,8 @@ jobs:
         TEST_DIR: "/storage/tmp"
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
-        OSF_USER: ${{ secrets.OSF_USER }}
-        OSF_PASS: ${{ secrets.OSF_PASS }}
+        OSF_USERNAME: ${{ secrets.OSF_USER }}
+        OSF_PASSWORD: ${{ secrets.OSF_PASS }}
         RUN_ID: ${{ github.run_id }}-${{ matrix.args }}
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh docker
@@ -63,8 +63,8 @@ jobs:
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
-        OSF_USER: ${{ secrets.OSF_USER }}
-        OSF_PASS: ${{ secrets.OSF_PASS }}
+        OSF_USERNAME: ${{ secrets.OSF_USER }}
+        OSF_PASSWORD: ${{ secrets.OSF_PASS }}
         RUN_ID: ${{ github.run_id }}
         TEST_DIR: "/storage/tmp"
       run: |
@@ -74,8 +74,8 @@ jobs:
           -e WEBDAV_PASSWORD=$WEBDAV_PASSWORD \
           -e FREEIMAGE_KEY=$FREEIMAGE_KEY \
           -e OSF_TOKEN=$OSF_TOKEN \
-          -e OSF_USER=$OSF_USER \
-          -e OSF_PASS=$OSF_PASS \
+          -e OSF_USERNAME=$OSF_USERNAME \
+          -e OSF_PASSWORD=$OSF_PASSWORD \
           -e TEST_DIR=$TEST_DIR \
           -e GITHUB_STEP_SUMMARY=$GITHUB_STEP_SUMMARY \
           qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_segmentation.py -s -k '${{ matrix.args }}'"

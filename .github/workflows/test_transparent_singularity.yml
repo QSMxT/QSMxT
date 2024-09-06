@@ -33,8 +33,8 @@ jobs:
         TEST_DIR: "/tmp"
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
-        OSF_USER: ${{ secrets.OSF_USER }}
-        OSF_PASS: ${{ secrets.OSF_PASS }}
+        OSF_USERNAME: ${{ secrets.OSF_USER }}
+        OSF_PASSWORD: ${{ secrets.OSF_PASS }}
       run: |
         ./qsmxt/tests/setup_qsmxt.sh apptainer
     - name: test transparent singularity
@@ -43,8 +43,8 @@ jobs:
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
         FREEIMAGE_KEY: ${{ secrets.FREEIMAGE_KEY }}
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
-        OSF_USER: ${{ secrets.OSF_USER }}
-        OSF_PASS: ${{ secrets.OSF_PASS }}
+        OSF_USERNAME: ${{ secrets.OSF_USER }}
+        OSF_PASSWORD: ${{ secrets.OSF_PASS }}
         RUN_ID: ${{ github.run_id }}
         TEST_DIR: "/tmp"
       run: |
