@@ -1398,6 +1398,8 @@ def process_args(args):
         args.use_existing_qsms = True
     if args.do_analysis and not args.do_segmentation:
         args.use_existing_segmentations = True
+    if args.do_template and not args.do_qsm:
+        args.use_existing_qsms = True
 
     # default QSM algorithms
     if not args.qsm_algorithm:

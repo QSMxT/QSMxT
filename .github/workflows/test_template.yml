@@ -34,6 +34,10 @@ jobs:
   test_template:
     needs: setup_qsmxt
     runs-on: "self-hosted"
+    strategy:
+      matrix:
+        args: ['test_template', 'test_template_existing_qsms']
+      fail-fast: false
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
@@ -46,7 +50,7 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USERNAME: ${{ secrets.OSF_USER }}
         OSF_PASSWORD: ${{ secrets.OSF_PASS }}
-        RUN_ID: ${{ github.run_id }}
+        RUN_ID: ${{ github.run_id }}-${{ matrix.args }}
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh docker
     - name: Run template pipeline
@@ -70,7 +74,7 @@ jobs:
           -e OSF_PASSWORD=$OSF_PASSWORD \
           -e TEST_DIR=$TEST_DIR \
           -e GITHUB_STEP_SUMMARY=$GITHUB_STEP_SUMMARY \
-          qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_template.py -s"
+          qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_template.py -s -k '${{ matrix.args }}'"
     - uses: actions/upload-artifact@v3
       with:
         name: public-outputs

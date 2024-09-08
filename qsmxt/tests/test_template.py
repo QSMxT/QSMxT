@@ -95,3 +95,39 @@ def test_template(bids_dir_public, init_workflow, run_workflow, run_args):
 
     shutil.rmtree(args.bids_dir)
 
+@pytest.mark.parametrize("init_workflow, run_workflow, run_args", [
+    (True, run_workflows, None)
+])
+def test_template_existing_qsms(bids_dir_public, init_workflow, run_workflow, run_args):
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, f"=== TESTING TEMPLATE PIPELINE ===")
+
+    bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    shutil.copytree(bids_dir_public, bids_dir)
+
+    # run pipeline and specifically choose magnitude-based masking
+    args = [
+        bids_dir,
+        "--do_template", "yes",
+        "--auto_yes",
+        "--debug",
+    ]
+    
+    # create the workflow and run - it should fall back to phase-based masking with a warning
+    args = main(args)
+
+    # generate image - index out of range
+    github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
+    if not github_step_summary:
+        logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
+    else:
+        
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(find_files(os.path.join(args.output_dir, 'template', 'qsm_template'), '*.nii*')[0], title='QSM template', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm_template.png', cmap='gray'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(find_files(os.path.join(args.output_dir, 'template', 'magnitude_template'), '*.nii*')[0], title='Magnitude template', out_png='mag_template.png', cmap='gray'))})")
+
+        for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
+            write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
+
+    shutil.rmtree(args.bids_dir)
+
+    
