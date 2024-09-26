@@ -44,6 +44,12 @@ To automatically sort your DICOM images, use `dicom-sort`:
 dicom-sort YOUR_DICOM_DIR/ dicoms-sorted/
 ```
 
+If this doesn't find all DICOMs (e.g. you have enhanced DICOM files). Run with using the option `--check_all_files`:
+
+```bash
+dicom-sort YOUR_DICOM_DIR/ dicoms-sorted/ --check_all_files
+```
+
 To convert to BIDS, use `dicom-convert`:
 
 ```bash
