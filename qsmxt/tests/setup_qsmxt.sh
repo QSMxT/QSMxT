@@ -196,16 +196,16 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     echo "[DEBUG] which conda && which python && which pip"
     which conda && which python && which pip
 
-    export PROD_MINICONDA_PATH="${TEST_DIR}/miniconda3"
-    echo "[DEBUG] Checking for existing miniconda installation"
-    if [ ! -d ${PROD_MINICONDA_PATH} ]; then
-        echo "[DEBUG] Install miniconda"
-        ${TEST_DIR}/QSMxT/docs/_includes/miniconda_install.sh
+    export PROD_MINIFORGE_PATH="${TEST_DIR}/miniforge3"
+    echo "[DEBUG] Checking for existing miniforge installation"
+    if [ ! -d ${PROD_MINIFORGE_PATH} ]; then
+        echo "[DEBUG] Install miniforge"
+        ${TEST_DIR}/QSMxT/docs/_includes/miniforge_install.sh
     else
-        echo "[DEBUG] Existing miniconda installation found!"
+        echo "[DEBUG] Existing miniforge installation found!"
     fi
-    source ${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh
-    export PATH=${PROD_MINICONDA_PATH}/bin:${PATH}
+    source ${PROD_MINIFORGE_PATH}/etc/profile.d/conda.sh
+    export PATH=${PROD_MINIFORGE_PATH}/bin:${PATH}
 
     echo "[DEBUG] which conda && which python && which pip"
     which conda && which python && which pip

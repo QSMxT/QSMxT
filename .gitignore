@@ -11,3 +11,4 @@ data
 qsmxt.egg-info/
 dist/
 build/
+.venv

@@ -8,7 +8,7 @@ on:
     paths:
       - setup.py
       - .github/workflows/test_transparent_singularity.yml
-      - docs/_includes/miniconda_install.sh
+      - docs/_includes/miniforge_install.sh
       - docs/_includes/transparent_singularity_install.sh
       - aseg_labels.csv
       - qsmxt/qsm_pipelines.json
@@ -51,9 +51,9 @@ jobs:
         TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
         TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
         export PATH="${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}:${PATH}"
-        export PROD_MINICONDA_PATH="${TEST_DIR}/miniconda3"
-        source ${PROD_MINICONDA_PATH}/etc/profile.d/conda.sh
-        export PATH="${PROD_MINICONDA_PATH}/bin:${PATH}"
+        export PROD_MINIFORGE_PATH="${TEST_DIR}/miniforge3"
+        source ${PROD_MINIFORGE_PATH}/etc/profile.d/conda.sh
+        export PATH="${PROD_MINIFORGE_PATH}/bin:${PATH}"
 
         echo "[DEBUG] echo ${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}:${PATH}"
         echo "${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}:${PATH}"

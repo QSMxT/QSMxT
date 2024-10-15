@@ -57,9 +57,9 @@ QSMxT can be installed on an HPC or Linux machine using [transparent singularity
   ```
   - **NOTE:** You must have sufficient storage available in `$APPTAINER_TMPDIR` (by default `/tmp`), `$APPTAINER_CACHEDIR` (by default `$HOME/.apptainer/cache`), and the repository directory to store the QSMxT container.
 3. Check if you have conda installed using 'which conda'. If it is installed you can skip the first steps of this:
-  {% capture code_block_content %}{% include miniconda_install.sh %}{% endcapture %}
+  {% capture code_block_content %}{% include miniforge_install.sh %}{% endcapture %}
   {% assign code_block_content = code_block_content | replace: '${PROD_PACKAGE_VERSION}', site.PROD_PACKAGE_VERSION %}
-  {% assign code_block_content = code_block_content | replace: '${PROD_MINICONDA_PATH}', site.PROD_MINICONDA_PATH %}
+  {% assign code_block_content = code_block_content | replace: '${PROD_MINIFORGE_PATH}', site.PROD_MINIFORGE_PATH %}
   ```bash
   {{ code_block_content | strip }}
   ```

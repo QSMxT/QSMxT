@@ -12,7 +12,7 @@ TEST_CONTAINER_DATE: 20240830
 PROD_PACKAGE_VERSION: 7.2.0
 PROD_CONTAINER_VERSION: 7.2.0
 PROD_CONTAINER_DATE: 20240830
-PROD_MINICONDA_PATH: ~/miniconda3
+PROD_MINIFORGE_PATH: ~/miniforge3
 
 remote_theme: just-the-docs/just-the-docs
 baseurl: "/QSMxT" # the subpath of your site, e.g. /blog
