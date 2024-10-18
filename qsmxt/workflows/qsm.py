@@ -1102,7 +1102,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         normalize_phase_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
         mn_normalize_phase = create_node(
             interface=processphase.PhaseToNormalizedInterface(
-                scale_factor=1e6 if run_args.qsm_algorithm == 'nextqsm' else 1e6/(2*np.pi)
+                scale_factor=1e6/(2*np.pi)
             ),
             name='nibabel-numpy_normalize-phase',
             iterfield=['phase', 'TE'],
@@ -1127,7 +1127,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         normalize_freq_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
         mn_normalize_freq = create_node(
             interface=processphase.FreqToNormalizedInterface(
-                scale_factor=1e6 if run_args.qsm_algorithm == 'nextqsm' else 1e6/(2*np.pi)
+                scale_factor=1e6/(2*np.pi)
             ),
             name='nibabel-numpy_normalize-freq',
             iterfield=['frequency'],
