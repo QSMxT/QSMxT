@@ -276,8 +276,11 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                     details['acquisition_time'] = None
                     if 'AcquisitionTime' in json_data:
                         details['acquisition_time'] = datetime.datetime.strptime(json_data['AcquisitionTime'], "%H:%M:%S.%f")
-                    if 'ImageType' in json_data.keys(): details['image_type'] = [t.upper() for t in json_data['ImageType']]
-                    details['echo_time'] = json_data['EchoTime']
+                    if 'ImageType' in json_data.keys():
+                        details['image_type'] = [t.upper() for t in json_data['ImageType']]
+                    else:
+                        details['image_type'] = []
+                    details['echo_time'] = float(json_data['EchoTime'])
                     details['file_name'] = json_file.split('.json')[0]
                     details['run_num'] = None
                     details['echo_num'] = None
