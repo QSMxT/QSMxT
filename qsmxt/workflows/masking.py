@@ -46,7 +46,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # combine magnitude if necessary
         if magnitude_available and run_args.combine_phase:
-            n_combine_magnitude_mem = (np.product(dimensions_phase) * 8) / (1024 ** 3) * num_echoes * 4
+            n_combine_magnitude_mem = (np.prod(dimensions_phase) * 8) / (1024 ** 3) * num_echoes * 4
             n_combine_magnitude = create_node(
                 interface=combinemagnitude.CombineMagnitudeInterface(),
                 name='nibabel-numpy_combine-magnitude',
@@ -101,7 +101,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # do phase weights if necessary
         if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
-            mn_phaseweights_mem = 2.80122 * (np.product(dimensions_phase) * 8 / (1024 ** 3)) + 0.95 # DONE
+            mn_phaseweights_mem = 2.80122 * (np.prod(dimensions_phase) * 8 / (1024 ** 3)) + 0.95 # DONE
             mn_phaseweights_threads = 1
             if qualitymap_available:
                 mn_phaseweights = create_node(
@@ -151,7 +151,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
         # do bet mask if necessary
         if bet_this_run:
             bet_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
-            bet_mem = (np.product(dimensions_phase) * bytepix_phase) / (1024 ** 3) * 10
+            bet_mem = (np.prod(dimensions_phase) * bytepix_phase) / (1024 ** 3) * 10
             mn_bet = create_node(
                 interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
                 iterfield=['in_file'],
