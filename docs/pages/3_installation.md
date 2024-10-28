@@ -60,6 +60,7 @@ QSMxT can be installed on an HPC or Linux machine using [transparent singularity
   {% capture code_block_content %}{% include miniforge_install.sh %}{% endcapture %}
   {% assign code_block_content = code_block_content | replace: '${PROD_PACKAGE_VERSION}', site.PROD_PACKAGE_VERSION %}
   {% assign code_block_content = code_block_content | replace: '${PROD_MINIFORGE_PATH}', site.PROD_MINIFORGE_PATH %}
+  {% assign code_block_content = code_block_content | replace: '${PROD_PYTHON_VERSION}', site.PROD_PYTHON_VERSION %}
   ```bash
   {{ code_block_content | strip }}
   ```

@@ -5,6 +5,6 @@ source ${PROD_MINIFORGE_PATH}/etc/profile.d/conda.sh
 export PATH=${PROD_MINIFORGE_PATH}/bin/:${PATH}
 
 #create conda environment for qsmxt
-conda create -n qsmxt python=3.8
+conda create -n qsmxt python=${PROD_PYTHON_VERSION}
 conda activate qsmxt
 pip install qsmxt==${PROD_PACKAGE_VERSION}

@@ -75,15 +75,19 @@ cd "${TEST_DIR}"
 echo "[DEBUG] Extracting version information from docs/_config.yml"
 export TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
 export TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
-export DEPLOY_PACKAGE_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'DEPLOY_PACKAGE_VERSION' | awk '{print $2}')
 export TEST_PACKAGE_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_PACKAGE_VERSION' | awk '{print $2}')
+export TEST_PYTHON_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_PYTHON_VERSION' | awk '{print $2}')
 export PROD_PACKAGE_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'PROD_PACKAGE_VERSION' | awk '{print $2}')
+export PROD_PYTHON_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'PROD_PYTHON_VERSION' | aws '{print $2}')
+export DEPLOY_PACKAGE_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'DEPLOY_PACKAGE_VERSION' | awk '{print $2}')
 export REQUIRED_PACKAGE_VERSION="${!REQUIRED_VERSION_TYPE}"
 echo "[DEBUG] TEST_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}"
 echo "[DEBUG] TEST_CONTAINER_DATE=${TEST_CONTAINER_DATE}"
-echo "[DEBUG] DEPLOY_PACKAGE_VERSION=${DEPLOY_PACKAGE_VERSION}"
 echo "[DEBUG] TEST_PACKAGE_VERSION=${TEST_PACKAGE_VERSION}"
+echo "[DEBUG] TEST_PYTHON_VERSION=${TEST_PYTHON_VERSION}"
 echo "[DEBUG] PROD_PACKAGE_VERSION=${PROD_PACKAGE_VERSION}"
+echo "[DEBUG] PROD_PYTHON_VERSION=${TEST_PACKAGE_VERSION}"
+echo "[DEBUG] DEPLOY_PACKAGE_VERSION=${DEPLOY_PACKAGE_VERSION}"
 echo "[DEBUG] REQUIRED_PACKAGE_TYPE=${REQUIRED_VERSION_TYPE}"
 echo "[DEBUG] REQUIRED_PACKAGE_VERSION=${REQUIRED_PACKAGE_VERSION}"
 
@@ -172,6 +176,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
     export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
     export PROD_PACKAGE_VERSION=${TEST_CONTAINER_VERSION}
+    export PROD_PYTHON_VERSION=${TEST_PYTHON_VERSION}
 
     if [ ! -f "${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg" ]; then
         echo "[DEBUG] Install QSMxT via transparent singularity"
