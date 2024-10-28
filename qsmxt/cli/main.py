@@ -575,7 +575,7 @@ def parse_args(args, return_run_command=False):
         nargs=2,
         default=None,
         dest='slurm',
-        help='Run the pipeline via SLURM and use the argument as the account string.'
+        help='Run the pipeline via SLURM and use the arguments as the account string and partition.'
     )
 
     parser.add_argument(
