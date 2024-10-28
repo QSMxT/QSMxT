@@ -78,7 +78,7 @@ export TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST
 export TEST_PACKAGE_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_PACKAGE_VERSION' | awk '{print $2}')
 export TEST_PYTHON_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_PYTHON_VERSION' | awk '{print $2}')
 export PROD_PACKAGE_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'PROD_PACKAGE_VERSION' | awk '{print $2}')
-export PROD_PYTHON_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'PROD_PYTHON_VERSION' | aws '{print $2}')
+export PROD_PYTHON_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'PROD_PYTHON_VERSION' | awk '{print $2}')
 export DEPLOY_PACKAGE_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'DEPLOY_PACKAGE_VERSION' | awk '{print $2}')
 export REQUIRED_PACKAGE_VERSION="${!REQUIRED_VERSION_TYPE}"
 echo "[DEBUG] TEST_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}"
@@ -93,6 +93,7 @@ echo "[DEBUG] REQUIRED_PACKAGE_VERSION=${REQUIRED_PACKAGE_VERSION}"
 
 # docker container setup
 if [ "${CONTAINER_TYPE}" = "docker" ]; then
+    echo "[DEBUG] Installing via docker"
     echo "[DEBUG] Pulling QSMxT container vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
     sudo docker pull "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
 
