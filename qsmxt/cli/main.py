@@ -105,8 +105,12 @@ def init_session_workflow(args, subject, session=None):
             for path in files
             if acquisition in path
             and '_run-' in path
+            and (not args.runs or any(f"_{run}_" in os.path.split(path)[1] for run in args.runs))
         ])))
-        run_details[acquisition] = acquisition_runs if len(acquisition_runs) else None
+        if acquisition_runs:
+            run_details[acquisition] = acquisition_runs
+        elif not args.runs:
+            run_details[acquisition] = None
 
     # handle runs not associated with any acquisition name
     other_runs = sorted(list(set([
@@ -114,16 +118,19 @@ def init_session_workflow(args, subject, session=None):
         for path in files
         if '_acq-' not in path
         and '_run-' in path
+        and (not args.runs or any(f"_{run}_" in os.path.split(path)[1] for run in args.runs))
     ])))
     if other_runs:
         run_details[None] = other_runs
 
     # handle the final case where there may be no run or acquisition identifier
-    others = any(all(x not in path for x in ['_acq-', '_run-']) for path in files)
-    if others:
-        if None in run_details.keys(): run_details[None].append(None)
-        run_details[None] = [None]
+    if not args.runs:
+        others = any(all(x not in path for x in ['_acq-', '_run-']) for path in files)
+        if others:
+            if None in run_details.keys(): run_details[None].append(None)
+            run_details[None] = [None]
 
+    # initialise qsm workflow for all acq-run pairs
     if any([args.do_qsm, args.do_segmentation, args.do_t2starmap, args.do_r2starmap, args.do_swi, args.do_analysis]):
         wfs = [
             init_qsm_workflow(copy.deepcopy(args), subject, session, acq, run)
