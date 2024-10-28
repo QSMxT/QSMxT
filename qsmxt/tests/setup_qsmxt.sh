@@ -149,6 +149,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
         echo "[DEBUG] QSMxT is installed, checking for linked installation and version"
         QSMXT_INSTALL_PATH=$(sudo docker exec qsmxt-container pip show qsmxt | grep 'Location:' | awk '{print $2}')
         QSMXT_VERSION=$(sudo docker exec qsmxt-container bash -c "qsmxt --version")
+        QSMXT_VERSION=$(echo "$QSMXT_VERSION" | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+')
 
         echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
         echo "[DEBUG] ${QSMXT_VERSION}"
@@ -237,6 +238,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
         echo "[DEBUG] Getting QSMxT location and version"
         QSMXT_INSTALL_PATH=$(pip show qsmxt | grep 'Location:' | awk '{print $2}')
         QSMXT_VERSION=$(qsmxt --version)
+        QSMXT_VERSION=$(echo "$QSMXT_VERSION" | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+')
         echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
         echo "[DEBUG] ${QSMXT_VERSION}"
 
