@@ -63,15 +63,17 @@ def get_folders_in(folder, full_path=False):
 
 def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_patterns, auto_yes):
     logger = make_logger()
-    logger.log(LogLevel.INFO.value, 'Converting all DICOMs to NIfTI...')
+
     subjects = get_folders_in(input_dir)
 
     if not subjects:
         logger.log(LogLevel.ERROR.value, f"No subjects found in '{input_dir}'!")
         script_exit(1)
+    logger.log(LogLevel.INFO.value, f"Found {len(subjects)} subjects in '{input_dir}'")
 
     already_converted = False
 
+    logger.log(LogLevel.INFO.value, 'Converting all DICOMs to NIfTI...')
     for subject in subjects:
         sessions = get_folders_in(os.path.join(input_dir, subject))
 
@@ -138,25 +140,32 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                 json_files.extend(sorted(glob.glob(os.path.join(session_extra_folder, "*json"))))
                 json_datas.extend([load_json(json_file) for json_file in sorted(glob.glob(os.path.join(session_extra_folder, "*json")))])
 
-    logger.log(LogLevel.INFO.value, f"Enumerating protocol names from JSON headers...")
-    all_protocol_names = []
+    logger.log(LogLevel.INFO.value, f"Enumerating protocol names and series descriptions from JSON headers...")
+    protocols_descriptions = {}
     for i in range(len(json_datas)):
         if "Modality" not in json_datas[i]:
             logger.log(LogLevel.WARNING.value, f"'Modality' missing from JSON header '{json_files[i]}'. Skipping...")
             continue
         if json_datas[i]["Modality"] != "MR":
+            logger.log(LogLevel.WARNING.value, f"'Modality' of '{json_files[i]}' is not MR. Skipping...")
             continue
         if "ProtocolName" not in json_datas[i]:
             logger.log(LogLevel.WARNING.value, f"'ProtocolName' missing from JSON header '{json_files[i]}'. Skipping...")
             continue
-        all_protocol_names.append(json_datas[i]["ProtocolName"].lower())
-    all_protocol_names = sorted(list(set(all_protocol_names)))
-
-    if not all_protocol_names:
-        logger.log(LogLevel.ERROR.value, f"No valid protocol names found in JSON headers in '{output_dir}/.../extra_data' folders!")
+        if "SeriesDescription" not in json_datas[i]:
+            logger.log(LogLevel.WARNING.value, f"'SeriesDescription' missing from JSON header '{json_files[i]}' - using ProtocolName as description.")
+            json_datas[i]['SeriesDescription'] = json_datas[i]['ProtocolName']
+            continue
+        if json_datas[i]["ProtocolName"].lower() not in protocols_descriptions:
+            protocols_descriptions[json_datas[i]["ProtocolName"].lower()] = [json_datas[i]["SeriesDescription"]]
+        elif json_datas[i]["SeriesDescription"] not in protocols_descriptions[json_datas[i]["ProtocolName"].lower()]:
+            protocols_descriptions[json_datas[i]["ProtocolName"].lower()].append(json_datas[i]["SeriesDescription"])
+    
+    if not protocols_descriptions:
+        logger.log(LogLevel.ERROR.value, f"No valid protocols found in JSON headers in '{output_dir}/.../extra_data' folders!")
         script_exit(1)
 
-    logger.log(LogLevel.INFO.value, f"All protocol names identified: {all_protocol_names}")
+    logger.log(LogLevel.INFO.value, f"All protocols identified: {protocols_descriptions.keys()}")
 
     # identify protocol names using patterns if not interactive or auto_yes is enabled
     qsm_protocol_names = []
@@ -166,7 +175,7 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
         logger.log(LogLevel.INFO.value, f"Enumerating protocol names with QSM intention using match patterns {qsm_protocol_patterns}...")
         qsm_protocol_names = []
         for qsm_protocol_pattern in qsm_protocol_patterns:
-            for protocol_name in all_protocol_names:
+            for protocol_name in list(sorted(protocols_descriptions.keys())):
                 if fnmatch.fnmatch(protocol_name, qsm_protocol_pattern):
                     qsm_protocol_names.append(protocol_name)
         if not qsm_protocol_names:
@@ -176,10 +185,12 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
 
         logger.log(LogLevel.INFO.value, f"Enumerating T1w protocol names using match patterns {t1w_protocol_patterns}...")
         t1w_protocol_names = []
+        t1w_series_descriptions = []
         for t1w_protocol_pattern in t1w_protocol_patterns:
-            for protocol_name in all_protocol_names:
+            for protocol_name in list(sorted(protocols_descriptions.keys())):
                 if fnmatch.fnmatch(protocol_name, t1w_protocol_pattern):
                     t1w_protocol_names.append(protocol_name)
+                    t1w_series_descriptions.append(protocols_descriptions[protocol_name])
         if not t1w_protocol_names:
             logger.log(LogLevel.WARNING.value, f"No T1w protocols found matching patterns {t1w_protocol_patterns}! Automated segmentation will not be possible.")
         else:
@@ -188,53 +199,66 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
     else: # manually identify protocols using selection if interactive
 
         # === QSM PROTOCOLS SELECTION ===
-        print("== PROTOCOL NAMES ==")
-        for i in range(len(all_protocol_names)):
-            print(f"{i+1}. {all_protocol_names[i]}")
-        while True:
-            user_input = input("Identify protocols intended for QSM (comma-separated numbers): ")
-            qsm_scans_idx = user_input.split(",")
-            try:
-                qsm_scans_idx = [int(j)-1 for j in qsm_scans_idx]
-            except:
-                print("Invalid input")
-                continue
-            qsm_scans_idx = sorted(list(set(qsm_scans_idx)))
-            try:
-                qsm_protocol_names = [all_protocol_names[j] for j in qsm_scans_idx]
-                break
-            except:
-                print("Invalid input")
+        if len(protocols_descriptions) == 1:
+            qsm_protocol_names = [list(sorted(protocols_descriptions.keys()))[0]]
+        else:
+            print("== PROTOCOL NAMES ==")
+            for i in range(len(protocols_descriptions)):
+                print(f"{i+1}. {list(sorted(protocols_descriptions.keys()))[i]}")
+            while True:
+                user_input = input("Identify protocols intended for QSM (comma-separated numbers): ")
+                qsm_scans_idx = user_input.split(",")
+                try:
+                    qsm_scans_idx = [int(j)-1 for j in qsm_scans_idx]
+                except:
+                    print("Invalid input")
+                    continue
+                qsm_scans_idx = sorted(list(set(qsm_scans_idx)))
+                try:
+                    qsm_protocol_names = [list(sorted(protocols_descriptions.keys()))[j] for j in qsm_scans_idx]
+                    break
+                except:
+                    print("Invalid input")
         if not qsm_protocol_names:
             logger.log(LogLevel.ERROR.value, "No QSM-intended protocols identified! Exiting...")
             script_exit(1)
         logger.log(LogLevel.INFO.value, f"Identified the following protocols intended for QSM: {qsm_protocol_names}")
 
         # === T1W PROTOCOLS SELECTION ===
-        remaining_protocol_names = [protocol_name for protocol_name in all_protocol_names if protocol_name not in qsm_protocol_names]
-        if remaining_protocol_names:
+        remaining_protocol_descriptions = [
+            (protocol_name, series_description)
+            for protocol_name, series_descriptions in protocols_descriptions.items()
+            if protocol_name not in qsm_protocol_names
+            for series_description in series_descriptions
+        ]
+
+        if remaining_protocol_descriptions:
             print("== PROTOCOL NAMES ==")
-            for i in range(len(remaining_protocol_names)):
-                print(f"{i+1}. {remaining_protocol_names[i]}")
+            for i, (protocol_name, series_description) in enumerate(remaining_protocol_descriptions):
+                print(f"{i + 1}. {protocol_name} - {series_description}")
+
             while True:
-                user_input = input("Identify T1w scans for automated segmentation (comma-separated numbers; enter nothing to ignore): ").strip()
+                user_input = input("Identify T1w series for automated segmentation (comma-separated numbers; enter nothing to ignore): ").strip()
                 if user_input == "":
                     break
                 t1w_scans_idx = user_input.split(",")
                 try:
-                    t1w_scans_idx = sorted(list(set([int(j)-1 for j in t1w_scans_idx])))
-                except:
+                    t1w_scans_idx = sorted(list(set([int(j) - 1 for j in t1w_scans_idx])))
+                except ValueError:
                     print("Invalid input")
                     continue
                 try:
-                    t1w_protocol_names = [remaining_protocol_names[j] for j in t1w_scans_idx]
+                    t1w_protocol_names = [remaining_protocol_descriptions[j][0] for j in t1w_scans_idx]
+                    t1w_series_descriptions = [remaining_protocol_descriptions[j][1] for j in t1w_scans_idx]
                     break
-                except:
+                except IndexError:
                     print("Invalid input")
+
         if not t1w_protocol_names:
             logger.log(LogLevel.WARNING.value, f"No T1w protocols found matching patterns {t1w_protocol_patterns}! Automated segmentation will not be possible.")
         else:
-            logger.log(LogLevel.INFO.value, f"Identified the following protocols as T1w: {t1w_protocol_names}")
+            selected_protocols = ', '.join(f"{name} - {desc}" for name, desc in zip(t1w_protocol_names, t1w_series_descriptions))
+            logger.log(LogLevel.INFO.value, f"Identified the following series as T1w: {selected_protocols}")
 
     logger.log(LogLevel.INFO.value, 'Parsing relevant details from JSON headers...')
     all_session_details = []
@@ -262,6 +286,9 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                     logger.log(LogLevel.WARNING.value, f"'EchoTime' missing from JSON header '{json_file}'! Skipping...")
                     continue
                 if json_data['Modality'] == 'MR' and json_data['ProtocolName'].lower() in qsm_protocol_names + t1w_protocol_names:
+                    if json_data['ProtocolName'].lower() in t1w_protocol_names:
+                        if 'SeriesDescription' in json_data and not json_data['SeriesDescription'] in t1w_series_descriptions:
+                            continue
                     details = {}
                     details['subject'] = subject
                     details['session'] = session
@@ -297,6 +324,7 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                 protocol_type = session_details[0]['protocol_type']
                 protocol_name = session_details[0]['protocol_name']
                 acquisition_time = session_details[0]['acquisition_time']
+                series_description = session_details[0]['series_description']
                 for i in range(len(session_details)):
                     
                     if protocol_type != session_details[i]['protocol_type'] or protocol_name != session_details[i]['protocol_name']:
@@ -311,6 +339,7 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
                     acquisition_time = session_details[i]['acquisition_time']
                     protocol_name = session_details[i]['protocol_name']
                     protocol_type = session_details[i]['protocol_type']
+                    series_description = session_details[i]['series_description']
                     session_details[i]['run_num'] = run_num
 
                 # update part types
