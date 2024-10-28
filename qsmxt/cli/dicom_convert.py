@@ -190,7 +190,7 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
             for protocol_name in list(sorted(protocols_descriptions.keys())):
                 if fnmatch.fnmatch(protocol_name, t1w_protocol_pattern):
                     t1w_protocol_names.append(protocol_name)
-                    t1w_series_descriptions.append(protocols_descriptions[protocol_name])
+                    t1w_series_descriptions.extend(protocols_descriptions[protocol_name])
         if not t1w_protocol_names:
             logger.log(LogLevel.WARNING.value, f"No T1w protocols found matching patterns {t1w_protocol_patterns}! Automated segmentation will not be possible.")
         else:
@@ -556,7 +556,7 @@ def convert_to_nifti(input_dir, output_dir, qsm_protocol_patterns, t1w_protocol_
         rename(details['file_name']+'.nii', details['new_name']+'.nii', always_show=auto_yes)
     
     # create required dataset_description.json file
-    logger.log(LogLevel.INFO.value, 'Generating details for BIDS datset_description.json...')
+    logger.log(LogLevel.INFO.value, 'Generating details for BIDS dataset_description.json...')
     dataset_description = {
         "Name" : f"QSMxT BIDS ({datetime.date.today()})",
         "BIDSVersion" : "1.7.0",
