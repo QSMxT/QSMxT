@@ -10,7 +10,7 @@ nav_order: 1
   <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.4.1/js/bootstrap.min.js"></script>
 </head>
 
-# QSMxT
+# QSMxT v{{ site.PROD_CONTAINER_VERSION }}
 
 QSMxT is an end-to-end software toolbox for QSM that automatically reconstructs and processes large datasets in parallel using sensible defaults.
 
