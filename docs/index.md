@@ -14,7 +14,7 @@ nav_order: 1
 
 QSMxT is an end-to-end software toolbox for QSM that automatically reconstructs and processes large datasets in parallel using sensible defaults.
 
-[Interactive notebook](https://www.neurodesk.org/example-notebooks/structural_imaging/qsmxt.html){: .btn }
+[Interactive notebook](https://www.neurodesk.org/example-notebooks/structural_imaging/qsmxt.html){: .btn .btn-purple }
 
 QSMxT produces:
 
