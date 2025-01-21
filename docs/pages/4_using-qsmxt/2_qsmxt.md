@@ -329,7 +329,7 @@ If you wish to run QSMxT non-interactively, you may specify all settings via com
 This example will run QSMxT non-interactively and produce QSM using the fast pipeline and segmentations.
 
 ```bash
-qsmxt bids/ --do_qsm --premade fast --do_segmentations --auto_yes
+qsmxt bids/ --do_qsm --premade fast --do_segmentation --auto_yes
 ```
 
 <script>
