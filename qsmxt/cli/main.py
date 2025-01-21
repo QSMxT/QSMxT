@@ -628,6 +628,11 @@ def parse_args(args, return_run_command=False):
     # parse explicit arguments ONLY
     args, unknown = parser.parse_known_args(args)
 
+    # give error for unknown args
+    if unknown:
+        logger.log(LogLevel.ERROR.value, f"Unknown arguments: {unknown}")
+        script_exit(1, logger=logger)
+
     # if listing premades or displaying the version, skip the rest
     if args.list_premades or args.version:
         if return_run_command:
