@@ -1,6 +1,6 @@
 ---
 layout: default
-title: QSMxT v{{ site.PROD_CONTAINER_VERSION }}
+title: QSMxT
 nav_order: 1
 ---
 
