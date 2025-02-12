@@ -75,7 +75,7 @@ jobs:
           -e TEST_DIR=$TEST_DIR \
           -e GITHUB_STEP_SUMMARY=$GITHUB_STEP_SUMMARY \
           qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_template.py -s -k '${{ matrix.args }}'"
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
         name: public-outputs
         path: /storage/tmp/public-outputs
