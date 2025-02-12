@@ -196,12 +196,15 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     which julia && which dcm2niix
 
     echo "[DEBUG] remove executables we are replacing"
-    for f in {python3,python,qsmxt,dicom-sort,dicom-convert}; do
+    for f in {python3,python,qsmxt,dicom-sort,dicom-convert,nifti-convert}; do
         rm -rf ${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}/${f}
     done
 
     echo "[DEBUG] which conda && which python && which pip"
     which conda && which python && which pip
+
+    echo "[DEBUG] which qsmxt && which dicom-sort && which dicom-convert && which nifti-convert"
+    which qsmxt && which dicom-sort && which dicom-convert && which nifti-convert
 
     export PROD_MINIFORGE_PATH="${TEST_DIR}/miniforge3"
     echo "[DEBUG] Checking for existing miniforge installation"
@@ -222,6 +225,9 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 
     echo "[DEBUG] which conda && which python && which pip"
     which conda && which python && which pip
+
+    echo "[DEBUG] which qsmxt && which dicom-sort && which dicom-convert && which nifti-convert"
+    which qsmxt && which dicom-sort && which dicom-convert && which nifti-convert
     
     echo "[DEBUG] python --version && pip --version"
     python --version && pip --version

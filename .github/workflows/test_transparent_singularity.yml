@@ -65,10 +65,13 @@ jobs:
         which dcm2niix
     
         echo "[DEBUG] which conda && which python && which pip && which qsmxt && which julia"
-        which conda && which python && which pip && which qsmxt && which julia
+        which conda && which julia
     
         echo "[DEBUG] conda activate qsmxt"
         conda activate qsmxt
+
+        echo "[DEBUG] which python && which pip && which qsmxt && dicom-sort && which dicom-convert && which nifti-convert"
+        which python && which pip && which qsmxt && which dicom-sort && which dicom-convert && which nifti-convert
 
         ./qsmxt/tests/test_transparent_singularity.sh
 
