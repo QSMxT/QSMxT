@@ -96,7 +96,7 @@ def find_and_autoassign_qsm_pairs(row_data):
         for row in group_rows:
             row["Type"] = "Skip"
 
-        # Gather potential M/P or R/I based on GEPrivateType and/or ImageType
+        # Gather potential M/P or R/I based on ImageType
         mag_list   = []
         phase_list = []
         real_list  = []
@@ -104,7 +104,7 @@ def find_and_autoassign_qsm_pairs(row_data):
 
         def classify(row):
             """Return 'mag', 'phase', 'real', or 'imag' if the row qualifies, else None."""
-            # Consider row['ImageType'] (tuple?) or row['GEPrivateType']
+            # Consider row['ImageType'] (tuple?)
             # We'll unify to uppercase strings:
             image_type = row.get("ImageType", ())
             if isinstance(image_type, (tuple, list)):
@@ -112,23 +112,21 @@ def find_and_autoassign_qsm_pairs(row_data):
             else:
                 image_type_up = [str(image_type).upper()]
 
-            ge_val = str(row.get("GEPrivateType", "")).lower()
-
             # Some helper for checking the row's ImageType
             def has_any(substrings, container):
                 return any(s in container for s in substrings)
 
             # Priority #1: mag
-            if has_any(["MAG", "M"], image_type_up) or ge_val == "magnitude":
+            if has_any(["MAG", "M"], image_type_up):
                 return "mag"
             # Priority #2: phase
-            if has_any(["PHASE", "P"], image_type_up) or ge_val == "phase":
+            if has_any(["PHASE", "P"], image_type_up):
                 return "phase"
             # Priority #3: real
-            if has_any(["REAL"], image_type_up) or ge_val == "real":
+            if has_any(["REAL"], image_type_up):
                 return "real"
             # Priority #4: imag (imaginary)
-            if has_any(["IMAG", "IMAGINARY"], image_type_up) or ge_val == "imag":
+            if has_any(["IMAG", "IMAGINARY"], image_type_up):
                 return "imag"
             return None
 
@@ -398,17 +396,10 @@ def detail_screen(stdscr, protocols, user_data):
 
         # Table display
         headers = ["SeriesDescription", "ImageType", "Count", "NumEchoes", "Type"]
-        if 'GEPrivateType' in rows[0]:
-            headers.insert(2, "GEPrivateType")
-            table_data = [
-                [r["SeriesDescription"], r["ImageType"], r["GEPrivateType"], r["Count"], r["NumEchoes"], r["Type"]]
-                for r in rows
-            ]
-        else:
-            table_data = [
-                [r["SeriesDescription"], r["ImageType"], r["Count"], r["NumEchoes"], r["Type"]]
-                for r in rows
-            ]
+        table_data = [
+            [r["SeriesDescription"], r["ImageType"], r["Count"], r["NumEchoes"], r["Type"]]
+            for r in rows
+        ]
             
         table_lines = tabulate(table_data, headers=headers, tablefmt="plain").split("\n")
         for i, line in enumerate(table_lines):
@@ -548,8 +539,6 @@ def interactive_acquisition_selection(grouped):
                     "NumEchoes": row["NumEchoes"],
                     "Type": "Skip"
                 })
-                if "GEPrivateType" in row:
-                    row_dicts[-1]["GEPrivateType"] = row["GEPrivateType"]
             protocol_rows_map[prot] = row_dicts
 
         for prot in protocols:
@@ -657,20 +646,20 @@ def convert_to_bids(input_dir, output_dir, auto_yes, qsm_protocol_patterns, t1w_
 
     # If we have GE private tags
     if '(0043,102F)' in dicom_session.columns:
-        private_map = {0: 'Magnitude', 1: 'Phase', 2: 'Real', 3: 'Imag'}
-        dicom_session['GEPrivateType'] = dicom_session['(0043,102F)'].map(private_map).fillna('')
+        private_map = {0: 'M', 1: 'P', 2: 'REAL', 3: 'IMAGINARY'}
+        dicom_session['ImageType'].append(dicom_session['(0043,102F)'].map(private_map).fillna(''))
 
     # Additional columns
     dicom_session['NumEchoes'] = dicom_session.groupby('ProtocolName')['EchoTime'].transform('nunique')
     dicom_session['EchoNumber'] = dicom_session.groupby('ProtocolName')['EchoTime'].rank(method='dense')
     dicom_session['NumRuns'] = (
         dicom_session
-        .groupby(['PatientID','StudyDate','ProtocolName','SeriesDescription'])['SeriesInstanceUID']
+        .groupby(['PatientID','StudyDate','ProtocolName','SeriesDescription', 'ImageType'])['SeriesInstanceUID']
         .transform('nunique')
     )
     dicom_session['RunNumber'] = (
         dicom_session
-        .groupby(['PatientID','StudyDate','ProtocolName','SeriesDescription'])['SeriesInstanceUID']
+        .groupby(['PatientID','StudyDate','ProtocolName','SeriesDescription', 'ImageType'])['SeriesInstanceUID']
         .rank(method='dense')
     )
 
@@ -681,7 +670,6 @@ def convert_to_bids(input_dir, output_dir, auto_yes, qsm_protocol_patterns, t1w_
         dicom_session['Type'] = 'Skip'
 
     groupby_fields = ["ProtocolName", "SeriesDescription", "ImageType"]
-    if "GEPrivateType" in dicom_session.columns: groupby_fields.append("GEPrivateType")
 
     grouped = (
         dicom_session
@@ -708,10 +696,6 @@ def convert_to_bids(input_dir, output_dir, auto_yes, qsm_protocol_patterns, t1w_
                         mask_prot
                         & (grouped['SeriesDescription'] == row_info['SeriesDescription'])
                         & (grouped['ImageType'] == row_info['ImageType'])
-                        & (
-                            'GEPrivateType' not in grouped.columns 
-                            or grouped['GEPrivateType'] == row_info['GEPrivateType']
-                          )
                     )
                     grouped.loc[rmask,'Type'] = row_info['Type']
 
