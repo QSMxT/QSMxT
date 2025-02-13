@@ -46,7 +46,8 @@ setup(
         'packaging==24.1',
         'nextqsm==1.0.4',
         'matplotlib==3.7.5',
-        'pandas==2.0.3'
+        'pandas==2.0.3',
+        'dicompare==0.1.14'
     ],
     entry_points={
         'console_scripts': [

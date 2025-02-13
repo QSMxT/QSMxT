@@ -3,283 +3,17 @@
 import argparse
 import os
 import sys
-import csv
 import json
 import shutil
 import datetime
+import curses
+import re
+import pandas as pd
+
+from dicompare import load_nifti_session
 
 from qsmxt.scripts.qsmxt_functions import get_qsmxt_version, get_diff
-from qsmxt.scripts.logger import LogLevel, make_logger, show_warning_summary 
-
-def copy(old, new, always_show=False):
-    logger = make_logger()
-    if always_show or not sys.__stdin__.isatty():
-        logger.log(LogLevel.INFO.value, f'Copying {old} -> {new}')
-    if not os.path.exists(os.path.split(new)[0]):
-        os.makedirs(os.path.split(new)[0], exist_ok=True)
-    shutil.copy2(old, new)
-
-
-def load_json(path):
-    with open(path, encoding='utf-8') as f:
-        j = json.load(f)
-    return j
-
-
-def json_filename(nifti_filename):
-    head, filename, ext = splitext(nifti_filename)
-    return os.path.join(head, filename + '.json')
-
-
-def flatten(a):
-    return [i for g in a for i in g]
-
-def get_bids_entities():
-    return ['sub', 'ses', 'acq', 'ce', 'rec', 'run', 'mod', 'echo', 'flip', 'inv', 'mt', 'part', 'desc', 'suffix']
-
-def find_files_with_extension(input_dir, extension):
-    file_list = []
-    for root, dirs, files in os.walk(input_dir):
-        for f in files:
-            if (isinstance(extension, list) and any(f.endswith(a) for a in extension)):
-                file_list.append(os.path.join(root, f))
-            elif isinstance(extension, str) and f.endswith(extension):
-                file_list.append(os.path.join(root, f))
-    return file_list
-
-def splitext(path):
-    head, tail = os.path.split(path)
-
-    if tail.endswith('.nii.gz'):
-        ext = '.nii.gz'
-        filename = tail.split('.nii.gz')[0]
-    else:
-        filename, ext = os.path.splitext(tail)
-
-    return head, filename, ext
-
-
-import csv
-
-def get_details_from_csv(csv_file):
-    logger = make_logger()
-    all_details = []
-    
-    with open(csv_file, "r", encoding='utf-8') as f:
-        csv_reader = csv.DictReader(f)
-        
-        for i, line_contents in enumerate(csv_reader):
-            details = {}
-            details['filedir'] = line_contents['filedir']
-            details['filename'] = line_contents['filename']
-
-            for field in line_contents:
-                if line_contents[field]: details[field] = line_contents[field]
-
-            all_details.append(details)
-
-    return all_details
-
-
-def get_bids_entity(path, entity):
-    head, filename, ext = splitext(path)
-    entity_pairs = filename.split('_')
-    if entity == 'suffix':
-        return entity_pairs[-1]
-    for entity_pair in entity_pairs:
-        entity_pair_tuple = entity_pair.split('-')
-        if len(entity_pair_tuple) == 2:
-            entity_i, label_i = entity_pair_tuple
-            if entity_i == entity:
-                return label_i
-
-    return None
-
-
-def get_details_from_filenames(file_list):
-    all_details = []
-
-    for nifti_file in file_list:
-        details = {}
-        head, filename, ext = splitext(nifti_file)
-        details['filename'] = filename + ext
-        details['filedir'] = head
-
-        for entity in get_bids_entities():
-            label = get_bids_entity(path=nifti_file, entity=entity)
-            if label:
-                details[entity] = label
-
-        all_details.append(details)
-
-    return all_details
-
-
-def update_details_with_jsons(all_details):
-    for details in all_details:
-        json_file = json_filename(os.path.join(details['filedir'], details['filename']))
-        if os.path.exists(json_file):
-            json_data = load_json(json_file)
-            for field in ['MagneticFieldStrength', 'EchoTime', 'ImageType']:
-                if field in json_data:
-                    details[field] = json_data[field]
-    return all_details
-
-
-def write_details_to_csv(all_details, csv_file):
-    bids_entities = get_bids_entities()
-    json_fields = ['MagneticFieldStrength', 'EchoTime']
-    all_fields = ['filedir', 'filename', 'DerivativePipeline'] + bids_entities + json_fields
-
-    with open(csv_file, 'w', encoding='utf-8', newline='') as f:
-        csv_writer = csv.DictWriter(f, fieldnames=all_fields)
-        
-        # Write header
-        csv_writer.writeheader()
-        
-        # Sort all_details by filename
-        all_details.sort(key=lambda d: (d['filedir'], d['filename']))
-        
-        # Write rows
-        for d in all_details:
-            row_dict = {}
-            for field in all_fields:
-                if field == 'ImageType':
-                    if 'part' not in all_fields:
-                        row_dict['part'] = 'phase' if any(x.upper() in d.get(field, '') for x in ['P', 'PHASE']) else 'mag'
-                if field == 'suffix':
-                    if 'part' not in d and d.get(field, '') == 'ph':
-                        row_dict['part'] = 'phase'
-                if field == 'EchoNumber':
-                    if 'echo' not in all_fields:
-                        row_dict['echo'] = d.get(field, '')
-                row_dict[field] = d.get(field, '')  # If the key doesn't exist in `d`, it will return an empty string
-            csv_writer.writerow(row_dict)
-
-
-def nifti_convert(args):
-    logger = make_logger()
-    if os.path.exists(args.csv_file):
-        logger.log(LogLevel.INFO.value, f"CSV spreadsheet '{args.csv_file}' found! Reading...")
-        all_details = get_details_from_csv(args.csv_file)
-        logger.log(LogLevel.INFO.value, f"CSV spreadsheet loaded.")
-    else:
-        logger.log(LogLevel.INFO.value, f"Finding NIfTI files...")
-        nifti_files = find_files_with_extension(args.input_dir, ['.nii', '.nii.gz'])
-        logger.log(LogLevel.INFO.value, f"{len(nifti_files)} NIfTI files found.")
-        logger.log(LogLevel.INFO.value, f"Extracting details from filenames...")
-        all_details = get_details_from_filenames(nifti_files)
-        logger.log(LogLevel.INFO.value, f"Done reading details.")
-        logger.log(LogLevel.INFO.value, f"Updating details with JSON header information...")
-        all_details = update_details_with_jsons(all_details)
-        logger.log(LogLevel.INFO.value, f"Done reading JSON header files.")
-        write_details_to_csv(all_details, args.csv_file)
-        logger.log(LogLevel.INFO.value, f"RUN AGAIN AFTER ENTERING RELEVANT BIDS INFORMATION TO {args.csv_file}.")
-        script_exit(0)
-    
-    logger.log(LogLevel.INFO.value, "Computing new NIfTI file names and locations...")
-    for details in all_details:
-        filedir = details['filedir']
-        filename = details['filename']
-        _, filename, ext = splitext(filename)
-        filename = os.path.join(filedir, filename)
-
-        if any(x not in details for x in ['sub', 'suffix']):
-            logger.log(LogLevel.ERROR.value, f"File '{filename + ext}' is missing BIDS-critical information! At least 'sub' and 'suffix' entities are required!")
-            script_exit(1)
-        
-        new_name = ""
-
-        for entity in get_bids_entities():
-            if entity in details:
-                new_name += "_" if new_name else ""
-                new_name += f"{entity}-{details[entity]}" if entity != 'suffix' else details[entity]
-
-        new_name += ext
-
-        new_dir = os.path.join(args.output_dir)
-        if 'DerivativePipeline' in details:
-            new_dir = os.path.join(new_dir, 'derivatives', details['DerivativePipeline'])
-        new_dir = os.path.join(new_dir, f"sub-{details['sub']}")
-        if 'ses' in details:
-            new_dir = os.path.join(new_dir, f"ses-{details['ses']}")
-        new_dir = os.path.join(new_dir, "anat")
-        
-        details['new_name'] = os.path.join(new_dir, new_name)
-    logger.log(LogLevel.INFO.value, "New NIfTI file names and locations determined.")
-
-    print("Summary of identified files and proposed new names (following BIDS standard):")
-    for f in all_details:
-        print(f"{os.path.split(f['filename'])[1]} \n\t -> {os.path.split(f['new_name'])[1]}")
-
-    if len(all_details) != len(set(details['new_name'] for details in all_details)):
-        logger.log(LogLevel.ERROR.value, "Resultant BIDS data contains name conflicts! Correct CSV and run again.")
-        script_exit(1)
-    
-    # if running interactively, show a summary of the renames prior to actioning
-    if sys.__stdin__.isatty() and not args.auto_yes:
-        print("Confirm copy + renames? (n for no): ")
-        if input().strip().lower() in ["n", "no"]:
-            script_exit()
-
-    # copy/rename all files
-    logger.log(LogLevel.INFO.value, "Copying NIfTI files to new locations with new names...")
-    for details in all_details:
-        copy(os.path.join(details['filedir'], details['filename']), details['new_name'], always_show=args.auto_yes)
-    logger.log(LogLevel.INFO.value, "Done copying NIfTI files.")
-
-    logger.log(LogLevel.INFO.value, "Copying JSON header files if present and generating them if needed...")
-    for details in all_details:
-        f = json_filename(os.path.join(details['filedir'], details['filename']))
-        if os.path.exists(f):
-            copy(f, json_filename(details['new_name']), always_show=args.auto_yes)
-        else:
-            dictionary = {}
-            for field in details:
-                if field not in get_bids_entities():
-                    dictionary[field] = details[field]
-
-            if 'EchoTime' in dictionary:
-                dictionary['EchoTime'] = float(dictionary['EchoTime'])
-            if 'MagneticFieldStrength' in dictionary:
-                dictionary['MagneticFieldStrength'] = float(dictionary['MagneticFieldStrength'])
-            if 'ImageType' not in dictionary and 'part' in details:
-                dictionary['ImageType'] = ["P", "PHASE"] if details['part'] == 'phase' else ["M", "MAGNITUDE"]
-            if 'EchoNumber' not in dictionary and 'echo' in details:
-                dictionary['EchoNumber'] = int(details['echo'])
-            if 'ProtocolName' not in dictionary and 'acq' in details:
-                dictionary['ProtocolName'] = details['acq']
-            
-            with open(json_filename(details['new_name']), 'w', encoding='utf-8') as json_file:
-                json.dump(dictionary, json_file)
-            logger.log(LogLevel.INFO.value, f"Automatically generated JSON header file '{json_filename(details['new_name'])}'")
-    logger.log(LogLevel.INFO.value, "Done copying and generating JSON header files.")
-
-    # create required dataset_description.json file
-    logger.log(LogLevel.INFO.value, 'Generating details for BIDS datset_description.json...')
-    dataset_description = {
-        "Name" : f"QSMxT BIDS ({datetime.date.today()})",
-        "BIDSVersion" : "1.7.0",
-        "GeneratedBy" : [{
-            "Name" : "QSMxT",
-            "Version": f"{get_qsmxt_version()}",
-            "CodeURL" : "https://github.com/QSMxT/QSMxT"
-        }],
-        "Authors" : ["ADD AUTHORS HERE"]
-    }
-    logger.log(LogLevel.INFO.value, 'Writing BIDS dataset_description.json...')
-    with open(os.path.join(args.output_dir, 'dataset_description.json'), 'w', encoding='utf-8') as dataset_json_file:
-        json.dump(dataset_description, dataset_json_file)
-
-    logger.log(LogLevel.INFO.value, 'Writing BIDS .bidsignore file...')
-    with open(os.path.join(args.output_dir, '.bidsignore'), 'w', encoding='utf-8') as bidsignore_file:
-        bidsignore_file.write('references.txt\n')
-        bidsignore_file.write('dataset_qsmxt.csv\n')
-
-    logger.log(LogLevel.INFO.value, 'Writing BIDS dataset README...')
-    with open(os.path.join(args.output_dir, 'README'), 'w', encoding='utf-8') as readme_file:
-        readme_file.write(f"Generated using QSMxT ({get_qsmxt_version()})\n")
-        readme_file.write(f"\nDescribe your dataset here.\n")
+from qsmxt.scripts.logger import LogLevel, make_logger, show_warning_summary
 
 def script_exit(exit_code=0):
     logger = make_logger()
@@ -287,15 +21,596 @@ def script_exit(exit_code=0):
     logger.log(LogLevel.INFO.value, 'Finished')
     exit(exit_code)
 
+def interactive_table(session: pd.DataFrame):
+    """
+    A curses-based interface with:
+      - A "regex row" at row_idx = -1, with one regex input per column (except NIfTI_Path).
+      - A data table (row_idx >= 0) with columns:
+         0) NIfTI_Path (read-only, toggles full/basename on TAB)
+         1) sub
+         2) ses
+         3) acq
+         4) run
+         5) echo
+         6) part
+         7) suffix
+         8) MagneticFieldStrength
+         9) EchoTime
+
+    Controls:
+      - ARROWS = move, ENTER = apply regex (if on regex row) or move down (if on data table)
+      - ESC = finish
+      - TAB = toggle between showing full path or basename in NIfTI_Path column
+      - BACKSPACE = remove last character from the current field (if not empty),
+        or if already empty, copy from the field above (if available).
+      - DELETE = clear (empty) the current field if not empty, or if already empty, copy from above.
+      - We also show context-specific help for each column in a line above the table.
+    """
+
+    session.reset_index(drop=True, inplace=True)
+
+    columns = [
+        "NIfTI_Path",
+        "sub",
+        "ses",
+        "acq",
+        "run",
+        "echo",
+        "part",
+        "suffix",
+        "MagneticFieldStrength",
+        "EchoTime",
+    ]
+
+    # For toggling whether we display full path or basename
+    show_full_path = True
+    row_idx = -1  # -1 => "regex row"; 0.. => data table
+    col_idx = 0
+
+    # Ensure all columns exist
+    for c in columns:
+        if c not in session.columns:
+            session[c] = None
+
+    # Turn all non-None values to strings
+    for c in columns:
+        session[c] = session[c].apply(lambda x: str(x) if pd.notnull(x) else None)
+
+    # Keep a hidden full path for applying regex
+    session["NIfTI_Path_Full"] = session["NIfTI_Path"]
+
+    # Regex patterns for each column (except NIfTI_Path)
+    regex_map = {}
+    for c in columns:
+        if c != "NIfTI_Path":
+            regex_map[c] = ""
+
+    # Default guesses
+    default_patterns = {
+        "sub": r"sub-([A-Za-z0-9]+)",
+        "ses": r"ses-([A-Za-z0-9]+)",
+        "acq": r"acq-([A-Za-z0-9]+)",
+        "run": r"run-([0-9]+)",
+        "echo": r"echo-([0-9]+)",
+        "part": r"part-([A-Za-z]+)",
+        "suffix": r"_([A-Za-z0-9]+)\.nii",
+        "MagneticFieldStrength": r"_B(\d+\.\d+)",
+        "EchoTime": r"_TE(\d+\.\d+)",
+    }
+    for k,v in default_patterns.items():
+        if k in regex_map:
+            regex_map[k] = v
+
+    column_help = {
+        "NIfTI_Path": "[READ-ONLY]: Press TAB to toggle full path or basename.",
+        "sub": "[REQUIRED]: Subject ID e.g. 1 (BIDS: sub-<label>).",
+        "ses": "[OPTIONAL]: Session date e.g. 20241231 (BIDS: ses-<label>).",
+        "acq": "[OPTIONAL]: Acquisition label (BIDS: acq-<label>).",
+        "run": "[REQUIRED for multiple runs]: For multiple runs of an acquisition in a single session e.g. 1, 2, etc.",
+        "echo": "[REQUIRED for MEGRE]: Counter for identifying echo chronology.",
+        "part": "[REQUIRED for T2starw or MEGRE]: Identifies signal part ('mag', 'phase', 'real', or 'imag').",
+        "suffix": "[REQUIRED]: Identifies acquisition type T2starw or MEGRE for single or multi-echo GRE, respectively, T1w for anatomical T1.",
+        "MagneticFieldStrength": "[REQUIRED for T2starw/MEGRE]: Magnetic field strength in Teslas e.g. 1.5, 3, 7.",
+        "EchoTime": "[REQUIRED for T2starw/MEGRE]: Echo time in seconds e.g. 0.015, 0.03."
+    }
+
+    def apply_regex_to_filenames(column):
+        pattern = regex_map[column]
+        if not pattern:
+            return False, f"No regex pattern for {column}."
+
+        try:
+            compiled = re.compile(pattern)
+        except re.error as e:
+            return False, f"Invalid regex for {column}: {e}"
+
+        assigned_count = 0
+        for i in range(len(session)):
+            fullp = str(session.loc[i, "NIfTI_Path_Full"])
+            match = compiled.search(fullp)
+            if match:
+                val = match.group(1)
+                session.loc[i, column] = val
+                assigned_count += 1
+
+        return True, f"Regex assigned {column} for {assigned_count} file(s)."
+
+    def copy_from_above_if_exists(r, c):
+        """
+        Copies the value from row (r-1, c) to (r, c) if (r > 0) and
+        the above cell is not empty.
+        """
+        if r <= 0:
+            return  # can't copy from above if we're in the top row or negative
+        above_val = session.loc[r-1, c]
+        if pd.notnull(above_val) and str(above_val).strip() != "":
+            session.loc[r, c] = above_val
+
+    def validate_data(data):
+        errors = []
+        # col names
+        col_names = ["NIfTI_Path", "sub", "ses", "acq", "run", "echo", "part", "suffix", "MagneticFieldStrength", "EchoTime"]
+        for i, row in data.iterrows():
+            row = row[col_names].drop("NIfTI_Path")
+            if row.isnull().all():
+                continue
+
+            for c in ["sub", "suffix"]:
+                if pd.isnull(row[c]):
+                    errors.append((i, col_names.index(c), "Subject ID and suffix are required."))
+            
+            # if suffix is T2starw or MEGRE, MagneticFieldStrength and EchoTime are required
+            if row["suffix"] in ["T2starw", "MEGRE"]:
+                if pd.isnull(row["MagneticFieldStrength"]):
+                    errors.append((i, col_names.index("MagneticFieldStrength"), "T2starw and MEGRE images require MagneticFieldStrength."))
+                if pd.isnull(row["EchoTime"]):
+                    errors.append((i, col_names.index("EchoTime"), "T2starw and MEGRE images require EchoTime."))
+                
+            # if suffix is MEGRE, echo is required
+            if row["suffix"] == "MEGRE":
+                if pd.isnull(row["echo"]):
+                    errors.append((i, col_names.index("echo"), "MEGRE images require echo."))
+            
+            # if suffix is T2starw or MEGRE, part is required
+            if row["suffix"] in ["T2starw", "MEGRE"]:
+                if pd.isnull(row["part"]):
+                    errors.append((i, col_names.index("part"), "T2starw and MEGRE images require part."))
+            
+            # if suffix is T2starw, echo is not allowed
+            if row["suffix"] == "T2starw":
+                if pd.notnull(row["echo"]):
+                    errors.append((i, col_names.index("echo"), "T2starw images should not have echo."))
+
+            # part values may only be 'mag', 'phase', 'real', or 'imag'
+            if pd.notnull(row["part"]) and str(row["part"]).strip() not in ["mag", "phase", "real", "imag"]:
+                errors.append((i, col_names.index("part"), "part should be 'mag', 'phase', 'real', or 'imag'."))
+
+            # suffix values may only be 'T2starw', 'MEGRE', or 'T1w'
+            if pd.notnull(row["suffix"]) and str(row["suffix"]).strip() not in ["T2starw", "MEGRE", "T1w"]:
+                errors.append((i, col_names.index("suffix"), "suffix should be 'T2starw', 'MEGRE', or 'T1w'."))
+            
+            # echo values should be positive integers
+            if pd.notnull(row["echo"]):
+                try:
+                    val = int(row["echo"])
+                    if val <= 0:
+                        errors.append((i, col_names.index("echo"), "echo should be a positive integer."))
+                except ValueError:
+                    errors.append((i, col_names.index("echo"), "echo should be a positive integer."))
+
+            # MagneticFieldStrength and EchoTime should be positive floats
+            for c in ["MagneticFieldStrength", "EchoTime"]:
+                if pd.notnull(row[c]):
+                    try:
+                        val = float(row[c])
+                        if val <= 0:
+                            errors.append((i, col_names.index(c), f"{c} should be a positive float."))
+                    except ValueError:
+                        errors.append((i, col_names.index(c), f"{c} should be a positive float."))
+
+        # the same combination of sub, ses, acq, run, echo, part, and suffix should not be repeated
+        dupes = data.duplicated(subset=["sub", "ses", "acq", "run", "echo", "part", "suffix"], keep=False)
+        for i, dupe in dupes.items():
+            if dupe:
+                errors.append((i, col_names.index("sub"), "Duplicate combination of sub, ses, acq, run, echo, part, and suffix."))
+
+        # 2) For a given sub/ses/acq/run combo, MagneticFieldStrength should be constant
+        group_mf = data.groupby(["sub","ses","acq","run"], dropna=False)
+        for group_keys, grp in group_mf:
+            # sub, ses, acq, run => all rows must share the same MagneticFieldStrength (if not null)
+            non_null_values = grp["MagneticFieldStrength"].dropna().unique()
+            # If there's more than 1 distinct non-null MF strength => error on each row
+            if len(non_null_values) > 1:
+                for idx in grp.index:
+                    errors.append((idx, col_names.index("MagneticFieldStrength"),
+                                "MagneticFieldStrength must be constant for sub/ses/acq/run."))
+
+        # 3) For a given sub/ses/acq/run/echo combo, EchoTime should be constant
+        group_et = data.groupby(["sub","ses","acq","run","echo"], dropna=False)
+        for group_keys, grp in group_et:
+            # sub, ses, acq, run, echo => all rows must share the same EchoTime (if not null)
+            non_null_times = grp["EchoTime"].dropna().unique()
+            if len(non_null_times) > 1:
+                for idx in grp.index:
+                    errors.append((idx, col_names.index("EchoTime"),
+                                "EchoTime must be constant for sub/ses/acq/run/echo."))
+        
+        # --- 3) If multiple rows share the same sub/ses/acq/run/part/suffix,
+        #         their echo values must be consecutive 1..n.
+        #         (Ignoring T2starw that disallows echo anyway).
+        grouping_cols = ["sub","ses","acq","run","part","suffix"]
+        grouped = data.groupby(grouping_cols, dropna=False)  # dropna=False so we keep invalid combos too
+        for group_keys, grp in grouped:
+            suffix_val = group_keys[-1]  # suffix is last in group_keys
+            if suffix_val != "MEGRE":
+                continue
+
+            echo_vals = []
+            row_indices = []
+            for idx, thisrow in grp.iterrows():
+                e = str(thisrow["echo"]).strip() if pd.notnull(thisrow["echo"]) else ""
+                # if e is not empty
+                if e:
+                    try:
+                        echo_vals.append(int(e))
+                    except ValueError:
+                        # already flagged above
+                        pass
+                row_indices.append(idx)
+
+            sorted_e = sorted(echo_vals)
+            if sorted_e != list(range(1, len(sorted_e) + 1)):
+                for idx in row_indices:
+                    errors.append((idx, col_names.index("echo"), "For multiple echoes, they must start at 1 and be consecutive within the same sub/ses/acq/run/part/suffix."))
+
+        if errors:
+            return False, errors
+        return True, []
+
+    def curses_ui(stdscr):
+        nonlocal row_idx, col_idx, show_full_path
+
+        curses.curs_set(1)
+        curses.start_color()
+
+        # normal
+        curses.init_pair(1, curses.COLOR_WHITE, curses.COLOR_BLACK)
+        normal = curses.color_pair(1)
+
+        # error
+        curses.init_pair(2, curses.COLOR_RED, curses.COLOR_BLACK)
+        error = curses.color_pair(2)
+
+        # warning
+        curses.init_pair(3, curses.COLOR_YELLOW, curses.COLOR_BLACK)
+        warning = curses.color_pair(3)
+
+        # success
+        curses.init_pair(4, curses.COLOR_GREEN, curses.COLOR_BLACK)
+        success = curses.color_pair(4)
+
+        valid, errors = validate_data(session)
+        if not valid:
+            row_idx, col_idx, message = errors[0]
+            status = (error, message)
+        else:
+            status = (success, "Valid")
+
+        nrows = len(session)
+        ncols = len(columns)
+        changes = False
+
+        while True:
+            stdscr.clear()
+            max_y, max_x = stdscr.getmaxyx()
+
+            # Layout plan:
+            #  Line 0-1 : instructions
+            #  Line 2   : status
+            #  Line 3   : help text for current column
+            #  Line 4   : BLANK
+            #  Line 5   : regex header
+            #  Line 6   : regex row
+            #  Line 7   : BLANK
+            #  Line 8   : table header
+            #  Line 9.. : data rows
+
+            # Quick naive sizing for columns
+            col0_width = max_x // 3
+            if col0_width < 20:
+                col0_width = 20
+            other_col_count = ncols - 1
+            if other_col_count < 1:
+                other_col_count = 1
+            remaining_width = max_x - col0_width
+            each_col_width = remaining_width // other_col_count
+            if each_col_width < 12:
+                each_col_width = 12
+
+            def get_col_width(ix):
+                return col0_width if ix == 0 else each_col_width
+
+            try:
+
+                # Instructions lines
+                stdscr.addstr(0, 0, "=== nifti-convert: Convert NIfTI to BIDS for QSMxT ==="[:max_x])
+                stdscr.addstr(1, 0, "INSTRUCTIONS: Fill out the data table below to complete the conversion to BIDS."[:max_x])
+
+                stdscr.addstr(3, 0, "CONTROLS: ARROWS=move; ESC=done; TAB=toggle full paths; DEL=clear / copy above cell"[:max_x])
+                stdscr.addstr(4, 0, "REGULAR EXPRESSIONS: You can use the regex row to autopopulate columns based on filenames."[:max_x])
+
+                # Status message
+                stdscr.addstr(6, 0, f"STATUS: {status[1]}"[:max_x], status[0])
+
+                if row_idx == -1:
+                    help_text = "HELP <REGEX row>: Edit a pattern for each column. Press ENTER to apply."[:max_x]
+                else:
+                    current_col = columns[col_idx]
+                    help_text = f"HELP <{current_col}> {column_help.get(current_col, '')}"[:max_x]
+                stdscr.addstr(7, 0, help_text[:max_x])
+
+                # Blank line 4
+                regex_header_y = 9
+                # Regex header
+                regex_header_str = ""
+                for ci, cname in enumerate(columns):
+                    w = get_col_width(ci)
+                    regex_header_str += cname[:w].ljust(w) + " "
+                stdscr.addstr(regex_header_y, 0, regex_header_str[:max_x])
+
+                # Regex row
+                regex_row_y = regex_header_y + 1
+                row_output = ""
+                for ci, cname in enumerate(columns):
+                    w = get_col_width(ci)
+                    if ci == 0:
+                        cell_txt = "[NoRegex]"
+                    else:
+                        cell_txt = regex_map[cname][:w]
+
+                    if row_idx == -1 and col_idx == ci:
+                        stdscr.attron(curses.A_REVERSE)
+                        stdscr.addstr(regex_row_y, len(row_output), cell_txt.ljust(w))
+                        stdscr.attroff(curses.A_REVERSE)
+                    else:
+                        stdscr.addstr(regex_row_y, len(row_output), cell_txt.ljust(w))
+                    row_output += cell_txt.ljust(w) + " "
+
+                # Blank line 7
+                table_header_y = regex_row_y + 2
+                # Table header
+                table_header_str = ""
+                for ci, cname in enumerate(columns):
+                    w = get_col_width(ci)
+                    table_header_str += cname[:w].ljust(w) + " "
+                stdscr.addstr(table_header_y, 0, table_header_str[:max_x])
+
+                data_start_y = table_header_y + 1
+
+                # Data rows
+                for r_i in range(nrows):
+                    yy = data_start_y + r_i
+                    if yy >= max_y:
+                        break
+
+                    col_x = 0
+                    for ci, cname in enumerate(columns):
+                        w = get_col_width(ci)
+                        val = ""
+                        if ci == 0:
+                            # NIfTI_Path
+                            if show_full_path:
+                                val = str(session.loc[r_i, "NIfTI_Path_Full"])
+                            else:
+                                val = os.path.basename(str(session.loc[r_i, "NIfTI_Path_Full"]))
+                        else:
+                            raw_val = session.loc[r_i, cname]
+                            val = "" if pd.isnull(raw_val) else str(raw_val)
+
+                        val = val[:w]
+
+                        # highlight if this is the current cell
+                        if (r_i == row_idx) and (ci == col_idx) and (row_idx >= 0):
+                            stdscr.attron(curses.A_REVERSE)
+                            stdscr.addstr(yy, col_x, val.ljust(w))
+                            stdscr.attroff(curses.A_REVERSE)
+                        else:
+                            stdscr.addstr(yy, col_x, val.ljust(w))
+                        col_x += w + 1
+            except curses.error:
+                stdscr.clear()
+                stdscr.addstr(0, 0, "Window too small!", error)
+                stdscr.addstr(1, 0, "Please resize the window to be larger.", error)
+                stdscr.refresh()
+                stdscr.getch()
+                continue
+
+            stdscr.refresh()
+            key = stdscr.getch()
+
+            if key == 27:  # ESC
+                valid, errors = validate_data(session)
+                if not valid:
+                    row_idx, col_idx, msg = errors[0]
+                    status = (error, msg)
+                else:
+                    return
+
+            elif key in (curses.KEY_ENTER, 10, 13):
+                # ENTER
+                if row_idx == -1:
+                    # apply regex for col_idx if not 0
+                    if col_idx == 0:
+                        status = (warning, "Cannot apply regex to NIfTI_Path.")
+                    else:
+                        c_name = columns[col_idx]
+                        valid, msg = apply_regex_to_filenames(c_name)
+                        if valid:
+                            status = (success, msg)
+                        else:
+                            status = (error, msg)
+                else:
+                    row_idx = min(nrows - 1, row_idx + 1)
+
+            elif key == curses.KEY_UP:
+                if row_idx == -1:
+                    # can't go above regex row
+                    pass
+                elif row_idx == 0:
+                    # moving from first data row to regex row
+                    row_idx = -1
+                else:
+                    row_idx -= 1
+
+            elif key == curses.KEY_DOWN:
+                if row_idx == -1:
+                    # move from regex row to first data row
+                    row_idx = 0
+                else:
+                    row_idx = min(nrows - 1, row_idx + 1)
+
+            elif key == curses.KEY_LEFT:
+                col_idx = max(0, col_idx - 1)
+
+            elif key == curses.KEY_RIGHT:
+                col_idx = min(ncols - 1, col_idx + 1)
+
+            elif key == 9:  # TAB => toggle path mode
+                show_full_path = not show_full_path
+
+            elif 32 <= key <= 126:
+                # typed a normal ASCII char
+                if row_idx == -1:
+                    # editing regex
+                    if col_idx != 0:
+                        c_name = columns[col_idx]
+                        regex_map[c_name] += chr(key)
+                else:
+                    # editing table
+                    if col_idx != 0:  # NIfTI_Path is read-only
+                        c_name = columns[col_idx]
+                        curr_val = session.loc[row_idx, c_name]
+                        if pd.isnull(curr_val):
+                            curr_val = ""
+                        session.loc[row_idx, c_name] = curr_val + chr(key)
+                        changes = True
+
+            elif key in (curses.KEY_BACKSPACE, 127):
+                # BACKSPACE => remove last char if not empty, else copy from above
+                if row_idx == -1 and col_idx != 0:
+                    # editing regex pattern
+                    c_name = columns[col_idx]
+                    curr = regex_map[c_name]
+                    if curr:
+                        regex_map[c_name] = curr[:-1]
+                    # if it's empty already, do nothing for regex row
+                elif row_idx >= 0 and col_idx != 0:
+                    # editing table
+                    c_name = columns[col_idx]
+                    curr_val = session.loc[row_idx, c_name]
+                    if pd.isnull(curr_val) or str(curr_val).strip() == "":
+                        curr_val = None
+                    elif curr_val == None:
+                        # copy from above if possible
+                        copy_from_above_if_exists(row_idx, c_name)
+                    else:
+                        # remove last character
+                        session.loc[row_idx, c_name] = curr_val[:-1]
+                        if str(session.loc[row_idx, c_name]).strip() == "":
+                            session.loc[row_idx, c_name] = None
+                    changes = True
+
+            elif key == curses.KEY_DC:
+                # DELETE => clear if not empty, else copy from above
+                if row_idx == -1 and col_idx != 0:
+                    # editing regex
+                    c_name = columns[col_idx]
+                    curr = regex_map[c_name]
+                    if curr == None:
+                        # do nothing for regex row if it's already empty
+                        pass
+                    else:
+                        # clear it
+                        regex_map[c_name] = None
+                elif row_idx >= 0 and col_idx != 0:
+                    c_name = columns[col_idx]
+                    curr_val = session.loc[row_idx, c_name]
+                    if pd.isnull(curr_val):
+                        curr_val = None
+                    if curr_val == None:
+                        # already empty => copy from above
+                        copy_from_above_if_exists(row_idx, c_name)
+                    else:
+                        # clear
+                        session.loc[row_idx, c_name] = None
+                changes = True
+
+            if changes:
+                valid, errors = validate_data(session)
+                if not valid:
+                    _, _, msg = errors[0]
+                    status = (error, msg)
+                else:
+                    status = (success, "Valid")
+            # else ignore other keys
+
+    curses.wrapper(curses_ui)
+    return session
+
+def nifti_convert(nifti_dir, output_dir):
+    logger = make_logger()
+
+    session = load_nifti_session(nifti_dir)
+    session.reset_index(drop=True, inplace=True)
+    # Sort by some BIDS fields if they exist, to get a consistent order
+    sort_cols = [
+        "sub", "ses", "acq", "run", "echo", "part",
+        "suffix", "MagneticFieldStrength", "EchoTime", "NIfTI_Path"
+    ]
+    # Only use columns that exist
+    use_sort_cols = [c for c in sort_cols if c in session.columns]
+    session.sort_values(by=use_sort_cols, inplace=True)
+    logger.log(LogLevel.INFO.value, f"Found {len(session)} NIfTI files.")
+
+    session = interactive_table(session)
+
+    # for each row in the dataframe, move the file to the new location
+    for i in range(len(session)):
+        row = session.loc[i]
+        new_name = f"sub-{row['sub']}"
+        if pd.notnull(row["ses"]):
+            new_name += f"_ses-{row['ses']}"
+        if pd.notnull(row["acq"]):
+            new_name += f"_acq-{row['acq']}"
+        if pd.notnull(row["run"]):
+            new_name += f"_run-{row['run']}"
+        if pd.notnull(row["echo"]):
+            new_name += f"_echo-{row['echo']}"
+        if pd.notnull(row["part"]):
+            new_name += f"_part-{row['part']}"
+        new_name += f"_{row['suffix']}.nii"
+
+        anat_dir = os.path.join(output_dir, f"sub-{row['sub']}")
+        if pd.notnull(row["ses"]):
+            anat_dir = os.path.join(anat_dir, f"ses-{row['ses']}")
+        anat_dir = os.path.join(anat_dir, "anat")
+
+        os.makedirs(anat_dir, exist_ok=True)
+
+        logger.log(LogLevel.INFO.value, f"Copying {row['NIfTI_Path_Full']} to {os.path.join(anat_dir, new_name)}")
+        shutil.copy(row["NIfTI_Path_Full"], os.path.join(anat_dir, new_name))
+        json_path = row['JSON_Path']
+        shutil.copy(json_path, os.path.join(anat_dir, new_name.replace(".nii.gz", ".nii").replace(".nii", ".json")))
+
 def main():
     parser = argparse.ArgumentParser(
-        description="QSMxT niftiConvert: Sorts NIfTI files into BIDS for use with QSMxT",
+        description="QSMxT niftiConvert with extended curses UI, multiline regex row, toggling path view, and field copying.",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter
     )
 
     parser.add_argument(
         'input_dir',
-        help='Input NIfTI directory to be recursively searched for NIfTI files.'
+        help='Input NIfTI directory.'
     )
 
     parser.add_argument(
@@ -303,18 +618,10 @@ def main():
         help='Output BIDS directory.'
     )
 
-    parser.add_argument(
-        '--auto_yes',
-        action='store_true',
-        help='Force running non-interactively. This is useful when used as part of a script or on a testing server.'
-    )
-
     args = parser.parse_args()
 
     args.input_dir = os.path.abspath(args.input_dir)
     args.output_dir = os.path.abspath(args.output_dir)
-    args.csv_file = os.path.join(args.output_dir, 'dataset_qsmxt.csv')
-
     os.makedirs(args.output_dir, exist_ok=True)
 
     logger = make_logger(
@@ -336,20 +643,15 @@ def main():
             diff_file.write(diff)
 
     with open(os.path.join(args.output_dir, "references.txt"), 'w', encoding='utf-8') as f:
-        # output QSMxT version, run command, and python interpreter
         f.write(f"QSMxT: {get_qsmxt_version()}")
         f.write(f"\nRun command: {str.join(' ', sys.argv)}")
         f.write(f"\nPython interpreter: {sys.executable}")
+        f.write("\n\n == References ==\n")
+        f.write("\n - Stewart AW, Bollmann S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
+        f.write("\n - Gorgolewski KJ, Auer T, Calhoun VD, et al. The brain imaging data structure, a format for organizing outputs of neuroimaging experiments. Sci Data. 2016;3(1):160044.\n")
 
-        f.write("\n\n == References ==")
-
-        f.write("\n\n - Stewart AW, Bollman S, et al. QSMxT/QSMxT. GitHub; 2022. https://github.com/QSMxT/QSMxT")
-        f.write("\n\n - Gorgolewski KJ, Auer T, Calhoun VD, et al. The brain imaging data structure, a format for organizing and describing outputs of neuroimaging experiments. Sci Data. 2016;3(1):160044. doi:10.1038/sdata.2016.44")
-        f.write("\n\n")
-
-    nifti_convert(
-        args=args
-    )
-
+    nifti_convert(args.input_dir, args.output_dir)
     script_exit()
 
+if __name__ == "__main__":
+    main()

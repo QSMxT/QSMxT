@@ -98,9 +98,9 @@ jobs:
           -e TEST_DIR=$TEST_DIR \
           -e GITHUB_STEP_SUMMARY=$GITHUB_STEP_SUMMARY \
           qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_qsm.py -s -k 'test_premade and ${{ matrix.args }}'"
-    - uses: actions/upload-artifact@v3
+    - uses: actions/upload-artifact@v4
       with:
-        name: public-outputs
+        name: public-outputs-${{ matrix.args }}
         path: /storage/tmp/public-outputs
   test_qsm_edgecases:
     needs: setup_qsmxt

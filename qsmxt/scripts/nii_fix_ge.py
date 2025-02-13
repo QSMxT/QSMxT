@@ -53,18 +53,36 @@ def fix_ge_polar(mag_path, phase_path, delete_originals=True):
         os.remove(phase_path)
         os.rename(phase_corr_path, phase_path)
 
+    # return new file path
+    return phase_path
 
-def fix_ge_complex(real_nii_path, imag_nii_path, delete_originals=False):
+
+def fix_ge_complex(real_nii_path, imag_nii_path, out_mag_path=None, out_phase_path=None, delete_originals=True):
 
     # ensure paths are absolute
     real_nii_path = os.path.abspath(real_nii_path)
     imag_nii_path = os.path.abspath(imag_nii_path)
     real_json_path = f"{get_fname(real_nii_path)}.json"
     imag_json_path = f"{get_fname(imag_nii_path)}.json"
-    mag_nii_path = real_nii_path.replace('_real', '')
-    phase_nii_path = extend_fname(mag_nii_path, '_ph')
-    mag_json_path = f"{get_fname(mag_nii_path)}.json"
-    phase_json_path = f"{get_fname(phase_nii_path)}.json"
+
+    if out_mag_path is None:
+        if 'part-real' in real_nii_path:
+            out_mag_path = real_nii_path.replace('part-real', 'part-mag')
+        elif '_real' in real_nii_path:
+            out_mag_path = real_nii_path.replace('_real', '_mag')
+        else:
+            out_mag_path = extend_fname(real_nii_path, "_mag")
+    
+    if out_phase_path is None:
+        if 'part-real' in real_nii_path:
+            out_phase_path = real_nii_path.replace('part-real', 'part-phase')
+        elif '_real' in real_nii_path:
+            out_phase_path = real_nii_path.replace('_real', '_phase')
+        else:
+            out_phase_path = extend_fname(real_nii_path, "_phase")
+
+    mag_json_path = f"{get_fname(out_mag_path)}.json"
+    phase_json_path = f"{get_fname(out_phase_path)}.json"
 
     # load real data
     real_nii = nib.load(real_nii_path)
@@ -89,14 +107,9 @@ def fix_ge_complex(real_nii_path, imag_nii_path, delete_originals=False):
     phase_nii = nib.Nifti1Image(phase_data, real_nii.affine, real_nii.header)
     
     # save new images to file
-    nib.save(mag_nii, mag_nii_path)
-    nib.save(phase_nii, phase_nii_path)
+    nib.save(mag_nii, out_mag_path)
+    nib.save(phase_nii, out_phase_path)
     
-    # delete original images
-    if delete_originals:
-        os.remove(real_nii_path)
-        os.remove(imag_nii_path)
-
     # create new json headers
     if os.path.exists(real_json_path):
         mag_json_data = load_json(real_json_path)
@@ -109,10 +122,15 @@ def fix_ge_complex(real_nii_path, imag_nii_path, delete_originals=False):
         with open(phase_json_path, 'w') as phase_json:
             json.dump(phase_json_data, phase_json)
 
-        # delete original json headers
-        if delete_originals:
-            os.remove(real_json_path)
-            os.remove(imag_json_path)
+    # delete originals
+    if delete_originals:
+        os.remove(real_nii_path)
+        os.remove(imag_nii_path)
+        os.remove(real_json_path)
+        os.remove(imag_json_path)
+
+    # return new file paths
+    return out_mag_path, out_phase_path
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
