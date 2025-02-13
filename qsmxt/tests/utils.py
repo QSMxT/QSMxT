@@ -132,9 +132,9 @@ def download_from_rdm(remote_path, local_path):
 def download_from_osf(project, local_path):
     logger = make_logger()
     try:
-        osf_token = os.environ['OSF_TOKEN']
-        osf_user = os.environ['OSF_USER']
-        osf_pass = os.environ['OSF_PASS']
+        osf_token = os.environ.get('OSF_TOKEN', '')
+        osf_user = os.environ.get('OSF_USER', os.environ.get('OSF_USERNAME', ''))
+        osf_pass = os.environ.get('OSF_PASS', os.environ.get('OSF_PASSWORD', ''))
     except KeyError as e:
         logger.log(LogLevel.ERROR.value, f"Cannot connect to OSF - missing environment variable/s! Need OSF_TOKEN, OSF_USER and OSF_PASS.")
         raise e
