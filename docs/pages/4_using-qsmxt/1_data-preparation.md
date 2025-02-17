@@ -14,52 +14,24 @@ permalink: /using-qsmxt/data-preparation
 
 # Data preparation
 
-QSMxT requires <a href="https://bids.neuroimaging.io/" target="_blank" data-placement="top" data-toggle="popover" data-trigger="hover focus" data-content="Click to read about BIDS at https://bids.neuroimaging.io/.">BIDS</a>-conforming data. You can use `dicom-sort`, `dicom-convert` and `nifti-convert` to convert your data to BIDS, depending on whether you have DICOM or NIfTI images. 
+QSMxT requires <a href="https://bids.neuroimaging.io/" target="_blank" data-placement="top" data-toggle="popover" data-trigger="hover focus" data-content="Click to read about BIDS at https://bids.neuroimaging.io/.">BIDS</a>-conforming data. You can use `dicom-convert` and `nifti-convert` to convert your data to BIDS, depending on whether you have DICOM or NIfTI images. 
 
-The data conversion tools packaged in QSMxT are only intended to work with a subset of BIDS. This subset represents the minimum BIDS specification to enable QSM post-processing. The tools are not designed to convert, for example, Diffusion-Weighted Imaging (DWI), functional MRI (fMRI), T2-weighted imaging, or other imaging modalities. Any images not needed for QSM will be left in the extra_data directory for the relevant subject-session folder. For QSM, relevant BIDS suffixes include T2starw and MEGRE, including magnitude and phase parts. T1-weighted imaging is also supported to enable segmentation and registration to the QSM space. Some derived data including brain masks may be used in some QSM pipelines and are also supported.
+The data conversion tools packaged in QSMxT are only intended to work with a subset of BIDS. This subset represents the minimum BIDS specification to enable QSM post-processing. The tools are not designed to convert, for example, Diffusion-Weighted Imaging (DWI), functional MRI (fMRI), T2-weighted imaging, or other imaging modalities. For QSM, relevant BIDS suffixes include T2starw and MEGRE, including magnitude and phase parts. T1-weighted imaging is also supported to enable segmentation and registration to the QSM space. Some derived data, including brain masks, may be used in some QSM pipelines and are also supported.
 
 For example BIDS structures, see [BIDS Examples](#bids-examples).
 
 ## DICOM to BIDS
 
-To convert DICOM to BIDS using `dicom-convert`, your data must first be organized into folders by subject, session, and series. For example:
+To convert to BIDS, use `dicom-convert`, which runs interactively:
 
 ```bash
-dicoms/
-├── sub-1
-│   └── ses-20190606
-│       ├── 3_t1_mprage_sag_p2
-│       ├── 6_gre_qsm_5echoes_Iso1mm
-│       └── 7_gre_qsm_5echoes_Iso1mm
-├── sub-2
-│   └── ses-20190528
-│       ├── 10_gre_qsm_5echoes_Iso1mm
-│       ├── 11_gre_qsm_5echoes_Iso1mm
-│       └── 3_t1_mprage_sag_p2
+dicom-convert dicoms/ bids/
 ```
 
-To automatically sort your DICOM images, use `dicom-sort`:
+To run `dicom-convert` non-interactively, use `--auto_yes`. Running it this way is less flexible because it does not provide the interfaces used to identify individual series from each acquisition and instead relies on heuristics. Some of these heuristics can be customized, namely the patterns used to identify imaging protocols intended for QSM and T1-weighted images. These can be specified using command-line arguments, e.g.:
 
 ```bash
-dicom-sort YOUR_DICOM_DIR/ dicoms-sorted/
-```
-
-If this doesn't find all DICOMs (e.g. you have enhanced DICOM files). Run with using the option `--check_all_files`:
-
-```bash
-dicom-sort YOUR_DICOM_DIR/ dicoms-sorted/ --check_all_files
-```
-
-To convert to BIDS, use `dicom-convert`:
-
-```bash
-dicom-convert dicoms-sorted/ bids/
-```
-
-Carefully read the output to ensure data were correctly recognized and converted. Crucially, the `dicom-convert` script needs to know which of your acquisitions are intended for QSM, and which are T1-weighted and suitable for segmentation. It identifies this based on the DICOM `ProtocolName` field and looks for the patterns `*qsm*` and `*t2starw*` for the QSM-intended series and `t1w` for the T1-weighted series. You can specify your patterns using command-line arguments, e.g.:
-
-```bash
-dicom-convert dicoms-sorted/ bids/ --t2starw_protocol_patterns '*gre*' --t1w_protocol_patterns '*mp2rage*'
+dicom-convert dicoms/ bids/ --auto_yes --t2starw_protocol_patterns '*gre*' --t1w_protocol_patterns '*mp2rage*'
 ```
 
 ## NIfTI to BIDS
@@ -70,17 +42,15 @@ To convert NIfTI to BIDS, use `nifti-convert`:
 nifti-convert YOUR_NIFTI_DIR/ bids/
 ```
 
-Carefully read the output to ensure data were correctly recognized. The script will write a .CSV spreadsheet to file to be filled with BIDS entity information and NIfTI JSON information. If you are unsure how to complete the spreadsheet, please see [anatomical imaging data](https://bids-specification.readthedocs.io/en/stable/04-modality-specific-files/01-magnetic-resonance-imaging-data.html#anatomy-imaging-data) section on the BIDS specification for details about each entity in the `anat` datatype. Note that `nifti-convert` currently only supports the BIDS `anat` datatype, which is sufficient for studies in QSM. Ensure you also fill the `MagneticFieldStrength` and `EchoTime` fields, which are necessary for QSM calculation. Once you have filled the spreadsheet, run the script again to complete the conversion.
-
 # UK BioBank Data
 
 QSMxT can process and analyse UK BioBank data. Please see the [GitHib issue](https://github.com/QSMxT/QSMxT/issues/115#issuecomment-2017360415) for detailed instructions.
 
 # BIDS Examples
 
-The following are examples of valid BIDS structures that are suitable for processing using QSMxT.
+The following are examples of valid BIDS structures suitable for processing using QSMxT.
 
-Crucially, distinct groups of files suitable for a single QSM reconstruction are distinguished from one another by their subject name, optional session directory, optional acquisition name, optional run number, and suffix.
+Crucially, distinct groups of files suitable for a single QSM reconstruction are distinguished by their subject name, optional session directory, optional acquisition name, optional run number, and suffix.
 
 ## Minimal example (single subject, single session, single echo)
 
