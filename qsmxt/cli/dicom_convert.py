@@ -650,8 +650,8 @@ def convert_to_bids(input_dir, output_dir, auto_yes, qsm_protocol_patterns, t1w_
         dicom_session['ImageType'].append(dicom_session['(0043,102F)'].map(private_map).fillna(''))
 
     # Additional columns
-    dicom_session['NumEchoes'] = dicom_session.groupby('ProtocolName')['EchoTime'].transform('nunique')
-    dicom_session['EchoNumber'] = dicom_session.groupby('ProtocolName')['EchoTime'].rank(method='dense')
+    dicom_session['NumEchoes'] = dicom_session.groupby(['PatientID', 'StudyDate', 'ProtocolName', 'SeriesDescription', 'SeriesInstanceUID'])['EchoTime'].transform('nunique')
+    dicom_session['EchoNumber'] = dicom_session.groupby(['PatientID', 'StudyDate', 'ProtocolName', 'SeriesDescription', 'SeriesInstanceUID'])['EchoTime'].rank(method='dense')
     dicom_session['NumRuns'] = (
         dicom_session
         .groupby(['PatientID','StudyDate','ProtocolName','SeriesDescription', 'ImageType'])['SeriesInstanceUID']
