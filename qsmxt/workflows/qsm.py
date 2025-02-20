@@ -350,8 +350,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, run=None):
     basedir = os.path.join(run_args.output_dir, subject, session if session else '')
     basename = f"{subject}"
     if session: basename += f"_{session}"
-    if run: basename += f"_run-{run}"
     if acq: basename += f"_acq-{acq}"
+    if run: basename += f"_run-{run}"
     
     n_copyfile.inputs.output_map = {
         'qsm': os.path.join(basedir, 'anat', f"{basename}_Chimap"),
