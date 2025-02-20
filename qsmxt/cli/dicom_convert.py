@@ -607,10 +607,10 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
             acq_label = f"acq-{clean(row['ProtocolName'])}"
             
             base_name = f"{subject_id}_{session_id}_{acq_label}"
-            if row["NumEchoes"] > 1 and row["AcquisitionType"] == "QSM":
-                base_name += f"_echo-{int(row['EchoNumber']):02}"
             if row["NumRuns"] > 1:
                 base_name += f"_run-{int(row['RunNumber']):02}"
+            if row["NumEchoes"] > 1 and row["AcquisitionType"] == "QSM":
+                base_name += f"_echo-{int(row['EchoNumber']):02}"
             
             if row["AcquisitionType"] == "QSM":
                 base_name += f"_part-{row['Type'].lower()}"
