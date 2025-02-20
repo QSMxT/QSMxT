@@ -63,7 +63,7 @@ class RomeoB0Interface(CommandLineJulia):
     def __init__(self, **inputs): super(RomeoB0Interface, self).__init__(**inputs)
     input_spec = RomeoB0InputSpec
     output_spec = RomeoB0OutputSpec
-    _cmd = os.path.join(get_qsmxt_dir(), "scripts", "romeo_unwrapping.jl --no-rescale --compute-B0 B0.nii")
+    _cmd = os.path.join(get_qsmxt_dir(), "scripts", "romeo_unwrapping.jl --no-rescale --compute-B0 B0.nii --individual-unwrapping --correct-global")
 
     def _format_arg(self, name, trait_spec, value):
         if name == 'TEs' or name == 'TE':
