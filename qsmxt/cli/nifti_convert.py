@@ -588,7 +588,8 @@ def nifti_convert(nifti_dir, output_dir):
             new_name += f"_echo-{row['echo']}"
         if pd.notnull(row["part"]):
             new_name += f"_part-{row['part']}"
-        new_name += f"_{row['suffix']}.nii"
+        original_ext = ".nii.gz" if row["NIfTI_Path"].endswith(".nii.gz") else ".nii"
+        new_name += f"_{row['suffix']}.{original_ext}"
 
         anat_dir = os.path.join(output_dir, f"sub-{row['sub']}")
         if pd.notnull(row["ses"]):
@@ -600,7 +601,7 @@ def nifti_convert(nifti_dir, output_dir):
         logger.log(LogLevel.INFO.value, f"Copying {row['NIfTI_Path_Full']} to {os.path.join(anat_dir, new_name)}")
         shutil.copy(row["NIfTI_Path_Full"], os.path.join(anat_dir, new_name))
         json_path = row['JSON_Path']
-        shutil.copy(json_path, os.path.join(anat_dir, new_name.replace(".nii.gz", ".nii").replace(".nii", ".json")))
+        shutil.copy(json_path, os.path.join(anat_dir, new_name.replace(original_ext, ".json")))
 
 def main():
     parser = argparse.ArgumentParser(
