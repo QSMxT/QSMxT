@@ -650,7 +650,7 @@ def parse_args(args, return_run_command=False):
 
     # Checking the combined qsm_reference values
     if args.qsm_reference is not None:
-        if not (args.qsm_reference in ['mean', 'none'] or (isinstance(args.qsm_reference, list) and all(isinstance(x, int) for x in args.qsm_reference))):
+        if not ((len(args.qsm_reference) == 1 and args.qsm_reference[0] in ['mean', 'none']) or all(isinstance(x, int) for x in args.qsm_reference)):
             parser.error("--qsm_reference must be either 'mean', 'none', or a series of one or more integers")
 
     # get explicitly set arguments
