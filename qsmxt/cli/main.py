@@ -24,18 +24,24 @@ from qsmxt.workflows.template import init_template_workflow
 
 def init_workflow(args):
     logger = make_logger('main')
-    subjects = [
-        os.path.split(path)[1]
-        for path in sorted(glob.glob(os.path.join(args.bids_dir, "sub*")))
-        if not args.subjects or os.path.split(path)[1] in args.subjects
+    subject_paths = [
+        path for path in sorted(glob.glob(os.path.join(args.bids_dir, "sub*")))
     ]
-    if not subjects:
-        logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, 'sub*')}")
+
+    if not subject_paths:
+        logger.log(LogLevel.ERROR.value, f"No subjects found in {os.path.join(args.bids_dir, 'sub*')}!")
         script_exit(1, logger=logger)
+    
+    subject_ids = [os.path.split(subject_path)[1] for subject_path in subject_paths if not args.subjects or os.path.split(subject_path)[1] in args.subjects]
+
+    if not subject_ids:
+        logger.log(LogLevel.ERROR.value, f"Requested subjects {args.subjects} not found in {os.path.join(args.bids_dir, 'sub*')}!")
+        script_exit(1, logger=logger)
+
     wf = Workflow(f'qsmxt-workflow', base_dir=args.workflow_dir)
     wf.add_nodes([
         node for node in
-        [init_subject_workflow(args, subject) for subject in subjects]
+        [init_subject_workflow(args, subject) for subject in subject_ids]
         if node
     ])
 
@@ -63,19 +69,23 @@ def init_subject_workflow(args, subject):
     logger = make_logger('main')
     subject_path = os.path.join(args.bids_dir, subject)
 
-    sessions = [
-        os.path.split(path)[1]
-        for path in sorted(glob.glob(os.path.join(subject_path, "ses*")))
-        if not args.sessions or os.path.split(path)[1] in args.sessions
+    session_paths = [
+        path for path in sorted(glob.glob(os.path.join(subject_path, "ses*")))
     ]
 
-    if not sessions and not glob.glob(os.path.join(subject_path, "anat", "*.*")):
-        logger.log(LogLevel.WARNING.value, f"No imaging data or sessions found in {subject_path}")
+    if not session_paths:
+        logger.log(LogLevel.WARNING.value, f"No sessions found in {subject_path}")
+        return None
+
+    session_ids = [os.path.split(path)[1] for path in session_paths if not args.sessions or os.path.split(path)[1] in args.sessions]
+
+    if not session_ids and not glob.glob(os.path.join(subject_path, "anat", "*.*")):
+        logger.log(LogLevel.WARNING.value, f"No imaging data or sessions matching {args.sessions} found in {subject_path}")
         return None
 
     wf = Workflow(name=subject, base_dir=os.path.join(args.output_dir, "workflow"))
 
-    for session in sessions or [None]:
+    for session in session_ids or [None]:
         session_wf = init_session_workflow(args, subject, session)
         if session_wf:
             wf.add_nodes([session_wf])
