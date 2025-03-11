@@ -73,14 +73,13 @@ def init_subject_workflow(args, subject):
         path for path in sorted(glob.glob(os.path.join(subject_path, "ses*")))
     ]
 
-    if not session_paths:
-        logger.log(LogLevel.WARNING.value, f"No sessions found in {subject_path}")
-        return None
-
     session_ids = [os.path.split(path)[1] for path in session_paths if not args.sessions or os.path.split(path)[1] in args.sessions]
 
     if not session_ids and not glob.glob(os.path.join(subject_path, "anat", "*.*")):
-        logger.log(LogLevel.WARNING.value, f"No imaging data or sessions matching {args.sessions} found in {subject_path}")
+        if args.sessions:
+            logger.log(LogLevel.WARNING.value, f"No imaging data or sessions matching {args.sessions} found in {subject_path}")
+        else:
+            logger.log(LogLevel.WARNING.value, f"No imaging data found in {subject_path}")
         return None
 
     wf = Workflow(name=subject, base_dir=os.path.join(args.output_dir, "workflow"))
@@ -94,61 +93,44 @@ def init_subject_workflow(args, subject):
 
 def init_session_workflow(args, subject, session=None):
     logger = make_logger('main')
-    wf = Workflow(session or subject, base_dir=os.path.join(args.output_dir, "workflow", os.path.join(subject, session) if session else subject))
+    base = os.path.join(subject, session) if session else subject
+    wf = Workflow(session or subject,
+                  base_dir=os.path.join(args.output_dir, "workflow", base))
 
-    file_pattern = os.path.join(args.bids_dir, os.path.join(subject, session) if session else subject, "anat", f"sub-*_part-*.nii*")
+    file_pattern = os.path.join(args.bids_dir, base, "anat", f"sub-*_part-*.nii*")
     files = sorted(glob.glob(file_pattern))
 
+    groups = {}
+    for path in files:
+        acq = re.search("_acq-([a-zA-Z0-9-]+)_", path).group(1) if '_acq-' in path else None
+        rec = re.search("_rec-([a-zA-Z0-9-]+)_", path).group(1) if '_rec-' in path else None
+        run = re.search("_run-([a-zA-Z0-9]+)_", path).group(1) if '_run-' in path else None
+
+        if args.runs and run:
+            if not any(f"_{r}_" in os.path.split(path)[1] for r in args.runs):
+                continue
+
+        key = (acq, rec)
+        if key not in groups:
+            groups[key] = set()
+        if run:
+            groups[key].add(run)
+
     run_details = {}
+    for key, runs in groups.items():
+        if any(r is not None for r in runs):
+            run_details[key] = sorted(list(runs))
+        else:
+            run_details[key] = [None]
 
-    # get all unique acquisition names
-    acquisitions = sorted(list(set([
-        re.search("_acq-([a-zA-Z0-9-]+)_", path).group(1)
-        for path in files
-        if '_acq-' in path
-    ])))
-
-    # handle multiple runs associated with each acquisition name
-    for acquisition in acquisitions:
-        acquisition_runs = sorted(list(set([
-            re.search("_run-([a-zA-Z0-9]+)_", path).group(1)
-            for path in files
-            if acquisition in path
-            and '_run-' in path
-            and (not args.runs or any(f"_{run}_" in os.path.split(path)[1] for run in args.runs))
-        ])))
-        if acquisition_runs:
-            run_details[acquisition] = acquisition_runs
-        elif not args.runs:
-            run_details[acquisition] = None
-
-    # handle runs not associated with any acquisition name
-    other_runs = sorted(list(set([
-        re.search("_run-([a-zA-Z0-9]+)_", path).group(1)
-        for path in files
-        if '_acq-' not in path
-        and '_run-' in path
-        and (not args.runs or any(f"_{run}_" in os.path.split(path)[1] for run in args.runs))
-    ])))
-    if other_runs:
-        run_details[None] = other_runs
-
-    # handle the final case where there may be no run or acquisition identifier
-    if not args.runs:
-        others = any(all(x not in path for x in ['_acq-', '_run-']) for path in files)
-        if others:
-            if None in run_details.keys(): run_details[None].append(None)
-            run_details[None] = [None]
-
-    # initialise qsm workflow for all acq-run pairs
-    if any([args.do_qsm, args.do_segmentation, args.do_t2starmap, args.do_r2starmap, args.do_swi, args.do_analysis]):
-        wfs = [
-            init_qsm_workflow(copy.deepcopy(args), subject, session, acq, run)
-            for acq, runs in (run_details.items() if run_details else [(None, [None])])
+    if any([args.do_qsm, args.do_segmentation, args.do_t2starmap,
+            args.do_r2starmap, args.do_swi, args.do_analysis]):
+        workflows = [
+            init_qsm_workflow(copy.deepcopy(args), subject, session, acq, rec, run)
+            for (acq, rec), runs in run_details.items()
             for run in (runs if runs is not None else [None])
-            if run_details
         ]
-        wf.add_nodes([wfi for wfi in wfs if wfi])
+        wf.add_nodes([w for w in workflows if w])
 
     return wf
 
