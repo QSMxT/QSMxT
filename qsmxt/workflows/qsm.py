@@ -111,15 +111,15 @@ def get_matching_files(bids_dir, subject, dtype="anat", suffixes=[], ext="nii*",
         matching_files = [glob.glob(f"{pattern}.{ext}")]
     return sorted([item for sublist in matching_files for item in sublist])
 
-def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, run=None):
+def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, suffix=None, run=None):
     logger = make_logger('main')
-    run_id = f"{subject}" + (f".{session}" if session else "") + (f".acq-{acq}" if acq else "") + (f".rec-{rec}" if rec else "") + (f".run-{run}" if run else "")
+    run_id = f"{subject}" + (f".{session}" if session else "") + (f".acq-{acq}" if acq else "") + (f".rec-{rec}" if rec else "") + (f".{suffix}" if suffix else "") + (f".run-{run}" if run else "")
     logger.log(LogLevel.INFO.value, f"Creating QSMxT workflow for {run_id}...")
 
     # Retrieve relevant files for this run.
     t1w_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=["T1w"], ext="nii*", session=session, run=None, part=None, acq=acq, rec=rec)
-    phase_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=[], session=session, run=run, part="phase", acq=acq, rec=rec)[:run_args.num_echoes]
-    magnitude_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=[], session=session, run=run, part="mag", acq=acq, rec=rec)[:run_args.num_echoes]
+    phase_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=[suffix] if suffix else None, session=session, run=run, part="phase", acq=acq, rec=rec)[:run_args.num_echoes]
+    magnitude_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=[suffix] if suffix else None, session=session, run=run, part="mag", acq=acq, rec=rec)[:run_args.num_echoes]
     phase_params_files = [path.replace('.nii.gz', '.nii').replace('.nii', '.json') for path in phase_files]
     mag_params_files = [path.replace('.nii.gz', '.nii').replace('.nii', '.json') for path in magnitude_files]
     params_files = phase_params_files if len(phase_params_files) else mag_params_files
@@ -325,10 +325,10 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, run=N
     
     # create nipype workflow for this run
     wf = Workflow(
-        f"qsmxt" + (f"_acq-{acq}" if acq else "") + (f"_rec-{rec}" if rec else "") + (f"_run-{run}" if run else ""),
+        f"qsm" + (f"_acq-{acq}" if acq else "") + (f"_rec-{rec}" if rec else "") + (f"_{suffix}" if suffix else "") + (f"_run-{run}" if run else ""),
         base_dir=os.path.join(run_args.output_dir, "workflow",
                               os.path.join(subject, session) if session else subject,
-                              acq or "", rec or "", run or "")
+                              acq or "", rec or "", suffix or "", run or "")
     )
 
     # inputs and outputs
@@ -362,6 +362,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, run=N
         basename += f"_acq-{acq}"
     if rec:
         basename += f"_rec-{rec}"
+    if suffix:
+        basename += f"_{suffix}"
     if run:
         basename += f"_run-{run}"
     
@@ -593,7 +595,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, run=N
                 num_threads=n_registration_threads,
                 fixed_image=magnitude_files[0],
                 moving_image=t1w_files[0],
-                output_prefix=f"{subject}_{session}" + (f"_acq-{acq}" if acq else "") + (f"_rec-{rec}" if rec else "") + (f"_run-{run}" if run else "") + "_"
+                output_prefix=f"{subject}_{session}" + (f"_acq-{acq}" if acq else "") + (f"_rec-{rec}" if rec else "") + (f"_{suffix}" if suffix else "") + (f"_run-{run}" if run else "") + "_"
             ),
             name='ants_register-t1-to-qsm',
             n_procs=n_registration_threads,

@@ -94,7 +94,7 @@ def init_subject_workflow(args, subject):
 def init_session_workflow(args, subject, session=None):
     logger = make_logger('main')
     base = os.path.join(subject, session) if session else subject
-    wf = Workflow(session or subject,
+    wf = Workflow(session or "default",
                   base_dir=os.path.join(args.output_dir, "workflow", base))
 
     file_pattern = os.path.join(args.bids_dir, base, "anat", f"sub-*_part-*.nii*")
@@ -105,12 +105,13 @@ def init_session_workflow(args, subject, session=None):
         acq = re.search("_acq-([a-zA-Z0-9-]+)_", path).group(1) if '_acq-' in path else None
         rec = re.search("_rec-([a-zA-Z0-9-]+)_", path).group(1) if '_rec-' in path else None
         run = re.search("_run-([a-zA-Z0-9]+)_", path).group(1) if '_run-' in path else None
+        suffix = os.path.splitext(os.path.split(path)[1])[0].split('_')[-1]
 
         if args.runs and run:
             if not any(f"_{r}_" in os.path.split(path)[1] for r in args.runs):
                 continue
 
-        key = (acq, rec)
+        key = (acq, rec, suffix)
         if key not in groups:
             groups[key] = set()
         if run:
@@ -126,8 +127,8 @@ def init_session_workflow(args, subject, session=None):
     if any([args.do_qsm, args.do_segmentation, args.do_t2starmap,
             args.do_r2starmap, args.do_swi, args.do_analysis]):
         workflows = [
-            init_qsm_workflow(copy.deepcopy(args), subject, session, acq, rec, run)
-            for (acq, rec), runs in run_details.items()
+            init_qsm_workflow(copy.deepcopy(args), subject, session, acq, rec, suffix, run)
+            for (acq, rec, suffix), runs in run_details.items()
             for run in (runs if runs is not None else [None])
         ]
         wf.add_nodes([w for w in workflows if w])
