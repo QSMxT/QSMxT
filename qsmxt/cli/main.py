@@ -107,6 +107,14 @@ def init_session_workflow(args, subject, session=None):
         run = re.search("_run-([a-zA-Z0-9]+)_", path).group(1) if '_run-' in path else None
         suffix = os.path.splitext(os.path.split(path)[1])[0].split('_')[-1]
 
+        if args.recs and rec:
+            if not any(f"_{r}_" in os.path.split(path)[1] for r in args.recs):
+                continue
+
+        if args.acqs and acq:
+            if not any(f"_{a}_" in os.path.split(path)[1] for a in args.acqs):
+                continue
+
         if args.runs and run:
             if not any(f"_{r}_" in os.path.split(path)[1] for r in args.runs):
                 continue
@@ -254,7 +262,21 @@ def parse_args(args, return_run_command=False):
         '--runs',
         default=None,
         nargs='*',
-        help='List of runs to process (e.g. \'run-1\'); by default all runs are processed.'
+        help='List of BIDS runs to process (e.g. \'run-1\'); by default all runs are processed.'
+    )
+
+    parser.add_argument(
+        '--recs',
+        default=None,
+        nargs='*',
+        help='List of BIDS reconstructions to process (e.g. \'rec-1\'); by default all reconstructions are processed.'
+    )
+
+    parser.add_argument(
+        '--acqs',
+        default=None,
+        nargs='*',
+        help='List of BIDS acqs to process (e.g. \'acq-qsm\'); by default all runs are processed.'
     )
 
     parser.add_argument(
