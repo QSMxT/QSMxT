@@ -271,6 +271,7 @@ else
 
     echo "[DEBUG] Pulling head phantom data from OSF..."
     #osf --project "9jc42" --username "${OSF_USERNAME}" fetch data.tar "${TEST_DIR}/data.tar"
+    echo osf --project "9jc42" --token "${OSF_TOKEN}" fetch data.tar "${TEST_DIR}/data.tar"
     osf --project "9jc42" --token "${OSF_TOKEN}" fetch data.tar "${TEST_DIR}/data.tar"
 
     echo "[DEBUG] Extracting..."
