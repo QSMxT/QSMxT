@@ -133,23 +133,23 @@ def download_from_osf(project, local_path):
     logger = make_logger()
     try:
         osf_token = os.environ.get('OSF_TOKEN', '')
-        osf_user = os.environ.get('OSF_USER', '') or os.environ.get('OSF_USERNAME', '')
-        osf_pass = os.environ.get('OSF_PASS', '') or os.environ.get('OSF_PASSWORD', '')
+        osf_username = os.environ.get('OSF_USERNAME', '') or os.environ.get('OSF_USERNAME', '')
+        osf_password = os.environ.get('OSF_PASSWORD', '') or os.environ.get('OSF_PASSWORD', '')
     except KeyError as e:
-        logger.log(LogLevel.ERROR.value, f"Cannot connect to OSF - missing environment variable/s! Need OSF_TOKEN, OSF_USER and OSF_PASS.")
+        logger.log(LogLevel.ERROR.value, f"Cannot connect to OSF - missing environment variable/s! Need OSF_TOKEN, OSF_USERNAME and OSF_PASSWORD.")
         raise e
     
-    if any(len(x) == 0 for x in [osf_token, osf_user, osf_pass]):
+    if any(len(x) == 0 for x in [osf_token, osf_username, osf_password]):
         if len(osf_token) == 0:
             logger.log(LogLevel.ERROR.value, f"OSF_TOKEN length is zero")
-        if len(osf_user) == 0:
-            logger.log(LogLevel.ERROR.value, f"OSF_USER length is zero")
-        if len(osf_pass) == 0:
-            logger.log(LogLevel.ERROR.value, f"OSF_PASS length is zero")
-        raise ValueError("OSF_TOKEN, OSF_USER and/or OSF_PASS not initialised properly!")
+        if len(osf_username) == 0:
+            logger.log(LogLevel.ERROR.value, f"OSF_USERNAME length is zero")
+        if len(osf_password) == 0:
+            logger.log(LogLevel.ERROR.value, f"OSF_PASSWORD length is zero")
+        raise ValueError("OSF_TOKEN, OSF_USER and/or OSF_PASSWORD not initialised properly!")
     
     logger.log(LogLevel.INFO.value, "Connecting to OSF...")
-    osf = osfclient.OSF(username=osf_user, password=osf_pass, token=osf_token)
+    osf = osfclient.OSF(username=osf_username, password=osf_password, token=osf_token)
     osf_project = osf.project(project)
     osf_file = list(osf_project.storage().files)[0]
 

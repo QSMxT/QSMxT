@@ -125,8 +125,8 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
             --env WEBDAV_PASSWORD="${WEBDAV_PASSWORD}" \
             --env FREEIMAGE_KEY="${FREEIMAGE_KEY}" \
             --env OSF_TOKEN="${OSF_TOKEN}" \
-            --env OSF_USER="${OSF_USER}" \
-            --env OSF_PASS="${OSF_PASS}" \
+            --env OSF_USERNAME="${OSF_USERNAME}" \
+            --env OSF_PASSWORD="${OSF_PASSWORD}" \
             --env GITHUB_STEP_SUMMARY="${GITHUB_STEP_SUMMARY}" \
             "vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}" \
             /bin/bash
@@ -270,7 +270,7 @@ else
     pip install qsm-forward==0.22 osfclient
 
     echo "[DEBUG] Pulling head phantom data from OSF..."
-    osf --project "9jc42" --username "${OSF_USER}" --password "${OSF_PASS}" fetch data.tar "${TEST_DIR}/data.tar"
+    osf --project "9jc42" --username "${OSF_USERNAME}" --password "${OSF_PASSWORD}" fetch data.tar "${TEST_DIR}/data.tar"
 
     echo "[DEBUG] Extracting..."
     tar xf "${TEST_DIR}/data.tar"
