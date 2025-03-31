@@ -11,12 +11,14 @@ import curses
 import shutil
 import time
 import pandas as pd
-
 from dicompare import load_dicom_session, load_nifti_session, assign_acquisition_and_run_numbers
 
 from qsmxt.scripts.qsmxt_functions import get_qsmxt_version, get_diff
 from qsmxt.scripts.logger import LogLevel, make_logger, show_warning_summary 
 from qsmxt.scripts.nii_fix_ge import fix_ge_polar, fix_ge_complex
+
+from tabulate import tabulate
+from collections import defaultdict
 
 def sys_cmd(cmd):
     logger = make_logger()
@@ -58,200 +60,104 @@ def clean(data):
         return f'ses-{cleaned[3:]}'
     return cleaned
 
-def find_and_autoassign_qsm_pairs(row_data):
-    """
-    Automatically identifies exactly one pair for QSM per (Count, NumEchoes),
-    picking the pair (Mag+Phase or Real+Imag) with the smallest difference
-    in SeriesNumber. Priority:
-       1) Mag + Phase
-       2) Real + Imag
+def auto_assign_initial_labels(table_data):
+    # Group rows by acquisition.
+    acquisition_groups = defaultdict(list)
+    for row in table_data:
+        row.setdefault("Type", "Skip")
+        row.setdefault("Description", "")
+        acquisition_groups[row["Acquisition"]].append(row)
 
-    Returns None if at least one valid pair is found, or a message if none is found.
-    """
+    # Helper: create a grouping key from Count and InversionNumber.
+    def get_group_key(row):
+        count = row.get("Count")
+        inv = row.get("InversionNumber")
+        # If inversion is missing or empty, use None.
+        inv_key = inv if inv not in [None, ""] else None
+        return (count, inv_key)
 
-    from collections import defaultdict, Counter
+    for acq_name, rows in acquisition_groups.items():
+        # Dictionaries to hold paired rows for later description assignment.
+        mag_phase_pairs = defaultdict(list)  # key: (Count, InversionNumber)
+        real_imag_pairs = defaultdict(list)
 
-    # Group rows by (Count, NumEchoes). If you only want to group by Count, remove NumEchoes
-    grouped = defaultdict(list)
-    for r in row_data:
-        cval = (r["Count"], r["NumEchoes"])
-        grouped[cval].append(r)
+        # Group rows by the (Count, InversionNumber) key.
+        groups = defaultdict(list)
+        for row in rows:
+            key = get_group_key(row)
+            groups[key].append(row)
 
-    any_pair_found = False
+        # For each group, assign as many Mag/Phase and Real/Imag pairs as possible.
+        for key, group in groups.items():
+            # Mag/Phase pairing.
+            mag_candidates = [
+                r for r in group if r["Type"] == "Skip" and (
+                    (isinstance(r.get("ImageType"), (list, tuple)) and 'M' in r.get("ImageType")) or
+                    (not isinstance(r.get("ImageType"), (list, tuple)) and 'M' in str(r.get("ImageType")))
+                )
+            ]
+            pha_candidates = [
+                r for r in group if r["Type"] == "Skip" and (
+                    (isinstance(r.get("ImageType"), (list, tuple)) and 'P' in r.get("ImageType")) or
+                    (not isinstance(r.get("ImageType"), (list, tuple)) and 'P' in str(r.get("ImageType")))
+                )
+            ]
+            n_pairs = min(len(mag_candidates), len(pha_candidates))
+            for i in range(n_pairs):
+                mag_candidates[i]["Type"] = "Mag"
+                pha_candidates[i]["Type"] = "Phase"
+                mag_phase_pairs[key].append((mag_candidates[i], pha_candidates[i]))
 
-    for (count_val, echo_val), group_rows in grouped.items():
-        # Mark everything Skip first
-        for row in group_rows:
-            row["Type"] = "Skip"
+            # Real/Imag pairing.
+            real_candidates = [
+                r for r in group if r["Type"] == "Skip" and (
+                    (isinstance(r.get("ImageType"), (list, tuple)) and 'REAL' in r.get("ImageType")) or
+                    (not isinstance(r.get("ImageType"), (list, tuple)) and 'REAL' in str(r.get("ImageType")))
+                )
+            ]
+            imag_candidates = [
+                r for r in group if r["Type"] == "Skip" and (
+                    (isinstance(r.get("ImageType"), (list, tuple)) and 'IMAGINARY' in r.get("ImageType")) or
+                    (not isinstance(r.get("ImageType"), (list, tuple)) and 'IMAGINARY' in str(r.get("ImageType")))
+                )
+            ]
+            n_pairs = min(len(real_candidates), len(imag_candidates))
+            for i in range(n_pairs):
+                real_candidates[i]["Type"] = "Real"
+                imag_candidates[i]["Type"] = "Imag"
+                real_imag_pairs[key].append((real_candidates[i], imag_candidates[i]))
 
-        # Gather potential M/P or R/I based on ImageType
-        mag_list   = []
-        phase_list = []
-        real_list  = []
-        imag_list  = []
+        # Next, try to mark a row as T1w if its ImageType contains 'UNI' or if its
+        # SeriesDescription (uppercased) contains 'UNI-DEN' or 'T1W'.
+        for row in rows:
+            if row["Type"] == "Skip":
+                image_type = row.get("ImageType", "")
+                series_desc = str(row.get("SeriesDescription", "")).upper()
+                if (isinstance(image_type, (list, tuple)) and 'UNI' in image_type) or \
+                   (not isinstance(image_type, (list, tuple)) and 'UNI' in str(image_type)) or \
+                   ('UNI-DEN' in series_desc or 'T1W' in series_desc):
+                    row["Type"] = "T1w"
+                    break
 
-        def classify(row):
-            """Return 'mag', 'phase', 'real', or 'imag' if the row qualifies, else None."""
-            # Consider row['ImageType'] (tuple?)
-            # We'll unify to uppercase strings:
-            image_type = row.get("ImageType", ())
-            if isinstance(image_type, (tuple, list)):
-                image_type_up = [x.upper() for x in image_type]
-            else:
-                image_type_up = [str(image_type).upper()]
+        # Fallback: if no row is marked as T1w and the acquisition name contains 'T1',
+        # mark the first row as T1w.
+        if not any(r["Type"] == "T1w" for r in rows) and 'T1' in acq_name.upper():
+            rows[0]["Type"] = "T1w"
 
-            # Some helper for checking the row's ImageType
-            def has_any(substrings, container):
-                return any(s in container for s in substrings)
+        # For each group of Mag/Phase pairs with the same key, if there is more than one pair,
+        # assign sequential Description numbers to each pair.
+        for key, pairs in mag_phase_pairs.items():
+            if len(pairs) > 1:
+                for idx, (mag_row, pha_row) in enumerate(pairs, start=1):
+                    mag_row["Description"] = str(idx)
+                    pha_row["Description"] = str(idx)
 
-            # Priority #1: mag
-            if has_any(["MAG", "M"], image_type_up):
-                return "mag"
-            # Priority #2: phase
-            if has_any(["PHASE", "P"], image_type_up):
-                return "phase"
-            # Priority #3: real
-            if has_any(["REAL"], image_type_up):
-                return "real"
-            # Priority #4: imag (imaginary)
-            if has_any(["IMAG", "IMAGINARY"], image_type_up):
-                return "imag"
-            return None
-
-        # Classify each row
-        for row in group_rows:
-            ctype = classify(row)
-            if ctype == "mag":
-                mag_list.append(row)
-            elif ctype == "phase":
-                phase_list.append(row)
-            elif ctype == "real":
-                real_list.append(row)
-            elif ctype == "imag":
-                imag_list.append(row)
-            # else remains "Skip"
-
-        # Next, we pick exactly 1 mag+phase pair if possible
-        # Among all possible pairs, choose the one with the SMALLEST difference in SeriesNumber
-        def pick_closest_pair(listA, listB, labelA, labelB):
-            """Return (rowA, rowB) that have the minimal |SeriesNumberA - SeriesNumberB|, or None."""
-            if not listA or not listB:
-                return None, None
-            best_pair = None
-            best_diff = float("inf")
-            for a in listA:
-                for b in listB:
-                    # We'll assume row['SeriesNumber'] is an integer or numeric
-                    # If it's missing, default to 999999 or 0, you can decide
-                    #snA = a.get("SeriesNumber", 999999)
-                    #snB = b.get("SeriesNumber", 999999)
-                    # let's instead use the row idx
-                    snA = group_rows.index(a)
-                    snB = group_rows.index(b)
-                    
-                    diff = abs(snA - snB)
-                    if diff < best_diff:
-                        best_diff = diff
-                        best_pair = (a, b)
-            if best_pair:
-                best_pair[0]["Type"] = labelA  # e.g. "Mag"
-                best_pair[1]["Type"] = labelB  # e.g. "Phase"
-                return best_pair
-            return None, None
-
-        # 1) Try picking best (mag, phase)
-        mag_phase_pair = pick_closest_pair(mag_list, phase_list, "Mag", "Phase")
-        if mag_phase_pair[0] and mag_phase_pair[1]:
-            any_pair_found = True
-        else:
-            # 2) if no mag+phase, try real+imag
-            real_imag_pair = pick_closest_pair(real_list, imag_list, "Real", "Imag")
-            if real_imag_pair[0] and real_imag_pair[1]:
-                any_pair_found = True
-            else:
-                # Nothing chosen => entire group remains "Skip"
-                pass
-
-    # If no pairs found in any group, do the repeated Count check
-    if not any_pair_found:
-        counts = Counter(r["Count"] for r in row_data)
-        if not any(v >= 2 for v in counts.values()):
-            return "Not suitable for QSM (no repeated Count)."
-    return None
-
-def find_and_autoassign_t1w(row_data):
-    """
-    Automatically identifies exactly one series for T1w.
-
-    Priority of matching (picks first match):
-      1) If row_data has exactly one row, auto-assign T1w.
-      2) "UNI?DEN" in ImageType or SeriesDescription (regex 'UNI.?DEN').
-      3) "T1" in ImageType.
-      4) "*t1w*" in SeriesDescription.
-      5) "*t1*" in SeriesDescription.
-      6) Otherwise, exclude any series with "T1 MAP" or "R1" or "R2" in
-         ImageType or SeriesDescription, pick the first from the remainder if exactly one.
-    
-    If no candidate is found, all remain "Skip".
-    """
-
-    # Mark all as Skip
-    for row in row_data:
-        row["Type"] = "Skip"
-
-    # If there's exactly one row, assign it T1w and return
-    if len(row_data) == 1:
-        row_data[0]["Type"] = "T1w"
-        return
-
-    # 1) Attempt "UNI?DEN" in ImageType or SeriesDescription
-    # We'll define a quick function to check
-    UNI_DEN_REGEX = re.compile(r'UNI.?DEN', re.IGNORECASE)
-
-    for row in row_data:
-        it_str = row.get("ImageType", [])
-        sd_str = row.get("SeriesDescription", "")
-        if any(UNI_DEN_REGEX.search(x) for x in it_str) or UNI_DEN_REGEX.search(sd_str):
-            row["Type"] = "T1w"
-            return  # done
-
-    # 2) If no match yet, look for "T1" in ImageType
-    for row in row_data:
-        it_str = row.get("ImageType", [])
-        if "T1" in it_str:
-            row["Type"] = "T1w"
-            return  # done
-
-    # 3) If no match yet, SeriesDescription matching "*t1w*"
-    for row in row_data:
-        sd_str = row.get("SeriesDescription", "")
-        if "T1W" in sd_str:
-            row["Type"] = "T1w"
-            return  # done
-
-    # 4) If no match yet, SeriesDescription matching "*t1*"
-    for row in row_data:
-        sd_str = row.get("SeriesDescription", "")
-        if "T1" in sd_str:
-            row["Type"] = "T1w"
-            return  # done
-
-    def is_excluded_t1_map_r(row):
-        it_str = row.get("ImageType", [])
-        sd_str = row.get("SeriesDescription", "").upper()
-        exclude_keywords = ["T1 MAP", "R1", "R2"]
-        return any(k in it_str or k in sd_str for k in exclude_keywords)
-
-    # build list of non-excluded
-    candidates = [r for r in row_data if not is_excluded_t1_map_r(r)]
-    
-    # if candidates has one item exactly
-    if len(candidates) == 1:
-        candidates[0]["Type"] = "T1w"
-        return
-
-    # If we reached here, no T1w assigned (all remain Skip).
-    return
+        # Do the same for each group of Real/Imag pairs.
+        for key, pairs in real_imag_pairs.items():
+            if len(pairs) > 1:
+                for idx, (real_row, imag_row) in enumerate(pairs, start=1):
+                    real_row["Description"] = str(idx)
+                    imag_row["Description"] = str(idx)
 
 def validate_qsm_rows(row_data):
     """
@@ -385,9 +291,6 @@ def validate_series_selections(table_data):
                 errors.append(f"Series '{series}': Multiple Real/Imag series selections must be differentiated by InversionNumber or Description.")
     return errors
 
-from tabulate import tabulate
-
-
 def interactive_acquisition_selection_series(table_data):
     """
     Interactive UI for editing series-level selections, one Acquisition at a time.
@@ -395,11 +298,11 @@ def interactive_acquisition_selection_series(table_data):
     ENTER at final acquisition asks for confirmation, displays warning if some acquisitions have no selection.
     ESC exits, arrow keys and text editing as normal.
     """
+    auto_assign_initial_labels(table_data)
+    
     for row in table_data:
         row.setdefault("Type", "Skip")
         row.setdefault("Description", "")
-
-    from collections import defaultdict
 
     acquisition_groups = defaultdict(list)
     for row in table_data:
@@ -502,7 +405,6 @@ def interactive_acquisition_selection_series(table_data):
 
     return curses.wrapper(curses_ui)
 
-
 def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
     logger = make_logger()
     # Only convert series whose Type is not 'Skip'
@@ -595,7 +497,7 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
 
         shutil.rmtree(tmp_outdir)
 
-def convert_to_bids(input_dir, output_dir, auto_yes, qsm_protocol_patterns, t1w_protocol_patterns):
+def convert_to_bids(input_dir, output_dir, auto_yes):
     logger = make_logger()
     time_start = time.time()
     dicom_session = load_dicom_session(input_dir, show_progress=True)
@@ -618,21 +520,25 @@ def convert_to_bids(input_dir, output_dir, auto_yes, qsm_protocol_patterns, t1w_
     if "InversionNumber" in dicom_session.columns:
         groupby_fields.append("InversionNumber")
     grouped = dicom_session.groupby(groupby_fields, dropna=False).agg(Count=("InstanceNumber", "count"), NumEchoes=("EchoTime", "nunique")).reset_index()
-    if not auto_yes and sys.__stdin__.isatty():
+    if auto_yes or not sys.__stdin__.isatty():
+        logger.log(LogLevel.INFO.value, "Auto-assigning initial labels")
+        grouped_dict = grouped.to_dict(orient="records")
+        auto_assign_initial_labels(grouped_dict)
+        selections = pd.DataFrame(grouped_dict)
+        logger.log(LogLevel.INFO.value, f"Auto-assigned selections:\n{selections}")
+    else:
         logger.log(LogLevel.INFO.value, "Entering interactive mode for series selection")
         selections = interactive_acquisition_selection_series(grouped.to_dict(orient="records"))
-        selections = pd.DataFrame(selections)  # convert list of dicts to DataFrame
+        selections = pd.DataFrame(selections)
         logger.log(LogLevel.INFO.value, f"User selections:\n{selections}")
-        grouped = grouped.merge(
-            selections[["Acquisition", "SeriesDescription", "ImageType", "Type", "Description"]],
-            on=["Acquisition", "SeriesDescription", "ImageType"],
-            how="left"
-        )
-        grouped["Type"] = grouped["Type"].fillna("Skip")
-        grouped["Description"] = grouped["Description"].fillna("")
-    else:
-        grouped["Type"] = "Skip"
-        grouped["Description"] = ""
+    grouped = grouped.merge(
+        selections[["Acquisition", "SeriesDescription", "ImageType", "Type", "Description"]],
+        on=["Acquisition", "SeriesDescription", "ImageType"],
+        how="left"
+    )
+    grouped["Type"] = grouped["Type"].fillna("Skip")
+    grouped["Description"] = grouped["Description"].fillna("")
+
     logger.log(LogLevel.INFO.value, "Merging selections into dataframe...")
     for col in ["AcquisitionType", "Type", "Description"]:
         if col in dicom_session.columns:
@@ -648,6 +554,10 @@ def fix_ge_data(bids_dir):
 
     logger.log(LogLevel.INFO.value, "Checking for complex or polar data requiring fixing...")
     nifti_session = load_nifti_session(bids_dir, show_progress=True)
+
+    if 'part' not in nifti_session.columns:
+        logger.log(LogLevel.INFO.value, "No 'part' column found in NIfTI session. No complex or polar data to fix.")
+        script_exit(0)
 
     group_cols = [col for col in ["sub", "ses", "acq", "run", "echo", "suffix"] if col in nifti_session.columns]
     grouped = nifti_session.groupby(group_cols)
@@ -708,18 +618,6 @@ def main():
         help='Run non-interactively if desired.'
     )
 
-    parser.add_argument(
-        '--qsm_protocol_patterns',
-        default=['*t2starw*', '*qsm*', '*aspire*'],
-        nargs='*'
-    )
-
-    parser.add_argument(
-        '--t1w_protocol_patterns',
-        default=['*t1w*', '*mp2rage*'],
-        nargs='*'
-    )
-
     args = parser.parse_args()
 
     args.input_dir = os.path.abspath(args.input_dir)
@@ -767,9 +665,7 @@ def main():
     convert_to_bids(
         input_dir=args.input_dir,
         output_dir=args.output_dir,
-        auto_yes=args.auto_yes,
-        qsm_protocol_patterns=[pattern.lower() for pattern in args.qsm_protocol_patterns],
-        t1w_protocol_patterns=[pattern.lower() for pattern in args.t1w_protocol_patterns]
+        auto_yes=args.auto_yes
     )
 
     fix_ge_data(args.output_dir)
