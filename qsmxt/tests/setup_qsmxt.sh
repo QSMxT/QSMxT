@@ -270,9 +270,8 @@ else
     pip install qsm-forward==0.22 osfclient
 
     echo "[DEBUG] Pulling head phantom data from OSF..."
-    #osf --project "9jc42" --username "${OSF_USERNAME}" fetch data.tar "${TEST_DIR}/data.tar"
-    echo osf --project "9jc42" --token "${OSF_TOKEN}" fetch data.tar "${TEST_DIR}/data.tar"
-    osf --project "9jc42" --token "${OSF_TOKEN}" fetch data.tar "${TEST_DIR}/data.tar"
+    echo osf --project "9jc42" --username "${OSF_USERNAME}" fetch data.tar "${TEST_DIR}/data.tar"
+    osf --project "9jc42" --username "${OSF_USERNAME}" fetch data.tar "${TEST_DIR}/data.tar"
 
     echo "[DEBUG] Extracting..."
     tar xf "${TEST_DIR}/data.tar"
