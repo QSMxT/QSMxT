@@ -11,17 +11,12 @@ import curses
 import shutil
 import time
 import pandas as pd
-import fnmatch
 
-from tabulate import tabulate
-
-from dicompare import load_dicom_session, load_nifti_session
+from dicompare import load_dicom_session, load_nifti_session, assign_acquisition_and_run_numbers
 
 from qsmxt.scripts.qsmxt_functions import get_qsmxt_version, get_diff
 from qsmxt.scripts.logger import LogLevel, make_logger, show_warning_summary 
 from qsmxt.scripts.nii_fix_ge import fix_ge_polar, fix_ge_complex
-
-from collections import Counter
 
 def sys_cmd(cmd):
     logger = make_logger()
@@ -62,13 +57,6 @@ def clean(data):
     elif data.startswith('ses-'):
         return f'ses-{cleaned[3:]}'
     return cleaned
-
-def get_folders_in(folder, full_path=False):
-    folders = list(filter(os.path.isdir, [os.path.join(folder, d) for d in os.listdir(folder)]))
-    if full_path:
-        return folders
-    folders = [os.path.split(x)[1] for x in folders]
-    return folders
 
 def find_and_autoassign_qsm_pairs(row_data):
     """
@@ -191,8 +179,6 @@ def find_and_autoassign_qsm_pairs(row_data):
             return "Not suitable for QSM (no repeated Count)."
     return None
 
-import re
-
 def find_and_autoassign_t1w(row_data):
     """
     Automatically identifies exactly one series for T1w.
@@ -267,7 +253,6 @@ def find_and_autoassign_t1w(row_data):
     # If we reached here, no T1w assigned (all remain Skip).
     return
 
-
 def validate_qsm_rows(row_data):
     """
     Checks if at least one valid pair is assigned. 
@@ -331,241 +316,204 @@ def validate_t1w_rows(row_data):
         return (False, "Must select at least one series for T1w.")
     return (True, "")
 
-def detail_screen(stdscr, protocols, user_data):
+def validate_series_selections(table_data):
     """
-    Integrates the protocol loop that was previously in interactive_acquisition_selection.
-    This function handles rendering and key interactions for each protocol in 'protocols'.
+    Validate the current series selections.
+    
+    For each acquisition (grouped by Acquisition), enforce:
+      - For each row marked "Mag", at least one row in the same group must be "Phase"
+        with the same Count, and vice versa.
+      - Similarly for "Real" and "Imag".
+      - If a Mag/Phase (or Real/Imag) pair exists but the Count values differ,
+        report an error.
+      - If more than one pair is selected in the same acquisition, the pairs must be
+        differentiated by a non-empty, unique InversionNumber or Description.
+        
+    Returns a list of error messages.
     """
+    errors = []
+    groups = {}
+    for row in table_data:
+        key = row.get("Acquisition", "")
+        groups.setdefault(key, []).append(row)
+    for series, rows in groups.items():
+        mag_rows = [r for r in rows if r.get("Type") == "Mag"]
+        phase_rows = [r for r in rows if r.get("Type") == "Phase"]
+        real_rows = [r for r in rows if r.get("Type") == "Real"]
+        imag_rows = [r for r in rows if r.get("Type") == "Imag"]
+        for m in mag_rows:
+            matching_phase = [p for p in phase_rows if p.get("Count") == m.get("Count")]
+            if not matching_phase:
+                errors.append(f"Series '{series}': Mag series (Count={m.get('Count')}) requires at least one Phase series with the same number of images.")
+        for p in phase_rows:
+            matching_mag = [m for m in mag_rows if m.get("Count") == p.get("Count")]
+            if not matching_mag:
+                errors.append(f"Series '{series}': Phase series (Count={p.get('Count')}) requires at least one Mag series with the same number of images.")
+        for r in real_rows:
+            matching_imag = [i for i in imag_rows if i.get("Count") == r.get("Count")]
+            if not matching_imag:
+                errors.append(f"Series '{series}': Real series (Count={r.get('Count')}) requires at least one Imag series with the same number of images.")
+        for i in imag_rows:
+            matching_real = [r for r in real_rows if r.get("Count") == i.get("Count")]
+            if not matching_real:
+                errors.append(f"Series '{series}': Imag series (Count={i.get('Count')}) requires at least one Real series with the same number of images.")
+        for m in mag_rows:
+            for p in phase_rows:
+                if m.get("Count") != p.get("Count"):
+                    errors.append(f"Series '{series}': Selected Mag and Phase series have non-matching number of images ({m.get('Count')} vs. {p.get('Count')}).")
+        for r in real_rows:
+            for i in imag_rows:
+                if r.get("Count") != i.get("Count"):
+                    errors.append(f"Series '{series}': Selected Real and Imag series have non-matching number of images ({r.get('Count')} vs. {i.get('Count')}).")
+        if len(mag_rows) > 1:
+            identifiers = []
+            for m in mag_rows:
+                ident = m.get("InversionNumber")
+                if ident is None or ident == "":
+                    ident = m.get("Description", "")
+                identifiers.append(ident)
+            if len(set(identifiers)) < len(identifiers):
+                errors.append(f"Series '{series}': Multiple Mag/Phase series selections must be differentiated by InversionNumber or Description.")
+        if len(real_rows) > 1:
+            identifiers = []
+            for r in real_rows:
+                ident = r.get("InversionNumber")
+                if ident is None or ident == "":
+                    ident = r.get("Description", "")
+                identifiers.append(ident)
+            if len(set(identifiers)) < len(identifiers):
+                errors.append(f"Series '{series}': Multiple Real/Imag series selections must be differentiated by InversionNumber or Description.")
+    return errors
 
-    def do_validation(rows, acq_type):
-        if acq_type == "QSM":
-            ok, msg = validate_qsm_rows(rows)
-            if not ok:
-                # Place error message after the table
-                error_line = TABLE_ROWS + len(rows) + 1
-                stdscr.addstr(error_line, 0, f"ERROR: {msg}")
-                return False
-        elif acq_type == "T1w":
-            ok, msg = validate_t1w_rows(rows)
-            if not ok:
-                error_line = TABLE_ROWS + len(rows) + 1
-                stdscr.addstr(error_line, 0, f"ERROR: {msg}")
-                return False
-        return True
+from tabulate import tabulate
 
-    protocol_idx = 0
 
-    # Constants for screen lines
-    INSTRUCTIONS_LINE_1 = 0
-    INSTRUCTIONS_LINE_2 = 1
-    PROTOCOL_NAME_LINE = 3
-    ACQ_TYPE_LINE = 4
-    TABLE_HEADER = 6
-    TABLE_ROWS = 7
+def interactive_acquisition_selection_series(table_data):
+    """
+    Interactive UI for editing series-level selections, one Acquisition at a time.
+    SHIFT / SHIFT+TAB or ENTER to move forward/backward through acquisitions.
+    ENTER at final acquisition asks for confirmation, displays warning if some acquisitions have no selection.
+    ESC exits, arrow keys and text editing as normal.
+    """
+    for row in table_data:
+        row.setdefault("Type", "Skip")
+        row.setdefault("Description", "")
 
-    detail_idx = PROTOCOL_NAME_LINE
+    from collections import defaultdict
 
-    while True:
-        stdscr.clear()
+    acquisition_groups = defaultdict(list)
+    for row in table_data:
+        acquisition_groups[row["Acquisition"]].append(row)
 
-        # Two lines of instructions
-        stdscr.addstr(INSTRUCTIONS_LINE_1, 0, "Use arrow keys: (↑/↓) move, (←/→) change, ENTER to confirm.")
-        stdscr.addstr(INSTRUCTIONS_LINE_2, 0, "ESC exits or goes back to previous menu.")
+    acquisition_keys = list(acquisition_groups.keys())
 
-        protocol = protocols[protocol_idx]
-        rows = user_data[protocol]["Rows"]
-        acq_type = user_data[protocol]["AcquisitionType"]
-
-        # Protocol line
-        proto_line = f"ProtocolName ({protocol_idx + 1} of {len(protocols)}): {protocol}"
-        if detail_idx == PROTOCOL_NAME_LINE:
-            stdscr.attron(curses.A_REVERSE)
-            stdscr.addstr(PROTOCOL_NAME_LINE, 0, proto_line)
-            stdscr.attroff(curses.A_REVERSE)
-        else:
-            stdscr.addstr(PROTOCOL_NAME_LINE, 0, proto_line)
-
-        # Acquisition type line
-        acq_line = f"Acquisition type: {acq_type}"
-        if detail_idx == ACQ_TYPE_LINE:
-            stdscr.attron(curses.A_REVERSE)
-            stdscr.addstr(ACQ_TYPE_LINE, 0, acq_line)
-            stdscr.attroff(curses.A_REVERSE)
-        else:
-            stdscr.addstr(ACQ_TYPE_LINE, 0, acq_line)
-
-        # Table display
-        headers = ["SeriesDescription", "ImageType", "Count", "NumEchoes", "Type"]
-        table_data = [
-            [r["SeriesDescription"], r["ImageType"], r["Count"], r["NumEchoes"], r["Type"]]
-            for r in rows
-        ]
-            
-        table_lines = tabulate(table_data, headers=headers, tablefmt="plain").split("\n")
-        for i, line in enumerate(table_lines):
-            row_y = TABLE_HEADER + i
-            if i == 0:
-                stdscr.addstr(row_y, 0, line)
-            else:
-                row_i = row_y
-                if detail_idx == row_i:
-                    stdscr.attron(curses.A_REVERSE)
-                    stdscr.addstr(row_y, 0, line)
-                    stdscr.attroff(curses.A_REVERSE)
-                else:
-                    stdscr.addstr(row_y, 0, line)
-
-        # Run basic validation for display feedback
-        valid = do_validation(rows, acq_type)
-
-        stdscr.refresh()
-        key = stdscr.getch()
-
-        # If ENTER
-        if key == 10:
-            # Check all protocols for validity
-            invalid_protocol = None
-            for prot in protocols:
-                test_acq_type = user_data[prot]["AcquisitionType"]
-                test_rows = user_data[prot]["Rows"]
-                if test_acq_type in ["QSM", "T1w"]:
-                    ok, msg = validate_qsm_rows(test_rows) if test_acq_type == "QSM" else validate_t1w_rows(test_rows)
-                    if not ok:
-                        invalid_protocol = (prot, msg)
-                        break
-
-            if invalid_protocol:
-                # Show error message for the protocol that failed
-                error_line = TABLE_ROWS + len(rows) + 2
-                stdscr.addstr(error_line, 0, f"ERROR: Protocol '{invalid_protocol[0]}' is not valid: {invalid_protocol[1]}")
-                stdscr.refresh()
-                continue  # Return to the loop so the user can fix the issue
-
-            # Count how many are set to skip
-            skip_count = sum(1 for p in protocols if user_data[p]["AcquisitionType"] == "Skip")
-            if skip_count > 0:
-                # Ask user for confirmation
-                prompt_line = TABLE_ROWS + len(rows) + 3
-                skip_msg = f"{skip_count} protocols are marked skip. Continue anyway? (y/n)"
-                stdscr.addstr(prompt_line, 0, skip_msg)
-                stdscr.refresh()
-
-                while True:
-                    choice = stdscr.getch()
-                    if choice in [ord('y'), ord('Y')]:
-                        return user_data
-                    elif choice in [ord('n'), ord('N')]:
-                        break
-            else:
-                return user_data
-
-        if key == curses.KEY_UP:
-            if detail_idx > PROTOCOL_NAME_LINE:
-                detail_idx -= 1
-            if detail_idx == TABLE_HEADER:
-                detail_idx = ACQ_TYPE_LINE
-
-        elif key == curses.KEY_DOWN:
-            last_table_line = TABLE_HEADER + len(rows)
-            if detail_idx < last_table_line:
-                if detail_idx == ACQ_TYPE_LINE and acq_type == "Skip":
-                    continue
-                detail_idx += 1
-            if detail_idx < TABLE_ROWS and detail_idx > ACQ_TYPE_LINE:
-                detail_idx = TABLE_ROWS
-
-        elif key == curses.KEY_LEFT or key == curses.KEY_RIGHT:
-            dx = 1 if key == curses.KEY_RIGHT else -1
-
-            # If on the protocol line
-            if detail_idx == PROTOCOL_NAME_LINE:
-                if not valid:
-                    continue
-                if dx == -1:
-                    protocol_idx = max(0, protocol_idx - 1)
-                else:
-                    protocol_idx = min(len(protocols) - 1, protocol_idx + 1)
-                detail_idx = PROTOCOL_NAME_LINE
-
-            elif detail_idx == ACQ_TYPE_LINE:
-                possible = ["QSM", "T1w", "Skip"]
-                i_acq = possible.index(acq_type)
-                new_acq = possible[(i_acq + dx) % len(possible)]
-                user_data[protocol]["AcquisitionType"] = new_acq
-                acq_type = new_acq
-                if new_acq == "QSM":
-                    find_and_autoassign_qsm_pairs(rows)
-                if new_acq == "T1w":
-                    find_and_autoassign_t1w(rows)
-
-            # If we're in the table rows
-            elif detail_idx >= TABLE_ROWS:
-                row_index = detail_idx - TABLE_ROWS
-                if acq_type == "QSM":
-                    opts = ["Mag", "Phase", "Real", "Imag", "Skip"]
-                elif acq_type == "T1w":
-                    opts = ["T1w", "Skip"]
-                else:
-                    opts = []
-                if opts:
-                    cur_val = rows[row_index]["Type"]
-                    i_val = opts.index(cur_val) if cur_val in opts else 0
-                    new_v = (i_val + dx) % len(opts)
-                    rows[row_index]["Type"] = opts[new_v]
-
-        if detail_idx < PROTOCOL_NAME_LINE:
-            detail_idx = PROTOCOL_NAME_LINE
-
-        last_table_line = TABLE_ROWS + len(rows)
-        if detail_idx > last_table_line:
-            detail_idx = last_table_line
-
-def interactive_acquisition_selection(grouped):
     def curses_ui(stdscr):
         curses.curs_set(0)
+        if curses.has_colors():
+            curses.start_color()
+            curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
 
-        protocols = grouped["ProtocolName"].unique()
-        user_data = {prot: {"AcquisitionType": "Skip", "Rows": []} for prot in protocols}
+        headers = ["SeriesDescription", "ImageType", "Count", "NumEchoes", "InversionNumber", "Type", "Description"]
 
-        protocol_rows_map = {}
-        for prot in protocols:
-            subset = grouped[grouped["ProtocolName"] == prot]
-            row_dicts = []
-            for _, row in subset.iterrows():
-                row_dicts.append({
-                    "SeriesDescription": row["SeriesDescription"],
-                    "ImageType": row["ImageType"],
-                    "Count": row["Count"],
-                    "NumEchoes": row["NumEchoes"],
-                    "Type": "Skip"
-                })
-            protocol_rows_map[prot] = row_dicts
+        allowed_types = ["Mag", "Phase", "Real", "Imag", "T1w", "Extra", "Skip"]
+        current_acq_index = 0
+        current_row = 0
+        nav_blocked = False
 
-        for prot in protocols:
-            user_data[prot]["Rows"] = protocol_rows_map[prot]
+        while True:
+            stdscr.clear()
+            current_acq = acquisition_keys[current_acq_index]
+            rows = acquisition_groups[current_acq]
+            nrows = len(rows)
+            stdscr.addstr(0, 0, f"Acquisition ({current_acq_index+1} of {len(acquisition_keys)}): {current_acq}")
+            stdscr.addstr(1, 0, "Arrow keys = navigate/select type | Text = edit description | SHIFT/ENTER = next | SHIFT+TAB = previous | ESC = quit")
 
-        detail_screen(
-            stdscr, protocols, user_data,
-        )
+            display_data = [[r.get(h, "") for h in headers] for r in rows]
+            table_str = tabulate(display_data, headers=headers, tablefmt="plain")
+            for idx, line in enumerate(table_str.splitlines()):
+                if idx == current_row + 1:
+                    stdscr.attron(curses.A_REVERSE)
+                    stdscr.addstr(3 + idx, 0, line[:stdscr.getmaxyx()[1] - 1])
+                    stdscr.attroff(curses.A_REVERSE)
+                else:
+                    stdscr.addstr(3 + idx, 0, line[:stdscr.getmaxyx()[1] - 1])
 
-        return user_data
+            errors = validate_series_selections(rows)
+            err_y = 4 + len(display_data) + 2
+            if errors:
+                for err in errors:
+                    stdscr.addstr(err_y, 0, f"ERROR: {err}", curses.A_BOLD | curses.color_pair(1))
+                    err_y += 1
+                if nav_blocked:
+                    stdscr.addstr(err_y, 0, "Cannot leave this acquisition until all errors are resolved.", curses.A_BOLD | curses.color_pair(1))
+                    err_y += 1
+            else:
+                stdscr.addstr(err_y, 0, "No errors.", curses.A_BOLD)
+
+            stdscr.refresh()
+            key = stdscr.getch()
+            nav_blocked = False
+
+            if key == 27:
+                return None
+            elif key == curses.KEY_UP:
+                if current_row > 0:
+                    current_row -= 1
+            elif key == curses.KEY_DOWN:
+                if current_row < nrows - 1:
+                    current_row += 1
+            elif key == curses.KEY_LEFT:
+                cur = rows[current_row]["Type"]
+                idx = allowed_types.index(cur) if cur in allowed_types else 0
+                rows[current_row]["Type"] = allowed_types[(idx - 1) % len(allowed_types)]
+            elif key == curses.KEY_RIGHT:
+                cur = rows[current_row]["Type"]
+                idx = allowed_types.index(cur) if cur in allowed_types else 0
+                rows[current_row]["Type"] = allowed_types[(idx + 1) % len(allowed_types)]
+            elif key in (curses.KEY_BACKSPACE, 127, 8):
+                desc = rows[current_row]["Description"]
+                rows[current_row]["Description"] = desc[:-1]
+            elif 32 <= key <= 126:
+                ch = chr(key)
+                rows[current_row]["Description"] += ch
+            elif key in (9, 10):  # TAB or ENTER
+                if errors:
+                    nav_blocked = True
+                else:
+                    if current_acq_index == len(acquisition_keys) - 1:
+                        stdscr.addstr(err_y + 1, 0, "Confirm selections?", curses.A_BOLD)
+                        empty = [k for k, v in acquisition_groups.items() if all(r.get("Type", "Skip") == "Skip" for r in v)]
+                        if empty:
+                            stdscr.addstr(err_y + 2, 0, f"({len(empty)} acquisitions have no selections)", curses.A_BOLD | curses.color_pair(1))
+                        stdscr.addstr(err_y + 3, 0, "(y or n): ", curses.A_BOLD)
+                        stdscr.refresh()
+                        ch = stdscr.getch()
+                        if ch in (ord('y'), ord('Y')):
+                            return [r for group in acquisition_groups.values() for r in group]
+                    else:
+                        current_acq_index += 1
+                        current_row = 0
+            elif key == 353:  # SHIFT+TAB
+                if errors:
+                    nav_blocked = True
+                else:
+                    current_acq_index = (current_acq_index - 1) % len(acquisition_keys)
+                    current_row = 0
 
     return curses.wrapper(curses_ui)
 
+
 def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
     logger = make_logger()
-    to_convert = dicom_session[
-        (dicom_session['AcquisitionType'] != 'Skip') &
-        (dicom_session['Type'] != 'Skip')
-    ]
-
+    # Only convert series whose Type is not 'Skip'
+    to_convert = dicom_session[dicom_session['Type'] != 'Skip']
     if to_convert.empty:
         logger.log(LogLevel.ERROR.value, "No acquisitions selected for conversion. Exiting.")
         script_exit(1)
     
     group_cols = [
-        "PatientID", "StudyDate", "ProtocolName", "SeriesDescription", 
-        "AcquisitionType", "Type", "EchoNumber", "RunNumber"
+        "PatientName", "PatientID", "StudyDate", "Acquisition", "SeriesDescription", 
+        "Type", "EchoNumber", "RunNumber"
     ]
     missing_cols = [col for col in group_cols if col not in to_convert.columns]
     if missing_cols:
@@ -602,27 +550,39 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
 
         for nii_name in converted_niftis:
             row = grp_data.iloc[0]
-            subject_id = f"sub-{clean(row['PatientID'])}"
+            subject_id = f"sub-{clean(row['PatientID']) or clean(row['PatientName'])}"
             session_id = f"ses-{clean(row['StudyDate'])}"
-            acq_label = f"acq-{clean(row['ProtocolName'])}"
+            # Build an acquisition label based on Acquisition and Description
+            acq_label = f"acq-{clean(row['Acquisition'])}"
+            if row["Description"]:
+                acq_label += f"_desc-{row['Description']}"
+            elif row["Type"] == "Extra":
+                acq_label += f"_desc-{clean(row['SeriesDescription'])}"
             
             base_name = f"{subject_id}_{session_id}_{acq_label}"
             if row["NumRuns"] > 1:
                 base_name += f"_run-{int(row['RunNumber']):02}"
-            if row["NumEchoes"] > 1 and row["AcquisitionType"] == "QSM":
+            if row["NumEchoes"] > 1 and row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
                 base_name += f"_echo-{int(row['EchoNumber']):02}"
             
-            if row["AcquisitionType"] == "QSM":
+            # if InversionNumber is present and is numberic
+            if "InversionNumber" in row and pd.notnull(row["InversionNumber"]):
+                base_name += f"_inv-{int(row['InversionNumber'])}"
+            if row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
                 base_name += f"_part-{row['Type'].lower()}"
-            if row["AcquisitionType"] == "T1w":
+            
+            if row["Type"] == "T1w":
                 base_name += "_T1w"
-            elif row["AcquisitionType"] == "QSM" and row["NumEchoes"] > 1:
-                base_name += "_MEGRE"
-            elif row["AcquisitionType"] == "QSM" and row["NumEchoes"] == 1:
-                base_name += "_T2starw"
+            elif row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
+                if row["NumEchoes"] > 1:
+                    base_name += "_MEGRE"
+                else:
+                    base_name += "_T2starw"
+            elif row["Type"] == "Extra":
+                base_name += nii_name.replace("temp_output", "").replace(".nii", "").replace(".nii.gz", "")
             
             ext = ".nii" if nii_name.endswith(".nii") else ".nii.gz"
-            out_dir = os.path.join(output_dir, subject_id, session_id, "anat")
+            out_dir = os.path.join(output_dir, subject_id, session_id, "anat" if row["Type"] != "Extra" else "extra_data")
             os.makedirs(out_dir, exist_ok=True)
             dst_path = os.path.join(out_dir, f"{base_name}{ext}")
             src_path = os.path.join(tmp_outdir, nii_name)
@@ -638,121 +598,50 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
 def convert_to_bids(input_dir, output_dir, auto_yes, qsm_protocol_patterns, t1w_protocol_patterns):
     logger = make_logger()
     time_start = time.time()
-    dicom_session = load_dicom_session(input_dir, parallel_workers=12, show_progress=True)
+    dicom_session = load_dicom_session(input_dir, show_progress=True)
+    dicom_session = assign_acquisition_and_run_numbers(dicom_session)
     time_end = time.time()
     logger.log(LogLevel.INFO.value, f"Loaded DICOM session in {time_end - time_start:.2f} seconds")
-    
     dicom_session.reset_index(drop=True, inplace=True)
-
-    # If we have GE private tags
     if '(0043,102F)' in dicom_session.columns:
         private_map = {0: 'M', 1: 'P', 2: 'REAL', 3: 'IMAGINARY'}
         dicom_session['ImageType'].append(dicom_session['(0043,102F)'].map(private_map).fillna(''))
-
-    # Additional columns
-    dicom_session['NumEchoes'] = dicom_session.groupby(['PatientID', 'StudyDate', 'ProtocolName', 'SeriesDescription', 'SeriesInstanceUID'])['EchoTime'].transform('nunique')
-    dicom_session['EchoNumber'] = dicom_session.groupby(['PatientID', 'StudyDate', 'ProtocolName', 'SeriesDescription', 'SeriesInstanceUID'])['EchoTime'].rank(method='dense')
-    dicom_session['NumRuns'] = (
-        dicom_session
-        .groupby(['PatientID','StudyDate','ProtocolName','SeriesDescription', 'ImageType'])['SeriesInstanceUID']
-        .transform('nunique')
-    )
-    dicom_session['RunNumber'] = (
-        dicom_session
-        .groupby(['PatientID','StudyDate','ProtocolName','SeriesDescription', 'ImageType'])['SeriesInstanceUID']
-        .rank(method='dense')
-    )
-
-    # Ensure 'AcquisitionType' and 'Type' exist
-    if 'AcquisitionType' not in dicom_session.columns:
-        dicom_session['AcquisitionType'] = 'Skip'
-    if 'Type' not in dicom_session.columns:
-        dicom_session['Type'] = 'Skip'
-
-    groupby_fields = ["ProtocolName", "SeriesDescription", "ImageType"]
-
-    grouped = (
-        dicom_session
-        .groupby(groupby_fields)
-        .agg(Count=("InstanceNumber", "count"), NumEchoes=("EchoTime", "nunique"))
-        .reset_index()
-    )
-
-    # 1) If user is interactive
+    dicom_session['NumEchoes'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'SeriesDescription', 'SeriesInstanceUID'])['EchoTime'].transform('nunique')
+    dicom_session['EchoNumber'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'SeriesDescription', 'SeriesInstanceUID'])['EchoTime'].rank(method='dense')
+    dicom_session['NumRuns'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'])['RunNumber'].transform('nunique')
+    #dicom_session['RunNumber'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'SeriesDescription', 'ImageType'])['SeriesInstanceUID'].rank(method='dense')
+    if "InversionTime" in dicom_session.columns:
+        mask = dicom_session["InversionTime"].notnull() & (dicom_session["InversionTime"] != 0)
+        dicom_session.loc[mask, "InversionNumber"] = dicom_session[mask].groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'])['InversionTime'].rank(method='dense')
+        dicom_session["InversionNumber"] = dicom_session["InversionNumber"].astype(pd.Int64Dtype())
+    groupby_fields = ["Acquisition", "SeriesDescription", "ImageType"]
+    if "InversionNumber" in dicom_session.columns:
+        groupby_fields.append("InversionNumber")
+    grouped = dicom_session.groupby(groupby_fields, dropna=False).agg(Count=("InstanceNumber", "count"), NumEchoes=("EchoTime", "nunique")).reset_index()
     if not auto_yes and sys.__stdin__.isatty():
-        logger.log(LogLevel.INFO.value, "Entering interactive mode for acquisition selection")
-        selections = interactive_acquisition_selection(grouped)
+        logger.log(LogLevel.INFO.value, "Entering interactive mode for series selection")
+        selections = interactive_acquisition_selection_series(grouped.to_dict(orient="records"))
+        selections = pd.DataFrame(selections)  # convert list of dicts to DataFrame
         logger.log(LogLevel.INFO.value, f"User selections:\n{selections}")
-
-        # Write back user selections
-        for prot, data_dict in selections.items():
-            acq_type = data_dict["AcquisitionType"]
-            mask_prot = (grouped['ProtocolName'] == prot)
-            grouped.loc[mask_prot, 'AcquisitionType'] = acq_type
-
-            if acq_type in ["QSM","T1w"]:
-                for row_info in data_dict["Rows"]:
-                    rmask = (
-                        mask_prot
-                        & (grouped['SeriesDescription'] == row_info['SeriesDescription'])
-                        & (grouped['ImageType'] == row_info['ImageType'])
-                    )
-                    grouped.loc[rmask,'Type'] = row_info['Type']
-
-    # 2) Else do auto-assignment
+        grouped = grouped.merge(
+            selections[["Acquisition", "SeriesDescription", "ImageType", "Type", "Description"]],
+            on=["Acquisition", "SeriesDescription", "ImageType"],
+            how="left"
+        )
+        grouped["Type"] = grouped["Type"].fillna("Skip")
+        grouped["Description"] = grouped["Description"].fillna("")
     else:
-        # Auto-assign 'AcquisitionType' based on protocol patterns
-        for prot in grouped['ProtocolName'].unique():
-            if any(fnmatch.fnmatch(prot.lower(), p.lower()) for p in qsm_protocol_patterns):
-                grouped.loc[grouped['ProtocolName']==prot,'AcquisitionType'] = 'QSM'
-            elif any(fnmatch.fnmatch(prot.lower(), p.lower()) for p in t1w_protocol_patterns):
-                grouped.loc[grouped['ProtocolName']==prot,'AcquisitionType'] = 'T1w'
-            # else remains 'Skip'
-
-        # Now group by ProtocolName and run your auto-assign pair logic
-        for prot, group_df in grouped.groupby('ProtocolName'):
-            logger.log(LogLevel.INFO.value, f"Auto-assigning series for protocol {prot}")
-            acq_type = group_df['AcquisitionType'].iloc[0]
-            if acq_type == 'QSM':
-                # Turn sub-DataFrame into python dicts for find_and_autoassign_qsm_pairs (if that expects a list of dict)
-                records = group_df.to_dict('records')
-                find_and_autoassign_qsm_pairs(records)
-                # Write back
-                updated = pd.DataFrame(records)
-                logger.log(LogLevel.INFO.value, f"Auto-assignment:\n{updated}")
-                # Align on index
-                for i, idx in enumerate(group_df.index):
-                    grouped.at[idx,'Type'] = updated.at[i,'Type']
-
-            elif acq_type == 'T1w':
-                records = group_df.to_dict('records')
-                find_and_autoassign_t1w(records)
-                # Write back
-                updated = pd.DataFrame(records)
-                logger.log(LogLevel.INFO.value, f"Auto-assignment:\n{updated}")
-                for i, idx in enumerate(group_df.index):
-                    grouped.at[idx,'Type'] = updated.at[i,'Type']
-
-    # update dicom_session with the new AcquisitionType and Type
+        grouped["Type"] = "Skip"
+        grouped["Description"] = ""
     logger.log(LogLevel.INFO.value, "Merging selections into dataframe...")
-    cols_to_drop = ["AcquisitionType", "Type"]
-    dicom_session.drop(columns=cols_to_drop, errors='ignore', inplace=True)
-
-    # Now merge only the columns we want from grouped:
-    merge_cols = groupby_fields + ["AcquisitionType","Type"]
-    dicom_session = dicom_session.merge(
-        grouped[merge_cols],
-        on=groupby_fields,
-        how='left'
-    )
-
-    # If some rows had no match in `grouped`, fill them with 'Skip'
-    dicom_session['AcquisitionType'] = dicom_session['AcquisitionType'].fillna('Skip')
-    dicom_session['Type'] = dicom_session['Type'].fillna('Skip')
-
-    # Finally, do your conversion
+    for col in ["AcquisitionType", "Type", "Description"]:
+        if col in dicom_session.columns:
+            dicom_session.drop(columns=col, inplace=True)
+    merge_cols = groupby_fields + ["Type", "Description"]
+    dicom_session = dicom_session.merge(grouped[merge_cols], on=groupby_fields, how='left')
+    dicom_session["Type"] = dicom_session["Type"].fillna("Skip")
+    dicom_session["Description"] = dicom_session["Description"].fillna("")
     convert_and_organize(dicom_session, output_dir)
-
 
 def fix_ge_data(bids_dir):
     logger = make_logger()

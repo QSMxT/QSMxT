@@ -104,11 +104,17 @@ def init_session_workflow(args, subject, session=None):
     for path in files:
         acq = re.search("_acq-([a-zA-Z0-9-]+)_", path).group(1) if '_acq-' in path else None
         rec = re.search("_rec-([a-zA-Z0-9-]+)_", path).group(1) if '_rec-' in path else None
+        inv = re.search("_inv-([a-zA-Z0-9]+)_", path).group(1) if '_inv-' in path else None
         run = re.search("_run-([a-zA-Z0-9]+)_", path).group(1) if '_run-' in path else None
+
         suffix = os.path.splitext(os.path.split(path)[1])[0].split('_')[-1]
 
         if args.recs and rec:
             if not any(f"_{r}_" in os.path.split(path)[1] for r in args.recs):
+                continue
+
+        if args.invs and inv:
+            if not any(f"_{i}_" in os.path.split(path)[1] for i in args.invs):
                 continue
 
         if args.acqs and acq:
@@ -119,7 +125,7 @@ def init_session_workflow(args, subject, session=None):
             if not any(f"_{r}_" in os.path.split(path)[1] for r in args.runs):
                 continue
 
-        key = (acq, rec, suffix)
+        key = (acq, rec, inv, suffix)
         if key not in groups:
             groups[key] = set()
         if run:
@@ -135,8 +141,8 @@ def init_session_workflow(args, subject, session=None):
     if any([args.do_qsm, args.do_segmentation, args.do_t2starmap,
             args.do_r2starmap, args.do_swi, args.do_analysis]):
         workflows = [
-            init_qsm_workflow(copy.deepcopy(args), subject, session, acq, rec, suffix, run)
-            for (acq, rec, suffix), runs in run_details.items()
+            init_qsm_workflow(copy.deepcopy(args), subject, session, acq, rec, inv, suffix, run)
+            for (acq, rec, inv, suffix), runs in run_details.items()
             for run in (runs if runs is not None else [None])
         ]
         wf.add_nodes([w for w in workflows if w])
@@ -270,6 +276,13 @@ def parse_args(args, return_run_command=False):
         default=None,
         nargs='*',
         help='List of BIDS reconstructions to process (e.g. \'rec-1\'); by default all reconstructions are processed.'
+    )
+
+    parser.add_argument(
+        '--invs',
+        default=None,
+        nargs='*',
+        help='List of BIDS inversions to process (e.g. \'inv-1\'); by default all inversions are processed.'
     )
 
     parser.add_argument(
