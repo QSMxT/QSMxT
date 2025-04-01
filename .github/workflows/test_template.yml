@@ -14,6 +14,7 @@ on:
       - qsmxt/tests/utils.py
       - qsmxt/tests/setup_qsmxt.sh
       - qsmxt/scripts/logger.py
+      - qsmxt/workflows/template.py
     
 jobs:
   setup_qsmxt:
