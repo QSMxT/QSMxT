@@ -12,3 +12,4 @@ qsmxt.egg-info/
 dist/
 build/
 .venv
+bids/
