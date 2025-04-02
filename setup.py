@@ -47,13 +47,12 @@ setup(
         'nextqsm==1.0.4',
         'matplotlib==3.7.5',
         'pandas==2.0.3',
-        'dicompare==0.1.18'
+        'dicompare==0.1.19'
     ],
     entry_points={
         'console_scripts': [
             'qsmxt = qsmxt.cli.main:main',
             'dicom-convert = qsmxt.cli.dicom_convert:main',
-            'dicom-sort = qsmxt.cli.dicom_sort:main',
             'nifti-convert = qsmxt.cli.nifti_convert:main',
             'get-qsmxt-dir = qsmxt.scripts.qsmxt_functions:get_qsmxt_dir'
         ],

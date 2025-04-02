@@ -3,11 +3,8 @@
 
 A full QSM processing pipeline from DICOM to segmentation to evaluation of results. 
 
-To sort DICOMs, use:
-    $ dicom-sort YOUR_DICOM_DIR dicoms-sorted
-
-To convert sorted DICOMs to BIDS, use:
-    $ dicom-convert dicoms-sorted bids
+To convert DICOMs to BIDS, use:
+    $ dicom-convert YOUR_DICOM_DIR bids
 
 To run QSMxT, use:
     $ qsmxt bids
