@@ -13,7 +13,7 @@ nav_order: 2
 
 # Data acquisition
 
-Data acquisition for QSM largely depends on your application, imaging goals, and constraints. This page provides some general guidelines. For more detailed recommendations, see the [2023 QSM Consensus Paper](https://arxiv.org/abs/2307.02306) from Bilgic et al.
+Data acquisition for QSM largely depends on your application, imaging goals, and constraints. This page provides some general guidelines. For more detailed recommendations, see the [2023 QSM Consensus Paper](https://doi.org/10.1002/mrm.30006) from Bilgic et al.
 
 **Acquisition type**: QSM reconstruction requires a gradient-recalled echo (GRE) MRI acquisition with phase images exported. The T2\* weighting of a GRE acquisition provide phase contrast that retains variations due to susceptibility effects. Fast imaging techniques such as 3D-EPI and others are sometimes employed.
 

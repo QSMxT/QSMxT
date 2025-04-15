@@ -501,15 +501,15 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
     logger = make_logger()
     time_start = time.time()
     dicom_session = load_dicom_session(input_dir, show_progress=True)
-    dicom_session = assign_acquisition_and_run_numbers(dicom_session)
     time_end = time.time()
     logger.log(LogLevel.INFO.value, f"Loaded DICOM session in {time_end - time_start:.2f} seconds")
+    dicom_session = assign_acquisition_and_run_numbers(dicom_session)
     dicom_session.reset_index(drop=True, inplace=True)
     if '(0043,102F)' in dicom_session.columns:
         private_map = {0: 'M', 1: 'P', 2: 'REAL', 3: 'IMAGINARY'}
         dicom_session['ImageType'].append(dicom_session['(0043,102F)'].map(private_map).fillna(''))
-    dicom_session['NumEchoes'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'SeriesDescription', 'SeriesInstanceUID'])['EchoTime'].transform('nunique')
-    dicom_session['EchoNumber'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'SeriesDescription', 'SeriesInstanceUID'])['EchoTime'].rank(method='dense')
+    dicom_session['NumEchoes'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'])['EchoTime'].transform('nunique')
+    dicom_session['EchoNumber'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'])['EchoTime'].rank(method='dense')
     dicom_session['NumRuns'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'])['RunNumber'].transform('nunique')
     #dicom_session['RunNumber'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'SeriesDescription', 'ImageType'])['SeriesInstanceUID'].rank(method='dense')
     if "InversionTime" in dicom_session.columns:
@@ -661,6 +661,12 @@ def main():
         f.write("\n\n - Rorden C et al. Rordenlab/Dcm2niix. GitHub; 2022. https://github.com/rordenlab/dcm2niix")
         f.write("\n\n - Gorgolewski KJ, Auer T, Calhoun VD, et al. The brain imaging data structure, a format for organizing and describing outputs of neuroimaging experiments. Sci Data. 2016;3(1):160044. doi:10.1038/sdata.2016.44")
         f.write("\n\n")
+
+    # check if dcm2niix exists in path
+    dcm2niix_path = shutil.which("dcm2niix")
+    if dcm2niix_path is None:
+        logger.log(LogLevel.ERROR.value, "dcm2niix not found in PATH! Please see https://qsmxt.github.io/QSMxT/installation")
+        script_exit(1)
 
     convert_to_bids(
         input_dir=args.input_dir,
