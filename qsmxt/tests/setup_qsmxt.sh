@@ -174,15 +174,15 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     sudo apt-get update
     sudo apt-get install -y apptainer
 
-    echo "[DEBUG] Requires transparent-singularity installation qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}"
+    echo "[DEBUG] Requires transparent-apptainer installation qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}"
     export PROD_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}
     export PROD_CONTAINER_DATE=${TEST_CONTAINER_DATE}
     export PROD_PACKAGE_VERSION=${PROD_PACKAGE_VERSION}
     export PROD_PYTHON_VERSION=${TEST_PYTHON_VERSION}
 
     if [ ! -f "${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}.simg" ]; then
-        echo "[DEBUG] Install QSMxT via transparent singularity"
-        ${TEST_DIR}/QSMxT/docs/_includes/transparent_singularity_install.sh
+        echo "[DEBUG] Install QSMxT via transparent apptainer"
+        ${TEST_DIR}/QSMxT/docs/_includes/transparent_apptainer_install.sh
     else
         echo "[DEBUG] Existing installation found"
     fi

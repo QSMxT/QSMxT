@@ -1,4 +1,4 @@
-name: transparent singularity test
+name: transparent apptainer test
 
 on:
   workflow_dispatch:
@@ -7,13 +7,13 @@ on:
     branches: [ 'main' ]
     paths:
       - setup.py
-      - .github/workflows/test_transparent_singularity.yml
+      - .github/workflows/test_transparent_apptainer.yml
       - docs/_includes/miniforge_install.sh
-      - docs/_includes/transparent_singularity_install.sh
+      - docs/_includes/transparent_apptainer_install.sh
       - aseg_labels.csv
       - qsmxt/qsm_pipelines.json
       - qsmxt/cli/*.py
-      - qsmxt/tests/test_transparent_singularity.sh
+      - qsmxt/tests/test_transparent_apptainer.sh
       - qsmxt/tests/utils.py
       - qsmxt/tests/setup_qsmxt.sh
       - qsmxt/interfaces/*
@@ -21,7 +21,7 @@ on:
       - qsmxt/workflows/*
     
 jobs:
-  test_transparent_singularity_pipeline:
+  test_transparent_apptainer_pipeline:
     runs-on: ubuntu-24.04
     steps:
     - uses: actions/checkout@v3
@@ -37,7 +37,7 @@ jobs:
         OSF_PASSWORD: ${{ secrets.OSF_PASS }}
       run: |
         ./qsmxt/tests/setup_qsmxt.sh apptainer
-    - name: test transparent singularity
+    - name: test transparent apptainer
       env:
         WEBDAV_LOGIN: ${{ secrets.WEBDAV_LOGIN }}
         WEBDAV_PASSWORD: ${{ secrets.WEBDAV_PASSWORD }}
@@ -73,5 +73,5 @@ jobs:
         echo "[DEBUG] which python && which pip && which qsmxt && which dicom-convert && which nifti-convert"
         which python && which pip && which qsmxt && which dicom-convert && which nifti-convert
 
-        ./qsmxt/tests/test_transparent_singularity.sh
+        ./qsmxt/tests/test_transparent_apptainer.sh
 

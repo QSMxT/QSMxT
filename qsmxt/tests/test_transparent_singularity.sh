@@ -9,11 +9,11 @@ pip install osfclient > /dev/null 2>&1
 osf -p ru43c clone . > /dev/null 2>&1
 tar xf osfstorage/dicoms-unsorted.tar -C .
 
-echo "[DEBUG] dicom-convert dicoms-unsorted bids-transparent-singularity --auto_yes"
-dicom-convert dicoms-unsorted bids-transparent-singularity --auto_yes
+echo "[DEBUG] dicom-convert dicoms-unsorted bids-transparent-apptainer --auto_yes"
+dicom-convert dicoms-unsorted bids-transparent-apptainer --auto_yes
 
-echo "[DEBUG] bids-transparent-singularity --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug"
-qsmxt bids-transparent-singularity --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug
+echo "[DEBUG] bids-transparent-apptainer --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug"
+qsmxt bids-transparent-apptainer --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug
 
-rm -rf dicoms-unsorted/ bids-transparent-singularity/ 
+rm -rf dicoms-unsorted/ bids-transparent-apptainer/ 
 

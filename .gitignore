@@ -12,5 +12,5 @@ qsmxt.egg-info/
 dist/
 build/
 .venv
-bids/
-dicoms-unsorted*
+bids*/
+dicom*/
