@@ -35,6 +35,7 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USERNAME: ${{ secrets.OSF_USER }}
         OSF_PASSWORD: ${{ secrets.OSF_PASS }}
+        apptainer_opts: "--fakeroot"
       run: |
         ./qsmxt/tests/setup_qsmxt.sh apptainer
     - name: test transparent apptainer
@@ -72,9 +73,6 @@ jobs:
 
         echo "[DEBUG] which python && which pip && which qsmxt && which dicom-convert && which nifti-convert"
         which python && which pip && which qsmxt && which dicom-convert && which nifti-convert
-
-        # Set apptainer_opts to include --fakeroot
-        export apptainer_opts="--fakeroot"
 
         ./qsmxt/tests/test_transparent_apptainer.sh
 
