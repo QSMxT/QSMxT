@@ -22,7 +22,7 @@ on:
     
 jobs:
   test_transparent_apptainer_pipeline:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-22.04 # ubuntu-24.04 causes issues with user namespaces
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
