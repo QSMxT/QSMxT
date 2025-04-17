@@ -35,7 +35,6 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USERNAME: ${{ secrets.OSF_USER }}
         OSF_PASSWORD: ${{ secrets.OSF_PASS }}
-        apptainer_opts: "--fakeroot"
       run: |
         ./qsmxt/tests/setup_qsmxt.sh apptainer
     - name: test transparent apptainer
