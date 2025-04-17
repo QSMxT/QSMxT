@@ -45,10 +45,10 @@ docker run -it -v ~/neurodesktop-storage:/neurodesktop-storage vnmd/qsmxt_{{ sit
 
 ## HPC installation
 
-QSMxT can be installed on an HPC or Linux machine using [transparent apptainer](https://github.com/neurodesk/transparent-apptainer). Transparent apptainer installs QSMxT using an Apptainer container and exposes the underlying tools to the host environment, which is necessary for HPCs using PBS Graph or SLURM. 
+QSMxT can be installed on an HPC or Linux machine using [transparent apptainer](https://github.com/astewartau/transparent-apptainer). Transparent apptainer installs QSMxT using an Apptainer container and exposes the underlying tools to the host environment, which is necessary for HPCs using PBS Graph or SLURM. 
 
 1. Install or load [apptainer](https://apptainer.org/docs/user/1.0/quick_start.html#quick-start) on your HPC. Test if it works by executing 'apptainer --version'.
-2. Install the QSMxT container via [transparent apptainer](https://github.com/neurodesk/transparent-apptainer):
+2. Install the QSMxT container via [transparent apptainer](https://github.com/astewartau/transparent-apptainer):
   {% capture code_block_content %}{% include transparent_apptainer_install.sh %}{% endcapture %}
   {% assign code_block_content = code_block_content | replace: '${PROD_CONTAINER_VERSION}', site.PROD_CONTAINER_VERSION %}
   {% assign code_block_content = code_block_content | replace: '${PROD_CONTAINER_DATE}', site.PROD_CONTAINER_DATE %}
