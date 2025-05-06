@@ -9,6 +9,8 @@ from qsmxt.scripts.qsmxt_functions import extend_fname
 
 def frequency_to_normalized(frequency_path, B0, scale_factor=1, out_path=None):
     # use scale_factor=1e6 for microradians (needed for nextqsm)
+    # use scale_factor=1e6/(2*np.pi) for ppm (needed for most other algorithms)
+    
     # load ΔB (Hz)
     frequency_nii = nib.load(frequency_path)
     ΔB = frequency_nii.get_fdata()
