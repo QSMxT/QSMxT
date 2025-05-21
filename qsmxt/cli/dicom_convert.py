@@ -11,6 +11,8 @@ import curses
 import shutil
 import time
 import pandas as pd
+import nibabel as nb
+import numpy as np
 from dicompare import load_dicom_session, load_nifti_session, assign_acquisition_and_run_numbers
 
 from qsmxt.scripts.qsmxt_functions import get_qsmxt_version, get_diff
@@ -422,6 +424,8 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
         logger.log(LogLevel.WARNING.value, f"The following fields are missing from the DICOM session: {', '.join(missing_cols)}")
     if "SeriesInstanceUID" in to_convert.columns:
         group_cols.append("SeriesInstanceUID")
+    if "(0051,100F)" in to_convert.columns:
+        group_cols.append("(0051,100F)")
     
     grouped = to_convert.groupby(group_cols)
 
@@ -440,7 +444,7 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
         for dicom_file in dicom_files:
             shutil.copy(dicom_file, tmp_outdir)
         
-        cmd = f'"{dcm2niix_path}" -o "{tmp_outdir}" -f "{dcm2niix_base}" -z n "{tmp_outdir}"'
+        cmd = f'"{dcm2niix_path}" -o "{tmp_outdir}" -f "{dcm2niix_base}" -z n -m o "{tmp_outdir}"'
         logger.log(LogLevel.INFO.value, f"Running command: '{cmd}'")
         os.system(cmd)
         
@@ -464,6 +468,9 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
             base_name = f"{subject_id}_{session_id}_{acq_label}"
             if row["NumRuns"] > 1:
                 base_name += f"_run-{int(row['RunNumber']):02}"
+            if '(0051,100F)' in row and row['(0051,100F)'] not in ["", "None", "HEA;HEP", None]:
+                coil_num = re.search(r'\d+', row['(0051,100F)']).group(0)
+                base_name += f"_coil-{int(coil_num):02}"
             if row["NumEchoes"] > 1 and row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
                 base_name += f"_echo-{int(row['EchoNumber']):02}"
             
@@ -508,10 +515,29 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
     if '(0043,102F)' in dicom_session.columns:
         private_map = {0: 'M', 1: 'P', 2: 'REAL', 3: 'IMAGINARY'}
         dicom_session['ImageType'].append(dicom_session['(0043,102F)'].map(private_map).fillna(''))
+    
+    if 'PatientID' not in dicom_session.columns:
+        dicom_session['PatientID'] = dicom_session['PatientName']
+    if 'PatientName' not in dicom_session.columns:
+        dicom_session['PatientName'] = dicom_session['PatientID']
+    if 'StudyDate' not in dicom_session.columns:
+        if 'AcquisitionDate' in dicom_session.columns:
+            dicom_session['StudyDate'] = dicom_session['AcquisitionDate']
+        elif 'SeriesDate' in dicom_session.columns:
+            dicom_session['StudyDate'] = dicom_session['SeriesDate']
+        else:
+            dicom_session['StudyDate'] = datetime.datetime.now().strftime("%Y%m%d")
+    if 'AcquisitionDate' not in dicom_session.columns and 'StudyDate' in dicom_session.columns:
+        dicom_session['AcquisitionDate'] = dicom_session['StudyDate']
+    if 'SeriesTime' not in dicom_session.columns:
+        if 'AcquisitionTime' in dicom_session.columns:
+            dicom_session['SeriesTime'] = dicom_session['AcquisitionTime']
+        else:
+            dicom_session['SeriesTime'] = datetime.datetime.now().strftime("%H%M%S")
+
     dicom_session['NumEchoes'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'])['EchoTime'].transform('nunique')
     dicom_session['EchoNumber'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'])['EchoTime'].rank(method='dense')
     dicom_session['NumRuns'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'])['RunNumber'].transform('nunique')
-    #dicom_session['RunNumber'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'SeriesDescription', 'ImageType'])['SeriesInstanceUID'].rank(method='dense')
     if "InversionTime" in dicom_session.columns:
         mask = dicom_session["InversionTime"].notnull() & (dicom_session["InversionTime"] != 0)
         dicom_session.loc[mask, "InversionNumber"] = dicom_session[mask].groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'])['InversionTime'].rank(method='dense')
@@ -519,6 +545,7 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
     groupby_fields = ["Acquisition", "SeriesDescription", "ImageType"]
     if "InversionNumber" in dicom_session.columns:
         groupby_fields.append("InversionNumber")
+
     grouped = dicom_session.groupby(groupby_fields, dropna=False).agg(Count=("InstanceNumber", "count"), NumEchoes=("EchoTime", "nunique")).reset_index()
     if auto_yes or not sys.__stdin__.isatty():
         logger.log(LogLevel.INFO.value, "Auto-assigning initial labels")
@@ -589,6 +616,113 @@ def fix_ge_data(bids_dir):
                 phase_nii_path=phase_nii_path,
                 delete_originals=True
             )
+
+def merge_multicoil_data(bids_dir):
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, "Merging multicoil data...")
+
+    nifti_sess = load_nifti_session(bids_dir, show_progress=False)
+
+    # group by subject/session/acq/run
+    group_cols = [c for c in ("sub","ses","acq","run") if c in nifti_sess.columns]
+    for key_vals, grp in nifti_sess.groupby(group_cols):
+
+        # consider only rows with a 'coil' column
+        if "coil" not in grp.columns:
+            continue
+        
+        # for each echo
+        for echo in grp["echo"].unique():
+            # for each part
+            for part in ["mag", "phase"]:
+                sub = grp[(grp["part"]==part) & (grp["echo"]==echo)]
+
+                # if there's multiple files, stack them
+                if len(sub) > 1:
+                    # sort by coil index
+                    sub = sub.sort_values("coil")
+                    imgs = [nb.load(p).get_fdata() for p in sub["NIfTI_Path"]]
+                    img0 = nb.load(sub.iloc[0]["NIfTI_Path"])
+                    arr4 = np.stack(imgs, axis=3)
+                    coil_id = sub.iloc[0]["coil"]
+                    newname = os.path.basename(sub.iloc[0]["NIfTI_Path"]).replace(f"_coil-{coil_id}", "")
+                    out_path = os.path.join(os.path.dirname(sub.iloc[0]["NIfTI_Path"]), newname)
+                    nb.save(nb.Nifti1Image(arr4, img0.affine, img0.header), out_path)
+
+                    # copy json header
+                    json_path = os.path.splitext(sub.iloc[0]["NIfTI_Path"])[0] + ".json"
+                    if os.path.isfile(json_path):
+                        # copy json file
+                        new_json_path = os.path.splitext(out_path)[0] + ".json"
+                        shutil.copy(json_path, new_json_path)
+
+def run_mcpc3ds_on_multicoil(bids_dir):
+    logger = make_logger()
+    logger.log(LogLevel.INFO.value, "Scanning for multi-coil, multi-echo runs to combine…")
+
+    nifti_sess = load_nifti_session(bids_dir, show_progress=False)
+
+    # group by subject/session/acq/run
+    group_cols = [c for c in ("sub","ses","acq","run") if c in nifti_sess.columns]
+    for key_vals, grp in nifti_sess.groupby(group_cols):
+        # pick out only those files whose NIfTI_Shape has length 4 (i.e. X×Y×Z×coils)
+        mc = grp[grp["NIfTI_Shape"].map(lambda s: len(s) == 4)]
+
+        # within those, collect by echo
+        mags_by_echo   = mc[mc["part"]=="mag"  ].set_index("echo")["NIfTI_Path"]
+        phases_by_echo = mc[mc["part"]=="phase"].set_index("echo")["NIfTI_Path"]
+
+        # only proceed if *every* echo has both mag & phase
+        echos = sorted(set(mags_by_echo.index) & set(phases_by_echo.index))
+        if not echos:
+            continue
+
+        # build ordered lists
+        mags   = [mags_by_echo[i]   for i in echos]
+        phases = [phases_by_echo[i] for i in echos]
+        # fetch their EchoTime (any row for that echo)
+        tes    = [float(grp.loc[grp["echo"]==i, "EchoTime"].iat[0]) for i in echos]
+
+        te_str = ",".join(f"{t:.6f}" for t in tes)
+
+        # output prefix = filepath without extension of first magnitude
+        base = os.path.splitext(mags[0])[0]
+
+        cmd = (
+            "julia " + os.path.join(get_qsmxt_dir(), "scripts", "mcpc3ds.jl") + " "
+            + "--mag " + " ".join(f'"{m}"' for m in mags) + " "
+            + "--phase " + " ".join(f'"{p}"' for p in phases) + " "
+            + f'--TEs "{te_str}" '
+            + f'--outprefix "{base}"'
+        )
+
+        logger.log(LogLevel.INFO.value, f"🌀 MCPC-3D-S combine: {cmd}")
+        os.system(cmd)
+
+        # get the output files
+        mag_out = f"{base}_mag.nii"
+        phase_out = f"{base}_phase.nii"
+
+        mag_out_new = mag_out.replace("_mag.nii", ".nii")
+        phase_out_new = phase_out.replace('part-mag', 'part-phase').replace("_phase.nii", ".nii")
+
+        # check if the output files exist
+        shutil.move(mag_out, mag_out_new)
+        shutil.move(phase_out, phase_out_new)
+
+        # split the output 4d files into separate echo files
+        mag_nii = nb.load(mag_out_new)
+        phase_nii = nb.load(phase_out_new)
+        mag_data = mag_nii.get_fdata()
+        phase_data = phase_nii.get_fdata()
+
+        # if the data is 4D, split it into separate files
+        if mag_data.ndim == 4:
+            for i in range(mag_data.shape[3]):
+                mag_nii_echo = nb.Nifti1Image(mag_data[..., i], mag_nii.affine, mag_nii.header)
+                phase_nii_echo = nb.Nifti1Image(phase_data[..., i], phase_nii.affine, phase_nii.header)
+                nb.save(mag_nii_echo, mag_out_new.replace('echo-01', f'echo-{i+1:02}'))
+                nb.save(phase_nii_echo, phase_out_new.replace('echo-01', f'echo-{i+1:02}'))
 
 def script_exit(exit_code=0):
     logger = make_logger()
@@ -674,6 +808,8 @@ def main():
         auto_yes=args.auto_yes
     )
 
+    merge_multicoil_data(args.output_dir)
+    run_mcpc3ds_on_multicoil(args.output_dir)
     fix_ge_data(args.output_dir)
 
     script_exit()
