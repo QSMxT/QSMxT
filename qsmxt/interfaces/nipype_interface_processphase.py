@@ -146,18 +146,23 @@ def scale_to_pi(phase_path, phase_scaled_path=None):
     phase_nii = nib.load(phase_path)
     Φ_acc_wrapped = phase_nii.get_fdata()
 
-    # if a significant portion is exactly pi, replace with noise (GE data uses pi as the background)
-    noise_added = False
+    # replace nans with 0
+    changed = False
+    if np.isnan(Φ_acc_wrapped).any():
+        changed = True
+        Φ_acc_wrapped[np.isnan(Φ_acc_wrapped)] = 0
+
+    # if a significant portion is close to 0 or pi, replace with random values
     mask = np.logical_or((abs(abs(Φ_acc_wrapped) - np.pi)) < 1e-3, Φ_acc_wrapped == 0)
     if mask.sum() / mask.size >= 0.1:
         seed_value = seed_from_filename(phase_path)
         np.random.seed(seed_value)
         noise = np.random.uniform(-np.pi, np.pi, Φ_acc_wrapped.shape)
         Φ_acc_wrapped[mask] = noise[mask]
-        noise_added = True
+        changed = True
     
     # return the original if it is already scaled correctly
-    if not noise_added and (np.round(np.min(Φ_acc_wrapped), 2)*-1) == np.round(np.max(Φ_acc_wrapped), 2) == 3.14:
+    if not changed and (np.round(np.min(Φ_acc_wrapped), 2)*-1) == np.round(np.max(Φ_acc_wrapped), 2) == 3.14:
         return phase_path
     
     # scale to -pi,+pi
