@@ -15,7 +15,7 @@ import nibabel as nb
 import numpy as np
 from dicompare import load_dicom_session, load_nifti_session, assign_acquisition_and_run_numbers
 
-from qsmxt.scripts.qsmxt_functions import get_qsmxt_version, get_diff
+from qsmxt.scripts.qsmxt_functions import get_qsmxt_version, get_diff, get_qsmxt_dir
 from qsmxt.scripts.logger import LogLevel, make_logger, show_warning_summary 
 from qsmxt.scripts.nii_fix_ge import fix_ge_polar, fix_ge_complex
 
@@ -619,7 +619,7 @@ def fix_ge_data(bids_dir):
 
 def merge_multicoil_data(bids_dir):
     logger = make_logger()
-    logger.log(LogLevel.INFO.value, "Merging multicoil data...")
+    logger.log(LogLevel.INFO.value, "Scanning for multi-coil data to merge...")
 
     nifti_sess = load_nifti_session(bids_dir, show_progress=False)
 
@@ -631,11 +631,20 @@ def merge_multicoil_data(bids_dir):
         if "coil" not in grp.columns:
             continue
         
+        # Handle both single-echo and multi-echo data
+        # If 'echo' column exists, use it; otherwise, create a dummy echo value
+        if "echo" in grp.columns:
+            echo_groups = grp.groupby("echo")
+        else:
+            # For single-echo data, create a dummy echo group
+            grp["echo"] = "01"  # Add a dummy echo column
+            echo_groups = [(grp["echo"].iloc[0], grp)]
+            
         # for each echo
-        for echo in grp["echo"].unique():
+        for echo, echo_grp in echo_groups:
             # for each part
             for part in ["mag", "phase"]:
-                sub = grp[(grp["part"]==part) & (grp["echo"]==echo)]
+                sub = echo_grp[echo_grp["part"]==part]
 
                 # if there's multiple files, stack them
                 if len(sub) > 1:
@@ -658,7 +667,7 @@ def merge_multicoil_data(bids_dir):
 
 def run_mcpc3ds_on_multicoil(bids_dir):
     logger = make_logger()
-    logger.log(LogLevel.INFO.value, "Scanning for multi-coil, multi-echo runs to combine…")
+    logger.log(LogLevel.INFO.value, "Scanning for multi-coil runs to combine...")
 
     nifti_sess = load_nifti_session(bids_dir, show_progress=False)
 
@@ -668,20 +677,62 @@ def run_mcpc3ds_on_multicoil(bids_dir):
         # pick out only those files whose NIfTI_Shape has length 4 (i.e. X×Y×Z×coils)
         mc = grp[grp["NIfTI_Shape"].map(lambda s: len(s) == 4)]
 
-        # within those, collect by echo
-        mags_by_echo   = mc[mc["part"]=="mag"  ].set_index("echo")["NIfTI_Path"]
-        phases_by_echo = mc[mc["part"]=="phase"].set_index("echo")["NIfTI_Path"]
-
-        # only proceed if *every* echo has both mag & phase
-        echos = sorted(set(mags_by_echo.index) & set(phases_by_echo.index))
-        if not echos:
+        # pick out remaining files with length 3
+        sc = grp[grp["NIfTI_Shape"].map(lambda s: len(s) == 3)]
+        
+        if len(mc) == 0:
             continue
+        
+        # Check if this is multi-echo or single-echo data
+        is_multi_echo = "echo" in mc.columns
+        
+        if is_multi_echo:
+            # Multi-echo case - handle as before
+            # within those, collect by echo
+            mags_by_echo = mc[mc["part"]=="mag"].set_index("echo")["NIfTI_Path"]
+            phases_by_echo = mc[mc["part"]=="phase"].set_index("echo")["NIfTI_Path"]
 
-        # build ordered lists
-        mags   = [mags_by_echo[i]   for i in echos]
-        phases = [phases_by_echo[i] for i in echos]
-        # fetch their EchoTime (any row for that echo)
-        tes    = [float(grp.loc[grp["echo"]==i, "EchoTime"].iat[0]) for i in echos]
+            # only proceed if *every* echo has both mag & phase
+            echos = sorted(set(mags_by_echo.index) & set(phases_by_echo.index))
+            if not echos:
+                continue
+
+            # build ordered lists
+            mags = [mags_by_echo[i] for i in echos]
+            phases = [phases_by_echo[i] for i in echos]
+            # fetch their EchoTime (any row for that echo)
+            tes = [float(grp.loc[grp["echo"]==i, "EchoTime"].iat[0]) for i in echos]
+        else:
+            # Single-echo case
+            mag_files = mc[mc["part"]=="mag"]["NIfTI_Path"].tolist()
+            phase_files = mc[mc["part"]=="phase"]["NIfTI_Path"].tolist()
+            
+            # Check if we have both mag and phase
+            if not mag_files or not phase_files:
+                continue
+                
+            # Take the first mag and phase file
+            mags = [mag_files[0]]
+            phases = [phase_files[0]]
+            
+            # Get the echo time from the JSON if available
+            json_path = os.path.splitext(mag_files[0])[0] + ".json"
+            if os.path.exists(json_path):
+                try:
+                    with open(json_path, 'r') as f:
+                        metadata = json.load(f)
+                    tes = [float(metadata.get("EchoTime", 0.0))]
+                except:
+                    # Default echo time if not found
+                    tes = [0.0]
+                    logger.log(LogLevel.WARNING.value, f"Could not read EchoTime from {json_path}, using default value 0.0")
+            else:
+                # Try to get from the dataframe
+                if "EchoTime" in mc.columns:
+                    tes = [float(mc["EchoTime"].iloc[0])]
+                else:
+                    tes = [0.0]
+                    logger.log(LogLevel.WARNING.value, f"No EchoTime found for {mag_files[0]}, using default value 0.0")
 
         te_str = ",".join(f"{t:.6f}" for t in tes)
 
@@ -703,26 +754,55 @@ def run_mcpc3ds_on_multicoil(bids_dir):
         mag_out = f"{base}_mag.nii"
         phase_out = f"{base}_phase.nii"
 
-        mag_out_new = mag_out.replace("_mag.nii", ".nii")
-        phase_out_new = phase_out.replace('part-mag', 'part-phase').replace("_phase.nii", ".nii")
-
         # check if the output files exist
-        shutil.move(mag_out, mag_out_new)
-        shutil.move(phase_out, phase_out_new)
+        if not os.path.exists(mag_out) or not os.path.exists(phase_out):
+            logger.log(LogLevel.ERROR.value, f"Output files not found: {mag_out} or {phase_out}")
+            continue
+        
+        # delete individual coil files (sc)
+        if len(sc) > 0:
+            logger.log(LogLevel.INFO.value, f"Deleting individual coil files...")
+            for f in sc["NIfTI_Path"]:
+                if os.path.exists(f):
+                    os.remove(f)
+                if os.path.exists(f.replace(".nii", ".json")):
+                    os.remove(f.replace(".nii", ".json"))
 
-        # split the output 4d files into separate echo files
-        mag_nii = nb.load(mag_out_new)
-        phase_nii = nb.load(phase_out_new)
-        mag_data = mag_nii.get_fdata()
-        phase_data = phase_nii.get_fdata()
+        # Determine the new filenames
+        if is_multi_echo:
+            mag_out_new = mag_out.replace("_mag.nii", ".nii")
+            phase_out_new = phase_out.replace('part-mag', 'part-phase').replace("_phase.nii", ".nii")
+        else:
+            # For single-echo, we need to handle filenames differently
+            mag_out_new = mag_out.replace("_mag.nii", ".nii")
+            phase_out_new = os.path.join(
+                os.path.dirname(phase_out),
+                os.path.basename(mag_out_new).replace('part-mag', 'part-phase')
+            )
 
-        # if the data is 4D, split it into separate files
-        if mag_data.ndim == 4:
-            for i in range(mag_data.shape[3]):
-                mag_nii_echo = nb.Nifti1Image(mag_data[..., i], mag_nii.affine, mag_nii.header)
-                phase_nii_echo = nb.Nifti1Image(phase_data[..., i], phase_nii.affine, phase_nii.header)
-                nb.save(mag_nii_echo, mag_out_new.replace('echo-01', f'echo-{i+1:02}'))
-                nb.save(phase_nii_echo, phase_out_new.replace('echo-01', f'echo-{i+1:02}'))
+        # check if the output files exist and move them
+        if os.path.exists(mag_out) and os.path.exists(phase_out):
+            shutil.move(mag_out, mag_out_new)
+            shutil.move(phase_out, phase_out_new)
+        else:
+            logger.log(LogLevel.WARNING.value, f"Expected output files not found: {mag_out} or {phase_out}")
+            continue
+
+        # Only split if multi-echo
+        if is_multi_echo and len(echos) > 1:
+            # split the output 4d files into separate echo files
+            mag_nii = nb.load(mag_out_new)
+            phase_nii = nb.load(phase_out_new)
+            mag_data = mag_nii.get_fdata()
+            phase_data = phase_nii.get_fdata()
+
+            # if the data is 4D, split it into separate files
+            if mag_data.ndim == 4:
+                for i in range(mag_data.shape[3]):
+                    mag_nii_echo = nb.Nifti1Image(mag_data[..., i], mag_nii.affine, mag_nii.header)
+                    phase_nii_echo = nb.Nifti1Image(phase_data[..., i], phase_nii.affine, phase_nii.header)
+                    nb.save(mag_nii_echo, mag_out_new.replace('echo-01', f'echo-{i+1:02}'))
+                    nb.save(phase_nii_echo, phase_out_new.replace('echo-01', f'echo-{i+1:02}'))
 
 def script_exit(exit_code=0):
     logger = make_logger()
