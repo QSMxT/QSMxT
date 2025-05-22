@@ -1565,6 +1565,7 @@ def visualize_resource_usage(json_file, wf):
     import numpy as np
     from matplotlib import pyplot as plt
 
+    logger = make_logger('main')
     json_dir = os.path.split(json_file)[0]
 
     # Load JSON data from file
@@ -1591,7 +1592,7 @@ def visualize_resource_usage(json_file, wf):
 
     csv_file_path = os.path.join(json_dir, 'resource_usage.csv')
     df.to_csv(csv_file_path)
-    print(f"DataFrame saved as CSV at: {csv_file_path}")
+    logger.log(LogLevel.INFO.value, f"Resource usage data saved as CSV at: {csv_file_path}")
 
     # Plotting all resource usages
     plt.figure(figsize=(24, 8))

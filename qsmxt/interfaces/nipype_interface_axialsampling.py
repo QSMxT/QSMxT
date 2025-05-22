@@ -69,12 +69,8 @@ def resample_to_axial(mag_nii=None, pha_nii=None, mask_nii=None):
 
 def resample_files(mag_file=None, pha_file=None, mask_file=None, obliquity_threshold=None):
     # load data
-    #print(f"Loading mag={os.path.split(mag_file)[1]}...")
     mag_nii = nib.load(mag_file) if mag_file else None
-    #print(f"Loading pha={os.path.split(pha_file)[1]}...")
     pha_nii = nib.load(pha_file) if pha_file else None
-    #if mask_file:
-    #    print(f"Loading mask={os.path.split(mask_file)[1]}...")
     mask_nii = nib.load(mask_file) if mask_file else None        
 
     # check obliquity
@@ -82,9 +78,7 @@ def resample_files(mag_file=None, pha_file=None, mask_file=None, obliquity_thres
     obliquity = np.rad2deg(nib.affines.obliquity(nii.affine))
     obliquity_norm = np.linalg.norm(obliquity)
     if obliquity_threshold and obliquity_norm < obliquity_threshold:
-        #print(f"Obliquity = {obliquity}; norm = {obliquity_norm} < {obliquity_threshold}; no resampling needed.")
         return mag_file, pha_file, mask_file
-    #print(f"Obliquity = {obliquity}; norm = {obliquity_norm} >= {obliquity_threshold}; resampling will commence.")
 
     # resample
     mag_rot_nii, pha_rot_nii, mask_rot_nii = resample_to_axial(mag_nii, pha_nii, mask_nii)

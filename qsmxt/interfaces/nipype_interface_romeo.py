@@ -124,9 +124,6 @@ if __name__ == "__main__":
                                            phase_offset_correction=args.phase_offset_correction)
         romeo_interface.run()
         outputs = romeo_interface.aggregate_outputs()
-        print(f"Processing complete. Unwrapped phase and B0 map generated.")
-        print(f"Unwrapped Phase Path(s): {outputs.phase_unwrapped}")
-        print(f"B0 Map Path: {outputs.frequency}")
         
     except Exception as e:
         sys.stderr.write(f"Error running RomeoB0Interface: {e}")

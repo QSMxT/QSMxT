@@ -9,17 +9,12 @@ from qsmxt.scripts.qsmxt_functions import extend_fname
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits, InputMultiPath
 
 def resample_to_reference(in_file, ref_file, out_file=None, interpolation='continuous'):
-    print(f"Resampling {in_file} to {ref_file} with interpolation {interpolation}")
-
     # Load NIfTI files
     in_nii = nib.load(in_file)
     ref_nii = nib.load(ref_file)
 
-    print("Loaded input and reference files")
-
     # Check if the input image is already aligned with the reference image
     if np.array_equal(in_nii.affine, ref_nii.affine):
-        print("Input image is already aligned with the reference image")
         return in_file
 
     # Resample the source image to match the reference image
@@ -30,12 +25,9 @@ def resample_to_reference(in_file, ref_file, out_file=None, interpolation='conti
         interpolation=interpolation
     )
 
-    print("Resampled the image")
-
     # Save the resampled image
     out_file = out_file or extend_fname(in_file, "_resampled", out_dir=os.getcwd())
     nib.save(resampled_nii, out_file)
-    print(f"Saved resampled image to {out_file}")
 
     return out_file
 
