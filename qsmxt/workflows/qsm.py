@@ -125,7 +125,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
     logger.log(LogLevel.INFO.value, f"Creating QSMxT workflow for {run_id}...")
 
     # Retrieve relevant files for this run.
-    t1w_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=["T1w"], ext="nii*", session=session, run=None, part=None, acq=acq, rec=rec, inv=inv)
+    t1w_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=["T1w"], session=session, run=None, part=None, acq=None, rec=None, inv=None)
     phase_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=[suffix] if suffix else None, session=session, run=run, part="phase", acq=acq, rec=rec, inv=inv)[:run_args.num_echoes]
     magnitude_files = get_matching_files(run_args.bids_dir, subject=subject, dtype="anat", suffixes=[suffix] if suffix else None, session=session, run=run, part="mag", acq=acq, rec=rec, inv=inv)[:run_args.num_echoes]
     phase_params_files = [path.replace('.nii.gz', '.nii').replace('.nii', '.json') for path in phase_files]

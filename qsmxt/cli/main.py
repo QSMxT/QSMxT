@@ -107,21 +107,21 @@ def init_session_workflow(args, subject, session=None):
         inv = re.search("_inv-([a-zA-Z0-9]+)_", path).group(1) if '_inv-' in path else None
         run = re.search("_run-([a-zA-Z0-9]+)_", path).group(1) if '_run-' in path else None
 
-        suffix = os.path.splitext(os.path.split(path)[1])[0].split('_')[-1]
+        suffix = os.path.splitext(os.path.split(path)[1])[0].split('_')[-1].split('.')[0]
 
-        if args.recs and rec:
+        if args.recs:
             if not any(f"_{r}_" in os.path.split(path)[1] for r in args.recs):
                 continue
 
-        if args.invs and inv:
+        if args.invs:
             if not any(f"_{i}_" in os.path.split(path)[1] for i in args.invs):
                 continue
 
-        if args.acqs and acq:
+        if args.acqs:
             if not any(f"_{a}_" in os.path.split(path)[1] for a in args.acqs):
                 continue
 
-        if args.runs and run:
+        if args.runs:
             if not any(f"_{r}_" in os.path.split(path)[1] for r in args.runs):
                 continue
 
