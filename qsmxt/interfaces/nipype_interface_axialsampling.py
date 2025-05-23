@@ -43,7 +43,7 @@ def resample_to_axial(mag_nii=None, pha_nii=None, mask_nii=None):
         # convert real and imaginary to magnitude and phase
         real_rot = real_rot_nii.get_fdata()
         imag_rot = imag_rot_nii.get_fdata()
-        mag_rot = np.array(np.round(np.hypot(real_rot, imag_rot, dtype=np.float32), 0), dtype=np.int32)
+        mag_rot = np.array(np.round(np.hypot(real_rot, imag_rot, dtype=mag.dtype), 0), dtype=mag.dtype)
         pha_rot = np.arctan2(imag_rot, real_rot, dtype=np.float32)
 
         # add noise to zero values
