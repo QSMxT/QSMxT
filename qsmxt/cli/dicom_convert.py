@@ -627,8 +627,8 @@ def merge_multicoil_data(bids_dir):
     group_cols = [c for c in ("sub","ses","acq","run") if c in nifti_sess.columns]
     for key_vals, grp in nifti_sess.groupby(group_cols):
 
-        # consider only rows with a 'coil' column
-        if "coil" not in grp.columns:
+        # consider only rows with a 'coil' and 'part' column
+        if "coil" not in grp.columns or "part" not in grp.columns:
             continue
         
         # Handle both single-echo and multi-echo data
