@@ -468,7 +468,7 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
             base_name = f"{subject_id}_{session_id}_{acq_label}"
             if row["NumRuns"] > 1:
                 base_name += f"_run-{int(row['RunNumber']):02}"
-            if '(0051,100F)' in row and row['(0051,100F)'] not in ["", "None", "HEA;HEP", None]:
+            if '(0051,100F)' in row and row['(0051,100F)'] not in ["", "None", "HEA;HEP", None] and not any(c in row['(0051,100F)'] for c in [';', '-']):
                 coil_num = re.search(r'\d+', row['(0051,100F)']).group(0)
                 base_name += f"_coil-{int(coil_num):02}"
             if row["NumEchoes"] > 1 and row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
