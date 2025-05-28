@@ -407,7 +407,7 @@ def interactive_acquisition_selection_series(table_data):
 
     return curses.wrapper(curses_ui)
 
-def handle_4d_files(tmp_outdir, converted_niftis, dcm2niix_base):
+def handle_4d_files(tmp_outdir, converted_niftis, dcm2niix_base, dicom_group):
     """Handle 4D files by splitting them into separate 3D files for each echo"""
     logger = make_logger()
     
@@ -440,6 +440,29 @@ def handle_4d_files(tmp_outdir, converted_niftis, dcm2niix_base):
                     with open(json_src, 'r') as f:
                         json_data = json.load(f)
                 
+                # Extract echo times from DICOM group if available
+                echo_times = None
+                if dicom_group is not None and "EchoTime" in dicom_group.columns:
+                    # Get unique echo times sorted
+                    echo_times = sorted(dicom_group["EchoTime"].unique())
+                    logger.log(LogLevel.INFO.value, f"Found {len(echo_times)} echo times from DICOM group: {echo_times}")
+                
+                # If we don't have enough echo times for all dimensions, try to infer them
+                if echo_times is None or len(echo_times) < img.shape[3]:
+                    logger.log(LogLevel.WARNING.value, f"Not enough echo times found in DICOM data for all {img.shape[3]} volumes. Will try to infer.")
+                    
+                    # Try to infer from the 4D file's header
+                    if len(img.header.get_zooms()) > 3 and img.header.get_zooms()[3] > 0:
+                        # Use the 4th dimension's zoom factor as echo spacing
+                        echo_spacing = img.header.get_zooms()[3]
+                        echo_times = [echo_spacing * (i + 1) for i in range(img.shape[3])]
+                        logger.log(LogLevel.INFO.value, f"Inferred echo times from NIfTI header: {echo_times}")
+                    elif json_data and "EchoTime" in json_data:
+                        # Use the base echo time and assume uniform spacing
+                        base_te = json_data["EchoTime"]
+                        echo_times = [base_te * (i + 1) for i in range(img.shape[3])]
+                        logger.log(LogLevel.INFO.value, f"Inferred echo times from base TE: {echo_times}")
+                
                 # Split the 4D file into separate 3D files for each echo
                 for i in range(img.shape[3]):
                     # Create a unique name for this echo
@@ -457,16 +480,8 @@ def handle_4d_files(tmp_outdir, converted_niftis, dcm2niix_base):
                         echo_json = json_data.copy()
                         
                         # Update the echo time if available
-                        if "EchoTime" in echo_json:
-                            # For Philips, the 4th dimension is often echo time
-                            # We can get the actual echo time from the header's zoom factor
-                            if len(img.header.get_zooms()) > 3 and img.header.get_zooms()[3] > 0:
-                                echo_json["EchoTime"] = img.header.get_zooms()[3] * echo_num
-                            else:
-                                # If zoom factor isn't available, try to calculate based on first echo
-                                base_te = echo_json["EchoTime"]
-                                echo_spacing = base_te  # Assume uniform echo spacing if not specified
-                                echo_json["EchoTime"] = base_te + (echo_num - 1) * echo_spacing
+                        if echo_times and i < len(echo_times):
+                            echo_json["EchoTime"] = echo_times[i] / 1000.0 if echo_times[i] > 1 else echo_times[i]  # Convert ms to seconds if needed
                         
                         # Add metadata to indicate this is magnitude or phase
                         echo_json["ImageType"] = [data_type.upper()]
@@ -480,6 +495,7 @@ def handle_4d_files(tmp_outdir, converted_niftis, dcm2niix_base):
                     os.remove(json_src)
         except Exception as e:
             logger.log(LogLevel.WARNING.value, f"Error processing {nii_path}: {str(e)}")
+
 
 def determine_data_type(nii_path, assigned_type):
     """
@@ -562,133 +578,171 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
         logger.log(LogLevel.ERROR.value, "No acquisitions selected for conversion. Exiting.")
         script_exit(1)
     
-    group_cols = [
-        "PatientName", "PatientID", "StudyDate", "Acquisition", "SeriesDescription", 
-        "Type", "EchoNumber", "RunNumber"
+    # First, group by patient, study, acquisition, series description, and run number
+    base_group_cols = [
+        "PatientName", "PatientID", "StudyDate", "Acquisition", "SeriesDescription", "RunNumber"
     ]
-    missing_cols = [col for col in group_cols if col not in to_convert.columns]
+    missing_cols = [col for col in base_group_cols if col not in to_convert.columns]
     if missing_cols:
         logger.log(LogLevel.WARNING.value, f"The following fields are missing from the DICOM session: {', '.join(missing_cols)}")
+    
+    # Add SeriesInstanceUID if available
     if "SeriesInstanceUID" in to_convert.columns:
-        group_cols.append("SeriesInstanceUID")
+        base_group_cols.append("SeriesInstanceUID")
     if "(0051,100F)" in to_convert.columns:
-        group_cols.append("(0051,100F)")
+        base_group_cols.append("(0051,100F)")
 
     # if any PatientID is empty, fill it with PatientName and vice versa
     if 'PatientID' in to_convert.columns and 'PatientName' in to_convert.columns:
         to_convert['PatientID'].fillna(to_convert['PatientName'], inplace=True)
         to_convert['PatientName'].fillna(to_convert['PatientID'], inplace=True)
     
-    # if any group_cols are empty, fill them with a default value "NA"
-    for col in group_cols:
+    # if any base_group_cols are empty, fill them with a default value "NA"
+    for col in base_group_cols:
         if col not in to_convert.columns:
             continue
         to_convert[col].fillna("NA", inplace=True)
     
-    grouped = to_convert.groupby(group_cols)
+    # First level grouping
+    base_grouped = to_convert.groupby(base_group_cols)
 
-    if not grouped.groups:
+    if not base_grouped.groups:
         logger.log(LogLevel.ERROR.value, "No valid acquisitions found. Exiting.")
         script_exit(1)
     
-    for grp_keys, grp_data in grouped:
-        logger.log(LogLevel.INFO.value, f"Converting {grp_keys}")
-        dicom_files = grp_data["DICOM_Path"].unique().tolist()
-
-        tmp_outdir = os.path.join(output_dir, "temp_convert")
-        os.makedirs(tmp_outdir, exist_ok=True)
-        dcm2niix_base = "temp_output"
-
-        for dicom_file in dicom_files:
-            shutil.copy(dicom_file, tmp_outdir)
+    # Process each base group
+    for base_keys, base_group_data in base_grouped:
+        logger.log(LogLevel.INFO.value, f"Processing base group: {base_keys}")
         
-        cmd = f'"{dcm2niix_path}" -o "{tmp_outdir}" -f "{dcm2niix_base}" -z n -m o "{tmp_outdir}"'
-        logger.log(LogLevel.INFO.value, f"Running command: '{cmd}'")
-        os.system(cmd)
-        
-        logger.log(LogLevel.INFO.value, "Moving converted NIfTI files into BIDS structure")
-        converted_niftis = []
-        for fn in os.listdir(tmp_outdir):
-            if fn.startswith(dcm2niix_base) and (fn.endswith(".nii") or fn.endswith(".nii.gz")):
-                converted_niftis.append(fn)
-
-        # Handle 4D Philips files
-        handle_4d_files(tmp_outdir, converted_niftis, dcm2niix_base)
-        
-        # Refresh the list of NIfTI files after potential splitting
-        converted_niftis = []
-        for fn in os.listdir(tmp_outdir):
-            if fn.startswith(dcm2niix_base) and (fn.endswith(".nii") or fn.endswith(".nii.gz")):
-                converted_niftis.append(fn)            
-
-        # Now organize the files based on their type
-        for nii_filename in converted_niftis:
-            row = grp_data.iloc[0]
-            subject_id = f"sub-{clean(row['PatientID']) or clean(row['PatientName'])}"
-            session_id = f"ses-{clean(row['StudyDate'])}"
+        # Check if we need to further group by Type
+        unique_dicom_paths = base_group_data["DICOM_Path"].unique()
+        if len(unique_dicom_paths) > 1:
+            # We have multiple DICOM files in this group, so group by Type
+            type_grouped = base_group_data.groupby("Type")
             
-            # Determine the data type (mag/phase/real/imag) based on filename or JSON
-            data_type = determine_data_type(os.path.join(tmp_outdir, nii_filename), row["Type"])
-            
-            # Extract echo number if present in the filename
-            echo_num = extract_echo_number(nii_filename)
-            
-            # Build an acquisition label based on Acquisition and Description
-            acq_label = f"acq-{clean(row['Acquisition'])}"
-            if row["Description"]:
-                acq_label += f"_desc-{row['Description']}"
-            elif row["Type"] == "Extra":
-                acq_label += f"_desc-{clean(row['SeriesDescription'])}"
-            
-            base_name = f"{subject_id}_{session_id}_{acq_label}"
-            if row["NumRuns"] > 1:
-                base_name += f"_run-{int(row['RunNumber']):02}"
-            if '(0051,100F)' in row and row['(0051,100F)'] not in ["", "None", "HEA;HEP", "NA", None] and not any(c in row['(0051,100F)'] for c in [';', '-']):
-                coil_num = re.search(r'\d+', row['(0051,100F)'])
-                if not coil_num:
-                    logger.log(LogLevel.WARNING.value, f"Could not extract coil number from '(0051,100F)': {row['(0051,100F)']}")
+            for type_key, type_group_data in type_grouped:
+                # Check if we need to further group by EchoNumber
+                unique_type_dicom_paths = type_group_data["DICOM_Path"].unique()
+                if len(unique_type_dicom_paths) > 1 and "EchoNumber" in type_group_data.columns:
+                    # We have multiple DICOM files for this Type, so group by EchoNumber
+                    echo_grouped = type_group_data.groupby("EchoNumber")
+                    
+                    for echo_key, echo_group_data in echo_grouped:
+                        # Process this final group
+                        process_dicom_group(echo_group_data, output_dir, dcm2niix_path)
                 else:
-                    coil_num = coil_num.group(0)
-                    base_name += f"_coil-{int(coil_num):02}"
-            
-            # Add echo number if present
-            if echo_num:
-                base_name += f"_echo-{echo_num}"
-            elif row["NumEchoes"] > 1 and row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
-                base_name += f"_echo-{int(row['EchoNumber']):02}"
-            
-            # Add inversion number if present
-            if "InversionNumber" in row and pd.notnull(row["InversionNumber"]):
-                base_name += f"_inv-{int(row['InversionNumber'])}"
-            
-            # Add part label based on data type
-            if data_type.lower() in ["mag", "phase", "real", "imag"]:
-                base_name += f"_part-{data_type.lower()}"
-            
-            # Add suffix based on type
-            if row["Type"] == "T1w":
-                base_name += "_T1w"
-            elif row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
-                if row["NumEchoes"] > 1:
-                    base_name += "_MEGRE"
-                else:
-                    base_name += "_T2starw"
-            elif row["Type"] == "Extra":
-                base_name += nii_filename.replace("temp_output", "").replace(".nii", "").replace(".nii.gz", "")
-            
-            ext = ".nii" if nii_filename.endswith(".nii") else ".nii.gz"
-            out_dir = os.path.join(output_dir, subject_id, session_id, "anat" if row["Type"] != "Extra" else "extra_data")
-            os.makedirs(out_dir, exist_ok=True)
-            dst_path = os.path.join(out_dir, f"{base_name}{ext}")
-            src_path = os.path.join(tmp_outdir, nii_filename)
-            shutil.move(src_path, dst_path)
-            
-            json_src = os.path.join(tmp_outdir, nii_filename.replace(ext, ".json"))
-            if os.path.isfile(json_src):
-                json_dst = os.path.join(out_dir, f"{base_name}.json")
-                shutil.move(json_src, json_dst)
+                    # Process this Type group
+                    process_dicom_group(type_group_data, output_dir, dcm2niix_path)
+        else:
+            # Only one unique DICOM path, process the base group directly
+            process_dicom_group(base_group_data, output_dir, dcm2niix_path)
 
-        shutil.rmtree(tmp_outdir)
+def process_dicom_group(grp_data, output_dir, dcm2niix_path):
+    """Process a group of DICOM files that should be converted together"""
+    logger = make_logger()
+    
+    logger.log(LogLevel.INFO.value, f"Converting group with {len(grp_data)} rows")
+    dicom_files = grp_data["DICOM_Path"].unique().tolist()
+    
+    # Create temporary directory for conversion
+    tmp_outdir = os.path.join(output_dir, "temp_convert")
+    os.makedirs(tmp_outdir, exist_ok=True)
+    dcm2niix_base = "temp_output"
+    
+    # Copy DICOM files to temporary directory
+    for dicom_file in dicom_files:
+        shutil.copy(dicom_file, tmp_outdir)
+    
+    # Run dcm2niix
+    cmd = f'"{dcm2niix_path}" -o "{tmp_outdir}" -f "{dcm2niix_base}" -z n -m o "{tmp_outdir}"'
+    logger.log(LogLevel.INFO.value, f"Running command: '{cmd}'")
+    os.system(cmd)
+    
+    # Get list of converted NIfTI files
+    converted_niftis = []
+    for fn in os.listdir(tmp_outdir):
+        if fn.startswith(dcm2niix_base) and (fn.endswith(".nii") or fn.endswith(".nii.gz")):
+            converted_niftis.append(fn)
+    
+    # Handle 4D files - pass the entire group data for echo time extraction
+    handle_4d_files(tmp_outdir, converted_niftis, dcm2niix_base, grp_data)
+    
+    # Refresh the list of NIfTI files after potential splitting
+    converted_niftis = []
+    for fn in os.listdir(tmp_outdir):
+        if fn.startswith(dcm2niix_base) and (fn.endswith(".nii") or fn.endswith(".nii.gz")):
+            converted_niftis.append(fn)
+    
+    # Organize the files based on their type
+    for nii_filename in converted_niftis:
+        row = grp_data.iloc[0]
+        subject_id = f"sub-{clean(row['PatientID']) or clean(row['PatientName'])}"
+        session_id = f"ses-{clean(row['StudyDate'])}"
+        
+        # Determine the data type (mag/phase/real/imag) based on filename or JSON
+        data_type = determine_data_type(os.path.join(tmp_outdir, nii_filename), row["Type"])
+        
+        # Extract echo number if present in the filename
+        echo_num = extract_echo_number(nii_filename)
+        
+        # Build an acquisition label based on Acquisition and Description
+        acq_label = f"acq-{clean(row['Acquisition'])}"
+        if row["Description"]:
+            acq_label += f"_desc-{row['Description']}"
+        elif row["Type"] == "Extra":
+            acq_label += f"_desc-{clean(row['SeriesDescription'])}"
+        
+        base_name = f"{subject_id}_{session_id}_{acq_label}"
+        if "NumRuns" in row and row["NumRuns"] > 1:
+            base_name += f"_run-{int(row['RunNumber']):02}"
+        if '(0051,100F)' in row and row['(0051,100F)'] not in ["", "None", "HEA;HEP", "NA", None] and not any(c in row['(0051,100F)'] for c in [';', '-']):
+            coil_num = re.search(r'\d+', row['(0051,100F)'])
+            if not coil_num:
+                logger.log(LogLevel.WARNING.value, f"Could not extract coil number from '(0051,100F)': {row['(0051,100F)']}")
+            else:
+                coil_num = coil_num.group(0)
+                base_name += f"_coil-{int(coil_num):02}"
+        
+        # Add echo number if present
+        if echo_num:
+            base_name += f"_echo-{echo_num}"
+        elif "NumEchoes" in row and row["NumEchoes"] > 1 and row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
+            base_name += f"_echo-{int(row['EchoNumber']):02}"
+        
+        # Add inversion number if present
+        if "InversionNumber" in row and pd.notnull(row["InversionNumber"]):
+            base_name += f"_inv-{int(row['InversionNumber'])}"
+        
+        # Add part label based on data type
+        if data_type.lower() in ["mag", "phase", "real", "imag"]:
+            base_name += f"_part-{data_type.lower()}"
+        
+        # Add suffix based on type
+        if row["Type"] == "T1w":
+            base_name += "_T1w"
+        elif row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
+            if "NumEchoes" in row and row["NumEchoes"] > 1:
+                base_name += "_MEGRE"
+            else:
+                base_name += "_T2starw"
+        elif row["Type"] == "Extra":
+            base_name += nii_filename.replace("temp_output", "").replace(".nii", "").replace(".nii.gz", "")
+        
+        ext = ".nii" if nii_filename.endswith(".nii") else ".nii.gz"
+        out_dir = os.path.join(output_dir, subject_id, session_id, "anat" if row["Type"] != "Extra" else "extra_data")
+        os.makedirs(out_dir, exist_ok=True)
+        dst_path = os.path.join(out_dir, f"{base_name}{ext}")
+        src_path = os.path.join(tmp_outdir, nii_filename)
+        shutil.move(src_path, dst_path)
+        
+        json_src = os.path.join(tmp_outdir, nii_filename.replace(ext, ".json"))
+        if os.path.isfile(json_src):
+            json_dst = os.path.join(out_dir, f"{base_name}.json")
+            shutil.move(json_src, json_dst)
+    
+    # Clean up temporary directory
+    shutil.rmtree(tmp_outdir)
+
 
 def convert_to_bids(input_dir, output_dir, auto_yes):
     logger = make_logger()
