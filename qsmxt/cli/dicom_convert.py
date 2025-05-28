@@ -481,7 +481,11 @@ def handle_4d_files(tmp_outdir, converted_niftis, dcm2niix_base, dicom_group):
                         
                         # Update the echo time if available
                         if echo_times and i < len(echo_times):
-                            echo_json["EchoTime"] = echo_times[i] / 1000.0 if echo_times[i] > 1 else echo_times[i]  # Convert ms to seconds if needed
+                            # if manufacturer if Philips, echo_times[i] is in seconds
+                            if echo_times[i] > 1:
+                                echo_json["EchoTime"] = echo_times[i] / 1000.0  # Convert ms to seconds for BIDS
+                            else:
+                                echo_json["EchoTime"] = echo_times[i]
                         
                         # Add metadata to indicate this is magnitude or phase
                         echo_json["ImageType"] = [data_type.upper()]
