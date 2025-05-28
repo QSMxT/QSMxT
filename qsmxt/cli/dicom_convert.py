@@ -407,6 +407,153 @@ def interactive_acquisition_selection_series(table_data):
 
     return curses.wrapper(curses_ui)
 
+def handle_4d_files(tmp_outdir, converted_niftis, dcm2niix_base):
+    """Handle 4D files by splitting them into separate 3D files for each echo"""
+    logger = make_logger()
+    
+    # Create a copy of the list since we'll be modifying it
+    for nii_filename in list(converted_niftis):
+        nii_path = os.path.join(tmp_outdir, nii_filename)
+        if not os.path.exists(nii_path):
+            continue
+            
+        try:
+            img = nb.load(nii_path)
+            if img.ndim == 4:
+                logger.log(LogLevel.INFO.value, f"Splitting 4D NIfTI file: {nii_path}")
+                
+                # Determine if this is magnitude or phase based on filename
+                is_phase = "_ph" in nii_filename
+                data_type = "phase" if is_phase else "mag"
+                
+                # Remove the original file from our list
+                if nii_filename in converted_niftis:
+                    converted_niftis.remove(nii_filename)
+                
+                # Get the base name without extension
+                nii_base = os.path.basename(nii_path).replace(".nii.gz", "").replace(".nii", "")
+                
+                # Load the corresponding JSON if it exists
+                json_src = nii_path.replace(".nii.gz", "").replace(".nii", "") + ".json"
+                json_data = None
+                if os.path.isfile(json_src):
+                    with open(json_src, 'r') as f:
+                        json_data = json.load(f)
+                
+                # Split the 4D file into separate 3D files for each echo
+                for i in range(img.shape[3]):
+                    # Create a unique name for this echo
+                    echo_num = i + 1
+                    new_nii_name = f"{nii_base}_echo-{echo_num:02d}" + (".nii" if nii_path.endswith(".nii") else ".nii.gz")
+                    new_nii_path = os.path.join(tmp_outdir, new_nii_name)
+                    
+                    # Save the 3D volume
+                    nb.save(nb.Nifti1Image(img.dataobj[..., i], img.affine, img.header), new_nii_path)
+                    converted_niftis.append(new_nii_name)
+                    
+                    # Create a corresponding JSON file with updated echo time
+                    if json_data:
+                        json_dst = new_nii_path.replace(".nii.gz", "").replace(".nii", "") + ".json"
+                        echo_json = json_data.copy()
+                        
+                        # Update the echo time if available
+                        if "EchoTime" in echo_json:
+                            # For Philips, the 4th dimension is often echo time
+                            # We can get the actual echo time from the header's zoom factor
+                            if len(img.header.get_zooms()) > 3 and img.header.get_zooms()[3] > 0:
+                                echo_json["EchoTime"] = img.header.get_zooms()[3] * echo_num
+                            else:
+                                # If zoom factor isn't available, try to calculate based on first echo
+                                base_te = echo_json["EchoTime"]
+                                echo_spacing = base_te  # Assume uniform echo spacing if not specified
+                                echo_json["EchoTime"] = base_te + (echo_num - 1) * echo_spacing
+                        
+                        # Add metadata to indicate this is magnitude or phase
+                        echo_json["ImageType"] = [data_type.upper()]
+                        
+                        with open(json_dst, 'w') as f:
+                            json.dump(echo_json, f, indent=4)
+                
+                # Remove the original 4D file after splitting
+                os.remove(nii_path)
+                if os.path.exists(json_src):
+                    os.remove(json_src)
+        except Exception as e:
+            logger.log(LogLevel.WARNING.value, f"Error processing {nii_path}: {str(e)}")
+
+def determine_data_type(nii_path, assigned_type):
+    """
+    Determine the data type (mag/phase/real/imag) based on filename or JSON
+    
+    Parameters:
+    - nii_path: Path to the NIfTI file
+    - assigned_type: Type assigned by the user in the interactive interface
+    
+    Returns:
+    - Data type string (mag, phase, real, imag)
+    """
+    # First check if the filename contains indicators
+    filename = os.path.basename(nii_path)
+    if "_ph" in filename:
+        return "phase"
+    
+    # Check the JSON file for ImageType
+    json_path = nii_path.replace(".nii.gz", "").replace(".nii", "") + ".json"
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, 'r') as f:
+                json_data = json.load(f)
+            
+            image_type = json_data.get("ImageType", [])
+            if isinstance(image_type, list):
+                if "P" in image_type or "PHASE" in image_type:
+                    return "phase"
+                elif "M" in image_type or "MAG" in image_type:
+                    return "mag"
+                elif "REAL" in image_type:
+                    return "real"
+                elif "IMAGINARY" in image_type:
+                    return "imag"
+            elif isinstance(image_type, str):
+                if "P" in image_type or "PHASE" in image_type:
+                    return "phase"
+                elif "M" in image_type or "MAG" in image_type:
+                    return "mag"
+                elif "REAL" in image_type:
+                    return "real"
+                elif "IMAGINARY" in image_type:
+                    return "imag"
+        except Exception:
+            pass
+    
+    # If we can't determine from the file, use the assigned type
+    if assigned_type == "Phase":
+        return "phase"
+    elif assigned_type == "Mag":
+        return "mag"
+    elif assigned_type == "Real":
+        return "real"
+    elif assigned_type == "Imag":
+        return "imag"
+    
+    # Default to magnitude if we can't determine
+    return "mag"
+
+def extract_echo_number(filename):
+    """
+    Extract echo number from filename if present
+    
+    Parameters:
+    - filename: NIfTI filename
+    
+    Returns:
+    - Echo number string or None if not found
+    """
+    match = re.search(r'_echo-(\d+)', filename)
+    if match:
+        return match.group(1)
+    return None
+
 def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
     logger = make_logger()
     # Only convert series whose Type is not 'Skip'
@@ -426,6 +573,17 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
         group_cols.append("SeriesInstanceUID")
     if "(0051,100F)" in to_convert.columns:
         group_cols.append("(0051,100F)")
+
+    # if any PatientID is empty, fill it with PatientName and vice versa
+    if 'PatientID' in to_convert.columns and 'PatientName' in to_convert.columns:
+        to_convert['PatientID'].fillna(to_convert['PatientName'], inplace=True)
+        to_convert['PatientName'].fillna(to_convert['PatientID'], inplace=True)
+    
+    # if any group_cols are empty, fill them with a default value "NA"
+    for col in group_cols:
+        if col not in to_convert.columns:
+            continue
+        to_convert[col].fillna("NA", inplace=True)
     
     grouped = to_convert.groupby(group_cols)
 
@@ -454,10 +612,27 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
             if fn.startswith(dcm2niix_base) and (fn.endswith(".nii") or fn.endswith(".nii.gz")):
                 converted_niftis.append(fn)
 
-        for nii_name in converted_niftis:
+        # Handle 4D Philips files
+        handle_4d_files(tmp_outdir, converted_niftis, dcm2niix_base)
+        
+        # Refresh the list of NIfTI files after potential splitting
+        converted_niftis = []
+        for fn in os.listdir(tmp_outdir):
+            if fn.startswith(dcm2niix_base) and (fn.endswith(".nii") or fn.endswith(".nii.gz")):
+                converted_niftis.append(fn)            
+
+        # Now organize the files based on their type
+        for nii_filename in converted_niftis:
             row = grp_data.iloc[0]
             subject_id = f"sub-{clean(row['PatientID']) or clean(row['PatientName'])}"
             session_id = f"ses-{clean(row['StudyDate'])}"
+            
+            # Determine the data type (mag/phase/real/imag) based on filename or JSON
+            data_type = determine_data_type(os.path.join(tmp_outdir, nii_filename), row["Type"])
+            
+            # Extract echo number if present in the filename
+            echo_num = extract_echo_number(nii_filename)
+            
             # Build an acquisition label based on Acquisition and Description
             acq_label = f"acq-{clean(row['Acquisition'])}"
             if row["Description"]:
@@ -468,18 +643,29 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
             base_name = f"{subject_id}_{session_id}_{acq_label}"
             if row["NumRuns"] > 1:
                 base_name += f"_run-{int(row['RunNumber']):02}"
-            if '(0051,100F)' in row and row['(0051,100F)'] not in ["", "None", "HEA;HEP", None] and not any(c in row['(0051,100F)'] for c in [';', '-']):
-                coil_num = re.search(r'\d+', row['(0051,100F)']).group(0)
-                base_name += f"_coil-{int(coil_num):02}"
-            if row["NumEchoes"] > 1 and row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
+            if '(0051,100F)' in row and row['(0051,100F)'] not in ["", "None", "HEA;HEP", "NA", None] and not any(c in row['(0051,100F)'] for c in [';', '-']):
+                coil_num = re.search(r'\d+', row['(0051,100F)'])
+                if not coil_num:
+                    logger.log(LogLevel.WARNING.value, f"Could not extract coil number from '(0051,100F)': {row['(0051,100F)']}")
+                else:
+                    coil_num = coil_num.group(0)
+                    base_name += f"_coil-{int(coil_num):02}"
+            
+            # Add echo number if present
+            if echo_num:
+                base_name += f"_echo-{echo_num}"
+            elif row["NumEchoes"] > 1 and row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
                 base_name += f"_echo-{int(row['EchoNumber']):02}"
             
-            # if InversionNumber is present and is numberic
+            # Add inversion number if present
             if "InversionNumber" in row and pd.notnull(row["InversionNumber"]):
                 base_name += f"_inv-{int(row['InversionNumber'])}"
-            if row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
-                base_name += f"_part-{row['Type'].lower()}"
             
+            # Add part label based on data type
+            if data_type.lower() in ["mag", "phase", "real", "imag"]:
+                base_name += f"_part-{data_type.lower()}"
+            
+            # Add suffix based on type
             if row["Type"] == "T1w":
                 base_name += "_T1w"
             elif row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
@@ -488,16 +674,16 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
                 else:
                     base_name += "_T2starw"
             elif row["Type"] == "Extra":
-                base_name += nii_name.replace("temp_output", "").replace(".nii", "").replace(".nii.gz", "")
+                base_name += nii_filename.replace("temp_output", "").replace(".nii", "").replace(".nii.gz", "")
             
-            ext = ".nii" if nii_name.endswith(".nii") else ".nii.gz"
+            ext = ".nii" if nii_filename.endswith(".nii") else ".nii.gz"
             out_dir = os.path.join(output_dir, subject_id, session_id, "anat" if row["Type"] != "Extra" else "extra_data")
             os.makedirs(out_dir, exist_ok=True)
             dst_path = os.path.join(out_dir, f"{base_name}{ext}")
-            src_path = os.path.join(tmp_outdir, nii_name)
+            src_path = os.path.join(tmp_outdir, nii_filename)
             shutil.move(src_path, dst_path)
             
-            json_src = os.path.join(tmp_outdir, nii_name.replace(ext, ".json"))
+            json_src = os.path.join(tmp_outdir, nii_filename.replace(ext, ".json"))
             if os.path.isfile(json_src):
                 json_dst = os.path.join(out_dir, f"{base_name}.json")
                 shutil.move(json_src, json_dst)
