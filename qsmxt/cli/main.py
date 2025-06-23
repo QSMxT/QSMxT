@@ -82,7 +82,7 @@ def init_subject_workflow(args, subject):
             logger.log(LogLevel.WARNING.value, f"No imaging data found in {subject_path}")
         return None
 
-    wf = Workflow(name=subject, base_dir=os.path.join(args.output_dir, "workflow"))
+    wf = Workflow(name=subject, base_dir=os.path.join(args.workflow_dir))
 
     for session in session_ids or [None]:
         session_wf = init_session_workflow(args, subject, session)
@@ -95,7 +95,7 @@ def init_session_workflow(args, subject, session=None):
     logger = make_logger('main')
     base = os.path.join(subject, session) if session else subject
     wf = Workflow(session or "default",
-                  base_dir=os.path.join(args.output_dir, "workflow", base))
+                  base_dir=os.path.join(args.workflow_dir, "workflow", base))
 
     file_pattern = os.path.join(args.bids_dir, base, "anat", f"sub-*_part-*.nii*")
     files = sorted(glob.glob(file_pattern))
@@ -177,6 +177,14 @@ def parse_args(args, return_run_command=False):
         default=None,
         type=os.path.abspath,
         help='Input output directory. By default, the output will be integrated into the BIDS directory as a BIDS derivative.'
+    )
+
+    parser.add_argument(
+        '--workflow-dir',
+        dest='workflow_dir',
+        default=None,
+        type=os.path.abspath,
+        help='Directory for nipype workflow intermediate files. By default, this is set to output_dir/workflow or bids_dir/derivatives/qsmxt/.../workflow if no output_dir is specified.'
     )
 
     parser.add_argument(
@@ -672,9 +680,14 @@ def parse_args(args, return_run_command=False):
         parser.error("bids_dir is required!")
     if args.output_dir is None:
         args.output_dir = os.path.join(args.bids_dir, 'derivatives', f"qsmxt-{datetime.datetime.now().strftime('%Y-%m-%d-%H%M%S')}")
-        args.workflow_dir = os.path.join(args.bids_dir, 'derivatives')
+        if args.workflow_dir is None:
+            args.workflow_dir = os.path.join(args.bids_dir, 'derivatives', 'workflow')
     else:
-        args.workflow_dir = args.output_dir
+        if args.workflow_dir is None:
+            args.workflow_dir = os.path.join(args.output_dir, 'workflow')
+    if not os.path.exists(args.workflow_dir):
+        os.makedirs(args.workflow_dir, exist_ok=True)
+    
 
     # Checking the combined qsm_reference values
     if args.qsm_reference is not None:

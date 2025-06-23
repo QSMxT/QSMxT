@@ -335,7 +335,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
     # create nipype workflow for this run
     wf = Workflow(
         f"qsm" + (f"_acq-{acq}" if acq else "") + (f"_rec-{rec}" if rec else "") + (f"_{suffix}" if suffix else "") + (f"_inv-{inv}" if inv else "") + (f"_run-{run}" if run else ""),
-        base_dir=os.path.join(run_args.output_dir, "workflow",
+        base_dir=os.path.join(run_args.workflow_dir,
                               os.path.join(subject, session) if session else subject,
                               acq or "", rec or "", suffix or "", inv or "", run or "")
     )
