@@ -25,6 +25,7 @@ from qsmxt.interfaces import nipype_interface_resample_like as resample_like
 from qsmxt.interfaces import nipype_interface_qsm_referencing as qsm_referencing
 from qsmxt.interfaces import nipype_interface_nii2dcm as nii2dcm
 from qsmxt.interfaces import nipype_interface_copyfile as copyfile
+from qsmxt.interfaces import nipype_interface_copy_json_sidecar as copy_json_sidecar
 
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
@@ -354,11 +355,11 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
         n_inputs.inputs.mask = mask_files[0] if len(mask_files) == 1 else mask_files
 
     n_outputs = create_node(
-        IdentityInterface(fields=['qsm', 'qsm_singlepass', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 'transform', 'analysis_csv', 'qsm_dicoms', 'swi_dicoms', 'swi_mip_dicoms']),
+        IdentityInterface(fields=['qsm', 'qsm_singlepass', 'qsm_json', 'qsm_singlepass_json', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 'transform', 'analysis_csv', 'qsm_dicoms', 'swi_dicoms', 'swi_mip_dicoms']),
         name='qsmxt_outputs'
     )
     n_copyfile = Node(copyfile.DynamicCopyFiles(infields=[
-        'qsm', 'qsm_singlepass', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 'transform', 'analysis_csv', 'qsm_dicoms', 'swi_dicoms', 'swi_mip_dicoms'
+        'qsm', 'qsm_singlepass', 'qsm_json', 'qsm_singlepass_json', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 'transform', 'analysis_csv', 'qsm_dicoms', 'swi_dicoms', 'swi_mip_dicoms'
     ]), name="copyfile")
     
     basedir = os.path.join(run_args.output_dir, subject, session if session else '')
@@ -380,6 +381,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
     n_copyfile.inputs.output_map = {
         'qsm': os.path.join(basedir, 'anat', f"{basename}_Chimap"),
         'qsm_singlepass': os.path.join(basedir, 'anat', f"{basename}_desc-singlepass_Chimap"),
+        'qsm_json': os.path.join(basedir, 'anat', f"{basename}_Chimap"),
+        'qsm_singlepass_json': os.path.join(basedir, 'anat', f"{basename}_desc-singlepass_Chimap"),
         'swi': os.path.join(basedir, 'anat', f"{basename}_swi"),
         'swi_mip': os.path.join(basedir, 'anat', f"{basename}_minIP"),
         't2s': os.path.join(basedir, 'anat', f"{basename}_T2starmap"),
@@ -397,6 +400,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
         (n_outputs, n_copyfile, [
             ('qsm', 'qsm'),
             ('qsm_singlepass', 'qsm_singlepass'),
+            ('qsm_json', 'qsm_json'),
+            ('qsm_singlepass_json', 'qsm_singlepass_json'),
             ('swi', 'swi'),
             ('swi_mip', 'swi_mip'),
             ('t2s', 't2s'),
@@ -852,6 +857,15 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')])
         ])
 
+        # Create JSON sidecar for QSM output
+        n_qsm_json_sidecar = create_node(
+            interface=copy_json_sidecar.CopyJsonSidecarInterface(
+                source_json=phase_params_files[0] if phase_params_files else params_files[0],
+                additional_image_types=['QSM']
+            ),
+            name='copy_qsm_json_sidecar'
+        )
+
         if run_args.qsm_reference:
             n_qsm_referenced = create_node(
                 interface=qsm_referencing.ReferenceQSMInterface(
@@ -861,7 +875,9 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             )
             wf.connect([
                 (n_resample_qsm, n_qsm_referenced, [('out_file', 'in_qsm')]),
-                (n_qsm_referenced, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
+                (n_qsm_referenced, n_qsm_json_sidecar, [('out_file', 'target_nifti')]),
+                (n_qsm_referenced, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')]),
+                (n_qsm_json_sidecar, n_outputs, [('out_json', 'qsm_json' if not run_args.two_pass else 'qsm_singlepass_json')])
             ])
             if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation:
                 wf.connect([
@@ -869,7 +885,9 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
                 ])
         else:
             wf.connect([
-                (n_resample_qsm, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')])
+                (n_resample_qsm, n_qsm_json_sidecar, [('out_file', 'target_nifti')]),
+                (n_resample_qsm, n_outputs, [('out_file', 'qsm' if not run_args.two_pass else 'qsm_singlepass')]),
+                (n_qsm_json_sidecar, n_outputs, [('out_json', 'qsm_json' if not run_args.two_pass else 'qsm_singlepass_json')])
             ])
 
         # two-pass algorithm
@@ -941,6 +959,15 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
                 (mn_inputs_canonical, n_resample_qsm, [('phase', 'ref_file')])
             ])
 
+            # Create JSON sidecar for two-pass QSM output
+            n_qsm_twopass_json_sidecar = create_node(
+                interface=copy_json_sidecar.CopyJsonSidecarInterface(
+                    source_json=phase_params_files[0] if phase_params_files else params_files[0],
+                    additional_image_types=['QSM']
+                ),
+                name='copy_qsm_twopass_json_sidecar'
+            )
+
             if run_args.qsm_reference:
                 n_qsm_twopass_referenced = create_node(
                     interface=qsm_referencing.ReferenceQSMInterface(
@@ -950,7 +977,9 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
                 )
                 wf.connect([
                     (n_resample_qsm, n_qsm_twopass_referenced, [('out_file', 'in_qsm')]),
-                    (n_qsm_twopass_referenced, n_outputs, [('out_file', 'qsm')])
+                    (n_qsm_twopass_referenced, n_qsm_twopass_json_sidecar, [('out_file', 'target_nifti')]),
+                    (n_qsm_twopass_referenced, n_outputs, [('out_file', 'qsm')]),
+                    (n_qsm_twopass_json_sidecar, n_outputs, [('out_json', 'qsm_json')])
                 ])
                 if isinstance(run_args.qsm_reference, list) and run_args.do_segmentation:
                     wf.connect([
@@ -958,7 +987,9 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
                     ])
             else:
                 wf.connect([
-                    (n_resample_qsm, n_outputs, [('out_file', 'qsm')])
+                    (n_resample_qsm, n_qsm_twopass_json_sidecar, [('out_file', 'target_nifti')]),
+                    (n_resample_qsm, n_outputs, [('out_file', 'qsm')]),
+                    (n_qsm_twopass_json_sidecar, n_outputs, [('out_json', 'qsm_json')])
                 ])
 
     if run_args.do_analysis:

@@ -15,6 +15,45 @@ from qsmxt.tests.utils import *
 
 run_workflows = True
 
+def check_chimap_json_sidecars(output_dir, logger):
+    """
+    Simple check that Chimap files exist and have JSON sidecars with QSM in ImageType.
+    
+    Args:
+        output_dir: Directory containing QSMxT outputs
+        logger: Logger instance
+    """
+    import json
+    
+    # Find the Chimap files
+    chimap_files = find_files(output_dir, '*_Chimap.nii*')
+    if len(chimap_files) == 0:
+        logger.log(LogLevel.INFO.value, "No Chimap files found - skipping JSON sidecar check")
+        return
+    
+    logger.log(LogLevel.INFO.value, f"Found {len(chimap_files)} Chimap file(s), checking JSON sidecars...")
+    
+    for chimap_file in chimap_files:
+        # Check Chimap NIfTI exists
+        assert os.path.exists(chimap_file), f"Chimap file not found: {chimap_file}"
+        
+        # Determine expected JSON sidecar path
+        json_sidecar_path = chimap_file.replace('.nii.gz', '.json').replace('.nii', '.json')
+        
+        # Check JSON sidecar exists
+        assert os.path.exists(json_sidecar_path), f"JSON sidecar not found for {chimap_file}: {json_sidecar_path}"
+        
+        # Check JSON contains QSM in ImageType
+        with open(json_sidecar_path, 'r') as f:
+            chimap_json = json.load(f)
+        
+        assert 'ImageType' in chimap_json, f"ImageType field missing in JSON sidecar: {json_sidecar_path}"
+        assert 'QSM' in chimap_json['ImageType'], f"'QSM' not found in ImageType field: {json_sidecar_path}"
+        
+        logger.log(LogLevel.INFO.value, f"✓ {os.path.basename(chimap_file)} has valid JSON sidecar with QSM ImageType")
+    
+    logger.log(LogLevel.INFO.value, f"✓ All {len(chimap_files)} Chimap JSON sidecars validated")
+
 def getrunid():
     return os.environ.get('RUN_ID') or ''
 
@@ -101,6 +140,9 @@ def test_premade(bids_dir_public, premade):
     # create the workflow and run if necessary
     args = main(args)
     
+    # Check JSON sidecars for Chimap outputs
+    check_chimap_json_sidecars(args.output_dir, logger)
+    
     # upload output folder
     tar_file = compress_folder(folder=args.output_dir, result_id=premade)
     sys_cmd(f"rm -rf {os.path.join(gettempdir(), 'public-outputs')}")
@@ -113,6 +155,9 @@ def test_premade(bids_dir_public, premade):
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"Premade {premade}")
+        chimap_files = find_files(args.output_dir, '*_Chimap.nii*')
+        if chimap_files:
+            write_to_file(github_step_summary, f"✓ JSON sidecars validated for {len(chimap_files)} Chimap file(s)")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_Chimap.nii*')[0], title=premade, colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
         for png_file in glob.glob(os.path.join(args.output_dir, '*.png')):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
@@ -139,6 +184,9 @@ def test_nocombine(bids_dir_public):
     
     # create the workflow and run if necessary
     args = main(args)
+
+    # Check JSON sidecars for Chimap outputs
+    check_chimap_json_sidecars(args.output_dir, logger)
 
     # generate image
     github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
@@ -464,6 +512,9 @@ def test_laplacian_and_tv(bids_dir_public):
     # create the workflow and run
     args = main(args)
 
+    # Check JSON sidecars for Chimap outputs
+    check_chimap_json_sidecars(args.output_dir, logger)
+
     # generate image
     github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if not github_step_summary:
@@ -475,5 +526,7 @@ def test_laplacian_and_tv(bids_dir_public):
             write_to_file(github_step_summary, f"![summary]({upload_png(png_file)})")
 
     shutil.rmtree(args.bids_dir)
+
+
 
 
