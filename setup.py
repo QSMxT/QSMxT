@@ -35,7 +35,6 @@ setup(
         'scipy==1.10.1',
         'scikit-image==0.21.0',
         'pydicom==2.4.4',
-        'pytest==8.3.3',
         'seaborn==0.13.2',
         'webdavclient3==3.14.6',
         'images-upload-cli==1.1.3',
@@ -49,6 +48,23 @@ setup(
         'pandas==2.0.3',
         'dicompare==0.1.26'
     ],
+    extras_require={
+        'dev': [
+            'pytest>=7.0.0',
+            'pytest-mock>=3.10.0',
+            'pytest-cov>=4.0.0',
+            'pytest-xdist>=3.0.0',
+            'black>=22.0.0',
+            'isort>=5.10.0',
+            'flake8>=5.0.0',
+        ],
+        'test': [
+            'pytest>=7.0.0',
+            'pytest-mock>=3.10.0',
+            'pytest-cov>=4.0.0',
+            'pytest-xdist>=3.0.0',
+        ]
+    },
     entry_points={
         'console_scripts': [
             'qsmxt = qsmxt.cli.main:main',

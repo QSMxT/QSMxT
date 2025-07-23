@@ -12,9 +12,9 @@ on:
       - aseg_labels.csv
       - qsmxt/workflows/segmentation.py
       - qsmxt/workflows/qsm.py
-      - qsmxt/tests/test_segmentation.py
+      - qsmxt/tests/integration/test_segmentation.py
       - qsmxt/tests/test_segmentation.sh
-      - qsmxt/tests/utils.py
+      - qsmxt/tests/integration/utils.py
       - qsmxt/tests/setup_qsmxt.sh
       - qsmxt/interfaces/nipype_interface_fastsurfer.py
       - qsmxt/scripts/logger.py
@@ -78,7 +78,7 @@ jobs:
           -e OSF_PASSWORD=$OSF_PASSWORD \
           -e TEST_DIR=$TEST_DIR \
           -e GITHUB_STEP_SUMMARY=$GITHUB_STEP_SUMMARY \
-          qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_segmentation.py -s -k '${{ matrix.args }}'"
+          qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/integration/test_segmentation.py -s -k '${{ matrix.args }}'"
     - uses: actions/upload-artifact@v4
       with:
         name: public-outputs-${{ matrix.args }}

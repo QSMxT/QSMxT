@@ -1,0 +1,19 @@
+# Development and testing dependencies
+pytest>=7.0.0
+pytest-mock>=3.10.0
+pytest-cov>=4.0.0
+pytest-xdist>=3.0.0
+numpy-testing>=1.24.0
+
+# Code quality tools
+black>=22.0.0
+isort>=5.10.0
+flake8>=5.0.0
+
+# Documentation tools (optional)
+sphinx>=5.0.0
+sphinx-rtd-theme>=1.0.0
+
+# Development utilities
+pre-commit>=2.20.0
+tox>=4.0.0

@@ -13,8 +13,8 @@ on:
       - qsmxt/workflows/masking.py
       - qsmxt/tests/setup_qsmxt.sh
       - qsmxt/tests/test_qsm.sh
-      - qsmxt/tests/test_qsm.py
-      - qsmxt/tests/utils.py
+      - qsmxt/tests/integration/test_qsm.py
+      - qsmxt/tests/integration/utils.py
       - qsmxt/interfaces/nipype_interface_addtojson.py
       - qsmxt/interfaces/nipype_interface_axialsampling.py
       - qsmxt/interfaces/nipype_interface_bet2.py
@@ -97,7 +97,7 @@ jobs:
           -e OSF_PASSWORD=$OSF_PASSWORD \
           -e TEST_DIR=$TEST_DIR \
           -e GITHUB_STEP_SUMMARY=$GITHUB_STEP_SUMMARY \
-          qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_qsm.py -s -k 'test_premade and ${{ matrix.args }}'"
+          qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/integration/test_qsm.py -s -k 'test_premade and ${{ matrix.args }}'"
     - uses: actions/upload-artifact@v4
       with:
         name: public-outputs-${{ matrix.args }}
@@ -146,5 +146,5 @@ jobs:
           -e OSF_PASSWORD=$OSF_PASSWORD \
           -e TEST_DIR=$TEST_DIR \
           -e GITHUB_STEP_SUMMARY=$GITHUB_STEP_SUMMARY \
-          qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_qsm.py -s -k '${{ matrix.args }}'"
+          qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/integration/test_qsm.py -s -k '${{ matrix.args }}'"
 

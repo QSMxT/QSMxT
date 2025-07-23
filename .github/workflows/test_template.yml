@@ -10,8 +10,8 @@ on:
       - .github/workflows/test_template.yml
       - qsmxt/cli/main.py
       - qsmxt/tests/test_template.sh
-      - qsmxt/tests/test_template.py
-      - qsmxt/tests/utils.py
+      - qsmxt/tests/integration/test_template.py
+      - qsmxt/tests/integration/utils.py
       - qsmxt/tests/setup_qsmxt.sh
       - qsmxt/scripts/logger.py
       - qsmxt/workflows/template.py
@@ -75,7 +75,7 @@ jobs:
           -e OSF_PASSWORD=$OSF_PASSWORD \
           -e TEST_DIR=$TEST_DIR \
           -e GITHUB_STEP_SUMMARY=$GITHUB_STEP_SUMMARY \
-          qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_template.py -s -k '${{ matrix.args }}'"
+          qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/integration/test_template.py -s -k '${{ matrix.args }}'"
     - uses: actions/upload-artifact@v4
       with:
         name: public-outputs-${{ matrix.args }}
