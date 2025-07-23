@@ -55,6 +55,7 @@ def rename(old, new, always_show=False):
     os.rename(old, new)
 
 def clean(data): 
+    data = str(data).strip()
     cleaned = re.sub(r'[^a-zA-Z0-9]', '', data).lower()
     if data.startswith('sub-'):
         return f'sub-{cleaned[3:]}'
@@ -608,7 +609,7 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
         to_convert[col].fillna("NA", inplace=True)
     
     # First level grouping
-    base_grouped = to_convert.groupby(base_group_cols)
+    base_grouped = to_convert.groupby(base_group_cols, dropna=False)
 
     if not base_grouped.groups:
         logger.log(LogLevel.ERROR.value, "No valid acquisitions found. Exiting.")
@@ -622,14 +623,14 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
         unique_dicom_paths = base_group_data["DICOM_Path"].unique()
         if len(unique_dicom_paths) > 1:
             # We have multiple DICOM files in this group, so group by Type
-            type_grouped = base_group_data.groupby("Type")
+            type_grouped = base_group_data.groupby("Type", dropna=False)
             
             for type_key, type_group_data in type_grouped:
                 # Check if we need to further group by EchoNumber
                 unique_type_dicom_paths = type_group_data["DICOM_Path"].unique()
-                if len(unique_type_dicom_paths) > 1 and "EchoNumber" in type_group_data.columns:
+                if len(unique_type_dicom_paths) > 1 and "EchoNumber" in type_group_data.columns and type_group_data["EchoNumber"].notnull().any():
                     # We have multiple DICOM files for this Type, so group by EchoNumber
-                    echo_grouped = type_group_data.groupby("EchoNumber")
+                    echo_grouped = type_group_data.groupby("EchoNumber", dropna=False)
                     
                     for echo_key, echo_group_data in echo_grouped:
                         # Process this final group
@@ -758,7 +759,7 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
     dicom_session.reset_index(drop=True, inplace=True)
     if '(0043,102F)' in dicom_session.columns:
         private_map = {0: 'M', 1: 'P', 2: 'REAL', 3: 'IMAGINARY'}
-        dicom_session['ImageType'].append(dicom_session['(0043,102F)'].map(private_map).fillna(''))
+        dicom_session['ImageType'] = dicom_session['(0043,102F)'].apply(lambda x: private_map.get(x, ''))
     
     if 'PatientID' not in dicom_session.columns:
         dicom_session['PatientID'] = dicom_session['PatientName']
@@ -831,11 +832,13 @@ def fix_ge_data(bids_dir):
         script_exit(0)
 
     group_cols = [col for col in ["sub", "ses", "acq", "run", "echo", "suffix"] if col in nifti_session.columns]
-    grouped = nifti_session.groupby(group_cols)
+    grouped = nifti_session.groupby(group_cols, dropna=False)
 
     for grp_keys, grp_data in grouped:
         if not grp_data["part"].isin(["real", "imag"]).all():
             continue
+
+        logger.log(LogLevel.INFO.value, f"Found complex data group: {grp_keys}")
         
         real_nii_path = grp_data[grp_data["part"] == "real"]["NIfTI_Path"].values[0]
         imag_nii_path = grp_data[grp_data["part"] == "imag"]["NIfTI_Path"].values[0]
@@ -850,6 +853,8 @@ def fix_ge_data(bids_dir):
     
     for grp_keys, grp_data in grouped:
         if grp_data["part"].isin(["mag", "phase"]).all() and "GE" in grp_data["Manufacturer"].values[0].upper():
+            logger.log(LogLevel.INFO.value, f"Found GE polar data group: {grp_keys}")
+
             mag_nii_path = grp_data[grp_data["part"] == "mag"]["NIfTI_Path"].values[0]
             phase_nii_path = grp_data[grp_data["part"] == "phase"]["NIfTI_Path"].values[0]
 
@@ -869,7 +874,7 @@ def merge_multicoil_data(bids_dir):
 
     # group by subject/session/acq/run
     group_cols = [c for c in ("sub","ses","acq","run") if c in nifti_sess.columns]
-    for key_vals, grp in nifti_sess.groupby(group_cols):
+    for key_vals, grp in nifti_sess.groupby(group_cols, dropna=False):
 
         # consider only rows with a 'coil' and 'part' column
         if "coil" not in grp.columns or "part" not in grp.columns:
@@ -917,7 +922,7 @@ def run_mcpc3ds_on_multicoil(bids_dir):
 
     # group by subject/session/acq/run
     group_cols = [c for c in ("sub","ses","acq","run") if c in nifti_sess.columns]
-    for key_vals, grp in nifti_sess.groupby(group_cols):
+    for key_vals, grp in nifti_sess.groupby(group_cols, dropna=False):
         # pick out only those files whose NIfTI_Shape has length 4 (i.e. X×Y×Z×coils)
         mc = grp[grp["NIfTI_Shape"].map(lambda s: len(s) == 4)]
 
