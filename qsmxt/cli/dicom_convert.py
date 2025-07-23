@@ -624,21 +624,27 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
         if len(unique_dicom_paths) > 1:
             # We have multiple DICOM files in this group, so group by Type
             type_grouped = base_group_data.groupby("Type", dropna=False)
+            logger.log(LogLevel.INFO.value, f"Found {len(type_grouped)} unique Types in this group")
             
             for type_key, type_group_data in type_grouped:
+                logger.log(LogLevel.INFO.value, f"Processing Type group: {type_key} with {len(type_group_data)} rows")
                 # Check if we need to further group by EchoNumber
                 unique_type_dicom_paths = type_group_data["DICOM_Path"].unique()
                 if len(unique_type_dicom_paths) > 1 and "EchoNumber" in type_group_data.columns and type_group_data["EchoNumber"].notnull().any():
+                    logger.log(LogLevel.INFO.value, f"Found multiple DICOM paths for Type '{type_key}', grouping by EchoNumber")
                     # We have multiple DICOM files for this Type, so group by EchoNumber
                     echo_grouped = type_group_data.groupby("EchoNumber", dropna=False)
                     
                     for echo_key, echo_group_data in echo_grouped:
+                        logger.log(LogLevel.INFO.value, f"Processing Echo group: {echo_key} with {len(echo_group_data)} rows")
                         # Process this final group
                         process_dicom_group(echo_group_data, output_dir, dcm2niix_path)
                 else:
+                    logger.log(LogLevel.INFO.value, f"Only one unique DICOM path for Type '{type_key}', processing directly")
                     # Process this Type group
                     process_dicom_group(type_group_data, output_dir, dcm2niix_path)
         else:
+            logger.log(LogLevel.INFO.value, "Only one unique DICOM path in this base group, processing directly")
             # Only one unique DICOM path, process the base group directly
             process_dicom_group(base_group_data, output_dir, dcm2niix_path)
 
@@ -744,6 +750,13 @@ def process_dicom_group(grp_data, output_dir, dcm2niix_path):
         if os.path.isfile(json_src):
             json_dst = os.path.join(out_dir, f"{base_name}.json")
             shutil.move(json_src, json_dst)
+            # copy AcquisitionPlane from grp_data to JSON
+            if "AcquisitionPlane" in grp_data.columns:
+                with open(json_dst, 'r') as f:
+                    json_data = json.load(f)
+                json_data["AcquisitionPlane"] = grp_data.iloc[0]["AcquisitionPlane"]
+                with open(json_dst, 'w') as f:
+                    json.dump(json_data, f, indent=4)
     
     # Clean up temporary directory
     shutil.rmtree(tmp_outdir)
@@ -757,9 +770,6 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
     logger.log(LogLevel.INFO.value, f"Loaded DICOM session in {time_end - time_start:.2f} seconds")
     dicom_session = assign_acquisition_and_run_numbers(dicom_session)
     dicom_session.reset_index(drop=True, inplace=True)
-    if '(0043,102F)' in dicom_session.columns:
-        private_map = {0: 'M', 1: 'P', 2: 'REAL', 3: 'IMAGINARY'}
-        dicom_session['ImageType'] = dicom_session['(0043,102F)'].apply(lambda x: private_map.get(x, ''))
     
     if 'PatientID' not in dicom_session.columns:
         dicom_session['PatientID'] = dicom_session['PatientName']
@@ -780,12 +790,12 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
         else:
             dicom_session['SeriesTime'] = datetime.datetime.now().strftime("%H%M%S")
 
-    dicom_session['NumEchoes'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'])['EchoTime'].transform('nunique')
-    dicom_session['EchoNumber'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'])['EchoTime'].rank(method='dense')
-    dicom_session['NumRuns'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'])['RunNumber'].transform('nunique')
+    dicom_session['NumEchoes'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'], dropna=False)['EchoTime'].transform('nunique')
+    dicom_session['EchoNumber'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'], dropna=False)['EchoTime'].rank(method='dense')
+    dicom_session['NumRuns'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'], dropna=False)['RunNumber'].transform('nunique')
     if "InversionTime" in dicom_session.columns:
         mask = dicom_session["InversionTime"].notnull() & (dicom_session["InversionTime"] != 0)
-        dicom_session.loc[mask, "InversionNumber"] = dicom_session[mask].groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'])['InversionTime'].rank(method='dense')
+        dicom_session.loc[mask, "InversionNumber"] = dicom_session[mask].groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'], dropna=False)['InversionTime'].rank(method='dense')
         dicom_session["InversionNumber"] = dicom_session["InversionNumber"].astype(pd.Int64Dtype())
     groupby_fields = ["Acquisition", "SeriesDescription", "ImageType"]
     if "InversionNumber" in dicom_session.columns:
@@ -842,13 +852,15 @@ def fix_ge_data(bids_dir):
         
         real_nii_path = grp_data[grp_data["part"] == "real"]["NIfTI_Path"].values[0]
         imag_nii_path = grp_data[grp_data["part"] == "imag"]["NIfTI_Path"].values[0]
+        acquisition_plane = grp_data["AcquisitionPlane"].values[0] if "AcquisitionPlane" in grp_data.columns else "axial"
 
-        logger.log(LogLevel.INFO.value, f"Fixing complex data (real={real_nii_path}; imag={imag_nii_path})")
+        logger.log(LogLevel.INFO.value, f"Fixing complex data (real={real_nii_path}; imag={imag_nii_path}; acquisition_plane={acquisition_plane})")
 
         fix_ge_complex(
             real_nii_path=real_nii_path,
             imag_nii_path=imag_nii_path,
-            delete_originals=True
+            delete_originals=True,
+            acquisition_plane=acquisition_plane
         )
     
     for grp_keys, grp_data in grouped:
@@ -857,13 +869,15 @@ def fix_ge_data(bids_dir):
 
             mag_nii_path = grp_data[grp_data["part"] == "mag"]["NIfTI_Path"].values[0]
             phase_nii_path = grp_data[grp_data["part"] == "phase"]["NIfTI_Path"].values[0]
+            acquisition_plane = grp_data["AcquisitionPlane"].values[0] if "AcquisitionPlane" in grp_data.columns else "axial"
 
-            logger.log(LogLevel.INFO.value, f"Fixing GE polar data (mag={mag_nii_path}; phase={phase_nii_path})")
+            logger.log(LogLevel.INFO.value, f"Fixing GE polar data (mag={mag_nii_path}; phase={phase_nii_path}; acquisition_plane={acquisition_plane})")
 
             fix_ge_polar(
                 mag_nii_path=mag_nii_path,
                 phase_nii_path=phase_nii_path,
-                delete_originals=True
+                delete_originals=True,
+                acquisition_plane=acquisition_plane
             )
 
 def merge_multicoil_data(bids_dir):

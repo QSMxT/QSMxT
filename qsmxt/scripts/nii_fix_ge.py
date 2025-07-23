@@ -14,7 +14,13 @@ def load_json(path):
         j = json.load(f)
     return j
 
-def fix_ge_polar(mag_path, phase_path, delete_originals=True):
+def fix_ge_polar(mag_path, phase_path, delete_originals=True, acquisition_plane='axial'):
+    if acquisition_plane == 'sagittal':
+        axes = 0
+    elif acquisition_plane == 'coronal':
+        axes = 1
+    elif acquisition_plane == 'axial':
+        axes = 2
 
     # ensure paths are absolute
     mag_path = os.path.abspath(mag_path)
@@ -32,7 +38,7 @@ def fix_ge_polar(mag_path, phase_path, delete_originals=True):
     phase_data_scaled = phase_data / 4096 * np.pi
     complex_data_image = mag_data * (np.cos(phase_data_scaled) + 1j * np.sin(phase_data_scaled))
     scaling = np.sqrt(complex_data_image.size)
-    complex_data_kspace = np.fft.fftshift (np.fft.fftshift (np.fft.fftn(  np.fft.fftshift(complex_data_image))), axes=2) / scaling
+    complex_data_kspace = np.fft.fftshift (np.fft.fftshift (np.fft.fftn(  np.fft.fftshift(complex_data_image))), axes=axes) / scaling
     complex_data_correct_image = np.fft.fftshift(np.fft.ifftn(np.fft.fftshift(complex_data_kspace))) * scaling        
 
     # compute corrected phase image
@@ -57,7 +63,13 @@ def fix_ge_polar(mag_path, phase_path, delete_originals=True):
     return phase_path
 
 
-def fix_ge_complex(real_nii_path, imag_nii_path, out_mag_path=None, out_phase_path=None, delete_originals=True):
+def fix_ge_complex(real_nii_path, imag_nii_path, out_mag_path=None, out_phase_path=None, delete_originals=True, acquisition_plane='axial'):
+    if acquisition_plane == 'sagittal':
+        axes = 0
+    elif acquisition_plane == 'coronal':
+        axes = 1
+    elif acquisition_plane == 'axial':
+        axes = 2
 
     # ensure paths are absolute
     real_nii_path = os.path.abspath(real_nii_path)
@@ -95,7 +107,7 @@ def fix_ge_complex(real_nii_path, imag_nii_path, out_mag_path=None, out_phase_pa
     # compute complex result in the image domain
     complex_data_image = real_data + 1j * imag_data
     scaling = np.sqrt(complex_data_image.size)
-    complex_data_kspace = np.fft.fftshift(np.fft.fftshift (np.fft.fftn(  np.fft.fftshift(complex_data_image))), axes=2) / scaling
+    complex_data_kspace = np.fft.fftshift(np.fft.fftshift (np.fft.fftn(  np.fft.fftshift(complex_data_image))), axes=axes) / scaling
     complex_data_correct_image = np.fft.fftshift(np.fft.ifftn(np.fft.fftshift(complex_data_kspace))) * scaling        
 
     # compute magnitude and phase of complex image
