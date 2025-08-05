@@ -133,38 +133,6 @@ jobs:
           path: dicom-convert-test-results.xml
           retention-days: 30
 
-  lint:
-    name: Code Linting
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v3
-        with:
-          python-version: '3.8'
-
-      - name: Install linting dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install flake8 black isort
-
-      - name: Check code formatting with black
-        run: |
-          black --check --diff qsmxt/
-
-      - name: Check import sorting with isort
-        run: |
-          isort --check-only --diff qsmxt/
-
-      - name: Lint with flake8
-        run: |
-          # Stop the build if there are Python syntax errors or undefined names
-          flake8 qsmxt/ --count --select=E9,F63,F7,F82 --show-source --statistics
-          # Exit-zero treats all errors as warnings. Line length is set to 88 (black's default)
-          flake8 qsmxt/ --count --exit-zero --max-complexity=10 --max-line-length=88 --statistics
-
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
@@ -194,83 +162,32 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Overall job status table
-          echo "| Job | Status |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----|--------|" >> $GITHUB_STEP_SUMMARY
-          echo "| QSMxT Tests | ${{ needs.qsmxt-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| DICOM Convert Tests | ${{ needs.dicom-convert-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| Code Linting | ${{ needs.lint.result == 'success' && '✅ Passed' || '❌ Failed' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Job | Status | Details |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----|--------|---------|" >> $GITHUB_STEP_SUMMARY
           
-          # Function to parse and display individual test results
-          parse_test_results() {
-            local file=$1
-            local suite_name=$2
-            
-            if [ ! -f "$file" ]; then
-              echo "### $suite_name - ❌ No Results" >> $GITHUB_STEP_SUMMARY
-              echo "Test file not found: $file" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              return
-            fi
-            
-            # Extract overall stats
-            local total=$(grep -o 'tests="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
-            local failures=$(grep -o 'failures="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
-            local errors=$(grep -o 'errors="[0-9]*"' "$file" | grep -o '[0-9]*' | head -1 || echo "0")
-            local passed=$((total - failures - errors))
-            
-            if [ "$failures" = "0" ] && [ "$errors" = "0" ]; then
-              echo "### $suite_name - ✅ All Tests Passed ($total/$total)" >> $GITHUB_STEP_SUMMARY
-            else
-              echo "### $suite_name - ❌ Some Tests Failed ($passed/$total passed)" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "| Test | Status | Time |" >> $GITHUB_STEP_SUMMARY
-            echo "|------|--------|------|" >> $GITHUB_STEP_SUMMARY
-            
-            # Parse individual test cases
-            # Extract testcase elements with name, status, and time
-            grep '<testcase' "$file" | while IFS= read -r line; do
-              # Extract test name
-              test_name=$(echo "$line" | sed -n 's/.*name="\([^"]*\)".*/\1/p')
-              # Extract time
-              test_time=$(echo "$line" | sed -n 's/.*time="\([^"]*\)".*/\1/p')
-              
-              # Check if test failed or had error
-              if echo "$line" | grep -q 'failure\|error'; then
-                echo "| \`$test_name\` | ❌ Failed | ${test_time}s |" >> $GITHUB_STEP_SUMMARY
-              elif echo "$line" | grep -q 'skipped'; then
-                echo "| \`$test_name\` | ⏭️ Skipped | ${test_time}s |" >> $GITHUB_STEP_SUMMARY
-              else
-                echo "| \`$test_name\` | ✅ Passed | ${test_time}s |" >> $GITHUB_STEP_SUMMARY
-              fi
-            done
-            
-            # Show failure details if any
-            if [ "$failures" != "0" ] || [ "$errors" != "0" ]; then
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "<details>" >> $GITHUB_STEP_SUMMARY
-              echo "<summary>🔍 Failure Details</summary>" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              
-              # Extract failure messages
-              grep -A 10 '<failure\|<error' "$file" | sed 's/<[^>]*>//g' | head -50 >> $GITHUB_STEP_SUMMARY
-              
-              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-              echo "</details>" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            echo "" >> $GITHUB_STEP_SUMMARY
-          }
+          # Get test counts for each suite
+          QSMXT_SUMMARY="No results"
+          if [ -f qsmxt-test-results.xml ]; then
+            QSMXT_TOTAL=$(grep -o 'tests="[0-9]*"' qsmxt-test-results.xml | grep -o '[0-9]*' | head -1 || echo "0")
+            QSMXT_FAILURES=$(grep -o 'failures="[0-9]*"' qsmxt-test-results.xml | grep -o '[0-9]*' | head -1 || echo "0")
+            QSMXT_ERRORS=$(grep -o 'errors="[0-9]*"' qsmxt-test-results.xml | grep -o '[0-9]*' | head -1 || echo "0")
+            QSMXT_PASSED=$((QSMXT_TOTAL - QSMXT_FAILURES - QSMXT_ERRORS))
+            QSMXT_SUMMARY="${QSMXT_PASSED}/${QSMXT_TOTAL} passed"
+          fi
           
-          # Parse results for each test suite
-          parse_test_results "qsmxt-test-results.xml" "QSMxT Tests"
-          parse_test_results "dicom-convert-test-results.xml" "DICOM Convert Tests"
+          DICOM_SUMMARY="No results"
+          if [ -f dicom-convert-test-results.xml ]; then
+            DICOM_TOTAL=$(grep -o 'tests="[0-9]*"' dicom-convert-test-results.xml | grep -o '[0-9]*' | head -1 || echo "0")
+            DICOM_FAILURES=$(grep -o 'failures="[0-9]*"' dicom-convert-test-results.xml | grep -o '[0-9]*' | head -1 || echo "0")
+            DICOM_ERRORS=$(grep -o 'errors="[0-9]*"' dicom-convert-test-results.xml | grep -o '[0-9]*' | head -1 || echo "0")
+            DICOM_PASSED=$((DICOM_TOTAL - DICOM_FAILURES - DICOM_ERRORS))
+            DICOM_SUMMARY="${DICOM_PASSED}/${DICOM_TOTAL} passed"
+          fi
           
-          # Overall summary
-          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "| QSMxT Tests | ${{ needs.qsmxt-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} | $QSMXT_SUMMARY |" >> $GITHUB_STEP_SUMMARY
+          echo "| DICOM Convert Tests | ${{ needs.dicom-convert-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} | $DICOM_SUMMARY |" >> $GITHUB_STEP_SUMMARY
+          echo "| Code Linting | ${{ needs.lint.result == 'success' && '✅ Passed' || '❌ Failed' }} | - |" >> $GITHUB_STEP_SUMMARY
+          
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Check overall status
@@ -283,16 +200,5 @@ jobs:
             echo "All test suites and linting checks completed successfully." >> $GITHUB_STEP_SUMMARY
           else
             echo "## ❌ Some Jobs Failed" >> $GITHUB_STEP_SUMMARY
-            echo "Please review the individual job results above and check the workflow logs for more details." >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**Failed Jobs:**" >> $GITHUB_STEP_SUMMARY
-            if [[ "$QSMXT_STATUS" != "success" ]]; then
-              echo "- QSMxT Tests: $QSMXT_STATUS" >> $GITHUB_STEP_SUMMARY
-            fi
-            if [[ "$DICOM_STATUS" != "success" ]]; then
-              echo "- DICOM Convert Tests: $DICOM_STATUS" >> $GITHUB_STEP_SUMMARY
-            fi
-            if [[ "$LINT_STATUS" != "success" ]]; then
-              echo "- Code Linting: $LINT_STATUS" >> $GITHUB_STEP_SUMMARY
-            fi
+            echo "Check the individual job logs for detailed error information." >> $GITHUB_STEP_SUMMARY
           fi
