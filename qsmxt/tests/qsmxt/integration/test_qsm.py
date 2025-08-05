@@ -401,12 +401,42 @@ def test_supplementary_images(bids_dir_public):
     
     args = main(args)
 
+    # Count DICOM files in the expected output locations
+    dicom_locations = {
+        'Chimap': '*_desc-dicoms_Chimap',
+        'SWI': '*_desc-dicoms_swi',
+        'SWI_MIP': '*_desc-dicoms_minIP'
+    }
+    
+    dicom_counts = {}
+    total_dicom_count = 0
+    
+    for desc, pattern in dicom_locations.items():
+        dicom_dirs = find_files(args.output_dir, pattern)
+        if dicom_dirs:
+            dicom_dir = dicom_dirs[0]
+            dicom_files = glob.glob(os.path.join(dicom_dir, '*.dcm'))
+            dicom_counts[desc] = len(dicom_files)
+            total_dicom_count += len(dicom_files)
+            logger.log(LogLevel.INFO.value, f"Found {len(dicom_files)} DICOM files in {desc} directory: {dicom_dir}")
+        else:
+            dicom_counts[desc] = 0
+            logger.log(LogLevel.WARNING.value, f"No DICOM directory found for {desc} with pattern: {pattern}")
+
     # generate image
     github_step_summary = os.environ.get('GITHUB_STEP_SUMMARY')
     if not github_step_summary:
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
         write_to_file(github_step_summary, f"test_supplementary_images")
+        
+        # Write DICOM count summary
+        write_to_file(github_step_summary, f"\n**DICOM Export Summary:**")
+        write_to_file(github_step_summary, f"- Total DICOM files created: {total_dicom_count}")
+        for desc, count in dicom_counts.items():
+            write_to_file(github_step_summary, f"- {desc}: {count} DICOM files")
+        write_to_file(github_step_summary, f"\n")
+        
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_swi.nii*')[0], title='SWI', out_png='swi.png', cmap='gray'))})")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_minIP.nii*')[0], title='SWI MIP', out_png='swi_mip.png', cmap='gray'))})")
         write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_T2starmap.nii*')[0], title='T2* map', out_png='t2s.png', cmap='gray', vmin=0, vmax=100, colorbar=True, cbar_label='T2* (ms)'))})")
