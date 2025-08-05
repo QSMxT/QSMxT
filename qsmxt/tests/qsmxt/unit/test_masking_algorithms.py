@@ -11,7 +11,7 @@ from qsmxt.interfaces.nipype_interface_masking import (
     fill_holes_morphological,
     fill_small_holes
 )
-from qsmxt.tests.fixtures.synthetic_data import generate_bimodal_histogram_data
+from qsmxt.tests.qsmxt.fixtures.synthetic_data import generate_bimodal_histogram_data
 
 
 class TestHistogramFunctions:

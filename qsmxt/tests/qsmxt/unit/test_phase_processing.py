@@ -9,7 +9,7 @@ from qsmxt.interfaces.nipype_interface_processphase import (
     scale_to_pi,
     seed_from_filename
 )
-from qsmxt.tests.fixtures.mock_helpers import mock_nibabel_io
+from qsmxt.tests.qsmxt.fixtures.mock_helpers import mock_nibabel_io
 
 
 class TestPhaseProcessing:

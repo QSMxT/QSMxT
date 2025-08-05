@@ -3,7 +3,6 @@
 import argparse
 import os
 import sys
-import subprocess
 import json
 import datetime
 import re
@@ -21,38 +20,6 @@ from qsmxt.scripts.nii_fix_ge import fix_ge_polar, fix_ge_complex
 
 from tabulate import tabulate
 from collections import defaultdict
-
-def sys_cmd(cmd):
-    logger = make_logger()
-    logger.log(LogLevel.INFO.value, f"Running command: '{cmd}'")
-        
-    process = subprocess.run(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    stdout_byte = process.stdout
-    stderr_byte = process.stderr
-
-    stdout_str = stdout_byte.decode('UTF-8')
-    stderr_str = str(stderr_byte.decode('UTF-8'))
-    return_code = process.returncode
-    
-    if stdout_str:
-        logger.log(LogLevel.DEBUG.value, f"Command output: '{stdout_str}'", end="")
-
-    if return_code:
-        logger.log(LogLevel.WARNING.value, f"Command '{cmd}' returned error {return_code}: '{stderr_str}'")
-    
-    return return_code
-
-def load_json(path):
-    with open(path, encoding='utf-8') as f:
-        j = json.load(f)
-    return j
-
-def rename(old, new, always_show=False):
-    if always_show or not sys.__stdin__.isatty():
-        logger = make_logger()
-        logger.log(LogLevel.INFO.value, f'Renaming {old} -> {new}')
-    os.makedirs(os.path.split(new)[0], exist_ok=True)
-    os.rename(old, new)
 
 def clean(data): 
     data = str(data).strip()
@@ -162,68 +129,6 @@ def auto_assign_initial_labels(table_data):
                     real_row["Description"] = str(idx)
                     imag_row["Description"] = str(idx)
 
-def validate_qsm_rows(row_data):
-    """
-    Checks if at least one valid pair is assigned. 
-    For each Count, allowed combinations:
-      - 0 or 1 Mag, 0 or 1 Phase, or 
-      - 0 or 1 Real, 0 or 1 Imag
-    A pair is (Mag, Phase) or (Real, Imag) for that Count.
-    If no pairs are found, or if there is any partial mismatch, returns an error message.
-    """
-    used_rows = [r for r in row_data if r['Type'] in ['Mag','Phase','Real','Imag']]
-    if not used_rows:
-        return (False, "No pairs have been selected.")
-    
-    # Group by Count
-    grouped = {}
-    for r in used_rows:
-        cval = r['Count']
-        if cval not in grouped:
-            grouped[cval] = []
-        grouped[cval].append(r)
-
-    valid_pairs_found = False
-
-    for cval, group in grouped.items():
-        # Sort them by Type
-        assigned_types = [g["Type"] for g in group]
-        n_mag = assigned_types.count("Mag")
-        n_pha = assigned_types.count("Phase")
-        n_real = assigned_types.count("Real")
-        n_imag = assigned_types.count("Imag")
-
-        # If we have both Mag and Phase for this Count, that is one valid pair
-        # If we also have Real and Imag, that's an additional valid pair
-        # No mixing Real+Phase or Imag+Mag for the same row
-        # More than one instance of the same label is not allowed here
-        if n_mag > 1 or n_pha > 1 or n_real > 1 or n_imag > 1:
-            return (False, f"More than one row labeled as Mag/Phase/Real/Imag for the same Count {cval}.")
-
-        # If we have (Mag=1, Phase=1), that is a valid pair
-        # If we have (Real=1, Imag=1), that is another valid pair
-        # A partial mismatch is not allowed
-        has_magpha = (n_mag == 1 and n_pha == 1)
-        has_realimag = (n_real == 1 and n_imag == 1)
-        partial_magpha = (n_mag == 1 and n_pha == 0) or (n_mag == 0 and n_pha == 1)
-        partial_realimag = (n_real == 1 and n_imag == 0) or (n_real == 0 and n_imag == 1)
-
-        if partial_magpha or partial_realimag:
-            return (False, f"Partial assignment at Count {cval} is not allowed.")
-
-        if has_magpha or has_realimag:
-            valid_pairs_found = True
-    
-    if not valid_pairs_found:
-        return (False, "No valid pairs were found in the assigned rows.")
-    
-    return (True, "")
-
-def validate_t1w_rows(row_data):
-    used = [r for r in row_data if r['Type'] == 'T1w']
-    if len(used) < 1:
-        return (False, "Must select at least one series for T1w.")
-    return (True, "")
 
 def validate_series_selections(table_data):
     """

@@ -1,12 +1,15 @@
 {
     "python.testing.pytestEnabled": true,
     "python.testing.pytestPath": "pytest",
-    "python.testing.pytestArgs": ["-s"],
+    "python.testing.pytestArgs": [
+        "qsmxt"
+    ],
     "python.testing.unittestArgs": [
         "-v",
         "-s",
         ".",
         "-p",
         "tests/*test*.py"
-    ]
+    ],
+    "python.testing.unittestEnabled": false
 }
