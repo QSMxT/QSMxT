@@ -136,7 +136,7 @@ jobs:
   test-summary:
     name: Test Summary
     runs-on: ubuntu-latest
-    needs: [qsmxt-tests, dicom-convert-tests, lint]
+    needs: [qsmxt-tests, dicom-convert-tests]
     if: always()
     steps:
       - name: Checkout code
@@ -186,18 +186,16 @@ jobs:
           
           echo "| QSMxT Tests | ${{ needs.qsmxt-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} | $QSMXT_SUMMARY |" >> $GITHUB_STEP_SUMMARY
           echo "| DICOM Convert Tests | ${{ needs.dicom-convert-tests.result == 'success' && '✅ Passed' || '❌ Failed' }} | $DICOM_SUMMARY |" >> $GITHUB_STEP_SUMMARY
-          echo "| Code Linting | ${{ needs.lint.result == 'success' && '✅ Passed' || '❌ Failed' }} | - |" >> $GITHUB_STEP_SUMMARY
           
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Check overall status
           QSMXT_STATUS="${{ needs.qsmxt-tests.result }}"
           DICOM_STATUS="${{ needs.dicom-convert-tests.result }}"
-          LINT_STATUS="${{ needs.lint.result }}"
           
-          if [[ "$QSMXT_STATUS" == "success" && "$DICOM_STATUS" == "success" && "$LINT_STATUS" == "success" ]]; then
+          if [[ "$QSMXT_STATUS" == "success" && "$DICOM_STATUS" == "success" ]]; then
             echo "## ✅ All Jobs Passed!" >> $GITHUB_STEP_SUMMARY
-            echo "All test suites and linting checks completed successfully." >> $GITHUB_STEP_SUMMARY
+            echo "All test suites completed successfully." >> $GITHUB_STEP_SUMMARY
           else
             echo "## ❌ Some Jobs Failed" >> $GITHUB_STEP_SUMMARY
             echo "Check the individual job logs for detailed error information." >> $GITHUB_STEP_SUMMARY
