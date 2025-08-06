@@ -1065,7 +1065,10 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             if node:
                 logger.log(LogLevel.DEBUG.value, f"Found node {node._name}")
                 n_nii2dcm = create_node(
-                    interface=nii2dcm.Nii2DcmInterface(centered=True if 'qsm' in target_attribute else False),
+                    interface=nii2dcm.Nii2DcmInterface(
+                        centered=True if 'qsm' in target_attribute else False,
+                        preserve_float=run_args.preserve_float
+                    ),
                     name=f'n_nii2dcm_{target_attribute}'
                 )
                 wf.connect([

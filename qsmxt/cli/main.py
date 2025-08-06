@@ -593,9 +593,21 @@ def parse_args(args, return_run_command=False):
 
     parser.add_argument(
         '--export_dicoms',
-        action='store_true',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
         default=None,
         help='Exports outputs to DICOM format in addition to NIfTI.'
+    )
+
+    parser.add_argument(
+        '--preserve_float',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
+        default=None,
+        help='Exported DICOMs will preserve quantitative float values instead of converting '
+             'to int. Reduced compatibility with some DICOM viewers.'
     )
 
     parser.add_argument(

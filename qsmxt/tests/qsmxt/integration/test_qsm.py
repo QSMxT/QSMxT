@@ -412,7 +412,7 @@ def test_supplementary_images(bids_dir_public):
     total_dicom_count = 0
     
     for desc, pattern in dicom_locations.items():
-        dicom_dirs = find_files(args.output_dir, pattern)
+        dicom_dirs = glob.glob(os.path.join(args.output_dir, '**', pattern), recursive=True)
         if dicom_dirs:
             dicom_dir = dicom_dirs[0]
             dicom_files = glob.glob(os.path.join(dicom_dir, '*.dcm'))

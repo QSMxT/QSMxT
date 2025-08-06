@@ -16,6 +16,9 @@ class Nii2DcmInputSpec(CommandLineInputSpec):
     centered = traits.Bool(
         argstr="--centered"
     )
+    preserve_float = traits.Bool(
+        argstr="--float"
+    )
     in_file = File(
         exists=True,
         mandatory=True,
