@@ -378,7 +378,7 @@ def parse_args(args, return_run_command=False):
         '--tgv_iterations',
         type=int,
         default=None,
-        help='Number of iterations used by tgv.'
+        help='Number of iterations used by tgv. Used only when --qsm_algorithm is set to tgv.'
     )
 
     parser.add_argument(
@@ -386,14 +386,38 @@ def parse_args(args, return_run_command=False):
         type=float,
         default=None,
         nargs=2,
-        help='Regularisation alphas used by tgv.'
+        help='Regularisation alphas used by tgv. Used only when --qsm_algorithm is set to tgv.'
     )
 
     parser.add_argument(
         '--tgv_erosions',
         type=int,
         default=None,
-        help='Number of erosions applied by tgv.'
+        help='Number of erosions applied by tgv. Used only when --qsm_algorithm is set to tgv.'
+    )
+
+    parser.add_argument(
+        '--rts_tol',
+        type=float,
+        default=None,
+        help='Stopping tolerance for RTS convergence (default: 1e-4). Lower values increase precision '+
+            'but may slow convergence. Used only when --qsm_algorithm is set to rts.'
+    )
+
+    parser.add_argument(
+        '--rts_delta',
+        type=float,
+        default=None,
+        help='Threshold for ill-conditioned k-space region (default: 0.15). Controls which k-space '+
+            'regions are considered ill-conditioned. Used only when --qsm_algorithm is set to rts.'
+    )
+
+    parser.add_argument(
+        '--rts_mu',
+        type=float,
+        default=None,
+        help='Mu regularization parameter for TV minimization (default: 1e5). Controls the strength '+
+            'of total variation regularization. Used only when --qsm_algorithm is set to rts.'
     )
 
          

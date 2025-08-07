@@ -1387,7 +1387,12 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         rts_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
         rts_mem = (18.19 * (np.prod(dimensions_phase) * 3 / (1024 ** 3)) + 2) # DONE
         mn_qsm = create_node(
-            interface=qsmjl.RtsQsmInterface(num_threads=rts_threads),
+            interface=qsmjl.RtsQsmInterface(
+                num_threads=rts_threads,
+                tol=getattr(run_args, 'rts_tol', None) or 1e-4,
+                delta_threshold=getattr(run_args, 'rts_delta', None) or 0.15,
+                mu_regularization=getattr(run_args, 'rts_mu', None) or 1e5
+            ),
             name='qsmjl_rts',
             iterfield=['tissue_frequency', 'mask'],
             n_procs=rts_threads,
