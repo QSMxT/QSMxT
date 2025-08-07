@@ -26,6 +26,7 @@ from qsmxt.interfaces import nipype_interface_qsm_referencing as qsm_referencing
 from qsmxt.interfaces import nipype_interface_nii2dcm as nii2dcm
 from qsmxt.interfaces import nipype_interface_copyfile as copyfile
 from qsmxt.interfaces import nipype_interface_copy_json_sidecar as copy_json_sidecar
+from qsmxt.interfaces import nipype_interface_create_reference_dicom as create_reference_dicom
 
 from qsmxt.scripts.logger import LogLevel, make_logger
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args, create_node
@@ -1061,18 +1062,71 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
     # insert DICOM conversion step
     if run_args.export_dicoms:
         for target_attribute in ['qsm', 'swi', 'swi_mip']:
+            # Get the NIfTI file node
             node, node_attribute = get_preceding_node_and_attribute(wf, target_node_name='qsmxt_outputs', target_attribute=target_attribute)
             if node:
-                logger.log(LogLevel.DEBUG.value, f"Found node {node._name}")
+                logger.log(LogLevel.DEBUG.value, f"Found node {node._name} for {target_attribute}")
+                
+                # Determine which JSON sidecar to use based on the target
+                json_attribute = None
+                if target_attribute == 'qsm':
+                    # Use qsm_json or qsm_singlepass_json depending on two_pass setting
+                    json_attribute = 'qsm_json' if run_args.two_pass else ('qsm_json' if run_args.do_qsm else None)
+                elif target_attribute == 'swi' or target_attribute == 'swi_mip':
+                    # SWI and SWI MIP share the same metadata, use the original phase JSON
+                    json_attribute = None  # Will use phase_params_files[0] directly
+                
+                # Determine image type suffixes
+                image_type_suffix = []
+                series_desc_suffix = ""
+                if 'qsm' in target_attribute:
+                    image_type_suffix = ['QSM']
+                    series_desc_suffix = "_QSM"
+                elif target_attribute == 'swi':
+                    image_type_suffix = ['SWI']
+                    series_desc_suffix = "_SWI"
+                elif target_attribute == 'swi_mip':
+                    image_type_suffix = ['SWI', 'PROJECTION IMAGE']
+                    series_desc_suffix = "_SWI_MIP"
+                
+                # Create reference DICOM generator node
+                n_create_ref_dicom = create_node(
+                    interface=create_reference_dicom.CreateReferenceDicomInterface(
+                        subject_id=subject,
+                        session_id=session if session else "",
+                        image_type_suffix=image_type_suffix,
+                        series_description_suffix=series_desc_suffix
+                    ),
+                    name=f'n_create_ref_dicom_{target_attribute}'
+                )
+                
+                # Connect the appropriate JSON source
+                if json_attribute:
+                    # Get JSON from the outputs
+                    json_node, json_node_attribute = get_preceding_node_and_attribute(
+                        wf, target_node_name='qsmxt_outputs', target_attribute=json_attribute
+                    )
+                    if json_node:
+                        wf.connect([
+                            (json_node, n_create_ref_dicom, [(json_node_attribute, 'source_json')])
+                        ])
+                else:
+                    # Use the original phase params file for SWI
+                    n_create_ref_dicom.inputs.source_json = phase_params_files[0] if phase_params_files else params_files[0]
+                
+                # Create nii2dcm node with reference DICOM
                 n_nii2dcm = create_node(
                     interface=nii2dcm.Nii2DcmInterface(
-                        centered=True if 'qsm' in target_attribute else False,
-                        preserve_float=run_args.preserve_float
+                        centered=True if 'qsm' in target_attribute and not run_args.preserve_float else False,
+                        preserve_float=run_args.preserve_float if 'qsm' in target_attribute else False,
                     ),
                     name=f'n_nii2dcm_{target_attribute}'
                 )
+                
+                # Connect nodes
                 wf.connect([
                     (node, n_nii2dcm, [(node_attribute, 'in_file')]),
+                    (n_create_ref_dicom, n_nii2dcm, [('reference_dicom', 'ref_dicom')]),
                     (n_nii2dcm, n_outputs, [('out_dir', f"{target_attribute}_dicoms")])
                 ])
     

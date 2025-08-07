@@ -7,11 +7,13 @@ class Nii2DcmInputSpec(CommandLineInputSpec):
         "MR",
         usedefault=True,
         argstr="--dicom_type %s",
+        desc="Type of DICOM output (MR or SVR)"
     )
     ref_dicom = File(
         exists=True,
         mandatory=False,
-        argstr="--ref_dicom %s"
+        argstr="--ref_dicom %s",
+        desc="Reference DICOM file for metadata transfer"
     )
     centered = traits.Bool(
         argstr="--centered"
@@ -40,7 +42,7 @@ class Nii2DcmOutputSpec(TraitedSpec):
 class Nii2DcmInterface(CommandLine):
     input_spec = Nii2DcmInputSpec
     output_spec = Nii2DcmOutputSpec
-    _cmd = "git init && nii2dcm --dicom_type MR"
+    _cmd = "nii2dcm --dicom_type MR"
 
     def _format_arg(self, name, spec, value):
         if name == 'out_dir':
