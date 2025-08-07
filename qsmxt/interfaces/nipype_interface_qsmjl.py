@@ -212,11 +212,29 @@ class RtsQsmInputSpec(CommandLineInputSpecJulia):
         default=[0,0,1],
         position=3
     )
+    tol = traits.Float(
+        argstr="--tol %s",
+        default=1e-4,
+        desc="Stopping tolerance for RTS convergence (default: 1e-4)",
+        position=4
+    )
+    delta_threshold = traits.Float(
+        argstr="--delta %s",
+        default=0.15,
+        desc="Threshold for ill-conditioned k-space region (default: 0.15)",
+        position=5
+    )
+    mu_regularization = traits.Float(
+        argstr="--mu %s",
+        default=1e5,
+        desc="Mu regularization parameter for TV minimization (default: 1e5)",
+        position=6
+    )
     qsm = File(
         argstr="--qsm-out %s",
         name_source=['tissue_frequency'],
         name_template='%s_rts.nii',
-        position=4
+        position=7
     )
 
 
