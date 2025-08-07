@@ -145,7 +145,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
 
     if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
         echo "[DEBUG] QSMxT is not installed. Installing."
-        sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
+        sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT[dev]"
     else
         echo "[DEBUG] QSMxT is installed, checking for linked installation and version"
         QSMXT_INSTALL_PATH=$(sudo docker exec qsmxt-container pip show qsmxt | grep 'Location:' | awk '{print $2}')
@@ -160,7 +160,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
         else
             echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling."
             sudo docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
-            sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT"
+            sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT[dev]"
         fi
     fi
 fi
