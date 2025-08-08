@@ -73,14 +73,17 @@ git pull origin "${BRANCH}"
 cd "${TEST_DIR}"
 
 echo "[DEBUG] Extracting version information from docs/_config.yml"
-export TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
-export TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
-export TEST_PACKAGE_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_PACKAGE_VERSION' | awk '{print $2}')
-export TEST_PYTHON_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_PYTHON_VERSION' | awk '{print $2}')
-export PROD_PACKAGE_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'PROD_PACKAGE_VERSION' | awk '{print $2}')
-export PROD_PYTHON_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'PROD_PYTHON_VERSION' | awk '{print $2}')
-export DEPLOY_PACKAGE_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'DEPLOY_PACKAGE_VERSION' | awk '{print $2}')
-export REQUIRED_PACKAGE_VERSION="${!REQUIRED_VERSION_TYPE}"
+get_config_value() {
+    grep "^$1:" "${TEST_DIR}/QSMxT/docs/_config.yml" | awk '{print $2}'
+}
+export TEST_CONTAINER_VERSION=$(get_config_value 'TEST_CONTAINER_VERSION')
+export TEST_CONTAINER_DATE=$(get_config_value 'TEST_CONTAINER_DATE')
+export TEST_PACKAGE_VERSION=$(get_config_value 'TEST_PACKAGE_VERSION')
+export TEST_PYTHON_VERSION=$(get_config_value 'TEST_PYTHON_VERSION')
+export PROD_PACKAGE_VERSION=$(get_config_value 'PROD_PACKAGE_VERSION')
+export PROD_PYTHON_VERSION=$(get_config_value 'PROD_PYTHON_VERSION')
+export DEPLOY_PACKAGE_VERSION=$(get_config_value 'DEPLOY_PACKAGE_VERSION')
+export REQUIRED_VERSION_TYPE=$(get_config_value 'REQUIRED_VERSION_TYPE')
 echo "[DEBUG] TEST_CONTAINER_VERSION=${TEST_CONTAINER_VERSION}"
 echo "[DEBUG] TEST_CONTAINER_DATE=${TEST_CONTAINER_DATE}"
 echo "[DEBUG] TEST_PACKAGE_VERSION=${TEST_PACKAGE_VERSION}"
@@ -100,6 +103,8 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     # Check if the container exists and its image version
     echo "[DEBUG] Checking if container name qsmxt-container already exists"
     CONTAINER_EXISTS=$(sudo docker ps -a -q -f name=qsmxt-container)
+    CREATE_CONTAINER=false
+
     if [ -n "${CONTAINER_EXISTS}" ]; then
         echo "[DEBUG] qsmxt-container already exists."
         CONTAINER_IMAGE=$(sudo docker inspect qsmxt-container --format='{{.Config.Image}}' 2>/dev/null || echo "")
@@ -111,12 +116,13 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
             sudo docker rm qsmxt-container
             echo "[DEBUG] Removing image ${CONTAINER_IMAGE}"
             sudo docker rmi -f "${CONTAINER_IMAGE}"
+            CREATE_CONTAINER=true
         fi
+    else
+        CREATE_CONTAINER=true
     fi
 
-    echo "[DEBUG] Checking if qsmxt-container already exists"
-    CONTAINER_EXISTS=$(sudo docker ps -a -q -f name=qsmxt-container)
-    if [ ! -n "${CONTAINER_EXISTS}" ]; then
+    if [ "$CREATE_CONTAINER" = true ]; then
         echo "[DEBUG] Creating qsmxt-container using image vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
         sudo docker create --name qsmxt-container -it \
             -v ${TEST_DIR}/:${TEST_DIR} \
@@ -140,29 +146,9 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     fi
 
     # Run the commands inside the container using docker exec
-    echo "[DEBUG] Checking if qsmxt is already installed"
-    QSMXT_INSTALL_CHECK=$(sudo docker exec qsmxt-container pip list | grep 'qsmxt' || true)
-
-    if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
-        echo "[DEBUG] QSMxT is not installed. Installing."
-        sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT[dev]"
-    else
-        echo "[DEBUG] QSMxT is installed, checking for linked installation and version"
-        QSMXT_INSTALL_PATH=$(sudo docker exec qsmxt-container pip show qsmxt | grep 'Location:' | awk '{print $2}')
-        QSMXT_VERSION=$(sudo docker exec qsmxt-container bash -c "qsmxt --version")
-        QSMXT_VERSION=$(echo "$QSMXT_VERSION" | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+')
-
-        echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
-        echo "[DEBUG] ${QSMXT_VERSION}"
-
-        if [ "${QSMXT_INSTALL_PATH}" = "${TEST_DIR}/QSMxT" ] && [[ "${QSMXT_VERSION}" == *"${TEST_PACKAGE_VERSION}"* ]]; then
-            echo "[DEBUG] QSMxT is already installed as a linked installation and version matches."
-        else
-            echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling."
-            sudo docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
-            sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT[dev]"
-        fi
-    fi
+    echo "[DEBUG] Installing QSMxT with dev dependencies (will reinstall if already present)"
+    sudo docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
+    sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT[dev]"
 fi
 
 # apptainer container setup
@@ -235,30 +221,12 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     echo "[DEBUG] pip install --upgrade pip"
     pip install --upgrade pip
 
-    echo "[DEBUG] Checking if qsmxt is already installed"
-    QSMXT_INSTALL_CHECK=$(pip list | grep qsmxt || true)
-
-    if [ -z "${QSMXT_INSTALL_CHECK}" ]; then
-        echo "[DEBUG] QSMxT is not installed. Installing."
-        pip install -e ${TEST_DIR}/QSMxT
-    else
-        echo "[DEBUG] Getting QSMxT location and version"
-        QSMXT_INSTALL_PATH=$(pip show qsmxt | grep 'Location:' | awk '{print $2}')
-        QSMXT_VERSION=$(qsmxt --version)
-        QSMXT_VERSION=$(echo "$QSMXT_VERSION" | grep -oP 'v\K[0-9]+\.[0-9]+\.[0-9]+')
-        echo "[DEBUG] QSMxT installed at ${QSMXT_INSTALL_PATH}"
-        echo "[DEBUG] ${QSMXT_VERSION}"
-
-        if [[ ! "${QSMXT_VERSION}" == *"${REQUIRED_PACKAGE_VERSION}"* ]]; then
-            echo "[DEBUG] QSMxT is not installed as a linked installation or version mismatch. Reinstalling."
-            pip uninstall qsmxt -y
-            pip install -e ${TEST_DIR}/QSMxT
-            echo "[DEBUG] `qsmxt --version`"
-        fi
-    fi
+    echo "[DEBUG] Installing QSMxT with dev dependencies (will reinstall if already present)"
+    pip uninstall qsmxt -y
+    pip install -e ${TEST_DIR}/QSMxT[dev]
 
     echo "[DEBUG] which julia && which dcm2niix"
-    which julia && dcm2niix
+    which julia && which dcm2niix
 
 fi
 
