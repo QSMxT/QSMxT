@@ -1,37 +1,9 @@
 #!/usr/bin/env bash
 set -e 
 
-# === ACQUIRE LOCK ===
-
-# Set a trap to ensure the lock file is removed even if the script exits unexpectedly
+# === SETUP LOCK FILE ===
 LOCK_FILE="${TEST_DIR}/qsmxt.lock"
-trap 'rm -f ${LOCK_FILE}; echo "[DEBUG] Lock ${LOCK_FILE} released due to script exit"; exit' INT TERM EXIT
-
-# Function to generate a random sleep time between MIN_WAIT_TIME and MAX_WAIT_TIME
-MAX_WAIT_TIME=10
-MIN_WAIT_TIME=5
-function random_sleep_time() {
-    echo $((RANDOM % (MAX_WAIT_TIME - MIN_WAIT_TIME + 1) + MIN_WAIT_TIME))
-}
-
-# Loop until the lock file can be acquired
-echo "[DEBUG] Create ${TEST_DIR}"
 mkdir -p "${TEST_DIR}"
-
-echo "[DEBUG] Checking for ${LOCK_FILE}"
-while true; do
-    if [ ! -f "${LOCK_FILE}" ]; then
-        touch "${LOCK_FILE}"
-        echo "[DEBUG] ${LOCK_FILE} acquired"
-        break
-    else
-        echo "[DEBUG] Another process is using resources, waiting"
-        sleep $(random_sleep_time)
-    fi
-done
-
-echo "[DEBUG] TEST_DIR=${TEST_DIR}"
-cd "${TEST_DIR}"
 
 # === DETERMINE INSTALL TYPE ===
 if [ "$#" -ne 1 ]; then
@@ -39,6 +11,35 @@ if [ "$#" -ne 1 ]; then
     exit 1
 fi
 CONTAINER_TYPE=$1
+
+echo "[DEBUG] TEST_DIR=${TEST_DIR}"
+echo "[DEBUG] Process $$ attempting to acquire lock..."
+
+# Use flock for atomic locking - this is the key improvement
+# The entire critical section runs inside the lock
+exec 200>"${LOCK_FILE}"
+if ! flock -n 200; then
+    echo "[DEBUG] Another process has the lock. Waiting..."
+    # Wait up to 300 seconds (5 minutes) for the lock
+    if ! flock -w 300 200; then
+        echo "[ERROR] Could not acquire lock after 5 minutes. Exiting."
+        exit 1
+    fi
+fi
+
+echo "[DEBUG] Lock acquired by process $$"
+cd "${TEST_DIR}"
+
+# === VALIDATE ENVIRONMENT VARIABLES ===
+# Check critical environment variables before proceeding
+echo "[DEBUG] Validating environment variables..."
+echo "[DEBUG] OSF_USERNAME=${OSF_USERNAME:-(empty)}"
+echo "[DEBUG] OSF_TOKEN=${OSF_TOKEN:+set}${OSF_TOKEN:-(empty)}"
+echo "[DEBUG] OSF_PASSWORD=${OSF_PASSWORD:+set}${OSF_PASSWORD:-(empty)}"
+
+if [ -z "${OSF_USERNAME}" ]; then
+    echo "[WARNING] OSF_USERNAME is empty - OSF operations may fail"
+fi
 
 # === GET CORRECT BRANCH OF QSMxT REPO ===
 echo "GITHUB_HEAD_REF: ${GITHUB_HEAD_REF}"
@@ -231,15 +232,60 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 fi
 
 # === GENERATE TEST DATA ===
+# This section is inside the lock to prevent multiple processes from corrupting data
 if [ -d "${TEST_DIR}/bids" ]; then
     echo "[DEBUG] BIDS directory ${TEST_DIR}/bids exists."
 else
     echo "[DEBUG] BIDS directory ${TEST_DIR}/bids does not exist. Downloading dependencies..."
-    pip install qsm-forward==0.22 osfclient
-
+    
+    # Use a separate lock for pip install to prevent concurrent pip operations
+    PIP_LOCK="${TEST_DIR}/pip.lock"
+    exec 201>"${PIP_LOCK}"
+    if flock -n 201; then
+        echo "[DEBUG] Installing Python dependencies..."
+        pip install qsm-forward==0.22 osfclient
+    else
+        echo "[DEBUG] Waiting for pip operations to complete..."
+        flock 201
+        echo "[DEBUG] Pip lock released, continuing..."
+    fi
+    
+    # Validate OSF credentials before attempting download
+    if [ -z "${OSF_USERNAME}" ] && [ -z "${OSF_TOKEN}" ]; then
+        echo "[ERROR] Neither OSF_USERNAME nor OSF_TOKEN is set. Cannot download data."
+        echo "[ERROR] Please ensure GitHub secrets are properly configured."
+        exit 1
+    fi
+    
     echo "[DEBUG] Pulling head phantom data from OSF..."
-    echo osf --project "9jc42" --username "${OSF_USERNAME}" fetch data.tar "${TEST_DIR}/data.tar"
-    osf --project "9jc42" --username "${OSF_USERNAME}" fetch data.tar "${TEST_DIR}/data.tar"
+    echo "[DEBUG] OSF_USERNAME=${OSF_USERNAME:-(empty)}"
+    echo "[DEBUG] OSF_TOKEN is ${OSF_TOKEN:+set}${OSF_TOKEN:-not set}"
+    echo "[DEBUG] OSF_PASSWORD is ${OSF_PASSWORD:+set}${OSF_PASSWORD:-not set}"
+    
+    # Construct the osf command based on available credentials
+    OSF_CMD="osf --project 9jc42"
+    
+    # Only add username if it's not empty
+    if [ -n "${OSF_USERNAME}" ]; then
+        OSF_CMD="${OSF_CMD} --username \"${OSF_USERNAME}\""
+    fi
+    
+    OSF_CMD="${OSF_CMD} fetch data.tar \"${TEST_DIR}/data.tar\""
+    
+    echo "[DEBUG] Running: ${OSF_CMD}"
+    
+    # Export environment variables explicitly before running osf
+    export OSF_TOKEN="${OSF_TOKEN}"
+    export OSF_PASSWORD="${OSF_PASSWORD}"
+    export OSF_USERNAME="${OSF_USERNAME}"
+    
+    # Run the command with eval to handle the quoted parameters correctly
+    eval ${OSF_CMD}
+    
+    if [ $? -ne 0 ]; then
+        echo "[ERROR] Failed to download data from OSF"
+        exit 1
+    fi
 
     echo "[DEBUG] Extracting..."
     tar xf "${TEST_DIR}/data.tar"
@@ -254,7 +300,5 @@ else
     echo "[DEBUG] Data generation complete!"
 fi
 
-# === REMOVE LOCK FILE ===
-echo "[DEBUG] Removing lockfile..."
-rm -f "${LOCK_FILE}"
-
+# The lock is automatically released when the script exits and file descriptor 200 is closed
+echo "[DEBUG] Setup complete. Lock will be released on exit."
