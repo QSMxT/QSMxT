@@ -179,7 +179,7 @@ def compress_folder(folder, result_id):
     logger.log(LogLevel.INFO.value, f"Compressing folder {folder} with suffix '{result_id}'")
     sys_cmd(f"tar -cf {results_tar} {folder}")
 
-    return results_tar
+    return os.path.abspath(results_tar)
 
 def display_nii(
     nii_path=None, data=None, dim=0, title=None, slc=None, dpi=96, size=None, out_png=None, final_fig=True, title_fontsize=12,
