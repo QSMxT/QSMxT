@@ -172,7 +172,9 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
     if run_args.do_segmentation and len(t1w_files) > 1:
         logger.log(LogLevel.WARNING.value, f"{run_id}: Using {t1w_files[0]} for segmentation - multiple T1w files found!")
     if run_args.do_qsm and not phase_files:
-        logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping QSM - No phase files found!")
+        # Only warn if this isn't a T1w-only acquisition
+        if suffix != "T1w":
+            logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping QSM - No phase files found!")
         run_args.do_qsm = False
         run_args.do_swi = False
     if len(phase_files) != len(phase_params_files) and any([run_args.do_qsm, run_args.do_swi]):
@@ -281,7 +283,9 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             logger.log(LogLevel.ERROR.value, f"{run_id}: Cannot use existing masks - >3D masks detected! Each mask must be 3D only for BIDS-compliance.")
             run_args.use_existing_masks = False
     if run_args.do_analysis and not (qsm_files or run_args.do_qsm):
-        logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping analysis - no QSM files found or --do_qsm not selected!")
+        # Only warn if this isn't a T1w-only acquisition
+        if suffix != "T1w":
+            logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping analysis - no QSM files found or --do_qsm not selected!")
         run_args.do_analysis = False
     if run_args.do_analysis and not (seg_files or run_args.do_segmentation):
         logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping analysis - no segmentations found or --do_segmentation not selected!")
