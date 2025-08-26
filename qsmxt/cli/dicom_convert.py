@@ -690,7 +690,7 @@ def process_dicom_group(grp_data, output_dir, dcm2niix_path):
         # Add echo number if present
         if echo_num:
             base_name += f"_echo-{echo_num}"
-        elif "NumEchoes" in row and row["NumEchoes"] > 1 and row["Type"] in ["Mag", "Phase", "Real", "Imag"]:
+        elif "NumEchoes" in row and row["NumEchoes"] > 1:
             base_name += f"_echo-{int(row['EchoNumber']):02}"
         
         # Add inversion number if present
