@@ -20,9 +20,9 @@ echo "[DEBUG] Process $$ attempting to acquire lock..."
 exec 200>"${LOCK_FILE}"
 if ! flock -n 200; then
     echo "[DEBUG] Another process has the lock. Waiting..."
-    # Wait up to 300 seconds (5 minutes) for the lock
-    if ! flock -w 300 200; then
-        echo "[ERROR] Could not acquire lock after 5 minutes. Exiting."
+    # Wait up to 1800 seconds (30 minutes) for the lock
+    if ! flock -w 1800 200; then
+        echo "[ERROR] Could not acquire lock after 30 minutes. Exiting."
         exit 1
     fi
 fi
