@@ -496,9 +496,18 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
     if missing_cols:
         logger.log(LogLevel.WARNING.value, f"The following fields are missing from the DICOM session: {', '.join(missing_cols)}")
     
-    # Add SeriesInstanceUID if available
+    # Add SeriesInstanceUID if available, but only for non-complementary types
+    # For Mag/Phase and Real/Imag pairs, we want them grouped together despite different SeriesInstanceUID
     if "SeriesInstanceUID" in to_convert.columns:
-        base_group_cols.append("SeriesInstanceUID")
+        # Check if this group contains complementary types
+        unique_types = set(to_convert['Type'].unique())
+        has_mag_phase = ('Mag' in unique_types and 'Phase' in unique_types)
+        has_real_imag = ('Real' in unique_types and 'Imag' in unique_types)
+        
+        if not (has_mag_phase or has_real_imag):
+            # No complementary types, safe to group by SeriesInstanceUID
+            base_group_cols.append("SeriesInstanceUID")
+    
     if "(0051,100F)" in to_convert.columns:
         base_group_cols.append("(0051,100F)")
 
@@ -528,10 +537,56 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
         unique_dicom_paths = base_group_data["DICOM_Path"].unique()
         if len(unique_dicom_paths) > 1:
             # We have multiple DICOM files in this group, so group by Type
+            # But keep complementary types (Mag+Phase, Real+Imag) together
             type_grouped = base_group_data.groupby("Type", dropna=False)
             logger.log(LogLevel.INFO.value, f"Found {len(type_grouped)} unique Types in this group")
             
+            # Group complementary types together
+            complementary_groups = {}
+            individual_groups = {}
+            
             for type_key, type_group_data in type_grouped:
+                if type_key in ["Mag", "Phase"]:
+                    if "MagPhase" not in complementary_groups:
+                        complementary_groups["MagPhase"] = []
+                    complementary_groups["MagPhase"].append((type_key, type_group_data))
+                elif type_key in ["Real", "Imag"]:
+                    if "RealImag" not in complementary_groups:
+                        complementary_groups["RealImag"] = []
+                    complementary_groups["RealImag"].append((type_key, type_group_data))
+                else:
+                    individual_groups[type_key] = type_group_data
+            
+            # Process complementary groups together
+            for comp_type, type_pairs in complementary_groups.items():
+                if len(type_pairs) > 1:
+                    # Combine the data from complementary types
+                    combined_data = pd.concat([data for _, data in type_pairs], ignore_index=True)
+                    logger.log(LogLevel.INFO.value, f"Processing {comp_type} group with {len(combined_data)} rows")
+                    # Check if we need to further group by EchoNumber
+                    unique_combined_dicom_paths = combined_data["DICOM_Path"].unique()
+                    if len(unique_combined_dicom_paths) > 1 and "EchoNumber" in combined_data.columns and combined_data["EchoNumber"].notnull().any():
+                        logger.log(LogLevel.INFO.value, f"Found multiple DICOM paths for {comp_type}, grouping by EchoNumber")
+                        echo_grouped = combined_data.groupby("EchoNumber", dropna=False)
+                        for echo_key, echo_group_data in echo_grouped:
+                            logger.log(LogLevel.INFO.value, f"Processing Echo group: {echo_key} with {len(echo_group_data)} rows")
+                            process_dicom_group(echo_group_data, output_dir, dcm2niix_path)
+                    else:
+                        process_dicom_group(combined_data, output_dir, dcm2niix_path)
+                else:
+                    # Only one type in the pair, process individually
+                    for type_key, type_group_data in type_pairs:
+                        logger.log(LogLevel.INFO.value, f"Processing individual {type_key} with {len(type_group_data)} rows")
+                        if len(type_group_data["DICOM_Path"].unique()) > 1 and "EchoNumber" in type_group_data.columns and type_group_data["EchoNumber"].notnull().any():
+                            echo_grouped = type_group_data.groupby("EchoNumber", dropna=False)
+                            for echo_key, echo_group_data in echo_grouped:
+                                logger.log(LogLevel.INFO.value, f"Processing Echo group: {echo_key} with {len(echo_group_data)} rows")
+                                process_dicom_group(echo_group_data, output_dir, dcm2niix_path)
+                        else:
+                            process_dicom_group(type_group_data, output_dir, dcm2niix_path)
+            
+            # Process individual groups
+            for type_key, type_group_data in individual_groups.items():
                 logger.log(LogLevel.INFO.value, f"Processing Type group: {type_key} with {len(type_group_data)} rows")
                 # Check if we need to further group by EchoNumber
                 unique_type_dicom_paths = type_group_data["DICOM_Path"].unique()
@@ -589,6 +644,19 @@ def process_dicom_group(grp_data, output_dir, dcm2niix_path):
         if fn.startswith(dcm2niix_base) and (fn.endswith(".nii") or fn.endswith(".nii.gz")):
             converted_niftis.append(fn)
     
+    # Analyze data types in this specific processing group to determine if part labels are needed
+    group_data_types = set()
+    for nii_filename in converted_niftis:
+        row = grp_data.iloc[0]  # All rows in group should have same Type
+        data_type = determine_data_type(os.path.join(tmp_outdir, nii_filename), row["Type"])
+        group_data_types.add(data_type.lower())
+    
+    # Determine if part labels are needed for this specific group
+    needs_part_labels = (
+        ("mag" in group_data_types and "phase" in group_data_types) or
+        ("real" in group_data_types and "imag" in group_data_types)
+    )
+    
     # Organize the files based on their type
     for nii_filename in converted_niftis:
         row = grp_data.iloc[0]
@@ -629,9 +697,10 @@ def process_dicom_group(grp_data, output_dir, dcm2niix_path):
         if "InversionNumber" in row and pd.notnull(row["InversionNumber"]):
             base_name += f"_inv-{int(row['InversionNumber'])}"
         
-        # Add part label based on data type
-        if data_type.lower() in ["mag", "phase", "real", "imag"]:
-            base_name += f"_part-{data_type.lower()}"
+        # Add part label only when needed for disambiguation or for phase-only data
+        if needs_part_labels or data_type.lower() == "phase":
+            if data_type.lower() in ["mag", "phase", "real", "imag"]:
+                base_name += f"_part-{data_type.lower()}"
         
         # Add suffix based on type
         if row["Type"] == "T1w":
@@ -701,7 +770,7 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
     if "InversionTime" in dicom_session.columns:
         mask = dicom_session["InversionTime"].notnull() & (dicom_session["InversionTime"] != 0)
         dicom_session.loc[mask, "InversionNumber"] = dicom_session[mask].groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'], dropna=False)['InversionTime'].rank(method='dense')
-        dicom_session["InversionNumber"] = dicom_session["InversionNumber"].astype(pd.Int64Dtype())
+        dicom_session["InversionNumber"] = dicom_session["InversionNumber"].astype(pd.Float64Dtype())
     groupby_fields = ["Acquisition", "SeriesDescription", "ImageType"]
     if "InversionNumber" in dicom_session.columns:
         groupby_fields.append("InversionNumber")
@@ -718,9 +787,19 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
         selections = interactive_acquisition_selection_series(grouped.to_dict(orient="records"))
         selections = pd.DataFrame(selections)
         logger.log(LogLevel.INFO.value, f"User selections:\n{selections}")
+    # Build merge columns and keys dynamically
+    merge_cols = ["Acquisition", "SeriesDescription", "ImageType", "Type", "Description"]
+    merge_keys = ["Acquisition", "SeriesDescription", "ImageType"]
+    if "InversionNumber" in grouped.columns:
+        merge_cols.insert(-2, "InversionNumber")  # Insert before Type and Description
+        merge_keys.append("InversionNumber")
+        # Ensure consistent data types for InversionNumber
+        selections["InversionNumber"] = selections["InversionNumber"].astype(pd.Float64Dtype())
+        grouped["InversionNumber"] = grouped["InversionNumber"].astype(pd.Float64Dtype())
+    
     grouped = grouped.merge(
-        selections[["Acquisition", "SeriesDescription", "ImageType", "Type", "Description"]],
-        on=["Acquisition", "SeriesDescription", "ImageType"],
+        selections[merge_cols],
+        on=merge_keys,
         how="left"
     )
     grouped["Type"] = grouped["Type"].fillna("Skip")
