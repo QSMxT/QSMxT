@@ -138,7 +138,12 @@ def interactive_table(session: pd.DataFrame):
             fullp = str(session.loc[i, "NIfTI_Path_Full"])
             match = compiled.search(fullp)
             if match:
-                val = match.group(1)
+                # Check if there are capture groups
+                if match.groups():
+                    val = match.group(1)
+                else:
+                    # No capture groups, use the entire match
+                    val = match.group(0)
                 session.loc[i, column] = val
                 assigned_count += 1
 
