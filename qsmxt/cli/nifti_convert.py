@@ -68,6 +68,7 @@ def interactive_table(session: pd.DataFrame):
     show_full_path = True
     row_idx = -1  # -1 => "regex row"; 0.. => data table
     col_idx = 0
+    viewport_top = 0  # Top row of the viewport for scrolling
 
     # First, handle the display path if it exists (before converting to strings)
     # Keep a hidden full path for file operations (the actual file path without [index])
@@ -315,6 +316,18 @@ def interactive_table(session: pd.DataFrame):
         while True:
             stdscr.clear()
             max_y, max_x = stdscr.getmaxyx()
+            
+            # Check minimum window size - need at least space for headers and one data row
+            min_height = 15  # Headers + at least one data row
+            min_width = 80   # Reasonable width for columns
+            
+            if max_y < min_height or max_x < min_width:
+                stdscr.addstr(0, 0, "Window too small!", error)
+                stdscr.addstr(1, 0, f"Minimum size: {min_width}x{min_height}, Current: {max_x}x{max_y}", error)
+                stdscr.addstr(2, 0, "Please resize the window to be larger.", error)
+                stdscr.refresh()
+                stdscr.getch()
+                continue
 
             # Layout plan:
             #  Line 0-1 : instructions
@@ -399,11 +412,34 @@ def interactive_table(session: pd.DataFrame):
                 stdscr.addstr(table_header_y, 0, table_header_str[:max_x])
 
                 data_start_y = table_header_y + 1
-
-                # Data rows
-                for r_i in range(nrows):
-                    yy = data_start_y + r_i
-                    if yy >= max_y:
+                
+                # Calculate viewport dimensions
+                available_rows = max_y - data_start_y - 1  # Leave one line at bottom for scroll indicator
+                
+                # Adjust viewport if current row is outside
+                if row_idx >= 0:
+                    if row_idx < viewport_top:
+                        viewport_top = row_idx
+                    elif row_idx >= viewport_top + available_rows:
+                        viewport_top = row_idx - available_rows + 1
+                
+                # Ensure viewport_top is valid
+                viewport_top = max(0, min(viewport_top, max(0, nrows - available_rows)))
+                
+                # Show scroll indicators if needed
+                if viewport_top > 0:
+                    # Show "more above" indicator
+                    stdscr.addstr(data_start_y - 1, max_x - 20, f"▲ {viewport_top} more above ▲", curses.A_BOLD)
+                
+                # Data rows (only show visible rows within viewport)
+                visible_rows = min(available_rows, nrows - viewport_top)
+                for display_idx in range(visible_rows):
+                    r_i = viewport_top + display_idx
+                    if r_i >= nrows:
+                        break
+                    
+                    yy = data_start_y + display_idx
+                    if yy >= max_y - 1:  # Leave room for bottom indicator
                         break
 
                     col_x = 0
@@ -430,6 +466,11 @@ def interactive_table(session: pd.DataFrame):
                         else:
                             stdscr.addstr(yy, col_x, val.ljust(w))
                         col_x += w + 1
+                
+                # Show "more below" indicator if needed
+                if viewport_top + available_rows < nrows:
+                    remaining = nrows - (viewport_top + available_rows)
+                    stdscr.addstr(max_y - 1, max_x - 20, f"▼ {remaining} more below ▼", curses.A_BOLD)
             except curses.error:
                 stdscr.clear()
                 stdscr.addstr(0, 0, "Window too small!", error)
@@ -497,7 +538,8 @@ def interactive_table(session: pd.DataFrame):
                     # editing regex
                     if col_idx != 0:
                         c_name = columns[col_idx]
-                        regex_map[c_name] += chr(key)
+                        current_val = regex_map.get(c_name, "") or ""
+                        regex_map[c_name] = current_val + chr(key)
                 else:
                     # editing table
                     if col_idx != 0:  # NIfTI_Path is read-only
