@@ -281,7 +281,7 @@ def interactive_table(session: pd.DataFrame):
         return True, []
 
     def curses_ui(stdscr):
-        nonlocal row_idx, col_idx, show_full_path
+        nonlocal row_idx, col_idx, show_full_path, viewport_top
 
         curses.curs_set(1)
         curses.start_color()
