@@ -9,6 +9,8 @@ import datetime
 import curses
 import re
 import pandas as pd
+import nibabel as nib
+import numpy as np
 
 from dicompare import load_nifti_session
 
@@ -67,6 +69,15 @@ def interactive_table(session: pd.DataFrame):
     row_idx = -1  # -1 => "regex row"; 0.. => data table
     col_idx = 0
 
+    # First, handle the display path if it exists (before converting to strings)
+    # Keep a hidden full path for file operations (the actual file path without [index])
+    session["NIfTI_Path_Full"] = session["NIfTI_Path"].copy()
+    
+    # Use display path if available (for 4D volumes with [index] notation) for the UI
+    if "NIfTI_Path_Display" in session.columns:
+        # Replace NIfTI_Path with the display version that includes [0], [1], etc.
+        session["NIfTI_Path"] = session["NIfTI_Path_Display"]
+    
     # Ensure all columns exist
     for c in columns:
         if c not in session.columns:
@@ -75,9 +86,6 @@ def interactive_table(session: pd.DataFrame):
     # Turn all non-None values to strings
     for c in columns:
         session[c] = session[c].apply(lambda x: str(x) if pd.notnull(x) else None)
-
-    # Keep a hidden full path for applying regex
-    session["NIfTI_Path_Full"] = session["NIfTI_Path"]
 
     # Regex patterns for each column (except NIfTI_Path)
     regex_map = {}
@@ -209,13 +217,16 @@ def interactive_table(session: pd.DataFrame):
                         errors.append((i, col_names.index(c), f"{c} should be a positive float."))
 
         # the same combination of sub, ses, acq, run, echo, part, and suffix should not be repeated
-        dupes = data.duplicated(subset=["sub", "ses", "acq", "run", "echo", "part", "suffix"], keep=False)
+        # BUT skip rows where sub is None/empty since they will be skipped anyway
+        data_with_sub = data[data['sub'].notna() & (data['sub'] != '') & (data['sub'] != 'None')]
+        dupes = data_with_sub.duplicated(subset=["sub", "ses", "acq", "run", "echo", "part", "suffix"], keep=False)
         for i, dupe in dupes.items():
             if dupe:
                 errors.append((i, col_names.index("sub"), "Duplicate combination of sub, ses, acq, run, echo, part, and suffix."))
 
         # 2) For a given sub/ses/acq/run combo, MagneticFieldStrength should be constant
-        group_mf = data.groupby(["sub","ses","acq","run"], dropna=False)
+        # Only validate rows with valid subject IDs
+        group_mf = data_with_sub.groupby(["sub","ses","acq","run"], dropna=False)
         for group_keys, grp in group_mf:
             # sub, ses, acq, run => all rows must share the same MagneticFieldStrength (if not null)
             non_null_values = grp["MagneticFieldStrength"].dropna().unique()
@@ -226,7 +237,8 @@ def interactive_table(session: pd.DataFrame):
                                 "MagneticFieldStrength must be constant for sub/ses/acq/run."))
 
         # 3) For a given sub/ses/acq/run/echo combo, EchoTime should be constant
-        group_et = data.groupby(["sub","ses","acq","run","echo"], dropna=False)
+        # Only validate rows with valid subject IDs
+        group_et = data_with_sub.groupby(["sub","ses","acq","run","echo"], dropna=False)
         for group_keys, grp in group_et:
             # sub, ses, acq, run, echo => all rows must share the same EchoTime (if not null)
             non_null_times = grp["EchoTime"].dropna().unique()
@@ -366,7 +378,8 @@ def interactive_table(session: pd.DataFrame):
                     if ci == 0:
                         cell_txt = "[NoRegex]"
                     else:
-                        cell_txt = regex_map[cname][:w]
+                        regex_val = regex_map.get(cname, "") or ""
+                        cell_txt = regex_val[:w]
 
                     if row_idx == -1 and col_idx == ci:
                         stdscr.attron(curses.A_REVERSE)
@@ -398,11 +411,11 @@ def interactive_table(session: pd.DataFrame):
                         w = get_col_width(ci)
                         val = ""
                         if ci == 0:
-                            # NIfTI_Path
+                            # NIfTI_Path - use the display version that has [0], [1] etc
                             if show_full_path:
-                                val = str(session.loc[r_i, "NIfTI_Path_Full"])
+                                val = str(session.loc[r_i, "NIfTI_Path"])
                             else:
-                                val = os.path.basename(str(session.loc[r_i, "NIfTI_Path_Full"]))
+                                val = os.path.basename(str(session.loc[r_i, "NIfTI_Path"]))
                         else:
                             raw_val = session.loc[r_i, cname]
                             val = "" if pd.isnull(raw_val) else str(raw_val)
@@ -500,7 +513,7 @@ def interactive_table(session: pd.DataFrame):
                 if row_idx == -1 and col_idx != 0:
                     # editing regex pattern
                     c_name = columns[col_idx]
-                    curr = regex_map[c_name]
+                    curr = regex_map.get(c_name, "") or ""
                     if curr:
                         regex_map[c_name] = curr[:-1]
                     # if it's empty already, do nothing for regex row
@@ -525,8 +538,8 @@ def interactive_table(session: pd.DataFrame):
                 if row_idx == -1 and col_idx != 0:
                     # editing regex
                     c_name = columns[col_idx]
-                    curr = regex_map[c_name]
-                    if curr == None:
+                    curr = regex_map.get(c_name, "") or ""
+                    if not curr:
                         # do nothing for regex row if it's already empty
                         pass
                     else:
@@ -577,6 +590,12 @@ def nifti_convert(nifti_dir, output_dir):
     # for each row in the dataframe, move the file to the new location
     for i in range(len(session)):
         row = session.loc[i]
+        
+        # Skip files where subject ID is None
+        if pd.isna(row['sub']) or row['sub'] is None:
+            logger.log(LogLevel.INFO.value, f"Skipping {row['NIfTI_Path_Full']} - no subject ID assigned")
+            continue
+            
         new_name = f"sub-{row['sub']}"
         if pd.notnull(row["ses"]):
             new_name += f"_ses-{row['ses']}"
@@ -589,7 +608,8 @@ def nifti_convert(nifti_dir, output_dir):
         if pd.notnull(row["part"]):
             new_name += f"_part-{row['part']}"
         original_ext = ".nii.gz" if row["NIfTI_Path"].endswith(".nii.gz") else ".nii"
-        new_name += f"_{row['suffix']}.{original_ext}"
+        suffix = str(row['suffix']).rstrip('.')  # Remove trailing dot if present
+        new_name += f"_{suffix}{original_ext}"
 
         anat_dir = os.path.join(output_dir, f"sub-{row['sub']}")
         if pd.notnull(row["ses"]):
@@ -598,10 +618,58 @@ def nifti_convert(nifti_dir, output_dir):
 
         os.makedirs(anat_dir, exist_ok=True)
 
-        logger.log(LogLevel.INFO.value, f"Copying {row['NIfTI_Path_Full']} to {os.path.join(anat_dir, new_name)}")
-        shutil.copy(row["NIfTI_Path_Full"], os.path.join(anat_dir, new_name))
-        json_path = row['JSON_Path']
-        shutil.copy(json_path, os.path.join(anat_dir, new_name.replace(original_ext, ".json")))
+        output_path = os.path.join(anat_dir, new_name)
+        
+        # Check if this is a 4D volume that needs splitting
+        if 'Volume_Index' in row and pd.notnull(row['Volume_Index']):
+            vol_idx = int(row['Volume_Index'])
+            logger.log(LogLevel.INFO.value, f"Extracting volume {vol_idx} from {row['NIfTI_Path_Full']} to {output_path}")
+            
+            # Load the 4D NIfTI and extract the specific volume
+            img_4d = nib.load(row['NIfTI_Path_Full'])
+            data_4d = img_4d.get_fdata()
+            
+            # Extract the specific 3D volume
+            data_3d = data_4d[:, :, :, vol_idx]
+            
+            # Create a new 3D NIfTI image
+            img_3d = nib.Nifti1Image(data_3d, img_4d.affine, img_4d.header)
+            
+            # Save the 3D volume
+            nib.save(img_3d, output_path)
+        else:
+            # Regular 3D volume, just copy it
+            logger.log(LogLevel.INFO.value, f"Copying {row['NIfTI_Path_Full']} to {output_path}")
+            shutil.copy(row["NIfTI_Path_Full"], output_path)
+            
+        # Create JSON sidecar file
+        output_json = os.path.join(anat_dir, new_name.replace(original_ext, ".json"))
+        json_data = {}
+        
+        # If original JSON exists, use it as base
+        if 'JSON_Path' in row and pd.notnull(row['JSON_Path']):
+            with open(row['JSON_Path'], 'r') as f:
+                json_data = json.load(f)
+        
+        # Add metadata from the table
+        if 'MagneticFieldStrength' in row and pd.notnull(row['MagneticFieldStrength']):
+            try:
+                json_data['MagneticFieldStrength'] = float(row['MagneticFieldStrength'])
+            except (ValueError, TypeError):
+                pass
+                
+        if 'EchoTime' in row and pd.notnull(row['EchoTime']):
+            try:
+                json_data['EchoTime'] = float(row['EchoTime'])
+            except (ValueError, TypeError):
+                pass
+        
+        # Don't add VolumeIndex - it's not a valid BIDS field
+        
+        # Only create JSON file if there's actually metadata to write
+        if json_data:
+            with open(output_json, 'w') as f:
+                json.dump(json_data, f, indent=2)
 
 def main():
     parser = argparse.ArgumentParser(
