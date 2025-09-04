@@ -16,27 +16,38 @@ def get_matching_files(bids_dir, subject, dtype="anat", suffixes=[], ext="nii*",
     if session:
         pattern = os.path.join(pattern, session)
     pattern = os.path.join(pattern, dtype) + os.path.sep
+
+    # Build required entity patterns (without wildcards for exact matching)
+    required_entities = []
     if space:
-        pattern += f"*space-{space}*"
+        required_entities.append(f"_space-{space}_")
     if acq:
-        pattern += f"*acq-{acq}*"
+        required_entities.append(f"_acq-{acq}_")
     if rec:
-        pattern += f"*rec-{rec}*"
+        required_entities.append(f"_rec-{rec}_")
     if run:
-        pattern += f"*run-{run}*"
+        required_entities.append(f"_run-{run}_")
     if inv:
-        pattern += f"*inv-{inv}*"
+        required_entities.append(f"_inv-{inv}_")
     if part:
-        pattern += f"*part-{part}*"
-    dir, fname = os.path.split(pattern)
+        required_entities.append(f"_part-{part}_")
+
+    # Get all files matching suffixes
     if suffixes:
-        if fname:
-            matching_files = [glob.glob(f"{pattern}_{suffix}.{ext}") for suffix in suffixes]
-        else:
-            matching_files = [glob.glob(os.path.join(dir, f"*{suffix}.{ext}")) for suffix in suffixes]
+        all_files = []
+        for suffix in suffixes:
+            all_files.extend(glob.glob(os.path.join(pattern, f"*_{suffix}.{ext}")))
     else:
-        matching_files = [glob.glob(f"{pattern}.{ext}")]
-    return sorted([item for sublist in matching_files for item in sublist])
+        all_files = glob.glob(os.path.join(pattern, f"*.{ext}"))
+
+    # Filter files that contain all required entities
+    matching_files = []
+    for filepath in all_files:
+        filename = os.path.basename(filepath)
+        if all(entity in filename for entity in required_entities):
+            matching_files.append(filepath)
+
+    return sorted(matching_files)
 
 def init_template_workflow(run_args):
     logger = make_logger('main')
