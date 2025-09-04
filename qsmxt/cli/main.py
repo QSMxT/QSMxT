@@ -59,9 +59,10 @@ def init_workflow(args):
             wf.connect(node, 'qsm', n_merge_qsm, f'in{i+1}')
 
         template_wf = init_template_workflow(args)
-        wf.connect([
-            (n_merge_qsm, template_wf, [('out', 'template_inputs.qsm')]),
-        ])
+        if template_wf is not None:
+            wf.connect([
+                (n_merge_qsm, template_wf, [('out', 'template_inputs.qsm')]),
+            ])
 
     return wf
 
