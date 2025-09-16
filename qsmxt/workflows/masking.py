@@ -46,7 +46,9 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # combine magnitude if necessary
         if magnitude_available and run_args.combine_phase:
-            n_combine_magnitude_mem = (np.prod(dimensions_phase) * 8) / (1024 ** 3) * num_echoes * 4
+            n_combine_magnitude_mem = (np.prod(dimensions_phase) * 8) / (1024 ** 3) * num_echoes * 8
+            # Ensure minimum memory for both node and plugin args
+            n_combine_magnitude_mem = max(2, n_combine_magnitude_mem)
             n_combine_magnitude = create_node(
                 interface=combinemagnitude.CombineMagnitudeInterface(),
                 name='nibabel-numpy_combine-magnitude',

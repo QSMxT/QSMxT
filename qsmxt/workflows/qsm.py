@@ -590,7 +590,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
     
     # swi
     if run_args.do_swi:
-        n_swi_mem = mem_mag_64 * (len(magnitude_files) + 2) + mem_phase_64 * len(phase_files)
+        n_swi_mem = (mem_mag_64 * (len(magnitude_files) + 2) + mem_phase_64 * len(phase_files)) * 5  # 5x safety factor for Julia/container overhead
         n_swi_threads = min(6, run_args.n_procs) if run_args.multiproc else 6
         n_swi = create_node(
             interface=swi.ClearSwiInterface(
@@ -729,7 +729,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             name='nipype_inputs-resampled'
         )
         if magnitude_files:
-            mn_resample_mem = (np.prod(dimensions_phase) * bytepix_phase) / (1024 ** 3) * 2 * 16
+            mn_resample_mem = (np.prod(dimensions_phase) * bytepix_phase) / (1024 ** 3) * 8 * 16
             mn_resample_inputs = create_node(
                 interface=sampling.AxialSamplingInterface(
                     obliquity_threshold=999 if run_args.obliquity_threshold == -1 else run_args.obliquity_threshold
@@ -1389,7 +1389,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
     if run_args.qsm_algorithm == 'rts':
         rts_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
-        rts_mem = (18.19 * (np.prod(dimensions_phase) * 3 / (1024 ** 3)) + 2) # DONE
+        rts_mem = ((18.19 * (np.prod(dimensions_phase) * 3 / (1024 ** 3)) + 2)) * 2  # 2x safety factor for Julia/container overhead
         mn_qsm = create_node(
             interface=qsmjl.RtsQsmInterface(
                 num_threads=rts_threads,

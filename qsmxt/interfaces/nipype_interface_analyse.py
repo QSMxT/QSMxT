@@ -151,7 +151,17 @@ class AnalyseInterface(SimpleInterface):
         else:
             out_sname = in_sname
 
-        out_name = os.path.abspath(f'{out_qname}_{out_sname}_analysis.csv')
+        def merge_without_duplicates(name1, name2):
+            parts1 = name1.split('_')
+            parts2 = name2.split('_')
+            merged = parts1.copy()
+            for part in parts2:
+                if part not in merged:
+                    merged.append(part)
+            return '_'.join(merged)
+
+        merged_name = merge_without_duplicates(out_qname, out_sname)
+        out_name = os.path.abspath(f'{merged_name}_analysis.csv')
                 
         self._results['out_csv'] = analyse(
             in_file=self.inputs.in_file,
