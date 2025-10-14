@@ -78,14 +78,14 @@ def init_template_workflow(run_args):
                 "anat",
                 f"sub-*_part-phase*.nii*"
             )
-            files = sorted(glob.glob(phase_pattern))
+            phase_files = sorted(glob.glob(phase_pattern))
 
-            if not files:
+            if not phase_files:
                 logger.log(LogLevel.WARNING.value, f"No files found matching pattern: {phase_pattern}")
                 continue
 
             groups = {}
-            for path in files:
+            for path in phase_files:
                 acq = re.search("_acq-([a-zA-Z0-9-]+)_", path).group(1) if "_acq-" in path else None
                 rec = re.search("_rec-([a-zA-Z0-9-]+)_", path).group(1) if "_rec-" in path else None
                 inv = re.search("_inv-([a-zA-Z0-9]+)_", path).group(1) if "_inv-" in path else None
@@ -134,9 +134,9 @@ def init_template_workflow(run_args):
                         rec=rec,
                         inv=inv,
                         run=run,
-                        dtype="anat",
-                        part="mag"
+                        dtype="anat"
                     )
+                    run_magfiles = [f for f in run_magfiles if 'part-mag' in f or 'part' not in f]
                     if run_magfiles:
                         magnitude_files.append(run_magfiles[0])
 
