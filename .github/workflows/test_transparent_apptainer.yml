@@ -22,7 +22,7 @@ on:
     
 jobs:
   test_transparent_apptainer_pipeline:
-    runs-on: ubuntu-22.04 # ubuntu-24.04 causes issues with user namespaces
+    runs-on: self-hosted # Use self-hosted runner with more disk space
     steps:
     - uses: actions/checkout@v3
     - uses: actions/setup-python@v3
@@ -30,20 +30,12 @@ jobs:
         python-version: 3.8
     - name: Setup QSMxT
       env:
+        TEST_DIR: "/storage/tmp"
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USERNAME: ${{ secrets.OSF_USER }}
         OSF_PASSWORD: ${{ secrets.OSF_PASS }}
       run: |
-        # Prefer /storage/ashley if available (self-hosted runners), otherwise use /tmp
-        if [ -d "/storage/ashley" ] && [ -w "/storage/ashley" ]; then
-          export TEST_DIR="/storage/ashley/qsmxt_test"
-          echo "Using /storage/ashley for TEST_DIR (self-hosted runner)"
-        else
-          export TEST_DIR="/tmp"
-          echo "Using /tmp for TEST_DIR (GitHub-hosted runner)"
-        fi
-        mkdir -p "${TEST_DIR}"
         ./qsmxt/tests/setup_qsmxt.sh apptainer
     - name: test transparent apptainer
       env:
@@ -54,16 +46,8 @@ jobs:
         OSF_USERNAME: ${{ secrets.OSF_USER }}
         OSF_PASSWORD: ${{ secrets.OSF_PASS }}
         RUN_ID: ${{ github.run_id }}
+        TEST_DIR: "/storage/tmp"
       run: |
-        # Prefer /storage/ashley if available (self-hosted runners), otherwise use /tmp
-        if [ -d "/storage/ashley" ] && [ -w "/storage/ashley" ]; then
-          export TEST_DIR="/storage/ashley/qsmxt_test"
-          echo "Using /storage/ashley for TEST_DIR (self-hosted runner)"
-        else
-          export TEST_DIR="/tmp"
-          echo "Using /tmp for TEST_DIR (GitHub-hosted runner)"
-        fi
-
         TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
         TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
         export PATH="${TEST_DIR}/qsmxt_${TEST_CONTAINER_VERSION}_${TEST_CONTAINER_DATE}:${PATH}"
