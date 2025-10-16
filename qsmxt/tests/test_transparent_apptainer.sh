@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-set -e 
+set -e
 
 echo "[DEBUG] which dcm2niix"
 which dcm2niix
+
+# Use TEST_DIR if set, otherwise use /tmp, to avoid filling up workspace
+TEST_WORKDIR="${TEST_DIR:-/tmp}/qsmxt_test_workdir_$$"
+echo "[DEBUG] Creating test working directory: ${TEST_WORKDIR}"
+mkdir -p "${TEST_WORKDIR}"
+cd "${TEST_WORKDIR}"
 
 echo "[DEBUG] Download test data"
 pip install osfclient > /dev/null 2>&1
@@ -15,5 +21,7 @@ dicom-convert dicoms-unsorted bids-transparent-apptainer --auto_yes
 echo "[DEBUG] bids-transparent-apptainer --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug"
 qsmxt bids-transparent-apptainer --premade fast --do_qsm --do_template --do_segmentation --do_analysis --auto_yes --debug
 
-rm -rf dicoms-unsorted/ bids-transparent-apptainer/ 
+echo "[DEBUG] Cleaning up test working directory: ${TEST_WORKDIR}"
+cd /
+rm -rf "${TEST_WORKDIR}" 
 
