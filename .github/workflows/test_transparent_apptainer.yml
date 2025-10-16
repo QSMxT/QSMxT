@@ -20,11 +20,6 @@ on:
       - qsmxt/scripts/*
       - qsmxt/workflows/*
 
-# Prevent multiple instances from running simultaneously to avoid conda env conflicts
-concurrency:
-  group: transparent-apptainer-test
-  cancel-in-progress: false
-
 jobs:
   test_transparent_apptainer_pipeline:
     runs-on: self-hosted
@@ -35,7 +30,8 @@ jobs:
         python-version: 3.8
     - name: Setup QSMxT
       env:
-        TEST_DIR: "/storage/tmp"
+        # Use runner-specific directory to avoid conflicts with parallel runs
+        TEST_DIR: "/storage/tmp/${{ runner.name }}"
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USERNAME: ${{ secrets.OSF_USER }}
@@ -51,7 +47,8 @@ jobs:
         OSF_USERNAME: ${{ secrets.OSF_USER }}
         OSF_PASSWORD: ${{ secrets.OSF_PASS }}
         RUN_ID: ${{ github.run_id }}
-        TEST_DIR: "/storage/tmp"
+        # Use runner-specific directory to avoid conflicts with parallel runs
+        TEST_DIR: "/storage/tmp/${{ runner.name }}"
       run: |
         TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
         TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
