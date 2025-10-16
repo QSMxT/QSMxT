@@ -227,7 +227,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     pip uninstall qsmxt -y
 
     echo "[DEBUG] Cleaning up any stale egg-info directory"
-    rm -rf ${TEST_DIR}/QSMxT/qsmxt.egg-info
+    sudo rm -rf ${TEST_DIR}/QSMxT/qsmxt.egg-info
 
     pip install -e ${TEST_DIR}/QSMxT[dev]
 
