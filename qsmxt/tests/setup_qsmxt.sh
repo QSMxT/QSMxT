@@ -149,6 +149,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     # Run the commands inside the container using docker exec
     echo "[DEBUG] Installing QSMxT with dev dependencies (will reinstall if already present)"
     sudo docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
+    sudo docker exec qsmxt-container bash -c "rm -rf ${TEST_DIR}/QSMxT/qsmxt.egg-info"
     sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT[dev]"
 fi
 
@@ -224,6 +225,10 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 
     echo "[DEBUG] Installing QSMxT with dev dependencies (will reinstall if already present)"
     pip uninstall qsmxt -y
+
+    echo "[DEBUG] Cleaning up any stale egg-info directory"
+    sudo rm -rf ${TEST_DIR}/QSMxT/qsmxt.egg-info
+
     pip install -e ${TEST_DIR}/QSMxT[dev]
 
     echo "[DEBUG] which julia && which dcm2niix"
