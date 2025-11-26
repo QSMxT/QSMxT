@@ -764,6 +764,11 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
         else:
             dicom_session['SeriesTime'] = datetime.datetime.now().strftime("%H%M%S")
 
+    # Convert EchoTime to numeric to handle mixed types (strings and floats)
+    # This can occur when CSA header extraction returns strings for unconvertible values
+    if 'EchoTime' in dicom_session.columns:
+        dicom_session['EchoTime'] = pd.to_numeric(dicom_session['EchoTime'], errors='coerce')
+
     dicom_session['NumEchoes'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'], dropna=False)['EchoTime'].transform('nunique')
     dicom_session['EchoNumber'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'], dropna=False)['EchoTime'].rank(method='dense')
     dicom_session['NumRuns'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'], dropna=False)['RunNumber'].transform('nunique')
@@ -924,6 +929,9 @@ def run_mcpc3ds_on_multicoil(bids_dir):
         # pick out only those files whose NIfTI_Shape has length 4 (i.e. X×Y×Z×coils)
         mc = grp[grp["NIfTI_Shape"].map(lambda s: len(s) == 4)]
 
+        # Deduplicate by NIfTI_Path (merged files may appear multiple times, once per original coil)
+        mc = mc.drop_duplicates(subset=["NIfTI_Path"])
+
         # pick out remaining files with length 3
         sc = grp[grp["NIfTI_Shape"].map(lambda s: len(s) == 3)]
         
@@ -934,8 +942,7 @@ def run_mcpc3ds_on_multicoil(bids_dir):
         is_multi_echo = "echo" in mc.columns
         
         if is_multi_echo:
-            # Multi-echo case - handle as before
-            # within those, collect by echo
+            # Multi-echo case - collect files by echo
             mags_by_echo = mc[mc["part"]=="mag"].set_index("echo")["NIfTI_Path"]
             phases_by_echo = mc[mc["part"]=="phase"].set_index("echo")["NIfTI_Path"]
 
