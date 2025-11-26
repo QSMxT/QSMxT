@@ -85,31 +85,228 @@ def MakeListsOfTransformLists(warpTransformList, AffineTransformList):
 def FlattenTransformAndImagesList(ListOfPassiveImagesDictionaries,
                                   transformation_series):
     import sys
+    import os
+    import re
+    import glob
+
     print("HACK:  DEBUG: ListOfPassiveImagesDictionaries\n{lpi}\n".format(
         lpi=ListOfPassiveImagesDictionaries))
-    subjCount = len(ListOfPassiveImagesDictionaries)
-    tranCount = len(transformation_series)
-    if subjCount != tranCount:
-        print("ERROR:  subjCount must equal tranCount {0} != {1}".format(
-            subjCount, tranCount))
+
+    def extract_bids_entities_from_qsm_path(qsm_path):
+        """Extract BIDS entities from QSM output path."""
+        # Extract subject and session from path
+        subject_match = re.search(r'/sub-([^/]+)/', qsm_path)
+        session_match = re.search(r'/ses-([^/]+)/', qsm_path)
+
+        subject = f"sub-{subject_match.group(1)}" if subject_match else None
+        session = f"ses-{session_match.group(1)}" if session_match else None
+
+        # Extract entities from the QSM directory name
+        qsm_dir_match = re.search(r'/qsm_([^/]+)/', qsm_path)
+        if not qsm_dir_match:
+            return None
+
+        qsm_dir = qsm_dir_match.group(1)
+
+        # Parse entities from the QSM directory name
+        acq = re.search(r'acq-([^_]+)', qsm_dir).group(1) if 'acq-' in qsm_dir else None
+        rec = re.search(r'rec-([^_]+)', qsm_dir).group(1) if 'rec-' in qsm_dir else None
+        inv = re.search(r'inv-([^_]+)', qsm_dir).group(1) if 'inv-' in qsm_dir else None
+        run = re.search(r'run-([^_]+)', qsm_dir).group(1) if 'run-' in qsm_dir else None
+
+        # If entities not found in directory name, try extracting from the filename
+        filename = os.path.basename(qsm_path)
+        if not acq:
+            acq_match = re.search(r'acq-([^_]+)', filename)
+            if acq_match:
+                acq = acq_match.group(1)
+        if not rec:
+            rec_match = re.search(r'rec-([^_]+)', filename)
+            if rec_match:
+                rec = rec_match.group(1)
+        if not inv:
+            inv_match = re.search(r'inv-([^_]+)', filename)
+            if inv_match:
+                inv = inv_match.group(1)
+        if not run:
+            run_match = re.search(r'run-([^_]+)', filename)
+            if run_match:
+                run = run_match.group(1)
+
+        # Extract suffix (usually MEGRE)
+        suffix = None
+        if 'MEGRE' in qsm_dir:
+            suffix = 'MEGRE'
+
+        return {
+            'subject': subject,
+            'session': session,
+            'acq': acq,
+            'rec': rec,
+            'inv': inv,
+            'suffix': suffix,
+            'run': run
+        }
+
+    def infer_bids_dir_from_qsm_path(qsm_path):
+        """Infer BIDS directory from QSM output path."""
+        # QSM path looks like: /path/to/bids/derivatives/workflow/qsmxt-workflow/sub-X/ses-Y/qsm_...
+        # We need to find the BIDS root directory
+
+        # Look for the pattern that indicates we're in derivatives
+        derivatives_match = re.search(r'(.+)/derivatives/', qsm_path)
+        if derivatives_match:
+            return derivatives_match.group(1)
+
+        # Fallback: look for the parent directory of sub-* directories
+        subject_match = re.search(r'(.+)/sub-[^/]+/', qsm_path)
+        if subject_match:
+            # Go up to find the actual BIDS directory
+            potential_bids = subject_match.group(1)
+            # If it contains 'derivatives', go up further
+            while 'derivatives' in potential_bids or 'workflow' in potential_bids:
+                potential_bids = os.path.dirname(potential_bids)
+            return potential_bids
+
+        return None
+
+    def find_corresponding_magnitude_file(bids_dir, entities):
+        """Find magnitude file that matches the exact BIDS entities from QSM."""
+        subject = entities['subject']
+        session = entities['session']
+        acq = entities['acq']
+        rec = entities['rec']
+        inv = entities['inv']
+        suffix = entities['suffix']
+        run = entities['run']
+
+        # Build the search pattern
+        base_path = os.path.join(bids_dir, subject)
+        if session:
+            base_path = os.path.join(base_path, session)
+        search_path = os.path.join(base_path, "anat")
+
+        # Build filename pattern with exact entities
+        pattern_parts = [f"{subject}"]
+        if session:
+            pattern_parts.append(f"{session}")
+        if acq:
+            pattern_parts.append(f"acq-{acq}")
+        if rec:
+            pattern_parts.append(f"rec-{rec}")
+        if run:
+            pattern_parts.append(f"run-{run}")
+
+        pattern_parts.append("echo-*")
+
+        if inv:
+            pattern_parts.append(f"inv-{inv}")
+
+        # Try part-mag first
+        mag_pattern = "_".join(pattern_parts) + f"_part-mag_{suffix}.nii*"
+        mag_files = glob.glob(os.path.join(search_path, mag_pattern))
+
+        if mag_files:
+            return sorted(mag_files)[0]
+
+        # If no part-mag, try without part (for alternative BIDS structure)
+        if run:
+            alt_pattern = "_".join(pattern_parts) + f"_{suffix}.nii*"
+            alt_files = glob.glob(os.path.join(search_path, alt_pattern))
+            # Filter out phase files
+            alt_files = [f for f in alt_files if "_part-phase_" not in f]
+            if alt_files:
+                return sorted(alt_files)[0]
+
+        return None
+
+    def build_magnitude_qsm_pairs(qsm_files, bids_dir):
+        """Build list of (magnitude_file, qsm_file) pairs that match exactly."""
+        pairs = []
+        failed_matches = []
+
+        for qsm_file in qsm_files:
+            # Extract BIDS entities from QSM path
+            entities = extract_bids_entities_from_qsm_path(qsm_file)
+
+            if not entities:
+                failed_matches.append((qsm_file, "Could not parse BIDS entities"))
+                continue
+
+            # Find corresponding magnitude file
+            mag_file = find_corresponding_magnitude_file(bids_dir, entities)
+
+            if mag_file:
+                pairs.append((mag_file, qsm_file, entities))
+            else:
+                failed_matches.append((qsm_file, f"No magnitude file found for entities: {entities}"))
+
+        return pairs, failed_matches
+
+    # Enhanced BIDS entity matching logic
+    print("=== ENHANCED FLATTEN FUNCTION ===")
+    print(f"Input: {len(ListOfPassiveImagesDictionaries)} QSM files, {len(transformation_series)} transforms")
+
+    # Extract QSM file paths
+    qsm_files = [qsm_dict['QSM'] for qsm_dict in ListOfPassiveImagesDictionaries]
+
+    # Infer BIDS directory from the first QSM file path
+    if qsm_files:
+        bids_dir = infer_bids_dir_from_qsm_path(qsm_files[0])
+        print(f"Inferred BIDS directory: {bids_dir}")
+    else:
+        print("ERROR: No QSM files provided")
         sys.exit(-1)
-    flattened_images = list()
-    flattened_image_nametypes = list()
-    flattened_transforms = list()
-    passiveImagesCount = len(ListOfPassiveImagesDictionaries[0])
-    for subjIndex in range(0, subjCount):
-        # if passiveImagesCount != len(ListOfPassiveImagesDictionaries[subjIndex]):
-        #    print "ERROR:  all image lengths must be equal {0} != {1}".format(passiveImagesCount,len(ListOfPassiveImagesDictionaries[subjIndex]))
-        #    sys.exit(-1)
-        subjImgDictionary = ListOfPassiveImagesDictionaries[subjIndex]
-        subjToAtlasTransform = transformation_series[subjIndex]
-        for imgname, img in list(subjImgDictionary.items()):
-            flattened_images.append(img)
-            flattened_image_nametypes.append(imgname)
-            flattened_transforms.append(subjToAtlasTransform)
+
+    if not bids_dir:
+        print("ERROR: Could not infer BIDS directory from QSM paths")
+        sys.exit(-1)
+
+    # Build magnitude-QSM pairs using BIDS entity matching
+    pairs, failed_matches = build_magnitude_qsm_pairs(qsm_files, bids_dir)
+
+    print(f"Successfully matched: {len(pairs)} QSM files to magnitude files")
+    print(f"Failed to match: {len(failed_matches)} QSM files")
+
+    if failed_matches:
+        print("Failed matches:")
+        for qsm_file, reason in failed_matches:
+            print(f"  {os.path.basename(qsm_file)}: {reason}")
+
+    # Check if we have enough transforms for the matched pairs
+    num_transforms = len(transformation_series)
+    num_matched = len(pairs)
+
+    if num_matched > num_transforms:
+        print(f"WARNING: {num_matched} matched pairs but only {num_transforms} transforms")
+        print(f"Using first {num_transforms} matched pairs")
+        pairs = pairs[:num_transforms]
+    elif num_matched < num_transforms:
+        print(f"WARNING: {num_matched} matched pairs but {num_transforms} transforms")
+        print(f"Using first {num_matched} transforms")
+        transformation_series = transformation_series[:num_matched]
+
+    # Build the flattened lists using only matched pairs
+    flattened_images = []
+    flattened_image_nametypes = []
+    flattened_transforms = []
+
+    for i, (mag_file, qsm_file, entities) in enumerate(pairs):
+        # Use the QSM file for template building
+        flattened_images.append(qsm_file)
+        flattened_image_nametypes.append('QSM')
+
+        # Use corresponding transform
+        if i < len(transformation_series):
+            flattened_transforms.append(transformation_series[i])
+
+    print(f"Final output: {len(flattened_images)} images, {len(flattened_transforms)} transforms")
+    print("Successfully processed with BIDS entity matching!")
+
     print("HACK: flattened images    {0}\n".format(flattened_images))
     print("HACK: flattened nametypes {0}\n".format(flattened_image_nametypes))
     print("HACK: flattened txfms     {0}\n".format(flattened_transforms))
+
     return flattened_images, flattened_transforms, flattened_image_nametypes
 
 

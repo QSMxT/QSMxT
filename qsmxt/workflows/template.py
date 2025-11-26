@@ -158,6 +158,13 @@ def init_template_workflow(run_args):
     n_inputs.inputs.params = params_files
     n_inputs.inputs.sort_filelist = True
 
+    # Calculate dynamic time allocation for ANTS template building
+    # Base time of 2 hours + 1 hour per subject, with maximum of 50 hours
+    n_subjects = len(magnitude_files)
+    template_time_hours = min(2 + n_subjects, 50)
+    template_time = f"{template_time_hours:02d}:00:00"
+    logger.log(LogLevel.INFO.value, f"Template building with {n_subjects} subjects - allocated {template_time} per ANTS job")
+
     n_outputs = Node(
         interface=IdentityInterface(
             fields=['initial_average', 'magnitude_template', 'qsm_template', 'transforms', 'qsms_transformed']
@@ -215,7 +222,7 @@ def init_template_workflow(run_args):
         pbs_account=run_args.pbs,
         slurm_partition=run_args.slurm[1],
         name="ANTS",
-        time="04:00:00",
+        time=template_time,
         mem_gb=n_ants_mem_gb,
         num_cpus=n_ants_threads
     )
@@ -238,7 +245,7 @@ def init_template_workflow(run_args):
         pbs_account=run_args.pbs,
         slurm_partition=run_args.slurm[1],
         name="ANTS",
-        time="04:00:00",
+        time=template_time,
         mem_gb=n_ants_mem_gb,
         num_cpus=n_ants_threads
     )
