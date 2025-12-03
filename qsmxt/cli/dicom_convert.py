@@ -21,7 +21,7 @@ from qsmxt.scripts.nii_fix_ge import fix_ge_polar, fix_ge_complex
 from tabulate import tabulate
 from collections import defaultdict
 
-def clean(data): 
+def clean(data):
     data = str(data).strip()
     cleaned = re.sub(r'[^a-zA-Z0-9]', '', data).lower()
     if data.startswith('sub-'):
@@ -29,6 +29,18 @@ def clean(data):
     elif data.startswith('ses-'):
         return f'ses-{cleaned[3:]}'
     return cleaned
+
+
+def normalize_series_description(series_desc):
+    """
+    Normalize SeriesDescription by removing _RR suffixes.
+
+    Siemens scanners append '_RR' suffixes to SeriesDescription during image export.
+    This can cause images from the same acquisition to appear as different series.
+    """
+    if pd.isna(series_desc) or series_desc == '':
+        return series_desc
+    return re.sub(r'(_RR)+$', '', str(series_desc))
 
 def auto_assign_initial_labels(table_data):
     # Group rows by acquisition.
@@ -537,56 +549,13 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
         unique_dicom_paths = base_group_data["DICOM_Path"].unique()
         if len(unique_dicom_paths) > 1:
             # We have multiple DICOM files in this group, so group by Type
-            # But keep complementary types (Mag+Phase, Real+Imag) together
+            # Process each Type separately (Mag, Phase, Real, Imag, etc.)
+            # This ensures each process_dicom_group call gets only one type of data
             type_grouped = base_group_data.groupby("Type", dropna=False)
             logger.log(LogLevel.INFO.value, f"Found {len(type_grouped)} unique Types in this group")
-            
-            # Group complementary types together
-            complementary_groups = {}
-            individual_groups = {}
-            
+
+            # Process each type individually
             for type_key, type_group_data in type_grouped:
-                if type_key in ["Mag", "Phase"]:
-                    if "MagPhase" not in complementary_groups:
-                        complementary_groups["MagPhase"] = []
-                    complementary_groups["MagPhase"].append((type_key, type_group_data))
-                elif type_key in ["Real", "Imag"]:
-                    if "RealImag" not in complementary_groups:
-                        complementary_groups["RealImag"] = []
-                    complementary_groups["RealImag"].append((type_key, type_group_data))
-                else:
-                    individual_groups[type_key] = type_group_data
-            
-            # Process complementary groups together
-            for comp_type, type_pairs in complementary_groups.items():
-                if len(type_pairs) > 1:
-                    # Combine the data from complementary types
-                    combined_data = pd.concat([data for _, data in type_pairs], ignore_index=True)
-                    logger.log(LogLevel.INFO.value, f"Processing {comp_type} group with {len(combined_data)} rows")
-                    # Check if we need to further group by EchoNumber
-                    unique_combined_dicom_paths = combined_data["DICOM_Path"].unique()
-                    if len(unique_combined_dicom_paths) > 1 and "EchoNumber" in combined_data.columns and combined_data["EchoNumber"].notnull().any():
-                        logger.log(LogLevel.INFO.value, f"Found multiple DICOM paths for {comp_type}, grouping by EchoNumber")
-                        echo_grouped = combined_data.groupby("EchoNumber", dropna=False)
-                        for echo_key, echo_group_data in echo_grouped:
-                            logger.log(LogLevel.INFO.value, f"Processing Echo group: {echo_key} with {len(echo_group_data)} rows")
-                            process_dicom_group(echo_group_data, output_dir, dcm2niix_path)
-                    else:
-                        process_dicom_group(combined_data, output_dir, dcm2niix_path)
-                else:
-                    # Only one type in the pair, process individually
-                    for type_key, type_group_data in type_pairs:
-                        logger.log(LogLevel.INFO.value, f"Processing individual {type_key} with {len(type_group_data)} rows")
-                        if len(type_group_data["DICOM_Path"].unique()) > 1 and "EchoNumber" in type_group_data.columns and type_group_data["EchoNumber"].notnull().any():
-                            echo_grouped = type_group_data.groupby("EchoNumber", dropna=False)
-                            for echo_key, echo_group_data in echo_grouped:
-                                logger.log(LogLevel.INFO.value, f"Processing Echo group: {echo_key} with {len(echo_group_data)} rows")
-                                process_dicom_group(echo_group_data, output_dir, dcm2niix_path)
-                        else:
-                            process_dicom_group(type_group_data, output_dir, dcm2niix_path)
-            
-            # Process individual groups
-            for type_key, type_group_data in individual_groups.items():
                 logger.log(LogLevel.INFO.value, f"Processing Type group: {type_key} with {len(type_group_data)} rows")
                 # Check if we need to further group by EchoNumber
                 unique_type_dicom_paths = type_group_data["DICOM_Path"].unique()
@@ -776,11 +745,17 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
         mask = dicom_session["InversionTime"].notnull() & (dicom_session["InversionTime"] != 0)
         dicom_session.loc[mask, "InversionNumber"] = dicom_session[mask].groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition'], dropna=False)['InversionTime'].rank(method='dense')
         dicom_session["InversionNumber"] = dicom_session["InversionNumber"].astype(pd.Float64Dtype())
-    groupby_fields = ["Acquisition", "SeriesDescription", "ImageType"]
+
+    # Normalize SeriesDescription to group series with _RR suffix variations together
+    dicom_session["NormalizedSeriesDescription"] = dicom_session["SeriesDescription"].apply(normalize_series_description)
+
+    groupby_fields = ["Acquisition", "NormalizedSeriesDescription", "ImageType"]
     if "InversionNumber" in dicom_session.columns:
         groupby_fields.append("InversionNumber")
 
     grouped = dicom_session.groupby(groupby_fields, dropna=False).agg(Count=("InstanceNumber", "count"), NumEchoes=("EchoTime", "nunique")).reset_index()
+    # Rename for display in UI (show as "SeriesDescription")
+    grouped = grouped.rename(columns={"NormalizedSeriesDescription": "SeriesDescription"})
     if auto_yes or not sys.__stdin__.isatty():
         logger.log(LogLevel.INFO.value, "Auto-assigning initial labels")
         grouped_dict = grouped.to_dict(orient="records")
@@ -793,6 +768,7 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
         selections = pd.DataFrame(selections)
         logger.log(LogLevel.INFO.value, f"User selections:\n{selections}")
     # Build merge columns and keys dynamically
+    # Note: grouped has "SeriesDescription" which is actually the normalized version (renamed for display)
     merge_cols = ["Acquisition", "SeriesDescription", "ImageType", "Type", "Description"]
     merge_keys = ["Acquisition", "SeriesDescription", "ImageType"]
     if "InversionNumber" in grouped.columns:
@@ -801,7 +777,7 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
         # Ensure consistent data types for InversionNumber
         selections["InversionNumber"] = selections["InversionNumber"].astype(pd.Float64Dtype())
         grouped["InversionNumber"] = grouped["InversionNumber"].astype(pd.Float64Dtype())
-    
+
     grouped = grouped.merge(
         selections[merge_cols],
         on=merge_keys,
@@ -809,6 +785,9 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
     )
     grouped["Type"] = grouped["Type"].fillna("Skip")
     grouped["Description"] = grouped["Description"].fillna("")
+
+    # Rename back to NormalizedSeriesDescription for merging with dicom_session
+    grouped = grouped.rename(columns={"SeriesDescription": "NormalizedSeriesDescription"})
 
     logger.log(LogLevel.INFO.value, "Merging selections into dataframe...")
     for col in ["AcquisitionType", "Type", "Description"]:
