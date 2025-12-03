@@ -473,17 +473,26 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
         (n_inputs, n_json_params, [('params_files', 'params_files')])
     ])
 
-    # read voxel size 'vsz' from nifti file
+    # read voxel size 'vsz' and B0 direction from nifti file
     def read_nii(nii_file):
         import nibabel as nib
         import numpy as np
         if isinstance(nii_file, list): nii_file = nii_file[0]
         nii = nib.load(nii_file)
-        return np.array(nii.header.get_zooms()).tolist()
+        vsz = np.array(nii.header.get_zooms()).tolist()
+        # Calculate B0 direction from affine for oblique acquisitions
+        # B0 is along z-axis in scanner/world coordinates [0, 0, 1]
+        # Transform to voxel space using inverse of rotation matrix
+        affine = nii.affine
+        rotation = affine[:3, :3]
+        b0_world = np.array([0, 0, 1])
+        b0_voxel = np.linalg.inv(rotation) @ b0_world
+        b0_direction = (b0_voxel / np.linalg.norm(b0_voxel)).tolist()
+        return vsz, b0_direction
     n_nii_params = create_node(
         interface=Function(
             input_names=['nii_file'],
-            output_names=['vsz'],
+            output_names=['vsz', 'b0_direction'],
             function=read_nii
         ),
         name='nibabel_read-nii'
@@ -852,8 +861,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             (mn_json_params, wf_qsm, [('TE', 'qsm_inputs.TE')]),
             (n_json_params, wf_qsm, [('B0', 'qsm_inputs.B0')]),
             (n_nii_params, wf_qsm, [('vsz', 'qsm_inputs.vsz')]),
+            (n_nii_params, wf_qsm, [('b0_direction', 'qsm_inputs.b0_direction')]),
         ])
-        wf_qsm.get_node('qsm_inputs').inputs.b0_direction = [0, 0, 1]
         
         n_qsm_average = create_node(
             interface=nonzeroaverage.NonzeroAverageInterface(),
@@ -939,9 +948,9 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
                 (mn_json_params, wf_qsm_intermediate, [('TE', 'qsm_inputs.TE')]),
                 (n_json_params, wf_qsm_intermediate, [('B0', 'qsm_inputs.B0')]),
                 (n_nii_params, wf_qsm_intermediate, [('vsz', 'qsm_inputs.vsz')]),
+                (n_nii_params, wf_qsm_intermediate, [('b0_direction', 'qsm_inputs.b0_direction')]),
                 (wf_masking_intermediate, wf_qsm_intermediate, [('masking_outputs.mask', 'qsm_inputs.mask')])
             ])
-            wf_qsm_intermediate.get_node('qsm_inputs').inputs.b0_direction = [0, 0, 1]
                     
             # two-pass combination
             mn_qsm_twopass = create_node(
@@ -1479,6 +1488,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         wf.connect([
             (n_inputs, mn_qsm, [('mask', 'mask')]),
             (n_inputs, mn_qsm, [('B0', 'B0')]),
+            (n_inputs, mn_qsm, [('b0_direction', 'b0_direction')]),
             (mn_qsm, n_outputs, [('qsm', 'qsm')]),
         ])
         if run_args.combine_phase:

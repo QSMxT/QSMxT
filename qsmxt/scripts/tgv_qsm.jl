@@ -25,6 +25,9 @@ function parse_cli_args()
         "--b0-str"
             help = "input - magnetic field strength"
             default = "3.0"
+        "--b0-dir"
+            help = "input - magnetic field direction for oblique acquisitions"
+            default = "[0,0,1]"
         "--alphas"
             help = "input - manual regularization alphas"
             default = nothing
@@ -51,6 +54,9 @@ function main(args)
     B0::Float64 = eval(Meta.parse(args["b0-str"]))
     regularization::Float64 = eval(Meta.parse(args["regularization"]))
 
+    # Parse B0 direction for oblique acquisitions
+    b0_dir = collect(Float64, eval(Meta.parse(args["b0-dir"])))
+
     # Parsing alpha and iterations values
     alpha = args["alphas"] !== nothing ? Tuple(map(x -> parse(Float64, String(x)), split(replace(args["alphas"], ['[', ']'] => "")))) : nothing
     iterations = args["iterations"] !== nothing ? parse(Int, args["iterations"]) : nothing
@@ -61,7 +67,8 @@ function main(args)
         :fieldstrength => B0,
         :erosions => erosions,
         :laplacian => get_laplace_phase3,
-        :regularization => regularization
+        :regularization => regularization,
+        :B0_dir => b0_dir
     )
     if alpha !== nothing
         kwargs[:alpha] = alpha

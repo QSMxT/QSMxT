@@ -20,6 +20,7 @@ class TGVQSMJlInputSpec(CommandLineInputSpecJulia):
     TE = traits.Float(mandatory=True, argstr="--TE %s")
     qsm = File(name_source=["phase"], name_template="%s_tgvqsmjl.nii", argstr="--output %s")
     B0 = traits.Float(default_value=3.0, argstr="--b0-str %s")
+    b0_direction = traits.ListFloat(argstr="--b0-dir '[%s]'", default=[0, 0, 1])
     regularization = traits.Float(2.0, argstr="--regularization %s")
     alpha = traits.ListFloat(minlen=2, maxlen=2, argstr="--alphas '[%s]'")
     iterations = traits.Int(argstr="--iterations %s")
