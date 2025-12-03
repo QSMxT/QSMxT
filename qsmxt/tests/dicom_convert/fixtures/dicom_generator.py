@@ -107,6 +107,7 @@ def create_dicom_file(
         ds.InversionTime = inversion_time
     
     # Set equipment information
+    ds.Modality = "MR"
     ds.Manufacturer = manufacturer
     ds.InstitutionName = "Test Institution"
     

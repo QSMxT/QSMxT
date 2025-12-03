@@ -41,6 +41,7 @@ class TestWorkflowConstruction:
         mock_args.bet_fractional_intensity = 0.5
         mock_args.tgv_alphas = [0.0015, 0.0005]
         mock_args.tgv_iterations = 1000
+        mock_args.gpu = None
         return mock_args
 
     def test_masking_workflow_construction_basic(self, mock_run_args):
@@ -327,6 +328,7 @@ class TestWorkflowValidation:
         mock_args.bet_fractional_intensity = 0.5
         mock_args.tgv_alphas = [0.0015, 0.0005]
         mock_args.tgv_iterations = 1000
+        mock_args.gpu = None
         return mock_args
 
     def test_workflow_invalid_parameters(self, mock_run_args):
@@ -433,6 +435,7 @@ class TestWorkflowIntegration:
         mock_args.bet_fractional_intensity = 0.5
         mock_args.tgv_alphas = [0.0015, 0.0005]
         mock_args.tgv_iterations = 1000
+        mock_args.gpu = None
         return mock_args
 
     def test_masking_qsm_workflow_integration(self, mock_run_args):
