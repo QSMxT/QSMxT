@@ -544,7 +544,15 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
     # Process each base group
     for base_keys, base_group_data in base_grouped:
         logger.log(LogLevel.INFO.value, f"Processing base group: {base_keys}")
-        
+
+        # Determine if part labels are needed at the acquisition level
+        # (i.e., if both Mag and Phase exist, or both Real and Imag exist)
+        acq_types = set(base_group_data["Type"].unique())
+        acq_needs_part_labels = (
+            ("Mag" in acq_types and "Phase" in acq_types) or
+            ("Real" in acq_types and "Imag" in acq_types)
+        )
+
         # Check if we need to further group by Type
         unique_dicom_paths = base_group_data["DICOM_Path"].unique()
         if len(unique_dicom_paths) > 1:
@@ -563,22 +571,31 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
                     logger.log(LogLevel.INFO.value, f"Found multiple DICOM paths for Type '{type_key}', grouping by EchoNumber")
                     # We have multiple DICOM files for this Type, so group by EchoNumber
                     echo_grouped = type_group_data.groupby("EchoNumber", dropna=False)
-                    
+
                     for echo_key, echo_group_data in echo_grouped:
                         logger.log(LogLevel.INFO.value, f"Processing Echo group: {echo_key} with {len(echo_group_data)} rows")
                         # Process this final group
-                        process_dicom_group(echo_group_data, output_dir, dcm2niix_path)
+                        process_dicom_group(echo_group_data, output_dir, dcm2niix_path, acq_needs_part_labels)
                 else:
                     logger.log(LogLevel.INFO.value, f"Only one unique DICOM path for Type '{type_key}', processing directly")
                     # Process this Type group
-                    process_dicom_group(type_group_data, output_dir, dcm2niix_path)
+                    process_dicom_group(type_group_data, output_dir, dcm2niix_path, acq_needs_part_labels)
         else:
             logger.log(LogLevel.INFO.value, "Only one unique DICOM path in this base group, processing directly")
             # Only one unique DICOM path, process the base group directly
-            process_dicom_group(base_group_data, output_dir, dcm2niix_path)
+            process_dicom_group(base_group_data, output_dir, dcm2niix_path, acq_needs_part_labels)
 
-def process_dicom_group(grp_data, output_dir, dcm2niix_path):
-    """Process a group of DICOM files that should be converted together"""
+def process_dicom_group(grp_data, output_dir, dcm2niix_path, acq_needs_part_labels=False):
+    """Process a group of DICOM files that should be converted together
+
+    Args:
+        grp_data: DataFrame with DICOM metadata for the group
+        output_dir: Output directory for converted files
+        dcm2niix_path: Path to dcm2niix executable
+        acq_needs_part_labels: If True, part labels (part-mag, part-phase, etc.)
+                               should be added because the acquisition contains
+                               both magnitude and phase (or real and imaginary) data
+    """
     logger = make_logger()
     
     logger.log(LogLevel.INFO.value, f"Converting group with {len(grp_data)} rows")
@@ -613,18 +630,9 @@ def process_dicom_group(grp_data, output_dir, dcm2niix_path):
         if fn.startswith(dcm2niix_base) and (fn.endswith(".nii") or fn.endswith(".nii.gz")):
             converted_niftis.append(fn)
     
-    # Analyze data types in this specific processing group to determine if part labels are needed
-    group_data_types = set()
-    for nii_filename in converted_niftis:
-        row = grp_data.iloc[0]  # All rows in group should have same Type
-        data_type = determine_data_type(os.path.join(tmp_outdir, nii_filename), row["Type"])
-        group_data_types.add(data_type.lower())
-    
-    # Determine if part labels are needed for this specific group
-    needs_part_labels = (
-        ("mag" in group_data_types and "phase" in group_data_types) or
-        ("real" in group_data_types and "imag" in group_data_types)
-    )
+    # Part labels (part-mag, part-phase, etc.) are needed if the acquisition
+    # contains both magnitude and phase (or real and imaginary) data.
+    # This is determined at the acquisition level and passed in as acq_needs_part_labels.
     
     # Organize the files based on their type
     for nii_filename in converted_niftis:
@@ -666,8 +674,8 @@ def process_dicom_group(grp_data, output_dir, dcm2niix_path):
         if "InversionNumber" in row and pd.notnull(row["InversionNumber"]):
             base_name += f"_inv-{int(row['InversionNumber'])}"
         
-        # Add part label only when needed for disambiguation or for phase-only data
-        if needs_part_labels or data_type.lower() == "phase":
+        # Add part label when the group contains both mag/phase or real/imag data
+        if acq_needs_part_labels:
             if data_type.lower() in ["mag", "phase", "real", "imag"]:
                 base_name += f"_part-{data_type.lower()}"
         
