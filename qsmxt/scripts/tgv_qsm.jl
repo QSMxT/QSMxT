@@ -7,6 +7,42 @@ catch
     using QuantitativeSusceptibilityMappingTGV, MriResearchTools, ArgParse
 end
 
+function try_load_or_install(pkg_name::String)
+    try
+        @eval using $(Symbol(pkg_name))
+        return @eval $(Symbol(pkg_name))
+    catch
+        @info "Package $pkg_name not found. Attempting to install..."
+        try
+            Pkg.add(pkg_name)
+            @eval using $(Symbol(pkg_name))
+            return @eval $(Symbol(pkg_name))
+        catch e
+            @warn "Failed to install or load $pkg_name: $e. Falling back to CPU."
+            return nothing
+        end
+    end
+end
+
+function load_gpu_module(gpu_type)
+    if gpu_type === nothing
+        return nothing
+    end
+    gpu_lower = lowercase(gpu_type)
+    if gpu_lower == "cuda"
+        return try_load_or_install("CUDA")
+    elseif gpu_lower == "amdgpu"
+        return try_load_or_install("AMDGPU")
+    elseif gpu_lower == "oneapi"
+        return try_load_or_install("oneAPI")
+    elseif gpu_lower == "metal"
+        return try_load_or_install("Metal")
+    else
+        @warn "Unknown GPU type: $gpu_type. Falling back to CPU."
+        return nothing
+    end
+end
+
 function parse_cli_args()
     s = ArgParseSettings()
     @add_arg_table! s begin
@@ -37,6 +73,9 @@ function parse_cli_args()
         "--regularization"
             help = "input - regularization factor"
             default = "2.0"
+        "--gpu"
+            help = "GPU backend: cuda, amdgpu, oneapi, metal (default: CPU)"
+            default = nothing
         "--output"
             help = "output - qsm filename"
             default = "chi.nii"
@@ -45,6 +84,9 @@ function parse_cli_args()
 end
 
 function main(args)
+    # Load GPU module if specified
+    gpu_module = load_gpu_module(args["gpu"])
+
     phase = readphase(args["phase"])
     mask = niread(args["mask"]) .!= 0
 
@@ -75,6 +117,9 @@ function main(args)
     end
     if iterations !== nothing
         kwargs[:iterations] = iterations
+    end
+    if gpu_module !== nothing
+        kwargs[:gpu] = gpu_module
     end
 
     # Use splatting to pass the named arguments to the function

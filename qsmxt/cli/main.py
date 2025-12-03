@@ -398,6 +398,17 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
+        '--gpu',
+        type=str.lower,
+        nargs='?',
+        const='cuda',
+        default=None,
+        choices=['cuda', 'amdgpu', 'oneapi', 'metal'],
+        help='Enable GPU acceleration. Without a value, defaults to CUDA. Options: cuda, amdgpu, oneapi, metal. '
+             'Requires appropriate GPU hardware and drivers.'
+    )
+
+    parser.add_argument(
         '--rts_tol',
         type=float,
         default=None,

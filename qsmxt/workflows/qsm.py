@@ -1460,13 +1460,14 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
         )
 
     if run_args.qsm_algorithm == 'tgv':
-        tgv_threads = min(4, run_args.n_procs)
+        tgv_threads = min(4, run_args.n_procs) if not run_args.gpu else 1
         tgv_mem = 50.9915 * (np.prod(dimensions_phase) * 8 / (1024**3)) + 1.2 # DONE
         mn_qsm = create_node(
             interface=tgvjl.TGVQSMJlInterface(
                 erosions=qsm_erosions,
                 alpha=run_args.tgv_alphas,
                 iterations=run_args.tgv_iterations,
+                gpu=run_args.gpu,
                 num_threads=tgv_threads
             ),
             name='tgv',
