@@ -1,0 +1,92 @@
+name: Boutiques tests
+on:
+  workflow_dispatch:
+  push:
+    branches: [ 'main' ]
+    paths:
+      - 'qsmxt/boutiques/**'
+      - 'qsmxt/cli/main.py'
+      - 'qsmxt/tests/test_boutiques.py'
+      - '.github/workflows/test_boutiques.yml'
+  pull_request:
+    branches: [ 'main' ]
+    paths:
+      - 'qsmxt/boutiques/**'
+      - 'qsmxt/cli/main.py'
+      - 'qsmxt/tests/test_boutiques.py'
+      - '.github/workflows/test_boutiques.yml'
+
+jobs:
+  boutiques-validation:
+    name: Boutiques Descriptor Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.8'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install boutiques pytest numpy
+
+      - name: Validate Boutiques descriptor schema
+        run: |
+          bosh validate qsmxt/boutiques/qsmxt.json
+
+      - name: Simulate Boutiques execution
+        run: |
+          bosh exec simulate -i qsmxt/boutiques/test_invocation.json qsmxt/boutiques/qsmxt.json
+
+      - name: Run Boutiques unit tests
+        env:
+          TEST_BOUTIQUES_VALIDATION: "1"
+        run: |
+          pytest qsmxt/tests/test_boutiques.py \
+            -v \
+            --tb=short \
+            -k "not test_boutiques_exec_launch"
+
+  boutiques-integration:
+    name: Boutiques Integration Test
+    runs-on: "self-hosted"
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v3
+        with:
+          python-version: '3.8'
+
+      - name: Setup QSMxT container
+        env:
+          TEST_DIR: "/storage/tmp"
+          REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
+          OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
+          OSF_USERNAME: ${{ secrets.OSF_USER }}
+          OSF_PASSWORD: ${{ secrets.OSF_PASS }}
+        run: |
+          /bin/bash qsmxt/tests/setup_qsmxt.sh docker
+
+      - name: Run Boutiques integration test
+        env:
+          OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
+          OSF_USERNAME: ${{ secrets.OSF_USER }}
+          OSF_PASSWORD: ${{ secrets.OSF_PASS }}
+          TEST_DIR: "/storage/tmp"
+          TEST_BOUTIQUES_INTEGRATION: "1"
+          TEST_BOUTIQUES_VALIDATION: "1"
+        run: |
+          sudo docker exec \
+            -e OSF_TOKEN=$OSF_TOKEN \
+            -e OSF_USERNAME=$OSF_USERNAME \
+            -e OSF_PASSWORD=$OSF_PASSWORD \
+            -e TEST_DIR=$TEST_DIR \
+            -e TEST_BOUTIQUES_INTEGRATION=$TEST_BOUTIQUES_INTEGRATION \
+            -e TEST_BOUTIQUES_VALIDATION=$TEST_BOUTIQUES_VALIDATION \
+            qsmxt-container bash -c "pip install boutiques && pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_boutiques.py -s -v"

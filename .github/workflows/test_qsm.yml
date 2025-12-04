@@ -45,8 +45,6 @@ on:
       - qsmxt/scripts/romeo_voxelquality.jl
       - qsmxt/scripts/qsmxt_functions.py
       - qsmxt/scripts/qsmxt_version.py
-      - qsmxt/boutiques/**
-      - qsmxt/tests/test_boutiques.py
 jobs:
   setup_qsmxt:
     runs-on: "self-hosted"
@@ -149,30 +147,3 @@ jobs:
           -e TEST_DIR=$TEST_DIR \
           -e GITHUB_STEP_SUMMARY=$GITHUB_STEP_SUMMARY \
           qsmxt-container bash -c "pytest ${TEST_DIR}/QSMxT/qsmxt/tests/qsmxt/integration/test_qsm.py -s -k '${{ matrix.args }}'"
-
-  test_boutiques_integration:
-    needs: setup_qsmxt
-    runs-on: "self-hosted"
-    steps:
-    - uses: actions/checkout@v3
-    - uses: actions/setup-python@v3
-      with:
-        python-version: 3.8
-    - name: Test Boutiques Integration
-      env:
-        OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
-        OSF_USERNAME: ${{ secrets.OSF_USER }}
-        OSF_PASSWORD: ${{ secrets.OSF_PASS }}
-        TEST_DIR: "/storage/tmp"
-        TEST_BOUTIQUES_INTEGRATION: "1"
-        TEST_BOUTIQUES_VALIDATION: "1"
-      run: |
-        sudo docker exec \
-          -e OSF_TOKEN=$OSF_TOKEN \
-          -e OSF_USERNAME=$OSF_USERNAME \
-          -e OSF_PASSWORD=$OSF_PASSWORD \
-          -e TEST_DIR=$TEST_DIR \
-          -e TEST_BOUTIQUES_INTEGRATION=$TEST_BOUTIQUES_INTEGRATION \
-          -e TEST_BOUTIQUES_VALIDATION=$TEST_BOUTIQUES_VALIDATION \
-          qsmxt-container bash -c "pip install boutiques && pytest ${TEST_DIR}/QSMxT/qsmxt/tests/test_boutiques.py -s -v"
-
