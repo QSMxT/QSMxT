@@ -502,7 +502,87 @@ class TestWorkflowIntegration:
         # Create two identical workflows
         wf1 = masking_workflow(**params)
         wf2 = masking_workflow(**params)
-        
+
         # They should have the same structure
         assert wf1.list_node_names() == wf2.list_node_names()
         assert len(wf1._graph.edges()) == len(wf2._graph.edges())
+
+
+class TestInitQsmWorkflowValidation:
+    """Test validation logic in init_qsm_workflow."""
+
+    def test_do_swi_without_phase_files_should_not_crash(self, tmp_path):
+        """
+        Test that running --do_swi without phase files gracefully disables SWI
+        instead of crashing with NameError for undefined mem_phase_64.
+
+        This is a regression test for GitHub issue where do_swi=True with no
+        phase files would cause a crash because mem_phase_64 is only defined
+        when phase_files exist.
+        """
+        from qsmxt.workflows.qsm import init_qsm_workflow
+
+        # Create a minimal BIDS structure with only magnitude files (no phase)
+        bids_dir = tmp_path / "bids"
+        sub_dir = bids_dir / "sub-01" / "anat"
+        sub_dir.mkdir(parents=True)
+
+        # Create a dummy magnitude file and JSON
+        import nibabel as nib
+        import numpy as np
+        import json
+
+        # Create minimal NIfTI
+        data = np.zeros((10, 10, 10), dtype=np.float32)
+        img = nib.Nifti1Image(data, np.eye(4))
+        mag_file = sub_dir / "sub-01_part-mag_T2starw.nii.gz"
+        nib.save(img, str(mag_file))
+
+        # Create JSON sidecar
+        json_file = sub_dir / "sub-01_part-mag_T2starw.json"
+        with open(json_file, 'w') as f:
+            json.dump({"EchoTime": 0.02, "MagneticFieldStrength": 3.0}, f)
+
+        # Create mock run_args with do_swi=True but do_qsm=False
+        mock_args = MagicMock()
+        mock_args.bids_dir = str(bids_dir)
+        mock_args.output_dir = str(tmp_path / "output")
+        mock_args.workflow_dir = str(tmp_path / "workflow")
+        mock_args.subjects = None
+        mock_args.sessions = None
+        mock_args.acqs = None
+        mock_args.recs = None
+        mock_args.invs = None
+        mock_args.runs = None
+        mock_args.num_echoes = 99
+        mock_args.do_qsm = False  # QSM disabled
+        mock_args.do_swi = True   # SWI enabled - this should gracefully disable
+        mock_args.do_t2starmap = False
+        mock_args.do_r2starmap = False
+        mock_args.do_segmentation = False
+        mock_args.do_analysis = False
+        mock_args.existing_masks_pipeline = "nonexistent"
+        mock_args.existing_qsm_pipeline = "nonexistent"
+        mock_args.existing_segmentation_pipeline = "nonexistent"
+        mock_args.use_existing_masks = False
+        mock_args.combine_phase = False
+
+        # This should NOT crash - it should gracefully disable SWI and return None
+        # Before the fix, this would raise: NameError: name 'mem_phase_64' is not defined
+        result = init_qsm_workflow(
+            run_args=mock_args,
+            subject="sub-01",
+            session=None,
+            acq=None,
+            rec=None,
+            inv=None,
+            suffix="T2starw",
+            run=None
+        )
+
+        # With no phase files and do_swi=True, do_qsm=False, workflow should return None
+        # because there's nothing to process after SWI is disabled
+        assert result is None
+
+        # Verify that do_swi was disabled
+        assert mock_args.do_swi == False

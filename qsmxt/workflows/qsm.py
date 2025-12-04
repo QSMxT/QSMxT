@@ -171,10 +171,10 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
         run_args.do_segmentation = False
     if run_args.do_segmentation and len(t1w_files) > 1:
         logger.log(LogLevel.WARNING.value, f"{run_id}: Using {t1w_files[0]} for segmentation - multiple T1w files found!")
-    if run_args.do_qsm and not phase_files:
+    if (run_args.do_qsm or run_args.do_swi) and not phase_files:
         # Only warn if this isn't a T1w-only acquisition
         if suffix != "T1w":
-            logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping QSM - No phase files found!")
+            logger.log(LogLevel.WARNING.value, f"{run_id}: Skipping QSM/SWI - No phase files found!")
         run_args.do_qsm = False
         run_args.do_swi = False
     if len(phase_files) != len(phase_params_files) and any([run_args.do_qsm, run_args.do_swi]):
