@@ -169,7 +169,7 @@ def FlattenTransformAndImagesList(ListOfPassiveImagesDictionaries,
         return None
 
     def find_corresponding_magnitude_file(bids_dir, entities):
-        """Find magnitude file that matches the exact BIDS entities from QSM."""
+        """Find magnitude file that matches the BIDS entities from QSM."""
         subject = entities['subject']
         session = entities['session']
         acq = entities['acq']
@@ -178,43 +178,38 @@ def FlattenTransformAndImagesList(ListOfPassiveImagesDictionaries,
         suffix = entities['suffix']
         run = entities['run']
 
-        # Build the search pattern
+        # Build the search path
         base_path = os.path.join(bids_dir, subject)
         if session:
             base_path = os.path.join(base_path, session)
         search_path = os.path.join(base_path, "anat")
 
-        # Build filename pattern with exact entities
-        pattern_parts = [f"{subject}"]
-        if session:
-            pattern_parts.append(f"{session}")
+        # Build required entity substrings to filter by
+        required_entities = []
         if acq:
-            pattern_parts.append(f"acq-{acq}")
+            required_entities.append(f"_acq-{acq}_")
         if rec:
-            pattern_parts.append(f"rec-{rec}")
+            required_entities.append(f"_rec-{rec}_")
         if run:
-            pattern_parts.append(f"run-{run}")
-
-        pattern_parts.append("echo-*")
-
+            required_entities.append(f"_run-{run}_")
         if inv:
-            pattern_parts.append(f"inv-{inv}")
+            required_entities.append(f"_inv-{inv}_")
 
-        # Try part-mag first
-        mag_pattern = "_".join(pattern_parts) + f"_part-mag_{suffix}.nii*"
-        mag_files = glob.glob(os.path.join(search_path, mag_pattern))
+        # Get all files matching the suffix
+        all_files = glob.glob(os.path.join(search_path, f"*_{suffix}.nii*"))
 
-        if mag_files:
-            return sorted(mag_files)[0]
+        # Filter to magnitude files (part-mag or no part entity)
+        mag_files = [f for f in all_files if '_part-mag_' in f or '_part-' not in f]
 
-        # If no part-mag, try without part (for alternative BIDS structure)
-        if run:
-            alt_pattern = "_".join(pattern_parts) + f"_{suffix}.nii*"
-            alt_files = glob.glob(os.path.join(search_path, alt_pattern))
-            # Filter out phase files
-            alt_files = [f for f in alt_files if "_part-phase_" not in f]
-            if alt_files:
-                return sorted(alt_files)[0]
+        # Filter files that contain all required entities
+        matching_files = []
+        for filepath in mag_files:
+            filename = os.path.basename(filepath)
+            if all(entity in filename for entity in required_entities):
+                matching_files.append(filepath)
+
+        if matching_files:
+            return sorted(matching_files)[0]
 
         return None
 
