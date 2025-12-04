@@ -263,8 +263,8 @@ class TestBoutiquesIntegration:
             json.dump(invocation, f)
 
         try:
-            # Run via boutiques
-            bosh(['exec', 'launch', DESCRIPTOR_PATH, invocation_path])
+            # Run via boutiques with --no-container since we're already inside the QSMxT container
+            bosh(['exec', 'launch', '--no-container', DESCRIPTOR_PATH, invocation_path])
 
             # Verify outputs
             chimap_files = glob.glob(os.path.join(output_dir, '**', '*_Chimap.nii*'), recursive=True)
