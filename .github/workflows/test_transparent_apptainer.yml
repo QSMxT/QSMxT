@@ -49,6 +49,8 @@ jobs:
         RUN_ID: ${{ github.run_id }}
         # Use runner-specific directory to avoid conflicts with parallel runs
         TEST_DIR: "/storage/tmp/${{ runner.name }}"
+        # Bind /storage into apptainer containers so workflows can access files outside CWD
+        APPTAINER_BINDPATH: "/storage"
       run: |
         TEST_CONTAINER_VERSION=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_VERSION' | awk '{print $2}')
         TEST_CONTAINER_DATE=$(cat ${TEST_DIR}/QSMxT/docs/_config.yml | grep 'TEST_CONTAINER_DATE' | awk '{print $2}')
