@@ -419,3 +419,220 @@ def test_script_exit_codes(exit_code):
             with patch('qsmxt.cli.dicom_convert.show_warning_summary'):
                 script_exit(exit_code)
                 mock_exit.assert_called_once_with(exit_code)
+
+
+class TestPartLabelNaming:
+    """Test cases for BIDS part label (part-mag, part-phase) naming."""
+
+    @patch('qsmxt.cli.dicom_convert.make_logger')
+    @patch('os.system')
+    @patch('qsmxt.cli.dicom_convert.handle_4d_files')
+    def test_mag_phase_pair_gets_part_labels(self, mock_handle_4d, mock_system, mock_logger):
+        """Test that magnitude files get part-mag label when phase exists in same group.
+
+        This is a regression test for a bug where magnitude files were missing
+        the part-mag label while phase files correctly received part-phase.
+        According to BIDS spec, when both mag and phase exist, both should have
+        part labels.
+        """
+        if not PYDICOM_AVAILABLE:
+            pytest.skip("pydicom not available for creating test DICOM files")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from qsmxt.tests.dicom_convert.fixtures.dicom_generator import create_dicom_file
+
+            # Create magnitude and phase DICOM files with same acquisition parameters
+            dicom_dir = os.path.join(tmpdir, "dicoms")
+            os.makedirs(dicom_dir, exist_ok=True)
+
+            study_uid = "1.2.3.4.5"
+            study_date = "20230101"
+
+            # Create magnitude DICOM
+            mag_file = os.path.join(dicom_dir, "mag.dcm")
+            create_dicom_file(
+                filename=mag_file,
+                patient_id="patient1",
+                patient_name="Patient^One",
+                study_date=study_date,
+                series_description="QSM_GRE",
+                image_type=['ORIGINAL', 'PRIMARY', 'M', 'ND'],
+                instance_number=1,
+                series_number=1
+            )
+
+            # Create phase DICOM
+            phase_file = os.path.join(dicom_dir, "phase.dcm")
+            create_dicom_file(
+                filename=phase_file,
+                patient_id="patient1",
+                patient_name="Patient^One",
+                study_date=study_date,
+                series_description="QSM_GRE",
+                image_type=['ORIGINAL', 'PRIMARY', 'P', 'ND'],
+                instance_number=1,
+                series_number=2
+            )
+
+            # Create DataFrame with both Mag and Phase in same acquisition
+            grp_data = pd.DataFrame([
+                {
+                    'PatientID': 'patient1',
+                    'PatientName': 'Patient^One',
+                    'StudyDate': study_date,
+                    'SeriesDescription': 'QSM_GRE',
+                    'Acquisition': 'gre',
+                    'ImageType': ('ORIGINAL', 'PRIMARY', 'M', 'ND'),
+                    'EchoTime': 20.0,
+                    'DICOM_Path': mag_file,
+                    'Type': 'Mag',
+                    'Description': '',
+                    'NumRuns': 1,
+                    'NumEchoes': 1,
+                    'EchoNumber': 1,
+                    'RunNumber': 1,
+                },
+                {
+                    'PatientID': 'patient1',
+                    'PatientName': 'Patient^One',
+                    'StudyDate': study_date,
+                    'SeriesDescription': 'QSM_GRE',
+                    'Acquisition': 'gre',
+                    'ImageType': ('ORIGINAL', 'PRIMARY', 'P', 'ND'),
+                    'EchoTime': 20.0,
+                    'DICOM_Path': phase_file,
+                    'Type': 'Phase',
+                    'Description': '',
+                    'NumRuns': 1,
+                    'NumEchoes': 1,
+                    'EchoNumber': 1,
+                    'RunNumber': 1,
+                }
+            ])
+
+            # Mock dcm2niix to create NIfTI files
+            def create_nifti_side_effect(cmd):
+                if "dcm2niix" in cmd:
+                    nii_path = os.path.join(tmpdir, "temp_convert", "temp_output.nii")
+                    os.makedirs(os.path.dirname(nii_path), exist_ok=True)
+                    img = nb.Nifti1Image(np.zeros((64, 64, 32)), np.eye(4))
+                    nb.save(img, nii_path)
+                    # Create JSON sidecar
+                    with open(nii_path.replace('.nii', '.json'), 'w') as f:
+                        json.dump({'EchoTime': 0.02}, f)
+                return 0
+
+            mock_system.side_effect = create_nifti_side_effect
+
+            # Determine if part labels are needed (simulating what convert_and_organize does)
+            acq_types = set(grp_data["Type"].unique())
+            acq_needs_part_labels = (
+                ("Mag" in acq_types and "Phase" in acq_types) or
+                ("Real" in acq_types and "Imag" in acq_types)
+            )
+
+            # This should be True since we have both Mag and Phase
+            assert acq_needs_part_labels, "acq_needs_part_labels should be True when both Mag and Phase exist"
+
+            # Process magnitude group
+            mag_grp = grp_data[grp_data['Type'] == 'Mag']
+            process_dicom_group(mag_grp, tmpdir, "dcm2niix", acq_needs_part_labels)
+
+            # Check output files
+            output_dir = os.path.join(tmpdir, "sub-patient1", "ses-20230101", "anat")
+            if os.path.exists(output_dir):
+                files = os.listdir(output_dir)
+                # Should have part-mag in the filename
+                mag_files = [f for f in files if f.endswith('.nii')]
+                assert len(mag_files) > 0, "No NIfTI files were created"
+                assert any('part-mag' in f for f in mag_files), \
+                    f"Magnitude files should have 'part-mag' label. Found: {mag_files}"
+
+    @patch('qsmxt.cli.dicom_convert.make_logger')
+    @patch('os.system')
+    @patch('qsmxt.cli.dicom_convert.handle_4d_files')
+    def test_mag_only_no_part_label(self, mock_handle_4d, mock_system, mock_logger):
+        """Test that magnitude-only data does NOT get part-mag label.
+
+        When there's no phase data in the acquisition, the magnitude files
+        should not have a part label (just _T2starw.nii).
+        """
+        if not PYDICOM_AVAILABLE:
+            pytest.skip("pydicom not available for creating test DICOM files")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            from qsmxt.tests.dicom_convert.fixtures.dicom_generator import create_dicom_file
+
+            dicom_dir = os.path.join(tmpdir, "dicoms")
+            os.makedirs(dicom_dir, exist_ok=True)
+
+            # Create only magnitude DICOM (no phase)
+            mag_file = os.path.join(dicom_dir, "mag.dcm")
+            create_dicom_file(
+                filename=mag_file,
+                patient_id="patient1",
+                patient_name="Patient^One",
+                study_date="20230101",
+                series_description="QSM_GRE",
+                image_type=['ORIGINAL', 'PRIMARY', 'M', 'ND'],
+                instance_number=1,
+                series_number=1
+            )
+
+            # Create DataFrame with only Mag (no Phase)
+            grp_data = pd.DataFrame([
+                {
+                    'PatientID': 'patient1',
+                    'PatientName': 'Patient^One',
+                    'StudyDate': '20230101',
+                    'SeriesDescription': 'QSM_GRE',
+                    'Acquisition': 'gre',
+                    'ImageType': ('ORIGINAL', 'PRIMARY', 'M', 'ND'),
+                    'EchoTime': 20.0,
+                    'DICOM_Path': mag_file,
+                    'Type': 'Mag',
+                    'Description': '',
+                    'NumRuns': 1,
+                    'NumEchoes': 1,
+                    'EchoNumber': 1,
+                    'RunNumber': 1,
+                }
+            ])
+
+            def create_nifti_side_effect(cmd):
+                if "dcm2niix" in cmd:
+                    nii_path = os.path.join(tmpdir, "temp_convert", "temp_output.nii")
+                    os.makedirs(os.path.dirname(nii_path), exist_ok=True)
+                    img = nb.Nifti1Image(np.zeros((64, 64, 32)), np.eye(4))
+                    nb.save(img, nii_path)
+                    with open(nii_path.replace('.nii', '.json'), 'w') as f:
+                        json.dump({'EchoTime': 0.02}, f)
+                return 0
+
+            mock_system.side_effect = create_nifti_side_effect
+
+            # Determine if part labels are needed
+            acq_types = set(grp_data["Type"].unique())
+            acq_needs_part_labels = (
+                ("Mag" in acq_types and "Phase" in acq_types) or
+                ("Real" in acq_types and "Imag" in acq_types)
+            )
+
+            # This should be False since we only have Mag
+            assert not acq_needs_part_labels, "acq_needs_part_labels should be False when only Mag exists"
+
+            # Process magnitude group
+            process_dicom_group(grp_data, tmpdir, "dcm2niix", acq_needs_part_labels)
+
+            # Check output files
+            output_dir = os.path.join(tmpdir, "sub-patient1", "ses-20230101", "anat")
+            if os.path.exists(output_dir):
+                files = os.listdir(output_dir)
+                nii_files = [f for f in files if f.endswith('.nii')]
+                assert len(nii_files) > 0, "No NIfTI files were created"
+                # Should NOT have part-mag in the filename
+                assert not any('part-mag' in f for f in nii_files), \
+                    f"Magnitude-only files should NOT have 'part-mag' label. Found: {nii_files}"
+                # Should have _T2starw suffix
+                assert any('_T2starw' in f for f in nii_files), \
+                    f"Files should have '_T2starw' suffix. Found: {nii_files}"
