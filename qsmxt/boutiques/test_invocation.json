@@ -1,0 +1,7 @@
+{
+    "bids_dir": "/path/to/bids",
+    "output_dir": "/path/to/output",
+    "do_qsm": "on",
+    "premade": "default",
+    "auto_yes": true
+}

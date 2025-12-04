@@ -1,0 +1,680 @@
+{
+    "name": "qsmxt",
+    "description": "QSMxT is an end-to-end software toolbox for Quantitative Susceptibility Mapping (QSM) that automatically reconstructs and processes large datasets in parallel using sensible defaults. QSMxT supports multiple QSM algorithms, brain segmentation, and various analysis pipelines for neuroimaging research.",
+    "tool-version": "8.2.0",
+    "schema-version": "0.5",
+    "author": "Ashley Stewart, et al.",
+    "url": "https://qsmxt.github.io/",
+    "descriptor-url": "https://github.com/QSMxT/QSMxT",
+    "command-line": "qsmxt [BIDS_DIR] [OUTPUT_DIR] [WORKFLOW_DIR] [DO_QSM] [DO_SEGMENTATION] [DO_ANALYSIS] [DO_TEMPLATE] [DO_T2STARMAP] [DO_R2STARMAP] [DO_SWI] [LABELS_FILE] [SUBJECTS] [SESSIONS] [RUNS] [RECS] [INVS] [ACQS] [NUM_ECHOES] [PIPELINE_FILE] [PREMADE] [OBLIQUITY_THRESHOLD] [COMBINE_PHASE] [QSM_ALGORITHM] [QSM_REFERENCE] [TGV_ITERATIONS] [TGV_ALPHAS] [TGV_EROSIONS] [GPU] [RTS_TOL] [RTS_DELTA] [RTS_MU] [UNWRAPPING_ALGORITHM] [BF_ALGORITHM] [TWO_PASS] [INHOMOGENEITY_CORRECTION] [MASKING_ALGORITHM] [MASK_EROSIONS] [USE_EXISTING_QSMS] [EXISTING_QSM_PIPELINE] [USE_EXISTING_SEGMENTATIONS] [EXISTING_SEGMENTATION_PIPELINE] [USE_EXISTING_MASKS] [EXISTING_MASKS_PIPELINE] [MASKING_INPUT] [THRESHOLD_VALUE] [THRESHOLD_ALGORITHM] [FILLING_ALGORITHM] [THRESHOLD_ALGORITHM_FACTOR] [ADD_BET] [BET_FRACTIONAL_INTENSITY] [EXPORT_DICOMS] [PRESERVE_FLOAT] [PBS] [SLURM] [N_PROCS] [DEBUG] [LIST_PREMADES] [DRY] [AUTO_YES] [VERSION]",
+    "container-image": {
+        "image": "vnmd/qsmxt:8.2.0",
+        "type": "singularity",
+        "index": "docker://"
+    },
+    "inputs": [
+        {
+            "id": "bids_dir",
+            "name": "BIDS Directory",
+            "description": "Input BIDS directory. Can be generated using dicom-convert or nifti-convert.",
+            "type": "File",
+            "optional": false,
+            "value-key": "[BIDS_DIR]"
+        },
+        {
+            "id": "output_dir",
+            "name": "Output Directory",
+            "description": "Output directory. By default, the output will be integrated into the BIDS directory as a BIDS derivative.",
+            "type": "String",
+            "optional": true,
+            "value-key": "[OUTPUT_DIR]"
+        },
+        {
+            "id": "workflow_dir",
+            "name": "Workflow Directory",
+            "description": "Directory for nipype workflow intermediate files. By default, this is set to output_dir/workflow or bids_dir/derivatives/qsmxt/.../workflow if no output_dir is specified.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--workflow-dir",
+            "value-key": "[WORKFLOW_DIR]"
+        },
+        {
+            "id": "do_qsm",
+            "name": "Run QSM Pipeline",
+            "description": "Whether or not to run the QSM pipeline.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--do_qsm",
+            "value-key": "[DO_QSM]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "do_segmentation",
+            "name": "Run Segmentation Pipeline",
+            "description": "Whether or not to run the segmentation pipeline.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--do_segmentation",
+            "value-key": "[DO_SEGMENTATION]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "do_analysis",
+            "name": "Run Analysis Pipeline",
+            "description": "Whether or not to run the analysis pipeline.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--do_analysis",
+            "value-key": "[DO_ANALYSIS]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "do_template",
+            "name": "Run Template Pipeline",
+            "description": "Whether or not to run the template-building pipeline.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--do_template",
+            "value-key": "[DO_TEMPLATE]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "do_t2starmap",
+            "name": "Generate T2* Map",
+            "description": "Enables generation of T2* map.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--do_t2starmap",
+            "value-key": "[DO_T2STARMAP]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "do_r2starmap",
+            "name": "Generate R2* Map",
+            "description": "Enables generation of R2* map.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--do_r2starmap",
+            "value-key": "[DO_R2STARMAP]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "do_swi",
+            "name": "Generate SWI",
+            "description": "Enables generation of SWI via CLEAR-SWI.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--do_swi",
+            "value-key": "[DO_SWI]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "labels_file",
+            "name": "Labels File",
+            "description": "Optional labels CSV file to include named fields in analysis outputs. The CSV should contain segmentation numbers in the first column and ROI names in the second.",
+            "type": "File",
+            "optional": true,
+            "command-line-flag": "--labels_file",
+            "value-key": "[LABELS_FILE]"
+        },
+        {
+            "id": "subjects",
+            "name": "Subjects",
+            "description": "List of subject folders to process; by default all subjects are processed.",
+            "type": "String",
+            "optional": true,
+            "list": true,
+            "command-line-flag": "--subjects",
+            "value-key": "[SUBJECTS]"
+        },
+        {
+            "id": "sessions",
+            "name": "Sessions",
+            "description": "List of session folders to process; by default all sessions are processed.",
+            "type": "String",
+            "optional": true,
+            "list": true,
+            "command-line-flag": "--sessions",
+            "value-key": "[SESSIONS]"
+        },
+        {
+            "id": "runs",
+            "name": "Runs",
+            "description": "List of BIDS runs to process (e.g. 'run-1'); by default all runs are processed.",
+            "type": "String",
+            "optional": true,
+            "list": true,
+            "command-line-flag": "--runs",
+            "value-key": "[RUNS]"
+        },
+        {
+            "id": "recs",
+            "name": "Reconstructions",
+            "description": "List of BIDS reconstructions to process (e.g. 'rec-1'); by default all reconstructions are processed.",
+            "type": "String",
+            "optional": true,
+            "list": true,
+            "command-line-flag": "--recs",
+            "value-key": "[RECS]"
+        },
+        {
+            "id": "invs",
+            "name": "Inversions",
+            "description": "List of BIDS inversions to process (e.g. 'inv-1'); by default all inversions are processed.",
+            "type": "String",
+            "optional": true,
+            "list": true,
+            "command-line-flag": "--invs",
+            "value-key": "[INVS]"
+        },
+        {
+            "id": "acqs",
+            "name": "Acquisitions",
+            "description": "List of BIDS acquisitions to process (e.g. 'acq-qsm'); by default all acquisitions are processed.",
+            "type": "String",
+            "optional": true,
+            "list": true,
+            "command-line-flag": "--acqs",
+            "value-key": "[ACQS]"
+        },
+        {
+            "id": "num_echoes",
+            "name": "Number of Echoes",
+            "description": "The number of echoes to process; by default all echoes are processed.",
+            "type": "Number",
+            "optional": true,
+            "integer": true,
+            "command-line-flag": "--num_echoes",
+            "value-key": "[NUM_ECHOES]"
+        },
+        {
+            "id": "pipeline_file",
+            "name": "Pipeline File",
+            "description": "Specify a JSON file from which custom premade pipelines will be made available.",
+            "type": "File",
+            "optional": true,
+            "command-line-flag": "--pipeline_file",
+            "value-key": "[PIPELINE_FILE]"
+        },
+        {
+            "id": "premade",
+            "name": "Premade Pipeline",
+            "description": "Specify a premade pipeline to use as the default. By default, this is 'default'.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--premade",
+            "value-key": "[PREMADE]",
+            "value-choices": ["default", "gre", "epi", "bet", "fast", "body", "nextqsm"]
+        },
+        {
+            "id": "obliquity_threshold",
+            "name": "Obliquity Threshold",
+            "description": "The 'obliquity' as measured by nilearn from which oblique-acquired acquisitions should be axially resampled. Use -1 to disable resampling completely.",
+            "type": "Number",
+            "optional": true,
+            "integer": true,
+            "command-line-flag": "--obliquity_threshold",
+            "value-key": "[OBLIQUITY_THRESHOLD]"
+        },
+        {
+            "id": "combine_phase",
+            "name": "Combine Phase",
+            "description": "Combines multi-echo phase images by generating a field map using ROMEO.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--combine_phase",
+            "value-key": "[COMBINE_PHASE]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "qsm_algorithm",
+            "name": "QSM Algorithm",
+            "description": "QSM algorithm. TGV includes unwrapping and background field removal. NeXtQSM uses deep learning. RTS solves only the dipole-inversion step.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--qsm_algorithm",
+            "value-key": "[QSM_ALGORITHM]",
+            "value-choices": ["tgv", "tv", "nextqsm", "rts"]
+        },
+        {
+            "id": "qsm_reference",
+            "name": "QSM Reference",
+            "description": "Referencing method for QSM. Options are: 'mean', 'none', or a segmentation ID (integer).",
+            "type": "String",
+            "optional": true,
+            "list": true,
+            "command-line-flag": "--qsm_reference",
+            "value-key": "[QSM_REFERENCE]"
+        },
+        {
+            "id": "tgv_iterations",
+            "name": "TGV Iterations",
+            "description": "Number of iterations used by TGV. Used only when --qsm_algorithm is set to tgv.",
+            "type": "Number",
+            "optional": true,
+            "integer": true,
+            "command-line-flag": "--tgv_iterations",
+            "value-key": "[TGV_ITERATIONS]"
+        },
+        {
+            "id": "tgv_alphas",
+            "name": "TGV Alphas",
+            "description": "Regularisation alphas used by TGV (two values). Used only when --qsm_algorithm is set to tgv.",
+            "type": "Number",
+            "optional": true,
+            "list": true,
+            "min-list-entries": 2,
+            "max-list-entries": 2,
+            "command-line-flag": "--tgv_alphas",
+            "value-key": "[TGV_ALPHAS]"
+        },
+        {
+            "id": "tgv_erosions",
+            "name": "TGV Erosions",
+            "description": "Number of erosions applied by TGV. Used only when --qsm_algorithm is set to tgv.",
+            "type": "Number",
+            "optional": true,
+            "integer": true,
+            "command-line-flag": "--tgv_erosions",
+            "value-key": "[TGV_EROSIONS]"
+        },
+        {
+            "id": "gpu",
+            "name": "GPU Acceleration",
+            "description": "Enable GPU acceleration. Options: cuda, amdgpu, oneapi, metal.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--gpu",
+            "value-key": "[GPU]",
+            "value-choices": ["cuda", "amdgpu", "oneapi", "metal"]
+        },
+        {
+            "id": "rts_tol",
+            "name": "RTS Tolerance",
+            "description": "Stopping tolerance for RTS convergence (default: 1e-4). Used only when --qsm_algorithm is set to rts.",
+            "type": "Number",
+            "optional": true,
+            "command-line-flag": "--rts_tol",
+            "value-key": "[RTS_TOL]"
+        },
+        {
+            "id": "rts_delta",
+            "name": "RTS Delta",
+            "description": "Threshold for ill-conditioned k-space region (default: 0.15). Used only when --qsm_algorithm is set to rts.",
+            "type": "Number",
+            "optional": true,
+            "command-line-flag": "--rts_delta",
+            "value-key": "[RTS_DELTA]"
+        },
+        {
+            "id": "rts_mu",
+            "name": "RTS Mu",
+            "description": "Mu regularization parameter for TV minimization (default: 1e5). Used only when --qsm_algorithm is set to rts.",
+            "type": "Number",
+            "optional": true,
+            "command-line-flag": "--rts_mu",
+            "value-key": "[RTS_MU]"
+        },
+        {
+            "id": "unwrapping_algorithm",
+            "name": "Unwrapping Algorithm",
+            "description": "Phase unwrapping algorithm. ROMEO is the default when --qsm_algorithm is set to rts or nextqsm.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--unwrapping_algorithm",
+            "value-key": "[UNWRAPPING_ALGORITHM]",
+            "value-choices": ["romeo", "romeo-combined", "laplacian"]
+        },
+        {
+            "id": "bf_algorithm",
+            "name": "Background Field Algorithm",
+            "description": "Background field correction algorithm.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--bf_algorithm",
+            "value-key": "[BF_ALGORITHM]",
+            "value-choices": ["vsharp", "pdf"]
+        },
+        {
+            "id": "two_pass",
+            "name": "Two-Pass QSM",
+            "description": "Perform a QSM reconstruction in a two-stage fashion to reduce artefacts.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--two_pass",
+            "value-key": "[TWO_PASS]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "inhomogeneity_correction",
+            "name": "Inhomogeneity Correction",
+            "description": "Applies an inhomogeneity correction to the magnitude prior to masking.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--inhomogeneity_correction",
+            "value-key": "[INHOMOGENEITY_CORRECTION]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "masking_algorithm",
+            "name": "Masking Algorithm",
+            "description": "Masking algorithm. The default algorithm is 'threshold'.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--masking_algorithm",
+            "value-key": "[MASKING_ALGORITHM]",
+            "value-choices": ["threshold", "bet"]
+        },
+        {
+            "id": "mask_erosions",
+            "name": "Mask Erosions",
+            "description": "Number of erosions applied to masks prior to QSM processing steps.",
+            "type": "Number",
+            "optional": true,
+            "integer": true,
+            "list": true,
+            "command-line-flag": "--mask_erosions",
+            "value-key": "[MASK_EROSIONS]"
+        },
+        {
+            "id": "use_existing_qsms",
+            "name": "Use Existing QSMs",
+            "description": "Prioritize using existing QSM images from the BIDS derivatives directory.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--use_existing_qsms",
+            "value-key": "[USE_EXISTING_QSMS]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "existing_qsm_pipeline",
+            "name": "Existing QSM Pipeline",
+            "description": "A pattern matching the name of the software pipeline used to derive pre-existing QSM images.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--existing_qsm_pipeline",
+            "value-key": "[EXISTING_QSM_PIPELINE]"
+        },
+        {
+            "id": "use_existing_segmentations",
+            "name": "Use Existing Segmentations",
+            "description": "Prioritize using existing segmentations from the BIDS derivatives directory.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--use_existing_segmentations",
+            "value-key": "[USE_EXISTING_SEGMENTATIONS]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "existing_segmentation_pipeline",
+            "name": "Existing Segmentation Pipeline",
+            "description": "A pattern matching the name of the software pipeline used to derive pre-existing segmentations.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--existing_segmentation_pipeline",
+            "value-key": "[EXISTING_SEGMENTATION_PIPELINE]"
+        },
+        {
+            "id": "use_existing_masks",
+            "name": "Use Existing Masks",
+            "description": "Prioritize using existing masks from the BIDS derivatives directory.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--use_existing_masks",
+            "value-key": "[USE_EXISTING_MASKS]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "existing_masks_pipeline",
+            "name": "Existing Masks Pipeline",
+            "description": "A pattern matching the name of the software pipeline used to derive input masks.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--existing_masks_pipeline",
+            "value-key": "[EXISTING_MASKS_PIPELINE]"
+        },
+        {
+            "id": "masking_input",
+            "name": "Masking Input",
+            "description": "Input to the masking algorithm. Phase-based masking may reduce artefacts near the ROI boundary.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--masking_input",
+            "value-key": "[MASKING_INPUT]",
+            "value-choices": ["phase", "magnitude"]
+        },
+        {
+            "id": "threshold_value",
+            "name": "Threshold Value",
+            "description": "Masking threshold. Values between 0 and 1 represent a percentage of the multi-echo input range.",
+            "type": "Number",
+            "optional": true,
+            "list": true,
+            "command-line-flag": "--threshold_value",
+            "value-key": "[THRESHOLD_VALUE]"
+        },
+        {
+            "id": "threshold_algorithm",
+            "name": "Threshold Algorithm",
+            "description": "Algorithm used to select a threshold for threshold-based masking if --threshold_value is left unspecified.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--threshold_algorithm",
+            "value-key": "[THRESHOLD_ALGORITHM]",
+            "value-choices": ["otsu", "gaussian"]
+        },
+        {
+            "id": "filling_algorithm",
+            "name": "Filling Algorithm",
+            "description": "Algorithm used to fill holes for threshold-based masking.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--filling_algorithm",
+            "value-key": "[FILLING_ALGORITHM]",
+            "value-choices": ["morphological", "gaussian", "both", "bet"]
+        },
+        {
+            "id": "threshold_algorithm_factor",
+            "name": "Threshold Algorithm Factor",
+            "description": "Factor to multiply the algorithmically-determined threshold by. Larger factors will create smaller masks.",
+            "type": "Number",
+            "optional": true,
+            "list": true,
+            "command-line-flag": "--threshold_algorithm_factor",
+            "value-key": "[THRESHOLD_ALGORITHM_FACTOR]"
+        },
+        {
+            "id": "add_bet",
+            "name": "Add BET",
+            "description": "Combines the chosen masking method with BET.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--add_bet",
+            "value-key": "[ADD_BET]",
+            "value-choices": ["on", "off", "true", "false", "yes", "no"]
+        },
+        {
+            "id": "bet_fractional_intensity",
+            "name": "BET Fractional Intensity",
+            "description": "Fractional intensity for BET masking operations.",
+            "type": "Number",
+            "optional": true,
+            "command-line-flag": "--bet_fractional_intensity",
+            "value-key": "[BET_FRACTIONAL_INTENSITY]"
+        },
+        {
+            "id": "export_dicoms",
+            "name": "Export DICOMs",
+            "description": "Exports outputs to DICOM format in addition to NIfTI.",
+            "type": "Flag",
+            "optional": true,
+            "command-line-flag": "--export_dicoms",
+            "value-key": "[EXPORT_DICOMS]"
+        },
+        {
+            "id": "preserve_float",
+            "name": "Preserve Float",
+            "description": "Exported DICOMs will preserve quantitative float values instead of converting to int.",
+            "type": "Flag",
+            "optional": true,
+            "command-line-flag": "--preserve_float",
+            "value-key": "[PRESERVE_FLOAT]"
+        },
+        {
+            "id": "pbs",
+            "name": "PBS Account String",
+            "description": "Run the pipeline via PBS and use the argument as the account string.",
+            "type": "String",
+            "optional": true,
+            "command-line-flag": "--pbs",
+            "value-key": "[PBS]"
+        },
+        {
+            "id": "slurm",
+            "name": "SLURM Settings",
+            "description": "Run the pipeline via SLURM. Provide account string and partition.",
+            "type": "String",
+            "optional": true,
+            "list": true,
+            "min-list-entries": 2,
+            "max-list-entries": 2,
+            "command-line-flag": "--slurm",
+            "value-key": "[SLURM]"
+        },
+        {
+            "id": "n_procs",
+            "name": "Number of Processes",
+            "description": "Number of processes to run concurrently for MultiProc. By default, the number of available CPUs is used.",
+            "type": "Number",
+            "optional": true,
+            "integer": true,
+            "command-line-flag": "--n_procs",
+            "value-key": "[N_PROCS]"
+        },
+        {
+            "id": "debug",
+            "name": "Debug Mode",
+            "description": "Enables some nipype settings for debugging.",
+            "type": "Flag",
+            "optional": true,
+            "command-line-flag": "--debug",
+            "value-key": "[DEBUG]"
+        },
+        {
+            "id": "list_premades",
+            "name": "List Premades",
+            "description": "List the possible premade pipelines only.",
+            "type": "Flag",
+            "optional": true,
+            "command-line-flag": "--list_premades",
+            "value-key": "[LIST_PREMADES]"
+        },
+        {
+            "id": "dry",
+            "name": "Dry Run",
+            "description": "Creates the nipype pipeline using the chosen settings, but does not execute it.",
+            "type": "Flag",
+            "optional": true,
+            "command-line-flag": "--dry",
+            "value-key": "[DRY]"
+        },
+        {
+            "id": "auto_yes",
+            "name": "Auto Yes",
+            "description": "Runs the pipeline in non-interactive mode.",
+            "type": "Flag",
+            "optional": true,
+            "command-line-flag": "--auto_yes",
+            "value-key": "[AUTO_YES]"
+        },
+        {
+            "id": "version",
+            "name": "Version",
+            "description": "Displays the QSMxT version.",
+            "type": "Flag",
+            "optional": true,
+            "command-line-flag": "--version",
+            "value-key": "[VERSION]"
+        }
+    ],
+    "output-files": [
+        {
+            "id": "qsm_output",
+            "name": "QSM Output",
+            "description": "QSM reconstruction output (Chimap NIfTI files)",
+            "path-template": "[OUTPUT_DIR]/**/sub-*_*Chimap.nii*",
+            "optional": true
+        },
+        {
+            "id": "mask_output",
+            "name": "Mask Output",
+            "description": "Brain masks generated during processing",
+            "path-template": "[OUTPUT_DIR]/**/sub-*_*mask.nii*",
+            "optional": true
+        },
+        {
+            "id": "segmentation_output",
+            "name": "Segmentation Output",
+            "description": "Brain segmentation output",
+            "path-template": "[OUTPUT_DIR]/**/sub-*_*dseg.nii*",
+            "optional": true
+        },
+        {
+            "id": "analysis_output",
+            "name": "Analysis Output",
+            "description": "Analysis CSV files with ROI statistics",
+            "path-template": "[OUTPUT_DIR]/**/*.csv",
+            "optional": true
+        }
+    ],
+    "groups": [
+        {
+            "id": "pipeline_selection",
+            "name": "Pipeline Selection",
+            "description": "Options for selecting which pipelines to run",
+            "members": ["do_qsm", "do_segmentation", "do_analysis", "do_template", "do_t2starmap", "do_r2starmap", "do_swi"]
+        },
+        {
+            "id": "subject_selection",
+            "name": "Subject Selection",
+            "description": "Options for filtering which subjects/sessions/runs to process",
+            "members": ["subjects", "sessions", "runs", "recs", "invs", "acqs", "num_echoes"]
+        },
+        {
+            "id": "qsm_settings",
+            "name": "QSM Algorithm Settings",
+            "description": "Settings for QSM reconstruction algorithms",
+            "members": ["qsm_algorithm", "qsm_reference", "tgv_iterations", "tgv_alphas", "tgv_erosions", "gpu", "rts_tol", "rts_delta", "rts_mu", "unwrapping_algorithm", "bf_algorithm", "two_pass"]
+        },
+        {
+            "id": "masking_settings",
+            "name": "Masking Settings",
+            "description": "Settings for brain masking",
+            "members": ["masking_algorithm", "masking_input", "mask_erosions", "threshold_value", "threshold_algorithm", "filling_algorithm", "threshold_algorithm_factor", "add_bet", "bet_fractional_intensity", "inhomogeneity_correction"]
+        },
+        {
+            "id": "existing_data",
+            "name": "Existing Data",
+            "description": "Options for using pre-existing processed data",
+            "members": ["use_existing_qsms", "existing_qsm_pipeline", "use_existing_segmentations", "existing_segmentation_pipeline", "use_existing_masks", "existing_masks_pipeline"]
+        },
+        {
+            "id": "execution_settings",
+            "name": "Execution Settings",
+            "description": "Settings for pipeline execution",
+            "members": ["pbs", "slurm", "n_procs", "debug", "dry", "auto_yes"]
+        }
+    ],
+    "tags": {
+        "domain": ["neuroimaging", "mri", "qsm"],
+        "source": "https://github.com/QSMxT/QSMxT"
+    },
+    "suggested-resources": {
+        "cpu-cores": 4,
+        "ram": 16,
+        "walltime-estimate": 3600
+    },
+    "custom": {
+        "cbrain:readonly-input-files": true
+    }
+}

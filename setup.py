@@ -63,6 +63,7 @@ setup(
             'pytest-mock>=3.10.0',
             'pytest-cov>=4.0.0',
             'pytest-xdist>=3.0.0',
+            'boutiques>=0.5.26',
         ]
     },
     entry_points={
