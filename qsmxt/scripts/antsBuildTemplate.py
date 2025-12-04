@@ -133,10 +133,8 @@ def FlattenTransformAndImagesList(ListOfPassiveImagesDictionaries,
             if run_match:
                 run = run_match.group(1)
 
-        # Extract suffix (usually MEGRE)
-        suffix = None
-        if 'MEGRE' in qsm_dir:
-            suffix = 'MEGRE'
+        # Extract suffix - it's always the last underscore-separated part of qsm_dir
+        suffix = qsm_dir.split('_')[-1]
 
         return {
             'subject': subject,
