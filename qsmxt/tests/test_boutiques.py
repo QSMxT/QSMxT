@@ -281,18 +281,19 @@ class TestBoutiquesIntegration:
         not os.environ.get('TEST_BOUTIQUES_VALIDATION', False),
         reason="Full Boutiques validation requires boutiques package; set TEST_BOUTIQUES_VALIDATION=1 to enable"
     )
-    def test_boutiques_invocation_validation(self, bids_dir):
+    def test_boutiques_invocation_validation(self):
         """
         Test that a real invocation validates against the descriptor.
 
         This doesn't run the pipeline, just validates the invocation schema.
+        Uses placeholder paths since we're only validating the JSON structure.
         """
         from boutiques import bosh
 
-        # Create a realistic invocation
+        # Create a realistic invocation (paths don't need to exist for simulation)
         invocation = {
-            "bids_dir": bids_dir,
-            "output_dir": os.path.join(gettempdir(), "boutiques-validation-test"),
+            "bids_dir": "/path/to/bids",
+            "output_dir": "/path/to/output",
             "do_qsm": "on",
             "premade": "fast",
             "auto_yes": True
