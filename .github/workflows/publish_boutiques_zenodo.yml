@@ -160,9 +160,33 @@ jobs:
           echo "Creating new version of existing deposition..."
           CONCEPT_ID="${{ steps.check_zenodo.outputs.concept_id }}"
 
+          # First, check for and discard any existing drafts for this concept
+          echo "Checking for existing drafts..."
+          DRAFTS=$(curl -s "https://zenodo.org/api/deposit/depositions?q=conceptrecid:$CONCEPT_ID" \
+            -H "Authorization: Bearer $ZENODO_TOKEN" | python3 -c "
+          import json, sys
+          deps = json.load(sys.stdin)
+          for d in deps:
+              if not d.get('submitted', True):
+                  print(d['id'])
+          ")
+
+          for DRAFT_ID in $DRAFTS; do
+            echo "Discarding existing draft: $DRAFT_ID"
+            curl -s -X POST "https://zenodo.org/api/deposit/depositions/$DRAFT_ID/actions/discard" \
+              -H "Authorization: Bearer $ZENODO_TOKEN"
+          done
+
           # Get the latest published deposition ID for this concept
-          LATEST=$(curl -s "https://zenodo.org/api/deposit/depositions?q=conceptrecid:$CONCEPT_ID&status=published&sort=mostrecent" \
-            -H "Authorization: Bearer $ZENODO_TOKEN" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0]['id'] if d else '')")
+          LATEST=$(curl -s "https://zenodo.org/api/deposit/depositions?q=conceptrecid:$CONCEPT_ID" \
+            -H "Authorization: Bearer $ZENODO_TOKEN" | python3 -c "
+          import json, sys
+          deps = json.load(sys.stdin)
+          for d in deps:
+              if d.get('submitted', False):
+                  print(d['id'])
+                  break
+          ")
 
           if [ -z "$LATEST" ]; then
             echo "ERROR: Could not find latest deposition for concept $CONCEPT_ID"
