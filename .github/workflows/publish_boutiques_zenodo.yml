@@ -221,10 +221,18 @@ jobs:
           BUCKET_URL="${{ steps.create_deposition.outputs.bucket_url }}"
 
           echo "Uploading qsmxt.json to Zenodo..."
-          curl -s -X PUT "$BUCKET_URL/qsmxt.json" \
+          RESPONSE=$(curl -s -X PUT "$BUCKET_URL/qsmxt.json" \
             -H "Authorization: Bearer $ZENODO_TOKEN" \
-            -H "Content-Type: application/json" \
-            --data-binary @"$DESCRIPTOR_PATH"
+            -H "Content-Type: application/octet-stream" \
+            --data-binary @"$DESCRIPTOR_PATH")
+
+          echo "$RESPONSE"
+
+          # Check for errors
+          if echo "$RESPONSE" | grep -q '"status"'; then
+            echo "ERROR: Upload failed"
+            exit 1
+          fi
 
           echo "Upload complete!"
 
