@@ -1,0 +1,260 @@
+name: Publish Boutiques Descriptor to Zenodo
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (e.g., 8.2.0)'
+        required: true
+        type: string
+      dry_run:
+        description: 'Dry run (validate only, do not publish)'
+        required: false
+        type: boolean
+        default: true
+
+env:
+  DESCRIPTOR_PATH: qsmxt/boutiques/qsmxt.json
+  ZENODO_CONCEPT_ID: "17852334"
+
+jobs:
+  publish-to-zenodo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install boutiques requests
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "release" ]; then
+            # Extract version from release tag (remove 'v' prefix if present)
+            VERSION="${{ github.event.release.tag_name }}"
+            VERSION="${VERSION#v}"
+          else
+            VERSION="${{ github.event.inputs.version }}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Publishing version: $VERSION"
+
+      - name: Validate Boutiques descriptor
+        run: |
+          echo "Validating Boutiques descriptor..."
+          bosh validate "$DESCRIPTOR_PATH"
+
+          # Verify version in descriptor matches release version
+          DESCRIPTOR_VERSION=$(python3 -c "import json; print(json.load(open('$DESCRIPTOR_PATH'))['tool-version'])")
+          echo "Descriptor version: $DESCRIPTOR_VERSION"
+
+          if [ "$DESCRIPTOR_VERSION" != "${{ steps.version.outputs.version }}" ]; then
+            echo "WARNING: Descriptor version ($DESCRIPTOR_VERSION) does not match release version (${{ steps.version.outputs.version }})"
+          fi
+
+      - name: Prepare Zenodo metadata
+        id: metadata
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          # Extract info from descriptor
+          python3 << 'EOF' > zenodo_metadata.json
+          import json
+          import os
+
+          with open(os.environ['DESCRIPTOR_PATH']) as f:
+              descriptor = json.load(f)
+
+          version = os.environ.get('VERSION', descriptor.get('tool-version', 'unknown'))
+
+          metadata = {
+              "metadata": {
+                  "title": f"QSMxT Boutiques Descriptor",
+                  "upload_type": "software",
+                  "description": f"""<p>{descriptor.get('description', 'QSMxT - Quantitative Susceptibility Mapping Toolbox')}</p>
+          <p>This is the Boutiques descriptor for QSMxT version {version}.</p>
+          <p>Boutiques is a flexible framework for describing command-line tools, enabling standardized execution across platforms.</p>
+          <p>For more information, see:</p>
+          <ul>
+          <li><a href="https://qsmxt.github.io/">QSMxT Documentation</a></li>
+          <li><a href="https://github.com/QSMxT/QSMxT">QSMxT GitHub</a></li>
+          <li><a href="https://boutiques.github.io/">Boutiques Framework</a></li>
+          </ul>""",
+                  "creators": [
+                      {"name": "Stewart, Ashley", "affiliation": "The University of Queensland"},
+                      {"name": "QSMxT Contributors"}
+                  ],
+                  "version": version,
+                  "keywords": [
+                      "Boutiques",
+                      "schema-version:0.5",
+                      "application-type:bids",
+                      "domain:neuroimaging",
+                      "domain:mri",
+                      "domain:qsm",
+                      "singularity",
+                      "docker"
+                  ],
+                  "license": "agpl-3.0",
+                  "related_identifiers": [
+                      {
+                          "identifier": "https://github.com/QSMxT/QSMxT",
+                          "relation": "isSupplementTo",
+                          "scheme": "url"
+                      },
+                      {
+                          "identifier": "https://qsmxt.github.io/",
+                          "relation": "isDocumentedBy",
+                          "scheme": "url"
+                      }
+                  ],
+                  "notes": f"This descriptor was automatically generated from QSMxT release v{version}"
+              }
+          }
+
+          print(json.dumps(metadata, indent=2))
+          EOF
+
+          cat zenodo_metadata.json
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          DESCRIPTOR_PATH: ${{ env.DESCRIPTOR_PATH }}
+
+      - name: Check for existing Zenodo deposition
+        id: check_zenodo
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+        run: |
+          echo "Using concept ID: $ZENODO_CONCEPT_ID"
+          echo "concept_id=$ZENODO_CONCEPT_ID" >> $GITHUB_OUTPUT
+
+      - name: Create new version
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        id: create_deposition
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+        run: |
+          echo "Creating new version of existing deposition..."
+          CONCEPT_ID="${{ steps.check_zenodo.outputs.concept_id }}"
+
+          # Get the latest published deposition ID for this concept
+          LATEST=$(curl -s "https://zenodo.org/api/deposit/depositions?q=conceptrecid:$CONCEPT_ID&status=published&sort=mostrecent" \
+            -H "Authorization: Bearer $ZENODO_TOKEN" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d[0]['id'] if d else '')")
+
+          if [ -z "$LATEST" ]; then
+            echo "ERROR: Could not find latest deposition for concept $CONCEPT_ID"
+            exit 1
+          fi
+
+          echo "Latest deposition ID: $LATEST"
+
+          # Create new version
+          RESPONSE=$(curl -s -X POST "https://zenodo.org/api/deposit/depositions/$LATEST/actions/newversion" \
+            -H "Authorization: Bearer $ZENODO_TOKEN")
+
+          # Get the new draft URL
+          NEW_VERSION_URL=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('links', {}).get('latest_draft', ''))")
+
+          if [ -z "$NEW_VERSION_URL" ]; then
+            echo "ERROR: Could not get new version URL"
+            echo "$RESPONSE"
+            exit 1
+          fi
+
+          # Fetch the new draft
+          RESPONSE=$(curl -s "$NEW_VERSION_URL" -H "Authorization: Bearer $ZENODO_TOKEN")
+
+          # Delete old files from the new draft
+          DEPOSITION_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          FILES=$(curl -s "https://zenodo.org/api/deposit/depositions/$DEPOSITION_ID/files" \
+            -H "Authorization: Bearer $ZENODO_TOKEN")
+
+          for FILE_ID in $(echo "$FILES" | python3 -c "import json,sys; [print(f['id']) for f in json.load(sys.stdin)]"); do
+            curl -s -X DELETE "https://zenodo.org/api/deposit/depositions/$DEPOSITION_ID/files/$FILE_ID" \
+              -H "Authorization: Bearer $ZENODO_TOKEN"
+          done
+
+          # Update metadata
+          curl -s -X PUT "https://zenodo.org/api/deposit/depositions/$DEPOSITION_ID" \
+            -H "Authorization: Bearer $ZENODO_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d @zenodo_metadata.json
+
+          # Extract deposition ID and bucket URL
+          DEPOSITION_ID=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          BUCKET_URL=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin)['links']['bucket'])")
+
+          echo "Deposition ID: $DEPOSITION_ID"
+          echo "Bucket URL: $BUCKET_URL"
+
+          echo "deposition_id=$DEPOSITION_ID" >> $GITHUB_OUTPUT
+          echo "bucket_url=$BUCKET_URL" >> $GITHUB_OUTPUT
+
+      - name: Upload descriptor file
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+        run: |
+          BUCKET_URL="${{ steps.create_deposition.outputs.bucket_url }}"
+
+          echo "Uploading qsmxt.json to Zenodo..."
+          curl -s -X PUT "$BUCKET_URL/qsmxt.json" \
+            -H "Authorization: Bearer $ZENODO_TOKEN" \
+            -H "Content-Type: application/json" \
+            --data-binary @"$DESCRIPTOR_PATH"
+
+          echo "Upload complete!"
+
+      - name: Publish deposition
+        if: ${{ github.event.inputs.dry_run != 'true' }}
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+        run: |
+          DEPOSITION_ID="${{ steps.create_deposition.outputs.deposition_id }}"
+
+          echo "Publishing deposition $DEPOSITION_ID..."
+          RESPONSE=$(curl -s -X POST "https://zenodo.org/api/deposit/depositions/$DEPOSITION_ID/actions/publish" \
+            -H "Authorization: Bearer $ZENODO_TOKEN")
+
+          DOI=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('doi', 'N/A'))")
+          CONCEPT_DOI=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('conceptdoi', 'N/A'))")
+          RECORD_URL=$(echo "$RESPONSE" | python3 -c "import json,sys; print(json.load(sys.stdin).get('links', {}).get('record_html', 'N/A'))")
+
+          echo "Published successfully!"
+          echo "DOI: $DOI"
+          echo "Concept DOI: $CONCEPT_DOI"
+          echo "URL: $RECORD_URL"
+
+          # Output for GitHub Actions summary
+          echo "## Zenodo Publication Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **DOI**: $DOI" >> $GITHUB_STEP_SUMMARY
+          echo "- **Concept DOI**: $CONCEPT_DOI" >> $GITHUB_STEP_SUMMARY
+          echo "- **URL**: $RECORD_URL" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The Boutiques descriptor for QSMxT v${{ steps.version.outputs.version }} has been published to Zenodo." >> $GITHUB_STEP_SUMMARY
+
+      - name: Dry run summary
+        if: ${{ github.event.inputs.dry_run == 'true' }}
+        run: |
+          echo "## Dry Run Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Validation passed. The following would be published:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Version**: ${{ steps.version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Descriptor**: $DESCRIPTOR_PATH" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Metadata" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          cat zenodo_metadata.json >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
