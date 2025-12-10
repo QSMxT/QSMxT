@@ -21,6 +21,15 @@ function parse_command_line()
         "--outprefix"
             help     = "Output file prefix (no extension)"
             required = true
+        "--echoes"
+            help     = "Echoes to use for combination, comma-separated (e.g. \"1,2\"). Default: use first two echoes"
+            default  = ""
+        "--sigma"
+            help     = "Smoothing parameter for phase offsets, comma-separated for each dimension (e.g. \"10,10,5\"). Default: 10,10,5"
+            default  = "10,10,5"
+        "--bipolar-correction"
+            help     = "Enable bipolar correction to remove linear phase artifact from bipolar readouts"
+            action   = :store_true
     end
     return parse_args(ARGS, s)
 end
@@ -32,6 +41,14 @@ function main()
     phases = args["phase"]
     TEs    = parse.(Float64, split(args["TEs"], r"\s*,\s*"))
     outpre = args["outprefix"]
+
+    # Parse optional parameters
+    σ = parse.(Float64, split(args["sigma"], r"\s*,\s*"))
+    bipolar_correction = args["bipolar-correction"]
+
+    # Parse echoes (empty string means use default)
+    echoes_str = args["echoes"]
+    echoes = isempty(echoes_str) ? [1, 2] : parse.(Int, split(echoes_str, r"\s*,\s*"))
 
     @assert length(mags) == length(phases) == length(TEs) "Counts of --mag, --phase and --TEs must match."
 
@@ -52,7 +69,7 @@ function main()
     phase5 = cat(phase5_list...; dims=4)
 
     # Run the coil-combination algorithm
-    combined = MriResearchTools.mcpc3ds(phase5, mag5; TEs=TEs)
+    combined = MriResearchTools.mcpc3ds(phase5, mag5; TEs=TEs, echoes=echoes, sigma=σ, bipolar_correction=bipolar_correction)
 
     # Extract the combined magnitude and phase (4-D: X×Y×Z×necho)
     mag_c   = MriResearchTools.getmag(combined)

@@ -167,29 +167,45 @@ def validate_series_selections(table_data):
         phase_rows = [r for r in rows if r.get("Type") == "Phase"]
         real_rows = [r for r in rows if r.get("Type") == "Real"]
         imag_rows = [r for r in rows if r.get("Type") == "Imag"]
+        # Helper to get identifier for matching pairs
+        def get_ident(row):
+            inv = row.get("InversionNumber")
+            return inv if inv not in [None, ""] else row.get("Description", "")
+
         for m in mag_rows:
-            matching_phase = [p for p in phase_rows if p.get("Count") == m.get("Count")]
+            m_ident = get_ident(m)
+            matching_phase = [p for p in phase_rows if p.get("Count") == m.get("Count") and get_ident(p) == m_ident]
             if not matching_phase:
-                errors.append(f"Series '{series}': Mag series (Count={m.get('Count')}) requires at least one Phase series with the same number of images.")
+                errors.append(f"Series '{series}': Mag series (Count={m.get('Count')}, Description='{m.get('Description', '')}') requires a Phase series with the same number of images and description.")
         for p in phase_rows:
-            matching_mag = [m for m in mag_rows if m.get("Count") == p.get("Count")]
+            p_ident = get_ident(p)
+            matching_mag = [m for m in mag_rows if m.get("Count") == p.get("Count") and get_ident(m) == p_ident]
             if not matching_mag:
-                errors.append(f"Series '{series}': Phase series (Count={p.get('Count')}) requires at least one Mag series with the same number of images.")
+                errors.append(f"Series '{series}': Phase series (Count={p.get('Count')}, Description='{p.get('Description', '')}') requires a Mag series with the same number of images and description.")
         for r in real_rows:
-            matching_imag = [i for i in imag_rows if i.get("Count") == r.get("Count")]
+            r_ident = get_ident(r)
+            matching_imag = [i for i in imag_rows if i.get("Count") == r.get("Count") and get_ident(i) == r_ident]
             if not matching_imag:
-                errors.append(f"Series '{series}': Real series (Count={r.get('Count')}) requires at least one Imag series with the same number of images.")
+                errors.append(f"Series '{series}': Real series (Count={r.get('Count')}, Description='{r.get('Description', '')}') requires an Imag series with the same number of images and description.")
         for i in imag_rows:
-            matching_real = [r for r in real_rows if r.get("Count") == i.get("Count")]
+            i_ident = get_ident(i)
+            matching_real = [r for r in real_rows if r.get("Count") == i.get("Count") and get_ident(r) == i_ident]
             if not matching_real:
-                errors.append(f"Series '{series}': Imag series (Count={i.get('Count')}) requires at least one Real series with the same number of images.")
+                errors.append(f"Series '{series}': Imag series (Count={i.get('Count')}, Description='{i.get('Description', '')}') requires a Real series with the same number of images and description.")
+        # Only compare Mag/Phase pairs with matching Description (or InversionNumber)
         for m in mag_rows:
+            m_ident = m.get("InversionNumber") if m.get("InversionNumber") not in [None, ""] else m.get("Description", "")
             for p in phase_rows:
-                if m.get("Count") != p.get("Count"):
+                p_ident = p.get("InversionNumber") if p.get("InversionNumber") not in [None, ""] else p.get("Description", "")
+                # Only validate count match for pairs with the same identifier
+                if m_ident == p_ident and m.get("Count") != p.get("Count"):
                     errors.append(f"Series '{series}': Selected Mag and Phase series have non-matching number of images ({m.get('Count')} vs. {p.get('Count')}).")
         for r in real_rows:
+            r_ident = r.get("InversionNumber") if r.get("InversionNumber") not in [None, ""] else r.get("Description", "")
             for i in imag_rows:
-                if r.get("Count") != i.get("Count"):
+                i_ident = i.get("InversionNumber") if i.get("InversionNumber") not in [None, ""] else i.get("Description", "")
+                # Only validate count match for pairs with the same identifier
+                if r_ident == i_ident and r.get("Count") != i.get("Count"):
                     errors.append(f"Series '{series}': Selected Real and Imag series have non-matching number of images ({r.get('Count')} vs. {i.get('Count')}).")
         if len(mag_rows) > 1:
             identifiers = []
@@ -500,28 +516,66 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
         logger.log(LogLevel.ERROR.value, "No acquisitions selected for conversion. Exiting.")
         script_exit(1)
     
-    # First, group by patient, study, acquisition, series description, and run number
+    # Check if we have complementary types (Mag/Phase or Real/Imag pairs)
+    # If so, we need to group them together despite different SeriesDescription/SeriesInstanceUID
+    unique_types = set(to_convert['Type'].unique())
+    has_mag_phase = ('Mag' in unique_types and 'Phase' in unique_types)
+    has_real_imag = ('Real' in unique_types and 'Imag' in unique_types)
+    has_complementary_types = has_mag_phase or has_real_imag
+
+    # First, group by patient, study, acquisition, and run number
+    # Only include SeriesDescription if we don't have complementary types that may be in different series
     base_group_cols = [
-        "PatientName", "PatientID", "StudyDate", "Acquisition", "SeriesDescription", "RunNumber"
+        "PatientName", "PatientID", "StudyDate", "Acquisition", "RunNumber"
     ]
+    if not has_complementary_types:
+        base_group_cols.append("SeriesDescription")
+
     missing_cols = [col for col in base_group_cols if col not in to_convert.columns]
     if missing_cols:
         logger.log(LogLevel.WARNING.value, f"The following fields are missing from the DICOM session: {', '.join(missing_cols)}")
-    
+
     # Add SeriesInstanceUID if available, but only for non-complementary types
     # For Mag/Phase and Real/Imag pairs, we want them grouped together despite different SeriesInstanceUID
     if "SeriesInstanceUID" in to_convert.columns:
-        # Check if this group contains complementary types
-        unique_types = set(to_convert['Type'].unique())
-        has_mag_phase = ('Mag' in unique_types and 'Phase' in unique_types)
-        has_real_imag = ('Real' in unique_types and 'Imag' in unique_types)
-        
-        if not (has_mag_phase or has_real_imag):
+        if not has_complementary_types:
             # No complementary types, safe to group by SeriesInstanceUID
             base_group_cols.append("SeriesInstanceUID")
     
+    # Check if there are multiple unique coil values per acquisition
+    # Only add coil labels if there are actually multiple coils to distinguish
+    # Use same grouping logic as base_group_cols (exclude SeriesDescription if complementary types)
+    has_multiple_coils = False
     if "(0051,100F)" in to_convert.columns:
-        base_group_cols.append("(0051,100F)")
+        # Group by acquisition-level columns and count unique coil values
+        acq_cols = ["PatientName", "PatientID", "StudyDate", "Acquisition"]
+        if not has_complementary_types:
+            acq_cols.append("SeriesDescription")
+        acq_cols = [c for c in acq_cols if c in to_convert.columns]
+        if acq_cols:
+            coil_counts = to_convert.groupby(acq_cols, dropna=False)["(0051,100F)"].nunique()
+            has_multiple_coils = (coil_counts > 1).any()
+
+        # Only group by coil if there are multiple coils
+        if has_multiple_coils:
+            base_group_cols.append("(0051,100F)")
+
+    # Check if there are both Combined AND Uncombined data that need differentiation
+    # Only add rec- labels if both exist for the same acquisition
+    needs_rec_label = False
+    if "CoilType" in to_convert.columns:
+        # Group by acquisition-level columns and check for both Combined and Uncombined
+        acq_cols = ["PatientName", "PatientID", "StudyDate", "Acquisition"]
+        if not has_complementary_types:
+            acq_cols.append("SeriesDescription")
+        acq_cols = [c for c in acq_cols if c in to_convert.columns]
+        if acq_cols:
+            coil_types_per_acq = to_convert.groupby(acq_cols, dropna=False)["CoilType"].apply(lambda x: set(x.dropna()))
+            needs_rec_label = any(("Combined" in ct and "Uncombined" in ct) for ct in coil_types_per_acq)
+
+        # Only group by CoilType if we need to differentiate
+        if needs_rec_label:
+            base_group_cols.append("CoilType")
 
     # if any PatientID is empty, fill it with PatientName and vice versa
     if 'PatientID' in to_convert.columns and 'PatientName' in to_convert.columns:
@@ -575,17 +629,17 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
                     for echo_key, echo_group_data in echo_grouped:
                         logger.log(LogLevel.INFO.value, f"Processing Echo group: {echo_key} with {len(echo_group_data)} rows")
                         # Process this final group
-                        process_dicom_group(echo_group_data, output_dir, dcm2niix_path, acq_needs_part_labels)
+                        process_dicom_group(echo_group_data, output_dir, dcm2niix_path, acq_needs_part_labels, has_multiple_coils, needs_rec_label)
                 else:
                     logger.log(LogLevel.INFO.value, f"Only one unique DICOM path for Type '{type_key}', processing directly")
                     # Process this Type group
-                    process_dicom_group(type_group_data, output_dir, dcm2niix_path, acq_needs_part_labels)
+                    process_dicom_group(type_group_data, output_dir, dcm2niix_path, acq_needs_part_labels, has_multiple_coils, needs_rec_label)
         else:
             logger.log(LogLevel.INFO.value, "Only one unique DICOM path in this base group, processing directly")
             # Only one unique DICOM path, process the base group directly
-            process_dicom_group(base_group_data, output_dir, dcm2niix_path, acq_needs_part_labels)
+            process_dicom_group(base_group_data, output_dir, dcm2niix_path, acq_needs_part_labels, has_multiple_coils, needs_rec_label)
 
-def process_dicom_group(grp_data, output_dir, dcm2niix_path, acq_needs_part_labels=False):
+def process_dicom_group(grp_data, output_dir, dcm2niix_path, acq_needs_part_labels=False, has_multiple_coils=False, needs_rec_label=False):
     """Process a group of DICOM files that should be converted together
 
     Args:
@@ -595,6 +649,10 @@ def process_dicom_group(grp_data, output_dir, dcm2niix_path, acq_needs_part_labe
         acq_needs_part_labels: If True, part labels (part-mag, part-phase, etc.)
                                should be added because the acquisition contains
                                both magnitude and phase (or real and imaginary) data
+        has_multiple_coils: If True, coil labels (_coil-XX) should be added because
+                            the acquisition contains data from multiple separate coils
+        needs_rec_label: If True, rec-uncombined labels should be added during initial
+                         conversion (will be replaced with rec-mcpc3ds after coil combination)
     """
     logger = make_logger()
     
@@ -648,15 +706,24 @@ def process_dicom_group(grp_data, output_dir, dcm2niix_path, acq_needs_part_labe
         
         # Build an acquisition label based on Acquisition and Description
         acq_label = f"acq-{clean(row['Acquisition'])}"
-        if row["Description"]:
-            acq_label += f"_desc-{row['Description']}"
-        elif row["Type"] == "Extra":
-            acq_label += f"_desc-{clean(row['SeriesDescription'])}"
-        
+
         base_name = f"{subject_id}_{session_id}_{acq_label}"
+
+        # Add rec-uncombined label for uncombined coil data only if both exist (to differentiate from combined)
+        # Combined data gets no rec- label (it's the default); uncombined will become rec-mcpc3ds after processing
+        if needs_rec_label and row.get("CoilType") == "Uncombined":
+            base_name += "_rec-uncombined"
+
         if "NumRuns" in row and row["NumRuns"] > 1:
             base_name += f"_run-{int(row['RunNumber']):02}"
-        if '(0051,100F)' in row and row['(0051,100F)'] not in ["", "None", "HEA;HEP", "NA", None] and not any(c in row['(0051,100F)'] for c in [';', '-']):
+
+        # Add desc- for other descriptions (not combined/uncombined)
+        if row["Description"] and row["Description"].lower() not in ["combined", "uncombined"]:
+            base_name += f"_desc-{row['Description']}"
+        elif row["Type"] == "Extra":
+            base_name += f"_desc-{clean(row['SeriesDescription'])}"
+        # Only add coil labels if there are actually multiple coils in the acquisition
+        if has_multiple_coils and '(0051,100F)' in row and row['(0051,100F)'] not in ["", "None", "HEA;HEP", "NA", None] and not any(c in row['(0051,100F)'] for c in [';', '-']):
             coil_num = re.search(r'\d+', row['(0051,100F)'])
             if not coil_num:
                 logger.log(LogLevel.WARNING.value, f"Could not extract coil number from '(0051,100F)': {row['(0051,100F)']}")
@@ -760,8 +827,14 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
     groupby_fields = ["Acquisition", "NormalizedSeriesDescription", "ImageType"]
     if "InversionNumber" in dicom_session.columns:
         groupby_fields.append("InversionNumber")
+    if "CoilType" in dicom_session.columns:
+        groupby_fields.append("CoilType")
 
     grouped = dicom_session.groupby(groupby_fields, dropna=False).agg(Count=("InstanceNumber", "count"), NumEchoes=("EchoTime", "nunique")).reset_index()
+
+    # Auto-assign Description based on CoilType (combined vs uncombined coil data)
+    if "CoilType" in grouped.columns:
+        grouped["Description"] = grouped["CoilType"].apply(lambda x: x.lower() if pd.notna(x) else "")
     # Rename for display in UI (show as "SeriesDescription")
     grouped = grouped.rename(columns={"NormalizedSeriesDescription": "SeriesDescription"})
     if auto_yes or not sys.__stdin__.isatty():
@@ -785,7 +858,14 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
         # Ensure consistent data types for InversionNumber
         selections["InversionNumber"] = selections["InversionNumber"].astype(pd.Float64Dtype())
         grouped["InversionNumber"] = grouped["InversionNumber"].astype(pd.Float64Dtype())
+    if "CoilType" in grouped.columns:
+        merge_cols.insert(-2, "CoilType")  # Insert before Type and Description
+        merge_keys.append("CoilType")
 
+    # Drop Description from grouped before merge to avoid _x/_y suffix conflicts
+    # The Description from selections (which may have been modified by user) takes precedence
+    if "Description" in grouped.columns:
+        grouped = grouped.drop(columns=["Description"])
     grouped = grouped.merge(
         selections[merge_cols],
         on=merge_keys,
@@ -884,6 +964,9 @@ def merge_multicoil_data(bids_dir):
             # for each part
             for part in ["mag", "phase"]:
                 sub = echo_grp[echo_grp["part"]==part]
+
+                # Only include files that have a coil label (exclude combined/non-coil files)
+                sub = sub[sub["coil"].notna()]
 
                 # if there's multiple files, stack them
                 if len(sub) > 1:
@@ -1000,22 +1083,26 @@ def run_mcpc3ds_on_multicoil(bids_dir):
             logger.log(LogLevel.ERROR.value, f"Output files not found: {mag_out} or {phase_out}")
             continue
         
-        # delete individual coil files (sc)
+        # delete individual coil files (sc) - only those with _coil- in the filename
+        # Preserve scanner-combined files (no rec- label) which also have 3D shape
         if len(sc) > 0:
-            logger.log(LogLevel.INFO.value, f"Deleting individual coil files...")
-            for f in sc["NIfTI_Path"]:
-                if os.path.exists(f):
-                    os.remove(f)
-                if os.path.exists(f.replace(".nii", ".json")):
-                    os.remove(f.replace(".nii", ".json"))
+            coil_files = sc[sc["NIfTI_Path"].str.contains("_coil-")]
+            if len(coil_files) > 0:
+                logger.log(LogLevel.INFO.value, f"Deleting individual coil files...")
+                for f in coil_files["NIfTI_Path"]:
+                    if os.path.exists(f):
+                        os.remove(f)
+                    if os.path.exists(f.replace(".nii", ".json")):
+                        os.remove(f.replace(".nii", ".json"))
 
         # Determine the new filenames
+        # Replace rec-uncombined with rec-mcpc3ds to indicate the reconstruction method
         if is_multi_echo:
-            mag_out_new = mag_out.replace("_mag.nii", ".nii")
-            phase_out_new = phase_out.replace('part-mag', 'part-phase').replace("_phase.nii", ".nii")
+            mag_out_new = mag_out.replace("_mag.nii", ".nii").replace("_rec-uncombined", "_rec-mcpc3ds")
+            phase_out_new = phase_out.replace('part-mag', 'part-phase').replace("_phase.nii", ".nii").replace("_rec-uncombined", "_rec-mcpc3ds")
         else:
             # For single-echo, we need to handle filenames differently
-            mag_out_new = mag_out.replace("_mag.nii", ".nii")
+            mag_out_new = mag_out.replace("_mag.nii", ".nii").replace("_rec-uncombined", "_rec-mcpc3ds")
             phase_out_new = os.path.join(
                 os.path.dirname(phase_out),
                 os.path.basename(mag_out_new).replace('part-mag', 'part-phase')
@@ -1042,8 +1129,25 @@ def run_mcpc3ds_on_multicoil(bids_dir):
                 for i in range(mag_data.shape[3]):
                     mag_nii_echo = nb.Nifti1Image(mag_data[..., i], mag_nii.affine, mag_nii.header)
                     phase_nii_echo = nb.Nifti1Image(phase_data[..., i], phase_nii.affine, phase_nii.header)
-                    nb.save(mag_nii_echo, mag_out_new.replace('echo-01', f'echo-{i+1:02}'))
-                    nb.save(phase_nii_echo, phase_out_new.replace('echo-01', f'echo-{i+1:02}'))
+                    mag_echo_path = mag_out_new.replace('echo-01', f'echo-{i+1:02}')
+                    phase_echo_path = phase_out_new.replace('echo-01', f'echo-{i+1:02}')
+                    nb.save(mag_nii_echo, mag_echo_path)
+                    nb.save(phase_nii_echo, phase_echo_path)
+
+                    # Copy JSON sidecars from source files (use mag source for both)
+                    src_json = os.path.splitext(mags[i])[0] + ".json"
+                    if os.path.exists(src_json):
+                        shutil.copy(src_json, os.path.splitext(mag_echo_path)[0] + ".json")
+                        shutil.copy(src_json, os.path.splitext(phase_echo_path)[0] + ".json")
+
+        # Delete the source 4D multi-coil files that were used for MCPC-3D-S
+        logger.log(LogLevel.INFO.value, f"Deleting source multi-coil files after MCPC-3D-S...")
+        for f in mags + phases:
+            if os.path.exists(f):
+                os.remove(f)
+            json_f = os.path.splitext(f)[0] + ".json"
+            if os.path.exists(json_f):
+                os.remove(json_f)
 
 def script_exit(exit_code=0):
     logger = make_logger()
