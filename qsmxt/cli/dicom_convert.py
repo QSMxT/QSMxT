@@ -808,10 +808,12 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
         else:
             dicom_session['SeriesTime'] = datetime.datetime.now().strftime("%H%M%S")
 
-    # Convert EchoTime to numeric to handle mixed types (strings and floats)
+    # Convert EchoTime and InversionTime to numeric to handle mixed types (strings and floats)
     # This can occur when CSA header extraction returns strings for unconvertible values
     if 'EchoTime' in dicom_session.columns:
         dicom_session['EchoTime'] = pd.to_numeric(dicom_session['EchoTime'], errors='coerce')
+    if 'InversionTime' in dicom_session.columns:
+        dicom_session['InversionTime'] = pd.to_numeric(dicom_session['InversionTime'], errors='coerce')
 
     dicom_session['NumEchoes'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'], dropna=False)['EchoTime'].transform('nunique')
     dicom_session['EchoNumber'] = dicom_session.groupby(['PatientName', 'PatientID', 'StudyDate', 'Acquisition', 'RunNumber', 'SeriesDescription', 'SeriesTime'], dropna=False)['EchoTime'].rank(method='dense')
