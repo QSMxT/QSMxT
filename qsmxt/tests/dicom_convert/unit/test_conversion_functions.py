@@ -274,19 +274,20 @@ class TestProcessDicomGroup:
     @patch('os.system')
     @patch('qsmxt.cli.dicom_convert.handle_4d_files')
     def test_process_dicom_group_with_coil(self, mock_handle_4d, mock_system, mock_logger):
-        """Test processing data with coil information."""
+        """Test processing data with coil information when multiple coils exist."""
         if not PYDICOM_AVAILABLE:
             pytest.skip("pydicom not available for creating test DICOM files")
-            
+
         with tempfile.TemporaryDirectory() as tmpdir:
-            # Create actual DICOM file with coil information
+            # Create actual DICOM files with different coil information
+            # We need multiple coils to trigger coil labeling (has_multiple_coils=True)
             dicom_dir = os.path.join(tmpdir, "dicoms")
             os.makedirs(dicom_dir, exist_ok=True)
             from qsmxt.tests.dicom_convert.fixtures.dicom_generator import create_dicom_file
-            
-            filename = os.path.join(dicom_dir, "coil.dcm")
+
+            filename1 = os.path.join(dicom_dir, "coil1.dcm")
             create_dicom_file(
-                filename=filename,
+                filename=filename1,
                 patient_id="patient1",
                 patient_name="Patient^One",
                 study_date="20230101",
@@ -296,17 +297,31 @@ class TestProcessDicomGroup:
                 series_number=1,
                 coil_string="C32"
             )
-            
-            # Create DataFrame from actual DICOM file
+
+            filename2 = os.path.join(dicom_dir, "coil2.dcm")
+            create_dicom_file(
+                filename=filename2,
+                patient_id="patient1",
+                patient_name="Patient^One",
+                study_date="20230101",
+                series_description="GRE",
+                image_type=['ORIGINAL', 'PRIMARY', 'M'],
+                instance_number=2,
+                series_number=1,
+                coil_string="C33"
+            )
+
+            # Create DataFrame from actual DICOM file (just one for this group)
+            # But pass has_multiple_coils=True to simulate multi-coil scenario
             grp_data = create_dataframe_from_dicom_files(
-                [filename], 
-                acquisition="gre", 
+                [filename1],
+                acquisition="gre",
                 series_description="GRE"
             )
             grp_data['RunNumber'] = 1
             grp_data['NumRuns'] = 1
             grp_data['(0051,100F)'] = 'C32'  # Add coil information
-            
+
             # Mock file creation
             def create_nifti_side_effect(cmd):
                 if "dcm2niix" in cmd:
@@ -315,11 +330,12 @@ class TestProcessDicomGroup:
                     img = nb.Nifti1Image(np.zeros((64, 64, 32)), np.eye(4))
                     nb.save(img, nii_path)
                 return 0
-            
+
             mock_system.side_effect = create_nifti_side_effect
-            
-            process_dicom_group(grp_data, tmpdir, "dcm2niix")
-            
+
+            # Pass has_multiple_coils=True since we have data from multiple coils
+            process_dicom_group(grp_data, tmpdir, "dcm2niix", has_multiple_coils=True)
+
             # Check coil number in filename
             expected_pattern = "coil-32"
             output_dir = os.path.join(tmpdir, "sub-patient1", "ses-20230101", "anat")

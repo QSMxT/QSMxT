@@ -40,7 +40,7 @@ class TestValidateSeriesSelections:
         ]
         errors = validate_series_selections(table_data)
         assert len(errors) == 1
-        assert "Mag series (Count=10) requires at least one Phase series" in errors[0]
+        assert "Mag series (Count=10" in errors[0] and "requires a Phase series" in errors[0]
     
     def test_phase_without_mag(self):
         """Test phase without corresponding magnitude."""
@@ -49,7 +49,7 @@ class TestValidateSeriesSelections:
         ]
         errors = validate_series_selections(table_data)
         assert len(errors) == 1
-        assert "Phase series (Count=10) requires at least one Mag series" in errors[0]
+        assert "Phase series (Count=10" in errors[0] and "requires a Mag series" in errors[0]
     
     def test_real_without_imag(self):
         """Test real without corresponding imaginary."""
@@ -58,7 +58,7 @@ class TestValidateSeriesSelections:
         ]
         errors = validate_series_selections(table_data)
         assert len(errors) == 1
-        assert "Real series (Count=10) requires at least one Imag series" in errors[0]
+        assert "Real series (Count=10" in errors[0] and "requires an Imag series" in errors[0]
     
     def test_imag_without_real(self):
         """Test imaginary without corresponding real."""
@@ -67,7 +67,7 @@ class TestValidateSeriesSelections:
         ]
         errors = validate_series_selections(table_data)
         assert len(errors) == 1
-        assert "Imag series (Count=10) requires at least one Real series" in errors[0]
+        assert "Imag series (Count=10" in errors[0] and "requires a Real series" in errors[0]
     
     def test_mismatched_counts_mag_phase(self):
         """Test magnitude and phase with different counts."""
@@ -151,7 +151,7 @@ class TestValidateSeriesSelections:
         errors = validate_series_selections(table_data)
         assert len(errors) == 1
         assert "acquisition2" in errors[0]
-        assert "Mag series (Count=20) requires at least one Phase series" in errors[0]
+        assert "Mag series (Count=20" in errors[0] and "requires a Phase series" in errors[0]
     
     def test_none_and_empty_values_handling(self):
         """Test handling of None and empty values."""
