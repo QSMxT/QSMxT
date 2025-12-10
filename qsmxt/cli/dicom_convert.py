@@ -142,10 +142,16 @@ def auto_assign_initial_labels(table_data):
                     imag_row["Description"] = str(idx)
 
 
+def _get_series_ident(row):
+    """Helper to get identifier for matching pairs (InversionNumber or Description)."""
+    inv = row.get("InversionNumber")
+    return inv if inv not in [None, ""] else row.get("Description", "")
+
+
 def validate_series_selections(table_data):
     """
     Validate the current series selections.
-    
+
     For each acquisition (grouped by Acquisition), enforce:
       - For each row marked "Mag", at least one row in the same group must be "Phase"
         with the same Count, and vice versa.
@@ -154,7 +160,7 @@ def validate_series_selections(table_data):
         report an error.
       - If more than one pair is selected in the same acquisition, the pairs must be
         differentiated by a non-empty, unique InversionNumber or Description.
-        
+
     Returns a list of error messages.
     """
     errors = []
@@ -167,29 +173,25 @@ def validate_series_selections(table_data):
         phase_rows = [r for r in rows if r.get("Type") == "Phase"]
         real_rows = [r for r in rows if r.get("Type") == "Real"]
         imag_rows = [r for r in rows if r.get("Type") == "Imag"]
-        # Helper to get identifier for matching pairs
-        def get_ident(row):
-            inv = row.get("InversionNumber")
-            return inv if inv not in [None, ""] else row.get("Description", "")
 
         for m in mag_rows:
-            m_ident = get_ident(m)
-            matching_phase = [p for p in phase_rows if p.get("Count") == m.get("Count") and get_ident(p) == m_ident]
+            m_ident = _get_series_ident(m)
+            matching_phase = [p for p in phase_rows if p.get("Count") == m.get("Count") and _get_series_ident(p) == m_ident]
             if not matching_phase:
                 errors.append(f"Series '{series}': Mag series (Count={m.get('Count')}, Description='{m.get('Description', '')}') requires a Phase series with the same number of images and description.")
         for p in phase_rows:
-            p_ident = get_ident(p)
-            matching_mag = [m for m in mag_rows if m.get("Count") == p.get("Count") and get_ident(m) == p_ident]
+            p_ident = _get_series_ident(p)
+            matching_mag = [m for m in mag_rows if m.get("Count") == p.get("Count") and _get_series_ident(m) == p_ident]
             if not matching_mag:
                 errors.append(f"Series '{series}': Phase series (Count={p.get('Count')}, Description='{p.get('Description', '')}') requires a Mag series with the same number of images and description.")
         for r in real_rows:
-            r_ident = get_ident(r)
-            matching_imag = [i for i in imag_rows if i.get("Count") == r.get("Count") and get_ident(i) == r_ident]
+            r_ident = _get_series_ident(r)
+            matching_imag = [i for i in imag_rows if i.get("Count") == r.get("Count") and _get_series_ident(i) == r_ident]
             if not matching_imag:
                 errors.append(f"Series '{series}': Real series (Count={r.get('Count')}, Description='{r.get('Description', '')}') requires an Imag series with the same number of images and description.")
         for i in imag_rows:
-            i_ident = get_ident(i)
-            matching_real = [r for r in real_rows if r.get("Count") == i.get("Count") and get_ident(r) == i_ident]
+            i_ident = _get_series_ident(i)
+            matching_real = [r for r in real_rows if r.get("Count") == i.get("Count") and _get_series_ident(r) == i_ident]
             if not matching_real:
                 errors.append(f"Series '{series}': Imag series (Count={i.get('Count')}, Description='{i.get('Description', '')}') requires a Real series with the same number of images and description.")
         # Only compare Mag/Phase pairs with matching Description (or InversionNumber)
