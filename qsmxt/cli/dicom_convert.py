@@ -717,9 +717,9 @@ def process_dicom_group(grp_data, output_dir, dcm2niix_path, acq_needs_part_labe
         if "NumRuns" in row and row["NumRuns"] > 1:
             base_name += f"_run-{int(row['RunNumber']):02}"
 
-        # Add desc- for other descriptions (not combined/uncombined)
-        if row["Description"] and row["Description"].lower() not in ["combined", "uncombined"]:
-            base_name += f"_desc-{row['Description']}"
+        # Add desc- for user-provided descriptions
+        if row["Description"]:
+            base_name += f"_desc-{clean(row['Description'])}"
         elif row["Type"] == "Extra":
             base_name += f"_desc-{clean(row['SeriesDescription'])}"
         # Only add coil labels if there are actually multiple coils in the acquisition
@@ -832,9 +832,6 @@ def convert_to_bids(input_dir, output_dir, auto_yes):
 
     grouped = dicom_session.groupby(groupby_fields, dropna=False).agg(Count=("InstanceNumber", "count"), NumEchoes=("EchoTime", "nunique")).reset_index()
 
-    # Auto-assign Description based on CoilType (combined vs uncombined coil data)
-    if "CoilType" in grouped.columns:
-        grouped["Description"] = grouped["CoilType"].apply(lambda x: x.lower() if pd.notna(x) else "")
     # Rename for display in UI (show as "SeriesDescription")
     grouped = grouped.rename(columns={"NormalizedSeriesDescription": "SeriesDescription"})
     if auto_yes or not sys.__stdin__.isatty():
