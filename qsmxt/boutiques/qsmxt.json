@@ -601,29 +601,29 @@
         {
             "id": "qsm_output",
             "name": "QSM Output",
-            "description": "QSM reconstruction output (Chimap NIfTI files)",
-            "path-template": "[OUTPUT_DIR]/**/sub-*_*Chimap.nii*",
+            "description": "QSM reconstruction output (Chimap NIfTI files). When OUTPUT_DIR is not specified, outputs are in BIDS_DIR/derivatives/qsmxt-*/",
+            "path-template": "[BIDS_DIR]/derivatives/qsmxt-*/**/sub-*_*Chimap.nii*",
             "optional": true
         },
         {
             "id": "mask_output",
             "name": "Mask Output",
-            "description": "Brain masks generated during processing",
-            "path-template": "[OUTPUT_DIR]/**/sub-*_*mask.nii*",
+            "description": "Brain masks generated during processing. When OUTPUT_DIR is not specified, outputs are in BIDS_DIR/derivatives/qsmxt-*/",
+            "path-template": "[BIDS_DIR]/derivatives/qsmxt-*/**/sub-*_*mask.nii*",
             "optional": true
         },
         {
             "id": "segmentation_output",
             "name": "Segmentation Output",
-            "description": "Brain segmentation output",
-            "path-template": "[OUTPUT_DIR]/**/sub-*_*dseg.nii*",
+            "description": "Brain segmentation output. When OUTPUT_DIR is not specified, outputs are in BIDS_DIR/derivatives/qsmxt-*/",
+            "path-template": "[BIDS_DIR]/derivatives/qsmxt-*/**/sub-*_*dseg.nii*",
             "optional": true
         },
         {
             "id": "analysis_output",
             "name": "Analysis Output",
-            "description": "Analysis CSV files with ROI statistics",
-            "path-template": "[OUTPUT_DIR]/**/*.csv",
+            "description": "Analysis CSV files with ROI statistics. When OUTPUT_DIR is not specified, outputs are in BIDS_DIR/derivatives/qsmxt-*/",
+            "path-template": "[BIDS_DIR]/derivatives/qsmxt-*/**/*.csv",
             "optional": true
         }
     ],

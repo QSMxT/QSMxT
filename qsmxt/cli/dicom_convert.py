@@ -42,6 +42,79 @@ def normalize_series_description(series_desc):
         return series_desc
     return re.sub(r'(_RR)+$', '', str(series_desc))
 
+
+def get_image_type_signature(image_type):
+    """
+    Extract a signature from ImageType that identifies the source/export format.
+    Removes known type markers (M, P, REAL, IMAGINARY) to get the base signature.
+    This helps pair mag/phase series that came from the same source.
+    """
+    if image_type is None:
+        return ()
+
+    if isinstance(image_type, str):
+        parts = [image_type]
+    elif isinstance(image_type, (list, tuple)):
+        parts = list(image_type)
+    else:
+        parts = [str(image_type)]
+
+    # Remove known type markers that distinguish mag/phase/real/imag
+    type_markers = {'M', 'P', 'MAG', 'PHASE', 'REAL', 'IMAGINARY'}
+    signature = tuple(p for p in parts if p not in type_markers)
+    return signature
+
+
+def pair_by_signature(candidates_a, candidates_b, pairs_list, type_a, type_b):
+    """
+    Pair candidates preferring matching ImageType signatures.
+
+    Args:
+        candidates_a: List of candidate rows for type A (e.g., Mag)
+        candidates_b: List of candidate rows for type B (e.g., Phase)
+        pairs_list: List to append paired tuples to
+        type_a: Type label for candidates_a (e.g., "Mag")
+        type_b: Type label for candidates_b (e.g., "Phase")
+    """
+    # Group candidates by their ImageType signature
+    a_by_sig = defaultdict(list)
+    b_by_sig = defaultdict(list)
+
+    for row in candidates_a:
+        sig = get_image_type_signature(row.get("ImageType"))
+        a_by_sig[sig].append(row)
+
+    for row in candidates_b:
+        sig = get_image_type_signature(row.get("ImageType"))
+        b_by_sig[sig].append(row)
+
+    # First pass: pair candidates with matching signatures
+    paired_a = set()
+    paired_b = set()
+
+    for sig in a_by_sig:
+        if sig in b_by_sig:
+            a_list = a_by_sig[sig]
+            b_list = b_by_sig[sig]
+            n_pairs = min(len(a_list), len(b_list))
+            for i in range(n_pairs):
+                a_list[i]["Type"] = type_a
+                b_list[i]["Type"] = type_b
+                pairs_list.append((a_list[i], b_list[i]))
+                paired_a.add(id(a_list[i]))
+                paired_b.add(id(b_list[i]))
+
+    # Second pass: pair remaining unpaired candidates sequentially (fallback)
+    remaining_a = [r for r in candidates_a if id(r) not in paired_a]
+    remaining_b = [r for r in candidates_b if id(r) not in paired_b]
+
+    n_fallback = min(len(remaining_a), len(remaining_b))
+    for i in range(n_fallback):
+        remaining_a[i]["Type"] = type_a
+        remaining_b[i]["Type"] = type_b
+        pairs_list.append((remaining_a[i], remaining_b[i]))
+
+
 def auto_assign_initial_labels(table_data):
     # Group rows by acquisition.
     acquisition_groups = defaultdict(list)
@@ -71,7 +144,7 @@ def auto_assign_initial_labels(table_data):
 
         # For each group, assign as many Mag/Phase and Real/Imag pairs as possible.
         for key, group in groups.items():
-            # Mag/Phase pairing.
+            # Mag/Phase pairing - use signature-based matching to pair series from same source
             mag_candidates = [
                 r for r in group if r["Type"] == "Skip" and (
                     (isinstance(r.get("ImageType"), (list, tuple)) and 'M' in r.get("ImageType")) or
@@ -84,13 +157,9 @@ def auto_assign_initial_labels(table_data):
                     (not isinstance(r.get("ImageType"), (list, tuple)) and 'P' in str(r.get("ImageType")))
                 )
             ]
-            n_pairs = min(len(mag_candidates), len(pha_candidates))
-            for i in range(n_pairs):
-                mag_candidates[i]["Type"] = "Mag"
-                pha_candidates[i]["Type"] = "Phase"
-                mag_phase_pairs[key].append((mag_candidates[i], pha_candidates[i]))
+            pair_by_signature(mag_candidates, pha_candidates, mag_phase_pairs[key], "Mag", "Phase")
 
-            # Real/Imag pairing.
+            # Real/Imag pairing - use signature-based matching to pair series from same source
             real_candidates = [
                 r for r in group if r["Type"] == "Skip" and (
                     (isinstance(r.get("ImageType"), (list, tuple)) and 'REAL' in r.get("ImageType")) or
@@ -103,11 +172,7 @@ def auto_assign_initial_labels(table_data):
                     (not isinstance(r.get("ImageType"), (list, tuple)) and 'IMAGINARY' in str(r.get("ImageType")))
                 )
             ]
-            n_pairs = min(len(real_candidates), len(imag_candidates))
-            for i in range(n_pairs):
-                real_candidates[i]["Type"] = "Real"
-                imag_candidates[i]["Type"] = "Imag"
-                real_imag_pairs[key].append((real_candidates[i], imag_candidates[i]))
+            pair_by_signature(real_candidates, imag_candidates, real_imag_pairs[key], "Real", "Imag")
 
         # Next, try to mark a row as T1w if its ImageType contains 'UNI' or if its
         # SeriesDescription (uppercased) contains 'UNI-DEN' or 'T1W'.
@@ -152,18 +217,18 @@ def validate_series_selections(table_data):
     """
     Validate the current series selections.
 
-    For each acquisition (grouped by Acquisition), enforce:
+    For each acquisition (grouped by Acquisition), check:
       - For each row marked "Mag", at least one row in the same group must be "Phase"
         with the same Count, and vice versa.
       - Similarly for "Real" and "Imag".
       - If a Mag/Phase (or Real/Imag) pair exists but the Count values differ,
-        report an error.
+        report a warning.
       - If more than one pair is selected in the same acquisition, the pairs must be
         differentiated by a non-empty, unique InversionNumber or Description.
 
-    Returns a list of error messages.
+    Returns a list of warning messages (no longer blocks navigation).
     """
-    errors = []
+    warnings = []
     groups = {}
     for row in table_data:
         key = row.get("Acquisition", "")
@@ -217,7 +282,7 @@ def validate_series_selections(table_data):
                     ident = m.get("Description", "")
                 identifiers.append(ident)
             if len(set(identifiers)) < len(identifiers):
-                errors.append(f"Series '{series}': Multiple Mag/Phase series selections must be differentiated by InversionNumber or Description.")
+                warnings.append(f"Series '{series}': Multiple Mag/Phase series selections should be differentiated by InversionNumber or Description.")
         if len(real_rows) > 1:
             identifiers = []
             for r in real_rows:
@@ -226,8 +291,8 @@ def validate_series_selections(table_data):
                     ident = r.get("Description", "")
                 identifiers.append(ident)
             if len(set(identifiers)) < len(identifiers):
-                errors.append(f"Series '{series}': Multiple Real/Imag series selections must be differentiated by InversionNumber or Description.")
-    return errors
+                warnings.append(f"Series '{series}': Multiple Real/Imag series selections should be differentiated by InversionNumber or Description.")
+    return warnings
 
 def interactive_acquisition_selection_series(table_data):
     """
@@ -259,7 +324,6 @@ def interactive_acquisition_selection_series(table_data):
         allowed_types = ["Mag", "Phase", "Real", "Imag", "T1w", "Extra", "Skip"]
         current_acq_index = 0
         current_row = 0
-        nav_blocked = False
 
         while True:
             stdscr.clear()
@@ -279,21 +343,17 @@ def interactive_acquisition_selection_series(table_data):
                 else:
                     stdscr.addstr(3 + idx, 0, line[:stdscr.getmaxyx()[1] - 1])
 
-            errors = validate_series_selections(rows)
-            err_y = 4 + len(display_data) + 2
-            if errors:
-                for err in errors:
-                    stdscr.addstr(err_y, 0, f"ERROR: {err}", curses.A_BOLD | curses.color_pair(1))
-                    err_y += 1
-                if nav_blocked:
-                    stdscr.addstr(err_y, 0, "Cannot leave this acquisition until all errors are resolved.", curses.A_BOLD | curses.color_pair(1))
-                    err_y += 1
+            warnings = validate_series_selections(rows)
+            warn_y = 4 + len(display_data) + 2
+            if warnings:
+                for warn in warnings:
+                    stdscr.addstr(warn_y, 0, f"WARNING: {warn}", curses.A_BOLD | curses.color_pair(1))
+                    warn_y += 1
             else:
-                stdscr.addstr(err_y, 0, "No errors.", curses.A_BOLD)
+                stdscr.addstr(warn_y, 0, "No warnings.", curses.A_BOLD)
 
             stdscr.refresh()
             key = stdscr.getch()
-            nav_blocked = False
 
             if key == 27:
                 return None
@@ -318,28 +378,22 @@ def interactive_acquisition_selection_series(table_data):
                 ch = chr(key)
                 rows[current_row]["Description"] += ch
             elif key in (9, 10):  # TAB or ENTER
-                if errors:
-                    nav_blocked = True
+                if current_acq_index == len(acquisition_keys) - 1:
+                    stdscr.addstr(warn_y + 1, 0, "Confirm selections?", curses.A_BOLD)
+                    empty = [k for k, v in acquisition_groups.items() if all(r.get("Type", "Skip") == "Skip" for r in v)]
+                    if empty:
+                        stdscr.addstr(warn_y + 2, 0, f"({len(empty)} acquisitions have no selections)", curses.A_BOLD | curses.color_pair(1))
+                    stdscr.addstr(warn_y + 3, 0, "(y or n): ", curses.A_BOLD)
+                    stdscr.refresh()
+                    ch = stdscr.getch()
+                    if ch in (ord('y'), ord('Y')):
+                        return [r for group in acquisition_groups.values() for r in group]
                 else:
-                    if current_acq_index == len(acquisition_keys) - 1:
-                        stdscr.addstr(err_y + 1, 0, "Confirm selections?", curses.A_BOLD)
-                        empty = [k for k, v in acquisition_groups.items() if all(r.get("Type", "Skip") == "Skip" for r in v)]
-                        if empty:
-                            stdscr.addstr(err_y + 2, 0, f"({len(empty)} acquisitions have no selections)", curses.A_BOLD | curses.color_pair(1))
-                        stdscr.addstr(err_y + 3, 0, "(y or n): ", curses.A_BOLD)
-                        stdscr.refresh()
-                        ch = stdscr.getch()
-                        if ch in (ord('y'), ord('Y')):
-                            return [r for group in acquisition_groups.values() for r in group]
-                    else:
-                        current_acq_index += 1
-                        current_row = 0
-            elif key == 353:  # SHIFT+TAB
-                if errors:
-                    nav_blocked = True
-                else:
-                    current_acq_index = (current_acq_index - 1) % len(acquisition_keys)
+                    current_acq_index += 1
                     current_row = 0
+            elif key == 353:  # SHIFT+TAB
+                current_acq_index = (current_acq_index - 1) % len(acquisition_keys)
+                current_row = 0
 
     return curses.wrapper(curses_ui)
 
@@ -527,8 +581,9 @@ def convert_and_organize(dicom_session, output_dir, dcm2niix_path="dcm2niix"):
 
     # First, group by patient, study, acquisition, and run number
     # Only include SeriesDescription if we don't have complementary types that may be in different series
+    # Always include Description to separate user-differentiated series (e.g., from different sources)
     base_group_cols = [
-        "PatientName", "PatientID", "StudyDate", "Acquisition", "RunNumber"
+        "PatientName", "PatientID", "StudyDate", "Acquisition", "RunNumber", "Description"
     ]
     if not has_complementary_types:
         base_group_cols.append("SeriesDescription")
