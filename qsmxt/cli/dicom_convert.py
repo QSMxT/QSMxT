@@ -1,4 +1,13 @@
 #!/usr/bin/env python3
+"""
+QSMxT DICOM to BIDS Converter
+
+Converts DICOM files to BIDS-compliant NIfTI format with support for:
+- Multi-echo GRE sequences (QSM/SWI)
+- Multi-coil (uncombined) data with MCPC-3D-S combination
+- GE complex/polar data correction
+- Interactive series selection UI
+"""
 
 import argparse
 import os
@@ -8,6 +17,7 @@ import datetime
 import re
 import curses
 import shutil
+import subprocess
 import time
 import pandas as pd
 import nibabel as nb
@@ -20,6 +30,17 @@ from qsmxt.scripts.nii_fix_ge import fix_ge_polar, fix_ge_complex
 
 from tabulate import tabulate
 from collections import defaultdict
+
+# Curses key codes
+KEY_ESC = 27
+KEY_TAB = 9
+KEY_ENTER = 10
+KEY_SHIFT_TAB = 353
+KEY_BACKSPACE_CODES = (curses.KEY_BACKSPACE, 127, 8)
+
+# BIDS type mappings
+ALLOWED_TYPES = ["Mag", "Phase", "Real", "Imag", "T1w", "Extra", "Skip"]
+COMPLEMENTARY_TYPES = {"Mag": "Phase", "Phase": "Mag", "Real": "Imag", "Imag": "Real"}
 
 def clean(data):
     data = str(data).strip()
@@ -243,22 +264,22 @@ def validate_series_selections(table_data):
             m_ident = _get_series_ident(m)
             matching_phase = [p for p in phase_rows if p.get("Count") == m.get("Count") and _get_series_ident(p) == m_ident]
             if not matching_phase:
-                errors.append(f"Series '{series}': Mag series (Count={m.get('Count')}, Description='{m.get('Description', '')}') requires a Phase series with the same number of images and description.")
+                warnings.append(f"Series '{series}': Mag series (Count={m.get('Count')}, Description='{m.get('Description', '')}') requires a Phase series with the same number of images and description.")
         for p in phase_rows:
             p_ident = _get_series_ident(p)
             matching_mag = [m for m in mag_rows if m.get("Count") == p.get("Count") and _get_series_ident(m) == p_ident]
             if not matching_mag:
-                errors.append(f"Series '{series}': Phase series (Count={p.get('Count')}, Description='{p.get('Description', '')}') requires a Mag series with the same number of images and description.")
+                warnings.append(f"Series '{series}': Phase series (Count={p.get('Count')}, Description='{p.get('Description', '')}') requires a Mag series with the same number of images and description.")
         for r in real_rows:
             r_ident = _get_series_ident(r)
             matching_imag = [i for i in imag_rows if i.get("Count") == r.get("Count") and _get_series_ident(i) == r_ident]
             if not matching_imag:
-                errors.append(f"Series '{series}': Real series (Count={r.get('Count')}, Description='{r.get('Description', '')}') requires an Imag series with the same number of images and description.")
+                warnings.append(f"Series '{series}': Real series (Count={r.get('Count')}, Description='{r.get('Description', '')}') requires an Imag series with the same number of images and description.")
         for i in imag_rows:
             i_ident = _get_series_ident(i)
             matching_real = [r for r in real_rows if r.get("Count") == i.get("Count") and _get_series_ident(r) == i_ident]
             if not matching_real:
-                errors.append(f"Series '{series}': Imag series (Count={i.get('Count')}, Description='{i.get('Description', '')}') requires a Real series with the same number of images and description.")
+                warnings.append(f"Series '{series}': Imag series (Count={i.get('Count')}, Description='{i.get('Description', '')}') requires a Real series with the same number of images and description.")
         # Only compare Mag/Phase pairs with matching Description (or InversionNumber)
         for m in mag_rows:
             m_ident = m.get("InversionNumber") if m.get("InversionNumber") not in [None, ""] else m.get("Description", "")
@@ -266,14 +287,14 @@ def validate_series_selections(table_data):
                 p_ident = p.get("InversionNumber") if p.get("InversionNumber") not in [None, ""] else p.get("Description", "")
                 # Only validate count match for pairs with the same identifier
                 if m_ident == p_ident and m.get("Count") != p.get("Count"):
-                    errors.append(f"Series '{series}': Selected Mag and Phase series have non-matching number of images ({m.get('Count')} vs. {p.get('Count')}).")
+                    warnings.append(f"Series '{series}': Selected Mag and Phase series have non-matching number of images ({m.get('Count')} vs. {p.get('Count')}).")
         for r in real_rows:
             r_ident = r.get("InversionNumber") if r.get("InversionNumber") not in [None, ""] else r.get("Description", "")
             for i in imag_rows:
                 i_ident = i.get("InversionNumber") if i.get("InversionNumber") not in [None, ""] else i.get("Description", "")
                 # Only validate count match for pairs with the same identifier
                 if r_ident == i_ident and r.get("Count") != i.get("Count"):
-                    errors.append(f"Series '{series}': Selected Real and Imag series have non-matching number of images ({r.get('Count')} vs. {i.get('Count')}).")
+                    warnings.append(f"Series '{series}': Selected Real and Imag series have non-matching number of images ({r.get('Count')} vs. {i.get('Count')}).")
         if len(mag_rows) > 1:
             identifiers = []
             for m in mag_rows:
