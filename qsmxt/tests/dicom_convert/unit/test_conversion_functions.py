@@ -371,7 +371,8 @@ class TestConvertAndOrganize:
             'SeriesDescription': ['GRE_MAG', 'GRE_PHASE'],
             'RunNumber': [1, 1],
             'DICOM_Path': ['/path/1.dcm', '/path/2.dcm'],
-            'SeriesInstanceUID': ['1.2.3', '1.2.4']
+            'SeriesInstanceUID': ['1.2.3', '1.2.4'],
+            'Description': ['', '']
         })
         
         convert_and_organize(dicom_session, "/output", "dcm2niix")
@@ -393,7 +394,8 @@ class TestConvertAndOrganize:
             'RunNumber': [1, 1, 1, 1],
             'DICOM_Path': ['/p/1.dcm', '/p/2.dcm', '/p/3.dcm', '/p/4.dcm'],
             'SeriesInstanceUID': ['1', '2', '3', '4'],
-            'EchoNumber': [1, 1, 2, 2]
+            'EchoNumber': [1, 1, 2, 2],
+            'Description': ['', '', '', '']
         })
         
         convert_and_organize(dicom_session, "/output", "dcm2niix")
@@ -411,13 +413,14 @@ class TestConvertAndOrganize:
             'DICOM_Path': ['/path/1.dcm']
             # Missing PatientID, PatientName, StudyDate, etc.
         })
-        
+
         # Add minimal required columns
         dicom_session['PatientID'] = pd.NA
         dicom_session['PatientName'] = pd.NA
         dicom_session['StudyDate'] = pd.NA
         dicom_session['SeriesDescription'] = pd.NA
         dicom_session['RunNumber'] = pd.NA
+        dicom_session['Description'] = ''
         
         convert_and_organize(dicom_session, "/output", "dcm2niix")
         

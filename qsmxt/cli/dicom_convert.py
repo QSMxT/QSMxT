@@ -229,9 +229,11 @@ def auto_assign_initial_labels(table_data):
 
 
 def _get_series_ident(row):
-    """Helper to get identifier for matching pairs (InversionNumber or Description)."""
-    inv = row.get("InversionNumber")
-    return inv if inv not in [None, ""] else row.get("Description", "")
+    """Helper to get identifier tuple for matching pairs (InversionNumber, Description, CoilType)."""
+    inv = row.get("InversionNumber") or ""
+    desc = row.get("Description") or ""
+    coil = row.get("CoilType") or ""
+    return (inv, desc, coil)
 
 
 def validate_series_selections(table_data):
@@ -245,7 +247,7 @@ def validate_series_selections(table_data):
       - If a Mag/Phase (or Real/Imag) pair exists but the Count values differ,
         report a warning.
       - If more than one pair is selected in the same acquisition, the pairs must be
-        differentiated by a non-empty, unique InversionNumber or Description.
+        differentiated by a non-empty, unique InversionNumber, Description, or CoilType.
 
     Returns a list of warning messages (no longer blocks navigation).
     """
@@ -280,39 +282,29 @@ def validate_series_selections(table_data):
             matching_real = [r for r in real_rows if r.get("Count") == i.get("Count") and _get_series_ident(r) == i_ident]
             if not matching_real:
                 warnings.append(f"Series '{series}': Imag series (Count={i.get('Count')}, Description='{i.get('Description', '')}') requires a Real series with the same number of images and description.")
-        # Only compare Mag/Phase pairs with matching Description (or InversionNumber)
+        # Only compare Mag/Phase pairs with matching identifier (InversionNumber, Description, CoilType)
         for m in mag_rows:
-            m_ident = m.get("InversionNumber") if m.get("InversionNumber") not in [None, ""] else m.get("Description", "")
+            m_ident = _get_series_ident(m)
             for p in phase_rows:
-                p_ident = p.get("InversionNumber") if p.get("InversionNumber") not in [None, ""] else p.get("Description", "")
+                p_ident = _get_series_ident(p)
                 # Only validate count match for pairs with the same identifier
                 if m_ident == p_ident and m.get("Count") != p.get("Count"):
                     warnings.append(f"Series '{series}': Selected Mag and Phase series have non-matching number of images ({m.get('Count')} vs. {p.get('Count')}).")
         for r in real_rows:
-            r_ident = r.get("InversionNumber") if r.get("InversionNumber") not in [None, ""] else r.get("Description", "")
+            r_ident = _get_series_ident(r)
             for i in imag_rows:
-                i_ident = i.get("InversionNumber") if i.get("InversionNumber") not in [None, ""] else i.get("Description", "")
+                i_ident = _get_series_ident(i)
                 # Only validate count match for pairs with the same identifier
                 if r_ident == i_ident and r.get("Count") != i.get("Count"):
                     warnings.append(f"Series '{series}': Selected Real and Imag series have non-matching number of images ({r.get('Count')} vs. {i.get('Count')}).")
         if len(mag_rows) > 1:
-            identifiers = []
-            for m in mag_rows:
-                ident = m.get("InversionNumber")
-                if ident is None or ident == "":
-                    ident = m.get("Description", "")
-                identifiers.append(ident)
+            identifiers = [_get_series_ident(m) for m in mag_rows]
             if len(set(identifiers)) < len(identifiers):
-                warnings.append(f"Series '{series}': Multiple Mag/Phase series selections should be differentiated by InversionNumber or Description.")
+                warnings.append(f"Series '{series}': Multiple Mag/Phase series selections should be differentiated by InversionNumber, Description, or CoilType.")
         if len(real_rows) > 1:
-            identifiers = []
-            for r in real_rows:
-                ident = r.get("InversionNumber")
-                if ident is None or ident == "":
-                    ident = r.get("Description", "")
-                identifiers.append(ident)
+            identifiers = [_get_series_ident(r) for r in real_rows]
             if len(set(identifiers)) < len(identifiers):
-                warnings.append(f"Series '{series}': Multiple Real/Imag series selections should be differentiated by InversionNumber or Description.")
+                warnings.append(f"Series '{series}': Multiple Real/Imag series selections should be differentiated by InversionNumber, Description, or CoilType.")
     return warnings
 
 def interactive_acquisition_selection_series(table_data):
@@ -340,7 +332,23 @@ def interactive_acquisition_selection_series(table_data):
             curses.start_color()
             curses.init_pair(1, curses.COLOR_RED, curses.COLOR_BLACK)
 
-        headers = ["SeriesDescription", "ImageType", "Count", "NumEchoes", "InversionNumber", "Type", "Description"]
+        # All possible data headers - will be filtered to only show columns with values
+        all_data_headers = ["SeriesDescription", "ImageType", "Count", "NumEchoes", "InversionNumber", "CoilType"]
+        # Editable columns that are always shown
+        always_show_headers = ["Type", "Description"]
+
+        def column_has_values(header, rows):
+            """Check if any row has a non-empty value for this header."""
+            for r in rows:
+                val = r.get(header)
+                if val is not None and val != "" and str(val).strip() != "":
+                    # Also check for NaN
+                    try:
+                        if not (isinstance(val, float) and pd.isna(val)):
+                            return True
+                    except (TypeError, ValueError):
+                        return True
+            return False
 
         allowed_types = ["Mag", "Phase", "Real", "Imag", "T1w", "Extra", "Skip"]
         current_acq_index = 0
@@ -351,6 +359,11 @@ def interactive_acquisition_selection_series(table_data):
             current_acq = acquisition_keys[current_acq_index]
             rows = acquisition_groups[current_acq]
             nrows = len(rows)
+
+            # Filter headers to only show columns with values (for data columns)
+            # Always show editable columns (Type, Description)
+            headers = [h for h in all_data_headers if column_has_values(h, rows)] + always_show_headers
+
             stdscr.addstr(0, 0, f"Acquisition ({current_acq_index+1} of {len(acquisition_keys)}): {current_acq}")
             stdscr.addstr(1, 0, "Arrow keys = navigate/select type | Text = edit description | SHIFT/ENTER = next | SHIFT+TAB = previous | ESC = quit")
 

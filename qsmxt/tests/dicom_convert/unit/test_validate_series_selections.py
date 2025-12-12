@@ -99,7 +99,7 @@ class TestValidateSeriesSelections:
         ]
         errors = validate_series_selections(table_data)
         assert len(errors) == 1
-        assert "Multiple Mag/Phase series selections must be differentiated" in errors[0]
+        assert "Multiple Mag/Phase series selections should be differentiated" in errors[0]
     
     def test_multiple_mag_with_inversion_numbers(self):
         """Test multiple magnitude series differentiated by InversionNumber."""
@@ -133,7 +133,7 @@ class TestValidateSeriesSelections:
         ]
         errors = validate_series_selections(table_data)
         assert len(errors) == 1
-        assert "Multiple Real/Imag series selections must be differentiated" in errors[0]
+        assert "Multiple Real/Imag series selections should be differentiated" in errors[0]
     
     def test_mixed_valid_invalid_acquisitions(self):
         """Test mix of valid and invalid acquisitions."""
