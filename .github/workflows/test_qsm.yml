@@ -158,6 +158,28 @@ jobs:
     - uses: actions/setup-python@v3
       with:
         python-version: 3.8
+    - name: Update Boutiques descriptor with container image
+      env:
+        TEST_DIR: "/storage/tmp"
+      run: |
+        # Read container version info from _config.yml
+        CONTAINER_VERSION=$(grep '^TEST_CONTAINER_VERSION:' docs/_config.yml | awk '{print $2}')
+        CONTAINER_DATE=$(grep '^TEST_CONTAINER_DATE:' docs/_config.yml | awk '{print $2}')
+        CONTAINER_IMAGE="vnmd/qsmxt_${CONTAINER_VERSION}:${CONTAINER_DATE}"
+
+        echo "Setting container image to: $CONTAINER_IMAGE"
+
+        # Update the descriptor in the test directory
+        sudo docker exec qsmxt-container python3 -c "
+        import json
+        descriptor_path = '${TEST_DIR}/QSMxT/qsmxt/boutiques/qsmxt.json'
+        with open(descriptor_path, 'r') as f:
+            descriptor = json.load(f)
+        descriptor['container-image']['image'] = '${CONTAINER_IMAGE}'
+        with open(descriptor_path, 'w') as f:
+            json.dump(descriptor, f, indent=4)
+        print('Updated container image in descriptor')
+        "
     - name: Test Boutiques Integration
       env:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
