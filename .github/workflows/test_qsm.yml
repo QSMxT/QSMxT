@@ -182,32 +182,10 @@ jobs:
         echo "Descriptor path: $DESCRIPTOR_PATH"
 
         # Update the descriptor in the test directory
-        sudo docker exec qsmxt-container python3 -c "
-import json
-import sys
-
-descriptor_path = '${DESCRIPTOR_PATH}'
-container_image = '${CONTAINER_IMAGE}'
-
-print(f'Reading descriptor from: {descriptor_path}')
-with open(descriptor_path, 'r') as f:
-    descriptor = json.load(f)
-
-print(f'Setting container image to: {container_image}')
-descriptor['container-image']['image'] = container_image
-
-with open(descriptor_path, 'w') as f:
-    json.dump(descriptor, f, indent=4)
-
-# Verify the update
-with open(descriptor_path, 'r') as f:
-    updated = json.load(f)
-actual_image = updated.get('container-image', {}).get('image')
-if actual_image != container_image:
-    print(f'ERROR: Verification failed! Expected {container_image}, got {actual_image}')
-    sys.exit(1)
-print(f'Successfully updated and verified container image: {actual_image}')
-"
+        sudo docker exec \
+          -e DESCRIPTOR_PATH="$DESCRIPTOR_PATH" \
+          -e CONTAINER_IMAGE="$CONTAINER_IMAGE" \
+          qsmxt-container python3 -c "import json, sys, os; descriptor_path = os.environ['DESCRIPTOR_PATH']; container_image = os.environ['CONTAINER_IMAGE']; print(f'Reading: {descriptor_path}'); f = open(descriptor_path, 'r'); descriptor = json.load(f); f.close(); print(f'Setting image to: {container_image}'); descriptor['container-image']['image'] = container_image; f = open(descriptor_path, 'w'); json.dump(descriptor, f, indent=4); f.close(); f = open(descriptor_path, 'r'); updated = json.load(f); f.close(); actual = updated.get('container-image', {}).get('image'); assert actual == container_image, f'Verification failed: expected {container_image}, got {actual}'; print(f'Successfully verified: {actual}')"
     - name: Test Boutiques Integration
       env:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
