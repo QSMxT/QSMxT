@@ -1,15 +1,13 @@
 name: Publish Boutiques Descriptor to Zenodo
 
 on:
-  release:
-    types: [published]
   workflow_dispatch:
     inputs:
       dry_run:
         description: 'Dry run (validate only, do not publish)'
         required: false
         type: boolean
-        default: true
+        default: false
 
 env:
   DESCRIPTOR_PATH: qsmxt/boutiques/qsmxt.json
