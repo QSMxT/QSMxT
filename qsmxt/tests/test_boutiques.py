@@ -249,6 +249,15 @@ class TestBoutiquesIntegration:
         """
         from boutiques import bosh
 
+        # Verify container image is set (workflow must set this before running)
+        with open(DESCRIPTOR_PATH, 'r') as f:
+            descriptor = json.load(f)
+        container_image = descriptor.get('container-image', {}).get('image')
+        assert container_image, (
+            f"Container image not set in descriptor at {DESCRIPTOR_PATH}. "
+            "The CI workflow must update this before running tests."
+        )
+
         # Create a realistic invocation (paths don't need to exist for simulation)
         invocation = {
             "bids_dir": "/path/to/bids",

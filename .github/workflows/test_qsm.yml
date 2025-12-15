@@ -162,24 +162,52 @@ jobs:
       env:
         TEST_DIR: "/storage/tmp"
       run: |
+        set -e  # Fail fast on any error
+
         # Read container version info from _config.yml
         CONTAINER_VERSION=$(grep '^TEST_CONTAINER_VERSION:' docs/_config.yml | awk '{print $2}')
         CONTAINER_DATE=$(grep '^TEST_CONTAINER_DATE:' docs/_config.yml | awk '{print $2}')
+
+        # Validate variables are set
+        if [ -z "$CONTAINER_VERSION" ] || [ -z "$CONTAINER_DATE" ]; then
+            echo "ERROR: Failed to read container version from docs/_config.yml"
+            echo "CONTAINER_VERSION='$CONTAINER_VERSION' CONTAINER_DATE='$CONTAINER_DATE'"
+            exit 1
+        fi
+
         CONTAINER_IMAGE="vnmd/qsmxt_${CONTAINER_VERSION}:${CONTAINER_DATE}"
+        DESCRIPTOR_PATH="${TEST_DIR}/QSMxT/qsmxt/boutiques/qsmxt.json"
 
         echo "Setting container image to: $CONTAINER_IMAGE"
+        echo "Descriptor path: $DESCRIPTOR_PATH"
 
         # Update the descriptor in the test directory
         sudo docker exec qsmxt-container python3 -c "
-        import json
-        descriptor_path = '${TEST_DIR}/QSMxT/qsmxt/boutiques/qsmxt.json'
-        with open(descriptor_path, 'r') as f:
-            descriptor = json.load(f)
-        descriptor['container-image']['image'] = '${CONTAINER_IMAGE}'
-        with open(descriptor_path, 'w') as f:
-            json.dump(descriptor, f, indent=4)
-        print('Updated container image in descriptor')
-        "
+import json
+import sys
+
+descriptor_path = '${DESCRIPTOR_PATH}'
+container_image = '${CONTAINER_IMAGE}'
+
+print(f'Reading descriptor from: {descriptor_path}')
+with open(descriptor_path, 'r') as f:
+    descriptor = json.load(f)
+
+print(f'Setting container image to: {container_image}')
+descriptor['container-image']['image'] = container_image
+
+with open(descriptor_path, 'w') as f:
+    json.dump(descriptor, f, indent=4)
+
+# Verify the update
+with open(descriptor_path, 'r') as f:
+    updated = json.load(f)
+actual_image = updated.get('container-image', {}).get('image')
+if actual_image != container_image:
+    print(f'ERROR: Verification failed! Expected {container_image}, got {actual_image}')
+    sys.exit(1)
+print(f'Successfully updated and verified container image: {actual_image}')
+"
     - name: Test Boutiques Integration
       env:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
