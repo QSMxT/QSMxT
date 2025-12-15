@@ -46,7 +46,7 @@ setup(
         'nextqsm==1.0.4',
         'matplotlib==3.7.5',
         'pandas==2.0.3',
-        'dicompare==0.1.40'
+        'dicompare==0.1.41'
     ],
     extras_require={
         'dev': [
