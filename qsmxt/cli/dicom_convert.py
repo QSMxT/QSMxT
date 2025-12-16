@@ -172,6 +172,14 @@ def auto_assign_initial_labels(table_data):
                     (not isinstance(r.get("ImageType"), (list, tuple)) and 'M' in str(r.get("ImageType")))
                 )
             ]
+
+            # For ASPIRE and similar sequences: prefer magnitude images WITHOUT vendor-specific
+            # markers (like 'ASPIRE') in ImageType - these are the "true" magnitude, not derivatives
+            mag_with_aspire = [r for r in mag_candidates if isinstance(r.get("ImageType"), (list, tuple)) and 'ASPIRE' in r.get("ImageType")]
+            mag_without_aspire = [r for r in mag_candidates if not (isinstance(r.get("ImageType"), (list, tuple)) and 'ASPIRE' in r.get("ImageType"))]
+            if mag_with_aspire and mag_without_aspire:
+                mag_candidates = mag_without_aspire
+
             pha_candidates = [
                 r for r in group if r["Type"] == "Skip" and (
                     (isinstance(r.get("ImageType"), (list, tuple)) and 'P' in r.get("ImageType")) or
