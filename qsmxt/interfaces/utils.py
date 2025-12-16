@@ -1,9 +1,10 @@
 import os
+import shutil
 from nipype.interfaces.base import CommandLine, CommandLineInputSpec, traits
 from nipype.interfaces.base.traits_extension import isdefined
 
 class CommandLineInputSpecJulia(CommandLineInputSpec):
-    num_threads = traits.Int(-1, usedefault=True, desc="Number of threads to use, by default $NCPUS")
+    num_threads = traits.Int(-1, usedefault=True, desc="Number of threads to use, by default 4")
     def __init__(self, **inputs): super(CommandLineInputSpecJulia, self).__init__(**inputs)
 
 class CommandLineJulia(CommandLine):
@@ -19,8 +20,14 @@ class CommandLineJulia(CommandLine):
     def _num_threads_update(self):
         self._num_threads = self.inputs.num_threads
         if self.inputs.num_threads == -1:
-            cpu_count = max(4, int(os.environ["NCPUS"]) if "NCPUS" in os.environ else int(os.cpu_count()))
-            self.inputs.environ.update({ "JULIA_NUM_THREADS" : str(cpu_count), "JULIA_CPU_THREADS" : str(cpu_count) })
-        else:
-            self.inputs.environ.update({ "JULIA_NUM_THREADS" : f"{self.inputs.num_threads}", "JULIA_CPU_THREADS" : f"{self.inputs.num_threads}" })
+            self._num_threads = 4
+
+    @property
+    def cmdline(self):
+        # Get the original command line from parent
+        original_cmdline = super().cmdline
+        # Find julia executable
+        julia_exe = shutil.which("julia") or "julia"
+        # Prepend julia with --threads argument
+        return f"{julia_exe} --threads={self._num_threads} {original_cmdline}"
 

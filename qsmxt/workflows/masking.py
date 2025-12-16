@@ -85,10 +85,12 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
 
         # correct magnitude if necessary
         if run_args.inhomogeneity_correction and (bet_this_run or run_args.masking_input == 'magnitude'):
+            inhomogeneity_threads = min(4, run_args.n_procs) if run_args.multiproc else 4
             mn_inhomogeneity_correction = create_node(
-                interface=makehomogeneous.MakeHomogeneousInterface(),
+                interface=makehomogeneous.MakeHomogeneousInterface(num_threads=inhomogeneity_threads),
                 iterfield=['magnitude'],
                 name='mrt_correct-inhomogeneity',
+                n_procs=inhomogeneity_threads,
                 is_map=use_maps
             )
 
@@ -104,7 +106,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
         # do phase weights if necessary
         if run_args.masking_algorithm == 'threshold' and run_args.masking_input == 'phase':
             mn_phaseweights_mem = 2.80122 * (np.prod(dimensions_phase) * 8 / (1024 ** 3)) + 0.95 # DONE
-            mn_phaseweights_threads = 1
+            mn_phaseweights_threads = min(4, run_args.n_procs) if run_args.multiproc else 4
             if qualitymap_available:
                 mn_phaseweights = create_node(
                     interface=IdentityInterface(['quality_map']),
@@ -115,7 +117,7 @@ def masking_workflow(run_args, mask_available, magnitude_available, qualitymap_a
                 wf.connect([(n_inputs, mn_phaseweights, [('quality_map', 'quality_map')])])
             else:
                 mn_phaseweights = create_node(
-                    interface=phaseweights.RomeoMaskingInterface(),
+                    interface=phaseweights.RomeoMaskingInterface(num_threads=mn_phaseweights_threads),
                     iterfield=['phase', 'magnitude'] if magnitude_available else ['phase'],
                     name='romeo-voxelquality',
                     mem_gb=mn_phaseweights_mem,

@@ -575,10 +575,12 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
 
     # r2* and t2* mappping
     if run_args.do_t2starmap or run_args.do_r2starmap:
+        n_t2s_r2s_threads = min(4, run_args.n_procs) if run_args.multiproc else 4
         n_t2s_r2s_mem = mem_mag_64 * (len(magnitude_files) + 2)
         n_t2s_r2s = create_node(
-            interface=t2s_r2s.T2sR2sInterface(),
+            interface=t2s_r2s.T2sR2sInterface(num_threads=n_t2s_r2s_threads),
             mem_gb=n_t2s_r2s_mem,
+            n_procs=n_t2s_r2s_threads,
             name='mrt_t2s-r2s'
         )
         n_t2s_r2s.plugin_args = gen_plugin_args(
@@ -588,7 +590,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             slurm_partition=run_args.slurm[1],
             name="t2s-r2s",
             time="01:00:00",
-            mem_gb=n_t2s_r2s_mem
+            mem_gb=n_t2s_r2s_mem,
+            num_cpus=n_t2s_r2s_threads
         )
         wf.connect([
             (mn_inputs_canonical, n_t2s_r2s, [('magnitude', 'magnitude')]),
@@ -804,11 +807,13 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             name='phase-combined'
         )
         if run_args.combine_phase:
+            n_romeo_combine_threads = min(4, run_args.n_procs) if run_args.multiproc else 4
             n_romeo_mem = (54.0860 * (np.prod(dimensions_phase) * 8 / (1024**3)) + 3.9819) # DONE
             n_romeo_combine = create_node(
-                interface=romeo.RomeoB0Interface(),
+                interface=romeo.RomeoB0Interface(num_threads=n_romeo_combine_threads),
                 name='mrt_romeo_combine-phase',
-                mem_gb=n_romeo_mem
+                mem_gb=n_romeo_mem,
+                n_procs=n_romeo_combine_threads
             )
             n_romeo_combine.plugin_args = gen_plugin_args(
                 plugin_args={ 'overwrite': True },
@@ -818,6 +823,7 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
                 name="romeo_combine",
                 time="00:10:00",
                 mem_gb=n_romeo_mem,
+                num_cpus=n_romeo_combine_threads,
             )
             wf.connect([
                 (mn_json_params, n_romeo_combine, [('TE', 'TEs')]),
@@ -1174,11 +1180,11 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
             name='phase-unwrapping'
         )
         if run_args.unwrapping_algorithm == 'laplacian':
-            laplacian_threads = min(2, run_args.n_procs) if run_args.multiproc else 2
+            laplacian_threads = min(4, run_args.n_procs) if run_args.multiproc else 4
             laplacian_mem = 16.32256 * (np.prod(dimensions_phase) * 8 / (1024 ** 3)) + 1.12836 # DONE
             mn_laplacian = create_node(
                 is_map=use_maps,
-                interface=laplacian.LaplacianInterface(),
+                interface=laplacian.LaplacianInterface(num_threads=laplacian_threads),
                 iterfield=['phase'],
                 name='mrt_laplacian-unwrapping',
                 mem_gb=laplacian_mem,
@@ -1203,11 +1209,13 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
                     (n_inputs, n_unwrapping, [('phase_unwrapped', 'phase_unwrapped')]),
                 ])
             else:
+                romeo_threads = min(4, run_args.n_procs) if run_args.multiproc else 4
                 romeo_mem = 9.81512 * (np.prod(dimensions_phase) * 8 / (1024 ** 3)) + 1.75 # DONE
                 mn_romeo = create_node(
-                    interface=romeo.RomeoB0Interface(),
+                    interface=romeo.RomeoB0Interface(num_threads=romeo_threads),
                     name='mrt_romeo',
-                    mem_gb=romeo_mem
+                    mem_gb=romeo_mem,
+                    n_procs=romeo_threads
                 )
                 mn_romeo.plugin_args = gen_plugin_args(
                     plugin_args={ 'overwrite': True },
@@ -1216,6 +1224,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
                     slurm_partition=run_args.slurm[1],
                     name="Romeo",
                     mem_gb=romeo_mem,
+                    num_cpus=romeo_threads,
                 )
                 wf.connect([
                     (n_inputs, mn_romeo, [('phase', 'phase')]),
