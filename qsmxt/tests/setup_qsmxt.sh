@@ -305,5 +305,28 @@ else
     echo "[DEBUG] Data generation complete!"
 fi
 
+# === UPDATE BOUTIQUES DESCRIPTOR WITH CONTAINER IMAGE ===
+# This must happen after git operations to avoid being reverted by git reset --hard
+DESCRIPTOR_PATH="${TEST_DIR}/QSMxT/qsmxt/boutiques/qsmxt.json"
+CONTAINER_IMAGE="vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
+
+echo "[DEBUG] Updating Boutiques descriptor with container image: ${CONTAINER_IMAGE}"
+python3 << EOF
+import json
+
+descriptor_path = "${DESCRIPTOR_PATH}"
+container_image = "${CONTAINER_IMAGE}"
+
+with open(descriptor_path, "r") as f:
+    descriptor = json.load(f)
+
+descriptor["container-image"]["image"] = container_image
+
+with open(descriptor_path, "w") as f:
+    json.dump(descriptor, f, indent=4)
+
+print(f"[DEBUG] Updated container-image to: {container_image}")
+EOF
+
 # The lock is automatically released when the script exits and file descriptor 200 is closed
 echo "[DEBUG] Setup complete. Lock will be released on exit."
