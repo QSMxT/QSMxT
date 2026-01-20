@@ -9,8 +9,8 @@ echo "[DEBUG] Running test in TEST_DIR: ${TEST_DIR}"
 cd "${TEST_DIR}"
 
 echo "[DEBUG] Download test data"
-pip install osfclient > /dev/null 2>&1
-osf -p ru43c clone . > /dev/null 2>&1
+pip install osfclient
+osf -p ru43c clone .
 tar xf osfstorage/dicoms-unsorted.tar -C .
 
 echo "[DEBUG] dicom-convert dicoms-unsorted bids-transparent-apptainer --auto_yes"
