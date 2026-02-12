@@ -3,6 +3,21 @@ name: segmentation pipeline test
 on:
   workflow_dispatch:
   repository_dispatch:
+  pull_request:
+    branches: [ 'main' ]
+    paths:
+      - setup.py
+      - .github/workflows/test_segmentation.yml
+      - qsmxt/cli/main.py
+      - aseg_labels.csv
+      - qsmxt/workflows/segmentation.py
+      - qsmxt/workflows/qsm.py
+      - qsmxt/tests/qsmxt/integration/test_segmentation.py
+      - qsmxt/tests/test_segmentation.sh
+      - qsmxt/tests/qsmxt/integration/utils.py
+      - qsmxt/tests/setup_qsmxt.sh
+      - qsmxt/interfaces/nipype_interface_fastsurfer.py
+      - qsmxt/scripts/logger.py
   push:
     branches: [ 'main' ]
     paths:
@@ -33,6 +48,9 @@ jobs:
       env:
         TEST_DIR: "/storage/tmp"
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
+        OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
+        OSF_USERNAME: ${{ secrets.OSF_USER }}
+        OSF_PASSWORD: ${{ secrets.OSF_PASS }}
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh docker
   test_segmentation:
@@ -65,7 +83,7 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USERNAME: ${{ secrets.OSF_USER }}
         OSF_PASSWORD: ${{ secrets.OSF_PASS }}
-        RUN_ID: ${{ github.run_id }}
+        RUN_ID: ${{ github.run_id }}-${{ matrix.args }}
         TEST_DIR: "/storage/tmp"
       run: |
         sudo docker exec \

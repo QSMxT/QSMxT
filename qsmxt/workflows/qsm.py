@@ -371,11 +371,11 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
         n_inputs.inputs.mask = mask_files[0] if len(mask_files) == 1 else mask_files
 
     n_outputs = create_node(
-        IdentityInterface(fields=['qsm', 'qsm_singlepass', 'qsm_json', 'qsm_singlepass_json', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 'transform', 'analysis_csv', 'qsm_dicoms', 'swi_dicoms', 'swi_mip_dicoms']),
+        IdentityInterface(fields=['qsm', 'qsm_singlepass', 'qsm_json', 'qsm_singlepass_json', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 't1w_wmparc', 'qsm_wmparc', 'transform', 'analysis_csv', 'qsm_dicoms', 'swi_dicoms', 'swi_mip_dicoms']),
         name='qsmxt_outputs'
     )
     n_copyfile = Node(copyfile.DynamicCopyFiles(infields=[
-        'qsm', 'qsm_singlepass', 'qsm_json', 'qsm_singlepass_json', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 'transform', 'analysis_csv', 'qsm_dicoms', 'swi_dicoms', 'swi_mip_dicoms'
+        'qsm', 'qsm_singlepass', 'qsm_json', 'qsm_singlepass_json', 'swi', 'swi_mip', 't2s', 'r2s', 't1w_segmentation', 'qsm_segmentation', 't1w_wmparc', 'qsm_wmparc', 'transform', 'analysis_csv', 'qsm_dicoms', 'swi_dicoms', 'swi_mip_dicoms'
     ]), name="copyfile")
     
     basedir = os.path.join(run_args.output_dir, subject, session if session else '')
@@ -405,6 +405,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
         'r2s': os.path.join(basedir, 'anat', f"{basename}_R2starmap"),
         't1w_segmentation': os.path.join(basedir, 'anat', f"{basename}_space-orig_dseg"),
         'qsm_segmentation': os.path.join(basedir, 'anat', f"{basename}_space-qsm_dseg"),
+        't1w_wmparc': os.path.join(basedir, 'anat', f"{basename}_space-orig_wmparc"),
+        'qsm_wmparc': os.path.join(basedir, 'anat', f"{basename}_space-qsm_wmparc"),
         'transform': os.path.join(basedir, 'extra_data', f"{basename}_desc-t1w-to-qsm_transform"),
         'analysis_csv': os.path.join(basedir, 'extra_data', f"{basename}_qsm-analysis"),
         'qsm_dicoms': os.path.join(basedir, 'extra_data', f"{basename}_desc-dicoms_Chimap"),
@@ -424,6 +426,8 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             ('r2s', 'r2s'),
             ('t1w_segmentation', 't1w_segmentation'),
             ('qsm_segmentation', 'qsm_segmentation'),
+            ('t1w_wmparc', 't1w_wmparc'),
+            ('qsm_wmparc', 'qsm_wmparc'),
             ('transform', 'transform'),
             ('analysis_csv', 'analysis_csv'),
             ('qsm_dicoms', 'qsm_dicoms'),
@@ -685,6 +689,15 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             (n_fastsurfer, n_fastsurfer_aseg_nii, [('out_file', 'in_file')])
         ])
 
+        # convert wmparc to nii
+        n_fastsurfer_wmparc_nii = create_node(
+            interface=mgz2nii.Mgz2NiiInterface(),
+            name='numpy_numpy_nibabel_mgz2nii-wmparc'
+        )
+        wf.connect([
+            (n_fastsurfer, n_fastsurfer_wmparc_nii, [('out_wmparc', 'in_file')])
+        ])
+
         # resample segmentation in T1w space
         n_fastsurfer_aseg_nii_resampled = create_node(
             interface=resample_like.ResampleLikeInterface(
@@ -695,6 +708,18 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
         )
         wf.connect([
             (n_fastsurfer_aseg_nii, n_fastsurfer_aseg_nii_resampled, [('out_file', 'in_file')])
+        ])
+
+        # resample wmparc in T1w space
+        n_fastsurfer_wmparc_nii_resampled = create_node(
+            interface=resample_like.ResampleLikeInterface(
+                ref_file=t1w_files[0],
+                interpolation='nearest'
+            ),
+            name='nibabel_numpy_nilearn_t1w-wmparc-resampled'
+        )
+        wf.connect([
+            (n_fastsurfer_wmparc_nii, n_fastsurfer_wmparc_nii_resampled, [('out_file', 'in_file')])
         ])
 
         # get first canonical magnitude
@@ -725,9 +750,26 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             (n_registration, n_transform_segmentation, [('out_matrix', 'transforms')])
         ])
 
+        # apply transforms to wmparc
+        n_transform_wmparc = create_node(
+            interface=ApplyTransforms(
+                dimension=3,
+                interpolation="NearestNeighbor",
+                output_image=f"{run_id.replace('.', '_')}_wmparc_trans.nii"
+            ),
+            name='ants_transform-wmparc-to-qsm'
+        )
+        wf.connect([
+            (n_fastsurfer_wmparc_nii, n_transform_wmparc, [('out_file', 'input_image')]),
+            (n_getfirst_canonical_magnitude, n_transform_wmparc, [('magnitude', 'reference_image')]),
+            (n_registration, n_transform_wmparc, [('out_matrix', 'transforms')])
+        ])
+
         wf.connect([
             (n_fastsurfer_aseg_nii_resampled, n_outputs, [('out_file', 't1w_segmentation')]),
             (n_transform_segmentation, n_outputs, [('output_image', 'qsm_segmentation')]),
+            (n_fastsurfer_wmparc_nii_resampled, n_outputs, [('out_file', 't1w_wmparc')]),
+            (n_transform_wmparc, n_outputs, [('output_image', 'qsm_wmparc')]),
             (n_registration, n_outputs, [('out_matrix', 'transform')])
         ])
 

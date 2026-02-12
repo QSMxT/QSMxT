@@ -21,12 +21,13 @@ class FastSurferInputSpec(CommandLineInputSpec):
 
 class FastSurferOutputSpec(TraitedSpec):
     out_file = File()
+    out_wmparc = File()
 
 
 class FastSurferInterface(CommandLine):
     input_spec = FastSurferInputSpec
     output_spec = FastSurferOutputSpec
-    _cmd = "run_fastsurfer.sh --sd `pwd` --seg_only --sid output --py python3.8"
+    _cmd = "run_fastsurfer.sh --sd `pwd` --sid output --py python3.8"
 
     def __init__(self, **inputs):
         super(FastSurferInterface, self).__init__(**inputs)
@@ -40,6 +41,8 @@ class FastSurferInterface(CommandLine):
 
     def _list_outputs(self):
         outputs = self.output_spec().get()
+
+        # aparc+aseg segmentation
         outfile_old = os.path.join('output', 'mri', 'aparc.DKTatlas+aseg.deep.mgz')
         outfile_new = extend_fname(self.inputs.in_file, "_dseg", ext="mgz", out_dir=os.getcwd())
         try:
@@ -47,6 +50,16 @@ class FastSurferInterface(CommandLine):
         except FileNotFoundError:
             print("Expected output from FastSurfer missing! It may have been killed due to insufficient memory.", file=sys.stderr)
         outputs['out_file'] = outfile_new
+
+        # white matter parcellation
+        wmparc_old = os.path.join('output', 'mri', 'wmparc.DKTatlas.mapped.mgz')
+        wmparc_new = extend_fname(self.inputs.in_file, "_wmparc", ext="mgz", out_dir=os.getcwd())
+        try:
+            shutil.copy(wmparc_old, wmparc_new)
+        except FileNotFoundError:
+            print("Expected wmparc output from FastSurfer missing! Full pipeline (surface reconstruction) may not have completed.", file=sys.stderr)
+        outputs['out_wmparc'] = wmparc_new
+
         return outputs
 
     def _num_threads_update(self):
