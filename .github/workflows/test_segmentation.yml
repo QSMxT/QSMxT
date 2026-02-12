@@ -83,7 +83,7 @@ jobs:
         OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
         OSF_USERNAME: ${{ secrets.OSF_USER }}
         OSF_PASSWORD: ${{ secrets.OSF_PASS }}
-        RUN_ID: ${{ github.run_id }}
+        RUN_ID: ${{ github.run_id }}-${{ matrix.args }}
         TEST_DIR: "/storage/tmp"
       run: |
         sudo docker exec \
