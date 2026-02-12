@@ -119,8 +119,13 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
     if not github_step_summary:
         logger.log(LogLevel.WARNING.value, f"GITHUB_STEP_SUMMARY variable not found! Cannot write summary.")
     else:
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_Chimap.nii*')[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")        
-        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_dseg.nii*')[0], title='Segmentation', colorbar=True, vmin=0, vmax=+16, out_png='seg.png', cmap='tab10'))})")        
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_Chimap.nii*')[0], title='QSM', colorbar=True, vmin=-0.1, vmax=+0.1, out_png='qsm.png', cmap='gray'))})")
+        write_to_file(github_step_summary, f"![result]({upload_png(display_nii(nii_path=find_files(args.output_dir, '*_dseg.nii*')[0], title='Segmentation', colorbar=True, vmin=0, vmax=+16, out_png='seg.png', cmap='tab10'))})")
+
+        wmparc_files = find_files(args.output_dir, '*_wmparc.nii*')
+        for wmparc_file in wmparc_files:
+            wmparc_png = display_nii(nii_path=wmparc_file, title=f'WM Parcellation ({os.path.basename(wmparc_file)})', colorbar=True, vmin=0, vmax=+5000, out_png=f"wmparc_{os.path.basename(wmparc_file).replace('.', '_')}.png", cmap='tab20')
+            write_to_file(github_step_summary, f"![result]({upload_png(wmparc_png)})")
 
         csv_file = find_files(args.output_dir, '*analysis*.csv')[0]
         write_to_file(github_step_summary, csv_to_markdown(csv_file))
@@ -182,6 +187,7 @@ def test_separate_qsm_seg_analysis(bids_dir_public, init_workflow, run_workflow,
     else:
         chi_files = find_files(args.output_dir, '*_Chimap.nii*')
         seg_files = find_files(args.output_dir, '*_dseg.nii*')
+        wmparc_files = find_files(args.output_dir, '*_wmparc.nii*')
 
         for chi_file in chi_files:
             chi_png = display_nii(nii_path=chi_file, title=f'QSM ({chi_file})', colorbar=True, vmin=-0.1, vmax=+0.1, out_png=f"qsm_{os.path.split(chi_file)[1].replace('.', '_')}.png", cmap='gray')
@@ -189,6 +195,9 @@ def test_separate_qsm_seg_analysis(bids_dir_public, init_workflow, run_workflow,
         for seg_file in seg_files:
             seg_png = display_nii(nii_path=seg_file, title=f'Segmentation ({seg_file})', colorbar=True, vmin=0, vmax=+16, out_png=f"seg_{os.path.split(seg_file)[1].replace('.', '_')}.png", cmap='tab10')
             write_to_file(github_step_summary, f"![result]({upload_png(seg_png)})")
+        for wmparc_file in wmparc_files:
+            wmparc_png = display_nii(nii_path=wmparc_file, title=f'WM Parcellation ({os.path.basename(wmparc_file)})', colorbar=True, vmin=0, vmax=+5000, out_png=f"wmparc_{os.path.basename(wmparc_file).replace('.', '_')}.png", cmap='tab20')
+            write_to_file(github_step_summary, f"![result]({upload_png(wmparc_png)})")
 
         csv_files = find_files(args.output_dir, '*analysis*.csv')
         for csv_file in csv_files:
@@ -228,6 +237,7 @@ def test_seg_analysis_only(bids_dir_public, init_workflow, run_workflow, run_arg
     else:
         chi_files = find_files(args.output_dir, '*_Chimap.nii*')
         seg_files = find_files(args.output_dir, '*_dseg.nii*')
+        wmparc_files = find_files(args.output_dir, '*_wmparc.nii*')
 
         for chi_file in chi_files:
             chi_png = display_nii(nii_path=chi_file, title=f'QSM ({chi_file})', colorbar=True, vmin=-0.1, vmax=+0.1, out_png=f"qsm_{os.path.split(chi_file)[1].replace('.', '_')}.png", cmap='gray')
@@ -235,6 +245,9 @@ def test_seg_analysis_only(bids_dir_public, init_workflow, run_workflow, run_arg
         for seg_file in seg_files:
             seg_png = display_nii(nii_path=seg_file, title=f'Segmentation ({seg_file})', colorbar=True, vmin=0, vmax=+16, out_png=f"seg_{os.path.split(seg_file)[1].replace('.', '_')}.png", cmap='tab10')
             write_to_file(github_step_summary, f"![result]({upload_png(seg_png)})")
+        for wmparc_file in wmparc_files:
+            wmparc_png = display_nii(nii_path=wmparc_file, title=f'WM Parcellation ({os.path.basename(wmparc_file)})', colorbar=True, vmin=0, vmax=+5000, out_png=f"wmparc_{os.path.basename(wmparc_file).replace('.', '_')}.png", cmap='tab20')
+            write_to_file(github_step_summary, f"![result]({upload_png(wmparc_png)})")
 
         csv_files = find_files(args.output_dir, '*analysis*.csv')
         for csv_file in csv_files:
