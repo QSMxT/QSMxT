@@ -48,6 +48,9 @@ jobs:
       env:
         TEST_DIR: "/storage/tmp"
         REQUIRED_VERSION_TYPE: "TEST_PACKAGE_VERSION"
+        OSF_TOKEN: ${{ secrets.OSF_TOKEN }}
+        OSF_USERNAME: ${{ secrets.OSF_USER }}
+        OSF_PASSWORD: ${{ secrets.OSF_PASS }}
       run: |
         /bin/bash qsmxt/tests/setup_qsmxt.sh docker
   test_segmentation:
