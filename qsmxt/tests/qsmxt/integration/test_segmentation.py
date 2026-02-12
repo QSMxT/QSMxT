@@ -94,6 +94,8 @@ def test_segmentation(bids_dir_public, init_workflow, run_workflow, run_args):
     logger.log(LogLevel.INFO.value, f"=== TESTING SEGMENTATION PIPELINE ===")
 
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    if os.path.exists(bids_dir):
+        shutil.rmtree(bids_dir)
     shutil.copytree(bids_dir_public, bids_dir)
 
     # run pipeline and specifically choose magnitude-based masking
@@ -143,6 +145,8 @@ def test_separate_qsm_seg_analysis(bids_dir_public, init_workflow, run_workflow,
     logger.log(LogLevel.INFO.value, f"=== TESTING SEPARATE QSM, SEGMENTATION, AND ANALYSIS EXECUTIONS ===")
 
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    if os.path.exists(bids_dir):
+        shutil.rmtree(bids_dir)
     shutil.copytree(bids_dir_public, bids_dir)
 
     args = [
@@ -216,6 +220,8 @@ def test_seg_analysis_only(bids_dir_public, init_workflow, run_workflow, run_arg
     logger.log(LogLevel.INFO.value, f"=== TESTING SEGMENTATION + ANALYSIS ONLY ===")
 
     bids_dir = os.path.join(gettempdir(), f"{datetime.datetime.now().strftime('%Y%m%d-%H%M%S')}-{getrunid()}-bids")
+    if os.path.exists(bids_dir):
+        shutil.rmtree(bids_dir)
     shutil.copytree(bids_dir_public, bids_dir)
 
     args = [
