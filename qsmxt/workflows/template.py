@@ -3,13 +3,14 @@ import glob
 import re
 
 from nipype.interfaces.io import DataSink
-from nipype.pipeline.engine import Workflow, Node
+from nipype.pipeline.engine import Workflow, Node, MapNode
 from nipype.interfaces.utility import IdentityInterface, Function
 import nipype.interfaces.ants as ants
 
 from qsmxt.scripts.qsmxt_functions import gen_plugin_args
 from qsmxt.scripts.antsBuildTemplate import ANTSTemplateBuildSingleIterationWF
 from qsmxt.scripts.logger import LogLevel, make_logger
+from qsmxt.interfaces import nipype_interface_bet2 as bet2
 
 def get_matching_files(bids_dir, subject, dtype="anat", suffixes=[], ext="nii*", session=None, space=None, run=None, part=None, acq=None, rec=None, inv=None):
     pattern = os.path.join(bids_dir, subject)
@@ -195,6 +196,18 @@ def init_template_workflow(run_args):
         (n_inputs, n_qsmdict, [('qsm', 'qsm')])
     ])
 
+    # optional skull-stripping of magnitude images before template building
+    if run_args.template_bet:
+        mn_bet = MapNode(
+            interface=bet2.Bet2Interface(fractional_intensity=run_args.bet_fractional_intensity),
+            iterfield=['in_file'],
+            name='fsl-bet'
+        )
+        wf.connect([(n_inputs, mn_bet, [('magnitude', 'in_file')])])
+        mag_node, mag_field = mn_bet, 'out_file'
+    else:
+        mag_node, mag_field = n_inputs, 'magnitude'
+
     # initial average
     initAvg = Node(
         interface=ants.AverageImages(),
@@ -203,14 +216,14 @@ def init_template_workflow(run_args):
     initAvg.inputs.dimension = 3
     initAvg.inputs.normalize = True
     wf.connect([
-        (n_inputs, initAvg, [('magnitude', 'images')])
+        (mag_node, initAvg, [(mag_field, 'images')])
     ])
 
     # first iteration
     buildTemplateIteration1 = ANTSTemplateBuildSingleIterationWF('iteration01')
     wf.connect([
         (initAvg, buildTemplateIteration1, [('output_average_image', 'inputspec.fixed_image')]),
-        (n_inputs, buildTemplateIteration1, [('magnitude', 'inputspec.images')]),
+        (mag_node, buildTemplateIteration1, [(mag_field, 'inputspec.images')]),
         (n_qsmdict, buildTemplateIteration1, [('qsm_dict', 'inputspec.ListOfPassiveImagesDictionaries')]),
     ])
     n_ants_threads = min(6, run_args.n_procs) if run_args.multiproc else 6
@@ -235,7 +248,7 @@ def init_template_workflow(run_args):
     buildTemplateIteration2 = ANTSTemplateBuildSingleIterationWF('iteration02')
     wf.connect([
         (buildTemplateIteration1, buildTemplateIteration2, [('outputspec.template', 'inputspec.fixed_image')]),
-        (n_inputs, buildTemplateIteration2, [('magnitude', 'inputspec.images')]),
+        (mag_node, buildTemplateIteration2, [(mag_field, 'inputspec.images')]),
         (n_qsmdict, buildTemplateIteration2, [('qsm_dict', 'inputspec.ListOfPassiveImagesDictionaries')])
     ])
     BeginANTS2 = buildTemplateIteration2.get_node("BeginANTS")

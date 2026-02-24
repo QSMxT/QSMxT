@@ -10,6 +10,7 @@
         "do_r2starmap": false,
         "do_segmentation": false,
         "do_template": false,
+        "template_bet": false,
         "do_analysis": false,
         "export_dicoms": false,
         "preserve_float": false,

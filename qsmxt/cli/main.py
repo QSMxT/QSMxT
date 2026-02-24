@@ -225,6 +225,15 @@ def parse_args(args, return_run_command=False):
     )
 
     parser.add_argument(
+        '--template_bet',
+        nargs='?',
+        type=argparse_bool,
+        const=True,
+        default=None,
+        help='Skull-strip magnitude images using BET before template building.'
+    )
+
+    parser.add_argument(
         '--do_t2starmap',
         nargs='?',
         type=argparse_bool,
@@ -1103,7 +1112,7 @@ def get_interactive_args(args, explicit_args, implicit_args, premades, using_jso
         print(f" - R2* mapping: {'Yes' if args.do_r2starmap else 'No'}")
         print(f" - Segmentations: {'Yes' if args.do_segmentation else 'No'}")
         print(f" - Analysis CSVs: {'Yes' if args.do_analysis else 'No'}")
-        print(f" - GRE/QSM template space: {'Yes' if args.do_template else 'No'}")
+        print(f" - GRE/QSM template space: {'Yes' if args.do_template else 'No'}" + (f" (BET={args.template_bet})" if args.do_template and args.template_bet else ""))
         print(f" - DICOM outputs: {'Yes' if args.export_dicoms else 'No'}")
 
         if args.do_qsm:
