@@ -1208,8 +1208,10 @@ def run_mcpc3ds_on_multicoil(bids_dir):
 
         # check if the output files exist and move them
         if os.path.exists(mag_out) and os.path.exists(phase_out):
-            shutil.move(mag_out, mag_out_new)
-            shutil.move(phase_out, phase_out_new)
+            if os.path.abspath(mag_out) != os.path.abspath(mag_out_new):
+                shutil.move(mag_out, mag_out_new)
+            if os.path.abspath(phase_out) != os.path.abspath(phase_out_new):
+                shutil.move(phase_out, phase_out_new)
         else:
             logger.log(LogLevel.WARNING.value, f"Expected output files not found: {mag_out} or {phase_out}")
             continue
@@ -1235,8 +1237,12 @@ def run_mcpc3ds_on_multicoil(bids_dir):
                     # Copy JSON sidecars from source files (use mag source for both)
                     src_json = os.path.splitext(mags[i])[0] + ".json"
                     if os.path.exists(src_json):
-                        shutil.copy(src_json, os.path.splitext(mag_echo_path)[0] + ".json")
-                        shutil.copy(src_json, os.path.splitext(phase_echo_path)[0] + ".json")
+                        mag_dst_json = os.path.splitext(mag_echo_path)[0] + ".json"
+                        phase_dst_json = os.path.splitext(phase_echo_path)[0] + ".json"
+                        if os.path.abspath(src_json) != os.path.abspath(mag_dst_json):
+                            shutil.copy(src_json, mag_dst_json)
+                        if os.path.abspath(src_json) != os.path.abspath(phase_dst_json):
+                            shutil.copy(src_json, phase_dst_json)
 
         # Delete the source 4D multi-coil files that were used for MCPC-3D-S
         logger.log(LogLevel.INFO.value, f"Deleting source multi-coil files after MCPC-3D-S...")
