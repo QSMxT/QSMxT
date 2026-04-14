@@ -482,11 +482,17 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
         vsz = np.array(nii.header.get_zooms()).tolist()
         # Calculate B0 direction from affine for oblique acquisitions
         # B0 is along z-axis in scanner/world coordinates [0, 0, 1]
-        # Transform to voxel space using inverse of rotation matrix
+        # Transform to voxel space using the pure rotation matrix
+        # NOTE: affine[:3, :3] includes voxel scaling, so we must factor
+        # out voxel sizes to get the pure rotation before inverting.
+        # For anisotropic voxels (e.g. 0.8x0.8x3mm), failing to do this
+        # produces a severely incorrect B0 direction.
         affine = nii.affine
         rotation = affine[:3, :3]
+        voxel_sizes = np.sqrt(np.sum(rotation**2, axis=0))
+        pure_rotation = rotation / voxel_sizes
         b0_world = np.array([0, 0, 1])
-        b0_voxel = np.linalg.inv(rotation) @ b0_world
+        b0_voxel = pure_rotation.T @ b0_world
         b0_direction = (b0_voxel / np.linalg.norm(b0_voxel)).tolist()
         return vsz, b0_direction
     n_nii_params = create_node(
@@ -497,9 +503,10 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
         ),
         name='nibabel_read-nii'
     )
-    wf.connect([
-        (n_inputs, n_nii_params, [('phase' if phase_files else 'magnitude', 'nii_file')])
-    ])
+    # NOTE: n_nii_params is connected later, after axial resampling,
+    # so that B0 direction is computed from the resampled (axial) NIfTI.
+    # Computing it from the original oblique NIfTI would give the wrong
+    # B0 direction for the resampled data that dipole inversion operates on.
 
     # reorient to canonical
     def as_closest_canonical(phase=None, magnitude=None, mask=None):
@@ -853,6 +860,12 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
             (n_inputs_resampled, wf_masking, [('magnitude', 'masking_inputs.magnitude')]),
             (n_inputs_resampled, wf_masking, [('mask', 'masking_inputs.mask')]),
             (mn_json_params, wf_masking, [('TE', 'masking_inputs.TE')])
+        ])
+
+        # Connect n_nii_params to read from resampled phase so B0 direction
+        # matches the orientation of the data that dipole inversion operates on
+        wf.connect([
+            (n_inputs_resampled, n_nii_params, [('phase' if phase_files else 'magnitude', 'nii_file')])
         ])
 
         # === QSM ===
@@ -1382,7 +1395,7 @@ def qsm_workflow(run_args, name, magnitude_available, use_maps, dimensions_phase
     # === DIPOLE INVERSION ===
     if run_args.qsm_algorithm == 'nextqsm':
         nextqsm_threads = min(8, run_args.n_procs) if run_args.multiproc else 8
-        nextqsm_mem = 69.64824 * (np.prod(dimensions_phase) * 8 / (1024 ** 3)) + 5.6689 # DONE
+        nextqsm_mem = (69.64824 * (np.prod(dimensions_phase) * 8 / (1024 ** 3)) + 5.6689) * 2  # 2x safety factor for CPU inference
         mn_qsm = create_node(
             interface=nextqsm.NextqsmInterface(),
             name='nextqsm',
