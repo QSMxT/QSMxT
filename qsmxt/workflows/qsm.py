@@ -477,23 +477,11 @@ def init_qsm_workflow(run_args, subject, session=None, acq=None, rec=None, inv=N
     def read_nii(nii_file):
         import nibabel as nib
         import numpy as np
+        from qsmxt.interfaces.nipype_interface_axialsampling import compute_b0_direction
         if isinstance(nii_file, list): nii_file = nii_file[0]
         nii = nib.load(nii_file)
         vsz = np.array(nii.header.get_zooms()).tolist()
-        # Calculate B0 direction from affine for oblique acquisitions
-        # B0 is along z-axis in scanner/world coordinates [0, 0, 1]
-        # Transform to voxel space using the pure rotation matrix
-        # NOTE: affine[:3, :3] includes voxel scaling, so we must factor
-        # out voxel sizes to get the pure rotation before inverting.
-        # For anisotropic voxels (e.g. 0.8x0.8x3mm), failing to do this
-        # produces a severely incorrect B0 direction.
-        affine = nii.affine
-        rotation = affine[:3, :3]
-        voxel_sizes = np.sqrt(np.sum(rotation**2, axis=0))
-        pure_rotation = rotation / voxel_sizes
-        b0_world = np.array([0, 0, 1])
-        b0_voxel = pure_rotation.T @ b0_world
-        b0_direction = (b0_voxel / np.linalg.norm(b0_voxel)).tolist()
+        b0_direction = compute_b0_direction(nii.affine)
         return vsz, b0_direction
     n_nii_params = create_node(
         interface=Function(

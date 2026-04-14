@@ -6,6 +6,27 @@ import warnings
 from qsmxt.scripts.qsmxt_functions import extend_fname
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits
 
+def compute_b0_direction(affine):
+    """Compute B0 field direction in voxel space from a NIfTI affine matrix.
+
+    B0 is assumed to be along the z-axis in world/scanner coordinates [0, 0, 1].
+    This function transforms that direction into voxel space using the pure
+    rotation component of the affine (with voxel scaling factored out).
+
+    Args:
+        affine: 4x4 NIfTI affine matrix (numpy array).
+
+    Returns:
+        List of 3 floats: normalized B0 direction in voxel space.
+    """
+    rotation = affine[:3, :3]
+    voxel_sizes = np.sqrt(np.sum(rotation**2, axis=0))
+    pure_rotation = rotation / voxel_sizes
+    b0_world = np.array([0, 0, 1])
+    b0_voxel = pure_rotation.T @ b0_world
+    return (b0_voxel / np.linalg.norm(b0_voxel)).tolist()
+
+
 def resample_to_axial(mag_nii=None, pha_nii=None, mask_nii=None):
     # calculate base affine
     nii = mag_nii or pha_nii or mask_nii
