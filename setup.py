@@ -24,7 +24,6 @@ setup(
     },
     install_requires=[
         'psutil==6.1.0',
-        'datetime==5.5',
         'networkx==2.8.8',
         'numpy==1.24.3',
         'h5py==3.11.0',
