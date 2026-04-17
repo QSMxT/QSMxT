@@ -26,7 +26,7 @@ class FastSurferOutputSpec(TraitedSpec):
 class FastSurferInterface(CommandLine):
     input_spec = FastSurferInputSpec
     output_spec = FastSurferOutputSpec
-    _cmd = "run_fastsurfer.sh --sd `pwd` --seg_only --sid output --py python3"
+    _cmd = "run_fastsurfer.sh --sd `pwd` --seg_only --sid output --py python3 --allow_root"
 
     def __init__(self, **inputs):
         super(FastSurferInterface, self).__init__(**inputs)
