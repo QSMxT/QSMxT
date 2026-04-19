@@ -151,7 +151,8 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     sudo docker exec qsmxt-container bash -c "git config --global --add safe.directory ${TEST_DIR}/QSMxT"
     sudo docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
     sudo docker exec qsmxt-container bash -c "rm -rf ${TEST_DIR}/QSMxT/qsmxt.egg-info"
-    sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT[dev]"
+    sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install --no-deps -e ${TEST_DIR}/QSMxT"
+    sudo docker exec qsmxt-container bash -c "pip install pytest pytest-mock pytest-cov pytest-xdist"
 fi
 
 # apptainer container setup
