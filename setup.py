@@ -40,7 +40,6 @@ setup(
         'qsm-forward==0.22',
         'osfclient==0.0.5',
         'niflow-nipype1-workflows==0.0.5',
-        'tensorflow==2.13.1',
         'packaging==24.1',
         'nextqsm>=1.0.5',
         'matplotlib==3.7.5',
