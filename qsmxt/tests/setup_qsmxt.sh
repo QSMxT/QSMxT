@@ -152,6 +152,7 @@ if [ "${CONTAINER_TYPE}" = "docker" ]; then
     sudo docker exec qsmxt-container bash -c "pip uninstall qsmxt -y"
     sudo docker exec qsmxt-container bash -c "rm -rf ${TEST_DIR}/QSMxT/qsmxt.egg-info"
     sudo docker exec -e REQUIRED_VERSION_TYPE=${REQUIRED_VERSION_TYPE} qsmxt-container bash -c "pip install -e ${TEST_DIR}/QSMxT[dev]"
+    sudo docker exec qsmxt-container bash -c "pip install 'typing_extensions>=4.10'"
 fi
 
 # apptainer container setup
