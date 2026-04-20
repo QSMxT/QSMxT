@@ -231,7 +231,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
     echo "[DEBUG] Cleaning up any stale egg-info directory"
     sudo rm -rf ${TEST_DIR}/QSMxT/qsmxt.egg-info
 
-    pip install -e ${TEST_DIR}/QSMxT[dev]
+    pip install -e ${TEST_DIR}/QSMxT[test]
 
     echo "[DEBUG] which julia && which dcm2niix"
     which julia && which dcm2niix
