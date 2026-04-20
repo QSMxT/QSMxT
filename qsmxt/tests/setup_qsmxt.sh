@@ -211,6 +211,7 @@ if [ "${CONTAINER_TYPE}" = "apptainer" ]; then
 
     echo "[DEBUG] conda activate qsmxt"
     conda activate qsmxt
+    export PYTHONNOUSERSITE=1
 
     echo "[DEBUG] which conda && which python && which pip"
     which conda && which python && which pip
