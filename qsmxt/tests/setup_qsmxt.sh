@@ -75,7 +75,7 @@ cd "${TEST_DIR}"
 
 echo "[DEBUG] Extracting version information from docs/_config.yml"
 get_config_value() {
-    grep "^$1:" "${TEST_DIR}/QSMxT/docs/_config.yml" | awk '{print $2}'
+    grep "^$1:" "${TEST_DIR}/QSMxT/docs/_config.yml" | awk '{print $2}' | tr -d '"'
 }
 export TEST_CONTAINER_VERSION=$(get_config_value 'TEST_CONTAINER_VERSION')
 export TEST_CONTAINER_DATE=$(get_config_value 'TEST_CONTAINER_DATE')
@@ -305,29 +305,6 @@ else
     qsm-forward head "${TEST_DIR}/data" "${TEST_DIR}/bids" --subject 1 --session 2 --TR 0.05 --TEs 0.012 0.020 --flip_angle 15 --suffix MEGRE --save-phase
     echo "[DEBUG] Data generation complete!"
 fi
-
-# === UPDATE BOUTIQUES DESCRIPTOR WITH CONTAINER IMAGE ===
-# This must happen after git operations to avoid being reverted by git reset --hard
-DESCRIPTOR_PATH="${TEST_DIR}/QSMxT/qsmxt/boutiques/qsmxt.json"
-CONTAINER_IMAGE="vnmd/qsmxt_${TEST_CONTAINER_VERSION}:${TEST_CONTAINER_DATE}"
-
-echo "[DEBUG] Updating Boutiques descriptor with container image: ${CONTAINER_IMAGE}"
-python3 << EOF
-import json
-
-descriptor_path = "${DESCRIPTOR_PATH}"
-container_image = "${CONTAINER_IMAGE}"
-
-with open(descriptor_path, "r") as f:
-    descriptor = json.load(f)
-
-descriptor["container-image"]["image"] = container_image
-
-with open(descriptor_path, "w") as f:
-    json.dump(descriptor, f, indent=4)
-
-print(f"[DEBUG] Updated container-image to: {container_image}")
-EOF
 
 # The lock is automatically released when the script exits and file descriptor 200 is closed
 echo "[DEBUG] Setup complete. Lock will be released on exit."

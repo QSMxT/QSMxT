@@ -37,18 +37,18 @@ def _get_container_image():
 def _ensure_descriptor_has_container_image():
     """Ensure the boutiques descriptor has a container image set from _config.yml.
 
-    The descriptor ships with image: null and is patched at test time using
+    The descriptor ships with image: null and is always patched at test time using
     docs/_config.yml as the single source of truth for container version.
+    This always writes to avoid race conditions with concurrent git operations.
     """
+    image = _get_container_image()
+    if not image:
+        return
     with open(DESCRIPTOR_PATH, 'r') as f:
         descriptor = json.load(f)
-    if descriptor.get('container-image', {}).get('image'):
-        return
-    image = _get_container_image()
-    if image:
-        descriptor['container-image']['image'] = image
-        with open(DESCRIPTOR_PATH, 'w') as f:
-            json.dump(descriptor, f, indent=4)
+    descriptor['container-image']['image'] = image
+    with open(DESCRIPTOR_PATH, 'w') as f:
+        json.dump(descriptor, f, indent=4)
 
 
 def gettempdir():
