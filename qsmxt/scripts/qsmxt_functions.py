@@ -2,7 +2,7 @@ import os
 import shutil
 import json
 import site
-import pkg_resources
+from importlib.metadata import version as get_package_version
 import subprocess
 import psutil
 import math
@@ -63,7 +63,7 @@ def is_editable_package(package_name):
     return False
 
 def get_qsmxt_version():
-    return f"{pkg_resources.get_distribution('qsmxt').version}" + (" (linked installation)" if is_editable_package('qsmxt') else "")
+    return f"{get_package_version('qsmxt')}" + (" (linked installation)" if is_editable_package('qsmxt') else "")
 
 def get_qsm_premades(pipeline_file=None):
     with open(f"{os.path.join(get_qsmxt_dir(), 'qsm_pipelines.json')}", "r") as fh:
