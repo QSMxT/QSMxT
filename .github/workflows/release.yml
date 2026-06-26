@@ -1,0 +1,187 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+env:
+  CARGO_TERM_COLOR: always
+  # Pinned dcm2niix release bundled into the archives. Keep in sync with
+  # DCM2NIIX_BUNDLED_VERSION in src/dicom/convert.rs.
+  DCM2NIIX_VERSION: v1.0.20260416
+
+permissions:
+  contents: write
+
+jobs:
+  coverage-gate:
+    name: Coverage Gate (90%)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-tarpaulin
+        uses: taiki-e/install-action@cargo-tarpaulin
+
+      - name: Run coverage
+        # --engine llvm (source-based coverage) instead of the default ptrace engine:
+        # ptrace crashes ("tarpaulin being signaled") on the subprocess-spawning
+        # integration/self-update tests; llvm handles them and --exclude-files only
+        # affects the report, not execution.
+        run: cargo tarpaulin --engine llvm --workspace --out json --output-dir target/tarpaulin --exclude-files src/main.rs --exclude-files src/tui/mod.rs --exclude-files src/tui/ui.rs --exclude-files src/commands/update.rs -- --test-threads=1
+
+      - name: Enforce 70% coverage
+        run: |
+          COVERAGE=$(python3 -c "import json; data=json.load(open('target/tarpaulin/tarpaulin-report.json')); print(f\"{data['coverage']:.2f}\")")
+          echo "Coverage: ${COVERAGE}%"
+          if python3 -c "import sys; sys.exit(0 if float('${COVERAGE}') >= 70.0 else 1)"; then
+            echo "Coverage ${COVERAGE}% meets 70% threshold"
+          else
+            echo "::error::Coverage ${COVERAGE}% is below required 70% threshold"
+            exit 1
+          fi
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: coverage-gate
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-latest
+            dcm2niix_asset: lnx
+          - target: aarch64-unknown-linux-gnu
+            os: ubuntu-latest
+            dcm2niix_asset: none
+          - target: x86_64-apple-darwin
+            os: macos-latest
+            dcm2niix_asset: mac
+          - target: aarch64-apple-darwin
+            os: macos-latest
+            dcm2niix_asset: mac
+          - target: x86_64-unknown-linux-musl
+            os: ubuntu-latest
+            dcm2niix_asset: lnx
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+            dcm2niix_asset: win
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
+            dcm2niix_asset: none
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Set version from release tag
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
+          sed -i.bak "s/^version = .*/version = \"${VERSION}\"/" Cargo.toml
+          sed -i.bak "s/^version = .*/version = \"${VERSION}\"/" crates/qsmxt-config/Cargo.toml
+          rm -f Cargo.toml.bak crates/qsmxt-config/Cargo.toml.bak
+
+      - name: Install cross-compilation tools (aarch64-linux)
+        if: matrix.target == 'aarch64-unknown-linux-gnu'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gcc-aarch64-linux-gnu
+
+      - name: Install musl tools (x86_64)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build release binary
+        run: cargo build --release --target ${{ matrix.target }}
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+
+      # dcm2niix ships prebuilt binaries only for x86_64-linux (lnx), macOS
+      # universal2 (mac) and x86_64-windows (win). ARM Linux/Windows targets
+      # (dcm2niix_asset == 'none') ship without a bundled copy and fall back to
+      # PATH at runtime. The glibc 'lnx' build is bundled for the musl target too
+      # (works on glibc hosts; PATH fallback covers pure-musl/Alpine).
+      - name: Bundle dcm2niix (Unix)
+        if: runner.os != 'Windows' && matrix.dcm2niix_asset != 'none'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          curl -fsSL "https://github.com/rordenlab/dcm2niix/releases/download/${DCM2NIIX_VERSION}/dcm2niix_${{ matrix.dcm2niix_asset }}.zip" -o dcm2niix.zip
+          unzip -o dcm2niix.zip dcm2niix
+          chmod +x dcm2niix
+          rm dcm2niix.zip
+          curl -fsSL "https://raw.githubusercontent.com/rordenlab/dcm2niix/${DCM2NIIX_VERSION}/license.txt" -o dcm2niix.LICENSE || true
+          cd ../../..
+
+      - name: Bundle dcm2niix (Windows)
+        if: runner.os == 'Windows' && matrix.dcm2niix_asset != 'none'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          curl -fsSL "https://github.com/rordenlab/dcm2niix/releases/download/${DCM2NIIX_VERSION}/dcm2niix_${{ matrix.dcm2niix_asset }}.zip" -o dcm2niix.zip
+          7z x -y dcm2niix.zip dcm2niix.exe
+          rm dcm2niix.zip
+          curl -fsSL "https://raw.githubusercontent.com/rordenlab/dcm2niix/${DCM2NIIX_VERSION}/license.txt" -o dcm2niix.LICENSE || true
+          cd ../../..
+
+      - name: Package binary (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          FILES="qsmxt"
+          [ -f dcm2niix ] && FILES="$FILES dcm2niix"
+          [ -f dcm2niix.LICENSE ] && FILES="$FILES dcm2niix.LICENSE"
+          tar czf ../../../qsmxt-${{ github.ref_name }}-${{ matrix.target }}.tar.gz $FILES
+          cd ../../..
+
+      - name: Package binary (Windows)
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          cd target/${{ matrix.target }}/release
+          FILES="qsmxt.exe"
+          [ -f dcm2niix.exe ] && FILES="$FILES dcm2niix.exe"
+          [ -f dcm2niix.LICENSE ] && FILES="$FILES dcm2niix.LICENSE"
+          7z a ../../../qsmxt-${{ github.ref_name }}-${{ matrix.target }}.zip $FILES
+          cd ../../..
+
+      - name: Upload release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            qsmxt-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+            qsmxt-${{ github.ref_name }}-${{ matrix.target }}.zip
+
+  # Tell qsmbly (astewartau/qsmbly) a new qsmxt-config tag exists so it can
+  # open a PR bumping its pin. Requires a QSMBLY_DISPATCH_TOKEN secret: a
+  # fine-grained PAT scoped to astewartau/qsmbly with Contents: write
+  # (the default GITHUB_TOKEN cannot trigger workflows in another repo).
+  notify-qsmbly:
+    name: Notify qsmbly of new qsmxt-config
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch pin-bump event
+        env:
+          GH_TOKEN: ${{ secrets.QSMBLY_DISPATCH_TOKEN }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "QSMBLY_DISPATCH_TOKEN not set — skipping qsmbly notification." >&2
+            exit 0
+          fi
+          gh api repos/astewartau/qsmbly/dispatches \
+            -f event_type=qsmxt-config-release \
+            -f "client_payload[version]=${GITHUB_REF_NAME}"

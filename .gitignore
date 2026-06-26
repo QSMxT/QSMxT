@@ -1,16 +1,1 @@
-__pycache__/
-*ipynb*
-crash*
-batch*
-.vscode
-*.nii*
-debug/*
-testdata
-data
-*.proc*
-qsmxt.egg-info/
-dist/
-build/
-.venv
-bids*/
-dicom*/
+/target

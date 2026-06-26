@@ -1,0 +1,64 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  check:
+    name: Check, Clippy & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Cargo check
+        run: cargo check --workspace --all-targets
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run tests
+        run: cargo test --workspace
+
+      # Fails if a qsm-core *Params field isn't represented in its qsmxt-config
+      # *Config wrapper (drift guard). See crates/qsmxt-config/tests/param_coverage.rs.
+      - name: Param coverage (qsmxt-config vs qsm-core)
+        run: cargo test -p qsmxt-config --features introspection --test param_coverage
+
+  coverage:
+    name: Code Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-tarpaulin
+        uses: taiki-e/install-action@cargo-tarpaulin
+
+      - name: Run coverage
+        # --engine llvm (source-based): ptrace engine crashes on subprocess-spawning tests.
+        run: cargo tarpaulin --engine llvm --workspace --out json --output-dir target/tarpaulin --exclude-files src/main.rs --exclude-files src/tui/mod.rs --exclude-files src/tui/ui.rs --exclude-files src/commands/update.rs -- --test-threads=1
+
+      - name: Check coverage threshold
+        run: |
+          COVERAGE=$(python3 -c "import json; data=json.load(open('target/tarpaulin/tarpaulin-report.json')); print(f\"{data['coverage']:.2f}\")")
+          echo "Coverage: ${COVERAGE}%"
+          if python3 -c "import sys; sys.exit(0 if float('${COVERAGE}') >= 90.0 else 1)"; then
+            echo "::notice::Coverage ${COVERAGE}% meets 90% threshold"
+          else
+            echo "::warning::Coverage ${COVERAGE}% is below 90% threshold"
+          fi
