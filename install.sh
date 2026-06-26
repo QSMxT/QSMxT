@@ -1,10 +1,10 @@
 #!/bin/sh
 # QSMxT.rs installer — downloads the latest release binary for your platform.
-# Usage: curl -fsSL https://raw.githubusercontent.com/astewartau/qsmxt.rs/main/install.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.sh | sh
 
 set -e
 
-REPO="astewartau/qsmxt.rs"
+REPO="QSMxT/QSMxT"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 
 # Detect OS and architecture

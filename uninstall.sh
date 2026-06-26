@@ -1,6 +1,6 @@
 #!/bin/sh
 # QSMxT.rs uninstaller for Linux/macOS
-# Usage: curl -fsSL https://raw.githubusercontent.com/astewartau/qsmxt.rs/main/uninstall.sh | sh
+# Usage: curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/uninstall.sh | sh
 
 set -e
 

@@ -4,7 +4,7 @@ use std::env;
 use std::io::{self, Write};
 use std::process::Command;
 
-const REPO: &str = "astewartau/qsmxt.rs";
+const REPO: &str = "QSMxT/QSMxT";
 
 /// Fetches latest release info from GitHub API. Returns (tag, release_notes, html_url).
 fn fetch_latest_release() -> crate::Result<(String, String, String)> {

@@ -1,0 +1,137 @@
+/* QSMxT — custom Starlight theme
+   Brand: indigo → magenta gradient (evoking magnetic susceptibility / field). */
+
+:root {
+	--qsmxt-grad: linear-gradient(120deg, #7c6cff 0%, #a855f7 45%, #c026d3 100%);
+	--sl-font: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+}
+
+/* Accent palette — light mode */
+:root {
+	--sl-color-accent-low: #e7e3ff;
+	--sl-color-accent: #6d5cf0;
+	--sl-color-accent-high: #45378f;
+}
+
+/* Accent palette — dark mode */
+:root[data-theme='dark'] {
+	--sl-color-accent-low: #241d4a;
+	--sl-color-accent: #8b7cff;
+	--sl-color-accent-high: #cfc8ff;
+}
+
+/* ─────────────────────────── Hero (splash) ─────────────────────────── */
+
+.hero {
+	position: relative;
+}
+
+/* soft brand glow behind the hero */
+.hero::before {
+	content: '';
+	position: absolute;
+	inset: -20% -10% auto -10%;
+	height: 120%;
+	background: radial-gradient(60% 60% at 70% 10%, rgba(124, 108, 255, 0.22), transparent 70%),
+		radial-gradient(50% 50% at 15% 30%, rgba(192, 38, 211, 0.16), transparent 70%);
+	filter: blur(8px);
+	z-index: -1;
+	pointer-events: none;
+}
+
+.hero h1 {
+	font-weight: 800;
+	letter-spacing: -0.03em;
+	background: var(--qsmxt-grad);
+	-webkit-background-clip: text;
+	background-clip: text;
+	color: transparent;
+	line-height: 1.05;
+}
+
+.hero .tagline {
+	font-size: clamp(1.05rem, 2.5vw, 1.4rem);
+	color: var(--sl-color-gray-2);
+	max-width: 42ch;
+}
+
+/* Primary CTA gets the brand gradient */
+.hero .actions a[data-variant='primary'] {
+	background: var(--qsmxt-grad);
+	border: none;
+	color: #fff;
+	box-shadow: 0 8px 24px -8px rgba(124, 108, 255, 0.6);
+	transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+.hero .actions a[data-variant='primary']:hover {
+	transform: translateY(-2px);
+	box-shadow: 0 12px 28px -8px rgba(124, 108, 255, 0.75);
+}
+
+/* The hero "image" slot holds our terminal demo (see index.mdx) */
+.hero > img,
+.hero .hero-html {
+	width: min(100%, 38rem);
+}
+
+/* ─────────────────────────── Cards ─────────────────────────── */
+
+.card {
+	border-radius: 0.9rem;
+	transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+.card:hover {
+	transform: translateY(-3px);
+	border-color: var(--sl-color-accent);
+	box-shadow: 0 10px 30px -16px rgba(124, 108, 255, 0.5);
+}
+.card .icon {
+	color: var(--sl-color-accent);
+	background: var(--sl-color-accent-low);
+}
+
+/* ─────────────────────────── Terminal demo ─────────────────────────── */
+
+.qsmxt-term {
+	border-radius: 0.8rem;
+	border: 1px solid var(--sl-color-gray-5);
+	background: #0d1117;
+	box-shadow: 0 24px 60px -24px rgba(10, 8, 30, 0.7);
+	overflow: hidden;
+	font-size: 0.86rem;
+	text-align: left;
+}
+.qsmxt-term__bar {
+	display: flex;
+	align-items: center;
+	gap: 0.45rem;
+	padding: 0.6rem 0.8rem;
+	background: #161b22;
+	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+.qsmxt-term__dot {
+	width: 0.72rem;
+	height: 0.72rem;
+	border-radius: 50%;
+	display: inline-block;
+}
+.qsmxt-term__title {
+	margin-left: 0.4rem;
+	color: #8b949e;
+	font-size: 0.78rem;
+	font-family: var(--sl-font-mono);
+}
+.qsmxt-term__body {
+	margin: 0;
+	padding: 0.9rem 1rem 1.1rem;
+	color: #d6deeb;
+	font-family: var(--sl-font-mono);
+	line-height: 1.6;
+	white-space: pre;
+	overflow-x: auto;
+}
+.qsmxt-term__body .c-prompt { color: #7c6cff; }
+.qsmxt-term__body .c-cmd { color: #e6edf3; font-weight: 600; }
+.qsmxt-term__body .c-ok { color: #3fb950; }
+.qsmxt-term__body .c-dim { color: #6e7681; }
+.qsmxt-term__body .c-acc { color: #d2a8ff; }

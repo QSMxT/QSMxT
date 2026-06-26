@@ -1,0 +1,132 @@
+---
+title: QSMxT
+description: A fast, BIDS-native Quantitative Susceptibility Mapping pipeline and interactive TUI, built in Rust.
+template: splash
+hero:
+  tagline: Quantitative Susceptibility Mapping, in Rust — a fast, BIDS-native pipeline and interactive TUI.
+  image:
+    html: |
+      <div class="qsmxt-term">
+        <div class="qsmxt-term__bar">
+          <span class="qsmxt-term__dot" style="background:#ff5f56"></span>
+          <span class="qsmxt-term__dot" style="background:#ffbd2e"></span>
+          <span class="qsmxt-term__dot" style="background:#27c93f"></span>
+          <span class="qsmxt-term__title">qsmxt — run</span>
+        </div>
+        <pre class="qsmxt-term__body"><span class="c-prompt">$</span> <span class="c-cmd">qsmxt run study/bids</span>
+      <span class="c-dim">  discovered</span> 24 runs · 12 subjects
+        <span class="c-ok">✓</span> masking          <span class="c-acc">threshold</span>
+        <span class="c-ok">✓</span> phase unwrapping  <span class="c-acc">romeo</span>
+        <span class="c-ok">✓</span> B0 mapping        <span class="c-acc">multi-echo</span>
+        <span class="c-ok">✓</span> background field   <span class="c-acc">v-sharp</span>
+        <span class="c-ok">✓</span> dipole inversion  <span class="c-acc">rts</span>
+        <span class="c-ok">✓</span> referencing       <span class="c-acc">mean</span>
+      <span class="c-dim">  →</span> derivatives/qsmxt.rs/  <span class="c-dim">·  24 χ-maps in 3m12s</span></pre>
+      </div>
+  actions:
+    - text: Get started
+      link: /QSMxT/getting-started/installation/
+      icon: right-arrow
+      variant: primary
+    - text: Try in your browser
+      link: https://qsmbly.neurodesk.org/
+      icon: external
+      variant: secondary
+      attrs:
+        target: _blank
+        rel: noopener
+    - text: View on GitHub
+      link: https://github.com/QSMxT/QSMxT
+      icon: external
+      variant: minimal
+      attrs:
+        target: _blank
+        rel: noopener
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+QSMxT takes you from raw scanner DICOMs to quantitative susceptibility maps with
+a single self-contained binary. It auto-discovers phase/magnitude pairs in
+[BIDS](https://bids.neuroimaging.io/) datasets, runs the full reconstruction
+pipeline with sensible defaults, and writes tidy BIDS derivatives — no
+environment to manage, no toolbox sprawl.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.sh | sh
+```
+
+## Why QSMxT
+
+<CardGrid>
+	<Card title="End-to-end pipeline" icon="rocket">
+		Masking, phase unwrapping, echo combination, background field removal,
+		dipole inversion, and referencing — orchestrated for you.
+	</Card>
+	<Card title="10 inversion algorithms" icon="random">
+		RTS, TV, TKD, TSVD, TGV, Tikhonov, NLTV, MEDI, iLSQR, and QSMART, all
+		provided by [QSM.rs](https://github.com/astewartau/QSM.rs).
+	</Card>
+	<Card title="Interactive TUI" icon="laptop">
+		Convert, configure, and run from a polished terminal interface — the
+		recommended way to drive QSMxT, no config file required.
+	</Card>
+	<Card title="BIDS-native" icon="open-book">
+		Auto-discovers phase/magnitude, reads JSON sidecars, and writes compliant
+		derivatives to `derivatives/qsmxt.rs/`.
+	</Card>
+	<Card title="DICOM → BIDS" icon="document">
+		Built-in `dicom-convert` classifies series automatically — multi-echo,
+		multi-coil, and combined/uncombined reconstructions included.
+	</Card>
+	<Card title="Built for scale" icon="setting">
+		Disk caching skips completed steps on re-runs, memory-aware parallelism
+		fills your cores, and SLURM scripts fan out across a cluster.
+	</Card>
+</CardGrid>
+
+## Coming from QSMxT 8.x?
+
+:::note[QSMxT has been rebuilt from the ground up]
+**QSMxT v9 is a complete rewrite in Rust** — a single self-contained binary, no
+Python environment to manage. The reconstruction pipeline and DICOM/NIfTI
+conversion are fully reimplemented and faster, with a new interactive TUI.
+
+Some workflows from the 8.x line aren't part of v9: anatomical segmentation,
+template/group-space building, group statistics, NextQSM, and the web UI. If you
+rely on those, **the 8.x version is still available** — see the
+[`python-legacy` branch](https://github.com/QSMxT/QSMxT/tree/python-legacy) and the
+[8.x releases](https://github.com/QSMxT/QSMxT/releases).
+
+A few command changes: `qsmxt <bids>` is now `qsmxt run <bids>`, and conversion is
+`qsmxt dicom-convert`. The easiest way in is `qsmxt tui`.
+:::
+
+## Try it in your browser
+
+No install, no data to upload anywhere — **[qsmbly](https://qsmbly.neurodesk.org/)**
+runs the very same reconstruction algorithms entirely in your browser. It's the
+fastest way to experiment with QSM and get a feel for the methods before
+processing a full dataset with QSMxT.
+
+<LinkCard title="Open qsmbly →" description="Run the QSM algorithms in your browser at qsmbly.neurodesk.org" href="https://qsmbly.neurodesk.org/" target="_blank" rel="noopener" />
+
+## Get going
+
+<CardGrid>
+	<LinkCard title="Installation" description="One-line install for Linux, macOS, and Windows." href="/QSMxT/getting-started/installation/" />
+	<LinkCard title="Quick start" description="From raw data to QSM maps in minutes." href="/QSMxT/getting-started/quick-start/" />
+	<LinkCard title="Running interactively" description="Convert, configure, and run from the TUI — the recommended path." href="/QSMxT/guides/running-interactively/" />
+	<LinkCard title="Algorithms" description="The masking, unwrapping, background-field, and inversion methods." href="/QSMxT/reference/algorithms/" />
+</CardGrid>
+
+## How do I cite QSMxT?
+
+If QSMxT is useful in your research, please cite:
+
+> Stewart AW, Robinson SD, O'Brien K, et al. "QSMxT: Robust masking and artifact
+> reduction for quantitative susceptibility mapping." *Magnetic Resonance in
+> Medicine* 87.3 (2022): 1289–1300. [doi.org/10.1002/mrm.29048](https://doi.org/10.1002/mrm.29048)
+
+Every run also writes a `references.txt` listing citations for the specific
+methods your data and settings exercised.

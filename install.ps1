@@ -1,9 +1,9 @@
 # QSMxT.rs installer for Windows
-# Usage: irm https://raw.githubusercontent.com/astewartau/qsmxt.rs/main/install.ps1 | iex
+# Usage: irm https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"
 
-$repo = "astewartau/qsmxt.rs"
+$repo = "QSMxT/QSMxT"
 $target = "x86_64-pc-windows-msvc"
 
 # Default install directory

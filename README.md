@@ -23,30 +23,30 @@ All algorithms are provided by [QSM.rs](https://github.com/astewartau/QSM.rs).
 ### Quick install (Linux/macOS)
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/astewartau/qsmxt.rs/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.sh | sh
 ```
 
 ### Quick install (Windows PowerShell)
 
 ```powershell
-irm https://raw.githubusercontent.com/astewartau/qsmxt.rs/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.ps1 | iex
 ```
 
 ### Uninstall
 
 ```sh
 # Linux/macOS
-curl -fsSL https://raw.githubusercontent.com/astewartau/qsmxt.rs/main/uninstall.sh | sh
+curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/uninstall.sh | sh
 ```
 
 ```powershell
 # Windows PowerShell
-irm https://raw.githubusercontent.com/astewartau/qsmxt.rs/main/uninstall.ps1 | iex
+irm https://raw.githubusercontent.com/QSMxT/QSMxT/main/uninstall.ps1 | iex
 ```
 
 ### Manual download
 
-Download the latest binary for your platform from the [Releases](https://github.com/astewartau/qsmxt.rs/releases) page.
+Download the latest binary for your platform from the [Releases](https://github.com/QSMxT/QSMxT/releases) page.
 
 ### Bundled dcm2niix
 

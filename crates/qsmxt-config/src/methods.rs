@@ -139,7 +139,7 @@ const CITE_BIAS: Citation = Citation {
 
 const CITE_QSMXT: Citation = Citation {
     key: "stewart2026qsmxt",
-    text: "Stewart, A. (2026). QSMxT.rs. https://github.com/astewartau/qsmxt.rs",
+    text: "Stewart, A. (2026). QSMxT. https://github.com/QSMxT/QSMxT",
 };
 
 const CITE_QSMBLY: Citation = Citation {
