@@ -1,4 +1,4 @@
-# QSMxT (Rust)
+# QSMxT
 
 A command-line tool and interactive TUI for Quantitative Susceptibility Mapping (QSM) processing, built in Rust. QSMxT automates the full QSM pipeline on [BIDS](https://bids.neuroimaging.io/)-formatted neuroimaging datasets.
 
