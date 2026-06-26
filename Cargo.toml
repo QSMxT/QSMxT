@@ -6,6 +6,8 @@ name = "qsmxt"
 version = "0.0.0"  # set automatically by release CI from git tag
 edition = "2021"
 description = "QSMxT: Quantitative Susceptibility Mapping processing tool"
+license = "GPL-3.0-only"
+repository = "https://github.com/QSMxT/QSMxT"
 
 [[bin]]
 name = "qsmxt"

@@ -3,6 +3,7 @@ name = "qsmxt-config"
 version = "0.0.0"  # set automatically by release CI from git tag
 edition = "2021"
 description = "Pipeline configuration, command generation, and methods text for QSMxT"
+license = "GPL-3.0-only"
 
 [dependencies]
 qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.15.0" }
