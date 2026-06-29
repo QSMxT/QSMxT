@@ -35,6 +35,13 @@ hero:
       attrs:
         target: _blank
         rel: noopener
+    - text: Try in Neurodesk
+      link: https://www.neurodesk.org/
+      icon: external
+      variant: secondary
+      attrs:
+        target: _blank
+        rel: noopener
     - text: View on GitHub
       link: https://github.com/QSMxT/QSMxT
       icon: external
@@ -44,7 +51,7 @@ hero:
         rel: noopener
 ---
 
-import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
 
 QSMxT takes you from raw scanner DICOMs to quantitative susceptibility maps with
 a single self-contained binary. It auto-discovers phase/magnitude pairs in
@@ -52,9 +59,23 @@ a single self-contained binary. It auto-discovers phase/magnitude pairs in
 pipeline with sensible defaults, and writes tidy BIDS derivatives — no
 environment to manage, no toolbox sprawl.
 
-```sh
-curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.sh | sh
-```
+**Install** it with a single command:
+
+<Tabs syncKey="os">
+  <TabItem label="macOS / Linux">
+    ```sh
+    curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.sh | sh
+    ```
+  </TabItem>
+  <TabItem label="Windows">
+    ```powershell
+    irm https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.ps1 | iex
+    ```
+  </TabItem>
+</Tabs>
+
+See the [installation guide](/QSMxT/getting-started/installation/) for other
+options, or skip installing entirely and [try it in your browser](https://qsmbly.neurodesk.org/).
 
 ## Why QSMxT
 
