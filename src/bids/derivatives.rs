@@ -27,6 +27,22 @@ impl DerivativeOutputs {
         dir.join("anat")
     }
 
+    /// Build the subject/session extra_files directory for auxiliary outputs.
+    fn extra_files_dir(&self, key: &AcquisitionKey) -> PathBuf {
+        let mut dir = self.output_dir.join(format!("sub-{}", key.subject));
+        if let Some(ref ses) = key.session {
+            dir = dir.join(format!("ses-{}", ses));
+        }
+        dir.join("extra_files")
+    }
+
+    /// Directory holding an exported DICOM series for the given map suffix,
+    /// e.g. `sub-01/extra_files/sub-01_Chimap_dicoms/`.
+    pub fn dicom_dir(&self, key: &AcquisitionKey, suffix: &str) -> PathBuf {
+        self.extra_files_dir(key)
+            .join(format!("{}_{}_dicoms", key.basename(), suffix))
+    }
+
     /// Build the per-run workflow directory.
     ///
     /// Structure: `workflow/sub-{subject}/[ses-{session}/][acq-{acq}[_run-{run}]/]`
@@ -179,6 +195,21 @@ mod tests {
     }
 
     // --- Workflow step paths ---
+
+    #[test]
+    fn test_dicom_dir_no_session() {
+        let path = output().dicom_dir(&key_no_session(), "Chimap");
+        assert_eq!(path, PathBuf::from("/out/sub-01/extra_files/sub-01_Chimap_dicoms"));
+    }
+
+    #[test]
+    fn test_dicom_dir_with_session() {
+        let path = output().dicom_dir(&key_with_session(), "swi");
+        assert_eq!(
+            path,
+            PathBuf::from("/out/sub-01/ses-pre/extra_files/sub-01_ses-pre_swi_dicoms")
+        );
+    }
 
     #[test]
     fn test_field_ppm_path() {

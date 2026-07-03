@@ -302,6 +302,9 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         do_swi: form.do_swi,
         do_t2starmap: form.do_t2starmap,
         do_r2starmap: form.do_r2starmap,
+        export_dicom: form.export_dicom,
+        source_dicom: None,
+        dicom_outputs: None,
         inhomogeneity_correction: ps.inhomogeneity_correction,
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
         obliquity_threshold: parse_optional_f64(&ps.obliquity_threshold),
@@ -427,6 +430,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     config.pipeline.do_swi = app.form.do_swi;
     config.pipeline.do_t2starmap = app.form.do_t2starmap;
     config.pipeline.do_r2starmap = app.form.do_r2starmap;
+    config.pipeline.export_dicom = app.form.export_dicom;
     config.masking.inhomogeneity_correction = ps.inhomogeneity_correction;
     config.inversion.algorithm = qsm_algorithm;
     if !is_end_to_end {

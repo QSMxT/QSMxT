@@ -251,6 +251,11 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
         add_citation(&mut citations, &CITE_ARLO);
     }
 
+    // DICOM export
+    if config.pipeline.export_dicom {
+        sentences.push("Final maps were additionally exported as DICOM series.".to_string());
+    }
+
     // Build output
     let mut out = String::new();
     out.push_str("# Methods\n\n");

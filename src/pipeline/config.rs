@@ -203,6 +203,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         if args.do_swi { config.pipeline.do_swi = true; }
         if args.do_t2starmap { config.pipeline.do_t2starmap = true; }
         if args.do_r2starmap { config.pipeline.do_r2starmap = true; }
+        if args.export_dicom { config.pipeline.export_dicom = true; }
         if args.no_inhomogeneity_correction { config.masking.inhomogeneity_correction = false; }
         else if args.inhomogeneity_correction { config.masking.inhomogeneity_correction = true; }
         if let Some(v) = args.obliquity_threshold { config.pipeline.obliquity_threshold = v; }

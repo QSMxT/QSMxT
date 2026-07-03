@@ -178,6 +178,8 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         mem_limit_bytes,
         force: args.force,
         clean_intermediates: args.clean_intermediates,
+        source_dicom: args.source_dicom.clone(),
+        dicom_outputs: args.dicom_outputs.clone(),
     };
 
     let results = executor::local::execute_local(runs, &config, &output, &exec_config);
