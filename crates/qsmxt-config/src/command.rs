@@ -14,6 +14,7 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     if config.pipeline.do_swi { parts.push("--do-swi".into()); }
     if config.pipeline.do_t2starmap { parts.push("--do-t2starmap".into()); }
     if config.pipeline.do_r2starmap { parts.push("--do-r2starmap".into()); }
+    if config.pipeline.export_dicom { parts.push("--export-dicom".into()); }
     emit_f64(&mut parts, "--obliquity-threshold", config.pipeline.obliquity_threshold, d.pipeline.obliquity_threshold);
 
     // ── Inhomogeneity ──

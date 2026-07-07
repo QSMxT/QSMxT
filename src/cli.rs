@@ -591,6 +591,20 @@ pub struct RunArgs {
     #[arg(long)]
     pub do_r2starmap: bool,
 
+    /// Also export final maps as DICOM series into each subject's extra_files/ folder
+    #[arg(long)]
+    pub export_dicom: bool,
+
+    /// Optional source DICOM directory; inherit patient/study identity from the
+    /// original DICOMs when exporting (used with --export-dicom)
+    #[arg(long)]
+    pub source_dicom: Option<PathBuf>,
+
+    /// Restrict DICOM export to these maps (default: all produced). Values:
+    /// chimap, swi, minip, t2starmap, r2starmap (used with --export-dicom)
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    pub dicom_outputs: Option<Vec<String>>,
+
     /// Apply inhomogeneity correction to magnitude before masking
     #[arg(long)]
     pub inhomogeneity_correction: bool,

@@ -16,6 +16,10 @@ pub struct ExecutionConfig {
     pub force: bool,
     /// Remove intermediate files after completion
     pub clean_intermediates: bool,
+    /// Optional source DICOM directory for `--export-dicom` (metadata inheritance).
+    pub source_dicom: Option<std::path::PathBuf>,
+    /// Optional subset of maps to export as DICOM (`--dicom-outputs`).
+    pub dicom_outputs: Option<Vec<String>>,
 }
 
 /// Execute pipeline runs in parallel using Rayon.
@@ -70,6 +74,20 @@ pub fn execute_local(
                     .collect();
                     for path in &final_paths {
                         info!("{}: -> {}", run.key, path.display());
+                    }
+
+                    // Optional DICOM export (best-effort: never fails the run).
+                    if config.pipeline.export_dicom {
+                        let opts = crate::dicom::export::DicomExportOptions {
+                            export_swi: config.pipeline.do_swi,
+                            export_t2star: config.pipeline.do_t2starmap,
+                            export_r2star: config.pipeline.do_r2starmap,
+                            source_dicom: exec_config.source_dicom.as_deref(),
+                            outputs_filter: exec_config.dicom_outputs.as_deref(),
+                        };
+                        if let Err(e) = crate::dicom::export::export_run_dicoms(run, output, &opts) {
+                            error!("{}: DICOM export failed - {}", run.key, e);
+                        }
                     }
                 }
                 Err(e) => error!("{}: FAILED after {:.1}s - {}", run.key, elapsed.as_secs_f64(), e),
@@ -183,6 +201,8 @@ mod tests {
             mem_limit_bytes: None,
             force: false,
             clean_intermediates: false,
+            source_dicom: None,
+            dicom_outputs: None,
         };
         assert_eq!(compute_concurrency(&runs, &config, &exec), 8);
     }
@@ -195,6 +215,8 @@ mod tests {
             mem_limit_bytes: Some(1024 * 1024 * 1024),
             force: false,
             clean_intermediates: false,
+            source_dicom: None,
+            dicom_outputs: None,
         };
         assert_eq!(compute_concurrency(&[], &config, &exec), 8);
     }
@@ -211,6 +233,8 @@ mod tests {
             mem_limit_bytes: Some(per_run * 2),
             force: false,
             clean_intermediates: false,
+            source_dicom: None,
+            dicom_outputs: None,
         };
         assert_eq!(compute_concurrency(&runs, &config, &exec), 2);
     }
@@ -226,6 +250,8 @@ mod tests {
             mem_limit_bytes: Some(per_run),
             force: false,
             clean_intermediates: false,
+            source_dicom: None,
+            dicom_outputs: None,
         };
         assert_eq!(compute_concurrency(&runs, &config, &exec), 1);
     }

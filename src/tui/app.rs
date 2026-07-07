@@ -2004,6 +2004,7 @@ pub struct RunForm {
     pub swi_mip_window: String,
     pub do_t2starmap: bool,
     pub do_r2starmap: bool,
+    pub export_dicom: bool,
 
     // Tab 4: Execution
     pub execution_mode: usize, // 0=Local, 1=SLURM
@@ -2035,6 +2036,7 @@ impl Default for RunForm {
             swi_mip_window: format!("{}", swi.mip_window),
             do_t2starmap: false,
             do_r2starmap: false,
+            export_dicom: false,
             execution_mode: 0,
             dry_run: false,
             debug: false,
@@ -2102,6 +2104,11 @@ impl App {
                     label: "Compute R2* Map",
                     kind: FieldKind::Checkbox,
                     help: "Compute R2* decay rate map (requires 3+ echoes with magnitude)",
+                },
+                FieldDef {
+                    label: "Export DICOM",
+                    kind: FieldKind::Checkbox,
+                    help: "Also write final maps as DICOM series into each subject's extra_files/ folder",
                 },
             ],
             // Tab 3: Execution
@@ -2522,6 +2529,7 @@ impl App {
             (2, 6) => self.form.swi_mip_window = defaults.swi_mip_window.clone(),
             (2, 7) => self.form.do_t2starmap = defaults.do_t2starmap,
             (2, 8) => self.form.do_r2starmap = defaults.do_r2starmap,
+            (2, 9) => self.form.export_dicom = defaults.export_dicom,
             // Tab 3 (Execution)
             (3, 0) => self.form.execution_mode = defaults.execution_mode,
             (3, 1) => self.form.dry_run = defaults.dry_run,
@@ -2559,6 +2567,7 @@ impl App {
                 self.form.swi_mip_window = defaults.swi_mip_window.clone();
                 self.form.do_t2starmap = defaults.do_t2starmap;
                 self.form.do_r2starmap = defaults.do_r2starmap;
+                self.form.export_dicom = defaults.export_dicom;
             }
             3 => {
                 self.form.execution_mode = defaults.execution_mode;
@@ -3664,6 +3673,7 @@ impl App {
             (2, 0) => self.form.do_swi,
             (2, 7) => self.form.do_t2starmap,
             (2, 8) => self.form.do_r2starmap,
+            (2, 9) => self.form.export_dicom,
             (3, 1) => self.form.dry_run,
             (3, 2) => self.form.debug,
             (3, 9) => self.form.slurm_submit,
@@ -3676,6 +3686,7 @@ impl App {
             (2, 0) => self.form.do_swi = !self.form.do_swi,
             (2, 7) => self.form.do_t2starmap = !self.form.do_t2starmap,
             (2, 8) => self.form.do_r2starmap = !self.form.do_r2starmap,
+            (2, 9) => self.form.export_dicom = !self.form.export_dicom,
             (3, 1) => self.form.dry_run = !self.form.dry_run,
             (3, 2) => self.form.debug = !self.form.debug,
             (3, 9) => self.form.slurm_submit = !self.form.slurm_submit,
@@ -3727,6 +3738,7 @@ impl App {
             (2, 0) => self.form.do_swi,
             (2, 7) => self.form.do_t2starmap,
             (2, 8) => self.form.do_r2starmap,
+            (2, 9) => self.form.export_dicom,
             (3, 1) => self.form.dry_run,
             (3, 2) => self.form.debug,
             (3, 9) => self.form.slurm_submit,

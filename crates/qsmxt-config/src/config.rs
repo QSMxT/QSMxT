@@ -258,11 +258,12 @@ pub struct PipelineToggles {
     pub do_swi: bool,
     pub do_t2starmap: bool,
     pub do_r2starmap: bool,
+    pub export_dicom: bool,
     pub obliquity_threshold: f64,
 }
 impl Default for PipelineToggles {
     fn default() -> Self {
-        Self { do_qsm: true, do_swi: false, do_t2starmap: false, do_r2starmap: false, obliquity_threshold: -1.0 }
+        Self { do_qsm: true, do_swi: false, do_t2starmap: false, do_r2starmap: false, export_dicom: false, obliquity_threshold: -1.0 }
     }
 }
 
