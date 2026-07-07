@@ -52,6 +52,8 @@ pub enum Command {
         #[command(subcommand)]
         command: InvertCommand,
     },
+    /// QSMART vessel-aware reconstruction: total field -> susceptibility (NIfTI in/out)
+    Qsmart(QsmartArgs),
     /// Susceptibility-weighted imaging (NIfTI in/out)
     Swi(SwiArgs),
     /// R2* mapping from multi-echo magnitude data (NIfTI in/out)
@@ -1236,6 +1238,32 @@ pub struct InvertIlsqrArgs {
 }
 
 // ── SWI ──
+
+#[derive(Parser, Debug)]
+pub struct QsmartArgs {
+    /// Input total field NIfTI file (ppm)
+    pub input: PathBuf,
+    /// Binary mask NIfTI file
+    #[arg(short, long)]
+    pub mask: PathBuf,
+    /// Output susceptibility map NIfTI file
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// B0 direction (3 values)
+    #[arg(long, num_args = 3, default_values_t = [0.0, 0.0, 1.0])]
+    pub b0_direction: Vec<f64>,
+    /// B0 field strength in Tesla
+    #[arg(long)]
+    pub field_strength: f64,
+    /// Echo time in seconds
+    #[arg(long)]
+    pub echo_time: f64,
+    /// Combined magnitude NIfTI (optional; drives vasculature detection)
+    #[arg(long)]
+    pub magnitude: Option<PathBuf>,
+    #[command(flatten)]
+    pub qsmart_params: QsmartParamArgs,
+}
 
 #[derive(Parser, Debug)]
 pub struct SwiArgs {

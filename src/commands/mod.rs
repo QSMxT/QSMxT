@@ -5,6 +5,7 @@ pub mod homogeneity;
 pub mod init;
 pub mod invert;
 pub mod mask;
+pub mod qsmart;
 pub mod quality_map;
 pub mod r2star;
 pub mod resample;

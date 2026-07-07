@@ -37,6 +37,7 @@ fn main() {
         Command::Unwrap { command } => commands::unwrap::execute(command),
         Command::Bgremove { command } => commands::bgremove::execute(command),
         Command::Invert { command } => commands::invert::execute(command),
+        Command::Qsmart(args) => commands::qsmart::execute(args),
         Command::Swi(args) => commands::swi::execute(args),
         Command::R2star(args) => commands::r2star::execute(args),
         Command::T2star(args) => commands::t2star::execute(args),

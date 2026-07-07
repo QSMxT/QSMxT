@@ -31,6 +31,26 @@ fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
     }
 }
 
+/// Apply QSMART parameter overrides onto a config. Shared by the `run` pipeline and the standalone
+/// `qsmxt qsmart` command so both honour the same flags.
+pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamArgs) {
+    if let Some(v) = p.qsmart_ilsqr_tol { config.inversion.qsmart.ilsqr_tol = v; }
+    if let Some(v) = p.qsmart_ilsqr_max_iter { config.inversion.qsmart.ilsqr_max_iter = v; }
+    if let Some(v) = p.qsmart_vasc_sphere_radius { config.inversion.qsmart.vasc_sphere_radius = v; }
+    if let Some(v) = p.qsmart_sdf_spatial_radius { config.inversion.qsmart.sdf_spatial_radius = v; }
+    if let Some(a) = p.qsmart_inversion { config.inversion.qsmart.inversion = qsm_algorithm_arg_to_config(a); }
+    if let Some(v) = p.qsmart_sdf_sigma1_stage1 { config.inversion.qsmart.sdf_sigma1_stage1 = v; }
+    if let Some(v) = p.qsmart_sdf_sigma2_stage1 { config.inversion.qsmart.sdf_sigma2_stage1 = v; }
+    if let Some(v) = p.qsmart_sdf_sigma1_stage2 { config.inversion.qsmart.sdf_sigma1_stage2 = v; }
+    if let Some(v) = p.qsmart_sdf_sigma2_stage2 { config.inversion.qsmart.sdf_sigma2_stage2 = v; }
+    if let Some(v) = p.qsmart_sdf_lower_lim { config.inversion.qsmart.sdf_lower_lim = v; }
+    if let Some(v) = p.qsmart_sdf_curv_constant { config.inversion.qsmart.sdf_curv_constant = v; }
+    if let Some(v) = p.qsmart_frangi_scale_min { config.inversion.qsmart.frangi_scale_min = v; }
+    if let Some(v) = p.qsmart_frangi_scale_max { config.inversion.qsmart.frangi_scale_max = v; }
+    if let Some(v) = p.qsmart_frangi_scale_ratio { config.inversion.qsmart.frangi_scale_ratio = v; }
+    if let Some(v) = p.qsmart_frangi_c { config.inversion.qsmart.frangi_c = v; }
+}
+
 /// Maps flat CLI flags to nested config fields.
 pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         // ── Inversion algorithm ──
@@ -143,21 +163,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         if let Some(v) = args.tgv_params.tgv_alpha0 { config.inversion.tgv.alpha0 = v; }
         if let Some(v) = args.tgv_params.tgv_step_size { config.inversion.tgv.step_size = v; }
         if let Some(v) = args.tgv_params.tgv_tol { config.inversion.tgv.tol = v; }
-        if let Some(v) = args.qsmart_params.qsmart_ilsqr_tol { config.inversion.qsmart.ilsqr_tol = v; }
-        if let Some(v) = args.qsmart_params.qsmart_ilsqr_max_iter { config.inversion.qsmart.ilsqr_max_iter = v; }
-        if let Some(v) = args.qsmart_params.qsmart_vasc_sphere_radius { config.inversion.qsmart.vasc_sphere_radius = v; }
-        if let Some(v) = args.qsmart_params.qsmart_sdf_spatial_radius { config.inversion.qsmart.sdf_spatial_radius = v; }
-        if let Some(a) = args.qsmart_params.qsmart_inversion { config.inversion.qsmart.inversion = qsm_algorithm_arg_to_config(a); }
-        if let Some(v) = args.qsmart_params.qsmart_sdf_sigma1_stage1 { config.inversion.qsmart.sdf_sigma1_stage1 = v; }
-        if let Some(v) = args.qsmart_params.qsmart_sdf_sigma2_stage1 { config.inversion.qsmart.sdf_sigma2_stage1 = v; }
-        if let Some(v) = args.qsmart_params.qsmart_sdf_sigma1_stage2 { config.inversion.qsmart.sdf_sigma1_stage2 = v; }
-        if let Some(v) = args.qsmart_params.qsmart_sdf_sigma2_stage2 { config.inversion.qsmart.sdf_sigma2_stage2 = v; }
-        if let Some(v) = args.qsmart_params.qsmart_sdf_lower_lim { config.inversion.qsmart.sdf_lower_lim = v; }
-        if let Some(v) = args.qsmart_params.qsmart_sdf_curv_constant { config.inversion.qsmart.sdf_curv_constant = v; }
-        if let Some(v) = args.qsmart_params.qsmart_frangi_scale_min { config.inversion.qsmart.frangi_scale_min = v; }
-        if let Some(v) = args.qsmart_params.qsmart_frangi_scale_max { config.inversion.qsmart.frangi_scale_max = v; }
-        if let Some(v) = args.qsmart_params.qsmart_frangi_scale_ratio { config.inversion.qsmart.frangi_scale_ratio = v; }
-        if let Some(v) = args.qsmart_params.qsmart_frangi_c { config.inversion.qsmart.frangi_c = v; }
+        apply_qsmart_overrides(config, &args.qsmart_params);
 
         // ── Background removal params ──
         if let Some(v) = args.vsharp_params.vsharp_threshold { config.bg_removal.vsharp.threshold = v; }
