@@ -1181,6 +1181,12 @@ pub struct InvertNltvArgs {
 pub struct InvertMediArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
+    /// B0 field strength in Tesla (MEDI works in radians; used to convert the ppm field)
+    #[arg(long)]
+    pub field_strength: f64,
+    /// Echo time in seconds (used to convert the ppm field to radians for MEDI)
+    #[arg(long)]
+    pub echo_time: f64,
     /// Magnitude NIfTI file (recommended)
     #[arg(long)]
     pub magnitude: Option<PathBuf>,
@@ -1190,9 +1196,10 @@ pub struct InvertMediArgs {
     /// Enable MERIT weighting
     #[arg(long)]
     pub merit: Option<bool>,
-    /// Enable SMV deconvolution
+    /// Enable SMV deconvolution (MEDI's own background removal). Set false when the input is
+    /// already a local field. [default: from qsm-core]
     #[arg(long)]
-    pub smv: bool,
+    pub smv: Option<bool>,
     /// SMV radius in mm
     #[arg(long)]
     pub smv_radius: Option<f64>,
