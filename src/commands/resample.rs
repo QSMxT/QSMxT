@@ -21,7 +21,7 @@ pub fn execute(args: ResampleArgs) -> crate::Result<()> {
     );
 
     // Save using resampled geometry
-    let ref_nifti = qsm_core::nifti_io::NiftiData {
+    let ref_nifti = qsm_core::io::NiftiData {
         data: vec![],
         dims: resampled.dims,
         voxel_size: resampled.voxel_size,

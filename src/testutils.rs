@@ -24,21 +24,21 @@ const VOXEL_SIZE: (f64, f64, f64) = (1.0, 1.0, 1.0);
 /// Write a synthetic magnitude volume (positive values, brighter in centre).
 pub fn write_magnitude(path: &Path) {
     let data = magnitude_data();
-    qsm_core::nifti_io::save_nifti_to_file(path, &data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
+    qsm_core::io::save_nifti_to_file(path, &data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
         .expect("write magnitude");
 }
 
 /// Write a synthetic phase volume (values in 0..4096 range, will be scaled to [-π, π]).
 pub fn write_phase(path: &Path) {
     let data = phase_data();
-    qsm_core::nifti_io::save_nifti_to_file(path, &data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
+    qsm_core::io::save_nifti_to_file(path, &data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
         .expect("write phase");
 }
 
 /// Write a synthetic binary mask (1 inside, 0 at single-voxel border).
 pub fn write_mask(path: &Path) {
     let data: Vec<f64> = mask_data().iter().map(|&m| m as f64).collect();
-    qsm_core::nifti_io::save_nifti_to_file(path, &data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
+    qsm_core::io::save_nifti_to_file(path, &data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
         .expect("write mask");
 }
 
@@ -51,7 +51,7 @@ pub fn write_field(path: &Path) {
             data[i] = ((i as f64) * 0.001).sin() * 0.1;
         }
     }
-    qsm_core::nifti_io::save_nifti_to_file(path, &data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
+    qsm_core::io::save_nifti_to_file(path, &data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
         .expect("write field");
 }
 

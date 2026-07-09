@@ -30,7 +30,7 @@ use log::{info, warn};
 use crate::bids::derivatives::DerivativeOutputs;
 use crate::bids::discovery::QsmRun;
 use crate::error::QsmxtError;
-use qsm_core::nifti_io;
+use qsm_core::io;
 
 /// Root OID prefix for synthesized UIDs. `2.25` is the DICOM-sanctioned arc for
 /// UUID-derived UIDs; we substitute a stable hash of the run identity so repeat
@@ -249,7 +249,7 @@ struct ExportMap<'a> {
 /// Export one map (one NIfTI volume) as a DICOM series of axial slices.
 /// Returns the number of slices written.
 fn export_map(m: ExportMap) -> crate::Result<usize> {
-    let volume = nifti_io::read_nifti_file(m.nifti_path)
+    let volume = io::read_nifti_file(m.nifti_path)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", m.nifti_path.display(), e)))?;
 
     let (nx, ny, nz) = volume.dims;
@@ -627,7 +627,7 @@ mod tests {
             0.0, 0.0, 2.0, 7.0,
             0.0, 0.0, 0.0, 1.0,
         ];
-        nifti_io::save_nifti_to_file(&nii, &data, (nx, ny, nz), (1.0, 1.0, 2.0), &affine).unwrap();
+        io::save_nifti_to_file(&nii, &data, (nx, ny, nz), (1.0, 1.0, 2.0), &affine).unwrap();
 
         let key = AcquisitionKey {
             subject: "01".to_string(),

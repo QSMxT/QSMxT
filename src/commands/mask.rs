@@ -72,10 +72,11 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
             let nifti = load_nifti(&args.common.input)?;
             let grid = super::common::nifti_grid(&nifti);
             info!("Running BET (fractional_intensity={:.2})", args.fractional_intensity);
-            let mask = qsm_core::bet::run_bet(
-                &nifti.data, &grid,
-                args.fractional_intensity, 1.0, 0.0, 1000, 4, |_, _| {},
-            );
+            let params = qsm_core::bet::BetParams {
+                fractional_intensity: args.fractional_intensity,
+                ..qsm_core::bet::BetParams::default()
+            };
+            let mask = qsm_core::bet::run_bet(&nifti.data, &grid, &params, |_, _| {});
             let mask = apply_ops(mask, &args.common.ops, &grid)?;
             save_and_log(&args.common, &mask, &nifti)
         }
@@ -137,7 +138,7 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
     }
 }
 
-fn save_and_log(common: &MaskCommonArgs, mask: &[u8], nifti: &qsm_core::nifti_io::NiftiData) -> crate::Result<()> {
+fn save_and_log(common: &MaskCommonArgs, mask: &[u8], nifti: &qsm_core::io::NiftiData) -> crate::Result<()> {
     save_mask(&common.output, mask, nifti)?;
     let count: usize = mask.iter().map(|&m| m as usize).sum();
     info!(

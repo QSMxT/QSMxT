@@ -50,7 +50,7 @@ param_config!(SharpConfig from qsm_core::bgremove::SharpParams { threshold: f64,
 param_config!(ResharpConfig from qsm_core::bgremove::ResharpParams {
     radius: f64, tik_reg: f64, tol: f64, max_iter: usize
 });
-param_config!(HarperellaConfig from qsm_core::pipeline::HarperellaParams {
+param_config!(HarperellaConfig from qsm_core::bgremove::HarperellaParams {
     radius: f64, max_iter: usize, tol: f64
 });
 param_config!(BetConfig from qsm_core::bet::BetParams {
