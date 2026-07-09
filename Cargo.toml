@@ -14,9 +14,7 @@ name = "qsmxt"
 path = "src/main.rs"
 
 [dependencies]
-# TEMP: local path while refactoring to the new QSM.rs API. Switch back to a
-# published tag (git = ..., tag = "vX.Y.Z", ...) once QSM.rs #43 is merged & released.
-qsm-core = { path = "/home/ashley/repos/qsm/QSM.rs", features = ["parallel"] }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.16.0", features = ["parallel"] }
 qsmxt-config = { path = "crates/qsmxt-config" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
