@@ -161,7 +161,7 @@ pub fn split_4d_nifti(
     })?;
 
     let (data, (nx, ny, nz, nt), voxel_size, affine) =
-        qsm_core::nifti_io::load_nifti_4d(&bytes).map_err(crate::error::QsmxtError::NiftiIo)?;
+        qsm_core::io::load_nifti_4d(&bytes).map_err(crate::error::QsmxtError::NiftiIo)?;
 
     let vol_size = nx * ny * nz;
     let mut paths = Vec::with_capacity(nt);
@@ -172,7 +172,7 @@ pub fn split_4d_nifti(
         let vol_data = &data[start..end];
 
         let out_path = output_dir.join(format!("{}_echo-{}.nii.gz", base_name, t + 1));
-        qsm_core::nifti_io::save_nifti_to_file(
+        qsm_core::io::save_nifti_to_file(
             &out_path,
             vol_data,
             (nx, ny, nz),

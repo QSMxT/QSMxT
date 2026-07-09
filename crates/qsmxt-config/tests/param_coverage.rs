@@ -72,12 +72,13 @@ fn qsmxt_config_covers_all_qsm_core_params() {
 
     // Background-field removal
     cover!(q::bgremove::VsharpParams => c::VsharpConfig);
-    cover!(q::bgremove::PdfParams => c::PdfConfig);
-    cover!(q::bgremove::LbvParams => c::LbvConfig);
+    // max_iter defaults to an automatic value (None) and isn't a user knob here.
+    cover!(q::bgremove::PdfParams => c::PdfConfig, ignore: ["max_iter"]);
+    cover!(q::bgremove::LbvParams => c::LbvConfig, ignore: ["max_iter"]);
     cover!(q::bgremove::IsmvParams => c::IsmvConfig);
     cover!(q::bgremove::SharpParams => c::SharpConfig);
     cover!(q::bgremove::ResharpParams => c::ResharpConfig);
-    cover!(q::pipeline::HarperellaParams => c::HarperellaConfig);
+    cover!(q::bgremove::HarperellaParams => c::HarperellaConfig);
 
     // Masking / field mapping / misc
     cover!(q::bet::BetParams => c::BetConfig);

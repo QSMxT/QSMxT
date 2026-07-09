@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
-use qsm_core::nifti_io::{self, NiftiData};
+use qsm_core::io::{self, NiftiData};
 use serde::Serialize;
 
 use crate::bids::derivatives::DerivativeOutputs;
@@ -157,7 +157,7 @@ fn save_volume(path: &Path, data: &[f64], meta: &RunMetadata) -> crate::Result<(
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    nifti_io::save_nifti_to_file(path, data, meta.dims, meta.voxel_size, &meta.affine)
+    io::save_nifti_to_file(path, data, meta.dims, meta.voxel_size, &meta.affine)
         .map_err(QsmxtError::NiftiIo)
 }
 
@@ -169,7 +169,7 @@ fn save_mask(path: &Path, mask: &[u8], meta: &RunMetadata) -> crate::Result<()> 
 
 /// Helper: load a f64 volume from NIfTI.
 fn load_volume(path: &Path) -> crate::Result<Vec<f64>> {
-    let nifti = nifti_io::read_nifti_file(path)
+    let nifti = io::read_nifti_file(path)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))?;
     Ok(nifti.data)
 }
@@ -272,7 +272,7 @@ fn stage_load(
     if !state.is_step_cached("load") {
         let t = Instant::now();
         progress("Loading NIfTI metadata");
-        let first_phase = nifti_io::read_nifti_file(&qsm_run.echoes[0].phase_nifti)
+        let first_phase = io::read_nifti_file(&qsm_run.echoes[0].phase_nifti)
             .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", qsm_run.echoes[0].phase_nifti.display(), e)))?;
 
         let meta = RunMetadata {
@@ -312,7 +312,7 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
     progress("Rescaling phase to radians");
     let mut phase_paths = Vec::new();
     for (i, echo) in ctx.run.echoes.iter().enumerate() {
-        let mut phase_nifti = nifti_io::read_nifti_file(&echo.phase_nifti)
+        let mut phase_nifti = io::read_nifti_file(&echo.phase_nifti)
             .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?;
         qsm_core::pipeline::scale_phase_to_pi(&mut phase_nifti.data);
         let out_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
@@ -368,7 +368,7 @@ fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Re
         if m_path.exists() {
             mag_slices.push(load_volume(&m_path)?);
         } else if let Some(ref src) = ctx.run.echoes[i].magnitude_nifti {
-            let nifti = nifti_io::read_nifti_file(src)
+            let nifti = io::read_nifti_file(src)
                 .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", src.display(), e)))?;
             mag_slices.push(nifti.data);
         }
@@ -463,7 +463,7 @@ fn resolve_mask_magnitude(ctx: &StageContext) -> crate::Result<Vec<NiftiData>> {
     if needs_first || needs_last {
         let echo_idx = if needs_first { 0 } else { ctx.run.echoes.len() - 1 };
         if let Some(ref src) = ctx.run.echoes[echo_idx].magnitude_nifti {
-            let nifti = nifti_io::read_nifti_file(src)
+            let nifti = io::read_nifti_file(src)
                 .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", src.display(), e)))?;
             let data = if ctx.config.masking.inhomogeneity_correction {
                 let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
@@ -480,7 +480,7 @@ fn resolve_mask_magnitude(ctx: &StageContext) -> crate::Result<Vec<NiftiData>> {
     // Default: load the pre-computed RSS-combined magnitude
     let combined_path = ctx.output.magnitude_path(&ctx.run.key);
     if combined_path.exists() {
-        let m = nifti_io::read_nifti_file(&combined_path)
+        let m = io::read_nifti_file(&combined_path)
             .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", combined_path.display(), e)))?;
         Ok(vec![m])
     } else {
@@ -556,7 +556,7 @@ fn stage_t2star_r2star(ctx: &mut StageContext, mask_path: &Path, progress: &dyn 
     let mut interleaved = vec![0.0f64; n_voxels * ctx.meta.n_echoes];
     for i in 0..ctx.meta.n_echoes {
         let mag_data = if let Some(ref raw_path) = ctx.run.echoes[i].magnitude_nifti {
-            let nifti = nifti_io::read_nifti_file(raw_path)
+            let nifti = io::read_nifti_file(raw_path)
                 .map_err(|e| QsmxtError::NiftiIo(format!("mag echo {}: {}", i + 1, e)))?;
             nifti.data
         } else {
@@ -617,7 +617,7 @@ fn stage_unwrap(
     progress("Phase unwrapping / echo combination");
     let mut phases: Vec<NiftiData> = Vec::new();
     for i in 0..ctx.meta.n_echoes {
-        let p = nifti_io::read_nifti_file(&ctx.output.phase_scaled_path(&ctx.run.key, i + 1))
+        let p = io::read_nifti_file(&ctx.output.phase_scaled_path(&ctx.run.key, i + 1))
             .map_err(|e| QsmxtError::NiftiIo(format!("echo {}: {}", i + 1, e)))?;
         phases.push(p);
     }
@@ -691,9 +691,6 @@ fn stage_tgv(
         load_volume(&ctx.output.phase_scaled_path(&ctx.run.key, 1))?
     };
 
-    let phase_f32: Vec<f32> = phase_data.iter().map(|&v| v as f32).collect();
-    drop(phase_data);
-
     let (nx, ny, nz) = ctx.meta.dims;
     let (vsx, vsy, vsz) = ctx.meta.voxel_size;
     let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
@@ -707,11 +704,9 @@ fn stage_tgv(
         fieldstrength: ctx.meta.field_strength as f32,
         te: ctx.meta.echo_times[0] as f32,
     };
-    let b0_f32 = (bdir.0 as f32, bdir.1 as f32, bdir.2 as f32);
-    let chi_f32 = qsm_core::inversion::tgv_qsm(
-        &phase_f32, &mask, &grid, &params, b0_f32, |_, _| {},
+    let chi = qsm_core::inversion::tgv_qsm(
+        &phase_data, &mask, &grid, &params, bdir, |_, _| {},
     );
-    let chi: Vec<f64> = chi_f32.iter().map(|&v| v as f64).collect();
 
     save_volume(&chi_raw_path, &chi, ctx.meta)?;
     ctx.complete_step("tgv", Some("tgv"), tgv_params, &[mask_path, field_path], vec![chi_raw_path], t)?;

@@ -14,17 +14,13 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             info!("Background removal (V-SHARP, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
             let d = qsm_core::bgremove::VsharpParams::default();
-            let max_radius = args.max_radius_factor.unwrap_or(d.max_radius_factor) * grid.vsx().min(grid.vsy()).min(grid.vsz());
-            let min_radius = args.min_radius_factor.unwrap_or(d.min_radius_factor) * grid.vsx().max(grid.vsy()).max(grid.vsz());
-            let step = grid.vsx().max(grid.vsy()).max(grid.vsz());
-            let mut radii = Vec::new();
-            let mut r = max_radius;
-            while r >= min_radius { radii.push(r); r -= step; }
-            if radii.is_empty() { radii.push(min_radius); }
-            let threshold = args.threshold.unwrap_or(d.threshold);
-
+            let params = qsm_core::bgremove::VsharpParams {
+                threshold: args.threshold.unwrap_or(d.threshold),
+                max_radius_factor: args.max_radius_factor.unwrap_or(d.max_radius_factor),
+                min_radius_factor: args.min_radius_factor.unwrap_or(d.min_radius_factor),
+            };
             let (lf, em) = qsm_core::bgremove::vsharp(
-                &field_nifti.data, &mask, &grid, &radii, threshold, |_, _| {},
+                &field_nifti.data, &mask, &grid, &params, |_, _| {},
             );
             (c, (lf, field_nifti), em)
         }
@@ -39,10 +35,12 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             info!("Background removal (PDF, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
             let d = qsm_core::bgremove::PdfParams::default();
-            let max_iter = (grid.n_total() as f64).sqrt().ceil() as usize;
-            let tol = args.tol.unwrap_or(d.tol);
+            let params = qsm_core::bgremove::PdfParams {
+                tol: args.tol.unwrap_or(d.tol),
+                max_iter: None,
+            };
             let lf = qsm_core::bgremove::pdf(
-                &field_nifti.data, &mask, &grid, bdir, tol, max_iter, |_, _| {},
+                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
             );
             (c, (lf, field_nifti), mask)
         }
@@ -56,10 +54,12 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             info!("Background removal (LBV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
             let d = qsm_core::bgremove::LbvParams::default();
-            let max_iter = (grid.n_total() as f64).sqrt().ceil() as usize;
-            let tol = args.tol.unwrap_or(d.tol);
+            let params = qsm_core::bgremove::LbvParams {
+                tol: args.tol.unwrap_or(d.tol),
+                max_iter: None,
+            };
             let (lf, em) = qsm_core::bgremove::lbv(
-                &field_nifti.data, &mask, &grid, tol, max_iter, |_, _| {},
+                &field_nifti.data, &mask, &grid, &params, |_, _| {},
             );
             (c, (lf, field_nifti), em)
         }
@@ -73,11 +73,13 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             info!("Background removal (iSMV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
             let d = qsm_core::bgremove::IsmvParams::default();
-            let radius = args.radius_factor.unwrap_or(d.radius_factor) * grid.vsx().max(grid.vsy()).max(grid.vsz());
-            let tol = args.tol.unwrap_or(d.tol);
-            let max_iter = args.max_iter.unwrap_or(d.max_iter);
+            let params = qsm_core::bgremove::IsmvParams {
+                tol: args.tol.unwrap_or(d.tol),
+                max_iter: args.max_iter.unwrap_or(d.max_iter),
+                radius_factor: args.radius_factor.unwrap_or(d.radius_factor),
+            };
             let (lf, em) = qsm_core::bgremove::ismv(
-                &field_nifti.data, &mask, &grid, radius, tol, max_iter, |_, _| {},
+                &field_nifti.data, &mask, &grid, &params, |_, _| {},
             );
             (c, (lf, field_nifti), em)
         }
@@ -91,10 +93,12 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             info!("Background removal (SHARP, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
             let d = qsm_core::bgremove::SharpParams::default();
-            let radius = args.radius_factor.unwrap_or(d.radius_factor) * grid.vsx().min(grid.vsy()).min(grid.vsz());
-            let threshold = args.threshold.unwrap_or(d.threshold);
+            let params = qsm_core::bgremove::SharpParams {
+                threshold: args.threshold.unwrap_or(d.threshold),
+                radius_factor: args.radius_factor.unwrap_or(d.radius_factor),
+            };
             let (lf, em) = qsm_core::bgremove::sharp(
-                &field_nifti.data, &mask, &grid, threshold, radius,
+                &field_nifti.data, &mask, &grid, &params,
             );
             (c, (lf, field_nifti), em)
         }
@@ -127,13 +131,13 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
             info!("Background removal (HARPERELLA, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
-            let d = qsm_core::pipeline::HarperellaParams::default();
-            let params = qsm_core::pipeline::HarperellaParams {
+            let d = qsm_core::bgremove::HarperellaParams::default();
+            let params = qsm_core::bgremove::HarperellaParams {
                 radius: args.radius.unwrap_or(d.radius),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
             };
-            let (lf, em) = qsm_core::pipeline::harperella(
+            let (lf, em) = qsm_core::bgremove::harperella(
                 &phase_nifti.data, &mask, &grid, &params, |_, _| {},
             );
 
@@ -151,13 +155,13 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
             info!("Background removal (iHARPERELLA, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
-            let d = qsm_core::pipeline::HarperellaParams::default();
-            let params = qsm_core::pipeline::HarperellaParams {
+            let d = qsm_core::bgremove::HarperellaParams::default();
+            let params = qsm_core::bgremove::HarperellaParams {
                 radius: args.radius.unwrap_or(d.radius),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
             };
-            let (lf, em) = qsm_core::pipeline::iharperella(
+            let (lf, em) = qsm_core::bgremove::iharperella(
                 &phase_nifti.data, &mask, &grid, &params, |_, _| {},
             );
 

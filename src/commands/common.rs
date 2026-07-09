@@ -1,7 +1,7 @@
 //! Shared helpers for standalone CLI commands.
 
 use std::path::Path;
-use qsm_core::nifti_io::{self, NiftiData};
+use qsm_core::io::{self, NiftiData};
 use crate::error::QsmxtError;
 
 /// Create a Grid from NIfTI metadata.
@@ -13,7 +13,7 @@ pub fn nifti_grid(nifti: &NiftiData) -> qsm_core::Grid {
 
 /// Load a NIfTI file with error mapping.
 pub fn load_nifti(path: &Path) -> crate::Result<NiftiData> {
-    nifti_io::read_nifti_file(path)
+    io::read_nifti_file(path)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))
 }
 
@@ -26,7 +26,7 @@ pub fn load_mask(path: &Path) -> crate::Result<(Vec<u8>, NiftiData)> {
 
 /// Save a f64 volume to NIfTI, preserving geometry from a reference.
 pub fn save_nifti(path: &Path, data: &[f64], reference: &NiftiData) -> crate::Result<()> {
-    nifti_io::save_nifti_to_file(path, data, reference.dims, reference.voxel_size, &reference.affine)
+    io::save_nifti_to_file(path, data, reference.dims, reference.voxel_size, &reference.affine)
         .map_err(QsmxtError::NiftiIo)
 }
 

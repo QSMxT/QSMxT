@@ -209,7 +209,7 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
         }
 
         // Read volume dimensions from the first phase NIfTI header (fast, header-only)
-        let dims = qsm_core::nifti_io::read_nifti_dims(&echoes[0].phase_nifti)
+        let dims = qsm_core::io::read_nifti_dims(&echoes[0].phase_nifti)
             .map_err(QsmxtError::NiftiIo)?;
         let has_magnitude = echoes[0].magnitude_nifti.is_some();
 

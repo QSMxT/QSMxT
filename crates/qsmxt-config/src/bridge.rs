@@ -100,8 +100,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             max_radius_factor: cfg.bg_removal.vsharp.max_radius_factor,
             min_radius_factor: cfg.bg_removal.vsharp.min_radius_factor,
         },
-        pdf: qsm_core::bgremove::PdfParams { tol: cfg.bg_removal.pdf.tol },
-        lbv: qsm_core::bgremove::LbvParams { tol: cfg.bg_removal.lbv.tol },
+        pdf: qsm_core::bgremove::PdfParams { tol: cfg.bg_removal.pdf.tol, max_iter: None },
+        lbv: qsm_core::bgremove::LbvParams { tol: cfg.bg_removal.lbv.tol, max_iter: None },
         ismv: qsm_core::bgremove::IsmvParams {
             tol: cfg.bg_removal.ismv.tol,
             max_iter: cfg.bg_removal.ismv.max_iter,
@@ -117,7 +117,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             tol: cfg.bg_removal.resharp.tol,
             max_iter: cfg.bg_removal.resharp.max_iter,
         },
-        harperella: qsm_core::pipeline::HarperellaParams {
+        harperella: qsm_core::bgremove::HarperellaParams {
             radius: cfg.bg_removal.harperella.radius,
             max_iter: cfg.bg_removal.harperella.max_iter,
             tol: cfg.bg_removal.harperella.tol,

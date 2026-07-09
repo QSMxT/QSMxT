@@ -56,7 +56,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
 
             let d = qsm_core::inversion::TkdParams::default();
             let chi = qsm_core::inversion::tkd(
-                &field_nifti.data, &mask, &grid, bdir, args.threshold.unwrap_or(d.threshold),
+                &field_nifti.data, &mask, &grid, bdir,
+                &qsm_core::inversion::TkdParams { threshold: args.threshold.unwrap_or(d.threshold) },
             );
             (c, (chi, field_nifti))
         }
@@ -70,7 +71,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
 
             let d = qsm_core::inversion::TkdParams::default();
             let chi = qsm_core::inversion::tsvd(
-                &field_nifti.data, &mask, &grid, bdir, args.threshold.unwrap_or(d.threshold),
+                &field_nifti.data, &mask, &grid, bdir,
+                &qsm_core::inversion::TkdParams { threshold: args.threshold.unwrap_or(d.threshold) },
             );
             (c, (chi, field_nifti))
         }
@@ -87,8 +89,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
             };
-            let chi = qsm_core::inversion::ilsqr_simple(
-                &field_nifti.data, &mask, &grid, bdir, &params,
+            let (chi, _, _, _) = qsm_core::inversion::ilsqr(
+                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }
@@ -173,7 +175,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
             };
-            let chi_rad = qsm_core::inversion::medi_l1(
+            let chi_rad = qsm_core::inversion::medi(
                 &field_rad, &n_std, &magnitude, &mask, &grid, bdir, &params, |_, _| {},
             );
             let chi: Vec<f64> = chi_rad.iter().map(|&v| v / ppm_to_rad).collect();
@@ -188,7 +190,6 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             info!("Dipole inversion (TGV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
             let d = qsm_core::inversion::TgvParams::default();
-            let phase_f32: Vec<f32> = field_nifti.data.iter().map(|&v| v as f32).collect();
             let params = qsm_core::inversion::TgvParams {
                 iterations: args.iterations.unwrap_or(d.iterations),
                 erosions: args.erosions.unwrap_or(d.erosions),
@@ -199,11 +200,9 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 fieldstrength: args.field_strength as f32,
                 te: args.echo_time as f32,
             };
-            let b0_f32 = (bdir.0 as f32, bdir.1 as f32, bdir.2 as f32);
-            let chi_f32 = qsm_core::inversion::tgv_qsm(
-                &phase_f32, &mask, &grid, &params, b0_f32, |_, _| {},
+            let chi = qsm_core::inversion::tgv_qsm(
+                &field_nifti.data, &mask, &grid, &params, bdir, |_, _| {},
             );
-            let chi: Vec<f64> = chi_f32.iter().map(|&v| v as f64).collect();
             (c, (chi, field_nifti))
         }
     };
