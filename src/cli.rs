@@ -623,6 +623,12 @@ pub struct RunArgs {
     #[arg(long, value_enum)]
     pub mask_preset: Option<MaskPresetArg>,
 
+    /// Prefer a bring-your-own mask from BIDS derivatives when present (else compute it).
+    /// Bare flag = first matching derivatives tool (alphabetical); give a name (e.g. `bet`)
+    /// to restrict to `derivatives/<tool>/sub-*/anat/*_mask.nii*`. Always falls back.
+    #[arg(long, num_args = 0..=1, default_missing_value = "*")]
+    pub use_custom_masks: Option<String>,
+
     /// Define a mask section (repeatable, multiple sections are OR'd together).
     /// Format: <input>,<generator>,<refinement1>,<refinement2>,...
     /// Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2

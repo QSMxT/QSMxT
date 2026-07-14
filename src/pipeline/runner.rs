@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use glob::glob;
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use qsm_core::io::{self, NiftiData};
 use serde::Serialize;
@@ -399,17 +400,97 @@ fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Re
     Ok(())
 }
 
+/// Locate a bring-your-own mask under `<bids>/derivatives/<tool>/sub-*/[ses-*/]anat/*_mask.nii*`
+/// for this run. `tool == "*"` searches every derivatives dir alphabetically; within a tool the
+/// first matching mask (alphabetical) wins. Returns None if nothing matches (caller falls back).
+fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
+    // BIDS root = strip <sub-X>[/ses-Y]/anat/<file> off the first echo's phase path.
+    let anat = run.echoes.first()?.phase_nifti.parent()?;   // .../sub-X[/ses-Y]/anat
+    let sub_or_ses = anat.parent()?;
+    let bids_root = if run.key.session.is_some() {
+        sub_or_ses.parent()?.parent()?
+    } else {
+        sub_or_ses.parent()?
+    };
+    let deriv = bids_root.join("derivatives");
+    if !deriv.is_dir() {
+        return None;
+    }
+    let tool_dirs: Vec<PathBuf> = if tool == "*" {
+        let mut ds: Vec<PathBuf> = std::fs::read_dir(&deriv).ok()?
+            .filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.is_dir())
+            .collect();
+        ds.sort();
+        ds
+    } else {
+        vec![deriv.join(tool)]
+    };
+    let sub = format!("sub-{}", run.key.subject);
+    let ses = run.key.session.as_ref().map(|s| format!("ses-{}", s));
+    for td in tool_dirs {
+        let anat_dir = match &ses {
+            Some(s) => td.join(&sub).join(s).join("anat"),
+            None => td.join(&sub).join("anat"),
+        };
+        let pattern = format!("{}/*_mask.nii*", anat_dir.display());
+        if let Ok(paths) = glob(&pattern) {
+            let mut hits: Vec<PathBuf> = paths.filter_map(|r| r.ok()).collect();
+            hits.sort();
+            if let Some(p) = hits.into_iter().next() {
+                return Some(p);
+            }
+        }
+    }
+    None
+}
+
 fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
     let mask_params = serde_json::json!({
         "sections": ctx.config.masking.sections.iter().map(|s| format!("{}", s)).collect::<Vec<_>>(),
+        "custom_mask_tool": ctx.config.masking.custom_mask_tool,
     });
     if ctx.is_cached_with_params("mask", None, &mask_params) {
         log::info!("Skipping mask (cached)");
         return Ok(());
     }
     let t = Instant::now();
-    log::info!("Creating mask ({} section(s))", ctx.config.masking.sections.len());
     progress("Creating mask");
+
+    // Prefer a bring-your-own mask from BIDS derivatives, if requested and available.
+    if let Some(tool) = ctx.config.masking.custom_mask_tool.clone() {
+        if let Some(cm_path) = find_custom_mask(ctx.run, &tool) {
+            match io::read_nifti_file(&cm_path) {
+                Ok(nd) => {
+                    let raw: Vec<u8> = nd.data.iter().map(|&v| if v > 0.5 { 1u8 } else { 0u8 }).collect();
+                    let mask_u8 = if nd.dims == ctx.meta.dims {
+                        raw
+                    } else {
+                        // Nearest-neighbour resample onto the working (axial) grid.
+                        phase::resample_mask_to_axial(&raw, nd.dims.0, nd.dims.1, nd.dims.2, &nd.affine)
+                    };
+                    let (nx, ny, nz) = ctx.meta.dims;
+                    if mask_u8.len() == nx * ny * nz {
+                        log::info!("Using custom mask from {}", cm_path.display());
+                        save_mask(mask_path, &mask_u8, ctx.meta)?;
+                        ctx.complete_step("mask", None, mask_params, &[cm_path.as_path()],
+                                          vec![mask_path.to_path_buf()], t)?;
+                        log_step_done("Mask (custom)", t);
+                        return Ok(());
+                    }
+                    log::warn!("custom mask {} could not be conformed to the working grid — computing instead",
+                               cm_path.display());
+                }
+                Err(e) => log::warn!("could not read custom mask {} ({}) — computing instead", cm_path.display(), e),
+            }
+        } else {
+            let ses_str = ctx.run.key.session.as_ref().map(|s| format!("/ses-{}", s)).unwrap_or_default();
+            log::info!("no custom mask under derivatives (tool: {}) for sub-{}{} — computing",
+                       tool, ctx.run.key.subject, ses_str);
+        }
+    }
+
+    log::info!("Creating mask ({} section(s))", ctx.config.masking.sections.len());
 
     // Load phases (needed for PhaseQuality masking input)
     let mut phases: Vec<Vec<f64>> = Vec::new();
@@ -957,6 +1038,38 @@ fn stage_reference(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&
 #[cfg(test)]
 mod tests {
     use qsm_core::pipeline::config::QsmReference as CoreRef;
+
+    #[test]
+    fn test_find_custom_mask() {
+        use crate::bids::discovery::{EchoFiles, QsmRun};
+        use crate::bids::entities::AcquisitionKey;
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path();
+        let anat = root.join("sub-1").join("anat");
+        std::fs::create_dir_all(&anat).unwrap();
+        let phase = anat.join("sub-1_part-phase_MEGRE.nii");
+        std::fs::write(&phase, b"x").unwrap();
+        let bet_anat = root.join("derivatives").join("bet").join("sub-1").join("anat");
+        std::fs::create_dir_all(&bet_anat).unwrap();
+        let mask = bet_anat.join("sub-1_desc-bet_mask.nii");
+        std::fs::write(&mask, b"x").unwrap();
+
+        let run = QsmRun {
+            key: AcquisitionKey {
+                subject: "1".into(), session: None, acquisition: None,
+                reconstruction: None, inversion: None, run: None, suffix: "MEGRE".into(),
+            },
+            echoes: vec![EchoFiles {
+                echo_number: 1, phase_nifti: phase.clone(), phase_json: phase.clone(),
+                magnitude_nifti: None, magnitude_json: None,
+            }],
+            magnetic_field_strength: 3.0, echo_times: vec![0.004], b0_dir: (0.0, 0.0, 1.0),
+            dims: (2, 2, 2), has_magnitude: false,
+        };
+        assert_eq!(super::find_custom_mask(&run, "bet"), Some(mask.clone()));
+        assert_eq!(super::find_custom_mask(&run, "*"), Some(mask.clone())); // first tool alphabetically
+        assert_eq!(super::find_custom_mask(&run, "nonexistent"), None);     // falls back (None)
+    }
 
     #[test]
     fn test_apply_reference_mean_all_masked() {

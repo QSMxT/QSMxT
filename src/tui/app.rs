@@ -1054,6 +1054,7 @@ pub struct PipelineFormState {
     // Mask sections (OR'd together at runtime)
     pub mask_sections: Vec<crate::pipeline::config::MaskSection>,
     pub mask_preset: usize, // 0=robust threshold, 1=BET, 2=custom
+    pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
     // Pipeline tab UI state
     pub focus: usize,
@@ -1172,6 +1173,7 @@ impl Default for PipelineFormState {
             bet_subdivisions: format!("{}", bet.subdivisions),
             mask_sections: crate::pipeline::config::default_mask_sections(),
             mask_preset: 0, // robust threshold
+            custom_mask_tool: String::new(),
             focus: 0,
             editing: false,
             cursor: 0,
@@ -1311,6 +1313,10 @@ impl PipelineFormState {
         rows.push(PipelineRow::AlgoSelect {
             label: "Mask Preset", field: "mask_preset",
             options: MASK_PRESET_OPTIONS, help: MASK_PRESET_HELP,
+        });
+        rows.push(PipelineRow::Param {
+            label: "Use custom masks", field: "custom_mask_tool",
+            help: "BYO mask from BIDS derivatives: empty=off, * =any tool, or a tool name (e.g. bet); falls back if absent",
         });
 
         // Mask sections
@@ -1595,6 +1601,7 @@ impl PipelineFormState {
             "medi_smv_radius" => &self.medi_smv_radius,
             "phase_offset_sigma" => &self.phase_offset_sigma,
             "romeo_template" => &self.romeo_template,
+            "custom_mask_tool" => &self.custom_mask_tool,
             "vsharp_threshold" => &self.vsharp_threshold,
             "vsharp_max_radius" => &self.vsharp_max_radius,
             "vsharp_min_radius" => &self.vsharp_min_radius,
@@ -1675,6 +1682,7 @@ impl PipelineFormState {
             "medi_smv_radius" => Some(&mut self.medi_smv_radius),
             "phase_offset_sigma" => Some(&mut self.phase_offset_sigma),
             "romeo_template" => Some(&mut self.romeo_template),
+            "custom_mask_tool" => Some(&mut self.custom_mask_tool),
             "vsharp_threshold" => Some(&mut self.vsharp_threshold),
             "vsharp_max_radius" => Some(&mut self.vsharp_max_radius),
             "vsharp_min_radius" => Some(&mut self.vsharp_min_radius),

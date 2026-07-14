@@ -212,6 +212,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         if args.export_dicom { config.pipeline.export_dicom = true; }
         if args.no_inhomogeneity_correction { config.masking.inhomogeneity_correction = false; }
         else if args.inhomogeneity_correction { config.masking.inhomogeneity_correction = true; }
+        if let Some(tool) = &args.use_custom_masks { config.masking.custom_mask_tool = Some(tool.clone()); }
         if let Some(v) = args.obliquity_threshold { config.pipeline.obliquity_threshold = v; }
 
         // ── Mask sections ──

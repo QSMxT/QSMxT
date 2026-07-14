@@ -299,10 +299,15 @@ impl Default for FieldMappingConfig {
 pub struct MaskingConfig {
     pub inhomogeneity_correction: bool,
     pub sections: Vec<MaskSection>,
+    /// Prefer a bring-your-own mask from BIDS derivatives when present, falling back to `sections`.
+    /// `Some("*")` = first matching derivatives tool alphabetically; `Some("bet")` = that tool only;
+    /// `None` = always compute the mask from `sections`.
+    #[serde(default)]
+    pub custom_mask_tool: Option<String>,
 }
 impl Default for MaskingConfig {
     fn default() -> Self {
-        Self { inhomogeneity_correction: true, sections: default_mask_sections() }
+        Self { inhomogeneity_correction: true, sections: default_mask_sections(), custom_mask_tool: None }
     }
 }
 

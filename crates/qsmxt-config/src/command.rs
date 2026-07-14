@@ -26,6 +26,15 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         }
     }
 
+    // ── Custom masks (BYO from derivatives) ──
+    if config.masking.custom_mask_tool != d.masking.custom_mask_tool {
+        match config.masking.custom_mask_tool.as_deref() {
+            Some("*") => parts.push("--use-custom-masks".into()),
+            Some(tool) => parts.push(format!("--use-custom-masks {}", tool)),
+            None => {}
+        }
+    }
+
     // ── Field mapping ──
     if config.field_mapping.phase_offset_removal != d.field_mapping.phase_offset_removal {
         parts.push(format!("--phase-offset-removal {}", config.field_mapping.phase_offset_removal));

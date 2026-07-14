@@ -87,6 +87,7 @@ mod integration_tests {
             no_inhomogeneity_correction: false,
             obliquity_threshold: None,
             mask_preset: None,
+            use_custom_masks: None,
             mask_sections_cli: None,
             dry: true,
             debug: false,

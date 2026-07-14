@@ -309,6 +309,7 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
         obliquity_threshold: parse_optional_f64(&ps.obliquity_threshold),
         mask_preset: None,
+        use_custom_masks: if ps.custom_mask_tool.trim().is_empty() { None } else { Some(ps.custom_mask_tool.trim().to_string()) },
         mask_sections_cli: {
             let secs: Vec<String> = ps.mask_sections.iter().map(|section| {
                 let mut parts = vec![format!("{}", section.input)];
@@ -458,6 +459,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         _ => QsmReference::None,
     };
     config.masking.sections = ps.mask_sections.clone();
+    config.masking.custom_mask_tool = if ps.custom_mask_tool.trim().is_empty() { None } else { Some(ps.custom_mask_tool.trim().to_string()) };
 
     // Obliquity
     if let Ok(v) = ps.obliquity_threshold.trim().parse::<f64>() { config.pipeline.obliquity_threshold = v; }

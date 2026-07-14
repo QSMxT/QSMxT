@@ -325,6 +325,17 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
         return;
     }
 
+    // Prefer a bring-your-own mask from BIDS derivatives, where available.
+    match config.masking.custom_mask_tool.as_deref() {
+        Some("*") => sentences.push(
+            "Where available, existing brain masks were sourced from the BIDS derivatives; \
+             otherwise they were generated as follows.".to_string()),
+        Some(tool) => sentences.push(format!(
+            "Where available, brain masks were sourced from the '{}' BIDS derivatives; \
+             otherwise they were generated as follows.", tool)),
+        None => {}
+    }
+
     // Describe inhomogeneity correction if enabled, with context about what it affects.
     // The RSS-combined magnitude is used for both Magnitude and PhaseQuality masking inputs,
     // while MagnitudeFirst/MagnitudeLast use their specific echo magnitudes.
