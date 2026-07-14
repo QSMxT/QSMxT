@@ -801,19 +801,19 @@ fn stage_standard_qsm(
     let bf_name = format!("{}", ctx.config.bg_removal.algorithm);
     let bf_params = match ctx.config.bg_removal.algorithm {
         BfAlgorithm::Vsharp => serde_json::json!({
-            "max_radius_factor": ctx.config.bg_removal.vsharp.max_radius_factor,
-            "min_radius_factor": ctx.config.bg_removal.vsharp.min_radius_factor,
+            "max_radius": ctx.config.bg_removal.vsharp.max_radius,
+            "min_radius": ctx.config.bg_removal.vsharp.min_radius,
             "threshold": ctx.config.bg_removal.vsharp.threshold,
         }),
         BfAlgorithm::Pdf => serde_json::json!({ "tol": ctx.config.bg_removal.pdf.tol }),
         BfAlgorithm::Lbv => serde_json::json!({ "tol": ctx.config.bg_removal.lbv.tol }),
         BfAlgorithm::Ismv => serde_json::json!({
-            "radius_factor": ctx.config.bg_removal.ismv.radius_factor,
+            "radius": ctx.config.bg_removal.ismv.radius,
             "tol": ctx.config.bg_removal.ismv.tol,
             "max_iter": ctx.config.bg_removal.ismv.max_iter,
         }),
         BfAlgorithm::Sharp => serde_json::json!({
-            "radius_factor": ctx.config.bg_removal.sharp.radius_factor,
+            "radius": ctx.config.bg_removal.sharp.radius,
             "threshold": ctx.config.bg_removal.sharp.threshold,
         }),
         BfAlgorithm::Resharp => serde_json::json!({

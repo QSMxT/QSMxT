@@ -97,19 +97,19 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         vsharp: qsm_core::bgremove::VsharpParams {
             threshold: cfg.bg_removal.vsharp.threshold,
-            max_radius_factor: cfg.bg_removal.vsharp.max_radius_factor,
-            min_radius_factor: cfg.bg_removal.vsharp.min_radius_factor,
+            max_radius: cfg.bg_removal.vsharp.max_radius,
+            min_radius: cfg.bg_removal.vsharp.min_radius,
         },
         pdf: qsm_core::bgremove::PdfParams { tol: cfg.bg_removal.pdf.tol, max_iter: None },
         lbv: qsm_core::bgremove::LbvParams { tol: cfg.bg_removal.lbv.tol, max_iter: None },
         ismv: qsm_core::bgremove::IsmvParams {
             tol: cfg.bg_removal.ismv.tol,
             max_iter: cfg.bg_removal.ismv.max_iter,
-            radius_factor: cfg.bg_removal.ismv.radius_factor,
+            radius: cfg.bg_removal.ismv.radius,
         },
         sharp: qsm_core::bgremove::SharpParams {
             threshold: cfg.bg_removal.sharp.threshold,
-            radius_factor: cfg.bg_removal.sharp.radius_factor,
+            radius: cfg.bg_removal.sharp.radius,
         },
         resharp: qsm_core::bgremove::ResharpParams {
             radius: cfg.bg_removal.resharp.radius,

@@ -39,14 +39,14 @@ param_config!(MediConfig from qsm_core::inversion::MediParams {
 });
 param_config!(IlsqrConfig from qsm_core::inversion::IlsqrParams { tol: f64, max_iter: usize });
 param_config!(VsharpConfig from qsm_core::bgremove::VsharpParams {
-    threshold: f64, max_radius_factor: f64, min_radius_factor: f64
+    threshold: f64, max_radius: f64, min_radius: f64
 });
 param_config!(PdfConfig from qsm_core::bgremove::PdfParams { tol: f64 });
 param_config!(LbvConfig from qsm_core::bgremove::LbvParams { tol: f64 });
 param_config!(IsmvConfig from qsm_core::bgremove::IsmvParams {
-    tol: f64, max_iter: usize, radius_factor: f64
+    tol: f64, max_iter: usize, radius: f64
 });
-param_config!(SharpConfig from qsm_core::bgremove::SharpParams { threshold: f64, radius_factor: f64 });
+param_config!(SharpConfig from qsm_core::bgremove::SharpParams { threshold: f64, radius: f64 });
 param_config!(ResharpConfig from qsm_core::bgremove::ResharpParams {
     radius: f64, tik_reg: f64, tol: f64, max_iter: usize
 });

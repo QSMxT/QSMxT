@@ -16,8 +16,8 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let d = qsm_core::bgremove::VsharpParams::default();
             let params = qsm_core::bgremove::VsharpParams {
                 threshold: args.threshold.unwrap_or(d.threshold),
-                max_radius_factor: args.max_radius_factor.unwrap_or(d.max_radius_factor),
-                min_radius_factor: args.min_radius_factor.unwrap_or(d.min_radius_factor),
+                max_radius: args.max_radius.unwrap_or(d.max_radius),
+                min_radius: args.min_radius.unwrap_or(d.min_radius),
             };
             let (lf, em) = qsm_core::bgremove::vsharp(
                 &field_nifti.data, &mask, &grid, &params, |_, _| {},
@@ -76,7 +76,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let params = qsm_core::bgremove::IsmvParams {
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
-                radius_factor: args.radius_factor.unwrap_or(d.radius_factor),
+                radius: args.radius.unwrap_or(d.radius),
             };
             let (lf, em) = qsm_core::bgremove::ismv(
                 &field_nifti.data, &mask, &grid, &params, |_, _| {},
@@ -95,7 +95,7 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let d = qsm_core::bgremove::SharpParams::default();
             let params = qsm_core::bgremove::SharpParams {
                 threshold: args.threshold.unwrap_or(d.threshold),
-                radius_factor: args.radius_factor.unwrap_or(d.radius_factor),
+                radius: args.radius.unwrap_or(d.radius),
             };
             let (lf, em) = qsm_core::bgremove::sharp(
                 &field_nifti.data, &mask, &grid, &params,

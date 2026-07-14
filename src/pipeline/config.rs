@@ -167,15 +167,15 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
 
         // ── Background removal params ──
         if let Some(v) = args.vsharp_params.vsharp_threshold { config.bg_removal.vsharp.threshold = v; }
-        if let Some(v) = args.vsharp_params.vsharp_max_radius_factor { config.bg_removal.vsharp.max_radius_factor = v; }
-        if let Some(v) = args.vsharp_params.vsharp_min_radius_factor { config.bg_removal.vsharp.min_radius_factor = v; }
+        if let Some(v) = args.vsharp_params.vsharp_max_radius { config.bg_removal.vsharp.max_radius = v; }
+        if let Some(v) = args.vsharp_params.vsharp_min_radius { config.bg_removal.vsharp.min_radius = v; }
         if let Some(v) = args.pdf_params.pdf_tol { config.bg_removal.pdf.tol = v; }
         if let Some(v) = args.lbv_params.lbv_tol { config.bg_removal.lbv.tol = v; }
         if let Some(v) = args.ismv_params.ismv_tol { config.bg_removal.ismv.tol = v; }
         if let Some(v) = args.ismv_params.ismv_max_iter { config.bg_removal.ismv.max_iter = v; }
-        if let Some(v) = args.ismv_params.ismv_radius_factor { config.bg_removal.ismv.radius_factor = v; }
+        if let Some(v) = args.ismv_params.ismv_radius { config.bg_removal.ismv.radius = v; }
         if let Some(v) = args.sharp_params.sharp_threshold { config.bg_removal.sharp.threshold = v; }
-        if let Some(v) = args.sharp_params.sharp_radius_factor { config.bg_removal.sharp.radius_factor = v; }
+        if let Some(v) = args.sharp_params.sharp_radius { config.bg_removal.sharp.radius = v; }
         if let Some(v) = args.resharp_params.resharp_radius { config.bg_removal.resharp.radius = v; }
         if let Some(v) = args.resharp_params.resharp_tik_reg { config.bg_removal.resharp.tik_reg = v; }
         if let Some(v) = args.resharp_params.resharp_tol { config.bg_removal.resharp.tol = v; }

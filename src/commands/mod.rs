@@ -328,7 +328,7 @@ mod integration_tests {
         c.output_mask = Some(output_mask.clone());
         super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
             common: c,
-            threshold: None, max_radius_factor: None, min_radius_factor: None,
+            threshold: None, max_radius: None, min_radius: None,
         })).unwrap();
         assert!(output.exists());
         assert!(output_mask.exists());
@@ -917,7 +917,7 @@ mod integration_tests {
 
         super::bgremove::execute(BgremoveCommand::Ismv(BgremoveIsmvArgs {
             common: common_bgremove(input, mask, output.clone()),
-            tol: None, max_iter: None, radius_factor: None,
+            tol: None, max_iter: None, radius: None,
         })).unwrap();
         assert!(output.exists());
     }
@@ -933,7 +933,7 @@ mod integration_tests {
 
         super::bgremove::execute(BgremoveCommand::Sharp(BgremoveSharpArgs {
             common: common_bgremove(input, mask, output.clone()),
-            threshold: None, radius_factor: None,
+            threshold: None, radius: None,
         })).unwrap();
         assert!(output.exists());
     }

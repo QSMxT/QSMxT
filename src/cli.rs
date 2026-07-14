@@ -293,12 +293,12 @@ pub struct VsharpParamArgs {
     /// V-SHARP deconvolution threshold
     #[arg(long)]
     pub vsharp_threshold: Option<f64>,
-    /// V-SHARP max radius factor (multiplied by min voxel size)
+    /// V-SHARP max kernel radius in mm
     #[arg(long)]
-    pub vsharp_max_radius_factor: Option<f64>,
-    /// V-SHARP min radius factor (multiplied by max voxel size)
+    pub vsharp_max_radius: Option<f64>,
+    /// V-SHARP min kernel radius in mm
     #[arg(long)]
-    pub vsharp_min_radius_factor: Option<f64>,
+    pub vsharp_min_radius: Option<f64>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -323,9 +323,9 @@ pub struct IsmvParamArgs {
     /// iSMV max iterations
     #[arg(long)]
     pub ismv_max_iter: Option<usize>,
-    /// iSMV radius factor (multiplied by max voxel size)
+    /// iSMV kernel radius in mm
     #[arg(long)]
-    pub ismv_radius_factor: Option<f64>,
+    pub ismv_radius: Option<f64>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -333,9 +333,9 @@ pub struct SharpParamArgs {
     /// SHARP threshold
     #[arg(long)]
     pub sharp_threshold: Option<f64>,
-    /// SHARP radius factor (multiplied by min voxel size)
+    /// SHARP kernel radius in mm
     #[arg(long)]
-    pub sharp_radius_factor: Option<f64>,
+    pub sharp_radius: Option<f64>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -903,10 +903,10 @@ pub struct BgremoveVsharpArgs {
     pub threshold: Option<f64>,
     /// Max radius factor (multiplied by min voxel size)
     #[arg(long)]
-    pub max_radius_factor: Option<f64>,
+    pub max_radius: Option<f64>,
     /// Min radius factor (multiplied by max voxel size)
     #[arg(long)]
-    pub min_radius_factor: Option<f64>,
+    pub min_radius: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
@@ -939,7 +939,7 @@ pub struct BgremoveIsmvArgs {
     pub max_iter: Option<usize>,
     /// Radius factor (multiplied by max voxel size)
     #[arg(long)]
-    pub radius_factor: Option<f64>,
+    pub radius: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
@@ -951,7 +951,7 @@ pub struct BgremoveSharpArgs {
     pub threshold: Option<f64>,
     /// Radius factor (multiplied by min voxel size)
     #[arg(long)]
-    pub radius_factor: Option<f64>,
+    pub radius: Option<f64>,
 }
 
 #[derive(Parser, Debug)]

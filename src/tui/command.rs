@@ -238,8 +238,8 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         },
         vsharp_params: crate::cli::VsharpParamArgs {
             vsharp_threshold: parse_optional_f64(&ps.vsharp_threshold),
-            vsharp_max_radius_factor: None,
-            vsharp_min_radius_factor: None,
+            vsharp_max_radius: None,
+            vsharp_min_radius: None,
         },
         pdf_params: crate::cli::PdfParamArgs {
             pdf_tol: parse_optional_f64(&ps.pdf_tol),
@@ -250,11 +250,11 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         ismv_params: crate::cli::IsmvParamArgs {
             ismv_tol: parse_optional_f64(&ps.ismv_tol),
             ismv_max_iter: parse_optional_usize(&ps.ismv_max_iter),
-            ismv_radius_factor: None,
+            ismv_radius: None,
         },
         sharp_params: crate::cli::SharpParamArgs {
             sharp_threshold: parse_optional_f64(&ps.sharp_threshold),
-            sharp_radius_factor: None,
+            sharp_radius: None,
         },
         resharp_params: crate::cli::ResharpParamArgs {
             resharp_radius: parse_optional_f64(&ps.resharp_radius),

@@ -65,19 +65,19 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     match config.bg_removal.algorithm {
         BfAlgorithm::Vsharp => {
             emit_f64(&mut parts, "--vsharp-threshold", config.bg_removal.vsharp.threshold, d.bg_removal.vsharp.threshold);
-            emit_f64(&mut parts, "--vsharp-max-radius-factor", config.bg_removal.vsharp.max_radius_factor, d.bg_removal.vsharp.max_radius_factor);
-            emit_f64(&mut parts, "--vsharp-min-radius-factor", config.bg_removal.vsharp.min_radius_factor, d.bg_removal.vsharp.min_radius_factor);
+            emit_f64(&mut parts, "--vsharp-max-radius", config.bg_removal.vsharp.max_radius, d.bg_removal.vsharp.max_radius);
+            emit_f64(&mut parts, "--vsharp-min-radius", config.bg_removal.vsharp.min_radius, d.bg_removal.vsharp.min_radius);
         }
         BfAlgorithm::Pdf => { emit_f64(&mut parts, "--pdf-tol", config.bg_removal.pdf.tol, d.bg_removal.pdf.tol); }
         BfAlgorithm::Lbv => { emit_f64(&mut parts, "--lbv-tol", config.bg_removal.lbv.tol, d.bg_removal.lbv.tol); }
         BfAlgorithm::Ismv => {
             emit_f64(&mut parts, "--ismv-tol", config.bg_removal.ismv.tol, d.bg_removal.ismv.tol);
             emit_usize(&mut parts, "--ismv-max-iter", config.bg_removal.ismv.max_iter, d.bg_removal.ismv.max_iter);
-            emit_f64(&mut parts, "--ismv-radius-factor", config.bg_removal.ismv.radius_factor, d.bg_removal.ismv.radius_factor);
+            emit_f64(&mut parts, "--ismv-radius", config.bg_removal.ismv.radius, d.bg_removal.ismv.radius);
         }
         BfAlgorithm::Sharp => {
             emit_f64(&mut parts, "--sharp-threshold", config.bg_removal.sharp.threshold, d.bg_removal.sharp.threshold);
-            emit_f64(&mut parts, "--sharp-radius-factor", config.bg_removal.sharp.radius_factor, d.bg_removal.sharp.radius_factor);
+            emit_f64(&mut parts, "--sharp-radius", config.bg_removal.sharp.radius, d.bg_removal.sharp.radius);
         }
         BfAlgorithm::Resharp => {
             emit_f64(&mut parts, "--resharp-radius", config.bg_removal.resharp.radius, d.bg_removal.resharp.radius);
