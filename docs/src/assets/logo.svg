@@ -6,9 +6,6 @@
     </linearGradient>
   </defs>
   <rect x="1.5" y="1.5" width="29" height="29" rx="8" fill="url(#qsmxt-g)"/>
-  <g stroke="#fff" stroke-width="2.6" stroke-linecap="round" fill="none">
-    <!-- stylised chi (χ) — magnetic susceptibility -->
-    <path d="M10 9 C 13 13, 19 19, 22 23"/>
-    <path d="M22 9 C 19 13, 16 16, 13.5 19 C 12 21, 11 22, 9.5 24"/>
-  </g>
+  <!-- chi (χ) glyph outline from GNU FreeSerif Italic (free font) -->
+  <g transform="matrix(0.02786,0,0,-0.02786,9.7864,19.2879)"><path d="M265 -28 252 95 498 431H406L240 203L227 332C222 375 219 441 158 441C90 441 64 356 60 303L81 296C88 339 109 361 149 361C192 361 193 314 197 282L210 164L-52 -195H40L222 57L236 -62C241 -103 246 -205 307 -205C363 -205 398 -133 402 -73L381 -66C374 -86 370 -130 319 -130C279 -130 268 -59 265 -28Z" fill="#fff"/></g>
 </svg>
