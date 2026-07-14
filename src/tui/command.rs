@@ -238,8 +238,8 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         },
         vsharp_params: crate::cli::VsharpParamArgs {
             vsharp_threshold: parse_optional_f64(&ps.vsharp_threshold),
-            vsharp_max_radius: None,
-            vsharp_min_radius: None,
+            vsharp_max_radius: parse_optional_f64(&ps.vsharp_max_radius),
+            vsharp_min_radius: parse_optional_f64(&ps.vsharp_min_radius),
         },
         pdf_params: crate::cli::PdfParamArgs {
             pdf_tol: parse_optional_f64(&ps.pdf_tol),
@@ -250,11 +250,11 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         ismv_params: crate::cli::IsmvParamArgs {
             ismv_tol: parse_optional_f64(&ps.ismv_tol),
             ismv_max_iter: parse_optional_usize(&ps.ismv_max_iter),
-            ismv_radius: None,
+            ismv_radius: parse_optional_f64(&ps.ismv_radius),
         },
         sharp_params: crate::cli::SharpParamArgs {
             sharp_threshold: parse_optional_f64(&ps.sharp_threshold),
-            sharp_radius: None,
+            sharp_radius: parse_optional_f64(&ps.sharp_radius),
         },
         resharp_params: crate::cli::ResharpParamArgs {
             resharp_radius: parse_optional_f64(&ps.resharp_radius),
@@ -543,11 +543,15 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
 
     // BG removal
     set_f64!(config.bg_removal.vsharp.threshold, ps.vsharp_threshold);
+    set_f64!(config.bg_removal.vsharp.max_radius, ps.vsharp_max_radius);
+    set_f64!(config.bg_removal.vsharp.min_radius, ps.vsharp_min_radius);
     set_f64!(config.bg_removal.pdf.tol, ps.pdf_tol);
     set_f64!(config.bg_removal.lbv.tol, ps.lbv_tol);
     set_f64!(config.bg_removal.ismv.tol, ps.ismv_tol);
     set_usize!(config.bg_removal.ismv.max_iter, ps.ismv_max_iter);
+    set_f64!(config.bg_removal.ismv.radius, ps.ismv_radius);
     set_f64!(config.bg_removal.sharp.threshold, ps.sharp_threshold);
+    set_f64!(config.bg_removal.sharp.radius, ps.sharp_radius);
     set_f64!(config.bg_removal.resharp.radius, ps.resharp_radius);
     set_f64!(config.bg_removal.resharp.tik_reg, ps.resharp_tik_reg);
     set_f64!(config.bg_removal.resharp.tol, ps.resharp_tol);

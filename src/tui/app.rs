@@ -982,6 +982,8 @@ pub struct PipelineFormState {
 
     // V-SHARP
     pub vsharp_threshold: String,
+    pub vsharp_max_radius: String,
+    pub vsharp_min_radius: String,
 
     // PDF
     pub pdf_tol: String,
@@ -992,9 +994,11 @@ pub struct PipelineFormState {
     // iSMV
     pub ismv_tol: String,
     pub ismv_max_iter: String,
+    pub ismv_radius: String,
 
     // SHARP
     pub sharp_threshold: String,
+    pub sharp_radius: String,
 
     // RESHARP
     pub resharp_radius: String,
@@ -1119,11 +1123,15 @@ impl Default for PipelineFormState {
             medi_percentage: format!("{}", qsm_core::inversion::MediParams::default().percentage),
             medi_smv_radius: format!("{}", qsm_core::inversion::MediParams::default().smv_radius),
             vsharp_threshold: format!("{}", qsm_core::bgremove::VsharpParams::default().threshold),
+            vsharp_max_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().max_radius),
+            vsharp_min_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().min_radius),
             pdf_tol: format!("{}", qsm_core::bgremove::PdfParams::default().tol),
             lbv_tol: format!("{}", qsm_core::bgremove::LbvParams::default().tol),
             ismv_tol: format!("{}", qsm_core::bgremove::IsmvParams::default().tol),
             ismv_max_iter: format!("{}", qsm_core::bgremove::IsmvParams::default().max_iter),
+            ismv_radius: format!("{}", qsm_core::bgremove::IsmvParams::default().radius),
             sharp_threshold: format!("{}", qsm_core::bgremove::SharpParams::default().threshold),
+            sharp_radius: format!("{}", qsm_core::bgremove::SharpParams::default().radius),
             resharp_radius: format!("{}", qsm_core::bgremove::ResharpParams::default().radius),
             resharp_tik_reg: format!("{}", qsm_core::bgremove::ResharpParams::default().tik_reg),
             resharp_tol: format!("{}", qsm_core::bgremove::ResharpParams::default().tol),
@@ -1340,6 +1348,8 @@ impl PipelineFormState {
             match self.bf_algorithm {
                 0 => { // V-SHARP
                     rows.push(PipelineRow::Param { label: "  Threshold", field: "vsharp_threshold", help: "Deconvolution threshold" });
+                    rows.push(PipelineRow::Param { label: "  Max Radius", field: "vsharp_max_radius", help: "Largest SMV kernel radius (mm)" });
+                    rows.push(PipelineRow::Param { label: "  Min Radius", field: "vsharp_min_radius", help: "Smallest SMV kernel radius (mm)" });
                 }
                 1 => { // PDF
                     rows.push(PipelineRow::Param { label: "  Tolerance", field: "pdf_tol", help: "Convergence tolerance" });
@@ -1350,9 +1360,11 @@ impl PipelineFormState {
                 3 => { // iSMV
                     rows.push(PipelineRow::Param { label: "  Tolerance", field: "ismv_tol", help: "Convergence tolerance" });
                     rows.push(PipelineRow::Param { label: "  Max Iter", field: "ismv_max_iter", help: "Maximum iterations" });
+                    rows.push(PipelineRow::Param { label: "  Radius", field: "ismv_radius", help: "SMV kernel radius (mm)" });
                 }
                 4 => { // SHARP
                     rows.push(PipelineRow::Param { label: "  Threshold", field: "sharp_threshold", help: "Deconvolution threshold" });
+                    rows.push(PipelineRow::Param { label: "  Radius", field: "sharp_radius", help: "SMV kernel radius (mm)" });
                 }
                 5 => { // RESHARP
                     rows.push(PipelineRow::Param { label: "  Radius", field: "resharp_radius", help: "SMV kernel radius in mm" });
@@ -1534,7 +1546,8 @@ impl PipelineFormState {
         "nltv_lambda", "nltv_mu", "nltv_tol", "nltv_max_iter", "nltv_newton_iter",
         "medi_lambda", "medi_max_iter", "medi_cg_max_iter", "medi_cg_tol", "medi_tol", "medi_percentage", "medi_smv_radius",
         "phase_offset_sigma", "romeo_template",
-        "vsharp_threshold", "pdf_tol", "lbv_tol", "ismv_tol", "ismv_max_iter", "sharp_threshold",
+        "vsharp_threshold", "vsharp_max_radius", "vsharp_min_radius", "pdf_tol", "lbv_tol",
+        "ismv_tol", "ismv_max_iter", "ismv_radius", "sharp_threshold", "sharp_radius",
         "resharp_radius", "resharp_tik_reg", "resharp_tol", "resharp_max_iter",
         "harperella_radius", "harperella_max_iter", "harperella_tol",
         "iharperella_radius", "iharperella_max_iter", "iharperella_tol",
@@ -1583,11 +1596,15 @@ impl PipelineFormState {
             "phase_offset_sigma" => &self.phase_offset_sigma,
             "romeo_template" => &self.romeo_template,
             "vsharp_threshold" => &self.vsharp_threshold,
+            "vsharp_max_radius" => &self.vsharp_max_radius,
+            "vsharp_min_radius" => &self.vsharp_min_radius,
             "pdf_tol" => &self.pdf_tol,
             "lbv_tol" => &self.lbv_tol,
             "ismv_tol" => &self.ismv_tol,
             "ismv_max_iter" => &self.ismv_max_iter,
+            "ismv_radius" => &self.ismv_radius,
             "sharp_threshold" => &self.sharp_threshold,
+            "sharp_radius" => &self.sharp_radius,
             "resharp_radius" => &self.resharp_radius,
             "resharp_tik_reg" => &self.resharp_tik_reg,
             "resharp_tol" => &self.resharp_tol,
@@ -1659,11 +1676,15 @@ impl PipelineFormState {
             "phase_offset_sigma" => Some(&mut self.phase_offset_sigma),
             "romeo_template" => Some(&mut self.romeo_template),
             "vsharp_threshold" => Some(&mut self.vsharp_threshold),
+            "vsharp_max_radius" => Some(&mut self.vsharp_max_radius),
+            "vsharp_min_radius" => Some(&mut self.vsharp_min_radius),
             "pdf_tol" => Some(&mut self.pdf_tol),
             "lbv_tol" => Some(&mut self.lbv_tol),
             "ismv_tol" => Some(&mut self.ismv_tol),
             "ismv_max_iter" => Some(&mut self.ismv_max_iter),
+            "ismv_radius" => Some(&mut self.ismv_radius),
             "sharp_threshold" => Some(&mut self.sharp_threshold),
+            "sharp_radius" => Some(&mut self.sharp_radius),
             "resharp_radius" => Some(&mut self.resharp_radius),
             "resharp_tik_reg" => Some(&mut self.resharp_tik_reg),
             "resharp_tol" => Some(&mut self.resharp_tol),
