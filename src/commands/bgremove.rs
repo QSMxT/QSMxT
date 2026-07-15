@@ -14,19 +14,6 @@ fn tissue_phase_to_ppm(phase: &mut [f64], te: f64, b0: f64) {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::tissue_phase_to_ppm;
-
-    #[test]
-    fn test_tissue_phase_to_ppm_scale() {
-        // 2π rad at TE=0.004 s, B0=7 T → Hz = 1/TE = 250; ppm = 250·1e6/(42.576e6·7) ≈ 0.8388.
-        let mut v = [2.0 * std::f64::consts::PI];
-        tissue_phase_to_ppm(&mut v, 0.004, 7.0);
-        assert!((v[0] - 0.8388).abs() < 1e-3, "got {}", v[0]);
-    }
-}
-
 pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
     let (common, local_field, eroded_mask) = match cmd {
         BgremoveCommand::Vsharp(args) => {
@@ -214,4 +201,17 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tissue_phase_to_ppm;
+
+    #[test]
+    fn test_tissue_phase_to_ppm_scale() {
+        // 2π rad at TE=0.004 s, B0=7 T → Hz = 1/TE = 250; ppm = 250·1e6/(42.576e6·7) ≈ 0.8388.
+        let mut v = [2.0 * std::f64::consts::PI];
+        tissue_phase_to_ppm(&mut v, 0.004, 7.0);
+        assert!((v[0] - 0.8388).abs() < 1e-3, "got {}", v[0]);
+    }
 }
