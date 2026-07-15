@@ -1000,6 +1000,13 @@ pub struct BgremoveHarperellaArgs {
     /// Convergence tolerance
     #[arg(long)]
     pub tol: Option<f64>,
+    /// Echo time (s). With --field-strength, converts the radian tissue-phase output to a
+    /// ppm field (`phase / (2·π·γ·B0·TE)`); without both, the output stays in radians.
+    #[arg(long)]
+    pub te: Option<f64>,
+    /// B0 field strength (T) — see --te.
+    #[arg(long)]
+    pub field_strength: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
@@ -1024,6 +1031,13 @@ pub struct BgremoveIharperellaArgs {
     /// Convergence tolerance
     #[arg(long)]
     pub tol: Option<f64>,
+    /// Echo time (s). With --field-strength, converts the radian tissue-phase output to a
+    /// ppm field (`phase / (2·π·γ·B0·TE)`); without both, the output stays in radians.
+    #[arg(long)]
+    pub te: Option<f64>,
+    /// B0 field strength (T) — see --te.
+    #[arg(long)]
+    pub field_strength: Option<f64>,
 }
 
 // ── Invert ──

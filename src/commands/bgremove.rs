@@ -2,6 +2,31 @@ use log::info;
 use super::common::{load_nifti, load_mask, save_nifti, save_mask};
 use crate::cli::{BgremoveCommand, BgremoveCommonArgs};
 
+/// Convert a HARPERELLA tissue-phase field (radians at echo `te` s) to a ppm field, in place.
+/// `ppm = phase · 1e6 / (2·π·γ·B0·TE)`, γ = 42.576e6 Hz/T (i.e. Hz = phase/(2π·TE), then
+/// ppm = Hz·1e6/(γ·B0)). HARPERELLA works in the phase domain, so this turns its output into the
+/// same ppm local field the other bgremove methods produce.
+fn tissue_phase_to_ppm(phase: &mut [f64], te: f64, b0: f64) {
+    const GAMMA: f64 = 42.576e6; // Hz/T
+    let scale = 1e6 / (2.0 * std::f64::consts::PI * GAMMA * b0 * te);
+    for v in phase.iter_mut() {
+        *v *= scale;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::tissue_phase_to_ppm;
+
+    #[test]
+    fn test_tissue_phase_to_ppm_scale() {
+        // 2π rad at TE=0.004 s, B0=7 T → Hz = 1/TE = 250; ppm = 250·1e6/(42.576e6·7) ≈ 0.8388.
+        let mut v = [2.0 * std::f64::consts::PI];
+        tissue_phase_to_ppm(&mut v, 0.004, 7.0);
+        assert!((v[0] - 0.8388).abs() < 1e-3, "got {}", v[0]);
+    }
+}
+
 pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
     let (common, local_field, eroded_mask) = match cmd {
         BgremoveCommand::Vsharp(args) => {
@@ -137,9 +162,12 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
             };
-            let (lf, em) = qsm_core::bgremove::harperella(
+            let (mut lf, em) = qsm_core::bgremove::harperella(
                 &phase_nifti.data, &mask, &grid, &params, |_, _| {},
             );
+            if let (Some(te), Some(b0)) = (args.te, args.field_strength) {
+                tissue_phase_to_ppm(&mut lf, te, b0);
+            }
 
             let common = BgremoveCommonArgs {
                 input: args.input, mask: args.mask, output: args.output,
@@ -161,9 +189,12 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
                 tol: args.tol.unwrap_or(d.tol),
             };
-            let (lf, em) = qsm_core::bgremove::iharperella(
+            let (mut lf, em) = qsm_core::bgremove::iharperella(
                 &phase_nifti.data, &mask, &grid, &params, |_, _| {},
             );
+            if let (Some(te), Some(b0)) = (args.te, args.field_strength) {
+                tissue_phase_to_ppm(&mut lf, te, b0);
+            }
 
             let common = BgremoveCommonArgs {
                 input: args.input, mask: args.mask, output: args.output,
