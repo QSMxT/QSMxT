@@ -14,7 +14,7 @@ name = "qsmxt"
 path = "src/main.rs"
 
 [dependencies]
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.18.0", features = ["parallel"] }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.19.0", features = ["parallel"] }
 qsmxt-config = { path = "crates/qsmxt-config" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
