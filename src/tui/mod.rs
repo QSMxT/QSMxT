@@ -63,7 +63,11 @@ pub fn run_tui() -> crate::Result<()> {
         // Use poll with timeout so the UI refreshes during background scans
         if crossterm::event::poll(std::time::Duration::from_millis(100))? {
             if let crossterm::event::Event::Key(key) = crossterm::event::read()? {
-                app.handle_key(key);
+                // Windows delivers both Press and Release events for every
+                // keystroke; only act on Press or every action fires twice.
+                if key.kind == crossterm::event::KeyEventKind::Press {
+                    app.handle_key(key);
+                }
             }
         }
 
