@@ -182,6 +182,12 @@ fn install_release(tag: &str) -> crate::Result<()> {
     // inode and the path is repointed at the new file.
     let staged = dir.join(format!(".{}.new", bin_name));
     let _ = std::fs::remove_file(&staged); // discard any leftover from a prior run
+    #[cfg(target_os = "windows")]
+    {
+        // Remove the old binary a previous self-update left behind (it was
+        // locked while that qsmxt process was still running).
+        let _ = std::fs::remove_file(dir.join(format!(".{}.old", bin_name)));
+    }
 
     // Stage next to `dest`, falling back to sudo when the directory isn't
     // writable by the current user. std::fs::copy preserves the file mode, so
@@ -238,11 +244,30 @@ fn install_release(tag: &str) -> crate::Result<()> {
         }
         #[cfg(target_os = "windows")]
         {
-            let _ = std::fs::remove_file(&staged);
-            return Err(QsmxtError::Update(format!(
-                "Failed to install binary to {}",
-                dest.display()
-            )));
+            // Windows refuses to replace a running executable, but it does
+            // allow *renaming* it. Move the running exe aside, then move the
+            // staged binary into its place. The .old file stays locked until
+            // this process exits; it is cleaned up on the next update.
+            let old = dir.join(format!(".{}.old", bin_name));
+            let _ = std::fs::remove_file(&old);
+            if let Err(e) = std::fs::rename(&dest, &old) {
+                let _ = std::fs::remove_file(&staged);
+                return Err(QsmxtError::Update(format!(
+                    "Failed to move current binary aside ({}): {}",
+                    dest.display(),
+                    e
+                )));
+            }
+            if let Err(e) = std::fs::rename(&staged, &dest) {
+                // Try to restore the old binary so the install isn't left broken.
+                let _ = std::fs::rename(&old, &dest);
+                let _ = std::fs::remove_file(&staged);
+                return Err(QsmxtError::Update(format!(
+                    "Failed to install binary to {}: {}",
+                    dest.display(),
+                    e
+                )));
+            }
         }
     }
 
