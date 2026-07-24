@@ -34,7 +34,6 @@ mod integration_tests {
             qsm_algorithm: None,
             unwrapping_algorithm: None,
             bf_algorithm: None,
-            masking_algorithm: None,
             masking_input: None,
             phase_offset_removal: None,
             phase_offset_sigma: None,
@@ -51,7 +50,6 @@ mod integration_tests {
             bet_iterations: None,
             bet_subdivisions: None,
             qsm_reference: None,
-            mask_erosions: None,
             rts_params: Default::default(),
             tv_params: Default::default(),
             tkd_params: Default::default(),
@@ -611,9 +609,7 @@ mod integration_tests {
         args.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
         args.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
         args.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-        args.masking_algorithm = Some(MaskAlgorithmArg::Threshold);
         args.masking_input = Some(MaskInputArg::MagnitudeFirst);
-        args.mask_erosions = Some(vec![1]);
         args.dry = false;
         args.no_mem_limit = true;
         super::run::execute(args).unwrap();
@@ -637,9 +633,7 @@ mod integration_tests {
             args.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
             args.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
             args.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-            args.masking_algorithm = Some(MaskAlgorithmArg::Threshold);
             args.masking_input = Some(MaskInputArg::MagnitudeFirst);
-            args.mask_erosions = Some(vec![1]);
             args.dry = false;
             args.no_mem_limit = true;
             args
@@ -688,9 +682,7 @@ mod integration_tests {
             args.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
             args.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
             args.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-            args.masking_algorithm = Some(MaskAlgorithmArg::Threshold);
             args.masking_input = Some(MaskInputArg::Magnitude);
-            args.mask_erosions = Some(vec![1]);
             args.dry = false;
             args.no_mem_limit = true;
             args.do_t2starmap = do_t2star;
@@ -727,10 +719,8 @@ mod integration_tests {
         args.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
         args.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
         args.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-        args.masking_algorithm = Some(MaskAlgorithmArg::Threshold);
         args.masking_input = Some(MaskInputArg::Magnitude);
         args.phase_offset_removal = Some(true);
-        args.mask_erosions = Some(vec![1]);
         args.dry = false;
         args.no_mem_limit = true;
         args.do_swi = true;
@@ -755,7 +745,6 @@ mod integration_tests {
         let mut args = default_run_args(bids, out.clone());
         args.qsm_algorithm = Some(QsmAlgorithmArg::Tgv);
         args.masking_input = Some(MaskInputArg::MagnitudeFirst);
-        args.mask_erosions = Some(vec![0]);
         args.tgv_params.tgv_iterations = Some(5);
         args.tgv_params.tgv_erosions = Some(0);
         args.dry = false;

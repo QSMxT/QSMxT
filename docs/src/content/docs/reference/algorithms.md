@@ -9,16 +9,22 @@ your BIDS data. Below are the valid values for each algorithm option.
 
 ## Masking
 
-Set with `--masking-algorithm`, and choose what it operates on with
-`--masking-input`.
+Choose a masking recipe with `--mask-preset`, and override the image it
+operates on with `--masking-input`.
 
 | Value | Method |
 | --- | --- |
-| `threshold` | Intensity thresholding (default) |
-| `bet` | Brain Extraction Tool |
+| `robust-threshold` | Otsu thresholding of the phase-quality map, refined with dilation, hole-filling and erosion (default) |
+| `bet` | Brain Extraction Tool on the magnitude image |
 
 **Masking input** (`--masking-input`): `magnitude-first`, `magnitude`,
-`magnitude-last`, `phase-quality`.
+`magnitude-last`, `phase-quality`. For example,
+`--mask-preset robust-threshold --masking-input magnitude` thresholds the
+combined magnitude image instead of the phase-quality map.
+
+For full control, compose custom mask sections with `--mask` (repeatable),
+e.g. `--mask magnitude,bet:0.5,erode:2`. Each section names its input
+followed by a generator and refinement operations.
 
 ## Phase unwrapping
 

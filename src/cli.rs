@@ -447,11 +447,8 @@ pub struct RunArgs {
     #[arg(long, value_enum)]
     pub bf_algorithm: Option<BfAlgorithmArg>,
 
-    /// Masking algorithm
-    #[arg(long, value_enum)]
-    pub masking_algorithm: Option<MaskAlgorithmArg>,
-
-    /// Masking input type
+    /// Masking input image (overrides the input of the configured mask sections;
+    /// combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude)
     #[arg(long, value_enum)]
     pub masking_input: Option<MaskInputArg>,
 
@@ -514,10 +511,6 @@ pub struct RunArgs {
     /// QSM reference method (mean or none)
     #[arg(long, value_enum)]
     pub qsm_reference: Option<QsmReferenceArg>,
-
-    /// Mask erosion iterations
-    #[arg(long, num_args = 1..)]
-    pub mask_erosions: Option<Vec<usize>>,
 
     #[command(flatten)]
     pub rts_params: RtsParamArgs,
@@ -1471,11 +1464,6 @@ pub enum B0EstimationArg {
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum B0WeightTypeArg {
     PhaseSNR, PhaseVar, Average, TEs, Mag,
-}
-
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
-pub enum MaskAlgorithmArg {
-    Bet, Threshold,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

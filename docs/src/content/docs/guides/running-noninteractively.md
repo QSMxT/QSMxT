@@ -48,7 +48,7 @@ configurable — see [Algorithms](/QSMxT/reference/algorithms/).
 
 ```sh
 qsmxt run study/bids \
-  --masking-algorithm threshold \
+  --mask-preset robust-threshold \
   --unwrapping-algorithm romeo \
   --bf-algorithm vsharp \
   --qsm-algorithm rts
@@ -59,8 +59,13 @@ qsmxt run study/bids \
 | `--qsm-algorithm` | `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `ilsqr`, `qsmart` |
 | `--unwrapping-algorithm` | `romeo`, `laplacian` |
 | `--bf-algorithm` | `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella` |
-| `--masking-algorithm` | `bet`, `threshold` |
+| `--mask-preset` | `robust-threshold`, `bet` |
 | `--masking-input` | `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality` |
+
+`--masking-input` overrides the image the mask is computed from and combines
+with `--mask-preset` — e.g. `--mask-preset bet --masking-input magnitude-first`
+runs BET on the first-echo magnitude. For fully custom masking, see `--mask`
+in the [command reference](/QSMxT/reference/commands/).
 
 ### Selecting runs
 

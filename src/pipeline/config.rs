@@ -251,6 +251,24 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
             if !new_sections.is_empty() { config.masking.sections = new_sections; }
         }
 
+        // ── Masking input / erosion overrides ──
+        // These rewrite the configured sections (default or --mask-preset). Full
+        // --mask sections already spell out their own input and refinements, so
+        // the overrides don't apply there.
+        if let Some(input) = args.masking_input {
+            if args.mask_sections_cli.is_some() {
+                log::warn!("--masking-input is ignored when --mask is given (each --mask section names its own input)");
+            } else {
+                let input = match input {
+                    cli::MaskInputArg::MagnitudeFirst => MaskingInput::MagnitudeFirst,
+                    cli::MaskInputArg::Magnitude => MaskingInput::Magnitude,
+                    cli::MaskInputArg::MagnitudeLast => MaskingInput::MagnitudeLast,
+                    cli::MaskInputArg::PhaseQuality => MaskingInput::PhaseQuality,
+                };
+                for section in &mut config.masking.sections { section.input = input; }
+            }
+        }
+
         // QSMART has no internal mask erosion (unlike V-SHARP), so a loose threshold
         // mask leaks non-brain phase into the global dipole inversion and produces
         // streaking. Default QSMART to a BET mask when masking is untouched; otherwise
@@ -258,6 +276,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         if config.inversion.algorithm == QsmAlgorithm::Qsmart {
             let untouched = args.mask_preset.is_none()
                 && args.mask_sections_cli.is_none()
+                && args.masking_input.is_none()
                 && config.masking.sections == default_mask_sections();
             if untouched {
                 log::info!("QSMART: defaulting to BET brain mask (override with --mask)");
@@ -356,5 +375,55 @@ mod tests {
     fn non_qsmart_keeps_default_mask() {
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "rts"]);
         assert_eq!(c.masking.sections, default_mask_sections());
+    }
+
+    #[test]
+    fn masking_algorithm_flag_is_rejected() {
+        // Removed in favour of --mask-preset / --mask; must be a parse error,
+        // not silently ignored.
+        assert!(cli::Cli::try_parse_from(&[
+            "qsmxt", "run", "<bids>", "--masking-algorithm", "bet",
+        ]).is_err());
+    }
+
+    #[test]
+    fn masking_input_overrides_default_sections() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--masking-input", "magnitude"]);
+        assert!(c.masking.sections.iter().all(|s| s.input == MaskingInput::Magnitude));
+        // Generator and refinements keep the default recipe.
+        let d = default_mask_sections();
+        assert_eq!(c.masking.sections[0].generator, d[0].generator);
+        assert_eq!(c.masking.sections[0].refinements, d[0].refinements);
+    }
+
+    #[test]
+    fn masking_input_combines_with_mask_preset() {
+        let c = config_from_cli(&[
+            "qsmxt", "run", "<bids>",
+            "--mask-preset", "bet",
+            "--masking-input", "magnitude-first",
+        ]);
+        assert_eq!(c.masking.sections.len(), 1);
+        assert_eq!(c.masking.sections[0].input, MaskingInput::MagnitudeFirst);
+        assert!(matches!(c.masking.sections[0].generator, MaskOp::Bet { .. }));
+    }
+
+    #[test]
+    fn masking_input_ignored_with_explicit_mask_sections() {
+        let c = config_from_cli(&[
+            "qsmxt", "run", "<bids>",
+            "--mask", "phase-quality,threshold:otsu",
+            "--masking-input", "magnitude",
+        ]);
+        assert_eq!(c.masking.sections[0].input, MaskingInput::PhaseQuality);
+    }
+
+    #[test]
+    fn mask_erosions_flag_is_rejected() {
+        // Removed alongside --masking-algorithm; erosion belongs in --mask
+        // sections (erode:N).
+        assert!(cli::Cli::try_parse_from(&[
+            "qsmxt", "run", "<bids>", "--mask-erosions", "3",
+        ]).is_err());
     }
 }

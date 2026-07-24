@@ -134,7 +134,6 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         qsm_algorithm: Some(qsm_options[ps.qsm_algorithm]),
         unwrapping_algorithm: Some(unwrap_options[ps.unwrapping_algorithm]),
         bf_algorithm: Some(bf_options[ps.bf_algorithm]),
-        masking_algorithm: None,
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma: None,
@@ -155,7 +154,6 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
             1 => Some(crate::cli::QsmReferenceArg::None),
             _ => None,
         },
-        mask_erosions: None,
         rts_params: crate::cli::RtsParamArgs {
             rts_delta: parse_optional_f64(&ps.rts_delta),
             rts_mu: parse_optional_f64(&ps.rts_mu),

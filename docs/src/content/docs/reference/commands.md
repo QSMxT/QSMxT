@@ -54,8 +54,9 @@ qsmxt <cmd> --help # full help for a command
 | `--qsm-algorithm <A>` | Dipole inversion method |
 | `--unwrapping-algorithm <A>` | Phase unwrapping method |
 | `--bf-algorithm <A>` | Background field removal method |
-| `--masking-algorithm <A>` | Masking method |
-| `--masking-input <A>` | What the mask is derived from |
+| `--mask-preset <P>` | Masking recipe (`robust-threshold`, `bet`) |
+| `--mask <SECTION>` | Custom mask section, repeatable (e.g. `magnitude,bet:0.5,erode:2`) |
+| `--masking-input <A>` | Override the image the mask is derived from |
 | `--phase-offset-removal <bool>` | Multi-echo phase-offset removal |
 | `--bipolar-correction` | Bipolar readout correction (≥ 3 echoes) |
 | `--romeo-*` | Fine-grained ROMEO unwrapping controls |
