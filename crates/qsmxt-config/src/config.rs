@@ -33,6 +33,24 @@ param_config!(TkdConfig from qsm_core::inversion::TkdParams { threshold: f64 });
 param_config!(NltvConfig from qsm_core::inversion::NltvParams {
     lambda: f64, mu: f64, tol: f64, max_iter: usize, newton_iter: usize
 });
+param_config!(NdiConfig from qsm_core::inversion::NdiParams {
+    tau: f64, alpha: f64, max_iter: usize, phase_scale: f64
+});
+param_config!(FansiConfig from qsm_core::inversion::FansiParams {
+    alpha1: f64, mu1: f64, mu2: f64, alpha0: f64, mu0: f64, max_iter: usize,
+    tol_update: f64, tol_delta: f64, phase_scale: f64
+});
+param_config!(L1qsmConfig from qsm_core::inversion::L1QsmParams {
+    alpha1: f64, mu1: f64, mu2: f64, mu3: f64, lambda: f64, max_iter: usize,
+    tol_update: f64, tol_delta: f64, phase_scale: f64
+});
+param_config!(WhqsmConfig from qsm_core::inversion::WhQsmParams {
+    alpha1: f64, mu1: f64, mu2: f64, beta: f64, muh: f64, max_iter: usize,
+    tol_update: f64, tol_delta: f64, phase_scale: f64
+});
+param_config!(HdqsmConfig from qsm_core::inversion::HdQsmParams {
+    alpha_l2: f64, mu1_l2: f64, mu2: f64, max_iter_l1: usize, max_iter_l2: usize, tol_update: f64
+});
 param_config!(MediConfig from qsm_core::inversion::MediParams {
     lambda: f64, merit: bool, smv: bool, smv_radius: f64, data_weighting: i32,
     percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
@@ -350,6 +368,11 @@ pub struct InversionConfig {
     pub ilsqr: IlsqrConfig,
     pub tgv: TgvConfig,
     pub qsmart: QsmartConfig,
+    pub ndi: NdiConfig,
+    pub fansi: FansiConfig,
+    pub l1qsm: L1qsmConfig,
+    pub whqsm: WhqsmConfig,
+    pub hdqsm: HdqsmConfig,
 }
 impl Default for InversionConfig {
     fn default() -> Self {
@@ -360,6 +383,9 @@ impl Default for InversionConfig {
             tikhonov: TikhonovConfig::default(), nltv: NltvConfig::default(),
             medi: MediConfig::default(), ilsqr: IlsqrConfig::default(),
             tgv: TgvConfig::default(), qsmart: QsmartConfig::default(),
+            ndi: NdiConfig::default(), fansi: FansiConfig::default(),
+            l1qsm: L1qsmConfig::default(), whqsm: WhqsmConfig::default(),
+            hdqsm: HdqsmConfig::default(),
         }
     }
 }

@@ -37,6 +37,12 @@ fn map_alg(alg: QsmAlgorithm) -> PInvAlg {
         QsmAlgorithm::Medi => PInvAlg::Medi,
         QsmAlgorithm::Ilsqr => PInvAlg::Ilsqr,
         QsmAlgorithm::Qsmart => PInvAlg::Qsmart,
+        QsmAlgorithm::Ndi => PInvAlg::Ndi,
+        QsmAlgorithm::Fansi => PInvAlg::Fansi,
+        QsmAlgorithm::FansiTgv => PInvAlg::FansiTgv,
+        QsmAlgorithm::L1qsm => PInvAlg::L1qsm,
+        QsmAlgorithm::Whqsm => PInvAlg::Whqsm,
+        QsmAlgorithm::Hdqsm => PInvAlg::Hdqsm,
     }
 }
 
@@ -165,6 +171,37 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         ilsqr: qsm_core::inversion::IlsqrParams {
             tol: cfg.inversion.ilsqr.tol, max_iter: cfg.inversion.ilsqr.max_iter,
+        },
+        ndi: qsm_core::inversion::NdiParams {
+            tau: cfg.inversion.ndi.tau, alpha: cfg.inversion.ndi.alpha,
+            max_iter: cfg.inversion.ndi.max_iter, phase_scale: cfg.inversion.ndi.phase_scale,
+        },
+        fansi: qsm_core::inversion::FansiParams {
+            alpha1: cfg.inversion.fansi.alpha1, mu1: cfg.inversion.fansi.mu1,
+            mu2: cfg.inversion.fansi.mu2, alpha0: cfg.inversion.fansi.alpha0,
+            mu0: cfg.inversion.fansi.mu0, max_iter: cfg.inversion.fansi.max_iter,
+            tol_update: cfg.inversion.fansi.tol_update, tol_delta: cfg.inversion.fansi.tol_delta,
+            phase_scale: cfg.inversion.fansi.phase_scale,
+            is_tgv: false,
+        },
+        l1qsm: qsm_core::inversion::L1QsmParams {
+            alpha1: cfg.inversion.l1qsm.alpha1, mu1: cfg.inversion.l1qsm.mu1,
+            mu2: cfg.inversion.l1qsm.mu2, mu3: cfg.inversion.l1qsm.mu3,
+            lambda: cfg.inversion.l1qsm.lambda, max_iter: cfg.inversion.l1qsm.max_iter,
+            tol_update: cfg.inversion.l1qsm.tol_update, tol_delta: cfg.inversion.l1qsm.tol_delta,
+            phase_scale: cfg.inversion.l1qsm.phase_scale,
+        },
+        whqsm: qsm_core::inversion::WhQsmParams {
+            alpha1: cfg.inversion.whqsm.alpha1, mu1: cfg.inversion.whqsm.mu1,
+            mu2: cfg.inversion.whqsm.mu2, beta: cfg.inversion.whqsm.beta,
+            muh: cfg.inversion.whqsm.muh, max_iter: cfg.inversion.whqsm.max_iter,
+            tol_update: cfg.inversion.whqsm.tol_update, tol_delta: cfg.inversion.whqsm.tol_delta,
+            phase_scale: cfg.inversion.whqsm.phase_scale,
+        },
+        hdqsm: qsm_core::inversion::HdQsmParams {
+            alpha_l2: cfg.inversion.hdqsm.alpha_l2, mu1_l2: cfg.inversion.hdqsm.mu1_l2,
+            mu2: cfg.inversion.hdqsm.mu2, max_iter_l1: cfg.inversion.hdqsm.max_iter_l1,
+            max_iter_l2: cfg.inversion.hdqsm.max_iter_l2, tol_update: cfg.inversion.hdqsm.tol_update,
         },
         tgv: qsm_core::inversion::TgvParams {
             iterations: cfg.inversion.tgv.iterations,

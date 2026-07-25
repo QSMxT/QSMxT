@@ -112,6 +112,12 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         QsmAlgorithmArg::Medi,
         QsmAlgorithmArg::Ilsqr,
         QsmAlgorithmArg::Qsmart,
+        QsmAlgorithmArg::Ndi,
+        QsmAlgorithmArg::Fansi,
+        QsmAlgorithmArg::FansiTgv,
+        QsmAlgorithmArg::L1qsm,
+        QsmAlgorithmArg::Whqsm,
+        QsmAlgorithmArg::Hdqsm,
     ];
     let unwrap_options = [UnwrapAlgorithmArg::Romeo, UnwrapAlgorithmArg::Laplacian];
     let bf_options = [
@@ -233,6 +239,53 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
             qsmart_frangi_scale_max: parse_optional_f64(&ps.qsmart_frangi_scale_max),
             qsmart_frangi_scale_ratio: parse_optional_f64(&ps.qsmart_frangi_scale_ratio),
             qsmart_frangi_c: parse_optional_f64(&ps.qsmart_frangi_c),
+        },
+        ndi_params: crate::cli::NdiParamArgs {
+            ndi_tau: parse_optional_f64(&ps.ndi_tau),
+            ndi_alpha: parse_optional_f64(&ps.ndi_alpha),
+            ndi_max_iter: parse_optional_usize(&ps.ndi_max_iter),
+            ndi_phase_scale: parse_optional_f64(&ps.ndi_phase_scale),
+        },
+        fansi_params: crate::cli::FansiParamArgs {
+            fansi_alpha1: parse_optional_f64(&ps.fansi_alpha1),
+            fansi_mu1: parse_optional_f64(&ps.fansi_mu1),
+            fansi_mu2: parse_optional_f64(&ps.fansi_mu2),
+            fansi_alpha0: parse_optional_f64(&ps.fansi_alpha0),
+            fansi_mu0: parse_optional_f64(&ps.fansi_mu0),
+            fansi_max_iter: parse_optional_usize(&ps.fansi_max_iter),
+            fansi_tol_update: parse_optional_f64(&ps.fansi_tol_update),
+            fansi_tol_delta: parse_optional_f64(&ps.fansi_tol_delta),
+            fansi_phase_scale: parse_optional_f64(&ps.fansi_phase_scale),
+        },
+        l1qsm_params: crate::cli::L1qsmParamArgs {
+            l1qsm_alpha1: parse_optional_f64(&ps.l1qsm_alpha1),
+            l1qsm_mu1: parse_optional_f64(&ps.l1qsm_mu1),
+            l1qsm_mu2: parse_optional_f64(&ps.l1qsm_mu2),
+            l1qsm_mu3: parse_optional_f64(&ps.l1qsm_mu3),
+            l1qsm_lambda: parse_optional_f64(&ps.l1qsm_lambda),
+            l1qsm_max_iter: parse_optional_usize(&ps.l1qsm_max_iter),
+            l1qsm_tol_update: parse_optional_f64(&ps.l1qsm_tol_update),
+            l1qsm_tol_delta: parse_optional_f64(&ps.l1qsm_tol_delta),
+            l1qsm_phase_scale: parse_optional_f64(&ps.l1qsm_phase_scale),
+        },
+        whqsm_params: crate::cli::WhqsmParamArgs {
+            whqsm_alpha1: parse_optional_f64(&ps.whqsm_alpha1),
+            whqsm_mu1: parse_optional_f64(&ps.whqsm_mu1),
+            whqsm_mu2: parse_optional_f64(&ps.whqsm_mu2),
+            whqsm_beta: parse_optional_f64(&ps.whqsm_beta),
+            whqsm_muh: parse_optional_f64(&ps.whqsm_muh),
+            whqsm_max_iter: parse_optional_usize(&ps.whqsm_max_iter),
+            whqsm_tol_update: parse_optional_f64(&ps.whqsm_tol_update),
+            whqsm_tol_delta: parse_optional_f64(&ps.whqsm_tol_delta),
+            whqsm_phase_scale: parse_optional_f64(&ps.whqsm_phase_scale),
+        },
+        hdqsm_params: crate::cli::HdqsmParamArgs {
+            hdqsm_alpha_l2: parse_optional_f64(&ps.hdqsm_alpha_l2),
+            hdqsm_mu1_l2: parse_optional_f64(&ps.hdqsm_mu1_l2),
+            hdqsm_mu2: parse_optional_f64(&ps.hdqsm_mu2),
+            hdqsm_max_iter_l1: parse_optional_usize(&ps.hdqsm_max_iter_l1),
+            hdqsm_max_iter_l2: parse_optional_usize(&ps.hdqsm_max_iter_l2),
+            hdqsm_tol_update: parse_optional_f64(&ps.hdqsm_tol_update),
         },
         vsharp_params: crate::cli::VsharpParamArgs {
             vsharp_threshold: parse_optional_f64(&ps.vsharp_threshold),
@@ -413,6 +466,8 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         QsmAlgorithm::Rts, QsmAlgorithm::Tv, QsmAlgorithm::Tkd, QsmAlgorithm::Tsvd,
         QsmAlgorithm::Tgv, QsmAlgorithm::Tikhonov, QsmAlgorithm::Nltv, QsmAlgorithm::Medi,
         QsmAlgorithm::Ilsqr, QsmAlgorithm::Qsmart,
+        QsmAlgorithm::Ndi, QsmAlgorithm::Fansi, QsmAlgorithm::FansiTgv,
+        QsmAlgorithm::L1qsm, QsmAlgorithm::Whqsm, QsmAlgorithm::Hdqsm,
     ];
     let unwrap_algorithms = [UnwrappingAlgorithm::Romeo, UnwrappingAlgorithm::Laplacian];
     let bf_algorithms = [
@@ -504,6 +559,53 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     set_f64!(config.inversion.nltv.tol, ps.nltv_tol);
     set_usize!(config.inversion.nltv.max_iter, ps.nltv_max_iter);
     set_usize!(config.inversion.nltv.newton_iter, ps.nltv_newton_iter);
+
+    // NDI
+    set_f64!(config.inversion.ndi.tau, ps.ndi_tau);
+    set_f64!(config.inversion.ndi.alpha, ps.ndi_alpha);
+    set_usize!(config.inversion.ndi.max_iter, ps.ndi_max_iter);
+    set_f64!(config.inversion.ndi.phase_scale, ps.ndi_phase_scale);
+
+    // FANSI (nlTV / nlTGV — shared)
+    set_f64!(config.inversion.fansi.alpha1, ps.fansi_alpha1);
+    set_f64!(config.inversion.fansi.mu1, ps.fansi_mu1);
+    set_f64!(config.inversion.fansi.mu2, ps.fansi_mu2);
+    set_f64!(config.inversion.fansi.alpha0, ps.fansi_alpha0);
+    set_f64!(config.inversion.fansi.mu0, ps.fansi_mu0);
+    set_usize!(config.inversion.fansi.max_iter, ps.fansi_max_iter);
+    set_f64!(config.inversion.fansi.tol_update, ps.fansi_tol_update);
+    set_f64!(config.inversion.fansi.tol_delta, ps.fansi_tol_delta);
+    set_f64!(config.inversion.fansi.phase_scale, ps.fansi_phase_scale);
+
+    // L1-QSM
+    set_f64!(config.inversion.l1qsm.alpha1, ps.l1qsm_alpha1);
+    set_f64!(config.inversion.l1qsm.mu1, ps.l1qsm_mu1);
+    set_f64!(config.inversion.l1qsm.mu2, ps.l1qsm_mu2);
+    set_f64!(config.inversion.l1qsm.mu3, ps.l1qsm_mu3);
+    set_f64!(config.inversion.l1qsm.lambda, ps.l1qsm_lambda);
+    set_usize!(config.inversion.l1qsm.max_iter, ps.l1qsm_max_iter);
+    set_f64!(config.inversion.l1qsm.tol_update, ps.l1qsm_tol_update);
+    set_f64!(config.inversion.l1qsm.tol_delta, ps.l1qsm_tol_delta);
+    set_f64!(config.inversion.l1qsm.phase_scale, ps.l1qsm_phase_scale);
+
+    // WH-QSM
+    set_f64!(config.inversion.whqsm.alpha1, ps.whqsm_alpha1);
+    set_f64!(config.inversion.whqsm.mu1, ps.whqsm_mu1);
+    set_f64!(config.inversion.whqsm.mu2, ps.whqsm_mu2);
+    set_f64!(config.inversion.whqsm.beta, ps.whqsm_beta);
+    set_f64!(config.inversion.whqsm.muh, ps.whqsm_muh);
+    set_usize!(config.inversion.whqsm.max_iter, ps.whqsm_max_iter);
+    set_f64!(config.inversion.whqsm.tol_update, ps.whqsm_tol_update);
+    set_f64!(config.inversion.whqsm.tol_delta, ps.whqsm_tol_delta);
+    set_f64!(config.inversion.whqsm.phase_scale, ps.whqsm_phase_scale);
+
+    // HD-QSM
+    set_f64!(config.inversion.hdqsm.alpha_l2, ps.hdqsm_alpha_l2);
+    set_f64!(config.inversion.hdqsm.mu1_l2, ps.hdqsm_mu1_l2);
+    set_f64!(config.inversion.hdqsm.mu2, ps.hdqsm_mu2);
+    set_usize!(config.inversion.hdqsm.max_iter_l1, ps.hdqsm_max_iter_l1);
+    set_usize!(config.inversion.hdqsm.max_iter_l2, ps.hdqsm_max_iter_l2);
+    set_f64!(config.inversion.hdqsm.tol_update, ps.hdqsm_tol_update);
 
     // MEDI
     set_f64!(config.inversion.medi.lambda, ps.medi_lambda);

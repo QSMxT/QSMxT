@@ -971,6 +971,32 @@ fn stage_standard_qsm(
             "lambda": ctx.config.inversion.medi.lambda, "max_iter": ctx.config.inversion.medi.max_iter,
             "smv": ctx.config.inversion.medi.smv,
         }),
+        QsmAlgorithm::Ndi => serde_json::json!({
+            "tau": ctx.config.inversion.ndi.tau, "alpha": ctx.config.inversion.ndi.alpha,
+            "max_iter": ctx.config.inversion.ndi.max_iter,
+        }),
+        QsmAlgorithm::Fansi => serde_json::json!({
+            "is_tgv": false, "alpha1": ctx.config.inversion.fansi.alpha1,
+            "max_iter": ctx.config.inversion.fansi.max_iter,
+        }),
+        QsmAlgorithm::FansiTgv => serde_json::json!({
+            "is_tgv": true, "alpha1": ctx.config.inversion.fansi.alpha1,
+            "alpha0": ctx.config.inversion.fansi.alpha0,
+            "max_iter": ctx.config.inversion.fansi.max_iter,
+        }),
+        QsmAlgorithm::L1qsm => serde_json::json!({
+            "alpha1": ctx.config.inversion.l1qsm.alpha1, "lambda": ctx.config.inversion.l1qsm.lambda,
+            "max_iter": ctx.config.inversion.l1qsm.max_iter,
+        }),
+        QsmAlgorithm::Whqsm => serde_json::json!({
+            "alpha1": ctx.config.inversion.whqsm.alpha1, "beta": ctx.config.inversion.whqsm.beta,
+            "max_iter": ctx.config.inversion.whqsm.max_iter,
+        }),
+        QsmAlgorithm::Hdqsm => serde_json::json!({
+            "alpha_l2": ctx.config.inversion.hdqsm.alpha_l2,
+            "max_iter_l1": ctx.config.inversion.hdqsm.max_iter_l1,
+            "max_iter_l2": ctx.config.inversion.hdqsm.max_iter_l2,
+        }),
         _ => serde_json::json!({}),
     };
     if !ctx.is_cached_with_params("invert", Some(&alg_name), &invert_params) {

@@ -888,6 +888,12 @@ const QSM_ALGO_HELP: &[&str] = &[
     "Tikhonov L2 regularization (closed-form) — https://doi.org/10.1002/jmri.24365",
     "Nonlinear Total Variation (NLTV) — https://doi.org/10.1016/j.neuroimage.2017.11.018",
     "Morphology Enabled Dipole Inversion (MEDI) — https://doi.org/10.1002/mrm.22816",
+    "Nonlinear Dipole Inversion (NDI) — https://doi.org/10.1002/nbm.4271",
+    "FANSI Nonlinear TV (nlTV) — https://doi.org/10.1002/mrm.27073",
+    "FANSI Nonlinear TGV (nlTGV) — https://doi.org/10.1002/mrm.27073",
+    "L1-QSM (L1 data fidelity) — https://doi.org/10.1002/mrm.29057",
+    "Weak-Harmonic QSM (WH-QSM) — https://doi.org/10.1002/mrm.27483",
+    "Hybrid Data Fidelity QSM (HD-QSM) — https://doi.org/10.1002/mrm.29296",
 ];
 const UNWRAP_HELP: &[&str] = &[
     "ROMEO region-growing unwrapping — https://doi.org/10.1002/mrm.28563",
@@ -1033,6 +1039,53 @@ pub struct PipelineFormState {
     pub qsmart_frangi_scale_ratio: String,
     pub qsmart_frangi_c: String,
 
+    // NDI
+    pub ndi_tau: String,
+    pub ndi_alpha: String,
+    pub ndi_max_iter: String,
+    pub ndi_phase_scale: String,
+
+    // FANSI (nlTV / nlTGV — shared)
+    pub fansi_alpha1: String,
+    pub fansi_mu1: String,
+    pub fansi_mu2: String,
+    pub fansi_alpha0: String,
+    pub fansi_mu0: String,
+    pub fansi_max_iter: String,
+    pub fansi_tol_update: String,
+    pub fansi_tol_delta: String,
+    pub fansi_phase_scale: String,
+
+    // L1-QSM
+    pub l1qsm_alpha1: String,
+    pub l1qsm_mu1: String,
+    pub l1qsm_mu2: String,
+    pub l1qsm_mu3: String,
+    pub l1qsm_lambda: String,
+    pub l1qsm_max_iter: String,
+    pub l1qsm_tol_update: String,
+    pub l1qsm_tol_delta: String,
+    pub l1qsm_phase_scale: String,
+
+    // WH-QSM
+    pub whqsm_alpha1: String,
+    pub whqsm_mu1: String,
+    pub whqsm_mu2: String,
+    pub whqsm_beta: String,
+    pub whqsm_muh: String,
+    pub whqsm_max_iter: String,
+    pub whqsm_tol_update: String,
+    pub whqsm_tol_delta: String,
+    pub whqsm_phase_scale: String,
+
+    // HD-QSM
+    pub hdqsm_alpha_l2: String,
+    pub hdqsm_mu1_l2: String,
+    pub hdqsm_mu2: String,
+    pub hdqsm_max_iter_l1: String,
+    pub hdqsm_max_iter_l2: String,
+    pub hdqsm_tol_update: String,
+
     // BET
     pub bet_fractional_intensity: String,
     pub bet_smoothness: String,
@@ -1076,6 +1129,11 @@ impl Default for PipelineFormState {
         let tv = qsm_core::inversion::TvParams::default();
         let tkd = qsm_core::inversion::TkdParams::default();
         let tgv = qsm_core::inversion::TgvParams::default();
+        let ndi = qsm_core::inversion::NdiParams::default();
+        let fansi = qsm_core::inversion::FansiParams::default();
+        let l1qsm = qsm_core::inversion::L1QsmParams::default();
+        let whqsm = qsm_core::inversion::WhQsmParams::default();
+        let hdqsm = qsm_core::inversion::HdQsmParams::default();
         let bet = qsm_core::bet::BetParams::default();
         Self {
             qsm_algorithm: 0, // rts
@@ -1166,6 +1224,49 @@ impl Default for PipelineFormState {
             qsmart_frangi_scale_max: format!("{}", qsm_core::utils::QsmartParams::default().frangi_scale_range[1]),
             qsmart_frangi_scale_ratio: format!("{}", qsm_core::utils::QsmartParams::default().frangi_scale_ratio),
             qsmart_frangi_c: format!("{}", qsm_core::utils::QsmartParams::default().frangi_c),
+
+            ndi_tau: format!("{}", ndi.tau),
+            ndi_alpha: format!("{}", ndi.alpha),
+            ndi_max_iter: format!("{}", ndi.max_iter),
+            ndi_phase_scale: format!("{}", ndi.phase_scale),
+
+            fansi_alpha1: format!("{}", fansi.alpha1),
+            fansi_mu1: format!("{}", fansi.mu1),
+            fansi_mu2: format!("{}", fansi.mu2),
+            fansi_alpha0: format!("{}", fansi.alpha0),
+            fansi_mu0: format!("{}", fansi.mu0),
+            fansi_max_iter: format!("{}", fansi.max_iter),
+            fansi_tol_update: format!("{}", fansi.tol_update),
+            fansi_tol_delta: format!("{}", fansi.tol_delta),
+            fansi_phase_scale: format!("{}", fansi.phase_scale),
+
+            l1qsm_alpha1: format!("{}", l1qsm.alpha1),
+            l1qsm_mu1: format!("{}", l1qsm.mu1),
+            l1qsm_mu2: format!("{}", l1qsm.mu2),
+            l1qsm_mu3: format!("{}", l1qsm.mu3),
+            l1qsm_lambda: format!("{}", l1qsm.lambda),
+            l1qsm_max_iter: format!("{}", l1qsm.max_iter),
+            l1qsm_tol_update: format!("{}", l1qsm.tol_update),
+            l1qsm_tol_delta: format!("{}", l1qsm.tol_delta),
+            l1qsm_phase_scale: format!("{}", l1qsm.phase_scale),
+
+            whqsm_alpha1: format!("{}", whqsm.alpha1),
+            whqsm_mu1: format!("{}", whqsm.mu1),
+            whqsm_mu2: format!("{}", whqsm.mu2),
+            whqsm_beta: format!("{}", whqsm.beta),
+            whqsm_muh: format!("{}", whqsm.muh),
+            whqsm_max_iter: format!("{}", whqsm.max_iter),
+            whqsm_tol_update: format!("{}", whqsm.tol_update),
+            whqsm_tol_delta: format!("{}", whqsm.tol_delta),
+            whqsm_phase_scale: format!("{}", whqsm.phase_scale),
+
+            hdqsm_alpha_l2: format!("{}", hdqsm.alpha_l2),
+            hdqsm_mu1_l2: format!("{}", hdqsm.mu1_l2),
+            hdqsm_mu2: format!("{}", hdqsm.mu2),
+            hdqsm_max_iter_l1: format!("{}", hdqsm.max_iter_l1),
+            hdqsm_max_iter_l2: format!("{}", hdqsm.max_iter_l2),
+            hdqsm_tol_update: format!("{}", hdqsm.tol_update),
+
             bet_fractional_intensity: format!("{}", bet.fractional_intensity),
             bet_smoothness: format!("{}", bet.smoothness),
             bet_gradient_threshold: format!("{}", bet.gradient_threshold),
@@ -1187,7 +1288,7 @@ impl Default for PipelineFormState {
     }
 }
 
-pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "ilsqr", "qsmart"];
+pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "ilsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm"];
 // QSMART's inner dipole inversion (excludes the two end-to-end algorithms tgv/qsmart).
 pub const QSMART_INV_OPTIONS: &[&str] = &["ilsqr", "rts", "tv", "tkd", "tsvd", "tikhonov", "nltv", "medi"];
 const QSMART_INV_HELP: &[&str] = &[
@@ -1524,6 +1625,53 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Frangi Step (mm)", field: "qsmart_frangi_scale_ratio", help: "Frangi scale step (mm)" });
                 rows.push(PipelineRow::Param { label: "  Frangi C", field: "qsmart_frangi_c", help: "Frangi C noise threshold" });
             }
+            10 => { // NDI
+                rows.push(PipelineRow::Param { label: "  Tau", field: "ndi_tau", help: "Gradient-descent step size" });
+                rows.push(PipelineRow::Param { label: "  Alpha", field: "ndi_alpha", help: "L2 regularization weight" });
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "ndi_max_iter", help: "Number of iterations" });
+                rows.push(PipelineRow::Param { label: "  Phase Scale", field: "ndi_phase_scale", help: "ppm -> working-scale multiplier" });
+            }
+            11 | 12 => { // FANSI nlTV (11) / nlTGV (12) — shared params
+                rows.push(PipelineRow::Param { label: "  Alpha1", field: "fansi_alpha1", help: "First-order (TV/TGV) L1 penalty weight" });
+                rows.push(PipelineRow::Param { label: "  Mu1", field: "fansi_mu1", help: "Gradient-consistency ADMM weight" });
+                rows.push(PipelineRow::Param { label: "  Mu2", field: "fansi_mu2", help: "Fidelity-consistency ADMM weight" });
+                rows.push(PipelineRow::Param { label: "  Alpha0", field: "fansi_alpha0", help: "Second-order L1 penalty weight (nlTGV only)" });
+                rows.push(PipelineRow::Param { label: "  Mu0", field: "fansi_mu0", help: "Second-order consistency ADMM weight (nlTGV only)" });
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "fansi_max_iter", help: "Number of outer ADMM iterations" });
+                rows.push(PipelineRow::Param { label: "  Tol Update", field: "fansi_tol_update", help: "Percent-update stopping tolerance" });
+                rows.push(PipelineRow::Param { label: "  Tol Delta", field: "fansi_tol_delta", help: "Inner Newton convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  Phase Scale", field: "fansi_phase_scale", help: "ppm -> working-scale multiplier" });
+            }
+            13 => { // L1-QSM
+                rows.push(PipelineRow::Param { label: "  Alpha1", field: "l1qsm_alpha1", help: "Gradient (TV) L1 penalty weight" });
+                rows.push(PipelineRow::Param { label: "  Mu1", field: "l1qsm_mu1", help: "Gradient-consistency ADMM weight" });
+                rows.push(PipelineRow::Param { label: "  Mu2", field: "l1qsm_mu2", help: "Fidelity-consistency ADMM weight" });
+                rows.push(PipelineRow::Param { label: "  Mu3", field: "l1qsm_mu3", help: "L1 proximal ADMM weight" });
+                rows.push(PipelineRow::Param { label: "  Lambda", field: "l1qsm_lambda", help: "L1 fidelity strength" });
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "l1qsm_max_iter", help: "Number of outer ADMM iterations" });
+                rows.push(PipelineRow::Param { label: "  Tol Update", field: "l1qsm_tol_update", help: "Percent-update stopping tolerance" });
+                rows.push(PipelineRow::Param { label: "  Tol Delta", field: "l1qsm_tol_delta", help: "Inner Newton convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  Phase Scale", field: "l1qsm_phase_scale", help: "ppm -> working-scale multiplier" });
+            }
+            14 => { // WH-QSM
+                rows.push(PipelineRow::Param { label: "  Alpha1", field: "whqsm_alpha1", help: "TV regularization weight" });
+                rows.push(PipelineRow::Param { label: "  Mu1", field: "whqsm_mu1", help: "ADMM penalty for TV splitting" });
+                rows.push(PipelineRow::Param { label: "  Mu2", field: "whqsm_mu2", help: "ADMM penalty for data-fidelity splitting" });
+                rows.push(PipelineRow::Param { label: "  Beta", field: "whqsm_beta", help: "Weak-harmonic ROI penalty" });
+                rows.push(PipelineRow::Param { label: "  Muh", field: "whqsm_muh", help: "ADMM penalty for harmonic-field splitting" });
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "whqsm_max_iter", help: "Maximum outer iterations" });
+                rows.push(PipelineRow::Param { label: "  Tol Update", field: "whqsm_tol_update", help: "Percent-update stopping tolerance" });
+                rows.push(PipelineRow::Param { label: "  Tol Delta", field: "whqsm_tol_delta", help: "Inner Newton stopping tolerance" });
+                rows.push(PipelineRow::Param { label: "  Phase Scale", field: "whqsm_phase_scale", help: "ppm -> working-scale multiplier" });
+            }
+            15 => { // HD-QSM
+                rows.push(PipelineRow::Param { label: "  Alpha L2", field: "hdqsm_alpha_l2", help: "L2-stage TV weight" });
+                rows.push(PipelineRow::Param { label: "  Mu1 L2", field: "hdqsm_mu1_l2", help: "L2-stage gradient-consistency ADMM weight" });
+                rows.push(PipelineRow::Param { label: "  Mu2", field: "hdqsm_mu2", help: "Fidelity consistency weight" });
+                rows.push(PipelineRow::Param { label: "  Max Iter L1", field: "hdqsm_max_iter_l1", help: "Stage-1 (L1) iterations" });
+                rows.push(PipelineRow::Param { label: "  Max Iter L2", field: "hdqsm_max_iter_l2", help: "Stage-2 (L2) iterations" });
+                rows.push(PipelineRow::Param { label: "  Tol Update", field: "hdqsm_tol_update", help: "Stage-2 percent-update stopping tolerance" });
+            }
             _ => {}
         }
 
@@ -1561,6 +1709,11 @@ impl PipelineFormState {
         "qsmart_sdf_sigma1_stage1", "qsmart_sdf_sigma2_stage1", "qsmart_sdf_sigma1_stage2", "qsmart_sdf_sigma2_stage2",
         "qsmart_sdf_lower_lim", "qsmart_sdf_curv_constant",
         "qsmart_frangi_scale_min", "qsmart_frangi_scale_max", "qsmart_frangi_scale_ratio", "qsmart_frangi_c",
+        "ndi_tau", "ndi_alpha", "ndi_max_iter", "ndi_phase_scale",
+        "fansi_alpha1", "fansi_mu1", "fansi_mu2", "fansi_alpha0", "fansi_mu0", "fansi_max_iter", "fansi_tol_update", "fansi_tol_delta", "fansi_phase_scale",
+        "l1qsm_alpha1", "l1qsm_mu1", "l1qsm_mu2", "l1qsm_mu3", "l1qsm_lambda", "l1qsm_max_iter", "l1qsm_tol_update", "l1qsm_tol_delta", "l1qsm_phase_scale",
+        "whqsm_alpha1", "whqsm_mu1", "whqsm_mu2", "whqsm_beta", "whqsm_muh", "whqsm_max_iter", "whqsm_tol_update", "whqsm_tol_delta", "whqsm_phase_scale",
+        "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
         "bet_fractional_intensity", "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
     ];
 
@@ -1636,6 +1789,43 @@ impl PipelineFormState {
             "qsmart_frangi_scale_max" => &self.qsmart_frangi_scale_max,
             "qsmart_frangi_scale_ratio" => &self.qsmart_frangi_scale_ratio,
             "qsmart_frangi_c" => &self.qsmart_frangi_c,
+            "ndi_tau" => &self.ndi_tau,
+            "ndi_alpha" => &self.ndi_alpha,
+            "ndi_max_iter" => &self.ndi_max_iter,
+            "ndi_phase_scale" => &self.ndi_phase_scale,
+            "fansi_alpha1" => &self.fansi_alpha1,
+            "fansi_mu1" => &self.fansi_mu1,
+            "fansi_mu2" => &self.fansi_mu2,
+            "fansi_alpha0" => &self.fansi_alpha0,
+            "fansi_mu0" => &self.fansi_mu0,
+            "fansi_max_iter" => &self.fansi_max_iter,
+            "fansi_tol_update" => &self.fansi_tol_update,
+            "fansi_tol_delta" => &self.fansi_tol_delta,
+            "fansi_phase_scale" => &self.fansi_phase_scale,
+            "l1qsm_alpha1" => &self.l1qsm_alpha1,
+            "l1qsm_mu1" => &self.l1qsm_mu1,
+            "l1qsm_mu2" => &self.l1qsm_mu2,
+            "l1qsm_mu3" => &self.l1qsm_mu3,
+            "l1qsm_lambda" => &self.l1qsm_lambda,
+            "l1qsm_max_iter" => &self.l1qsm_max_iter,
+            "l1qsm_tol_update" => &self.l1qsm_tol_update,
+            "l1qsm_tol_delta" => &self.l1qsm_tol_delta,
+            "l1qsm_phase_scale" => &self.l1qsm_phase_scale,
+            "whqsm_alpha1" => &self.whqsm_alpha1,
+            "whqsm_mu1" => &self.whqsm_mu1,
+            "whqsm_mu2" => &self.whqsm_mu2,
+            "whqsm_beta" => &self.whqsm_beta,
+            "whqsm_muh" => &self.whqsm_muh,
+            "whqsm_max_iter" => &self.whqsm_max_iter,
+            "whqsm_tol_update" => &self.whqsm_tol_update,
+            "whqsm_tol_delta" => &self.whqsm_tol_delta,
+            "whqsm_phase_scale" => &self.whqsm_phase_scale,
+            "hdqsm_alpha_l2" => &self.hdqsm_alpha_l2,
+            "hdqsm_mu1_l2" => &self.hdqsm_mu1_l2,
+            "hdqsm_mu2" => &self.hdqsm_mu2,
+            "hdqsm_max_iter_l1" => &self.hdqsm_max_iter_l1,
+            "hdqsm_max_iter_l2" => &self.hdqsm_max_iter_l2,
+            "hdqsm_tol_update" => &self.hdqsm_tol_update,
             "bet_fractional_intensity" => &self.bet_fractional_intensity,
             "bet_smoothness" => &self.bet_smoothness,
             "bet_gradient_threshold" => &self.bet_gradient_threshold,
@@ -1717,6 +1907,43 @@ impl PipelineFormState {
             "qsmart_frangi_scale_max" => Some(&mut self.qsmart_frangi_scale_max),
             "qsmart_frangi_scale_ratio" => Some(&mut self.qsmart_frangi_scale_ratio),
             "qsmart_frangi_c" => Some(&mut self.qsmart_frangi_c),
+            "ndi_tau" => Some(&mut self.ndi_tau),
+            "ndi_alpha" => Some(&mut self.ndi_alpha),
+            "ndi_max_iter" => Some(&mut self.ndi_max_iter),
+            "ndi_phase_scale" => Some(&mut self.ndi_phase_scale),
+            "fansi_alpha1" => Some(&mut self.fansi_alpha1),
+            "fansi_mu1" => Some(&mut self.fansi_mu1),
+            "fansi_mu2" => Some(&mut self.fansi_mu2),
+            "fansi_alpha0" => Some(&mut self.fansi_alpha0),
+            "fansi_mu0" => Some(&mut self.fansi_mu0),
+            "fansi_max_iter" => Some(&mut self.fansi_max_iter),
+            "fansi_tol_update" => Some(&mut self.fansi_tol_update),
+            "fansi_tol_delta" => Some(&mut self.fansi_tol_delta),
+            "fansi_phase_scale" => Some(&mut self.fansi_phase_scale),
+            "l1qsm_alpha1" => Some(&mut self.l1qsm_alpha1),
+            "l1qsm_mu1" => Some(&mut self.l1qsm_mu1),
+            "l1qsm_mu2" => Some(&mut self.l1qsm_mu2),
+            "l1qsm_mu3" => Some(&mut self.l1qsm_mu3),
+            "l1qsm_lambda" => Some(&mut self.l1qsm_lambda),
+            "l1qsm_max_iter" => Some(&mut self.l1qsm_max_iter),
+            "l1qsm_tol_update" => Some(&mut self.l1qsm_tol_update),
+            "l1qsm_tol_delta" => Some(&mut self.l1qsm_tol_delta),
+            "l1qsm_phase_scale" => Some(&mut self.l1qsm_phase_scale),
+            "whqsm_alpha1" => Some(&mut self.whqsm_alpha1),
+            "whqsm_mu1" => Some(&mut self.whqsm_mu1),
+            "whqsm_mu2" => Some(&mut self.whqsm_mu2),
+            "whqsm_beta" => Some(&mut self.whqsm_beta),
+            "whqsm_muh" => Some(&mut self.whqsm_muh),
+            "whqsm_max_iter" => Some(&mut self.whqsm_max_iter),
+            "whqsm_tol_update" => Some(&mut self.whqsm_tol_update),
+            "whqsm_tol_delta" => Some(&mut self.whqsm_tol_delta),
+            "whqsm_phase_scale" => Some(&mut self.whqsm_phase_scale),
+            "hdqsm_alpha_l2" => Some(&mut self.hdqsm_alpha_l2),
+            "hdqsm_mu1_l2" => Some(&mut self.hdqsm_mu1_l2),
+            "hdqsm_mu2" => Some(&mut self.hdqsm_mu2),
+            "hdqsm_max_iter_l1" => Some(&mut self.hdqsm_max_iter_l1),
+            "hdqsm_max_iter_l2" => Some(&mut self.hdqsm_max_iter_l2),
+            "hdqsm_tol_update" => Some(&mut self.hdqsm_tol_update),
             "bet_fractional_intensity" => Some(&mut self.bet_fractional_intensity),
             "bet_smoothness" => Some(&mut self.bet_smoothness),
             "bet_gradient_threshold" => Some(&mut self.bet_gradient_threshold),

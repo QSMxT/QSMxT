@@ -133,6 +133,150 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             );
             (c, (chi, field_nifti))
         }
+        InvertCommand::Ndi(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let grid = super::common::nifti_grid(&field_nifti);
+            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
+            info!("Dipole inversion (NDI, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            let d = qsm_core::inversion::NdiParams::default();
+            let params = qsm_core::inversion::NdiParams {
+                tau: args.tau.unwrap_or(d.tau),
+                alpha: args.alpha.unwrap_or(d.alpha),
+                max_iter: args.max_iter.unwrap_or(d.max_iter),
+                phase_scale: args.phase_scale.unwrap_or(d.phase_scale),
+            };
+            let chi = qsm_core::inversion::ndi(
+                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+            );
+            (c, (chi, field_nifti))
+        }
+        InvertCommand::Fansi(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let grid = super::common::nifti_grid(&field_nifti);
+            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
+            info!("Dipole inversion (FANSI nlTV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            let d = qsm_core::inversion::FansiParams::default();
+            let params = qsm_core::inversion::FansiParams {
+                alpha1: args.alpha1.unwrap_or(d.alpha1),
+                mu1: args.mu1.unwrap_or(d.mu1),
+                mu2: args.mu2.unwrap_or(d.mu2),
+                alpha0: args.alpha0.unwrap_or(d.alpha0),
+                mu0: args.mu0.unwrap_or(d.mu0),
+                max_iter: args.max_iter.unwrap_or(d.max_iter),
+                tol_update: args.tol_update.unwrap_or(d.tol_update),
+                tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
+                phase_scale: args.phase_scale.unwrap_or(d.phase_scale),
+                is_tgv: false,
+            };
+            let chi = qsm_core::inversion::fansi(
+                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+            );
+            (c, (chi, field_nifti))
+        }
+        InvertCommand::FansiTgv(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let grid = super::common::nifti_grid(&field_nifti);
+            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
+            info!("Dipole inversion (FANSI nlTGV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            let d = qsm_core::inversion::FansiParams::default();
+            let params = qsm_core::inversion::FansiParams {
+                alpha1: args.alpha1.unwrap_or(d.alpha1),
+                mu1: args.mu1.unwrap_or(d.mu1),
+                mu2: args.mu2.unwrap_or(d.mu2),
+                alpha0: args.alpha0.unwrap_or(d.alpha0),
+                mu0: args.mu0.unwrap_or(d.mu0),
+                max_iter: args.max_iter.unwrap_or(d.max_iter),
+                tol_update: args.tol_update.unwrap_or(d.tol_update),
+                tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
+                phase_scale: args.phase_scale.unwrap_or(d.phase_scale),
+                is_tgv: true,
+            };
+            let chi = qsm_core::inversion::fansi(
+                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+            );
+            (c, (chi, field_nifti))
+        }
+        InvertCommand::L1qsm(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let grid = super::common::nifti_grid(&field_nifti);
+            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
+            info!("Dipole inversion (L1-QSM, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            let d = qsm_core::inversion::L1QsmParams::default();
+            let params = qsm_core::inversion::L1QsmParams {
+                alpha1: args.alpha1.unwrap_or(d.alpha1),
+                mu1: args.mu1.unwrap_or(d.mu1),
+                mu2: args.mu2.unwrap_or(d.mu2),
+                mu3: args.mu3.unwrap_or(d.mu3),
+                lambda: args.lambda.unwrap_or(d.lambda),
+                max_iter: args.max_iter.unwrap_or(d.max_iter),
+                tol_update: args.tol_update.unwrap_or(d.tol_update),
+                tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
+                phase_scale: args.phase_scale.unwrap_or(d.phase_scale),
+            };
+            let chi = qsm_core::inversion::l1qsm(
+                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+            );
+            (c, (chi, field_nifti))
+        }
+        InvertCommand::Whqsm(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let grid = super::common::nifti_grid(&field_nifti);
+            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
+            info!("Dipole inversion (WH-QSM, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            let d = qsm_core::inversion::WhQsmParams::default();
+            let params = qsm_core::inversion::WhQsmParams {
+                alpha1: args.alpha1.unwrap_or(d.alpha1),
+                mu1: args.mu1.unwrap_or(d.mu1),
+                mu2: args.mu2.unwrap_or(d.mu2),
+                beta: args.beta.unwrap_or(d.beta),
+                muh: args.muh.unwrap_or(d.muh),
+                max_iter: args.max_iter.unwrap_or(d.max_iter),
+                tol_update: args.tol_update.unwrap_or(d.tol_update),
+                tol_delta: args.tol_delta.unwrap_or(d.tol_delta),
+                phase_scale: args.phase_scale.unwrap_or(d.phase_scale),
+            };
+            let chi = qsm_core::inversion::whqsm(
+                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+            );
+            (c, (chi, field_nifti))
+        }
+        InvertCommand::Hdqsm(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let grid = super::common::nifti_grid(&field_nifti);
+            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
+            info!("Dipole inversion (HD-QSM, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            let d = qsm_core::inversion::HdQsmParams::default();
+            let params = qsm_core::inversion::HdQsmParams {
+                alpha_l2: args.alpha_l2.unwrap_or(d.alpha_l2),
+                mu1_l2: args.mu1_l2.unwrap_or(d.mu1_l2),
+                mu2: args.mu2.unwrap_or(d.mu2),
+                max_iter_l1: args.max_iter_l1.unwrap_or(d.max_iter_l1),
+                max_iter_l2: args.max_iter_l2.unwrap_or(d.max_iter_l2),
+                tol_update: args.tol_update.unwrap_or(d.tol_update),
+            };
+            let chi = qsm_core::inversion::hdqsm(
+                &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+            );
+            (c, (chi, field_nifti))
+        }
         InvertCommand::Medi(args) => {
             let c = args.common;
             let field_nifti = load_nifti(&c.input)?;

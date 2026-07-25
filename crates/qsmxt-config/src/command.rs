@@ -176,6 +176,61 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             emit_f64(&mut parts, "--qsmart-frangi-scale-ratio", q.frangi_scale_ratio, dq.frangi_scale_ratio);
             emit_f64(&mut parts, "--qsmart-frangi-c", q.frangi_c, dq.frangi_c);
         }
+        QsmAlgorithm::Ndi => {
+            emit_f64(&mut parts, "--ndi-tau", config.inversion.ndi.tau, d.inversion.ndi.tau);
+            emit_f64(&mut parts, "--ndi-alpha", config.inversion.ndi.alpha, d.inversion.ndi.alpha);
+            emit_usize(&mut parts, "--ndi-max-iter", config.inversion.ndi.max_iter, d.inversion.ndi.max_iter);
+            emit_f64(&mut parts, "--ndi-phase-scale", config.inversion.ndi.phase_scale, d.inversion.ndi.phase_scale);
+        }
+        QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => {
+            let fa = &config.inversion.fansi;
+            let df = &d.inversion.fansi;
+            emit_f64(&mut parts, "--fansi-alpha1", fa.alpha1, df.alpha1);
+            emit_f64(&mut parts, "--fansi-mu1", fa.mu1, df.mu1);
+            emit_f64(&mut parts, "--fansi-mu2", fa.mu2, df.mu2);
+            emit_f64(&mut parts, "--fansi-alpha0", fa.alpha0, df.alpha0);
+            emit_f64(&mut parts, "--fansi-mu0", fa.mu0, df.mu0);
+            emit_usize(&mut parts, "--fansi-max-iter", fa.max_iter, df.max_iter);
+            emit_f64(&mut parts, "--fansi-tol-update", fa.tol_update, df.tol_update);
+            emit_f64(&mut parts, "--fansi-tol-delta", fa.tol_delta, df.tol_delta);
+            emit_f64(&mut parts, "--fansi-phase-scale", fa.phase_scale, df.phase_scale);
+        }
+        QsmAlgorithm::L1qsm => {
+            let l = &config.inversion.l1qsm;
+            let dl = &d.inversion.l1qsm;
+            emit_f64(&mut parts, "--l1qsm-alpha1", l.alpha1, dl.alpha1);
+            emit_f64(&mut parts, "--l1qsm-mu1", l.mu1, dl.mu1);
+            emit_f64(&mut parts, "--l1qsm-mu2", l.mu2, dl.mu2);
+            emit_f64(&mut parts, "--l1qsm-mu3", l.mu3, dl.mu3);
+            emit_f64(&mut parts, "--l1qsm-lambda", l.lambda, dl.lambda);
+            emit_usize(&mut parts, "--l1qsm-max-iter", l.max_iter, dl.max_iter);
+            emit_f64(&mut parts, "--l1qsm-tol-update", l.tol_update, dl.tol_update);
+            emit_f64(&mut parts, "--l1qsm-tol-delta", l.tol_delta, dl.tol_delta);
+            emit_f64(&mut parts, "--l1qsm-phase-scale", l.phase_scale, dl.phase_scale);
+        }
+        QsmAlgorithm::Whqsm => {
+            let w = &config.inversion.whqsm;
+            let dw = &d.inversion.whqsm;
+            emit_f64(&mut parts, "--whqsm-alpha1", w.alpha1, dw.alpha1);
+            emit_f64(&mut parts, "--whqsm-mu1", w.mu1, dw.mu1);
+            emit_f64(&mut parts, "--whqsm-mu2", w.mu2, dw.mu2);
+            emit_f64(&mut parts, "--whqsm-beta", w.beta, dw.beta);
+            emit_f64(&mut parts, "--whqsm-muh", w.muh, dw.muh);
+            emit_usize(&mut parts, "--whqsm-max-iter", w.max_iter, dw.max_iter);
+            emit_f64(&mut parts, "--whqsm-tol-update", w.tol_update, dw.tol_update);
+            emit_f64(&mut parts, "--whqsm-tol-delta", w.tol_delta, dw.tol_delta);
+            emit_f64(&mut parts, "--whqsm-phase-scale", w.phase_scale, dw.phase_scale);
+        }
+        QsmAlgorithm::Hdqsm => {
+            let h = &config.inversion.hdqsm;
+            let dh = &d.inversion.hdqsm;
+            emit_f64(&mut parts, "--hdqsm-alpha-l2", h.alpha_l2, dh.alpha_l2);
+            emit_f64(&mut parts, "--hdqsm-mu1-l2", h.mu1_l2, dh.mu1_l2);
+            emit_f64(&mut parts, "--hdqsm-mu2", h.mu2, dh.mu2);
+            emit_usize(&mut parts, "--hdqsm-max-iter-l1", h.max_iter_l1, dh.max_iter_l1);
+            emit_usize(&mut parts, "--hdqsm-max-iter-l2", h.max_iter_l2, dh.max_iter_l2);
+            emit_f64(&mut parts, "--hdqsm-tol-update", h.tol_update, dh.tol_update);
+        }
     }
 
     // ── QSM reference ──
@@ -293,6 +348,9 @@ mod tests {
             (QsmAlgorithm::Tikhonov, "tikhonov"), (QsmAlgorithm::Nltv, "nltv"),
             (QsmAlgorithm::Medi, "medi"), (QsmAlgorithm::Ilsqr, "ilsqr"),
             (QsmAlgorithm::Qsmart, "qsmart"),
+            (QsmAlgorithm::Ndi, "ndi"), (QsmAlgorithm::Fansi, "fansi"),
+            (QsmAlgorithm::FansiTgv, "fansi-tgv"), (QsmAlgorithm::L1qsm, "l1qsm"),
+            (QsmAlgorithm::Whqsm, "whqsm"), (QsmAlgorithm::Hdqsm, "hdqsm"),
         ] {
             let mut c = PipelineConfig::default();
             c.inversion.algorithm = alg;
