@@ -424,7 +424,7 @@ mod tests {
     fn masking_algorithm_flag_is_rejected() {
         // Removed in favour of --mask-preset / --mask; must be a parse error,
         // not silently ignored.
-        assert!(cli::Cli::try_parse_from(&[
+        assert!(cli::Cli::try_parse_from([
             "qsmxt", "run", "<bids>", "--masking-algorithm", "bet",
         ]).is_err());
     }
@@ -465,7 +465,7 @@ mod tests {
     fn mask_erosions_flag_is_rejected() {
         // Removed alongside --masking-algorithm; erosion belongs in --mask
         // sections (erode:N).
-        assert!(cli::Cli::try_parse_from(&[
+        assert!(cli::Cli::try_parse_from([
             "qsmxt", "run", "<bids>", "--mask-erosions", "3",
         ]).is_err());
     }
