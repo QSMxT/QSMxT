@@ -196,6 +196,137 @@ pub struct NltvParamArgs {
 }
 
 #[derive(Args, Debug, Default, Clone)]
+pub struct NdiParamArgs {
+    /// NDI gradient-descent step size (tau)
+    #[arg(long)]
+    pub ndi_tau: Option<f64>,
+    /// NDI L2 regularization weight (alpha)
+    #[arg(long)]
+    pub ndi_alpha: Option<f64>,
+    /// NDI max iterations
+    #[arg(long)]
+    pub ndi_max_iter: Option<usize>,
+    /// NDI phase scale (ppm -> working scale)
+    #[arg(long)]
+    pub ndi_phase_scale: Option<f64>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
+pub struct FansiParamArgs {
+    /// FANSI first-order (TV/TGV) L1 penalty weight (alpha1)
+    #[arg(long)]
+    pub fansi_alpha1: Option<f64>,
+    /// FANSI gradient-consistency ADMM weight (mu1)
+    #[arg(long)]
+    pub fansi_mu1: Option<f64>,
+    /// FANSI fidelity-consistency ADMM weight (mu2)
+    #[arg(long)]
+    pub fansi_mu2: Option<f64>,
+    /// FANSI second-order L1 penalty weight (alpha0, nlTGV only)
+    #[arg(long)]
+    pub fansi_alpha0: Option<f64>,
+    /// FANSI second-order consistency ADMM weight (mu0, nlTGV only)
+    #[arg(long)]
+    pub fansi_mu0: Option<f64>,
+    /// FANSI outer ADMM iterations
+    #[arg(long)]
+    pub fansi_max_iter: Option<usize>,
+    /// FANSI percent-update convergence tolerance
+    #[arg(long)]
+    pub fansi_tol_update: Option<f64>,
+    /// FANSI inner Newton convergence tolerance
+    #[arg(long)]
+    pub fansi_tol_delta: Option<f64>,
+    /// FANSI phase scale (ppm -> working scale)
+    #[arg(long)]
+    pub fansi_phase_scale: Option<f64>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
+pub struct L1qsmParamArgs {
+    /// L1-QSM gradient (TV) L1 penalty weight (alpha1)
+    #[arg(long)]
+    pub l1qsm_alpha1: Option<f64>,
+    /// L1-QSM gradient-consistency ADMM weight (mu1)
+    #[arg(long)]
+    pub l1qsm_mu1: Option<f64>,
+    /// L1-QSM fidelity-consistency ADMM weight (mu2)
+    #[arg(long)]
+    pub l1qsm_mu2: Option<f64>,
+    /// L1-QSM L1 proximal ADMM weight (mu3)
+    #[arg(long)]
+    pub l1qsm_mu3: Option<f64>,
+    /// L1-QSM L1 fidelity strength (lambda)
+    #[arg(long)]
+    pub l1qsm_lambda: Option<f64>,
+    /// L1-QSM outer ADMM iterations
+    #[arg(long)]
+    pub l1qsm_max_iter: Option<usize>,
+    /// L1-QSM percent-update convergence tolerance
+    #[arg(long)]
+    pub l1qsm_tol_update: Option<f64>,
+    /// L1-QSM inner Newton convergence tolerance
+    #[arg(long)]
+    pub l1qsm_tol_delta: Option<f64>,
+    /// L1-QSM phase scale (ppm -> working scale)
+    #[arg(long)]
+    pub l1qsm_phase_scale: Option<f64>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
+pub struct WhqsmParamArgs {
+    /// WH-QSM TV regularization weight (alpha1)
+    #[arg(long)]
+    pub whqsm_alpha1: Option<f64>,
+    /// WH-QSM ADMM penalty for TV splitting (mu1)
+    #[arg(long)]
+    pub whqsm_mu1: Option<f64>,
+    /// WH-QSM ADMM penalty for data-fidelity splitting (mu2)
+    #[arg(long)]
+    pub whqsm_mu2: Option<f64>,
+    /// WH-QSM weak-harmonic ROI penalty (beta)
+    #[arg(long)]
+    pub whqsm_beta: Option<f64>,
+    /// WH-QSM ADMM penalty for harmonic-field splitting (muh)
+    #[arg(long)]
+    pub whqsm_muh: Option<f64>,
+    /// WH-QSM max outer iterations
+    #[arg(long)]
+    pub whqsm_max_iter: Option<usize>,
+    /// WH-QSM percent-update convergence tolerance
+    #[arg(long)]
+    pub whqsm_tol_update: Option<f64>,
+    /// WH-QSM inner Newton convergence tolerance
+    #[arg(long)]
+    pub whqsm_tol_delta: Option<f64>,
+    /// WH-QSM phase scale (ppm -> working scale)
+    #[arg(long)]
+    pub whqsm_phase_scale: Option<f64>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
+pub struct HdqsmParamArgs {
+    /// HD-QSM L2-stage TV weight (alpha_l2)
+    #[arg(long)]
+    pub hdqsm_alpha_l2: Option<f64>,
+    /// HD-QSM L2-stage gradient-consistency ADMM weight (mu1_l2)
+    #[arg(long)]
+    pub hdqsm_mu1_l2: Option<f64>,
+    /// HD-QSM fidelity consistency weight (mu2)
+    #[arg(long)]
+    pub hdqsm_mu2: Option<f64>,
+    /// HD-QSM stage-1 (L1) iterations (max_iter_l1)
+    #[arg(long)]
+    pub hdqsm_max_iter_l1: Option<usize>,
+    /// HD-QSM stage-2 (L2) iterations (max_iter_l2)
+    #[arg(long)]
+    pub hdqsm_max_iter_l2: Option<usize>,
+    /// HD-QSM stage-2 percent-update convergence tolerance
+    #[arg(long)]
+    pub hdqsm_tol_update: Option<f64>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
 pub struct MediParamArgs {
     /// MEDI lambda
     #[arg(long)]
@@ -532,6 +663,16 @@ pub struct RunArgs {
     pub ilsqr_params: IlsqrParamArgs,
     #[command(flatten)]
     pub qsmart_params: QsmartParamArgs,
+    #[command(flatten)]
+    pub ndi_params: NdiParamArgs,
+    #[command(flatten)]
+    pub fansi_params: FansiParamArgs,
+    #[command(flatten)]
+    pub l1qsm_params: L1qsmParamArgs,
+    #[command(flatten)]
+    pub whqsm_params: WhqsmParamArgs,
+    #[command(flatten)]
+    pub hdqsm_params: HdqsmParamArgs,
     #[command(flatten)]
     pub vsharp_params: VsharpParamArgs,
     #[command(flatten)]
@@ -1070,6 +1211,19 @@ pub enum InvertCommand {
     Medi(InvertMediArgs),
     /// Iterative Least Squares QR
     Ilsqr(InvertIlsqrArgs),
+    /// Nonlinear Dipole Inversion
+    Ndi(InvertNdiArgs),
+    /// FANSI Nonlinear Total Variation
+    Fansi(InvertFansiArgs),
+    /// FANSI Nonlinear Total Generalized Variation
+    #[command(name = "fansi-tgv")]
+    FansiTgv(InvertFansiTgvArgs),
+    /// L1 Data-Fidelity QSM
+    L1qsm(InvertL1qsmArgs),
+    /// Weak-Harmonic QSM
+    Whqsm(InvertWhqsmArgs),
+    /// Hybrid Data-Fidelity QSM
+    Hdqsm(InvertHdqsmArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -1248,6 +1402,180 @@ pub struct InvertIlsqrArgs {
     /// Max iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
+}
+
+#[derive(Parser, Debug)]
+pub struct InvertNdiArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    /// Gradient-descent step size (tau)
+    #[arg(long)]
+    pub tau: Option<f64>,
+    /// L2 regularization weight (alpha)
+    #[arg(long)]
+    pub alpha: Option<f64>,
+    /// Max iterations
+    #[arg(long)]
+    pub max_iter: Option<usize>,
+    /// Phase scale (ppm -> working scale)
+    #[arg(long)]
+    pub phase_scale: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct InvertFansiArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    /// First-order (TV/TGV) L1 penalty weight (alpha1)
+    #[arg(long)]
+    pub alpha1: Option<f64>,
+    /// Gradient-consistency ADMM weight (mu1)
+    #[arg(long)]
+    pub mu1: Option<f64>,
+    /// Fidelity-consistency ADMM weight (mu2)
+    #[arg(long)]
+    pub mu2: Option<f64>,
+    /// Second-order L1 penalty weight (alpha0, nlTGV only)
+    #[arg(long)]
+    pub alpha0: Option<f64>,
+    /// Second-order consistency ADMM weight (mu0, nlTGV only)
+    #[arg(long)]
+    pub mu0: Option<f64>,
+    /// Max iterations
+    #[arg(long)]
+    pub max_iter: Option<usize>,
+    /// Percent-update convergence tolerance
+    #[arg(long)]
+    pub tol_update: Option<f64>,
+    /// Inner Newton convergence tolerance
+    #[arg(long)]
+    pub tol_delta: Option<f64>,
+    /// Phase scale (ppm -> working scale)
+    #[arg(long)]
+    pub phase_scale: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct InvertFansiTgvArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    /// First-order (TGV gradient) L1 penalty weight (alpha1)
+    #[arg(long)]
+    pub alpha1: Option<f64>,
+    /// Gradient-consistency ADMM weight (mu1)
+    #[arg(long)]
+    pub mu1: Option<f64>,
+    /// Fidelity-consistency ADMM weight (mu2)
+    #[arg(long)]
+    pub mu2: Option<f64>,
+    /// Second-order L1 penalty weight (alpha0)
+    #[arg(long)]
+    pub alpha0: Option<f64>,
+    /// Second-order consistency ADMM weight (mu0)
+    #[arg(long)]
+    pub mu0: Option<f64>,
+    /// Max iterations
+    #[arg(long)]
+    pub max_iter: Option<usize>,
+    /// Percent-update convergence tolerance
+    #[arg(long)]
+    pub tol_update: Option<f64>,
+    /// Inner Newton convergence tolerance
+    #[arg(long)]
+    pub tol_delta: Option<f64>,
+    /// Phase scale (ppm -> working scale)
+    #[arg(long)]
+    pub phase_scale: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct InvertL1qsmArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    /// Gradient (TV) L1 penalty weight (alpha1)
+    #[arg(long)]
+    pub alpha1: Option<f64>,
+    /// Gradient-consistency ADMM weight (mu1)
+    #[arg(long)]
+    pub mu1: Option<f64>,
+    /// Fidelity-consistency ADMM weight (mu2)
+    #[arg(long)]
+    pub mu2: Option<f64>,
+    /// L1 proximal ADMM weight (mu3)
+    #[arg(long)]
+    pub mu3: Option<f64>,
+    /// L1 fidelity strength (lambda)
+    #[arg(long)]
+    pub lambda: Option<f64>,
+    /// Max iterations
+    #[arg(long)]
+    pub max_iter: Option<usize>,
+    /// Percent-update convergence tolerance
+    #[arg(long)]
+    pub tol_update: Option<f64>,
+    /// Inner Newton convergence tolerance
+    #[arg(long)]
+    pub tol_delta: Option<f64>,
+    /// Phase scale (ppm -> working scale)
+    #[arg(long)]
+    pub phase_scale: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct InvertWhqsmArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    /// TV regularization weight (alpha1)
+    #[arg(long)]
+    pub alpha1: Option<f64>,
+    /// ADMM penalty for TV splitting (mu1)
+    #[arg(long)]
+    pub mu1: Option<f64>,
+    /// ADMM penalty for data-fidelity splitting (mu2)
+    #[arg(long)]
+    pub mu2: Option<f64>,
+    /// Weak-harmonic ROI penalty (beta)
+    #[arg(long)]
+    pub beta: Option<f64>,
+    /// ADMM penalty for harmonic-field splitting (muh)
+    #[arg(long)]
+    pub muh: Option<f64>,
+    /// Max iterations
+    #[arg(long)]
+    pub max_iter: Option<usize>,
+    /// Percent-update convergence tolerance
+    #[arg(long)]
+    pub tol_update: Option<f64>,
+    /// Inner Newton convergence tolerance
+    #[arg(long)]
+    pub tol_delta: Option<f64>,
+    /// Phase scale (ppm -> working scale)
+    #[arg(long)]
+    pub phase_scale: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct InvertHdqsmArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    /// L2-stage TV weight (alpha_l2)
+    #[arg(long)]
+    pub alpha_l2: Option<f64>,
+    /// L2-stage gradient-consistency ADMM weight (mu1_l2)
+    #[arg(long)]
+    pub mu1_l2: Option<f64>,
+    /// Fidelity consistency weight (mu2)
+    #[arg(long)]
+    pub mu2: Option<f64>,
+    /// Stage-1 (L1) iterations (max_iter_l1)
+    #[arg(long)]
+    pub max_iter_l1: Option<usize>,
+    /// Stage-2 (L2) iterations (max_iter_l2)
+    #[arg(long)]
+    pub max_iter_l2: Option<usize>,
+    /// Stage-2 percent-update convergence tolerance
+    #[arg(long)]
+    pub tol_update: Option<f64>,
 }
 
 // ── SWI ──
@@ -1444,6 +1772,7 @@ pub struct QualityMapArgs {
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum QsmAlgorithmArg {
     Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Ilsqr, Qsmart,
+    Ndi, Fansi, FansiTgv, L1qsm, Whqsm, Hdqsm,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

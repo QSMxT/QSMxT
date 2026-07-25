@@ -141,6 +141,17 @@ fn estimate_standard_pipeline(n: usize, n_echoes: usize, config: &PipelineConfig
         QsmAlgorithm::Medi => 180 * n,
         QsmAlgorithm::Tgv => unreachable!("TGV handled separately"),
         QsmAlgorithm::Qsmart => unreachable!("QSMART handled separately"),
+        // NDI: gradient-descent with dipole kernel + a few field buffers
+        QsmAlgorithm::Ndi => 120 * n,
+        // FANSI nlTV / nlTGV: ADMM with gradient + consistency buffers
+        QsmAlgorithm::Fansi => 140 * n,
+        QsmAlgorithm::FansiTgv => 140 * n,
+        // L1-QSM: ADMM with extra L1 proximal buffer
+        QsmAlgorithm::L1qsm => 140 * n,
+        // WH-QSM: ADMM with additional harmonic-field buffers
+        QsmAlgorithm::Whqsm => 140 * n,
+        // HD-QSM: two-stage L1->L2, closed-form + ADMM buffers
+        QsmAlgorithm::Hdqsm => 120 * n,
     };
 
     // Peak is the maximum across the three sequential stages

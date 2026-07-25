@@ -28,6 +28,12 @@ fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
         cli::QsmAlgorithmArg::Medi => QsmAlgorithm::Medi,
         cli::QsmAlgorithmArg::Ilsqr => QsmAlgorithm::Ilsqr,
         cli::QsmAlgorithmArg::Qsmart => QsmAlgorithm::Qsmart,
+        cli::QsmAlgorithmArg::Ndi => QsmAlgorithm::Ndi,
+        cli::QsmAlgorithmArg::Fansi => QsmAlgorithm::Fansi,
+        cli::QsmAlgorithmArg::FansiTgv => QsmAlgorithm::FansiTgv,
+        cli::QsmAlgorithmArg::L1qsm => QsmAlgorithm::L1qsm,
+        cli::QsmAlgorithmArg::Whqsm => QsmAlgorithm::Whqsm,
+        cli::QsmAlgorithmArg::Hdqsm => QsmAlgorithm::Hdqsm,
     }
 }
 
@@ -163,6 +169,43 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         if let Some(v) = args.tgv_params.tgv_alpha0 { config.inversion.tgv.alpha0 = v; }
         if let Some(v) = args.tgv_params.tgv_step_size { config.inversion.tgv.step_size = v; }
         if let Some(v) = args.tgv_params.tgv_tol { config.inversion.tgv.tol = v; }
+        if let Some(v) = args.ndi_params.ndi_tau { config.inversion.ndi.tau = v; }
+        if let Some(v) = args.ndi_params.ndi_alpha { config.inversion.ndi.alpha = v; }
+        if let Some(v) = args.ndi_params.ndi_max_iter { config.inversion.ndi.max_iter = v; }
+        if let Some(v) = args.ndi_params.ndi_phase_scale { config.inversion.ndi.phase_scale = v; }
+        if let Some(v) = args.fansi_params.fansi_alpha1 { config.inversion.fansi.alpha1 = v; }
+        if let Some(v) = args.fansi_params.fansi_mu1 { config.inversion.fansi.mu1 = v; }
+        if let Some(v) = args.fansi_params.fansi_mu2 { config.inversion.fansi.mu2 = v; }
+        if let Some(v) = args.fansi_params.fansi_alpha0 { config.inversion.fansi.alpha0 = v; }
+        if let Some(v) = args.fansi_params.fansi_mu0 { config.inversion.fansi.mu0 = v; }
+        if let Some(v) = args.fansi_params.fansi_max_iter { config.inversion.fansi.max_iter = v; }
+        if let Some(v) = args.fansi_params.fansi_tol_update { config.inversion.fansi.tol_update = v; }
+        if let Some(v) = args.fansi_params.fansi_tol_delta { config.inversion.fansi.tol_delta = v; }
+        if let Some(v) = args.fansi_params.fansi_phase_scale { config.inversion.fansi.phase_scale = v; }
+        if let Some(v) = args.l1qsm_params.l1qsm_alpha1 { config.inversion.l1qsm.alpha1 = v; }
+        if let Some(v) = args.l1qsm_params.l1qsm_mu1 { config.inversion.l1qsm.mu1 = v; }
+        if let Some(v) = args.l1qsm_params.l1qsm_mu2 { config.inversion.l1qsm.mu2 = v; }
+        if let Some(v) = args.l1qsm_params.l1qsm_mu3 { config.inversion.l1qsm.mu3 = v; }
+        if let Some(v) = args.l1qsm_params.l1qsm_lambda { config.inversion.l1qsm.lambda = v; }
+        if let Some(v) = args.l1qsm_params.l1qsm_max_iter { config.inversion.l1qsm.max_iter = v; }
+        if let Some(v) = args.l1qsm_params.l1qsm_tol_update { config.inversion.l1qsm.tol_update = v; }
+        if let Some(v) = args.l1qsm_params.l1qsm_tol_delta { config.inversion.l1qsm.tol_delta = v; }
+        if let Some(v) = args.l1qsm_params.l1qsm_phase_scale { config.inversion.l1qsm.phase_scale = v; }
+        if let Some(v) = args.whqsm_params.whqsm_alpha1 { config.inversion.whqsm.alpha1 = v; }
+        if let Some(v) = args.whqsm_params.whqsm_mu1 { config.inversion.whqsm.mu1 = v; }
+        if let Some(v) = args.whqsm_params.whqsm_mu2 { config.inversion.whqsm.mu2 = v; }
+        if let Some(v) = args.whqsm_params.whqsm_beta { config.inversion.whqsm.beta = v; }
+        if let Some(v) = args.whqsm_params.whqsm_muh { config.inversion.whqsm.muh = v; }
+        if let Some(v) = args.whqsm_params.whqsm_max_iter { config.inversion.whqsm.max_iter = v; }
+        if let Some(v) = args.whqsm_params.whqsm_tol_update { config.inversion.whqsm.tol_update = v; }
+        if let Some(v) = args.whqsm_params.whqsm_tol_delta { config.inversion.whqsm.tol_delta = v; }
+        if let Some(v) = args.whqsm_params.whqsm_phase_scale { config.inversion.whqsm.phase_scale = v; }
+        if let Some(v) = args.hdqsm_params.hdqsm_alpha_l2 { config.inversion.hdqsm.alpha_l2 = v; }
+        if let Some(v) = args.hdqsm_params.hdqsm_mu1_l2 { config.inversion.hdqsm.mu1_l2 = v; }
+        if let Some(v) = args.hdqsm_params.hdqsm_mu2 { config.inversion.hdqsm.mu2 = v; }
+        if let Some(v) = args.hdqsm_params.hdqsm_max_iter_l1 { config.inversion.hdqsm.max_iter_l1 = v; }
+        if let Some(v) = args.hdqsm_params.hdqsm_max_iter_l2 { config.inversion.hdqsm.max_iter_l2 = v; }
+        if let Some(v) = args.hdqsm_params.hdqsm_tol_update { config.inversion.hdqsm.tol_update = v; }
         apply_qsmart_overrides(config, &args.qsmart_params);
 
         // ── Background removal params ──

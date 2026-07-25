@@ -72,6 +72,26 @@ const CITE_NLTV: Citation = Citation {
     text: "Milovic, C., Bilgic, B., Zhao, B., Acosta-Cabronero, J., Tejos, C. (2018). \"Fast nonlinear susceptibility inversion with variational regularization.\" *Magnetic Resonance in Medicine*, 80(2):814-821. https://doi.org/10.1002/mrm.27073",
 };
 
+const CITE_NDI: Citation = Citation {
+    key: "polak2020",
+    text: "Polak, D., et al. (2020). \"Nonlinear dipole inversion (NDI) enables robust quantitative susceptibility mapping (QSM).\" NMR in Biomedicine, 33(12):e4271.",
+};
+
+const CITE_L1QSM: Citation = Citation {
+    key: "milovic2022",
+    text: "Milovic, C., et al. (2022). \"Comparison of parameter optimization methods for quantitative susceptibility mapping.\" Magnetic Resonance in Medicine, 87(3):1517-1531.",
+};
+
+const CITE_WHQSM: Citation = Citation {
+    key: "milovic2019",
+    text: "Milovic, C., et al. (2019). \"Weak-harmonic regularization for quantitative susceptibility mapping.\" Magnetic Resonance in Medicine, 81(2):1399-1411.",
+};
+
+const CITE_HDQSM: Citation = Citation {
+    key: "lambert2022",
+    text: "Lambert, M., et al. (2022). \"Hybrid data fidelity term approach for quantitative susceptibility mapping.\" Magnetic Resonance in Medicine, 88(4):1567-1583.",
+};
+
 const CITE_MEDI: Citation = Citation {
     key: "liu2011medi",
     text: "Liu, T., et al. (2011). \"Morphology enabled dipole inversion (MEDI) from a single-angle acquisition.\" *Magnetic Resonance in Medicine*, 66(3):777-783. https://doi.org/10.1002/mrm.22816",
@@ -462,6 +482,12 @@ fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
         QsmAlgorithm::Nltv => ("NLTV (Nonlinear Total Variation)", &CITE_NLTV),
         QsmAlgorithm::Medi => ("MEDI (Morphology Enabled Dipole Inversion)", &CITE_MEDI),
         QsmAlgorithm::Ilsqr => ("iLSQR", &CITE_ILSQR),
+        QsmAlgorithm::Ndi => ("NDI (Nonlinear Dipole Inversion)", &CITE_NDI),
+        QsmAlgorithm::Fansi => ("FANSI (Nonlinear TV)", &CITE_NLTV),
+        QsmAlgorithm::FansiTgv => ("FANSI (Nonlinear TGV)", &CITE_NLTV),
+        QsmAlgorithm::L1qsm => ("L1-QSM (L1 Data Fidelity)", &CITE_L1QSM),
+        QsmAlgorithm::Whqsm => ("WH-QSM (Weak-Harmonic)", &CITE_WHQSM),
+        QsmAlgorithm::Hdqsm => ("HD-QSM (Hybrid Data Fidelity)", &CITE_HDQSM),
         QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart => ("iLSQR", &CITE_ILSQR),
     }
 }
@@ -479,6 +505,10 @@ fn cite_inline(cite: &Citation) -> &'static str {
         "bilgic2014l2" => "Bilgic et al., 2014",
         "liu2011medi" => "Liu et al., 2011",
         "milovic2018" => "Milovic et al., 2018",
+        "polak2020" => "Polak et al., 2020",
+        "milovic2022" => "Milovic et al., 2022",
+        "milovic2019" => "Milovic et al., 2019",
+        "lambert2022" => "Lambert et al., 2022",
         "li2015" => "Li et al., 2015",
         "sun2014" => "Sun & Wilman, 2014",
         "li2014" => "Li et al., 2014",
@@ -997,6 +1027,12 @@ mod tests {
             (QsmAlgorithm::Nltv, "NLTV"),
             (QsmAlgorithm::Medi, "MEDI"),
             (QsmAlgorithm::Ilsqr, "iLSQR"),
+            (QsmAlgorithm::Ndi, "NDI"),
+            (QsmAlgorithm::Fansi, "FANSI (Nonlinear TV)"),
+            (QsmAlgorithm::FansiTgv, "FANSI (Nonlinear TGV)"),
+            (QsmAlgorithm::L1qsm, "L1-QSM"),
+            (QsmAlgorithm::Whqsm, "WH-QSM"),
+            (QsmAlgorithm::Hdqsm, "HD-QSM"),
         ] {
             let mut c = PipelineConfig::default();
             c.inversion.algorithm = alg;
