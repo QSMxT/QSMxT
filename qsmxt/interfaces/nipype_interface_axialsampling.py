@@ -4,6 +4,7 @@ import numpy as np
 import nilearn.image
 import warnings
 from qsmxt.scripts.qsmxt_functions import extend_fname
+from qsmxt.interfaces.nipype_interface_processphase import seed_from_array
 from nipype.interfaces.base import SimpleInterface, BaseInterfaceInputSpec, TraitedSpec, File, traits
 
 def compute_b0_direction(affine):
@@ -70,8 +71,11 @@ def resample_to_axial(mag_nii=None, pha_nii=None, mask_nii=None):
         # add noise to zero values
         mask = pha_rot == 0
         if mask.sum() / mask.size >= 0.1:
-            np.random.seed()
-            noise = np.random.uniform(-np.pi, np.pi, pha_rot.shape)
+            # seed from the voxel data so the noise is fully reproducible; the
+            # previous bare np.random.seed() reseeded from system entropy and
+            # made every run produce a different result (see seed_from_array)
+            rng = np.random.default_rng(seed_from_array(pha_rot))
+            noise = rng.uniform(-np.pi, np.pi, pha_rot.shape)
             pha_rot[mask] = noise[mask]
 
         # create nifti objects

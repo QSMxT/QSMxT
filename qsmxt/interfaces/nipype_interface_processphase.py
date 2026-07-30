@@ -141,6 +141,18 @@ def seed_from_filename(filename):
     seed = hash_num % (2**32)  # Make seed 32-bit integer.
     return seed
 
+def seed_from_array(array):
+    # Derive a deterministic RNG seed from the voxel data itself rather than the
+    # file path. Seeding from the path made the injected phase noise depend on
+    # which derivative/output folder a run wrote to, so re-processing identical
+    # data into a different folder produced a different noise field and hence a
+    # different (but valid) QSM map. Hashing the array content keeps the noise
+    # reproducible for identical inputs regardless of path or output location.
+    arr = np.ascontiguousarray(array)
+    hash_obj = hashlib.md5(arr.tobytes())
+    hash_num = int(hash_obj.hexdigest(), 16)
+    return hash_num % (2**32)  # Make seed 32-bit integer.
+
 def scale_to_pi(phase_path, phase_scaled_path=None):
     # load input phase
     phase_nii = nib.load(phase_path)
@@ -155,9 +167,11 @@ def scale_to_pi(phase_path, phase_scaled_path=None):
     # if a significant portion is close to 0 or pi, replace with random values
     mask = np.logical_or((abs(abs(Φ_acc_wrapped) - np.pi)) < 1e-3, Φ_acc_wrapped == 0)
     if mask.sum() / mask.size >= 0.1:
-        seed_value = seed_from_filename(phase_path)
-        np.random.seed(seed_value)
-        noise = np.random.uniform(-np.pi, np.pi, Φ_acc_wrapped.shape)
+        # seed from the voxel data, not the path, so the noise is reproducible
+        # for identical inputs regardless of output folder (see seed_from_array)
+        seed_value = seed_from_array(Φ_acc_wrapped)
+        rng = np.random.default_rng(seed_value)
+        noise = rng.uniform(-np.pi, np.pi, Φ_acc_wrapped.shape)
         Φ_acc_wrapped[mask] = noise[mask]
         changed = True
     

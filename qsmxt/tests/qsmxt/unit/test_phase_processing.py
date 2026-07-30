@@ -7,7 +7,8 @@ from qsmxt.interfaces.nipype_interface_processphase import (
     frequency_to_normalized,
     phase_to_normalized,
     scale_to_pi,
-    seed_from_filename
+    seed_from_filename,
+    seed_from_array
 )
 from qsmxt.tests.qsmxt.fixtures.mock_helpers import mock_nibabel_io
 
@@ -154,7 +155,7 @@ class TestPhaseProcessing:
         phase_data = np.zeros((10, 10, 10))  # All zeros - should trigger replacement
         
         with mock_nibabel_io(phase_data) as (mock_load, mock_save, mock_img):
-            with patch('qsmxt.interfaces.nipype_interface_processphase.seed_from_filename', 
+            with patch('qsmxt.interfaces.nipype_interface_processphase.seed_from_array',
                       return_value=42):
                 scale_to_pi("test_phase.nii")
             
@@ -207,9 +208,41 @@ class TestPhaseProcessing:
         filename = "consistent_test.nii"
         
         seeds = [seed_from_filename(filename) for _ in range(10)]
-        
+
         # All seeds should be identical
         assert all(seed == seeds[0] for seed in seeds), "Seed generation not consistent"
+
+    def test_seed_from_array_content_based(self):
+        """Seed depends on voxel data content, not on any file path."""
+        rng = np.random.default_rng(0)
+        data1 = rng.uniform(-np.pi, np.pi, (8, 8, 8))
+        data2 = data1.copy()
+        data3 = rng.uniform(-np.pi, np.pi, (8, 8, 8))
+
+        # Identical content -> identical seed
+        assert seed_from_array(data1) == seed_from_array(data2)
+        # Different content -> different seed
+        assert seed_from_array(data1) != seed_from_array(data3)
+        # Valid 32-bit integer
+        assert 0 <= seed_from_array(data1) < 2**32
+
+    def test_scale_to_pi_reproducible_across_paths(self):
+        """Regression test for the repeatability bug: identical phase data must
+        produce identical scaled output regardless of the input file path /
+        output folder (the noise seed must come from the data, not the path)."""
+        phase_data = np.zeros((10, 10, 10))  # triggers noise replacement
+
+        with mock_nibabel_io(phase_data.copy()) as (mock_load, mock_save, mock_img):
+            scale_to_pi("/run_original/derivatives/sub-01_phase.nii")
+            saved_a = np.array(mock_img.call_args[1]['dataobj'])
+
+        with mock_nibabel_io(phase_data.copy()) as (mock_load, mock_save, mock_img):
+            scale_to_pi("/run_rerun/other_derivatives/sub-01_phase.nii")
+            saved_b = np.array(mock_img.call_args[1]['dataobj'])
+
+        # Same input data + different paths -> bit-identical result
+        assert np.array_equal(saved_a, saved_b), \
+            "scale_to_pi output depends on file path (repeatability bug)"
 
     @pytest.mark.parametrize("B0,TE,scale_factor", [
         (1.5, 0.01, 1),      # Low field, short TE
