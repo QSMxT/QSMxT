@@ -14,8 +14,32 @@ permissions:
   contents: write
 
 jobs:
+  # Releases are a repository-level event, so GitHub runs this workflow (from
+  # the default branch) for EVERY published release — including tags cut from
+  # the python-legacy line (v8.x), which have no Cargo project. Detect that and
+  # skip the Rust jobs so a legacy release doesn't produce a failing run.
+  # Legacy pip publishing is handled separately by publish-legacy.yml.
+  guard:
+    name: Guard (Rust release only)
+    runs-on: ubuntu-latest
+    outputs:
+      is_rust: ${{ steps.check.outputs.is_rust }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: check
+        shell: bash
+        run: |
+          if [ -f Cargo.toml ]; then
+            echo "is_rust=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_rust=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No Cargo.toml at ${GITHUB_REF_NAME} — skipping the Rust release workflow (legacy python-legacy tag). Use the 'Publish legacy pip package' workflow to publish to PyPI."
+          fi
+
   coverage-gate:
     name: Coverage Gate (90%)
+    needs: guard
+    if: needs.guard.outputs.is_rust == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
