@@ -1,0 +1,63 @@
+name: Publish legacy pip package
+
+# Publishes the legacy Python (v8.x) QSMxT package to PyPI.
+#
+# The old release-triggered publish workflow (python-publish.yml) lives only on
+# the python-legacy branch. GitHub only runs `release`-triggered workflows that
+# exist on the DEFAULT branch, and main is now the Rust rewrite — so publishing
+# a GitHub release no longer publishes the pip package. This manually-dispatched
+# workflow lives on the default branch (so it is dispatchable) and checks out the
+# legacy branch/tag itself to build and upload it.
+#
+# Run it from the Actions tab ("Run workflow") or with:
+#   gh workflow run publish-legacy.yml -f ref=python-legacy
+# Point `ref` at a branch (python-legacy) or a specific tag (e.g. v8.3.4).
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Legacy branch or tag to build and publish from"
+        required: true
+        default: python-legacy
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Verify this is the legacy Python line
+        shell: bash
+        run: |
+          if [ ! -f setup.py ] || [ -f Cargo.toml ]; then
+            echo "::error::ref '${{ inputs.ref }}' does not look like the legacy Python line (expected setup.py and no Cargo.toml). Refusing to publish."
+            exit 1
+          fi
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install build tooling
+        run: python -m pip install --upgrade pip build
+
+      - name: Build package
+        env:
+          # setup.py reads the version from docs/_config.yml keyed by this var
+          REQUIRED_VERSION_TYPE: DEPLOY_PACKAGE_VERSION
+        run: python -m build
+
+      - name: Show artifacts to be published
+        run: ls -l dist/
+
+      - name: Publish package to PyPI
+        uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
+        with:
+          user: __token__
+          password: ${{ secrets.PYPI_API_TOKEN }}
