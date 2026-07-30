@@ -1,7 +1,7 @@
 use std::io::Write;
 use std::sync::Mutex;
 
-use log::{error, info};
+use log::{error, info, warn};
 
 use crate::bids::discovery::{self, DiscoveryFilter};
 use crate::bids::derivatives::DerivativeOutputs;
@@ -117,9 +117,9 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         return Ok(());
     }
 
-    // Resolve output: <dir>/derivatives/qsmxt.rs/
+    // Resolve output: <dir>/derivatives/qsmxt/
     let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
-    let derivatives_dir = base_dir.join("derivatives").join("qsmxt.rs");
+    let derivatives_dir = base_dir.join("derivatives").join("qsmxt");
     std::fs::create_dir_all(&derivatives_dir)?;
 
     // Set up logger: write to both stderr and a log file
@@ -154,7 +154,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         .ok();
 
     // Log version info
-    info!("qsmxt.rs {}", env!("CARGO_PKG_VERSION"));
+    info!("qsmxt {}", env!("CARGO_PKG_VERSION"));
     info!("QSM.rs {} ({})", env!("QSM_CORE_VERSION"), env!("QSM_CORE_GIT_HASH"));
     info!(
         "Processing {} run(s) across {} subject(s)",
@@ -163,6 +163,12 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     );
 
     let output = DerivativeOutputs::new(&derivatives_dir);
+
+    // Write the BIDS derivative dataset_description.json (required for a valid
+    // derivative dataset) and a .bidsignore for non-BIDS pipeline artefacts.
+    crate::bids::dataset_description::write(&derivatives_dir, &args.bids_dir)?;
+    crate::bids::dataset_description::write_bidsignore(&derivatives_dir)?;
+    crate::bids::dataset_description::write_readme(&derivatives_dir)?;
 
     // Save config to derivatives dir
     let config_path = derivatives_dir.join("pipeline_config.toml");
@@ -182,7 +188,14 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         dicom_outputs: args.dicom_outputs.clone(),
     };
 
-    let results = executor::local::execute_local(runs, &config, &output, &exec_config);
+    let results = executor::local::execute_local(&runs, &config, &output, &exec_config);
+
+    // Write BEP028 (BIDS-Prov) records and per-output GeneratedBy sidecars.
+    // Best-effort: provenance output must never fail an otherwise-successful run.
+    let command_line = std::env::args().collect::<Vec<_>>().join(" ");
+    if let Err(e) = crate::bids::bidsprov::write_provenance(&derivatives_dir, &runs, &output, &command_line) {
+        warn!("Failed to write BIDS-Prov provenance records: {}", e);
+    }
 
     let failures: Vec<_> = results.iter().filter(|r| r.is_err()).collect();
     if !failures.is_empty() {

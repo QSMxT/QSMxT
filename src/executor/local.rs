@@ -27,12 +27,12 @@ pub struct ExecutionConfig {
 /// When `mem_limit_bytes` is set, estimates per-run memory usage from
 /// volume dimensions and limits concurrency to avoid exceeding the limit.
 pub fn execute_local(
-    runs: Vec<QsmRun>,
+    runs: &[QsmRun],
     config: &PipelineConfig,
     output: &DerivativeOutputs,
     exec_config: &ExecutionConfig,
 ) -> Vec<crate::Result<()>> {
-    let n_threads = compute_concurrency(&runs, config, exec_config);
+    let n_threads = compute_concurrency(runs, config, exec_config);
 
     rayon::ThreadPoolBuilder::new()
         .num_threads(n_threads)

@@ -25,7 +25,7 @@ pub fn generate_all_slurm(
     mem_gb: usize,
     cpus: usize,
 ) -> crate::Result<Vec<PathBuf>> {
-    let derivatives_dir = output_dir.join("derivatives").join("qsmxt.rs");
+    let derivatives_dir = output_dir.join("derivatives").join("qsmxt");
     let slurm_dir = derivatives_dir.join("slurm");
     std::fs::create_dir_all(&slurm_dir)?;
 

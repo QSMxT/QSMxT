@@ -44,7 +44,7 @@ qsmxt run study/bids
 ```
 
 QSMxT discovers every phase/magnitude run in the dataset and reconstructs a QSM
-map for each, writing results to `study/bids/derivatives/qsmxt.rs/`. With no
+map for each, writing results to `study/bids/derivatives/qsmxt/`. With no
 configuration it uses sensible defaults: ROMEO unwrapping, V-SHARP background
 removal, and RTS dipole inversion. Pick algorithms inline or process a subset:
 
@@ -61,7 +61,7 @@ runs the same reconstruction algorithms entirely in your browser.
 
 ## What you get
 
-Outputs land under `derivatives/qsmxt.rs/` as BIDS-compliant NIfTIs — one QSM map
+Outputs land under `derivatives/qsmxt/` as BIDS-compliant NIfTIs — one QSM map
 per run, plus any [supplementary outputs](/QSMxT/reference/tools/) you enabled
 (SWI, T2\*, R2\*, RSS-combined magnitude). A `references.txt` lists citations for
 the exact methods your data and settings used.

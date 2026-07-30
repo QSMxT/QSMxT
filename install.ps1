@@ -1,4 +1,4 @@
-# QSMxT.rs installer for Windows
+# QSMxT installer for Windows
 # Usage: irm https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.ps1 | iex
 
 $ErrorActionPreference = "Stop"

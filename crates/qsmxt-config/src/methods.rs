@@ -168,12 +168,12 @@ const CITE_QSMBLY: Citation = Citation {
 };
 
 /// Generate a methods description and citation list from a pipeline configuration.
-/// Uses "qsmxt.rs" as the tool name by default.
+/// Uses "qsmxt" as the tool name by default.
 pub fn generate_methods(config: &PipelineConfig) -> String {
-    generate_methods_for(config, "qsmxt.rs")
+    generate_methods_for(config, "qsmxt")
 }
 
-/// Generate methods for a specific tool (e.g. "qsmxt.rs" or "QSMbly").
+/// Generate methods for a specific tool (e.g. "qsmxt" or "QSMbly").
 pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     let mut sentences = Vec::new();
     let mut citations: Vec<&Citation> = Vec::new();
@@ -544,7 +544,7 @@ mod tests {
     fn test_default_methods() {
         let config = PipelineConfig::default();
         let out = generate_methods(&config);
-        assert!(out.contains("QSM processing was performed using qsmxt.rs"));
+        assert!(out.contains("QSM processing was performed using qsmxt"));
         assert!(out.contains("Phase offset removal"));
         assert!(out.contains("ROMEO"));
         assert!(out.contains("V-SHARP"));

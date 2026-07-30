@@ -1,5 +1,5 @@
 //! Pipeline configuration — re-exports from qsmxt-config library
-//! plus qsmxt.rs-specific extensions (file I/O, CLI override mapping).
+//! plus qsmxt-specific extensions (file I/O, CLI override mapping).
 
 use std::path::Path;
 use crate::cli;

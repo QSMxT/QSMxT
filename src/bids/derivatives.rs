@@ -94,7 +94,14 @@ impl DerivativeOutputs {
     // Final outputs
     pub fn qsm_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "Chimap") }
     pub fn mask_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "mask") }
-    pub fn magnitude_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "magnitude") }
+    /// Combined magnitude image.
+    ///
+    /// Named as a `part-mag` T2*-weighted anatomical (`_part-mag_T2starw`)
+    /// rather than the BIDS `magnitude` suffix, which is reserved for fieldmap
+    /// schemes that require accompanying Phase/Phase-difference/Fieldmap maps.
+    pub fn magnitude_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_part-mag_T2starw.nii", key.basename()))
+    }
     pub fn swi_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "swi") }
     pub fn swi_mip_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "minIP") }
     pub fn t2star_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "T2starmap") }
@@ -175,7 +182,7 @@ mod tests {
     #[test]
     fn test_magnitude_path() {
         let path = output().magnitude_path(&key_no_session());
-        assert_eq!(path, PathBuf::from("/out/sub-01/anat/sub-01_magnitude.nii"));
+        assert_eq!(path, PathBuf::from("/out/sub-01/anat/sub-01_part-mag_T2starw.nii"));
     }
 
     #[test]

@@ -619,11 +619,38 @@ mod integration_tests {
         args.no_mem_limit = true;
         super::run::execute(args).unwrap();
 
-        let deriv = out.join("derivatives/qsmxt.rs");
+        let deriv = out.join("derivatives/qsmxt");
         assert!(deriv.join("sub-1/anat/sub-1_Chimap.nii").exists());
         assert!(deriv.join("sub-1/anat/sub-1_mask.nii").exists());
-        assert!(deriv.join("sub-1/anat/sub-1_magnitude.nii").exists());
+        assert!(deriv.join("sub-1/anat/sub-1_part-mag_T2starw.nii").exists());
         assert!(deriv.join("pipeline_config.toml").exists());
+        assert!(deriv.join("dataset_description.json").exists());
+
+        // BEP028 (BIDS-Prov) records
+        assert!(deriv.join("prov/prov-qsmxt_base.json").exists());
+        assert!(deriv.join("prov/prov-qsmxt_soft.json").exists());
+        assert!(deriv.join("prov/prov-qsmxt_env.json").exists());
+        assert!(deriv.join("prov/prov-qsmxt_act.json").exists());
+        assert!(deriv.join("prov/prov-qsmxt_ent.json").exists());
+
+        // The final QSM map has a GeneratedBy sidecar referencing the
+        // reference-step activity that produced it.
+        let sidecar: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(deriv.join("sub-1/anat/sub-1_Chimap.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(sidecar["GeneratedBy"], "bids::prov/#reference-sub-1");
+        // SkullStripped is required for derivative anat images; the QSM map is
+        // referenced within the brain mask.
+        assert_eq!(sidecar["SkullStripped"], true);
+        assert!(deriv.join(".bidsignore").exists());
+
+        // The referenced activity exists in the activity records.
+        let act: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(deriv.join("prov/prov-qsmxt_act.json")).unwrap(),
+        )
+        .unwrap();
+        assert!(act.get("bids::prov/#reference-sub-1").is_some());
     }
 
     #[test]
@@ -647,10 +674,10 @@ mod integration_tests {
         // First run: produces all outputs
         super::run::execute(make_args()).unwrap();
 
-        let deriv = out.join("derivatives/qsmxt.rs");
+        let deriv = out.join("derivatives/qsmxt");
         let qsm = deriv.join("sub-1/anat/sub-1_Chimap.nii");
         let mask = deriv.join("sub-1/anat/sub-1_mask.nii");
-        let mag = deriv.join("sub-1/anat/sub-1_magnitude.nii");
+        let mag = deriv.join("sub-1/anat/sub-1_part-mag_T2starw.nii");
         assert!(qsm.exists());
         assert!(mask.exists());
         assert!(mag.exists());
@@ -697,7 +724,7 @@ mod integration_tests {
         // First run: QSM only (no T2*)
         super::run::execute(make_args(false)).unwrap();
 
-        let deriv = out.join("derivatives/qsmxt.rs");
+        let deriv = out.join("derivatives/qsmxt");
         let qsm = deriv.join("sub-1/anat/sub-1_Chimap.nii");
         assert!(qsm.exists());
         let qsm_mtime = std::fs::metadata(&qsm).unwrap().modified().unwrap();
@@ -733,7 +760,7 @@ mod integration_tests {
         args.do_r2starmap = true;
         super::run::execute(args).unwrap();
 
-        let deriv = out.join("derivatives/qsmxt.rs");
+        let deriv = out.join("derivatives/qsmxt");
         assert!(deriv.join("sub-1/anat/sub-1_Chimap.nii").exists());
         assert!(deriv.join("sub-1/anat/sub-1_swi.nii").exists());
         assert!(deriv.join("sub-1/anat/sub-1_T2starmap.nii").exists());
@@ -758,7 +785,7 @@ mod integration_tests {
         args.mask_sections_cli = Some(vec!["phase-quality,threshold:otsu".to_string()]);
         super::run::execute(args).unwrap();
 
-        assert!(out.join("derivatives/qsmxt.rs/sub-1/anat/sub-1_Chimap.nii").exists());
+        assert!(out.join("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii").exists());
     }
 
     #[test]
@@ -778,7 +805,7 @@ mod integration_tests {
         args.mask_sections_cli = Some(vec!["phase-quality,threshold:otsu,dilate:1,erode:1".to_string()]);
         super::run::execute(args).unwrap();
 
-        assert!(out.join("derivatives/qsmxt.rs/sub-1/anat/sub-1_Chimap.nii").exists());
+        assert!(out.join("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii").exists());
     }
 
     // --- Invert algorithms ---
@@ -953,7 +980,7 @@ mod integration_tests {
             include: None, exclude: None, num_echoes: None,
         }).unwrap();
 
-        assert!(out.join("derivatives/qsmxt.rs/slurm").exists());
+        assert!(out.join("derivatives/qsmxt/slurm").exists());
     }
 
     #[test]

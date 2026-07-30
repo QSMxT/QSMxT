@@ -547,7 +547,7 @@ pub struct RunArgs {
     /// Input BIDS directory
     pub bids_dir: PathBuf,
 
-    /// Output directory (defaults to bids_dir; outputs go into <dir>/derivatives/qsmxt.rs/)
+    /// Output directory (defaults to bids_dir; outputs go into <dir>/derivatives/qsmxt/)
     pub output_dir: Option<PathBuf>,
 
     /// Pipeline configuration file (TOML)
@@ -821,7 +821,7 @@ pub struct SlurmArgs {
     /// Input BIDS directory
     pub bids_dir: PathBuf,
 
-    /// Output directory (defaults to bids_dir; outputs go into <dir>/derivatives/qsmxt.rs/)
+    /// Output directory (defaults to bids_dir; outputs go into <dir>/derivatives/qsmxt/)
     pub output_dir: Option<PathBuf>,
 
     /// SLURM account name

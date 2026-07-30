@@ -1,5 +1,5 @@
 #!/bin/sh
-# QSMxT.rs installer — downloads the latest release binary for your platform.
+# QSMxT installer — downloads the latest release binary for your platform.
 # Usage: curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.sh | sh
 
 set -e

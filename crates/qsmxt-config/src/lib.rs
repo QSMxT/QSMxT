@@ -1,7 +1,7 @@
 //! QSMxT Pipeline Configuration Library
 //!
 //! Shared configuration, command generation, and methods text for QSMxT tools.
-//! Used by both qsmxt.rs (CLI/TUI) and qsmbly (browser WASM).
+//! Used by both qsmxt (CLI/TUI) and qsmbly (browser WASM).
 
 pub mod error;
 pub mod enums;

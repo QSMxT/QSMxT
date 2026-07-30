@@ -26,7 +26,7 @@ qsmxt run <BIDS_DIR> [OUTPUT_DIR]
 
 - `<BIDS_DIR>` — input BIDS directory
 - `[OUTPUT_DIR]` — defaults to `<BIDS_DIR>`; results go to
-  `<OUTPUT_DIR>/derivatives/qsmxt.rs/`
+  `<OUTPUT_DIR>/derivatives/qsmxt/`
 
 With no options, QSMxT runs with sensible defaults end to end. Need a BIDS dataset
 first? See [Converting DICOMs to BIDS](#converting-dicoms-to-bids) below.
@@ -116,7 +116,7 @@ the whole pipeline.
 ### Output
 
 ```
-study/bids/derivatives/qsmxt.rs/
+study/bids/derivatives/qsmxt/
 └── sub-01/
     └── anat/
         └── sub-01_…_Chimap.nii.gz

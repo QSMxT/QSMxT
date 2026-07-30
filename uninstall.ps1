@@ -1,4 +1,4 @@
-# QSMxT.rs uninstaller for Windows
+# QSMxT uninstaller for Windows
 # Usage: irm https://raw.githubusercontent.com/QSMxT/QSMxT/main/uninstall.ps1 | iex
 
 $ErrorActionPreference = "Stop"
