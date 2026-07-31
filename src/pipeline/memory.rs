@@ -139,6 +139,8 @@ fn estimate_standard_pipeline(n: usize, n_echoes: usize, config: &PipelineConfig
         QsmAlgorithm::Rts => 160 * n,
         // MEDI: magnitude + edge weights + CG buffers
         QsmAlgorithm::Medi => 180 * n,
+        // TFI: preconditioned total-field CG, similar footprint to MEDI
+        QsmAlgorithm::Tfi => 180 * n,
         QsmAlgorithm::Tgv => unreachable!("TGV handled separately"),
         QsmAlgorithm::Qsmart => unreachable!("QSMART handled separately"),
         // NDI: gradient-descent with dipole kernel + a few field buffers

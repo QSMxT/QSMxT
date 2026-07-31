@@ -58,6 +58,7 @@ mod integration_tests {
             tikhonov_params: Default::default(),
             nltv_params: Default::default(),
             medi_params: Default::default(),
+            tfi_params: Default::default(),
             ilsqr_params: Default::default(),
             qsmart_params: Default::default(),
             ndi_params: Default::default(),

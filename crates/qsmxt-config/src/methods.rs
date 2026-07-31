@@ -97,6 +97,11 @@ const CITE_MEDI: Citation = Citation {
     text: "Liu, T., et al. (2011). \"Morphology enabled dipole inversion (MEDI) from a single-angle acquisition.\" *Magnetic Resonance in Medicine*, 66(3):777-783. https://doi.org/10.1002/mrm.22816",
 };
 
+const CITE_TFI: Citation = Citation {
+    key: "liu2017tfi",
+    text: "Liu, Z., et al. (2017). \"Preconditioned total field inversion (TFI) method for quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 78(1):303-315. https://doi.org/10.1002/mrm.26331",
+};
+
 const CITE_ILSQR: Citation = Citation {
     key: "li2015",
     text: "Li, W., et al. (2015). \"A method for estimating and removing streaking artifacts in quantitative susceptibility mapping.\" *NeuroImage*, 108:111-122. https://doi.org/10.1016/j.neuroimage.2014.12.043",
@@ -481,6 +486,7 @@ fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
         QsmAlgorithm::Tikhonov => ("Tikhonov regularization", &CITE_TIKHONOV),
         QsmAlgorithm::Nltv => ("NLTV (Nonlinear Total Variation)", &CITE_NLTV),
         QsmAlgorithm::Medi => ("MEDI (Morphology Enabled Dipole Inversion)", &CITE_MEDI),
+        QsmAlgorithm::Tfi => ("TFI (Total Field Inversion)", &CITE_TFI),
         QsmAlgorithm::Ilsqr => ("iLSQR", &CITE_ILSQR),
         QsmAlgorithm::Ndi => ("NDI (Nonlinear Dipole Inversion)", &CITE_NDI),
         QsmAlgorithm::Fansi => ("FANSI (Nonlinear TV)", &CITE_NLTV),
@@ -504,6 +510,7 @@ fn cite_inline(cite: &Citation) -> &'static str {
         "shmueli2009" => "Shmueli et al., 2009",
         "bilgic2014l2" => "Bilgic et al., 2014",
         "liu2011medi" => "Liu et al., 2011",
+        "liu2017tfi" => "Liu et al., 2017",
         "milovic2018" => "Milovic et al., 2018",
         "polak2020" => "Polak et al., 2020",
         "milovic2022" => "Milovic et al., 2022",
@@ -1026,6 +1033,7 @@ mod tests {
             (QsmAlgorithm::Tikhonov, "Tikhonov"),
             (QsmAlgorithm::Nltv, "NLTV"),
             (QsmAlgorithm::Medi, "MEDI"),
+            (QsmAlgorithm::Tfi, "TFI"),
             (QsmAlgorithm::Ilsqr, "iLSQR"),
             (QsmAlgorithm::Ndi, "NDI"),
             (QsmAlgorithm::Fansi, "FANSI (Nonlinear TV)"),

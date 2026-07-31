@@ -55,6 +55,10 @@ param_config!(MediConfig from qsm_core::inversion::MediParams {
     lambda: f64, merit: bool, smv: bool, smv_radius: f64, data_weighting: i32,
     percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
 });
+param_config!(TfiConfig from qsm_core::inversion::TfiParams {
+    lambda: f64, precond: f64, merit: bool, data_weighting: i32,
+    percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
+});
 param_config!(IlsqrConfig from qsm_core::inversion::IlsqrParams { tol: f64, max_iter: usize });
 param_config!(VsharpConfig from qsm_core::bgremove::VsharpParams {
     threshold: f64, max_radius: f64, min_radius: f64
@@ -365,6 +369,7 @@ pub struct InversionConfig {
     pub tikhonov: TikhonovConfig,
     pub nltv: NltvConfig,
     pub medi: MediConfig,
+    pub tfi: TfiConfig,
     pub ilsqr: IlsqrConfig,
     pub tgv: TgvConfig,
     pub qsmart: QsmartConfig,
@@ -381,7 +386,7 @@ impl Default for InversionConfig {
             rts: RtsConfig::default(), tv: TvConfig::default(),
             tkd: TkdConfig::default(), tsvd: TkdConfig::default(),
             tikhonov: TikhonovConfig::default(), nltv: NltvConfig::default(),
-            medi: MediConfig::default(), ilsqr: IlsqrConfig::default(),
+            medi: MediConfig::default(), tfi: TfiConfig::default(), ilsqr: IlsqrConfig::default(),
             tgv: TgvConfig::default(), qsmart: QsmartConfig::default(),
             ndi: NdiConfig::default(), fansi: FansiConfig::default(),
             l1qsm: L1qsmConfig::default(), whqsm: WhqsmConfig::default(),

@@ -110,6 +110,7 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         QsmAlgorithmArg::Tikhonov,
         QsmAlgorithmArg::Nltv,
         QsmAlgorithmArg::Medi,
+        QsmAlgorithmArg::Tfi,
         QsmAlgorithmArg::Ilsqr,
         QsmAlgorithmArg::Qsmart,
         QsmAlgorithmArg::Ndi,
@@ -210,6 +211,17 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
             medi_max_iter: parse_optional_usize(&ps.medi_max_iter),
             medi_tol: parse_optional_f64(&ps.medi_tol),
         },
+        tfi_params: crate::cli::TfiParamArgs {
+            tfi_lambda: parse_optional_f64(&ps.tfi_lambda),
+            tfi_precond: parse_optional_f64(&ps.tfi_precond),
+            tfi_merit: None,
+            tfi_data_weighting: None,
+            tfi_percentage: parse_optional_f64(&ps.tfi_percentage),
+            tfi_cg_tol: parse_optional_f64(&ps.tfi_cg_tol),
+            tfi_cg_max_iter: parse_optional_usize(&ps.tfi_cg_max_iter),
+            tfi_max_iter: parse_optional_usize(&ps.tfi_max_iter),
+            tfi_tol: parse_optional_f64(&ps.tfi_tol),
+        },
         ilsqr_params: crate::cli::IlsqrParamArgs {
             ilsqr_tol: parse_optional_f64(&ps.ilsqr_tol),
             ilsqr_max_iter: parse_optional_usize(&ps.ilsqr_max_iter),
@@ -219,7 +231,7 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
             qsmart_ilsqr_max_iter: parse_optional_usize(&ps.qsmart_ilsqr_max_iter),
             qsmart_vasc_sphere_radius: ps.qsmart_vasc_sphere_radius.trim().parse::<i32>().ok(),
             qsmart_sdf_spatial_radius: ps.qsmart_sdf_spatial_radius.trim().parse::<i32>().ok(),
-            qsmart_inversion: if ps.qsm_algorithm == 9 {
+            qsmart_inversion: if ps.qsm_algorithm == 10 {
                 [
                     crate::cli::QsmAlgorithmArg::Ilsqr, crate::cli::QsmAlgorithmArg::Rts,
                     crate::cli::QsmAlgorithmArg::Tv, crate::cli::QsmAlgorithmArg::Tkd,
@@ -465,6 +477,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     let qsm_algorithms = [
         QsmAlgorithm::Rts, QsmAlgorithm::Tv, QsmAlgorithm::Tkd, QsmAlgorithm::Tsvd,
         QsmAlgorithm::Tgv, QsmAlgorithm::Tikhonov, QsmAlgorithm::Nltv, QsmAlgorithm::Medi,
+        QsmAlgorithm::Tfi,
         QsmAlgorithm::Ilsqr, QsmAlgorithm::Qsmart,
         QsmAlgorithm::Ndi, QsmAlgorithm::Fansi, QsmAlgorithm::FansiTgv,
         QsmAlgorithm::L1qsm, QsmAlgorithm::Whqsm, QsmAlgorithm::Hdqsm,
@@ -616,6 +629,15 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     set_f64!(config.inversion.medi.percentage, ps.medi_percentage);
     set_f64!(config.inversion.medi.smv_radius, ps.medi_smv_radius);
     config.inversion.medi.smv = ps.medi_smv;
+
+    // TFI
+    set_f64!(config.inversion.tfi.lambda, ps.tfi_lambda);
+    set_f64!(config.inversion.tfi.precond, ps.tfi_precond);
+    set_usize!(config.inversion.tfi.max_iter, ps.tfi_max_iter);
+    set_usize!(config.inversion.tfi.cg_max_iter, ps.tfi_cg_max_iter);
+    set_f64!(config.inversion.tfi.cg_tol, ps.tfi_cg_tol);
+    set_f64!(config.inversion.tfi.tol, ps.tfi_tol);
+    set_f64!(config.inversion.tfi.percentage, ps.tfi_percentage);
 
     // TGV
     set_usize!(config.inversion.tgv.iterations, ps.tgv_iterations);

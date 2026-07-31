@@ -986,6 +986,15 @@ pub struct PipelineFormState {
     pub medi_percentage: String,
     pub medi_smv_radius: String,
 
+    // TFI
+    pub tfi_lambda: String,
+    pub tfi_precond: String,
+    pub tfi_max_iter: String,
+    pub tfi_cg_max_iter: String,
+    pub tfi_cg_tol: String,
+    pub tfi_tol: String,
+    pub tfi_percentage: String,
+
     // V-SHARP
     pub vsharp_threshold: String,
     pub vsharp_max_radius: String,
@@ -1181,6 +1190,13 @@ impl Default for PipelineFormState {
             medi_tol: format!("{}", qsm_core::inversion::MediParams::default().tol),
             medi_percentage: format!("{}", qsm_core::inversion::MediParams::default().percentage),
             medi_smv_radius: format!("{}", qsm_core::inversion::MediParams::default().smv_radius),
+            tfi_lambda: format!("{}", qsm_core::inversion::TfiParams::default().lambda),
+            tfi_precond: format!("{}", qsm_core::inversion::TfiParams::default().precond),
+            tfi_max_iter: format!("{}", qsm_core::inversion::TfiParams::default().max_iter),
+            tfi_cg_max_iter: format!("{}", qsm_core::inversion::TfiParams::default().cg_max_iter),
+            tfi_cg_tol: format!("{}", qsm_core::inversion::TfiParams::default().cg_tol),
+            tfi_tol: format!("{}", qsm_core::inversion::TfiParams::default().tol),
+            tfi_percentage: format!("{}", qsm_core::inversion::TfiParams::default().percentage),
             vsharp_threshold: format!("{}", qsm_core::bgremove::VsharpParams::default().threshold),
             vsharp_max_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().max_radius),
             vsharp_min_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().min_radius),
@@ -1288,7 +1304,7 @@ impl Default for PipelineFormState {
     }
 }
 
-pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "ilsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm"];
+pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm"];
 // QSMART's inner dipole inversion (excludes the two end-to-end algorithms tgv/qsmart).
 pub const QSMART_INV_OPTIONS: &[&str] = &["ilsqr", "rts", "tv", "tkd", "tsvd", "tikhonov", "nltv", "medi"];
 const QSMART_INV_HELP: &[&str] = &[
@@ -1323,7 +1339,7 @@ impl PipelineFormState {
     pub fn visible_rows(&self) -> Vec<PipelineRow> {
         let mut rows = Vec::new();
         let is_tgv = self.qsm_algorithm == 4;
-        let is_qsmart = self.qsm_algorithm == 9;
+        let is_qsmart = self.qsm_algorithm == 10;
         let is_medi_smv = self.qsm_algorithm == 7 && self.medi_smv;
 
         // QSM toggle
@@ -1549,11 +1565,20 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "medi_tol", help: "Outer convergence tolerance" });
             }
-            8 => { // iLSQR
+            8 => { // TFI
+                rows.push(PipelineRow::Param { label: "  Lambda", field: "tfi_lambda", help: "Regularization weight" });
+                rows.push(PipelineRow::Param { label: "  Precond", field: "tfi_precond", help: "Preconditioner value (susceptibility scaling outside the mask)" });
+                rows.push(PipelineRow::Param { label: "  Percentage", field: "tfi_percentage", help: "Fraction of voxels considered edges (0.0-1.0)" });
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "tfi_max_iter", help: "Maximum outer iterations" });
+                rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "tfi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
+                rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "tfi_cg_tol", help: "CG convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "tfi_tol", help: "Outer convergence tolerance" });
+            }
+            9 => { // iLSQR
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "ilsqr_tol", help: "Convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Max Iter", field: "ilsqr_max_iter", help: "Maximum iterations" });
             }
-            9 => { // QSMART
+            10 => { // QSMART
                 rows.push(PipelineRow::Note {
                     text: "⚠ QSMART needs a tight BET brain mask — loose masks cause streaking (set mask below)",
                 });
@@ -1625,13 +1650,13 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Frangi Step (mm)", field: "qsmart_frangi_scale_ratio", help: "Frangi scale step (mm)" });
                 rows.push(PipelineRow::Param { label: "  Frangi C", field: "qsmart_frangi_c", help: "Frangi C noise threshold" });
             }
-            10 => { // NDI
+            11 => { // NDI
                 rows.push(PipelineRow::Param { label: "  Tau", field: "ndi_tau", help: "Gradient-descent step size" });
                 rows.push(PipelineRow::Param { label: "  Alpha", field: "ndi_alpha", help: "L2 regularization weight" });
                 rows.push(PipelineRow::Param { label: "  Max Iter", field: "ndi_max_iter", help: "Number of iterations" });
                 rows.push(PipelineRow::Param { label: "  Phase Scale", field: "ndi_phase_scale", help: "ppm -> working-scale multiplier" });
             }
-            11 | 12 => { // FANSI nlTV (11) / nlTGV (12) — shared params
+            12 | 13 => { // FANSI nlTV (12) / nlTGV (13) — shared params
                 rows.push(PipelineRow::Param { label: "  Alpha1", field: "fansi_alpha1", help: "First-order (TV/TGV) L1 penalty weight" });
                 rows.push(PipelineRow::Param { label: "  Mu1", field: "fansi_mu1", help: "Gradient-consistency ADMM weight" });
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "fansi_mu2", help: "Fidelity-consistency ADMM weight" });
@@ -1642,7 +1667,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Tol Delta", field: "fansi_tol_delta", help: "Inner Newton convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Phase Scale", field: "fansi_phase_scale", help: "ppm -> working-scale multiplier" });
             }
-            13 => { // L1-QSM
+            14 => { // L1-QSM
                 rows.push(PipelineRow::Param { label: "  Alpha1", field: "l1qsm_alpha1", help: "Gradient (TV) L1 penalty weight" });
                 rows.push(PipelineRow::Param { label: "  Mu1", field: "l1qsm_mu1", help: "Gradient-consistency ADMM weight" });
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "l1qsm_mu2", help: "Fidelity-consistency ADMM weight" });
@@ -1653,7 +1678,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Tol Delta", field: "l1qsm_tol_delta", help: "Inner Newton convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Phase Scale", field: "l1qsm_phase_scale", help: "ppm -> working-scale multiplier" });
             }
-            14 => { // WH-QSM
+            15 => { // WH-QSM
                 rows.push(PipelineRow::Param { label: "  Alpha1", field: "whqsm_alpha1", help: "TV regularization weight" });
                 rows.push(PipelineRow::Param { label: "  Mu1", field: "whqsm_mu1", help: "ADMM penalty for TV splitting" });
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "whqsm_mu2", help: "ADMM penalty for data-fidelity splitting" });
@@ -1664,7 +1689,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Tol Delta", field: "whqsm_tol_delta", help: "Inner Newton stopping tolerance" });
                 rows.push(PipelineRow::Param { label: "  Phase Scale", field: "whqsm_phase_scale", help: "ppm -> working-scale multiplier" });
             }
-            15 => { // HD-QSM
+            16 => { // HD-QSM
                 rows.push(PipelineRow::Param { label: "  Alpha L2", field: "hdqsm_alpha_l2", help: "L2-stage TV weight" });
                 rows.push(PipelineRow::Param { label: "  Mu1 L2", field: "hdqsm_mu1_l2", help: "L2-stage gradient-consistency ADMM weight" });
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "hdqsm_mu2", help: "Fidelity consistency weight" });
@@ -1699,6 +1724,7 @@ impl PipelineFormState {
         "tikhonov_lambda",
         "nltv_lambda", "nltv_mu", "nltv_tol", "nltv_max_iter", "nltv_newton_iter",
         "medi_lambda", "medi_max_iter", "medi_cg_max_iter", "medi_cg_tol", "medi_tol", "medi_percentage", "medi_smv_radius",
+        "tfi_lambda", "tfi_precond", "tfi_max_iter", "tfi_cg_max_iter", "tfi_cg_tol", "tfi_tol", "tfi_percentage",
         "phase_offset_sigma", "romeo_template",
         "vsharp_threshold", "vsharp_max_radius", "vsharp_min_radius", "pdf_tol", "lbv_tol",
         "ismv_tol", "ismv_max_iter", "ismv_radius", "sharp_threshold", "sharp_radius",
@@ -1752,6 +1778,13 @@ impl PipelineFormState {
             "medi_tol" => &self.medi_tol,
             "medi_percentage" => &self.medi_percentage,
             "medi_smv_radius" => &self.medi_smv_radius,
+            "tfi_lambda" => &self.tfi_lambda,
+            "tfi_precond" => &self.tfi_precond,
+            "tfi_max_iter" => &self.tfi_max_iter,
+            "tfi_cg_max_iter" => &self.tfi_cg_max_iter,
+            "tfi_cg_tol" => &self.tfi_cg_tol,
+            "tfi_tol" => &self.tfi_tol,
+            "tfi_percentage" => &self.tfi_percentage,
             "phase_offset_sigma" => &self.phase_offset_sigma,
             "romeo_template" => &self.romeo_template,
             "custom_mask_tool" => &self.custom_mask_tool,
@@ -1870,6 +1903,13 @@ impl PipelineFormState {
             "medi_tol" => Some(&mut self.medi_tol),
             "medi_percentage" => Some(&mut self.medi_percentage),
             "medi_smv_radius" => Some(&mut self.medi_smv_radius),
+            "tfi_lambda" => Some(&mut self.tfi_lambda),
+            "tfi_precond" => Some(&mut self.tfi_precond),
+            "tfi_max_iter" => Some(&mut self.tfi_max_iter),
+            "tfi_cg_max_iter" => Some(&mut self.tfi_cg_max_iter),
+            "tfi_cg_tol" => Some(&mut self.tfi_cg_tol),
+            "tfi_tol" => Some(&mut self.tfi_tol),
+            "tfi_percentage" => Some(&mut self.tfi_percentage),
             "phase_offset_sigma" => Some(&mut self.phase_offset_sigma),
             "romeo_template" => Some(&mut self.romeo_template),
             "custom_mask_tool" => Some(&mut self.custom_mask_tool),

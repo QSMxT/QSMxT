@@ -26,6 +26,7 @@ fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
         cli::QsmAlgorithmArg::Nltv => QsmAlgorithm::Nltv,
         cli::QsmAlgorithmArg::Tsvd => QsmAlgorithm::Tsvd,
         cli::QsmAlgorithmArg::Medi => QsmAlgorithm::Medi,
+        cli::QsmAlgorithmArg::Tfi => QsmAlgorithm::Tfi,
         cli::QsmAlgorithmArg::Ilsqr => QsmAlgorithm::Ilsqr,
         cli::QsmAlgorithmArg::Qsmart => QsmAlgorithm::Qsmart,
         cli::QsmAlgorithmArg::Ndi => QsmAlgorithm::Ndi,
@@ -163,6 +164,15 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         if let Some(v) = args.medi_params.medi_percentage { config.inversion.medi.percentage = v; }
         if let Some(v) = args.medi_params.medi_smv_radius { config.inversion.medi.smv_radius = v; }
         if args.medi_params.medi_smv { config.inversion.medi.smv = true; }
+        if let Some(v) = args.tfi_params.tfi_lambda { config.inversion.tfi.lambda = v; }
+        if let Some(v) = args.tfi_params.tfi_precond { config.inversion.tfi.precond = v; }
+        if let Some(v) = args.tfi_params.tfi_data_weighting { config.inversion.tfi.data_weighting = v; }
+        if let Some(v) = args.tfi_params.tfi_percentage { config.inversion.tfi.percentage = v; }
+        if let Some(v) = args.tfi_params.tfi_cg_tol { config.inversion.tfi.cg_tol = v; }
+        if let Some(v) = args.tfi_params.tfi_cg_max_iter { config.inversion.tfi.cg_max_iter = v; }
+        if let Some(v) = args.tfi_params.tfi_max_iter { config.inversion.tfi.max_iter = v; }
+        if let Some(v) = args.tfi_params.tfi_tol { config.inversion.tfi.tol = v; }
+        if let Some(v) = args.tfi_params.tfi_merit { config.inversion.tfi.merit = v; }
         if let Some(v) = args.tgv_params.tgv_iterations { config.inversion.tgv.iterations = v; }
         if let Some(v) = args.tgv_params.tgv_erosions { config.inversion.tgv.erosions = v; }
         if let Some(v) = args.tgv_params.tgv_alpha1 { config.inversion.tgv.alpha1 = v; }
