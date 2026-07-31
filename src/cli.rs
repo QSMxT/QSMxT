@@ -361,6 +361,37 @@ pub struct MediParamArgs {
 }
 
 #[derive(Args, Debug, Default, Clone)]
+pub struct TfiParamArgs {
+    /// TFI lambda
+    #[arg(long)]
+    pub tfi_lambda: Option<f64>,
+    /// TFI preconditioner value (susceptibility scaling outside the mask)
+    #[arg(long)]
+    pub tfi_precond: Option<f64>,
+    /// TFI: enable MERIT weighting
+    #[arg(long)]
+    pub tfi_merit: Option<bool>,
+    /// TFI: data weighting mode (0=uniform, 1=SNR)
+    #[arg(long)]
+    pub tfi_data_weighting: Option<i32>,
+    /// TFI edge percentage (0.0-1.0)
+    #[arg(long)]
+    pub tfi_percentage: Option<f64>,
+    /// TFI CG tolerance
+    #[arg(long)]
+    pub tfi_cg_tol: Option<f64>,
+    /// TFI CG max iterations
+    #[arg(long)]
+    pub tfi_cg_max_iter: Option<usize>,
+    /// TFI max outer iterations
+    #[arg(long)]
+    pub tfi_max_iter: Option<usize>,
+    /// TFI outer tolerance
+    #[arg(long)]
+    pub tfi_tol: Option<f64>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
 pub struct IlsqrParamArgs {
     /// iLSQR tolerance
     #[arg(long)]
@@ -659,6 +690,8 @@ pub struct RunArgs {
     pub nltv_params: NltvParamArgs,
     #[command(flatten)]
     pub medi_params: MediParamArgs,
+    #[command(flatten)]
+    pub tfi_params: TfiParamArgs,
     #[command(flatten)]
     pub ilsqr_params: IlsqrParamArgs,
     #[command(flatten)]
@@ -1209,6 +1242,8 @@ pub enum InvertCommand {
     Nltv(InvertNltvArgs),
     /// Morphology Enabled Dipole Inversion
     Medi(InvertMediArgs),
+    /// Total Field Inversion (preconditioned). Input is the TOTAL field (not a local field).
+    Tfi(InvertTfiArgs),
     /// Iterative Least Squares QR
     Ilsqr(InvertIlsqrArgs),
     /// Nonlinear Dipole Inversion
@@ -1372,6 +1407,42 @@ pub struct InvertMediArgs {
     /// SMV radius in mm
     #[arg(long)]
     pub smv_radius: Option<f64>,
+    /// Data weighting mode (0=uniform, 1=SNR)
+    #[arg(long)]
+    pub data_weighting: Option<i32>,
+    /// Edge percentage (0.0-1.0)
+    #[arg(long)]
+    pub percentage: Option<f64>,
+    /// CG tolerance
+    #[arg(long)]
+    pub cg_tol: Option<f64>,
+    /// CG max iterations
+    #[arg(long)]
+    pub cg_max_iter: Option<usize>,
+    /// Max outer iterations
+    #[arg(long)]
+    pub max_iter: Option<usize>,
+    /// Outer tolerance
+    #[arg(long)]
+    pub tol: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct InvertTfiArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    /// Magnitude NIfTI file (recommended)
+    #[arg(long)]
+    pub magnitude: Option<PathBuf>,
+    /// Lambda
+    #[arg(long)]
+    pub lambda: Option<f64>,
+    /// Preconditioner value (susceptibility scaling outside the mask)
+    #[arg(long)]
+    pub precond: Option<f64>,
+    /// Enable MERIT weighting
+    #[arg(long)]
+    pub merit: Option<bool>,
     /// Data weighting mode (0=uniform, 1=SNR)
     #[arg(long)]
     pub data_weighting: Option<i32>,
@@ -1771,7 +1842,7 @@ pub struct QualityMapArgs {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum QsmAlgorithmArg {
-    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Ilsqr, Qsmart,
+    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Qsmart,
     Ndi, Fansi, FansiTgv, L1qsm, Whqsm, Hdqsm,
 }
 

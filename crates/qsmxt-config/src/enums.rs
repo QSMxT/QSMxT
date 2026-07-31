@@ -4,7 +4,7 @@ use std::fmt;
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum QsmAlgorithm {
-    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Ilsqr, Qsmart,
+    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Qsmart,
     Ndi, Fansi,
     #[serde(rename = "fansi-tgv")] FansiTgv,
     L1qsm, Whqsm, Hdqsm,
@@ -14,7 +14,7 @@ impl fmt::Display for QsmAlgorithm {
         write!(f, "{}", match self {
             Self::Rts => "rts", Self::Tv => "tv", Self::Tkd => "tkd", Self::Tsvd => "tsvd",
             Self::Tgv => "tgv", Self::Tikhonov => "tikhonov", Self::Nltv => "nltv",
-            Self::Medi => "medi", Self::Ilsqr => "ilsqr", Self::Qsmart => "qsmart",
+            Self::Medi => "medi", Self::Tfi => "tfi", Self::Ilsqr => "ilsqr", Self::Qsmart => "qsmart",
             Self::Ndi => "ndi", Self::Fansi => "fansi", Self::FansiTgv => "fansi-tgv",
             Self::L1qsm => "l1qsm", Self::Whqsm => "whqsm", Self::Hdqsm => "hdqsm",
         })

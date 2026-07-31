@@ -145,6 +145,15 @@ pub fn generate_command(config: &PipelineConfig) -> String {
                 parts.push("--medi-smv".into());
             }
         }
+        QsmAlgorithm::Tfi => {
+            emit_f64(&mut parts, "--tfi-lambda", config.inversion.tfi.lambda, d.inversion.tfi.lambda);
+            emit_f64(&mut parts, "--tfi-precond", config.inversion.tfi.precond, d.inversion.tfi.precond);
+            emit_f64(&mut parts, "--tfi-percentage", config.inversion.tfi.percentage, d.inversion.tfi.percentage);
+            emit_usize(&mut parts, "--tfi-max-iter", config.inversion.tfi.max_iter, d.inversion.tfi.max_iter);
+            emit_usize(&mut parts, "--tfi-cg-max-iter", config.inversion.tfi.cg_max_iter, d.inversion.tfi.cg_max_iter);
+            emit_f64(&mut parts, "--tfi-cg-tol", config.inversion.tfi.cg_tol, d.inversion.tfi.cg_tol);
+            emit_f64(&mut parts, "--tfi-tol", config.inversion.tfi.tol, d.inversion.tfi.tol);
+        }
         QsmAlgorithm::Ilsqr => {
             emit_f64(&mut parts, "--ilsqr-tol", config.inversion.ilsqr.tol, d.inversion.ilsqr.tol);
             emit_usize(&mut parts, "--ilsqr-max-iter", config.inversion.ilsqr.max_iter, d.inversion.ilsqr.max_iter);
@@ -346,7 +355,8 @@ mod tests {
             (QsmAlgorithm::Tv, "tv"), (QsmAlgorithm::Tkd, "tkd"),
             (QsmAlgorithm::Tsvd, "tsvd"), (QsmAlgorithm::Tgv, "tgv"),
             (QsmAlgorithm::Tikhonov, "tikhonov"), (QsmAlgorithm::Nltv, "nltv"),
-            (QsmAlgorithm::Medi, "medi"), (QsmAlgorithm::Ilsqr, "ilsqr"),
+            (QsmAlgorithm::Medi, "medi"), (QsmAlgorithm::Tfi, "tfi"),
+            (QsmAlgorithm::Ilsqr, "ilsqr"),
             (QsmAlgorithm::Qsmart, "qsmart"),
             (QsmAlgorithm::Ndi, "ndi"), (QsmAlgorithm::Fansi, "fansi"),
             (QsmAlgorithm::FansiTgv, "fansi-tgv"), (QsmAlgorithm::L1qsm, "l1qsm"),

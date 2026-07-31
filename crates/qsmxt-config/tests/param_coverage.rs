@@ -66,6 +66,7 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     cover!(q::inversion::TikhonovParams => c::TikhonovConfig);
     cover!(q::inversion::NltvParams => c::NltvConfig);
     cover!(q::inversion::MediParams => c::MediConfig);
+    cover!(q::inversion::TfiParams => c::TfiConfig);
     cover!(q::inversion::IlsqrParams => c::IlsqrConfig);
     // fieldstrength/te are runtime scan parameters, not user knobs.
     cover!(q::inversion::TgvParams => c::TgvConfig, ignore: ["fieldstrength", "te"]);

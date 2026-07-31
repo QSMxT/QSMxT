@@ -325,6 +325,48 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let chi: Vec<f64> = chi_rad.iter().map(|&v| v / ppm_to_rad).collect();
             (c, (chi, field_nifti))
         }
+        InvertCommand::Tfi(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let grid = super::common::nifti_grid(&field_nifti);
+            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
+            info!("Dipole inversion (TFI, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            // TFI takes the TOTAL field in ppm (same convention as NDI and the other inversions —
+            // NOT MEDI's radians). No conversion: scaling the large total field to radians would
+            // wrap it in the exp(i·field) data term. χ comes back in ppm.
+            let d = qsm_core::inversion::TfiParams::default();
+            let n_voxels = field_nifti.data.len();
+            let (n_std, magnitude) = if let Some(ref mag_path) = args.magnitude {
+                let mag_nifti = load_nifti(mag_path)?;
+                // A multi-echo magnitude arrives 4D; TFI uses a single 3D volume (first echo).
+                let mag = if mag_nifti.data.len() > n_voxels {
+                    mag_nifti.data[..n_voxels].to_vec()
+                } else {
+                    mag_nifti.data
+                };
+                (vec![1.0f64; n_voxels], mag)
+            } else {
+                warn!("No --magnitude provided for TFI; using uniform magnitude (results may be suboptimal)");
+                (vec![1.0f64; n_voxels], vec![1.0f64; n_voxels])
+            };
+            let params = qsm_core::inversion::TfiParams {
+                lambda: args.lambda.unwrap_or(d.lambda),
+                precond: args.precond.unwrap_or(d.precond),
+                merit: args.merit.unwrap_or(d.merit),
+                data_weighting: args.data_weighting.unwrap_or(d.data_weighting),
+                percentage: args.percentage.unwrap_or(d.percentage),
+                cg_tol: args.cg_tol.unwrap_or(d.cg_tol),
+                cg_max_iter: args.cg_max_iter.unwrap_or(d.cg_max_iter),
+                max_iter: args.max_iter.unwrap_or(d.max_iter),
+                tol: args.tol.unwrap_or(d.tol),
+            };
+            let chi = qsm_core::inversion::tfi(
+                &field_nifti.data, &n_std, &magnitude, &mask, &grid, bdir, &params, |_, _| {},
+            );
+            (c, (chi, field_nifti))
+        }
         InvertCommand::Tgv(args) => {
             let c = args.common;
             let field_nifti = load_nifti(&c.input)?;
