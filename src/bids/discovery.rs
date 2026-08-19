@@ -31,6 +31,19 @@ pub struct QsmRun {
     pub dims: (usize, usize, usize),
     /// Whether magnitude files are available for this run.
     pub has_magnitude: bool,
+    /// Matching multi-echo spin-echo (`MESE`) acquisition, if present in the dataset
+    /// (same subject/session). Used to compute R2 (EPG) → R2' for chi-separation.
+    pub mese: Option<MeseRun>,
+}
+
+/// A multi-echo spin-echo (`MESE`) acquisition for T2/R2 mapping (BIDS suffix `MESE`).
+#[derive(Debug, Clone)]
+pub struct MeseRun {
+    pub key: AcquisitionKey,
+    /// Per-echo magnitude NIfTI paths, ordered by echo number.
+    pub magnitude_niftis: Vec<PathBuf>,
+    /// Echo times in seconds, ordered by echo number.
+    pub echo_times: Vec<f64>,
 }
 
 /// Filters for BIDS discovery.
@@ -221,13 +234,80 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
             b0_dir,
             dims,
             has_magnitude,
+            mese: None,
         });
     }
+
+    // Attach matching MESE (multi-echo spin-echo) acquisitions for R2/R2' computation.
+    attach_mese(&mut runs, bids_dir);
 
     // Sort by key for deterministic ordering
     runs.sort_by_key(|a| a.key.to_string());
 
     Ok(runs)
+}
+
+/// Discover `MESE` acquisitions and attach each to QSM runs of the same subject/session.
+///
+/// MESE files are magnitude-only (`sub-XX[_ses-][_acq-][_run-]_echo-N_MESE.nii(.gz)`) so they
+/// are not picked up by the phase-based [`discover_runs`] glob. A run keeps `mese = None` when
+/// no matching spin-echo acquisition exists.
+fn attach_mese(runs: &mut [QsmRun], bids_dir: &Path) {
+    let patterns = [
+        format!("{}/sub-*/anat/*_MESE.nii*", bids_dir.display()),
+        format!("{}/sub-*/ses-*/anat/*_MESE.nii*", bids_dir.display()),
+    ];
+
+    // Group MESE magnitude files by acquisition key.
+    let mut groups: HashMap<AcquisitionKey, Vec<(PathBuf, BidsEntities)>> = HashMap::new();
+    for pattern in &patterns {
+        let entries = match glob(pattern) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let Some(filename) = entry.file_name().and_then(|f| f.to_str()) else { continue };
+            let Some(ent) = entities::parse_entities(filename) else { continue };
+            // MESE magnitude images carry no phase part.
+            if ent.part == Some(Part::Phase) {
+                continue;
+            }
+            groups.entry(ent.acquisition_key()).or_default().push((entry.clone(), ent));
+        }
+    }
+
+    // Build a MeseRun per acquisition key (sorted by echo, echo times from sidecars).
+    let mut mese_runs: Vec<MeseRun> = Vec::new();
+    for (key, mut files) in groups {
+        files.sort_by_key(|(_, ent)| ent.echo.unwrap_or(1));
+        let mut magnitude_niftis = Vec::new();
+        let mut echo_times = Vec::new();
+        for (path, _) in &files {
+            let Some(json_path) = entities::sidecar_path(path) else { continue };
+            match sidecar::read_sidecar(&json_path) {
+                Ok(sc) => {
+                    magnitude_niftis.push(path.clone());
+                    echo_times.push(sc.echo_time);
+                }
+                Err(e) => warn!("Skipping MESE echo (bad sidecar {}): {}", json_path.display(), e),
+            }
+        }
+        if magnitude_niftis.len() >= 3 {
+            mese_runs.push(MeseRun { key, magnitude_niftis, echo_times });
+        } else if !magnitude_niftis.is_empty() {
+            warn!("Ignoring MESE acquisition with <3 usable echoes: {}", key);
+        }
+    }
+
+    // Attach by subject/session (ignoring acq/run differences between GRE and MESE).
+    for run in runs.iter_mut() {
+        run.mese = mese_runs.iter()
+            .find(|m| m.key.subject == run.key.subject && m.key.session == run.key.session)
+            .cloned();
+        if run.mese.is_some() {
+            debug!("Attached MESE acquisition to run {}", run.key);
+        }
+    }
 }
 
 // ─── Lightweight BIDS tree scanner (for TUI filters) ───

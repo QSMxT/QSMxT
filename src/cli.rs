@@ -32,39 +32,48 @@ pub enum Command {
     DicomConvert(DicomConvertArgs),
     /// Generate SLURM job scripts for HPC execution
     Slurm(SlurmArgs),
-    /// Masking operations (NIfTI in/out)
+    /// Masking operations
     Mask {
         #[command(subcommand)]
         command: MaskCommand,
     },
-    /// Phase unwrapping (NIfTI in/out)
+    /// Phase unwrapping
     Unwrap {
         #[command(subcommand)]
         command: UnwrapCommand,
     },
-    /// Background field removal (NIfTI in/out)
+    /// Background field removal
     Bgremove {
         #[command(subcommand)]
         command: BgremoveCommand,
     },
-    /// Dipole inversion (NIfTI in/out)
+    /// Dipole inversion
     Invert {
         #[command(subcommand)]
         command: InvertCommand,
     },
-    /// QSMART vessel-aware reconstruction: total field -> susceptibility (NIfTI in/out)
+    /// Susceptibility source separation
+    Separate {
+        #[command(subcommand)]
+        command: SeparateCommand,
+    },
+    /// QSMART vessel-aware reconstruction: total field -> susceptibility
     Qsmart(QsmartArgs),
-    /// Susceptibility-weighted imaging (NIfTI in/out)
+    /// Susceptibility-weighted imaging
     Swi(SwiArgs),
-    /// R2* mapping from multi-echo magnitude data (NIfTI in/out)
+    /// R2* mapping from multi-echo magnitude data
     R2star(R2starArgs),
-    /// T2* mapping from multi-echo magnitude data (NIfTI in/out)
+    /// T2* mapping from multi-echo magnitude data
     T2star(T2starArgs),
-    /// Inhomogeneity correction on magnitude data (NIfTI in/out)
+    /// R2 mapping from multi-echo spin-echo (MESE) magnitude data (EPG)
+    R2(R2Args),
+    /// R2' mapping (R2' = R2* - R2)
+    R2prime(R2primeArgs),
+    /// Inhomogeneity correction on magnitude data
     Homogeneity(HomogeneityArgs),
-    /// Resample oblique volume to axial orientation (NIfTI in/out)
+    /// Resample oblique volume to axial orientation
     Resample(ResampleArgs),
-    /// Compute ROMEO phase quality map (NIfTI in/out)
+    /// Compute ROMEO phase quality map
     #[command(name = "quality-map")]
     QualityMap(QualityMapArgs),
     /// Launch interactive TUI for pipeline configuration
@@ -324,6 +333,153 @@ pub struct HdqsmParamArgs {
     /// HD-QSM stage-2 percent-update convergence tolerance
     #[arg(long)]
     pub hdqsm_tol_update: Option<f64>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
+pub struct AmpPeParamArgs {
+    /// AMP-PE Daubechies wavelet order (1=db1, 2=db2)
+    #[arg(long)]
+    pub amp_pe_wave_order: Option<usize>,
+    /// AMP-PE wavelet decomposition levels
+    #[arg(long)]
+    pub amp_pe_nlevel: Option<usize>,
+    /// AMP-PE morphology-mask energy retention fraction (0.0-1.0)
+    #[arg(long)]
+    pub amp_pe_wave_pec: Option<f64>,
+    /// AMP-PE simulated echo time (s) used to turn the field into phase
+    #[arg(long)]
+    pub amp_pe_simulated_te: Option<f64>,
+    /// AMP-PE linearization iterations per stage
+    #[arg(long)]
+    pub amp_pe_max_linearization_ite: Option<usize>,
+    /// AMP-PE GAMP signal-update damping rate
+    #[arg(long)]
+    pub amp_pe_damp_rate_sig: Option<f64>,
+    /// AMP-PE parameter-estimation learning rate (kappa)
+    #[arg(long)]
+    pub amp_pe_damp_rate_par: Option<f64>,
+    /// AMP-PE inner sparse-reconstruction iterations
+    #[arg(long)]
+    pub amp_pe_max_pe_spar_ite: Option<usize>,
+    /// AMP-PE inner parameter-estimation iterations
+    #[arg(long)]
+    pub amp_pe_max_pe_est_ite: Option<usize>,
+    /// AMP-PE GAMP inner convergence threshold
+    #[arg(long)]
+    pub amp_pe_cvg_thd: Option<f64>,
+    /// AMP-PE L2-seed Tikhonov weight
+    #[arg(long)]
+    pub amp_pe_tikhonov_beta: Option<f64>,
+}
+
+/// Per-method chi-separation parameters (defaults come from qsm-core's `Default` impls).
+#[derive(Args, Debug, Default, Clone)]
+pub struct SeparationParamArgs {
+    // R2*-QSM (Dimov)
+    /// R2*-QSM relaxometric constant at 3T (Hz/ppm)
+    #[arg(long)]
+    pub r2star_qsm_r_const_3t: Option<f64>,
+    // DECOMPOSE (Chen)
+    /// DECOMPOSE inner alternating passes per voxel
+    #[arg(long)]
+    pub decompose_n_inner: Option<usize>,
+    /// DECOMPOSE upper bound on |χ| in the fit (ppm)
+    #[arg(long)]
+    pub decompose_chi_bound: Option<f64>,
+    /// DECOMPOSE Levenberg–Marquardt max iterations
+    #[arg(long)]
+    pub decompose_max_lm_iter: Option<usize>,
+    // χ-sep iLSQR (Shin)
+    /// χ-sep iLSQR paramagnetic relaxometric constant (Hz/ppm)
+    #[arg(long)]
+    pub chi_sep_ilsqr_dr_pos: Option<f64>,
+    /// χ-sep iLSQR diamagnetic relaxometric constant (Hz/ppm)
+    #[arg(long)]
+    pub chi_sep_ilsqr_dr_neg: Option<f64>,
+    /// χ-sep iLSQR L1 edge-masked TV weight
+    #[arg(long)]
+    pub chi_sep_ilsqr_lambda1: Option<f64>,
+    /// χ-sep iLSQR edge-mask keep fraction (0-1)
+    #[arg(long)]
+    pub chi_sep_ilsqr_percentage: Option<f64>,
+    /// χ-sep iLSQR R2' reliability window lower (Hz)
+    #[arg(long)]
+    pub chi_sep_ilsqr_r2p_min: Option<f64>,
+    /// χ-sep iLSQR R2' reliability window upper (Hz)
+    #[arg(long)]
+    pub chi_sep_ilsqr_r2p_max: Option<f64>,
+    /// χ-sep iLSQR outer Gauss-Newton iterations
+    #[arg(long)]
+    pub chi_sep_ilsqr_max_iter: Option<usize>,
+    /// χ-sep iLSQR outer relative-change tolerance
+    #[arg(long)]
+    pub chi_sep_ilsqr_tol: Option<f64>,
+    /// χ-sep iLSQR inner CG max iterations
+    #[arg(long)]
+    pub chi_sep_ilsqr_cg_max_iter: Option<usize>,
+    /// χ-sep iLSQR inner CG relative tolerance
+    #[arg(long)]
+    pub chi_sep_ilsqr_cg_tol: Option<f64>,
+    // χ-sep MEDI
+    /// χ-sep MEDI paramagnetic L1 weight
+    #[arg(long)]
+    pub chi_sep_medi_lambda_para: Option<f64>,
+    /// χ-sep MEDI diamagnetic L1 weight
+    #[arg(long)]
+    pub chi_sep_medi_lambda_dia: Option<f64>,
+    /// χ-sep MEDI field/R2' coupling weight
+    #[arg(long)]
+    pub chi_sep_medi_lambda_cpl: Option<f64>,
+    /// χ-sep MEDI paramagnetic relaxivity (Hz/ppm)
+    #[arg(long)]
+    pub chi_sep_medi_dr_pos: Option<f64>,
+    /// χ-sep MEDI diamagnetic relaxivity (Hz/ppm)
+    #[arg(long)]
+    pub chi_sep_medi_dr_neg: Option<f64>,
+    /// χ-sep MEDI edge-mask percentage (0-1)
+    #[arg(long)]
+    pub chi_sep_medi_percentage: Option<f64>,
+    /// χ-sep MEDI inner CG tolerance
+    #[arg(long)]
+    pub chi_sep_medi_cg_tol: Option<f64>,
+    /// χ-sep MEDI inner CG max iterations
+    #[arg(long)]
+    pub chi_sep_medi_cg_max_iter: Option<usize>,
+    /// χ-sep MEDI outer Gauss-Newton iterations
+    #[arg(long)]
+    pub chi_sep_medi_max_iter: Option<usize>,
+    /// χ-sep MEDI outer convergence tolerance
+    #[arg(long)]
+    pub chi_sep_medi_tol: Option<f64>,
+    // WaveSep (Fang)
+    /// WaveSep paramagnetic relaxivity (Hz/ppm)
+    #[arg(long)]
+    pub wavesep_dr_pos: Option<f64>,
+    /// WaveSep diamagnetic relaxivity (Hz/ppm)
+    #[arg(long)]
+    pub wavesep_dr_neg: Option<f64>,
+    /// WaveSep proximal-gradient step size
+    #[arg(long)]
+    pub wavesep_alpha: Option<f64>,
+    /// WaveSep wavelet L1 soft-threshold weight
+    #[arg(long)]
+    pub wavesep_lambda: Option<f64>,
+    /// WaveSep Daubechies wavelet order
+    #[arg(long)]
+    pub wavesep_wavelet_order: Option<usize>,
+    /// WaveSep ISTA max iterations
+    #[arg(long)]
+    pub wavesep_max_iter: Option<usize>,
+    /// WaveSep relative-change stop tolerance
+    #[arg(long)]
+    pub wavesep_tol: Option<f64>,
+    // HC-ChiSep (Stewart 2026)
+    /// HC-ChiSep paramagnetic relaxivity at 3T (Hz/ppm)
+    #[arg(long)]
+    pub hc_chisep_dr_pos_3t: Option<f64>,
+    /// HC-ChiSep R2' bin width for the anchored grid search (Hz)
+    #[arg(long)]
+    pub hc_chisep_bin_hz: Option<f64>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -707,6 +863,10 @@ pub struct RunArgs {
     #[command(flatten)]
     pub hdqsm_params: HdqsmParamArgs,
     #[command(flatten)]
+    pub amp_pe_params: AmpPeParamArgs,
+    #[command(flatten)]
+    pub separation_params: SeparationParamArgs,
+    #[command(flatten)]
     pub vsharp_params: VsharpParamArgs,
     #[command(flatten)]
     pub pdf_params: PdfParamArgs,
@@ -759,6 +919,34 @@ pub struct RunArgs {
     /// Compute R2* decay rate map from multi-echo magnitude data
     #[arg(long)]
     pub do_r2starmap: bool,
+
+    /// Compute R2 map from a multi-echo spin-echo (MESE) acquisition (EPG)
+    #[arg(long)]
+    pub do_r2map: bool,
+
+    /// Compute R2' map (= R2* − R2; needs GRE magnitude + a MESE acquisition)
+    #[arg(long)]
+    pub do_r2primemap: bool,
+
+    /// Compute chi-separation (paramagnetic/diamagnetic susceptibility maps)
+    #[arg(long = "do-chisep")]
+    pub do_chi_separation: bool,
+
+    /// Chi-separation method (default: r2star-qsm)
+    #[arg(long = "chisep", value_enum)]
+    pub chi_separation_algorithm: Option<SeparationAlgorithmArg>,
+
+    /// Use a bring-your-own QSM (Chimap) from <bids>/derivatives/<TOOL>/ for chi-separation
+    #[arg(long, value_name = "TOOL")]
+    pub use_custom_qsm: Option<String>,
+
+    /// Use a bring-your-own R2 map from <bids>/derivatives/<TOOL>/ for chi-separation
+    #[arg(long, value_name = "TOOL")]
+    pub use_custom_r2: Option<String>,
+
+    /// Use a bring-your-own R2' map from <bids>/derivatives/<TOOL>/ for chi-separation
+    #[arg(long, value_name = "TOOL")]
+    pub use_custom_r2prime: Option<String>,
 
     /// Also export final maps as DICOM series into each subject's extra_files/ folder
     #[arg(long)]
@@ -1259,6 +1447,8 @@ pub enum InvertCommand {
     Whqsm(InvertWhqsmArgs),
     /// Hybrid Data-Fidelity QSM
     Hdqsm(InvertHdqsmArgs),
+    /// AMP-PE (Approximate Message Passing with Parameter Estimation)
+    AmpPe(InvertAmpPeArgs),
 }
 
 #[derive(Parser, Debug)]
@@ -1649,6 +1839,292 @@ pub struct InvertHdqsmArgs {
     pub tol_update: Option<f64>,
 }
 
+#[derive(Parser, Debug)]
+pub struct InvertAmpPeArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    /// Magnitude NIfTI file (used as data-fidelity weight + morphology mask)
+    #[arg(long)]
+    pub magnitude: Option<PathBuf>,
+    /// B0 field strength in Tesla (scales the simulated phase)
+    #[arg(long, default_value_t = 3.0)]
+    pub b0: f64,
+    /// Daubechies wavelet order (1=db1, 2=db2)
+    #[arg(long)]
+    pub wave_order: Option<usize>,
+    /// Wavelet decomposition levels
+    #[arg(long)]
+    pub nlevel: Option<usize>,
+    /// Morphology-mask energy retention fraction (0.0-1.0)
+    #[arg(long)]
+    pub wave_pec: Option<f64>,
+    /// Simulated echo time (s) used to turn the field into phase
+    #[arg(long)]
+    pub simulated_te: Option<f64>,
+    /// Linearization iterations per stage
+    #[arg(long)]
+    pub max_linearization_ite: Option<usize>,
+    /// GAMP signal-update damping rate
+    #[arg(long)]
+    pub damp_rate_sig: Option<f64>,
+    /// Parameter-estimation learning rate (kappa)
+    #[arg(long)]
+    pub damp_rate_par: Option<f64>,
+    /// Inner sparse-reconstruction iterations
+    #[arg(long)]
+    pub max_pe_spar_ite: Option<usize>,
+    /// Inner parameter-estimation iterations
+    #[arg(long)]
+    pub max_pe_est_ite: Option<usize>,
+    /// GAMP inner convergence threshold
+    #[arg(long)]
+    pub cvg_thd: Option<f64>,
+    /// L2-seed Tikhonov weight
+    #[arg(long)]
+    pub tikhonov_beta: Option<f64>,
+}
+
+// ── Chi-separation ──
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum SeparationAlgorithmArg {
+    /// R2*-QSM closed-form (Dimov 2022) — QSM + R2* (GRE-only)
+    R2starQsm,
+    /// DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only)
+    Decompose,
+    /// χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM
+    ChiSepIlsqr,
+    /// χ-separation MEDI — local field + R2' + magnitude
+    ChiSepMedi,
+    /// WaveSep wavelet-L1 (Fang 2023) — QSM + R2'
+    Wavesep,
+    /// Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude
+    HcChisep,
+}
+
+/// Inputs shared by every chi-separation method.
+#[derive(Args, Debug, Clone)]
+pub struct SeparateCommonArgs {
+    /// Conventional QSM (χ_total) NIfTI in ppm
+    #[arg(long)]
+    pub qsm: PathBuf,
+    /// Binary mask NIfTI file
+    #[arg(short, long)]
+    pub mask: PathBuf,
+    /// Output prefix; writes {prefix}_paramagnetic.nii, {prefix}_diamagnetic.nii, {prefix}_total.nii
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// B0 field strength in Tesla
+    #[arg(long, default_value_t = 3.0)]
+    pub field_strength: f64,
+    /// B0 direction (3 values)
+    #[arg(long, num_args = 3, default_values_t = [0.0, 0.0, 1.0])]
+    pub b0_direction: Vec<f64>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum SeparateCommand {
+    /// R2*-QSM closed-form (Dimov 2022) — QSM + R2* (GRE-only)
+    R2starQsm(SeparateR2starQsmArgs),
+    /// DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude (GRE-only)
+    Decompose(SeparateDecomposeArgs),
+    /// χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM
+    ChiSepIlsqr(SeparateChiSepIlsqrArgs),
+    /// χ-separation MEDI — local field + R2' + magnitude + QSM
+    ChiSepMedi(SeparateChiSepMediArgs),
+    /// WaveSep wavelet-L1 (Fang 2023) — QSM + R2'
+    Wavesep(SeparateWavesepArgs),
+    /// Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude
+    HcChisep(SeparateHcChisepArgs),
+}
+
+#[derive(Parser, Debug)]
+#[command(group(clap::ArgGroup::new("r2star_source").required(true).args(["r2star", "magnitude"])))]
+pub struct SeparateR2starQsmArgs {
+    #[command(flatten)]
+    pub common: SeparateCommonArgs,
+    /// R2* map NIfTI in Hz (else fit from --magnitude + --echo-times)
+    #[arg(long)]
+    pub r2star: Option<PathBuf>,
+    /// Multi-echo magnitude: one 4D file or several 3D files (space-separated). Fits R2* if --r2star absent.
+    #[arg(long, num_args = 1.., requires = "echo_times")]
+    pub magnitude: Vec<PathBuf>,
+    /// GRE echo times in seconds (space- or comma-separated), required with --magnitude
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    pub echo_times: Vec<f64>,
+    /// Relaxometric constant at 3T (Hz/ppm)
+    #[arg(long)]
+    pub r_const_3t: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct SeparateDecomposeArgs {
+    #[command(flatten)]
+    pub common: SeparateCommonArgs,
+    /// Multi-echo magnitude: one 4D file or several 3D files (space-separated)
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
+    /// GRE echo times in seconds (space- or comma-separated)
+    #[arg(long, num_args = 1.., value_delimiter = ',', required = true)]
+    pub echo_times: Vec<f64>,
+    /// Inner alternating passes per voxel
+    #[arg(long)]
+    pub n_inner: Option<usize>,
+    /// Upper bound on |χ| in the fit (ppm)
+    #[arg(long)]
+    pub chi_bound: Option<f64>,
+    /// Levenberg–Marquardt max iterations
+    #[arg(long)]
+    pub max_lm_iter: Option<usize>,
+}
+
+#[derive(Parser, Debug)]
+pub struct SeparateChiSepIlsqrArgs {
+    #[command(flatten)]
+    pub common: SeparateCommonArgs,
+    /// Local (tissue) field NIfTI in ppm
+    #[arg(long)]
+    pub local_field: PathBuf,
+    /// R2' map NIfTI in Hz
+    #[arg(long)]
+    pub r2prime: PathBuf,
+    /// Magnitude for SNR weighting + edge mask: one 4D file or several 3D files (RSS-combined)
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
+    /// Paramagnetic relaxometric constant (Hz/ppm)
+    #[arg(long)]
+    pub dr_pos: Option<f64>,
+    /// Diamagnetic relaxometric constant (Hz/ppm)
+    #[arg(long)]
+    pub dr_neg: Option<f64>,
+    /// L1 edge-masked TV weight
+    #[arg(long)]
+    pub lambda1: Option<f64>,
+    /// Edge-mask keep fraction (0-1)
+    #[arg(long)]
+    pub percentage: Option<f64>,
+    /// R2' reliability window lower (Hz)
+    #[arg(long)]
+    pub r2p_min: Option<f64>,
+    /// R2' reliability window upper (Hz)
+    #[arg(long)]
+    pub r2p_max: Option<f64>,
+    /// Outer Gauss-Newton iterations
+    #[arg(long)]
+    pub max_iter: Option<usize>,
+    /// Outer relative-change tolerance
+    #[arg(long)]
+    pub tol: Option<f64>,
+    /// Inner CG max iterations
+    #[arg(long)]
+    pub cg_max_iter: Option<usize>,
+    /// Inner CG relative tolerance
+    #[arg(long)]
+    pub cg_tol: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct SeparateChiSepMediArgs {
+    #[command(flatten)]
+    pub common: SeparateCommonArgs,
+    /// Local (tissue) field NIfTI in ppm
+    #[arg(long)]
+    pub local_field: PathBuf,
+    /// R2' map NIfTI in Hz
+    #[arg(long)]
+    pub r2prime: PathBuf,
+    /// Magnitude for edge weighting: one 4D file or several 3D files (RSS-combined)
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
+    /// Paramagnetic L1 weight
+    #[arg(long)]
+    pub lambda_para: Option<f64>,
+    /// Diamagnetic L1 weight
+    #[arg(long)]
+    pub lambda_dia: Option<f64>,
+    /// Field/R2' coupling weight
+    #[arg(long)]
+    pub lambda_cpl: Option<f64>,
+    /// Paramagnetic relaxivity (Hz/ppm)
+    #[arg(long)]
+    pub dr_pos: Option<f64>,
+    /// Diamagnetic relaxivity (Hz/ppm)
+    #[arg(long)]
+    pub dr_neg: Option<f64>,
+    /// Edge-mask percentage (0-1)
+    #[arg(long)]
+    pub percentage: Option<f64>,
+    /// Inner CG tolerance
+    #[arg(long)]
+    pub cg_tol: Option<f64>,
+    /// Inner CG max iterations
+    #[arg(long)]
+    pub cg_max_iter: Option<usize>,
+    /// Outer Gauss-Newton iterations
+    #[arg(long)]
+    pub max_iter: Option<usize>,
+    /// Outer convergence tolerance
+    #[arg(long)]
+    pub tol: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct SeparateWavesepArgs {
+    #[command(flatten)]
+    pub common: SeparateCommonArgs,
+    /// R2' map NIfTI in Hz
+    #[arg(long)]
+    pub r2prime: PathBuf,
+    /// Paramagnetic relaxivity (Hz/ppm)
+    #[arg(long)]
+    pub dr_pos: Option<f64>,
+    /// Diamagnetic relaxivity (Hz/ppm)
+    #[arg(long)]
+    pub dr_neg: Option<f64>,
+    /// Proximal-gradient step size
+    #[arg(long)]
+    pub alpha: Option<f64>,
+    /// Wavelet L1 soft-threshold weight
+    #[arg(long)]
+    pub lambda: Option<f64>,
+    /// Daubechies wavelet order
+    #[arg(long)]
+    pub wavelet_order: Option<usize>,
+    /// ISTA max iterations
+    #[arg(long)]
+    pub max_iter: Option<usize>,
+    /// Relative-change stop tolerance
+    #[arg(long)]
+    pub tol: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct SeparateHcChisepArgs {
+    #[command(flatten)]
+    pub common: SeparateCommonArgs,
+    /// R2' map NIfTI in Hz
+    #[arg(long)]
+    pub r2prime: PathBuf,
+    /// Multi-echo magnitude: one 4D file or several 3D files (space-separated)
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
+    /// GRE echo times in seconds (space- or comma-separated)
+    #[arg(long, num_args = 1.., value_delimiter = ',', required = true)]
+    pub echo_times: Vec<f64>,
+    /// Multi-echo spin-echo magnitude: one 4D file or several 3D files (optional)
+    #[arg(long, num_args = 1..)]
+    pub se_magnitude: Vec<PathBuf>,
+    /// Spin-echo times in seconds (comma-separated) for --se-magnitude
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    pub se_echo_times: Vec<f64>,
+    /// Paramagnetic relaxivity at 3T (Hz/ppm)
+    #[arg(long)]
+    pub dr_pos_3t: Option<f64>,
+    /// R2' bin width for the anchored grid search (Hz)
+    #[arg(long)]
+    pub bin_hz: Option<f64>,
+}
+
 // ── SWI ──
 
 #[derive(Parser, Debug)]
@@ -1703,8 +2179,8 @@ pub struct SwiArgs {
 
 #[derive(Parser, Debug)]
 pub struct R2starArgs {
-    /// Input multi-echo magnitude NIfTI files (3+ echoes required)
-    #[arg(required = true, num_args = 3..)]
+    /// Multi-echo magnitude: one 4D file or several 3D files (3+ echoes; space-separated)
+    #[arg(required = true, num_args = 1..)]
     pub inputs: Vec<PathBuf>,
     /// Binary mask NIfTI file
     #[arg(short, long)]
@@ -1719,8 +2195,8 @@ pub struct R2starArgs {
 
 #[derive(Parser, Debug)]
 pub struct T2starArgs {
-    /// Input multi-echo magnitude NIfTI files (3+ echoes required)
-    #[arg(required = true, num_args = 3..)]
+    /// Multi-echo magnitude: one 4D file or several 3D files (3+ echoes; space-separated)
+    #[arg(required = true, num_args = 1..)]
     pub inputs: Vec<PathBuf>,
     /// Binary mask NIfTI file
     #[arg(short, long)]
@@ -1731,6 +2207,44 @@ pub struct T2starArgs {
     /// Echo times in seconds (must match number of inputs)
     #[arg(long, required = true, num_args = 3..)]
     pub echo_times: Vec<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct R2Args {
+    /// Multi-echo spin-echo (MESE) magnitude: one 4D file or several 3D files (space-separated)
+    #[arg(required = true, num_args = 1..)]
+    pub inputs: Vec<PathBuf>,
+    /// Binary mask NIfTI file
+    #[arg(short, long)]
+    pub mask: PathBuf,
+    /// Output R2 map NIfTI file
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// Spin-echo times in seconds (space- or comma-separated)
+    #[arg(long, required = true, num_args = 1.., value_delimiter = ',')]
+    pub echo_times: Vec<f64>,
+    /// Assumed T1 in seconds (EPG dictionary)
+    #[arg(long)]
+    pub t1: Option<f64>,
+    /// Optional B1 map NIfTI (refocusing efficiency); fitted from the dictionary if absent
+    #[arg(long)]
+    pub b1_map: Option<PathBuf>,
+}
+
+#[derive(Parser, Debug)]
+pub struct R2primeArgs {
+    /// R2* map NIfTI in Hz
+    #[arg(long)]
+    pub r2star: PathBuf,
+    /// R2 map NIfTI in Hz
+    #[arg(long)]
+    pub r2: PathBuf,
+    /// Binary mask NIfTI file
+    #[arg(short, long)]
+    pub mask: PathBuf,
+    /// Output R2' map NIfTI file
+    #[arg(short, long)]
+    pub output: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -1843,7 +2357,7 @@ pub struct QualityMapArgs {
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum QsmAlgorithmArg {
     Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Qsmart,
-    Ndi, Fansi, FansiTgv, L1qsm, Whqsm, Hdqsm,
+    Ndi, Fansi, FansiTgv, L1qsm, Whqsm, Hdqsm, AmpPe,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

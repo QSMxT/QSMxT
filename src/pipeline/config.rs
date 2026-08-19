@@ -35,6 +35,18 @@ fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
         cli::QsmAlgorithmArg::L1qsm => QsmAlgorithm::L1qsm,
         cli::QsmAlgorithmArg::Whqsm => QsmAlgorithm::Whqsm,
         cli::QsmAlgorithmArg::Hdqsm => QsmAlgorithm::Hdqsm,
+        cli::QsmAlgorithmArg::AmpPe => QsmAlgorithm::AmpPe,
+    }
+}
+
+fn separation_algorithm_arg_to_config(a: cli::SeparationAlgorithmArg) -> SeparationAlgorithm {
+    match a {
+        cli::SeparationAlgorithmArg::R2starQsm => SeparationAlgorithm::R2starQsm,
+        cli::SeparationAlgorithmArg::Decompose => SeparationAlgorithm::Decompose,
+        cli::SeparationAlgorithmArg::ChiSepIlsqr => SeparationAlgorithm::ChiSepIlsqr,
+        cli::SeparationAlgorithmArg::ChiSepMedi => SeparationAlgorithm::ChiSepMedi,
+        cli::SeparationAlgorithmArg::Wavesep => SeparationAlgorithm::WaveSep,
+        cli::SeparationAlgorithmArg::HcChisep => SeparationAlgorithm::HcChisep,
     }
 }
 
@@ -216,6 +228,17 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         if let Some(v) = args.hdqsm_params.hdqsm_max_iter_l1 { config.inversion.hdqsm.max_iter_l1 = v; }
         if let Some(v) = args.hdqsm_params.hdqsm_max_iter_l2 { config.inversion.hdqsm.max_iter_l2 = v; }
         if let Some(v) = args.hdqsm_params.hdqsm_tol_update { config.inversion.hdqsm.tol_update = v; }
+        if let Some(v) = args.amp_pe_params.amp_pe_wave_order { config.inversion.amp_pe.wave_order = v; }
+        if let Some(v) = args.amp_pe_params.amp_pe_nlevel { config.inversion.amp_pe.nlevel = v; }
+        if let Some(v) = args.amp_pe_params.amp_pe_wave_pec { config.inversion.amp_pe.wave_pec = v; }
+        if let Some(v) = args.amp_pe_params.amp_pe_simulated_te { config.inversion.amp_pe.simulated_te = v; }
+        if let Some(v) = args.amp_pe_params.amp_pe_max_linearization_ite { config.inversion.amp_pe.max_linearization_ite = v; }
+        if let Some(v) = args.amp_pe_params.amp_pe_damp_rate_sig { config.inversion.amp_pe.damp_rate_sig = v; }
+        if let Some(v) = args.amp_pe_params.amp_pe_damp_rate_par { config.inversion.amp_pe.damp_rate_par = v; }
+        if let Some(v) = args.amp_pe_params.amp_pe_max_pe_spar_ite { config.inversion.amp_pe.max_pe_spar_ite = v; }
+        if let Some(v) = args.amp_pe_params.amp_pe_max_pe_est_ite { config.inversion.amp_pe.max_pe_est_ite = v; }
+        if let Some(v) = args.amp_pe_params.amp_pe_cvg_thd { config.inversion.amp_pe.cvg_thd = v; }
+        if let Some(v) = args.amp_pe_params.amp_pe_tikhonov_beta { config.inversion.amp_pe.tikhonov_beta = v; }
         apply_qsmart_overrides(config, &args.qsmart_params);
 
         // ── Background removal params ──
@@ -262,6 +285,52 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         if args.do_swi { config.pipeline.do_swi = true; }
         if args.do_t2starmap { config.pipeline.do_t2starmap = true; }
         if args.do_r2starmap { config.pipeline.do_r2starmap = true; }
+        if args.do_r2map { config.pipeline.do_r2map = true; }
+        if args.do_r2primemap { config.pipeline.do_r2primemap = true; }
+        if args.do_chi_separation { config.pipeline.do_chi_separation = true; }
+        if let Some(a) = args.chi_separation_algorithm {
+            config.separation.algorithm = separation_algorithm_arg_to_config(a);
+        }
+        if let Some(t) = &args.use_custom_qsm { config.separation.custom_qsm_tool = Some(t.clone()); }
+        if let Some(t) = &args.use_custom_r2 { config.separation.custom_r2_tool = Some(t.clone()); }
+        if let Some(t) = &args.use_custom_r2prime { config.separation.custom_r2prime_tool = Some(t.clone()); }
+        let sp = &args.separation_params;
+        if let Some(v) = sp.r2star_qsm_r_const_3t { config.separation.r2star_qsm.r_const_3t = v; }
+        if let Some(v) = sp.decompose_n_inner { config.separation.decompose.n_inner = v; }
+        if let Some(v) = sp.decompose_chi_bound { config.separation.decompose.chi_bound = v; }
+        if let Some(v) = sp.decompose_max_lm_iter { config.separation.decompose.max_lm_iter = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_dr_pos { config.separation.chi_sep_ilsqr.dr_pos = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_dr_neg { config.separation.chi_sep_ilsqr.dr_neg = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_lambda1 { config.separation.chi_sep_ilsqr.lambda1 = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_percentage { config.separation.chi_sep_ilsqr.percentage = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_r2p_min { config.separation.chi_sep_ilsqr.r2p_min = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_r2p_max { config.separation.chi_sep_ilsqr.r2p_max = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_max_iter { config.separation.chi_sep_ilsqr.max_iter = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_tol { config.separation.chi_sep_ilsqr.tol = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_cg_max_iter { config.separation.chi_sep_ilsqr.cg_max_iter = v; }
+        if let Some(v) = sp.chi_sep_ilsqr_cg_tol { config.separation.chi_sep_ilsqr.cg_tol = v; }
+        if let Some(v) = sp.chi_sep_medi_lambda_para { config.separation.chi_sep_medi.lambda_para = v; }
+        if let Some(v) = sp.chi_sep_medi_lambda_dia { config.separation.chi_sep_medi.lambda_dia = v; }
+        if let Some(v) = sp.chi_sep_medi_lambda_cpl { config.separation.chi_sep_medi.lambda_cpl = v; }
+        if let Some(v) = sp.chi_sep_medi_dr_pos { config.separation.chi_sep_medi.dr_pos = v; }
+        if let Some(v) = sp.chi_sep_medi_dr_neg { config.separation.chi_sep_medi.dr_neg = v; }
+        if let Some(v) = sp.chi_sep_medi_percentage { config.separation.chi_sep_medi.percentage = v; }
+        if let Some(v) = sp.chi_sep_medi_cg_tol { config.separation.chi_sep_medi.cg_tol = v; }
+        if let Some(v) = sp.chi_sep_medi_cg_max_iter { config.separation.chi_sep_medi.cg_max_iter = v; }
+        if let Some(v) = sp.chi_sep_medi_max_iter { config.separation.chi_sep_medi.max_iter = v; }
+        if let Some(v) = sp.chi_sep_medi_tol { config.separation.chi_sep_medi.tol = v; }
+        if let Some(v) = sp.wavesep_dr_pos { config.separation.wavesep.dr_pos = v; }
+        if let Some(v) = sp.wavesep_dr_neg { config.separation.wavesep.dr_neg = v; }
+        if let Some(v) = sp.wavesep_alpha { config.separation.wavesep.alpha = v; }
+        if let Some(v) = sp.wavesep_lambda { config.separation.wavesep.lambda = v; }
+        if let Some(v) = sp.wavesep_wavelet_order { config.separation.wavesep.wavelet_order = v; }
+        if let Some(v) = sp.wavesep_max_iter { config.separation.wavesep.max_iter = v; }
+        if let Some(v) = sp.wavesep_tol { config.separation.wavesep.tol = v; }
+        if let Some(v) = sp.hc_chisep_dr_pos_3t { config.separation.hc_chisep.dr_pos_3t = v; }
+        if let Some(v) = sp.hc_chisep_bin_hz { config.separation.hc_chisep.bin_hz = v; }
+        // Chi-separation depends on R2*/R2/R2'; enabling it implies computing them
+        // (a custom R2' or R2 map, when supplied, is used instead — see the runner).
+        enforce_separation_dependencies(config);
         if args.export_dicom { config.pipeline.export_dicom = true; }
         if args.no_inhomogeneity_correction { config.masking.inhomogeneity_correction = false; }
         else if args.inhomogeneity_correction { config.masking.inhomogeneity_correction = true; }

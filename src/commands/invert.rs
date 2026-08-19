@@ -277,6 +277,46 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             );
             (c, (chi, field_nifti))
         }
+        InvertCommand::AmpPe(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let grid = super::common::nifti_grid(&field_nifti);
+            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
+            info!("Dipole inversion (AMP-PE, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            // AMP-PE takes the local field in ppm (like NDI). Magnitude, when provided, is the
+            // data-fidelity weight + morphology mask; a multi-echo (4D) magnitude is RSS-combined.
+            // χ comes back in ppm.
+            let n_voxels = field_nifti.data.len();
+            let magnitude: Option<Vec<f64>> = args.magnitude.as_ref()
+                .map(|mag_path| super::common::load_magnitude_rss(mag_path, n_voxels))
+                .transpose()?;
+            if magnitude.is_none() {
+                warn!("No --magnitude provided for AMP-PE; using uniform weights with no morphology mask");
+            }
+
+            let d = qsm_core::inversion::AmpPeParams::default();
+            let params = qsm_core::inversion::AmpPeParams {
+                wave_order: args.wave_order.unwrap_or(d.wave_order),
+                nlevel: args.nlevel.unwrap_or(d.nlevel),
+                wave_pec: args.wave_pec.unwrap_or(d.wave_pec),
+                simulated_te: args.simulated_te.unwrap_or(d.simulated_te),
+                max_linearization_ite: args.max_linearization_ite.unwrap_or(d.max_linearization_ite),
+                b0: args.b0,
+                gyro_ratio: d.gyro_ratio,
+                damp_rate_sig: args.damp_rate_sig.unwrap_or(d.damp_rate_sig),
+                damp_rate_par: args.damp_rate_par.unwrap_or(d.damp_rate_par),
+                max_pe_spar_ite: args.max_pe_spar_ite.unwrap_or(d.max_pe_spar_ite),
+                max_pe_est_ite: args.max_pe_est_ite.unwrap_or(d.max_pe_est_ite),
+                cvg_thd: args.cvg_thd.unwrap_or(d.cvg_thd),
+                tikhonov_beta: args.tikhonov_beta.unwrap_or(d.tikhonov_beta),
+            };
+            let chi = qsm_core::inversion::amp_pe(
+                &field_nifti.data, &mask, magnitude.as_deref(), &grid, bdir, &params, |_, _| {},
+            );
+            (c, (chi, field_nifti))
+        }
         InvertCommand::Medi(args) => {
             let c = args.common;
             let field_nifti = load_nifti(&c.input)?;
@@ -295,13 +335,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = qsm_core::inversion::MediParams::default();
             let n_voxels = field_nifti.data.len();
             let (n_std, magnitude) = if let Some(ref mag_path) = args.magnitude {
-                let mag_nifti = load_nifti(mag_path)?;
-                // A multi-echo magnitude arrives 4D; MEDI uses a single 3D volume (first echo).
-                let mag = if mag_nifti.data.len() > n_voxels {
-                    mag_nifti.data[..n_voxels].to_vec()
-                } else {
-                    mag_nifti.data
-                };
+                // Multi-echo (4D) or multiple magnitudes are RSS-combined to a single weighting volume.
+                let mag = super::common::load_magnitude_rss(mag_path, n_voxels)?;
                 (vec![1.0f64; n_voxels], mag)
             } else {
                 warn!("No --magnitude provided for MEDI; using uniform magnitude (results may be suboptimal)");
@@ -339,13 +374,8 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let d = qsm_core::inversion::TfiParams::default();
             let n_voxels = field_nifti.data.len();
             let (n_std, magnitude) = if let Some(ref mag_path) = args.magnitude {
-                let mag_nifti = load_nifti(mag_path)?;
-                // A multi-echo magnitude arrives 4D; TFI uses a single 3D volume (first echo).
-                let mag = if mag_nifti.data.len() > n_voxels {
-                    mag_nifti.data[..n_voxels].to_vec()
-                } else {
-                    mag_nifti.data
-                };
+                // Multi-echo (4D) or multiple magnitudes are RSS-combined to a single weighting volume.
+                let mag = super::common::load_magnitude_rss(mag_path, n_voxels)?;
                 (vec![1.0f64; n_voxels], mag)
             } else {
                 warn!("No --magnitude provided for TFI; using uniform magnitude (results may be suboptimal)");

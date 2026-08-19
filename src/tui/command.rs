@@ -1,8 +1,14 @@
 use std::path::PathBuf;
 
 use crate::cli::*;
-use crate::pipeline::config::{PipelineConfig, QsmAlgorithm, UnwrappingAlgorithm, BfAlgorithm, QsmReference, B0Estimation, B0WeightType};
+use crate::pipeline::config::{PipelineConfig, QsmAlgorithm, SeparationAlgorithm, UnwrappingAlgorithm, BfAlgorithm, QsmReference, B0Estimation, B0WeightType, enforce_separation_dependencies};
 use super::app::App;
+
+/// Trimmed non-empty string → Some, else None (for bring-your-own tool fields).
+fn non_empty(s: &str) -> Option<String> {
+    let t = s.trim();
+    if t.is_empty() { None } else { Some(t.to_string()) }
+}
 
 pub fn build_command_string(app: &App) -> String {
     let form = &app.form;
@@ -130,6 +136,14 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         BfAlgorithmArg::Resharp,
         BfAlgorithmArg::Harperella,
         BfAlgorithmArg::Iharperella,
+    ];
+    let sep_options = [
+        SeparationAlgorithmArg::R2starQsm,
+        SeparationAlgorithmArg::Decompose,
+        SeparationAlgorithmArg::ChiSepIlsqr,
+        SeparationAlgorithmArg::ChiSepMedi,
+        SeparationAlgorithmArg::Wavesep,
+        SeparationAlgorithmArg::HcChisep,
     ];
     Ok(RunArgs {
         bids_dir: expand_tilde(&form.bids_dir),
@@ -299,6 +313,54 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
             hdqsm_max_iter_l2: parse_optional_usize(&ps.hdqsm_max_iter_l2),
             hdqsm_tol_update: parse_optional_f64(&ps.hdqsm_tol_update),
         },
+        amp_pe_params: crate::cli::AmpPeParamArgs {
+            amp_pe_wave_order: parse_optional_usize(&ps.amp_pe_wave_order),
+            amp_pe_nlevel: parse_optional_usize(&ps.amp_pe_nlevel),
+            amp_pe_wave_pec: parse_optional_f64(&ps.amp_pe_wave_pec),
+            amp_pe_simulated_te: parse_optional_f64(&ps.amp_pe_simulated_te),
+            amp_pe_max_linearization_ite: parse_optional_usize(&ps.amp_pe_max_linearization_ite),
+            amp_pe_tikhonov_beta: parse_optional_f64(&ps.amp_pe_tikhonov_beta),
+            amp_pe_damp_rate_sig: None,
+            amp_pe_damp_rate_par: None,
+            amp_pe_max_pe_spar_ite: None,
+            amp_pe_max_pe_est_ite: None,
+            amp_pe_cvg_thd: None,
+        },
+        separation_params: crate::cli::SeparationParamArgs {
+            r2star_qsm_r_const_3t: parse_optional_f64(&ps.sep_r2starqsm_r_const_3t),
+            decompose_n_inner: parse_optional_usize(&ps.sep_decompose_n_inner),
+            decompose_chi_bound: parse_optional_f64(&ps.sep_decompose_chi_bound),
+            decompose_max_lm_iter: parse_optional_usize(&ps.sep_decompose_max_lm_iter),
+            chi_sep_ilsqr_dr_pos: parse_optional_f64(&ps.sep_ilsqr_dr_pos),
+            chi_sep_ilsqr_dr_neg: parse_optional_f64(&ps.sep_ilsqr_dr_neg),
+            chi_sep_ilsqr_lambda1: parse_optional_f64(&ps.sep_ilsqr_lambda1),
+            chi_sep_ilsqr_percentage: parse_optional_f64(&ps.sep_ilsqr_percentage),
+            chi_sep_ilsqr_r2p_min: parse_optional_f64(&ps.sep_ilsqr_r2p_min),
+            chi_sep_ilsqr_r2p_max: parse_optional_f64(&ps.sep_ilsqr_r2p_max),
+            chi_sep_ilsqr_max_iter: parse_optional_usize(&ps.sep_ilsqr_max_iter),
+            chi_sep_ilsqr_tol: parse_optional_f64(&ps.sep_ilsqr_tol),
+            chi_sep_ilsqr_cg_max_iter: parse_optional_usize(&ps.sep_ilsqr_cg_max_iter),
+            chi_sep_ilsqr_cg_tol: parse_optional_f64(&ps.sep_ilsqr_cg_tol),
+            chi_sep_medi_lambda_para: parse_optional_f64(&ps.sep_medi_lambda_para),
+            chi_sep_medi_lambda_dia: parse_optional_f64(&ps.sep_medi_lambda_dia),
+            chi_sep_medi_lambda_cpl: parse_optional_f64(&ps.sep_medi_lambda_cpl),
+            chi_sep_medi_dr_pos: parse_optional_f64(&ps.sep_medi_dr_pos),
+            chi_sep_medi_dr_neg: parse_optional_f64(&ps.sep_medi_dr_neg),
+            chi_sep_medi_percentage: parse_optional_f64(&ps.sep_medi_percentage),
+            chi_sep_medi_cg_tol: parse_optional_f64(&ps.sep_medi_cg_tol),
+            chi_sep_medi_cg_max_iter: parse_optional_usize(&ps.sep_medi_cg_max_iter),
+            chi_sep_medi_max_iter: parse_optional_usize(&ps.sep_medi_max_iter),
+            chi_sep_medi_tol: parse_optional_f64(&ps.sep_medi_tol),
+            wavesep_dr_pos: parse_optional_f64(&ps.sep_wavesep_dr_pos),
+            wavesep_dr_neg: parse_optional_f64(&ps.sep_wavesep_dr_neg),
+            wavesep_alpha: parse_optional_f64(&ps.sep_wavesep_alpha),
+            wavesep_lambda: parse_optional_f64(&ps.sep_wavesep_lambda),
+            wavesep_wavelet_order: parse_optional_usize(&ps.sep_wavesep_wavelet_order),
+            wavesep_max_iter: parse_optional_usize(&ps.sep_wavesep_max_iter),
+            wavesep_tol: parse_optional_f64(&ps.sep_wavesep_tol),
+            hc_chisep_dr_pos_3t: parse_optional_f64(&ps.sep_hcchisep_dr_pos_3t),
+            hc_chisep_bin_hz: parse_optional_f64(&ps.sep_hcchisep_bin_hz),
+        },
         vsharp_params: crate::cli::VsharpParamArgs {
             vsharp_threshold: parse_optional_f64(&ps.vsharp_threshold),
             vsharp_max_radius: parse_optional_f64(&ps.vsharp_max_radius),
@@ -365,6 +427,13 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         do_swi: form.do_swi,
         do_t2starmap: form.do_t2starmap,
         do_r2starmap: form.do_r2starmap,
+        do_r2map: form.do_r2map,
+        do_r2primemap: form.do_r2primemap,
+        do_chi_separation: ps.do_chi_separation,
+        chi_separation_algorithm: Some(sep_options[ps.separation_algorithm]),
+        use_custom_qsm: if ps.custom_qsm_tool.trim().is_empty() { None } else { Some(ps.custom_qsm_tool.trim().to_string()) },
+        use_custom_r2: if ps.custom_r2_tool.trim().is_empty() { None } else { Some(ps.custom_r2_tool.trim().to_string()) },
+        use_custom_r2prime: if ps.custom_r2prime_tool.trim().is_empty() { None } else { Some(ps.custom_r2prime_tool.trim().to_string()) },
         export_dicom: form.export_dicom,
         source_dicom: None,
         dicom_outputs: None,
@@ -481,6 +550,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         QsmAlgorithm::Ilsqr, QsmAlgorithm::Qsmart,
         QsmAlgorithm::Ndi, QsmAlgorithm::Fansi, QsmAlgorithm::FansiTgv,
         QsmAlgorithm::L1qsm, QsmAlgorithm::Whqsm, QsmAlgorithm::Hdqsm,
+        QsmAlgorithm::AmpPe,
     ];
     let unwrap_algorithms = [UnwrappingAlgorithm::Romeo, UnwrappingAlgorithm::Laplacian];
     let bf_algorithms = [
@@ -497,7 +567,20 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     config.pipeline.do_swi = app.form.do_swi;
     config.pipeline.do_t2starmap = app.form.do_t2starmap;
     config.pipeline.do_r2starmap = app.form.do_r2starmap;
+    config.pipeline.do_r2map = app.form.do_r2map;
+    config.pipeline.do_r2primemap = app.form.do_r2primemap;
+    config.pipeline.do_chi_separation = ps.do_chi_separation;
     config.pipeline.export_dicom = app.form.export_dicom;
+    // Separation
+    let sep_algorithms = [
+        SeparationAlgorithm::R2starQsm, SeparationAlgorithm::Decompose,
+        SeparationAlgorithm::ChiSepIlsqr, SeparationAlgorithm::ChiSepMedi,
+        SeparationAlgorithm::WaveSep, SeparationAlgorithm::HcChisep,
+    ];
+    config.separation.algorithm = sep_algorithms[ps.separation_algorithm.min(sep_algorithms.len() - 1)];
+    config.separation.custom_qsm_tool = non_empty(&ps.custom_qsm_tool);
+    config.separation.custom_r2_tool = non_empty(&ps.custom_r2_tool);
+    config.separation.custom_r2prime_tool = non_empty(&ps.custom_r2prime_tool);
     config.masking.inhomogeneity_correction = ps.inhomogeneity_correction;
     config.inversion.algorithm = qsm_algorithm;
     if !is_end_to_end {
@@ -533,6 +616,40 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     // Parse algorithm parameters from TUI form strings
     macro_rules! set_f64 { ($dst:expr, $src:expr) => { if let Ok(v) = $src.trim().parse::<f64>() { $dst = v; } } }
     macro_rules! set_usize { ($dst:expr, $src:expr) => { if let Ok(v) = $src.trim().parse::<usize>() { $dst = v; } } }
+    // Separation per-method parameters (after set_f64!/set_usize! are in scope).
+    set_f64!(config.separation.r2star_qsm.r_const_3t, ps.sep_r2starqsm_r_const_3t);
+    set_usize!(config.separation.decompose.n_inner, ps.sep_decompose_n_inner);
+    set_f64!(config.separation.decompose.chi_bound, ps.sep_decompose_chi_bound);
+    set_usize!(config.separation.decompose.max_lm_iter, ps.sep_decompose_max_lm_iter);
+    set_f64!(config.separation.chi_sep_ilsqr.dr_pos, ps.sep_ilsqr_dr_pos);
+    set_f64!(config.separation.chi_sep_ilsqr.dr_neg, ps.sep_ilsqr_dr_neg);
+    set_f64!(config.separation.chi_sep_ilsqr.lambda1, ps.sep_ilsqr_lambda1);
+    set_f64!(config.separation.chi_sep_ilsqr.percentage, ps.sep_ilsqr_percentage);
+    set_f64!(config.separation.chi_sep_ilsqr.r2p_min, ps.sep_ilsqr_r2p_min);
+    set_f64!(config.separation.chi_sep_ilsqr.r2p_max, ps.sep_ilsqr_r2p_max);
+    set_usize!(config.separation.chi_sep_ilsqr.max_iter, ps.sep_ilsqr_max_iter);
+    set_f64!(config.separation.chi_sep_ilsqr.tol, ps.sep_ilsqr_tol);
+    set_usize!(config.separation.chi_sep_ilsqr.cg_max_iter, ps.sep_ilsqr_cg_max_iter);
+    set_f64!(config.separation.chi_sep_ilsqr.cg_tol, ps.sep_ilsqr_cg_tol);
+    set_f64!(config.separation.chi_sep_medi.lambda_para, ps.sep_medi_lambda_para);
+    set_f64!(config.separation.chi_sep_medi.lambda_dia, ps.sep_medi_lambda_dia);
+    set_f64!(config.separation.chi_sep_medi.lambda_cpl, ps.sep_medi_lambda_cpl);
+    set_f64!(config.separation.chi_sep_medi.dr_pos, ps.sep_medi_dr_pos);
+    set_f64!(config.separation.chi_sep_medi.dr_neg, ps.sep_medi_dr_neg);
+    set_f64!(config.separation.chi_sep_medi.percentage, ps.sep_medi_percentage);
+    set_f64!(config.separation.chi_sep_medi.cg_tol, ps.sep_medi_cg_tol);
+    set_usize!(config.separation.chi_sep_medi.cg_max_iter, ps.sep_medi_cg_max_iter);
+    set_usize!(config.separation.chi_sep_medi.max_iter, ps.sep_medi_max_iter);
+    set_f64!(config.separation.chi_sep_medi.tol, ps.sep_medi_tol);
+    set_f64!(config.separation.wavesep.dr_pos, ps.sep_wavesep_dr_pos);
+    set_f64!(config.separation.wavesep.dr_neg, ps.sep_wavesep_dr_neg);
+    set_f64!(config.separation.wavesep.alpha, ps.sep_wavesep_alpha);
+    set_f64!(config.separation.wavesep.lambda, ps.sep_wavesep_lambda);
+    set_usize!(config.separation.wavesep.wavelet_order, ps.sep_wavesep_wavelet_order);
+    set_usize!(config.separation.wavesep.max_iter, ps.sep_wavesep_max_iter);
+    set_f64!(config.separation.wavesep.tol, ps.sep_wavesep_tol);
+    set_f64!(config.separation.hc_chisep.dr_pos_3t, ps.sep_hcchisep_dr_pos_3t);
+    set_f64!(config.separation.hc_chisep.bin_hz, ps.sep_hcchisep_bin_hz);
 
     // BET
     set_f64!(config.bet.fractional_intensity, ps.bet_fractional_intensity);
@@ -620,6 +737,14 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     set_usize!(config.inversion.hdqsm.max_iter_l2, ps.hdqsm_max_iter_l2);
     set_f64!(config.inversion.hdqsm.tol_update, ps.hdqsm_tol_update);
 
+    // AMP-PE
+    set_usize!(config.inversion.amp_pe.wave_order, ps.amp_pe_wave_order);
+    set_usize!(config.inversion.amp_pe.nlevel, ps.amp_pe_nlevel);
+    set_f64!(config.inversion.amp_pe.wave_pec, ps.amp_pe_wave_pec);
+    set_f64!(config.inversion.amp_pe.simulated_te, ps.amp_pe_simulated_te);
+    set_usize!(config.inversion.amp_pe.max_linearization_ite, ps.amp_pe_max_linearization_ite);
+    set_f64!(config.inversion.amp_pe.tikhonov_beta, ps.amp_pe_tikhonov_beta);
+
     // MEDI
     set_f64!(config.inversion.medi.lambda, ps.medi_lambda);
     set_usize!(config.inversion.medi.max_iter, ps.medi_max_iter);
@@ -699,6 +824,8 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     config.field_mapping.romeo.mag_coherence = ps.romeo_mag_coherence;
     config.field_mapping.romeo.mag_weight = ps.romeo_mag_weight;
 
+    // Chi-separation forces the relaxometry maps it depends on (R2/R2'/R2*).
+    enforce_separation_dependencies(&mut config);
     config
 }
 
@@ -731,6 +858,19 @@ mod tests {
         assert!(cmd.contains("/data/bids"));
         assert!(cmd.contains("/data/out"));
         assert!(!cmd.contains("<bids_dir>"));
+    }
+
+    #[test]
+    fn test_command_string_reflects_chi_separation_edits() {
+        let mut app = default_app();
+        // Enabling chi-separation + selecting decompose + editing a param must all show up.
+        app.pipeline_state.do_chi_separation = true;
+        app.pipeline_state.separation_algorithm = 1; // decompose
+        app.pipeline_state.sep_decompose_max_lm_iter = "77".to_string();
+        let cmd = build_command_string(&app);
+        assert!(cmd.contains("--do-chisep"));
+        assert!(cmd.contains("--chisep decompose"));
+        assert!(cmd.contains("--decompose-max-lm-iter 77"));
     }
 
     #[test]

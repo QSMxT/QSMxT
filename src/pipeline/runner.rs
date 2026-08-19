@@ -200,7 +200,9 @@ pub fn run_pipeline_cached(
 
     let needs_mask = config.pipeline.do_qsm || config.pipeline.do_swi
         || (config.pipeline.do_t2starmap && meta.n_echoes >= 3 && meta.has_magnitude)
-        || (config.pipeline.do_r2starmap && meta.n_echoes >= 3 && meta.has_magnitude);
+        || (config.pipeline.do_r2starmap && meta.n_echoes >= 3 && meta.has_magnitude)
+        || config.pipeline.do_r2map || config.pipeline.do_r2primemap
+        || config.pipeline.do_chi_separation;
     let needs_phase = needs_mask || config.pipeline.do_qsm;
 
     if !needs_phase {
@@ -231,6 +233,10 @@ pub fn run_pipeline_cached(
         stage_t2star_r2star(&mut ctx, &mask_path, progress)?;
     }
 
+    if config.pipeline.do_r2map || config.pipeline.do_r2primemap {
+        stage_r2_r2prime(&mut ctx, &mask_path, progress)?;
+    }
+
     if !config.pipeline.do_qsm {
         log::info!("QSM processing disabled — skipping reconstruction");
     }
@@ -250,6 +256,10 @@ pub fn run_pipeline_cached(
         }
 
         stage_reference(&mut ctx, &mask_path, progress)?;
+    }
+
+    if config.pipeline.do_chi_separation {
+        stage_chi_separation(&mut ctx, &mask_path, progress)?;
     }
 
     ctx.state.mark_run_complete();
@@ -400,10 +410,11 @@ fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Re
     Ok(())
 }
 
-/// Locate a bring-your-own mask under `<bids>/derivatives/<tool>/sub-*/[ses-*/]anat/*_mask.nii*`
+/// Locate a bring-your-own derivative under `<bids>/derivatives/<tool>/sub-*/[ses-*/]anat/<glob>`
 /// for this run. `tool == "*"` searches every derivatives dir alphabetically; within a tool the
-/// first matching mask (alphabetical) wins. Returns None if nothing matches (caller falls back).
-fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
+/// first matching file (alphabetical) wins. When `skip_desc` is set, `desc-*` files are ignored so
+/// a custom `Chimap` query never returns a chi-separation output. Returns None if nothing matches.
+fn find_custom_derivative(run: &QsmRun, tool: &str, suffix_glob: &str, skip_desc: bool) -> Option<PathBuf> {
     // BIDS root = strip <sub-X>[/ses-Y]/anat/<file> off the first echo's phase path.
     let anat = run.echoes.first()?.phase_nifti.parent()?;   // .../sub-X[/ses-Y]/anat
     let sub_or_ses = anat.parent()?;
@@ -433,9 +444,11 @@ fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
             Some(s) => td.join(&sub).join(s).join("anat"),
             None => td.join(&sub).join("anat"),
         };
-        let pattern = format!("{}/*_mask.nii*", anat_dir.display());
+        let pattern = format!("{}/{}", anat_dir.display(), suffix_glob);
         if let Ok(paths) = glob(&pattern) {
-            let mut hits: Vec<PathBuf> = paths.filter_map(|r| r.ok()).collect();
+            let mut hits: Vec<PathBuf> = paths.filter_map(|r| r.ok())
+                .filter(|p| !skip_desc || !p.to_string_lossy().contains("desc-"))
+                .collect();
             hits.sort();
             if let Some(p) = hits.into_iter().next() {
                 return Some(p);
@@ -443,6 +456,11 @@ fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Bring-your-own brain mask (`*_mask.nii*`).
+fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
+    find_custom_derivative(run, tool, "*_mask.nii*", false)
 }
 
 fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
@@ -665,6 +683,268 @@ fn stage_t2star_r2star(ctx: &mut StageContext, mask_path: &Path, progress: &dyn 
     save_volume(&t2_path, &t2star, ctx.meta)?;
     ctx.complete_step("t2star_r2star", Some("arlo"), t2r2_params, &[mask_path], vec![r2_path, t2_path], t)?;
     log_step_done("T2*/R2* mapping", t);
+    Ok(())
+}
+
+/// Load a matched MESE acquisition's magnitude as a voxel-major `(n_voxels, n_se)` buffer.
+fn load_mese_voxel_major(mese: &crate::bids::discovery::MeseRun, n_voxels: usize) -> Option<Vec<f64>> {
+    let n_se = mese.echo_times.len();
+    let mut se = vec![0.0f64; n_voxels * n_se];
+    for (i, p) in mese.magnitude_niftis.iter().enumerate() {
+        match io::read_nifti_file(p) {
+            Ok(nf) if nf.data.len() == n_voxels => {
+                for vox in 0..n_voxels { se[vox * n_se + i] = nf.data[vox]; }
+            }
+            _ => {
+                log::warn!("MESE echo unreadable/mismatched dims ({}); ignoring MESE", p.display());
+                return None;
+            }
+        }
+    }
+    Some(se)
+}
+
+/// Supplementary R2 (EPG from a MESE acquisition) and R2' = R2* − R2 maps.
+///
+/// Runs when `do_r2map`/`do_r2primemap` are set (chi-separation forces these on via
+/// `enforce_separation_dependencies`). A bring-your-own R2/R2' map from `<bids>/derivatives/<tool>`
+/// is preferred over computing. Missing inputs (no MESE, no R2*) skip the affected map with a
+/// warning rather than failing the run.
+fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
+    let want_r2 = ctx.config.pipeline.do_r2map;
+    let want_r2p = ctx.config.pipeline.do_r2primemap;
+    if !want_r2 && !want_r2p {
+        return Ok(());
+    }
+    let params = serde_json::json!({
+        "do_r2map": want_r2, "do_r2primemap": want_r2p,
+        "custom_r2": ctx.config.separation.custom_r2_tool,
+        "custom_r2prime": ctx.config.separation.custom_r2prime_tool,
+        "echo_times": ctx.meta.echo_times,
+        "has_mese": ctx.run.mese.is_some(),
+    });
+    if ctx.is_cached_with_params("r2_r2prime", Some("epg"), &params) {
+        log::info!("Skipping r2_r2prime (cached)");
+        return Ok(());
+    }
+    let t = Instant::now();
+    let (nx, ny, nz) = ctx.dims();
+    let n_voxels = nx * ny * nz;
+    let (vsx, vsy, vsz) = ctx.voxel_size();
+    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+    let mask = load_mask(mask_path)?;
+    let mut outputs: Vec<PathBuf> = Vec::new();
+
+    // ── R2 map (Hz) ──
+    let r2: Option<Vec<f64>> = if let Some(tool) = ctx.config.separation.custom_r2_tool.clone() {
+        match find_custom_derivative(ctx.run, &tool, "*_R2map.nii*", false) {
+            Some(p) => { log::info!("Using custom R2 map from {}", p.display()); Some(load_volume(&p)?) }
+            None => { log::warn!("no custom R2 map under derivatives (tool: {}) — skipping R2", tool); None }
+        }
+    } else if let Some(mese) = ctx.run.mese.clone() {
+        if mese.echo_times.len() >= 3 {
+            progress("Computing R2 (EPG) from MESE");
+            load_mese_voxel_major(&mese, n_voxels).map(|se| {
+                let p = qsm_core::relaxometry::R2EpgParams::default();
+                let (r2_map, _b1) = qsm_core::relaxometry::r2_epg(&se, &mask, &mese.echo_times, &grid, &p, None);
+                r2_map
+            })
+        } else {
+            None
+        }
+    } else {
+        log::info!("No MESE acquisition and no custom R2 map — R2/R2' unavailable for this run");
+        None
+    };
+    if let Some(ref r2map) = r2 {
+        let out = ctx.output.r2_path(&ctx.run.key);
+        save_volume(&out, r2map, ctx.meta)?;
+        outputs.push(out);
+    }
+
+    // ── R2' map (Hz) = R2* − R2 ──
+    if want_r2p {
+        let r2p: Option<Vec<f64>> = if let Some(tool) = ctx.config.separation.custom_r2prime_tool.clone() {
+            match find_custom_derivative(ctx.run, &tool, "*_R2primemap.nii*", false) {
+                Some(p) => { log::info!("Using custom R2' map from {}", p.display()); Some(load_volume(&p)?) }
+                None => { log::warn!("no custom R2' map under derivatives (tool: {}) — skipping R2'", tool); None }
+            }
+        } else {
+            let r2star_path = ctx.output.r2star_path(&ctx.run.key);
+            match (r2star_path.exists(), r2.as_ref()) {
+                (true, Some(r2map)) => {
+                    let r2s = load_volume(&r2star_path)?;
+                    Some(qsm_core::relaxometry::r2prime(&r2s, r2map, &mask))
+                }
+                _ => { log::warn!("R2' needs both R2* and R2 — one is missing; skipping R2'"); None }
+            }
+        };
+        if let Some(ref r2pv) = r2p {
+            let out = ctx.output.r2prime_path(&ctx.run.key);
+            save_volume(&out, r2pv, ctx.meta)?;
+            outputs.push(out);
+        }
+    }
+
+    if !outputs.is_empty() {
+        ctx.complete_step("r2_r2prime", Some("epg"), params, &[mask_path], outputs, t)?;
+        log_step_done("R2/R2' mapping", t);
+    }
+    Ok(())
+}
+
+/// Susceptibility source separation (chi-separation).
+///
+/// Splits the conventional QSM (χ_total) into paramagnetic (χ+) and diamagnetic (χ−) maps.
+/// Inputs are loaded from pipeline outputs (or bring-your-own derivatives): the QSM (`Chimap`),
+/// local field, multi-echo magnitude (+ RSS), R2* and R2' (produced by earlier stages). Methods
+/// whose required inputs are unavailable are skipped with a warning rather than failing the run.
+fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
+    let alg = ctx.config.separation.algorithm;
+    let alg_name = format!("{}", alg);
+
+    // Every method needs a conventional QSM (χ_total) — pipeline output or a custom derivative.
+    let qsm_path = match ctx.config.separation.custom_qsm_tool.clone() {
+        Some(tool) => match find_custom_derivative(ctx.run, &tool, "*_Chimap.nii*", true) {
+            Some(p) => { log::info!("Using custom QSM from {}", p.display()); p }
+            None => {
+                log::warn!("Skipping chi-separation ({}): no custom QSM under derivatives (tool: {})", alg_name, tool);
+                return Ok(());
+            }
+        },
+        None => {
+            let p = ctx.output.qsm_path(&ctx.run.key);
+            if !p.exists() {
+                log::warn!("Skipping chi-separation ({}): no QSM (Chimap) at {}", alg_name, p.display());
+                return Ok(());
+            }
+            p
+        }
+    };
+
+    let sep_params = serde_json::json!({
+        "algorithm": alg_name,
+        "echo_times": ctx.meta.echo_times,
+        "field_strength": ctx.meta.field_strength,
+        "has_mese": ctx.run.mese.is_some(),
+        "custom_qsm": ctx.config.separation.custom_qsm_tool,
+        "custom_r2prime": ctx.config.separation.custom_r2prime_tool,
+    });
+    if ctx.is_cached_with_params("chi_separation", Some(&alg_name), &sep_params) {
+        log::info!("Skipping chi_separation (cached)");
+        return Ok(());
+    }
+
+    let t = Instant::now();
+    let (nx, ny, nz) = ctx.dims();
+    let n_voxels = nx * ny * nz;
+    progress("Chi-separation");
+    log::info!("Chi-separation ({})", alg_name);
+    let mask = load_mask(mask_path)?;
+    let qsm = load_volume(&qsm_path)?;
+
+    // Multi-echo magnitude (voxel-major) + RSS over echoes, when magnitude is available.
+    let (magnitude_multi, magnitude_rss): (Option<Vec<f64>>, Option<Vec<f64>>) = if ctx.meta.has_magnitude {
+        let mut interleaved = vec![0.0f64; n_voxels * ctx.meta.n_echoes];
+        let mut rss = vec![0.0f64; n_voxels];
+        for i in 0..ctx.meta.n_echoes {
+            let mag = if let Some(ref raw) = ctx.run.echoes[i].magnitude_nifti {
+                io::read_nifti_file(raw).map_err(|e| QsmxtError::NiftiIo(format!("mag echo {}: {}", i + 1, e)))?.data
+            } else {
+                load_volume(&ctx.output.mag_path(&ctx.run.key, i + 1))?
+            };
+            for vox in 0..n_voxels {
+                interleaved[vox * ctx.meta.n_echoes + i] = mag[vox];
+                rss[vox] += mag[vox] * mag[vox];
+            }
+        }
+        for v in rss.iter_mut() { *v = v.sqrt(); }
+        (Some(interleaved), Some(rss))
+    } else {
+        (None, None)
+    };
+
+    // R2* / R2' — from stage_t2star_r2star / stage_r2_r2prime, or a bring-your-own R2' map.
+    let r2star: Option<Vec<f64>> = {
+        let p = ctx.output.r2star_path(&ctx.run.key);
+        if p.exists() { Some(load_volume(&p)?) } else { None }
+    };
+    let r2prime: Option<Vec<f64>> = match ctx.config.separation.custom_r2prime_tool.clone() {
+        Some(tool) => find_custom_derivative(ctx.run, &tool, "*_R2primemap.nii*", false)
+            .map(|p| load_volume(&p)).transpose()?,
+        None => {
+            let p = ctx.output.r2prime_path(&ctx.run.key);
+            if p.exists() { Some(load_volume(&p)?) } else { None }
+        }
+    };
+
+    // Multi-echo spin-echo magnitude (voxel-major) for HC-ChiSep.
+    let se_multi: Option<Vec<f64>> = ctx.run.mese.as_ref().and_then(|mese| load_mese_voxel_major(mese, n_voxels));
+
+    // Local field (ppm) for the field-based methods.
+    let local_field: Vec<f64> = {
+        let p = ctx.output.local_field_path(&ctx.run.key);
+        if p.exists() { load_volume(&p)? } else { Vec::new() }
+    };
+
+    // Gate on the inputs the chosen method requires.
+    let need = |cond: bool, what: &str| -> bool {
+        if !cond {
+            log::warn!("Skipping chi-separation ({}): missing {}", alg_name, what);
+        }
+        cond
+    };
+    let ready = match alg {
+        SeparationAlgorithm::R2starQsm => need(r2star.is_some() || magnitude_multi.is_some(), "R2* or multi-echo magnitude"),
+        SeparationAlgorithm::Decompose => need(magnitude_multi.is_some(), "multi-echo magnitude"),
+        SeparationAlgorithm::ChiSepIlsqr => {
+            need(!local_field.is_empty(), "local field") & need(r2prime.is_some(), "R2'") & need(magnitude_rss.is_some(), "magnitude")
+        }
+        SeparationAlgorithm::ChiSepMedi => {
+            need(!local_field.is_empty(), "local field") & need(r2prime.is_some(), "R2'") & need(magnitude_rss.is_some(), "magnitude")
+        }
+        SeparationAlgorithm::WaveSep => need(r2prime.is_some(), "R2'"),
+        SeparationAlgorithm::HcChisep => need(r2prime.is_some(), "R2'") & need(magnitude_multi.is_some(), "multi-echo magnitude"),
+    };
+    if !ready {
+        return Ok(());
+    }
+
+    let metadata = crate::pipeline::config::to_scan_metadata(
+        ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times, ctx.meta.field_strength, ctx.meta.b0_direction,
+    );
+    let mut sep_config = qsmxt_config::bridge::to_separation_config(ctx.config);
+    if let Some(mese) = &ctx.run.mese {
+        sep_config.hc_chisep.se_echo_times = mese.echo_times.clone();
+    }
+
+    let inputs = qsm_core::pipeline::SeparationInputs {
+        local_field_ppm: &local_field,
+        qsm: &qsm,
+        mask: &mask,
+        r2prime: r2prime.as_deref(),
+        r2star: r2star.as_deref(),
+        magnitude_rss: magnitude_rss.as_deref(),
+        magnitude_multi: magnitude_multi.as_deref(),
+        se_magnitude_multi: se_multi.as_deref(),
+    };
+
+    let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &alg_name);
+    let result = qsm_core::pipeline::run_separation(inputs, &metadata, &sep_config, &mut *prog)
+        .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+
+    let para_path = ctx.output.chi_para_path(&ctx.run.key);
+    let dia_path = ctx.output.chi_dia_path(&ctx.run.key);
+    let total_path = ctx.output.chi_sep_total_path(&ctx.run.key);
+    // χ− is signed-negative in qsm-core (so χ_total = χ+ + χ−); write the diamagnetic map as its
+    // magnitude |χ−| so both source maps are positive. χ_total stays the signed net susceptibility.
+    let chi_dia: Vec<f64> = result.chi_neg.iter().map(|&v| v.abs()).collect();
+    save_volume(&para_path, &result.chi_pos, ctx.meta)?;
+    save_volume(&dia_path, &chi_dia, ctx.meta)?;
+    save_volume(&total_path, &result.chi_total, ctx.meta)?;
+    ctx.complete_step("chi_separation", Some(&alg_name), sep_params, &[mask_path, &qsm_path],
+        vec![para_path, dia_path, total_path], t)?;
+    log_step_done(&format!("Chi-separation ({})", alg_name), t);
     Ok(())
 }
 
@@ -997,6 +1277,14 @@ fn stage_standard_qsm(
             "max_iter_l1": ctx.config.inversion.hdqsm.max_iter_l1,
             "max_iter_l2": ctx.config.inversion.hdqsm.max_iter_l2,
         }),
+        QsmAlgorithm::AmpPe => serde_json::json!({
+            "wave_order": ctx.config.inversion.amp_pe.wave_order,
+            "nlevel": ctx.config.inversion.amp_pe.nlevel,
+            "wave_pec": ctx.config.inversion.amp_pe.wave_pec,
+            "simulated_te": ctx.config.inversion.amp_pe.simulated_te,
+            "max_linearization_ite": ctx.config.inversion.amp_pe.max_linearization_ite,
+            "tikhonov_beta": ctx.config.inversion.amp_pe.tikhonov_beta,
+        }),
         _ => serde_json::json!({}),
     };
     if !ctx.is_cached_with_params("invert", Some(&alg_name), &invert_params) {
@@ -1091,6 +1379,7 @@ mod tests {
             }],
             magnetic_field_strength: 3.0, echo_times: vec![0.004], b0_dir: (0.0, 0.0, 1.0),
             dims: (2, 2, 2), has_magnitude: false,
+            mese: None,
         };
         assert_eq!(super::find_custom_mask(&run, "bet"), Some(mask.clone()));
         assert_eq!(super::find_custom_mask(&run, "*"), Some(mask.clone())); // first tool alphabetically

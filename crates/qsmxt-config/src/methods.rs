@@ -92,6 +92,36 @@ const CITE_HDQSM: Citation = Citation {
     text: "Lambert, M., et al. (2022). \"Hybrid data fidelity term approach for quantitative susceptibility mapping.\" Magnetic Resonance in Medicine, 88(4):1567-1583.",
 };
 
+const CITE_AMPPE: Citation = Citation {
+    key: "huang2023amppe",
+    text: "Huang, S., et al. (2023). \"Quantitative susceptibility mapping using approximate message passing with parameter estimation.\" *Magnetic Resonance in Medicine*, 90(4):1414-1430. https://doi.org/10.1002/mrm.29725",
+};
+
+const CITE_CHISEP: Citation = Citation {
+    key: "shin2021chisep",
+    text: "Shin, H.-G., et al. (2021). \"χ-separation: Magnetic susceptibility source separation toward iron and myelin mapping in the brain.\" *NeuroImage*, 240:118371. https://doi.org/10.1016/j.neuroimage.2021.118371",
+};
+
+const CITE_R2STARQSM: Citation = Citation {
+    key: "dimov2022",
+    text: "Dimov, A. V., et al. (2022). \"Susceptibility source separation from gradient echo data using magnitude decay modeling.\" *Journal of Neuroimaging*, 32(4):852-859. https://doi.org/10.1111/jon.13014",
+};
+
+const CITE_WAVESEP: Citation = Citation {
+    key: "fang2023wavesep",
+    text: "Fang, J., et al. (2023). \"Wavelet-based single-step susceptibility source separation (WaveSep).\" *Magnetic Resonance in Medicine* (χ-separation family).",
+};
+
+const CITE_DECOMPOSE: Citation = Citation {
+    key: "chen2021decompose",
+    text: "Chen, J., et al. (2021). \"DECOMPOSE-QSM: susceptibility source separation from a single gradient-echo acquisition.\" *Magnetic Resonance in Medicine*.",
+};
+
+const CITE_HCCHISEP: Citation = Citation {
+    key: "stewart2026",
+    text: "Stewart, A., et al. (2026). \"Hollow-cylinder susceptibility source separation (HC-ChiSep).\"",
+};
+
 const CITE_MEDI: Citation = Citation {
     key: "liu2011medi",
     text: "Liu, T., et al. (2011). \"Morphology enabled dipole inversion (MEDI) from a single-angle acquisition.\" *Magnetic Resonance in Medicine*, 66(3):777-783. https://doi.org/10.1002/mrm.22816",
@@ -274,6 +304,16 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     } else if config.pipeline.do_r2starmap {
         sentences.push("R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015).".to_string());
         add_citation(&mut citations, &CITE_ARLO);
+    }
+
+    // Chi-separation (susceptibility source separation)
+    if config.pipeline.do_chi_separation {
+        let (sep_name, sep_cite) = separation_name_cite(config.separation.algorithm);
+        sentences.push(format!(
+            "Paramagnetic and diamagnetic susceptibility maps were computed by susceptibility source separation using {} ({}).",
+            sep_name, cite_inline(sep_cite),
+        ));
+        add_citation(&mut citations, sep_cite);
     }
 
     // DICOM export
@@ -494,7 +534,19 @@ fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
         QsmAlgorithm::L1qsm => ("L1-QSM (L1 Data Fidelity)", &CITE_L1QSM),
         QsmAlgorithm::Whqsm => ("WH-QSM (Weak-Harmonic)", &CITE_WHQSM),
         QsmAlgorithm::Hdqsm => ("HD-QSM (Hybrid Data Fidelity)", &CITE_HDQSM),
+        QsmAlgorithm::AmpPe => ("AMP-PE (Approximate Message Passing with Parameter Estimation)", &CITE_AMPPE),
         QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart => ("iLSQR", &CITE_ILSQR),
+    }
+}
+
+fn separation_name_cite(alg: SeparationAlgorithm) -> (&'static str, &'static Citation) {
+    match alg {
+        SeparationAlgorithm::R2starQsm => ("R2*-QSM susceptibility source separation", &CITE_R2STARQSM),
+        SeparationAlgorithm::Decompose => ("DECOMPOSE-QSM", &CITE_DECOMPOSE),
+        SeparationAlgorithm::ChiSepIlsqr => ("χ-separation (iLSQR)", &CITE_CHISEP),
+        SeparationAlgorithm::ChiSepMedi => ("χ-separation (MEDI)", &CITE_CHISEP),
+        SeparationAlgorithm::WaveSep => ("WaveSep", &CITE_WAVESEP),
+        SeparationAlgorithm::HcChisep => ("hollow-cylinder χ-separation (HC-ChiSep)", &CITE_HCCHISEP),
     }
 }
 
@@ -516,6 +568,12 @@ fn cite_inline(cite: &Citation) -> &'static str {
         "milovic2022" => "Milovic et al., 2022",
         "milovic2019" => "Milovic et al., 2019",
         "lambert2022" => "Lambert et al., 2022",
+        "huang2023amppe" => "Huang et al., 2023",
+        "shin2021chisep" => "Shin et al., 2021",
+        "dimov2022" => "Dimov et al., 2022",
+        "fang2023wavesep" => "Fang et al., 2023",
+        "chen2021decompose" => "Chen et al., 2021",
+        "stewart2026" => "Stewart et al., 2026",
         "li2015" => "Li et al., 2015",
         "sun2014" => "Sun & Wilman, 2014",
         "li2014" => "Li et al., 2014",
@@ -1041,6 +1099,7 @@ mod tests {
             (QsmAlgorithm::L1qsm, "L1-QSM"),
             (QsmAlgorithm::Whqsm, "WH-QSM"),
             (QsmAlgorithm::Hdqsm, "HD-QSM"),
+            (QsmAlgorithm::AmpPe, "AMP-PE"),
         ] {
             let mut c = PipelineConfig::default();
             c.inversion.algorithm = alg;

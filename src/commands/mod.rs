@@ -8,6 +8,9 @@ pub mod mask;
 pub mod qsmart;
 pub mod quality_map;
 pub mod r2star;
+pub mod r2;
+pub mod r2prime;
+pub mod separate;
 pub mod resample;
 pub mod run;
 pub mod slurm;
@@ -66,6 +69,8 @@ mod integration_tests {
             l1qsm_params: Default::default(),
             whqsm_params: Default::default(),
             hdqsm_params: Default::default(),
+            amp_pe_params: Default::default(),
+            separation_params: Default::default(),
             vsharp_params: Default::default(),
             pdf_params: Default::default(),
             lbv_params: Default::default(),
@@ -84,6 +89,13 @@ mod integration_tests {
             do_swi: false,
             do_t2starmap: false,
             do_r2starmap: false,
+            do_r2map: false,
+            do_r2primemap: false,
+            do_chi_separation: false,
+            chi_separation_algorithm: None,
+            use_custom_qsm: None,
+            use_custom_r2: None,
+            use_custom_r2prime: None,
             export_dicom: false,
             source_dicom: None,
             dicom_outputs: None,

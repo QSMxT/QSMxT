@@ -137,6 +137,7 @@ mod tests {
             b0_dir: (0.0, 0.0, 1.0),
             dims: (64, 64, 64),
             has_magnitude: false,
+            mese: None,
         }
     }
 

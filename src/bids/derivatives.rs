@@ -106,6 +106,20 @@ impl DerivativeOutputs {
     pub fn swi_mip_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "minIP") }
     pub fn t2star_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "T2starmap") }
     pub fn r2star_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "R2starmap") }
+    /// R2 map (Hz) from the MESE acquisition (EPG fit).
+    pub fn r2_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "R2map") }
+    /// R2' = R2* − R2 (Hz), used by the R2'-based chi-separation methods.
+    pub fn r2prime_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "R2primemap") }
+    /// Chi-separation outputs, using the BIDS `desc-` entity on the `Chimap` suffix.
+    pub fn chi_para_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-paramagnetic_Chimap.nii", key.basename()))
+    }
+    pub fn chi_dia_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-diamagnetic_Chimap.nii", key.basename()))
+    }
+    pub fn chi_sep_total_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-total_Chimap.nii", key.basename()))
+    }
 
     // Intermediate outputs (in workflow step directories)
     pub fn field_ppm_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "unwrap", "field-ppm") }
