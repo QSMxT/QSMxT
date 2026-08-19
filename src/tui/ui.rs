@@ -6,7 +6,8 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{App, FieldKind, PipelineRow, TAB_NAMES};
+use super::app::{App, FieldKind, PipelineRow, PipelineTabMode, TAB_NAMES,
+    TAB_INPUT, TAB_QSM, TAB_SEPARATION, TAB_EXECUTION, TAB_METHODS};
 use super::command;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -103,15 +104,20 @@ fn draw_tabs(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 }
 
 fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
-    if app.active_tab == 0 {
+    if app.active_tab == TAB_INPUT {
         draw_input_tab(f, app, area);
         return;
     }
-    if app.active_tab == 1 {
+    if app.active_tab == TAB_QSM || app.active_tab == TAB_SEPARATION {
+        app.pipeline_state.mode = if app.active_tab == TAB_SEPARATION {
+            PipelineTabMode::Separation
+        } else {
+            PipelineTabMode::Qsm
+        };
         draw_pipeline_tab(f, app, area);
         return;
     }
-    if app.active_tab == 4 {
+    if app.active_tab == TAB_METHODS {
         draw_methods_tab(f, app, area);
         return;
     }
@@ -161,7 +167,7 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     Style::default().fg(Color::White)
                 };
                 let val_style = if focused { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::Gray) };
-                let is_required = app.active_tab == 3 && i == 4 && app.form.execution_mode == 1;
+                let is_required = app.active_tab == TAB_EXECUTION && i == 4 && app.form.execution_mode == 1;
                 let display_val = if value.is_empty() && !editing && is_required {
                     Span::styled("(required)", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))
                 } else if value.is_empty() && !editing {

@@ -8,6 +8,7 @@ pub enum QsmAlgorithm {
     Ndi, Fansi,
     #[serde(rename = "fansi-tgv")] FansiTgv,
     L1qsm, Whqsm, Hdqsm,
+    #[serde(rename = "amp-pe")] AmpPe,
 }
 impl fmt::Display for QsmAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -17,6 +18,26 @@ impl fmt::Display for QsmAlgorithm {
             Self::Medi => "medi", Self::Tfi => "tfi", Self::Ilsqr => "ilsqr", Self::Qsmart => "qsmart",
             Self::Ndi => "ndi", Self::Fansi => "fansi", Self::FansiTgv => "fansi-tgv",
             Self::L1qsm => "l1qsm", Self::Whqsm => "whqsm", Self::Hdqsm => "hdqsm",
+            Self::AmpPe => "amp-pe",
+        })
+    }
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+pub enum SeparationAlgorithm {
+    #[serde(rename = "r2star-qsm")] R2starQsm,
+    #[serde(rename = "decompose")] Decompose,
+    #[serde(rename = "chi-sep-ilsqr")] ChiSepIlsqr,
+    #[serde(rename = "chi-sep-medi")] ChiSepMedi,
+    #[serde(rename = "wavesep")] WaveSep,
+    #[serde(rename = "hc-chisep")] HcChisep,
+}
+impl fmt::Display for SeparationAlgorithm {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self {
+            Self::R2starQsm => "r2star-qsm", Self::Decompose => "decompose",
+            Self::ChiSepIlsqr => "chi-sep-ilsqr", Self::ChiSepMedi => "chi-sep-medi",
+            Self::WaveSep => "wavesep", Self::HcChisep => "hc-chisep",
         })
     }
 }

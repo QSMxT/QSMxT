@@ -9,6 +9,8 @@ use qsm_core::pipeline::{
     FieldMappingConfig as PFieldMapping,
     BgRemovalConfig as PBgRemoval,
     InversionConfig as PInversion,
+    SeparationConfig as PSeparation,
+    SeparationAlgorithm as PSepAlg,
     ScanMetadata as PScanMetadata,
     UnwrappingAlgorithm as PUnwrap,
     B0EstimationMethod as PB0Method,
@@ -44,6 +46,7 @@ fn map_alg(alg: QsmAlgorithm) -> PInvAlg {
         QsmAlgorithm::L1qsm => PInvAlg::L1qsm,
         QsmAlgorithm::Whqsm => PInvAlg::Whqsm,
         QsmAlgorithm::Hdqsm => PInvAlg::Hdqsm,
+        QsmAlgorithm::AmpPe => PInvAlg::AmpPe,
     }
 }
 
@@ -130,6 +133,11 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             tol: cfg.bg_removal.harperella.tol,
         },
         sdf: qsm_core::bgremove::SdfParams::default(),
+        // mSMV is a refinement-only post-step in qsm-core v0.26; not yet exposed as a
+        // qsmxt knob, so use defaults and leave the refinement off (b0/te are overridden
+        // from scan metadata by the dispatcher when enabled).
+        msmv: qsm_core::bgremove::MsmvParams::default(),
+        msmv_refine: false,
     };
 
     let inversion = PInversion {
@@ -215,6 +223,22 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             mu2: cfg.inversion.hdqsm.mu2, max_iter_l1: cfg.inversion.hdqsm.max_iter_l1,
             max_iter_l2: cfg.inversion.hdqsm.max_iter_l2, tol_update: cfg.inversion.hdqsm.tol_update,
         },
+        // AMP-PE: `b0` is overridden from scan metadata by the qsm-core dispatcher.
+        amp_pe: qsm_core::inversion::AmpPeParams {
+            wave_order: cfg.inversion.amp_pe.wave_order,
+            nlevel: cfg.inversion.amp_pe.nlevel,
+            wave_pec: cfg.inversion.amp_pe.wave_pec,
+            simulated_te: cfg.inversion.amp_pe.simulated_te,
+            max_linearization_ite: cfg.inversion.amp_pe.max_linearization_ite,
+            b0: cfg.inversion.amp_pe.b0,
+            gyro_ratio: cfg.inversion.amp_pe.gyro_ratio,
+            damp_rate_sig: cfg.inversion.amp_pe.damp_rate_sig,
+            damp_rate_par: cfg.inversion.amp_pe.damp_rate_par,
+            max_pe_spar_ite: cfg.inversion.amp_pe.max_pe_spar_ite,
+            max_pe_est_ite: cfg.inversion.amp_pe.max_pe_est_ite,
+            cvg_thd: cfg.inversion.amp_pe.cvg_thd,
+            tikhonov_beta: cfg.inversion.amp_pe.tikhonov_beta,
+        },
         tgv: qsm_core::inversion::TgvParams {
             iterations: cfg.inversion.tgv.iterations,
             erosions: cfg.inversion.tgv.erosions,
@@ -252,6 +276,64 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     };
 
     (field_mapping, bg_removal, inversion, reference)
+}
+
+/// Map a qsmxt-config separation algorithm to its qsm-core equivalent.
+fn map_sep_alg(alg: SeparationAlgorithm) -> PSepAlg {
+    match alg {
+        SeparationAlgorithm::ChiSepIlsqr => PSepAlg::ChiSepIlsqr,
+        SeparationAlgorithm::ChiSepMedi => PSepAlg::ChiSepMedi,
+        SeparationAlgorithm::R2starQsm => PSepAlg::R2starQsm,
+        SeparationAlgorithm::WaveSep => PSepAlg::WaveSep,
+        SeparationAlgorithm::Decompose => PSepAlg::Decompose,
+        SeparationAlgorithm::HcChisep => PSepAlg::HcChisep,
+    }
+}
+
+/// Convert the chi-separation config to qsm-core's `SeparationConfig`.
+///
+/// `cf`/`b0` are left at defaults — the `run_separation` dispatcher overrides them
+/// from scan metadata. `hc_chisep.se_echo_times` stays empty here; the runner sets it
+/// when multi-echo spin-echo data is available.
+pub fn to_separation_config(cfg: &PipelineConfig) -> PSeparation {
+    let s = &cfg.separation;
+    PSeparation {
+        algorithm: map_sep_alg(s.algorithm),
+        chi_sep_ilsqr: qsm_core::separation::ChiSepIlsqrParams {
+            dr_pos: s.chi_sep_ilsqr.dr_pos, dr_neg: s.chi_sep_ilsqr.dr_neg,
+            lambda1: s.chi_sep_ilsqr.lambda1, percentage: s.chi_sep_ilsqr.percentage,
+            r2p_min: s.chi_sep_ilsqr.r2p_min, r2p_max: s.chi_sep_ilsqr.r2p_max,
+            max_iter: s.chi_sep_ilsqr.max_iter, tol: s.chi_sep_ilsqr.tol,
+            cg_max_iter: s.chi_sep_ilsqr.cg_max_iter, cg_tol: s.chi_sep_ilsqr.cg_tol,
+            ..qsm_core::separation::ChiSepIlsqrParams::default()
+        },
+        chi_sep_medi: qsm_core::separation::ChiSepParams {
+            lambda_para: s.chi_sep_medi.lambda_para, lambda_dia: s.chi_sep_medi.lambda_dia,
+            lambda_cpl: s.chi_sep_medi.lambda_cpl, dr_pos: s.chi_sep_medi.dr_pos,
+            dr_neg: s.chi_sep_medi.dr_neg, percentage: s.chi_sep_medi.percentage,
+            cg_tol: s.chi_sep_medi.cg_tol, cg_max_iter: s.chi_sep_medi.cg_max_iter,
+            max_iter: s.chi_sep_medi.max_iter, tol: s.chi_sep_medi.tol,
+            ..qsm_core::separation::ChiSepParams::default()
+        },
+        r2star_qsm: qsm_core::separation::R2starQsmParams {
+            r_const_3t: s.r2star_qsm.r_const_3t,
+            ..qsm_core::separation::R2starQsmParams::default()
+        },
+        wavesep: qsm_core::separation::WaveSepParams {
+            dr_pos: s.wavesep.dr_pos, dr_neg: s.wavesep.dr_neg, alpha: s.wavesep.alpha,
+            lambda: s.wavesep.lambda, wavelet_order: s.wavesep.wavelet_order,
+            max_iter: s.wavesep.max_iter, tol: s.wavesep.tol,
+        },
+        decompose: qsm_core::separation::DecomposeParams {
+            n_inner: s.decompose.n_inner, chi_bound: s.decompose.chi_bound,
+            max_lm_iter: s.decompose.max_lm_iter,
+            ..qsm_core::separation::DecomposeParams::default()
+        },
+        hc_chisep: qsm_core::separation::HcChisepParams {
+            dr_pos_3t: s.hc_chisep.dr_pos_3t, bin_hz: s.hc_chisep.bin_hz,
+            ..qsm_core::separation::HcChisepParams::default()
+        },
+    }
 }
 
 /// Convert RunMetadata-like info to qsm-core ScanMetadata.

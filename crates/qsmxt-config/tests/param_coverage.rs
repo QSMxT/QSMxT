@@ -67,7 +67,17 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     cover!(q::inversion::NltvParams => c::NltvConfig);
     cover!(q::inversion::MediParams => c::MediConfig);
     cover!(q::inversion::TfiParams => c::TfiConfig);
+    cover!(q::inversion::AmpPeParams => c::AmpPeConfig);
     cover!(q::inversion::IlsqrParams => c::IlsqrConfig);
+
+    // Chi-separation methods. cf/b0 come from scan metadata; se_echo_times is set by the
+    // runner from spin-echo data — none are user knobs.
+    cover!(q::separation::ChiSepIlsqrParams => c::ChiSepIlsqrConfig, ignore: ["cf"]);
+    cover!(q::separation::ChiSepParams => c::ChiSepMediConfig, ignore: ["cf"]);
+    cover!(q::separation::R2starQsmParams => c::R2starQsmConfig, ignore: ["b0"]);
+    cover!(q::separation::WaveSepParams => c::WaveSepConfig);
+    cover!(q::separation::DecomposeParams => c::DecomposeConfig, ignore: ["b0"]);
+    cover!(q::separation::HcChisepParams => c::HcChisepConfig, ignore: ["b0", "se_echo_times"]);
     // fieldstrength/te are runtime scan parameters, not user knobs.
     cover!(q::inversion::TgvParams => c::TgvConfig, ignore: ["fieldstrength", "te"]);
 

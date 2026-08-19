@@ -481,6 +481,7 @@ mod tests {
             b0_dir: (0.0, 0.0, 1.0),
             dims: (4, 4, 4),
             has_magnitude: false,
+            mese: None,
         };
 
         write_provenance(deriv, &[run], &output, "qsmxt run /data/bids --qsm-algorithm tkd").unwrap();

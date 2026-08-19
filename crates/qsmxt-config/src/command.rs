@@ -14,6 +14,17 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     if config.pipeline.do_swi { parts.push("--do-swi".into()); }
     if config.pipeline.do_t2starmap { parts.push("--do-t2starmap".into()); }
     if config.pipeline.do_r2starmap { parts.push("--do-r2starmap".into()); }
+    if config.pipeline.do_chi_separation { parts.push("--do-chisep".into()); }
+    // R2/R2' maps are implied by chi-separation; only surface them when set independently.
+    if config.pipeline.do_r2primemap && !config.pipeline.do_chi_separation {
+        parts.push("--do-r2primemap".into());
+    }
+    if config.pipeline.do_r2map && !config.pipeline.do_chi_separation && !config.pipeline.do_r2primemap {
+        parts.push("--do-r2map".into());
+    }
+    if let Some(tool) = &config.separation.custom_qsm_tool { parts.push(format!("--use-custom-qsm {}", tool)); }
+    if let Some(tool) = &config.separation.custom_r2_tool { parts.push(format!("--use-custom-r2 {}", tool)); }
+    if let Some(tool) = &config.separation.custom_r2prime_tool { parts.push(format!("--use-custom-r2prime {}", tool)); }
     if config.pipeline.export_dicom { parts.push("--export-dicom".into()); }
     emit_f64(&mut parts, "--obliquity-threshold", config.pipeline.obliquity_threshold, d.pipeline.obliquity_threshold);
 
@@ -240,6 +251,76 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             emit_usize(&mut parts, "--hdqsm-max-iter-l2", h.max_iter_l2, dh.max_iter_l2);
             emit_f64(&mut parts, "--hdqsm-tol-update", h.tol_update, dh.tol_update);
         }
+        QsmAlgorithm::AmpPe => {
+            let a = &config.inversion.amp_pe;
+            let da = &d.inversion.amp_pe;
+            // b0 (scan) and gyro_ratio (physical constant) are not run flags.
+            emit_usize(&mut parts, "--amp-pe-wave-order", a.wave_order, da.wave_order);
+            emit_usize(&mut parts, "--amp-pe-nlevel", a.nlevel, da.nlevel);
+            emit_f64(&mut parts, "--amp-pe-wave-pec", a.wave_pec, da.wave_pec);
+            emit_f64(&mut parts, "--amp-pe-simulated-te", a.simulated_te, da.simulated_te);
+            emit_usize(&mut parts, "--amp-pe-max-linearization-ite", a.max_linearization_ite, da.max_linearization_ite);
+            emit_f64(&mut parts, "--amp-pe-damp-rate-sig", a.damp_rate_sig, da.damp_rate_sig);
+            emit_f64(&mut parts, "--amp-pe-damp-rate-par", a.damp_rate_par, da.damp_rate_par);
+            emit_usize(&mut parts, "--amp-pe-max-pe-spar-ite", a.max_pe_spar_ite, da.max_pe_spar_ite);
+            emit_usize(&mut parts, "--amp-pe-max-pe-est-ite", a.max_pe_est_ite, da.max_pe_est_ite);
+            emit_f64(&mut parts, "--amp-pe-cvg-thd", a.cvg_thd, da.cvg_thd);
+            emit_f64(&mut parts, "--amp-pe-tikhonov-beta", a.tikhonov_beta, da.tikhonov_beta);
+        }
+    }
+
+    // ── Chi-separation method + params (only the selected method's) ──
+    if config.pipeline.do_chi_separation {
+        emit_enum(&mut parts, "--chisep", &config.separation.algorithm, &d.separation.algorithm);
+        let s = &config.separation;
+        let ds = &d.separation;
+        match config.separation.algorithm {
+            SeparationAlgorithm::R2starQsm => {
+                emit_f64(&mut parts, "--r2star-qsm-r-const-3t", s.r2star_qsm.r_const_3t, ds.r2star_qsm.r_const_3t);
+            }
+            SeparationAlgorithm::Decompose => {
+                emit_usize(&mut parts, "--decompose-n-inner", s.decompose.n_inner, ds.decompose.n_inner);
+                emit_f64(&mut parts, "--decompose-chi-bound", s.decompose.chi_bound, ds.decompose.chi_bound);
+                emit_usize(&mut parts, "--decompose-max-lm-iter", s.decompose.max_lm_iter, ds.decompose.max_lm_iter);
+            }
+            SeparationAlgorithm::ChiSepIlsqr => {
+                emit_f64(&mut parts, "--chi-sep-ilsqr-dr-pos", s.chi_sep_ilsqr.dr_pos, ds.chi_sep_ilsqr.dr_pos);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-dr-neg", s.chi_sep_ilsqr.dr_neg, ds.chi_sep_ilsqr.dr_neg);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-lambda1", s.chi_sep_ilsqr.lambda1, ds.chi_sep_ilsqr.lambda1);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-percentage", s.chi_sep_ilsqr.percentage, ds.chi_sep_ilsqr.percentage);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-r2p-min", s.chi_sep_ilsqr.r2p_min, ds.chi_sep_ilsqr.r2p_min);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-r2p-max", s.chi_sep_ilsqr.r2p_max, ds.chi_sep_ilsqr.r2p_max);
+                emit_usize(&mut parts, "--chi-sep-ilsqr-max-iter", s.chi_sep_ilsqr.max_iter, ds.chi_sep_ilsqr.max_iter);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-tol", s.chi_sep_ilsqr.tol, ds.chi_sep_ilsqr.tol);
+                emit_usize(&mut parts, "--chi-sep-ilsqr-cg-max-iter", s.chi_sep_ilsqr.cg_max_iter, ds.chi_sep_ilsqr.cg_max_iter);
+                emit_f64(&mut parts, "--chi-sep-ilsqr-cg-tol", s.chi_sep_ilsqr.cg_tol, ds.chi_sep_ilsqr.cg_tol);
+            }
+            SeparationAlgorithm::ChiSepMedi => {
+                emit_f64(&mut parts, "--chi-sep-medi-lambda-para", s.chi_sep_medi.lambda_para, ds.chi_sep_medi.lambda_para);
+                emit_f64(&mut parts, "--chi-sep-medi-lambda-dia", s.chi_sep_medi.lambda_dia, ds.chi_sep_medi.lambda_dia);
+                emit_f64(&mut parts, "--chi-sep-medi-lambda-cpl", s.chi_sep_medi.lambda_cpl, ds.chi_sep_medi.lambda_cpl);
+                emit_f64(&mut parts, "--chi-sep-medi-dr-pos", s.chi_sep_medi.dr_pos, ds.chi_sep_medi.dr_pos);
+                emit_f64(&mut parts, "--chi-sep-medi-dr-neg", s.chi_sep_medi.dr_neg, ds.chi_sep_medi.dr_neg);
+                emit_f64(&mut parts, "--chi-sep-medi-percentage", s.chi_sep_medi.percentage, ds.chi_sep_medi.percentage);
+                emit_f64(&mut parts, "--chi-sep-medi-cg-tol", s.chi_sep_medi.cg_tol, ds.chi_sep_medi.cg_tol);
+                emit_usize(&mut parts, "--chi-sep-medi-cg-max-iter", s.chi_sep_medi.cg_max_iter, ds.chi_sep_medi.cg_max_iter);
+                emit_usize(&mut parts, "--chi-sep-medi-max-iter", s.chi_sep_medi.max_iter, ds.chi_sep_medi.max_iter);
+                emit_f64(&mut parts, "--chi-sep-medi-tol", s.chi_sep_medi.tol, ds.chi_sep_medi.tol);
+            }
+            SeparationAlgorithm::WaveSep => {
+                emit_f64(&mut parts, "--wavesep-dr-pos", s.wavesep.dr_pos, ds.wavesep.dr_pos);
+                emit_f64(&mut parts, "--wavesep-dr-neg", s.wavesep.dr_neg, ds.wavesep.dr_neg);
+                emit_f64(&mut parts, "--wavesep-alpha", s.wavesep.alpha, ds.wavesep.alpha);
+                emit_f64(&mut parts, "--wavesep-lambda", s.wavesep.lambda, ds.wavesep.lambda);
+                emit_usize(&mut parts, "--wavesep-wavelet-order", s.wavesep.wavelet_order, ds.wavesep.wavelet_order);
+                emit_usize(&mut parts, "--wavesep-max-iter", s.wavesep.max_iter, ds.wavesep.max_iter);
+                emit_f64(&mut parts, "--wavesep-tol", s.wavesep.tol, ds.wavesep.tol);
+            }
+            SeparationAlgorithm::HcChisep => {
+                emit_f64(&mut parts, "--hc-chisep-dr-pos-3t", s.hc_chisep.dr_pos_3t, ds.hc_chisep.dr_pos_3t);
+                emit_f64(&mut parts, "--hc-chisep-bin-hz", s.hc_chisep.bin_hz, ds.hc_chisep.bin_hz);
+            }
+        }
     }
 
     // ── QSM reference ──
@@ -291,6 +372,26 @@ mod tests {
         config.inversion.algorithm = QsmAlgorithm::Tv;
         let cmd = generate_command(&config);
         assert!(cmd.contains("--qsm-algorithm tv"));
+    }
+
+    #[test]
+    fn test_chi_separation_command() {
+        // Default (r2star-qsm) with chi-sep enabled: just the toggle, no algorithm flag.
+        let mut config = PipelineConfig::default();
+        config.pipeline.do_chi_separation = true;
+        let cmd = generate_command(&config);
+        assert!(cmd.contains("--do-chisep"));
+        assert!(!cmd.contains("--chisep")); // default method → not emitted
+
+        // Selecting a non-default method emits it; editing a param emits that too.
+        config.separation.algorithm = SeparationAlgorithm::Decompose;
+        config.separation.decompose.max_lm_iter = 99;
+        let cmd = generate_command(&config);
+        assert!(cmd.contains("--chisep decompose"));
+        assert!(cmd.contains("--decompose-max-lm-iter 99"));
+
+        // A param for a non-selected method must NOT leak into the command.
+        assert!(!cmd.contains("--wavesep-alpha"));
     }
 
     #[test]
@@ -361,6 +462,7 @@ mod tests {
             (QsmAlgorithm::Ndi, "ndi"), (QsmAlgorithm::Fansi, "fansi"),
             (QsmAlgorithm::FansiTgv, "fansi-tgv"), (QsmAlgorithm::L1qsm, "l1qsm"),
             (QsmAlgorithm::Whqsm, "whqsm"), (QsmAlgorithm::Hdqsm, "hdqsm"),
+            (QsmAlgorithm::AmpPe, "amp-pe"),
         ] {
             let mut c = PipelineConfig::default();
             c.inversion.algorithm = alg;

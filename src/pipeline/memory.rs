@@ -72,13 +72,26 @@ pub fn estimate_peak_memory_bytes(
         estimate_standard_pipeline(n, n_echoes, config)
     };
 
+    // Chi-separation + R2/R2' run as sequential stages after QSM. Peak load: the QSM (8N),
+    // R2*/R2/R2' maps (~24N), multi-echo GRE + MESE magnitude voxel-major (~2·n_echoes·8N),
+    // plus the EPG R2 dictionary/solver or the run_separation workspace (~80N for the CG methods).
+    let sep_mem = if config.pipeline.do_chi_separation
+        || config.pipeline.do_r2map
+        || config.pipeline.do_r2primemap
+    {
+        (2 * n_echoes * F64 + 120) * n
+    } else {
+        0
+    };
+
     // Overall peak: baseline + max across all stages
-    // Stages are sequential: masking → SWI → QSM
+    // Stages are sequential: masking → SWI → QSM → (R2/R2' + chi-separation)
     let peak = baseline
         + [
             mask_mem,
             swi_temp + swi_persistent,
             qsm_stage_mem + swi_persistent,
+            sep_mem,
         ]
         .into_iter()
         .max()
@@ -154,6 +167,8 @@ fn estimate_standard_pipeline(n: usize, n_echoes: usize, config: &PipelineConfig
         QsmAlgorithm::Whqsm => 140 * n,
         // HD-QSM: two-stage L1->L2, closed-form + ADMM buffers
         QsmAlgorithm::Hdqsm => 120 * n,
+        // AMP-PE: GAMP over complex wavelet coefficients + padded FFT workspace
+        QsmAlgorithm::AmpPe => 260 * n,
     };
 
     // Peak is the maximum across the three sequential stages

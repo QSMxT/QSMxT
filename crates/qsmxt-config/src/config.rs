@@ -59,7 +59,95 @@ param_config!(TfiConfig from qsm_core::inversion::TfiParams {
     lambda: f64, precond: f64, merit: bool, data_weighting: i32,
     percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
 });
+param_config!(AmpPeConfig from qsm_core::inversion::AmpPeParams {
+    wave_order: usize, nlevel: usize, wave_pec: f64, simulated_te: f64,
+    max_linearization_ite: usize, b0: f64, gyro_ratio: f64, damp_rate_sig: f64,
+    damp_rate_par: f64, max_pe_spar_ite: usize, max_pe_est_ite: usize,
+    cvg_thd: f64, tikhonov_beta: f64
+});
 param_config!(IlsqrConfig from qsm_core::inversion::IlsqrParams { tol: f64, max_iter: usize });
+
+// ─── Chi-separation method params (cf/b0/se_echo_times are set from scan metadata) ───
+param_config!(ChiSepIlsqrConfig from qsm_core::separation::ChiSepIlsqrParams {
+    dr_pos: f64, dr_neg: f64, lambda1: f64, percentage: f64, r2p_min: f64, r2p_max: f64,
+    max_iter: usize, tol: f64, cg_max_iter: usize, cg_tol: f64
+});
+param_config!(ChiSepMediConfig from qsm_core::separation::ChiSepParams {
+    lambda_para: f64, lambda_dia: f64, lambda_cpl: f64, dr_pos: f64, dr_neg: f64,
+    percentage: f64, cg_tol: f64, cg_max_iter: usize, max_iter: usize, tol: f64
+});
+param_config!(R2starQsmConfig from qsm_core::separation::R2starQsmParams { r_const_3t: f64 });
+param_config!(WaveSepConfig from qsm_core::separation::WaveSepParams {
+    dr_pos: f64, dr_neg: f64, alpha: f64, lambda: f64, wavelet_order: usize, max_iter: usize, tol: f64
+});
+param_config!(DecomposeConfig from qsm_core::separation::DecomposeParams {
+    n_inner: usize, chi_bound: f64, max_lm_iter: usize
+});
+param_config!(HcChisepConfig from qsm_core::separation::HcChisepParams {
+    dr_pos_3t: f64, bin_hz: f64
+});
+
+/// Chi-separation configuration (algorithm selector + per-method params).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct SeparationConfig {
+    pub algorithm: SeparationAlgorithm,
+    pub chi_sep_ilsqr: ChiSepIlsqrConfig,
+    pub chi_sep_medi: ChiSepMediConfig,
+    pub r2star_qsm: R2starQsmConfig,
+    pub wavesep: WaveSepConfig,
+    pub decompose: DecomposeConfig,
+    pub hc_chisep: HcChisepConfig,
+    /// Bring-your-own input maps from `<bids>/derivatives/<tool>/…` (mirrors
+    /// `masking.custom_mask_tool`). When set, the pipeline prefers the custom map over
+    /// computing it. Empty/None = compute from the pipeline.
+    #[serde(default)]
+    pub custom_qsm_tool: Option<String>,
+    #[serde(default)]
+    pub custom_r2_tool: Option<String>,
+    #[serde(default)]
+    pub custom_r2prime_tool: Option<String>,
+}
+impl Default for SeparationConfig {
+    fn default() -> Self {
+        Self {
+            algorithm: SeparationAlgorithm::R2starQsm,
+            chi_sep_ilsqr: ChiSepIlsqrConfig::default(),
+            chi_sep_medi: ChiSepMediConfig::default(),
+            r2star_qsm: R2starQsmConfig::default(),
+            wavesep: WaveSepConfig::default(),
+            decompose: DecomposeConfig::default(),
+            hc_chisep: HcChisepConfig::default(),
+            custom_qsm_tool: None,
+            custom_r2_tool: None,
+            custom_r2prime_tool: None,
+        }
+    }
+}
+
+/// Force the relaxometry outputs that chi-separation depends on.
+///
+/// Chi-separation needs R2 and R2' (R2' = R2* − R2); enabling it turns those maps on unless a
+/// custom map is supplied for them. Computing R2' additionally requires R2 and R2*. This keeps a
+/// `--do-chi-separation` run self-consistent, and is what the TUI validates against (it must not
+/// let the user disable a required map while chi-separation is enabled).
+pub fn enforce_separation_dependencies(config: &mut PipelineConfig) {
+    if config.pipeline.do_chi_separation {
+        if config.separation.custom_r2_tool.is_none() {
+            config.pipeline.do_r2map = true;
+        }
+        if config.separation.custom_r2prime_tool.is_none() {
+            config.pipeline.do_r2primemap = true;
+        }
+    }
+    // R2' = R2* − R2 → computing it (no custom map) requires R2 and R2*.
+    if config.pipeline.do_r2primemap && config.separation.custom_r2prime_tool.is_none() {
+        if config.separation.custom_r2_tool.is_none() {
+            config.pipeline.do_r2map = true;
+        }
+        config.pipeline.do_r2starmap = true;
+    }
+}
 param_config!(VsharpConfig from qsm_core::bgremove::VsharpParams {
     threshold: f64, max_radius: f64, min_radius: f64
 });
@@ -267,6 +355,7 @@ pub struct PipelineConfig {
     pub masking: MaskingConfig,
     pub bg_removal: BgRemovalConfig,
     pub inversion: InversionConfig,
+    pub separation: SeparationConfig,
     pub qsm: QsmConfig,
     pub swi: SwiConfig,
     pub bet: BetConfig,
@@ -280,12 +369,17 @@ pub struct PipelineToggles {
     pub do_swi: bool,
     pub do_t2starmap: bool,
     pub do_r2starmap: bool,
+    /// Compute an R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG.
+    pub do_r2map: bool,
+    /// Compute an R2' map (Hz) = R2* − R2 (needs GRE magnitude + a MESE acquisition).
+    pub do_r2primemap: bool,
+    pub do_chi_separation: bool,
     pub export_dicom: bool,
     pub obliquity_threshold: f64,
 }
 impl Default for PipelineToggles {
     fn default() -> Self {
-        Self { do_qsm: true, do_swi: false, do_t2starmap: false, do_r2starmap: false, export_dicom: false, obliquity_threshold: -1.0 }
+        Self { do_qsm: true, do_swi: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, obliquity_threshold: -1.0 }
     }
 }
 
@@ -378,6 +472,7 @@ pub struct InversionConfig {
     pub l1qsm: L1qsmConfig,
     pub whqsm: WhqsmConfig,
     pub hdqsm: HdqsmConfig,
+    pub amp_pe: AmpPeConfig,
 }
 impl Default for InversionConfig {
     fn default() -> Self {
@@ -390,7 +485,7 @@ impl Default for InversionConfig {
             tgv: TgvConfig::default(), qsmart: QsmartConfig::default(),
             ndi: NdiConfig::default(), fansi: FansiConfig::default(),
             l1qsm: L1qsmConfig::default(), whqsm: WhqsmConfig::default(),
-            hdqsm: HdqsmConfig::default(),
+            hdqsm: HdqsmConfig::default(), amp_pe: AmpPeConfig::default(),
         }
     }
 }

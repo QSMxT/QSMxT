@@ -487,9 +487,20 @@ impl NiftiState {
     }
 }
 
-pub const TAB_NAMES: [&str; 5] = [
+// Tab indices. Defined as named constants (usable directly in `match` patterns) so the tab
+// order can be changed in ONE place — reorder `TAB_NAMES` and update these — without hunting
+// down hardcoded `(tab, field)` literals across the file.
+pub const TAB_INPUT: usize = 0;
+pub const TAB_QSM: usize = 1;
+pub const TAB_SEPARATION: usize = 2;
+pub const TAB_SUPPLEMENTARY: usize = 3;
+pub const TAB_EXECUTION: usize = 4;
+pub const TAB_METHODS: usize = 5;
+
+pub const TAB_NAMES: [&str; 6] = [
     "Input",
-    "Pipeline",
+    "QSM",
+    "Separation",
     "Supplementary",
     "Execution",
     "Methods",
@@ -821,6 +832,15 @@ pub struct FieldDef {
 
 // ─── Pipeline tab state ───
 
+/// Which row set `PipelineFormState` renders — the QSM tab or the Separation tab. Both tabs share
+/// the same state + navigation/edit machinery; only `visible_rows()` differs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum PipelineTabMode {
+    #[default]
+    Qsm,
+    Separation,
+}
+
 /// A visible row in the pipeline tab.
 #[derive(Debug, Clone)]
 pub enum PipelineRow {
@@ -917,6 +937,8 @@ const QSM_REF_HELP: &[&str] = &[
 /// All pipeline form values (algorithms + parameters).
 #[derive(Debug, Clone)]
 pub struct PipelineFormState {
+    /// Which tab's rows to render (QSM vs Separation) — set by the App before routing input.
+    pub mode: PipelineTabMode,
     // Algorithm selections (as indices)
     pub qsm_algorithm: usize,
     pub unwrapping_algorithm: usize,
@@ -994,6 +1016,14 @@ pub struct PipelineFormState {
     pub tfi_cg_tol: String,
     pub tfi_tol: String,
     pub tfi_percentage: String,
+
+    // AMP-PE
+    pub amp_pe_wave_order: String,
+    pub amp_pe_nlevel: String,
+    pub amp_pe_wave_pec: String,
+    pub amp_pe_simulated_te: String,
+    pub amp_pe_max_linearization_ite: String,
+    pub amp_pe_tikhonov_beta: String,
 
     // V-SHARP
     pub vsharp_threshold: String,
@@ -1118,6 +1148,52 @@ pub struct PipelineFormState {
     pub mask_preset: usize, // 0=robust threshold, 1=BET, 2=custom
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
+    // Separation tab
+    pub do_chi_separation: bool,
+    pub separation_algorithm: usize, // index into SEP_ALGO_OPTIONS
+    pub custom_qsm_tool: String,     // empty=off; "*"=any; else a derivatives tool name
+    pub custom_r2_tool: String,
+    pub custom_r2prime_tool: String,
+    // R2*-QSM
+    pub sep_r2starqsm_r_const_3t: String,
+    // DECOMPOSE
+    pub sep_decompose_n_inner: String,
+    pub sep_decompose_chi_bound: String,
+    pub sep_decompose_max_lm_iter: String,
+    // χ-sep iLSQR
+    pub sep_ilsqr_dr_pos: String,
+    pub sep_ilsqr_dr_neg: String,
+    pub sep_ilsqr_lambda1: String,
+    pub sep_ilsqr_percentage: String,
+    pub sep_ilsqr_r2p_min: String,
+    pub sep_ilsqr_r2p_max: String,
+    pub sep_ilsqr_max_iter: String,
+    pub sep_ilsqr_tol: String,
+    pub sep_ilsqr_cg_max_iter: String,
+    pub sep_ilsqr_cg_tol: String,
+    // χ-sep MEDI
+    pub sep_medi_lambda_para: String,
+    pub sep_medi_lambda_dia: String,
+    pub sep_medi_lambda_cpl: String,
+    pub sep_medi_dr_pos: String,
+    pub sep_medi_dr_neg: String,
+    pub sep_medi_percentage: String,
+    pub sep_medi_cg_tol: String,
+    pub sep_medi_cg_max_iter: String,
+    pub sep_medi_max_iter: String,
+    pub sep_medi_tol: String,
+    // WaveSep
+    pub sep_wavesep_dr_pos: String,
+    pub sep_wavesep_dr_neg: String,
+    pub sep_wavesep_alpha: String,
+    pub sep_wavesep_lambda: String,
+    pub sep_wavesep_wavelet_order: String,
+    pub sep_wavesep_max_iter: String,
+    pub sep_wavesep_tol: String,
+    // HC-ChiSep
+    pub sep_hcchisep_dr_pos_3t: String,
+    pub sep_hcchisep_bin_hz: String,
+
     // Pipeline tab UI state
     pub focus: usize,
     pub editing: bool,
@@ -1134,6 +1210,13 @@ pub struct PipelineFormState {
 
 impl Default for PipelineFormState {
     fn default() -> Self {
+        let sep_r2starqsm = qsm_core::separation::R2starQsmParams::default();
+        let sep_decompose = qsm_core::separation::DecomposeParams::default();
+        let sep_ilsqr = qsm_core::separation::ChiSepIlsqrParams::default();
+        let sep_medi = qsm_core::separation::ChiSepParams::default();
+        let sep_wavesep = qsm_core::separation::WaveSepParams::default();
+        let sep_hcchisep = qsm_core::separation::HcChisepParams::default();
+        let fmt_default = |x: f64| format!("{}", x);
         let rts = qsm_core::inversion::RtsParams::default();
         let tv = qsm_core::inversion::TvParams::default();
         let tkd = qsm_core::inversion::TkdParams::default();
@@ -1145,6 +1228,7 @@ impl Default for PipelineFormState {
         let hdqsm = qsm_core::inversion::HdQsmParams::default();
         let bet = qsm_core::bet::BetParams::default();
         Self {
+            mode: PipelineTabMode::Qsm,
             qsm_algorithm: 0, // rts
             unwrapping_algorithm: 0, // romeo
             bf_algorithm: 0, // vsharp
@@ -1197,6 +1281,12 @@ impl Default for PipelineFormState {
             tfi_cg_tol: format!("{}", qsm_core::inversion::TfiParams::default().cg_tol),
             tfi_tol: format!("{}", qsm_core::inversion::TfiParams::default().tol),
             tfi_percentage: format!("{}", qsm_core::inversion::TfiParams::default().percentage),
+            amp_pe_wave_order: format!("{}", qsm_core::inversion::AmpPeParams::default().wave_order),
+            amp_pe_nlevel: format!("{}", qsm_core::inversion::AmpPeParams::default().nlevel),
+            amp_pe_wave_pec: format!("{}", qsm_core::inversion::AmpPeParams::default().wave_pec),
+            amp_pe_simulated_te: format!("{}", qsm_core::inversion::AmpPeParams::default().simulated_te),
+            amp_pe_max_linearization_ite: format!("{}", qsm_core::inversion::AmpPeParams::default().max_linearization_ite),
+            amp_pe_tikhonov_beta: format!("{}", qsm_core::inversion::AmpPeParams::default().tikhonov_beta),
             vsharp_threshold: format!("{}", qsm_core::bgremove::VsharpParams::default().threshold),
             vsharp_max_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().max_radius),
             vsharp_min_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().min_radius),
@@ -1291,6 +1381,44 @@ impl Default for PipelineFormState {
             mask_sections: crate::pipeline::config::default_mask_sections(),
             mask_preset: 0, // robust threshold
             custom_mask_tool: String::new(),
+            do_chi_separation: false,
+            separation_algorithm: 0,
+            custom_qsm_tool: String::new(),
+            custom_r2_tool: String::new(),
+            custom_r2prime_tool: String::new(),
+            sep_r2starqsm_r_const_3t: fmt_default(sep_r2starqsm.r_const_3t),
+            sep_decompose_n_inner: sep_decompose.n_inner.to_string(),
+            sep_decompose_chi_bound: fmt_default(sep_decompose.chi_bound),
+            sep_decompose_max_lm_iter: sep_decompose.max_lm_iter.to_string(),
+            sep_ilsqr_dr_pos: fmt_default(sep_ilsqr.dr_pos),
+            sep_ilsqr_dr_neg: fmt_default(sep_ilsqr.dr_neg),
+            sep_ilsqr_lambda1: fmt_default(sep_ilsqr.lambda1),
+            sep_ilsqr_percentage: fmt_default(sep_ilsqr.percentage),
+            sep_ilsqr_r2p_min: fmt_default(sep_ilsqr.r2p_min),
+            sep_ilsqr_r2p_max: fmt_default(sep_ilsqr.r2p_max),
+            sep_ilsqr_max_iter: sep_ilsqr.max_iter.to_string(),
+            sep_ilsqr_tol: fmt_default(sep_ilsqr.tol),
+            sep_ilsqr_cg_max_iter: sep_ilsqr.cg_max_iter.to_string(),
+            sep_ilsqr_cg_tol: fmt_default(sep_ilsqr.cg_tol),
+            sep_medi_lambda_para: fmt_default(sep_medi.lambda_para),
+            sep_medi_lambda_dia: fmt_default(sep_medi.lambda_dia),
+            sep_medi_lambda_cpl: fmt_default(sep_medi.lambda_cpl),
+            sep_medi_dr_pos: fmt_default(sep_medi.dr_pos),
+            sep_medi_dr_neg: fmt_default(sep_medi.dr_neg),
+            sep_medi_percentage: fmt_default(sep_medi.percentage),
+            sep_medi_cg_tol: fmt_default(sep_medi.cg_tol),
+            sep_medi_cg_max_iter: sep_medi.cg_max_iter.to_string(),
+            sep_medi_max_iter: sep_medi.max_iter.to_string(),
+            sep_medi_tol: fmt_default(sep_medi.tol),
+            sep_wavesep_dr_pos: fmt_default(sep_wavesep.dr_pos),
+            sep_wavesep_dr_neg: fmt_default(sep_wavesep.dr_neg),
+            sep_wavesep_alpha: fmt_default(sep_wavesep.alpha),
+            sep_wavesep_lambda: fmt_default(sep_wavesep.lambda),
+            sep_wavesep_wavelet_order: sep_wavesep.wavelet_order.to_string(),
+            sep_wavesep_max_iter: sep_wavesep.max_iter.to_string(),
+            sep_wavesep_tol: fmt_default(sep_wavesep.tol),
+            sep_hcchisep_dr_pos_3t: fmt_default(sep_hcchisep.dr_pos_3t),
+            sep_hcchisep_bin_hz: fmt_default(sep_hcchisep.bin_hz),
             focus: 0,
             editing: false,
             cursor: 0,
@@ -1304,7 +1432,16 @@ impl Default for PipelineFormState {
     }
 }
 
-pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm"];
+pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe"];
+pub const SEP_ALGO_OPTIONS: &[&str] = &["r2star-qsm", "decompose", "chi-sep-ilsqr", "chi-sep-medi", "wavesep", "hc-chisep"];
+const SEP_ALGO_HELP: &[&str] = &[
+    "R2*-QSM closed-form (Dimov 2022) — QSM + R2*, GRE-only",
+    "DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude, GRE-only",
+    "χ-separation iLSQR (Shin 2021) — local field + R2' + magnitude + QSM",
+    "χ-separation MEDI — local field + R2' + magnitude",
+    "WaveSep wavelet-L1 (Fang 2023) — QSM + R2'",
+    "Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude",
+];
 // QSMART's inner dipole inversion (excludes the two end-to-end algorithms tgv/qsmart).
 pub const QSMART_INV_OPTIONS: &[&str] = &["ilsqr", "rts", "tv", "tkd", "tsvd", "tikhonov", "nltv", "medi"];
 const QSMART_INV_HELP: &[&str] = &[
@@ -1336,7 +1473,83 @@ pub const QSM_REF_OPTIONS: &[&str] = &["mean", "none"];
 
 impl PipelineFormState {
     /// Build the visible rows based on current algorithm selections.
+    /// Rows for the Separation tab: enable toggle, method selector, the selected method's
+    /// parameters, and bring-your-own input tool fields.
+    fn separation_visible_rows(&self) -> Vec<PipelineRow> {
+        let mut rows = Vec::new();
+        rows.push(PipelineRow::Toggle {
+            label: "Compute Chi-Separation", field: "do_chi_separation",
+            help: "Split QSM into paramagnetic (χ+, iron) and diamagnetic (χ−, myelin) maps",
+        });
+        if !self.do_chi_separation {
+            rows.push(PipelineRow::Note { text: "Enable to configure susceptibility source separation." });
+            return rows;
+        }
+        rows.push(PipelineRow::Separator);
+        rows.push(PipelineRow::AlgoSelect {
+            label: "Method", field: "separation_algorithm",
+            options: SEP_ALGO_OPTIONS, help: SEP_ALGO_HELP,
+        });
+        rows.push(PipelineRow::Separator);
+        match self.separation_algorithm {
+            0 => {
+                rows.push(PipelineRow::Param { label: "  Relaxometric const @3T", field: "sep_r2starqsm_r_const_3t", help: "Hz/ppm at 3T (scales with B0)" });
+            }
+            1 => {
+                rows.push(PipelineRow::Param { label: "  Inner passes", field: "sep_decompose_n_inner", help: "Alternating 3-stage fit passes per voxel" });
+                rows.push(PipelineRow::Param { label: "  Chi bound (ppm)", field: "sep_decompose_chi_bound", help: "Upper bound on |χ| in the fit" });
+                rows.push(PipelineRow::Param { label: "  Max LM iter", field: "sep_decompose_max_lm_iter", help: "Levenberg–Marquardt max iterations" });
+            }
+            2 => {
+                rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_ilsqr_dr_pos", help: "Paramagnetic relaxometric constant" });
+                rows.push(PipelineRow::Param { label: "  Dr- (Hz/ppm)", field: "sep_ilsqr_dr_neg", help: "Diamagnetic relaxometric constant" });
+                rows.push(PipelineRow::Param { label: "  Lambda1", field: "sep_ilsqr_lambda1", help: "L1 edge-masked TV weight" });
+                rows.push(PipelineRow::Param { label: "  Percentage", field: "sep_ilsqr_percentage", help: "Edge-mask keep fraction (0-1)" });
+                rows.push(PipelineRow::Param { label: "  R2' min (Hz)", field: "sep_ilsqr_r2p_min", help: "R2' reliability window lower" });
+                rows.push(PipelineRow::Param { label: "  R2' max (Hz)", field: "sep_ilsqr_r2p_max", help: "R2' reliability window upper" });
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "sep_ilsqr_max_iter", help: "Outer Gauss-Newton iterations" });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_ilsqr_tol", help: "Outer relative-change tolerance" });
+                rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "sep_ilsqr_cg_max_iter", help: "Inner CG max iterations" });
+                rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "sep_ilsqr_cg_tol", help: "Inner CG relative tolerance" });
+            }
+            3 => {
+                rows.push(PipelineRow::Param { label: "  Lambda para", field: "sep_medi_lambda_para", help: "Paramagnetic L1 weight" });
+                rows.push(PipelineRow::Param { label: "  Lambda dia", field: "sep_medi_lambda_dia", help: "Diamagnetic L1 weight" });
+                rows.push(PipelineRow::Param { label: "  Lambda cpl", field: "sep_medi_lambda_cpl", help: "Field/R2' coupling weight" });
+                rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_medi_dr_pos", help: "Paramagnetic relaxivity" });
+                rows.push(PipelineRow::Param { label: "  Dr- (Hz/ppm)", field: "sep_medi_dr_neg", help: "Diamagnetic relaxivity" });
+                rows.push(PipelineRow::Param { label: "  Percentage", field: "sep_medi_percentage", help: "Edge-mask percentage (0-1)" });
+                rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "sep_medi_cg_tol", help: "Inner CG tolerance" });
+                rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "sep_medi_cg_max_iter", help: "Inner CG max iterations" });
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "sep_medi_max_iter", help: "Outer Gauss-Newton iterations" });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_medi_tol", help: "Outer convergence tolerance" });
+            }
+            4 => {
+                rows.push(PipelineRow::Param { label: "  Dr+ (Hz/ppm)", field: "sep_wavesep_dr_pos", help: "Paramagnetic relaxivity" });
+                rows.push(PipelineRow::Param { label: "  Dr- (Hz/ppm)", field: "sep_wavesep_dr_neg", help: "Diamagnetic relaxivity" });
+                rows.push(PipelineRow::Param { label: "  Alpha", field: "sep_wavesep_alpha", help: "Proximal-gradient step size" });
+                rows.push(PipelineRow::Param { label: "  Lambda", field: "sep_wavesep_lambda", help: "Wavelet L1 soft-threshold weight" });
+                rows.push(PipelineRow::Param { label: "  Wavelet order", field: "sep_wavesep_wavelet_order", help: "Daubechies order" });
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "sep_wavesep_max_iter", help: "ISTA max iterations" });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_wavesep_tol", help: "Relative-change stop tolerance" });
+            }
+            _ => {
+                rows.push(PipelineRow::Param { label: "  Dr+ @3T (Hz/ppm)", field: "sep_hcchisep_dr_pos_3t", help: "Paramagnetic relaxivity at 3T" });
+                rows.push(PipelineRow::Param { label: "  R2' bin (Hz)", field: "sep_hcchisep_bin_hz", help: "R2' bin width for anchored grid search" });
+            }
+        }
+        rows.push(PipelineRow::Separator);
+        rows.push(PipelineRow::Note { text: "Bring-your-own inputs (derivatives tool name; blank = compute, * = any tool):" });
+        rows.push(PipelineRow::Param { label: "  Custom QSM tool", field: "custom_qsm_tool", help: "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM" });
+        rows.push(PipelineRow::Param { label: "  Custom R2 tool", field: "custom_r2_tool", help: "Use an R2 map from derivatives instead of computing from MESE" });
+        rows.push(PipelineRow::Param { label: "  Custom R2' tool", field: "custom_r2prime_tool", help: "Use an R2' map from derivatives instead of computing" });
+        rows
+    }
+
     pub fn visible_rows(&self) -> Vec<PipelineRow> {
+        if self.mode == PipelineTabMode::Separation {
+            return self.separation_visible_rows();
+        }
         let mut rows = Vec::new();
         let is_tgv = self.qsm_algorithm == 4;
         let is_qsmart = self.qsm_algorithm == 10;
@@ -1697,6 +1910,14 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Max Iter L2", field: "hdqsm_max_iter_l2", help: "Stage-2 (L2) iterations" });
                 rows.push(PipelineRow::Param { label: "  Tol Update", field: "hdqsm_tol_update", help: "Stage-2 percent-update stopping tolerance" });
             }
+            17 => { // AMP-PE
+                rows.push(PipelineRow::Param { label: "  Wave Order", field: "amp_pe_wave_order", help: "Daubechies wavelet order (1=db1, 2=db2)" });
+                rows.push(PipelineRow::Param { label: "  N Level", field: "amp_pe_nlevel", help: "Wavelet decomposition levels" });
+                rows.push(PipelineRow::Param { label: "  Wave Pec", field: "amp_pe_wave_pec", help: "Morphology-mask energy retention fraction (0.0-1.0)" });
+                rows.push(PipelineRow::Param { label: "  Simulated TE", field: "amp_pe_simulated_te", help: "Simulated echo time (s) used to turn the field into phase" });
+                rows.push(PipelineRow::Param { label: "  Max Linearization Ite", field: "amp_pe_max_linearization_ite", help: "Linearization iterations per stage" });
+                rows.push(PipelineRow::Param { label: "  Tikhonov Beta", field: "amp_pe_tikhonov_beta", help: "L2-seed Tikhonov weight" });
+            }
             _ => {}
         }
 
@@ -1725,6 +1946,7 @@ impl PipelineFormState {
         "nltv_lambda", "nltv_mu", "nltv_tol", "nltv_max_iter", "nltv_newton_iter",
         "medi_lambda", "medi_max_iter", "medi_cg_max_iter", "medi_cg_tol", "medi_tol", "medi_percentage", "medi_smv_radius",
         "tfi_lambda", "tfi_precond", "tfi_max_iter", "tfi_cg_max_iter", "tfi_cg_tol", "tfi_tol", "tfi_percentage",
+        "amp_pe_wave_order", "amp_pe_nlevel", "amp_pe_wave_pec", "amp_pe_simulated_te", "amp_pe_max_linearization_ite", "amp_pe_tikhonov_beta",
         "phase_offset_sigma", "romeo_template",
         "vsharp_threshold", "vsharp_max_radius", "vsharp_min_radius", "pdf_tol", "lbv_tol",
         "ismv_tol", "ismv_max_iter", "ismv_radius", "sharp_threshold", "sharp_radius",
@@ -1785,6 +2007,12 @@ impl PipelineFormState {
             "tfi_cg_tol" => &self.tfi_cg_tol,
             "tfi_tol" => &self.tfi_tol,
             "tfi_percentage" => &self.tfi_percentage,
+            "amp_pe_wave_order" => &self.amp_pe_wave_order,
+            "amp_pe_nlevel" => &self.amp_pe_nlevel,
+            "amp_pe_wave_pec" => &self.amp_pe_wave_pec,
+            "amp_pe_simulated_te" => &self.amp_pe_simulated_te,
+            "amp_pe_max_linearization_ite" => &self.amp_pe_max_linearization_ite,
+            "amp_pe_tikhonov_beta" => &self.amp_pe_tikhonov_beta,
             "phase_offset_sigma" => &self.phase_offset_sigma,
             "romeo_template" => &self.romeo_template,
             "custom_mask_tool" => &self.custom_mask_tool,
@@ -1864,6 +2092,42 @@ impl PipelineFormState {
             "bet_gradient_threshold" => &self.bet_gradient_threshold,
             "bet_iterations" => &self.bet_iterations,
             "bet_subdivisions" => &self.bet_subdivisions,
+            "custom_qsm_tool" => &self.custom_qsm_tool,
+            "custom_r2_tool" => &self.custom_r2_tool,
+            "custom_r2prime_tool" => &self.custom_r2prime_tool,
+            "sep_r2starqsm_r_const_3t" => &self.sep_r2starqsm_r_const_3t,
+            "sep_decompose_n_inner" => &self.sep_decompose_n_inner,
+            "sep_decompose_chi_bound" => &self.sep_decompose_chi_bound,
+            "sep_decompose_max_lm_iter" => &self.sep_decompose_max_lm_iter,
+            "sep_ilsqr_dr_pos" => &self.sep_ilsqr_dr_pos,
+            "sep_ilsqr_dr_neg" => &self.sep_ilsqr_dr_neg,
+            "sep_ilsqr_lambda1" => &self.sep_ilsqr_lambda1,
+            "sep_ilsqr_percentage" => &self.sep_ilsqr_percentage,
+            "sep_ilsqr_r2p_min" => &self.sep_ilsqr_r2p_min,
+            "sep_ilsqr_r2p_max" => &self.sep_ilsqr_r2p_max,
+            "sep_ilsqr_max_iter" => &self.sep_ilsqr_max_iter,
+            "sep_ilsqr_tol" => &self.sep_ilsqr_tol,
+            "sep_ilsqr_cg_max_iter" => &self.sep_ilsqr_cg_max_iter,
+            "sep_ilsqr_cg_tol" => &self.sep_ilsqr_cg_tol,
+            "sep_medi_lambda_para" => &self.sep_medi_lambda_para,
+            "sep_medi_lambda_dia" => &self.sep_medi_lambda_dia,
+            "sep_medi_lambda_cpl" => &self.sep_medi_lambda_cpl,
+            "sep_medi_dr_pos" => &self.sep_medi_dr_pos,
+            "sep_medi_dr_neg" => &self.sep_medi_dr_neg,
+            "sep_medi_percentage" => &self.sep_medi_percentage,
+            "sep_medi_cg_tol" => &self.sep_medi_cg_tol,
+            "sep_medi_cg_max_iter" => &self.sep_medi_cg_max_iter,
+            "sep_medi_max_iter" => &self.sep_medi_max_iter,
+            "sep_medi_tol" => &self.sep_medi_tol,
+            "sep_wavesep_dr_pos" => &self.sep_wavesep_dr_pos,
+            "sep_wavesep_dr_neg" => &self.sep_wavesep_dr_neg,
+            "sep_wavesep_alpha" => &self.sep_wavesep_alpha,
+            "sep_wavesep_lambda" => &self.sep_wavesep_lambda,
+            "sep_wavesep_wavelet_order" => &self.sep_wavesep_wavelet_order,
+            "sep_wavesep_max_iter" => &self.sep_wavesep_max_iter,
+            "sep_wavesep_tol" => &self.sep_wavesep_tol,
+            "sep_hcchisep_dr_pos_3t" => &self.sep_hcchisep_dr_pos_3t,
+            "sep_hcchisep_bin_hz" => &self.sep_hcchisep_bin_hz,
             _ => "",
         }
     }
@@ -1910,6 +2174,12 @@ impl PipelineFormState {
             "tfi_cg_tol" => Some(&mut self.tfi_cg_tol),
             "tfi_tol" => Some(&mut self.tfi_tol),
             "tfi_percentage" => Some(&mut self.tfi_percentage),
+            "amp_pe_wave_order" => Some(&mut self.amp_pe_wave_order),
+            "amp_pe_nlevel" => Some(&mut self.amp_pe_nlevel),
+            "amp_pe_wave_pec" => Some(&mut self.amp_pe_wave_pec),
+            "amp_pe_simulated_te" => Some(&mut self.amp_pe_simulated_te),
+            "amp_pe_max_linearization_ite" => Some(&mut self.amp_pe_max_linearization_ite),
+            "amp_pe_tikhonov_beta" => Some(&mut self.amp_pe_tikhonov_beta),
             "phase_offset_sigma" => Some(&mut self.phase_offset_sigma),
             "romeo_template" => Some(&mut self.romeo_template),
             "custom_mask_tool" => Some(&mut self.custom_mask_tool),
@@ -1989,6 +2259,42 @@ impl PipelineFormState {
             "bet_gradient_threshold" => Some(&mut self.bet_gradient_threshold),
             "bet_iterations" => Some(&mut self.bet_iterations),
             "bet_subdivisions" => Some(&mut self.bet_subdivisions),
+            "custom_qsm_tool" => Some(&mut self.custom_qsm_tool),
+            "custom_r2_tool" => Some(&mut self.custom_r2_tool),
+            "custom_r2prime_tool" => Some(&mut self.custom_r2prime_tool),
+            "sep_r2starqsm_r_const_3t" => Some(&mut self.sep_r2starqsm_r_const_3t),
+            "sep_decompose_n_inner" => Some(&mut self.sep_decompose_n_inner),
+            "sep_decompose_chi_bound" => Some(&mut self.sep_decompose_chi_bound),
+            "sep_decompose_max_lm_iter" => Some(&mut self.sep_decompose_max_lm_iter),
+            "sep_ilsqr_dr_pos" => Some(&mut self.sep_ilsqr_dr_pos),
+            "sep_ilsqr_dr_neg" => Some(&mut self.sep_ilsqr_dr_neg),
+            "sep_ilsqr_lambda1" => Some(&mut self.sep_ilsqr_lambda1),
+            "sep_ilsqr_percentage" => Some(&mut self.sep_ilsqr_percentage),
+            "sep_ilsqr_r2p_min" => Some(&mut self.sep_ilsqr_r2p_min),
+            "sep_ilsqr_r2p_max" => Some(&mut self.sep_ilsqr_r2p_max),
+            "sep_ilsqr_max_iter" => Some(&mut self.sep_ilsqr_max_iter),
+            "sep_ilsqr_tol" => Some(&mut self.sep_ilsqr_tol),
+            "sep_ilsqr_cg_max_iter" => Some(&mut self.sep_ilsqr_cg_max_iter),
+            "sep_ilsqr_cg_tol" => Some(&mut self.sep_ilsqr_cg_tol),
+            "sep_medi_lambda_para" => Some(&mut self.sep_medi_lambda_para),
+            "sep_medi_lambda_dia" => Some(&mut self.sep_medi_lambda_dia),
+            "sep_medi_lambda_cpl" => Some(&mut self.sep_medi_lambda_cpl),
+            "sep_medi_dr_pos" => Some(&mut self.sep_medi_dr_pos),
+            "sep_medi_dr_neg" => Some(&mut self.sep_medi_dr_neg),
+            "sep_medi_percentage" => Some(&mut self.sep_medi_percentage),
+            "sep_medi_cg_tol" => Some(&mut self.sep_medi_cg_tol),
+            "sep_medi_cg_max_iter" => Some(&mut self.sep_medi_cg_max_iter),
+            "sep_medi_max_iter" => Some(&mut self.sep_medi_max_iter),
+            "sep_medi_tol" => Some(&mut self.sep_medi_tol),
+            "sep_wavesep_dr_pos" => Some(&mut self.sep_wavesep_dr_pos),
+            "sep_wavesep_dr_neg" => Some(&mut self.sep_wavesep_dr_neg),
+            "sep_wavesep_alpha" => Some(&mut self.sep_wavesep_alpha),
+            "sep_wavesep_lambda" => Some(&mut self.sep_wavesep_lambda),
+            "sep_wavesep_wavelet_order" => Some(&mut self.sep_wavesep_wavelet_order),
+            "sep_wavesep_max_iter" => Some(&mut self.sep_wavesep_max_iter),
+            "sep_wavesep_tol" => Some(&mut self.sep_wavesep_tol),
+            "sep_hcchisep_dr_pos_3t" => Some(&mut self.sep_hcchisep_dr_pos_3t),
+            "sep_hcchisep_bin_hz" => Some(&mut self.sep_hcchisep_bin_hz),
             _ => None,
         }
     }
@@ -2004,6 +2310,7 @@ impl PipelineFormState {
             "b0_estimation" => self.b0_estimation,
             "b0_weight_type" => self.b0_weight_type,
             "mask_preset" => self.mask_preset,
+            "separation_algorithm" => self.separation_algorithm,
             _ => 0,
         }
     }
@@ -2022,6 +2329,7 @@ impl PipelineFormState {
                 self.mask_preset = val;
                 self.apply_mask_preset(val);
             }
+            "separation_algorithm" => self.separation_algorithm = val,
             _ => {}
         }
     }
@@ -2036,6 +2344,7 @@ impl PipelineFormState {
             "romeo_individual" => self.romeo_individual,
             "romeo_correct_global" => self.romeo_correct_global,
             "medi_smv" => self.medi_smv,
+            "do_chi_separation" => self.do_chi_separation,
             _ => false,
         }
     }
@@ -2044,6 +2353,7 @@ impl PipelineFormState {
     pub fn toggle(&mut self, field: &str) {
         match field {
             "do_qsm" => self.do_qsm = !self.do_qsm,
+            "do_chi_separation" => self.do_chi_separation = !self.do_chi_separation,
             "inhomogeneity_correction" => self.inhomogeneity_correction = !self.inhomogeneity_correction,
             "phase_offset_removal" => self.phase_offset_removal = !self.phase_offset_removal,
             "bipolar_correction" => self.bipolar_correction = !self.bipolar_correction,
@@ -2300,6 +2610,8 @@ pub struct RunForm {
     pub swi_mip_window: String,
     pub do_t2starmap: bool,
     pub do_r2starmap: bool,
+    pub do_r2map: bool,
+    pub do_r2primemap: bool,
     pub export_dicom: bool,
 
     // Tab 4: Execution
@@ -2332,6 +2644,8 @@ impl Default for RunForm {
             swi_mip_window: format!("{}", swi.mip_window),
             do_t2starmap: false,
             do_r2starmap: false,
+            do_r2map: false,
+            do_r2primemap: false,
             export_dicom: false,
             execution_mode: 0,
             dry_run: false,
@@ -2352,9 +2666,11 @@ impl App {
         let tab_fields = vec![
             // Tab 0: Input (custom rendering — IO fields + filter tree)
             vec![],
-            // Tab 1: Pipeline (custom rendering — see PipelineFormState)
+            // Tab 1: QSM (custom rendering — see PipelineFormState)
             vec![],
-            // Tab 2: Supplementary
+            // Tab 2: Separation (custom rendering — see PipelineFormState::separation_visible_rows)
+            vec![],
+            // Tab 3: Supplementary
             vec![
                 FieldDef {
                     label: "Compute SWI",
@@ -2402,12 +2718,22 @@ impl App {
                     help: "Compute R2* decay rate map (requires 3+ echoes with magnitude)",
                 },
                 FieldDef {
+                    label: "Compute R2 Map",
+                    kind: FieldKind::Checkbox,
+                    help: "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when chi-separation is enabled.",
+                },
+                FieldDef {
+                    label: "Compute R2' Map",
+                    kind: FieldKind::Checkbox,
+                    help: "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition. Forced on when chi-separation is enabled.",
+                },
+                FieldDef {
                     label: "Export DICOM",
                     kind: FieldKind::Checkbox,
                     help: "Also write final maps as DICOM series into each subject's extra_files/ folder",
                 },
             ],
-            // Tab 3: Execution
+            // Tab 4: Execution
             vec![
                 FieldDef {
                     label: "Execution Mode",
@@ -2541,21 +2867,27 @@ impl App {
         }
 
         // Route tab 0 (Input) to its combined IO + filter handler
-        if self.active_tab == 0 {
+        if self.active_tab == TAB_INPUT {
             self.handle_input_tab_key(key);
             return;
         }
-        // Route tab 1 (Pipeline) to its own handler
-        if self.active_tab == 1 {
+        // Route the QSM and Separation tabs to the shared pipeline-row handler (the row set
+        // is selected by `pipeline_state.mode`).
+        if self.active_tab == TAB_QSM || self.active_tab == TAB_SEPARATION {
+            self.pipeline_state.mode = if self.active_tab == TAB_SEPARATION {
+                PipelineTabMode::Separation
+            } else {
+                PipelineTabMode::Qsm
+            };
             self.handle_pipeline_key(key);
             return;
         }
 
-        // Route tab 4 (Methods) — read-only, only tab switching and scrolling
-        if self.active_tab == 4 {
+        // Route tab Methods — read-only, only tab switching and scrolling
+        if self.active_tab == TAB_METHODS {
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-                KeyCode::Char(c @ '1'..='5') => {
+                KeyCode::Char(c @ '1'..='6') => {
                     self.active_tab = (c as usize) - ('1' as usize);
                     self.active_field = 0;
                 }
@@ -2588,7 +2920,7 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
 
             // Tab switching
-            KeyCode::Char(c @ '1'..='5') => {
+            KeyCode::Char(c @ '1'..='6') => {
                 self.active_tab = (c as usize) - ('1' as usize);
                 self.active_field = 0;
             }
@@ -2682,7 +3014,7 @@ impl App {
             }
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-                KeyCode::Char(c @ '1'..='5') => {
+                KeyCode::Char(c @ '1'..='6') => {
                     self.active_tab = (c as usize) - ('1' as usize);
                     self.active_field = 0;
                 }
@@ -2816,27 +3148,29 @@ impl App {
             },
             (0, 3) => self.form.config_file = defaults.config_file.clone(),
             // Tab 2 (Supplementary)
-            (2, 0) => self.form.do_swi = defaults.do_swi,
-            (2, 1) => self.form.swi_scaling = defaults.swi_scaling,
-            (2, 2) => self.form.swi_strength = defaults.swi_strength.clone(),
-            (2, 3) => self.form.swi_hp_sigma_x = defaults.swi_hp_sigma_x.clone(),
-            (2, 4) => self.form.swi_hp_sigma_y = defaults.swi_hp_sigma_y.clone(),
-            (2, 5) => self.form.swi_hp_sigma_z = defaults.swi_hp_sigma_z.clone(),
-            (2, 6) => self.form.swi_mip_window = defaults.swi_mip_window.clone(),
-            (2, 7) => self.form.do_t2starmap = defaults.do_t2starmap,
-            (2, 8) => self.form.do_r2starmap = defaults.do_r2starmap,
-            (2, 9) => self.form.export_dicom = defaults.export_dicom,
+            (TAB_SUPPLEMENTARY, 0) => self.form.do_swi = defaults.do_swi,
+            (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling = defaults.swi_scaling,
+            (TAB_SUPPLEMENTARY, 2) => self.form.swi_strength = defaults.swi_strength.clone(),
+            (TAB_SUPPLEMENTARY, 3) => self.form.swi_hp_sigma_x = defaults.swi_hp_sigma_x.clone(),
+            (TAB_SUPPLEMENTARY, 4) => self.form.swi_hp_sigma_y = defaults.swi_hp_sigma_y.clone(),
+            (TAB_SUPPLEMENTARY, 5) => self.form.swi_hp_sigma_z = defaults.swi_hp_sigma_z.clone(),
+            (TAB_SUPPLEMENTARY, 6) => self.form.swi_mip_window = defaults.swi_mip_window.clone(),
+            (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap = defaults.do_t2starmap,
+            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap = defaults.do_r2starmap,
+            (TAB_SUPPLEMENTARY, 9) => self.form.do_r2map = defaults.do_r2map,
+            (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap = defaults.do_r2primemap,
+            (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom = defaults.export_dicom,
             // Tab 3 (Execution)
-            (3, 0) => self.form.execution_mode = defaults.execution_mode,
-            (3, 1) => self.form.dry_run = defaults.dry_run,
-            (3, 2) => self.form.debug = defaults.debug,
-            (3, 3) => self.form.n_procs = defaults.n_procs.clone(),
-            (3, 4) => self.form.slurm_account = defaults.slurm_account.clone(),
-            (3, 5) => self.form.slurm_partition = defaults.slurm_partition.clone(),
-            (3, 6) => self.form.slurm_time = defaults.slurm_time.clone(),
-            (3, 7) => self.form.slurm_mem = defaults.slurm_mem.clone(),
-            (3, 8) => self.form.slurm_cpus = defaults.slurm_cpus.clone(),
-            (3, 9) => self.form.slurm_submit = defaults.slurm_submit,
+            (TAB_EXECUTION, 0) => self.form.execution_mode = defaults.execution_mode,
+            (TAB_EXECUTION, 1) => self.form.dry_run = defaults.dry_run,
+            (TAB_EXECUTION, 2) => self.form.debug = defaults.debug,
+            (TAB_EXECUTION, 3) => self.form.n_procs = defaults.n_procs.clone(),
+            (TAB_EXECUTION, 4) => self.form.slurm_account = defaults.slurm_account.clone(),
+            (TAB_EXECUTION, 5) => self.form.slurm_partition = defaults.slurm_partition.clone(),
+            (TAB_EXECUTION, 6) => self.form.slurm_time = defaults.slurm_time.clone(),
+            (TAB_EXECUTION, 7) => self.form.slurm_mem = defaults.slurm_mem.clone(),
+            (TAB_EXECUTION, 8) => self.form.slurm_cpus = defaults.slurm_cpus.clone(),
+            (TAB_EXECUTION, 9) => self.form.slurm_submit = defaults.slurm_submit,
             _ => {}
         }
     }
@@ -2845,7 +3179,7 @@ impl App {
     fn reset_current_tab(&mut self) {
         let defaults = RunForm::default();
         match self.active_tab {
-            0 => {
+            TAB_INPUT => {
                 self.input_mode = InputMode::Bids;
                 self.form.bids_dir = defaults.bids_dir.clone();
                 self.form.output_dir = defaults.output_dir.clone();
@@ -2853,7 +3187,7 @@ impl App {
                 self.dicom_state = DicomConvertState::default();
                 self.nifti_state = NiftiState::default();
             }
-            2 => {
+            TAB_SUPPLEMENTARY => {
                 self.form.do_swi = defaults.do_swi;
                 self.form.swi_scaling = defaults.swi_scaling;
                 self.form.swi_strength = defaults.swi_strength.clone();
@@ -2863,9 +3197,11 @@ impl App {
                 self.form.swi_mip_window = defaults.swi_mip_window.clone();
                 self.form.do_t2starmap = defaults.do_t2starmap;
                 self.form.do_r2starmap = defaults.do_r2starmap;
+                self.form.do_r2map = defaults.do_r2map;
+                self.form.do_r2primemap = defaults.do_r2primemap;
                 self.form.export_dicom = defaults.export_dicom;
             }
-            3 => {
+            TAB_EXECUTION => {
                 self.form.execution_mode = defaults.execution_mode;
                 self.form.dry_run = defaults.dry_run;
                 self.form.debug = defaults.debug;
@@ -2929,7 +3265,7 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
 
             // Tab switching (same as other tabs)
-            KeyCode::Char(c @ '1'..='5') => {
+            KeyCode::Char(c @ '1'..='6') => {
                 self.active_tab = (c as usize) - ('1' as usize);
                 self.active_field = 0;
             }
@@ -3085,7 +3421,7 @@ impl App {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
 
-            KeyCode::Char(c @ '1'..='5') => {
+            KeyCode::Char(c @ '1'..='6') => {
                 self.active_tab = (c as usize) - ('1' as usize);
                 self.active_field = 0;
             }
@@ -3322,7 +3658,7 @@ impl App {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
 
-            KeyCode::Char(c @ '1'..='5') => {
+            KeyCode::Char(c @ '1'..='6') => {
                 self.active_tab = (c as usize) - ('1' as usize);
                 self.active_field = 0;
             }
@@ -3605,7 +3941,7 @@ impl App {
 
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
 
-            KeyCode::Char(c @ '1'..='5') => {
+            KeyCode::Char(c @ '1'..='6') => {
                 self.active_tab = (c as usize) - ('1' as usize);
                 self.active_field = 0;
             }
@@ -3898,17 +4234,17 @@ impl App {
                 InputMode::DicomToBids => &self.dicom_state.output_dir,
             },
             (0, 3) => &self.form.config_file,
-            (2, 2) => &self.form.swi_strength,
-            (2, 3) => &self.form.swi_hp_sigma_x,
-            (2, 4) => &self.form.swi_hp_sigma_y,
-            (2, 5) => &self.form.swi_hp_sigma_z,
-            (2, 6) => &self.form.swi_mip_window,
-            (3, 3) => &self.form.n_procs,
-            (3, 4) => &self.form.slurm_account,
-            (3, 5) => &self.form.slurm_partition,
-            (3, 6) => &self.form.slurm_time,
-            (3, 7) => &self.form.slurm_mem,
-            (3, 8) => &self.form.slurm_cpus,
+            (TAB_SUPPLEMENTARY, 2) => &self.form.swi_strength,
+            (TAB_SUPPLEMENTARY, 3) => &self.form.swi_hp_sigma_x,
+            (TAB_SUPPLEMENTARY, 4) => &self.form.swi_hp_sigma_y,
+            (TAB_SUPPLEMENTARY, 5) => &self.form.swi_hp_sigma_z,
+            (TAB_SUPPLEMENTARY, 6) => &self.form.swi_mip_window,
+            (TAB_EXECUTION, 3) => &self.form.n_procs,
+            (TAB_EXECUTION, 4) => &self.form.slurm_account,
+            (TAB_EXECUTION, 5) => &self.form.slurm_partition,
+            (TAB_EXECUTION, 6) => &self.form.slurm_time,
+            (TAB_EXECUTION, 7) => &self.form.slurm_mem,
+            (TAB_EXECUTION, 8) => &self.form.slurm_cpus,
             _ => "",
         }
     }
@@ -3926,33 +4262,33 @@ impl App {
                 InputMode::DicomToBids => &mut self.dicom_state.output_dir,
             },
             (0, 3) => &mut self.form.config_file,
-            (2, 2) => &mut self.form.swi_strength,
-            (2, 3) => &mut self.form.swi_hp_sigma_x,
-            (2, 4) => &mut self.form.swi_hp_sigma_y,
-            (2, 5) => &mut self.form.swi_hp_sigma_z,
-            (2, 6) => &mut self.form.swi_mip_window,
-            (3, 3) => &mut self.form.n_procs,
-            (3, 4) => &mut self.form.slurm_account,
-            (3, 5) => &mut self.form.slurm_partition,
-            (3, 6) => &mut self.form.slurm_time,
-            (3, 7) => &mut self.form.slurm_mem,
-            (3, 8) => &mut self.form.slurm_cpus,
+            (TAB_SUPPLEMENTARY, 2) => &mut self.form.swi_strength,
+            (TAB_SUPPLEMENTARY, 3) => &mut self.form.swi_hp_sigma_x,
+            (TAB_SUPPLEMENTARY, 4) => &mut self.form.swi_hp_sigma_y,
+            (TAB_SUPPLEMENTARY, 5) => &mut self.form.swi_hp_sigma_z,
+            (TAB_SUPPLEMENTARY, 6) => &mut self.form.swi_mip_window,
+            (TAB_EXECUTION, 3) => &mut self.form.n_procs,
+            (TAB_EXECUTION, 4) => &mut self.form.slurm_account,
+            (TAB_EXECUTION, 5) => &mut self.form.slurm_partition,
+            (TAB_EXECUTION, 6) => &mut self.form.slurm_time,
+            (TAB_EXECUTION, 7) => &mut self.form.slurm_mem,
+            (TAB_EXECUTION, 8) => &mut self.form.slurm_cpus,
             _ => unreachable!("text_value_mut called on non-text field"),
         }
     }
 
     pub fn select_value(&self) -> usize {
         match (self.active_tab, self.active_field) {
-            (2, 1) => self.form.swi_scaling,
-            (3, 0) => self.form.execution_mode,
+            (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling,
+            (TAB_EXECUTION, 0) => self.form.execution_mode,
             _ => 0,
         }
     }
 
     fn set_select_value(&mut self, val: usize) {
         match (self.active_tab, self.active_field) {
-            (2, 1) => self.form.swi_scaling = val,
-            (3, 0) => {
+            (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling = val,
+            (TAB_EXECUTION, 0) => {
                 self.form.execution_mode = val;
                 // Clamp active_field if it landed on a now-hidden field
                 if !self.is_field_visible(self.active_tab, self.active_field) {
@@ -3966,26 +4302,51 @@ impl App {
     #[allow(dead_code)]
     fn checkbox_value(&self) -> bool {
         match (self.active_tab, self.active_field) {
-            (2, 0) => self.form.do_swi,
-            (2, 7) => self.form.do_t2starmap,
-            (2, 8) => self.form.do_r2starmap,
-            (2, 9) => self.form.export_dicom,
-            (3, 1) => self.form.dry_run,
-            (3, 2) => self.form.debug,
-            (3, 9) => self.form.slurm_submit,
+            (TAB_SUPPLEMENTARY, 0) => self.form.do_swi,
+            (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap,
+            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap,
+            (TAB_SUPPLEMENTARY, 9) => self.form.do_r2map || self.r2_map_forced(),
+            (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
+            (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
+            (TAB_EXECUTION, 1) => self.form.dry_run,
+            (TAB_EXECUTION, 2) => self.form.debug,
+            (TAB_EXECUTION, 9) => self.form.slurm_submit,
             _ => false,
         }
     }
 
+    /// Whether the R2 map is forced on by chi-separation (enabled, no custom R2 supplied).
+    fn r2_map_forced(&self) -> bool {
+        self.pipeline_state.do_chi_separation && self.pipeline_state.custom_r2_tool.trim().is_empty()
+    }
+    /// Whether the R2' map is forced on by chi-separation (enabled, no custom R2' supplied).
+    fn r2prime_map_forced(&self) -> bool {
+        self.pipeline_state.do_chi_separation && self.pipeline_state.custom_r2prime_tool.trim().is_empty()
+    }
+
     fn toggle_checkbox(&mut self) {
         match (self.active_tab, self.active_field) {
-            (2, 0) => self.form.do_swi = !self.form.do_swi,
-            (2, 7) => self.form.do_t2starmap = !self.form.do_t2starmap,
-            (2, 8) => self.form.do_r2starmap = !self.form.do_r2starmap,
-            (2, 9) => self.form.export_dicom = !self.form.export_dicom,
-            (3, 1) => self.form.dry_run = !self.form.dry_run,
-            (3, 2) => self.form.debug = !self.form.debug,
-            (3, 9) => self.form.slurm_submit = !self.form.slurm_submit,
+            (TAB_SUPPLEMENTARY, 0) => self.form.do_swi = !self.form.do_swi,
+            (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap = !self.form.do_t2starmap,
+            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap = !self.form.do_r2starmap,
+            (TAB_SUPPLEMENTARY, 9) => {
+                if self.form.do_r2map && self.pipeline_state.do_chi_separation && self.pipeline_state.custom_r2_tool.trim().is_empty() {
+                    self.error_message = Some("R2 map is required by chi-separation — disable chi-separation (or set a custom R2 tool) first.".to_string());
+                } else {
+                    self.form.do_r2map = !self.form.do_r2map;
+                }
+            }
+            (TAB_SUPPLEMENTARY, 10) => {
+                if self.form.do_r2primemap && self.pipeline_state.do_chi_separation && self.pipeline_state.custom_r2prime_tool.trim().is_empty() {
+                    self.error_message = Some("R2' map is required by chi-separation — disable chi-separation (or set a custom R2' tool) first.".to_string());
+                } else {
+                    self.form.do_r2primemap = !self.form.do_r2primemap;
+                }
+            }
+            (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom = !self.form.export_dicom,
+            (TAB_EXECUTION, 1) => self.form.dry_run = !self.form.dry_run,
+            (TAB_EXECUTION, 2) => self.form.debug = !self.form.debug,
+            (TAB_EXECUTION, 9) => self.form.slurm_submit = !self.form.slurm_submit,
             _ => {}
         }
     }
@@ -3995,49 +4356,51 @@ impl App {
     pub fn is_field_visible(&self, tab: usize, field: usize) -> bool {
         match (tab, field) {
             // SWI settings (1-6) only visible when Compute SWI is checked
-            (2, 1..=6) => self.form.do_swi,
+            (TAB_SUPPLEMENTARY, 1..=6) => self.form.do_swi,
             // SLURM fields (4-9) only visible in SLURM mode
-            (3, 4..=9) => self.form.execution_mode == 1,
+            (TAB_EXECUTION, 4..=9) => self.form.execution_mode == 1,
             // Dry Run and Num Processes only in Local mode
-            (3, 1) | (3, 3) => self.form.execution_mode == 0,
+            (TAB_EXECUTION, 1) | (TAB_EXECUTION, 3) => self.form.execution_mode == 0,
             _ => true,
         }
     }
 
     pub fn get_text_value(&self, tab: usize, field: usize) -> &str {
         match (tab, field) {
-            (2, 2) => &self.form.swi_strength,
-            (2, 3) => &self.form.swi_hp_sigma_x,
-            (2, 4) => &self.form.swi_hp_sigma_y,
-            (2, 5) => &self.form.swi_hp_sigma_z,
-            (2, 6) => &self.form.swi_mip_window,
-            (3, 3) => &self.form.n_procs,
-            (3, 4) => &self.form.slurm_account,
-            (3, 5) => &self.form.slurm_partition,
-            (3, 6) => &self.form.slurm_time,
-            (3, 7) => &self.form.slurm_mem,
-            (3, 8) => &self.form.slurm_cpus,
+            (TAB_SUPPLEMENTARY, 2) => &self.form.swi_strength,
+            (TAB_SUPPLEMENTARY, 3) => &self.form.swi_hp_sigma_x,
+            (TAB_SUPPLEMENTARY, 4) => &self.form.swi_hp_sigma_y,
+            (TAB_SUPPLEMENTARY, 5) => &self.form.swi_hp_sigma_z,
+            (TAB_SUPPLEMENTARY, 6) => &self.form.swi_mip_window,
+            (TAB_EXECUTION, 3) => &self.form.n_procs,
+            (TAB_EXECUTION, 4) => &self.form.slurm_account,
+            (TAB_EXECUTION, 5) => &self.form.slurm_partition,
+            (TAB_EXECUTION, 6) => &self.form.slurm_time,
+            (TAB_EXECUTION, 7) => &self.form.slurm_mem,
+            (TAB_EXECUTION, 8) => &self.form.slurm_cpus,
             _ => "",
         }
     }
 
     pub fn get_select_value(&self, tab: usize, field: usize) -> usize {
         match (tab, field) {
-            (2, 1) => self.form.swi_scaling,
-            (3, 0) => self.form.execution_mode,
+            (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling,
+            (TAB_EXECUTION, 0) => self.form.execution_mode,
             _ => 0,
         }
     }
 
     pub fn get_checkbox_value(&self, tab: usize, field: usize) -> bool {
         match (tab, field) {
-            (2, 0) => self.form.do_swi,
-            (2, 7) => self.form.do_t2starmap,
-            (2, 8) => self.form.do_r2starmap,
-            (2, 9) => self.form.export_dicom,
-            (3, 1) => self.form.dry_run,
-            (3, 2) => self.form.debug,
-            (3, 9) => self.form.slurm_submit,
+            (TAB_SUPPLEMENTARY, 0) => self.form.do_swi,
+            (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap,
+            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap,
+            (TAB_SUPPLEMENTARY, 9) => self.form.do_r2map || self.r2_map_forced(),
+            (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
+            (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
+            (TAB_EXECUTION, 1) => self.form.dry_run,
+            (TAB_EXECUTION, 2) => self.form.debug,
+            (TAB_EXECUTION, 9) => self.form.slurm_submit,
             _ => false,
         }
     }
@@ -4286,7 +4649,7 @@ mod tests {
     #[test]
     fn test_filter_tab_routes_to_filter_handler() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Should not crash — filter handler takes over
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Up));
@@ -4305,7 +4668,7 @@ mod tests {
     #[test]
     fn test_text_value_unknown_returns_empty() {
         let mut app = App::new();
-        app.active_tab = 2; // Algorithms tab - no text fields
+        app.active_tab = TAB_SUPPLEMENTARY; // Algorithms tab - no text fields
         app.active_field = 0;
         assert_eq!(app.text_value(), "");
     }
@@ -4567,17 +4930,17 @@ mod tests {
         let mut app = App::new();
         app.form.execution_mode = 0; // Local
         // Local-only fields visible
-        assert!(app.is_field_visible(3, 0)); // Execution Mode
-        assert!(app.is_field_visible(3, 1)); // Dry Run
-        assert!(app.is_field_visible(3, 2)); // Debug
-        assert!(app.is_field_visible(3, 3)); // Num Processes
+        assert!(app.is_field_visible(TAB_EXECUTION, 0)); // Execution Mode
+        assert!(app.is_field_visible(TAB_EXECUTION, 1)); // Dry Run
+        assert!(app.is_field_visible(TAB_EXECUTION, 2)); // Debug
+        assert!(app.is_field_visible(TAB_EXECUTION, 3)); // Num Processes
         // SLURM fields hidden
-        assert!(!app.is_field_visible(3, 4)); // SLURM Account
-        assert!(!app.is_field_visible(3, 5)); // SLURM Partition
-        assert!(!app.is_field_visible(3, 6)); // SLURM Time
-        assert!(!app.is_field_visible(3, 7)); // SLURM Mem
-        assert!(!app.is_field_visible(3, 8)); // SLURM CPUs
-        assert!(!app.is_field_visible(3, 9)); // Auto-Submit
+        assert!(!app.is_field_visible(TAB_EXECUTION, 4)); // SLURM Account
+        assert!(!app.is_field_visible(TAB_EXECUTION, 5)); // SLURM Partition
+        assert!(!app.is_field_visible(TAB_EXECUTION, 6)); // SLURM Time
+        assert!(!app.is_field_visible(TAB_EXECUTION, 7)); // SLURM Mem
+        assert!(!app.is_field_visible(TAB_EXECUTION, 8)); // SLURM CPUs
+        assert!(!app.is_field_visible(TAB_EXECUTION, 9)); // Auto-Submit
     }
 
     #[test]
@@ -4585,19 +4948,19 @@ mod tests {
         let mut app = App::new();
         app.form.execution_mode = 1; // SLURM
         // Execution Mode always visible
-        assert!(app.is_field_visible(3, 0));
+        assert!(app.is_field_visible(TAB_EXECUTION, 0));
         // Dry Run and Num Processes hidden in SLURM mode
-        assert!(!app.is_field_visible(3, 1)); // Dry Run
-        assert!(!app.is_field_visible(3, 3)); // Num Processes
+        assert!(!app.is_field_visible(TAB_EXECUTION, 1)); // Dry Run
+        assert!(!app.is_field_visible(TAB_EXECUTION, 3)); // Num Processes
         // Debug visible in both modes
-        assert!(app.is_field_visible(3, 2));
+        assert!(app.is_field_visible(TAB_EXECUTION, 2));
         // SLURM fields visible
-        assert!(app.is_field_visible(3, 4));
-        assert!(app.is_field_visible(3, 5));
-        assert!(app.is_field_visible(3, 6));
-        assert!(app.is_field_visible(3, 7));
-        assert!(app.is_field_visible(3, 8));
-        assert!(app.is_field_visible(3, 9));
+        assert!(app.is_field_visible(TAB_EXECUTION, 4));
+        assert!(app.is_field_visible(TAB_EXECUTION, 5));
+        assert!(app.is_field_visible(TAB_EXECUTION, 6));
+        assert!(app.is_field_visible(TAB_EXECUTION, 7));
+        assert!(app.is_field_visible(TAB_EXECUTION, 8));
+        assert!(app.is_field_visible(TAB_EXECUTION, 9));
     }
 
     #[test]
@@ -4605,8 +4968,8 @@ mod tests {
         let app = App::new();
         // All fields on other tabs are always visible
         assert!(app.is_field_visible(0, 0));
-        assert!(app.is_field_visible(2, 0));
-        assert!(app.is_field_visible(2, 8));
+        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 0));
+        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 8));
     }
 
     // --- SLURM form fields ---
@@ -4628,7 +4991,7 @@ mod tests {
     #[test]
     fn test_execution_mode_select() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.active_field = 0;
         assert_eq!(app.select_value(), 0); // Local
         app.form.execution_mode = 1;
@@ -4640,25 +5003,25 @@ mod tests {
     #[test]
     fn test_slurm_text_values() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.form.slurm_account = "myacct".to_string();
         app.form.slurm_partition = "gpu".to_string();
         app.form.slurm_time = "04:00:00".to_string();
         app.form.slurm_mem = "64".to_string();
         app.form.slurm_cpus = "8".to_string();
-        assert_eq!(app.get_text_value(3, 4), "myacct");
-        assert_eq!(app.get_text_value(3, 5), "gpu");
-        assert_eq!(app.get_text_value(3, 6), "04:00:00");
-        assert_eq!(app.get_text_value(3, 7), "64");
-        assert_eq!(app.get_text_value(3, 8), "8");
+        assert_eq!(app.get_text_value(TAB_EXECUTION, 4), "myacct");
+        assert_eq!(app.get_text_value(TAB_EXECUTION, 5), "gpu");
+        assert_eq!(app.get_text_value(TAB_EXECUTION, 6), "04:00:00");
+        assert_eq!(app.get_text_value(TAB_EXECUTION, 7), "64");
+        assert_eq!(app.get_text_value(TAB_EXECUTION, 8), "8");
     }
 
     #[test]
     fn test_slurm_checkbox_value() {
         let mut app = App::new();
-        assert!(!app.get_checkbox_value(3, 9)); // slurm_submit default
+        assert!(!app.get_checkbox_value(TAB_EXECUTION, 9)); // slurm_submit default
         app.form.slurm_submit = true;
-        assert!(app.get_checkbox_value(3, 9));
+        assert!(app.get_checkbox_value(TAB_EXECUTION, 9));
     }
 
     // --- Reset SLURM fields ---
@@ -4666,7 +5029,7 @@ mod tests {
     #[test]
     fn test_reset_slurm_fields() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.form.execution_mode = 1;
         app.form.slurm_account = "changed".to_string();
         app.form.slurm_time = "99:00:00".to_string();
@@ -4680,7 +5043,7 @@ mod tests {
     #[test]
     fn test_reset_single_slurm_field() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.active_field = 4; // slurm_account
         app.form.slurm_account = "changed".to_string();
         app.reset_current_field();
@@ -4692,7 +5055,7 @@ mod tests {
     #[test]
     fn test_navigation_skips_hidden_slurm_fields() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.active_field = 2; // Debug (last visible in Local mode before Num Processes at 3)
         app.form.execution_mode = 1; // SLURM — hides fields 1 (Dry Run) and 3 (Num Processes)
         // Navigate down from Debug (2) — should skip 3 (hidden) and go to 4 (SLURM Account)
@@ -4705,7 +5068,7 @@ mod tests {
     #[test]
     fn test_input_tab_no_tree_cursor_stays() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = 3; // Config File (field 0=mode, 1=bids_dir, 2=output_dir, 3=config)
         // No BIDS tree loaded
         assert!(app.filter_state.tree.is_none());
@@ -4898,7 +5261,7 @@ mod tests {
     #[test]
     fn test_pipeline_tab_navigate_down_up() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         assert_eq!(app.pipeline_state.focus, 0);
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.pipeline_state.focus, 1);
@@ -4916,7 +5279,7 @@ mod tests {
     #[test]
     fn test_pipeline_tab_navigate_clamp_bottom() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         let max = app.pipeline_state.focusable_rows().len().saturating_sub(1);
         app.pipeline_state.focus = max;
         app.handle_key(key(KeyCode::Down));
@@ -4926,10 +5289,10 @@ mod tests {
     #[test]
     fn test_pipeline_tab_switch_from_pipeline() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.active_tab, 2);
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         app.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
         assert_eq!(app.active_tab, 0);
     }
@@ -4937,7 +5300,7 @@ mod tests {
     #[test]
     fn test_pipeline_tab_number_switch() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         app.handle_key(key(KeyCode::Char('3')));
         assert_eq!(app.active_tab, 2);
     }
@@ -4945,7 +5308,7 @@ mod tests {
     #[test]
     fn test_pipeline_left_right_algo_select() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Focus 0 is "QSM Processing" toggle, focus 1 is "Phase Combination" select
         // Find the focus index for the QSM Inversion AlgoSelect
         let rows = app.pipeline_state.visible_rows();
@@ -4969,7 +5332,7 @@ mod tests {
     #[test]
     fn test_pipeline_enter_cycles_algo_select() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Navigate to unwrapping_algorithm AlgoSelect
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -4993,7 +5356,7 @@ mod tests {
     #[test]
     fn test_pipeline_edit_text_param() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Find the obliquity_threshold Param row
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -5026,7 +5389,7 @@ mod tests {
     #[test]
     fn test_pipeline_toggle_do_qsm() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Focus 0 should be the do_qsm toggle
         app.pipeline_state.focus = 0;
         assert!(app.pipeline_state.do_qsm);
@@ -5040,7 +5403,7 @@ mod tests {
     #[test]
     fn test_pipeline_toggle_inhomogeneity_correction() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Find inhomogeneity_correction toggle
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -5061,7 +5424,7 @@ mod tests {
     #[test]
     fn test_pipeline_quit_from_pipeline_tab() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.should_quit);
     }
@@ -5069,7 +5432,7 @@ mod tests {
     #[test]
     fn test_pipeline_esc_from_pipeline_tab() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         app.handle_key(key(KeyCode::Esc));
         assert!(app.should_quit);
     }
@@ -5077,7 +5440,7 @@ mod tests {
     #[test]
     fn test_pipeline_f5_from_pipeline_tab() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         app.form.bids_dir = "/tmp/bids".to_string();
         app.handle_key(key(KeyCode::F(5)));
         assert!(app.should_run);
@@ -5086,7 +5449,7 @@ mod tests {
     #[test]
     fn test_pipeline_reset_field() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         app.pipeline_state.qsm_algorithm = 5;
         // Find qsm_algorithm focus
         let rows = app.pipeline_state.visible_rows();
@@ -5107,7 +5470,7 @@ mod tests {
     #[test]
     fn test_pipeline_reset_tab() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         app.pipeline_state.qsm_algorithm = 5;
         app.pipeline_state.bf_algorithm = 3;
         app.handle_key(key(KeyCode::Char('R')));
@@ -5127,7 +5490,7 @@ mod tests {
     #[test]
     fn test_pipeline_editing_left_right_cursor() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Find obliquity_threshold param and edit it
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -5158,7 +5521,7 @@ mod tests {
     #[test]
     fn test_supplementary_toggle_swi() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = TAB_SUPPLEMENTARY;
         app.active_field = 0; // Compute SWI checkbox
         assert!(!app.form.do_swi);
         app.handle_key(key(KeyCode::Enter));
@@ -5170,7 +5533,7 @@ mod tests {
     #[test]
     fn test_supplementary_toggle_t2star() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = TAB_SUPPLEMENTARY;
         app.active_field = 7; // Compute T2* Map
         assert!(!app.form.do_t2starmap);
         app.handle_key(key(KeyCode::Enter));
@@ -5180,7 +5543,7 @@ mod tests {
     #[test]
     fn test_supplementary_toggle_r2star() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = TAB_SUPPLEMENTARY;
         app.active_field = 8; // Compute R2* Map
         assert!(!app.form.do_r2starmap);
         app.handle_key(key(KeyCode::Char(' ')));
@@ -5190,7 +5553,7 @@ mod tests {
     #[test]
     fn test_supplementary_swi_scaling_select() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = TAB_SUPPLEMENTARY;
         app.form.do_swi = true; // make SWI fields visible
         app.active_field = 1; // SWI Scaling select
         assert_eq!(app.form.swi_scaling, 0); // tanh
@@ -5203,7 +5566,7 @@ mod tests {
     #[test]
     fn test_supplementary_edit_swi_strength() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = TAB_SUPPLEMENTARY;
         app.form.do_swi = true;
         app.active_field = 2; // SWI Strength text field
         app.handle_key(key(KeyCode::Enter));
@@ -5218,7 +5581,7 @@ mod tests {
     #[test]
     fn test_supplementary_navigate_fields() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = TAB_SUPPLEMENTARY;
         app.active_field = 0;
         // SWI fields are hidden when do_swi is false, so Down from 0 skips to 7
         app.handle_key(key(KeyCode::Down));
@@ -5233,30 +5596,30 @@ mod tests {
     fn test_supplementary_swi_visible_when_enabled() {
         let mut app = App::new();
         app.form.do_swi = true;
-        assert!(app.is_field_visible(2, 1)); // SWI Scaling
-        assert!(app.is_field_visible(2, 2)); // SWI Strength
-        assert!(app.is_field_visible(2, 6)); // SWI MIP Window
+        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 1)); // SWI Scaling
+        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 2)); // SWI Strength
+        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 6)); // SWI MIP Window
     }
 
     #[test]
     fn test_supplementary_swi_hidden_when_disabled() {
         let app = App::new();
-        assert!(!app.is_field_visible(2, 1));
-        assert!(!app.is_field_visible(2, 6));
+        assert!(!app.is_field_visible(TAB_SUPPLEMENTARY, 1));
+        assert!(!app.is_field_visible(TAB_SUPPLEMENTARY, 6));
     }
 
     #[test]
     fn test_supplementary_tab_switch() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = TAB_SUPPLEMENTARY;
         app.handle_key(key(KeyCode::Tab));
-        assert_eq!(app.active_tab, 3);
+        assert_eq!(app.active_tab, TAB_EXECUTION);
     }
 
     #[test]
     fn test_supplementary_reset_field() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = TAB_SUPPLEMENTARY;
         app.active_field = 0;
         app.form.do_swi = true;
         app.handle_key(key(KeyCode::Char('r')));
@@ -5266,7 +5629,7 @@ mod tests {
     #[test]
     fn test_supplementary_reset_tab() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = TAB_SUPPLEMENTARY;
         app.form.do_swi = true;
         app.form.do_t2starmap = true;
         app.form.do_r2starmap = true;
@@ -5283,7 +5646,7 @@ mod tests {
     #[test]
     fn test_execution_mode_switch_with_left_right() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.active_field = 0; // Execution Mode select
         assert_eq!(app.form.execution_mode, 0); // Local
         app.handle_key(key(KeyCode::Right));
@@ -5295,7 +5658,7 @@ mod tests {
     #[test]
     fn test_execution_mode_enter_cycles() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.active_field = 0;
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.form.execution_mode, 1); // SLURM
@@ -5306,7 +5669,7 @@ mod tests {
     #[test]
     fn test_execution_toggle_dry_run() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.active_field = 1; // Dry Run checkbox
         assert!(!app.form.dry_run);
         app.handle_key(key(KeyCode::Enter));
@@ -5316,7 +5679,7 @@ mod tests {
     #[test]
     fn test_execution_toggle_debug() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.active_field = 2; // Debug checkbox
         assert!(!app.form.debug);
         app.handle_key(key(KeyCode::Enter));
@@ -5326,7 +5689,7 @@ mod tests {
     #[test]
     fn test_execution_edit_n_procs() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.active_field = 3; // Num Processes
         app.handle_key(key(KeyCode::Enter));
         assert!(app.editing);
@@ -5339,7 +5702,7 @@ mod tests {
     #[test]
     fn test_execution_edit_slurm_account() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.form.execution_mode = 1; // SLURM mode
         app.active_field = 4; // SLURM Account
         app.handle_key(key(KeyCode::Enter));
@@ -5355,7 +5718,7 @@ mod tests {
     #[test]
     fn test_execution_edit_slurm_partition() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.form.execution_mode = 1;
         app.active_field = 5;
         app.handle_key(key(KeyCode::Enter));
@@ -5368,7 +5731,7 @@ mod tests {
     #[test]
     fn test_execution_edit_slurm_time() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.form.execution_mode = 1;
         app.active_field = 6;
         app.handle_key(key(KeyCode::Enter));
@@ -5383,7 +5746,7 @@ mod tests {
     #[test]
     fn test_execution_toggle_auto_submit() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.form.execution_mode = 1;
         app.active_field = 9; // Auto-Submit checkbox
         assert!(!app.form.slurm_submit);
@@ -5394,7 +5757,7 @@ mod tests {
     #[test]
     fn test_execution_reset_field() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.active_field = 6; // SLURM Time
         app.form.slurm_time = "99:99:99".to_string();
         app.handle_key(key(KeyCode::Char('r')));
@@ -5404,7 +5767,7 @@ mod tests {
     #[test]
     fn test_execution_reset_tab() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.form.execution_mode = 1;
         app.form.dry_run = true;
         app.form.debug = true;
@@ -5421,7 +5784,7 @@ mod tests {
     #[test]
     fn test_methods_tab_scroll_down() {
         let mut app = App::new();
-        app.active_tab = 4;
+        app.active_tab = TAB_METHODS;
         assert_eq!(app.methods_scroll_offset, 0);
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.methods_scroll_offset, 1);
@@ -5432,7 +5795,7 @@ mod tests {
     #[test]
     fn test_methods_tab_scroll_up() {
         let mut app = App::new();
-        app.active_tab = 4;
+        app.active_tab = TAB_METHODS;
         app.methods_scroll_offset = 3;
         app.handle_key(key(KeyCode::Up));
         assert_eq!(app.methods_scroll_offset, 2);
@@ -5443,7 +5806,7 @@ mod tests {
     #[test]
     fn test_methods_tab_scroll_up_at_zero() {
         let mut app = App::new();
-        app.active_tab = 4;
+        app.active_tab = TAB_METHODS;
         app.handle_key(key(KeyCode::Up));
         assert_eq!(app.methods_scroll_offset, 0);
     }
@@ -5451,7 +5814,7 @@ mod tests {
     #[test]
     fn test_methods_tab_quit() {
         let mut app = App::new();
-        app.active_tab = 4;
+        app.active_tab = TAB_METHODS;
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.should_quit);
     }
@@ -5459,7 +5822,7 @@ mod tests {
     #[test]
     fn test_methods_tab_esc() {
         let mut app = App::new();
-        app.active_tab = 4;
+        app.active_tab = TAB_METHODS;
         app.handle_key(key(KeyCode::Esc));
         assert!(app.should_quit);
     }
@@ -5467,7 +5830,7 @@ mod tests {
     #[test]
     fn test_methods_tab_switch() {
         let mut app = App::new();
-        app.active_tab = 4;
+        app.active_tab = TAB_METHODS;
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.active_tab, 0);
     }
@@ -5475,15 +5838,15 @@ mod tests {
     #[test]
     fn test_methods_tab_backtab() {
         let mut app = App::new();
-        app.active_tab = 4;
+        app.active_tab = TAB_METHODS;
         app.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
-        assert_eq!(app.active_tab, 3);
+        assert_eq!(app.active_tab, TAB_EXECUTION);
     }
 
     #[test]
     fn test_methods_tab_number_switch() {
         let mut app = App::new();
-        app.active_tab = 4;
+        app.active_tab = TAB_METHODS;
         app.handle_key(key(KeyCode::Char('2')));
         assert_eq!(app.active_tab, 1);
     }
@@ -5491,7 +5854,7 @@ mod tests {
     #[test]
     fn test_methods_tab_f5_triggers_run() {
         let mut app = App::new();
-        app.active_tab = 4;
+        app.active_tab = TAB_METHODS;
         app.form.bids_dir = "/tmp/bids".to_string();
         app.handle_key(key(KeyCode::F(5)));
         assert!(app.should_run);
@@ -5500,7 +5863,7 @@ mod tests {
     #[test]
     fn test_methods_tab_enter_triggers_run() {
         let mut app = App::new();
-        app.active_tab = 4;
+        app.active_tab = TAB_METHODS;
         app.form.bids_dir = "/tmp/bids".to_string();
         app.handle_key(key(KeyCode::Enter));
         assert!(app.should_run);
@@ -5511,7 +5874,7 @@ mod tests {
     #[test]
     fn test_filter_enter_include_editing() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS; // in filter tree area
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.focus = FilterFocus::Include;
@@ -5522,7 +5885,7 @@ mod tests {
     #[test]
     fn test_filter_enter_exclude_editing() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.focus = FilterFocus::Exclude;
@@ -5533,7 +5896,7 @@ mod tests {
     #[test]
     fn test_filter_type_in_include() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.focus = FilterFocus::Include;
@@ -5550,7 +5913,7 @@ mod tests {
     #[test]
     fn test_filter_esc_stops_include_editing() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.include_editing = true;
@@ -5562,7 +5925,7 @@ mod tests {
     #[test]
     fn test_filter_enter_stops_include_editing_and_applies() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.include_editing = true;
@@ -5574,7 +5937,7 @@ mod tests {
     #[test]
     fn test_filter_type_in_exclude() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.focus = FilterFocus::Exclude;
@@ -5587,7 +5950,7 @@ mod tests {
     #[test]
     fn test_filter_text_backspace() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.include_editing = true;
@@ -5601,7 +5964,7 @@ mod tests {
     #[test]
     fn test_filter_text_delete() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.include_editing = true;
@@ -5614,7 +5977,7 @@ mod tests {
     #[test]
     fn test_filter_text_home_end() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.include_editing = true;
@@ -5629,7 +5992,7 @@ mod tests {
     #[test]
     fn test_filter_text_left_right() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.include_editing = true;
@@ -5644,7 +6007,7 @@ mod tests {
     #[test]
     fn test_filter_num_echoes_editing() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.focus = FilterFocus::NumEchoes;
@@ -5678,7 +6041,7 @@ mod tests {
         crate::testutils::create_single_echo_bids(dir.path());
         let mut app = App::new();
         app.filter_state.maybe_rescan(dir.path().to_str().unwrap());
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.focus = FilterFocus::TreeNode(0);
         // Select none
@@ -5698,7 +6061,7 @@ mod tests {
         crate::testutils::create_single_echo_bids(dir.path());
         let mut app = App::new();
         app.filter_state.maybe_rescan(dir.path().to_str().unwrap());
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         // Navigate to a run leaf
         app.filter_state.focus = FilterFocus::Exclude;
@@ -5718,7 +6081,7 @@ mod tests {
         crate::testutils::create_single_echo_bids(dir.path());
         let mut app = App::new();
         app.filter_state.maybe_rescan(dir.path().to_str().unwrap());
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.focus = FilterFocus::TreeNode(0); // subject
         let rows_before = app.filter_state.visible_rows().len();
@@ -5736,7 +6099,7 @@ mod tests {
         crate::testutils::create_single_echo_bids(dir.path());
         let mut app = App::new();
         app.filter_state.maybe_rescan(dir.path().to_str().unwrap());
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.focus = FilterFocus::Include;
         app.handle_key(key(KeyCode::Up));
@@ -5746,7 +6109,7 @@ mod tests {
     #[test]
     fn test_filter_tab_switch() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.focus = FilterFocus::Exclude;
@@ -5757,7 +6120,7 @@ mod tests {
     #[test]
     fn test_filter_f5() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.filter_state.tree = Some(crate::bids::discovery::BidsTree { subjects: vec![] });
         app.filter_state.focus = FilterFocus::Include;
@@ -5772,7 +6135,7 @@ mod tests {
     fn test_nifti_delete_magnitude_file() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.magnitude_files = vec![
             std::path::PathBuf::from("/a.nii"),
@@ -5788,7 +6151,7 @@ mod tests {
     fn test_nifti_delete_last_magnitude_resets_focus() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.magnitude_files = vec![std::path::PathBuf::from("/a.nii")];
         app.nifti_state.focus = NiftiFocus::MagFile(0);
@@ -5801,7 +6164,7 @@ mod tests {
     fn test_nifti_delete_phase_file() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.phase_files = vec![
             std::path::PathBuf::from("/p1.nii"),
@@ -5818,7 +6181,7 @@ mod tests {
     fn test_nifti_delete_last_phase_resets_focus() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.phase_files = vec![std::path::PathBuf::from("/p.nii")];
         app.nifti_state.focus = NiftiFocus::PhaseFile(0);
@@ -5831,7 +6194,7 @@ mod tests {
     fn test_nifti_reorder_magnitude_down() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.magnitude_files = vec![
             std::path::PathBuf::from("/a.nii"),
@@ -5848,7 +6211,7 @@ mod tests {
     fn test_nifti_reorder_magnitude_up() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.magnitude_files = vec![
             std::path::PathBuf::from("/a.nii"),
@@ -5865,7 +6228,7 @@ mod tests {
     fn test_nifti_reorder_phase_down() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.phase_files = vec![
             std::path::PathBuf::from("/p1.nii"),
@@ -5881,7 +6244,7 @@ mod tests {
     fn test_nifti_reorder_phase_up() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.phase_files = vec![
             std::path::PathBuf::from("/p1.nii"),
@@ -5897,7 +6260,7 @@ mod tests {
     fn test_nifti_up_at_top_goes_to_io() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::AddMagnitude;
         app.handle_key(key(KeyCode::Up));
@@ -5908,7 +6271,7 @@ mod tests {
     fn test_nifti_tab_switch() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.active_tab, 1);
@@ -5918,7 +6281,7 @@ mod tests {
     fn test_nifti_quit() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.should_quit);
@@ -5928,7 +6291,7 @@ mod tests {
     fn test_nifti_editing_backspace_home_end_left_right() {
         let mut app = App::new();
         app.input_mode = InputMode::NIfTI;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.nifti_state.focus = NiftiFocus::EchoTimes;
         app.nifti_state.echo_times = "12, 24".to_string();
@@ -5953,7 +6316,7 @@ mod tests {
     fn test_dicom_tab_navigate_up_to_io() {
         let mut app = App::new();
         app.input_mode = InputMode::DicomToBids;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.dicom_state.focus = DicomFocus::Series(0);
         app.handle_key(key(KeyCode::Up));
@@ -5964,7 +6327,7 @@ mod tests {
     fn test_dicom_tab_switch() {
         let mut app = App::new();
         app.input_mode = InputMode::DicomToBids;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.active_tab, 1);
@@ -5974,7 +6337,7 @@ mod tests {
     fn test_dicom_tab_quit() {
         let mut app = App::new();
         app.input_mode = InputMode::DicomToBids;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.should_quit);
@@ -5995,7 +6358,7 @@ mod tests {
     fn test_dicom_navigate_down() {
         let mut app = App::new();
         app.input_mode = InputMode::DicomToBids;
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = App::INPUT_IO_FIELDS;
         // No session, so focus_next just goes to ConvertButton
         app.handle_key(key(KeyCode::Down));
@@ -6007,7 +6370,7 @@ mod tests {
     #[test]
     fn test_adjust_io_select_cycles_mode() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = 0;
         assert_eq!(app.input_mode, InputMode::Bids);
         app.handle_key(key(KeyCode::Right));
@@ -6023,7 +6386,7 @@ mod tests {
     #[test]
     fn test_enter_on_io_mode_toggles() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = 0;
         assert_eq!(app.input_mode, InputMode::Bids);
         app.handle_key(key(KeyCode::Enter));
@@ -6089,7 +6452,7 @@ mod tests {
     #[test]
     fn test_reset_input_mode_field() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = 0;
         app.input_mode = InputMode::DicomToBids;
         app.handle_key(key(KeyCode::Char('r')));
@@ -6099,7 +6462,7 @@ mod tests {
     #[test]
     fn test_reset_bids_dir_field() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = 1;
         app.form.bids_dir = "/something".to_string();
         app.handle_key(key(KeyCode::Char('r')));
@@ -6109,7 +6472,7 @@ mod tests {
     #[test]
     fn test_reset_output_dir_field() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = 2;
         app.form.output_dir = "/out".to_string();
         app.handle_key(key(KeyCode::Char('r')));
@@ -6119,7 +6482,7 @@ mod tests {
     #[test]
     fn test_reset_config_file_field() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = 3;
         app.form.config_file = "cfg.toml".to_string();
         app.handle_key(key(KeyCode::Char('r')));
@@ -6129,7 +6492,7 @@ mod tests {
     #[test]
     fn test_reset_input_tab() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.input_mode = InputMode::DicomToBids;
         app.form.bids_dir = "/x".to_string();
         app.form.output_dir = "/y".to_string();
@@ -6142,7 +6505,7 @@ mod tests {
     #[test]
     fn test_reset_nifti_input_dir() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = 1;
         app.input_mode = InputMode::NIfTI;
         app.nifti_state.input_dir = "/data".to_string();
@@ -6155,7 +6518,7 @@ mod tests {
     #[test]
     fn test_reset_nifti_output_dir() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = 2;
         app.input_mode = InputMode::NIfTI;
         app.nifti_state.output_dir = "/out".to_string();
@@ -6166,7 +6529,7 @@ mod tests {
     #[test]
     fn test_reset_dicom_dir() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = 1;
         app.input_mode = InputMode::DicomToBids;
         app.dicom_state.dicom_dir = "/dcm".to_string();
@@ -6178,7 +6541,7 @@ mod tests {
     #[test]
     fn test_reset_dicom_output_dir() {
         let mut app = App::new();
-        app.active_tab = 0;
+        app.active_tab = TAB_INPUT;
         app.active_field = 2;
         app.input_mode = InputMode::DicomToBids;
         app.dicom_state.output_dir = "/out".to_string();
@@ -6189,7 +6552,7 @@ mod tests {
     #[test]
     fn test_reset_supplementary_fields() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = TAB_SUPPLEMENTARY;
         app.active_field = 2;
         app.form.swi_strength = "999".to_string();
         app.handle_key(key(KeyCode::Char('r')));
@@ -6200,7 +6563,7 @@ mod tests {
     #[test]
     fn test_reset_execution_fields() {
         let mut app = App::new();
-        app.active_tab = 3;
+        app.active_tab = TAB_EXECUTION;
         app.active_field = 7;
         app.form.slurm_mem = "999".to_string();
         app.handle_key(key(KeyCode::Char('r')));
@@ -6212,7 +6575,7 @@ mod tests {
     #[test]
     fn test_pipeline_mask_preset_switch() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Find mask_preset focus
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -6233,7 +6596,7 @@ mod tests {
     #[test]
     fn test_pipeline_mask_add_section() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         let initial_sections = app.pipeline_state.mask_sections.len();
         // Find MaskOpAddSection focus
         let rows = app.pipeline_state.visible_rows();
@@ -6254,7 +6617,7 @@ mod tests {
     #[test]
     fn test_pipeline_mask_add_step() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         let initial_refs = app.pipeline_state.mask_sections[0].refinements.len();
         // Find MaskOpAddStep for section 0
         let rows = app.pipeline_state.visible_rows();
@@ -6280,7 +6643,7 @@ mod tests {
     #[test]
     fn test_pipeline_mask_add_step_cycle_ops() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
         let mut add_step_focus = None;
@@ -6307,7 +6670,7 @@ mod tests {
     #[test]
     fn test_pipeline_mask_delete_refinement() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         let initial_refs = app.pipeline_state.mask_sections[0].refinements.len();
         assert!(initial_refs > 0);
         // Find first MaskOpEntry focus
@@ -6329,7 +6692,7 @@ mod tests {
     #[test]
     fn test_pipeline_mask_adjust_op_left_right() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Find MaskOpEntry focus and adjust with Left/Right
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -6350,7 +6713,7 @@ mod tests {
     #[test]
     fn test_pipeline_mask_generator_adjust() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Find MaskOpGenerator focus
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -6379,7 +6742,7 @@ mod tests {
     #[test]
     fn test_pipeline_mask_generator_param_adjust() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Find MaskOpGeneratorParam focus
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -6403,7 +6766,7 @@ mod tests {
     #[test]
     fn test_pipeline_mask_input_adjust() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Find MaskOpInput focus
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -6456,7 +6819,7 @@ mod tests {
     #[test]
     fn test_reset_pipeline_param_field() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Find obliquity_threshold param
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -6484,7 +6847,7 @@ mod tests {
     #[test]
     fn test_reset_pipeline_toggle_field() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Focus 0 is do_qsm toggle
         app.pipeline_state.focus = 0;
         app.pipeline_state.do_qsm = false;
@@ -6497,7 +6860,7 @@ mod tests {
     #[test]
     fn test_supplementary_edit_swi_hp_sigmas() {
         let mut app = App::new();
-        app.active_tab = 2;
+        app.active_tab = TAB_SUPPLEMENTARY;
         app.form.do_swi = true;
         // Edit SWI HP Sigma X (field 3)
         app.active_field = 3;
@@ -6591,7 +6954,7 @@ mod tests {
     #[test]
     fn test_pipeline_threshold_value_editing() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         // Set generator to Fixed threshold to make MaskOpThresholdValue visible
         app.pipeline_state.mask_sections[0].generator = crate::pipeline::config::MaskOp::Threshold {
             method: crate::pipeline::config::MaskThresholdMethod::Fixed,
@@ -6636,7 +6999,7 @@ mod tests {
     #[test]
     fn test_pipeline_threshold_value_esc_cancels() {
         let mut app = App::new();
-        app.active_tab = 1;
+        app.active_tab = TAB_QSM;
         app.pipeline_state.mask_sections[0].generator = crate::pipeline::config::MaskOp::Threshold {
             method: crate::pipeline::config::MaskThresholdMethod::Fixed,
             value: Some(0.5),
