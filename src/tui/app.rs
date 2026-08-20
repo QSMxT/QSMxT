@@ -1478,11 +1478,10 @@ impl PipelineFormState {
     fn separation_visible_rows(&self) -> Vec<PipelineRow> {
         let mut rows = Vec::new();
         rows.push(PipelineRow::Toggle {
-            label: "Compute Chi-Separation", field: "do_chi_separation",
+            label: "Compute χ-separation", field: "do_chi_separation",
             help: "Split QSM into paramagnetic (χ+, iron) and diamagnetic (χ−, myelin) maps",
         });
         if !self.do_chi_separation {
-            rows.push(PipelineRow::Note { text: "Enable to configure susceptibility source separation." });
             return rows;
         }
         rows.push(PipelineRow::Separator);
@@ -1557,7 +1556,7 @@ impl PipelineFormState {
 
         // QSM toggle
         rows.push(PipelineRow::Toggle {
-            label: "QSM Processing", field: "do_qsm",
+            label: "Compute QSM", field: "do_qsm",
             help: "Enable QSM reconstruction (disable to only run supplementary outputs)",
         });
 
@@ -5309,7 +5308,7 @@ mod tests {
     fn test_pipeline_left_right_algo_select() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        // Focus 0 is "QSM Processing" toggle, focus 1 is "Phase Combination" select
+        // Focus 0 is "Compute QSM" toggle, focus 1 is "Phase Combination" select
         // Find the focus index for the QSM Inversion AlgoSelect
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
