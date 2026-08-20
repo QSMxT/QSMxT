@@ -169,7 +169,8 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
             info!("Background removal (BFRnet, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
-            // Fetch the ONNX weights (cached under $QSM_MODEL_DIR / the download cache).
+            // Fetch the ONNX weights with a download bar (cached under $QSM_MODEL_DIR / the cache).
+            crate::pipeline::runner::prefetch_weights("bfrnet", "bfrnet")?;
             let spec = qsm_core::models::find_model("bfrnet")
                 .ok_or_else(|| crate::error::QsmxtError::Config("bfrnet not in model registry".into()))?;
             let weights = qsm_core::models::primary_weight_bytes(spec)

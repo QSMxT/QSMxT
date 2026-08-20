@@ -156,7 +156,10 @@ fn create_download_bar(label: &str, total: u64) -> ProgressBar {
 /// Pre-fetch a deep-learning model's weights (if `model_id` names one) with a download
 /// progress bar per weight file. No-op for classical algorithms (unknown id) or weights
 /// already cached — after this, qsm-core's inference path finds the files in the cache.
-fn prefetch_weights(model_id: &str, run_key: &str) -> crate::Result<()> {
+/// `label` prefixes the bar (the pipeline passes the run key; standalone commands pass the
+/// algorithm name). Shared by the pipeline runner and the standalone `invert`/`bgremove`/
+/// `separate` commands.
+pub fn prefetch_weights(model_id: &str, label: &str) -> crate::Result<()> {
     use std::cell::RefCell;
     use std::collections::HashMap;
     let bars: RefCell<HashMap<String, ProgressBar>> = RefCell::new(HashMap::new());
@@ -165,7 +168,7 @@ fn prefetch_weights(model_id: &str, run_key: &str) -> crate::Result<()> {
             let mut m = bars.borrow_mut();
             let bar = m
                 .entry(name.to_string())
-                .or_insert_with(|| create_download_bar(&format!("{} ↓ {}", run_key, name), total.max(1)));
+                .or_insert_with(|| create_download_bar(&format!("{} ↓ {}", label, name), total.max(1)));
             if total > 0 {
                 bar.set_length(total);
             }

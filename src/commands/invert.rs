@@ -12,6 +12,10 @@ fn run_dl_inversion(
     let field_nifti = load_nifti(&c.input)?;
     let (mask, _) = load_mask(&c.mask)?;
     let (nx, ny, nz) = field_nifti.dims;
+    // Fetch the model's ONNX weights with a download bar before inference (cached afterwards).
+    if let Some(id) = algorithm.dl_model_id() {
+        crate::pipeline::runner::prefetch_weights(id, name)?;
+    }
     info!("Dipole inversion ({}, {}x{}x{})", name, nx, ny, nz);
     let metadata = qsm_core::pipeline::ScanMetadata {
         dims: field_nifti.dims,
