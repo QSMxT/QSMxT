@@ -914,6 +914,17 @@ const QSM_ALGO_HELP: &[&str] = &[
     "L1-QSM (L1 data fidelity) — https://doi.org/10.1002/mrm.29057",
     "Weak-Harmonic QSM (WH-QSM) — https://doi.org/10.1002/mrm.27483",
     "Hybrid Data Fidelity QSM (HD-QSM) — https://doi.org/10.1002/mrm.29296",
+    "xQSM deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1002/nbm.4461",
+    "QSMnet deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2018.06.030",
+    "QSMnet+ deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2020.116579",
+    "AutoQSM single-step deep-learning reconstruction, no BFR (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2019.116064",
+    "QSMGAN GAN-refined deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2019.116389",
+    "IR2QSM unrolled deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1002/mp.17747",
+    "LPCNN learned-proximal deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1007/978-3-030-59713-9_13",
+    "MoDL-QSM model-based deep-learning dipole inversion, χ33/STI (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2021.118376",
+    "NeXtQSM single-step deep-learning reconstruction, no BFR (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2022.119729",
+    "iQSM end-to-end deep-learning reconstruction from phase (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2022.119410",
+    "iQSM+ orientation-adaptive end-to-end deep-learning reconstruction (weights auto-downloaded) — https://doi.org/10.1016/j.media.2024.103160",
 ];
 const UNWRAP_HELP: &[&str] = &[
     "ROMEO region-growing unwrapping — https://doi.org/10.1002/mrm.28563",
@@ -928,6 +939,8 @@ const BF_HELP: &[&str] = &[
     "Regularized SHARP (RESHARP) with Tikhonov — https://doi.org/10.1002/mrm.25032",
     "HARPERELLA integrated unwrap+BFR — https://doi.org/10.1002/nbm.3056",
     "Improved HARPERELLA (iHARPERELLA) — Li et al., Proc. ISMRM 2015, p.3313",
+    "BFRnet deep-learning background removal (weights auto-downloaded) — https://github.com/sunhongfu/BFRnet",
+    "iQFM deep-learning joint unwrapping + background removal from phase (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2022.119410",
 ];
 const QSM_REF_HELP: &[&str] = &[
     "Subtract mean susceptibility within mask (recommended)",
@@ -1060,6 +1073,11 @@ pub struct PipelineFormState {
     pub iharperella_radius: String,
     pub iharperella_max_iter: String,
     pub iharperella_tol: String,
+
+    // mSMV boundary-shadow refinement (post-step on the primary BFR)
+    pub msmv_refine: bool,
+    pub msmv_radius: String,
+    pub msmv_maxk: String,
 
     // QSMART
     pub qsmart_ilsqr_tol: String,
@@ -1307,6 +1325,9 @@ impl Default for PipelineFormState {
             iharperella_radius: format!("{}", qsm_core::bgremove::HarperellaParams::default().radius),
             iharperella_max_iter: format!("{}", qsm_core::bgremove::HarperellaParams::default().max_iter),
             iharperella_tol: format!("{}", qsm_core::bgremove::HarperellaParams::default().tol),
+            msmv_refine: false,
+            msmv_radius: format!("{}", qsm_core::bgremove::MsmvParams::default().radius),
+            msmv_maxk: format!("{}", qsm_core::bgremove::MsmvParams::default().maxk),
             do_qsm: true,
             romeo_phase_gradient_coherence: qsm_core::unwrap::RomeoParams::default().phase_gradient_coherence,
             romeo_mag_coherence: qsm_core::unwrap::RomeoParams::default().mag_coherence,
@@ -1432,8 +1453,8 @@ impl Default for PipelineFormState {
     }
 }
 
-pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe"];
-pub const SEP_ALGO_OPTIONS: &[&str] = &["r2star-qsm", "decompose", "chi-sep-ilsqr", "chi-sep-medi", "wavesep", "hc-chisep"];
+pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
+pub const SEP_ALGO_OPTIONS: &[&str] = &["r2star-qsm", "decompose", "chi-sep-ilsqr", "chi-sep-medi", "wavesep", "hc-chisep", "susep-net", "chi-sepnet"];
 const SEP_ALGO_HELP: &[&str] = &[
     "R2*-QSM closed-form (Dimov 2022) — QSM + R2*, GRE-only",
     "DECOMPOSE-QSM signal-domain fit (Chen 2021) — QSM + multi-echo magnitude, GRE-only",
@@ -1441,6 +1462,8 @@ const SEP_ALGO_HELP: &[&str] = &[
     "χ-separation MEDI — local field + R2' + magnitude",
     "WaveSep wavelet-L1 (Fang 2023) — QSM + R2'",
     "Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude",
+    "SUSEP-Net deep-learning separation — QSM + R2' + local field (weights auto-downloaded)",
+    "χ-sepnet deep-learning separation — QSM + R2' + local field (weights auto-downloaded)",
 ];
 // QSMART's inner dipole inversion (excludes the two end-to-end algorithms tgv/qsmart).
 pub const QSMART_INV_OPTIONS: &[&str] = &["ilsqr", "rts", "tv", "tkd", "tsvd", "tikhonov", "nltv", "medi"];
@@ -1455,7 +1478,7 @@ const QSMART_INV_HELP: &[&str] = &[
     "Morphology Enabled Dipole Inversion (MEDI)",
 ];
 pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian"];
-pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella"];
+pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
 pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit"];
 pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average", "tes", "mag"];
 const B0_ESTIMATION_HELP: &[&str] = &[
@@ -1553,6 +1576,13 @@ impl PipelineFormState {
         let is_tgv = self.qsm_algorithm == 4;
         let is_qsmart = self.qsm_algorithm == 10;
         let is_medi_smv = self.qsm_algorithm == 7 && self.medi_smv;
+        // AutoQSM / NeXtQSM are single-step (own background removal from the total field), so
+        // the BG-removal section is hidden — but field mapping/unwrapping still runs.
+        let is_autoqsm = self.qsm_algorithm == 21;
+        let is_nextqsm = self.qsm_algorithm == 26;
+        let is_single_step = is_autoqsm || is_nextqsm;
+        // iQSM / iQSM+ reconstruct end-to-end from raw phase: no field mapping or BG removal.
+        let is_iqsm = self.qsm_algorithm == 27 || self.qsm_algorithm == 28;
 
         // QSM toggle
         rows.push(PipelineRow::Toggle {
@@ -1578,7 +1608,7 @@ impl PipelineFormState {
 
         if self.do_qsm {
         // Field Mapping (hidden if TGV or QSMART)
-        if !is_tgv && !is_qsmart {
+        if !is_tgv && !is_qsmart && !is_iqsm {
             let is_laplacian = self.unwrapping_algorithm == 1;
 
             // Phase offset removal (disabled for Laplacian)
@@ -1674,8 +1704,8 @@ impl PipelineFormState {
 
         rows.push(PipelineRow::Separator);
 
-        // BG Removal (hidden for TGV, QSMART, and MEDI+SMV)
-        if !is_tgv && !is_qsmart && !is_medi_smv {
+        // BG Removal (hidden for TGV, QSMART, MEDI+SMV, single-step DL, and end-to-end iQSM)
+        if !is_tgv && !is_qsmart && !is_medi_smv && !is_single_step && !is_iqsm {
             rows.push(PipelineRow::AlgoSelect {
                 label: "BG Removal", field: "bf_algorithm",
                 options: BF_OPTIONS, help: BF_HELP,
@@ -1718,6 +1748,15 @@ impl PipelineFormState {
                     rows.push(PipelineRow::Param { label: "  Tolerance", field: "iharperella_tol", help: "Convergence tolerance" });
                 }
                 _ => {}
+            }
+            // mSMV boundary-shadow refinement, layered on top of the primary BFR (Roberts 2024).
+            rows.push(PipelineRow::Toggle {
+                label: "mSMV refinement", field: "msmv_refine",
+                help: "Remove residual boundary-field shadows with mSMV after the primary BFR (Roberts 2024)",
+            });
+            if self.msmv_refine {
+                rows.push(PipelineRow::Param { label: "  mSMV Radius", field: "msmv_radius", help: "SMV prefilter kernel radius in mm" });
+                rows.push(PipelineRow::Param { label: "  mSMV Max Iter", field: "msmv_maxk", help: "Maximum boundary-correction iterations" });
             }
             rows.push(PipelineRow::Separator);
         }
@@ -1952,6 +1991,7 @@ impl PipelineFormState {
         "resharp_radius", "resharp_tik_reg", "resharp_tol", "resharp_max_iter",
         "harperella_radius", "harperella_max_iter", "harperella_tol",
         "iharperella_radius", "iharperella_max_iter", "iharperella_tol",
+        "msmv_radius", "msmv_maxk",
         "qsmart_ilsqr_tol", "qsmart_ilsqr_max_iter", "qsmart_vasc_sphere_radius", "qsmart_sdf_spatial_radius",
         "qsmart_sdf_sigma1_stage1", "qsmart_sdf_sigma2_stage1", "qsmart_sdf_sigma1_stage2", "qsmart_sdf_sigma2_stage2",
         "qsmart_sdf_lower_lim", "qsmart_sdf_curv_constant",
@@ -2035,6 +2075,8 @@ impl PipelineFormState {
             "iharperella_radius" => &self.iharperella_radius,
             "iharperella_max_iter" => &self.iharperella_max_iter,
             "iharperella_tol" => &self.iharperella_tol,
+            "msmv_radius" => &self.msmv_radius,
+            "msmv_maxk" => &self.msmv_maxk,
             "qsmart_ilsqr_tol" => &self.qsmart_ilsqr_tol,
             "qsmart_ilsqr_max_iter" => &self.qsmart_ilsqr_max_iter,
             "qsmart_vasc_sphere_radius" => &self.qsmart_vasc_sphere_radius,
@@ -2202,6 +2244,8 @@ impl PipelineFormState {
             "iharperella_radius" => Some(&mut self.iharperella_radius),
             "iharperella_max_iter" => Some(&mut self.iharperella_max_iter),
             "iharperella_tol" => Some(&mut self.iharperella_tol),
+            "msmv_radius" => Some(&mut self.msmv_radius),
+            "msmv_maxk" => Some(&mut self.msmv_maxk),
             "qsmart_ilsqr_tol" => Some(&mut self.qsmart_ilsqr_tol),
             "qsmart_ilsqr_max_iter" => Some(&mut self.qsmart_ilsqr_max_iter),
             "qsmart_vasc_sphere_radius" => Some(&mut self.qsmart_vasc_sphere_radius),
@@ -2344,6 +2388,7 @@ impl PipelineFormState {
             "romeo_correct_global" => self.romeo_correct_global,
             "medi_smv" => self.medi_smv,
             "do_chi_separation" => self.do_chi_separation,
+            "msmv_refine" => self.msmv_refine,
             _ => false,
         }
     }
@@ -2359,6 +2404,7 @@ impl PipelineFormState {
             "romeo_individual" => self.romeo_individual = !self.romeo_individual,
             "romeo_correct_global" => self.romeo_correct_global = !self.romeo_correct_global,
             "medi_smv" => self.medi_smv = !self.medi_smv,
+            "msmv_refine" => self.msmv_refine = !self.msmv_refine,
             _ => {}
         }
     }

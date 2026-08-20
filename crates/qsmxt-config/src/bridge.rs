@@ -47,6 +47,19 @@ fn map_alg(alg: QsmAlgorithm) -> PInvAlg {
         QsmAlgorithm::Whqsm => PInvAlg::Whqsm,
         QsmAlgorithm::Hdqsm => PInvAlg::Hdqsm,
         QsmAlgorithm::AmpPe => PInvAlg::AmpPe,
+        QsmAlgorithm::Xqsm => PInvAlg::Xqsm,
+        QsmAlgorithm::Qsmnet => PInvAlg::Qsmnet,
+        QsmAlgorithm::QsmnetPlus => PInvAlg::QsmnetPlus,
+        QsmAlgorithm::Autoqsm => PInvAlg::Autoqsm,
+        QsmAlgorithm::Qsmgan => PInvAlg::Qsmgan,
+        QsmAlgorithm::Ir2qsm => PInvAlg::Ir2qsm,
+        QsmAlgorithm::Lpcnn => PInvAlg::Lpcnn,
+        QsmAlgorithm::ModlQsm => PInvAlg::ModlQsm,
+        QsmAlgorithm::Nextqsm => PInvAlg::Nextqsm,
+        // End-to-end from phase — the runner calls run_iqsm/run_iqsm_plus directly and
+        // never routes these through run_dipole_inversion (which rejects them).
+        QsmAlgorithm::Iqsm => PInvAlg::Iqsm,
+        QsmAlgorithm::IqsmPlus => PInvAlg::IqsmPlus,
     }
 }
 
@@ -104,6 +117,11 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             BfAlgorithm::Resharp => PBgAlg::Resharp,
             BfAlgorithm::Harperella => PBgAlg::Harperella,
             BfAlgorithm::Iharperella => PBgAlg::Iharperella,
+            BfAlgorithm::Bfrnet => PBgAlg::Bfrnet,
+            // iQFM has no qsm-core BgRemovalAlgorithm (its input is phase, not a total field):
+            // the qsmxt runner intercepts it and calls run_iqfm, so this value is never used.
+            // Map to a harmless placeholder to keep the config well-formed.
+            BfAlgorithm::Iqfm => PBgAlg::Vsharp,
         },
         vsharp: qsm_core::bgremove::VsharpParams {
             threshold: cfg.bg_removal.vsharp.threshold,
@@ -133,11 +151,15 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             tol: cfg.bg_removal.harperella.tol,
         },
         sdf: qsm_core::bgremove::SdfParams::default(),
-        // mSMV is a refinement-only post-step in qsm-core v0.26; not yet exposed as a
-        // qsmxt knob, so use defaults and leave the refinement off (b0/te are overridden
-        // from scan metadata by the dispatcher when enabled).
-        msmv: qsm_core::bgremove::MsmvParams::default(),
-        msmv_refine: false,
+        // mSMV boundary-shadow refinement (Roberts 2024), applied on top of the primary BFR
+        // when enabled. b0/te are overridden from scan metadata and prefilter is forced off
+        // (refinement mode) by the qsm-core dispatcher; only radius/maxk come from config.
+        msmv: qsm_core::bgremove::MsmvParams {
+            radius: cfg.bg_removal.msmv.radius,
+            maxk: cfg.bg_removal.msmv.maxk,
+            ..qsm_core::bgremove::MsmvParams::default()
+        },
+        msmv_refine: cfg.bg_removal.msmv_refine,
     };
 
     let inversion = PInversion {
@@ -287,6 +309,8 @@ fn map_sep_alg(alg: SeparationAlgorithm) -> PSepAlg {
         SeparationAlgorithm::WaveSep => PSepAlg::WaveSep,
         SeparationAlgorithm::Decompose => PSepAlg::Decompose,
         SeparationAlgorithm::HcChisep => PSepAlg::HcChisep,
+        SeparationAlgorithm::SusepNet => PSepAlg::SusepNet,
+        SeparationAlgorithm::ChiSepNet => PSepAlg::ChiSepNet,
     }
 }
 

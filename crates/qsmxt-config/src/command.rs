@@ -118,6 +118,15 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             emit_usize(&mut parts, "--iharperella-max-iter", config.bg_removal.iharperella.max_iter, d.bg_removal.iharperella.max_iter);
             emit_f64(&mut parts, "--iharperella-tol", config.bg_removal.iharperella.tol, d.bg_removal.iharperella.tol);
         }
+        // BFRnet / iQFM (deep learning) have no user-tunable parameters.
+        BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => {}
+    }
+    // mSMV boundary-shadow refinement is a post-step on any primary BFR (not part of the
+    // match above); emit its flag + params only when enabled.
+    if config.bg_removal.msmv_refine {
+        parts.push("--msmv-refine".into());
+        emit_f64(&mut parts, "--msmv-radius", config.bg_removal.msmv.radius, d.bg_removal.msmv.radius);
+        emit_usize(&mut parts, "--msmv-maxk", config.bg_removal.msmv.maxk, d.bg_removal.msmv.maxk);
     }
 
     // ── QSM inversion ──
@@ -270,6 +279,12 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             emit_f64(&mut parts, "--amp-pe-cvg-thd", a.cvg_thd, da.cvg_thd);
             emit_f64(&mut parts, "--amp-pe-tikhonov-beta", a.tikhonov_beta, da.tikhonov_beta);
         }
+        // Deep-learning inversions have no user-tunable parameters (weights + fixed graph).
+        QsmAlgorithm::Xqsm | QsmAlgorithm::Qsmnet
+        | QsmAlgorithm::QsmnetPlus | QsmAlgorithm::Autoqsm
+        | QsmAlgorithm::Qsmgan | QsmAlgorithm::Ir2qsm | QsmAlgorithm::Lpcnn
+        | QsmAlgorithm::ModlQsm | QsmAlgorithm::Nextqsm
+        | QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {}
     }
 
     // ── Chi-separation method + params (only the selected method's) ──
@@ -323,6 +338,8 @@ pub fn generate_command(config: &PipelineConfig) -> String {
                 emit_f64(&mut parts, "--hc-chisep-dr-pos-3t", s.hc_chisep.dr_pos_3t, ds.hc_chisep.dr_pos_3t);
                 emit_f64(&mut parts, "--hc-chisep-bin-hz", s.hc_chisep.bin_hz, ds.hc_chisep.bin_hz);
             }
+            // SUSEP-Net / χ-sepnet (deep learning) have no user-tunable parameters.
+            SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet => {}
         }
     }
 
@@ -375,6 +392,21 @@ mod tests {
         config.inversion.algorithm = QsmAlgorithm::Tv;
         let cmd = generate_command(&config);
         assert!(cmd.contains("--qsm-algorithm tv"));
+    }
+
+    #[test]
+    fn test_msmv_refine_command() {
+        // Off by default → no mSMV flags.
+        let mut config = PipelineConfig::default();
+        assert!(!generate_command(&config).contains("--msmv"));
+        // Enabled → the refine flag is emitted; a non-default param is emitted too.
+        config.bg_removal.msmv_refine = true;
+        config.bg_removal.msmv.maxk = 9;
+        let cmd = generate_command(&config);
+        assert!(cmd.contains("--msmv-refine"), "got: {}", cmd);
+        assert!(cmd.contains("--msmv-maxk 9"), "got: {}", cmd);
+        // A default param is not emitted (only the refine flag + changed knobs).
+        assert!(!cmd.contains("--msmv-radius"), "got: {}", cmd);
     }
 
     #[test]

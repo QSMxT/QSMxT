@@ -135,6 +135,50 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             );
             (c, (lf, field_nifti), em)
         }
+        BgremoveCommand::Msmv(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let (nx, ny, nz) = field_nifti.dims;
+            let (vsx, vsy, vsz) = field_nifti.voxel_size;
+            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+            info!("Background removal (mSMV, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            let d = qsm_core::bgremove::MsmvParams::default();
+            let params = qsm_core::bgremove::MsmvParams {
+                radius: args.radius.unwrap_or(d.radius),
+                maxk: args.maxk.unwrap_or(d.maxk),
+                b0: args.field_strength.unwrap_or(d.b0),
+                te: args.te.unwrap_or(d.te),
+                // Standalone (prefilter) by default; --refine skips the SMV prefilter to
+                // treat the input as an already-local field from a primary BFR.
+                prefilter: !args.refine,
+            };
+            // mSMV preserves the brain edge (no erosion): it returns the mask unchanged.
+            let (lf, em) = qsm_core::bgremove::msmv(
+                &field_nifti.data, &mask, &grid, &params, |_, _| {},
+            );
+            (c, (lf, field_nifti), em)
+        }
+        BgremoveCommand::Bfrnet(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let (nx, ny, nz) = field_nifti.dims;
+            let (vsx, vsy, vsz) = field_nifti.voxel_size;
+            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+            info!("Background removal (BFRnet, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            // Fetch the ONNX weights (cached under $QSM_MODEL_DIR / the download cache).
+            let spec = qsm_core::models::find_model("bfrnet")
+                .ok_or_else(|| crate::error::QsmxtError::Config("bfrnet not in model registry".into()))?;
+            let weights = qsm_core::models::primary_weight_bytes(spec)
+                .map_err(|e| crate::error::QsmxtError::Config(format!("BFRnet weights: {}", e)))?;
+            let lf = qsm_core::bgremove::bfrnet(&field_nifti.data, &mask, &grid, &weights)
+                .map_err(|e| crate::error::QsmxtError::Config(format!("BFRnet: {}", e)))?;
+            // BFRnet preserves the brain edge (no erosion): mask returned unchanged.
+            (c, (lf, field_nifti), mask)
+        }
         BgremoveCommand::Harperella(args) => {
             let phase_nifti = load_nifti(&args.input)?;
             let (mask, _) = load_mask(&args.mask)?;

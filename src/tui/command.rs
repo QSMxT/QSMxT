@@ -125,6 +125,18 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         QsmAlgorithmArg::L1qsm,
         QsmAlgorithmArg::Whqsm,
         QsmAlgorithmArg::Hdqsm,
+        QsmAlgorithmArg::AmpPe,
+        QsmAlgorithmArg::Xqsm,
+        QsmAlgorithmArg::Qsmnet,
+        QsmAlgorithmArg::QsmnetPlus,
+        QsmAlgorithmArg::Autoqsm,
+        QsmAlgorithmArg::Qsmgan,
+        QsmAlgorithmArg::Ir2qsm,
+        QsmAlgorithmArg::Lpcnn,
+        QsmAlgorithmArg::ModlQsm,
+        QsmAlgorithmArg::Nextqsm,
+        QsmAlgorithmArg::Iqsm,
+        QsmAlgorithmArg::IqsmPlus,
     ];
     let unwrap_options = [UnwrapAlgorithmArg::Romeo, UnwrapAlgorithmArg::Laplacian];
     let bf_options = [
@@ -136,6 +148,8 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         BfAlgorithmArg::Resharp,
         BfAlgorithmArg::Harperella,
         BfAlgorithmArg::Iharperella,
+        BfAlgorithmArg::Bfrnet,
+        BfAlgorithmArg::Iqfm,
     ];
     let sep_options = [
         SeparationAlgorithmArg::R2starQsm,
@@ -144,6 +158,8 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         SeparationAlgorithmArg::ChiSepMedi,
         SeparationAlgorithmArg::Wavesep,
         SeparationAlgorithmArg::HcChisep,
+        SeparationAlgorithmArg::SusepNet,
+        SeparationAlgorithmArg::ChiSepNet,
     ];
     Ok(RunArgs {
         bids_dir: expand_tilde(&form.bids_dir),
@@ -397,6 +413,11 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
             iharperella_max_iter: parse_optional_usize(&ps.iharperella_max_iter),
             iharperella_tol: parse_optional_f64(&ps.iharperella_tol),
         },
+        msmv_params: crate::cli::MsmvParamArgs {
+            msmv_refine: ps.msmv_refine,
+            msmv_radius: parse_optional_f64(&ps.msmv_radius),
+            msmv_maxk: parse_optional_usize(&ps.msmv_maxk),
+        },
         romeo_params: crate::cli::RomeoParamArgs {
             no_romeo_phase_gradient_coherence: !ps.romeo_phase_gradient_coherence,
             no_romeo_mag_coherence: !ps.romeo_mag_coherence,
@@ -551,12 +572,15 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         QsmAlgorithm::Ndi, QsmAlgorithm::Fansi, QsmAlgorithm::FansiTgv,
         QsmAlgorithm::L1qsm, QsmAlgorithm::Whqsm, QsmAlgorithm::Hdqsm,
         QsmAlgorithm::AmpPe,
+        QsmAlgorithm::Xqsm, QsmAlgorithm::Qsmnet, QsmAlgorithm::QsmnetPlus, QsmAlgorithm::Autoqsm,
+        QsmAlgorithm::Qsmgan, QsmAlgorithm::Ir2qsm, QsmAlgorithm::Lpcnn, QsmAlgorithm::ModlQsm,
+        QsmAlgorithm::Nextqsm, QsmAlgorithm::Iqsm, QsmAlgorithm::IqsmPlus,
     ];
     let unwrap_algorithms = [UnwrappingAlgorithm::Romeo, UnwrappingAlgorithm::Laplacian];
     let bf_algorithms = [
         BfAlgorithm::Vsharp, BfAlgorithm::Pdf, BfAlgorithm::Lbv,
         BfAlgorithm::Ismv, BfAlgorithm::Sharp, BfAlgorithm::Resharp,
-        BfAlgorithm::Harperella, BfAlgorithm::Iharperella,
+        BfAlgorithm::Harperella, BfAlgorithm::Iharperella, BfAlgorithm::Bfrnet, BfAlgorithm::Iqfm,
     ];
 
     let qsm_algorithm = qsm_algorithms[ps.qsm_algorithm];
@@ -576,6 +600,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         SeparationAlgorithm::R2starQsm, SeparationAlgorithm::Decompose,
         SeparationAlgorithm::ChiSepIlsqr, SeparationAlgorithm::ChiSepMedi,
         SeparationAlgorithm::WaveSep, SeparationAlgorithm::HcChisep,
+        SeparationAlgorithm::SusepNet, SeparationAlgorithm::ChiSepNet,
     ];
     config.separation.algorithm = sep_algorithms[ps.separation_algorithm.min(sep_algorithms.len() - 1)];
     config.separation.custom_qsm_tool = non_empty(&ps.custom_qsm_tool);
@@ -586,6 +611,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     if !is_end_to_end {
         config.field_mapping.unwrapping_algorithm = unwrap_algorithms[ps.unwrapping_algorithm];
         config.bg_removal.algorithm = bf_algorithms[ps.bf_algorithm];
+        config.bg_removal.msmv_refine = ps.msmv_refine;
     }
     config.field_mapping.phase_offset_removal = ps.phase_offset_removal;
     config.field_mapping.bipolar_correction = ps.bipolar_correction;
@@ -811,6 +837,8 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     set_f64!(config.bg_removal.iharperella.radius, ps.iharperella_radius);
     set_usize!(config.bg_removal.iharperella.max_iter, ps.iharperella_max_iter);
     set_f64!(config.bg_removal.iharperella.tol, ps.iharperella_tol);
+    set_f64!(config.bg_removal.msmv.radius, ps.msmv_radius);
+    set_usize!(config.bg_removal.msmv.maxk, ps.msmv_maxk);
 
     // Phase offset sigma
     if let Ok(vals) = ps.phase_offset_sigma.split_whitespace()
