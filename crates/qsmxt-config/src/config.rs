@@ -125,19 +125,29 @@ impl Default for SeparationConfig {
     }
 }
 
-/// Force the relaxometry outputs that chi-separation depends on.
+/// Force the relaxometry outputs the *selected* chi-separation method depends on.
 ///
-/// Chi-separation needs R2 and R2' (R2' = R2* − R2); enabling it turns those maps on unless a
-/// custom map is supplied for them. Computing R2' additionally requires R2 and R2*. This keeps a
-/// `--do-chi-separation` run self-consistent, and is what the TUI validates against (it must not
-/// let the user disable a required map while chi-separation is enabled).
+/// Requirements are method-specific: `r2star-qsm` needs R2*; `decompose` needs neither; the
+/// R2'-based methods (chi-sep-ilsqr/medi, wavesep, hc-chisep) need R2' (= R2* − R2), which in turn
+/// needs R2 and R2* unless a custom R2'/R2 map is supplied. Enabling chi-separation turns on exactly
+/// those maps. Keeps a `--do-chisep` run self-consistent, and is what the TUI validates against (it
+/// must not let the user disable a map the current method requires).
 pub fn enforce_separation_dependencies(config: &mut PipelineConfig) {
     if config.pipeline.do_chi_separation {
-        if config.separation.custom_r2_tool.is_none() {
-            config.pipeline.do_r2map = true;
-        }
-        if config.separation.custom_r2prime_tool.is_none() {
-            config.pipeline.do_r2primemap = true;
+        match config.separation.algorithm {
+            // Uses R2* directly (fit from the GRE magnitude); no R2/R2' needed.
+            SeparationAlgorithm::R2starQsm => config.pipeline.do_r2starmap = true,
+            // Fits the multi-echo magnitude signal directly; no relaxometry maps needed.
+            SeparationAlgorithm::Decompose => {}
+            // R2'-based methods: need R2' (unless a custom R2' map is supplied).
+            SeparationAlgorithm::ChiSepIlsqr
+            | SeparationAlgorithm::ChiSepMedi
+            | SeparationAlgorithm::WaveSep
+            | SeparationAlgorithm::HcChisep => {
+                if config.separation.custom_r2prime_tool.is_none() {
+                    config.pipeline.do_r2primemap = true;
+                }
+            }
         }
     }
     // R2' = R2* − R2 → computing it (no custom map) requires R2 and R2*.

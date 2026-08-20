@@ -379,18 +379,29 @@ mod tests {
 
     #[test]
     fn test_chi_separation_command() {
-        // Default (r2star-qsm) with chi-sep enabled: just the toggle, no algorithm flag.
+        // Default method (r2star-qsm) uses R2* directly — it forces R2* only, NOT R2/R2'.
         let mut config = PipelineConfig::default();
         config.pipeline.do_chi_separation = true;
-        // Chi-separation forces R2/R2'/R2* on; those are implied by --do-chisep and must not appear.
         enforce_separation_dependencies(&mut config);
-        assert!(config.pipeline.do_r2starmap && config.pipeline.do_r2map && config.pipeline.do_r2primemap);
+        assert!(config.pipeline.do_r2starmap);
+        assert!(!config.pipeline.do_r2map && !config.pipeline.do_r2primemap);
+        // Those maps are implied by --do-chisep and must not appear in the command.
         let cmd = generate_command(&config);
         assert!(cmd.contains("--do-chisep"));
         assert!(!cmd.contains("--do-r2starmap"), "r2starmap implied by chisep, got: {}", cmd);
         assert!(!cmd.contains("--do-r2map"));
         assert!(!cmd.contains("--do-r2primemap"));
         assert!(!cmd.contains("--chisep")); // default method → not emitted
+
+        // An R2'-based method (wavesep) forces R2' → R2 → R2*, none of which should leak.
+        let mut wc = PipelineConfig::default();
+        wc.pipeline.do_chi_separation = true;
+        wc.separation.algorithm = SeparationAlgorithm::WaveSep;
+        enforce_separation_dependencies(&mut wc);
+        assert!(wc.pipeline.do_r2primemap && wc.pipeline.do_r2map && wc.pipeline.do_r2starmap);
+        let cmd = generate_command(&wc);
+        assert!(cmd.contains("--chisep wavesep"));
+        assert!(!cmd.contains("--do-r2map") && !cmd.contains("--do-r2primemap") && !cmd.contains("--do-r2starmap"));
 
         // Selecting a non-default method emits it; editing a param emits that too.
         config.separation.algorithm = SeparationAlgorithm::Decompose;
