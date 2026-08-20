@@ -699,6 +699,19 @@ pub struct IharperellaParamArgs {
 }
 
 #[derive(Args, Debug, Default, Clone)]
+pub struct MsmvParamArgs {
+    /// Apply mSMV boundary-shadow refinement (Roberts 2024) on top of the primary BFR
+    #[arg(long)]
+    pub msmv_refine: bool,
+    /// mSMV SMV kernel radius in mm
+    #[arg(long)]
+    pub msmv_radius: Option<f64>,
+    /// mSMV maximum boundary-correction iterations
+    #[arg(long)]
+    pub msmv_maxk: Option<usize>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
 pub struct RomeoParamArgs {
     /// ROMEO: disable phase gradient coherence weights
     #[arg(long)]
@@ -882,6 +895,8 @@ pub struct RunArgs {
     pub harperella_params: HarperellaParamArgs,
     #[command(flatten)]
     pub iharperella_params: IharperellaParamArgs,
+    #[command(flatten)]
+    pub msmv_params: MsmvParamArgs,
     #[command(flatten)]
     pub romeo_params: RomeoParamArgs,
     #[command(flatten)]
@@ -1255,6 +1270,16 @@ pub enum BgremoveCommand {
     Harperella(BgremoveHarperellaArgs),
     /// Improved HARPERELLA (iHARPERELLA)
     Iharperella(BgremoveIharperellaArgs),
+    /// Maximum Spherical Mean Value (mSMV) boundary-shadow removal
+    Msmv(BgremoveMsmvArgs),
+    /// BFRnet deep-learning background removal (weights downloaded on first use)
+    Bfrnet(BgremoveBfrnetArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct BgremoveBfrnetArgs {
+    #[command(flatten)]
+    pub common: BgremoveCommonArgs,
 }
 
 #[derive(Parser, Debug)]
@@ -1333,6 +1358,28 @@ pub struct BgremoveResharpArgs {
     /// Maximum CG iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
+}
+
+#[derive(Parser, Debug)]
+pub struct BgremoveMsmvArgs {
+    #[command(flatten)]
+    pub common: BgremoveCommonArgs,
+    /// SMV prefilter kernel radius in mm
+    #[arg(long)]
+    pub radius: Option<f64>,
+    /// Maximum boundary-correction iterations
+    #[arg(long)]
+    pub maxk: Option<usize>,
+    /// B0 field strength (T) — sets the radian shadow-threshold cap
+    #[arg(long)]
+    pub field_strength: Option<f64>,
+    /// Echo time (s) for the ppm↔radian conversion
+    #[arg(long)]
+    pub te: Option<f64>,
+    /// Refinement mode: skip the SMV prefilter and treat the input as an already-local
+    /// field from a primary BFR (only the boundary-shadow correction is applied)
+    #[arg(long)]
+    pub refine: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -1451,6 +1498,35 @@ pub enum InvertCommand {
     Hdqsm(InvertHdqsmArgs),
     /// AMP-PE (Approximate Message Passing with Parameter Estimation)
     AmpPe(InvertAmpPeArgs),
+    /// xQSM deep-learning dipole inversion (weights downloaded on first use)
+    Xqsm(InvertDlArgs),
+    /// QSMnet deep-learning dipole inversion (weights downloaded on first use)
+    Qsmnet(InvertDlArgs),
+    /// QSMnet+ deep-learning dipole inversion (weights downloaded on first use)
+    QsmnetPlus(InvertDlArgs),
+    /// AutoQSM single-step reconstruction — input is the TOTAL field (weights downloaded on first use)
+    Autoqsm(InvertDlArgs),
+    /// QSMGAN deep-learning dipole inversion (weights downloaded on first use)
+    Qsmgan(InvertDlArgs),
+    /// IR2QSM deep-learning dipole inversion (weights downloaded on first use)
+    Ir2qsm(InvertDlArgs),
+    /// LPCNN deep-learning dipole inversion (weights downloaded on first use)
+    Lpcnn(InvertDlArgs),
+    /// MoDL-QSM deep-learning dipole inversion → χ33/STI component (weights downloaded on first use)
+    ModlQsm(InvertDlArgs),
+    /// NeXtQSM single-step reconstruction — input is the TOTAL field (weights downloaded on first use)
+    Nextqsm(InvertDlArgs),
+}
+
+/// Args for the deep-learning dipole inversions. They have no tunable parameters;
+/// weights are fetched on first use. `--field-strength` feeds the scan metadata.
+#[derive(Parser, Debug)]
+pub struct InvertDlArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    /// B0 field strength in Tesla (scan metadata)
+    #[arg(long, default_value_t = 3.0)]
+    pub field_strength: f64,
 }
 
 #[derive(Parser, Debug)]
@@ -1902,6 +1978,11 @@ pub enum SeparationAlgorithmArg {
     Wavesep,
     /// Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude
     HcChisep,
+    /// SUSEP-Net deep-learning separation — QSM + R2' + local field (weights downloaded on first use)
+    SusepNet,
+    /// χ-sepnet deep-learning separation — QSM + R2' + local field (weights downloaded on first use)
+    #[value(name = "chi-sepnet")]
+    ChiSepNet,
 }
 
 /// Inputs shared by every chi-separation method.
@@ -1938,6 +2019,23 @@ pub enum SeparateCommand {
     Wavesep(SeparateWavesepArgs),
     /// Hollow-cylinder χ-separation (Stewart 2026) — QSM + R2' + multi-echo magnitude
     HcChisep(SeparateHcChisepArgs),
+    /// SUSEP-Net deep-learning separation — QSM + R2' + local field (weights downloaded on first use)
+    SusepNet(SeparateSusepNetArgs),
+    /// χ-sepnet deep-learning separation — QSM + R2' + local field (weights downloaded on first use)
+    #[command(name = "chi-sepnet")]
+    ChiSepNet(SeparateSusepNetArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct SeparateSusepNetArgs {
+    #[command(flatten)]
+    pub common: SeparateCommonArgs,
+    /// Local (tissue) field NIfTI in ppm
+    #[arg(long)]
+    pub local_field: PathBuf,
+    /// R2' map NIfTI in Hz
+    #[arg(long)]
+    pub r2prime: PathBuf,
 }
 
 #[derive(Parser, Debug)]
@@ -2360,6 +2458,10 @@ pub struct QualityMapArgs {
 pub enum QsmAlgorithmArg {
     Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Qsmart,
     Ndi, Fansi, FansiTgv, L1qsm, Whqsm, Hdqsm, AmpPe,
+    // Deep-learning dipole inversions (weights downloaded on first use).
+    Xqsm, Qsmnet, QsmnetPlus, Autoqsm, Qsmgan, Ir2qsm, Lpcnn, ModlQsm, Nextqsm,
+    // End-to-end DL reconstructions from wrapped phase (no separate unwrap/BFR).
+    Iqsm, IqsmPlus,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
@@ -2370,6 +2472,10 @@ pub enum UnwrapAlgorithmArg {
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum BfAlgorithmArg {
     Vsharp, Pdf, Lbv, Ismv, Sharp, Resharp, Harperella, Iharperella,
+    /// BFRnet deep-learning background removal (weights downloaded on first use)
+    Bfrnet,
+    /// iQFM deep-learning joint unwrapping + background removal from phase (weights downloaded on first use)
+    Iqfm,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

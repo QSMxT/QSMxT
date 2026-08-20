@@ -162,6 +162,81 @@ const CITE_IHARPERELLA: Citation = Citation {
     text: "Li, W., Wu, B., Liu, C. (2015). \"iHARPERELLA: an improved method for integrated 3D phase unwrapping and background phase removal.\" *Proc. ISMRM* 23, p.3313.",
 };
 
+const CITE_XQSM: Citation = Citation {
+    key: "gao2021xqsm",
+    text: "Gao, Y., et al. (2021). \"xQSM: quantitative susceptibility mapping with octave convolutional and noise-regularized neural networks.\" *NMR in Biomedicine*, 34(3):e4461. https://doi.org/10.1002/nbm.4461",
+};
+
+const CITE_QSMNET: Citation = Citation {
+    key: "yoon2018qsmnet",
+    text: "Yoon, J., et al. (2018). \"Quantitative susceptibility mapping using deep neural network: QSMnet.\" *NeuroImage*, 179:199-206. https://doi.org/10.1016/j.neuroimage.2018.06.030",
+};
+
+const CITE_QSMNET_PLUS: Citation = Citation {
+    key: "jung2020qsmnetplus",
+    text: "Jung, W., et al. (2020). \"Exploring linearity of deep neural network trained QSM: QSMnet+.\" *NeuroImage*, 211:116579. https://doi.org/10.1016/j.neuroimage.2020.116579",
+};
+
+const CITE_AUTOQSM: Citation = Citation {
+    key: "wei2019autoqsm",
+    text: "Wei, H., et al. (2019). \"Learning-based single-step quantitative susceptibility mapping reconstruction without brain extraction (AutoQSM).\" *NeuroImage*, 202:116064. https://doi.org/10.1016/j.neuroimage.2019.116064",
+};
+
+const CITE_BFRNET: Citation = Citation {
+    key: "zhang2023bfrnet",
+    text: "Zhang, J., et al. (2023). \"BFRnet: A deep learning-based MR background field removal method for QSM.\" *Magnetic Resonance Imaging*, 100:15-24. https://github.com/sunhongfu/BFRnet",
+};
+
+const CITE_SUSEPNET: Citation = Citation {
+    key: "li2025susepnet",
+    text: "Li, Z., Gao, Y., Sun, H., et al. (2025). \"SUSEP-Net: deep learning susceptibility source separation.\" arXiv:2506.13293.",
+};
+
+const CITE_CHISEPNET: Citation = Citation {
+    key: "kim2025chisepnet",
+    text: "Kim, M., et al. (SNU-LIST). \"χ-sepnet: deep learning χ-separation network.\" https://github.com/SNU-LIST/chi-separation",
+};
+
+const CITE_QSMGAN: Citation = Citation {
+    key: "chen2020qsmgan",
+    text: "Chen, Y., et al. (2020). \"QSMGAN: improved quantitative susceptibility mapping using 3D generative adversarial networks with increased receptive field.\" *NeuroImage*, 207:116389. https://doi.org/10.1016/j.neuroimage.2019.116389",
+};
+
+const CITE_LPCNN: Citation = Citation {
+    key: "lai2020lpcnn",
+    text: "Lai, K.-W., et al. (2020). \"Learned proximal networks for quantitative susceptibility mapping (LPCNN).\" *MICCAI 2020*, LNCS 12262:125-135. https://doi.org/10.1007/978-3-030-59713-9_13",
+};
+
+const CITE_IR2QSM: Citation = Citation {
+    key: "li2025ir2qsm",
+    text: "Li, M., et al. (2025). \"IR2QSM: quantitative susceptibility mapping via deep neural networks with iterative reverse concatenations and recurrent modules.\" *Medical Physics*. https://doi.org/10.1002/mp.17747",
+};
+
+const CITE_MODLQSM: Citation = Citation {
+    key: "feng2021modlqsm",
+    text: "Feng, R., et al. (2021). \"MoDL-QSM: model-based deep learning for quantitative susceptibility mapping.\" *NeuroImage*, 240:118376. https://doi.org/10.1016/j.neuroimage.2021.118376",
+};
+
+const CITE_NEXTQSM: Citation = Citation {
+    key: "cognolato2023nextqsm",
+    text: "Cognolato, F., et al. (2023). \"NeXtQSM — a complete deep learning pipeline for data-consistent quantitative susceptibility mapping trained with hybrid data.\" *NeuroImage*, 271:119729. https://doi.org/10.1016/j.neuroimage.2022.119729",
+};
+
+const CITE_IQSM: Citation = Citation {
+    key: "gao2022iqsm",
+    text: "Gao, Y., et al. (2022). \"Instant tissue field and magnetic susceptibility mapping from MRI raw phase using Laplacian-enhanced deep neural networks (iQSM/iQFM).\" *NeuroImage*, 259:119410. https://doi.org/10.1016/j.neuroimage.2022.119410",
+};
+
+const CITE_IQSM_PLUS: Citation = Citation {
+    key: "gao2024iqsmplus",
+    text: "Gao, Y., et al. (2024). \"Plug-and-play latent feature editing for orientation-adaptive quantitative susceptibility mapping (iQSM+).\" *Medical Image Analysis*, 94:103160. https://doi.org/10.1016/j.media.2024.103160",
+};
+
+const CITE_MSMV: Citation = Citation {
+    key: "roberts2024",
+    text: "Roberts, A.G., et al. (2024). \"Maximum spherical mean value (mSMV) filtering for whole-brain quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 91(4):1586-1597. https://doi.org/10.1002/mrm.29963",
+};
+
 const CITE_CLEARSWI: Citation = Citation {
     key: "eckstein2024",
     text: "Eckstein, K., et al. (2024). \"CLEAR-SWI: Computational Efficient T2* Weighted Imaging.\" *Proc. ISMRM*.",
@@ -265,9 +340,20 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                         BfAlgorithm::Resharp => ("RESHARP", &CITE_RESHARP),
                         BfAlgorithm::Harperella => ("HARPERELLA", &CITE_HARPERELLA),
                         BfAlgorithm::Iharperella => ("iHARPERELLA", &CITE_IHARPERELLA),
+                        BfAlgorithm::Bfrnet => ("BFRnet (deep-learning background removal)", &CITE_BFRNET),
+                        BfAlgorithm::Iqfm => ("iQFM (deep-learning joint unwrapping + background removal)", &CITE_IQSM),
                     };
                     sentences.push(format!("Background field removal was performed using {} ({}).", name, cite_inline(cite)));
                     add_citation(&mut citations, cite);
+
+                    // Optional mSMV boundary-shadow refinement layered on the primary BFR.
+                    if config.bg_removal.msmv_refine {
+                        sentences.push(format!(
+                            "Residual boundary-field shadows were then removed with maximum spherical mean value (mSMV) filtering ({}).",
+                            cite_inline(&CITE_MSMV),
+                        ));
+                        add_citation(&mut citations, &CITE_MSMV);
+                    }
                 }
 
                 // Dipole inversion
@@ -535,6 +621,17 @@ fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
         QsmAlgorithm::Whqsm => ("WH-QSM (Weak-Harmonic)", &CITE_WHQSM),
         QsmAlgorithm::Hdqsm => ("HD-QSM (Hybrid Data Fidelity)", &CITE_HDQSM),
         QsmAlgorithm::AmpPe => ("AMP-PE (Approximate Message Passing with Parameter Estimation)", &CITE_AMPPE),
+        QsmAlgorithm::Xqsm => ("xQSM (deep-learning dipole inversion)", &CITE_XQSM),
+        QsmAlgorithm::Qsmnet => ("QSMnet (deep-learning dipole inversion)", &CITE_QSMNET),
+        QsmAlgorithm::QsmnetPlus => ("QSMnet+ (deep-learning dipole inversion)", &CITE_QSMNET_PLUS),
+        QsmAlgorithm::Autoqsm => ("AutoQSM (single-step deep-learning reconstruction)", &CITE_AUTOQSM),
+        QsmAlgorithm::Qsmgan => ("QSMGAN (GAN-refined deep-learning dipole inversion)", &CITE_QSMGAN),
+        QsmAlgorithm::Ir2qsm => ("IR2QSM (unrolled deep-learning dipole inversion)", &CITE_IR2QSM),
+        QsmAlgorithm::Lpcnn => ("LPCNN (learned-proximal deep-learning dipole inversion)", &CITE_LPCNN),
+        QsmAlgorithm::ModlQsm => ("MoDL-QSM (model-based deep-learning dipole inversion)", &CITE_MODLQSM),
+        QsmAlgorithm::Nextqsm => ("NeXtQSM (single-step deep-learning reconstruction)", &CITE_NEXTQSM),
+        QsmAlgorithm::Iqsm => ("iQSM (end-to-end deep-learning reconstruction from phase)", &CITE_IQSM),
+        QsmAlgorithm::IqsmPlus => ("iQSM+ (orientation-adaptive end-to-end deep-learning reconstruction)", &CITE_IQSM_PLUS),
         QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart => ("iLSQR", &CITE_ILSQR),
     }
 }
@@ -547,6 +644,8 @@ fn separation_name_cite(alg: SeparationAlgorithm) -> (&'static str, &'static Cit
         SeparationAlgorithm::ChiSepMedi => ("χ-separation (MEDI)", &CITE_CHISEP),
         SeparationAlgorithm::WaveSep => ("WaveSep", &CITE_WAVESEP),
         SeparationAlgorithm::HcChisep => ("hollow-cylinder χ-separation (HC-ChiSep)", &CITE_HCCHISEP),
+        SeparationAlgorithm::SusepNet => ("SUSEP-Net (deep-learning source separation)", &CITE_SUSEPNET),
+        SeparationAlgorithm::ChiSepNet => ("χ-sepnet (deep-learning source separation)", &CITE_CHISEPNET),
     }
 }
 
@@ -578,6 +677,21 @@ fn cite_inline(cite: &Citation) -> &'static str {
         "sun2014" => "Sun & Wilman, 2014",
         "li2014" => "Li et al., 2014",
         "li2015iharp" => "Li et al., 2015",
+        "roberts2024" => "Roberts et al., 2024",
+        "gao2021xqsm" => "Gao et al., 2021",
+        "yoon2018qsmnet" => "Yoon et al., 2018",
+        "jung2020qsmnetplus" => "Jung et al., 2020",
+        "wei2019autoqsm" => "Wei et al., 2019",
+        "zhang2023bfrnet" => "Zhang et al., 2023",
+        "li2025susepnet" => "Li et al., 2025",
+        "kim2025chisepnet" => "Kim et al. (SNU-LIST)",
+        "chen2020qsmgan" => "Chen et al., 2020",
+        "lai2020lpcnn" => "Lai et al., 2020",
+        "li2025ir2qsm" => "Li et al., 2025",
+        "feng2021modlqsm" => "Feng et al., 2021",
+        "cognolato2023nextqsm" => "Cognolato et al., 2023",
+        "gao2022iqsm" => "Gao et al., 2022",
+        "gao2024iqsmplus" => "Gao et al., 2024",
         "eckstein2021phd" => "Eckstein, 2021",
         _ => cite.key,
     }
@@ -742,12 +856,27 @@ mod tests {
             (BfAlgorithm::Resharp, "RESHARP"),
             (BfAlgorithm::Harperella, "HARPERELLA"),
             (BfAlgorithm::Iharperella, "iHARPERELLA"),
+            (BfAlgorithm::Bfrnet, "BFRnet"),
+            (BfAlgorithm::Iqfm, "iQFM"),
         ] {
             let mut c = PipelineConfig::default();
             c.bg_removal.algorithm = alg;
             let out = generate_methods(&c);
             assert!(out.contains(expected), "missing {} for {:?}", expected, alg);
         }
+    }
+
+    #[test]
+    fn test_msmv_refine_methods() {
+        let mut config = PipelineConfig::default();
+        // Off by default: no mSMV sentence.
+        assert!(!generate_methods(&config).contains("mSMV"));
+        // On: the primary BFR is still described, followed by the mSMV refinement.
+        config.bg_removal.msmv_refine = true;
+        let out = generate_methods(&config);
+        assert!(out.contains("V-SHARP"), "primary BFR still described: {}", out);
+        assert!(out.contains("mSMV"), "mSMV refinement described: {}", out);
+        assert!(out.contains("Roberts et al., 2024"));
     }
 
     #[test]
@@ -1100,6 +1229,17 @@ mod tests {
             (QsmAlgorithm::Whqsm, "WH-QSM"),
             (QsmAlgorithm::Hdqsm, "HD-QSM"),
             (QsmAlgorithm::AmpPe, "AMP-PE"),
+            (QsmAlgorithm::Xqsm, "xQSM"),
+            (QsmAlgorithm::Qsmnet, "QSMnet"),
+            (QsmAlgorithm::QsmnetPlus, "QSMnet+"),
+            (QsmAlgorithm::Autoqsm, "AutoQSM"),
+            (QsmAlgorithm::Qsmgan, "QSMGAN"),
+            (QsmAlgorithm::Ir2qsm, "IR2QSM"),
+            (QsmAlgorithm::Lpcnn, "LPCNN"),
+            (QsmAlgorithm::ModlQsm, "MoDL-QSM"),
+            (QsmAlgorithm::Nextqsm, "NeXtQSM"),
+            (QsmAlgorithm::Iqsm, "iQSM"),
+            (QsmAlgorithm::IqsmPlus, "iQSM+"),
         ] {
             let mut c = PipelineConfig::default();
             c.inversion.algorithm = alg;

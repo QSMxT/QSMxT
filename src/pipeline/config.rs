@@ -36,6 +36,17 @@ fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
         cli::QsmAlgorithmArg::Whqsm => QsmAlgorithm::Whqsm,
         cli::QsmAlgorithmArg::Hdqsm => QsmAlgorithm::Hdqsm,
         cli::QsmAlgorithmArg::AmpPe => QsmAlgorithm::AmpPe,
+        cli::QsmAlgorithmArg::Xqsm => QsmAlgorithm::Xqsm,
+        cli::QsmAlgorithmArg::Qsmnet => QsmAlgorithm::Qsmnet,
+        cli::QsmAlgorithmArg::QsmnetPlus => QsmAlgorithm::QsmnetPlus,
+        cli::QsmAlgorithmArg::Autoqsm => QsmAlgorithm::Autoqsm,
+        cli::QsmAlgorithmArg::Qsmgan => QsmAlgorithm::Qsmgan,
+        cli::QsmAlgorithmArg::Ir2qsm => QsmAlgorithm::Ir2qsm,
+        cli::QsmAlgorithmArg::Lpcnn => QsmAlgorithm::Lpcnn,
+        cli::QsmAlgorithmArg::ModlQsm => QsmAlgorithm::ModlQsm,
+        cli::QsmAlgorithmArg::Nextqsm => QsmAlgorithm::Nextqsm,
+        cli::QsmAlgorithmArg::Iqsm => QsmAlgorithm::Iqsm,
+        cli::QsmAlgorithmArg::IqsmPlus => QsmAlgorithm::IqsmPlus,
     }
 }
 
@@ -47,6 +58,8 @@ fn separation_algorithm_arg_to_config(a: cli::SeparationAlgorithmArg) -> Separat
         cli::SeparationAlgorithmArg::ChiSepMedi => SeparationAlgorithm::ChiSepMedi,
         cli::SeparationAlgorithmArg::Wavesep => SeparationAlgorithm::WaveSep,
         cli::SeparationAlgorithmArg::HcChisep => SeparationAlgorithm::HcChisep,
+        cli::SeparationAlgorithmArg::SusepNet => SeparationAlgorithm::SusepNet,
+        cli::SeparationAlgorithmArg::ChiSepNet => SeparationAlgorithm::ChiSepNet,
     }
 }
 
@@ -96,6 +109,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
                 cli::BfAlgorithmArg::Resharp => BfAlgorithm::Resharp,
                 cli::BfAlgorithmArg::Harperella => BfAlgorithm::Harperella,
                 cli::BfAlgorithmArg::Iharperella => BfAlgorithm::Iharperella,
+                cli::BfAlgorithmArg::Bfrnet => BfAlgorithm::Bfrnet,
+                cli::BfAlgorithmArg::Iqfm => BfAlgorithm::Iqfm,
             };
         }
 
@@ -262,6 +277,9 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         if let Some(v) = args.iharperella_params.iharperella_radius { config.bg_removal.iharperella.radius = v; }
         if let Some(v) = args.iharperella_params.iharperella_max_iter { config.bg_removal.iharperella.max_iter = v; }
         if let Some(v) = args.iharperella_params.iharperella_tol { config.bg_removal.iharperella.tol = v; }
+        if args.msmv_params.msmv_refine { config.bg_removal.msmv_refine = true; }
+        if let Some(v) = args.msmv_params.msmv_radius { config.bg_removal.msmv.radius = v; }
+        if let Some(v) = args.msmv_params.msmv_maxk { config.bg_removal.msmv.maxk = v; }
 
         // ── SWI ──
         if let Some(ref s) = args.swi_params.swi_hp_sigma {

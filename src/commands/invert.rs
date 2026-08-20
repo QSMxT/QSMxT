@@ -1,6 +1,31 @@
 use log::{info, warn};
 use super::common::{load_nifti, load_mask, save_nifti};
-use crate::cli::InvertCommand;
+use crate::cli::{InvertCommand, InvertCommonArgs};
+
+/// Run a deep-learning dipole inversion through qsm-core's pipeline dispatcher (the DL models
+/// are not exposed as standalone functions). Weights are downloaded on first use. AutoQSM is
+/// single-step and expects the TOTAL field as input; the others take a local (tissue) field.
+fn run_dl_inversion(
+    c: InvertCommonArgs, field_strength: f64,
+    algorithm: qsm_core::pipeline::InversionAlgorithm, name: &str,
+) -> crate::Result<(InvertCommonArgs, (Vec<f64>, qsm_core::io::NiftiData))> {
+    let field_nifti = load_nifti(&c.input)?;
+    let (mask, _) = load_mask(&c.mask)?;
+    let (nx, ny, nz) = field_nifti.dims;
+    info!("Dipole inversion ({}, {}x{}x{})", name, nx, ny, nz);
+    let metadata = qsm_core::pipeline::ScanMetadata {
+        dims: field_nifti.dims,
+        voxel_size: field_nifti.voxel_size,
+        echo_times: vec![],
+        field_strength,
+        b0_direction: (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]),
+    };
+    let config = qsm_core::pipeline::InversionConfig { algorithm, ..Default::default() };
+    let chi = qsm_core::pipeline::run_dipole_inversion(
+        &field_nifti.data, &mask, &metadata, &config, None, &mut |_, _| {},
+    ).map_err(|e| crate::error::QsmxtError::Config(format!("{}: {}", name, e)))?;
+    Ok((c, (chi, field_nifti)))
+}
 
 pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
     let (common, chi) = match cmd {
@@ -421,6 +446,24 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             );
             (c, (chi, field_nifti))
         }
+        InvertCommand::Xqsm(args) =>
+            run_dl_inversion(args.common, args.field_strength, qsm_core::pipeline::InversionAlgorithm::Xqsm, "xQSM")?,
+        InvertCommand::Qsmnet(args) =>
+            run_dl_inversion(args.common, args.field_strength, qsm_core::pipeline::InversionAlgorithm::Qsmnet, "QSMnet")?,
+        InvertCommand::QsmnetPlus(args) =>
+            run_dl_inversion(args.common, args.field_strength, qsm_core::pipeline::InversionAlgorithm::QsmnetPlus, "QSMnet+")?,
+        InvertCommand::Autoqsm(args) =>
+            run_dl_inversion(args.common, args.field_strength, qsm_core::pipeline::InversionAlgorithm::Autoqsm, "AutoQSM")?,
+        InvertCommand::Qsmgan(args) =>
+            run_dl_inversion(args.common, args.field_strength, qsm_core::pipeline::InversionAlgorithm::Qsmgan, "QSMGAN")?,
+        InvertCommand::Ir2qsm(args) =>
+            run_dl_inversion(args.common, args.field_strength, qsm_core::pipeline::InversionAlgorithm::Ir2qsm, "IR2QSM")?,
+        InvertCommand::Lpcnn(args) =>
+            run_dl_inversion(args.common, args.field_strength, qsm_core::pipeline::InversionAlgorithm::Lpcnn, "LPCNN")?,
+        InvertCommand::ModlQsm(args) =>
+            run_dl_inversion(args.common, args.field_strength, qsm_core::pipeline::InversionAlgorithm::ModlQsm, "MoDL-QSM")?,
+        InvertCommand::Nextqsm(args) =>
+            run_dl_inversion(args.common, args.field_strength, qsm_core::pipeline::InversionAlgorithm::Nextqsm, "NeXtQSM")?,
     };
 
     let (chi_data, field_nifti) = chi;

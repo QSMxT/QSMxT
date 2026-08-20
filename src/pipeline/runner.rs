@@ -243,7 +243,13 @@ pub fn run_pipeline_cached(
 
     if config.pipeline.do_qsm {
         let field_path = output.field_ppm_path(&qsm_run.key);
-        let need_field = !matches!(config.inversion.algorithm, QsmAlgorithm::Tgv if meta.n_echoes == 1);
+        // The total (unwrapped) field is not needed when reconstruction starts from raw
+        // wrapped phase: TGV single-echo, the end-to-end iQSM/iQSM+, or iQFM field-prep
+        // (which produces the local field directly from phase).
+        let starts_from_phase = matches!(config.inversion.algorithm, QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus)
+            || config.bg_removal.algorithm == BfAlgorithm::Iqfm;
+        let need_field = !matches!(config.inversion.algorithm, QsmAlgorithm::Tgv if meta.n_echoes == 1)
+            && !starts_from_phase;
 
         if need_field {
             stage_unwrap(&mut ctx, &mask_path, &field_path, progress)?;
@@ -252,6 +258,7 @@ pub fn run_pipeline_cached(
         match config.inversion.algorithm {
             QsmAlgorithm::Tgv => stage_tgv(&mut ctx, &mask_path, &field_path, progress)?,
             QsmAlgorithm::Qsmart => stage_qsmart(&mut ctx, &mask_path, &field_path, progress)?,
+            QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => stage_iqsm(&mut ctx, &mask_path, progress)?,
             _ => stage_standard_qsm(&mut ctx, &mask_path, &field_path, progress)?,
         }
 
@@ -905,6 +912,9 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
         }
         SeparationAlgorithm::WaveSep => need(r2prime.is_some(), "R2'"),
         SeparationAlgorithm::HcChisep => need(r2prime.is_some(), "R2'") & need(magnitude_multi.is_some(), "multi-echo magnitude"),
+        // SUSEP-Net / χ-sepnet (deep learning) consume [QSM, R2', local field] → [χ+, χ−].
+        SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet =>
+            need(!local_field.is_empty(), "local field") & need(r2prime.is_some(), "R2'"),
     };
     if !ready {
         return Ok(());
@@ -1016,6 +1026,71 @@ fn stage_unwrap(
     let input_refs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).chain(std::iter::once(mask_path)).collect();
     ctx.complete_step("unwrap", Some(unwrap_alg), unwrap_params, &input_refs, vec![field_path.to_path_buf()], t)?;
     log_step_done("Phase unwrapping", t);
+    Ok(())
+}
+
+/// Per-echo phase + magnitude volumes and the phase input paths (for cache provenance).
+type PhaseEchoes = (Vec<Vec<f64>>, Vec<Vec<f64>>, Vec<PathBuf>);
+
+/// Load per-echo wrapped (offset-scaled) phase and, when present, magnitude volumes — the
+/// raw inputs for the phase-domain deep-learning models (iQSM / iQSM+ / iQFM). Returns
+/// `(phases, magnitudes, phase_input_paths)`; `magnitudes` may be empty (→ uniform weights).
+fn load_phase_echoes(ctx: &StageContext) -> crate::Result<PhaseEchoes> {
+    let mut phases = Vec::new();
+    let mut phase_inputs = Vec::new();
+    for i in 0..ctx.meta.n_echoes {
+        let p = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
+        phases.push(load_volume(&p)?);
+        phase_inputs.push(p);
+    }
+    let mut magnitudes = Vec::new();
+    for i in 0..ctx.meta.n_echoes {
+        let m = ctx.output.mag_path(&ctx.run.key, i + 1);
+        if m.exists() {
+            magnitudes.push(load_volume(&m)?);
+        }
+    }
+    Ok((phases, magnitudes, phase_inputs))
+}
+
+/// iQSM / iQSM+ end-to-end reconstruction from wrapped **phase** (joint unwrapping +
+/// background removal + dipole inversion in one network). Writes the raw susceptibility
+/// map; referencing is applied downstream by [`stage_reference`].
+fn stage_iqsm(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
+    let plus = matches!(ctx.config.inversion.algorithm, QsmAlgorithm::IqsmPlus);
+    let alg = if plus { "iqsm-plus" } else { "iqsm" };
+    let chi_raw_path = ctx.output.chi_raw_path(&ctx.run.key);
+    let params = serde_json::json!({
+        "echo_times": ctx.meta.echo_times,
+        "field_strength": ctx.meta.field_strength,
+        "b0_direction": [ctx.meta.b0_direction.0, ctx.meta.b0_direction.1, ctx.meta.b0_direction.2],
+    });
+    if ctx.is_cached_with_params("invert", Some(alg), &params) {
+        log::info!("Skipping {} (cached)", alg);
+        return Ok(());
+    }
+    let t = Instant::now();
+    progress("iQSM reconstruction");
+    let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
+    let mask = load_mask(mask_path)?;
+    let scan_meta = crate::pipeline::config::to_scan_metadata(
+        ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
+        ctx.meta.field_strength, ctx.meta.b0_direction,
+    );
+    let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
+    let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
+    log::info!("{} reconstruction (end-to-end from phase)", if plus { "iQSM+" } else { "iQSM" });
+    // Referencing is done by stage_reference, so request None from the pipeline runner.
+    let chi = if plus {
+        qsm_core::pipeline::run_iqsm_plus(&phase_refs, &mag_refs, &mask, &scan_meta, qsm_core::pipeline::QsmReference::None)
+    } else {
+        qsm_core::pipeline::run_iqsm(&phase_refs, &mag_refs, &mask, &scan_meta, qsm_core::pipeline::QsmReference::None)
+    }.map_err(|e| QsmxtError::Config(format!("{}: {}", alg, e)))?;
+    save_volume(&chi_raw_path, &chi, ctx.meta)?;
+    let mut inputs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).collect();
+    inputs.push(mask_path);
+    ctx.complete_step("invert", Some(alg), params, &inputs, vec![chi_raw_path], t)?;
+    log_step_done(if plus { "iQSM+" } else { "iQSM" }, t);
     Ok(())
 }
 
@@ -1156,7 +1231,12 @@ fn stage_standard_qsm(
     ctx: &mut StageContext, mask_path: &Path, field_path: &Path, progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
     // --- Background removal ---
-    let skip_bgremove = ctx.config.inversion.algorithm == QsmAlgorithm::Medi && ctx.config.inversion.medi.smv;
+    // MEDI+SMV, AutoQSM and NeXtQSM do their own background removal from the total field, so
+    // the standalone BFR stage is skipped and the (unwrapped) total field is fed straight in.
+    let skip_bgremove = (ctx.config.inversion.algorithm == QsmAlgorithm::Medi && ctx.config.inversion.medi.smv)
+        || matches!(ctx.config.inversion.algorithm, QsmAlgorithm::Autoqsm | QsmAlgorithm::Nextqsm);
+    // iQFM replaces unwrap+BFR: it produces the local field directly from wrapped phase.
+    let is_iqfm = ctx.config.bg_removal.algorithm == BfAlgorithm::Iqfm;
     let local_field_path = ctx.output.local_field_path(&ctx.run.key);
     let bg_mask_path = ctx.output.bg_mask_path(&ctx.run.key);
     let bf_name = format!("{}", ctx.config.bg_removal.algorithm);
@@ -1193,11 +1273,39 @@ fn stage_standard_qsm(
             "max_iter": ctx.config.bg_removal.iharperella.max_iter,
             "tol": ctx.config.bg_removal.iharperella.tol,
         }),
+        // BFRnet / iQFM (deep learning) have no user-tunable parameters; cache key is the weights.
+        BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => serde_json::json!({}),
     };
     if skip_bgremove {
-        log::info!("Skipping background removal (MEDI SMV handles it internally)");
+        log::info!("Skipping background removal (single-step inversion handles it internally)");
     }
-    if !skip_bgremove && !ctx.is_cached_with_params("bgremove", Some(&bf_name), &bf_params) {
+    // iQFM: produce the local field directly from wrapped phase (joint unwrap + BFR).
+    if is_iqfm && !skip_bgremove && !ctx.is_cached_with_params("bgremove", Some(&bf_name), &bf_params) {
+        let t = Instant::now();
+        progress("iQFM field preparation");
+        let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
+        let mask = load_mask(mask_path)?;
+        let scan_meta = crate::pipeline::config::to_scan_metadata(
+            ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
+            ctx.meta.field_strength, ctx.meta.b0_direction,
+        );
+        let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
+        let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
+        log::info!("Background removal (iQFM, deep-learning joint unwrap+BFR)");
+        let local_field = qsm_core::pipeline::run_iqfm(&phase_refs, &mag_refs, &mask, &scan_meta)
+            .map_err(|e| QsmxtError::Config(format!("iQFM: {}", e)))?;
+        // iQFM preserves the brain edge (no erosion): reuse the brain mask.
+        save_volume(&local_field_path, &local_field, ctx.meta)?;
+        save_mask(&bg_mask_path, &mask, ctx.meta)?;
+        let mut inputs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).collect();
+        inputs.push(mask_path);
+        ctx.complete_step("bgremove", Some(&bf_name), bf_params.clone(), &inputs,
+            vec![local_field_path.clone(), bg_mask_path.clone()], t)?;
+        log_step_done("Background removal (iQFM)", t);
+    } else if is_iqfm {
+        log::info!("Skipping iQFM field preparation (cached)");
+    }
+    if !is_iqfm && !skip_bgremove && !ctx.is_cached_with_params("bgremove", Some(&bf_name), &bf_params) {
         let t = Instant::now();
         progress("Background field removal");
         let field_ppm = load_volume(field_path)?;

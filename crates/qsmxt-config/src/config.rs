@@ -140,10 +140,13 @@ pub fn enforce_separation_dependencies(config: &mut PipelineConfig) {
             // Fits the multi-echo magnitude signal directly; no relaxometry maps needed.
             SeparationAlgorithm::Decompose => {}
             // R2'-based methods: need R2' (unless a custom R2' map is supplied).
+            // SUSEP-Net consumes [QSM, R2', local field] → [χ+, χ−], so it needs R2' too.
             SeparationAlgorithm::ChiSepIlsqr
             | SeparationAlgorithm::ChiSepMedi
             | SeparationAlgorithm::WaveSep
-            | SeparationAlgorithm::HcChisep => {
+            | SeparationAlgorithm::HcChisep
+            | SeparationAlgorithm::SusepNet
+            | SeparationAlgorithm::ChiSepNet => {
                 if config.separation.custom_r2prime_tool.is_none() {
                     config.pipeline.do_r2primemap = true;
                 }
@@ -172,6 +175,12 @@ param_config!(ResharpConfig from qsm_core::bgremove::ResharpParams {
 });
 param_config!(HarperellaConfig from qsm_core::bgremove::HarperellaParams {
     radius: f64, max_iter: usize, tol: f64
+});
+// mSMV boundary-shadow refinement. Only radius/maxk are user knobs here; b0/te are
+// runtime scan parameters (overridden from ScanMetadata by qsm-core), and prefilter is
+// forced off by the dispatcher in refinement mode.
+param_config!(MsmvConfig from qsm_core::bgremove::MsmvParams {
+    radius: f64, maxk: usize
 });
 param_config!(BetConfig from qsm_core::bet::BetParams {
     fractional_intensity: f64, smoothness: f64, gradient_threshold: f64,
@@ -449,6 +458,11 @@ pub struct BgRemovalConfig {
     pub resharp: ResharpConfig,
     pub harperella: HarperellaConfig,
     pub iharperella: HarperellaConfig,
+    pub msmv: MsmvConfig,
+    /// Apply mSMV boundary-shadow refinement (Roberts 2024) as a post-step on top of the
+    /// selected primary background-field removal. mSMV is a refinement, not a standalone
+    /// primary remover, so this is how it's wired into the pipeline.
+    pub msmv_refine: bool,
 }
 impl Default for BgRemovalConfig {
     fn default() -> Self {
@@ -458,6 +472,7 @@ impl Default for BgRemovalConfig {
             lbv: LbvConfig::default(), ismv: IsmvConfig::default(),
             sharp: SharpConfig::default(), resharp: ResharpConfig::default(),
             harperella: HarperellaConfig::default(), iharperella: HarperellaConfig::default(),
+            msmv: MsmvConfig::default(), msmv_refine: false,
         }
     }
 }
@@ -547,9 +562,13 @@ impl PipelineConfig {
 fn prune_to_selected_algorithm(root: &mut toml::value::Table, section: &str) {
     let Some(toml::Value::Table(sub)) = root.get_mut(section) else { return };
     let Some(selected) = sub.get("algorithm").and_then(|v| v.as_str()).map(str::to_owned) else { return };
+    // mSMV is a boundary-shadow refinement layered on top of the primary BFR, not a primary
+    // alternative — keep its params table whenever the refinement is enabled.
+    let keep_msmv = sub.get("msmv_refine").and_then(|v| v.as_bool()).unwrap_or(false);
     let to_remove: Vec<String> = sub
         .iter()
-        .filter(|(k, v)| k.as_str() != "algorithm" && v.is_table() && k.as_str() != selected)
+        .filter(|(k, v)| k.as_str() != "algorithm" && v.is_table() && k.as_str() != selected
+            && !(keep_msmv && k.as_str() == "msmv"))
         .map(|(k, _)| k.clone())
         .collect();
     for k in &to_remove {

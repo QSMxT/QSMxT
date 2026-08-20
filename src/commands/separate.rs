@@ -252,6 +252,46 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
                 .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
             (c.output.clone(), qsm, result)
         }
+        SeparateCommand::SusepNet(args) => {
+            let c = &args.common;
+            let (qsm, mask, metadata, _) = load_common(c, &[])?;
+            info!("Chi-separation (susep-net, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+            let local_field = load_nifti(&args.local_field)?;
+            let r2prime = load_nifti(&args.r2prime)?;
+            // SUSEP-Net has no user-tunable parameters; weights download on first use.
+            let cfg = SeparationConfig {
+                algorithm: SeparationAlgorithm::SusepNet,
+                ..Default::default()
+            };
+            let inputs = SeparationInputs {
+                local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
+                r2prime: Some(&r2prime.data), r2star: None,
+                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
+            };
+            let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
+                .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+            (c.output.clone(), qsm, result)
+        }
+        SeparateCommand::ChiSepNet(args) => {
+            let c = &args.common;
+            let (qsm, mask, metadata, _) = load_common(c, &[])?;
+            info!("Chi-separation (chi-sepnet, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+            let local_field = load_nifti(&args.local_field)?;
+            let r2prime = load_nifti(&args.r2prime)?;
+            // χ-sepnet has no user-tunable parameters; weights download on first use.
+            let cfg = SeparationConfig {
+                algorithm: SeparationAlgorithm::ChiSepNet,
+                ..Default::default()
+            };
+            let inputs = SeparationInputs {
+                local_field_ppm: &local_field.data, qsm: &qsm.data, mask: &mask,
+                r2prime: Some(&r2prime.data), r2star: None,
+                magnitude_rss: None, magnitude_multi: None, se_magnitude_multi: None,
+            };
+            let result = run_separation(inputs, &metadata, &cfg, &mut |_, _| {})
+                .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+            (c.output.clone(), qsm, result)
+        }
     };
     save_result(&output, &result, &reference)?;
     Ok(())

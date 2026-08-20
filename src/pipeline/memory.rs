@@ -129,7 +129,8 @@ fn estimate_standard_pipeline(n: usize, n_echoes: usize, config: &PipelineConfig
         BfAlgorithm::Harperella => 60 * n,
         // iHARPERELLA: similar to HARPERELLA
         BfAlgorithm::Iharperella => 60 * n,
-        
+        // BFRnet / iQFM: ONNX U-Net activations dominate; padded field + network working set
+        BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => 120 * n,
     };
 
     // Dipole inversion
@@ -169,6 +170,16 @@ fn estimate_standard_pipeline(n: usize, n_echoes: usize, config: &PipelineConfig
         QsmAlgorithm::Hdqsm => 120 * n,
         // AMP-PE: GAMP over complex wavelet coefficients + padded FFT workspace
         QsmAlgorithm::AmpPe => 260 * n,
+        // Deep-learning inversions: ONNX U-Net activations dominate. QSMnet/QSMnet+ are the
+        // heaviest (deeper 3D U-Net, /16 padding); xQSM/AutoQSM are lighter patch/octave nets.
+        QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus => 200 * n,
+        QsmAlgorithm::Xqsm | QsmAlgorithm::Autoqsm => 120 * n,
+        // Other DL nets: unrolled/patch/single-step U-Nets. NeXtQSM (two U-Nets + unroll)
+        // and iQSM/iQSM+ (per-echo passes) are the heaviest; the rest are moderate.
+        QsmAlgorithm::Nextqsm => 220 * n,
+        QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => 200 * n,
+        QsmAlgorithm::Qsmgan | QsmAlgorithm::Ir2qsm
+        | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm => 140 * n,
     };
 
     // Peak is the maximum across the three sequential stages

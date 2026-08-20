@@ -79,6 +79,7 @@ mod integration_tests {
             resharp_params: Default::default(),
             harperella_params: Default::default(),
             iharperella_params: Default::default(),
+            msmv_params: Default::default(),
             romeo_params: Default::default(),
             swi_params: Default::default(),
             n_procs: Some(1),
