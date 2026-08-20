@@ -7445,8 +7445,7 @@ mod tests {
 
     #[test]
     fn test_pipeline_separation_algorithm_all_params() {
-        let mut ps = PipelineFormState::default();
-        ps.do_chi_separation = true;
+        let mut ps = PipelineFormState { do_chi_separation: true, ..Default::default() };
         // Every separation method incl. SUSEP-Net / χ-sepnet.
         for algo in 0..SEP_ALGO_OPTIONS.len() {
             ps.separation_algorithm = algo;
