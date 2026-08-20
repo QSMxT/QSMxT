@@ -138,6 +138,50 @@ fn iter_progress_bar(run_key: &str, step_name: &str) -> (Box<dyn FnMut(usize, us
     (cb, None)
 }
 
+/// Create a byte-oriented progress bar for weight downloads, in the same visual style as
+/// [`create_progress_bar`] (spinner + `━╸─` bar) but showing size + transfer rate.
+fn create_download_bar(label: &str, total: u64) -> ProgressBar {
+    let pb = MULTI_PROGRESS.add(ProgressBar::new(total));
+    pb.set_style(
+        ProgressStyle::with_template(&format!(
+            "  {{spinner:.green}} {} [{{bar:30.cyan/dim}}] {{bytes}}/{{total_bytes}} ({{percent}}%) | {{elapsed_precise}} elapsed | {{bytes_per_sec}}",
+            label
+        ))
+        .unwrap()
+        .progress_chars("━╸─"),
+    );
+    pb
+}
+
+/// Pre-fetch a deep-learning model's weights (if `model_id` names one) with a download
+/// progress bar per weight file. No-op for classical algorithms (unknown id) or weights
+/// already cached — after this, qsm-core's inference path finds the files in the cache.
+fn prefetch_weights(model_id: &str, run_key: &str) -> crate::Result<()> {
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+    let bars: RefCell<HashMap<String, ProgressBar>> = RefCell::new(HashMap::new());
+    let res = {
+        let mut cb = |name: &str, done: u64, total: u64| {
+            let mut m = bars.borrow_mut();
+            let bar = m
+                .entry(name.to_string())
+                .or_insert_with(|| create_download_bar(&format!("{} ↓ {}", run_key, name), total.max(1)));
+            if total > 0 {
+                bar.set_length(total);
+            }
+            bar.set_position(done);
+            if total > 0 && done >= total {
+                bar.finish_and_clear();
+            }
+        };
+        qsm_core::models::prefetch_with_progress(model_id, &mut cb)
+    };
+    for (_, bar) in bars.into_inner() {
+        bar.finish_and_clear();
+    }
+    res.map_err(|e| QsmxtError::Config(format!("weight download ({}): {}", model_id, e)))
+}
+
 /// Log step completion with timing.
 fn log_step_done(step_name: &str, start: Instant) {
     let elapsed = start.elapsed();
@@ -939,6 +983,8 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
         se_magnitude_multi: se_multi.as_deref(),
     };
 
+    // Fetch DL weights (SUSEP-Net / χ-sepnet) with a download bar; no-op for classical methods.
+    prefetch_weights(&alg_name, &ctx.run.key.to_string())?;
     let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &alg_name);
     let result = qsm_core::pipeline::run_separation(inputs, &metadata, &sep_config, &mut *prog)
         .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
@@ -1079,6 +1125,7 @@ fn stage_iqsm(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
     );
     let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
     let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
+    prefetch_weights(alg, &ctx.run.key.to_string())?;
     log::info!("{} reconstruction (end-to-end from phase)", if plus { "iQSM+" } else { "iQSM" });
     // Referencing is done by stage_reference, so request None from the pipeline runner.
     let chi = if plus {
@@ -1291,6 +1338,7 @@ fn stage_standard_qsm(
         );
         let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
         let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
+        prefetch_weights("iqfm", &ctx.run.key.to_string())?;
         log::info!("Background removal (iQFM, deep-learning joint unwrap+BFR)");
         let local_field = qsm_core::pipeline::run_iqfm(&phase_refs, &mag_refs, &mask, &scan_meta)
             .map_err(|e| QsmxtError::Config(format!("iQFM: {}", e)))?;
@@ -1317,6 +1365,8 @@ fn stage_standard_qsm(
             ctx.meta.field_strength, ctx.meta.b0_direction,
         );
 
+        // Fetch DL weights (BFRnet) with a download bar before removal; no-op otherwise.
+        prefetch_weights(&bf_name, &ctx.run.key.to_string())?;
         log::info!("Background removal ({})", bf_name);
         let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &bf_name);
         let bg_result = qsm_core::pipeline::run_bg_removal(
@@ -1415,6 +1465,8 @@ fn stage_standard_qsm(
             None
         };
 
+        // Fetch DL weights (with a download bar) before inference; no-op for classical algs.
+        prefetch_weights(&alg_name, &ctx.run.key.to_string())?;
         log::info!("Dipole inversion ({})", alg_name);
         let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &alg_name);
         let chi = qsm_core::pipeline::run_dipole_inversion(
