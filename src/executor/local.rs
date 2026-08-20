@@ -82,6 +82,9 @@ pub fn execute_local(
                             export_swi: config.pipeline.do_swi,
                             export_t2star: config.pipeline.do_t2starmap,
                             export_r2star: config.pipeline.do_r2starmap,
+                            export_r2: config.pipeline.do_r2map,
+                            export_r2prime: config.pipeline.do_r2primemap,
+                            export_chisep: config.pipeline.do_chi_separation,
                             source_dicom: exec_config.source_dicom.as_deref(),
                             outputs_filter: exec_config.dicom_outputs.as_deref(),
                         };
