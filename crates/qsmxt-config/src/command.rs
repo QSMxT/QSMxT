@@ -13,15 +13,18 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     if !config.pipeline.do_qsm { parts.push("--no-qsm".into()); }
     if config.pipeline.do_swi { parts.push("--do-swi".into()); }
     if config.pipeline.do_t2starmap { parts.push("--do-t2starmap".into()); }
-    if config.pipeline.do_r2starmap { parts.push("--do-r2starmap".into()); }
-    if config.pipeline.do_chi_separation { parts.push("--do-chisep".into()); }
-    // R2/R2' maps are implied by chi-separation; only surface them when set independently.
+    // R2*, R2 and R2' are chained: chi-separation implies R2' implies (R2 + R2*). Only surface each
+    // flag when it is set on its own, so `--do-chisep` doesn't drag redundant relaxometry flags in.
     if config.pipeline.do_r2primemap && !config.pipeline.do_chi_separation {
         parts.push("--do-r2primemap".into());
     }
     if config.pipeline.do_r2map && !config.pipeline.do_chi_separation && !config.pipeline.do_r2primemap {
         parts.push("--do-r2map".into());
     }
+    if config.pipeline.do_r2starmap && !config.pipeline.do_chi_separation && !config.pipeline.do_r2primemap {
+        parts.push("--do-r2starmap".into());
+    }
+    if config.pipeline.do_chi_separation { parts.push("--do-chisep".into()); }
     if let Some(tool) = &config.separation.custom_qsm_tool { parts.push(format!("--use-custom-qsm {}", tool)); }
     if let Some(tool) = &config.separation.custom_r2_tool { parts.push(format!("--use-custom-r2 {}", tool)); }
     if let Some(tool) = &config.separation.custom_r2prime_tool { parts.push(format!("--use-custom-r2prime {}", tool)); }
@@ -379,8 +382,14 @@ mod tests {
         // Default (r2star-qsm) with chi-sep enabled: just the toggle, no algorithm flag.
         let mut config = PipelineConfig::default();
         config.pipeline.do_chi_separation = true;
+        // Chi-separation forces R2/R2'/R2* on; those are implied by --do-chisep and must not appear.
+        enforce_separation_dependencies(&mut config);
+        assert!(config.pipeline.do_r2starmap && config.pipeline.do_r2map && config.pipeline.do_r2primemap);
         let cmd = generate_command(&config);
         assert!(cmd.contains("--do-chisep"));
+        assert!(!cmd.contains("--do-r2starmap"), "r2starmap implied by chisep, got: {}", cmd);
+        assert!(!cmd.contains("--do-r2map"));
+        assert!(!cmd.contains("--do-r2primemap"));
         assert!(!cmd.contains("--chisep")); // default method → not emitted
 
         // Selecting a non-default method emits it; editing a param emits that too.
