@@ -4314,13 +4314,18 @@ impl App {
         }
     }
 
-    /// Whether the R2 map is forced on by chi-separation (enabled, no custom R2 supplied).
-    fn r2_map_forced(&self) -> bool {
-        self.pipeline_state.do_chi_separation && self.pipeline_state.custom_r2_tool.trim().is_empty()
+    /// Whether the selected chi-separation method needs R2' (the R2'-based methods:
+    /// chi-sep-ilsqr/medi, wavesep, hc-chisep — indices ≥ 2 in SEP_ALGO_OPTIONS).
+    fn separation_needs_r2prime(&self) -> bool {
+        self.pipeline_state.do_chi_separation && self.pipeline_state.separation_algorithm >= 2
     }
-    /// Whether the R2' map is forced on by chi-separation (enabled, no custom R2' supplied).
+    /// R2' is forced when the method needs it and no custom R2' map is supplied.
     fn r2prime_map_forced(&self) -> bool {
-        self.pipeline_state.do_chi_separation && self.pipeline_state.custom_r2prime_tool.trim().is_empty()
+        self.separation_needs_r2prime() && self.pipeline_state.custom_r2prime_tool.trim().is_empty()
+    }
+    /// R2 is forced only when needed to compute a forced R2' (and no custom R2 map).
+    fn r2_map_forced(&self) -> bool {
+        self.r2prime_map_forced() && self.pipeline_state.custom_r2_tool.trim().is_empty()
     }
 
     fn toggle_checkbox(&mut self) {
@@ -4329,15 +4334,15 @@ impl App {
             (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap = !self.form.do_t2starmap,
             (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap = !self.form.do_r2starmap,
             (TAB_SUPPLEMENTARY, 9) => {
-                if self.form.do_r2map && self.pipeline_state.do_chi_separation && self.pipeline_state.custom_r2_tool.trim().is_empty() {
-                    self.error_message = Some("R2 map is required by chi-separation — disable chi-separation (or set a custom R2 tool) first.".to_string());
+                if self.r2_map_forced() {
+                    self.error_message = Some("R2 map is required by the selected chi-separation method — change method, disable chi-separation, or set a custom R2 tool first.".to_string());
                 } else {
                     self.form.do_r2map = !self.form.do_r2map;
                 }
             }
             (TAB_SUPPLEMENTARY, 10) => {
-                if self.form.do_r2primemap && self.pipeline_state.do_chi_separation && self.pipeline_state.custom_r2prime_tool.trim().is_empty() {
-                    self.error_message = Some("R2' map is required by chi-separation — disable chi-separation (or set a custom R2' tool) first.".to_string());
+                if self.r2prime_map_forced() {
+                    self.error_message = Some("R2' map is required by the selected chi-separation method — change method, disable chi-separation, or set a custom R2' tool first.".to_string());
                 } else {
                     self.form.do_r2primemap = !self.form.do_r2primemap;
                 }
