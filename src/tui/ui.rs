@@ -2,12 +2,12 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs, Wrap},
     Frame,
 };
 
-use super::app::{App, FieldKind, PipelineRow, PipelineTabMode, TAB_NAMES,
-    TAB_INPUT, TAB_QSM, TAB_SEPARATION, TAB_EXECUTION, TAB_METHODS};
+use super::app::{AlgoModal, App, FieldKind, PipelineRow, TAB_NAMES,
+    TAB_INPUT, TAB_QSM, TAB_SEPARATION, TAB_SUPPLEMENTARY, TAB_EXECUTION, TAB_METHODS};
 use super::command;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -34,6 +34,71 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     draw_form(f, app, chunks[1]);
     draw_command_preview_with(f, &cmd, chunks[2]);
     draw_help_bar(f, app, chunks[3]);
+
+    if let Some(ref modal) = app.algo_modal {
+        draw_algo_modal(f, modal, f.area());
+    }
+}
+
+/// A horizontally+vertically centered rectangle of at most `w`×`h`, clamped to `area`.
+fn centered_rect(w: u16, h: u16, area: Rect) -> Rect {
+    let w = w.min(area.width);
+    let h = h.min(area.height);
+    let x = area.x + (area.width.saturating_sub(w)) / 2;
+    let y = area.y + (area.height.saturating_sub(h)) / 2;
+    Rect { x, y, width: w, height: h }
+}
+
+/// Pop-up list to choose one algorithm option, showing every option at once (scrolls if needed)
+/// plus the highlighted option's help.
+fn draw_algo_modal(f: &mut Frame, modal: &AlgoModal, area: Rect) {
+    // Width: fit the longest option/title; height: options + help + borders + hint.
+    let content_w = modal.options.iter().map(|o| o.len()).max().unwrap_or(0)
+        .max(modal.title.len()) as u16 + 8;
+    let width = content_w.clamp(30, 70).min(area.width.saturating_sub(4));
+    let list_h = (modal.options.len() as u16).min(area.height.saturating_sub(10)).max(1);
+    let height = list_h + 6; // borders(2) + help(2) + hint(1) + list
+    let popup = centered_rect(width, height, area);
+
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(format!(" {} ", modal.title));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+
+    let parts = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(2), Constraint::Length(1)])
+        .split(inner);
+
+    let items: Vec<ListItem> = modal.options.iter().map(|o| ListItem::new(o.clone())).collect();
+    let list = List::new(items)
+        .highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD))
+        .highlight_symbol("▶ ");
+    let mut state = ListState::default();
+    state.select(Some(modal.cursor));
+    f.render_stateful_widget(list, parts[0], &mut state);
+
+    let help = modal.help.get(modal.cursor).cloned().unwrap_or_default();
+    f.render_widget(
+        Paragraph::new(help)
+            .style(Style::default().fg(Color::DarkGray))
+            .wrap(Wrap { trim: true }),
+        parts[1],
+    );
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::styled("↑↓", Style::default().fg(Color::Yellow)),
+            Span::styled(" select  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Enter", Style::default().fg(Color::Yellow)),
+            Span::styled(" choose  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("Esc", Style::default().fg(Color::Yellow)),
+            Span::styled(" cancel", Style::default().fg(Color::DarkGray)),
+        ])),
+        parts[2],
+    );
 }
 
 /// Render a scrollable paragraph with a scrollbar when content exceeds visible height.
@@ -109,11 +174,7 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         return;
     }
     if app.active_tab == TAB_QSM || app.active_tab == TAB_SEPARATION {
-        app.pipeline_state.mode = if app.active_tab == TAB_SEPARATION {
-            PipelineTabMode::Separation
-        } else {
-            PipelineTabMode::Qsm
-        };
+        app.sync_pipeline_mode();
         draw_pipeline_tab(f, app, area);
         return;
     }
@@ -151,8 +212,8 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 
         // Indent sub-fields under a parent checkbox
         let indent = match (app.active_tab, i) {
-            (2, 1..=6) => true,   // SWI settings under "Compute SWI"
-            (3, 4..=9) => true,   // SLURM settings under "Execution Mode"
+            (TAB_SUPPLEMENTARY, 1..=6) => true, // SWI settings under "Compute SWI"
+            (TAB_EXECUTION, 4..=9) => true,     // SLURM settings under "Execution Mode"
             _ => false,
         };
         let prefix = if indent { "    " } else { "  " };
