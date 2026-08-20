@@ -433,6 +433,9 @@ pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
         format!("{}/sub-*/ses-*/anat/*_part-phase_*.nii*", bids_dir.display()),
     ];
 
+    // Subjects/sessions that also have a matching MESE acquisition (for the "(+MESE)" annotation).
+    let mese_present = mese_subject_sessions(bids_dir);
+
     // Collect unique AcquisitionKeys grouped by subject and session
     // subject -> (session -> [AcquisitionKey])
     let mut tree_map: BTreeMap<String, BTreeMap<Option<String>, Vec<AcquisitionKey>>> = BTreeMap::new();
@@ -475,10 +478,15 @@ pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
         let mut sessions = Vec::new();
 
         for (session, keys) in session_map {
+            // A MESE for this subject/session is auto-used (R2 → R2') for every run under it.
+            let has_mese = mese_present.contains(&(subject.clone(), session.clone()));
             let run_leaves: Vec<BidsRunLeaf> = keys.into_iter().map(|key| {
                 let key_string = key.to_string();
-                // Build display: everything after sub-XX[_ses-YY]_
-                let display = build_run_display(&key);
+                // Build display: everything after sub-XX[_ses-YY]_ (annotated when MESE is present).
+                let mut display = build_run_display(&key);
+                if has_mese {
+                    display.push_str(" (+MESE)");
+                }
                 BidsRunLeaf { display, key_string, selected: true }
             }).collect();
 
@@ -497,6 +505,31 @@ pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
     }
 
     Ok(BidsTree { subjects })
+}
+
+/// The `(subject, session)` pairs that have a `MESE` (multi-echo spin-echo) acquisition, used to
+/// annotate the Input tree — a MESE is auto-matched to same-subject/session runs at processing time.
+fn mese_subject_sessions(bids_dir: &Path) -> std::collections::HashSet<(String, Option<String>)> {
+    let mut set = std::collections::HashSet::new();
+    let patterns = [
+        format!("{}/sub-*/anat/*_MESE.nii*", bids_dir.display()),
+        format!("{}/sub-*/ses-*/anat/*_MESE.nii*", bids_dir.display()),
+    ];
+    for pattern in &patterns {
+        let entries = match glob(pattern) {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        for entry in entries.flatten() {
+            let Some(filename) = entry.file_name().and_then(|f| f.to_str()) else { continue };
+            let Some(ent) = entities::parse_entities(filename) else { continue };
+            if ent.part == Some(Part::Phase) {
+                continue;
+            }
+            set.insert((ent.subject.clone(), ent.session.clone()));
+        }
+    }
+    set
 }
 
 /// Build the display string for a run (the part after subject/session).
@@ -603,6 +636,27 @@ mod tests {
         assert_eq!(tree.subjects[0].sessions.len(), 2);
         assert_eq!(tree.total_runs(), 2);
         assert_eq!(tree.selected_runs(), 2);
+    }
+
+    #[test]
+    fn test_scan_bids_tree_annotates_mese() {
+        let dir = tempfile::tempdir().unwrap();
+        let anat = dir.path().join("sub-1/anat");
+        std::fs::create_dir_all(&anat).unwrap();
+        // A MEGRE (phase) run and a same-subject MESE magnitude acquisition.
+        for echo in 1..=3 {
+            testutils::write_phase(&anat.join(format!("sub-1_echo-{}_part-phase_MEGRE.nii", echo)));
+            testutils::write_sidecar(&anat.join(format!("sub-1_echo-{}_part-phase_MEGRE.json", echo)), 0.004 * echo as f64, 3.0);
+        }
+        for echo in 1..=4 {
+            testutils::write_magnitude(&anat.join(format!("sub-1_echo-{}_MESE.nii", echo)));
+        }
+        let tree = scan_bids_tree(dir.path()).unwrap();
+        let display = &tree.subjects[0].runs[0].display;
+        assert!(display.contains("MEGRE"), "display: {}", display);
+        assert!(display.contains("(+MESE)"), "expected MESE annotation, got: {}", display);
+        // The key_string (used for include/exclude filtering) must NOT carry the annotation.
+        assert!(!tree.subjects[0].runs[0].key_string.contains("+MESE"));
     }
 
     #[test]
