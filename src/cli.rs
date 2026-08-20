@@ -1,15 +1,23 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
+/// Whether this build includes deep-learning (ONNX) support — shown in `--version` so a
+/// non-`dl` build (e.g. the Windows/ARM64 binary) advertises the missing models up front.
+#[cfg(feature = "dl")]
+const DL_STATUS: &str = "deep-learning models: enabled";
+#[cfg(not(feature = "dl"))]
+const DL_STATUS: &str = "deep-learning models: DISABLED in this build (classical algorithms only)";
+
 #[derive(Parser, Debug)]
 #[command(
     name = "qsmxt",
     version,
     long_version = const_format::formatcp!(
-        "{}\nqsm-core: {} ({})",
+        "{}\nqsm-core: {} ({})\n{}",
         env!("CARGO_PKG_VERSION"),
         env!("QSM_CORE_VERSION"),
         env!("QSM_CORE_GIT_HASH"),
+        DL_STATUS,
     ),
     about = "QSMxT: Quantitative Susceptibility Mapping tool (Rust)"
 )]

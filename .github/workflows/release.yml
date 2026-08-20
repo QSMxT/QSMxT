@@ -74,6 +74,8 @@ jobs:
     needs: coverage-gate
     runs-on: ${{ matrix.os }}
     strategy:
+      # Don't let one target's failure cancel the others — publish every binary that builds.
+      fail-fast: false
       matrix:
         include:
           - target: x86_64-unknown-linux-gnu
@@ -94,9 +96,13 @@ jobs:
           - target: x86_64-pc-windows-msvc
             os: windows-latest
             dcm2niix_asset: win
+          # Windows on ARM: the ONNX engine's kernel lib (tract-linalg) can't build its
+          # hand-written ARM64 SIMD assembly under MSVC, so this target is built WITHOUT the
+          # `dl` feature — classical algorithms only; deep-learning ones report a clear error.
           - target: aarch64-pc-windows-msvc
             os: windows-latest
             dcm2niix_asset: none
+            cargo_flags: --no-default-features
     steps:
       - uses: actions/checkout@v4
 
@@ -128,7 +134,7 @@ jobs:
           key: ${{ matrix.target }}
 
       - name: Build release binary
-        run: cargo build --release --target ${{ matrix.target }}
+        run: cargo build --release --target ${{ matrix.target }} ${{ matrix.cargo_flags }}
         env:
           CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
 

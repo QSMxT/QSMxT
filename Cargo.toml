@@ -13,8 +13,17 @@ repository = "https://github.com/QSMxT/QSMxT"
 name = "qsmxt"
 path = "src/main.rs"
 
+[features]
+# Deep-learning models (ONNX inference + weight download). On by default. Disable with
+# --no-default-features to build for targets where the ONNX engine can't compile (e.g.
+# aarch64-pc-windows-msvc, where tract-linalg's ARM64 assembly won't build under MSVC);
+# such a build keeps all classical algorithms and reports a clear error if a DL algorithm
+# is selected.
+default = ["dl"]
+dl = ["qsm-core/onnx", "qsm-core/download"]
+
 [dependencies]
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.27.2", features = ["parallel", "onnx", "download"] }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.27.2", features = ["parallel"] }
 qsmxt-config = { path = "crates/qsmxt-config" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"

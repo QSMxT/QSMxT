@@ -14,6 +14,30 @@ fn tissue_phase_to_ppm(phase: &mut [f64], te: f64, b0: f64) {
     }
 }
 
+/// BFRnet local-field estimation (deep learning). Split out so the non-`dl` build compiles
+/// without the ONNX-gated `qsm_core::bgremove::bfrnet` symbol; `prefetch_weights` guards the
+/// call site, so the no-DL body is effectively unreachable.
+#[cfg(feature = "dl")]
+fn bfrnet_local_field(
+    field: &qsm_core::io::NiftiData, mask: &[u8], grid: &qsm_core::Grid,
+) -> crate::Result<Vec<f64>> {
+    let spec = qsm_core::models::find_model("bfrnet")
+        .ok_or_else(|| crate::error::QsmxtError::Config("bfrnet not in model registry".into()))?;
+    let weights = qsm_core::models::primary_weight_bytes(spec)
+        .map_err(|e| crate::error::QsmxtError::Config(format!("BFRnet weights: {}", e)))?;
+    qsm_core::bgremove::bfrnet(&field.data, mask, grid, &weights)
+        .map_err(|e| crate::error::QsmxtError::Config(format!("BFRnet: {}", e)))
+}
+
+#[cfg(not(feature = "dl"))]
+fn bfrnet_local_field(
+    _field: &qsm_core::io::NiftiData, _mask: &[u8], _grid: &qsm_core::Grid,
+) -> crate::Result<Vec<f64>> {
+    Err(crate::error::QsmxtError::Config(
+        "BFRnet requires a deep-learning build of qsmxt".into(),
+    ))
+}
+
 pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
     let (common, local_field, eroded_mask) = match cmd {
         BgremoveCommand::Vsharp(args) => {
@@ -170,13 +194,9 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             info!("Background removal (BFRnet, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
             // Fetch the ONNX weights with a download bar (cached under $QSM_MODEL_DIR / the cache).
+            // On a build without the `dl` feature this errors here with a clear message.
             crate::pipeline::runner::prefetch_weights("bfrnet", "bfrnet")?;
-            let spec = qsm_core::models::find_model("bfrnet")
-                .ok_or_else(|| crate::error::QsmxtError::Config("bfrnet not in model registry".into()))?;
-            let weights = qsm_core::models::primary_weight_bytes(spec)
-                .map_err(|e| crate::error::QsmxtError::Config(format!("BFRnet weights: {}", e)))?;
-            let lf = qsm_core::bgremove::bfrnet(&field_nifti.data, &mask, &grid, &weights)
-                .map_err(|e| crate::error::QsmxtError::Config(format!("BFRnet: {}", e)))?;
+            let lf = bfrnet_local_field(&field_nifti, &mask, &grid)?;
             // BFRnet preserves the brain edge (no erosion): mask returned unchanged.
             (c, (lf, field_nifti), mask)
         }
