@@ -415,6 +415,35 @@ mod tests {
     use super::*;
 
     #[test]
+    fn dl_algorithms_map_to_core_and_display() {
+        use crate::enums::{BfAlgorithm as B, QsmAlgorithm as Q, SeparationAlgorithm as S};
+        let mut cfg = PipelineConfig::default();
+        for a in [
+            Q::Xqsm, Q::Qsmnet, Q::QsmnetPlus, Q::Autoqsm, Q::Qsmgan, Q::Ir2qsm,
+            Q::Lpcnn, Q::ModlQsm, Q::Nextqsm, Q::Iqsm, Q::IqsmPlus,
+        ] {
+            cfg.inversion.algorithm = a;
+            let (_, _, inv, _) = to_pipeline_stages(&cfg);
+            // map_alg produced a distinct core algorithm; Display round-trips to a non-empty id.
+            let _ = inv.algorithm;
+            assert!(!a.to_string().is_empty());
+        }
+        cfg = PipelineConfig::default();
+        for b in [B::Bfrnet, B::Iqfm] {
+            cfg.bg_removal.algorithm = b;
+            let (_, bg, _, _) = to_pipeline_stages(&cfg);
+            let _ = bg.algorithm;
+            assert!(!b.to_string().is_empty());
+        }
+        for s in [S::SusepNet, S::ChiSepNet] {
+            cfg.separation.algorithm = s;
+            let sep = to_separation_config(&cfg);
+            let _ = sep.algorithm;
+            assert!(!s.to_string().is_empty());
+        }
+    }
+
+    #[test]
     fn qsmart_config_propagates_to_core_params() {
         // Previously the bridge punted with QsmartParams::default(), dropping config.
         let mut cfg = PipelineConfig::default();

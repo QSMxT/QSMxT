@@ -579,7 +579,22 @@ fn prune_to_selected_algorithm(root: &mut toml::value::Table, section: &str) {
 #[cfg(test)]
 mod selected_toml_tests {
     use super::*;
-    use crate::enums::{BfAlgorithm, QsmAlgorithm};
+    use crate::enums::{BfAlgorithm, QsmAlgorithm, SeparationAlgorithm};
+
+    #[test]
+    fn dl_separation_forces_r2prime_and_msmv_config_defaults() {
+        // χ-sepnet (like susep-net) consumes local field + QSM + R2', so it must force R2'.
+        for alg in [SeparationAlgorithm::SusepNet, SeparationAlgorithm::ChiSepNet] {
+            let mut c = PipelineConfig::default();
+            c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = alg;
+            enforce_separation_dependencies(&mut c);
+            assert!(c.pipeline.do_r2primemap, "{:?} must force R2'", alg);
+        }
+        // mSMV config carries the qsm-core defaults.
+        let d = MsmvConfig::default();
+        assert!(d.radius > 0.0 && d.maxk > 0);
+    }
 
     #[test]
     fn to_toml_selected_prunes_and_roundtrips() {

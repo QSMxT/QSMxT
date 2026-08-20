@@ -395,6 +395,29 @@ mod tests {
     }
 
     #[test]
+    fn test_dl_algorithms_command() {
+        use crate::enums::{BfAlgorithm, QsmAlgorithm, SeparationAlgorithm};
+        for a in [
+            QsmAlgorithm::Xqsm, QsmAlgorithm::Qsmnet, QsmAlgorithm::QsmnetPlus,
+            QsmAlgorithm::Autoqsm, QsmAlgorithm::Qsmgan, QsmAlgorithm::Ir2qsm,
+            QsmAlgorithm::Lpcnn, QsmAlgorithm::ModlQsm, QsmAlgorithm::Nextqsm,
+            QsmAlgorithm::Iqsm, QsmAlgorithm::IqsmPlus,
+        ] {
+            let mut c = PipelineConfig::default();
+            c.inversion.algorithm = a;
+            let cmd = generate_command(&c);
+            assert!(cmd.contains(&format!("--qsm-algorithm {}", a)), "missing {} in: {}", a, cmd);
+        }
+        // iQFM background removal + χ-sepnet separation (deep-learning, no params).
+        let mut c = PipelineConfig::default();
+        c.bg_removal.algorithm = BfAlgorithm::Iqfm;
+        assert!(generate_command(&c).contains("--bf-algorithm iqfm"));
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
+        assert!(generate_command(&c).contains("--chisep chi-sepnet"));
+    }
+
+    #[test]
     fn test_msmv_refine_command() {
         // Off by default → no mSMV flags.
         let mut config = PipelineConfig::default();

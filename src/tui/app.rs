@@ -7421,8 +7421,8 @@ mod tests {
     #[test]
     fn test_pipeline_bf_algorithm_params() {
         let mut ps = PipelineFormState::default();
-        // Switch through BG removal algorithms and verify rows change
-        for algo in 0..5 {
+        // Switch through every BG removal algorithm (incl. BFRnet/iQFM) and verify rows change.
+        for algo in 0..BF_OPTIONS.len() {
             ps.bf_algorithm = algo;
             let rows = ps.visible_rows();
             assert!(!rows.is_empty());
@@ -7432,13 +7432,24 @@ mod tests {
     #[test]
     fn test_pipeline_qsm_algorithm_all_params() {
         let mut ps = PipelineFormState::default();
-        // Switch through all QSM algorithms
-        for algo in 0..10 {
+        // Switch through EVERY QSM algorithm (incl. the deep-learning ones: single-step
+        // NeXtQSM/AutoQSM hide BG removal; end-to-end iQSM/iQSM+ hide field mapping too).
+        for algo in 0..QSM_ALGO_OPTIONS.len() {
             ps.qsm_algorithm = algo;
             let rows = ps.visible_rows();
             assert!(!rows.is_empty());
             let focusable = ps.focusable_rows();
             assert!(!focusable.is_empty());
+        }
+    }
+
+    #[test]
+    fn test_pipeline_separation_algorithm_all_params() {
+        let mut ps = PipelineFormState { do_chi_separation: true, ..Default::default() };
+        // Every separation method incl. SUSEP-Net / χ-sepnet.
+        for algo in 0..SEP_ALGO_OPTIONS.len() {
+            ps.separation_algorithm = algo;
+            assert!(!ps.visible_rows().is_empty());
         }
     }
 
