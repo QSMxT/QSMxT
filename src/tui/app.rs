@@ -2509,6 +2509,47 @@ impl PipelineFormState {
         self.mark_mask_custom();
     }
 
+    /// Ordered masking input sources, matching the modal/cycle option order.
+    pub const MASK_INPUT_SOURCES: [crate::pipeline::config::MaskingInput; 4] = {
+        use crate::pipeline::config::MaskingInput::*;
+        [MagnitudeFirst, Magnitude, MagnitudeLast, PhaseQuality]
+    };
+
+    /// Current masking-input source index for a section (for populating the modal).
+    pub fn mask_input_index(&self, section: usize) -> usize {
+        self.mask_sections.get(section)
+            .and_then(|s| Self::MASK_INPUT_SOURCES.iter().position(|x| *x == s.input))
+            .unwrap_or(0)
+    }
+
+    /// Set a section's masking input source by index (from the modal).
+    pub fn set_mask_input(&mut self, section: usize, idx: usize) {
+        if section >= self.mask_sections.len() { return; }
+        if let Some(&src) = Self::MASK_INPUT_SOURCES.get(idx) {
+            self.mask_sections[section].input = src;
+            self.mark_mask_custom();
+        }
+    }
+
+    /// Set a section's generator algorithm by index (0 = threshold, 1 = BET). Only rewrites the
+    /// generator when the algorithm type actually changes, preserving existing parameters.
+    pub fn set_mask_generator(&mut self, section: usize, idx: usize) {
+        use crate::pipeline::config::*;
+        if section >= self.mask_sections.len() { return; }
+        let is_threshold = matches!(self.mask_sections[section].generator, MaskOp::Threshold { .. });
+        match idx {
+            0 if !is_threshold => {
+                self.mask_sections[section].generator = MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None };
+                self.mark_mask_custom();
+            }
+            1 if is_threshold => {
+                self.mask_sections[section].generator = MaskOp::Bet { fractional_intensity: 0.5 };
+                self.mark_mask_custom();
+            }
+            _ => {}
+        }
+    }
+
     /// Adjust the input source of a mask section with left/right.
     pub fn adjust_mask_input(&mut self, section: usize, delta: isize) {
         use crate::pipeline::config::MaskingInput;
@@ -2591,6 +2632,38 @@ pub struct App {
     pub input_mode: InputMode,
     pub dicom_state: DicomConvertState,
     pub nifti_state: NiftiState,
+    /// When set, an algorithm-selection modal is open over the QSM/Separation tab.
+    pub algo_modal: Option<AlgoModal>,
+}
+
+/// A pop-up list for choosing one option of a pipeline `AlgoSelect` (all options at once).
+#[derive(Debug, Clone)]
+pub struct AlgoModal {
+    /// What this modal edits, applied on confirm.
+    pub target: AlgoModalTarget,
+    /// Modal title (the row label, e.g. "QSM Inversion").
+    pub title: String,
+    pub options: Vec<String>,
+    /// Per-option help text (same length as `options`).
+    pub help: Vec<String>,
+    /// Currently highlighted option index.
+    pub cursor: usize,
+}
+
+/// The selection an [`AlgoModal`] applies when confirmed. Lets a single pop-up list serve every
+/// single-choice selector in the TUI regardless of how that selector stores its value.
+#[derive(Debug, Clone)]
+pub enum AlgoModalTarget {
+    /// A keyed `PipelineFormState` select (an `AlgoSelect` row, e.g. "qsm_algorithm").
+    PipelineSelect(String),
+    /// The masking input source of a mask section.
+    MaskInput(usize),
+    /// The generator algorithm (threshold vs BET) of a mask section.
+    MaskGenerator(usize),
+    /// The Input-tab mode selector (BIDS / NIfTI / DICOM).
+    InputMode,
+    /// A generic `tab_fields` Select at the given (tab, field) — e.g. Execution Mode, SWI Scaling.
+    TabSelect { tab: usize, field: usize },
 }
 
 pub struct RunForm {
@@ -2804,6 +2877,7 @@ impl App {
             form_scroll_offset: 0,
             methods_scroll_offset: 0,
             error_message: None,
+            algo_modal: None,
             input_mode: InputMode::Bids,
             dicom_state: DicomConvertState::default(),
             nifti_state: NiftiState::default(),
@@ -2860,6 +2934,12 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // An open algorithm-selection modal captures all input until dismissed.
+        if self.algo_modal.is_some() {
+            self.handle_algo_modal_key(key);
+            return;
+        }
+
         // Clear error on any non-F5 key press
         if key.code != KeyCode::F(5) {
             self.error_message = None;
@@ -2873,11 +2953,7 @@ impl App {
         // Route the QSM and Separation tabs to the shared pipeline-row handler (the row set
         // is selected by `pipeline_state.mode`).
         if self.active_tab == TAB_QSM || self.active_tab == TAB_SEPARATION {
-            self.pipeline_state.mode = if self.active_tab == TAB_SEPARATION {
-                PipelineTabMode::Separation
-            } else {
-                PipelineTabMode::Qsm
-            };
+            self.sync_pipeline_mode();
             self.handle_pipeline_key(key);
             return;
         }
@@ -3078,8 +3154,26 @@ impl App {
 
     fn interact_io_field(&mut self) {
         if self.active_field == 0 {
-            // Mode selector: toggle on Enter/Space
-            self.toggle_input_mode();
+            // Mode selector: open a modal listing all input modes.
+            self.algo_modal = Some(AlgoModal {
+                target: AlgoModalTarget::InputMode,
+                title: "Input Mode".to_string(),
+                options: vec![
+                    "BIDS".to_string(),
+                    "NIfTI -> BIDS".to_string(),
+                    "DICOM -> BIDS".to_string(),
+                ],
+                help: vec![
+                    "Standard BIDS dataset input".to_string(),
+                    "Convert loose NIfTI files to BIDS (experimental)".to_string(),
+                    "Convert DICOM series to BIDS (experimental)".to_string(),
+                ],
+                cursor: match self.input_mode {
+                    InputMode::Bids => 0,
+                    InputMode::NIfTI => 1,
+                    InputMode::DicomToBids => 2,
+                },
+            });
             return;
         }
         // Text fields (1-3)
@@ -3105,10 +3199,6 @@ impl App {
             // Mode selector: Left/Right cycles through modes
             self.cycle_input_mode(delta);
         }
-    }
-
-    fn toggle_input_mode(&mut self) {
-        self.cycle_input_mode(1);
     }
 
     fn cycle_input_mode(&mut self, delta: isize) {
@@ -3840,6 +3930,79 @@ impl App {
 
     // ─── Pipeline tab key handling ───
 
+    /// Keys while the algorithm-selection modal is open: ↑↓/jk move, Enter/Space confirm, Esc/q cancel.
+    fn handle_algo_modal_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Up | KeyCode::Char('k') => {
+                if let Some(m) = self.algo_modal.as_mut() {
+                    m.cursor = m.cursor.saturating_sub(1);
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if let Some(m) = self.algo_modal.as_mut() {
+                    if m.cursor + 1 < m.options.len() {
+                        m.cursor += 1;
+                    }
+                }
+            }
+            KeyCode::Enter | KeyCode::Char(' ') => {
+                if let Some(m) = self.algo_modal.take() {
+                    self.apply_algo_modal(m);
+                }
+            }
+            KeyCode::Esc | KeyCode::Char('q') => self.algo_modal = None,
+            _ => {}
+        }
+    }
+
+    /// Apply a confirmed [`AlgoModal`] selection to whatever it targets.
+    fn apply_algo_modal(&mut self, m: AlgoModal) {
+        match m.target {
+            AlgoModalTarget::PipelineSelect(field) => {
+                self.pipeline_state.set_select(&field, m.cursor);
+                // Keep focus on the selector row (its value changed; rows below may differ).
+                self.pipeline_state.restore_focus(&Some(field));
+            }
+            AlgoModalTarget::MaskInput(section) => {
+                self.pipeline_state.set_mask_input(section, m.cursor);
+            }
+            AlgoModalTarget::MaskGenerator(section) => {
+                self.pipeline_state.set_mask_generator(section, m.cursor);
+            }
+            AlgoModalTarget::InputMode => self.set_input_mode(m.cursor),
+            AlgoModalTarget::TabSelect { tab, field } => {
+                self.active_tab = tab;
+                self.active_field = field;
+                self.set_select_value(m.cursor);
+            }
+        }
+    }
+
+    /// Set the Input-tab mode by index (BIDS / NIfTI / DICOM).
+    fn set_input_mode(&mut self, idx: usize) {
+        const MODES: [InputMode; 3] = [InputMode::Bids, InputMode::NIfTI, InputMode::DicomToBids];
+        if let Some(&m) = MODES.get(idx) {
+            self.input_mode = m;
+            self.form_scroll_offset = 0;
+        }
+    }
+
+    /// Select the pipeline row set (QSM vs Separation) from the active tab. When the mode
+    /// actually changes — i.e. the user switched between the QSM and Separation tabs — reset
+    /// focus to the first selectable row so we never land on an out-of-range (invisible) row.
+    /// Called from both key handling and rendering so the display is always consistent.
+    pub fn sync_pipeline_mode(&mut self) {
+        let new_mode = if self.active_tab == TAB_SEPARATION {
+            PipelineTabMode::Separation
+        } else {
+            PipelineTabMode::Qsm
+        };
+        if new_mode != self.pipeline_state.mode {
+            self.pipeline_state.mode = new_mode;
+            self.pipeline_state.focus = 0;
+        }
+    }
+
     fn handle_pipeline_key(&mut self, key: KeyEvent) {
         let ps = &mut self.pipeline_state;
 
@@ -3998,6 +4161,54 @@ impl App {
 
             // Interact
             KeyCode::Enter | KeyCode::Char(' ') => {
+                // Single-choice selectors open a modal listing every option (rather than cycling).
+                let modal = {
+                    let ps = &self.pipeline_state;
+                    let rows = ps.visible_rows();
+                    let focus_idx = ps.focusable_rows().get(ps.focus).copied().unwrap_or(0);
+                    match rows.get(focus_idx) {
+                        Some(PipelineRow::AlgoSelect { label, field, options, help }) => Some(AlgoModal {
+                            target: AlgoModalTarget::PipelineSelect(field.to_string()),
+                            title: label.to_string(),
+                            options: options.iter().map(|s| s.to_string()).collect(),
+                            help: help.iter().map(|s| s.to_string()).collect(),
+                            cursor: ps.get_select(field),
+                        }),
+                        Some(PipelineRow::MaskOpInput { section }) => Some(AlgoModal {
+                            target: AlgoModalTarget::MaskInput(*section),
+                            title: "Masking Input".to_string(),
+                            options: PipelineFormState::MASK_INPUT_SOURCES.iter().map(|s| format!("{}", s)).collect(),
+                            help: vec![
+                                "First-echo magnitude".to_string(),
+                                "Magnitude (single- or combined-echo)".to_string(),
+                                "Last-echo magnitude".to_string(),
+                                "Phase-quality map".to_string(),
+                            ],
+                            cursor: ps.mask_input_index(*section),
+                        }),
+                        Some(PipelineRow::MaskOpGenerator { section }) => {
+                            let is_threshold = matches!(
+                                ps.mask_sections.get(*section).map(|s| &s.generator),
+                                Some(crate::pipeline::config::MaskOp::Threshold { .. })
+                            );
+                            Some(AlgoModal {
+                                target: AlgoModalTarget::MaskGenerator(*section),
+                                title: "Mask Algorithm".to_string(),
+                                options: vec!["threshold".to_string(), "bet".to_string()],
+                                help: vec![
+                                    "Intensity threshold-based masking".to_string(),
+                                    "FSL BET brain extraction".to_string(),
+                                ],
+                                cursor: if is_threshold { 0 } else { 1 },
+                            })
+                        }
+                        _ => None,
+                    }
+                };
+                if let Some(m) = modal {
+                    self.algo_modal = Some(m);
+                    return;
+                }
                 let ps = &mut self.pipeline_state;
                 let focused_field = ps.focused_field_name();
                 let rows = ps.visible_rows();
@@ -4005,6 +4216,7 @@ impl App {
                 let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
                 match rows.get(focus_idx).cloned() {
                     Some(PipelineRow::AlgoSelect { field, options, .. }) => {
+                        // (Unreached — handled by the modal above; kept for exhaustiveness.)
                         let cur = ps.get_select(field);
                         ps.set_select(field, (cur + 1) % options.len());
                         ps.restore_focus(&focused_field);
@@ -4195,16 +4407,24 @@ impl App {
     }
 
     fn interact_field(&mut self) {
-        match &self.current_field().kind {
+        match self.current_field().kind.clone() {
             FieldKind::Text => {
                 self.editing = true;
                 self.cursor_pos = self.text_value().len();
             }
             FieldKind::Checkbox => self.toggle_checkbox(),
             FieldKind::Select { options } => {
-                let n = options.len();
-                let val = self.select_value();
-                self.set_select_value((val + 1) % n);
+                // Open a modal listing all options rather than cycling by one.
+                let field = self.current_field();
+                let (title, help) = (field.label.to_string(), field.help.to_string());
+                let opts: Vec<String> = options.iter().map(|s| s.to_string()).collect();
+                self.algo_modal = Some(AlgoModal {
+                    target: AlgoModalTarget::TabSelect { tab: self.active_tab, field: self.active_field },
+                    title,
+                    help: vec![help; opts.len()],
+                    options: opts,
+                    cursor: self.select_value(),
+                });
             }
         }
     }
@@ -4418,6 +4638,113 @@ mod tests {
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
+    }
+
+    #[test]
+    fn test_algo_modal_opens_on_enter_over_algoselect() {
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.pipeline_state.mode = PipelineTabMode::Qsm;
+        // The QSM tab's first focusable row is the "Compute QSM" toggle; move to the inversion
+        // AlgoSelect and open it.
+        let opened = (0..40).any(|_| {
+            app.handle_key(key(KeyCode::Enter)); // opens modal iff focused row is an AlgoSelect
+            if app.algo_modal.is_some() { return true; }
+            app.handle_key(key(KeyCode::Down));
+            false
+        });
+        assert!(opened, "expected to open an AlgoSelect modal while navigating the QSM tab");
+        assert!(!app.algo_modal.as_ref().unwrap().options.is_empty());
+    }
+
+    #[test]
+    fn test_algo_modal_selects_option() {
+        let mut app = App::new();
+        app.algo_modal = Some(AlgoModal {
+            target: AlgoModalTarget::PipelineSelect("qsm_algorithm".to_string()),
+            title: "QSM Inversion".to_string(),
+            options: QSM_ALGO_OPTIONS.iter().map(|s| s.to_string()).collect(),
+            help: vec![String::new(); QSM_ALGO_OPTIONS.len()],
+            cursor: 0,
+        });
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.algo_modal.as_ref().unwrap().cursor, 2);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.algo_modal.is_none());
+        assert_eq!(app.pipeline_state.get_select("qsm_algorithm"), 2);
+    }
+
+    #[test]
+    fn test_algo_modal_cancel_leaves_value() {
+        let mut app = App::new();
+        let before = app.pipeline_state.get_select("qsm_algorithm");
+        app.algo_modal = Some(AlgoModal {
+            target: AlgoModalTarget::PipelineSelect("qsm_algorithm".to_string()),
+            title: "QSM Inversion".to_string(),
+            options: vec!["a".to_string(), "b".to_string()],
+            help: vec![String::new(), String::new()],
+            cursor: 1,
+        });
+        app.handle_key(key(KeyCode::Esc));
+        assert!(app.algo_modal.is_none());
+        assert_eq!(app.pipeline_state.get_select("qsm_algorithm"), before);
+    }
+
+    #[test]
+    fn test_mask_input_modal_opens_and_sets() {
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.sync_pipeline_mode();
+        // Focus the mask Input row.
+        let rows = app.pipeline_state.visible_rows();
+        let target = app.pipeline_state.focusable_rows().iter().position(|&ri| {
+            matches!(rows.get(ri), Some(PipelineRow::MaskOpInput { .. }))
+        }).expect("MaskOpInput row not focusable");
+        app.pipeline_state.focus = target;
+        app.handle_key(key(KeyCode::Enter));
+        let modal = app.algo_modal.as_ref().expect("modal should open over mask Input");
+        assert!(matches!(modal.target, AlgoModalTarget::MaskInput(_)));
+        assert_eq!(modal.options.len(), 4);
+        // Pick the last option (phase-quality) and confirm.
+        while app.algo_modal.as_ref().unwrap().cursor < 3 {
+            app.handle_key(key(KeyCode::Down));
+        }
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.algo_modal.is_none());
+        assert_eq!(
+            app.pipeline_state.mask_sections[0].input,
+            crate::pipeline::config::MaskingInput::PhaseQuality
+        );
+    }
+
+    #[test]
+    fn test_input_mode_modal_opens_and_sets() {
+        let mut app = App::new();
+        app.active_tab = TAB_INPUT;
+        app.active_field = 0;
+        app.handle_key(key(KeyCode::Enter));
+        let modal = app.algo_modal.as_ref().expect("modal should open over Input Mode");
+        assert!(matches!(modal.target, AlgoModalTarget::InputMode));
+        assert_eq!(modal.options.len(), 3);
+        app.handle_key(key(KeyCode::Down)); // NIfTI
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.algo_modal.is_none());
+        assert_eq!(app.input_mode, InputMode::NIfTI);
+    }
+
+    #[test]
+    fn test_execution_mode_modal_opens_and_sets() {
+        let mut app = App::new();
+        app.active_tab = TAB_EXECUTION;
+        app.active_field = 0; // Execution Mode select
+        app.handle_key(key(KeyCode::Enter));
+        let modal = app.algo_modal.as_ref().expect("modal should open over Execution Mode");
+        assert!(matches!(modal.target, AlgoModalTarget::TabSelect { .. }));
+        app.handle_key(key(KeyCode::Down)); // SLURM
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.algo_modal.is_none());
+        assert_eq!(app.form.execution_mode, 1);
     }
 
     // --- App::new ---
@@ -5310,6 +5637,24 @@ mod tests {
     }
 
     #[test]
+    fn test_switch_to_separation_resets_focus_to_first_row() {
+        let mut app = App::new();
+        // Sit deep in the QSM tab, past the number of rows Separation will have.
+        app.active_tab = TAB_QSM;
+        app.sync_pipeline_mode();
+        let qsm_max = app.pipeline_state.focusable_rows().len().saturating_sub(1);
+        app.pipeline_state.focus = qsm_max;
+        // Switch to Separation; mode changes, so focus must reset to the first selectable row.
+        app.active_tab = TAB_SEPARATION;
+        app.sync_pipeline_mode();
+        assert_eq!(app.pipeline_state.mode, PipelineTabMode::Separation);
+        assert_eq!(app.pipeline_state.focus, 0);
+        // And it must be in range for the Separation row set.
+        let sep_len = app.pipeline_state.focusable_rows().len();
+        assert!(app.pipeline_state.focus < sep_len.max(1));
+    }
+
+    #[test]
     fn test_pipeline_left_right_algo_select() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
@@ -5334,7 +5679,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pipeline_enter_cycles_algo_select() {
+    fn test_pipeline_enter_opens_algo_modal_and_left_right_cycles() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
         // Navigate to unwrapping_algorithm AlgoSelect
@@ -5350,11 +5695,24 @@ mod tests {
         let fi = uw_focus.expect("unwrapping_algorithm row not found");
         app.pipeline_state.focus = fi;
         assert_eq!(app.pipeline_state.unwrapping_algorithm, 0); // romeo
+
+        // Enter opens the selection modal for this field (does not cycle).
         app.handle_key(key(KeyCode::Enter));
+        assert!(matches!(
+            app.algo_modal.as_ref().unwrap().target,
+            AlgoModalTarget::PipelineSelect(ref f) if f == "unwrapping_algorithm"
+        ));
+        assert_eq!(app.pipeline_state.unwrapping_algorithm, 0); // still unchanged
+        // Pick the next option (laplacian) and confirm.
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.algo_modal.is_none());
         assert_eq!(app.pipeline_state.unwrapping_algorithm, 1); // laplacian
-        // Wrap around
-        app.handle_key(key(KeyCode::Enter));
-        assert_eq!(app.pipeline_state.unwrapping_algorithm, 0); // romeo
+
+        // Focus is restored to the selector after confirming; Left still cycles inline (no modal).
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.pipeline_state.unwrapping_algorithm, 0);
+        assert!(app.algo_modal.is_none());
     }
 
     #[test]
@@ -5660,13 +6018,19 @@ mod tests {
     }
 
     #[test]
-    fn test_execution_mode_enter_cycles() {
+    fn test_execution_mode_enter_opens_modal() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
         app.active_field = 0;
+        // Enter opens the modal (rather than cycling); selecting SLURM applies it.
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.algo_modal.is_some());
+        app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.form.execution_mode, 1); // SLURM
-        app.handle_key(key(KeyCode::Char(' ')));
+        // Left/Right still cycle the select inline without opening the modal.
+        app.handle_key(key(KeyCode::Left));
+        assert!(app.algo_modal.is_none());
         assert_eq!(app.form.execution_mode, 0); // Local
     }
 
@@ -6388,13 +6752,21 @@ mod tests {
     }
 
     #[test]
-    fn test_enter_on_io_mode_toggles() {
+    fn test_enter_on_io_mode_opens_modal() {
         let mut app = App::new();
         app.active_tab = TAB_INPUT;
         app.active_field = 0;
         assert_eq!(app.input_mode, InputMode::Bids);
+        // Enter opens the input-mode modal; picking NIfTI applies it.
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.algo_modal.is_some());
+        app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Enter));
         assert_eq!(app.input_mode, InputMode::NIfTI);
+        // Left/Right still cycles inline without the modal.
+        app.handle_key(key(KeyCode::Left));
+        assert!(app.algo_modal.is_none());
+        assert_eq!(app.input_mode, InputMode::Bids);
     }
 
     // ========== try_run validation tests ==========
