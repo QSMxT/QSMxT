@@ -140,6 +140,7 @@ fn iter_progress_bar(run_key: &str, step_name: &str) -> (Box<dyn FnMut(usize, us
 
 /// Create a byte-oriented progress bar for weight downloads, in the same visual style as
 /// [`create_progress_bar`] (spinner + `━╸─` bar) but showing size + transfer rate.
+#[cfg(feature = "dl")]
 fn create_download_bar(label: &str, total: u64) -> ProgressBar {
     let pb = MULTI_PROGRESS.add(ProgressBar::new(total));
     pb.set_style(
@@ -159,6 +160,7 @@ fn create_download_bar(label: &str, total: u64) -> ProgressBar {
 /// `label` prefixes the bar (the pipeline passes the run key; standalone commands pass the
 /// algorithm name). Shared by the pipeline runner and the standalone `invert`/`bgremove`/
 /// `separate` commands.
+#[cfg(feature = "dl")]
 pub fn prefetch_weights(model_id: &str, label: &str) -> crate::Result<()> {
     use std::cell::RefCell;
     use std::collections::HashMap;
@@ -183,6 +185,22 @@ pub fn prefetch_weights(model_id: &str, label: &str) -> crate::Result<()> {
         bar.finish_and_clear();
     }
     res.map_err(|e| QsmxtError::Config(format!("weight download ({}): {}", model_id, e)))
+}
+
+/// Build without the `dl` feature (e.g. the Windows/ARM64 binary): there is no ONNX
+/// inference or weight download. A classical algorithm (not a registry model) is a no-op;
+/// selecting a deep-learning algorithm fails here with a clear, actionable message instead
+/// of a confusing lower-level error.
+#[cfg(not(feature = "dl"))]
+pub fn prefetch_weights(model_id: &str, _label: &str) -> crate::Result<()> {
+    if qsm_core::models::find_model(model_id).is_some() {
+        return Err(QsmxtError::Config(format!(
+            "'{model_id}' is a deep-learning algorithm, which this build of qsmxt does not \
+             include (compiled without the 'dl' feature — e.g. the Windows/ARM64 binary). \
+             Pick a classical algorithm, or install a qsmxt build with deep-learning support.",
+        )));
+    }
+    Ok(())
 }
 
 /// Log step completion with timing.
@@ -1518,13 +1536,25 @@ mod tests {
 
     #[test]
     fn test_prefetch_weights_noop_and_download_bar() {
-        // Classical algorithm ids aren't registry models → prefetch is a no-op, no network.
+        // Classical algorithm ids aren't registry models → prefetch is a no-op (in both the
+        // `dl` and non-`dl` builds), no network.
         assert!(super::prefetch_weights("rts", "test").is_ok());
         assert!(super::prefetch_weights("vsharp", "test").is_ok());
-        // The download bar renders without touching the network.
-        let pb = super::create_download_bar("test ↓ x.onnx", 1000);
-        pb.set_position(500);
-        pb.finish_and_clear();
+        // The download bar renders without touching the network (only exists in `dl` builds).
+        #[cfg(feature = "dl")]
+        {
+            let pb = super::create_download_bar("test ↓ x.onnx", 1000);
+            pb.set_position(500);
+            pb.finish_and_clear();
+        }
+    }
+
+    #[cfg(not(feature = "dl"))]
+    #[test]
+    fn test_prefetch_weights_errors_for_dl_without_dl_feature() {
+        // Selecting a DL model in a non-DL build must fail with a clear message.
+        let err = super::prefetch_weights("qsmnet", "test").unwrap_err();
+        assert!(format!("{}", err).contains("deep-learning"), "got: {}", err);
     }
 
     #[test]
