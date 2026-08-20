@@ -2550,6 +2550,36 @@ impl PipelineFormState {
         }
     }
 
+    /// Ordered threshold methods, matching the modal/cycle option order.
+    pub const MASK_THRESHOLD_METHODS: [crate::pipeline::config::MaskThresholdMethod; 3] = {
+        use crate::pipeline::config::MaskThresholdMethod::*;
+        [Otsu, Fixed, Percentile]
+    };
+
+    /// Current threshold-method index for a section (0 if the generator isn't a threshold).
+    pub fn mask_threshold_method_index(&self, section: usize) -> usize {
+        use crate::pipeline::config::MaskOp;
+        match self.mask_sections.get(section).map(|s| &s.generator) {
+            Some(MaskOp::Threshold { method, .. }) => {
+                Self::MASK_THRESHOLD_METHODS.iter().position(|m| m == method).unwrap_or(0)
+            }
+            _ => 0,
+        }
+    }
+
+    /// Set a section's threshold method by index (from the modal). No-op unless the
+    /// generator is a threshold; the existing threshold value is preserved.
+    pub fn set_mask_threshold_method(&mut self, section: usize, idx: usize) {
+        use crate::pipeline::config::MaskOp;
+        if section >= self.mask_sections.len() { return; }
+        if let (MaskOp::Threshold { method, .. }, Some(&new_method)) =
+            (&mut self.mask_sections[section].generator, Self::MASK_THRESHOLD_METHODS.get(idx))
+        {
+            *method = new_method;
+            self.mark_mask_custom();
+        }
+    }
+
     /// Adjust the input source of a mask section with left/right.
     pub fn adjust_mask_input(&mut self, section: usize, delta: isize) {
         use crate::pipeline::config::MaskingInput;
@@ -2660,6 +2690,8 @@ pub enum AlgoModalTarget {
     MaskInput(usize),
     /// The generator algorithm (threshold vs BET) of a mask section.
     MaskGenerator(usize),
+    /// The threshold method (otsu / fixed / percentile) of a mask section's generator.
+    MaskThresholdMethod(usize),
     /// The Input-tab mode selector (BIDS / NIfTI / DICOM).
     InputMode,
     /// A generic `tab_fields` Select at the given (tab, field) — e.g. Execution Mode, SWI Scaling.
@@ -3969,6 +4001,9 @@ impl App {
             AlgoModalTarget::MaskGenerator(section) => {
                 self.pipeline_state.set_mask_generator(section, m.cursor);
             }
+            AlgoModalTarget::MaskThresholdMethod(section) => {
+                self.pipeline_state.set_mask_threshold_method(section, m.cursor);
+            }
             AlgoModalTarget::InputMode => self.set_input_mode(m.cursor),
             AlgoModalTarget::TabSelect { tab, field } => {
                 self.active_tab = tab;
@@ -4200,6 +4235,26 @@ impl App {
                                     "FSL BET brain extraction".to_string(),
                                 ],
                                 cursor: if is_threshold { 0 } else { 1 },
+                            })
+                        }
+                        // Threshold method is a discrete select → modal. (BET frac. intensity is a
+                        // numeric slider, so it keeps left/right and opens no modal.)
+                        Some(PipelineRow::MaskOpGeneratorParam { section })
+                            if matches!(
+                                ps.mask_sections.get(*section).map(|s| &s.generator),
+                                Some(crate::pipeline::config::MaskOp::Threshold { .. })
+                            ) =>
+                        {
+                            Some(AlgoModal {
+                                target: AlgoModalTarget::MaskThresholdMethod(*section),
+                                title: "Threshold Method".to_string(),
+                                options: vec!["otsu".to_string(), "fixed".to_string(), "percentile".to_string()],
+                                help: vec![
+                                    "Otsu automatic threshold".to_string(),
+                                    "Fixed intensity threshold".to_string(),
+                                    "Percentile-based threshold".to_string(),
+                                ],
+                                cursor: ps.mask_threshold_method_index(*section),
                             })
                         }
                         _ => None,
@@ -6967,6 +7022,55 @@ mod tests {
         assert_eq!(app.pipeline_state.mask_preset, 0); // robust threshold
         app.handle_key(key(KeyCode::Right));
         assert_eq!(app.pipeline_state.mask_preset, 1); // BET
+    }
+
+    #[test]
+    fn test_mask_threshold_method_modal_opens_and_sets() {
+        use crate::pipeline::config::{MaskOp, MaskThresholdMethod};
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.sync_pipeline_mode();
+        // Default preset is a threshold generator, so the param row is the method select.
+        assert!(matches!(
+            app.pipeline_state.mask_sections[0].generator,
+            MaskOp::Threshold { method: MaskThresholdMethod::Otsu, .. }
+        ));
+        let rows = app.pipeline_state.visible_rows();
+        let target = app.pipeline_state.focusable_rows().iter().position(|&ri| {
+            matches!(rows.get(ri), Some(PipelineRow::MaskOpGeneratorParam { .. }))
+        }).expect("MaskOpGeneratorParam row not focusable");
+        app.pipeline_state.focus = target;
+        app.handle_key(key(KeyCode::Enter));
+        let modal = app.algo_modal.as_ref().expect("modal should open over threshold Method");
+        assert!(matches!(modal.target, AlgoModalTarget::MaskThresholdMethod(_)));
+        assert_eq!(modal.options.len(), 3);
+        // Pick "percentile" (index 2) and confirm.
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.algo_modal.is_none());
+        assert!(matches!(
+            app.pipeline_state.mask_sections[0].generator,
+            MaskOp::Threshold { method: MaskThresholdMethod::Percentile, .. }
+        ));
+    }
+
+    #[test]
+    fn test_mask_bet_frac_intensity_opens_no_modal() {
+        use crate::pipeline::config::MaskOp;
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.sync_pipeline_mode();
+        // Switch the generator to BET so the param row is a numeric frac-intensity slider.
+        app.pipeline_state.mask_sections[0].generator = MaskOp::Bet { fractional_intensity: 0.5 };
+        let rows = app.pipeline_state.visible_rows();
+        let target = app.pipeline_state.focusable_rows().iter().position(|&ri| {
+            matches!(rows.get(ri), Some(PipelineRow::MaskOpGeneratorParam { .. }))
+        }).expect("MaskOpGeneratorParam row not focusable");
+        app.pipeline_state.focus = target;
+        app.handle_key(key(KeyCode::Enter));
+        // BET frac. intensity is a slider, not a discrete select — no modal.
+        assert!(app.algo_modal.is_none());
     }
 
     #[test]
