@@ -282,6 +282,26 @@ mod tests {
     }
 
     #[test]
+    fn test_dl_algorithms_estimate_memory() {
+        use crate::pipeline::config::BfAlgorithm;
+        for a in [
+            QsmAlgorithm::Xqsm, QsmAlgorithm::Qsmnet, QsmAlgorithm::QsmnetPlus,
+            QsmAlgorithm::Autoqsm, QsmAlgorithm::Qsmgan, QsmAlgorithm::Ir2qsm,
+            QsmAlgorithm::Lpcnn, QsmAlgorithm::ModlQsm, QsmAlgorithm::Nextqsm,
+            QsmAlgorithm::Iqsm, QsmAlgorithm::IqsmPlus,
+        ] {
+            let mut c = default_config();
+            c.inversion.algorithm = a;
+            assert!(estimate_peak_memory_bytes(8, 8, 8, 1, false, &c) > 0, "{:?}", a);
+        }
+        for b in [BfAlgorithm::Bfrnet, BfAlgorithm::Iqfm] {
+            let mut c = default_config();
+            c.bg_removal.algorithm = b;
+            assert!(estimate_peak_memory_bytes(8, 8, 8, 1, false, &c) > 0, "{:?}", b);
+        }
+    }
+
+    #[test]
     fn test_more_echoes_more_memory() {
         let config = default_config();
         let est_1 = estimate_peak_memory_bytes(128, 128, 128, 1, true, &config);

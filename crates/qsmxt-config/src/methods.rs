@@ -858,11 +858,28 @@ mod tests {
             (BfAlgorithm::Iharperella, "iHARPERELLA"),
             (BfAlgorithm::Bfrnet, "BFRnet"),
             (BfAlgorithm::Iqfm, "iQFM"),
+            (BfAlgorithm::Iqfm, "Gao et al., 2022"),
         ] {
             let mut c = PipelineConfig::default();
             c.bg_removal.algorithm = alg;
             let out = generate_methods(&c);
             assert!(out.contains(expected), "missing {} for {:?}", expected, alg);
+        }
+    }
+
+    #[test]
+    fn test_dl_separation_methods() {
+        for (alg, needle, cite) in [
+            (SeparationAlgorithm::SusepNet, "SUSEP-Net", "Li et al., 2025"),
+            (SeparationAlgorithm::ChiSepNet, "χ-sepnet", "Kim et al."),
+        ] {
+            let mut config = PipelineConfig::default();
+            config.pipeline.do_chi_separation = true;
+            config.separation.algorithm = alg;
+            let out = generate_methods(&config);
+            assert!(out.contains("susceptibility source separation"), "{:?}: {}", alg, out);
+            assert!(out.contains(needle), "missing {} for {:?}: {}", needle, alg, out);
+            assert!(out.contains(cite), "missing citation for {:?}: {}", alg, out);
         }
     }
 

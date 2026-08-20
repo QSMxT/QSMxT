@@ -1517,6 +1517,17 @@ mod tests {
     use qsm_core::pipeline::config::QsmReference as CoreRef;
 
     #[test]
+    fn test_prefetch_weights_noop_and_download_bar() {
+        // Classical algorithm ids aren't registry models → prefetch is a no-op, no network.
+        assert!(super::prefetch_weights("rts", "test").is_ok());
+        assert!(super::prefetch_weights("vsharp", "test").is_ok());
+        // The download bar renders without touching the network.
+        let pb = super::create_download_bar("test ↓ x.onnx", 1000);
+        pb.set_position(500);
+        pb.finish_and_clear();
+    }
+
+    #[test]
     fn test_find_custom_mask() {
         use crate::bids::discovery::{EchoFiles, QsmRun};
         use crate::bids::entities::AcquisitionKey;

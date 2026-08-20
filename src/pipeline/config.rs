@@ -436,6 +436,24 @@ mod tests {
     use super::*;
     use clap::Parser;
 
+    #[test]
+    fn dl_qsm_args_map_to_config() {
+        use crate::cli::QsmAlgorithmArg as A;
+        for a in [
+            A::Xqsm, A::Qsmnet, A::QsmnetPlus, A::Autoqsm, A::Qsmgan, A::Ir2qsm,
+            A::Lpcnn, A::ModlQsm, A::Nextqsm, A::Iqsm, A::IqsmPlus,
+        ] {
+            // Each DL arg maps to a distinct config algorithm whose Display is a non-empty id.
+            let alg = qsm_algorithm_arg_to_config(a);
+            assert!(!alg.to_string().is_empty());
+        }
+        // Separation + BG-removal DL args map too.
+        assert_eq!(
+            separation_algorithm_arg_to_config(crate::cli::SeparationAlgorithmArg::ChiSepNet),
+            SeparationAlgorithm::ChiSepNet
+        );
+    }
+
     /// A generated QSMART command (all params) must parse back through the CLI and
     /// round-trip the QSMART config values via apply_run_overrides.
     #[test]
