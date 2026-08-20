@@ -256,6 +256,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             let c = &args.common;
             let (qsm, mask, metadata, _) = load_common(c, &[])?;
             info!("Chi-separation (susep-net, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+            crate::pipeline::runner::prefetch_weights("susep-net", "susep-net")?;
             let local_field = load_nifti(&args.local_field)?;
             let r2prime = load_nifti(&args.r2prime)?;
             // SUSEP-Net has no user-tunable parameters; weights download on first use.
@@ -276,6 +277,7 @@ pub fn execute(cmd: SeparateCommand) -> crate::Result<()> {
             let c = &args.common;
             let (qsm, mask, metadata, _) = load_common(c, &[])?;
             info!("Chi-separation (chi-sepnet, {}x{}x{})", qsm.dims.0, qsm.dims.1, qsm.dims.2);
+            crate::pipeline::runner::prefetch_weights("chi-sepnet", "chi-sepnet")?;
             let local_field = load_nifti(&args.local_field)?;
             let r2prime = load_nifti(&args.r2prime)?;
             // χ-sepnet has no user-tunable parameters; weights download on first use.
