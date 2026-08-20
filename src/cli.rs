@@ -958,7 +958,9 @@ pub struct RunArgs {
     pub source_dicom: Option<PathBuf>,
 
     /// Restrict DICOM export to these maps (default: all produced). Values:
-    /// chimap, swi, minip, t2starmap, r2starmap (used with --export-dicom)
+    /// chimap, swi, minip, t2starmap, r2starmap, r2map, r2primemap,
+    /// desc-paramagnetic_chimap, desc-diamagnetic_chimap, desc-total_chimap
+    /// (used with --export-dicom)
     #[arg(long, num_args = 1.., value_delimiter = ',')]
     pub dicom_outputs: Option<Vec<String>>,
 

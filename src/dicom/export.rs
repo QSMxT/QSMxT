@@ -45,10 +45,18 @@ pub struct DicomExportOptions<'a> {
     pub export_t2star: bool,
     /// Export the R2* map if present.
     pub export_r2star: bool,
+    /// Export the R2 map (from MESE) if present.
+    pub export_r2: bool,
+    /// Export the R2' map if present.
+    pub export_r2prime: bool,
+    /// Export the chi-separation maps (paramagnetic / diamagnetic / total) if present.
+    pub export_chisep: bool,
     /// Optional source DICOM directory to inherit patient/study identity from.
     pub source_dicom: Option<&'a Path>,
     /// Optional subset of map suffixes to export (case-insensitive tokens like
-    /// `chimap`, `swi`, `minip`, `t2starmap`, `r2starmap`). `None` = all produced.
+    /// `chimap`, `swi`, `minip`, `t2starmap`, `r2starmap`, `r2map`, `r2primemap`,
+    /// `desc-paramagnetic_chimap`, `desc-diamagnetic_chimap`, `desc-total_chimap`).
+    /// `None` = all produced.
     pub outputs_filter: Option<&'a [String]>,
 }
 
@@ -110,6 +118,17 @@ pub fn export_run_dicoms(
     }
     if opts.export_r2star {
         maps.push(MapExport { suffix: "R2starmap", path: output.r2star_path(key), description: "QSMxT R2* map".to_string() });
+    }
+    if opts.export_r2 {
+        maps.push(MapExport { suffix: "R2map", path: output.r2_path(key), description: "QSMxT R2 map".to_string() });
+    }
+    if opts.export_r2prime {
+        maps.push(MapExport { suffix: "R2primemap", path: output.r2prime_path(key), description: "QSMxT R2' map".to_string() });
+    }
+    if opts.export_chisep {
+        maps.push(MapExport { suffix: "desc-paramagnetic_Chimap", path: output.chi_para_path(key), description: "QSMxT paramagnetic chi".to_string() });
+        maps.push(MapExport { suffix: "desc-diamagnetic_Chimap", path: output.chi_dia_path(key), description: "QSMxT diamagnetic chi".to_string() });
+        maps.push(MapExport { suffix: "desc-total_Chimap", path: output.chi_sep_total_path(key), description: "QSMxT total chi".to_string() });
     }
 
     // Apply the optional output subset filter.
@@ -552,6 +571,11 @@ fn series_number_for(suffix: &str) -> i32 {
         "minIP" => 3,
         "T2starmap" => 4,
         "R2starmap" => 5,
+        "R2map" => 6,
+        "R2primemap" => 7,
+        "desc-paramagnetic_Chimap" => 8,
+        "desc-diamagnetic_Chimap" => 9,
+        "desc-total_Chimap" => 10,
         _ => 99,
     }
 }
@@ -755,6 +779,96 @@ mod tests {
         assert!(suffix_selected("T2starmap", &filter));
         assert!(!suffix_selected("swi", &filter));
         assert!(!suffix_selected("R2starmap", &filter));
+    }
+
+    #[test]
+    fn test_series_numbers_unique_for_all_maps() {
+        // Every exportable suffix maps to a distinct, non-fallback series number.
+        let suffixes = [
+            "Chimap", "swi", "minIP", "T2starmap", "R2starmap", "R2map", "R2primemap",
+            "desc-paramagnetic_Chimap", "desc-diamagnetic_Chimap", "desc-total_Chimap",
+        ];
+        let mut nums: Vec<i32> = suffixes.iter().map(|s| series_number_for(s)).collect();
+        assert!(nums.iter().all(|&n| n != 99), "a known suffix fell through to the fallback");
+        nums.sort();
+        nums.dedup();
+        assert_eq!(nums.len(), suffixes.len(), "series numbers must be unique");
+    }
+
+    #[test]
+    fn test_export_run_dicoms_covers_chisep_r2_r2prime() {
+        use crate::bids::entities::AcquisitionKey;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let output = DerivativeOutputs::new(tmp.path());
+        let key = AcquisitionKey {
+            subject: "01".to_string(),
+            session: None,
+            acquisition: None,
+            reconstruction: None,
+            inversion: None,
+            run: None,
+            suffix: "MEGRE".to_string(),
+        };
+
+        // Write a small volume to every final-map path the exporter should pick up.
+        let (nx, ny, nz) = (2usize, 2usize, 2usize);
+        let data: Vec<f64> = (0..nx * ny * nz).map(|i| i as f64 * 0.01).collect();
+        let affine = [
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let write = |p: std::path::PathBuf| {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            io::save_nifti_to_file(&p, &data, (nx, ny, nz), (1.0, 1.0, 1.0), &affine).unwrap();
+        };
+        write(output.qsm_path(&key));
+        write(output.r2star_path(&key));
+        write(output.r2_path(&key));
+        write(output.r2prime_path(&key));
+        write(output.chi_para_path(&key));
+        write(output.chi_dia_path(&key));
+        write(output.chi_sep_total_path(&key));
+
+        let run = crate::bids::discovery::QsmRun {
+            key: key.clone(),
+            echoes: vec![],
+            magnetic_field_strength: 3.0,
+            echo_times: vec![0.02],
+            b0_dir: (0.0, 0.0, 1.0),
+            dims: (nx, ny, nz),
+            has_magnitude: true,
+            mese: None,
+        };
+
+        let opts = DicomExportOptions {
+            export_swi: false,
+            export_t2star: false,
+            export_r2star: true,
+            export_r2: true,
+            export_r2prime: true,
+            export_chisep: true,
+            source_dicom: None,
+            outputs_filter: None,
+        };
+        export_run_dicoms(&run, &output, &opts).unwrap();
+
+        // Each enabled map produced its own DICOM series folder with nz slices.
+        for suffix in [
+            "Chimap", "R2starmap", "R2map", "R2primemap",
+            "desc-paramagnetic_Chimap", "desc-diamagnetic_Chimap", "desc-total_Chimap",
+        ] {
+            let dir = output.dicom_dir(&key, suffix);
+            assert!(dir.is_dir(), "missing DICOM dir for {suffix}");
+            let n = std::fs::read_dir(&dir)
+                .unwrap()
+                .filter_map(|e| e.ok())
+                .filter(|e| e.path().extension().is_some_and(|x| x == "dcm"))
+                .count();
+            assert_eq!(n, nz, "expected {nz} slices for {suffix}");
+        }
     }
 
     #[test]
