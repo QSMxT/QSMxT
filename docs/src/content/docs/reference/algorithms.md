@@ -52,27 +52,80 @@ Set with `--bf-algorithm`.
 
 ## Dipole inversion
 
-Set with `--qsm-algorithm`. Ten methods are available, spanning fast direct
-methods through to regularised iterative reconstructions.
+Set with `--qsm-algorithm`. Two families are available: classical/iterative
+reconstructions and deep-learning networks.
+
+### Classical & iterative
 
 | Value | Method |
 | --- | --- |
-| `rts` | Regularized Total Strength (default) |
-| `tv` | Total Variation (ADMM) |
-| `tkd` | Truncated K-space Division |
-| `tsvd` | Truncated Singular Value Decomposition |
-| `tgv` | Total Generalized Variation |
+| `rts` | RTS — Rapid Two-Step (default) |
+| `tv` | Total Variation (TV-ADMM) |
+| `tkd` | TKD — Thresholded K-space Division |
+| `tsvd` | TSVD — Truncated Singular Value Decomposition |
+| `tgv` | TGV — Total Generalized Variation |
 | `tikhonov` | Tikhonov regularization |
-| `nltv` | Nonlocal Total Variation |
-| `medi` | Morphology-Enabled Dipole Inversion |
-| `ilsqr` | Iterative Least-Squares QR |
+| `nltv` | NLTV — Nonlinear Total Variation |
+| `medi` | MEDI — Morphology-Enabled Dipole Inversion |
+| `tfi` | TFI — Total Field Inversion |
+| `ilsqr` | iLSQR |
 | `qsmart` | QSMART two-stage reconstruction |
+| `ndi` | NDI — Nonlinear Dipole Inversion |
+| `fansi` | FANSI — Nonlinear TV |
+| `fansi-tgv` | FANSI — Nonlinear TGV |
+| `l1qsm` | L1-QSM — L1 data fidelity |
+| `whqsm` | WH-QSM — Weak-Harmonic |
+| `hdqsm` | HD-QSM — Hybrid data fidelity |
+| `amp-pe` | AMP-PE — Approximate Message Passing with Parameter Estimation |
+
+### Deep learning
+
+| Value | Method | Tileable |
+| --- | --- | --- |
+| `xqsm` | xQSM | ✓ |
+| `qsmnet` | QSMnet | ✓ |
+| `qsmnet-plus` | QSMnet+ | ✓ |
+| `ir2qsm` | IR2QSM — unrolled | ✓ |
+| `lpcnn` | LPCNN — learned-proximal | ✓ |
+| `modl-qsm` | MoDL-QSM — model-based | ✓ |
+| `nextqsm` | NeXtQSM — single-step | ✓ |
+| `autoqsm` | AutoQSM — single-step (native patching) | |
+| `qsmgan` | QSMGAN — GAN-refined (native patching) | |
+| `iqsm` | iQSM — end-to-end from phase | |
+| `iqsm-plus` | iQSM+ — orientation-adaptive end-to-end | |
+
+Model weights are downloaded automatically on first use (and cached) from the
+QSMxT weight registry on [Hugging Face](https://huggingface.co/qsmxt/qsm-onnx-weights).
+Deep-learning support requires a build with the default `dl` feature; `iqsm`
+and `iqsm-plus` reconstruct susceptibility directly from phase, so they replace
+the background-removal + inversion stages rather than running after them.
 
 :::tip
 Not sure which to pick? The defaults (`threshold` → `romeo` → `vsharp` → `rts`)
 are a robust, fast starting point for human brain GRE data. Use the
 [TUI](/QSMxT/guides/running-interactively/) to experiment interactively.
 :::
+
+### Overlap-tiling for deep-learning inversion
+
+Deep-learning inversions can run **overlap-tiled** to bound peak memory: the
+volume is split into cubic patches (each a core plus a context halo), inferred
+independently, and stitched back together. This is opt-in and applies to the
+tileable networks above.
+
+| Flag | Meaning |
+| --- | --- |
+| `--tile-size <N>` | Output core size per patch, in voxels — **presence enables tiling** |
+| `--tile-halo <N>` | Context margin per side, in voxels (default 8) |
+
+```bash
+qsmxt run bids/ output/ --qsm-algorithm xqsm --tile-size 128 --tile-halo 8
+```
+
+Tiling is an approximation of the whole-volume network — results are close but
+not bit-identical. Omit `--tile-size` to run the network over the whole volume.
+The flags are ignored by classical algorithms and by the natively-patched
+networks (`autoqsm`, `qsmgan`).
 
 ## Per-algorithm parameters
 
