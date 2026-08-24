@@ -498,6 +498,15 @@ pub struct InversionConfig {
     pub whqsm: WhqsmConfig,
     pub hdqsm: HdqsmConfig,
     pub amp_pe: AmpPeConfig,
+    /// Overlap-tiling for deep-learning inversions (bounded memory). `tile_size` = the output core
+    /// per patch (voxels); its presence enables tiling. `tile_halo` = context margin per side
+    /// (voxels; a default is used when omitted). `None` = whole-volume (the default). Applies to
+    /// the DL nets that route through `run_dipole_inversion`; ignored by classical algorithms and
+    /// the natively-patch-based nets (autoqsm/qsmgan).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tile_size: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tile_halo: Option<usize>,
 }
 impl Default for InversionConfig {
     fn default() -> Self {
@@ -511,6 +520,7 @@ impl Default for InversionConfig {
             ndi: NdiConfig::default(), fansi: FansiConfig::default(),
             l1qsm: L1qsmConfig::default(), whqsm: WhqsmConfig::default(),
             hdqsm: HdqsmConfig::default(), amp_pe: AmpPeConfig::default(),
+            tile_size: None, tile_halo: None,
         }
     }
 }

@@ -279,11 +279,21 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             emit_f64(&mut parts, "--amp-pe-cvg-thd", a.cvg_thd, da.cvg_thd);
             emit_f64(&mut parts, "--amp-pe-tikhonov-beta", a.tikhonov_beta, da.tikhonov_beta);
         }
-        // Deep-learning inversions have no user-tunable parameters (weights + fixed graph).
-        QsmAlgorithm::Xqsm | QsmAlgorithm::Qsmnet
-        | QsmAlgorithm::QsmnetPlus | QsmAlgorithm::Autoqsm
-        | QsmAlgorithm::Qsmgan | QsmAlgorithm::Ir2qsm | QsmAlgorithm::Lpcnn
-        | QsmAlgorithm::ModlQsm | QsmAlgorithm::Nextqsm
+        // Deep-learning inversions have no per-net params (weights + fixed graph), but the
+        // tileable nets (routed through run_dipole_inversion) accept overlap-tiling options.
+        // Presence of `--tile-size` enables tiling; absence = whole-volume.
+        QsmAlgorithm::Xqsm | QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus
+        | QsmAlgorithm::Ir2qsm | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm
+        | QsmAlgorithm::Nextqsm => {
+            if let Some(sz) = config.inversion.tile_size {
+                parts.push(format!("--tile-size {}", sz));
+            }
+            if let Some(h) = config.inversion.tile_halo {
+                parts.push(format!("--tile-halo {}", h));
+            }
+        }
+        // Natively patch-based (autoqsm/qsmgan) and phase-input (iqsm/iqsm+) nets: no tiling opts.
+        QsmAlgorithm::Autoqsm | QsmAlgorithm::Qsmgan
         | QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {}
     }
 
@@ -415,6 +425,29 @@ mod tests {
         c.pipeline.do_chi_separation = true;
         c.separation.algorithm = SeparationAlgorithm::ChiSepNet;
         assert!(generate_command(&c).contains("--chisep chi-sepnet"));
+    }
+
+    #[test]
+    fn test_dl_tiling_command() {
+        use crate::enums::QsmAlgorithm;
+        // Off by default: no tiling flags for a DL algorithm.
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Xqsm;
+        let cmd = generate_command(&c);
+        assert!(!cmd.contains("--tile-size"), "got: {}", cmd);
+        assert!(!cmd.contains("--tile-halo"), "got: {}", cmd);
+        // Setting tile_size enables tiling; halo emitted only when set.
+        c.inversion.tile_size = Some(64);
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--tile-size 64"), "got: {}", cmd);
+        assert!(!cmd.contains("--tile-halo"), "got: {}", cmd);
+        c.inversion.tile_halo = Some(4);
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--tile-size 64") && cmd.contains("--tile-halo 4"), "got: {}", cmd);
+        // Native-patch nets ignore tiling options (no flags emitted).
+        c.inversion.algorithm = QsmAlgorithm::Autoqsm;
+        let cmd = generate_command(&c);
+        assert!(!cmd.contains("--tile-size"), "autoqsm should not emit tiling: {}", cmd);
     }
 
     #[test]

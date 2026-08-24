@@ -24,7 +24,9 @@ fn run_dl_inversion(
         field_strength,
         b0_direction: (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]),
     };
-    let config = qsm_core::pipeline::InversionConfig { algorithm, ..Default::default() };
+    // Opt-in overlap-tiling: presence of --tile-size enables it; halo defaults to 8.
+    let tile = c.tiling_params.tile_size.map(|core| (core, c.tiling_params.tile_halo.unwrap_or(8)));
+    let config = qsm_core::pipeline::InversionConfig { algorithm, tile, ..Default::default() };
     let chi = qsm_core::pipeline::run_dipole_inversion(
         &field_nifti.data, &mask, &metadata, &config, None, &mut |_, _| {},
     ).map_err(|e| crate::error::QsmxtError::Config(format!("{}: {}", name, e)))?;

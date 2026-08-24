@@ -206,6 +206,9 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         if let Some(v) = args.tgv_params.tgv_alpha0 { config.inversion.tgv.alpha0 = v; }
         if let Some(v) = args.tgv_params.tgv_step_size { config.inversion.tgv.step_size = v; }
         if let Some(v) = args.tgv_params.tgv_tol { config.inversion.tgv.tol = v; }
+        // Deep-learning overlap-tiling (opt-in): presence of --tile-size enables it.
+        if let Some(v) = args.tiling_params.tile_size { config.inversion.tile_size = Some(v); }
+        if let Some(v) = args.tiling_params.tile_halo { config.inversion.tile_halo = Some(v); }
         if let Some(v) = args.ndi_params.ndi_tau { config.inversion.ndi.tau = v; }
         if let Some(v) = args.ndi_params.ndi_alpha { config.inversion.ndi.alpha = v; }
         if let Some(v) = args.ndi_params.ndi_max_iter { config.inversion.ndi.max_iter = v; }

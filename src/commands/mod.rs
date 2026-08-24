@@ -82,6 +82,7 @@ mod integration_tests {
             msmv_params: Default::default(),
             romeo_params: Default::default(),
             swi_params: Default::default(),
+            tiling_params: Default::default(),
             n_procs: Some(1),
             homogeneity_sigma_mm: None,
             homogeneity_nbox: None,
@@ -131,6 +132,7 @@ mod integration_tests {
         InvertCommonArgs {
             input, mask, output,
             b0_direction: vec![0.0, 0.0, 1.0],
+            tiling_params: Default::default(),
         }
     }
 

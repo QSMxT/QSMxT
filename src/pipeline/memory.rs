@@ -136,6 +136,15 @@ fn estimate_standard_pipeline(n: usize, n_echoes: usize, config: &PipelineConfig
     // Dipole inversion
     // Input: local_field (8N) + eroded_mask (N) carry forward from bg stage
     let inv_carry = 9 * n;
+    // With overlap-tiling on, a DL net's activations are bounded by one patch, not the whole
+    // volume — use the padded patch voxel count for the tileable nets (never more than `n`).
+    let dl_voxels = match config.inversion.tile_size {
+        Some(core) => {
+            let halo = config.inversion.tile_halo.unwrap_or(8);
+            (core + 2 * halo).saturating_pow(3).min(n)
+        }
+        None => n,
+    };
     let inv_temp = match config.inversion.algorithm {
         // TKD: dipole kernel + inverse + complex field + output
         QsmAlgorithm::Tkd => 40 * n,
@@ -172,14 +181,17 @@ fn estimate_standard_pipeline(n: usize, n_echoes: usize, config: &PipelineConfig
         QsmAlgorithm::AmpPe => 260 * n,
         // Deep-learning inversions: ONNX U-Net activations dominate. QSMnet/QSMnet+ are the
         // heaviest (deeper 3D U-Net, /16 padding); xQSM/AutoQSM are lighter patch/octave nets.
-        QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus => 200 * n,
-        QsmAlgorithm::Xqsm | QsmAlgorithm::Autoqsm => 120 * n,
+        // `dl_voxels` == `n` unless tiling is enabled (then it's one patch); autoqsm/qsmgan patch
+        // natively (unaffected by the tiling flag) and iqsm/iqsm+ take a separate phase path.
+        QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus => 200 * dl_voxels,
+        QsmAlgorithm::Xqsm => 120 * dl_voxels,
+        QsmAlgorithm::Autoqsm => 120 * n,
         // Other DL nets: unrolled/patch/single-step U-Nets. NeXtQSM (two U-Nets + unroll)
         // and iQSM/iQSM+ (per-echo passes) are the heaviest; the rest are moderate.
-        QsmAlgorithm::Nextqsm => 220 * n,
+        QsmAlgorithm::Nextqsm => 220 * dl_voxels,
         QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => 200 * n,
-        QsmAlgorithm::Qsmgan | QsmAlgorithm::Ir2qsm
-        | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm => 140 * n,
+        QsmAlgorithm::Qsmgan => 140 * n,
+        QsmAlgorithm::Ir2qsm | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm => 140 * dl_voxels,
     };
 
     // Peak is the maximum across the three sequential stages
