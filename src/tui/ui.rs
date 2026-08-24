@@ -52,12 +52,24 @@ fn centered_rect(w: u16, h: u16, area: Rect) -> Rect {
 /// Pop-up list to choose one algorithm option, showing every option at once (scrolls if needed)
 /// plus the highlighted option's help.
 fn draw_algo_modal(f: &mut Frame, modal: &AlgoModal, area: Rect) {
-    // Width: fit the longest option/title; height: options + help + borders + hint.
+    // Cap the visible list rather than growing to fit every option — a long list (e.g. the 29 QSM
+    // algorithms) then scrolls (with a scrollbar) instead of overflowing the screen and pushing
+    // the tooltip/hotkey footer off the bottom. Reserve room for a 3-line wrapped tooltip + a
+    // 1-line footer, and go wide so those lines fit.
+    const MAX_LIST_ROWS: u16 = 14;
+    const HELP_ROWS: u16 = 3;
+    const FOOTER_ROWS: u16 = 1;
+    let chrome = 2 + HELP_ROWS + FOOTER_ROWS; // borders + tooltip + footer
+
     let content_w = modal.options.iter().map(|o| o.len()).max().unwrap_or(0)
         .max(modal.title.len()) as u16 + 8;
-    let width = content_w.clamp(30, 70).min(area.width.saturating_sub(4));
-    let list_h = (modal.options.len() as u16).min(area.height.saturating_sub(10)).max(1);
-    let height = list_h + 6; // borders(2) + help(2) + hint(1) + list
+    // Wide enough for the footer legend and long tooltips (which still wrap); clamp to screen.
+    let width = content_w.max(72).clamp(72, 100).min(area.width.saturating_sub(4)).max(30);
+    let list_h = (modal.options.len() as u16)
+        .min(MAX_LIST_ROWS)
+        .min(area.height.saturating_sub(chrome + 2)) // keep the whole modal on-screen
+        .max(1);
+    let height = (list_h + chrome).min(area.height.saturating_sub(2));
     let popup = centered_rect(width, height, area);
 
     f.render_widget(Clear, popup);
@@ -70,16 +82,51 @@ fn draw_algo_modal(f: &mut Frame, modal: &AlgoModal, area: Rect) {
 
     let parts = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(1), Constraint::Length(2), Constraint::Length(1)])
+        .constraints([
+            Constraint::Min(1),
+            Constraint::Length(HELP_ROWS),
+            Constraint::Length(FOOTER_ROWS),
+        ])
         .split(inner);
 
-    let items: Vec<ListItem> = modal.options.iter().map(|o| ListItem::new(o.clone())).collect();
+    // Colour deep-learning options distinctly so they read as a group (they are listed
+    // contiguously at the end of each algorithm modal).
+    let dl_color = Color::LightMagenta;
+    let has_dl = modal.options.iter().any(|o| is_deep_learning_algo(o));
+    let items: Vec<ListItem> = modal.options.iter().map(|o| {
+        let item = ListItem::new(o.clone());
+        if is_deep_learning_algo(o) { item.style(Style::default().fg(dl_color)) } else { item }
+    }).collect();
+
+    // Reserve a 1-column scrollbar gutter when the list overflows its viewport.
+    let needs_scroll = modal.options.len() > parts[0].height as usize;
+    let (list_area, sb_area) = if needs_scroll {
+        let cols = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .split(parts[0]);
+        (cols[0], Some(cols[1]))
+    } else {
+        (parts[0], None)
+    };
+
     let list = List::new(items)
         .highlight_style(Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD))
         .highlight_symbol("▶ ");
     let mut state = ListState::default();
     state.select(Some(modal.cursor));
-    f.render_stateful_widget(list, parts[0], &mut state);
+    f.render_stateful_widget(list, list_area, &mut state);
+
+    if let Some(sb_area) = sb_area {
+        let mut sb_state = ScrollbarState::new(modal.options.len())
+            .viewport_content_length(list_area.height as usize)
+            .position(modal.cursor);
+        let sb = Scrollbar::new(ScrollbarOrientation::VerticalRight)
+            .begin_symbol(None)
+            .end_symbol(None)
+            .thumb_style(Style::default().fg(Color::Cyan));
+        f.render_stateful_widget(sb, sb_area, &mut sb_state);
+    }
 
     let help = modal.help.get(modal.cursor).cloned().unwrap_or_default();
     f.render_widget(
@@ -88,17 +135,30 @@ fn draw_algo_modal(f: &mut Frame, modal: &AlgoModal, area: Rect) {
             .wrap(Wrap { trim: true }),
         parts[1],
     );
-    f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled("↑↓", Style::default().fg(Color::Yellow)),
-            Span::styled(" select  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Enter", Style::default().fg(Color::Yellow)),
-            Span::styled(" choose  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Esc", Style::default().fg(Color::Yellow)),
-            Span::styled(" cancel", Style::default().fg(Color::DarkGray)),
-        ])),
-        parts[2],
-    );
+    let mut footer = vec![
+        Span::styled("↑↓", Style::default().fg(Color::Yellow)),
+        Span::styled(" select  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Enter", Style::default().fg(Color::Yellow)),
+        Span::styled(" choose  ", Style::default().fg(Color::DarkGray)),
+        Span::styled("Esc", Style::default().fg(Color::Yellow)),
+        Span::styled(" cancel", Style::default().fg(Color::DarkGray)),
+    ];
+    if has_dl {
+        footer.push(Span::styled("   ◆", Style::default().fg(dl_color)));
+        footer.push(Span::styled(" deep learning", Style::default().fg(Color::DarkGray)));
+    }
+    f.render_widget(Paragraph::new(Line::from(footer)), parts[2]);
+}
+
+/// Deep-learning algorithm ids across the inversion / background-removal / separation modals.
+/// Used to colour them as a group in the selector.
+fn is_deep_learning_algo(name: &str) -> bool {
+    matches!(
+        name,
+        "xqsm" | "qsmnet" | "qsmnet-plus" | "autoqsm" | "qsmgan" | "ir2qsm" | "lpcnn"
+            | "modl-qsm" | "nextqsm" | "iqsm" | "iqsm-plus" | "bfrnet" | "iqfm"
+            | "susep-net" | "chi-sepnet"
+    )
 }
 
 /// Render a scrollable paragraph with a scrollbar when content exceeds visible height.
@@ -1223,6 +1283,27 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 format!("  {}", text),
                 Style::default().fg(Color::Yellow),
             )),
+            PipelineRow::SectionHeader { id: _, label, summary, collapsed } => {
+                if focused {
+                    focused_help = Some(if *collapsed {
+                        "Enter/Space/→ to expand this section".to_string()
+                    } else {
+                        "Enter/Space/← to collapse this section".to_string()
+                    });
+                }
+                let arrow = if *collapsed { "▸" } else { "▾" };
+                let header_style = if focused {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
+                };
+                // Headers sit at column 0 (params are indented) so they read as section dividers.
+                let mut spans = vec![Span::styled(format!("{} {}", arrow, label), header_style)];
+                if *collapsed && !summary.is_empty() {
+                    spans.push(Span::styled(format!("  ·  {}", summary), Style::default().fg(Color::DarkGray)));
+                }
+                Line::from(spans)
+            }
             PipelineRow::MaskSectionHeader { section } => {
                 Line::from(Span::styled(
                     format!("  ── Mask {} ──", section + 1),
@@ -1447,8 +1528,15 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
         if let Some(&row_idx) = focusable.get(ps_focus) {
             if row_idx >= scroll && row_idx < scroll + form_area.height as usize {
                 let y = form_area.y + (row_idx - scroll) as u16;
-                let label_width = 24;
-                let x = form_area.x + label_width + ps_cursor as u16;
+                // The value starts after the 2-char row indent + the label field, which the render
+                // left-pads to a *minimum* of 22 columns (`format!("  {:22}", "label:")`) but lets
+                // grow for longer labels — so a wide label (e.g. the relaxometry constants) pushes
+                // the value right. Match that here instead of assuming a fixed 24.
+                let label_cols = match rows.get(row_idx) {
+                    Some(PipelineRow::Param { label, .. }) => (label.chars().count() + 1).max(22),
+                    _ => 22,
+                };
+                let x = form_area.x + 2 + label_cols as u16 + ps_cursor as u16;
                 f.set_cursor_position((x, y));
             }
         }
@@ -1622,6 +1710,34 @@ mod tests {
     fn test_draw_default_app_no_panic() {
         let mut app = App::new();
         let _ = render_app(&mut app);
+    }
+
+    #[test]
+    fn test_algo_modal_scrollbar_and_legend() {
+        use crate::tui::app::AlgoModalTarget;
+        let mut app = App::new();
+        // A long list with deep-learning entries at the end (like the QSM inversion selector).
+        let mut options: Vec<String> = (0..18).map(|i| format!("classical-{i}")).collect();
+        options.extend(["xqsm", "qsmnet", "autoqsm", "nextqsm"].iter().map(|s| s.to_string()));
+        let help: Vec<String> = options.iter().map(|o| format!("help for {o}")).collect();
+        app.algo_modal = Some(AlgoModal {
+            target: AlgoModalTarget::PipelineSelect("qsm_algorithm".into()),
+            title: "QSM Inversion".into(),
+            options,
+            help,
+            cursor: 20, // inside the DL group, past the capped viewport → list must scroll
+        });
+        let term = render_app(&mut app);
+        let buf = term.backend().buffer();
+        let mut text = String::new();
+        for y in 0..buf.area.height {
+            for x in 0..buf.area.width {
+                text.push_str(buf[(x, y)].symbol());
+            }
+        }
+        assert!(text.contains('█'), "expected a scrollbar thumb in the overflowing modal");
+        assert!(text.contains("deep learning"), "expected the deep-learning legend in the footer");
+        assert!(text.contains("select") && text.contains("cancel"), "expected the hotkey footer");
     }
 
     #[test]
