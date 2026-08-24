@@ -867,6 +867,11 @@ pub enum PipelineRow {
     Separator,
     /// Informational hint line (styled, not focusable)
     Note { text: &'static str },
+    /// Collapsible stage header on the QSM pipeline page (General, Field mapping, Masking,
+    /// Background removal, Dipole inversion, Referencing). Focusable; Enter/Space or ←/→ toggles
+    /// it. `summary` shows the stage's current choice when collapsed; `id` is a stable key for the
+    /// collapse state and `label` the display name.
+    SectionHeader { id: &'static str, label: &'static str, summary: String, collapsed: bool },
     /// Section header "── Mask N ──" (not focusable)
     MaskSectionHeader { section: usize },
     /// "── OR ──" separator between sections (not focusable)
@@ -900,31 +905,40 @@ pub const MASK_PRESET_HELP: &[&str] = &[
 
 // ─── Algorithm help text (name + DOI) ───
 
+// One entry per QSM_ALGO_OPTIONS entry, in the same order. Consistent format:
+//   "NAME (expansion) — one-line description. https://doi.org/…"
+// Deep-learning nets are marked "(deep learning; weights auto-downloaded)". Keep this aligned
+// with QSM_ALGO_OPTIONS — the coverage test asserts equal lengths.
 const QSM_ALGO_HELP: &[&str] = &[
-    "Rapid Two-Step (RTS) — https://doi.org/10.1016/j.neuroimage.2017.11.018",
-    "Total Variation ADMM (TV) — https://doi.org/10.1002/mrm.25029",
-    "Truncated K-space Division (TKD) — https://doi.org/10.1002/mrm.22135",
-    "Total Generalized Variation (TGV, single-step) — https://doi.org/10.1016/j.neuroimage.2015.02.041",
-    "Tikhonov L2 regularization (closed-form) — https://doi.org/10.1002/jmri.24365",
-    "Nonlinear Total Variation (NLTV) — https://doi.org/10.1016/j.neuroimage.2017.11.018",
-    "Morphology Enabled Dipole Inversion (MEDI) — https://doi.org/10.1002/mrm.22816",
-    "Nonlinear Dipole Inversion (NDI) — https://doi.org/10.1002/nbm.4271",
-    "FANSI Nonlinear TV (nlTV) — https://doi.org/10.1002/mrm.27073",
-    "FANSI Nonlinear TGV (nlTGV) — https://doi.org/10.1002/mrm.27073",
-    "L1-QSM (L1 data fidelity) — https://doi.org/10.1002/mrm.29057",
-    "Weak-Harmonic QSM (WH-QSM) — https://doi.org/10.1002/mrm.27483",
-    "Hybrid Data Fidelity QSM (HD-QSM) — https://doi.org/10.1002/mrm.29296",
-    "xQSM deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1002/nbm.4461",
-    "QSMnet deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2018.06.030",
-    "QSMnet+ deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2020.116579",
-    "AutoQSM single-step deep-learning reconstruction, no BFR (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2019.116064",
-    "QSMGAN GAN-refined deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2019.116389",
-    "IR2QSM unrolled deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1002/mp.17747",
-    "LPCNN learned-proximal deep-learning dipole inversion (weights auto-downloaded) — https://doi.org/10.1007/978-3-030-59713-9_13",
-    "MoDL-QSM model-based deep-learning dipole inversion, χ33/STI (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2021.118376",
-    "NeXtQSM single-step deep-learning reconstruction, no BFR (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2022.119729",
-    "iQSM end-to-end deep-learning reconstruction from phase (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2022.119410",
-    "iQSM+ orientation-adaptive end-to-end deep-learning reconstruction (weights auto-downloaded) — https://doi.org/10.1016/j.media.2024.103160",
+    "RTS (Rapid Two-Step) — fast two-step k-space inversion with streaking removal. https://doi.org/10.1016/j.neuroimage.2017.11.018",
+    "TV-ADMM (Total Variation) — ADMM inversion with a total-variation prior. https://doi.org/10.1002/mrm.25029",
+    "TKD (Thresholded K-space Division) — direct k-space division with thresholding. https://doi.org/10.1002/mrm.22135",
+    "TSVD (Truncated SVD) — zeroes the small singular values of the dipole kernel. https://doi.org/10.1002/mrm.22135",
+    "TGV (Total Generalized Variation) — single-step: unwrapping, background removal and inversion together. https://doi.org/10.1016/j.neuroimage.2015.02.041",
+    "Tikhonov — closed-form L2-regularized inversion. https://doi.org/10.1002/jmri.24365",
+    "NLTV (Nonlinear Total Variation) — nonlinear data fidelity with a TV prior. https://doi.org/10.1016/j.neuroimage.2017.11.018",
+    "MEDI (Morphology Enabled Dipole Inversion) — magnitude-guided edge weighting. https://doi.org/10.1002/mrm.22816",
+    "TFI (Total Field Inversion) — inverts the total field directly (its own background removal). https://doi.org/10.1002/mrm.26331",
+    "iLSQR — iterative LSQR with streaking-artifact correction. https://doi.org/10.1016/j.neuroimage.2014.12.043",
+    "QSMART — two-stage spatially-dependent filtering plus inversion. https://doi.org/10.1016/j.neuroimage.2020.117701",
+    "NDI (Nonlinear Dipole Inversion) — gradient-descent nonlinear fit. https://doi.org/10.1002/nbm.4271",
+    "FANSI (Nonlinear TV) — fast nonlinear susceptibility inversion with a TV prior. https://doi.org/10.1002/mrm.27073",
+    "FANSI (Nonlinear TGV) — FANSI with a total-generalized-variation prior. https://doi.org/10.1002/mrm.27073",
+    "L1-QSM (L1 Data Fidelity) — L1 fidelity for streaking suppression. https://doi.org/10.1002/mrm.29057",
+    "WH-QSM (Weak-Harmonic QSM) — jointly fits a residual harmonic background field. https://doi.org/10.1002/mrm.27483",
+    "HD-QSM (Hybrid Data Fidelity) — combined L1/L2 data fidelity. https://doi.org/10.1002/mrm.29296",
+    "AMP-PE (Approximate Message Passing with Parameter Estimation) — self-tuning Bayesian inversion. https://doi.org/10.1002/mrm.29725",
+    "xQSM (deep learning; weights auto-downloaded) — octave-convolution U-net dipole inversion. https://doi.org/10.1002/nbm.4461",
+    "QSMnet (deep learning; weights auto-downloaded) — 3D U-net dipole inversion. https://doi.org/10.1016/j.neuroimage.2018.06.030",
+    "QSMnet+ (deep learning; weights auto-downloaded) — QSMnet trained for a wider susceptibility range. https://doi.org/10.1016/j.neuroimage.2020.116579",
+    "AutoQSM (deep learning; weights auto-downloaded) — single-step reconstruction, no separate background removal. https://doi.org/10.1016/j.neuroimage.2019.116064",
+    "QSMGAN (deep learning; weights auto-downloaded) — GAN-refined U-net dipole inversion. https://doi.org/10.1016/j.neuroimage.2019.116389",
+    "IR2QSM (deep learning; weights auto-downloaded) — iterative unrolled U-net inversion. https://doi.org/10.1002/mp.17747",
+    "LPCNN (deep learning; weights auto-downloaded) — learned-proximal unrolled inversion. https://doi.org/10.1007/978-3-030-59713-9_13",
+    "MoDL-QSM (deep learning; weights auto-downloaded) — model-based unrolled inversion (χ33/STI). https://doi.org/10.1016/j.neuroimage.2021.118376",
+    "NeXtQSM (deep learning; weights auto-downloaded) — single-step reconstruction, no separate background removal. https://doi.org/10.1016/j.neuroimage.2022.119729",
+    "iQSM (deep learning; weights auto-downloaded) — end-to-end reconstruction from wrapped phase. https://doi.org/10.1016/j.neuroimage.2022.119410",
+    "iQSM+ (deep learning; weights auto-downloaded) — orientation-adaptive end-to-end reconstruction. https://doi.org/10.1016/j.media.2024.103160",
 ];
 const UNWRAP_HELP: &[&str] = &[
     "ROMEO region-growing unwrapping — https://doi.org/10.1002/mrm.28563",
@@ -970,6 +984,10 @@ pub struct PipelineFormState {
     // Parameters (as Strings for text editing)
     pub inhomogeneity_correction: bool,
     pub obliquity_threshold: String,
+
+    // Deep-learning overlap-tiling (empty = off / whole-volume). Shown for tileable DL inversions.
+    pub dl_tile_size: String,
+    pub dl_tile_halo: String,
 
     // RTS
     pub rts_delta: String,
@@ -1217,6 +1235,9 @@ pub struct PipelineFormState {
     pub editing: bool,
     pub cursor: usize,
     pub scroll_offset: usize,
+    /// Collapsed QSM-pipeline stage ids (see [`PipelineFormState::SECTION_IDS`]). Collapsed stages
+    /// show only their header + a one-line summary; expanded stages show their full controls.
+    pub collapsed_sections: std::collections::HashSet<&'static str>,
 
     // Mask ops editor state
     pub mask_ops_adding: bool,      // true when "Add step..." selector is active
@@ -1260,6 +1281,8 @@ impl Default for PipelineFormState {
             b0_weight_type: 0,   // phase_snr
             inhomogeneity_correction: true,
             obliquity_threshold: "-1".to_string(),
+            dl_tile_size: String::new(),
+            dl_tile_halo: String::new(),
             rts_delta: format!("{}", rts.delta),
             rts_mu: format!("{}", rts.mu),
             rts_tol: format!("{}", rts.tol),
@@ -1443,6 +1466,8 @@ impl Default for PipelineFormState {
             focus: 0,
             editing: false,
             cursor: 0,
+            // Start with every stage collapsed → the page opens as a compact pipeline overview.
+            collapsed_sections: Self::SECTION_IDS.iter().copied().collect(),
             scroll_offset: 0,
             mask_ops_adding: false,
             mask_ops_add_idx: 0,
@@ -1568,6 +1593,43 @@ impl PipelineFormState {
         rows
     }
 
+    /// Stable ids of the collapsible QSM-pipeline stages, top to bottom.
+    pub const SECTION_IDS: &[&'static str] =
+        &["general", "fieldmap", "masking", "bgremoval", "inversion", "reference"];
+
+    /// Build a stage header row, reading the current collapse state for `id`.
+    fn section_header(&self, id: &'static str, label: &'static str, summary: String) -> PipelineRow {
+        PipelineRow::SectionHeader {
+            id,
+            label,
+            summary,
+            collapsed: self.collapsed_sections.contains(id),
+        }
+    }
+
+    /// Toggle a stage's collapsed state.
+    pub fn toggle_section(&mut self, id: &'static str) {
+        if !self.collapsed_sections.remove(id) {
+            self.collapsed_sections.insert(id);
+        }
+    }
+
+    /// Drop the body rows of collapsed sections: keep every `SectionHeader`, and skip the rows
+    /// after a collapsed header until the next header. Rows before the first header are always kept.
+    fn apply_section_collapse(rows: Vec<PipelineRow>) -> Vec<PipelineRow> {
+        let mut out = Vec::with_capacity(rows.len());
+        let mut skipping = false;
+        for r in rows {
+            if let PipelineRow::SectionHeader { collapsed, .. } = &r {
+                skipping = *collapsed;
+                out.push(r);
+            } else if !skipping {
+                out.push(r);
+            }
+        }
+        out
+    }
+
     pub fn visible_rows(&self) -> Vec<PipelineRow> {
         if self.mode == PipelineTabMode::Separation {
             return self.separation_visible_rows();
@@ -1594,6 +1656,8 @@ impl PipelineFormState {
 
         // General settings (QSM-only)
         if self.do_qsm {
+        rows.push(self.section_header("general", "General",
+            format!("inhomogeneity correction {}", if self.inhomogeneity_correction { "on" } else { "off" })));
         rows.push(PipelineRow::Param {
             label: "Obliquity", field: "obliquity_threshold",
             help: "Resample oblique acquisitions to axial if obliquity exceeds this (degrees, -1 = disabled)",
@@ -1610,6 +1674,8 @@ impl PipelineFormState {
         // Field Mapping (hidden if TGV or QSMART)
         if !is_tgv && !is_qsmart && !is_iqsm {
             let is_laplacian = self.unwrapping_algorithm == 1;
+            rows.push(self.section_header("fieldmap", "Field mapping",
+                format!("{} unwrapping", UNWRAP_OPTIONS.get(self.unwrapping_algorithm).copied().unwrap_or(""))));
 
             // Phase offset removal (disabled for Laplacian)
             if !is_laplacian {
@@ -1669,6 +1735,8 @@ impl PipelineFormState {
         }
 
         // Mask preset selector (always visible — needed for SWI/T2*/R2* too)
+        rows.push(self.section_header("masking", "Masking",
+            MASK_PRESET_OPTIONS.get(self.get_select("mask_preset")).copied().unwrap_or("").to_string()));
         rows.push(PipelineRow::AlgoSelect {
             label: "Mask Preset", field: "mask_preset",
             options: MASK_PRESET_OPTIONS, help: MASK_PRESET_HELP,
@@ -1706,6 +1774,8 @@ impl PipelineFormState {
 
         // BG Removal (hidden for TGV, QSMART, MEDI+SMV, single-step DL, and end-to-end iQSM)
         if !is_tgv && !is_qsmart && !is_medi_smv && !is_single_step && !is_iqsm {
+            rows.push(self.section_header("bgremoval", "Background removal",
+                BF_OPTIONS.get(self.bf_algorithm).copied().unwrap_or("").to_string()));
             rows.push(PipelineRow::AlgoSelect {
                 label: "BG Removal", field: "bf_algorithm",
                 options: BF_OPTIONS, help: BF_HELP,
@@ -1762,6 +1832,8 @@ impl PipelineFormState {
         }
 
         // QSM Inversion
+        rows.push(self.section_header("inversion", "Dipole inversion",
+            QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("").to_string()));
         rows.push(PipelineRow::AlgoSelect {
             label: "QSM Inversion", field: "qsm_algorithm",
             options: QSM_ALGO_OPTIONS, help: QSM_ALGO_HELP,
@@ -1959,22 +2031,35 @@ impl PipelineFormState {
             _ => {}
         }
 
+        // Deep-learning overlap-tiling (optional). Shown for the tileable DL inversions; leave the
+        // fields blank to run whole-volume. Matched by name so it survives option reordering.
+        if matches!(
+            QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or(""),
+            "xqsm" | "qsmnet" | "qsmnet-plus" | "ir2qsm" | "lpcnn" | "modl-qsm" | "nextqsm"
+        ) {
+            rows.push(PipelineRow::Param { label: "  Tile size", field: "dl_tile_size", help: "Overlap-tiling core size in voxels; set to run tiled (bounded memory, approximate). Blank = whole-volume." });
+            rows.push(PipelineRow::Param { label: "  Tile halo", field: "dl_tile_halo", help: "Overlap-tiling context margin in voxels (default 8 when tile size is set)." });
+        }
+
         rows.push(PipelineRow::Separator);
 
         // QSM Reference
+        rows.push(self.section_header("reference", "Referencing",
+            QSM_REF_OPTIONS.get(self.get_select("qsm_reference")).copied().unwrap_or("").to_string()));
         rows.push(PipelineRow::AlgoSelect {
             label: "QSM Reference", field: "qsm_reference",
             options: QSM_REF_OPTIONS, help: QSM_REF_HELP,
         });
         } // end if do_qsm (unwrapping/inversion/reference)
 
-        rows
+        Self::apply_section_collapse(rows)
     }
 
     /// All valid parameter field names, for testing that string dispatch is complete.
     #[cfg(test)]
     pub const ALL_PARAM_FIELDS: &[&str] = &[
         "obliquity_threshold",
+        "dl_tile_size", "dl_tile_halo",
         "rts_delta", "rts_mu", "rts_tol", "rts_rho", "rts_max_iter", "rts_lsmr_iter",
         "tv_lambda", "tv_rho", "tv_tol", "tv_max_iter",
         "tkd_threshold", "tsvd_threshold",
@@ -2008,6 +2093,8 @@ impl PipelineFormState {
     pub fn get_param(&self, field: &str) -> &str {
         match field {
             "obliquity_threshold" => &self.obliquity_threshold,
+            "dl_tile_size" => &self.dl_tile_size,
+            "dl_tile_halo" => &self.dl_tile_halo,
             "rts_delta" => &self.rts_delta,
             "rts_mu" => &self.rts_mu,
             "rts_tol" => &self.rts_tol,
@@ -2177,6 +2264,8 @@ impl PipelineFormState {
     pub fn get_param_mut(&mut self, field: &str) -> Option<&mut String> {
         match field {
             "obliquity_threshold" => Some(&mut self.obliquity_threshold),
+            "dl_tile_size" => Some(&mut self.dl_tile_size),
+            "dl_tile_halo" => Some(&mut self.dl_tile_halo),
             "rts_delta" => Some(&mut self.rts_delta),
             "rts_mu" => Some(&mut self.rts_mu),
             "rts_tol" => Some(&mut self.rts_tol),
@@ -4242,6 +4331,19 @@ impl App {
 
             // Interact
             KeyCode::Enter | KeyCode::Char(' ') => {
+                // A collapsible stage header toggles open/closed instead of opening a selector.
+                let section_id = {
+                    let ps = &self.pipeline_state;
+                    let focus_idx = ps.focusable_rows().get(ps.focus).copied().unwrap_or(0);
+                    match ps.visible_rows().get(focus_idx) {
+                        Some(PipelineRow::SectionHeader { id, .. }) => Some(*id),
+                        _ => None,
+                    }
+                };
+                if let Some(id) = section_id {
+                    self.pipeline_state.toggle_section(id);
+                    return;
+                }
                 // Single-choice selectors open a modal listing every option (rather than cycling).
                 let modal = {
                     let ps = &self.pipeline_state;
@@ -4442,6 +4544,15 @@ impl App {
                         }
                         Some(PipelineRow::MaskOpInput { section }) => {
                             ps.adjust_mask_input(*section, delta);
+                        }
+                        // Stage headers: ← collapses, → expands (in addition to Enter/Space toggle).
+                        Some(PipelineRow::SectionHeader { id, .. }) => {
+                            let id = *id;
+                            if delta < 0 {
+                                ps.collapsed_sections.insert(id);
+                            } else {
+                                ps.collapsed_sections.remove(id);
+                            }
                         }
                         _ => {}
                     }
@@ -4745,6 +4856,7 @@ mod tests {
     fn test_algo_modal_opens_on_enter_over_algoselect() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.pipeline_state.mode = PipelineTabMode::Qsm;
         // The QSM tab's first focusable row is the "Compute QSM" toggle; move to the inversion
         // AlgoSelect and open it.
@@ -4796,6 +4908,7 @@ mod tests {
     fn test_mask_input_modal_opens_and_sets() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.sync_pipeline_mode();
         // Focus the mask Input row.
         let rows = app.pipeline_state.visible_rows();
@@ -5082,6 +5195,7 @@ mod tests {
     fn test_filter_tab_routes_to_filter_handler() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Should not crash — filter handler takes over
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Up));
@@ -5194,6 +5308,7 @@ mod tests {
     #[test]
     fn test_pipeline_visible_rows_change_with_algorithm() {
         let mut ps = super::PipelineFormState::default();
+        ps.collapsed_sections.clear(); // expand so algorithm-specific rows are visible
         let rows_rts = ps.visible_rows().len();
         ps.qsm_algorithm = 2; // TKD (fewer params)
         let rows_tkd = ps.visible_rows().len();
@@ -5202,6 +5317,47 @@ mod tests {
         ps.qsm_algorithm = 3; // TGV (hides unwrapping + bgremove)
         let rows_tgv = ps.visible_rows().len();
         assert!(rows_tgv < rows_rts, "TGV should hide unwrapping/bgremove");
+    }
+
+    #[test]
+    fn test_pipeline_section_collapse() {
+        let mut ps = super::PipelineFormState::default();
+        let has_param = |ps: &super::PipelineFormState, field: &str| {
+            ps.visible_rows().iter().any(|r| matches!(r, PipelineRow::Param { field: f, .. } if *f == field))
+        };
+        let has_header = |ps: &super::PipelineFormState, id: &str| {
+            ps.visible_rows().iter().any(|r| matches!(r, PipelineRow::SectionHeader { id: hid, .. } if *hid == id))
+        };
+        // Default is all-collapsed: headers present, bodies hidden.
+        assert!(has_header(&ps, "inversion"));
+        assert!(!has_param(&ps, "rts_delta"), "collapsed inversion should hide its params");
+        // Expanding shows the body; the header stays; collapsing hides it again.
+        ps.toggle_section("inversion");
+        assert!(has_param(&ps, "rts_delta"), "expanded inversion should show its params");
+        assert!(has_header(&ps, "inversion"), "header stays when expanded");
+        ps.toggle_section("inversion");
+        assert!(!has_param(&ps, "rts_delta"));
+    }
+
+    #[test]
+    fn test_pipeline_section_arrow_and_enter_toggle() {
+        let mut app = App::new();
+        app.active_tab = TAB_QSM; // (intentionally not clearing collapsed_sections: test the default)
+        // Focus the collapsed "inversion" header.
+        let rows = app.pipeline_state.visible_rows();
+        let focusable = app.pipeline_state.focusable_rows();
+        let hi = focusable.iter()
+            .position(|&ri| matches!(&rows[ri], PipelineRow::SectionHeader { id: "inversion", .. }))
+            .expect("inversion header present");
+        app.pipeline_state.focus = hi;
+        assert!(app.pipeline_state.collapsed_sections.contains("inversion"));
+        // → expands, ← collapses, Enter toggles.
+        app.handle_key(key(KeyCode::Right));
+        assert!(!app.pipeline_state.collapsed_sections.contains("inversion"), "→ should expand");
+        app.handle_key(key(KeyCode::Left));
+        assert!(app.pipeline_state.collapsed_sections.contains("inversion"), "← should collapse");
+        app.handle_key(key(KeyCode::Enter));
+        assert!(!app.pipeline_state.collapsed_sections.contains("inversion"), "Enter should toggle open");
     }
 
     // --- Filter tree tests ---
@@ -5337,9 +5493,14 @@ mod tests {
 
     #[test]
     fn test_all_param_fields_are_valid() {
+        // Opt-in fields that intentionally default to empty (blank = feature off).
+        const OPT_IN_EMPTY: &[&str] = &["dl_tile_size", "dl_tile_halo"];
         let state = PipelineFormState::default();
         for &field_name in PipelineFormState::ALL_PARAM_FIELDS {
             let val = state.get_param(field_name);
+            if OPT_IN_EMPTY.contains(&field_name) {
+                continue;
+            }
             assert_ne!(val, "", "get_param returned empty for field: {}", field_name);
         }
     }
@@ -5352,6 +5513,24 @@ mod tests {
                 state.get_param_mut(field_name).is_some(),
                 "get_param_mut returned None for field: {}", field_name,
             );
+        }
+    }
+
+    #[test]
+    fn test_algo_option_help_arrays_aligned() {
+        // Every selector's help array must have one entry per option, in order — otherwise the
+        // modal shows the wrong (or an empty) tooltip. Guards against silent drift.
+        use super::*;
+        for (label, opts, help) in [
+            ("qsm", QSM_ALGO_OPTIONS.len(), QSM_ALGO_HELP.len()),
+            ("separation", SEP_ALGO_OPTIONS.len(), SEP_ALGO_HELP.len()),
+            ("qsmart-inner", QSMART_INV_OPTIONS.len(), QSMART_INV_HELP.len()),
+            ("unwrap", UNWRAP_OPTIONS.len(), UNWRAP_HELP.len()),
+            ("bg-removal", BF_OPTIONS.len(), BF_HELP.len()),
+            ("qsm-reference", QSM_REF_OPTIONS.len(), QSM_REF_HELP.len()),
+            ("mask-preset", MASK_PRESET_OPTIONS.len(), MASK_PRESET_HELP.len()),
+        ] {
+            assert_eq!(opts, help, "{label}: {opts} options but {help} help entries");
         }
     }
 
@@ -5694,6 +5873,7 @@ mod tests {
     fn test_pipeline_tab_navigate_down_up() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         assert_eq!(app.pipeline_state.focus, 0);
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.pipeline_state.focus, 1);
@@ -5712,6 +5892,7 @@ mod tests {
     fn test_pipeline_tab_navigate_clamp_bottom() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         let max = app.pipeline_state.focusable_rows().len().saturating_sub(1);
         app.pipeline_state.focus = max;
         app.handle_key(key(KeyCode::Down));
@@ -5722,9 +5903,11 @@ mod tests {
     fn test_pipeline_tab_switch_from_pipeline() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.active_tab, 2);
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
         assert_eq!(app.active_tab, 0);
     }
@@ -5733,6 +5916,7 @@ mod tests {
     fn test_pipeline_tab_number_switch() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.handle_key(key(KeyCode::Char('3')));
         assert_eq!(app.active_tab, 2);
     }
@@ -5742,6 +5926,7 @@ mod tests {
         let mut app = App::new();
         // Sit deep in the QSM tab, past the number of rows Separation will have.
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.sync_pipeline_mode();
         let qsm_max = app.pipeline_state.focusable_rows().len().saturating_sub(1);
         app.pipeline_state.focus = qsm_max;
@@ -5759,6 +5944,7 @@ mod tests {
     fn test_pipeline_left_right_algo_select() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Focus 0 is "Compute QSM" toggle, focus 1 is "Phase Combination" select
         // Find the focus index for the QSM Inversion AlgoSelect
         let rows = app.pipeline_state.visible_rows();
@@ -5783,6 +5969,7 @@ mod tests {
     fn test_pipeline_enter_opens_algo_modal_and_left_right_cycles() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Navigate to unwrapping_algorithm AlgoSelect
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -5820,6 +6007,7 @@ mod tests {
     fn test_pipeline_edit_text_param() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Find the obliquity_threshold Param row
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -5853,6 +6041,7 @@ mod tests {
     fn test_pipeline_toggle_do_qsm() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Focus 0 should be the do_qsm toggle
         app.pipeline_state.focus = 0;
         assert!(app.pipeline_state.do_qsm);
@@ -5867,6 +6056,7 @@ mod tests {
     fn test_pipeline_toggle_inhomogeneity_correction() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Find inhomogeneity_correction toggle
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -5888,6 +6078,7 @@ mod tests {
     fn test_pipeline_quit_from_pipeline_tab() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.should_quit);
     }
@@ -5896,6 +6087,7 @@ mod tests {
     fn test_pipeline_esc_from_pipeline_tab() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.handle_key(key(KeyCode::Esc));
         assert!(app.should_quit);
     }
@@ -5904,6 +6096,7 @@ mod tests {
     fn test_pipeline_f5_from_pipeline_tab() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.form.bids_dir = "/tmp/bids".to_string();
         app.handle_key(key(KeyCode::F(5)));
         assert!(app.should_run);
@@ -5913,6 +6106,7 @@ mod tests {
     fn test_pipeline_reset_field() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.pipeline_state.qsm_algorithm = 5;
         // Find qsm_algorithm focus
         let rows = app.pipeline_state.visible_rows();
@@ -5934,6 +6128,7 @@ mod tests {
     fn test_pipeline_reset_tab() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.pipeline_state.qsm_algorithm = 5;
         app.pipeline_state.bf_algorithm = 3;
         app.handle_key(key(KeyCode::Char('R')));
@@ -5954,6 +6149,7 @@ mod tests {
     fn test_pipeline_editing_left_right_cursor() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Find obliquity_threshold param and edit it
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -7053,6 +7249,7 @@ mod tests {
     fn test_pipeline_mask_preset_switch() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Find mask_preset focus
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -7075,6 +7272,7 @@ mod tests {
         use crate::pipeline::config::{MaskOp, MaskThresholdMethod};
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.sync_pipeline_mode();
         // Default preset is a threshold generator, so the param row is the method select.
         assert!(matches!(
@@ -7106,6 +7304,7 @@ mod tests {
         use crate::pipeline::config::MaskOp;
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.sync_pipeline_mode();
         // Switch the generator to BET so the param row is a numeric frac-intensity slider.
         app.pipeline_state.mask_sections[0].generator = MaskOp::Bet { fractional_intensity: 0.5 };
@@ -7123,6 +7322,7 @@ mod tests {
     fn test_pipeline_mask_add_section() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         let initial_sections = app.pipeline_state.mask_sections.len();
         // Find MaskOpAddSection focus
         let rows = app.pipeline_state.visible_rows();
@@ -7144,6 +7344,7 @@ mod tests {
     fn test_pipeline_mask_add_step() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         let initial_refs = app.pipeline_state.mask_sections[0].refinements.len();
         // Find MaskOpAddStep for section 0
         let rows = app.pipeline_state.visible_rows();
@@ -7170,6 +7371,7 @@ mod tests {
     fn test_pipeline_mask_add_step_cycle_ops() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
         let mut add_step_focus = None;
@@ -7197,6 +7399,7 @@ mod tests {
     fn test_pipeline_mask_delete_refinement() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         let initial_refs = app.pipeline_state.mask_sections[0].refinements.len();
         assert!(initial_refs > 0);
         // Find first MaskOpEntry focus
@@ -7219,6 +7422,7 @@ mod tests {
     fn test_pipeline_mask_adjust_op_left_right() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Find MaskOpEntry focus and adjust with Left/Right
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -7240,6 +7444,7 @@ mod tests {
     fn test_pipeline_mask_generator_adjust() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Find MaskOpGenerator focus
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -7269,6 +7474,7 @@ mod tests {
     fn test_pipeline_mask_generator_param_adjust() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Find MaskOpGeneratorParam focus
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -7293,6 +7499,7 @@ mod tests {
     fn test_pipeline_mask_input_adjust() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Find MaskOpInput focus
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -7346,6 +7553,7 @@ mod tests {
     fn test_reset_pipeline_param_field() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Find obliquity_threshold param
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
@@ -7374,6 +7582,7 @@ mod tests {
     fn test_reset_pipeline_toggle_field() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Focus 0 is do_qsm toggle
         app.pipeline_state.focus = 0;
         app.pipeline_state.do_qsm = false;
@@ -7492,6 +7701,7 @@ mod tests {
     fn test_pipeline_threshold_value_editing() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         // Set generator to Fixed threshold to make MaskOpThresholdValue visible
         app.pipeline_state.mask_sections[0].generator = crate::pipeline::config::MaskOp::Threshold {
             method: crate::pipeline::config::MaskThresholdMethod::Fixed,
@@ -7537,6 +7747,7 @@ mod tests {
     fn test_pipeline_threshold_value_esc_cancels() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
         app.pipeline_state.mask_sections[0].generator = crate::pipeline::config::MaskOp::Threshold {
             method: crate::pipeline::config::MaskThresholdMethod::Fixed,
             value: Some(0.5),

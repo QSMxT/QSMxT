@@ -440,6 +440,10 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
             swi_strength: parse_optional_f64(&form.swi_strength),
             swi_mip_window: parse_optional_usize(&form.swi_mip_window),
         },
+        tiling_params: crate::cli::TilingParamArgs {
+            tile_size: parse_optional_usize(&ps.dl_tile_size),
+            tile_halo: parse_optional_usize(&ps.dl_tile_halo),
+        },
         n_procs: parse_optional_usize(&form.n_procs),
         homogeneity_sigma_mm: None,
         homogeneity_nbox: None,
