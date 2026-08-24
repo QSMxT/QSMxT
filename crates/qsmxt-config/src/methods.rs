@@ -360,6 +360,21 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 let (name, cite) = inversion_name_cite(config.inversion.algorithm);
                 sentences.push(format!("Dipole inversion was performed using {} ({}).", name, cite_inline(cite)));
                 add_citation(&mut citations, cite);
+                // Deep-learning tiling (memory-bounded, approximate) is noted when enabled — only
+                // for the tileable DL nets (a stray --tile-size on a classical algorithm is ignored).
+                let tileable = matches!(
+                    config.inversion.algorithm,
+                    QsmAlgorithm::Xqsm | QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus
+                        | QsmAlgorithm::Ir2qsm | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm
+                        | QsmAlgorithm::Nextqsm
+                );
+                if let (true, Some(core)) = (tileable, config.inversion.tile_size) {
+                    let halo = config.inversion.tile_halo.unwrap_or(8);
+                    sentences.push(format!(
+                        "Inference was run overlap-tiled (tile size {core} voxels, halo {halo} voxels) \
+                         to bound memory; note that tiling approximates the whole-volume network.",
+                    ));
+                }
             }
         }
 
@@ -741,6 +756,20 @@ mod tests {
         assert!(out.contains("Total Generalized Variation (TGV)"));
         assert!(!out.contains("Phase unwrapping was performed"));
         assert!(!out.contains("Background field removal"));
+    }
+
+    #[test]
+    fn test_dl_tiling_methods() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Xqsm;
+        // No tiling sentence when tiling is off.
+        assert!(!generate_methods(&config).contains("overlap-tiled"));
+        // Sentence appears (with the sizes) when tiling is enabled.
+        config.inversion.tile_size = Some(64);
+        config.inversion.tile_halo = Some(4);
+        let out = generate_methods(&config);
+        assert!(out.contains("overlap-tiled"), "got: {}", out);
+        assert!(out.contains("tile size 64") && out.contains("halo 4"), "got: {}", out);
     }
 
     #[test]

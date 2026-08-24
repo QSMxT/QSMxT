@@ -290,6 +290,10 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             // ppm and b0_dir keep qsm-core defaults
             ..Default::default()
         },
+        // Overlap-tiling for the DL inversions: presence of `tile_size` enables it (core size);
+        // `tile_halo` defaults to 8 (qsm-core's TileConfig default) when omitted. `None` =
+        // whole-volume. Stored as `(core, halo)` so this crate needn't pull qsm-core's onnx feature.
+        tile: cfg.inversion.tile_size.map(|core| (core, cfg.inversion.tile_halo.unwrap_or(8))),
     };
 
     let reference = match cfg.qsm.reference {

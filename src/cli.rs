@@ -186,6 +186,19 @@ pub struct TgvParamArgs {
     pub tgv_tol: Option<f64>,
 }
 
+/// Overlap-tiling for deep-learning inversions (bounded memory). Passing `--tile-size` enables
+/// tiling (the net runs patch-by-patch); omit it to run whole-volume. `--tile-halo` sets the
+/// context margin (defaults to 8 voxels). Tiling is an approximation of the whole-volume network.
+#[derive(Args, Debug, Default, Clone)]
+pub struct TilingParamArgs {
+    /// DL tiling: output core size per patch, in voxels (enables tiling)
+    #[arg(long)]
+    pub tile_size: Option<usize>,
+    /// DL tiling: context margin per side, in voxels (default 8)
+    #[arg(long)]
+    pub tile_halo: Option<usize>,
+}
+
 #[derive(Args, Debug, Default, Clone)]
 pub struct TikhonovParamArgs {
     /// Tikhonov lambda
@@ -909,6 +922,8 @@ pub struct RunArgs {
     pub romeo_params: RomeoParamArgs,
     #[command(flatten)]
     pub swi_params: SwiParamArgs,
+    #[command(flatten)]
+    pub tiling_params: TilingParamArgs,
 
 
     /// Number of parallel threads
@@ -1467,6 +1482,9 @@ pub struct InvertCommonArgs {
     /// B0 direction (3 values)
     #[arg(long, num_args = 3, default_values_t = [0.0, 0.0, 1.0])]
     pub b0_direction: Vec<f64>,
+    /// Deep-learning overlap-tiling (opt-in; ignored by classical algorithms).
+    #[command(flatten)]
+    pub tiling_params: TilingParamArgs,
 }
 
 #[derive(Subcommand, Debug)]
