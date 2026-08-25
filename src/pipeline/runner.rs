@@ -346,6 +346,50 @@ pub fn run_pipeline_cached(
 
 // ─── Stage functions ───
 
+/// Check every input volume of a run against the reference matrix size.
+///
+/// The whole run is processed on one grid, taken from the first phase echo, and that grid is
+/// used to index every other volume — so an echo or a magnitude with a different matrix size
+/// only surfaces much later as an out-of-bounds panic inside qsm-core (issue #184). Reading the
+/// 348-byte header of each file up front is free and lets us name the file that is at fault.
+fn validate_run_dims(run: &QsmRun, reference: &NiftiData) -> crate::Result<()> {
+    let phase0 = run.echoes[0].phase_nifti.as_path();
+    let reference_dims = io::read_nifti_dims(phase0).map_err(QsmxtError::NiftiIo)?;
+    let (rx, ry, rz) = reference_dims;
+
+    // The grid comes from the loaded volume, so the header has to agree with what was read.
+    if reference.data.len() != rx * ry * rz {
+        return Err(QsmxtError::DimensionMismatch(format!(
+            "{} declares {}x{}x{} ({} voxels) in its header but {} voxels were read",
+            phase0.display(), rx, ry, rz, rx * ry * rz, reference.data.len(),
+        )));
+    }
+
+    for (i, echo) in run.echoes.iter().enumerate() {
+        let mut inputs: Vec<(&str, &Path)> = vec![("phase", echo.phase_nifti.as_path())];
+        if let Some(ref mag) = echo.magnitude_nifti {
+            inputs.push(("magnitude", mag.as_path()));
+        }
+        for (kind, path) in inputs {
+            let dims = io::read_nifti_dims(path).map_err(QsmxtError::NiftiIo)?;
+            if dims != reference_dims {
+                return Err(QsmxtError::DimensionMismatch(format!(
+                    concat!(
+                        "echo {} {} ({}) is {}x{}x{} but the run is processed on the {}x{}x{} grid ",
+                        "of {}. Every echo of a run, phase and magnitude alike, must share one ",
+                        "matrix size — check the BIDS conversion, and that the magnitude and phase ",
+                        "come from the same acquisition",
+                    ),
+                    i + 1, kind, path.display(), dims.0, dims.1, dims.2,
+                    rx, ry, rz, phase0.display(),
+                )));
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn stage_load(
     qsm_run: &QsmRun,
     state: &mut PipelineState,
@@ -357,6 +401,7 @@ fn stage_load(
         progress("Loading NIfTI metadata");
         let first_phase = io::read_nifti_file(&qsm_run.echoes[0].phase_nifti)
             .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", qsm_run.echoes[0].phase_nifti.display(), e)))?;
+        validate_run_dims(qsm_run, &first_phase)?;
 
         let meta = RunMetadata {
             dims: first_phase.dims,
@@ -428,6 +473,35 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
     Ok(())
 }
 
+/// Apply inhomogeneity (bias field) correction on the run's working grid.
+///
+/// qsm-core indexes the volume as `x + y*nx + z*nx*ny` over the grid dimensions, so a volume
+/// with fewer voxels than the grid panics with an out-of-bounds index inside the box filter
+/// rather than reporting which input is wrong (issue #184). `validate_run_dims` catches this at
+/// load time for a fresh run; this guard also covers runs resumed from a cached state.
+fn homogeneity_correct(
+    data: &[f64],
+    meta: &RunMetadata,
+    homogeneity: &HomogeneityConfig,
+    source: &str,
+) -> crate::Result<Vec<f64>> {
+    let (nx, ny, nz) = meta.dims;
+    let (vsx, vsy, vsz) = meta.voxel_size;
+    if data.len() != nx * ny * nz {
+        return Err(QsmxtError::DimensionMismatch(format!(
+            concat!(
+                "inhomogeneity correction: {} has {} voxels but this run is processed on a ",
+                "{}x{}x{} grid ({} voxels) taken from its first phase echo. Check that the ",
+                "magnitude and phase come from the same acquisition, or pass ",
+                "--no-inhomogeneity-correction to skip this step",
+            ),
+            source, data.len(), nx, ny, nz, nx * ny * nz,
+        )));
+    }
+    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+    Ok(qsm_core::utils::makehomogeneous(data, &grid, homogeneity.sigma_mm, homogeneity.nbox))
+}
+
 fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
     let mag_params = serde_json::json!({
         "inhomogeneity_correction": ctx.config.masking.inhomogeneity_correction,
@@ -464,12 +538,10 @@ fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Re
         // Apply homogeneity correction to the combined result
         if ctx.config.masking.inhomogeneity_correction {
             progress("Applying inhomogeneity correction");
-            let (nx, ny, nz) = ctx.meta.dims;
-            let (vsx, vsy, vsz) = ctx.meta.voxel_size;
-            let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-            combined = qsm_core::utils::makehomogeneous(
-                &combined, &grid, ctx.config.homogeneity.sigma_mm, ctx.config.homogeneity.nbox,
-            );
+            combined = homogeneity_correct(
+                &combined, ctx.meta, &ctx.config.homogeneity,
+                "the RSS-combined magnitude",
+            )?;
         }
 
         let combined_path = ctx.output.magnitude_path(&ctx.run.key);
@@ -617,8 +689,6 @@ fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
 /// the appropriate magnitude volume based on what the mask sections require.
 fn resolve_mask_magnitude(ctx: &StageContext) -> crate::Result<Vec<NiftiData>> {
     use crate::pipeline::config::MaskingInput;
-    let (nx, ny, nz) = ctx.dims();
-    let (vsx, vsy, vsz) = ctx.voxel_size();
 
     // Determine which masking inputs are needed
     let inputs: Vec<MaskingInput> = ctx.config.masking.sections.iter()
@@ -637,10 +707,9 @@ fn resolve_mask_magnitude(ctx: &StageContext) -> crate::Result<Vec<NiftiData>> {
             let nifti = io::read_nifti_file(src)
                 .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", src.display(), e)))?;
             let data = if ctx.config.masking.inhomogeneity_correction {
-                let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-                qsm_core::utils::makehomogeneous(
-                    &nifti.data, &grid, ctx.config.homogeneity.sigma_mm, ctx.config.homogeneity.nbox,
-                )
+                homogeneity_correct(
+                    &nifti.data, ctx.meta, &ctx.config.homogeneity, &src.display().to_string(),
+                )?
             } else {
                 nifti.data
             };
@@ -1628,4 +1697,118 @@ mod tests {
         assert!((result[1] - 0.0).abs() < 1e-10);
         assert!((result[2] - 3.0).abs() < 1e-10);
     }
+
+    /// Build a `QsmRun` whose echoes point at the given (phase, magnitude) file pairs.
+    fn run_with_echoes(echoes: Vec<(std::path::PathBuf, Option<std::path::PathBuf>)>) -> crate::bids::discovery::QsmRun {
+        use crate::bids::discovery::{EchoFiles, QsmRun};
+        use crate::bids::entities::AcquisitionKey;
+        let n = echoes.len();
+        QsmRun {
+            key: AcquisitionKey {
+                subject: "1".into(), session: None, acquisition: None,
+                reconstruction: None, inversion: None, run: None, suffix: "MEGRE".into(),
+            },
+            echoes: echoes.into_iter().enumerate().map(|(i, (phase, mag))| EchoFiles {
+                echo_number: i as u32 + 1, phase_json: phase.clone(), phase_nifti: phase,
+                magnitude_json: None, magnitude_nifti: mag,
+            }).collect(),
+            magnetic_field_strength: 3.0,
+            echo_times: (0..n).map(|i| 0.004 + i as f64 * 0.004).collect(),
+            b0_dir: (0.0, 0.0, 1.0),
+            dims: (4, 4, 4), has_magnitude: true, mese: None,
+        }
+    }
+
+    /// Write a NIfTI of the given dimensions filled with 1.0.
+    fn write_vol(path: &std::path::Path, dims: (usize, usize, usize)) {
+        let data = vec![1.0f64; dims.0 * dims.1 * dims.2];
+        qsm_core::io::save_nifti_to_file(path, &data, dims, (1.0, 1.0, 1.0), &[
+            1.0, 0.0, 0.0, 0.0,
+            0.0, 1.0, 0.0, 0.0,
+            0.0, 0.0, 1.0, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]).unwrap();
+    }
+
+    #[test]
+    fn test_validate_run_dims_accepts_matching_inputs() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut echoes = Vec::new();
+        for e in 1..=2 {
+            let phase = dir.path().join(format!("echo{}_phase.nii", e));
+            let mag = dir.path().join(format!("echo{}_mag.nii", e));
+            write_vol(&phase, (4, 4, 4));
+            write_vol(&mag, (4, 4, 4));
+            echoes.push((phase, Some(mag)));
+        }
+        let run = run_with_echoes(echoes);
+        let reference = qsm_core::io::read_nifti_file(&run.echoes[0].phase_nifti).unwrap();
+        super::validate_run_dims(&run, &reference).unwrap();
+    }
+
+    #[test]
+    fn test_validate_run_dims_rejects_mismatched_magnitude() {
+        // A magnitude smaller than the phase used to reach qsm-core and panic with an
+        // out-of-bounds index during inhomogeneity correction (issue #184).
+        let dir = tempfile::tempdir().unwrap();
+        let phase = dir.path().join("echo1_phase.nii");
+        let mag = dir.path().join("echo1_mag.nii");
+        write_vol(&phase, (4, 4, 4));
+        write_vol(&mag, (4, 4, 3));
+        let run = run_with_echoes(vec![(phase, Some(mag.clone()))]);
+        let reference = qsm_core::io::read_nifti_file(&run.echoes[0].phase_nifti).unwrap();
+        let err = super::validate_run_dims(&run, &reference).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("Dimension mismatch"), "got: {}", msg);
+        assert!(msg.contains("magnitude"), "got: {}", msg);
+        assert!(msg.contains(&mag.display().to_string()), "got: {}", msg);
+        assert!(msg.contains("4x4x3"), "got: {}", msg);
+        assert!(msg.contains("4x4x4"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_validate_run_dims_rejects_mismatched_later_echo() {
+        let dir = tempfile::tempdir().unwrap();
+        let phase1 = dir.path().join("echo1_phase.nii");
+        let phase2 = dir.path().join("echo2_phase.nii");
+        write_vol(&phase1, (4, 4, 4));
+        write_vol(&phase2, (5, 4, 4));
+        let run = run_with_echoes(vec![(phase1, None), (phase2.clone(), None)]);
+        let reference = qsm_core::io::read_nifti_file(&run.echoes[0].phase_nifti).unwrap();
+        let err = super::validate_run_dims(&run, &reference).unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("echo 2 phase"), "got: {}", msg);
+        assert!(msg.contains(&phase2.display().to_string()), "got: {}", msg);
+    }
+
+    fn meta_4x4x4() -> crate::pipeline::graph::RunMetadata {
+        crate::pipeline::graph::RunMetadata {
+            dims: (4, 4, 4), voxel_size: (1.0, 1.0, 1.0),
+            affine: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+            n_echoes: 1, echo_times: vec![0.004], b0_direction: (0.0, 0.0, 1.0),
+            field_strength: 3.0, has_magnitude: true,
+        }
+    }
+
+    #[test]
+    fn test_homogeneity_correct_rejects_size_mismatch() {
+        // The guard must report the mismatch rather than let qsm-core index past the volume.
+        let cfg = crate::pipeline::config::HomogeneityConfig::default();
+        let short = vec![1.0f64; 4 * 4 * 3];
+        let err = super::homogeneity_correct(&short, &meta_4x4x4(), &cfg, "the magnitude").unwrap_err();
+        let msg = format!("{}", err);
+        assert!(msg.contains("48 voxels"), "got: {}", msg);
+        assert!(msg.contains("4x4x4"), "got: {}", msg);
+        assert!(msg.contains("--no-inhomogeneity-correction"), "got: {}", msg);
+    }
+
+    #[test]
+    fn test_homogeneity_correct_runs_on_matching_volume() {
+        let cfg = crate::pipeline::config::HomogeneityConfig::default();
+        let data: Vec<f64> = (0..4 * 4 * 4).map(|i| 100.0 + i as f64).collect();
+        let out = super::homogeneity_correct(&data, &meta_4x4x4(), &cfg, "the magnitude").unwrap();
+        assert_eq!(out.len(), data.len());
+        assert!(out.iter().all(|v| v.is_finite()));
+    }
+
 }
