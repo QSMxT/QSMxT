@@ -35,6 +35,7 @@ fn main() {
         Command::Slurm(args) => commands::slurm::execute(args),
         Command::Mask { command } => commands::mask::execute(command),
         Command::Unwrap { command } => commands::unwrap::execute(command),
+        Command::Fieldmap { command } => commands::fieldmap::execute(command),
         Command::Bgremove { command } => commands::bgremove::execute(command),
         Command::Invert { command } => commands::invert::execute(command),
         Command::Separate { command } => commands::separate::execute(command),

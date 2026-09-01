@@ -1,6 +1,7 @@
 pub mod common;
 pub mod bgremove;
 pub mod dicom;
+pub mod fieldmap;
 pub mod homogeneity;
 pub mod init;
 pub mod invert;
@@ -41,10 +42,6 @@ mod integration_tests {
             phase_offset_removal: None,
             phase_offset_sigma: None,
             bipolar_correction: false,
-            romeo_individual: false,
-            no_romeo_individual: false,
-            no_romeo_correct_global: false,
-            romeo_template: None,
             b0_estimation: None,
             b0_weight_type: None,
             bet_fractional_intensity: None,
@@ -87,6 +84,7 @@ mod integration_tests {
             homogeneity_sigma_mm: None,
             homogeneity_nbox: None,
             linear_fit_reliability_threshold: None,
+            linear_fit_estimate_offset: None,
             no_qsm: false,
             do_swi: false,
             do_t2starmap: false,

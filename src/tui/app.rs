@@ -1175,6 +1175,15 @@ pub struct PipelineFormState {
     pub romeo_phase_gradient_coherence: bool,
     pub romeo_mag_coherence: bool,
     pub romeo_mag_weight: bool,
+    pub romeo_phase_linearity: bool,
+    pub romeo_mag_weight2: bool,
+    pub romeo_bestpath: bool,
+    pub romeo_temporal_uncertain_unwrapping: String,
+    pub romeo_max_seeds: String,
+    pub romeo_merge_regions: bool,
+    pub romeo_correct_regions: bool,
+    pub romeo_wrap_addition: String,
+    pub linear_fit_estimate_offset: bool,
 
     // Phase offset sigma
     pub phase_offset_sigma: String,
@@ -1355,6 +1364,15 @@ impl Default for PipelineFormState {
             romeo_phase_gradient_coherence: qsm_core::unwrap::RomeoParams::default().phase_gradient_coherence,
             romeo_mag_coherence: qsm_core::unwrap::RomeoParams::default().mag_coherence,
             romeo_mag_weight: qsm_core::unwrap::RomeoParams::default().mag_weight,
+            romeo_phase_linearity: qsm_core::unwrap::RomeoParams::default().phase_linearity,
+            romeo_mag_weight2: qsm_core::unwrap::RomeoParams::default().mag_weight2,
+            romeo_bestpath: qsm_core::unwrap::RomeoParams::default().bestpath,
+            romeo_temporal_uncertain_unwrapping: format!("{}", qsm_core::unwrap::RomeoParams::default().temporal_uncertain_unwrapping),
+            romeo_max_seeds: format!("{}", qsm_core::unwrap::RomeoParams::default().max_seeds),
+            romeo_merge_regions: qsm_core::unwrap::RomeoParams::default().merge_regions,
+            romeo_correct_regions: qsm_core::unwrap::RomeoParams::default().correct_regions,
+            romeo_wrap_addition: format!("{}", qsm_core::unwrap::RomeoParams::default().wrap_addition),
+            linear_fit_estimate_offset: true,
             phase_offset_sigma: {
                 let s = qsm_core::utils::PhaseOffsetParams::default().sigma;
                 format!("{} {} {}", s[0], s[1], s[2])
@@ -1717,6 +1735,50 @@ impl PipelineFormState {
                     label: "  Correct Global", field: "romeo_correct_global",
                     help: "Correct inter-echo 2π offsets after unwrapping",
                 });
+                rows.push(PipelineRow::Toggle {
+                    label: "  Phase Gradient Coherence", field: "romeo_phase_gradient_coherence",
+                    help: "Weight edges by inter-echo phase-gradient consistency (multi-echo)",
+                });
+                rows.push(PipelineRow::Toggle {
+                    label: "  Phase Linearity", field: "romeo_phase_linearity",
+                    help: "Weight edges by second-derivative smoothness",
+                });
+                rows.push(PipelineRow::Toggle {
+                    label: "  Mag Coherence", field: "romeo_mag_coherence",
+                    help: "Weight edges by neighbor magnitude coherence",
+                });
+                rows.push(PipelineRow::Toggle {
+                    label: "  Mag Weight", field: "romeo_mag_weight",
+                    help: "Penalise low-signal voxels (off by default)",
+                });
+                rows.push(PipelineRow::Toggle {
+                    label: "  Mag Weight 2", field: "romeo_mag_weight2",
+                    help: "Penalise abnormally high signal / flow artefacts (off by default)",
+                });
+                rows.push(PipelineRow::Toggle {
+                    label: "  Best-path Weights", field: "romeo_bestpath",
+                    help: "Use Abdul-Rahman best-path weights instead of ROMEO weights",
+                });
+                rows.push(PipelineRow::Param {
+                    label: "  Temporal Uncertain", field: "romeo_temporal_uncertain_unwrapping",
+                    help: "Quality threshold [0,1] for re-unwrapping uncertain voxels (0 disables)",
+                });
+                rows.push(PipelineRow::Param {
+                    label: "  Max Seeds", field: "romeo_max_seeds",
+                    help: "Maximum number of seed regions (default 1)",
+                });
+                rows.push(PipelineRow::Toggle {
+                    label: "  Merge Regions", field: "romeo_merge_regions",
+                    help: "Merge neighboring regions after unwrapping",
+                });
+                rows.push(PipelineRow::Toggle {
+                    label: "  Correct Regions", field: "romeo_correct_regions",
+                    help: "Shift each region's median to nearest 0 by n·2π",
+                });
+                rows.push(PipelineRow::Param {
+                    label: "  Wrap Addition", field: "romeo_wrap_addition",
+                    help: "Extra phase tolerance beyond π for neighbor differences [0,π]",
+                });
             }
 
             // B0 estimation
@@ -1728,6 +1790,11 @@ impl PipelineFormState {
                 rows.push(PipelineRow::AlgoSelect {
                     label: "  Weight Type", field: "b0_weight_type",
                     options: B0_WEIGHT_TYPE_OPTIONS, help: B0_WEIGHT_TYPE_HELP,
+                });
+            } else { // linear_fit
+                rows.push(PipelineRow::Toggle {
+                    label: "  Estimate Offset", field: "linear_fit_estimate_offset",
+                    help: "Fit a phase-offset term in the linear echo-time fit",
                 });
             }
 
@@ -2071,6 +2138,7 @@ impl PipelineFormState {
         "tfi_lambda", "tfi_precond", "tfi_max_iter", "tfi_cg_max_iter", "tfi_cg_tol", "tfi_tol", "tfi_percentage",
         "amp_pe_wave_order", "amp_pe_nlevel", "amp_pe_wave_pec", "amp_pe_simulated_te", "amp_pe_max_linearization_ite", "amp_pe_tikhonov_beta",
         "phase_offset_sigma", "romeo_template",
+        "romeo_temporal_uncertain_unwrapping", "romeo_max_seeds", "romeo_wrap_addition",
         "vsharp_threshold", "vsharp_max_radius", "vsharp_min_radius", "pdf_tol", "lbv_tol",
         "ismv_tol", "ismv_max_iter", "ismv_radius", "sharp_threshold", "sharp_radius",
         "resharp_radius", "resharp_tik_reg", "resharp_tol", "resharp_max_iter",
@@ -2141,6 +2209,9 @@ impl PipelineFormState {
             "amp_pe_tikhonov_beta" => &self.amp_pe_tikhonov_beta,
             "phase_offset_sigma" => &self.phase_offset_sigma,
             "romeo_template" => &self.romeo_template,
+            "romeo_temporal_uncertain_unwrapping" => &self.romeo_temporal_uncertain_unwrapping,
+            "romeo_max_seeds" => &self.romeo_max_seeds,
+            "romeo_wrap_addition" => &self.romeo_wrap_addition,
             "custom_mask_tool" => &self.custom_mask_tool,
             "vsharp_threshold" => &self.vsharp_threshold,
             "vsharp_max_radius" => &self.vsharp_max_radius,
@@ -2312,6 +2383,9 @@ impl PipelineFormState {
             "amp_pe_tikhonov_beta" => Some(&mut self.amp_pe_tikhonov_beta),
             "phase_offset_sigma" => Some(&mut self.phase_offset_sigma),
             "romeo_template" => Some(&mut self.romeo_template),
+            "romeo_temporal_uncertain_unwrapping" => Some(&mut self.romeo_temporal_uncertain_unwrapping),
+            "romeo_max_seeds" => Some(&mut self.romeo_max_seeds),
+            "romeo_wrap_addition" => Some(&mut self.romeo_wrap_addition),
             "custom_mask_tool" => Some(&mut self.custom_mask_tool),
             "vsharp_threshold" => Some(&mut self.vsharp_threshold),
             "vsharp_max_radius" => Some(&mut self.vsharp_max_radius),
@@ -2475,6 +2549,15 @@ impl PipelineFormState {
             "bipolar_correction" => self.bipolar_correction,
             "romeo_individual" => self.romeo_individual,
             "romeo_correct_global" => self.romeo_correct_global,
+            "romeo_phase_gradient_coherence" => self.romeo_phase_gradient_coherence,
+            "romeo_phase_linearity" => self.romeo_phase_linearity,
+            "romeo_mag_coherence" => self.romeo_mag_coherence,
+            "romeo_mag_weight" => self.romeo_mag_weight,
+            "romeo_mag_weight2" => self.romeo_mag_weight2,
+            "romeo_bestpath" => self.romeo_bestpath,
+            "romeo_merge_regions" => self.romeo_merge_regions,
+            "romeo_correct_regions" => self.romeo_correct_regions,
+            "linear_fit_estimate_offset" => self.linear_fit_estimate_offset,
             "medi_smv" => self.medi_smv,
             "do_chi_separation" => self.do_chi_separation,
             "msmv_refine" => self.msmv_refine,
@@ -2492,6 +2575,15 @@ impl PipelineFormState {
             "bipolar_correction" => self.bipolar_correction = !self.bipolar_correction,
             "romeo_individual" => self.romeo_individual = !self.romeo_individual,
             "romeo_correct_global" => self.romeo_correct_global = !self.romeo_correct_global,
+            "romeo_phase_gradient_coherence" => self.romeo_phase_gradient_coherence = !self.romeo_phase_gradient_coherence,
+            "romeo_phase_linearity" => self.romeo_phase_linearity = !self.romeo_phase_linearity,
+            "romeo_mag_coherence" => self.romeo_mag_coherence = !self.romeo_mag_coherence,
+            "romeo_mag_weight" => self.romeo_mag_weight = !self.romeo_mag_weight,
+            "romeo_mag_weight2" => self.romeo_mag_weight2 = !self.romeo_mag_weight2,
+            "romeo_bestpath" => self.romeo_bestpath = !self.romeo_bestpath,
+            "romeo_merge_regions" => self.romeo_merge_regions = !self.romeo_merge_regions,
+            "romeo_correct_regions" => self.romeo_correct_regions = !self.romeo_correct_regions,
+            "linear_fit_estimate_offset" => self.linear_fit_estimate_offset = !self.linear_fit_estimate_offset,
             "medi_smv" => self.medi_smv = !self.medi_smv,
             "msmv_refine" => self.msmv_refine = !self.msmv_refine,
             _ => {}

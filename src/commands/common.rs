@@ -103,6 +103,49 @@ pub fn load_nifti(path: &Path) -> crate::Result<NiftiData> {
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))
 }
 
+/// A multi-echo (4D) NIfTI volume: per-echo 3D data plus shared geometry.
+pub struct MultiEcho {
+    /// Per-echo volumes, each `nx*ny*nz` in NIfTI (Fortran) order.
+    pub echoes: Vec<Vec<f64>>,
+    /// Spatial dimensions (nx, ny, nz).
+    pub dims: (usize, usize, usize),
+    /// Voxel size in mm.
+    pub voxel_size: (f64, f64, f64),
+    /// 4x4 affine (row-major).
+    pub affine: [f64; 16],
+}
+
+impl MultiEcho {
+    /// A `NiftiData`-shaped geometry reference for [`save_nifti`], using the first echo.
+    pub fn geometry_reference(&self) -> NiftiData {
+        NiftiData {
+            data: Vec::new(),
+            dims: self.dims,
+            voxel_size: self.voxel_size,
+            affine: self.affine,
+            scl_slope: 1.0,
+            scl_inter: 0.0,
+        }
+    }
+}
+
+/// Load a multi-echo (4D) NIfTI file, splitting the 4th axis into per-echo volumes.
+///
+/// `read_nifti_file`/`load_nifti` only return the first volume of a 4D file, so this
+/// uses `load_nifti_4d` and de-interleaves the flat `t`-major buffer.
+pub fn load_nifti_4d(path: &Path) -> crate::Result<MultiEcho> {
+    let bytes = std::fs::read(path)
+        .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))?;
+    let (data, (nx, ny, nz, nt), voxel_size, affine) = io::load_nifti_4d(&bytes)
+        .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", path.display(), e)))?;
+    let n_voxels = nx * ny * nz;
+    // load_nifti_4d lays the buffer out t-major: index = vox + t*n_voxels.
+    let echoes: Vec<Vec<f64>> = (0..nt)
+        .map(|t| data[t * n_voxels..(t + 1) * n_voxels].to_vec())
+        .collect();
+    Ok(MultiEcho { echoes, dims: (nx, ny, nz), voxel_size, affine })
+}
+
 /// Load a binary mask from a NIfTI file (threshold at 0.5).
 pub fn load_mask(path: &Path) -> crate::Result<(Vec<u8>, NiftiData)> {
     let nifti = load_nifti(path)?;

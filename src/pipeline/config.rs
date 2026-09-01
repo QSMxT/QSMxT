@@ -117,12 +117,6 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         // ── Field mapping ──
         if let Some(v) = args.phase_offset_removal { config.field_mapping.phase_offset_removal = v; }
         if args.bipolar_correction { config.field_mapping.bipolar_correction = true; }
-        if args.romeo_individual { config.field_mapping.romeo.individual = true; }
-        if args.no_romeo_individual { config.field_mapping.romeo.individual = false; }
-        if args.no_romeo_correct_global { config.field_mapping.romeo.correct_global = false; }
-        if let Some(t) = args.romeo_template {
-            config.field_mapping.romeo.template = if t > 0 { t - 1 } else { 0 };
-        }
         if let Some(a) = args.b0_estimation {
             config.field_mapping.b0_estimation = match a {
                 cli::B0EstimationArg::WeightedAvg => B0Estimation::WeightedAvg,
@@ -142,10 +136,32 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
             if s.len() == 3 { config.field_mapping.phase_offset_sigma = [s[0], s[1], s[2]]; }
         }
 
-        // ── ROMEO weights ──
-        if args.romeo_params.no_romeo_phase_gradient_coherence { config.field_mapping.romeo.phase_gradient_coherence = false; }
-        if args.romeo_params.no_romeo_mag_coherence { config.field_mapping.romeo.mag_coherence = false; }
-        if args.romeo_params.no_romeo_mag_weight { config.field_mapping.romeo.mag_weight = false; }
+        // ── ROMEO weights and unwrapping options ──
+        {
+            let r = &args.romeo_params;
+            let fmr = &mut config.field_mapping.romeo;
+            // Weight component flags (default-true → disabled via --no-*)
+            if r.no_romeo_phase_coherence { fmr.phase_coherence = false; }
+            if r.no_romeo_phase_gradient_coherence { fmr.phase_gradient_coherence = false; }
+            if r.no_romeo_phase_linearity { fmr.phase_linearity = false; }
+            if r.no_romeo_mag_coherence { fmr.mag_coherence = false; }
+            // Weight component flags (default-false → enabled via positive flag)
+            if r.romeo_mag_weight { fmr.mag_weight = true; }
+            if r.no_romeo_mag_weight { fmr.mag_weight = false; }
+            if r.romeo_mag_weight2 { fmr.mag_weight2 = true; }
+            if r.romeo_bestpath { fmr.bestpath = true; }
+            // Multi-echo options
+            if let Some(t) = r.romeo_template { fmr.template = if t > 0 { t - 1 } else { 0 }; }
+            if r.romeo_individual { fmr.individual = true; }
+            if r.no_romeo_individual { fmr.individual = false; }
+            if r.romeo_correct_global { fmr.correct_global = true; }
+            if r.no_romeo_correct_global { fmr.correct_global = false; }
+            if let Some(v) = r.romeo_temporal_uncertain_unwrapping { fmr.temporal_uncertain_unwrapping = v; }
+            if let Some(v) = r.romeo_max_seeds { fmr.max_seeds = v; }
+            if r.romeo_merge_regions { fmr.merge_regions = true; }
+            if r.romeo_correct_regions { fmr.correct_regions = true; }
+            if let Some(v) = r.romeo_wrap_addition { fmr.wrap_addition = v; }
+        }
 
         // ── QSM reference ──
         if let Some(a) = args.qsm_reference {
@@ -299,6 +315,9 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
         // ── Linear fit ──
         if let Some(v) = args.linear_fit_reliability_threshold {
             config.field_mapping.linear_fit.reliability_threshold_percentile = v;
+        }
+        if let Some(v) = args.linear_fit_estimate_offset {
+            config.field_mapping.linear_fit.estimate_offset = v;
         }
 
         // ── Pipeline toggles ──
