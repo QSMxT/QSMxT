@@ -317,6 +317,12 @@ pub struct RomeoConfig {
     pub mag_coherence: bool,
     pub mag_weight: bool,
     pub mag_weight2: bool,
+    pub bestpath: bool,
+    pub temporal_uncertain_unwrapping: f64,
+    pub max_seeds: u8,
+    pub merge_regions: bool,
+    pub correct_regions: bool,
+    pub wrap_addition: f64,
 }
 impl Default for RomeoConfig {
     fn default() -> Self {
@@ -331,6 +337,12 @@ impl Default for RomeoConfig {
             mag_coherence: p.mag_coherence,
             mag_weight: p.mag_weight,
             mag_weight2: p.mag_weight2,
+            bestpath: p.bestpath,
+            temporal_uncertain_unwrapping: p.temporal_uncertain_unwrapping,
+            max_seeds: p.max_seeds,
+            merge_regions: p.merge_regions,
+            correct_regions: p.correct_regions,
+            wrap_addition: p.wrap_addition,
         }
     }
 }

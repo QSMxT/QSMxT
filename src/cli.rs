@@ -50,6 +50,11 @@ pub enum Command {
         #[command(subcommand)]
         command: UnwrapCommand,
     },
+    /// B0 field mapping from multi-echo phase (NIfTI in, ppm out)
+    Fieldmap {
+        #[command(subcommand)]
+        command: FieldmapCommand,
+    },
     /// Background field removal
     Bgremove {
         #[command(subcommand)]
@@ -734,15 +739,91 @@ pub struct MsmvParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct RomeoParamArgs {
-    /// ROMEO: disable phase gradient coherence weights
+    /// ROMEO: disable phase coherence weights (default: on)
+    #[arg(long)]
+    pub no_romeo_phase_coherence: bool,
+    /// ROMEO: disable phase gradient coherence weights (default: on)
     #[arg(long)]
     pub no_romeo_phase_gradient_coherence: bool,
-    /// ROMEO: disable magnitude coherence weights
+    /// ROMEO: disable phase linearity weights (default: on)
+    #[arg(long)]
+    pub no_romeo_phase_linearity: bool,
+    /// ROMEO: disable magnitude coherence weights (default: on)
     #[arg(long)]
     pub no_romeo_mag_coherence: bool,
-    /// ROMEO: disable magnitude weighting
+    /// ROMEO: enable magnitude weighting (default: off)
+    #[arg(long)]
+    pub romeo_mag_weight: bool,
+    /// ROMEO: disable magnitude weighting (overrides --romeo-mag-weight; kept for compatibility)
     #[arg(long)]
     pub no_romeo_mag_weight: bool,
+    /// ROMEO: enable second magnitude weighting (flow-artifact penalty; default: off)
+    #[arg(long)]
+    pub romeo_mag_weight2: bool,
+    /// ROMEO: use Best-path (Abdul-Rahman) weights instead of ROMEO weights (default: off)
+    #[arg(long)]
+    pub romeo_bestpath: bool,
+    /// ROMEO: template echo index (1-indexed, only for template mode)
+    #[arg(long)]
+    pub romeo_template: Option<usize>,
+    /// ROMEO: use individual per-echo unwrapping (default)
+    #[arg(long)]
+    pub romeo_individual: bool,
+    /// ROMEO: use template-based temporal unwrapping (disables individual mode)
+    #[arg(long)]
+    pub no_romeo_individual: bool,
+    /// ROMEO: enable inter-echo 2π offset correction (default: off)
+    #[arg(long)]
+    pub romeo_correct_global: bool,
+    /// ROMEO: disable inter-echo 2π offset correction
+    #[arg(long)]
+    pub no_romeo_correct_global: bool,
+    /// ROMEO: temporal uncertain-unwrapping quality threshold [0,1] (0 disables; default: 0.5)
+    #[arg(long)]
+    pub romeo_temporal_uncertain_unwrapping: Option<f64>,
+    /// ROMEO: maximum number of seed regions (default: 1)
+    #[arg(long)]
+    pub romeo_max_seeds: Option<u8>,
+    /// ROMEO: merge neighboring regions after unwrapping (default: off)
+    #[arg(long)]
+    pub romeo_merge_regions: bool,
+    /// ROMEO: correct each region's median to nearest 0 (default: off)
+    #[arg(long)]
+    pub romeo_correct_regions: bool,
+    /// ROMEO: additional phase tolerance beyond π for neighbor differences [0,π] (default: 0.0)
+    #[arg(long)]
+    pub romeo_wrap_addition: Option<f64>,
+}
+
+impl RomeoParamArgs {
+    /// Build `qsm_core::unwrap::RomeoParams` from these CLI flags, starting from the
+    /// library defaults and applying overrides. `--romeo-template` is 1-indexed on the
+    /// CLI and converted to the 0-indexed value the library expects.
+    pub fn to_romeo_params(&self) -> qsm_core::unwrap::RomeoParams {
+        let mut p = qsm_core::unwrap::RomeoParams::default();
+        // Weight component flags (default-true → disabled via --no-*)
+        if self.no_romeo_phase_coherence { p.phase_coherence = false; }
+        if self.no_romeo_phase_gradient_coherence { p.phase_gradient_coherence = false; }
+        if self.no_romeo_phase_linearity { p.phase_linearity = false; }
+        if self.no_romeo_mag_coherence { p.mag_coherence = false; }
+        // Weight component flags (default-false → enabled via positive flag)
+        if self.romeo_mag_weight { p.mag_weight = true; }
+        if self.no_romeo_mag_weight { p.mag_weight = false; }
+        if self.romeo_mag_weight2 { p.mag_weight2 = true; }
+        if self.romeo_bestpath { p.bestpath = true; }
+        // Multi-echo options
+        if let Some(t) = self.romeo_template { p.template = t.saturating_sub(1); }
+        if self.romeo_individual { p.individual = true; }
+        if self.no_romeo_individual { p.individual = false; }
+        if self.romeo_correct_global { p.correct_global = true; }
+        if self.no_romeo_correct_global { p.correct_global = false; }
+        if let Some(v) = self.romeo_temporal_uncertain_unwrapping { p.temporal_uncertain_unwrapping = v; }
+        if let Some(v) = self.romeo_max_seeds { p.max_seeds = v; }
+        if self.romeo_merge_regions { p.merge_regions = true; }
+        if self.romeo_correct_regions { p.correct_regions = true; }
+        if let Some(v) = self.romeo_wrap_addition { p.wrap_addition = v; }
+        p
+    }
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -815,22 +896,6 @@ pub struct RunArgs {
     /// Enable bipolar gradient correction (requires >= 3 echoes)
     #[arg(long)]
     pub bipolar_correction: bool,
-
-    /// ROMEO: use individual per-echo unwrapping (default)
-    #[arg(long)]
-    pub romeo_individual: bool,
-
-    /// ROMEO: use template-based temporal unwrapping
-    #[arg(long)]
-    pub no_romeo_individual: bool,
-
-    /// ROMEO: disable inter-echo 2π offset correction
-    #[arg(long)]
-    pub no_romeo_correct_global: bool,
-
-    /// ROMEO: template echo index (1-indexed, only for template mode)
-    #[arg(long)]
-    pub romeo_template: Option<usize>,
 
     /// B0 field estimation method
     #[arg(long, value_enum)]
@@ -941,6 +1006,10 @@ pub struct RunArgs {
     /// Linear fit reliability threshold percentile (degrees)
     #[arg(long)]
     pub linear_fit_reliability_threshold: Option<f64>,
+
+    /// Linear fit: estimate a phase offset term (default: true)
+    #[arg(long)]
+    pub linear_fit_estimate_offset: Option<bool>,
 
     /// Skip QSM processing (only run supplementary outputs like SWI, T2*, R2*)
     #[arg(long)]
@@ -1253,6 +1322,79 @@ pub struct UnwrapRomeoArgs {
 pub struct UnwrapLaplacianArgs {
     #[command(flatten)]
     pub common: UnwrapCommonArgs,
+}
+
+// ── Fieldmap ──
+
+#[derive(Args, Debug, Clone)]
+pub struct FieldmapCommonArgs {
+    /// Input multi-echo wrapped phase NIfTI file (4D: x,y,z,echo)
+    pub input: PathBuf,
+    /// Binary mask NIfTI file
+    #[arg(short, long)]
+    pub mask: PathBuf,
+    /// Output B0 field map NIfTI file (in ppm)
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// Multi-echo magnitude NIfTI file (4D; improves weighting)
+    #[arg(long)]
+    pub magnitude: Option<PathBuf>,
+    /// Echo times in seconds (space-separated, one per echo)
+    #[arg(long, num_args = 1..)]
+    pub tes: Option<Vec<f64>>,
+    /// Field strength in Tesla (alias: --field-strength)
+    #[arg(long, alias = "field-strength")]
+    pub b0: Option<f64>,
+    /// JSON params file: {"TE":[..seconds], "B0":<tesla>, "voxel_size":[..], "B0_dir":[..]}.
+    /// --tes / --b0 override values from this file when both are present.
+    #[arg(long)]
+    pub params: Option<PathBuf>,
+    /// B0 field estimation method
+    #[arg(long, value_enum, default_value = "weighted-avg")]
+    pub b0_estimation: B0EstimationArg,
+    /// B0 weighted-averaging weight type
+    #[arg(long, value_enum, default_value = "phase-snr")]
+    pub b0_weight_type: B0WeightTypeArg,
+    /// Linear fit reliability threshold percentile (degrees)
+    #[arg(long)]
+    pub linear_fit_reliability_threshold: Option<f64>,
+    /// Linear fit: estimate a phase offset term (default: true)
+    #[arg(long)]
+    pub linear_fit_estimate_offset: Option<bool>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum FieldmapCommand {
+    /// ROMEO-based multi-echo field mapping (phase offset removal + unwrap + B0 fit)
+    Romeo(FieldmapRomeoArgs),
+    /// Laplacian-based multi-echo field mapping
+    Laplacian(FieldmapLaplacianArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct FieldmapRomeoArgs {
+    #[command(flatten)]
+    pub common: FieldmapCommonArgs,
+    /// Enable phase offset removal for multi-echo data (default: true)
+    #[arg(long)]
+    pub phase_offset_removal: Option<bool>,
+    /// Phase offset removal smoothing sigma (3 values, in voxels)
+    #[arg(long, num_args = 3)]
+    pub phase_offset_sigma: Option<Vec<f64>>,
+    /// Enable bipolar gradient correction (requires >= 3 echoes)
+    #[arg(long)]
+    pub bipolar_correction: bool,
+    #[command(flatten)]
+    pub romeo_params: RomeoParamArgs,
+}
+
+#[derive(Parser, Debug)]
+pub struct FieldmapLaplacianArgs {
+    #[command(flatten)]
+    pub common: FieldmapCommonArgs,
+    // Note: phase offset removal is inert for Laplacian (skipped by the engine),
+    // so it is intentionally not exposed here. b0-estimation / b0-weight-type /
+    // linear-fit-* on `common` still apply.
 }
 
 // ── Bgremove ──

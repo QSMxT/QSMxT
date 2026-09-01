@@ -99,7 +99,12 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             mag_coherence: cfg.field_mapping.romeo.mag_coherence,
             mag_weight: cfg.field_mapping.romeo.mag_weight,
             mag_weight2: cfg.field_mapping.romeo.mag_weight2,
-            ..Default::default()
+            bestpath: cfg.field_mapping.romeo.bestpath,
+            temporal_uncertain_unwrapping: cfg.field_mapping.romeo.temporal_uncertain_unwrapping,
+            max_seeds: cfg.field_mapping.romeo.max_seeds,
+            merge_regions: cfg.field_mapping.romeo.merge_regions,
+            correct_regions: cfg.field_mapping.romeo.correct_regions,
+            wrap_addition: cfg.field_mapping.romeo.wrap_addition,
         },
         linear_fit_params: qsm_core::utils::LinearFitParams {
             estimate_offset: cfg.field_mapping.linear_fit.estimate_offset,
