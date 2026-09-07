@@ -8,7 +8,7 @@ env:
   CARGO_TERM_COLOR: always
   # Pinned dcm2niix release bundled into the archives. Keep in sync with
   # DCM2NIIX_BUNDLED_VERSION in src/dicom/convert.rs.
-  DCM2NIIX_VERSION: v1.0.20260416
+  DCM2NIIX_VERSION: v1.0.20260724
 
 permissions:
   contents: write
