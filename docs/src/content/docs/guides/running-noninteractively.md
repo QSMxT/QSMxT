@@ -183,8 +183,9 @@ classification once even if many subjects share it.
 
 Output is a BIDS tree of `sub-*/anat/` NIfTIs with JSON sidecars (`EchoTime` in
 seconds), ready for the pipeline. Already have NIfTIs? You can assemble a BIDS
-dataset by hand — QSMxT only needs magnitude/phase pairs with valid sidecars; run
-[`qsmxt validate`](/QSMxT/reference/commands/) to check it's pipeline-ready.
+dataset by hand — see [Input data](/QSMxT/reference/inputs/) for the expected
+layout, and run [`qsmxt validate`](/QSMxT/reference/inputs/#checking-a-dataset)
+to check it's pipeline-ready.
 
 ## HPC & SLURM
 

@@ -71,4 +71,5 @@ the exact methods your data and settings used.
 - [Running interactively](/QSMxT/guides/running-interactively/) — the TUI workflow
 - [Running noninteractively](/QSMxT/guides/running-noninteractively/) — every stage and option
 - [Configuration](/QSMxT/reference/configuration/) — save settings to a TOML file
+- [Input data](/QSMxT/reference/inputs/) — what your dataset needs to contain
 - [Algorithms](/QSMxT/reference/algorithms/) — choose the right methods
