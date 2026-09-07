@@ -51,20 +51,25 @@ Two further acquisitions are recognised when present:
 | `sub-*/[ses-*/]anat/*_part-mag_*.nii[.gz]` | magnitude, for R2\*/T2\*, SWI and masking |
 | `sub-*/[ses-*/]anat/*_echo-*_MESE.nii[.gz]` | multi-echo spin-echo, for R2 and hence R2' |
 
+A MESE acquisition needs at least three echoes to fit R2. Fewer are ignored.
+
 ## What each output needs
 
-| Output | Requires |
+Phase is what a run is discovered from, so it is present for everything below.
+This table lists what each output needs in addition to it.
+
+| Output | Also requires |
 | --- | --- |
-| QSM | phase (magnitude recommended, and required by some masking options) |
+| QSM | nothing, though magnitude is recommended and some masking options need it |
 | SWI (`--do-swi`) | magnitude |
-| R2\*/T2\* (`--do-r2starmap`, `--do-t2starmap`) | at least 3 echoes, magnitude |
-| R2 (`--do-r2map`) | a MESE acquisition |
-| R2' (`--do-r2primemap`) | R2\* and R2, so magnitude plus a MESE acquisition |
+| R2\*/T2\* (`--do-r2starmap`, `--do-t2starmap`) | magnitude, at least 3 echoes |
+| R2 (`--do-r2map`) | a MESE acquisition, at least 3 echoes |
+| R2' (`--do-r2primemap`) | magnitude and a MESE acquisition, for R2\* and R2 |
 
 [Source separation](/QSMxT/reference/algorithms/#susceptibility-source-separation)
 (`--do-chisep`) splits into two groups. The `r2star-qsm` and `decompose` methods
-need only the GRE acquisition. Every other method is based on R2', so it needs a
-MESE acquisition as well.
+work from multi-echo GRE magnitude alone. The other six are based on R2', so they
+need a MESE acquisition as well.
 
 :::caution
 If a requested output cannot be computed from your data, QSMxT logs a warning and
