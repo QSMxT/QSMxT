@@ -137,3 +137,10 @@ you change them. You can also set them in a
 [configuration file](/QSMxT/reference/configuration/), or run the matching
 [standalone tool](/QSMxT/reference/tools/) (e.g. `qsmxt invert tgv --help`) to
 experiment directly.
+
+## Susceptibility source separation
+
+Separating a susceptibility map into paramagnetic and diamagnetic components is
+configured separately, and some methods need a multi-echo spin-echo acquisition
+in addition to your GRE data. See
+[Source separation](/QSMxT/reference/source-separation/).

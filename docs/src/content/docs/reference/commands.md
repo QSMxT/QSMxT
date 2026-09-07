@@ -60,6 +60,7 @@ qsmxt <cmd> --help # full help for a command
 | `--phase-offset-removal <bool>` | Multi-echo phase-offset removal |
 | `--bipolar-correction` | Bipolar readout correction (≥ 3 echoes) |
 | `--romeo-*` | Fine-grained ROMEO unwrapping controls |
+| `--do-chisep` / `--chisep <M>` | [Susceptibility source separation](/QSMxT/reference/source-separation/) |
 
 See [Algorithms](/QSMxT/reference/algorithms/) for the valid values of each
 algorithm option.

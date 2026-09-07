@@ -79,6 +79,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Commands', slug: 'reference/commands' },
 						{ label: 'Algorithms', slug: 'reference/algorithms' },
+						{ label: 'Source separation', slug: 'reference/source-separation' },
 						{ label: 'Configuration', slug: 'reference/configuration' },
 						{ label: 'Standalone tools', slug: 'reference/tools' },
 					],
