@@ -14,7 +14,7 @@ pub enum ConvertMessage {
 
 /// dcm2niix version bundled with release builds (see .github/workflows/release.yml).
 /// Kept in sync with the `DCM2NIIX_VERSION` pin in the release workflow.
-pub const DCM2NIIX_BUNDLED_VERSION: &str = "v1.0.20260416";
+pub const DCM2NIIX_BUNDLED_VERSION: &str = "v1.0.20260724";
 
 /// Bare executable name for the current platform.
 fn dcm2niix_exe_name() -> &'static str {

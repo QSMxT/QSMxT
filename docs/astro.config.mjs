@@ -78,6 +78,7 @@ export default defineConfig({
 					label: 'Reference',
 					items: [
 						{ label: 'Commands', slug: 'reference/commands' },
+						{ label: 'Input data', slug: 'reference/inputs' },
 						{ label: 'Algorithms', slug: 'reference/algorithms' },
 						{ label: 'Configuration', slug: 'reference/configuration' },
 						{ label: 'Standalone tools', slug: 'reference/tools' },

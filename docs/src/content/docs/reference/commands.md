@@ -12,7 +12,7 @@ for the complete, authoritative options of any command.
 | --- | --- |
 | [`run`](/QSMxT/guides/running-noninteractively/) | Run the full QSM pipeline on a BIDS dataset |
 | `init` | Generate a pipeline configuration file (TOML) |
-| `validate` | Validate BIDS dataset structure for QSM processing |
+| [`validate`](/QSMxT/reference/inputs/) | Validate BIDS dataset structure for QSM processing |
 | [`dicom-convert`](/QSMxT/guides/running-noninteractively/#converting-dicoms-to-bids) | Convert a DICOM directory to BIDS with automatic classification |
 | [`slurm`](/QSMxT/guides/running-noninteractively/#hpc--slurm) | Generate SLURM job scripts for HPC execution |
 | [`tui`](/QSMxT/guides/running-interactively/) | Launch the interactive TUI |
@@ -60,6 +60,7 @@ qsmxt <cmd> --help # full help for a command
 | `--phase-offset-removal <bool>` | Multi-echo phase-offset removal |
 | `--bipolar-correction` | Bipolar readout correction (≥ 3 echoes) |
 | `--romeo-*` | Fine-grained ROMEO unwrapping controls |
+| `--do-chisep` / `--chisep <M>` | [Susceptibility source separation](/QSMxT/reference/algorithms/#susceptibility-source-separation) |
 
 See [Algorithms](/QSMxT/reference/algorithms/) for the valid values of each
 algorithm option.

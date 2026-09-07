@@ -1784,7 +1784,7 @@ mod tests {
         app.active_tab = 2; // Pipeline tab
         let _ = render_app(&mut app);
         // Change algorithm
-        app.pipeline_state.qsm_algorithm = 3; // TGV
+        app.pipeline_state.qsm_algorithm = 3; // TSVD
         let _ = render_app(&mut app);
     }
 

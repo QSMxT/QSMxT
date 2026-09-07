@@ -137,3 +137,26 @@ you change them. You can also set them in a
 [configuration file](/QSMxT/reference/configuration/), or run the matching
 [standalone tool](/QSMxT/reference/tools/) (e.g. `qsmxt invert tgv --help`) to
 experiment directly.
+
+## Susceptibility source separation
+
+Enable with `--do-chisep` to split susceptibility into paramagnetic and
+diamagnetic components, and choose the method with `--chisep`.
+
+| Value | Method |
+| --- | --- |
+| `r2star-qsm` | R2\*-based magnitude decay modelling (default) |
+| `decompose` | DECOMPOSE-QSM |
+| `chi-sep-ilsqr` | χ-separation, iLSQR inversion |
+| `chi-sep-medi` | χ-separation, MEDI inversion |
+| `wavesep` | Wavelet-based single-step separation |
+| `hc-chisep` | Hollow-cylinder χ-separation |
+| `susep-net` | SUSEP-Net (deep learning) |
+| `chi-sepnet` | χ-sepnet (deep learning) |
+
+Only `r2star-qsm` and `decompose` run on a GRE acquisition alone. The rest are
+based on R2', so they also need a multi-echo spin-echo acquisition or a
+bring-your-own R2' map. See [Input data](/QSMxT/reference/inputs/).
+
+Outputs are written as `desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap` and
+`desc-total_Chimap`.
