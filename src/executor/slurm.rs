@@ -18,7 +18,7 @@ pub fn generate_all_slurm(
     runs: &[QsmRun],
     bids_dir: &Path,
     output_dir: &Path,
-    _config: &PipelineConfig,
+    config: &PipelineConfig,
     account: &str,
     partition: Option<&str>,
     time: &str,
@@ -31,7 +31,7 @@ pub fn generate_all_slurm(
 
     // Save config for SLURM jobs to reference
     let config_path = derivatives_dir.join("pipeline_config.toml");
-    std::fs::write(&config_path, _config.to_toml().unwrap_or_default())?;
+    std::fs::write(&config_path, config.to_toml().unwrap_or_default())?;
 
     let qsmxt_bin = std::env::current_exe().unwrap_or_else(|_| PathBuf::from("qsmxt"));
 

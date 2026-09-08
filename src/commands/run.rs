@@ -18,7 +18,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         PipelineConfig::default()
     };
 
-    crate::pipeline::config::apply_run_overrides(&mut config, &args);
+    crate::pipeline::config::apply_run_overrides(&mut config, &args.pipeline);
     
 
     // Discover BIDS runs

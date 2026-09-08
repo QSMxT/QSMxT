@@ -844,30 +844,13 @@ pub struct SwiParamArgs {
 
 // ─── Pipeline commands ───
 
-#[derive(Parser, Debug)]
-pub struct RunArgs {
-    /// Input BIDS directory
-    pub bids_dir: PathBuf,
-
-    /// Output directory (defaults to bids_dir; outputs go into <dir>/derivatives/qsmxt/)
-    pub output_dir: Option<PathBuf>,
-
-    /// Pipeline configuration file (TOML)
-    #[arg(long)]
-    pub config: Option<PathBuf>,
-
-    /// Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*")
-    #[arg(long, num_args = 1..)]
-    pub include: Option<Vec<String>>,
-
-    /// Exclude runs matching these glob patterns (e.g. "*mygrea*")
-    #[arg(long, num_args = 1..)]
-    pub exclude: Option<Vec<String>>,
-
-    /// Limit number of echoes to process
-    #[arg(long)]
-    pub num_echoes: Option<usize>,
-
+/// Pipeline configuration overrides shared by `qsmxt run` and `qsmxt slurm`.
+///
+/// These map onto `PipelineConfig` fields via `apply_run_overrides()`; both
+/// subcommands flatten this struct so a pipeline configured once (in the TUI or
+/// on the command line) means the same thing whether it runs locally or on SLURM.
+#[derive(Args, Debug, Default)]
+pub struct PipelineArgs {
     /// QSM algorithm
     #[arg(long, value_enum)]
     pub qsm_algorithm: Option<QsmAlgorithmArg>,
@@ -990,11 +973,6 @@ pub struct RunArgs {
     #[command(flatten)]
     pub tiling_params: TilingParamArgs,
 
-
-    /// Number of parallel threads
-    #[arg(long)]
-    pub n_procs: Option<usize>,
-
     /// Inhomogeneity correction smoothing sigma in mm
     #[arg(long)]
     pub homogeneity_sigma_mm: Option<f64>,
@@ -1059,18 +1037,6 @@ pub struct RunArgs {
     #[arg(long)]
     pub export_dicom: bool,
 
-    /// Optional source DICOM directory; inherit patient/study identity from the
-    /// original DICOMs when exporting (used with --export-dicom)
-    #[arg(long)]
-    pub source_dicom: Option<PathBuf>,
-
-    /// Restrict DICOM export to these maps (default: all produced). Values:
-    /// chimap, swi, minip, t2starmap, r2starmap, r2map, r2primemap,
-    /// desc-paramagnetic_chimap, desc-diamagnetic_chimap, desc-total_chimap
-    /// (used with --export-dicom)
-    #[arg(long, num_args = 1.., value_delimiter = ',')]
-    pub dicom_outputs: Option<Vec<String>>,
-
     /// Apply inhomogeneity correction to magnitude before masking
     #[arg(long)]
     pub inhomogeneity_correction: bool,
@@ -1099,6 +1065,50 @@ pub struct RunArgs {
     /// Example: magnitude,bet:0.5,erode:2
     #[arg(long = "mask", num_args = 1)]
     pub mask_sections_cli: Option<Vec<String>>,
+}
+
+#[derive(Parser, Debug)]
+pub struct RunArgs {
+    /// Input BIDS directory
+    pub bids_dir: PathBuf,
+
+    /// Output directory (defaults to bids_dir; outputs go into <dir>/derivatives/qsmxt/)
+    pub output_dir: Option<PathBuf>,
+
+    /// Pipeline configuration file (TOML)
+    #[arg(long)]
+    pub config: Option<PathBuf>,
+
+    /// Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*")
+    #[arg(long, num_args = 1..)]
+    pub include: Option<Vec<String>>,
+
+    /// Exclude runs matching these glob patterns (e.g. "*mygrea*")
+    #[arg(long, num_args = 1..)]
+    pub exclude: Option<Vec<String>>,
+
+    /// Limit number of echoes to process
+    #[arg(long)]
+    pub num_echoes: Option<usize>,
+
+    #[command(flatten)]
+    pub pipeline: PipelineArgs,
+
+    /// Number of parallel threads
+    #[arg(long)]
+    pub n_procs: Option<usize>,
+
+    /// Optional source DICOM directory; inherit patient/study identity from the
+    /// original DICOMs when exporting (used with --export-dicom)
+    #[arg(long)]
+    pub source_dicom: Option<PathBuf>,
+
+    /// Restrict DICOM export to these maps (default: all produced). Values:
+    /// chimap, swi, minip, t2starmap, r2starmap, r2map, r2primemap,
+    /// desc-paramagnetic_chimap, desc-diamagnetic_chimap, desc-total_chimap
+    /// (used with --export-dicom)
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    pub dicom_outputs: Option<Vec<String>>,
 
     /// Print processing plan without executing
     #[arg(long)]
@@ -1193,6 +1203,9 @@ pub struct SlurmArgs {
     /// Limit number of echoes to process
     #[arg(long)]
     pub num_echoes: Option<usize>,
+
+    #[command(flatten)]
+    pub pipeline: PipelineArgs,
 }
 
 // ─── Standalone algorithm commands (subcommand-per-algorithm) ───

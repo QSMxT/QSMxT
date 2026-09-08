@@ -84,7 +84,10 @@ pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamA
 }
 
 /// Maps flat CLI flags to nested config fields.
-pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::RunArgs) {
+///
+/// Shared by `qsmxt run` and `qsmxt slurm` (both flatten `PipelineArgs`), so a
+/// pipeline configured once resolves identically in either execution mode.
+pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs) {
         // ── Inversion algorithm ──
         if let Some(a) = args.qsm_algorithm {
             config.inversion.algorithm = qsm_algorithm_arg_to_config(a);
@@ -501,7 +504,7 @@ mod tests {
             _ => panic!("expected Run subcommand"),
         };
         let mut rebuilt = PipelineConfig::default();
-        apply_run_overrides(&mut rebuilt, &run_args);
+        apply_run_overrides(&mut rebuilt, &run_args.pipeline);
 
         assert_eq!(rebuilt.inversion.algorithm, QsmAlgorithm::Qsmart);
         assert_eq!(rebuilt.inversion.qsmart.inversion, QsmAlgorithm::Tv);
@@ -520,7 +523,7 @@ mod tests {
             _ => panic!("expected Run subcommand"),
         };
         let mut config = PipelineConfig::default();
-        apply_run_overrides(&mut config, &run_args);
+        apply_run_overrides(&mut config, &run_args.pipeline);
         config
     }
 

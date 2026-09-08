@@ -3,11 +3,16 @@ use crate::cli::SlurmArgs;
 use crate::pipeline::config::PipelineConfig;
 
 pub fn execute(args: SlurmArgs) -> crate::Result<()> {
-    let config = if let Some(ref path) = args.config {
+    // Build config the same way `qsmxt run` does: file -> CLI/TUI overrides.
+    // Without the overrides the generated jobs silently fall back to the
+    // pipeline defaults instead of the requested settings.
+    let mut config = if let Some(ref path) = args.config {
         crate::pipeline::config::load_config(path)?
     } else {
         PipelineConfig::default()
     };
+
+    crate::pipeline::config::apply_run_overrides(&mut config, &args.pipeline);
 
     let filter = DiscoveryFilter {
         include: args.include.clone(),
