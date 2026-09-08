@@ -100,12 +100,39 @@ fn push_if_changed(parts: &mut Vec<String>, flag: &str, current: &str, default: 
 
 pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
     let form = &app.form;
-    let ps = &app.pipeline_state;
     if form.bids_dir.is_empty() {
         return Err(crate::error::QsmxtError::Config(
             "BIDS directory is required".to_string(),
         ));
     }
+
+    Ok(RunArgs {
+        bids_dir: expand_tilde(&form.bids_dir),
+        output_dir: if form.output_dir.is_empty() { None } else { Some(expand_tilde(&form.output_dir)) },
+        config: parse_optional_path(&form.config_file),
+        include: app.filter_state.get_include_exclude().0,
+        exclude: app.filter_state.get_include_exclude().1,
+        num_echoes: parse_optional_usize(&app.filter_state.num_echoes),
+        n_procs: parse_optional_usize(&form.n_procs),
+        source_dicom: None,
+        dicom_outputs: None,
+        dry: form.dry_run,
+        debug: form.debug,
+        mem_limit_gb: None,
+        no_mem_limit: false,
+        force: false,
+        clean_intermediates: false,
+        pipeline: pipeline_args_from_app(app),
+    })
+}
+
+/// Pipeline settings as they stand in the TUI form.
+///
+/// Shared by the local (`RunArgs`) and SLURM (`SlurmArgs`) paths so both
+/// execute the pipeline the user configured, not the defaults.
+pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
+    let form = &app.form;
+    let ps = &app.pipeline_state;
 
     let qsm_options = [
         QsmAlgorithmArg::Rts,
@@ -161,13 +188,8 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         SeparationAlgorithmArg::SusepNet,
         SeparationAlgorithmArg::ChiSepNet,
     ];
-    Ok(RunArgs {
-        bids_dir: expand_tilde(&form.bids_dir),
-        output_dir: if form.output_dir.is_empty() { None } else { Some(expand_tilde(&form.output_dir)) },
-        config: parse_optional_path(&form.config_file),
-        include: app.filter_state.get_include_exclude().0,
-        exclude: app.filter_state.get_include_exclude().1,
-        num_echoes: parse_optional_usize(&app.filter_state.num_echoes),
+
+    PipelineArgs {
         qsm_algorithm: Some(qsm_options[ps.qsm_algorithm]),
         unwrapping_algorithm: Some(unwrap_options[ps.unwrapping_algorithm]),
         bf_algorithm: Some(bf_options[ps.bf_algorithm]),
@@ -455,7 +477,6 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
             tile_size: parse_optional_usize(&ps.dl_tile_size),
             tile_halo: parse_optional_usize(&ps.dl_tile_halo),
         },
-        n_procs: parse_optional_usize(&form.n_procs),
         homogeneity_sigma_mm: None,
         homogeneity_nbox: None,
         linear_fit_reliability_threshold: None,
@@ -472,8 +493,6 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         use_custom_r2: if ps.custom_r2_tool.trim().is_empty() { None } else { Some(ps.custom_r2_tool.trim().to_string()) },
         use_custom_r2prime: if ps.custom_r2prime_tool.trim().is_empty() { None } else { Some(ps.custom_r2prime_tool.trim().to_string()) },
         export_dicom: form.export_dicom,
-        source_dicom: None,
-        dicom_outputs: None,
         inhomogeneity_correction: ps.inhomogeneity_correction,
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
         obliquity_threshold: parse_optional_f64(&ps.obliquity_threshold),
@@ -489,13 +508,7 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
             }).collect();
             if secs.is_empty() { None } else { Some(secs) }
         },
-        dry: form.dry_run,
-        debug: form.debug,
-        mem_limit_gb: None,
-        no_mem_limit: false,
-        force: false,
-        clean_intermediates: false,
-    })
+    }
 }
 
 pub(super) fn expand_tilde(s: &str) -> PathBuf {
@@ -574,6 +587,7 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
         include,
         exclude,
         num_echoes: parse_optional_usize(&app.filter_state.num_echoes),
+        pipeline: pipeline_args_from_app(app),
     })
 }
 
@@ -1004,7 +1018,7 @@ mod tests {
         let args = build_run_args(&app).unwrap();
         assert_eq!(args.bids_dir, PathBuf::from("/bids"));
         assert_eq!(args.output_dir, Some(PathBuf::from("/out")));
-        assert_eq!(args.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Rts));
+        assert_eq!(args.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Rts));
     }
 
     #[test]
@@ -1032,9 +1046,9 @@ mod tests {
         app.pipeline_state.tkd_threshold = "0.15".to_string();
         app.form.n_procs = "8".to_string();
         let args = build_run_args(&app).unwrap();
-        assert_eq!(args.bet_fractional_intensity, Some(0.3));
-        assert_eq!(args.rts_params.rts_delta, Some(0.2));
-        assert_eq!(args.tgv_params.tgv_iterations, Some(500));
+        assert_eq!(args.pipeline.bet_fractional_intensity, Some(0.3));
+        assert_eq!(args.pipeline.rts_params.rts_delta, Some(0.2));
+        assert_eq!(args.pipeline.tgv_params.tgv_iterations, Some(500));
         assert_eq!(args.n_procs, Some(8));
     }
 
@@ -1050,13 +1064,13 @@ mod tests {
         app.form.dry_run = true;
         app.form.debug = true;
         let args = build_run_args(&app).unwrap();
-        assert!(args.do_swi);
-        assert!(args.do_t2starmap);
-        assert!(args.do_r2starmap);
-        assert!(args.inhomogeneity_correction);
+        assert!(args.pipeline.do_swi);
+        assert!(args.pipeline.do_t2starmap);
+        assert!(args.pipeline.do_r2starmap);
+        assert!(args.pipeline.inhomogeneity_correction);
         assert!(args.dry);
         assert!(args.debug);
-        assert_eq!(args.phase_offset_removal, Some(true)); // default mcpc3ds
+        assert_eq!(args.pipeline.phase_offset_removal, Some(true)); // default mcpc3ds
     }
 
     #[test]
@@ -1066,7 +1080,7 @@ mod tests {
         app.form.output_dir = "/o".to_string();
         app.pipeline_state.phase_offset_removal = false;
         let args = build_run_args(&app).unwrap();
-        assert_eq!(args.phase_offset_removal, Some(false));
+        assert_eq!(args.pipeline.phase_offset_removal, Some(false));
     }
 
 
@@ -1089,7 +1103,7 @@ mod tests {
         app.form.output_dir = "/o".to_string();
         app.pipeline_state.obliquity_threshold = "5.0".to_string();
         let args = build_run_args(&app).unwrap();
-        assert_eq!(args.obliquity_threshold, Some(5.0));
+        assert_eq!(args.pipeline.obliquity_threshold, Some(5.0));
     }
 
     // --- parse helpers ---
@@ -1276,6 +1290,76 @@ mod tests {
         assert_eq!(args.cpus_per_task, 8);
         assert!(args.submit);
         assert_eq!(args.config, Some(PathBuf::from("config.toml")));
+    }
+
+    /// The command the TUI prints in SLURM mode carries the pipeline flags, so
+    /// `qsmxt slurm` must actually accept them — a copy-pasted command has to run.
+    #[test]
+    fn test_slurm_command_string_parses() {
+        use clap::Parser;
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".to_string();
+        app.form.execution_mode = 1;
+        app.form.slurm_account = "acct".to_string();
+        app.pipeline_state.qsm_algorithm = 4; // tgv
+        app.pipeline_state.bet_fractional_intensity = "0.3".to_string();
+
+        let cmd = build_command_string(&app);
+        let argv: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
+        let cli = crate::cli::Cli::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("TUI SLURM command did not parse: {}\ncmd: {}", e, cmd));
+        match cli.command {
+            crate::cli::Command::Slurm(args) => {
+                assert_eq!(args.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tgv));
+                assert_eq!(args.pipeline.bet_fractional_intensity, Some(0.3));
+                assert_eq!(args.account, "acct");
+            }
+            _ => panic!("expected the slurm subcommand"),
+        }
+    }
+
+    /// Regression: SLURM mode used to drop every pipeline setting, so the
+    /// generated jobs ran the defaults (romeo/threshold/sharp/rts) instead of
+    /// the configured pipeline. The SLURM args must carry the same pipeline
+    /// settings as the local args.
+    #[test]
+    fn test_build_slurm_args_carries_pipeline_settings() {
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".to_string();
+        app.form.slurm_account = "acct".to_string();
+        app.pipeline_state.qsm_algorithm = 4; // tgv
+        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        app.pipeline_state.bf_algorithm = 1; // pdf
+        app.pipeline_state.bet_fractional_intensity = "0.3".to_string();
+        app.form.do_swi = true;
+
+        let slurm = build_slurm_args(&app).unwrap();
+        assert_eq!(slurm.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tgv));
+        assert_eq!(slurm.pipeline.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::Laplacian));
+        assert_eq!(slurm.pipeline.bf_algorithm, Some(crate::cli::BfAlgorithmArg::Pdf));
+        assert_eq!(slurm.pipeline.bet_fractional_intensity, Some(0.3));
+        assert!(slurm.pipeline.do_swi);
+    }
+
+    /// The pipeline the SLURM jobs get must be the one a local run would use.
+    #[test]
+    fn test_slurm_and_local_resolve_to_the_same_config() {
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".to_string();
+        app.form.slurm_account = "acct".to_string();
+        app.pipeline_state.qsm_algorithm = 4; // tgv
+        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        app.pipeline_state.bf_algorithm = 1; // pdf
+        app.pipeline_state.bipolar_correction = true;
+
+        let mut local = PipelineConfig::default();
+        crate::pipeline::config::apply_run_overrides(&mut local, &build_run_args(&app).unwrap().pipeline);
+        let mut slurm = PipelineConfig::default();
+        crate::pipeline::config::apply_run_overrides(&mut slurm, &build_slurm_args(&app).unwrap().pipeline);
+
+        assert_eq!(slurm.to_toml().unwrap(), local.to_toml().unwrap());
+        // ... and it is not merely the default pipeline.
+        assert_ne!(slurm.to_toml().unwrap(), PipelineConfig::default().to_toml().unwrap());
     }
 
     // --- output_dir optional ---

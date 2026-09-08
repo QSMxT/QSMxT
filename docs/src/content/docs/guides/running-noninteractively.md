@@ -201,6 +201,19 @@ This produces SLURM batch scripts for your dataset that you can submit with
 to a local run — just distributed. Run `qsmxt slurm --help` for the available
 options (partition, time limits, resource requests, and run selection).
 
+`qsmxt slurm` accepts the same pipeline options as `qsmxt run` (algorithms,
+masking, per-algorithm parameters, `--config`, …), so any `qsmxt run` command
+becomes a SLURM one by swapping the subcommand and adding the scheduler flags:
+
+```sh
+qsmxt slurm study/bids --qsm-algorithm tgv --unwrapping-algorithm laplacian \
+  --account myaccount --time 04:00:00
+```
+
+The resolved pipeline is written to
+`<OUTPUT_DIR>/derivatives/qsmxt/pipeline_config.toml` and each generated job
+runs against that file.
+
 :::note
 SLURM submission is available in the [TUI](/QSMxT/guides/running-interactively/)
 too — you don't have to use the command line to scale out.

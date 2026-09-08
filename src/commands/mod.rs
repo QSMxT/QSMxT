@@ -35,82 +35,84 @@ mod integration_tests {
             include: None,
             exclude: None,
             num_echoes: None,
-            qsm_algorithm: None,
-            unwrapping_algorithm: None,
-            bf_algorithm: None,
-            masking_input: None,
-            phase_offset_removal: None,
-            phase_offset_sigma: None,
-            bipolar_correction: false,
-            b0_estimation: None,
-            b0_weight_type: None,
-            bet_fractional_intensity: None,
-            bet_smoothness: None,
-            bet_gradient_threshold: None,
-            bet_iterations: None,
-            bet_subdivisions: None,
-            qsm_reference: None,
-            rts_params: Default::default(),
-            tv_params: Default::default(),
-            tkd_params: Default::default(),
-            tsvd_params: Default::default(),
-            tgv_params: Default::default(),
-            tikhonov_params: Default::default(),
-            nltv_params: Default::default(),
-            medi_params: Default::default(),
-            tfi_params: Default::default(),
-            ilsqr_params: Default::default(),
-            qsmart_params: Default::default(),
-            ndi_params: Default::default(),
-            fansi_params: Default::default(),
-            l1qsm_params: Default::default(),
-            whqsm_params: Default::default(),
-            hdqsm_params: Default::default(),
-            amp_pe_params: Default::default(),
-            separation_params: Default::default(),
-            vsharp_params: Default::default(),
-            pdf_params: Default::default(),
-            lbv_params: Default::default(),
-            ismv_params: Default::default(),
-            sharp_params: Default::default(),
-            resharp_params: Default::default(),
-            harperella_params: Default::default(),
-            iharperella_params: Default::default(),
-            msmv_params: Default::default(),
-            romeo_params: Default::default(),
-            swi_params: Default::default(),
-            tiling_params: Default::default(),
             n_procs: Some(1),
-            homogeneity_sigma_mm: None,
-            homogeneity_nbox: None,
-            linear_fit_reliability_threshold: None,
-            linear_fit_estimate_offset: None,
-            no_qsm: false,
-            do_swi: false,
-            do_t2starmap: false,
-            do_r2starmap: false,
-            do_r2map: false,
-            do_r2primemap: false,
-            do_chi_separation: false,
-            chi_separation_algorithm: None,
-            use_custom_qsm: None,
-            use_custom_r2: None,
-            use_custom_r2prime: None,
-            export_dicom: false,
             source_dicom: None,
             dicom_outputs: None,
-            inhomogeneity_correction: false,
-            no_inhomogeneity_correction: false,
-            obliquity_threshold: None,
-            mask_preset: None,
-            use_custom_masks: None,
-            mask_sections_cli: None,
             dry: true,
             debug: false,
             mem_limit_gb: None,
             no_mem_limit: false,
             force: false,
             clean_intermediates: false,
+            pipeline: PipelineArgs {
+                qsm_algorithm: None,
+                unwrapping_algorithm: None,
+                bf_algorithm: None,
+                masking_input: None,
+                phase_offset_removal: None,
+                phase_offset_sigma: None,
+                bipolar_correction: false,
+                b0_estimation: None,
+                b0_weight_type: None,
+                bet_fractional_intensity: None,
+                bet_smoothness: None,
+                bet_gradient_threshold: None,
+                bet_iterations: None,
+                bet_subdivisions: None,
+                qsm_reference: None,
+                rts_params: Default::default(),
+                tv_params: Default::default(),
+                tkd_params: Default::default(),
+                tsvd_params: Default::default(),
+                tgv_params: Default::default(),
+                tikhonov_params: Default::default(),
+                nltv_params: Default::default(),
+                medi_params: Default::default(),
+                tfi_params: Default::default(),
+                ilsqr_params: Default::default(),
+                qsmart_params: Default::default(),
+                ndi_params: Default::default(),
+                fansi_params: Default::default(),
+                l1qsm_params: Default::default(),
+                whqsm_params: Default::default(),
+                hdqsm_params: Default::default(),
+                amp_pe_params: Default::default(),
+                separation_params: Default::default(),
+                vsharp_params: Default::default(),
+                pdf_params: Default::default(),
+                lbv_params: Default::default(),
+                ismv_params: Default::default(),
+                sharp_params: Default::default(),
+                resharp_params: Default::default(),
+                harperella_params: Default::default(),
+                iharperella_params: Default::default(),
+                msmv_params: Default::default(),
+                romeo_params: Default::default(),
+                swi_params: Default::default(),
+                tiling_params: Default::default(),
+                homogeneity_sigma_mm: None,
+                homogeneity_nbox: None,
+                linear_fit_reliability_threshold: None,
+                linear_fit_estimate_offset: None,
+                no_qsm: false,
+                do_swi: false,
+                do_t2starmap: false,
+                do_r2starmap: false,
+                do_r2map: false,
+                do_r2primemap: false,
+                do_chi_separation: false,
+                chi_separation_algorithm: None,
+                use_custom_qsm: None,
+                use_custom_r2: None,
+                use_custom_r2prime: None,
+                export_dicom: false,
+                inhomogeneity_correction: false,
+                no_inhomogeneity_correction: false,
+                obliquity_threshold: None,
+                mask_preset: None,
+                use_custom_masks: None,
+                mask_sections_cli: None,
+            },
         }
     }
 
@@ -603,7 +605,7 @@ mod integration_tests {
         testutils::create_multi_echo_bids(&bids);
 
         let mut args = default_run_args(bids, out);
-        args.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
         args.no_mem_limit = true;
         super::run::execute(args).unwrap();
     }
@@ -625,10 +627,10 @@ mod integration_tests {
         testutils::create_single_echo_bids(&bids);
 
         let mut args = default_run_args(bids, out.clone());
-        args.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-        args.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-        args.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-        args.masking_input = Some(MaskInputArg::MagnitudeFirst);
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+        args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
+        args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
         args.dry = false;
         args.no_mem_limit = true;
         super::run::execute(args).unwrap();
@@ -676,10 +678,10 @@ mod integration_tests {
 
         let make_args = || {
             let mut args = default_run_args(bids.clone(), out.clone());
-            args.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-            args.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-            args.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-            args.masking_input = Some(MaskInputArg::MagnitudeFirst);
+            args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+            args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+            args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
+            args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
             args.dry = false;
             args.no_mem_limit = true;
             args
@@ -725,13 +727,13 @@ mod integration_tests {
 
         let make_args = |do_t2star: bool| {
             let mut args = default_run_args(bids.clone(), out.clone());
-            args.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-            args.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-            args.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-            args.masking_input = Some(MaskInputArg::Magnitude);
+            args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+            args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+            args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
+            args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
             args.dry = false;
             args.no_mem_limit = true;
-            args.do_t2starmap = do_t2star;
+            args.pipeline.do_t2starmap = do_t2star;
             args
         };
 
@@ -762,16 +764,16 @@ mod integration_tests {
         testutils::create_multi_echo_bids(&bids);
 
         let mut args = default_run_args(bids, out.clone());
-        args.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-        args.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-        args.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
-        args.masking_input = Some(MaskInputArg::Magnitude);
-        args.phase_offset_removal = Some(true);
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+        args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
+        args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
+        args.pipeline.phase_offset_removal = Some(true);
         args.dry = false;
         args.no_mem_limit = true;
-        args.do_swi = true;
-        args.do_t2starmap = true;
-        args.do_r2starmap = true;
+        args.pipeline.do_swi = true;
+        args.pipeline.do_t2starmap = true;
+        args.pipeline.do_r2starmap = true;
         super::run::execute(args).unwrap();
 
         let deriv = out.join("derivatives/qsmxt");
@@ -789,14 +791,14 @@ mod integration_tests {
         testutils::create_single_echo_bids(&bids);
 
         let mut args = default_run_args(bids, out.clone());
-        args.qsm_algorithm = Some(QsmAlgorithmArg::Tgv);
-        args.masking_input = Some(MaskInputArg::MagnitudeFirst);
-        args.tgv_params.tgv_iterations = Some(5);
-        args.tgv_params.tgv_erosions = Some(0);
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tgv);
+        args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
+        args.pipeline.tgv_params.tgv_iterations = Some(5);
+        args.pipeline.tgv_params.tgv_erosions = Some(0);
         args.dry = false;
         args.no_mem_limit = true;
-        args.inhomogeneity_correction = true;
-        args.mask_sections_cli = Some(vec!["phase-quality,threshold:otsu".to_string()]);
+        args.pipeline.inhomogeneity_correction = true;
+        args.pipeline.mask_sections_cli = Some(vec!["phase-quality,threshold:otsu".to_string()]);
         super::run::execute(args).unwrap();
 
         assert!(out.join("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii").exists());
@@ -810,13 +812,13 @@ mod integration_tests {
         testutils::create_single_echo_bids(&bids);
 
         let mut args = default_run_args(bids, out.clone());
-        args.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
-        args.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
-        args.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+        args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
         args.dry = false;
         args.no_mem_limit = true;
         args.clean_intermediates = true;
-        args.mask_sections_cli = Some(vec!["phase-quality,threshold:otsu,dilate:1,erode:1".to_string()]);
+        args.pipeline.mask_sections_cli = Some(vec!["phase-quality,threshold:otsu,dilate:1,erode:1".to_string()]);
         super::run::execute(args).unwrap();
 
         assert!(out.join("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii").exists());
@@ -992,9 +994,46 @@ mod integration_tests {
             time: "01:00:00".to_string(),
             mem: 16, cpus_per_task: 2, submit: false,
             include: None, exclude: None, num_echoes: None,
+            pipeline: Default::default(),
         }).unwrap();
 
         assert!(out.join("derivatives/qsmxt/slurm").exists());
+    }
+
+    /// The jobs run `qsmxt run --config <pipeline_config.toml>`, so the written
+    /// config must carry the requested pipeline — not the defaults.
+    #[test]
+    fn test_slurm_writes_requested_pipeline_config() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_single_echo_bids(&bids);
+
+        super::slurm::execute(SlurmArgs {
+            bids_dir: bids,
+            output_dir: Some(out.clone()),
+            account: "testacct".to_string(),
+            partition: None,
+            config: None,
+            time: "01:00:00".to_string(),
+            mem: 16, cpus_per_task: 2, submit: false,
+            include: None, exclude: None, num_echoes: None,
+            pipeline: PipelineArgs {
+                qsm_algorithm: Some(QsmAlgorithmArg::Tkd),
+                unwrapping_algorithm: Some(UnwrapAlgorithmArg::Laplacian),
+                bf_algorithm: Some(BfAlgorithmArg::Pdf),
+                ..Default::default()
+            },
+        }).unwrap();
+
+        let written = std::fs::read_to_string(out.join("derivatives/qsmxt/pipeline_config.toml")).unwrap();
+        let config: crate::pipeline::config::PipelineConfig = toml::from_str(&written).unwrap();
+        assert_eq!(config.inversion.algorithm, crate::pipeline::config::QsmAlgorithm::Tkd);
+        assert_eq!(
+            config.field_mapping.unwrapping_algorithm,
+            crate::pipeline::config::UnwrappingAlgorithm::Laplacian
+        );
+        assert_eq!(config.bg_removal.algorithm, crate::pipeline::config::BfAlgorithm::Pdf);
     }
 
     #[test]
