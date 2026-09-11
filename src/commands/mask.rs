@@ -3,15 +3,17 @@ use super::common::{load_nifti, save_mask, run_mask_operation};
 use crate::cli::{MaskCommand, MaskCommonArgs};
 use crate::pipeline::config::{parse_mask_op, MaskOp};
 
-fn apply_ops(mut mask: Vec<u8>, ops: &[String], grid: &qsm_core::Grid) -> crate::Result<Vec<u8>> {
+/// Apply `--op` refinements in order. `magnitude` is the input image when it is one (the
+/// threshold/BET/HD-BET subcommands) — needed by `signal-erode`.
+fn apply_ops(mut mask: Vec<u8>, ops: &[String], grid: &qsm_core::Grid, magnitude: Option<&[f64]>) -> crate::Result<Vec<u8>> {
     for op_str in ops {
         let op = parse_mask_op(op_str)?;
-        mask = apply_mask_op(mask, &op, grid);
+        mask = apply_mask_op(mask, &op, grid, magnitude)?;
     }
     Ok(mask)
 }
 
-fn apply_mask_op(mut mask: Vec<u8>, op: &MaskOp, grid: &qsm_core::Grid) -> Vec<u8> {
+fn apply_mask_op(mut mask: Vec<u8>, op: &MaskOp, grid: &qsm_core::Grid, magnitude: Option<&[f64]>) -> crate::Result<Vec<u8>> {
     match op {
         MaskOp::Erode { iterations } => {
             mask = qsm_core::utils::erode_mask(&mask, grid, *iterations);
@@ -33,9 +35,32 @@ fn apply_mask_op(mut mask: Vec<u8>, op: &MaskOp, grid: &qsm_core::Grid) -> Vec<u
             );
             mask = smoothed.iter().map(|&v| if v > 0.5 { 1u8 } else { 0u8 }).collect();
         }
-        _ => {} // Threshold/Bet are generators, not refinements
+        MaskOp::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } => {
+            let mag = magnitude.ok_or_else(|| crate::error::QsmxtError::Config(
+                "--op signal-erode needs the magnitude: use it with the otsu/value/percentile/bet/hd-bet \
+                 subcommands, whose input is the magnitude image".into(),
+            ))?;
+            let params = qsm_core::utils::SignalErosionParams {
+                threshold: *threshold, depth_cap: *depth_cap, global_erosions: *global_erosions,
+                bias_sigma: *bias_sigma, min_component: *min_component,
+            };
+            mask = qsm_core::utils::signal_gated_erosion(&mask, mag, grid, &params);
+        }
+        MaskOp::Threshold { .. } | MaskOp::Bet { .. } | MaskOp::HdBet { .. } => {
+            return Err(crate::error::QsmxtError::Config(format!(
+                "--op {op} creates a mask rather than refining one; use the matching `qsmxt mask` subcommand",
+            )));
+        }
     }
-    mask
+    Ok(mask)
+}
+
+/// The HD-BET op for `qsmxt mask hd-bet` (`--patch` wins over `--low-memory`).
+fn hd_bet_op(args: &crate::cli::MaskHdBetArgs) -> crate::Result<MaskOp> {
+    let mut spec = String::from("hd-bet");
+    if let Some(p) = &args.patch { spec += &format!(":{p}"); } else if args.low_memory { spec += ":low-memory"; }
+    if args.tta { spec += ":tta"; }
+    Ok(parse_mask_op(&spec)?)
 }
 
 pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
@@ -46,14 +71,14 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
             let t = qsm_core::utils::otsu_threshold(&nifti.data, 256);
             info!("Otsu threshold: {:.4}", t);
             let mask: Vec<u8> = nifti.data.iter().map(|&v| if v > t { 1u8 } else { 0u8 }).collect();
-            let mask = apply_ops(mask, &args.common.ops, &grid)?;
+            let mask = apply_ops(mask, &args.common.ops, &grid, Some(&nifti.data))?;
             save_and_log(&args.common, &mask, &nifti)
         }
         MaskCommand::Value(args) => {
             let nifti = load_nifti(&args.common.input)?;
             let grid = super::common::nifti_grid(&nifti);
             let mask: Vec<u8> = nifti.data.iter().map(|&v| if v > args.threshold { 1u8 } else { 0u8 }).collect();
-            let mask = apply_ops(mask, &args.common.ops, &grid)?;
+            let mask = apply_ops(mask, &args.common.ops, &grid, Some(&nifti.data))?;
             save_and_log(&args.common, &mask, &nifti)
         }
         MaskCommand::Percentile(args) => {
@@ -65,7 +90,7 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
             let t = sorted[idx.min(sorted.len() - 1)];
             info!("Percentile {:.1}% threshold: {:.4}", args.percentile, t);
             let mask: Vec<u8> = nifti.data.iter().map(|&v| if v > t { 1u8 } else { 0u8 }).collect();
-            let mask = apply_ops(mask, &args.common.ops, &grid)?;
+            let mask = apply_ops(mask, &args.common.ops, &grid, Some(&nifti.data))?;
             save_and_log(&args.common, &mask, &nifti)
         }
         MaskCommand::Bet(args) => {
@@ -77,7 +102,28 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
                 ..qsm_core::bet::BetParams::default()
             };
             let mask = qsm_core::bet::run_bet(&nifti.data, &grid, &params, |_, _| {});
-            let mask = apply_ops(mask, &args.common.ops, &grid)?;
+            let mask = apply_ops(mask, &args.common.ops, &grid, Some(&nifti.data))?;
+            save_and_log(&args.common, &mask, &nifti)
+        }
+        MaskCommand::HdBet(args) => {
+            let nifti = load_nifti(&args.common.input)?;
+            let grid = super::common::nifti_grid(&nifti);
+            let op = hd_bet_op(&args)?;
+            // Fetch the weights (with a progress bar), or fail clearly on a build without `dl`.
+            crate::pipeline::runner::prefetch_weights("hd-bet", "hd-bet")?;
+            info!("Running HD-BET ({})", op);
+            let section = crate::pipeline::config::MaskSection {
+                input: crate::pipeline::config::MaskingInput::Magnitude,
+                generator: op,
+                refinements: vec![],
+            };
+            let core = crate::pipeline::config::to_mask_sections(&[section]);
+            let meta = crate::pipeline::config::to_scan_metadata(
+                (grid.nx(), grid.ny(), grid.nz()), grid.voxel_size, &[], 0.0, (0.0, 0.0, 1.0),
+            );
+            let mask = qsm_core::pipeline::run_masking(&core, &[], Some(&nifti.data), &meta)
+                .map_err(|e| crate::error::QsmxtError::Config(format!("HD-BET: {e}")))?;
+            let mask = apply_ops(mask, &args.common.ops, &grid, Some(&nifti.data))?;
             save_and_log(&args.common, &mask, &nifti)
         }
         MaskCommand::Robust(args) => {

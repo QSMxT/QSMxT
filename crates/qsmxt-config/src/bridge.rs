@@ -416,11 +416,47 @@ fn convert_mask_op(op: &crate::masking::MaskOp) -> PMaskOp {
         crate::masking::MaskOp::Close { radius } => PMaskOp::Close { radius: *radius },
         crate::masking::MaskOp::FillHoles { max_size } => PMaskOp::FillHoles { max_size: *max_size },
         crate::masking::MaskOp::GaussianSmooth { sigma_mm } => PMaskOp::GaussianSmooth { sigma_mm: *sigma_mm },
+        crate::masking::MaskOp::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } =>
+            PMaskOp::SignalErode(qsm_core::utils::SignalErosionParams {
+                threshold: *threshold,
+                depth_cap: *depth_cap,
+                global_erosions: *global_erosions,
+                bias_sigma: *bias_sigma,
+                min_component: *min_component,
+            }),
+        crate::masking::MaskOp::HdBet { patch, tta } => PMaskOp::HdBet(qsm_core::bet::HdBetParams {
+            patch: (patch[0], patch[1], patch[2]),
+            mirror_tta: *tta,
+            ..Default::default()
+        }),
     }
 }
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn test_convert_new_mask_ops() {
+        use crate::masking::{parse_mask_op, MaskOp};
+        match convert_mask_op(&parse_mask_op("signal-erode:0.7:3:0:10:200").unwrap()) {
+            PMaskOp::SignalErode(p) => assert_eq!(p, qsm_core::utils::SignalErosionParams {
+                threshold: 0.7, depth_cap: 3, global_erosions: 0, bias_sigma: 10.0, min_component: 200,
+            }),
+            other => panic!("wrong op {other:?}"),
+        }
+        match convert_mask_op(&MaskOp::HdBet { patch: [128, 128, 64], tta: true }) {
+            PMaskOp::HdBet(p) => {
+                assert_eq!(p.patch, (128, 128, 64));
+                assert!(p.mirror_tta);
+                assert_eq!(p.tile_step, qsm_core::bet::HdBetParams::default().tile_step);
+            }
+            other => panic!("wrong op {other:?}"),
+        }
+        // Defaults on both sides agree.
+        assert_eq!(convert_mask_op(&MaskOp::hd_bet_default()), PMaskOp::HdBet(Default::default()));
+        assert_eq!(convert_mask_op(&MaskOp::signal_erode_default()), PMaskOp::SignalErode(Default::default()));
+    }
+
     use super::*;
 
     #[test]

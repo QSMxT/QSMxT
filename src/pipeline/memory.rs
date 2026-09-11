@@ -47,7 +47,18 @@ pub fn estimate_peak_memory_bytes(
     // Masking stage (temporary) — worst case across all sections
     // BET is the most expensive: sorted nonzero vec (~N*8) + within_brain values (~N*8) + output (N)
     let has_bet = config.masking.sections.iter().any(|s| matches!(s.generator, MaskOp::Bet { .. }));
-    let mask_mem = if has_bet { 17 * n } else { 9 * n };
+    // HD-BET: tract activations for one sliding-window patch (~1 KiB per patch voxel), the parsed
+    // model (~300 MB), and its f32 working volumes (~40 B/voxel). Measured on 164×205×205:
+    // ~3.6–4.5 GB with the native 192×192×96 patch, ~1.5–1.9 GB with the 128×128×64 one.
+    let hd_bet_mem = config.masking.sections.iter()
+        .filter_map(|s| match &s.generator { MaskOp::HdBet { patch, .. } => Some(patch.iter().product::<usize>()), _ => None })
+        .max()
+        .map_or(0, |patch_voxels| patch_voxels * 1024 + 300 * 1024 * 1024 + 40 * n);
+    // Signal-gated erosion keeps a handful of f64 volumes (smoothed signal, bias estimate, depth).
+    let has_signal_erode = config.masking.sections.iter()
+        .any(|s| s.refinements.iter().any(|op| matches!(op, MaskOp::SignalErode { .. })));
+    let mask_mem = (if has_bet { 17 * n } else { 9 * n }).max(hd_bet_mem)
+        + if has_signal_erode { 8 * n * F64 } else { 0 };
 
     // SWI runs before QSM; its outputs persist through QSM stages
     let swi_persistent = if config.pipeline.do_swi { 16 * n } else { 0 }; // swi + mip results
@@ -311,6 +322,20 @@ mod tests {
             c.bg_removal.algorithm = b;
             assert!(estimate_peak_memory_bytes(8, 8, 8, 1, false, &c) > 0, "{:?}", b);
         }
+    }
+
+    #[test]
+    fn test_hd_bet_mask_memory() {
+        use crate::pipeline::config::{hd_bet_mask_sections, MaskOp};
+        let mut c = default_config();
+        let base = estimate_peak_memory_bytes(164, 205, 205, 4, true, &c);
+        c.masking.sections = hd_bet_mask_sections();
+        let native = estimate_peak_memory_bytes(164, 205, 205, 4, true, &c);
+        c.masking.sections[0].generator = MaskOp::HdBet { patch: [128, 128, 64], tta: false };
+        let low = estimate_peak_memory_bytes(164, 205, 205, 4, true, &c);
+        // The native patch dominates the pipeline peak (measured ~3.6–4.5 GB for masking alone).
+        assert!(native > 3_500_000_000 && native > base, "native {native}, base {base}");
+        assert!(low < native, "low-memory patch ({low}) should estimate below native ({native})");
     }
 
     #[test]

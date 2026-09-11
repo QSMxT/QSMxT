@@ -675,6 +675,12 @@ fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
     );
     let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
 
+    // Deep-learning mask ops (HD-BET): fetch the weights first, with a progress bar — or fail
+    // clearly on a build without the `dl` feature.
+    for id in core_sections.iter().flat_map(|s| s.all_ops()).filter_map(|op| op.dl_model_id()) {
+        prefetch_weights(id, &ctx.run.key.to_string())?;
+    }
+
     let working_mask = qsm_core::pipeline::run_masking(
         &core_sections, &phase_refs, mag_data.as_deref(), &scan_meta,
     ).map_err(|e| QsmxtError::Config(format!("masking: {}", e)))?;
@@ -1623,6 +1629,17 @@ mod tests {
     fn test_prefetch_weights_errors_for_dl_without_dl_feature() {
         // Selecting a DL model in a non-DL build must fail with a clear message.
         let err = super::prefetch_weights("qsmnet", "test").unwrap_err();
+        assert!(format!("{}", err).contains("deep-learning"), "got: {}", err);
+    }
+
+    #[cfg(not(feature = "dl"))]
+    #[test]
+    fn test_hd_bet_mask_needs_dl_feature() {
+        // The mask stage prefetches every DL op's weights; HD-BET must hit the same clear error.
+        let sections = crate::pipeline::config::to_mask_sections(&crate::pipeline::config::hd_bet_mask_sections());
+        let ids: Vec<&str> = sections.iter().flat_map(|s| s.all_ops()).filter_map(|op| op.dl_model_id()).collect();
+        assert_eq!(ids, ["hd-bet"]);
+        let err = super::prefetch_weights(ids[0], "test").unwrap_err();
         assert!(format!("{}", err).contains("deep-learning"), "got: {}", err);
     }
 

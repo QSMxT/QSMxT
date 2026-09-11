@@ -16,6 +16,7 @@ operates on with `--masking-input`.
 | --- | --- |
 | `robust-threshold` | Otsu thresholding of the phase-quality map, refined with dilation, hole-filling and erosion (default) |
 | `bet` | Brain Extraction Tool on the magnitude image |
+| `hd-bet` | HD-BET deep-learning brain extraction on the magnitude image, followed by signal-gated erosion (the QSM-CI harmonization masking). Needs a deep-learning build; the weights (~120 MB, CC-BY-NC-4.0) are downloaded on first use |
 
 **Masking input** (`--masking-input`): `magnitude-first`, `magnitude`,
 `magnitude-last`, `phase-quality`. For example,
@@ -25,6 +26,23 @@ combined magnitude image instead of the phase-quality map.
 For full control, compose custom mask sections with `--mask` (repeatable),
 e.g. `--mask magnitude,bet:0.5,erode:2`. Each section names its input
 followed by a generator and refinement operations.
+
+- **Generators:** `threshold[:otsu|fixed:<v>|percentile:<p>]`, `bet[:<f>]`, and
+  `hd-bet[:<X>x<Y>x<Z>|low-memory][:tta]`. HD-BET runs 192×192×96 sliding-window
+  patches by default (about 4.5 GB peak). `low-memory` uses 128×128×64 patches
+  (about 1.9 GB peak), and `tta` adds mirroring test-time augmentation, which is
+  roughly 8× slower.
+- **Refinements:** `erode[:<n>]`, `dilate[:<n>]`, `close[:<r>]`, `fill-holes[:<max>]`,
+  `gaussian[:<sigma_mm>]`, and
+  `signal-erode[:<threshold>[:<depth_cap>[:<global_erosions>[:<bias_sigma>[:<min_component>]]]]]`.
+  `signal-erode` removes only boundary voxels whose bias-corrected magnitude is
+  below `threshold` × the in-mask median (default 0.80). It works inward through
+  sinus and skull-base signal dropout, never more than `depth_cap` voxels deep
+  (default 5), after `global_erosions` plain erosions (default 1). Dark interior
+  structures are never removed.
+
+For example, `--mask magnitude,hd-bet:low-memory,signal-erode` is the `hd-bet`
+preset with the low-memory patch size.
 
 ## Phase unwrapping
 

@@ -389,6 +389,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                     generator: MaskOp::Bet { fractional_intensity: 0.5 },
                     refinements: vec![MaskOp::Erode { iterations: 2 }],
                 }],
+                cli::MaskPresetArg::HdBet => hd_bet_mask_sections(),
             };
         }
         if let Some(ref sections) = args.mask_sections_cli {
@@ -407,7 +408,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                         Err(e) => log::warn!("Ignoring invalid mask op '{}': {}", part, e),
                     }
                 }
-                let gen_idx = ops.iter().position(|op| matches!(op, MaskOp::Threshold { .. } | MaskOp::Bet { .. }));
+                let gen_idx = ops.iter().position(MaskOp::is_generator);
                 let generator = if let Some(gi) = gen_idx { ops.remove(gi) } else {
                     MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }
                 };
@@ -446,10 +447,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             if untouched {
                 log::info!("QSMART: defaulting to BET brain mask (override with --mask)");
                 config.masking.sections = qsmart_default_mask_sections();
-            } else if !config.masking.sections.iter().all(|s| matches!(s.generator, MaskOp::Bet { .. })) {
+            } else if !config.masking.sections.iter().all(|s| matches!(s.generator, MaskOp::Bet { .. } | MaskOp::HdBet { .. })) {
                 log::warn!(
-                    "QSMART needs a tight brain mask; the configured mask is not BET-based and \
-                     may cause streaking artifacts. Consider --mask-preset bet or \
+                    "QSMART needs a tight brain mask; the configured mask is not BET- or HD-BET-based and \
+                     may cause streaking artifacts. Consider --mask-preset bet, --mask-preset hd-bet or \
                      --mask magnitude,bet:0.5,erode:2."
                 );
             }
@@ -577,6 +578,18 @@ mod tests {
         let d = default_mask_sections();
         assert_eq!(c.masking.sections[0].generator, d[0].generator);
         assert_eq!(c.masking.sections[0].refinements, d[0].refinements);
+    }
+
+    #[test]
+    fn hd_bet_mask_preset_and_sections() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--mask-preset", "hd-bet"]);
+        assert_eq!(c.masking.sections, hd_bet_mask_sections());
+        // --mask: hd-bet is recognised as the generator wherever it appears in the section.
+        let c = config_from_cli(&[
+            "qsmxt", "run", "<bids>", "--mask", "magnitude,signal-erode:0.7,hd-bet:low-memory",
+        ]);
+        assert_eq!(c.masking.sections[0].generator, MaskOp::HdBet { patch: [128, 128, 64], tta: false });
+        assert!(matches!(c.masking.sections[0].refinements[..], [MaskOp::SignalErode { threshold, .. }] if threshold == 0.7));
     }
 
     #[test]

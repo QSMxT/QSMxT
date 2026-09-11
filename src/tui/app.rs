@@ -893,15 +893,22 @@ pub enum PipelineRow {
 }
 
 pub const MASK_OP_TYPES: &[&str] = &[
-    "threshold", "bet", "erode", "dilate", "close", "fill-holes", "gaussian",
+    "threshold", "bet", "hd-bet", "erode", "dilate", "close", "fill-holes", "gaussian", "signal-erode",
 ];
 
-pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "custom"];
+/// Ops that create a mask (the section's generator); the rest are refinements.
+pub const MASK_GENERATOR_TYPES: &[&str] = &["threshold", "bet", "hd-bet"];
+
+pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "custom"];
 pub const MASK_PRESET_HELP: &[&str] = &[
     "Otsu threshold + dilate + fill holes + erode (recommended for brain)",
     "BET brain extraction + erode",
+    "HD-BET deep-learning brain extraction + signal-gated erosion (QSM-CI harmonization masking)",
     "Fully custom mask pipeline (edit steps below)",
 ];
+/// Index of the "custom" preset — set automatically when the steps are edited by hand, and
+/// skipped when cycling presets with ←/→.
+pub const MASK_PRESET_CUSTOM: usize = 3;
 
 // ─── Algorithm help text (name + DOI) ───
 
@@ -1190,7 +1197,7 @@ pub struct PipelineFormState {
 
     // Mask sections (OR'd together at runtime)
     pub mask_sections: Vec<crate::pipeline::config::MaskSection>,
-    pub mask_preset: usize, // 0=robust threshold, 1=BET, 2=custom
+    pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
     // Separation tab
@@ -2642,6 +2649,10 @@ impl PipelineFormState {
             MaskOp::Close { radius } => ("close", format!("{}", radius)),
             MaskOp::FillHoles { max_size } => ("fill-holes", if *max_size == 0 { "auto".to_string() } else { format!("{}", max_size) }),
             MaskOp::GaussianSmooth { sigma_mm } => ("gaussian", format!("{}", sigma_mm)),
+            MaskOp::HdBet { patch, tta } =>
+                ("hd-bet", format!("{}x{}x{}{}", patch[0], patch[1], patch[2], if *tta { " tta" } else { "" })),
+            MaskOp::SignalErode { threshold, depth_cap, .. } =>
+                ("signal-erode", format!("{:.2} (depth {})", threshold, depth_cap)),
         }
     }
 
@@ -2656,6 +2667,9 @@ impl PipelineFormState {
             MaskOp::Close { .. } => "Morphological close radius (←/→ to adjust)",
             MaskOp::FillHoles { .. } => "Fill holes max size (0=auto, Enter to edit)",
             MaskOp::GaussianSmooth { .. } => "Gaussian sigma in mm (Enter to edit)",
+            MaskOp::HdBet { .. } => "HD-BET deep-learning brain extraction (needs a deep-learning build)",
+            MaskOp::SignalErode { .. } =>
+                "Signal-gated erosion: peel low-signal boundary voxels (threshold as fraction of median, ←/→ to adjust)",
         }
     }
 
@@ -2670,6 +2684,8 @@ impl PipelineFormState {
             "close" => Some(MaskOp::Close { radius: 1 }),
             "fill-holes" => Some(MaskOp::FillHoles { max_size: 0 }),
             "gaussian" => Some(MaskOp::GaussianSmooth { sigma_mm: 4.0 }),
+            "hd-bet" => Some(MaskOp::hd_bet_default()),
+            "signal-erode" => Some(MaskOp::signal_erode_default()),
             _ => None,
         }
     }
@@ -2688,33 +2704,33 @@ impl PipelineFormState {
                     refinements: vec![MaskOp::Erode { iterations: 2 }],
                 }];
             }
-            2 => { /* Custom: don't touch sections */ }
-            _ => {}
+            2 => { // HD-BET + signal-gated erosion
+                self.mask_sections = hd_bet_mask_sections();
+            }
+            _ => { /* Custom: don't touch sections */ }
         }
     }
 
     /// Mark preset as "Custom" when user manually edits mask sections.
     fn mark_mask_custom(&mut self) {
-        if self.mask_preset != 2 {
-            self.mask_preset = 2;
+        if self.mask_preset != MASK_PRESET_CUSTOM {
+            self.mask_preset = MASK_PRESET_CUSTOM;
         }
     }
 
-    /// Adjust the generator of a mask section (switch between threshold and BET).
+    /// Index of a section's generator in [`MASK_GENERATOR_TYPES`].
+    pub fn mask_generator_index(&self, section: usize) -> usize {
+        self.mask_sections.get(section)
+            .and_then(|s| MASK_GENERATOR_TYPES.iter().position(|&t| t == Self::mask_op_label_value(&s.generator).0))
+            .unwrap_or(0)
+    }
+
+    /// Cycle the generator of a mask section (threshold → BET → HD-BET) with left/right.
     pub fn adjust_mask_generator(&mut self, section: usize, delta: isize) {
-        use crate::pipeline::config::*;
         if section >= self.mask_sections.len() { return; }
-        let gen = &self.mask_sections[section].generator;
-        let new_gen = match gen {
-            MaskOp::Threshold { .. } if delta > 0 => MaskOp::Bet { fractional_intensity: 0.5 },
-            MaskOp::Bet { .. } if delta < 0 => MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
-            // Also handle wrapping
-            MaskOp::Threshold { .. } => MaskOp::Bet { fractional_intensity: 0.5 },
-            MaskOp::Bet { .. } => MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
-            _ => return,
-        };
-        self.mask_sections[section].generator = new_gen;
-        self.mark_mask_custom();
+        let n = MASK_GENERATOR_TYPES.len() as isize;
+        let new = (self.mask_generator_index(section) as isize + delta).rem_euclid(n) as usize;
+        self.set_mask_generator(section, new);
     }
 
     /// Adjust the generator's parameter (threshold method or BET fractional intensity).
@@ -2730,6 +2746,11 @@ impl PipelineFormState {
             }
             MaskOp::Bet { fractional_intensity } => {
                 *fractional_intensity = (*fractional_intensity + delta as f64 * 0.05).clamp(0.05, 1.0);
+            }
+            // Toggle between the native patch and the low-memory one.
+            MaskOp::HdBet { patch, .. } => {
+                let low = crate::pipeline::config::hd_bet_low_memory_patch();
+                *patch = if *patch == low { MaskOp::hd_bet_default_patch() } else { low };
             }
             _ => {}
         }
@@ -2758,22 +2779,13 @@ impl PipelineFormState {
         }
     }
 
-    /// Set a section's generator algorithm by index (0 = threshold, 1 = BET). Only rewrites the
-    /// generator when the algorithm type actually changes, preserving existing parameters.
+    /// Set a section's generator algorithm by index into [`MASK_GENERATOR_TYPES`]. Only rewrites
+    /// the generator when the algorithm type actually changes, preserving existing parameters.
     pub fn set_mask_generator(&mut self, section: usize, idx: usize) {
-        use crate::pipeline::config::*;
-        if section >= self.mask_sections.len() { return; }
-        let is_threshold = matches!(self.mask_sections[section].generator, MaskOp::Threshold { .. });
-        match idx {
-            0 if !is_threshold => {
-                self.mask_sections[section].generator = MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None };
-                self.mark_mask_custom();
-            }
-            1 if is_threshold => {
-                self.mask_sections[section].generator = MaskOp::Bet { fractional_intensity: 0.5 };
-                self.mark_mask_custom();
-            }
-            _ => {}
+        if section >= self.mask_sections.len() || idx == self.mask_generator_index(section) { return; }
+        if let Some(op) = MASK_GENERATOR_TYPES.get(idx).and_then(|t| Self::default_mask_op(t)) {
+            self.mask_sections[section].generator = op;
+            self.mark_mask_custom();
         }
     }
 
@@ -2848,6 +2860,10 @@ impl PipelineFormState {
             MaskOp::GaussianSmooth { sigma_mm } => {
                 *sigma_mm = (*sigma_mm + delta as f64 * 0.5).max(0.5);
             }
+            MaskOp::HdBet { .. } => {}
+            MaskOp::SignalErode { threshold, .. } => {
+                *threshold = ((*threshold + delta as f64 * 0.05).clamp(0.05, 0.95) * 100.0).round() / 100.0;
+            }
         }
         self.mark_mask_custom();
     }
@@ -2856,7 +2872,7 @@ impl PipelineFormState {
     pub fn available_op_types(&self, _section: usize) -> Vec<&'static str> {
         // Generator is fixed — only offer morphological refinement ops
         MASK_OP_TYPES.iter()
-            .filter(|&&t| t != "threshold" && t != "bet")
+            .filter(|t| !MASK_GENERATOR_TYPES.contains(t))
             .copied()
             .collect()
     }
@@ -4462,19 +4478,16 @@ impl App {
                             cursor: ps.mask_input_index(*section),
                         }),
                         Some(PipelineRow::MaskOpGenerator { section }) => {
-                            let is_threshold = matches!(
-                                ps.mask_sections.get(*section).map(|s| &s.generator),
-                                Some(crate::pipeline::config::MaskOp::Threshold { .. })
-                            );
                             Some(AlgoModal {
                                 target: AlgoModalTarget::MaskGenerator(*section),
                                 title: "Mask Algorithm".to_string(),
-                                options: vec!["threshold".to_string(), "bet".to_string()],
+                                options: MASK_GENERATOR_TYPES.iter().map(|t| t.to_string()).collect(),
                                 help: vec![
                                     "Intensity threshold-based masking".to_string(),
                                     "FSL BET brain extraction".to_string(),
+                                    "HD-BET deep-learning brain extraction (Isensee et al., 2019)".to_string(),
                                 ],
-                                cursor: if is_threshold { 0 } else { 1 },
+                                cursor: ps.mask_generator_index(*section),
                             })
                         }
                         // Threshold method is a discrete select → modal. (BET frac. intensity is a
@@ -4618,8 +4631,8 @@ impl App {
                     let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
                     match rows.get(focus_idx) {
                         Some(PipelineRow::AlgoSelect { field, options, .. }) => {
-                            // Mask preset: only cycle between 0 (robust) and 1 (bet); "custom" is auto-set
-                            let n = if *field == "mask_preset" { 2 } else { options.len() } as isize;
+                            // Mask preset: cycle the real presets only; "custom" is auto-set on edits
+                            let n = if *field == "mask_preset" { MASK_PRESET_CUSTOM } else { options.len() } as isize;
                             let cur = ps.get_select(field).min((n - 1) as usize) as isize;
                             let new_val = (cur + delta).rem_euclid(n) as usize;
                             ps.set_select(field, new_val);
@@ -7357,6 +7370,11 @@ mod tests {
         assert_eq!(app.pipeline_state.mask_preset, 0); // robust threshold
         app.handle_key(key(KeyCode::Right));
         assert_eq!(app.pipeline_state.mask_preset, 1); // BET
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.pipeline_state.mask_preset, 2); // HD-BET + signal-gated erosion
+        assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::hd_bet_mask_sections());
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.pipeline_state.mask_preset, 0, "cycling skips 'custom'");
     }
 
     #[test]
@@ -7549,16 +7567,26 @@ mod tests {
         }
         let fi = gen_focus.expect("MaskOpGenerator not found");
         app.pipeline_state.focus = fi;
-        // Switch generator threshold <-> bet
+        // Cycle generator threshold -> bet -> hd-bet -> threshold (and back with Left)
         app.handle_key(key(KeyCode::Right));
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::Bet { .. }
         ));
-        app.handle_key(key(KeyCode::Left));
+        app.handle_key(key(KeyCode::Right));
+        assert!(matches!(
+            app.pipeline_state.mask_sections[0].generator,
+            crate::pipeline::config::MaskOp::HdBet { .. }
+        ));
+        app.handle_key(key(KeyCode::Right));
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::Threshold { .. }
+        ));
+        app.handle_key(key(KeyCode::Left));
+        assert!(matches!(
+            app.pipeline_state.mask_sections[0].generator,
+            crate::pipeline::config::MaskOp::HdBet { .. }
         ));
     }
 

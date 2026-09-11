@@ -257,6 +257,16 @@ const CITE_BET: Citation = Citation {
     text: "Smith, S.M. (2002). \"Fast robust automated brain extraction.\" *Human Brain Mapping*, 17(3):143-155. https://doi.org/10.1002/hbm.10062",
 };
 
+const CITE_HDBET: Citation = Citation {
+    key: "isensee2019",
+    text: "Isensee, F., Schell, M., Pflueger, I., et al. (2019). \"Automated brain extraction of multisequence MRI using artificial neural networks.\" *Human Brain Mapping*, 40(17):4952-4964. https://doi.org/10.1002/hbm.24750",
+};
+
+const CITE_QSMCI_SIGNAL_EROSION: Citation = Citation {
+    key: "qsmci",
+    text: "QSM-CI: signal-gated mask erosion (QSM-CI harmonization masking, `hd-bet-qsmci`). https://github.com/QSMxT/QSM-CI",
+};
+
 const CITE_BIPOLAR: Citation = Citation {
     key: "eckstein2021phd",
     text: "Eckstein, K. (2021). \"Advanced Methods for Quantitative Susceptibility Mapping and Susceptibility Weighted Imaging.\" PhD thesis, Medical University of Vienna. https://doi.org/10.34726/hss.2021.43447",
@@ -581,6 +591,13 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
                 add_citation(citations, &CITE_BET);
                 format!("BET brain extraction (Smith, 2002; f={:.2}) of {}", fractional_intensity, input_desc)
             }
+            MaskOp::HdBet { patch, tta } => {
+                add_citation(citations, &CITE_HDBET);
+                format!(
+                    "HD-BET deep-learning brain extraction (Isensee et al., 2019; {}x{}x{}-voxel sliding-window patches{}) of {}",
+                    patch[0], patch[1], patch[2], if *tta { ", mirroring test-time augmentation" } else { "" }, input_desc,
+                )
+            }
             _ => format!("{} of {}", section.generator, input_desc),
         };
         parts.push(gen_desc);
@@ -593,6 +610,15 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
             MaskOp::FillHoles { max_size: 0 } => "hole-filling".to_string(),
             MaskOp::FillHoles { max_size } => format!("hole-filling (max {} voxels)", max_size),
             MaskOp::GaussianSmooth { sigma_mm } => format!("Gaussian smoothing (sigma={:.1} mm)", sigma_mm),
+            MaskOp::SignalErode { threshold, depth_cap, global_erosions, .. } => {
+                add_citation(citations, &CITE_QSMCI_SIGNAL_EROSION);
+                let depth = if *depth_cap == 0 { "no depth limit".to_string() } else { format!("at most {} voxels deep", depth_cap) };
+                let global = if *global_erosions > 0 { format!("{} plain erosion{} then ", global_erosions, if *global_erosions != 1 { "s" } else { "" }) } else { String::new() };
+                format!(
+                    "signal-gated erosion ({}removal of boundary voxels below {:.2} of the median bias-corrected magnitude, {}; QSM-CI)",
+                    global, threshold, depth,
+                )
+            }
             _ => format!("{}", op),
         }).collect();
 
@@ -995,6 +1021,22 @@ mod tests {
         assert!(out.contains("BET brain extraction"));
         assert!(out.contains("Smith, 2002"));
         assert!(out.contains("f=0.35"));
+    }
+
+    #[test]
+    fn test_masking_hd_bet_signal_erode() {
+        let mut config = PipelineConfig::default();
+        config.masking.sections = vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::hd_bet_default(),
+            refinements: vec![MaskOp::signal_erode_default()],
+        }];
+        let out = generate_methods(&config);
+        assert!(out.contains("HD-BET deep-learning brain extraction (Isensee et al., 2019; 192x192x96"), "{out}");
+        assert!(out.contains("signal-gated erosion (1 plain erosion then removal of boundary voxels below 0.80"), "{out}");
+        assert!(out.contains("at most 5 voxels deep"), "{out}");
+        assert!(out.contains("https://doi.org/10.1002/hbm.24750"), "{out}");
+        assert!(out.contains("https://github.com/QSMxT/QSM-CI"), "{out}");
     }
 
     #[test]

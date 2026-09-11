@@ -185,6 +185,63 @@ mod integration_tests {
         assert!(output.exists());
     }
 
+    #[test]
+    fn test_mask_signal_erode_op() {
+        // signal-erode refines a threshold mask using the (magnitude) input image.
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("mag.nii");
+        let output = dir.path().join("mask.nii");
+        testutils::write_magnitude(&input);
+        let mut c = common_mask(input, output.clone());
+        c.ops = vec!["signal-erode:0.8:2:0:4:1".to_string()];
+        super::mask::execute(MaskCommand::Otsu(MaskOtsuArgs { common: c })).unwrap();
+        assert!(output.exists());
+    }
+
+    #[test]
+    fn test_mask_generator_op_is_rejected() {
+        // A generator passed as --op used to be silently ignored.
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("mag.nii");
+        testutils::write_magnitude(&input);
+        for op in ["bet:0.5", "hd-bet", "threshold:otsu"] {
+            let mut c = common_mask(input.clone(), dir.path().join("mask.nii"));
+            c.ops = vec![op.to_string()];
+            let err = super::mask::execute(MaskCommand::Otsu(MaskOtsuArgs { common: c })).unwrap_err();
+            assert!(format!("{err}").contains("creates a mask"), "{op}: {err}");
+        }
+    }
+
+    #[cfg(not(feature = "dl"))]
+    #[test]
+    fn test_mask_hd_bet_needs_dl() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("mag.nii");
+        testutils::write_magnitude(&input);
+        let err = super::mask::execute(MaskCommand::HdBet(MaskHdBetArgs {
+            common: common_mask(input, dir.path().join("mask.nii")),
+            low_memory: false, patch: None, tta: false,
+        })).unwrap_err();
+        assert!(format!("{err}").contains("deep-learning"), "{err}");
+    }
+
+    /// Runs HD-BET for real (downloads the ~120 MB weights on first use).
+    #[cfg(feature = "dl")]
+    #[test]
+    #[ignore]
+    fn test_mask_hd_bet() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("mag.nii");
+        let output = dir.path().join("mask.nii");
+        testutils::write_magnitude(&input);
+        let mut c = common_mask(input, output.clone());
+        c.ops = vec!["signal-erode".to_string()];
+        super::mask::execute(MaskCommand::HdBet(MaskHdBetArgs {
+            common: c, low_memory: true, patch: None, tta: false,
+        })).unwrap();
+        assert!(output.exists());
+    }
+
     // --- Mask: percentile, robust, erode ---
 
     #[test]
