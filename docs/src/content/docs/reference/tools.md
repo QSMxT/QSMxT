@@ -21,11 +21,16 @@ Generate or refine binary masks.
 | `value` | Fixed-value thresholding |
 | `percentile` | Percentile thresholding |
 | `bet` | Brain extraction (BET) |
+| `hd-bet` | Deep-learning brain extraction (HD-BET); `--low-memory`, `--patch XxYxZ`, `--tta`. Weights are downloaded on first use |
 | `robust` | Robust threshold (Otsu + dilate + fill-holes + erode) |
 | `erode` / `dilate` | Morphological erosion / dilation |
 | `close` | Morphological closing |
 | `fill-holes` | Fill holes in a binary mask |
 | `smooth` | Gaussian smooth (re-thresholded at 0.5) |
+
+The generating subcommands (`otsu`, `value`, `percentile`, `bet`, `hd-bet`) also
+accept `--op` refinements, applied in order, e.g. `--op erode:2` or
+`--op signal-erode` (signal-gated erosion, which uses the input magnitude).
 
 ## Phase unwrapping — `qsmxt unwrap`
 

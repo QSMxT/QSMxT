@@ -157,7 +157,7 @@ fn is_deep_learning_algo(name: &str) -> bool {
         name,
         "xqsm" | "qsmnet" | "qsmnet-plus" | "autoqsm" | "qsmgan" | "ir2qsm" | "lpcnn"
             | "modl-qsm" | "nextqsm" | "iqsm" | "iqsm-plus" | "bfrnet" | "iqfm"
-            | "susep-net" | "chi-sepnet"
+            | "susep-net" | "chi-sepnet" | "hd-bet"
     )
 }
 
@@ -1345,6 +1345,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 let algo_name = match gen {
                     crate::pipeline::config::MaskOp::Threshold { .. } => "threshold",
                     crate::pipeline::config::MaskOp::Bet { .. } => "bet",
+                    crate::pipeline::config::MaskOp::HdBet { .. } => "hd-bet",
                     _ => "?",
                 };
                 let label_style = if focused {
@@ -1354,7 +1355,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 };
                 if focused {
                     if focused_help.is_none() {
-                        focused_help = Some("Mask algorithm (←/→ to switch between threshold and BET)".to_string());
+                        focused_help = Some("Mask algorithm (←/→ to switch between threshold, BET and HD-BET)".to_string());
                     }
                     Line::from(vec![
                         Span::styled(format!("  {:22}", "Algorithm:"), label_style),
@@ -1387,6 +1388,11 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                     }
                     crate::pipeline::config::MaskOp::Bet { fractional_intensity } => {
                         ("Frac. Intensity:", format!("{:.2}", fractional_intensity), "BET fractional intensity 0.0-1.0, smaller = larger brain (←/→ to adjust)")
+                    }
+                    crate::pipeline::config::MaskOp::HdBet { patch, .. } => {
+                        let low = *patch == crate::pipeline::config::hd_bet_low_memory_patch();
+                        ("Patch:", format!("{}x{}x{}{}", patch[0], patch[1], patch[2], if low { " (low memory)" } else { "" }),
+                         "HD-BET sliding-window patch: native ~4.5 GB peak, low memory ~1.9 GB (←/→ to toggle)")
                     }
                     _ => ("?:", "?".to_string(), ""),
                 };

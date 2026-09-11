@@ -1049,7 +1049,8 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub obliquity_threshold: Option<f64>,
 
-    /// Mask preset (robust-threshold or bet)
+    /// Mask preset: robust-threshold, bet, or hd-bet (HD-BET deep-learning brain extraction +
+    /// signal-gated erosion; needs a deep-learning build)
     #[arg(long, value_enum)]
     pub mask_preset: Option<MaskPresetArg>,
 
@@ -1063,6 +1064,8 @@ pub struct PipelineArgs {
     /// Format: <input>,<generator>,<refinement1>,<refinement2>,...
     /// Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2
     /// Example: magnitude,bet:0.5,erode:2
+    /// Example: magnitude,hd-bet,signal-erode   (HD-BET: `hd-bet[:XxYxZ|low-memory][:tta]`;
+    ///   signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`)
     #[arg(long = "mask", num_args = 1)]
     pub mask_sections_cli: Option<Vec<String>>,
 }
@@ -1220,7 +1223,8 @@ pub struct MaskCommonArgs {
     #[arg(short, long)]
     pub output: PathBuf,
     /// Refinement operation (repeatable, applied in order).
-    /// Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0
+    /// Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0,
+    /// signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input)
     #[arg(long = "op")]
     pub ops: Vec<String>,
 }
@@ -1235,6 +1239,8 @@ pub enum MaskCommand {
     Percentile(MaskPercentileArgs),
     /// Brain extraction (BET)
     Bet(MaskBetArgs),
+    /// Deep-learning brain extraction (HD-BET; downloads weights on first use)
+    HdBet(MaskHdBetArgs),
     /// Robust threshold (Otsu + dilate:1 + fill-holes:0 + erode:1)
     Robust(MaskRobustArgs),
     /// Erode a binary mask
@@ -1280,6 +1286,21 @@ pub struct MaskBetArgs {
     /// Fractional intensity (0.0-1.0, smaller = larger brain)
     #[arg(long, default_value_t = 0.5)]
     pub fractional_intensity: f64,
+}
+
+#[derive(Parser, Debug)]
+pub struct MaskHdBetArgs {
+    #[command(flatten)]
+    pub common: MaskCommonArgs,
+    /// Use 128x128x64 sliding-window patches (~1.9 GB peak instead of ~4.5 GB)
+    #[arg(long)]
+    pub low_memory: bool,
+    /// Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16; default 192x192x96)
+    #[arg(long)]
+    pub patch: Option<String>,
+    /// 8-fold mirroring test-time augmentation (about 8x slower)
+    #[arg(long)]
+    pub tta: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -2681,5 +2702,5 @@ pub enum QsmReferenceArg {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum MaskPresetArg {
-    RobustThreshold, Bet,
+    RobustThreshold, Bet, HdBet,
 }

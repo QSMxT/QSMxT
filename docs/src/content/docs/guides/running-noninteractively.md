@@ -59,7 +59,7 @@ qsmxt run study/bids \
 | `--qsm-algorithm` | `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `ilsqr`, `qsmart` |
 | `--unwrapping-algorithm` | `romeo`, `laplacian` |
 | `--bf-algorithm` | `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella` |
-| `--mask-preset` | `robust-threshold`, `bet` |
+| `--mask-preset` | `robust-threshold`, `bet`, `hd-bet` |
 | `--masking-input` | `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality` |
 
 `--masking-input` overrides the image the mask is computed from and combines
