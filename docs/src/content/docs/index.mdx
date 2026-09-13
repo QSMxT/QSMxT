@@ -38,13 +38,6 @@ hero:
     - text: Try in Neurodesk
       link: https://www.neurodesk.org/
       icon: external
-      variant: secondary
-      attrs:
-        target: _blank
-        rel: noopener
-    - text: View on GitHub
-      link: https://github.com/QSMxT/QSMxT
-      icon: external
       variant: minimal
       attrs:
         target: _blank
@@ -53,11 +46,10 @@ hero:
 
 import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
 
-QSMxT takes you from raw scanner DICOMs to quantitative susceptibility maps with
-a single self-contained binary. It auto-discovers phase/magnitude pairs in
-[BIDS](https://bids.neuroimaging.io/) datasets, runs the full reconstruction
-pipeline with sensible defaults, and writes tidy BIDS derivatives — no
-environment to manage, no toolbox sprawl.
+QSMxT takes you from raw scanner DICOMs to quantitative susceptibility maps with a
+single self-contained binary. It finds the phase and magnitude pairs in a
+[BIDS](https://bids.neuroimaging.io/) dataset, runs the reconstruction with
+sensible defaults, and writes BIDS derivatives.
 
 **Install** it with a single command:
 
@@ -93,12 +85,9 @@ options, or skip installing entirely and [try it in your browser](https://qsmbly
 		recommended way to drive QSMxT, no config file required.
 	</Card>
 	<Card title="BIDS-native" icon="open-book">
-		Auto-discovers phase/magnitude, reads JSON sidecars, and writes compliant
-		derivatives to `derivatives/qsmxt/`.
-	</Card>
-	<Card title="DICOM → BIDS" icon="document">
-		Built-in `dicom-convert` classifies series automatically — multi-echo,
-		multi-coil, and combined/uncombined reconstructions included.
+		Finds phase and magnitude, reads JSON sidecars, and writes compliant
+		derivatives to `derivatives/qsmxt/`. Starting from DICOMs, `dicom-convert`
+		classifies the series for you.
 	</Card>
 	<Card title="Built for scale" icon="setting">
 		Disk caching skips completed steps on re-runs, memory-aware parallelism
@@ -106,39 +95,13 @@ options, or skip installing entirely and [try it in your browser](https://qsmbly
 	</Card>
 </CardGrid>
 
-## Coming from QSMxT 8.x?
-
-:::note[QSMxT has been rebuilt from the ground up]
-**QSMxT v9 is a complete rewrite in Rust** — a single self-contained binary, no
-Python environment to manage. The reconstruction pipeline and DICOM/NIfTI
-conversion are fully reimplemented and faster, with a new interactive TUI.
-
-Some workflows from the 8.x line aren't part of v9: anatomical segmentation,
-template/group-space building, group statistics, NextQSM, and the web UI. If you
-rely on those, **the 8.x version is still available** — see the
-[`python-legacy` branch](https://github.com/QSMxT/QSMxT/tree/python-legacy) and the
-[8.x releases](https://github.com/QSMxT/QSMxT/releases).
-
-A few command changes: `qsmxt <bids>` is now `qsmxt run <bids>`, and conversion is
-`qsmxt dicom-convert`. The easiest way in is `qsmxt tui`.
-:::
-
-## Try it in your browser
-
-No install, no data to upload anywhere — **[qsmbly](https://qsmbly.neurodesk.org/)**
-runs the very same reconstruction algorithms entirely in your browser. It's the
-fastest way to experiment with QSM and get a feel for the methods before
-processing a full dataset with QSMxT.
-
-<LinkCard title="Open qsmbly →" description="Run the QSM algorithms in your browser at qsmbly.neurodesk.org" href="https://qsmbly.neurodesk.org/" target="_blank" rel="noopener" />
-
 ## Get going
 
 <CardGrid>
 	<LinkCard title="Installation" description="One-line install for Linux, macOS, and Windows." href="/QSMxT/getting-started/installation/" />
 	<LinkCard title="Quick start" description="From raw data to QSM maps in minutes." href="/QSMxT/getting-started/quick-start/" />
 	<LinkCard title="Running interactively" description="Convert, configure, and run from the TUI — the recommended path." href="/QSMxT/guides/running-interactively/" />
-	<LinkCard title="Algorithms" description="The masking, unwrapping, background-field, and inversion methods." href="/QSMxT/reference/algorithms/" />
+	<LinkCard title="Coming from QSMxT 8.x" description="What changed in the Rust rewrite, and where to find 8.x." href="/QSMxT/getting-started/coming-from-8x/" />
 </CardGrid>
 
 ## How do I cite QSMxT?

@@ -65,6 +65,7 @@ export default defineConfig({
 					items: [
 						{ label: 'Installation', slug: 'getting-started/installation' },
 						{ label: 'Quick start', slug: 'getting-started/quick-start' },
+						{ label: 'Coming from QSMxT 8.x', slug: 'getting-started/coming-from-8x' },
 					],
 				},
 				{

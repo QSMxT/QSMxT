@@ -13,7 +13,7 @@ export const collections = {
 					.object({ content: z.string() })
 					.default({
 						content:
-							'QSMxT v9 is a ground-up rewrite in <strong>Rust</strong>. Coming from the Python version (8.x)? <a href="/QSMxT/#coming-from-qsmxt-8x">See what changed →</a>',
+							'QSMxT v9 is a ground-up rewrite in <strong>Rust</strong>. Coming from the Python version (8.x)? <a href="/QSMxT/getting-started/coming-from-8x/">See what changed →</a>',
 					}),
 			}),
 		}),
