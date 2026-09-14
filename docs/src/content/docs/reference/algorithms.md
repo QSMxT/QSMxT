@@ -52,8 +52,9 @@ Runs whose phase is stored per receive coil (`coil-<NN>` entity, see
 Hermitian inner product of the first two echoes gives the field evolution with the
 coil phase offsets cancelled; it is unwrapped once (with the `--unwrapping-algorithm`
 method), each coil's offset is estimated from its first echo and smoothed with
-`--phase-offset-sigma`, and the channels are summed coherently with magnitude²
-weights. Multi-echo phase-offset removal in the field-mapping stage then runs on
+`--coil-combination-sigma` (default `10 10 5` voxels; the same masked box-filter
+smoothing as MriResearchTools / QSMxT 8.x, so combined phase matches the 8.x
+converter), and the channels are summed coherently with magnitude² weights. Multi-echo phase-offset removal in the field-mapping stage then runs on
 the combined echoes as usual.
 
 ## Phase unwrapping
