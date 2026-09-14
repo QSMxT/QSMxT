@@ -424,10 +424,10 @@ fn convert_mask_op(op: &crate::masking::MaskOp) -> PMaskOp {
                 bias_sigma: *bias_sigma,
                 min_component: *min_component,
             }),
-        crate::masking::MaskOp::HdBet { patch, tta } => PMaskOp::HdBet(qsm_core::bet::HdBetParams {
+        crate::masking::MaskOp::HdBet { patch, tta, tile_step } => PMaskOp::HdBet(qsm_core::bet::HdBetParams {
             patch: (patch[0], patch[1], patch[2]),
             mirror_tta: *tta,
-            ..Default::default()
+            tile_step: *tile_step,
         }),
     }
 }
@@ -444,12 +444,18 @@ mod tests {
             }),
             other => panic!("wrong op {other:?}"),
         }
-        match convert_mask_op(&MaskOp::HdBet { patch: [128, 128, 64], tta: true }) {
+        match convert_mask_op(&MaskOp::HdBet { patch: [128, 128, 64], tta: true, tile_step: 0.75 }) {
             PMaskOp::HdBet(p) => {
                 assert_eq!(p.patch, (128, 128, 64));
                 assert!(p.mirror_tta);
-                assert_eq!(p.tile_step, qsm_core::bet::HdBetParams::default().tile_step);
+                // Used to be pinned to the default here: the config type had no field for it.
+                assert_eq!(p.tile_step, 0.75);
             }
+            other => panic!("wrong op {other:?}"),
+        }
+        // A parsed op carries its step through to qsm-core too.
+        match convert_mask_op(&parse_mask_op("hd-bet:low-memory:step=0.75").unwrap()) {
+            PMaskOp::HdBet(p) => assert_eq!(p.tile_step, 0.75),
             other => panic!("wrong op {other:?}"),
         }
         // Defaults on both sides agree.

@@ -884,6 +884,8 @@ pub enum PipelineRow {
     MaskOpGeneratorParam { section: usize },
     /// Threshold value (only shown for fixed/percentile threshold methods)
     MaskOpThresholdValue { section: usize },
+    /// HD-BET sliding-window step (only shown when the generator is HD-BET)
+    MaskOpHdBetStep { section: usize },
     /// A refinement step (editable, deletable, reorderable)
     MaskOpEntry { section: usize, index: usize },
     /// "Add step..." row for appending new ops to a section
@@ -1837,6 +1839,9 @@ impl PipelineFormState {
                     rows.push(PipelineRow::MaskOpThresholdValue { section: si });
                 }
             }
+            if matches!(&self.mask_sections[si].generator, crate::pipeline::config::MaskOp::HdBet { .. }) {
+                rows.push(PipelineRow::MaskOpHdBetStep { section: si });
+            }
             for oi in 0..self.mask_sections[si].refinements.len() {
                 rows.push(PipelineRow::MaskOpEntry { section: si, index: oi });
             }
@@ -2649,8 +2654,14 @@ impl PipelineFormState {
             MaskOp::Close { radius } => ("close", format!("{}", radius)),
             MaskOp::FillHoles { max_size } => ("fill-holes", if *max_size == 0 { "auto".to_string() } else { format!("{}", max_size) }),
             MaskOp::GaussianSmooth { sigma_mm } => ("gaussian", format!("{}", sigma_mm)),
-            MaskOp::HdBet { patch, tta } =>
-                ("hd-bet", format!("{}x{}x{}{}", patch[0], patch[1], patch[2], if *tta { " tta" } else { "" })),
+            MaskOp::HdBet { patch, tta, tile_step } => {
+                let step = if (*tile_step - crate::pipeline::config::hd_bet_default_tile_step()).abs() > f64::EPSILON {
+                    format!(" step={tile_step}")
+                } else {
+                    String::new()
+                };
+                ("hd-bet", format!("{}x{}x{}{}{}", patch[0], patch[1], patch[2], step, if *tta { " tta" } else { "" }))
+            }
             MaskOp::SignalErode { threshold, depth_cap, .. } =>
                 ("signal-erode", format!("{:.2} (depth {})", threshold, depth_cap)),
         }
@@ -2755,6 +2766,24 @@ impl PipelineFormState {
             _ => {}
         }
         self.mark_mask_custom();
+    }
+
+    /// HD-BET's sliding-window step, cycled through the useful strides.
+    ///
+    /// qsm-core accepts any stride in `(0, 1]`, but only a few are worth offering: 0.5 is
+    /// HD-BET's own default, and larger steps trade patch-seam quality for a shorter run.
+    pub fn adjust_hd_bet_tile_step(&mut self, section: usize, delta: isize) {
+        use crate::pipeline::config::MaskOp;
+        const STEPS: [f64; 4] = [0.5, 0.625, 0.75, 1.0];
+        if section >= self.mask_sections.len() { return; }
+        if let MaskOp::HdBet { tile_step, .. } = &mut self.mask_sections[section].generator {
+            let cur = STEPS.iter()
+                .position(|s| (s - *tile_step).abs() < 1e-9)
+                .unwrap_or(0) as isize;
+            let new = (cur + delta).rem_euclid(STEPS.len() as isize) as usize;
+            *tile_step = STEPS[new];
+            self.mark_mask_custom();
+        }
     }
 
     /// Ordered masking input sources, matching the modal/cycle option order.
@@ -4646,6 +4675,9 @@ impl App {
                         }
                         Some(PipelineRow::MaskOpGeneratorParam { section }) => {
                             ps.adjust_mask_generator_param(*section, delta);
+                        }
+                        Some(PipelineRow::MaskOpHdBetStep { section }) => {
+                            ps.adjust_hd_bet_tile_step(*section, delta);
                         }
                         Some(PipelineRow::MaskOpInput { section }) => {
                             ps.adjust_mask_input(*section, delta);
@@ -7861,6 +7893,41 @@ mod tests {
         if let crate::pipeline::config::MaskOp::Threshold { value, .. } = &app.pipeline_state.mask_sections[0].generator {
             assert!((value.unwrap() - 0.7).abs() < 0.001);
         }
+    }
+
+    #[test]
+    fn test_pipeline_hd_bet_step_row() {
+        use crate::pipeline::config::MaskOp;
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
+        app.pipeline_state.mask_sections[0].generator = MaskOp::hd_bet_default();
+        app.pipeline_state.mark_mask_custom();
+
+        let find_step_row = |app: &App| {
+            let rows = app.pipeline_state.visible_rows();
+            let focusable = app.pipeline_state.focusable_rows();
+            focusable.iter().position(|&ri| matches!(&rows[ri], PipelineRow::MaskOpHdBetStep { .. }))
+        };
+        let fi = find_step_row(&app).expect("HD-BET step row should be shown and focusable");
+        app.pipeline_state.focus = fi;
+
+        let step_of = |app: &App| match &app.pipeline_state.mask_sections[0].generator {
+            MaskOp::HdBet { tile_step, .. } => *tile_step,
+            other => panic!("expected hd-bet, got {other:?}"),
+        };
+        assert_eq!(step_of(&app), crate::pipeline::config::hd_bet_default_tile_step());
+
+        // Right steps to a coarser stride, left comes back.
+        app.handle_key(key(KeyCode::Right));
+        let stepped = step_of(&app);
+        assert!(stepped > 0.5, "right should coarsen the stride, got {stepped}");
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(step_of(&app), 0.5);
+
+        // The row belongs to HD-BET only.
+        app.pipeline_state.mask_sections[0].generator = MaskOp::Bet { fractional_intensity: 0.5 };
+        assert!(find_step_row(&app).is_none(), "step row should not show for BET");
     }
 
     #[test]

@@ -60,6 +60,7 @@ fn hd_bet_op(args: &crate::cli::MaskHdBetArgs) -> crate::Result<MaskOp> {
     let mut spec = String::from("hd-bet");
     if let Some(p) = &args.patch { spec += &format!(":{p}"); } else if args.low_memory { spec += ":low-memory"; }
     if args.tta { spec += ":tta"; }
+    if let Some(step) = args.tile_step { spec += &format!(":step={step}"); }
     Ok(parse_mask_op(&spec)?)
 }
 

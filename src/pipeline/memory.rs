@@ -343,7 +343,8 @@ mod tests {
         let base = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
         c.masking.sections = hd_bet_mask_sections();
         let native = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
-        c.masking.sections[0].generator = MaskOp::HdBet { patch: [128, 128, 64], tta: false };
+        c.masking.sections[0].generator =
+            MaskOp::HdBet { patch: [128, 128, 64], tta: false, tile_step: hd_bet_default_tile_step() };
         let low = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
         // The native patch dominates the pipeline peak (measured ~3.6–4.5 GB for masking alone).
         assert!(native > 3_500_000_000 && native > base, "native {native}, base {base}");

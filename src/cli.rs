@@ -1075,7 +1075,7 @@ pub struct PipelineArgs {
     /// Format: <input>,<generator>,<refinement1>,<refinement2>,...
     /// Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2
     /// Example: magnitude,bet:0.5,erode:2
-    /// Example: magnitude,hd-bet,signal-erode   (HD-BET: `hd-bet[:XxYxZ|low-memory][:tta]`;
+    /// Example: magnitude,hd-bet,signal-erode   (HD-BET: `hd-bet[:XxYxZ|low-memory][:tta][:step=F]`;
     ///   signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`)
     #[arg(long = "mask", num_args = 1)]
     pub mask_sections_cli: Option<Vec<String>>,
@@ -1312,6 +1312,10 @@ pub struct MaskHdBetArgs {
     /// 8-fold mirroring test-time augmentation (about 8x slower)
     #[arg(long)]
     pub tta: bool,
+    /// Sliding-window step as a fraction of the patch, in (0, 1]. Larger steps mean fewer
+    /// patches and a shorter run: 0.5 (default) is HD-BET's own, 1.0 abuts the patches.
+    #[arg(long)]
+    pub tile_step: Option<f64>,
 }
 
 #[derive(Parser, Debug)]

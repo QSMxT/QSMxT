@@ -591,11 +591,14 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
                 add_citation(citations, &CITE_BET);
                 format!("BET brain extraction (Smith, 2002; f={:.2}) of {}", fractional_intensity, input_desc)
             }
-            MaskOp::HdBet { patch, tta } => {
+            MaskOp::HdBet { patch, tta, tile_step } => {
                 add_citation(citations, &CITE_HDBET);
+                // Always stated: a methods section should name every parameter the run used.
                 format!(
-                    "HD-BET deep-learning brain extraction (Isensee et al., 2019; {}x{}x{}-voxel sliding-window patches{}) of {}",
-                    patch[0], patch[1], patch[2], if *tta { ", mirroring test-time augmentation" } else { "" }, input_desc,
+                    "HD-BET deep-learning brain extraction (Isensee et al., 2019; {}x{}x{}-voxel \
+                     sliding-window patches stepped by {:.0}% of the patch{}) of {}",
+                    patch[0], patch[1], patch[2], tile_step * 100.0,
+                    if *tta { ", mirroring test-time augmentation" } else { "" }, input_desc,
                 )
             }
             _ => format!("{} of {}", section.generator, input_desc),
