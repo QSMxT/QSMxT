@@ -239,7 +239,7 @@ mod integration_tests {
         let mut c = common_mask(input, output.clone());
         c.ops = vec!["signal-erode".to_string()];
         super::mask::execute(MaskCommand::HdBet(MaskHdBetArgs {
-            common: c, low_memory: true, patch: None, tta: false,
+            common: c, low_memory: true, patch: None, tta: false, tile_step: None,
         })).unwrap();
         assert!(output.exists());
     }

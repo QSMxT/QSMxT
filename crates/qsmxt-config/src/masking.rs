@@ -50,10 +50,12 @@ pub enum MaskOp {
         #[serde(default = "se_min_component")] min_component: usize,
     },
     /// HD-BET deep-learning brain extraction from the magnitude (needs a `dl` build).
-    /// `patch` is the sliding-window size `[x, y, z]` in voxels at 1 mm.
+    /// `patch` is the sliding-window size `[x, y, z]` in voxels at 1 mm; `tile_step` is the
+    /// window stride as a fraction of the patch, in `(0, 1]`.
     HdBet {
         #[serde(default = "hd_bet_patch")] patch: [usize; 3],
         #[serde(default)] tta: bool,
+        #[serde(default = "hd_bet_tile_step")] tile_step: f64,
     },
 }
 
@@ -65,6 +67,9 @@ fn se_global_erosions() -> usize { se_default().global_erosions }
 fn se_bias_sigma() -> f64 { se_default().bias_sigma }
 fn se_min_component() -> usize { se_default().min_component }
 fn hd_bet_patch() -> [usize; 3] { let p = qsm_core::bet::HdBetParams::default().patch; [p.0, p.1, p.2] }
+fn hd_bet_tile_step() -> f64 { hd_bet_default_tile_step() }
+/// qsm-core's default HD-BET sliding-window stride (nnU-Net's 50% overlap).
+pub fn hd_bet_default_tile_step() -> f64 { qsm_core::bet::HdBetParams::default().tile_step }
 /// `hd-bet:low-memory` patch — qsm-core's `HdBetParams::low_memory()` (~1.9 GB peak vs ~4.5 GB).
 pub fn hd_bet_low_memory_patch() -> [usize; 3] {
     let p = qsm_core::bet::HdBetParams::low_memory().patch;
@@ -80,7 +85,9 @@ impl MaskOp {
         }
     }
     /// HD-BET with the native (training-size) patch and no test-time augmentation.
-    pub fn hd_bet_default() -> Self { Self::HdBet { patch: hd_bet_patch(), tta: false } }
+    pub fn hd_bet_default() -> Self {
+        Self::HdBet { patch: hd_bet_patch(), tta: false, tile_step: hd_bet_tile_step() }
+    }
     /// HD-BET's native (training-size) sliding-window patch `[x, y, z]`.
     pub fn hd_bet_default_patch() -> [usize; 3] { hd_bet_patch() }
     /// Whether this op creates a mask (as opposed to refining one).
@@ -103,9 +110,14 @@ impl fmt::Display for MaskOp {
             Self::GaussianSmooth { sigma_mm } => write!(f, "gaussian:{:.1}", sigma_mm),
             Self::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } =>
                 write!(f, "signal-erode:{:.2}:{}:{}:{:.1}:{}", threshold, depth_cap, global_erosions, bias_sigma, min_component),
-            Self::HdBet { patch, tta } => {
+            Self::HdBet { patch, tta, tile_step } => {
                 write!(f, "hd-bet:{}x{}x{}", patch[0], patch[1], patch[2])?;
                 if *tta { write!(f, ":tta")?; }
+                // Only when it differs from the default, so every command written before this
+                // field existed still round-trips byte-for-byte.
+                if (*tile_step - hd_bet_tile_step()).abs() > f64::EPSILON {
+                    write!(f, ":step={}", tile_step)?;
+                }
                 Ok(())
             }
         }
@@ -206,17 +218,31 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
         "hd-bet" => {
             let mut patch = hd_bet_patch();
             let mut tta = false;
+            let mut tile_step = hd_bet_tile_step();
             for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
                 match *part {
                     "tta" => tta = true,
                     "native" => patch = hd_bet_patch(),
                     "low-memory" => patch = hd_bet_low_memory_patch(),
+                    s if s.starts_with("step=") => tile_step = parse_hd_bet_step(&s[5..])?,
                     dims => patch = parse_hd_bet_patch(dims)?,
                 }
             }
-            Ok(MaskOp::HdBet { patch, tta })
+            Ok(MaskOp::HdBet { patch, tta, tile_step })
         }
         _ => Err(ConfigError::Parse(format!("Unknown mask-op: '{}'", parts[0]))),
+    }
+}
+
+/// `step=<f>` HD-BET sliding-window stride, as a fraction of the patch. qsm-core requires
+/// `(0, 1]`: at 1.0 the windows abut, and anything larger would leave gaps in the volume.
+fn parse_hd_bet_step(s: &str) -> crate::Result<f64> {
+    let v: f64 = s.trim().parse()
+        .map_err(|_| ConfigError::Parse(format!("hd-bet: step must be a number, got '{s}'")))?;
+    if v > 0.0 && v <= 1.0 {
+        Ok(v)
+    } else {
+        Err(ConfigError::Parse(format!("hd-bet: step {v} must be greater than 0 and at most 1")))
     }
 }
 
@@ -313,14 +339,44 @@ mod tests {
         assert_eq!(parse_mask_op(&format!("{full}")).unwrap(), full);
     }
 
+    /// Every spelling of the op survives print → parse unchanged.
+    #[test]
+    fn hd_bet_specs_round_trip() {
+        for spec in ["hd-bet", "hd-bet:low-memory", "hd-bet:128x128x64:step=0.75",
+                     "hd-bet:low-memory:step=1:tta", "hd-bet:step=0.625"] {
+            let op = parse_mask_op(spec).expect(spec);
+            let printed = format!("{op}");
+            assert_eq!(parse_mask_op(&printed).expect(&printed), op, "round-trip of {spec}");
+        }
+        // Specs written before the field existed still print exactly as they did.
+        assert_eq!(format!("{}", parse_mask_op("hd-bet:low-memory").unwrap()), "hd-bet:128x128x64");
+        assert_eq!(format!("{}", parse_mask_op("hd-bet:tta").unwrap()), "hd-bet:192x192x96:tta");
+    }
+
     #[test]
     fn test_parse_hd_bet() {
-        assert_eq!(parse_mask_op("hd-bet").unwrap(), MaskOp::HdBet { patch: [192, 192, 96], tta: false });
-        assert_eq!(parse_mask_op("hd-bet:low-memory").unwrap(), MaskOp::HdBet { patch: [128, 128, 64], tta: false });
-        assert_eq!(parse_mask_op("hd-bet:160x160x128:tta").unwrap(), MaskOp::HdBet { patch: [160, 160, 128], tta: true });
+        let step = hd_bet_tile_step();
+        assert_eq!(parse_mask_op("hd-bet").unwrap(), MaskOp::HdBet { patch: [192, 192, 96], tta: false, tile_step: step });
+        assert_eq!(parse_mask_op("hd-bet:low-memory").unwrap(), MaskOp::HdBet { patch: [128, 128, 64], tta: false, tile_step: step });
+        assert_eq!(parse_mask_op("hd-bet:160x160x128:tta").unwrap(), MaskOp::HdBet { patch: [160, 160, 128], tta: true, tile_step: step });
         assert!(parse_mask_op("hd-bet:100x100x100").is_err(), "not a multiple of 32x32x16");
         assert!(parse_mask_op("hd-bet:big").is_err());
-        let op = MaskOp::HdBet { patch: [128, 128, 64], tta: true };
+
+        // The sliding-window stride, which used to be silently pinned to qsm-core's default.
+        assert_eq!(parse_mask_op("hd-bet:step=0.75").unwrap(),
+                   MaskOp::HdBet { patch: [192, 192, 96], tta: false, tile_step: 0.75 });
+        assert_eq!(parse_mask_op("hd-bet:low-memory:step=1:tta").unwrap(),
+                   MaskOp::HdBet { patch: [128, 128, 64], tta: true, tile_step: 1.0 });
+        assert!(parse_mask_op("hd-bet:step=0").is_err(), "stride must be > 0");
+        assert!(parse_mask_op("hd-bet:step=1.5").is_err(), "stride > 1 would leave gaps");
+        assert!(parse_mask_op("hd-bet:step=half").is_err());
+
+        // Printed only when it differs, so commands written before the field existed are
+        // unchanged; and what we print parses back to the same op.
+        let stepped = MaskOp::HdBet { patch: [128, 128, 64], tta: false, tile_step: 0.75 };
+        assert_eq!(format!("{stepped}"), "hd-bet:128x128x64:step=0.75");
+        assert_eq!(parse_mask_op(&format!("{stepped}")).unwrap(), stepped);
+        let op = MaskOp::HdBet { patch: [128, 128, 64], tta: true, tile_step: step };
         assert_eq!(format!("{op}"), "hd-bet:128x128x64:tta");
         assert_eq!(parse_mask_op(&format!("{op}")).unwrap(), op);
         assert!(op.is_generator());

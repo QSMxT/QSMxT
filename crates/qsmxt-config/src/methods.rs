@@ -591,11 +591,19 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
                 add_citation(citations, &CITE_BET);
                 format!("BET brain extraction (Smith, 2002; f={:.2}) of {}", fractional_intensity, input_desc)
             }
-            MaskOp::HdBet { patch, tta } => {
+            MaskOp::HdBet { patch, tta, tile_step } => {
                 add_citation(citations, &CITE_HDBET);
+                // The stride is only worth a sentence when it departs from nnU-Net's 50% overlap,
+                // which is what a reader would otherwise assume.
+                let overlap = if (*tile_step - crate::masking::hd_bet_default_tile_step()).abs() > f64::EPSILON {
+                    format!(", stepped by {:.0}% of the patch", tile_step * 100.0)
+                } else {
+                    String::new()
+                };
                 format!(
-                    "HD-BET deep-learning brain extraction (Isensee et al., 2019; {}x{}x{}-voxel sliding-window patches{}) of {}",
-                    patch[0], patch[1], patch[2], if *tta { ", mirroring test-time augmentation" } else { "" }, input_desc,
+                    "HD-BET deep-learning brain extraction (Isensee et al., 2019; {}x{}x{}-voxel sliding-window patches{}{}) of {}",
+                    patch[0], patch[1], patch[2], overlap,
+                    if *tta { ", mirroring test-time augmentation" } else { "" }, input_desc,
                 )
             }
             _ => format!("{} of {}", section.generator, input_desc),

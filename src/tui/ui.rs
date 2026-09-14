@@ -1442,6 +1442,40 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                     Span::styled(display_val, val_style),
                 ])
             }
+            PipelineRow::MaskOpHdBetStep { section } => {
+                let gen = &app.pipeline_state.mask_sections[*section].generator;
+                let label_style = if focused {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                let step = match gen {
+                    crate::pipeline::config::MaskOp::HdBet { tile_step, .. } => *tile_step,
+                    _ => crate::pipeline::config::hd_bet_default_tile_step(),
+                };
+                // Show the overlap, which is what the parameter means to a user; the stride it
+                // is stored as (and printed as `step=`) is its complement.
+                let val = format!("{:.0}% overlap{}", (1.0 - step) * 100.0,
+                    if (step - crate::pipeline::config::hd_bet_default_tile_step()).abs() < f64::EPSILON { " (default)" } else { "" });
+                if focused && focused_help.is_none() {
+                    focused_help = Some(
+                        "HD-BET patch overlap: less overlap means fewer patches and a shorter run, \
+                         at softer patch seams (←/→ to change)".to_string());
+                }
+                if focused {
+                    Line::from(vec![
+                        Span::styled(format!("  {:22}", "Patch Overlap:"), label_style),
+                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(val, Style::default().fg(Color::Cyan)),
+                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::styled(format!("  {:22}", "Patch Overlap:"), label_style),
+                        Span::styled(val, Style::default().fg(Color::Gray)),
+                    ])
+                }
+            }
             PipelineRow::MaskOpEntry { section, index } => {
                 let op = &app.pipeline_state.mask_sections[*section].refinements[*index];
                 let (op_type, op_val) = super::app::PipelineFormState::mask_op_label_value(op);
