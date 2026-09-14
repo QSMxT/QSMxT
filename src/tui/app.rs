@@ -884,7 +884,7 @@ pub enum PipelineRow {
     MaskOpGeneratorParam { section: usize },
     /// Threshold value (only shown for fixed/percentile threshold methods)
     MaskOpThresholdValue { section: usize },
-    /// HD-BET sliding-window overlap (only shown when the generator is HD-BET)
+    /// HD-BET sliding-window step (only shown when the generator is HD-BET)
     MaskOpHdBetStep { section: usize },
     /// A refinement step (editable, deletable, reorderable)
     MaskOpEntry { section: usize, index: usize },
@@ -2768,11 +2768,10 @@ impl PipelineFormState {
         self.mark_mask_custom();
     }
 
-    /// HD-BET's sliding-window overlap, cycled through the useful strides.
+    /// HD-BET's sliding-window step, cycled through the useful strides.
     ///
     /// qsm-core accepts any stride in `(0, 1]`, but only a few are worth offering: 0.5 is
-    /// HD-BET's own 50% overlap, and coarser strides trade patch-seam quality for a
-    /// proportionally shorter run.
+    /// HD-BET's own default, and larger steps trade patch-seam quality for a shorter run.
     pub fn adjust_hd_bet_tile_step(&mut self, section: usize, delta: isize) {
         use crate::pipeline::config::MaskOp;
         const STEPS: [f64; 4] = [0.5, 0.625, 0.75, 1.0];
@@ -7897,7 +7896,7 @@ mod tests {
     }
 
     #[test]
-    fn test_pipeline_hd_bet_overlap_row() {
+    fn test_pipeline_hd_bet_step_row() {
         use crate::pipeline::config::MaskOp;
         let mut app = App::new();
         app.active_tab = TAB_QSM;
@@ -7905,12 +7904,12 @@ mod tests {
         app.pipeline_state.mask_sections[0].generator = MaskOp::hd_bet_default();
         app.pipeline_state.mark_mask_custom();
 
-        let find_overlap = |app: &App| {
+        let find_step_row = |app: &App| {
             let rows = app.pipeline_state.visible_rows();
             let focusable = app.pipeline_state.focusable_rows();
             focusable.iter().position(|&ri| matches!(&rows[ri], PipelineRow::MaskOpHdBetStep { .. }))
         };
-        let fi = find_overlap(&app).expect("HD-BET overlap row should be shown and focusable");
+        let fi = find_step_row(&app).expect("HD-BET step row should be shown and focusable");
         app.pipeline_state.focus = fi;
 
         let step_of = |app: &App| match &app.pipeline_state.mask_sections[0].generator {
@@ -7928,7 +7927,7 @@ mod tests {
 
         // The row belongs to HD-BET only.
         app.pipeline_state.mask_sections[0].generator = MaskOp::Bet { fractional_intensity: 0.5 };
-        assert!(find_overlap(&app).is_none(), "overlap row should not show for BET");
+        assert!(find_step_row(&app).is_none(), "step row should not show for BET");
     }
 
     #[test]

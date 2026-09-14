@@ -68,7 +68,7 @@ fn se_bias_sigma() -> f64 { se_default().bias_sigma }
 fn se_min_component() -> usize { se_default().min_component }
 fn hd_bet_patch() -> [usize; 3] { let p = qsm_core::bet::HdBetParams::default().patch; [p.0, p.1, p.2] }
 fn hd_bet_tile_step() -> f64 { hd_bet_default_tile_step() }
-/// qsm-core's default HD-BET sliding-window stride (nnU-Net's 50% overlap).
+/// qsm-core's default HD-BET sliding-window step (nnU-Net's `tile_step_size`).
 pub fn hd_bet_default_tile_step() -> f64 { qsm_core::bet::HdBetParams::default().tile_step }
 /// `hd-bet:low-memory` patch — qsm-core's `HdBetParams::low_memory()` (~1.9 GB peak vs ~4.5 GB).
 pub fn hd_bet_low_memory_patch() -> [usize; 3] {
@@ -113,11 +113,7 @@ impl fmt::Display for MaskOp {
             Self::HdBet { patch, tta, tile_step } => {
                 write!(f, "hd-bet:{}x{}x{}", patch[0], patch[1], patch[2])?;
                 if *tta { write!(f, ":tta")?; }
-                // Only when it differs from the default, so every command written before this
-                // field existed still round-trips byte-for-byte.
-                if (*tile_step - hd_bet_tile_step()).abs() > f64::EPSILON {
-                    write!(f, ":step={}", tile_step)?;
-                }
+                write!(f, ":step={}", tile_step)?;
                 Ok(())
             }
         }
@@ -348,9 +344,9 @@ mod tests {
             let printed = format!("{op}");
             assert_eq!(parse_mask_op(&printed).expect(&printed), op, "round-trip of {spec}");
         }
-        // Specs written before the field existed still print exactly as they did.
-        assert_eq!(format!("{}", parse_mask_op("hd-bet:low-memory").unwrap()), "hd-bet:128x128x64");
-        assert_eq!(format!("{}", parse_mask_op("hd-bet:tta").unwrap()), "hd-bet:192x192x96:tta");
+        // Printed unconditionally: an op string always states every parameter it ran with.
+        assert_eq!(format!("{}", parse_mask_op("hd-bet:low-memory").unwrap()), "hd-bet:128x128x64:step=0.5");
+        assert_eq!(format!("{}", parse_mask_op("hd-bet:tta").unwrap()), "hd-bet:192x192x96:tta:step=0.5");
     }
 
     #[test]
@@ -371,13 +367,12 @@ mod tests {
         assert!(parse_mask_op("hd-bet:step=1.5").is_err(), "stride > 1 would leave gaps");
         assert!(parse_mask_op("hd-bet:step=half").is_err());
 
-        // Printed only when it differs, so commands written before the field existed are
-        // unchanged; and what we print parses back to the same op.
+        // Always printed, and what we print parses back to the same op.
         let stepped = MaskOp::HdBet { patch: [128, 128, 64], tta: false, tile_step: 0.75 };
         assert_eq!(format!("{stepped}"), "hd-bet:128x128x64:step=0.75");
         assert_eq!(parse_mask_op(&format!("{stepped}")).unwrap(), stepped);
         let op = MaskOp::HdBet { patch: [128, 128, 64], tta: true, tile_step: step };
-        assert_eq!(format!("{op}"), "hd-bet:128x128x64:tta");
+        assert_eq!(format!("{op}"), "hd-bet:128x128x64:tta:step=0.5");
         assert_eq!(parse_mask_op(&format!("{op}")).unwrap(), op);
         assert!(op.is_generator());
         assert!(!MaskOp::signal_erode_default().is_generator());
@@ -391,7 +386,7 @@ mod tests {
         ).unwrap();
         assert_eq!(sec.generator, MaskOp::hd_bet_default());
         assert_eq!(sec.refinements, vec![MaskOp::signal_erode_default()]);
-        assert_eq!(format!("{sec}"), "magnitude,hd-bet:192x192x96,signal-erode:0.80:5:1:12.0:1000");
+        assert_eq!(format!("{sec}"), "magnitude,hd-bet:192x192x96:step=0.5,signal-erode:0.80:5:1:12.0:1000");
     }
 
     #[test]

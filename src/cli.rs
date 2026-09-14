@@ -1312,8 +1312,8 @@ pub struct MaskHdBetArgs {
     /// 8-fold mirroring test-time augmentation (about 8x slower)
     #[arg(long)]
     pub tta: bool,
-    /// Sliding-window stride as a fraction of the patch, in (0, 1]. Lower overlap means fewer
-    /// patches and a shorter run: 0.5 (default) is HD-BET's own 50% overlap, 1.0 abuts them.
+    /// Sliding-window step as a fraction of the patch, in (0, 1]. Larger steps mean fewer
+    /// patches and a shorter run: 0.5 (default) is HD-BET's own, 1.0 abuts the patches.
     #[arg(long)]
     pub tile_step: Option<f64>,
 }

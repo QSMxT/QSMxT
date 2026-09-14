@@ -1453,25 +1453,26 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                     crate::pipeline::config::MaskOp::HdBet { tile_step, .. } => *tile_step,
                     _ => crate::pipeline::config::hd_bet_default_tile_step(),
                 };
-                // Show the overlap, which is what the parameter means to a user; the stride it
-                // is stored as (and printed as `step=`) is its complement.
-                let val = format!("{:.0}% overlap{}", (1.0 - step) * 100.0,
+                // Named and valued as the stride throughout — same word and same number as
+                // qsm-core's `tile_step`, the `step=` in the op string, and nnU-Net's
+                // `tile_step_size`. No translation for a reader to undo.
+                let val = format!("{:.3}{}", step,
                     if (step - crate::pipeline::config::hd_bet_default_tile_step()).abs() < f64::EPSILON { " (default)" } else { "" });
                 if focused && focused_help.is_none() {
                     focused_help = Some(
-                        "HD-BET patch overlap: less overlap means fewer patches and a shorter run, \
-                         at softer patch seams (←/→ to change)".to_string());
+                        "HD-BET sliding-window step, as a fraction of the patch: larger steps mean \
+                         fewer patches and a shorter run, at softer patch seams (←/→ to change)".to_string());
                 }
                 if focused {
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", "Patch Overlap:"), label_style),
+                        Span::styled(format!("  {:22}", "Patch Step:"), label_style),
                         Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
                         Span::styled(val, Style::default().fg(Color::Cyan)),
                         Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
                     ])
                 } else {
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", "Patch Overlap:"), label_style),
+                        Span::styled(format!("  {:22}", "Patch Step:"), label_style),
                         Span::styled(val, Style::default().fg(Color::Gray)),
                     ])
                 }
