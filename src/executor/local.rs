@@ -136,6 +136,7 @@ fn compute_concurrency(
                 ny,
                 nz,
                 run.echoes.len(),
+                run.coils.as_ref().map_or(1, |c| c.len()),
                 run.has_magnitude,
                 config,
             )
@@ -187,6 +188,7 @@ mod tests {
                     magnitude_json: Some(PathBuf::from("fake_mag.json")),
                 })
                 .collect(),
+            coils: None,
             magnetic_field_strength: 3.0,
             echo_times: vec![0.02; n_echoes],
             b0_dir: (0.0, 0.0, 1.0),
@@ -230,7 +232,7 @@ mod tests {
         let runs = vec![dummy_run((256, 256, 256), 4)];
         let config = PipelineConfig::default();
         // Get the per-run estimate
-        let per_run = memory::estimate_peak_memory_bytes(256, 256, 256, 4, true, &config);
+        let per_run = memory::estimate_peak_memory_bytes(256, 256, 256, 4, 1, true, &config);
         // Allow exactly 2 runs
         let exec = ExecutionConfig {
             n_procs: 16,
@@ -247,7 +249,7 @@ mod tests {
     fn test_compute_concurrency_memory_caps_below_nprocs() {
         let runs = vec![dummy_run((256, 256, 256), 4)];
         let config = PipelineConfig::default();
-        let per_run = memory::estimate_peak_memory_bytes(256, 256, 256, 4, true, &config);
+        let per_run = memory::estimate_peak_memory_bytes(256, 256, 256, 4, 1, true, &config);
         // Allow only 1 run worth of memory, but request 16 procs
         let exec = ExecutionConfig {
             n_procs: 16,

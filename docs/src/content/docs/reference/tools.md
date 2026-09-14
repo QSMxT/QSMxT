@@ -32,6 +32,22 @@ The generating subcommands (`otsu`, `value`, `percentile`, `bet`, `hd-bet`) also
 accept `--op` refinements, applied in order, e.g. `--op erode:2` or
 `--op signal-erode` (signal-gated erosion, which uses the input magnitude).
 
+## Coil combination — `qsmxt combine`
+
+Combine uncombined receive-coil channels into one phase and magnitude per echo
+with MCPC-3D-S (`mcpc3ds`). Inputs are the per-coil, per-echo 3D NIfTIs; files
+named with BIDS `coil-NN` / `echo-N` entities are ordered by those, otherwise pass
+them coil-major with `--num-echoes`. Echo times come from `--tes` or the phase
+sidecars.
+
+```sh
+qsmxt combine mcpc3ds \
+  --phase sub-1/anat/*rec-uncombined*part-phase_MEGRE.nii.gz \
+  --magnitude sub-1/anat/*rec-uncombined*part-mag_MEGRE.nii.gz \
+  -o combined/sub-1_rec-mcpc3ds
+# writes combined/sub-1_rec-mcpc3ds_echo-N_part-{phase,mag}.nii and _desc-mcpc3ds_mask.nii
+```
+
 ## Phase unwrapping — `qsmxt unwrap`
 
 Unwrap a wrapped phase image (`romeo` or `laplacian`).

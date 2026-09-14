@@ -469,6 +469,7 @@ mod tests {
 
         let run = QsmRun {
             key: k.clone(),
+            coils: None,
             echoes: vec![EchoFiles {
                 echo_number: 1,
                 phase_nifti: raw_phase.clone(),

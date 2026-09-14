@@ -128,6 +128,25 @@ impl DerivativeOutputs {
     pub fn chi_raw_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "invert", "Chimap-raw") }
 
     // Per-echo intermediates (in scale_phase step directory)
+    /// MCPC-3D-S combined phase of one echo, exported next to the other derivatives
+    /// (`<basename>_rec-mcpc3ds_echo-N_part-phase_MEGRE.nii`).
+    pub fn combined_phase_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
+        self.nifti_path(&Self::mcpc3ds_key(key), &format!("echo-{}_part-phase_{}", echo, key.suffix))
+    }
+    /// MCPC-3D-S combined magnitude of one echo (see [`Self::combined_phase_path`]).
+    pub fn combined_mag_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
+        self.nifti_path(&Self::mcpc3ds_key(key), &format!("echo-{}_part-mag_{}", echo, key.suffix))
+    }
+    /// The run key with its reconstruction entity set to `mcpc3ds` (replacing `uncombined`), so
+    /// exported combined echoes are named `..._rec-mcpc3ds_echo-N_part-*` like the v8 converter did.
+    fn mcpc3ds_key(key: &AcquisitionKey) -> AcquisitionKey {
+        AcquisitionKey { reconstruction: Some("mcpc3ds".to_string()), ..key.clone() }
+    }
+    /// Robust mask used for the MCPC-3D-S phase-offset estimation (workflow intermediate).
+    pub fn combine_mask_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_nifti_path(key, "scale_phase", "desc-mcpc3ds_mask")
+    }
+
     pub fn phase_scaled_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
         self.workflow_step_dir(key, "scale_phase").join(format!("{}_echo-{}_phase-scaled.nii", key.basename(), echo))
     }
@@ -155,6 +174,18 @@ mod tests {
             run: None,
             suffix: "MEGRE".to_string(),
         }
+    }
+
+    #[test]
+    fn combined_echo_paths_replace_uncombined_with_mcpc3ds() {
+        let out = DerivativeOutputs::new(Path::new("/o"));
+        let key = AcquisitionKey { reconstruction: Some("uncombined".into()), ..key_no_session() };
+        let p = out.combined_phase_path(&key, 2);
+        let name = p.file_name().unwrap().to_string_lossy().into_owned();
+        assert_eq!(name, "sub-01_rec-mcpc3ds_echo-2_part-phase_MEGRE.nii");
+        assert!(!name.contains("uncombined"));
+        let m = out.combined_mag_path(&key, 1);
+        assert!(m.file_name().unwrap().to_string_lossy().ends_with("_rec-mcpc3ds_echo-1_part-mag_MEGRE.nii"));
     }
 
     fn key_with_session() -> AcquisitionKey {

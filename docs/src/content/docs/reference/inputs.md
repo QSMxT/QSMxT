@@ -53,6 +53,29 @@ Two further acquisitions are recognised when present:
 
 A MESE acquisition needs at least three echoes to fit R2. Fewer are ignored.
 
+### Uncombined receive coils
+
+Data exported per coil element (Siemens "save uncombined", as in UK Biobank SWI)
+is recognised by the BIDS `coil-<NN>` entity that `qsmxt dicom-convert` writes:
+
+```
+sub-*/[ses-*/]anat/*_rec-uncombined_coil-01_echo-1_part-phase_MEGRE.nii.gz
+sub-*/[ses-*/]anat/*_rec-uncombined_coil-01_echo-1_part-mag_MEGRE.nii.gz
+...
+```
+
+All coils of one acquisition form a single run. Before anything else the pipeline
+combines them with MCPC-3D-S (see
+[Coil combination](/QSMxT/reference/algorithms/#coil-combination)), which needs
+magnitude and phase for every coil and at least two echoes, and then continues on
+the combined echoes. The combined echoes are also written to the derivatives as
+`*_rec-mcpc3ds_echo-<N>_part-{phase,mag}_*`.
+
+When the same acquisition is present both per coil and scanner-combined, the
+per-coil run is used and the scanner-combined one is skipped (a log line says so):
+the scanner's phase combination is generally not suitable for QSM. Pass
+`--exclude "*rec-uncombined*"` to process the scanner-combined data instead.
+
 ## What each output needs
 
 Phase is what a run is discovered from, so it is present for everything below.

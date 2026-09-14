@@ -365,7 +365,8 @@ fn validate_run_dims(run: &QsmRun, reference: &NiftiData) -> crate::Result<()> {
         )));
     }
 
-    for (i, echo) in run.echoes.iter().enumerate() {
+    let coil_echoes = run.coils.iter().flatten().flat_map(|c| c.echoes.iter().enumerate());
+    for (i, echo) in run.echoes.iter().enumerate().chain(coil_echoes) {
         let mut inputs: Vec<(&str, &Path)> = vec![("phase", echo.phase_nifti.as_path())];
         if let Some(ref mag) = echo.magnitude_nifti {
             inputs.push(("magnitude", mag.as_path()));
@@ -414,9 +415,11 @@ fn stage_load(
             has_magnitude: qsm_run.has_magnitude,
         };
         log::info!(
-            "Volume: {}x{}x{}, {:.1}mm iso, {} echoes, B0={:.1}T, TEs={:?}s",
+            "Volume: {}x{}x{}, {:.2}x{:.2}x{:.2}mm, {} echoes{}, B0={:.1}T, TEs={:?}s",
             meta.dims.0, meta.dims.1, meta.dims.2,
-            meta.voxel_size.0, meta.n_echoes, meta.field_strength, meta.echo_times,
+            meta.voxel_size.0, meta.voxel_size.1, meta.voxel_size.2, meta.n_echoes,
+            qsm_run.coils.as_ref().map(|c| format!(" x {} uncombined coils", c.len())).unwrap_or_default(),
+            meta.field_strength, meta.echo_times,
         );
         state.run_metadata = Some(meta.clone());
         state.mark_completed("load", vec![], None);
@@ -432,6 +435,9 @@ fn stage_load(
 }
 
 fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
+    if ctx.run.coils.is_some() {
+        return stage_combine_coils(ctx, progress);
+    }
     if ctx.is_cached("scale_phase") {
         log::info!("Skipping scale_phase (cached)");
         return Ok(());
@@ -470,6 +476,105 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
     let input_refs: Vec<&Path> = input_paths.iter().map(|p| p.as_path()).collect();
     ctx.complete_step("scale_phase", None, serde_json::json!({}), &input_refs, all_paths, t)?;
     log_step_done("Rescale phase", t);
+    Ok(())
+}
+
+/// MCPC-3D-S coil combination for uncombined (per-coil) runs.
+///
+/// Replaces `scale_phase` for runs with `coils`: every coil's echoes are loaded, phase rescaled
+/// to radians, combined with `qsm_core::utils::mcpc3ds_combine`, and the combined per-echo
+/// phase (already in radians, coil offsets removed) and magnitude are written to the same
+/// `scale_phase` intermediates every later stage reads. The combined echoes are also exported
+/// to the derivatives `anat/` folder as `rec-mcpc3ds` MEGRE volumes for inspection/reuse.
+fn stage_combine_coils(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
+    let coils = ctx.run.coils.as_ref().expect("stage_combine_coils needs coils");
+    let n_coils = coils.len();
+    let n_echoes = ctx.meta.n_echoes;
+    let sigma = ctx.config.field_mapping.coil_combination_sigma;
+    let unwrap = format!("{}", ctx.config.field_mapping.unwrapping_algorithm);
+    let params = serde_json::json!({
+        "coil_combination": "mcpc3ds",
+        "n_coils": n_coils,
+        "n_echoes": n_echoes,
+        "coil_numbers": coils.iter().map(|c| c.coil_number).collect::<Vec<_>>(),
+        "hip_echoes": [1, 2],
+        "sigma": sigma,
+        "hip_unwrapping": unwrap,
+        "echo_times": ctx.meta.echo_times,
+    });
+    if ctx.is_cached_with_params("scale_phase", Some("mcpc3ds"), &params) {
+        log::info!("Skipping coil combination (cached)");
+        return Ok(());
+    }
+    let t = Instant::now();
+    log::info!("Coil combination (MCPC-3D-S): {} coils x {} echoes", n_coils, n_echoes);
+    progress("MCPC-3D-S coil combination");
+
+    let n = ctx.meta.dims.0 * ctx.meta.dims.1 * ctx.meta.dims.2;
+    let mut phases: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_coils);
+    let mut mags: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_coils);
+    let mut inputs: Vec<PathBuf> = Vec::new();
+    for coil in coils {
+        let mut cp = Vec::with_capacity(n_echoes);
+        let mut cm = Vec::with_capacity(n_echoes);
+        for echo in coil.echoes.iter().take(n_echoes) {
+            let mut p = load_volume(&echo.phase_nifti)?;
+            if p.len() != n {
+                return Err(QsmxtError::DimensionMismatch(format!(
+                    "{} has {} voxels, expected {}", echo.phase_nifti.display(), p.len(), n)));
+            }
+            qsm_core::pipeline::scale_phase_to_pi(&mut p);
+            let mag_path = echo.magnitude_nifti.as_ref().ok_or_else(|| QsmxtError::Config(format!(
+                "coil {} echo {}: magnitude required for MCPC-3D-S", coil.coil_number, echo.echo_number)))?;
+            let m = load_volume(mag_path)?;
+            if m.len() != n {
+                return Err(QsmxtError::DimensionMismatch(format!(
+                    "{} has {} voxels, expected {}", mag_path.display(), m.len(), n)));
+            }
+            inputs.push(echo.phase_nifti.clone());
+            inputs.push(mag_path.clone());
+            cp.push(p);
+            cm.push(m);
+        }
+        phases.push(cp);
+        mags.push(cm);
+    }
+
+    let grid = qsm_core::Grid::new(
+        ctx.meta.dims.0, ctx.meta.dims.1, ctx.meta.dims.2,
+        ctx.meta.voxel_size.0, ctx.meta.voxel_size.1, ctx.meta.voxel_size.2,
+    );
+    let unwrap_method = if unwrap == "laplacian" {
+        qsm_core::unwrap::UnwrapMethod::Laplacian
+    } else {
+        qsm_core::unwrap::UnwrapMethod::Romeo
+    };
+    let combined = qsm_core::utils::mcpc3ds_combine(
+        &phases, &mags, &ctx.meta.echo_times, sigma, [0, 1], unwrap_method, &grid,
+    );
+    drop(phases);
+    drop(mags);
+
+    let mut outputs = Vec::new();
+    for e in 0..n_echoes {
+        let p_path = ctx.output.phase_scaled_path(&ctx.run.key, e + 1);
+        save_volume(&p_path, &combined.phases[e], ctx.meta)?;
+        let m_path = ctx.output.mag_path(&ctx.run.key, e + 1);
+        save_volume(&m_path, &combined.magnitudes[e], ctx.meta)?;
+        // Exported combined echoes (BIDS-style, rec-mcpc3ds) next to the other derivatives.
+        let p_out = ctx.output.combined_phase_path(&ctx.run.key, e + 1);
+        save_volume(&p_out, &combined.phases[e], ctx.meta)?;
+        let m_out = ctx.output.combined_mag_path(&ctx.run.key, e + 1);
+        save_volume(&m_out, &combined.magnitudes[e], ctx.meta)?;
+        outputs.extend([p_path, m_path, p_out, m_out]);
+    }
+    let mask_out = ctx.output.combine_mask_path(&ctx.run.key);
+    save_mask(&mask_out, &combined.mask, ctx.meta)?;
+    outputs.push(mask_out);
+
+    let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).collect();
+    ctx.complete_step("scale_phase", Some("mcpc3ds"), params, &input_refs, outputs, t)?;
+    log_step_done("Coil combination", t);
     Ok(())
 }
 
@@ -1663,6 +1768,7 @@ mod tests {
                 subject: "1".into(), session: None, acquisition: None,
                 reconstruction: None, inversion: None, run: None, suffix: "MEGRE".into(),
             },
+            coils: None,
             echoes: vec![EchoFiles {
                 echo_number: 1, phase_nifti: phase.clone(), phase_json: phase.clone(),
                 magnitude_nifti: None, magnitude_json: None,
@@ -1725,6 +1831,7 @@ mod tests {
                 subject: "1".into(), session: None, acquisition: None,
                 reconstruction: None, inversion: None, run: None, suffix: "MEGRE".into(),
             },
+            coils: None,
             echoes: echoes.into_iter().enumerate().map(|(i, (phase, mag))| EchoFiles {
                 echo_number: i as u32 + 1, phase_json: phase.clone(), phase_nifti: phase,
                 magnitude_json: None, magnitude_nifti: mag,

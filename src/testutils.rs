@@ -97,6 +97,29 @@ pub fn create_multi_echo_bids(root: &Path) -> PathBuf {
     root.to_path_buf()
 }
 
+/// Uncombined multi-coil BIDS dataset (MEGRE, 2 echoes, `n_coils` channels with the
+/// `rec-uncombined_coil-NN` entities) plus the scanner-combined echoes of the same acquisition —
+/// the layout `qsmxt dicom-convert` produces for a Siemens "save uncombined" SWI export.
+pub fn create_multi_coil_bids(root: &Path, n_coils: u32) -> PathBuf {
+    let anat = root.join("sub-1/ses-1/anat");
+    std::fs::create_dir_all(&anat).unwrap();
+    let echo_times = [0.009, 0.020];
+    for (i, &te) in echo_times.iter().enumerate() {
+        let echo = i + 1;
+        for part in ["phase", "mag"] {
+            let base = format!("sub-1_ses-1_acq-swi_echo-{}_part-{}_MEGRE", echo, part);
+            if part == "phase" { write_phase(&anat.join(format!("{}.nii", base))); } else { write_magnitude(&anat.join(format!("{}.nii", base))); }
+            write_sidecar(&anat.join(format!("{}.json", base)), te, 3.0);
+            for coil in 1..=n_coils {
+                let base = format!("sub-1_ses-1_acq-swi_rec-uncombined_coil-{:02}_echo-{}_part-{}_MEGRE", coil, echo, part);
+                if part == "phase" { write_phase(&anat.join(format!("{}.nii", base))); } else { write_magnitude(&anat.join(format!("{}.nii", base))); }
+                write_sidecar(&anat.join(format!("{}.json", base)), te, 3.0);
+            }
+        }
+    }
+    root.to_path_buf()
+}
+
 /// Multi-session BIDS dataset.
 pub fn create_multi_session_bids(root: &Path) -> PathBuf {
     let ses1 = root.join("sub-1/ses-pre/anat");
