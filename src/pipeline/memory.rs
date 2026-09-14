@@ -26,6 +26,8 @@ const U8: usize = 1;
 /// # Arguments
 /// * `nx`, `ny`, `nz` — Volume dimensions
 /// * `n_echoes` — Number of echo times
+/// * `n_coils` — Uncombined receive-coil channels (1 for combined data); MCPC-3D-S loads every
+///   coil's phase and magnitude at once before the rest of the pipeline runs
 /// * `has_magnitude` — Whether magnitude files are available
 /// * `config` — Pipeline configuration (determines which algorithms are used)
 pub fn estimate_peak_memory_bytes(
@@ -33,11 +35,20 @@ pub fn estimate_peak_memory_bytes(
     ny: usize,
     nz: usize,
     n_echoes: usize,
+    n_coils: usize,
     has_magnitude: bool,
     config: &PipelineConfig,
 ) -> usize {
     let n = nx * ny * nz;
     let n_mag = if has_magnitude { n_echoes } else { 0 };
+
+    // MCPC-3D-S coil combination: all coils' phase + magnitude (f64), the HIP (2 volumes),
+    // the unwrapped HIP, one offset volume, and the per-echo complex accumulators.
+    let coil_combine_mem = if n_coils > 1 {
+        (2 * n_coils * n_echoes + 4 + 2 * n_echoes) * n * F64
+    } else {
+        0
+    };
 
     // Baseline: data that persists across the entire pipeline
     let baseline = n_echoes * n * F64  // phases (Vec<f64> per echo)
@@ -99,6 +110,7 @@ pub fn estimate_peak_memory_bytes(
     // Stages are sequential: masking → SWI → QSM → (R2/R2' + chi-separation)
     let peak = baseline
         + [
+            coil_combine_mem,
             mask_mem,
             swi_temp + swi_persistent,
             qsm_stage_mem + swi_persistent,
@@ -315,12 +327,12 @@ mod tests {
         ] {
             let mut c = default_config();
             c.inversion.algorithm = a;
-            assert!(estimate_peak_memory_bytes(8, 8, 8, 1, false, &c) > 0, "{:?}", a);
+            assert!(estimate_peak_memory_bytes(8, 8, 8, 1, 1, false, &c) > 0, "{:?}", a);
         }
         for b in [BfAlgorithm::Bfrnet, BfAlgorithm::Iqfm] {
             let mut c = default_config();
             c.bg_removal.algorithm = b;
-            assert!(estimate_peak_memory_bytes(8, 8, 8, 1, false, &c) > 0, "{:?}", b);
+            assert!(estimate_peak_memory_bytes(8, 8, 8, 1, 1, false, &c) > 0, "{:?}", b);
         }
     }
 
@@ -328,11 +340,11 @@ mod tests {
     fn test_hd_bet_mask_memory() {
         use crate::pipeline::config::{hd_bet_mask_sections, MaskOp};
         let mut c = default_config();
-        let base = estimate_peak_memory_bytes(164, 205, 205, 4, true, &c);
+        let base = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
         c.masking.sections = hd_bet_mask_sections();
-        let native = estimate_peak_memory_bytes(164, 205, 205, 4, true, &c);
+        let native = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
         c.masking.sections[0].generator = MaskOp::HdBet { patch: [128, 128, 64], tta: false };
-        let low = estimate_peak_memory_bytes(164, 205, 205, 4, true, &c);
+        let low = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
         // The native patch dominates the pipeline peak (measured ~3.6–4.5 GB for masking alone).
         assert!(native > 3_500_000_000 && native > base, "native {native}, base {base}");
         assert!(low < native, "low-memory patch ({low}) should estimate below native ({native})");
@@ -341,8 +353,8 @@ mod tests {
     #[test]
     fn test_more_echoes_more_memory() {
         let config = default_config();
-        let est_1 = estimate_peak_memory_bytes(128, 128, 128, 1, true, &config);
-        let est_4 = estimate_peak_memory_bytes(128, 128, 128, 4, true, &config);
+        let est_1 = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
+        let est_4 = estimate_peak_memory_bytes(128, 128, 128, 4, 1, true, &config);
         assert!(est_4 > est_1, "4 echoes ({}) should use more memory than 1 ({})", est_4, est_1);
     }
 
@@ -350,9 +362,9 @@ mod tests {
     fn test_swi_adds_memory() {
         let mut config = default_config();
         config.pipeline.do_swi = false;
-        let est_no_swi = estimate_peak_memory_bytes(128, 128, 128, 1, true, &config);
+        let est_no_swi = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
         config.pipeline.do_swi = true;
-        let est_swi = estimate_peak_memory_bytes(128, 128, 128, 1, true, &config);
+        let est_swi = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
         assert!(est_swi >= est_no_swi, "SWI ({}) should use at least as much memory as no SWI ({})", est_swi, est_no_swi);
     }
 
@@ -360,9 +372,9 @@ mod tests {
     fn test_tkd_less_than_rts() {
         let mut config = default_config();
         config.inversion.algorithm = QsmAlgorithm::Tkd;
-        let est_tkd = estimate_peak_memory_bytes(128, 128, 128, 1, true, &config);
+        let est_tkd = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
         config.inversion.algorithm = QsmAlgorithm::Rts;
-        let est_rts = estimate_peak_memory_bytes(128, 128, 128, 1, true, &config);
+        let est_rts = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
         assert!(est_tkd < est_rts, "TKD ({}) should use less memory than RTS ({})", est_tkd, est_rts);
     }
 
@@ -371,9 +383,9 @@ mod tests {
         let mut config = default_config();
         config.inversion.algorithm = QsmAlgorithm::Tkd;
         config.bg_removal.algorithm = BfAlgorithm::Lbv;
-        let est_lbv = estimate_peak_memory_bytes(128, 128, 128, 1, true, &config);
+        let est_lbv = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
         config.bg_removal.algorithm = BfAlgorithm::Vsharp;
-        let est_vsharp = estimate_peak_memory_bytes(128, 128, 128, 1, true, &config);
+        let est_vsharp = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
         assert!(est_lbv < est_vsharp, "LBV ({}) should use less memory than V-SHARP ({})", est_lbv, est_vsharp);
     }
 
@@ -384,17 +396,26 @@ mod tests {
         config.inversion.algorithm = QsmAlgorithm::Tkd;
         config.bg_removal.algorithm = BfAlgorithm::Lbv;
         config.pipeline.do_swi = false;
-        let est = estimate_peak_memory_bytes(64, 64, 64, 1, false, &config);
+        let est = estimate_peak_memory_bytes(64, 64, 64, 1, 1, false, &config);
         let one_gb = 1024 * 1024 * 1024;
         assert!(est < one_gb, "64^3 minimal pipeline should use < 1 GB, got {}", format_bytes(est));
         assert!(est > 0, "Estimate should be positive");
     }
 
     #[test]
+    fn test_uncombined_coils_raise_estimate() {
+        let config = default_config();
+        let one = estimate_peak_memory_bytes(256, 288, 48, 2, 1, true, &config);
+        let many = estimate_peak_memory_bytes(256, 288, 48, 2, 32, true, &config);
+        // 32 coils x 2 echoes x (phase + magnitude) f64 volumes dominate
+        assert!(many > one + 32 * 2 * 2 * 256 * 288 * 48 * 8 / 2, "{} vs {}", many, one);
+    }
+
+    #[test]
     fn test_typical_brain_estimate() {
         // 256x256x176, 4 echoes, default GRE (RTS + PDF + ROMEO)
         let config = default_config();
-        let est = estimate_peak_memory_bytes(256, 256, 176, 4, true, &config);
+        let est = estimate_peak_memory_bytes(256, 256, 176, 4, 1, true, &config);
         let gb = est as f64 / (1024.0 * 1024.0 * 1024.0);
         // Should be in the range of 2-6 GB for a typical brain
         assert!(gb > 1.0, "Typical brain should use > 1 GB, got {:.1} GB", gb);
@@ -406,15 +427,15 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Tgv;
         config.field_mapping.phase_offset_removal = false;
-        let est = estimate_peak_memory_bytes(128, 128, 128, 1, true, &config);
+        let est = estimate_peak_memory_bytes(128, 128, 128, 1, 1, true, &config);
         assert!(est > 0, "TGV estimate should be positive");
     }
 
     #[test]
     fn test_no_magnitude_less_memory() {
         let config = default_config();
-        let est_mag = estimate_peak_memory_bytes(128, 128, 128, 4, true, &config);
-        let est_no_mag = estimate_peak_memory_bytes(128, 128, 128, 4, false, &config);
+        let est_mag = estimate_peak_memory_bytes(128, 128, 128, 4, 1, true, &config);
+        let est_no_mag = estimate_peak_memory_bytes(128, 128, 128, 4, 1, false, &config);
         assert!(est_no_mag < est_mag, "No magnitude ({}) should use less memory than with magnitude ({})", est_no_mag, est_mag);
     }
 

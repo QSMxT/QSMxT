@@ -1,5 +1,6 @@
 pub mod common;
 pub mod bgremove;
+pub mod combine;
 pub mod dicom;
 pub mod fieldmap;
 pub mod homogeneity;

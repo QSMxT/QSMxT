@@ -19,11 +19,24 @@ pub struct EchoFiles {
     pub magnitude_json: Option<PathBuf>,
 }
 
+/// Per-echo files of one receive-coil channel in an uncombined (per-coil) acquisition.
+#[derive(Debug, Clone)]
+pub struct CoilFiles {
+    pub coil_number: u32,
+    pub echoes: Vec<EchoFiles>,
+}
+
 /// A complete QSM acquisition run with all echoes.
 #[derive(Debug, Clone)]
 pub struct QsmRun {
     pub key: AcquisitionKey,
+    /// Per-echo files. For an uncombined multi-coil run these are the first coil's files:
+    /// they define the grid and sidecar metadata, and the pipeline replaces them with the
+    /// MCPC-3D-S combination of `coils` in its first stage.
     pub echoes: Vec<EchoFiles>,
+    /// Uncombined receive-coil channels (`coil-NN` entity), when the acquisition was exported
+    /// per coil. `None` for scanner-combined data.
+    pub coils: Option<Vec<CoilFiles>>,
     pub magnetic_field_strength: f64,
     pub echo_times: Vec<f64>,
     pub b0_dir: (f64, f64, f64),
@@ -148,74 +161,66 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
     // Build QsmRun for each group
     let mut runs: Vec<QsmRun> = Vec::new();
 
-    for (key, mut files) in groups {
-        // Sort by echo number
-        files.sort_by_key(|(_, ent)| ent.echo.unwrap_or(1));
-
-        // Apply echo limit
-        if let Some(max_echoes) = filter.num_echoes {
-            files.truncate(max_echoes);
+    for (key, files) in groups {
+        // Split per-coil (uncombined) channels from combined files.
+        let mut by_coil: BTreeMap<Option<u32>, Vec<(PathBuf, BidsEntities)>> = BTreeMap::new();
+        for f in files {
+            by_coil.entry(f.1.coil).or_default().push(f);
         }
+        let combined = by_coil.remove(&None);
 
-        let mut echoes = Vec::new();
-        let mut echo_times = Vec::new();
-        let mut b0_tesla = 0.0f64;
-        let mut b0_dir = (0.0, 0.0, 1.0);
-
-        for (phase_path, ent) in &files {
-            let echo_num = ent.echo.unwrap_or(1);
-
-            // Find corresponding files
-            let json_path = entities::sidecar_path(phase_path).ok_or_else(|| {
-                QsmxtError::BidsDiscovery(format!(
-                    "Cannot determine sidecar path for non-NIfTI file: {}",
-                    phase_path.display()
-                ))
-            })?;
-            let mag_path = entities::phase_to_magnitude_path(phase_path);
-
-            // Read sidecar
-            if !json_path.exists() {
-                return Err(QsmxtError::BidsDiscovery(format!(
-                    "JSON sidecar not found: {}",
-                    json_path.display()
-                )));
-            }
-            let sc = sidecar::read_sidecar(&json_path)?;
-            echo_times.push(sc.echo_time);
-            b0_tesla = sc.magnetic_field_strength;
-
-            if let Some(ref dir) = sc.b0_dir {
-                if dir.len() == 3 {
-                    b0_dir = (dir[0], dir[1], dir[2]);
-                } else {
-                    warn!(
-                        "B0 direction has {} components (expected 3), defaulting to (0,0,1): {}",
-                        dir.len(), json_path.display()
-                    );
-                }
-            }
-
-            let mag_nifti = if mag_path.exists() {
-                Some(mag_path.clone())
-            } else {
+        let (echoes, echo_times, b0_tesla, b0_dir, coils) = if by_coil.len() >= 2 {
+            if combined.is_some() {
                 warn!(
-                    "Magnitude file not found (will proceed without): {}",
-                    mag_path.display()
+                    "{}: both per-coil and combined files present in one run; using the {} per-coil channels",
+                    key, by_coil.len()
                 );
-                None
+            }
+            let mut coils: Vec<CoilFiles> = Vec::with_capacity(by_coil.len());
+            let mut tes: Option<Vec<f64>> = None;
+            let mut b0 = 0.0;
+            let mut dir = (0.0, 0.0, 1.0);
+            for (coil_number, cfiles) in by_coil {
+                let (e, t, b, d) = build_echoes(cfiles, filter.num_echoes)?;
+                if e.is_empty() {
+                    continue;
+                }
+                if e.iter().any(|x| x.magnitude_nifti.is_none()) {
+                    return Err(QsmxtError::BidsDiscovery(format!(
+                        "{}: coil {} is missing a magnitude file — MCPC-3D-S coil combination needs \
+                         magnitude and phase for every coil and echo",
+                        key, coil_number.unwrap_or(0)
+                    )));
+                }
+                match &tes {
+                    None => { tes = Some(t); b0 = b; dir = d; }
+                    Some(t0) => {
+                        if t0.len() != t.len() || t0.iter().zip(&t).any(|(a, b)| (a - b).abs() > 1e-9) {
+                            return Err(QsmxtError::BidsDiscovery(format!(
+                                "{}: coil {} has echo times {:?} but coil {} has {:?} — all coils of a run must share the same echoes",
+                                key, coil_number.unwrap_or(0), t, coils[0].coil_number, t0
+                            )));
+                        }
+                    }
+                }
+                coils.push(CoilFiles { coil_number: coil_number.unwrap_or(0), echoes: e });
+            }
+            if coils.is_empty() {
+                continue;
+            }
+            (coils[0].echoes.clone(), tes.unwrap_or_default(), b0, dir, Some(coils))
+        } else {
+            // Combined data, or a single coil (treated as combined).
+            let files = match combined {
+                Some(c) => c,
+                None => match by_coil.into_values().next() {
+                    Some(c) => c,
+                    None => continue,
+                },
             };
-
-            let mag_json = mag_nifti.as_ref().and_then(|p| entities::sidecar_path(p));
-
-            echoes.push(EchoFiles {
-                echo_number: echo_num,
-                phase_nifti: phase_path.clone(),
-                phase_json: json_path,
-                magnitude_nifti: mag_nifti,
-                magnitude_json: mag_json,
-            });
-        }
+            let (e, t, b, d) = build_echoes(files, filter.num_echoes)?;
+            (e, t, b, d, None)
+        };
 
         if echoes.is_empty() {
             continue;
@@ -229,6 +234,7 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
         runs.push(QsmRun {
             key,
             echoes,
+            coils,
             magnetic_field_strength: b0_tesla,
             echo_times,
             b0_dir,
@@ -238,6 +244,34 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
         });
     }
 
+    // When an acquisition was exported both scanner-combined and per coil (Siemens SWI with
+    // "save uncombined"), prefer the per-coil channels: the scanner's phase combination is not
+    // suitable for QSM, and MCPC-3D-S on the raw coils is. `--exclude "*rec-uncombined*"` keeps
+    // the scanner-combined run instead.
+    let coil_keys: Vec<AcquisitionKey> = runs.iter()
+        .filter(|r| r.coils.is_some())
+        .map(|r| r.key.clone())
+        .collect();
+    runs.retain(|r| {
+        if r.coils.is_some() || r.key.reconstruction.is_some() {
+            return true;
+        }
+        let shadowed = coil_keys.iter().any(|k| {
+            k.reconstruction.as_deref() == Some("uncombined")
+                && k.subject == r.key.subject && k.session == r.key.session
+                && k.acquisition == r.key.acquisition && k.run == r.key.run
+                && k.suffix == r.key.suffix
+        });
+        if shadowed {
+            log::info!(
+                "{}: skipping the scanner-combined run in favour of its uncombined coils \
+                 (MCPC-3D-S); pass --exclude \"*rec-uncombined*\" to process the combined data instead",
+                r.key
+            );
+        }
+        !shadowed
+    });
+
     // Attach matching MESE (multi-echo spin-echo) acquisitions for R2/R2' computation.
     attach_mese(&mut runs, bids_dir);
 
@@ -245,6 +279,82 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
     runs.sort_by_key(|a| a.key.to_string());
 
     Ok(runs)
+}
+
+/// Echo files, echo times, field strength and B0 direction for one set of phase files
+/// (one coil, or the combined data), sorted by echo number.
+type EchoSet = (Vec<EchoFiles>, Vec<f64>, f64, (f64, f64, f64));
+
+fn build_echoes(mut files: Vec<(PathBuf, BidsEntities)>, num_echoes: Option<usize>) -> crate::Result<EchoSet> {
+    // Sort by echo number
+    files.sort_by_key(|(_, ent)| ent.echo.unwrap_or(1));
+
+    // Apply echo limit
+    if let Some(max_echoes) = num_echoes {
+        files.truncate(max_echoes);
+    }
+
+    let mut echoes = Vec::new();
+    let mut echo_times = Vec::new();
+    let mut b0_tesla = 0.0f64;
+    let mut b0_dir = (0.0, 0.0, 1.0);
+
+    for (phase_path, ent) in &files {
+        let echo_num = ent.echo.unwrap_or(1);
+
+        // Find corresponding files
+        let json_path = entities::sidecar_path(phase_path).ok_or_else(|| {
+            QsmxtError::BidsDiscovery(format!(
+                "Cannot determine sidecar path for non-NIfTI file: {}",
+                phase_path.display()
+            ))
+        })?;
+        let mag_path = entities::phase_to_magnitude_path(phase_path);
+
+        // Read sidecar
+        if !json_path.exists() {
+            return Err(QsmxtError::BidsDiscovery(format!(
+                "JSON sidecar not found: {}",
+                json_path.display()
+            )));
+        }
+        let sc = sidecar::read_sidecar(&json_path)?;
+        echo_times.push(sc.echo_time);
+        b0_tesla = sc.magnetic_field_strength;
+
+        if let Some(ref dir) = sc.b0_dir {
+            if dir.len() == 3 {
+                b0_dir = (dir[0], dir[1], dir[2]);
+            } else {
+                warn!(
+                    "B0 direction has {} components (expected 3), defaulting to (0,0,1): {}",
+                    dir.len(), json_path.display()
+                );
+            }
+        }
+
+        let mag_nifti = if mag_path.exists() {
+            Some(mag_path.clone())
+        } else {
+            warn!(
+                "Magnitude file not found (will proceed without): {}",
+                mag_path.display()
+            );
+            None
+        };
+
+        let mag_json = mag_nifti.as_ref().and_then(|p| entities::sidecar_path(p));
+
+        echoes.push(EchoFiles {
+            echo_number: echo_num,
+            phase_nifti: phase_path.clone(),
+            phase_json: json_path,
+            magnitude_nifti: mag_nifti,
+            magnitude_json: mag_json,
+        });
+    }
+
+    Ok((echoes, echo_times, b0_tesla, b0_dir))
 }
 
 /// Discover `MESE` acquisitions and attach each to QSM runs of the same subject/session.
@@ -566,6 +676,38 @@ mod tests {
         assert_eq!(runs[0].echoes.len(), 1);
         assert!(runs[0].has_magnitude);
         assert!((runs[0].echo_times[0] - 0.02).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_discover_multi_coil_prefers_uncombined() {
+        let dir = tempfile::tempdir().unwrap();
+        testutils::create_multi_coil_bids(dir.path(), 3);
+        let runs = discover_runs(dir.path(), &DiscoveryFilter::default()).unwrap();
+        assert_eq!(runs.len(), 1, "scanner-combined duplicate must be dropped: {:?}", runs.iter().map(|r| r.key.to_string()).collect::<Vec<_>>());
+        let run = &runs[0];
+        assert_eq!(run.key.reconstruction.as_deref(), Some("uncombined"));
+        let coils = run.coils.as_ref().expect("coils");
+        assert_eq!(coils.len(), 3);
+        assert_eq!(coils.iter().map(|c| c.coil_number).collect::<Vec<_>>(), vec![1, 2, 3]);
+        assert!(coils.iter().all(|c| c.echoes.len() == 2));
+        assert_eq!(run.echoes.len(), 2, "placeholder echoes come from the first coil");
+        assert_eq!(run.echo_times.len(), 2);
+        assert!(run.has_magnitude);
+    }
+
+    #[test]
+    fn test_discover_multi_coil_exclude_keeps_combined() {
+        let dir = tempfile::tempdir().unwrap();
+        testutils::create_multi_coil_bids(dir.path(), 2);
+        let filter = DiscoveryFilter {
+            exclude: Some(vec!["*rec-uncombined*".to_string()]),
+            ..Default::default()
+        };
+        let runs = discover_runs(dir.path(), &filter).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert!(runs[0].coils.is_none());
+        assert_eq!(runs[0].key.reconstruction, None);
+        assert_eq!(runs[0].echoes.len(), 2);
     }
 
     #[test]

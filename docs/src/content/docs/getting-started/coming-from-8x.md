@@ -17,6 +17,14 @@ conversion are fully reimplemented and faster, and there is a new interactive TU
 The easiest way in is `qsmxt tui`, which walks you through conversion,
 configuration, and running.
 
+## Multi-coil data
+
+8.x combined uncombined receive coils with MCPC-3D-S inside `dicom-convert`
+(writing `_rec-mcpc3ds` files). In v9 the converter keeps the per-coil files
+(`_rec-uncombined_coil-NN_*`) and `qsmxt run` combines them as its first stage;
+`qsmxt combine mcpc3ds` does the same on loose files. See
+[Inputs](/QSMxT/reference/inputs/#uncombined-receive-coils).
+
 ## Workflows not in v9
 
 Some parts of the 8.x line are not included in v9:

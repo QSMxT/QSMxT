@@ -17,6 +17,8 @@ pub struct BidsEntities {
     pub inversion: Option<String>,
     pub run: Option<String>,
     pub echo: Option<u32>,
+    /// Receive-coil channel for uncombined (per-coil) data (`coil-NN`); `None` for combined data.
+    pub coil: Option<u32>,
     pub part: Option<Part>,
     pub suffix: String,
 }
@@ -126,6 +128,7 @@ pub fn parse_entities(filename: &str) -> Option<BidsEntities> {
     });
 
     let echo = extract_entity(entity_part, "echo").and_then(|e| e.parse::<u32>().ok());
+    let coil = extract_entity(entity_part, "coil").and_then(|c| c.parse::<u32>().ok());
 
     Some(BidsEntities {
         subject,
@@ -135,6 +138,7 @@ pub fn parse_entities(filename: &str) -> Option<BidsEntities> {
         inversion: extract_entity(entity_part, "inv"),
         run: extract_entity(entity_part, "run"),
         echo,
+        coil,
         part,
         suffix: suffix.to_string(),
     })
@@ -160,6 +164,19 @@ pub fn phase_to_magnitude_path(phase_path: &Path) -> std::path::PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_parse_coil() {
+        let e = parse_entities("sub-1_ses-20190507_acq-swi_rec-uncombined_coil-07_echo-2_part-phase_MEGRE.nii.gz").unwrap();
+        assert_eq!(e.coil, Some(7));
+        assert_eq!(e.echo, Some(2));
+        assert_eq!(e.reconstruction.as_deref(), Some("uncombined"));
+        // coil is not part of the acquisition key: all coils of a run group together
+        let k = e.acquisition_key();
+        let e2 = parse_entities("sub-1_ses-20190507_acq-swi_rec-uncombined_coil-08_echo-1_part-phase_MEGRE.nii.gz").unwrap();
+        assert_eq!(k, e2.acquisition_key());
+        assert_eq!(parse_entities("sub-1_echo-1_part-phase_MEGRE.nii").unwrap().coil, None);
+    }
 
     #[test]
     fn test_parse_basic() {

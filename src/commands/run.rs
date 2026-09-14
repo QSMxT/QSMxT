@@ -81,13 +81,15 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         println!();
         for run in &runs {
             let (nx, ny, nz) = run.dims;
+            let n_coils = run.coils.as_ref().map_or(1, |c| c.len());
             let est = memory::estimate_peak_memory_bytes(
-                nx, ny, nz, run.echoes.len(), run.has_magnitude, &config,
+                nx, ny, nz, run.echoes.len(), n_coils, run.has_magnitude, &config,
             );
             println!(
-                "  {} ({} echo(es), {}x{}x{}, B0={:.1}T, est. {})",
+                "  {} ({} echo(es){}, {}x{}x{}, B0={:.1}T, est. {})",
                 run.key,
                 run.echoes.len(),
+                if n_coils > 1 { format!(" x {} uncombined coils (MCPC-3D-S)", n_coils) } else { String::new() },
                 nx, ny, nz,
                 run.magnetic_field_strength,
                 memory::format_bytes(est),
@@ -99,7 +101,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                 .map(|r| {
                     memory::estimate_peak_memory_bytes(
                         r.dims.0, r.dims.1, r.dims.2,
-                        r.echoes.len(), r.has_magnitude, &config,
+                        r.echoes.len(), r.coils.as_ref().map_or(1, |c| c.len()), r.has_magnitude, &config,
                     )
                 })
                 .max()
