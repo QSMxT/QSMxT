@@ -18,6 +18,11 @@ pub struct RunMetadata {
     pub b0_direction: (f64, f64, f64),
     pub field_strength: f64,
     pub has_magnitude: bool,
+    /// Set when the run is being resampled to a cardinal-aligned grid: the dims and affine of the
+    /// files as they sit on disk. `dims`/`voxel_size`/`affine` above are then the *working* grid
+    /// every stage after `scale_phase` sees, and `b0_direction` is `(0,0,1)`.
+    #[serde(default)]
+    pub source_geometry: Option<((usize, usize, usize), [f64; 16])>,
 }
 
 /// Record of a completed step.

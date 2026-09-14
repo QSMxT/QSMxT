@@ -44,6 +44,46 @@ followed by a generator and refinement operations.
 For example, `--mask magnitude,hd-bet:low-memory,signal-erode` is the `hd-bet`
 preset with the low-memory patch size.
 
+## Oblique acquisitions
+
+The dipole kernel is built in the voxel grid, so an acquisition whose slices are tilted relative
+to B0 has to be handled explicitly. QSMxT does one of three things, in this order:
+
+1. **A `B0_dir` in the JSON sidecar wins.** It describes the acquisition better than the affine
+   can, and neither of the options below overrides it.
+2. **`--obliquity-threshold <degrees>` resamples to axial** when the obliquity exceeds it, as
+   QSMxT 8.x did. Magnitude and phase are resampled together through the complex domain before
+   anything else runs, so B0 is `(0, 0, 1)` by construction. The cardinal bounding box is larger
+   than the acquired volume — a 256×288×48 UK Biobank SWI at 32.5° obliquity becomes 272×339×77,
+   so expect roughly twice the voxels and twice the reconstruction time.
+3. **Otherwise the kernel is rotated**: B0 is taken from the affine and used as-is, leaving the
+   acquired grid and avoiding any interpolation. This is the default (`--obliquity-threshold -1`).
+
+Both routes are correct; the second matches 8.x output, the third is cheaper and does not
+interpolate. `qsmxt validate` reports what a dataset will do:
+
+```
+B0 direction: (0.05, 0.39, 0.92) (from the affine)
+Obliquity:    32.5° (B0 22.9° off the slice normal)
+```
+
+Obliquity is `nibabel`'s definition (the norm of the per-axis angles), so 8.x thresholds carry
+over. It is a combined measure rather than a tilt: a single 23° oblique acquisition scores ≈32°
+because two voxel axes move. The tilt in brackets is the physical angle between B0 and the slice
+normal, which is what the kernel cares about.
+
+:::caution
+Wrapped phase cannot be resampled on its own. Halfway between `+3.0` and `−3.0` rad a linear
+interpolator returns `0.0`, where the answer is near `±π`, so every wrap becomes a band of wrong
+values. The pipeline always resamples magnitude and phase together; if you use
+`qsmxt resample` by hand, pass `--phase` with `--magnitude` rather than resampling phase as a
+plain volume.
+:::
+
+Runs with a matching MESE acquisition (for R2′ / χ-separation) are never resampled — the MESE is
+read from BIDS on its own grid, so resampling only the GRE would leave the two inconsistent.
+Those runs use the affine-derived B0 direction instead, and say so in the log.
+
 ## Coil combination
 
 Runs whose phase is stored per receive coil (`coil-<NN>` entity, see

@@ -43,10 +43,6 @@ impl StageContext<'_> {
         self.state.is_step_cached_with_hash(step, Some(&hash))
     }
 
-    fn is_cached(&mut self, step: &str) -> bool {
-        self.state.is_step_cached(step)
-    }
-
     fn dims(&self) -> (usize, usize, usize) { self.meta.dims }
     fn voxel_size(&self) -> (f64, f64, f64) { self.meta.voxel_size }
 
@@ -261,7 +257,7 @@ pub fn run_pipeline_cached(
     let state_path = output.state_path(&qsm_run.key);
     let mut state = PipelineState::load_or_create(&state_path, config, &qsm_run.key, force);
 
-    let meta = stage_load(qsm_run, &mut state, &state_path, progress)?;
+    let meta = stage_load(qsm_run, config, &mut state, &state_path, progress)?;
 
     let needs_mask = config.pipeline.do_qsm || config.pipeline.do_swi
         || (config.pipeline.do_t2starmap && meta.n_echoes >= 3 && meta.has_magnitude)
@@ -391,8 +387,98 @@ fn validate_run_dims(run: &QsmRun, reference: &NiftiData) -> crate::Result<()> {
     Ok(())
 }
 
+/// Work out the grid and B0 direction the pipeline will actually reconstruct on.
+///
+/// The dipole kernel is built in voxel space, so an oblique acquisition has to be handled one of
+/// two ways, and doing neither is what leaves susceptibility contrast on the floor:
+///
+/// 1. **Resample to a cardinal-aligned grid** (`--obliquity-threshold`, as QSMxT 8.x did), after
+///    which B0 is `(0,0,1)` by construction. Costs one interpolation of every echo.
+/// 2. **Keep the grid and rotate the kernel**, using the true B0 direction from the affine.
+///
+/// A sidecar `B0_dir` always wins, since it describes the acquisition better than the affine can.
+fn resolve_geometry(
+    run: &QsmRun,
+    first_phase: &NiftiData,
+    config: &PipelineConfig,
+) -> crate::Result<RunMetadata> {
+    let affine = first_phase.affine;
+    let obliquity = qsm_core::geometry::obliquity_from_affine(&affine);
+    let tilt = qsm_core::geometry::b0_angle_from_affine(&affine);
+    let threshold = config.pipeline.obliquity_threshold;
+    let axes = qsm_core::geometry::obliquity_axes_from_affine(&affine);
+
+    let mut meta = RunMetadata {
+        dims: first_phase.dims,
+        voxel_size: first_phase.voxel_size,
+        affine,
+        n_echoes: run.echoes.len(),
+        echo_times: run.echo_times.clone(),
+        b0_direction: (0.0, 0.0, 1.0),
+        field_strength: run.magnetic_field_strength,
+        has_magnitude: run.has_magnitude,
+        source_geometry: None,
+    };
+
+    if obliquity > 0.01 {
+        log::info!(
+            "Obliquity {:.1}° (per-axis {:.1}/{:.1}/{:.1}°); B0 is {:.1}° from the slice normal",
+            obliquity, axes[0], axes[1], axes[2], tilt
+        );
+    }
+
+    // A sidecar B0_dir is authoritative and is never overridden by resampling.
+    if let Some(dir) = run.b0_dir {
+        meta.b0_direction = dir;
+        log::info!("B0 direction {:?} (from the JSON sidecar)", dir);
+        return Ok(meta);
+    }
+
+    let resample = threshold >= 0.0 && obliquity > threshold;
+    if resample {
+        if run.mese.is_some() {
+            // The MESE is read straight from BIDS for R2/R2', so resampling only the GRE would
+            // leave the two on different grids. Rotate the kernel instead — equally correct.
+            log::warn!(
+                "Obliquity {:.1}° exceeds the {:.1}° threshold, but this run has a matching MESE \
+                 acquisition that would be left on the original grid; using the affine-derived B0 \
+                 direction instead of resampling.",
+                obliquity, threshold
+            );
+        } else {
+            let grid = qsm_core::geometry::axial_grid_for(
+                first_phase.dims.0, first_phase.dims.1, first_phase.dims.2, &affine,
+            );
+            log::info!(
+                "Resampling to axial: {}x{}x{} -> {}x{}x{} (obliquity {:.1}° > threshold {:.1}°); \
+                 B0 becomes (0, 0, 1)",
+                first_phase.dims.0, first_phase.dims.1, first_phase.dims.2,
+                grid.dims.0, grid.dims.1, grid.dims.2, obliquity, threshold
+            );
+            meta.source_geometry = Some((first_phase.dims, affine));
+            meta.dims = grid.dims;
+            meta.voxel_size = grid.voxel_size;
+            meta.affine = grid.affine;
+            meta.b0_direction = (0.0, 0.0, 1.0);
+            return Ok(meta);
+        }
+    }
+
+    // No resampling: build the kernel on the acquired grid, with B0 where it actually points.
+    meta.b0_direction = qsm_core::geometry::b0_direction_from_affine(&affine);
+    if tilt > 0.5 {
+        log::info!(
+            "B0 direction ({:.3}, {:.3}, {:.3}) from the affine; pass --obliquity-threshold to \
+             resample to axial instead",
+            meta.b0_direction.0, meta.b0_direction.1, meta.b0_direction.2
+        );
+    }
+    Ok(meta)
+}
+
 fn stage_load(
     qsm_run: &QsmRun,
+    config: &PipelineConfig,
     state: &mut PipelineState,
     state_path: &Path,
     progress: &dyn Fn(&str),
@@ -404,20 +490,12 @@ fn stage_load(
             .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", qsm_run.echoes[0].phase_nifti.display(), e)))?;
         validate_run_dims(qsm_run, &first_phase)?;
 
-        let meta = RunMetadata {
-            dims: first_phase.dims,
-            voxel_size: first_phase.voxel_size,
-            affine: first_phase.affine,
-            n_echoes: qsm_run.echoes.len(),
-            echo_times: qsm_run.echo_times.clone(),
-            b0_direction: qsm_run.b0_dir,
-            field_strength: qsm_run.magnetic_field_strength,
-            has_magnitude: qsm_run.has_magnitude,
-        };
+        let meta = resolve_geometry(qsm_run, &first_phase, config)?;
         log::info!(
             "Volume: {}x{}x{}, {:.2}x{:.2}x{:.2}mm, {} echoes{}, B0={:.1}T, TEs={:?}s",
-            meta.dims.0, meta.dims.1, meta.dims.2,
-            meta.voxel_size.0, meta.voxel_size.1, meta.voxel_size.2, meta.n_echoes,
+            first_phase.dims.0, first_phase.dims.1, first_phase.dims.2,
+            first_phase.voxel_size.0, first_phase.voxel_size.1, first_phase.voxel_size.2,
+            meta.n_echoes,
             qsm_run.coils.as_ref().map(|c| format!(" x {} uncombined coils", c.len())).unwrap_or_default(),
             meta.field_strength, meta.echo_times,
         );
@@ -438,34 +516,74 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
     if ctx.run.coils.is_some() {
         return stage_combine_coils(ctx, progress);
     }
-    if ctx.is_cached("scale_phase") {
+    let params = serde_json::json!({
+        "resampled_to_axial": ctx.meta.source_geometry.is_some(),
+        "dims": [ctx.meta.dims.0, ctx.meta.dims.1, ctx.meta.dims.2],
+    });
+    if ctx.is_cached_with_params("scale_phase", None, &params) {
         log::info!("Skipping scale_phase (cached)");
         return Ok(());
     }
     let t = Instant::now();
-    progress("Rescaling phase to radians");
-    let mut phase_paths = Vec::new();
-    for (i, echo) in ctx.run.echoes.iter().enumerate() {
-        let mut phase_nifti = io::read_nifti_file(&echo.phase_nifti)
-            .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?;
-        qsm_core::pipeline::scale_phase_to_pi(&mut phase_nifti.data);
-        let out_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
-        save_volume(&out_path, &phase_nifti.data, ctx.meta)?;
-        phase_paths.push(out_path);
+    if ctx.meta.source_geometry.is_some() {
+        progress("Resampling to axial + rescaling phase");
+    } else {
+        progress("Rescaling phase to radians");
     }
-
-    // Save raw (uncorrected) per-echo magnitudes as intermediates
-    // (needed by MCPC-3D-S, linear fit, ROMEO)
+    let mut phase_paths = Vec::new();
     let mut mag_paths = Vec::new();
-    if ctx.run.has_magnitude {
+
+    if let Some((src_dims, src_affine)) = ctx.meta.source_geometry {
+        // Oblique run: bring every echo onto the cardinal grid before anything else sees it.
+        // Magnitude and phase go together through the complex domain, because interpolating
+        // wrapped phase on its own turns every wrap into a band of wrong values.
+        let (nx, ny, nz) = src_dims;
+        let params = qsm_core::geometry::AxialResampleParams::default();
         for (i, echo) in ctx.run.echoes.iter().enumerate() {
-            if let Some(ref mag_path) = echo.magnitude_nifti {
-                let out_path = ctx.output.mag_path(&ctx.run.key, i + 1);
-                if let Some(parent) = out_path.parent() {
-                    std::fs::create_dir_all(parent)?;
+            let mut phase_nifti = io::read_nifti_file(&echo.phase_nifti)
+                .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?;
+            qsm_core::pipeline::scale_phase_to_pi(&mut phase_nifti.data);
+            let mag = match echo.magnitude_nifti.as_ref() {
+                Some(p) => io::read_nifti_file(p)
+                    .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", p.display(), e)))?
+                    .data,
+                // No magnitude: weight every voxel equally so the phase still resamples correctly.
+                None => vec![1.0; phase_nifti.data.len()],
+            };
+            let out = qsm_core::geometry::resample_complex_to_axial(
+                &mag, &phase_nifti.data, nx, ny, nz, &src_affine, &params,
+            );
+            let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
+            save_volume(&p_path, &out.phase, ctx.meta)?;
+            phase_paths.push(p_path);
+            if ctx.run.has_magnitude {
+                let m_path = ctx.output.mag_path(&ctx.run.key, i + 1);
+                save_volume(&m_path, &out.magnitude, ctx.meta)?;
+                mag_paths.push(m_path);
+            }
+        }
+    } else {
+        for (i, echo) in ctx.run.echoes.iter().enumerate() {
+            let mut phase_nifti = io::read_nifti_file(&echo.phase_nifti)
+                .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?;
+            qsm_core::pipeline::scale_phase_to_pi(&mut phase_nifti.data);
+            let out_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
+            save_volume(&out_path, &phase_nifti.data, ctx.meta)?;
+            phase_paths.push(out_path);
+        }
+
+        // Save raw (uncorrected) per-echo magnitudes as intermediates
+        // (needed by MCPC-3D-S, linear fit, ROMEO)
+        if ctx.run.has_magnitude {
+            for (i, echo) in ctx.run.echoes.iter().enumerate() {
+                if let Some(ref mag_path) = echo.magnitude_nifti {
+                    let out_path = ctx.output.mag_path(&ctx.run.key, i + 1);
+                    if let Some(parent) = out_path.parent() {
+                        std::fs::create_dir_all(parent)?;
+                    }
+                    std::fs::copy(mag_path, &out_path)?;
+                    mag_paths.push(out_path);
                 }
-                std::fs::copy(mag_path, &out_path)?;
-                mag_paths.push(out_path);
             }
         }
     }
@@ -474,8 +592,8 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
     all_paths.extend(mag_paths.clone());
     let input_paths: Vec<PathBuf> = ctx.run.echoes.iter().map(|e| e.phase_nifti.clone()).collect();
     let input_refs: Vec<&Path> = input_paths.iter().map(|p| p.as_path()).collect();
-    ctx.complete_step("scale_phase", None, serde_json::json!({}), &input_refs, all_paths, t)?;
-    log_step_done("Rescale phase", t);
+    ctx.complete_step("scale_phase", None, params, &input_refs, all_paths, t)?;
+    log_step_done(if ctx.meta.source_geometry.is_some() { "Resample + rescale phase" } else { "Rescale phase" }, t);
     Ok(())
 }
 
@@ -501,6 +619,7 @@ fn stage_combine_coils(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate
         "sigma": sigma,
         "hip_unwrapping": unwrap,
         "echo_times": ctx.meta.echo_times,
+        "resampled_to_axial": ctx.meta.source_geometry.is_some(),
     });
     if ctx.is_cached_with_params("scale_phase", Some("mcpc3ds"), &params) {
         log::info!("Skipping coil combination (cached)");
@@ -510,7 +629,11 @@ fn stage_combine_coils(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate
     log::info!("Coil combination (MCPC-3D-S): {} coils x {} echoes", n_coils, n_echoes);
     progress("MCPC-3D-S coil combination");
 
-    let n = ctx.meta.dims.0 * ctx.meta.dims.1 * ctx.meta.dims.2;
+    let (src_dims, src_voxel) = match ctx.meta.source_geometry {
+        Some((d, a)) => (d, qsm_core::geometry::voxel_sizes_from_affine(&a)),
+        None => (ctx.meta.dims, ctx.meta.voxel_size),
+    };
+    let n = src_dims.0 * src_dims.1 * src_dims.2;
     let mut phases: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_coils);
     let mut mags: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_coils);
     let mut inputs: Vec<PathBuf> = Vec::new();
@@ -541,8 +664,7 @@ fn stage_combine_coils(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate
     }
 
     let grid = qsm_core::Grid::new(
-        ctx.meta.dims.0, ctx.meta.dims.1, ctx.meta.dims.2,
-        ctx.meta.voxel_size.0, ctx.meta.voxel_size.1, ctx.meta.voxel_size.2,
+        src_dims.0, src_dims.1, src_dims.2, src_voxel.0, src_voxel.1, src_voxel.2,
     );
     let unwrap_method = if unwrap == "laplacian" {
         qsm_core::unwrap::UnwrapMethod::Laplacian
@@ -557,19 +679,35 @@ fn stage_combine_coils(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate
 
     let mut outputs = Vec::new();
     for e in 0..n_echoes {
+        // Combine on the acquired grid (all coils share it), then resample the single combined
+        // pair rather than 32 of them.
+        let (phase_e, mag_e) = match ctx.meta.source_geometry {
+            Some((sd, sa)) => {
+                let r = qsm_core::geometry::resample_complex_to_axial(
+                    &combined.magnitudes[e], &combined.phases[e], sd.0, sd.1, sd.2, &sa,
+                    &qsm_core::geometry::AxialResampleParams::default(),
+                );
+                (r.phase, r.magnitude)
+            }
+            None => (combined.phases[e].clone(), combined.magnitudes[e].clone()),
+        };
         let p_path = ctx.output.phase_scaled_path(&ctx.run.key, e + 1);
-        save_volume(&p_path, &combined.phases[e], ctx.meta)?;
+        save_volume(&p_path, &phase_e, ctx.meta)?;
         let m_path = ctx.output.mag_path(&ctx.run.key, e + 1);
-        save_volume(&m_path, &combined.magnitudes[e], ctx.meta)?;
+        save_volume(&m_path, &mag_e, ctx.meta)?;
         // Exported combined echoes (BIDS-style, rec-mcpc3ds) next to the other derivatives.
         let p_out = ctx.output.combined_phase_path(&ctx.run.key, e + 1);
-        save_volume(&p_out, &combined.phases[e], ctx.meta)?;
+        save_volume(&p_out, &phase_e, ctx.meta)?;
         let m_out = ctx.output.combined_mag_path(&ctx.run.key, e + 1);
-        save_volume(&m_out, &combined.magnitudes[e], ctx.meta)?;
+        save_volume(&m_out, &mag_e, ctx.meta)?;
         outputs.extend([p_path, m_path, p_out, m_out]);
     }
     let mask_out = ctx.output.combine_mask_path(&ctx.run.key);
-    save_mask(&mask_out, &combined.mask, ctx.meta)?;
+    let combine_mask = match ctx.meta.source_geometry {
+        Some((sd, sa)) => qsm_core::geometry::resample_mask_to_axial(&combined.mask, sd.0, sd.1, sd.2, &sa),
+        None => combined.mask.clone(),
+    };
+    save_mask(&mask_out, &combine_mask, ctx.meta)?;
     outputs.push(mask_out);
 
     let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).collect();
@@ -814,7 +952,12 @@ fn resolve_mask_magnitude(ctx: &StageContext) -> crate::Result<Vec<NiftiData>> {
 
     if needs_first || needs_last {
         let echo_idx = if needs_first { 0 } else { ctx.run.echoes.len() - 1 };
-        if let Some(ref src) = ctx.run.echoes[echo_idx].magnitude_nifti {
+        // Prefer the scale_phase intermediate: it is the same echo, already on the working grid,
+        // so this keeps working when the run was resampled to axial (and when the coils were
+        // combined, where no single source file corresponds to it).
+        let intermediate = ctx.output.mag_path(&ctx.run.key, echo_idx + 1);
+        let source = if intermediate.exists() { Some(intermediate) } else { ctx.run.echoes[echo_idx].magnitude_nifti.clone() };
+        if let Some(ref src) = source {
             let nifti = io::read_nifti_file(src)
                 .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", src.display(), e)))?;
             let data = if ctx.config.masking.inhomogeneity_correction {
@@ -1773,7 +1916,7 @@ mod tests {
                 echo_number: 1, phase_nifti: phase.clone(), phase_json: phase.clone(),
                 magnitude_nifti: None, magnitude_json: None,
             }],
-            magnetic_field_strength: 3.0, echo_times: vec![0.004], b0_dir: (0.0, 0.0, 1.0),
+            magnetic_field_strength: 3.0, echo_times: vec![0.004], b0_dir: None,
             dims: (2, 2, 2), has_magnitude: false,
             mese: None,
         };
@@ -1838,7 +1981,7 @@ mod tests {
             }).collect(),
             magnetic_field_strength: 3.0,
             echo_times: (0..n).map(|i| 0.004 + i as f64 * 0.004).collect(),
-            b0_dir: (0.0, 0.0, 1.0),
+            b0_dir: None,
             dims: (4, 4, 4), has_magnitude: true, mese: None,
         }
     }
@@ -1905,12 +2048,116 @@ mod tests {
         assert!(msg.contains(&phase2.display().to_string()), "got: {}", msg);
     }
 
+    // --- resolve_geometry: how an oblique acquisition is handled ---
+
+    /// A real UK Biobank SWI affine: 0.8 x 0.8 x 3 mm, header "Tra>Cor(-22.9)".
+    fn oblique_affine() -> [f64; 16] {
+        [
+            0.7976, -0.0273, -0.1075, -101.6,
+            0.0141, 0.7358, -1.1647, -87.4,
+            0.0370, 0.3092, 2.7626, -60.2,
+            0.0, 0.0, 0.0, 1.0,
+        ]
+    }
+
+    fn nifti_with(affine: [f64; 16], dims: (usize, usize, usize)) -> qsm_core::io::NiftiData {
+        qsm_core::io::NiftiData {
+            data: vec![0.0; dims.0 * dims.1 * dims.2],
+            dims,
+            voxel_size: qsm_core::geometry::voxel_sizes_from_affine(&affine),
+            affine,
+            scl_slope: 1.0,
+            scl_inter: 0.0,
+        }
+    }
+
+    fn run_for_geometry(b0_dir: Option<(f64, f64, f64)>) -> crate::bids::discovery::QsmRun {
+        let mut run = run_with_echoes(vec![(std::path::PathBuf::from("p.nii"), None)]);
+        run.b0_dir = b0_dir;
+        run.echo_times = vec![0.004];
+        run
+    }
+
+    #[test]
+    fn geometry_axial_run_is_untouched() {
+        let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.obliquity_threshold = 10.0;
+        let affine = [
+            0.8, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let meta = super::resolve_geometry(&run_for_geometry(None), &nifti_with(affine, (4, 4, 4)), &cfg).unwrap();
+        assert!(meta.source_geometry.is_none(), "an axial run must not be resampled");
+        assert_eq!(meta.dims, (4, 4, 4));
+        assert_eq!(meta.b0_direction, (0.0, 0.0, 1.0));
+    }
+
+    #[test]
+    fn geometry_oblique_without_threshold_rotates_the_kernel() {
+        let cfg = crate::pipeline::config::PipelineConfig::default(); // threshold -1 (disabled)
+        let meta = super::resolve_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
+        assert!(meta.source_geometry.is_none(), "resampling is off by default");
+        assert_eq!(meta.dims, (16, 16, 8), "grid is left alone");
+        // B0 comes from the affine rather than being assumed along z.
+        let (bx, by, bz) = meta.b0_direction;
+        assert!((bx - 0.0463).abs() < 1e-3 && (by - 0.3871).abs() < 1e-3 && (bz - 0.9209).abs() < 1e-3,
+                "B0 should follow the affine, got ({bx}, {by}, {bz})");
+    }
+
+    #[test]
+    fn geometry_oblique_over_threshold_resamples_and_b0_becomes_z() {
+        let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.obliquity_threshold = 10.0; // obliquity here is ~32.5 degrees
+        let meta = super::resolve_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
+        let (src_dims, _) = meta.source_geometry.expect("should resample");
+        assert_eq!(src_dims, (16, 16, 8), "source dims are recorded for scale_phase");
+        assert!(meta.dims.0 >= 16 && meta.dims.1 >= 16 && meta.dims.2 >= 8,
+                "the cardinal box is at least as large, got {:?}", meta.dims);
+        assert_eq!(meta.b0_direction, (0.0, 0.0, 1.0), "resampled grid puts B0 along z");
+        assert!(qsm_core::geometry::obliquity_from_affine(&meta.affine) < 1e-9);
+    }
+
+    #[test]
+    fn geometry_threshold_above_obliquity_does_not_resample() {
+        let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.obliquity_threshold = 45.0; // above this run's ~32.5 degrees
+        let meta = super::resolve_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
+        assert!(meta.source_geometry.is_none());
+        assert!(meta.b0_direction.2 < 0.99, "still uses the affine direction");
+    }
+
+    #[test]
+    fn geometry_sidecar_b0_wins_over_resampling() {
+        let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.obliquity_threshold = 10.0;
+        let run = run_for_geometry(Some((0.0, 0.5, 0.866)));
+        let meta = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
+        assert!(meta.source_geometry.is_none(), "an explicit B0_dir means the grid is left alone");
+        assert_eq!(meta.b0_direction, (0.0, 0.5, 0.866));
+    }
+
+    #[test]
+    fn geometry_mese_run_is_not_resampled() {
+        let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.obliquity_threshold = 10.0;
+        let mut run = run_for_geometry(None);
+        run.mese = Some(crate::bids::discovery::MeseRun {
+            key: run.key.clone(),
+            magnitude_niftis: vec![std::path::PathBuf::from("mese.nii")],
+            echo_times: vec![0.01],
+        });
+        let meta = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
+        assert!(meta.source_geometry.is_none(),
+                "resampling the GRE alone would strand the MESE on another grid");
+        assert!(meta.b0_direction.2 < 0.99, "falls back to the affine direction");
+    }
+
     fn meta_4x4x4() -> crate::pipeline::graph::RunMetadata {
         crate::pipeline::graph::RunMetadata {
             dims: (4, 4, 4), voxel_size: (1.0, 1.0, 1.0),
             affine: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
             n_echoes: 1, echo_times: vec![0.004], b0_direction: (0.0, 0.0, 1.0),
             field_strength: 3.0, has_magnitude: true,
+            source_geometry: None,
         }
     }
 

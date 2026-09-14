@@ -39,7 +39,9 @@ pub struct QsmRun {
     pub coils: Option<Vec<CoilFiles>>,
     pub magnetic_field_strength: f64,
     pub echo_times: Vec<f64>,
-    pub b0_dir: (f64, f64, f64),
+    /// B0 direction in voxel coordinates, when a sidecar declares `B0_dir`. `None` means the
+    /// pipeline derives it from the NIfTI affine (or gets `(0,0,1)` after axial resampling).
+    pub b0_dir: Option<(f64, f64, f64)>,
     /// Volume dimensions (nx, ny, nz) from the first phase NIfTI header.
     pub dims: (usize, usize, usize),
     /// Whether magnitude files are available for this run.
@@ -179,7 +181,7 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
             let mut coils: Vec<CoilFiles> = Vec::with_capacity(by_coil.len());
             let mut tes: Option<Vec<f64>> = None;
             let mut b0 = 0.0;
-            let mut dir = (0.0, 0.0, 1.0);
+            let mut dir: Option<(f64, f64, f64)> = None;
             for (coil_number, cfiles) in by_coil {
                 let (e, t, b, d) = build_echoes(cfiles, filter.num_echoes)?;
                 if e.is_empty() {
@@ -283,7 +285,7 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
 
 /// Echo files, echo times, field strength and B0 direction for one set of phase files
 /// (one coil, or the combined data), sorted by echo number.
-type EchoSet = (Vec<EchoFiles>, Vec<f64>, f64, (f64, f64, f64));
+type EchoSet = (Vec<EchoFiles>, Vec<f64>, f64, Option<(f64, f64, f64)>);
 
 fn build_echoes(mut files: Vec<(PathBuf, BidsEntities)>, num_echoes: Option<usize>) -> crate::Result<EchoSet> {
     // Sort by echo number
@@ -297,7 +299,7 @@ fn build_echoes(mut files: Vec<(PathBuf, BidsEntities)>, num_echoes: Option<usiz
     let mut echoes = Vec::new();
     let mut echo_times = Vec::new();
     let mut b0_tesla = 0.0f64;
-    let mut b0_dir = (0.0, 0.0, 1.0);
+    let mut b0_dir: Option<(f64, f64, f64)> = None;
 
     for (phase_path, ent) in &files {
         let echo_num = ent.echo.unwrap_or(1);
@@ -324,7 +326,7 @@ fn build_echoes(mut files: Vec<(PathBuf, BidsEntities)>, num_echoes: Option<usiz
 
         if let Some(ref dir) = sc.b0_dir {
             if dir.len() == 3 {
-                b0_dir = (dir[0], dir[1], dir[2]);
+                b0_dir = Some((dir[0], dir[1], dir[2]));
             } else {
                 warn!(
                     "B0 direction has {} components (expected 3), defaulting to (0,0,1): {}",
