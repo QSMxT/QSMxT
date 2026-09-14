@@ -125,7 +125,7 @@ fn mcpc3ds(args: CombineMcpc3dsArgs) -> crate::Result<()> {
 
     let sigma = match &args.sigma {
         Some(s) => [s[0], s[1], s[2]],
-        None => qsm_core::utils::PhaseOffsetParams::default().sigma,
+        None => qsmxt_config::PipelineConfig::default().field_mapping.coil_combination_sigma,
     };
     let unwrap = match args.hip_unwrapping {
         UnwrapAlgorithmArg::Laplacian => qsm_core::unwrap::UnwrapMethod::Laplacian,

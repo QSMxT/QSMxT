@@ -135,6 +135,9 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 cli::B0WeightTypeArg::Mag => B0WeightType::Mag,
             };
         }
+        if let Some(ref s) = args.coil_combination_sigma {
+            if s.len() == 3 { config.field_mapping.coil_combination_sigma = [s[0], s[1], s[2]]; }
+        }
         if let Some(ref s) = args.phase_offset_sigma {
             if s.len() == 3 { config.field_mapping.phase_offset_sigma = [s[0], s[1], s[2]]; }
         }

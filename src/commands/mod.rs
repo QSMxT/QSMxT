@@ -52,6 +52,7 @@ mod integration_tests {
                 masking_input: None,
                 phase_offset_removal: None,
                 phase_offset_sigma: None,
+                coil_combination_sigma: None,
                 bipolar_correction: false,
                 b0_estimation: None,
                 b0_weight_type: None,

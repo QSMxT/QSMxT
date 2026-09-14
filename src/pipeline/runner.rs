@@ -490,7 +490,7 @@ fn stage_combine_coils(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate
     let coils = ctx.run.coils.as_ref().expect("stage_combine_coils needs coils");
     let n_coils = coils.len();
     let n_echoes = ctx.meta.n_echoes;
-    let sigma = ctx.config.field_mapping.phase_offset_sigma;
+    let sigma = ctx.config.field_mapping.coil_combination_sigma;
     let unwrap = format!("{}", ctx.config.field_mapping.unwrapping_algorithm);
     let params = serde_json::json!({
         "coil_combination": "mcpc3ds",

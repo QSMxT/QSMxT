@@ -881,6 +881,12 @@ pub struct PipelineArgs {
     #[arg(long, num_args = 3)]
     pub phase_offset_sigma: Option<Vec<f64>>,
 
+    /// MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets
+    /// (3 values, in voxels; default 10 10 5, as in QSMxT 8.x / MriResearchTools).
+    /// Only used for uncombined multi-coil runs.
+    #[arg(long, num_args = 3)]
+    pub coil_combination_sigma: Option<Vec<f64>>,
+
     /// Enable bipolar gradient correction (requires >= 3 echoes)
     #[arg(long)]
     pub bipolar_correction: bool,
@@ -1359,7 +1365,7 @@ pub struct CombineMcpc3dsArgs {
     /// Number of echoes when the file names carry no `echo-N` entity
     #[arg(long)]
     pub num_echoes: Option<usize>,
-    /// Gaussian smoothing sigma (voxels) for the per-coil phase offsets
+    /// Smoothing sigma (voxels) for the per-coil phase offsets (default 10 10 5)
     #[arg(long, num_args = 3, value_names = ["X", "Y", "Z"])]
     pub sigma: Option<Vec<f64>>,
     /// Unwrapping used on the coil-summed HIP phase

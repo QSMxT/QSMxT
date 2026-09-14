@@ -419,6 +419,10 @@ impl Default for PipelineToggles {
 pub struct FieldMappingConfig {
     pub phase_offset_removal: bool,
     pub phase_offset_sigma: [f64; 3],
+    /// Smoothing sigma (voxels) for the per-coil phase offsets in MCPC-3D-S coil combination
+    /// of uncombined multi-coil runs. Default [10, 10, 5] = MriResearchTools / QSMxT 8.x.
+    #[serde(default = "default_coil_combination_sigma")]
+    pub coil_combination_sigma: [f64; 3],
     pub bipolar_correction: bool,
     pub unwrapping_algorithm: UnwrappingAlgorithm,
     pub b0_estimation: B0Estimation,
@@ -426,11 +430,14 @@ pub struct FieldMappingConfig {
     pub romeo: RomeoConfig,
     pub linear_fit: LinearFitConfig,
 }
+fn default_coil_combination_sigma() -> [f64; 3] { [10.0, 10.0, 5.0] }
+
 impl Default for FieldMappingConfig {
     fn default() -> Self {
         Self {
             phase_offset_removal: true,
             phase_offset_sigma: qsm_core::utils::PhaseOffsetParams::default().sigma,
+            coil_combination_sigma: default_coil_combination_sigma(),
             bipolar_correction: false,
             unwrapping_algorithm: UnwrappingAlgorithm::Romeo,
             b0_estimation: B0Estimation::WeightedAvg,

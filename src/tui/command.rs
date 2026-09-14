@@ -196,6 +196,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma: None,
+                coil_combination_sigma: None,
         bipolar_correction: ps.bipolar_correction,
         b0_estimation: None,
         b0_weight_type: None,

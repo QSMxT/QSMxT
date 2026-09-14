@@ -54,6 +54,7 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         parts.push(format!("--phase-offset-removal {}", config.field_mapping.phase_offset_removal));
     }
     emit_f64_arr3(&mut parts, "--phase-offset-sigma", &config.field_mapping.phase_offset_sigma, &d.field_mapping.phase_offset_sigma);
+    emit_f64_arr3(&mut parts, "--coil-combination-sigma", &config.field_mapping.coil_combination_sigma, &d.field_mapping.coil_combination_sigma);
     if config.field_mapping.bipolar_correction { parts.push("--bipolar-correction".into()); }
     emit_enum(&mut parts, "--unwrapping-algorithm", &config.field_mapping.unwrapping_algorithm, &d.field_mapping.unwrapping_algorithm);
     emit_enum(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation);
@@ -814,6 +815,14 @@ algorithm = "tv"
         let config = PipelineConfig::from_toml("").unwrap();
         assert_eq!(config.inversion.algorithm, QsmAlgorithm::Rts);
         assert!(config.pipeline.do_qsm);
+    }
+
+    #[test]
+    fn test_coil_combination_sigma() {
+        let mut c = PipelineConfig::default();
+        assert!(!generate_command(&c).contains("--coil-combination-sigma"));
+        c.field_mapping.coil_combination_sigma = [4.0, 4.0, 4.0];
+        assert!(generate_command(&c).contains("--coil-combination-sigma 4 4 4"));
     }
 
     #[test]
