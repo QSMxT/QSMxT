@@ -33,7 +33,8 @@ followed by a generator and refinement operations.
   patches by default (about 4.5 GB peak). `low-memory` uses 128×128×64 patches
   (about 1.9 GB peak), and `tta` adds mirroring test-time augmentation, which is
   roughly 8× slower.
-- **Refinements:** `erode[:<n>]`, `dilate[:<n>]`, `close[:<r>]`, `fill-holes[:<max>]`,
+- **Refinements:** `erode[:<n>]`, `dilate[:<n>]`, `close[:<r>]`, `fill-holes[:<max>]`
+  (`0`, or omitted, is automatic: holes up to 5% of the volume),
   `gaussian[:<sigma_mm>]`, and
   `signal-erode[:<threshold>[:<depth_cap>[:<global_erosions>[:<bias_sigma>[:<min_component>]]]]]`.
   `signal-erode` removes only boundary voxels whose bias-corrected magnitude is
@@ -80,8 +81,9 @@ BET bounds the head, the phase-quality threshold drops voxels whose phase
 cannot be unwrapped reliably, and the holes their intersection leaves inside
 the brain are filled afterwards.
 
-To try combinations on masks you already have, without a pipeline run, use
-[`qsmxt mask and` / `qsmxt mask or`](/QSMxT/reference/tools/#masking--qsmxt-mask).
+To try this on files without a pipeline run, use
+[`qsmxt mask preset bet-and-phase`, or `qsmxt mask and` / `or`](/QSMxT/reference/tools/#masking--qsmxt-mask)
+on masks you already have.
 
 ## Oblique acquisitions
 

@@ -342,9 +342,50 @@ mod integration_tests {
         testutils::write_magnitude(&input);
 
         super::mask::execute(MaskCommand::Robust(MaskRobustArgs {
-            input, output: output.clone(),
+            common: common_mask(input.clone(), output.clone()),
         })).unwrap();
         assert!(output.exists());
+
+        // `robust` is `preset robust-threshold`, not a third copy of the recipe.
+        let via_preset = dir.path().join("preset.nii");
+        super::mask::execute(MaskCommand::Preset(MaskPresetArgs {
+            preset: MaskPresetArg::RobustThreshold, common: common_mask(input, via_preset.clone()), quality: None,
+        })).unwrap();
+        assert_eq!(read_mask(&output), read_mask(&via_preset));
+    }
+
+    /// A multi-section preset from files: BET on the input AND Otsu on `--quality`, then the
+    /// recipe's own refinements. Without `--quality` the phase-quality section reads the input.
+    #[test]
+    fn test_mask_preset_bet_and_phase() {
+        let dir = tempfile::tempdir().unwrap();
+        let (mag, quality) = (dir.path().join("mag.nii"), dir.path().join("quality.nii"));
+        testutils::write_magnitude(&mag);
+        // A quality map that is 1 everywhere except one dark slice, so the AND has something to remove.
+        testutils::write_mask_where(&quality, |i| i >= 64);
+
+        let with_quality = dir.path().join("with.nii");
+        super::mask::execute(MaskCommand::Preset(MaskPresetArgs {
+            preset: MaskPresetArg::BetAndPhase, common: common_mask(mag.clone(), with_quality.clone()),
+            quality: Some(quality.clone()),
+        })).unwrap();
+        let without = dir.path().join("without.nii");
+        super::mask::execute(MaskCommand::Preset(MaskPresetArgs {
+            preset: MaskPresetArg::BetAndPhase, common: common_mask(mag.clone(), without.clone()), quality: None,
+        })).unwrap();
+        let (w, wo) = (read_mask(&with_quality), read_mask(&without));
+        assert_ne!(w, wo, "--quality was not read");
+        assert!(w[..64].iter().all(|&v| v == 0), "the dark slice of the quality map is masked out");
+        assert!(w.contains(&1), "the AND of BET and the quality map is not empty");
+
+        // --quality must be on the input's grid.
+        let small = dir.path().join("small.nii");
+        testutils::write_mismatched_volume(&small, 1.0);
+        let err = super::mask::execute(MaskCommand::Preset(MaskPresetArgs {
+            preset: MaskPresetArg::BetAndPhase, common: common_mask(mag, dir.path().join("x.nii")),
+            quality: Some(small),
+        })).unwrap_err();
+        assert!(format!("{err}").contains("--quality"), "{err}");
     }
 
     #[test]
@@ -368,9 +409,17 @@ mod integration_tests {
         testutils::write_mask(&input);
 
         super::mask::execute(MaskCommand::Erode(MaskErodeArgs {
-            input, output: output.clone(), iterations: 1,
+            common: common_mask(input.clone(), output.clone()), iterations: 1,
         })).unwrap();
         assert!(output.exists());
+
+        // Every subcommand is the first link of a chain: --op runs after its own operation.
+        let count = |p: &std::path::Path| read_mask(p).iter().map(|&v| v as usize).sum::<usize>();
+        let chained = dir.path().join("chained.nii");
+        let mut c = common_mask(input, chained.clone());
+        c.ops = vec!["erode:1".to_string()];
+        super::mask::execute(MaskCommand::Erode(MaskErodeArgs { common: c, iterations: 1 })).unwrap();
+        assert!(count(&chained) < count(&output), "erode --op erode:1 erodes twice");
     }
 
     // --- Mask morphological operations ---
@@ -383,7 +432,7 @@ mod integration_tests {
         testutils::write_mask(&input);
 
         super::mask::execute(MaskCommand::Dilate(MaskDilateArgs {
-            input, output: output.clone(), iterations: 1,
+            common: common_mask(input, output.clone()), iterations: 1,
         })).unwrap();
         assert!(output.exists());
     }
@@ -396,7 +445,7 @@ mod integration_tests {
         testutils::write_mask(&input);
 
         super::mask::execute(MaskCommand::Close(MaskCloseArgs {
-            input, output: output.clone(), radius: 1,
+            common: common_mask(input, output.clone()), radius: 1,
         })).unwrap();
         assert!(output.exists());
     }
@@ -409,9 +458,12 @@ mod integration_tests {
         testutils::write_mask(&input);
 
         super::mask::execute(MaskCommand::FillHoles(MaskFillHolesArgs {
-            input, output: output.clone(), max_size: 1000,
+            common: common_mask(input, output.clone()), max_size: 0,
         })).unwrap();
         assert!(output.exists());
+        // The bare op agrees with the subcommand default and the presets: 0 = automatic.
+        assert_eq!(crate::pipeline::config::parse_mask_op("fill-holes").unwrap(),
+                   crate::pipeline::config::MaskOp::FillHoles { max_size: 0 });
     }
 
     #[test]
@@ -422,9 +474,20 @@ mod integration_tests {
         testutils::write_mask(&input);
 
         super::mask::execute(MaskCommand::Smooth(MaskSmoothArgs {
-            input, output: output.clone(), sigma: 2.0,
+            common: common_mask(input, output.clone()), sigma: 2.0,
         })).unwrap();
         assert!(output.exists());
+
+        // Binarises at 0.5 like every other subcommand — it used to take anything above 0.
+        let faint = dir.path().join("faint.nii");
+        let n = testutils::N_VOXELS;
+        qsm_core::io::save_nifti_to_file(&faint, &vec![0.3; n], (8, 8, 8), (1.0, 1.0, 1.0),
+            &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]).unwrap();
+        let out = dir.path().join("faint_smoothed.nii");
+        super::mask::execute(MaskCommand::Smooth(MaskSmoothArgs {
+            common: common_mask(faint, out.clone()), sigma: 1.0,
+        })).unwrap();
+        assert!(read_mask(&out).iter().all(|&v| v == 0), "0.3 everywhere is not a mask");
     }
 
     // --- Unwrap ---
