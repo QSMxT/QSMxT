@@ -22,15 +22,44 @@ Generate or refine binary masks.
 | `percentile` | Percentile thresholding |
 | `bet` | Brain extraction (BET) |
 | `hd-bet` | Deep-learning brain extraction (HD-BET); `--low-memory`, `--patch XxYxZ`, `--tta`. Weights are downloaded on first use |
-| `robust` | Robust threshold (Otsu + dilate + fill-holes + erode) |
+| `preset` | Run a [`--mask-preset`](/QSMxT/reference/algorithms/#masking) recipe on an image: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase` |
+| `robust` | Alias for `preset robust-threshold` |
 | `erode` / `dilate` | Morphological erosion / dilation |
 | `close` | Morphological closing |
-| `fill-holes` | Fill holes in a binary mask |
+| `fill-holes` | Fill holes in a binary mask (`--max-size 0`, the default, is automatic: 5% of the volume) |
 | `smooth` | Gaussian smooth (re-thresholded at 0.5) |
+| `and` / `or` | Intersect / union two or more masks on the same grid |
 
-The generating subcommands (`otsu`, `value`, `percentile`, `bet`, `hd-bet`) also
-accept `--op` refinements, applied in order, e.g. `--op erode:2` or
-`--op signal-erode` (signal-gated erosion, which uses the input magnitude).
+Every subcommand is the first link of a chain: it does its own operation, then
+applies any `--op` refinements in order — `erode:2`, `fill-holes:0`, `close:1`,
+`gaussian:4.0`, `signal-erode`, the same spellings as a `--mask` section. So
+`qsmxt mask erode m.nii -o out.nii --op fill-holes` erodes, then fills. What each
+op does is defined once, in the same code the pipeline runs, so a mask built
+here matches the one a `--mask` section would produce.
+
+`and` and `or` are the standalone form of the pipeline's
+[`--mask-combine`](/QSMxT/reference/algorithms/#combining-sections), for trying
+combinations on masks you already have without a pipeline run. Their `--op`
+refinements run on the *combined* mask, like `--mask-refine` does. The
+consensus recipe by hand, step by step:
+
+```sh
+qsmxt quality-map phase_e1.nii -o quality.nii --magnitude mag_e1.nii
+qsmxt mask bet mag_e1.nii -o bet.nii
+qsmxt mask otsu quality.nii -o phase.nii
+qsmxt mask and bet.nii phase.nii -o brain.nii --op fill-holes:0 --op erode:1
+```
+
+— or in one go, since it is a preset:
+
+```sh
+qsmxt mask preset bet-and-phase mag_e1.nii --quality quality.nii -o brain.nii
+```
+
+`preset` reads its input image for every section; sections that read phase
+quality use `--quality` when given, and the input image otherwise, as
+`run --masking-input` would. `--op signal-erode` needs a magnitude image: for
+`and`/`or`, whose inputs are masks, pass it as `--magnitude`.
 
 ## Coil combination — `qsmxt combine`
 

@@ -370,7 +370,9 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
         "erode" => Ok(MaskOp::Erode { iterations: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1) }),
         "dilate" => Ok(MaskOp::Dilate { iterations: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1) }),
         "close" => Ok(MaskOp::Close { radius: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1) }),
-        "fill-holes" => Ok(MaskOp::FillHoles { max_size: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1000) }),
+        // Bare `fill-holes` is the automatic cap (5% of the volume) — what every preset spells as
+        // `fill-holes:0` and what the TUI adds — rather than a 1000-voxel cap nothing else used.
+        "fill-holes" => Ok(MaskOp::FillHoles { max_size: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0) }),
         "gaussian" => Ok(MaskOp::GaussianSmooth { sigma_mm: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(4.0) }),
         "signal-erode" => {
             let num = |i: usize, name: &str| -> crate::Result<Option<f64>> {

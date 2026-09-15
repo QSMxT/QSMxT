@@ -165,22 +165,6 @@ pub fn save_mask(path: &Path, mask: &[u8], reference: &NiftiData) -> crate::Resu
     save_nifti(path, &data, reference)
 }
 
-/// Run a mask-to-mask operation: load → apply op → save.
-pub fn run_mask_operation(
-    input: &Path,
-    output: &Path,
-    op_name: &str,
-    op: impl FnOnce(&[u8], &qsm_core::Grid) -> Vec<u8>,
-) -> crate::Result<()> {
-    let (mask, nifti) = load_mask(input)?;
-    let grid = nifti_grid(&nifti);
-    log::info!("{} ({}x{}x{})", op_name, grid.nx(), grid.ny(), grid.nz());
-    let result = op(&mask, &grid);
-    save_mask(output, &result, &nifti)?;
-    log::info!("{} saved to {}", op_name, output.display());
-    Ok(())
-}
-
 /// Load multiple NIfTI files, validate against echo times, interleave, and compute R2* via ARLO.
 /// Returns the R2* map and the first magnitude NiftiData as geometry reference.
 pub fn compute_r2star(

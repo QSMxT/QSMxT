@@ -1241,12 +1241,12 @@ pub struct SlurmArgs {
 
 #[derive(Args, Debug, Clone)]
 pub struct MaskCommonArgs {
-    /// Input NIfTI file
+    /// Input NIfTI file (an image for the generating subcommands, a mask for the rest)
     pub input: PathBuf,
     /// Output mask NIfTI file
     #[arg(short, long)]
     pub output: PathBuf,
-    /// Refinement operation (repeatable, applied in order).
+    /// Further refinement, applied in order after the subcommand's own operation (repeatable).
     /// Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0,
     /// signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input)
     #[arg(long = "op")]
@@ -1265,7 +1265,9 @@ pub enum MaskCommand {
     Bet(MaskBetArgs),
     /// Deep-learning brain extraction (HD-BET; downloads weights on first use)
     HdBet(MaskHdBetArgs),
-    /// Robust threshold (Otsu + dilate:1 + fill-holes:0 + erode:1)
+    /// Run a `--mask-preset` recipe on an image (robust-threshold, bet, hd-bet, bet-and-phase)
+    Preset(MaskPresetArgs),
+    /// Alias for `preset robust-threshold`
     Robust(MaskRobustArgs),
     /// Erode a binary mask
     Erode(MaskErodeArgs),
@@ -1277,6 +1279,27 @@ pub enum MaskCommand {
     FillHoles(MaskFillHolesArgs),
     /// Gaussian smooth a binary mask (re-thresholds at 0.5)
     Smooth(MaskSmoothArgs),
+    /// Intersect binary masks: keep voxels every input keeps (the `run --mask-combine and`)
+    And(MaskCombineCliArgs),
+    /// Union binary masks: keep voxels any input keeps (the `run --mask-combine or`)
+    Or(MaskCombineCliArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct MaskCombineCliArgs {
+    /// Input mask NIfTI files (two or more, on the same grid)
+    #[arg(num_args = 2..)]
+    pub inputs: Vec<PathBuf>,
+    /// Output mask NIfTI file
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// Refinement operation applied to the combined mask (repeatable, applied in order) —
+    /// the `run --mask-refine` of this command. Examples: fill-holes:0, erode:1, close:1
+    #[arg(long = "op")]
+    pub ops: Vec<String>,
+    /// Magnitude image, needed only by `--op signal-erode`
+    #[arg(long)]
+    pub magnitude: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]
@@ -1333,11 +1356,21 @@ pub struct MaskHdBetArgs {
 
 #[derive(Parser, Debug)]
 pub struct MaskRobustArgs {
-    /// Input NIfTI file
-    pub input: PathBuf,
-    /// Output mask NIfTI file
-    #[arg(short, long)]
-    pub output: PathBuf,
+    #[command(flatten)]
+    pub common: MaskCommonArgs,
+}
+
+#[derive(Parser, Debug)]
+pub struct MaskPresetArgs {
+    /// Which recipe — the same names as `run --mask-preset`
+    #[arg(value_enum)]
+    pub preset: MaskPresetArg,
+    #[command(flatten)]
+    pub common: MaskCommonArgs,
+    /// Phase-quality map (from `qsmxt quality-map`) for the sections that read phase quality.
+    /// Without it those sections read the input image instead, as `run --masking-input` would.
+    #[arg(long)]
+    pub quality: Option<PathBuf>,
 }
 
 // ── Unwrap ──
@@ -2630,11 +2663,8 @@ pub struct HomogeneityArgs {
 
 #[derive(Parser, Debug)]
 pub struct MaskErodeArgs {
-    /// Input binary mask NIfTI file
-    pub input: PathBuf,
-    /// Output eroded mask NIfTI file
-    #[arg(short, long)]
-    pub output: PathBuf,
+    #[command(flatten)]
+    pub common: MaskCommonArgs,
     /// Number of erosion iterations
     #[arg(long, default_value_t = 1)]
     pub iterations: usize,
@@ -2642,11 +2672,8 @@ pub struct MaskErodeArgs {
 
 #[derive(Parser, Debug)]
 pub struct MaskDilateArgs {
-    /// Input binary mask NIfTI file
-    pub input: PathBuf,
-    /// Output dilated mask NIfTI file
-    #[arg(short, long)]
-    pub output: PathBuf,
+    #[command(flatten)]
+    pub common: MaskCommonArgs,
     /// Number of dilation iterations
     #[arg(long, default_value_t = 1)]
     pub iterations: usize,
@@ -2654,11 +2681,8 @@ pub struct MaskDilateArgs {
 
 #[derive(Parser, Debug)]
 pub struct MaskCloseArgs {
-    /// Input binary mask NIfTI file
-    pub input: PathBuf,
-    /// Output closed mask NIfTI file
-    #[arg(short, long)]
-    pub output: PathBuf,
+    #[command(flatten)]
+    pub common: MaskCommonArgs,
     /// Closing radius
     #[arg(long, default_value_t = 1)]
     pub radius: usize,
@@ -2666,23 +2690,17 @@ pub struct MaskCloseArgs {
 
 #[derive(Parser, Debug)]
 pub struct MaskFillHolesArgs {
-    /// Input binary mask NIfTI file
-    pub input: PathBuf,
-    /// Output filled mask NIfTI file
-    #[arg(short, long)]
-    pub output: PathBuf,
-    /// Maximum hole size in voxels
-    #[arg(long, default_value_t = 1000)]
+    #[command(flatten)]
+    pub common: MaskCommonArgs,
+    /// Maximum hole size in voxels (0 = automatic, 5% of the volume — what every preset uses)
+    #[arg(long, default_value_t = 0)]
     pub max_size: usize,
 }
 
 #[derive(Parser, Debug)]
 pub struct MaskSmoothArgs {
-    /// Input binary mask NIfTI file
-    pub input: PathBuf,
-    /// Output smoothed mask NIfTI file
-    #[arg(short, long)]
-    pub output: PathBuf,
+    #[command(flatten)]
+    pub common: MaskCommonArgs,
     /// Gaussian sigma in mm
     #[arg(long, default_value_t = 4.0)]
     pub sigma: f64,

@@ -14,6 +14,19 @@ pub fn load_config(path: &Path) -> crate::Result<PipelineConfig> {
     PipelineConfig::from_toml(&text).map_err(|e| QsmxtError::Config(format!("TOML parse error: {}", e)))
 }
 
+/// The recipe behind a `--mask-preset` value — shared by `run` and `qsmxt mask preset`.
+pub fn mask_preset_recipe(preset: cli::MaskPresetArg) -> MaskRecipe {
+    let name = match preset {
+        cli::MaskPresetArg::RobustThreshold => "robust-threshold",
+        cli::MaskPresetArg::Bet => "bet",
+        cli::MaskPresetArg::HdBet => "hd-bet",
+        cli::MaskPresetArg::BetAndPhase => "bet-and-phase",
+    };
+    mask_presets().into_iter().find(|(n, _)| *n == name)
+        .map(|(_, r)| r)
+        .expect("every MaskPresetArg is in mask_presets()")
+}
+
 /// Apply CLI overrides onto a config.
 /// Map a CLI dipole-inversion algorithm argument to the config enum.
 fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
@@ -387,14 +400,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(preset) = args.mask_preset {
             // A preset is a whole recipe — it replaces the combine mode and the post-combine
             // refinements too, not just the sections.
-            let name = match preset {
-                cli::MaskPresetArg::RobustThreshold => "robust-threshold",
-                cli::MaskPresetArg::Bet => "bet",
-                cli::MaskPresetArg::HdBet => "hd-bet",
-                cli::MaskPresetArg::BetAndPhase => "bet-and-phase",
-            };
-            let (_, recipe) = mask_presets().into_iter().find(|(n, _)| *n == name)
-                .expect("every MaskPresetArg is in mask_presets()");
+            let recipe = mask_preset_recipe(preset);
             config.masking.sections = recipe.sections;
             config.masking.combine = recipe.combine;
             config.masking.refinements = recipe.refinements;

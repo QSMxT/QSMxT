@@ -42,6 +42,25 @@ pub fn write_mask(path: &Path) {
         .expect("write mask");
 }
 
+/// Write a binary mask that is 1 exactly where `keep(index)` says so, on the test grid.
+/// For tests that need two masks whose overlap they control (e.g. `mask and` / `mask or`).
+pub fn write_mask_where(path: &Path, keep: impl Fn(usize) -> bool) {
+    let data: Vec<f64> = (0..N).map(|i| keep(i) as u8 as f64).collect();
+    qsm_core::io::save_nifti_to_file(path, &data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
+        .expect("write mask");
+}
+
+/// Write a volume of `value` on a grid one slice shorter than the test grid — for checking that
+/// operations reject inputs that are not on the same grid.
+pub fn write_mismatched_volume(path: &Path, value: f64) {
+    let data = vec![value; NX * NY * (NZ - 1)];
+    qsm_core::io::save_nifti_to_file(path, &data, (NX, NY, NZ - 1), VOXEL_SIZE, &IDENTITY_AFFINE)
+        .expect("write volume");
+}
+
+/// Voxel count of the synthetic test grid.
+pub const N_VOXELS: usize = N;
+
 /// Write a synthetic field map (small f64 values simulating local field in ppm).
 pub fn write_field(path: &Path) {
     let mut data = vec![0.0f64; N];
