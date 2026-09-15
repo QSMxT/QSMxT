@@ -96,7 +96,19 @@ pub fn execute(args: ValidateArgs) -> crate::Result<()> {
         println!("    Echoes: {}", n_echoes);
         println!("    Echo times: {:?} s", run.echo_times);
         println!("    Field strength: {:.1} T", run.magnetic_field_strength);
-        println!("    B0 direction: ({:.2}, {:.2}, {:.2})", run.b0_dir.0, run.b0_dir.1, run.b0_dir.2);
+        match run.b0_dir {
+            Some((x, y, z)) => println!("    B0 direction: ({x:.2}, {y:.2}, {z:.2}) (from sidecar)"),
+            None => {
+                let affine = qsm_core::io::read_nifti_file(&run.echoes[0].phase_nifti)
+                    .map(|n| n.affine)
+                    .unwrap_or([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
+                let (x, y, z) = qsm_core::geometry::b0_direction_from_affine(&affine);
+                let obliquity = qsm_core::geometry::obliquity_from_affine(&affine);
+                let tilt = qsm_core::geometry::b0_angle_from_affine(&affine);
+                println!("    B0 direction: ({x:.2}, {y:.2}, {z:.2}) (from the affine)");
+                println!("    Obliquity:    {obliquity:.1}° (B0 {tilt:.1}° off the slice normal)");
+            }
+        }
         println!("    Magnitude: {}", if has_mag { "present" } else { "MISSING (some algorithms may not work)" });
         match mese {
             Some(m) => println!("    MESE (spin-echo): present ({} echoes, {:?} s)", m.echo_times.len(), m.echo_times),

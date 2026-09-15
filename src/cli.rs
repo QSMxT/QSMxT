@@ -2690,11 +2690,28 @@ pub struct MaskSmoothArgs {
 
 #[derive(Parser, Debug)]
 pub struct ResampleArgs {
-    /// Input NIfTI file
-    pub input: PathBuf,
-    /// Output resampled NIfTI file
+    /// Input NIfTI file. Treated as continuous data (magnitude, an unwrapped field map, chi).
+    /// For wrapped phase pass --phase instead, with its magnitude, so the interpolation can go
+    /// through the complex domain and survive the wraps.
+    pub input: Option<PathBuf>,
+    /// Output resampled NIfTI file (for the positional input)
     #[arg(short, long)]
-    pub output: PathBuf,
+    pub output: Option<PathBuf>,
+    /// Wrapped phase to resample together with --magnitude (complex-domain interpolation)
+    #[arg(long, requires = "magnitude")]
+    pub phase: Option<PathBuf>,
+    /// Magnitude paired with --phase
+    #[arg(long, requires = "phase")]
+    pub magnitude: Option<PathBuf>,
+    /// Where to write the resampled phase (default: <phase stem>_axial.nii)
+    #[arg(long)]
+    pub phase_out: Option<PathBuf>,
+    /// Where to write the resampled magnitude (default: <magnitude stem>_axial.nii)
+    #[arg(long)]
+    pub magnitude_out: Option<PathBuf>,
+    /// Do not fill the empty corners of the new grid with seeded noise
+    #[arg(long)]
+    pub no_noise_fill: bool,
 }
 
 #[derive(Parser, Debug)]

@@ -479,7 +479,7 @@ mod tests {
             }],
             magnetic_field_strength: 3.0,
             echo_times: vec![0.02],
-            b0_dir: (0.0, 0.0, 1.0),
+            b0_dir: None,
             dims: (4, 4, 4),
             has_magnitude: false,
             mese: None,

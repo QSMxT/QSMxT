@@ -499,9 +499,40 @@ mod integration_tests {
         testutils::write_magnitude(&input);
 
         super::resample::execute(ResampleArgs {
-            input, output: output.clone(),
+            input: Some(input), output: Some(output.clone()),
+            phase: None, magnitude: None, phase_out: None, magnitude_out: None,
+            no_noise_fill: false,
         }).unwrap();
         assert!(output.exists());
+    }
+
+    /// Wrapped phase goes through the complex domain, so it needs its magnitude alongside.
+    #[test]
+    fn test_resample_phase_with_magnitude() {
+        let dir = tempfile::tempdir().unwrap();
+        let phase = dir.path().join("phase.nii");
+        let magnitude = dir.path().join("mag.nii");
+        let phase_out = dir.path().join("phase_axial.nii");
+        let magnitude_out = dir.path().join("mag_axial.nii");
+        testutils::write_phase(&phase);
+        testutils::write_magnitude(&magnitude);
+
+        super::resample::execute(ResampleArgs {
+            input: None, output: None,
+            phase: Some(phase), magnitude: Some(magnitude),
+            phase_out: Some(phase_out.clone()), magnitude_out: Some(magnitude_out.clone()),
+            no_noise_fill: true,
+        }).unwrap();
+        assert!(phase_out.exists() && magnitude_out.exists());
+    }
+
+    #[test]
+    fn test_resample_requires_an_input() {
+        let err = super::resample::execute(ResampleArgs {
+            input: None, output: None, phase: None, magnitude: None,
+            phase_out: None, magnitude_out: None, no_noise_fill: false,
+        });
+        assert!(err.is_err(), "no input should be an error, not a panic");
     }
 
     // --- Quality Map ---

@@ -92,7 +92,16 @@ qsmxt invert tgv --help
 | Command | Purpose |
 | --- | --- |
 | `homogeneity` | Correct intensity inhomogeneity on magnitude data |
-| `resample` | Resample an oblique volume to axial orientation |
+| `resample` | Resample an oblique volume to axial orientation. Continuous data (magnitude, an unwrapped field, χ) as a positional argument; **wrapped phase needs `--phase` with `--magnitude`** so the interpolation goes through the complex domain |
+
+```sh
+# continuous data
+qsmxt resample mag.nii -o mag_axial.nii
+
+# wrapped phase, with its magnitude, interpolated as mag·e^{iφ}
+qsmxt resample --phase phase.nii --magnitude mag.nii \
+  --phase-out phase_axial.nii --magnitude-out mag_axial.nii
+```
 
 :::note
 These tools share the same implementations the [pipeline](/QSMxT/guides/running-noninteractively/)

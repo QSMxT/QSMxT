@@ -80,6 +80,57 @@ BET bounds the head, the phase-quality threshold drops voxels whose phase
 cannot be unwrapped reliably, and the holes their intersection leaves inside
 the brain are filled afterwards.
 
+## Oblique acquisitions
+
+The dipole kernel is built in the voxel grid, so an acquisition whose slices
+are tilted relative to B0 has to be handled explicitly. QSMxT applies the first
+of these that fits:
+
+1. **A `B0_dir` in the JSON sidecar wins.** It describes the acquisition better
+   than the affine can.
+2. **`--obliquity-threshold <degrees>` resamples to axial** when the obliquity
+   exceeds it, as QSMxT 8.x did. Off by default (`-1`).
+3. **Otherwise the kernel is rotated** — B0 is taken from the affine and used
+   as-is. This is the default, and normally the one you want.
+
+Rotating the kernel is preferred because it is exact and free: the dipole
+kernel takes the field direction as a parameter, so pointing it the right way
+costs nothing, keeps the acquired grid, and interpolates nothing. Resampling
+exists for two reasons — reproducing 8.x output, and the deep-learning methods,
+which have no direction input and must be given axial data.
+
+The cost is not small. A 256×288×48 UK Biobank SWI at 32.5° obliquity resamples
+to 272×339×77, roughly twice the voxels, and took 459 s against 246 s for the
+same reconstruction on the acquired grid. The resampled outputs also land on a
+different grid from the input, so any transform you already hold — a FLIRT
+matrix, say — no longer describes them.
+
+`qsmxt validate` reports what a dataset will do:
+
+```
+B0 direction: (0.05, 0.39, 0.92) (from the affine)
+Obliquity:    32.5° (B0 22.9° off the slice normal)
+```
+
+Obliquity is `nibabel`'s definition (the norm of the per-axis angles), so 8.x
+thresholds carry over. It is a combined measure rather than a tilt: a single
+23° oblique acquisition scores ≈32° because two voxel axes move. The tilt in
+brackets is the physical angle between B0 and the slice normal, which is what
+the kernel cares about.
+
+:::caution
+Wrapped phase cannot be resampled on its own. Halfway between `+3.0` and `−3.0`
+rad a linear interpolator returns `0.0`, where the answer is near `±π`, so
+every wrap becomes a band of wrong values. The pipeline always resamples
+magnitude and phase together; if you use `qsmxt resample` by hand, pass
+`--phase` with `--magnitude` rather than resampling phase as a plain volume.
+:::
+
+Runs with a matching MESE acquisition (for R2′ / χ-separation) are never
+resampled — the MESE is read from BIDS on its own grid, so resampling only the
+GRE would leave the two inconsistent. Those runs use the affine-derived B0
+direction instead, and say so in the log.
+
 ## Coil combination
 
 Runs whose phase is stored per receive coil (`coil-<NN>` entity, see
