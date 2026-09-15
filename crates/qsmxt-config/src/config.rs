@@ -453,6 +453,13 @@ impl Default for FieldMappingConfig {
 pub struct MaskingConfig {
     pub inhomogeneity_correction: bool,
     pub sections: Vec<MaskSection>,
+    /// How `sections` fold into one mask: `or` (union, the default) or `and` (intersection).
+    #[serde(default)]
+    pub combine: MaskCombine,
+    /// Refinements applied to the combined mask, after `combine` — e.g. filling the holes an
+    /// intersection leaves inside the brain. Generator ops are rejected here.
+    #[serde(default)]
+    pub refinements: Vec<MaskOp>,
     /// Prefer a bring-your-own mask from BIDS derivatives when present, falling back to `sections`.
     /// `Some("*")` = first matching derivatives tool alphabetically; `Some("bet")` = that tool only;
     /// `None` = always compute the mask from `sections`.
@@ -461,7 +468,13 @@ pub struct MaskingConfig {
 }
 impl Default for MaskingConfig {
     fn default() -> Self {
-        Self { inhomogeneity_correction: true, sections: default_mask_sections(), custom_mask_tool: None }
+        Self {
+            inhomogeneity_correction: true,
+            sections: default_mask_sections(),
+            combine: MaskCombine::default(),
+            refinements: vec![],
+            custom_mask_tool: None,
+        }
     }
 }
 
@@ -623,6 +636,22 @@ mod selected_toml_tests {
         // mSMV config carries the qsm-core defaults.
         let d = MsmvConfig::default();
         assert!(d.radius > 0.0 && d.maxk > 0);
+    }
+
+    /// Configs written before `combine`/`refinements` existed must still load, and keep the
+    /// union behaviour they were written with.
+    #[test]
+    fn masking_combine_defaults_to_or_and_round_trips() {
+        let legacy: MaskingConfig = toml::from_str("inhomogeneity_correction = true\n").unwrap();
+        assert_eq!(legacy.combine, MaskCombine::Or);
+        assert!(legacy.refinements.is_empty());
+
+        let mut c = PipelineConfig::default();
+        c.masking.combine = MaskCombine::And;
+        c.masking.refinements = vec![MaskOp::FillHoles { max_size: 0 }];
+        let loaded = PipelineConfig::from_toml(&c.to_toml().unwrap()).unwrap();
+        assert_eq!(loaded.masking.combine, MaskCombine::And);
+        assert_eq!(loaded.masking.refinements, c.masking.refinements);
     }
 
     #[test]

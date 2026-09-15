@@ -26,6 +26,41 @@ pub fn parse_masking_input(s: &str) -> Option<MaskingInput> {
     }
 }
 
+/// How multiple mask sections fold into the final mask.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum MaskCombine {
+    /// Union — a voxel is kept if any section keeps it.
+    #[default]
+    Or,
+    /// Intersection — a voxel is kept only if every section keeps it.
+    And,
+}
+
+impl MaskCombine {
+    /// Fold one section's mask into the accumulator, voxel by voxel.
+    pub fn accumulate(&self, acc: &mut [u8], section: &[u8]) {
+        match self {
+            Self::Or => for (a, &s) in acc.iter_mut().zip(section) { *a |= s; },
+            Self::And => for (a, &s) in acc.iter_mut().zip(section) { *a &= s; },
+        }
+    }
+}
+
+impl fmt::Display for MaskCombine {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Or => "or", Self::And => "and" })
+    }
+}
+
+pub fn parse_mask_combine(s: &str) -> Option<MaskCombine> {
+    match s.trim() {
+        "or" => Some(MaskCombine::Or),
+        "and" => Some(MaskCombine::And),
+        _ => None,
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
 pub enum MaskThresholdMethod { Otsu, Fixed, Percentile }
@@ -179,6 +214,48 @@ pub fn hd_bet_mask_sections() -> Vec<MaskSection> {
         generator: MaskOp::hd_bet_default(),
         refinements: vec![MaskOp::signal_erode_default()],
     }]
+}
+
+/// A complete masking recipe: the sections, how they fold together, and the refinements that
+/// run on the combined mask. Presets that need more than one section return one of these.
+#[derive(Debug, Clone, PartialEq)]
+pub struct MaskRecipe {
+    pub sections: Vec<MaskSection>,
+    pub combine: MaskCombine,
+    pub refinements: Vec<MaskOp>,
+}
+
+impl MaskRecipe {
+    /// A recipe that is just sections, OR'd, with nothing after the combine.
+    pub fn from_sections(sections: Vec<MaskSection>) -> Self {
+        Self { sections, combine: MaskCombine::Or, refinements: vec![] }
+    }
+}
+
+/// BET on the magnitude intersected with a thresholded phase-quality map, then hole-filled and
+/// eroded — the two-mask recipe from the QSMxT paper (Stewart et al., MRM 2022). BET bounds the
+/// head while the phase-quality threshold drops voxels whose phase cannot be unwrapped reliably;
+/// the holes that intersection leaves inside the brain are filled afterwards.
+pub fn bet_and_phase_mask_recipe() -> MaskRecipe {
+    MaskRecipe {
+        sections: vec![
+            MaskSection {
+                input: MaskingInput::MagnitudeFirst,
+                generator: MaskOp::Bet { fractional_intensity: 0.5 },
+                refinements: vec![],
+            },
+            MaskSection {
+                input: MaskingInput::PhaseQuality,
+                generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
+                refinements: vec![],
+            },
+        ],
+        combine: MaskCombine::And,
+        refinements: vec![
+            MaskOp::FillHoles { max_size: 0 },
+            MaskOp::Erode { iterations: 1 },
+        ],
+    }
 }
 
 pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
@@ -425,6 +502,51 @@ mod tests {
         assert_eq!(sections[0].input, MaskingInput::PhaseQuality);
         assert!(sections[0].has_generator());
         assert_eq!(sections[0].refinements.len(), 3);
+    }
+
+    #[test]
+    fn mask_combine_parses_and_round_trips() {
+        assert_eq!(parse_mask_combine("or"), Some(MaskCombine::Or));
+        assert_eq!(parse_mask_combine("and"), Some(MaskCombine::And));
+        assert_eq!(parse_mask_combine(" and "), Some(MaskCombine::And));
+        assert_eq!(parse_mask_combine("xor"), None);
+        assert_eq!(MaskCombine::default(), MaskCombine::Or, "OR stays the historical default");
+        for c in [MaskCombine::Or, MaskCombine::And] {
+            assert_eq!(parse_mask_combine(&format!("{c}")), Some(c));
+        }
+    }
+
+    #[test]
+    fn mask_combine_accumulates_union_and_intersection() {
+        let a = [1u8, 1, 0, 0];
+        let b = [1u8, 0, 1, 0];
+
+        let mut acc = a;
+        MaskCombine::Or.accumulate(&mut acc, &b);
+        assert_eq!(acc, [1, 1, 1, 0]);
+
+        let mut acc = a;
+        MaskCombine::And.accumulate(&mut acc, &b);
+        assert_eq!(acc, [1, 0, 0, 0]);
+    }
+
+    /// The figure-2 recipe: BET on the magnitude intersected with thresholded phase quality,
+    /// with the intersection's holes filled afterwards.
+    #[test]
+    fn bet_and_phase_recipe_is_an_intersection_with_post_combine_steps() {
+        let r = bet_and_phase_mask_recipe();
+        assert_eq!(r.combine, MaskCombine::And);
+        assert_eq!(r.sections.len(), 2);
+        assert_eq!(r.sections[0].input, MaskingInput::MagnitudeFirst);
+        assert!(matches!(r.sections[0].generator, MaskOp::Bet { .. }));
+        assert_eq!(r.sections[1].input, MaskingInput::PhaseQuality);
+        assert!(matches!(r.sections[1].generator, MaskOp::Threshold { method: MaskThresholdMethod::Otsu, .. }));
+        // Hole-filling has to happen after the intersection — that is the whole point of the
+        // post-combine list, since fill-holes does not commute with an intersection.
+        assert_eq!(r.refinements, vec![MaskOp::FillHoles { max_size: 0 }, MaskOp::Erode { iterations: 1 }]);
+
+        assert_eq!(MaskRecipe::from_sections(default_mask_sections()).combine, MaskCombine::Or);
+        assert!(MaskRecipe::from_sections(default_mask_sections()).refinements.is_empty());
     }
 
     #[test]

@@ -385,15 +385,21 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
 
         // ── Mask sections ──
         if let Some(preset) = args.mask_preset {
-            config.masking.sections = match preset {
-                cli::MaskPresetArg::RobustThreshold => default_mask_sections(),
-                cli::MaskPresetArg::Bet => vec![MaskSection {
+            // A preset is a whole recipe — it replaces the combine mode and the post-combine
+            // refinements too, not just the sections.
+            let recipe = match preset {
+                cli::MaskPresetArg::RobustThreshold => MaskRecipe::from_sections(default_mask_sections()),
+                cli::MaskPresetArg::Bet => MaskRecipe::from_sections(vec![MaskSection {
                     input: MaskingInput::Magnitude,
                     generator: MaskOp::Bet { fractional_intensity: 0.5 },
                     refinements: vec![MaskOp::Erode { iterations: 2 }],
-                }],
-                cli::MaskPresetArg::HdBet => hd_bet_mask_sections(),
+                }]),
+                cli::MaskPresetArg::HdBet => MaskRecipe::from_sections(hd_bet_mask_sections()),
+                cli::MaskPresetArg::BetAndPhase => bet_and_phase_mask_recipe(),
             };
+            config.masking.sections = recipe.sections;
+            config.masking.combine = recipe.combine;
+            config.masking.refinements = recipe.refinements;
         }
         if let Some(ref sections) = args.mask_sections_cli {
             let mut new_sections = Vec::new();
@@ -418,6 +424,25 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 new_sections.push(MaskSection { input, generator, refinements: ops });
             }
             if !new_sections.is_empty() { config.masking.sections = new_sections; }
+        }
+        if let Some(combine) = args.mask_combine {
+            config.masking.combine = match combine {
+                cli::MaskCombineArg::Or => MaskCombine::Or,
+                cli::MaskCombineArg::And => MaskCombine::And,
+            };
+        }
+        if let Some(ref refinements) = args.mask_refinements_cli {
+            let mut ops: Vec<MaskOp> = Vec::new();
+            for s in refinements {
+                match parse_mask_op(s) {
+                    Ok(op) if op.is_generator() => log::warn!(
+                        "Ignoring --mask-refine {}: it creates a mask rather than refining one; \
+                         put it in a --mask section instead", op),
+                    Ok(op) => ops.push(op),
+                    Err(e) => log::warn!("Ignoring invalid --mask-refine '{}': {}", s, e),
+                }
+            }
+            config.masking.refinements = ops;
         }
 
         // ── Masking input / erosion overrides ──
@@ -606,6 +631,86 @@ mod tests {
         assert_eq!(c.masking.sections.len(), 1);
         assert_eq!(c.masking.sections[0].input, MaskingInput::MagnitudeFirst);
         assert!(matches!(c.masking.sections[0].generator, MaskOp::Bet { .. }));
+    }
+
+    /// The generated `qsmxt run` command has to carry the combine mode and the post-combine
+    /// steps, or a TUI-configured intersection silently runs as a union.
+    #[test]
+    fn generated_command_round_trips_an_and_recipe() {
+        let recipe = bet_and_phase_mask_recipe();
+        let mut config = PipelineConfig::default();
+        config.masking.sections = recipe.sections.clone();
+        config.masking.combine = recipe.combine;
+        config.masking.refinements = recipe.refinements.clone();
+
+        let cmd = generate_command(&config);
+        assert!(cmd.contains("--mask-combine and"), "cmd: {cmd}");
+        assert!(cmd.contains("--mask-refine fill-holes:0"), "cmd: {cmd}");
+
+        let argv: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
+        let cli = cli::Cli::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("generated command did not parse: {e}\ncmd: {cmd}"));
+        let run_args = match cli.command { cli::Command::Run(a) => a, _ => panic!("expected Run") };
+        let mut rebuilt = PipelineConfig::default();
+        apply_run_overrides(&mut rebuilt, &run_args.pipeline);
+        assert_eq!(rebuilt.masking.sections, recipe.sections);
+        assert_eq!(rebuilt.masking.combine, recipe.combine);
+        assert_eq!(rebuilt.masking.refinements, recipe.refinements);
+    }
+
+    #[test]
+    fn mask_combine_and_refine_from_cli() {
+        let c = config_from_cli(&[
+            "qsmxt", "run", "<bids>",
+            "--mask", "magnitude-first,bet:0.5",
+            "--mask", "phase-quality,threshold:otsu",
+            "--mask-combine", "and",
+            "--mask-refine", "fill-holes:0",
+            "--mask-refine", "erode:1",
+        ]);
+        assert_eq!(c.masking.sections.len(), 2);
+        assert_eq!(c.masking.combine, MaskCombine::And);
+        assert_eq!(c.masking.refinements,
+                   vec![MaskOp::FillHoles { max_size: 0 }, MaskOp::Erode { iterations: 1 }]);
+
+        // Default is unchanged when the flags are absent.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>"]);
+        assert_eq!(c.masking.combine, MaskCombine::Or);
+        assert!(c.masking.refinements.is_empty());
+    }
+
+    /// A generator in --mask-refine has nothing to refine — it would throw the combined mask
+    /// away. It is dropped with a warning rather than silently replacing the mask.
+    #[test]
+    fn mask_refine_rejects_generators() {
+        let c = config_from_cli(&[
+            "qsmxt", "run", "<bids>",
+            "--mask-refine", "threshold:otsu",
+            "--mask-refine", "erode:2",
+        ]);
+        assert_eq!(c.masking.refinements, vec![MaskOp::Erode { iterations: 2 }]);
+    }
+
+    #[test]
+    fn bet_and_phase_preset_is_a_whole_recipe() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--mask-preset", "bet-and-phase"]);
+        let recipe = bet_and_phase_mask_recipe();
+        assert_eq!(c.masking.sections, recipe.sections);
+        assert_eq!(c.masking.combine, recipe.combine);
+        assert_eq!(c.masking.refinements, recipe.refinements);
+
+        // A single-section preset over a two-section config clears the combine mode and the
+        // post-combine steps, rather than leaving them to apply to one section.
+        let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--mask-preset", "bet"]).expect("parse");
+        let run_args = match cli.command { cli::Command::Run(a) => a, _ => panic!("expected Run") };
+        let mut config = PipelineConfig {
+            masking: MaskingConfig { sections: recipe.sections, combine: recipe.combine,
+                                     refinements: recipe.refinements, ..MaskingConfig::default() },
+            ..PipelineConfig::default()
+        };
+        apply_run_overrides(&mut config, &run_args.pipeline);
+        assert_eq!(config.masking.combine, MaskCombine::Or);
+        assert!(config.masking.refinements.is_empty());
     }
 
     #[test]

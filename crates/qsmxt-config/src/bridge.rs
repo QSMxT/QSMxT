@@ -396,8 +396,13 @@ pub fn to_mask_sections(sections: &[crate::masking::MaskSection]) -> Vec<PMaskSe
             crate::masking::MaskingInput::PhaseQuality => PMaskingInput::PhaseQuality,
         },
         generator: convert_mask_op(&s.generator),
-        refinements: s.refinements.iter().map(convert_mask_op).collect(),
+        refinements: to_mask_ops(&s.refinements),
     }).collect()
+}
+
+/// Convert a bare list of mask ops (e.g. the refinements applied to the combined mask).
+pub fn to_mask_ops(ops: &[crate::masking::MaskOp]) -> Vec<PMaskOp> {
+    ops.iter().map(convert_mask_op).collect()
 }
 
 fn convert_mask_op(op: &crate::masking::MaskOp) -> PMaskOp {

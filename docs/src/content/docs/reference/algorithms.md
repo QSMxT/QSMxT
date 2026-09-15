@@ -17,6 +17,7 @@ operates on with `--masking-input`.
 | `robust-threshold` | Otsu thresholding of the phase-quality map, refined with dilation, hole-filling and erosion (default) |
 | `bet` | Brain Extraction Tool on the magnitude image |
 | `hd-bet` | HD-BET deep-learning brain extraction on the magnitude image, followed by signal-gated erosion (the QSM-CI harmonization masking). Needs a deep-learning build; the weights (~120 MB, CC-BY-NC-4.0) are downloaded on first use |
+| `bet-and-phase` | BET on the first-echo magnitude intersected with an Otsu-thresholded phase-quality map, then hole-filled and eroded (the two-mask recipe from the QSMxT paper) |
 
 **Masking input** (`--masking-input`): `magnitude-first`, `magnitude`,
 `magnitude-last`, `phase-quality`. For example,
@@ -43,6 +44,30 @@ followed by a generator and refinement operations.
 
 For example, `--mask magnitude,hd-bet:low-memory,signal-erode` is the `hd-bet`
 preset with the low-memory patch size.
+
+### Combining sections
+
+With more than one `--mask` section, `--mask-combine` decides how they fold
+together: `or` (the default) keeps a voxel any section keeps, and `and` keeps
+only voxels every section keeps. `--mask-refine` (repeatable) then applies
+refinement operations to the combined mask — which is where hole-filling
+belongs, since filling a section's holes before an intersection is not the same
+as filling the intersection's.
+
+The `bet-and-phase` preset is exactly this:
+
+```bash
+qsmxt run bids/ \
+  --mask magnitude-first,bet:0.50 \
+  --mask phase-quality,threshold:otsu \
+  --mask-combine and \
+  --mask-refine fill-holes:0 \
+  --mask-refine erode:1
+```
+
+BET bounds the head, the phase-quality threshold drops voxels whose phase
+cannot be unwrapped reliably, and the holes their intersection leaves inside
+the brain are filled afterwards.
 
 ## Coil combination
 

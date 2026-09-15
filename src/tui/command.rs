@@ -509,6 +509,15 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             }).collect();
             if secs.is_empty() { None } else { Some(secs) }
         },
+        // Only the non-default mode is worth spelling out on the command line.
+        mask_combine: match ps.mask_combine_recipe().0 {
+            crate::pipeline::config::MaskCombine::Or => None,
+            crate::pipeline::config::MaskCombine::And => Some(crate::cli::MaskCombineArg::And),
+        },
+        mask_refinements_cli: match ps.mask_combine_recipe().1 {
+            ops if ops.is_empty() => None,
+            ops => Some(ops.iter().map(|op| format!("{op}")).collect()),
+        },
     }
 }
 
@@ -665,6 +674,9 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         _ => QsmReference::None,
     };
     config.masking.sections = ps.mask_sections.clone();
+    let (combine, refinements) = ps.mask_combine_recipe();
+    config.masking.combine = combine;
+    config.masking.refinements = refinements;
     config.masking.custom_mask_tool = if ps.custom_mask_tool.trim().is_empty() { None } else { Some(ps.custom_mask_tool.trim().to_string()) };
 
     // Obliquity

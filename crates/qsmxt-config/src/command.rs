@@ -76,6 +76,12 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             parts.push(format!("--mask {}", section));
         }
     }
+    if config.masking.combine != d.masking.combine {
+        parts.push(format!("--mask-combine {}", config.masking.combine));
+    }
+    for op in &config.masking.refinements {
+        parts.push(format!("--mask-refine {}", op));
+    }
 
     // ── BET ──
     emit_f64(&mut parts, "--bet-fractional-intensity", config.bet.fractional_intensity, d.bet.fractional_intensity);
