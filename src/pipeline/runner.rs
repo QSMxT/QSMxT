@@ -853,6 +853,8 @@ fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
 fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
     let mask_params = serde_json::json!({
         "sections": ctx.config.masking.sections.iter().map(|s| format!("{}", s)).collect::<Vec<_>>(),
+        "combine": format!("{}", ctx.config.masking.combine),
+        "refinements": ctx.config.masking.refinements.iter().map(|o| format!("{}", o)).collect::<Vec<_>>(),
         "custom_mask_tool": ctx.config.masking.custom_mask_tool,
     });
     if ctx.is_cached_with_params("mask", None, &mask_params) {
@@ -895,7 +897,8 @@ fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
         }
     }
 
-    log::info!("Creating mask ({} section(s))", ctx.config.masking.sections.len());
+    log::info!("Creating mask ({} section(s), combined with {})",
+               ctx.config.masking.sections.len(), ctx.config.masking.combine);
 
     // Load phases (needed for PhaseQuality masking input)
     let mut phases: Vec<Vec<f64>> = Vec::new();
@@ -924,14 +927,51 @@ fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
         prefetch_weights(id, &ctx.run.key.to_string())?;
     }
 
-    let working_mask = qsm_core::pipeline::run_masking(
-        &core_sections, &phase_refs, mag_data.as_deref(), &scan_meta,
+    let core_refinements = qsmxt_config::to_mask_ops(&ctx.config.masking.refinements);
+    let working_mask = combine_mask_sections(
+        &core_sections, ctx.config.masking.combine, &core_refinements,
+        &phase_refs, mag_data.as_deref(), &scan_meta,
     ).map_err(|e| QsmxtError::Config(format!("masking: {}", e)))?;
     save_mask(mask_path, &working_mask, ctx.meta)?;
     let mag_path = ctx.output.magnitude_path(&ctx.run.key);
     ctx.complete_step("mask", None, mask_params, &[mag_path.as_path()], vec![mask_path.to_path_buf()], t)?;
     log_step_done("Mask creation", t);
     Ok(())
+}
+
+/// Build each mask section, fold them together with `combine`, then apply `refinements` to the
+/// result.
+///
+/// `combine` only matters with more than one section: `or` keeps a voxel any section keeps
+/// (the union qsm-core's `run_masking` produces), `and` keeps only voxels every section keeps.
+/// The refinements run on the combined mask, which is where an intersection's holes get filled —
+/// they are checked to be non-generators before we get here, so the image they see does not
+/// matter; the magnitude is passed for `signal-erode`.
+fn combine_mask_sections(
+    sections: &[qsm_core::pipeline::config::MaskSection],
+    combine: MaskCombine,
+    refinements: &[qsm_core::pipeline::config::MaskOp],
+    phases: &[&[f64]],
+    magnitude: Option<&[f64]>,
+    meta: &qsm_core::pipeline::config::ScanMetadata,
+) -> std::result::Result<Vec<u8>, qsm_core::pipeline::PipelineError> {
+    use qsm_core::pipeline::PipelineError;
+
+    let mut combined: Option<Vec<u8>> = None;
+    for section in sections {
+        let input = qsm_core::pipeline::masking::resolve_masking_input(section.input, phases, magnitude, meta);
+        let mask = qsm_core::pipeline::build_mask_section(section, &input, magnitude, meta)?;
+        combined = Some(match combined {
+            None => mask,
+            Some(mut acc) => { combine.accumulate(&mut acc, &mask); acc }
+        });
+    }
+    let combined = combined.ok_or_else(|| PipelineError::InvalidConfig("no mask sections configured".into()))?;
+
+    if refinements.is_empty() {
+        return Ok(combined);
+    }
+    qsm_core::pipeline::apply_mask_ops(combined, refinements, magnitude.unwrap_or(&[]), magnitude, meta)
 }
 
 /// Load magnitude data for masking: returns a single-element Vec containing
@@ -1889,6 +1929,51 @@ mod tests {
         assert_eq!(ids, ["hd-bet"]);
         let err = super::prefetch_weights(ids[0], "test").unwrap_err();
         assert!(format!("{}", err).contains("deep-learning"), "got: {}", err);
+    }
+
+    /// Two magnitude sections with fixed thresholds, so the section masks are known exactly:
+    /// OR is their union, AND their intersection, and the post-combine refinements run once on
+    /// the result rather than per section.
+    #[test]
+    fn test_combine_mask_sections_or_and_and() {
+        use super::combine_mask_sections;
+        use crate::pipeline::config::{MaskCombine, MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
+
+        let dims = (4usize, 4, 4);
+        let n = dims.0 * dims.1 * dims.2;
+        // A ramp: voxel i has value i, so `threshold:fixed:t` keeps exactly the voxels above t.
+        let mag: Vec<f64> = (0..n).map(|i| i as f64).collect();
+        let meta = crate::pipeline::config::to_scan_metadata(dims, (1.0, 1.0, 1.0), &[0.005], 3.0, (0.0, 0.0, 1.0));
+
+        let section = |t: f64| MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(t) },
+            refinements: vec![],
+        };
+        // > 10 keeps 53 voxels, > 30 keeps 33; the second is a strict subset of the first.
+        let sections = crate::pipeline::config::to_mask_sections(&[section(10.0), section(30.0)]);
+        let count = |m: &[u8]| m.iter().filter(|&&v| v == 1).count();
+
+        let or = combine_mask_sections(&sections, MaskCombine::Or, &[], &[], Some(&mag), &meta).unwrap();
+        assert_eq!(count(&or), n - 11, "union is the looser threshold");
+
+        let and = combine_mask_sections(&sections, MaskCombine::And, &[], &[], Some(&mag), &meta).unwrap();
+        assert_eq!(count(&and), n - 31, "intersection is the tighter threshold");
+        assert!(or.iter().zip(&and).all(|(o, a)| o >= a), "AND ⊆ OR");
+
+        // One section: the combine mode makes no difference.
+        let one = crate::pipeline::config::to_mask_sections(&[section(10.0)]);
+        for mode in [MaskCombine::Or, MaskCombine::And] {
+            assert_eq!(combine_mask_sections(&one, mode, &[], &[], Some(&mag), &meta).unwrap(), or);
+        }
+
+        // Post-combine refinements run on the combined mask.
+        let refinements = crate::pipeline::config::to_mask_ops(&[MaskOp::Erode { iterations: 1 }]);
+        let eroded = combine_mask_sections(&sections, MaskCombine::And, &refinements, &[], Some(&mag), &meta).unwrap();
+        assert!(count(&eroded) < count(&and), "erosion shrank the combined mask");
+
+        // No sections is a configuration error, not an empty mask.
+        assert!(combine_mask_sections(&[], MaskCombine::Or, &[], &[], Some(&mag), &meta).is_err());
     }
 
     #[test]

@@ -874,8 +874,11 @@ pub enum PipelineRow {
     SectionHeader { id: &'static str, label: &'static str, summary: String, collapsed: bool },
     /// Section header "── Mask N ──" (not focusable)
     MaskSectionHeader { section: usize },
+    /// Header for the steps that run on the combined mask (not focusable)
+    MaskCombinedHeader,
     /// "── OR ──" separator between sections (not focusable)
-    MaskOrSeparator,
+    /// "COMBINED WITH ◀ OR ▶" between sections (focusable, ←/→ toggles OR/AND)
+    MaskCombineOp,
     /// Input source for a mask section (focusable, ←/→ to cycle)
     MaskOpInput { section: usize },
     /// Generator algorithm selector (threshold or BET, ←/→ to switch)
@@ -888,6 +891,9 @@ pub enum PipelineRow {
     MaskOpHdBetStep { section: usize },
     /// A refinement step (editable, deletable, reorderable)
     MaskOpEntry { section: usize, index: usize },
+    /// One extra parameter of a multi-parameter refinement step (signal-erode), indexed into
+    /// [`SIGNAL_ERODE_PARAMS`] (focusable, ←/→ to adjust)
+    MaskOpSignalErodeParam { section: usize, index: usize, param: usize },
     /// "Add step..." row for appending new ops to a section
     MaskOpAddStep { section: usize },
     /// "Add mask..." row for adding a new OR'd section
@@ -901,16 +907,30 @@ pub const MASK_OP_TYPES: &[&str] = &[
 /// Ops that create a mask (the section's generator); the rest are refinements.
 pub const MASK_GENERATOR_TYPES: &[&str] = &["threshold", "bet", "hd-bet"];
 
-pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "custom"];
+pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "bet-and-phase", "custom"];
 pub const MASK_PRESET_HELP: &[&str] = &[
     "Otsu threshold + dilate + fill holes + erode (recommended for brain)",
     "BET brain extraction + erode",
     "HD-BET deep-learning brain extraction + signal-gated erosion (QSM-CI harmonization masking)",
+    "BET on the magnitude AND thresholded phase quality, then fill holes + erode (ISMRM EMTP consensus)",
     "Fully custom mask pipeline (edit steps below)",
 ];
 /// Index of the "custom" preset — set automatically when the steps are edited by hand, and
 /// skipped when cycling presets with ←/→.
-pub const MASK_PRESET_CUSTOM: usize = 3;
+pub const MASK_PRESET_CUSTOM: usize = 4;
+
+/// The signal-erode parameters that get a row of their own, past the threshold shown on the step
+/// row itself: label, help, and how ←/→ moves them. Order matches the row order.
+pub const SIGNAL_ERODE_PARAMS: &[(&str, &str)] = &[
+    ("Depth Cap", "Never peel deeper than this many voxels below the original surface (0 = no cap)"),
+    ("Plain Erosions", "Plain erosions run inside signal-erode, before the gate — unlike a separate erode step they spend the depth budget and leave the gate unchanged"),
+    ("Bias Sigma", "Gaussian scale (voxels) of the receive-coil bias estimate divided out of the magnitude"),
+    ("Min Component", "Keep every connected component with at least this many voxels, not just the largest"),
+];
+
+/// Pseudo-section index for the refinements that run on the combined mask, so the mask-step rows
+/// and their key handling are shared with the per-section refinements.
+pub const MASK_COMBINED_SECTION: usize = usize::MAX;
 
 // ─── Algorithm help text (name + DOI) ───
 
@@ -1197,8 +1217,12 @@ pub struct PipelineFormState {
     // Phase offset sigma
     pub phase_offset_sigma: String,
 
-    // Mask sections (OR'd together at runtime)
+    // Mask sections (combined with `mask_combine` at runtime)
     pub mask_sections: Vec<crate::pipeline::config::MaskSection>,
+    /// How the sections fold together (OR = union, AND = intersection).
+    pub mask_combine: crate::pipeline::config::MaskCombine,
+    /// Refinements applied to the combined mask, after `mask_combine`.
+    pub mask_combined_refinements: Vec<crate::pipeline::config::MaskOp>,
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
@@ -1450,6 +1474,8 @@ impl Default for PipelineFormState {
             bet_iterations: format!("{}", bet.iterations),
             bet_subdivisions: format!("{}", bet.subdivisions),
             mask_sections: crate::pipeline::config::default_mask_sections(),
+            mask_combine: crate::pipeline::config::MaskCombine::Or,
+            mask_combined_refinements: vec![],
             mask_preset: 0, // robust threshold
             custom_mask_tool: String::new(),
             do_chi_separation: false,
@@ -1826,7 +1852,7 @@ impl PipelineFormState {
         let multi_section = self.mask_sections.len() > 1;
         for si in 0..self.mask_sections.len() {
             if si > 0 {
-                rows.push(PipelineRow::MaskOrSeparator);
+                rows.push(PipelineRow::MaskCombineOp);
             }
             if multi_section {
                 rows.push(PipelineRow::MaskSectionHeader { section: si });
@@ -1842,12 +1868,16 @@ impl PipelineFormState {
             if matches!(&self.mask_sections[si].generator, crate::pipeline::config::MaskOp::HdBet { .. }) {
                 rows.push(PipelineRow::MaskOpHdBetStep { section: si });
             }
-            for oi in 0..self.mask_sections[si].refinements.len() {
-                rows.push(PipelineRow::MaskOpEntry { section: si, index: oi });
-            }
+            self.push_refinement_rows(&mut rows, si);
             rows.push(PipelineRow::MaskOpAddStep { section: si });
         }
         rows.push(PipelineRow::MaskOpAddSection);
+        // Steps that run on the combined mask — only meaningful with more than one section.
+        if multi_section {
+            rows.push(PipelineRow::MaskCombinedHeader);
+            self.push_refinement_rows(&mut rows, MASK_COMBINED_SECTION);
+            rows.push(PipelineRow::MaskOpAddStep { section: MASK_COMBINED_SECTION });
+        }
 
         rows.push(PipelineRow::Separator);
 
@@ -2662,8 +2692,8 @@ impl PipelineFormState {
                 };
                 ("hd-bet", format!("{}x{}x{}{}{}", patch[0], patch[1], patch[2], step, if *tta { " tta" } else { "" }))
             }
-            MaskOp::SignalErode { threshold, depth_cap, .. } =>
-                ("signal-erode", format!("{:.2} (depth {})", threshold, depth_cap)),
+            // Only the threshold: every other parameter has a row of its own below.
+            MaskOp::SignalErode { threshold, .. } => ("signal-erode", format!("{:.2}", threshold)),
         }
     }
 
@@ -2680,7 +2710,7 @@ impl PipelineFormState {
             MaskOp::GaussianSmooth { .. } => "Gaussian sigma in mm (Enter to edit)",
             MaskOp::HdBet { .. } => "HD-BET deep-learning brain extraction (needs a deep-learning build)",
             MaskOp::SignalErode { .. } =>
-                "Signal-gated erosion: peel low-signal boundary voxels (threshold as fraction of median, ←/→ to adjust)",
+                "Signal gate as a fraction of the in-mask median magnitude (←/→ to adjust); above ~0.85 it over-carves",
         }
     }
 
@@ -2701,25 +2731,66 @@ impl PipelineFormState {
         }
     }
 
-    /// Apply a mask preset, overwriting mask_sections.
+    /// Apply a mask preset, overwriting the whole recipe (sections, combine mode and the
+    /// refinements that run on the combined mask).
     pub fn apply_mask_preset(&mut self, preset: usize) {
         use crate::pipeline::config::*;
-        match preset {
-            0 => { // Robust threshold
-                self.mask_sections = default_mask_sections();
-            }
-            1 => { // BET
-                self.mask_sections = vec![MaskSection {
-                    input: MaskingInput::Magnitude,
-                    generator: MaskOp::Bet { fractional_intensity: 0.5 },
-                    refinements: vec![MaskOp::Erode { iterations: 2 }],
-                }];
-            }
-            2 => { // HD-BET + signal-gated erosion
-                self.mask_sections = hd_bet_mask_sections();
-            }
-            _ => { /* Custom: don't touch sections */ }
+        // MASK_PRESET_OPTIONS is mask_presets() plus the trailing "custom" entry, which leaves
+        // the recipe alone (see the alignment test).
+        let Some((_, recipe)) = mask_presets().into_iter().nth(preset) else { return };
+        self.mask_sections = recipe.sections;
+        self.mask_combine = recipe.combine;
+        self.mask_combined_refinements = recipe.refinements;
+    }
+
+    /// The refinement list a mask-step row edits — a section's, or the combined mask's.
+    pub fn mask_refinements(&self, section: usize) -> Option<&Vec<crate::pipeline::config::MaskOp>> {
+        if section == MASK_COMBINED_SECTION {
+            Some(&self.mask_combined_refinements)
+        } else {
+            self.mask_sections.get(section).map(|s| &s.refinements)
         }
+    }
+
+    /// Mutable counterpart of [`Self::mask_refinements`].
+    pub fn mask_refinements_mut(&mut self, section: usize) -> Option<&mut Vec<crate::pipeline::config::MaskOp>> {
+        if section == MASK_COMBINED_SECTION {
+            Some(&mut self.mask_combined_refinements)
+        } else {
+            self.mask_sections.get_mut(section).map(|s| &mut s.refinements)
+        }
+    }
+
+    /// Rows for one refinement list: the step itself, plus a row per extra parameter for the
+    /// steps that have more than one (signal-erode).
+    fn push_refinement_rows(&self, rows: &mut Vec<PipelineRow>, section: usize) {
+        let Some(refinements) = self.mask_refinements(section) else { return };
+        for (index, op) in refinements.iter().enumerate() {
+            rows.push(PipelineRow::MaskOpEntry { section, index });
+            if matches!(op, crate::pipeline::config::MaskOp::SignalErode { .. }) {
+                for param in 0..SIGNAL_ERODE_PARAMS.len() {
+                    rows.push(PipelineRow::MaskOpSignalErodeParam { section, index, param });
+                }
+            }
+        }
+    }
+
+    /// The combine mode and post-combine refinements as the pipeline should see them. Both are
+    /// only editable — and only shown — with more than one section, so a single-section recipe
+    /// reports the defaults rather than silently applying steps the user cannot see.
+    pub fn mask_combine_recipe(&self) -> (crate::pipeline::config::MaskCombine, Vec<crate::pipeline::config::MaskOp>) {
+        if self.mask_sections.len() < 2 {
+            (crate::pipeline::config::MaskCombine::Or, vec![])
+        } else {
+            (self.mask_combine, self.mask_combined_refinements.clone())
+        }
+    }
+
+    /// Toggle the mask combine mode (OR ↔ AND).
+    pub fn toggle_mask_combine(&mut self) {
+        use crate::pipeline::config::MaskCombine;
+        self.mask_combine = match self.mask_combine { MaskCombine::Or => MaskCombine::And, MaskCombine::And => MaskCombine::Or };
+        self.mark_mask_custom();
     }
 
     /// Mark preset as "Custom" when user manually edits mask sections.
@@ -2862,9 +2933,8 @@ impl PipelineFormState {
     /// Adjust a mask op parameter with left/right.
     pub fn adjust_mask_op(&mut self, section: usize, index: usize, delta: isize) {
         use crate::pipeline::config::*;
-        if section >= self.mask_sections.len() { return; }
-        if index >= self.mask_sections[section].refinements.len() { return; }
-        match &mut self.mask_sections[section].refinements[index] {
+        let Some(op) = self.mask_refinements_mut(section).and_then(|r| r.get_mut(index)) else { return };
+        match op {
             MaskOp::Threshold { method, .. } => {
                 let methods = [MaskThresholdMethod::Otsu, MaskThresholdMethod::Fixed, MaskThresholdMethod::Percentile];
                 let cur = methods.iter().position(|m| m == method).unwrap_or(0) as isize;
@@ -2897,6 +2967,37 @@ impl PipelineFormState {
         self.mark_mask_custom();
     }
 
+    /// Label and current value of one extra signal-erode parameter, for its own row.
+    pub fn signal_erode_param(&self, section: usize, index: usize, param: usize) -> Option<(&'static str, String)> {
+        use crate::pipeline::config::MaskOp;
+        let MaskOp::SignalErode { depth_cap, global_erosions, bias_sigma, min_component, .. } =
+            self.mask_refinements(section)?.get(index)? else { return None };
+        let (label, _) = *SIGNAL_ERODE_PARAMS.get(param)?;
+        let value = match param {
+            0 => if *depth_cap == 0 { "0 (no cap)".to_string() } else { format!("{depth_cap}") },
+            1 => format!("{global_erosions}"),
+            2 => format!("{bias_sigma:.1}"),
+            _ => format!("{min_component}"),
+        };
+        Some((label, value))
+    }
+
+    /// Adjust one extra signal-erode parameter with ←/→.
+    pub fn adjust_signal_erode_param(&mut self, section: usize, index: usize, param: usize, delta: isize) {
+        use crate::pipeline::config::MaskOp;
+        let Some(MaskOp::SignalErode { depth_cap, global_erosions, bias_sigma, min_component, .. }) =
+            self.mask_refinements_mut(section).and_then(|r| r.get_mut(index)) else { return };
+        let step_usize = |v: &mut usize, by: isize| *v = (*v as isize + delta * by).max(0) as usize;
+        match param {
+            0 => step_usize(depth_cap, 1),
+            1 => step_usize(global_erosions, 1),
+            // Voxels, like qsm-core's `bias_sigma`; 0 would divide out nothing.
+            2 => *bias_sigma = (*bias_sigma + delta as f64).max(1.0),
+            _ => step_usize(min_component, 100),
+        }
+        self.mark_mask_custom();
+    }
+
     /// Get available op types for adding refinement steps (morphological only).
     pub fn available_op_types(&self, _section: usize) -> Vec<&'static str> {
         // Generator is fixed — only offer morphological refinement ops
@@ -2911,7 +3012,8 @@ impl PipelineFormState {
         self.visible_rows()
             .iter()
             .enumerate()
-            .filter(|(_, r)| !matches!(r, PipelineRow::Separator | PipelineRow::Note { .. } | PipelineRow::MaskSectionHeader { .. } | PipelineRow::MaskOrSeparator))
+            .filter(|(_, r)| !matches!(r, PipelineRow::Separator | PipelineRow::Note { .. }
+                | PipelineRow::MaskSectionHeader { .. } | PipelineRow::MaskCombinedHeader))
             .map(|(i, _)| i)
             .collect()
     }
@@ -4431,8 +4533,9 @@ impl App {
                 let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
                 if let Some(PipelineRow::MaskOpEntry { section, index }) = rows.get(focus_idx) {
                     let (si, oi) = (*section, *index);
-                    if oi > 0 && si < ps.mask_sections.len() && oi < ps.mask_sections[si].refinements.len() {
-                        ps.mask_sections[si].refinements.swap(oi, oi - 1);
+                    let n = ps.mask_refinements(si).map_or(0, |r| r.len());
+                    if oi > 0 && oi < n {
+                        if let Some(refs) = ps.mask_refinements_mut(si) { refs.swap(oi, oi - 1); }
                         ps.mark_mask_custom();
                         if ps.focus > 0 { ps.focus -= 1; }
                     }
@@ -4445,8 +4548,8 @@ impl App {
                 let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
                 if let Some(PipelineRow::MaskOpEntry { section, index }) = rows.get(focus_idx) {
                     let (si, oi) = (*section, *index);
-                    if si < ps.mask_sections.len() && oi + 1 < ps.mask_sections[si].refinements.len() {
-                        ps.mask_sections[si].refinements.swap(oi, oi + 1);
+                    if oi + 1 < ps.mask_refinements(si).map_or(0, |r| r.len()) {
+                        if let Some(refs) = ps.mask_refinements_mut(si) { refs.swap(oi, oi + 1); }
                         ps.mark_mask_custom();
                         let max = ps.focusable_rows().len().saturating_sub(1);
                         if ps.focus < max { ps.focus += 1; }
@@ -4572,9 +4675,7 @@ impl App {
                             let available = ps.available_op_types(section);
                             if let Some(&type_name) = available.get(ps.mask_ops_add_idx) {
                                 if let Some(op) = PipelineFormState::default_mask_op(type_name) {
-                                    if section < ps.mask_sections.len() {
-                                        ps.mask_sections[section].refinements.push(op);
-                                    }
+                                    if let Some(refs) = ps.mask_refinements_mut(section) { refs.push(op); }
                                 }
                             }
                             ps.mask_ops_adding = false;
@@ -4603,7 +4704,11 @@ impl App {
                         ps.mask_threshold_editing = true;
                         ps.cursor = current.len();
                     }
-                    Some(PipelineRow::MaskOpEntry { .. }) | Some(PipelineRow::MaskOpInput { .. })
+                    Some(PipelineRow::MaskCombineOp) => {
+                        ps.toggle_mask_combine();
+                    }
+                    Some(PipelineRow::MaskOpSignalErodeParam { .. })
+                    | Some(PipelineRow::MaskOpEntry { .. }) | Some(PipelineRow::MaskOpInput { .. })
                     | Some(PipelineRow::MaskOpGenerator { .. }) | Some(PipelineRow::MaskOpGeneratorParam { .. }) => {
                         // Handled by Left/Right
                     }
@@ -4620,8 +4725,8 @@ impl App {
                 match rows.get(focus_idx) {
                     Some(PipelineRow::MaskOpEntry { section, index }) => {
                         let (si, oi) = (*section, *index);
-                        if si < ps.mask_sections.len() && oi < ps.mask_sections[si].refinements.len() {
-                            ps.mask_sections[si].refinements.remove(oi);
+                        if oi < ps.mask_refinements(si).map_or(0, |r| r.len()) {
+                            if let Some(refs) = ps.mask_refinements_mut(si) { refs.remove(oi); }
                             ps.mark_mask_custom();
                             let max = ps.focusable_rows().len().saturating_sub(1);
                             if ps.focus > max { ps.focus = max; }
@@ -4667,8 +4772,14 @@ impl App {
                             ps.set_select(field, new_val);
                             ps.restore_focus(&focused_field);
                         }
+                        Some(PipelineRow::MaskCombineOp) => {
+                            ps.toggle_mask_combine();
+                        }
                         Some(PipelineRow::MaskOpEntry { section, index }) => {
                             ps.adjust_mask_op(*section, *index, delta);
+                        }
+                        Some(PipelineRow::MaskOpSignalErodeParam { section, index, param }) => {
+                            ps.adjust_signal_erode_param(*section, *index, *param, delta);
                         }
                         Some(PipelineRow::MaskOpGenerator { section }) => {
                             ps.adjust_mask_generator(*section, delta);
@@ -7406,7 +7517,16 @@ mod tests {
         assert_eq!(app.pipeline_state.mask_preset, 2); // HD-BET + signal-gated erosion
         assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::hd_bet_mask_sections());
         app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.pipeline_state.mask_preset, 3); // BET AND phase quality
+        let recipe = crate::pipeline::config::bet_and_phase_mask_recipe();
+        assert_eq!(app.pipeline_state.mask_sections, recipe.sections);
+        assert_eq!(app.pipeline_state.mask_combine, recipe.combine);
+        assert_eq!(app.pipeline_state.mask_combined_refinements, recipe.refinements);
+        app.handle_key(key(KeyCode::Right));
         assert_eq!(app.pipeline_state.mask_preset, 0, "cycling skips 'custom'");
+        // Leaving the two-section preset resets the combine mode and the combined-mask steps.
+        assert_eq!(app.pipeline_state.mask_combine, crate::pipeline::config::MaskCombine::Or);
+        assert!(app.pipeline_state.mask_combined_refinements.is_empty());
     }
 
     #[test]
@@ -7458,6 +7578,145 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         // BET frac. intensity is a slider, not a discrete select — no modal.
         assert!(app.algo_modal.is_none());
+    }
+
+    /// The preset row, the CLI's `--mask-preset` values and `mask_presets()` are three views of
+    /// one list; `apply_mask_preset` indexes straight into it, so they have to stay aligned.
+    #[test]
+    fn test_mask_preset_options_match_the_preset_list() {
+        use clap::ValueEnum;
+        let names: Vec<&str> = crate::pipeline::config::mask_presets().iter().map(|(n, _)| *n).collect();
+        assert_eq!(&MASK_PRESET_OPTIONS[..MASK_PRESET_CUSTOM], &names[..]);
+        assert_eq!(MASK_PRESET_OPTIONS[MASK_PRESET_CUSTOM], "custom");
+        assert_eq!(MASK_PRESET_OPTIONS.len(), MASK_PRESET_HELP.len());
+
+        let cli_names: Vec<String> = crate::cli::MaskPresetArg::value_variants().iter()
+            .map(|v| v.to_possible_value().unwrap().get_name().to_string()).collect();
+        assert_eq!(cli_names, names, "--mask-preset values drifted from mask_presets()");
+    }
+
+    /// Every signal-erode parameter is reachable and adjustable with ←/→ from the pipeline form,
+    /// and what the CLI preview says is what the rows show.
+    #[test]
+    fn test_pipeline_signal_erode_params_are_editable() {
+        use crate::pipeline::config::MaskOp;
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
+        app.pipeline_state.apply_mask_preset(2); // hd-bet + signal-erode
+
+        let focus_param = |app: &mut App, param: usize| {
+            let rows = app.pipeline_state.visible_rows();
+            app.pipeline_state.focus = app.pipeline_state.focusable_rows().iter()
+                .position(|&ri| matches!(rows[ri], PipelineRow::MaskOpSignalErodeParam { param: p, .. } if p == param))
+                .unwrap_or_else(|| panic!("param {param} row not focusable"));
+        };
+        let op = |app: &App| app.pipeline_state.mask_sections[0].refinements[0].clone();
+        let MaskOp::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } = op(&app)
+            else { panic!("preset should end in signal-erode") };
+
+        // The step row itself is the threshold; the four params each have their own row.
+        let rows = app.pipeline_state.visible_rows();
+        app.pipeline_state.focus = app.pipeline_state.focusable_rows().iter()
+            .position(|&ri| matches!(rows[ri], PipelineRow::MaskOpEntry { .. })).expect("step row");
+        app.handle_key(key(KeyCode::Right));
+        assert!(matches!(op(&app), MaskOp::SignalErode { threshold: t, .. } if t > threshold));
+
+        for (param, expect) in [
+            (0usize, "depth cap"), (1, "plain erosions"), (2, "bias sigma"), (3, "min component"),
+        ] {
+            focus_param(&mut app, param);
+            app.handle_key(key(KeyCode::Right));
+            let MaskOp::SignalErode { depth_cap: d, global_erosions: g, bias_sigma: b, min_component: m, .. } = op(&app)
+                else { panic!("still signal-erode") };
+            let changed = match param {
+                0 => d > depth_cap,
+                1 => g > global_erosions,
+                2 => b > bias_sigma,
+                _ => m > min_component,
+            };
+            assert!(changed, "{expect} did not increase");
+            app.handle_key(key(KeyCode::Left)); // and back down
+        }
+
+        let MaskOp::SignalErode { depth_cap: d, global_erosions: g, bias_sigma: b, min_component: m, .. } = op(&app)
+            else { panic!("still signal-erode") };
+        assert_eq!((d, g, b, m), (depth_cap, global_erosions, bias_sigma, min_component), "←/→ round-trips");
+
+        // Counts clamp at zero rather than wrapping around.
+        focus_param(&mut app, 0);
+        for _ in 0..(depth_cap + 3) { app.handle_key(key(KeyCode::Left)); }
+        assert!(matches!(op(&app), MaskOp::SignalErode { depth_cap: 0, .. }));
+
+        // The generated command carries the edited values.
+        // Edited away from the preset, so the command spells the recipe out — with the
+        // parameters that are still at their default left off.
+        let cmd = crate::tui::command::build_command_string(&app);
+        assert!(cmd.contains("--mask magnitude,hd-bet,signal-erode:0.85:0"), "cmd: {cmd}");
+    }
+
+    /// The combine row only appears once there is more than one section, and ←/→ toggles it.
+    #[test]
+    fn test_pipeline_mask_combine_row_toggles() {
+        use crate::pipeline::config::MaskCombine;
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
+
+        let has_combine_row = |app: &App| app.pipeline_state.visible_rows().iter()
+            .any(|r| matches!(r, PipelineRow::MaskCombineOp));
+        assert!(!has_combine_row(&app), "a single section has nothing to combine with");
+
+        // Add a second section via the "+ Add mask..." row.
+        let focus_on = |app: &App, pred: fn(&PipelineRow) -> bool| {
+            let rows = app.pipeline_state.visible_rows();
+            app.pipeline_state.focusable_rows().iter().position(|&ri| pred(&rows[ri]))
+        };
+        app.pipeline_state.focus = focus_on(&app, |r| matches!(r, PipelineRow::MaskOpAddSection))
+            .expect("MaskOpAddSection not found");
+        app.handle_key(key(KeyCode::Enter));
+        assert!(has_combine_row(&app), "two sections show how they combine");
+
+        app.pipeline_state.focus = focus_on(&app, |r| matches!(r, PipelineRow::MaskCombineOp))
+            .expect("MaskCombineOp not focusable");
+        assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or);
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.pipeline_state.mask_combine, MaskCombine::And);
+        assert_eq!(app.pipeline_state.mask_preset, MASK_PRESET_CUSTOM, "editing the recipe marks it custom");
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.pipeline_state.mask_combine, MaskCombine::Or);
+    }
+
+    /// Steps added under "On the combined mask" land in the combined list, not in a section.
+    #[test]
+    fn test_pipeline_mask_combined_refinement_steps() {
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
+        app.pipeline_state.apply_mask_preset(3); // bet-and-phase: two sections
+        let recipe = crate::pipeline::config::bet_and_phase_mask_recipe();
+        assert_eq!(app.pipeline_state.mask_combined_refinements, recipe.refinements);
+
+        let section_refinements: usize = app.pipeline_state.mask_sections.iter().map(|s| s.refinements.len()).sum();
+        let rows = app.pipeline_state.visible_rows();
+        let fi = app.pipeline_state.focusable_rows().iter().position(|&ri| {
+            matches!(rows[ri], PipelineRow::MaskOpAddStep { section: MASK_COMBINED_SECTION })
+        }).expect("combined-mask add-step row not found");
+        app.pipeline_state.focus = fi;
+        app.handle_key(key(KeyCode::Enter)); // open the type selector
+        app.handle_key(key(KeyCode::Enter)); // add the selected type
+        assert_eq!(app.pipeline_state.mask_combined_refinements.len(), recipe.refinements.len() + 1);
+        assert_eq!(app.pipeline_state.mask_sections.iter().map(|s| s.refinements.len()).sum::<usize>(),
+                   section_refinements, "the step did not land in a section");
+
+        // ...and `d` deletes from the same list.
+        let rows = app.pipeline_state.visible_rows();
+        let fi = app.pipeline_state.focusable_rows().iter().position(|&ri| {
+            matches!(rows[ri], PipelineRow::MaskOpEntry { section: MASK_COMBINED_SECTION, index: 0 })
+        }).expect("combined-mask step row not found");
+        app.pipeline_state.focus = fi;
+        app.handle_key(key(KeyCode::Char('d')));
+        assert_eq!(app.pipeline_state.mask_combined_refinements.len(), recipe.refinements.len());
     }
 
     #[test]

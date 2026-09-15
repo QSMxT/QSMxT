@@ -70,10 +70,15 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         if config.masking.inhomogeneity_correction {
             println!("  Inhomogeneity:     enabled");
         }
-        println!("  Masking:           {}", config.masking.sections.iter()
+        let joiner = format!(" {} ", config.masking.combine.to_string().to_uppercase());
+        let mut masking = config.masking.sections.iter()
             .map(|s| format!("{}", s))
             .collect::<Vec<_>>()
-            .join(" | "));
+            .join(&joiner);
+        for op in &config.masking.refinements {
+            masking.push_str(&format!(" → {op}"));
+        }
+        println!("  Masking:           {masking}");
         println!("  Unwrapping:        {}", config.field_mapping.unwrapping_algorithm);
         println!("  BG Removal:        {}", config.bg_removal.algorithm);
         println!("  QSM Algorithm:     {:?}", config.inversion.algorithm);

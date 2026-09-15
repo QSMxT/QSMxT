@@ -17,6 +17,7 @@ operates on with `--masking-input`.
 | `robust-threshold` | Otsu thresholding of the phase-quality map, refined with dilation, hole-filling and erosion (default) |
 | `bet` | Brain Extraction Tool on the magnitude image |
 | `hd-bet` | HD-BET deep-learning brain extraction on the magnitude image, followed by signal-gated erosion (the QSM-CI harmonization masking). Needs a deep-learning build; the weights (~120 MB, CC-BY-NC-4.0) are downloaded on first use |
+| `bet-and-phase` | BET on the first-echo magnitude intersected with an Otsu-thresholded phase-quality map, then hole-filled and eroded (the masking recommended by the [ISMRM EMTP study group consensus](https://doi.org/10.1002/mrm.30006)) |
 
 **Masking input** (`--masking-input`): `magnitude-first`, `magnitude`,
 `magnitude-last`, `phase-quality`. For example,
@@ -39,50 +40,96 @@ followed by a generator and refinement operations.
   below `threshold` × the in-mask median (default 0.80). It works inward through
   sinus and skull-base signal dropout, never more than `depth_cap` voxels deep
   (default 5), after `global_erosions` plain erosions (default 1). Dark interior
-  structures are never removed.
+  structures are never removed. `bias_sigma` (default 12) is the Gaussian scale
+  in voxels of the receive-coil bias divided out first, and `min_component`
+  (default 1000) keeps every connected component that size or larger rather than
+  only the largest. In the TUI each of these is its own row under the step, so
+  you can nudge them with ←/→ and watch the generated command update.
+
+  `global_erosions` is not the same as putting an `erode` step in front of
+  `signal-erode`: the gate and the coil-bias estimate are computed from the
+  mask as it arrives, and the depth cap is measured from *that* surface, so
+  these erosions spend the depth budget and leave the gate unchanged. An `erode`
+  step beforehand shrinks the mask the gate is derived from and resets the depth
+  budget. The default of 1 is the QSM-CI harmonization setting.
 
 For example, `--mask magnitude,hd-bet:low-memory,signal-erode` is the `hd-bet`
 preset with the low-memory patch size.
 
+### Combining sections
+
+With more than one `--mask` section, `--mask-combine` decides how they fold
+together: `or` (the default) keeps a voxel any section keeps, and `and` keeps
+only voxels every section keeps. `--mask-refine` (repeatable) then applies
+refinement operations to the combined mask — which is where hole-filling
+belongs, since filling a section's holes before an intersection is not the same
+as filling the intersection's.
+
+The `bet-and-phase` preset is exactly this:
+
+```bash
+qsmxt run bids/ \
+  --mask magnitude-first,bet:0.50 \
+  --mask phase-quality,threshold:otsu \
+  --mask-combine and \
+  --mask-refine fill-holes:0 \
+  --mask-refine erode:1
+```
+
+BET bounds the head, the phase-quality threshold drops voxels whose phase
+cannot be unwrapped reliably, and the holes their intersection leaves inside
+the brain are filled afterwards.
+
 ## Oblique acquisitions
 
-The dipole kernel is built in the voxel grid, so an acquisition whose slices are tilted relative
-to B0 has to be handled explicitly. QSMxT does one of three things, in this order:
+The dipole kernel is built in the voxel grid, so an acquisition whose slices
+are tilted relative to B0 has to be handled explicitly. QSMxT applies the first
+of these that fits:
 
-1. **A `B0_dir` in the JSON sidecar wins.** It describes the acquisition better than the affine
-   can, and neither of the options below overrides it.
-2. **`--obliquity-threshold <degrees>` resamples to axial** when the obliquity exceeds it, as
-   QSMxT 8.x did. Magnitude and phase are resampled together through the complex domain before
-   anything else runs, so B0 is `(0, 0, 1)` by construction. The cardinal bounding box is larger
-   than the acquired volume — a 256×288×48 UK Biobank SWI at 32.5° obliquity becomes 272×339×77,
-   so expect roughly twice the voxels and twice the reconstruction time.
-3. **Otherwise the kernel is rotated**: B0 is taken from the affine and used as-is, leaving the
-   acquired grid and avoiding any interpolation. This is the default (`--obliquity-threshold -1`).
+1. **A `B0_dir` in the JSON sidecar wins.** It describes the acquisition better
+   than the affine can.
+2. **`--obliquity-threshold <degrees>` resamples to axial** when the obliquity
+   exceeds it, as QSMxT 8.x did. Off by default (`-1`).
+3. **Otherwise the kernel is rotated** — B0 is taken from the affine and used
+   as-is. This is the default, and normally the one you want.
 
-Both routes are correct; the second matches 8.x output, the third is cheaper and does not
-interpolate. `qsmxt validate` reports what a dataset will do:
+Rotating the kernel is preferred because it is exact and free: the dipole
+kernel takes the field direction as a parameter, so pointing it the right way
+costs nothing, keeps the acquired grid, and interpolates nothing. Resampling
+exists for two reasons — reproducing 8.x output, and the deep-learning methods,
+which have no direction input and must be given axial data.
+
+The cost is not small. A 256×288×48 UK Biobank SWI at 32.5° obliquity resamples
+to 272×339×77, roughly twice the voxels, and took 459 s against 246 s for the
+same reconstruction on the acquired grid. The resampled outputs also land on a
+different grid from the input, so any transform you already hold — a FLIRT
+matrix, say — no longer describes them.
+
+`qsmxt validate` reports what a dataset will do:
 
 ```
 B0 direction: (0.05, 0.39, 0.92) (from the affine)
 Obliquity:    32.5° (B0 22.9° off the slice normal)
 ```
 
-Obliquity is `nibabel`'s definition (the norm of the per-axis angles), so 8.x thresholds carry
-over. It is a combined measure rather than a tilt: a single 23° oblique acquisition scores ≈32°
-because two voxel axes move. The tilt in brackets is the physical angle between B0 and the slice
-normal, which is what the kernel cares about.
+Obliquity is `nibabel`'s definition (the norm of the per-axis angles), so 8.x
+thresholds carry over. It is a combined measure rather than a tilt: a single
+23° oblique acquisition scores ≈32° because two voxel axes move. The tilt in
+brackets is the physical angle between B0 and the slice normal, which is what
+the kernel cares about.
 
 :::caution
-Wrapped phase cannot be resampled on its own. Halfway between `+3.0` and `−3.0` rad a linear
-interpolator returns `0.0`, where the answer is near `±π`, so every wrap becomes a band of wrong
-values. The pipeline always resamples magnitude and phase together; if you use
-`qsmxt resample` by hand, pass `--phase` with `--magnitude` rather than resampling phase as a
-plain volume.
+Wrapped phase cannot be resampled on its own. Halfway between `+3.0` and `−3.0`
+rad a linear interpolator returns `0.0`, where the answer is near `±π`, so
+every wrap becomes a band of wrong values. The pipeline always resamples
+magnitude and phase together; if you use `qsmxt resample` by hand, pass
+`--phase` with `--magnitude` rather than resampling phase as a plain volume.
 :::
 
-Runs with a matching MESE acquisition (for R2′ / χ-separation) are never resampled — the MESE is
-read from BIDS on its own grid, so resampling only the GRE would leave the two inconsistent.
-Those runs use the affine-derived B0 direction instead, and say so in the log.
+Runs with a matching MESE acquisition (for R2′ / χ-separation) are never
+resampled — the MESE is read from BIDS on its own grid, so resampling only the
+GRE would leave the two inconsistent. Those runs use the affine-derived B0
+direction instead, and say so in the log.
 
 ## Coil combination
 

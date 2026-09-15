@@ -17,4 +17,4 @@ pub use masking::*;
 pub use error::{ConfigError, Result};
 pub use command::generate_command;
 pub use methods::generate_methods;
-pub use bridge::{to_pipeline_stages, to_scan_metadata, to_mask_sections};
+pub use bridge::{to_pipeline_stages, to_scan_metadata, to_mask_sections, to_mask_ops};
