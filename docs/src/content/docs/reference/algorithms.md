@@ -17,7 +17,7 @@ operates on with `--masking-input`.
 | `robust-threshold` | Otsu thresholding of the phase-quality map, refined with dilation, hole-filling and erosion (default) |
 | `bet` | Brain Extraction Tool on the magnitude image |
 | `hd-bet` | HD-BET deep-learning brain extraction on the magnitude image, followed by signal-gated erosion (the QSM-CI harmonization masking). Needs a deep-learning build; the weights (~120 MB, CC-BY-NC-4.0) are downloaded on first use |
-| `bet-and-phase` | BET on the first-echo magnitude intersected with an Otsu-thresholded phase-quality map, then hole-filled and eroded (the two-mask recipe from the QSMxT paper) |
+| `bet-and-phase` | BET on the first-echo magnitude intersected with an Otsu-thresholded phase-quality map, then hole-filled and eroded (the masking recommended by the [ISMRM EMTP study group consensus](https://doi.org/10.1002/mrm.30006)) |
 
 **Masking input** (`--masking-input`): `magnitude-first`, `magnitude`,
 `magnitude-last`, `phase-quality`. For example,
@@ -40,7 +40,11 @@ followed by a generator and refinement operations.
   below `threshold` × the in-mask median (default 0.80). It works inward through
   sinus and skull-base signal dropout, never more than `depth_cap` voxels deep
   (default 5), after `global_erosions` plain erosions (default 1). Dark interior
-  structures are never removed.
+  structures are never removed. `bias_sigma` (default 12) is the Gaussian scale
+  in voxels of the receive-coil bias divided out first, and `min_component`
+  (default 1000) keeps every connected component that size or larger rather than
+  only the largest. In the TUI each of these is its own row under the step, so
+  you can nudge them with ←/→ and watch the generated command update.
 
 For example, `--mask magnitude,hd-bet:low-memory,signal-erode` is the `hd-bet`
 preset with the low-memory patch size.

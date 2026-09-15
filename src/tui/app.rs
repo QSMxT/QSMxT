@@ -891,6 +891,9 @@ pub enum PipelineRow {
     MaskOpHdBetStep { section: usize },
     /// A refinement step (editable, deletable, reorderable)
     MaskOpEntry { section: usize, index: usize },
+    /// One extra parameter of a multi-parameter refinement step (signal-erode), indexed into
+    /// [`SIGNAL_ERODE_PARAMS`] (focusable, ←/→ to adjust)
+    MaskOpSignalErodeParam { section: usize, index: usize, param: usize },
     /// "Add step..." row for appending new ops to a section
     MaskOpAddStep { section: usize },
     /// "Add mask..." row for adding a new OR'd section
@@ -909,12 +912,21 @@ pub const MASK_PRESET_HELP: &[&str] = &[
     "Otsu threshold + dilate + fill holes + erode (recommended for brain)",
     "BET brain extraction + erode",
     "HD-BET deep-learning brain extraction + signal-gated erosion (QSM-CI harmonization masking)",
-    "BET on the magnitude AND thresholded phase quality, then fill holes + erode (QSMxT paper)",
+    "BET on the magnitude AND thresholded phase quality, then fill holes + erode (ISMRM EMTP consensus)",
     "Fully custom mask pipeline (edit steps below)",
 ];
 /// Index of the "custom" preset — set automatically when the steps are edited by hand, and
 /// skipped when cycling presets with ←/→.
 pub const MASK_PRESET_CUSTOM: usize = 4;
+
+/// The signal-erode parameters that get a row of their own, past the threshold shown on the step
+/// row itself: label, help, and how ←/→ moves them. Order matches the row order.
+pub const SIGNAL_ERODE_PARAMS: &[(&str, &str)] = &[
+    ("Depth Cap", "Never peel deeper than this many voxels below the original surface (0 = no cap)"),
+    ("Global Erosions", "Plain erosions applied before the signal gate — trims the bright skull/CSF sliver"),
+    ("Bias Sigma", "Gaussian scale (voxels) of the receive-coil bias estimate divided out of the magnitude"),
+    ("Min Component", "Keep every connected component with at least this many voxels, not just the largest"),
+];
 
 /// Pseudo-section index for the refinements that run on the combined mask, so the mask-step rows
 /// and their key handling are shared with the per-section refinements.
@@ -1856,18 +1868,14 @@ impl PipelineFormState {
             if matches!(&self.mask_sections[si].generator, crate::pipeline::config::MaskOp::HdBet { .. }) {
                 rows.push(PipelineRow::MaskOpHdBetStep { section: si });
             }
-            for oi in 0..self.mask_sections[si].refinements.len() {
-                rows.push(PipelineRow::MaskOpEntry { section: si, index: oi });
-            }
+            self.push_refinement_rows(&mut rows, si);
             rows.push(PipelineRow::MaskOpAddStep { section: si });
         }
         rows.push(PipelineRow::MaskOpAddSection);
         // Steps that run on the combined mask — only meaningful with more than one section.
         if multi_section {
             rows.push(PipelineRow::MaskCombinedHeader);
-            for oi in 0..self.mask_combined_refinements.len() {
-                rows.push(PipelineRow::MaskOpEntry { section: MASK_COMBINED_SECTION, index: oi });
-            }
+            self.push_refinement_rows(&mut rows, MASK_COMBINED_SECTION);
             rows.push(PipelineRow::MaskOpAddStep { section: MASK_COMBINED_SECTION });
         }
 
@@ -2684,8 +2692,8 @@ impl PipelineFormState {
                 };
                 ("hd-bet", format!("{}x{}x{}{}{}", patch[0], patch[1], patch[2], step, if *tta { " tta" } else { "" }))
             }
-            MaskOp::SignalErode { threshold, depth_cap, .. } =>
-                ("signal-erode", format!("{:.2} (depth {})", threshold, depth_cap)),
+            // Only the threshold: every other parameter has a row of its own below.
+            MaskOp::SignalErode { threshold, .. } => ("signal-erode", format!("{:.2}", threshold)),
         }
     }
 
@@ -2702,7 +2710,7 @@ impl PipelineFormState {
             MaskOp::GaussianSmooth { .. } => "Gaussian sigma in mm (Enter to edit)",
             MaskOp::HdBet { .. } => "HD-BET deep-learning brain extraction (needs a deep-learning build)",
             MaskOp::SignalErode { .. } =>
-                "Signal-gated erosion: peel low-signal boundary voxels (threshold as fraction of median, ←/→ to adjust)",
+                "Signal gate as a fraction of the in-mask median magnitude (←/→ to adjust); above ~0.85 it over-carves",
         }
     }
 
@@ -2758,6 +2766,20 @@ impl PipelineFormState {
             Some(&mut self.mask_combined_refinements)
         } else {
             self.mask_sections.get_mut(section).map(|s| &mut s.refinements)
+        }
+    }
+
+    /// Rows for one refinement list: the step itself, plus a row per extra parameter for the
+    /// steps that have more than one (signal-erode).
+    fn push_refinement_rows(&self, rows: &mut Vec<PipelineRow>, section: usize) {
+        let Some(refinements) = self.mask_refinements(section) else { return };
+        for (index, op) in refinements.iter().enumerate() {
+            rows.push(PipelineRow::MaskOpEntry { section, index });
+            if matches!(op, crate::pipeline::config::MaskOp::SignalErode { .. }) {
+                for param in 0..SIGNAL_ERODE_PARAMS.len() {
+                    rows.push(PipelineRow::MaskOpSignalErodeParam { section, index, param });
+                }
+            }
         }
     }
 
@@ -2949,6 +2971,37 @@ impl PipelineFormState {
             MaskOp::SignalErode { threshold, .. } => {
                 *threshold = ((*threshold + delta as f64 * 0.05).clamp(0.05, 0.95) * 100.0).round() / 100.0;
             }
+        }
+        self.mark_mask_custom();
+    }
+
+    /// Label and current value of one extra signal-erode parameter, for its own row.
+    pub fn signal_erode_param(&self, section: usize, index: usize, param: usize) -> Option<(&'static str, String)> {
+        use crate::pipeline::config::MaskOp;
+        let MaskOp::SignalErode { depth_cap, global_erosions, bias_sigma, min_component, .. } =
+            self.mask_refinements(section)?.get(index)? else { return None };
+        let (label, _) = *SIGNAL_ERODE_PARAMS.get(param)?;
+        let value = match param {
+            0 => if *depth_cap == 0 { "0 (no cap)".to_string() } else { format!("{depth_cap}") },
+            1 => format!("{global_erosions}"),
+            2 => format!("{bias_sigma:.1}"),
+            _ => format!("{min_component}"),
+        };
+        Some((label, value))
+    }
+
+    /// Adjust one extra signal-erode parameter with ←/→.
+    pub fn adjust_signal_erode_param(&mut self, section: usize, index: usize, param: usize, delta: isize) {
+        use crate::pipeline::config::MaskOp;
+        let Some(MaskOp::SignalErode { depth_cap, global_erosions, bias_sigma, min_component, .. }) =
+            self.mask_refinements_mut(section).and_then(|r| r.get_mut(index)) else { return };
+        let step_usize = |v: &mut usize, by: isize| *v = (*v as isize + delta * by).max(0) as usize;
+        match param {
+            0 => step_usize(depth_cap, 1),
+            1 => step_usize(global_erosions, 1),
+            // Voxels, like qsm-core's `bias_sigma`; 0 would divide out nothing.
+            2 => *bias_sigma = (*bias_sigma + delta as f64).max(1.0),
+            _ => step_usize(min_component, 100),
         }
         self.mark_mask_custom();
     }
@@ -4662,7 +4715,8 @@ impl App {
                     Some(PipelineRow::MaskCombineOp) => {
                         ps.toggle_mask_combine();
                     }
-                    Some(PipelineRow::MaskOpEntry { .. }) | Some(PipelineRow::MaskOpInput { .. })
+                    Some(PipelineRow::MaskOpSignalErodeParam { .. })
+                    | Some(PipelineRow::MaskOpEntry { .. }) | Some(PipelineRow::MaskOpInput { .. })
                     | Some(PipelineRow::MaskOpGenerator { .. }) | Some(PipelineRow::MaskOpGeneratorParam { .. }) => {
                         // Handled by Left/Right
                     }
@@ -4731,6 +4785,9 @@ impl App {
                         }
                         Some(PipelineRow::MaskOpEntry { section, index }) => {
                             ps.adjust_mask_op(*section, *index, delta);
+                        }
+                        Some(PipelineRow::MaskOpSignalErodeParam { section, index, param }) => {
+                            ps.adjust_signal_erode_param(*section, *index, *param, delta);
                         }
                         Some(PipelineRow::MaskOpGenerator { section }) => {
                             ps.adjust_mask_generator(*section, delta);
@@ -7529,6 +7586,64 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         // BET frac. intensity is a slider, not a discrete select — no modal.
         assert!(app.algo_modal.is_none());
+    }
+
+    /// Every signal-erode parameter is reachable and adjustable with ←/→ from the pipeline form,
+    /// and what the CLI preview says is what the rows show.
+    #[test]
+    fn test_pipeline_signal_erode_params_are_editable() {
+        use crate::pipeline::config::MaskOp;
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
+        app.pipeline_state.apply_mask_preset(2); // hd-bet + signal-erode
+
+        let focus_param = |app: &mut App, param: usize| {
+            let rows = app.pipeline_state.visible_rows();
+            app.pipeline_state.focus = app.pipeline_state.focusable_rows().iter()
+                .position(|&ri| matches!(rows[ri], PipelineRow::MaskOpSignalErodeParam { param: p, .. } if p == param))
+                .unwrap_or_else(|| panic!("param {param} row not focusable"));
+        };
+        let op = |app: &App| app.pipeline_state.mask_sections[0].refinements[0].clone();
+        let MaskOp::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } = op(&app)
+            else { panic!("preset should end in signal-erode") };
+
+        // The step row itself is the threshold; the four params each have their own row.
+        let rows = app.pipeline_state.visible_rows();
+        app.pipeline_state.focus = app.pipeline_state.focusable_rows().iter()
+            .position(|&ri| matches!(rows[ri], PipelineRow::MaskOpEntry { .. })).expect("step row");
+        app.handle_key(key(KeyCode::Right));
+        assert!(matches!(op(&app), MaskOp::SignalErode { threshold: t, .. } if t > threshold));
+
+        for (param, expect) in [
+            (0usize, "depth cap"), (1, "global erosions"), (2, "bias sigma"), (3, "min component"),
+        ] {
+            focus_param(&mut app, param);
+            app.handle_key(key(KeyCode::Right));
+            let MaskOp::SignalErode { depth_cap: d, global_erosions: g, bias_sigma: b, min_component: m, .. } = op(&app)
+                else { panic!("still signal-erode") };
+            let changed = match param {
+                0 => d > depth_cap,
+                1 => g > global_erosions,
+                2 => b > bias_sigma,
+                _ => m > min_component,
+            };
+            assert!(changed, "{expect} did not increase");
+            app.handle_key(key(KeyCode::Left)); // and back down
+        }
+
+        let MaskOp::SignalErode { depth_cap: d, global_erosions: g, bias_sigma: b, min_component: m, .. } = op(&app)
+            else { panic!("still signal-erode") };
+        assert_eq!((d, g, b, m), (depth_cap, global_erosions, bias_sigma, min_component), "←/→ round-trips");
+
+        // Counts clamp at zero rather than wrapping around.
+        focus_param(&mut app, 0);
+        for _ in 0..(depth_cap + 3) { app.handle_key(key(KeyCode::Left)); }
+        assert!(matches!(op(&app), MaskOp::SignalErode { depth_cap: 0, .. }));
+
+        // The generated command carries the edited values.
+        assert!(crate::tui::command::build_command_string(&app).contains("signal-erode:0.85:0:"),
+                "the edited signal-erode parameters are not in the generated command");
     }
 
     /// The combine row only appears once there is more than one section, and ←/→ toggles it.

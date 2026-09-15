@@ -233,9 +233,10 @@ impl MaskRecipe {
 }
 
 /// BET on the magnitude intersected with a thresholded phase-quality map, then hole-filled and
-/// eroded — the two-mask recipe from the QSMxT paper (Stewart et al., MRM 2022). BET bounds the
-/// head while the phase-quality threshold drops voxels whose phase cannot be unwrapped reliably;
-/// the holes that intersection leaves inside the brain are filled afterwards.
+/// eroded — the two-mask recipe recommended by the ISMRM electro-magnetic tissue properties study
+/// group consensus (Bilgic et al., MRM 2024; doi:10.1002/mrm.30006). BET bounds the head while the
+/// phase-quality threshold drops voxels whose phase cannot be unwrapped reliably; the holes that
+/// intersection leaves inside the brain are filled afterwards.
 pub fn bet_and_phase_mask_recipe() -> MaskRecipe {
     MaskRecipe {
         sections: vec![
@@ -530,7 +531,7 @@ mod tests {
         assert_eq!(acc, [1, 0, 0, 0]);
     }
 
-    /// The figure-2 recipe: BET on the magnitude intersected with thresholded phase quality,
+    /// The consensus recipe: BET on the magnitude intersected with thresholded phase quality,
     /// with the intersection's holes filled afterwards.
     #[test]
     fn bet_and_phase_recipe_is_an_intersection_with_post_combine_steps() {
