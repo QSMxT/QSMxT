@@ -1,7 +1,7 @@
 use log::info;
-use super::common::{load_nifti, save_mask, run_mask_operation};
+use super::common::{load_mask, load_nifti, save_mask, run_mask_operation};
 use crate::cli::{MaskCommand, MaskCommonArgs};
-use crate::pipeline::config::{parse_mask_op, MaskOp};
+use crate::pipeline::config::{parse_mask_op, MaskCombine, MaskOp};
 
 /// Apply `--op` refinements in order. `magnitude` is the input image when it is one (the
 /// threshold/BET/HD-BET subcommands) — needed by `signal-erode`.
@@ -38,7 +38,7 @@ fn apply_mask_op(mut mask: Vec<u8>, op: &MaskOp, grid: &qsm_core::Grid, magnitud
         MaskOp::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } => {
             let mag = magnitude.ok_or_else(|| crate::error::QsmxtError::Config(
                 "--op signal-erode needs the magnitude: use it with the otsu/value/percentile/bet/hd-bet \
-                 subcommands, whose input is the magnitude image".into(),
+                 subcommands, whose input is the magnitude image, or pass --magnitude to `mask and`/`mask or`".into(),
             ))?;
             let params = qsm_core::utils::SignalErosionParams {
                 threshold: *threshold, depth_cap: *depth_cap, global_erosions: *global_erosions,
@@ -169,6 +169,8 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
                 qsm_core::utils::fill_holes(mask, grid, max_size)
             })
         }
+        MaskCommand::And(args) => combine(args, MaskCombine::And),
+        MaskCommand::Or(args) => combine(args, MaskCombine::Or),
         MaskCommand::Smooth(args) => {
             let nifti = load_nifti(&args.input)?;
             let grid = super::common::nifti_grid(&nifti);
@@ -183,6 +185,46 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
             Ok(())
         }
     }
+}
+
+/// Fold masks together with `mode`, then apply `--op` refinements to the result — the standalone
+/// form of what `qsmxt run --mask-combine` does between `--mask` sections.
+fn combine(args: crate::cli::MaskCombineCliArgs, mode: MaskCombine) -> crate::Result<()> {
+    let (mut combined, reference) = load_mask(&args.inputs[0])?;
+    for path in &args.inputs[1..] {
+        let (mask, nifti) = load_mask(path)?;
+        if nifti.dims != reference.dims {
+            return Err(crate::error::QsmxtError::Config(format!(
+                "{} is {:?} but {} is {:?} — masks must be on the same grid",
+                args.inputs[0].display(), reference.dims, path.display(), nifti.dims,
+            )));
+        }
+        mode.accumulate(&mut combined, &mask);
+    }
+
+    // Only `signal-erode` reads it, and only if asked for.
+    let magnitude = args.magnitude.as_deref().map(load_nifti).transpose()?;
+    if let Some(mag) = &magnitude {
+        if mag.dims != reference.dims {
+            return Err(crate::error::QsmxtError::Config(format!(
+                "--magnitude {} is {:?} but the masks are {:?}",
+                args.magnitude.as_ref().unwrap().display(), mag.dims, reference.dims,
+            )));
+        }
+    }
+
+    let grid = super::common::nifti_grid(&reference);
+    let before: usize = combined.iter().map(|&m| m as usize).sum();
+    info!("Combined {} masks with {} ({} voxels)", args.inputs.len(), mode, before);
+    let mask = apply_ops(combined, &args.ops, &grid, magnitude.as_ref().map(|m| m.data.as_slice()))?;
+
+    save_mask(&args.output, &mask, &reference)?;
+    let count: usize = mask.iter().map(|&m| m as usize).sum();
+    info!(
+        "Mask saved to {} ({} voxels, {:.1}%)",
+        args.output.display(), count, 100.0 * count as f64 / mask.len() as f64
+    );
+    Ok(())
 }
 
 fn save_and_log(common: &MaskCommonArgs, mask: &[u8], nifti: &qsm_core::io::NiftiData) -> crate::Result<()> {

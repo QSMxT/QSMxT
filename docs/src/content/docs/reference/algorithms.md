@@ -80,6 +80,9 @@ BET bounds the head, the phase-quality threshold drops voxels whose phase
 cannot be unwrapped reliably, and the holes their intersection leaves inside
 the brain are filled afterwards.
 
+To try combinations on masks you already have, without a pipeline run, use
+[`qsmxt mask and` / `qsmxt mask or`](/QSMxT/reference/tools/#masking--qsmxt-mask).
+
 ## Oblique acquisitions
 
 The dipole kernel is built in the voxel grid, so an acquisition whose slices

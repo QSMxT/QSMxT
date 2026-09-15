@@ -26,7 +26,7 @@ pub mod validate;
 mod integration_tests {
     use crate::cli::*;
     use crate::testutils;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     fn default_run_args(bids_dir: PathBuf, output_dir: PathBuf) -> RunArgs {
         RunArgs {
@@ -200,6 +200,78 @@ mod integration_tests {
         c.ops = vec!["signal-erode:0.8:2:0:4:1".to_string()];
         super::mask::execute(MaskCommand::Otsu(MaskOtsuArgs { common: c })).unwrap();
         assert!(output.exists());
+    }
+
+    fn read_mask(path: &Path) -> Vec<u8> {
+        super::common::load_mask(path).expect("read mask").0
+    }
+
+    /// `mask and` / `mask or` are set intersection and union, voxel for voxel.
+    #[test]
+    fn test_mask_and_or() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (dir.path().join("a.nii"), dir.path().join("b.nii"));
+        // Overlapping halves, so neither is a subset of the other.
+        let n = testutils::N_VOXELS;
+        testutils::write_mask_where(&a, |i| i < n * 2 / 3);
+        testutils::write_mask_where(&b, |i| i >= n / 3);
+
+        let combine = |mode: fn(crate::cli::MaskCombineCliArgs) -> MaskCommand, out: &Path, ops: Vec<String>| {
+            let cmd = crate::cli::MaskCombineCliArgs {
+                inputs: vec![a.clone(), b.clone()], output: out.to_path_buf(), ops, magnitude: None,
+            };
+            super::mask::execute(mode(cmd)).unwrap();
+            read_mask(out)
+        };
+
+        let and = combine(MaskCommand::And, &dir.path().join("and.nii"), vec![]);
+        let or = combine(MaskCommand::Or, &dir.path().join("or.nii"), vec![]);
+        let (ma, mb) = (read_mask(&a), read_mask(&b));
+        for i in 0..n {
+            assert_eq!(and[i], ma[i] & mb[i], "voxel {i}");
+            assert_eq!(or[i], ma[i] | mb[i], "voxel {i}");
+        }
+        let count = |m: &[u8]| m.iter().map(|&v| v as usize).sum::<usize>();
+        assert_eq!(count(&and) + count(&or), count(&ma) + count(&mb), "inclusion-exclusion");
+
+        // --op runs on the combined mask, not on the inputs.
+        let eroded = combine(MaskCommand::And, &dir.path().join("e.nii"), vec!["erode:1".to_string()]);
+        assert!(count(&eroded) < count(&and), "erode:1 did not shrink the combined mask");
+    }
+
+    /// Masks on different grids cannot be combined, and say so by name.
+    #[test]
+    fn test_mask_combine_rejects_mismatched_grids() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, small) = (dir.path().join("a.nii"), dir.path().join("small.nii"));
+        testutils::write_mask_where(&a, |_| true);
+        testutils::write_mismatched_volume(&small, 1.0);
+
+        let err = super::mask::execute(MaskCommand::And(crate::cli::MaskCombineCliArgs {
+            inputs: vec![a, small], output: dir.path().join("out.nii"), ops: vec![], magnitude: None,
+        })).unwrap_err();
+        assert!(format!("{err}").contains("same grid"), "{err}");
+    }
+
+    /// signal-erode after a combine needs a magnitude, and `--magnitude` is how it gets one.
+    #[test]
+    fn test_mask_combine_signal_erode_needs_magnitude() {
+        let dir = tempfile::tempdir().unwrap();
+        let (a, b) = (dir.path().join("a.nii"), dir.path().join("b.nii"));
+        testutils::write_mask_where(&a, |_| true);
+        testutils::write_mask_where(&b, |_| true);
+        let args = |magnitude| crate::cli::MaskCombineCliArgs {
+            inputs: vec![a.clone(), b.clone()], output: dir.path().join("out.nii"),
+            ops: vec!["signal-erode:0.8:2:0:4:1".to_string()], magnitude,
+        };
+
+        let err = super::mask::execute(MaskCommand::And(args(None))).unwrap_err();
+        assert!(format!("{err}").contains("--magnitude"), "{err}");
+
+        let mag = dir.path().join("mag.nii");
+        testutils::write_magnitude(&mag);
+        super::mask::execute(MaskCommand::And(args(Some(mag)))).unwrap();
+        assert!(dir.path().join("out.nii").exists());
     }
 
     #[test]

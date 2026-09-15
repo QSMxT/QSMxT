@@ -1277,6 +1277,27 @@ pub enum MaskCommand {
     FillHoles(MaskFillHolesArgs),
     /// Gaussian smooth a binary mask (re-thresholds at 0.5)
     Smooth(MaskSmoothArgs),
+    /// Intersect binary masks: keep voxels every input keeps (the `run --mask-combine and`)
+    And(MaskCombineCliArgs),
+    /// Union binary masks: keep voxels any input keeps (the `run --mask-combine or`)
+    Or(MaskCombineCliArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct MaskCombineCliArgs {
+    /// Input mask NIfTI files (two or more, on the same grid)
+    #[arg(num_args = 2..)]
+    pub inputs: Vec<PathBuf>,
+    /// Output mask NIfTI file
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// Refinement operation applied to the combined mask (repeatable, applied in order) —
+    /// the `run --mask-refine` of this command. Examples: fill-holes:0, erode:1, close:1
+    #[arg(long = "op")]
+    pub ops: Vec<String>,
+    /// Magnitude image, needed only by `--op signal-erode`
+    #[arg(long)]
+    pub magnitude: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]

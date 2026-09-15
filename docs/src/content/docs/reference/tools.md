@@ -27,10 +27,25 @@ Generate or refine binary masks.
 | `close` | Morphological closing |
 | `fill-holes` | Fill holes in a binary mask |
 | `smooth` | Gaussian smooth (re-thresholded at 0.5) |
+| `and` / `or` | Intersect / union two or more masks on the same grid |
 
 The generating subcommands (`otsu`, `value`, `percentile`, `bet`, `hd-bet`) also
 accept `--op` refinements, applied in order, e.g. `--op erode:2` or
 `--op signal-erode` (signal-gated erosion, which uses the input magnitude).
+
+`and` and `or` are the standalone form of the pipeline's
+[`--mask-combine`](/QSMxT/reference/algorithms/#combining-sections), for trying
+combinations on masks you already have without a pipeline run. Their `--op`
+refinements run on the *combined* mask, like `--mask-refine` does:
+
+```sh
+qsmxt mask bet mag.nii -o bet.nii
+qsmxt mask otsu quality.nii -o phase.nii
+qsmxt mask and bet.nii phase.nii -o brain.nii --op fill-holes:0 --op erode:1
+```
+
+`--op signal-erode` needs a magnitude image, which these subcommands take as
+`--magnitude` (their own inputs being masks).
 
 ## Coil combination — `qsmxt combine`
 
