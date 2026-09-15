@@ -46,6 +46,13 @@ followed by a generator and refinement operations.
   only the largest. In the TUI each of these is its own row under the step, so
   you can nudge them with ←/→ and watch the generated command update.
 
+  `global_erosions` is not the same as putting an `erode` step in front of
+  `signal-erode`: the gate and the coil-bias estimate are computed from the
+  mask as it arrives, and the depth cap is measured from *that* surface, so
+  these erosions spend the depth budget and leave the gate unchanged. An `erode`
+  step beforehand shrinks the mask the gate is derived from and resets the depth
+  budget. The default of 1 is the QSM-CI harmonization setting.
+
 For example, `--mask magnitude,hd-bet:low-memory,signal-erode` is the `hd-bet`
 preset with the low-memory patch size.
 

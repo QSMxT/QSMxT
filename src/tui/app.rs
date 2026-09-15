@@ -923,7 +923,7 @@ pub const MASK_PRESET_CUSTOM: usize = 4;
 /// row itself: label, help, and how ←/→ moves them. Order matches the row order.
 pub const SIGNAL_ERODE_PARAMS: &[(&str, &str)] = &[
     ("Depth Cap", "Never peel deeper than this many voxels below the original surface (0 = no cap)"),
-    ("Global Erosions", "Plain erosions applied before the signal gate — trims the bright skull/CSF sliver"),
+    ("Plain Erosions", "Plain erosions run inside signal-erode, before the gate — unlike a separate erode step they spend the depth budget and leave the gate unchanged"),
     ("Bias Sigma", "Gaussian scale (voxels) of the receive-coil bias estimate divided out of the magnitude"),
     ("Min Component", "Keep every connected component with at least this many voxels, not just the largest"),
 ];
@@ -7616,7 +7616,7 @@ mod tests {
         assert!(matches!(op(&app), MaskOp::SignalErode { threshold: t, .. } if t > threshold));
 
         for (param, expect) in [
-            (0usize, "depth cap"), (1, "global erosions"), (2, "bias sigma"), (3, "min component"),
+            (0usize, "depth cap"), (1, "plain erosions"), (2, "bias sigma"), (3, "min component"),
         ] {
             focus_param(&mut app, param);
             app.handle_key(key(KeyCode::Right));
