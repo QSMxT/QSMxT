@@ -17,6 +17,7 @@ operates on with `--masking-input`.
 | `robust-threshold` | Otsu thresholding of the phase-quality map, refined with dilation, hole-filling and erosion (default) |
 | `bet` | Brain Extraction Tool on the magnitude image |
 | `hd-bet` | HD-BET deep-learning brain extraction on the magnitude image, followed by signal-gated erosion (the QSM-CI harmonization masking). Needs a deep-learning build; the weights (~120 MB, CC-BY-NC-4.0) are downloaded on first use |
+| `bet-and-phase` | BET on the first-echo magnitude intersected with an Otsu-thresholded phase-quality map, then hole-filled and eroded (the masking recommended by the [ISMRM EMTP study group consensus](https://doi.org/10.1002/mrm.30006)) |
 
 **Masking input** (`--masking-input`): `magnitude-first`, `magnitude`,
 `magnitude-last`, `phase-quality`. For example,
@@ -39,10 +40,45 @@ followed by a generator and refinement operations.
   below `threshold` × the in-mask median (default 0.80). It works inward through
   sinus and skull-base signal dropout, never more than `depth_cap` voxels deep
   (default 5), after `global_erosions` plain erosions (default 1). Dark interior
-  structures are never removed.
+  structures are never removed. `bias_sigma` (default 12) is the Gaussian scale
+  in voxels of the receive-coil bias divided out first, and `min_component`
+  (default 1000) keeps every connected component that size or larger rather than
+  only the largest. In the TUI each of these is its own row under the step, so
+  you can nudge them with ←/→ and watch the generated command update.
+
+  `global_erosions` is not the same as putting an `erode` step in front of
+  `signal-erode`: the gate and the coil-bias estimate are computed from the
+  mask as it arrives, and the depth cap is measured from *that* surface, so
+  these erosions spend the depth budget and leave the gate unchanged. An `erode`
+  step beforehand shrinks the mask the gate is derived from and resets the depth
+  budget. The default of 1 is the QSM-CI harmonization setting.
 
 For example, `--mask magnitude,hd-bet:low-memory,signal-erode` is the `hd-bet`
 preset with the low-memory patch size.
+
+### Combining sections
+
+With more than one `--mask` section, `--mask-combine` decides how they fold
+together: `or` (the default) keeps a voxel any section keeps, and `and` keeps
+only voxels every section keeps. `--mask-refine` (repeatable) then applies
+refinement operations to the combined mask — which is where hole-filling
+belongs, since filling a section's holes before an intersection is not the same
+as filling the intersection's.
+
+The `bet-and-phase` preset is exactly this:
+
+```bash
+qsmxt run bids/ \
+  --mask magnitude-first,bet:0.50 \
+  --mask phase-quality,threshold:otsu \
+  --mask-combine and \
+  --mask-refine fill-holes:0 \
+  --mask-refine erode:1
+```
+
+BET bounds the head, the phase-quality threshold drops voxels whose phase
+cannot be unwrapped reliably, and the holes their intersection leaves inside
+the brain are filled afterwards.
 
 ## Coil combination
 

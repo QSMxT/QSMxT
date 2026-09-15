@@ -262,6 +262,11 @@ const CITE_HDBET: Citation = Citation {
     text: "Isensee, F., Schell, M., Pflueger, I., et al. (2019). \"Automated brain extraction of multisequence MRI using artificial neural networks.\" *Human Brain Mapping*, 40(17):4952-4964. https://doi.org/10.1002/hbm.24750",
 };
 
+const CITE_QSM_CONSENSUS: Citation = Citation {
+    key: "bilgic2024consensus",
+    text: "Bilgic, B., Costagli, M., Chan, K.-S., et al. (2024). \"Recommended implementation of quantitative susceptibility mapping for clinical research in the brain: A consensus of the ISMRM electro-magnetic tissue properties study group.\" *Magnetic Resonance in Medicine*, 91(5):1834-1862. https://doi.org/10.1002/mrm.30006",
+};
+
 const CITE_QSMCI_SIGNAL_EROSION: Citation = Citation {
     key: "qsmci",
     text: "QSM-CI: signal-gated mask erosion (QSM-CI harmonization masking, `hd-bet-qsmci`). https://github.com/QSMxT/QSM-CI",
@@ -496,6 +501,28 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
     }
 }
 
+/// Prose for a list of mask refinement ops, in the order they run.
+fn describe_refinements(ops: &[MaskOp], citations: &mut Vec<&Citation>) -> Vec<String> {
+    ops.iter().map(|op| match op {
+        MaskOp::Erode { iterations } => format!("erosion ({} iteration{})", iterations, if *iterations != 1 { "s" } else { "" }),
+        MaskOp::Dilate { iterations } => format!("dilation ({} iteration{})", iterations, if *iterations != 1 { "s" } else { "" }),
+        MaskOp::Close { radius } => format!("morphological closing (radius={})", radius),
+        MaskOp::FillHoles { max_size: 0 } => "hole-filling".to_string(),
+        MaskOp::FillHoles { max_size } => format!("hole-filling (max {} voxels)", max_size),
+        MaskOp::GaussianSmooth { sigma_mm } => format!("Gaussian smoothing (sigma={:.1} mm)", sigma_mm),
+        MaskOp::SignalErode { threshold, depth_cap, global_erosions, .. } => {
+            add_citation(citations, &CITE_QSMCI_SIGNAL_EROSION);
+            let depth = if *depth_cap == 0 { "no depth limit".to_string() } else { format!("at most {} voxels deep", depth_cap) };
+            let global = if *global_erosions > 0 { format!("{} plain erosion{} then ", global_erosions, if *global_erosions != 1 { "s" } else { "" }) } else { String::new() };
+            format!(
+                "signal-gated erosion ({}removal of boundary voxels below {:.2} of the median bias-corrected magnitude, {}; QSM-CI)",
+                global, threshold, depth,
+            )
+        }
+        _ => format!("{}", op),
+    }).collect()
+}
+
 fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citations: &mut Vec<&Citation>) {
     if config.masking.sections.is_empty() {
         return;
@@ -606,24 +633,7 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
         parts.push(gen_desc);
 
         // Refinements
-        let refinement_descs: Vec<String> = section.refinements.iter().map(|op| match op {
-            MaskOp::Erode { iterations } => format!("erosion ({} iteration{})", iterations, if *iterations != 1 { "s" } else { "" }),
-            MaskOp::Dilate { iterations } => format!("dilation ({} iteration{})", iterations, if *iterations != 1 { "s" } else { "" }),
-            MaskOp::Close { radius } => format!("morphological closing (radius={})", radius),
-            MaskOp::FillHoles { max_size: 0 } => "hole-filling".to_string(),
-            MaskOp::FillHoles { max_size } => format!("hole-filling (max {} voxels)", max_size),
-            MaskOp::GaussianSmooth { sigma_mm } => format!("Gaussian smoothing (sigma={:.1} mm)", sigma_mm),
-            MaskOp::SignalErode { threshold, depth_cap, global_erosions, .. } => {
-                add_citation(citations, &CITE_QSMCI_SIGNAL_EROSION);
-                let depth = if *depth_cap == 0 { "no depth limit".to_string() } else { format!("at most {} voxels deep", depth_cap) };
-                let global = if *global_erosions > 0 { format!("{} plain erosion{} then ", global_erosions, if *global_erosions != 1 { "s" } else { "" }) } else { String::new() };
-                format!(
-                    "signal-gated erosion ({}removal of boundary voxels below {:.2} of the median bias-corrected magnitude, {}; QSM-CI)",
-                    global, threshold, depth,
-                )
-            }
-            _ => format!("{}", op),
-        }).collect();
+        let refinement_descs = describe_refinements(&section.refinements, citations);
 
         if !refinement_descs.is_empty() {
             parts.push(format!("followed by {}", join_list(&refinement_descs)));
@@ -635,11 +645,35 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
     if section_count == 1 {
         sentences.push(format!("A brain mask was generated using {}.", section_descs[0]));
     } else {
+        let (op, how) = match config.masking.combine {
+            MaskCombine::Or => ("OR", "union"),
+            MaskCombine::And => ("AND", "intersection"),
+        };
         sentences.push(format!(
-            "A brain mask was generated by combining {} mask sections (OR operation): {}.",
-            section_count,
-            join_list(&section_descs)
+            "A brain mask was generated by combining {} mask sections ({} operation, i.e. their {}): {}.",
+            section_count, op, how, join_list(&section_descs)
         ));
+    }
+
+    let combined_descs = describe_refinements(&config.masking.refinements, citations);
+    if !combined_descs.is_empty() {
+        sentences.push(format!(
+            "The {} mask was then refined by {}.",
+            if section_count == 1 { "resulting" } else { "combined" },
+            join_list(&combined_descs)
+        ));
+    }
+
+    // Exactly the consensus recipe — say so, and cite it.
+    let consensus = bet_and_phase_mask_recipe();
+    if config.masking.sections == consensus.sections
+        && config.masking.combine == consensus.combine
+        && config.masking.refinements == consensus.refinements
+    {
+        add_citation(citations, &CITE_QSM_CONSENSUS);
+        sentences.push(
+            "This masking follows the recommendation of the ISMRM electro-magnetic tissue \
+             properties study group consensus (Bilgic et al., 2024).".to_string());
     }
 }
 
@@ -702,6 +736,7 @@ fn cite_inline(cite: &Citation) -> &'static str {
         "zhou2014" => "Zhou et al., 2014",
         "kames2018" => "Kames et al., 2018",
         "bilgic2014tv" => "Bilgic et al., 2014",
+        "bilgic2024consensus" => "Bilgic et al., 2024",
         "shmueli2009" => "Shmueli et al., 2009",
         "bilgic2014l2" => "Bilgic et al., 2014",
         "liu2011medi" => "Liu et al., 2011",
@@ -762,6 +797,29 @@ fn join_list(items: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The `bet-and-phase` recipe names the operation, the intersection it means, and the
+    /// consensus it comes from — with the citation in the reference list.
+    #[test]
+    fn test_consensus_masking_methods() {
+        let recipe = bet_and_phase_mask_recipe();
+        let mut config = PipelineConfig::default();
+        config.masking.sections = recipe.sections.clone();
+        config.masking.combine = recipe.combine;
+        config.masking.refinements = recipe.refinements.clone();
+
+        let out = generate_methods(&config);
+        assert!(out.contains("AND operation, i.e. their intersection"), "out: {out}");
+        assert!(out.contains("The combined mask was then refined by hole-filling"), "out: {out}");
+        assert!(out.contains("electro-magnetic tissue properties study group consensus"), "out: {out}");
+        assert!(out.contains("10.1002/mrm.30006"), "consensus citation missing: {out}");
+
+        // A different recipe combined the same way is not the consensus one, and must not claim to be.
+        config.masking.refinements.clear();
+        let out = generate_methods(&config);
+        assert!(out.contains("AND operation"));
+        assert!(!out.contains("study group consensus"), "claimed the consensus for a modified recipe: {out}");
+    }
 
     #[test]
     fn test_default_methods() {

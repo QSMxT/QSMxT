@@ -114,6 +114,8 @@ mod integration_tests {
                 mask_preset: None,
                 use_custom_masks: None,
                 mask_sections_cli: None,
+                mask_combine: None,
+                mask_refinements_cli: None,
             },
         }
     }

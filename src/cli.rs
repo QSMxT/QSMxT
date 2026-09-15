@@ -1060,8 +1060,9 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub obliquity_threshold: Option<f64>,
 
-    /// Mask preset: robust-threshold, bet, or hd-bet (HD-BET deep-learning brain extraction +
-    /// signal-gated erosion; needs a deep-learning build)
+    /// Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction +
+    /// signal-gated erosion; needs a deep-learning build), or bet-and-phase (BET on the
+    /// magnitude AND a thresholded phase-quality map, then hole-filled and eroded)
     #[arg(long, value_enum)]
     pub mask_preset: Option<MaskPresetArg>,
 
@@ -1071,7 +1072,7 @@ pub struct PipelineArgs {
     #[arg(long, num_args = 0..=1, default_missing_value = "*")]
     pub use_custom_masks: Option<String>,
 
-    /// Define a mask section (repeatable, multiple sections are OR'd together).
+    /// Define a mask section (repeatable; multiple sections are combined with --mask-combine).
     /// Format: <input>,<generator>,<refinement1>,<refinement2>,...
     /// Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2
     /// Example: magnitude,bet:0.5,erode:2
@@ -1079,6 +1080,18 @@ pub struct PipelineArgs {
     ///   signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`)
     #[arg(long = "mask", num_args = 1)]
     pub mask_sections_cli: Option<Vec<String>>,
+
+    /// How to combine multiple --mask sections: `or` (union, the default) or `and`
+    /// (intersection — a voxel survives only where every section keeps it).
+    #[arg(long, value_enum)]
+    pub mask_combine: Option<MaskCombineArg>,
+
+    /// Refinement applied to the combined mask, after --mask-combine (repeatable).
+    /// Takes the same refinement ops as --mask, e.g. `erode:2` or `fill-holes:0`; generators
+    /// (threshold/bet/hd-bet) belong in a --mask section instead.
+    /// Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1
+    #[arg(long = "mask-refine", num_args = 1)]
+    pub mask_refinements_cli: Option<Vec<String>>,
 }
 
 #[derive(Parser, Debug)]
@@ -2753,5 +2766,14 @@ pub enum QsmReferenceArg {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum MaskPresetArg {
-    RobustThreshold, Bet, HdBet,
+    RobustThreshold, Bet, HdBet, BetAndPhase,
+}
+
+/// How multiple `--mask` sections fold into the final mask.
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum MaskCombineArg {
+    /// Union — keep a voxel any section keeps (default).
+    Or,
+    /// Intersection — keep only voxels every section keeps.
+    And,
 }

@@ -1310,10 +1310,29 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                     Style::default().fg(Color::DarkGray),
                 ))
             }
-            PipelineRow::MaskOrSeparator => {
+            PipelineRow::MaskCombineOp => {
+                let mode = format!("{}", app.pipeline_state.mask_combine).to_uppercase();
+                let sep = Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD);
+                if focused {
+                    if focused_help.is_none() {
+                        focused_help = Some(
+                            "How the mask sections combine: OR = union, AND = intersection (←/→ to change)".to_string());
+                    }
+                    Line::from(vec![
+                        Span::styled("  ── COMBINED WITH ", sep),
+                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(mode, Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)),
+                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
+                        Span::styled(" ──", sep),
+                    ])
+                } else {
+                    Line::from(Span::styled(format!("  ── COMBINED WITH {} ──", mode), sep))
+                }
+            }
+            PipelineRow::MaskCombinedHeader => {
                 Line::from(Span::styled(
-                    "  ── COMBINED WITH ──",
-                    Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+                    "  ── On the combined mask ──",
+                    Style::default().fg(Color::DarkGray),
                 ))
             }
             PipelineRow::MaskOpInput { section } => {
@@ -1478,7 +1497,10 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 }
             }
             PipelineRow::MaskOpEntry { section, index } => {
-                let op = &app.pipeline_state.mask_sections[*section].refinements[*index];
+                let Some(op) = app.pipeline_state.mask_refinements(*section).and_then(|r| r.get(*index)) else {
+                    lines.push(Line::from(""));
+                    continue;
+                };
                 let (op_type, op_val) = super::app::PipelineFormState::mask_op_label_value(op);
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
@@ -1509,6 +1531,35 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                     ])
                 }
             }
+            PipelineRow::MaskOpSignalErodeParam { section, index, param } => {
+                let Some((label, value)) = app.pipeline_state.signal_erode_param(*section, *index, *param) else {
+                    lines.push(Line::from(""));
+                    continue;
+                };
+                let label_style = if focused {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                // Indented one level past the step row, so it reads as that step's parameter.
+                let label = format!("      {:18}", format!("{label}:"));
+                if focused {
+                    if focused_help.is_none() {
+                        focused_help = Some(super::app::SIGNAL_ERODE_PARAMS[*param].1.to_string());
+                    }
+                    Line::from(vec![
+                        Span::styled(label, label_style),
+                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(value, Style::default().fg(Color::Cyan)),
+                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::styled(label, label_style),
+                        Span::styled(value, Style::default().fg(Color::Gray)),
+                    ])
+                }
+            }
             PipelineRow::MaskOpAddStep { section } => {
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
@@ -1535,6 +1586,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 }
             }
             PipelineRow::MaskOpAddSection => {
+
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
@@ -1817,6 +1869,57 @@ mod tests {
         // Move through fields
         app.active_field = 4;
         let _ = render_app(&mut app);
+    }
+
+    /// Every signal-erode parameter gets its own labelled row under the step.
+    #[test]
+    fn test_draw_signal_erode_param_rows() {
+        use crate::tui::app::{PipelineRow, SIGNAL_ERODE_PARAMS};
+        let mut app = App::new();
+        app.active_tab = crate::tui::app::TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
+        app.pipeline_state.apply_mask_preset(2); // hd-bet + signal-erode
+
+        let rows = app.pipeline_state.visible_rows();
+        let params: Vec<usize> = rows.iter().filter_map(|r| match r {
+            PipelineRow::MaskOpSignalErodeParam { param, .. } => Some(*param),
+            _ => None,
+        }).collect();
+        assert_eq!(params, (0..SIGNAL_ERODE_PARAMS.len()).collect::<Vec<_>>());
+
+        // Focus the last one, so every param row is scrolled into view together.
+        app.pipeline_state.focus = app.pipeline_state.focusable_rows().iter()
+            .position(|&ri| matches!(rows[ri], PipelineRow::MaskOpSignalErodeParam { param: 3, .. }))
+            .expect("min component row not focusable");
+        let terminal = render_app(&mut app);
+        let text: String = terminal.backend().buffer().content().iter().map(|c| c.symbol()).collect();
+        for (label, _) in SIGNAL_ERODE_PARAMS {
+            assert!(text.contains(label), "{label} row not drawn");
+        }
+        assert!(text.contains("connected component"), "focused param's help not drawn");
+    }
+
+    /// A two-section recipe renders its combine mode and the steps that run on the combined mask.
+    #[test]
+    fn test_draw_mask_combine_rows() {
+        use crate::tui::app::{PipelineRow, MASK_COMBINED_SECTION};
+        let mut app = App::new();
+        app.active_tab = crate::tui::app::TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
+        app.pipeline_state.apply_mask_preset(3); // bet-and-phase: two sections, AND
+
+        // Focus the combine row so the focused branch renders too.
+        let rows = app.pipeline_state.visible_rows();
+        assert!(rows.iter().any(|r| matches!(r, PipelineRow::MaskCombinedHeader)));
+        assert!(rows.iter().any(|r| matches!(r, PipelineRow::MaskOpEntry { section: MASK_COMBINED_SECTION, .. })));
+        app.pipeline_state.focus = app.pipeline_state.focusable_rows().iter()
+            .position(|&ri| matches!(rows[ri], PipelineRow::MaskCombineOp))
+            .expect("MaskCombineOp not focusable");
+
+        let terminal = render_app(&mut app);
+        let text: String = terminal.backend().buffer().content().iter().map(|c| c.symbol()).collect();
+        assert!(text.contains("COMBINED WITH"), "combine row not drawn");
+        assert!(text.contains("AND"), "combine mode not drawn");
     }
 
     #[test]
