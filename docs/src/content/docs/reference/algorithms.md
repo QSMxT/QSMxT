@@ -91,24 +91,37 @@ The dipole kernel is built in the voxel grid, so an acquisition whose slices
 are tilted relative to B0 has to be handled explicitly. QSMxT applies the first
 of these that fits:
 
-1. **A `B0_dir` in the JSON sidecar wins.** It describes the acquisition better
+1. **A deep-learning method forces resampling to axial.** These learned the
+   dipole relationship from axially-acquired data and take no direction
+   argument, so nothing else can help them.
+2. **A `B0_dir` in the JSON sidecar wins.** It describes the acquisition better
    than the affine can.
-2. **`--obliquity-threshold <degrees>` resamples to axial** when the obliquity
+3. **`--obliquity-threshold <degrees>` resamples to axial** when the obliquity
    exceeds it, as QSMxT 8.x did. Off by default (`-1`).
-3. **Otherwise the kernel is rotated** — B0 is taken from the affine and used
+4. **Otherwise the kernel is rotated** — B0 is taken from the affine and used
    as-is. This is the default, and normally the one you want.
 
 Rotating the kernel is preferred because it is exact and free: the dipole
 kernel takes the field direction as a parameter, so pointing it the right way
-costs nothing, keeps the acquired grid, and interpolates nothing. Resampling
-exists for two reasons — reproducing 8.x output, and the deep-learning methods,
-which have no direction input and must be given axial data.
+costs nothing, keeps the acquired grid, and interpolates nothing.
 
-The cost is not small. A 256×288×48 UK Biobank SWI at 32.5° obliquity resamples
-to 272×339×77, roughly twice the voxels, and took 459 s against 246 s for the
-same reconstruction on the acquired grid. The resampled outputs also land on a
-different grid from the input, so any transform you already hold — a FLIRT
-matrix, say — no longer describes them.
+The cost of the alternative is not small. A 256×288×48 UK Biobank SWI at 32.5°
+obliquity resamples to 272×339×77, roughly twice the voxels, and took 459 s
+against 246 s for the same reconstruction on the acquired grid. Resampled
+outputs are returned to the acquired grid afterwards unless you ask otherwise;
+see [Output space](#output-space).
+
+### Which methods need axial data
+
+| | behaviour on oblique data |
+|---|---|
+| all 18 classical dipole inversions, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
+| SHARP, V-SHARP, RESHARP, iSMV, LBV, HARPERELLA, iHARPERELLA, BFRnet | unaffected — never uses B0 |
+| all 11 deep-learning inversions, SUSEP-Net, χ-sepnet | **resampled first** — assumes B0 is +z |
+
+Background removal by the spherical mean value property is genuinely
+direction-independent rather than merely untested, which is why PDF is the only
+background remover in the first row.
 
 `qsmxt validate` reports what a dataset will do:
 
@@ -131,10 +144,73 @@ magnitude and phase together; if you use `qsmxt resample` by hand, pass
 `--phase` with `--magnitude` rather than resampling phase as a plain volume.
 :::
 
-Runs with a matching MESE acquisition (for R2′ / χ-separation) are never
-resampled — the MESE is read from BIDS on its own grid, so resampling only the
-GRE would leave the two inconsistent. Those runs use the affine-derived B0
-direction instead, and say so in the log.
+Runs with a matching MESE acquisition (for R2′ / χ-separation) are not
+resampled by the obliquity threshold — the MESE is read from BIDS on its own
+grid, so moving only the GRE would leave the two inconsistent. Those runs use
+the affine-derived B0 direction instead, and say so in the log. A
+deep-learning method on an oblique run with a MESE has no good answer available
+and is refused rather than guessed at.
+
+## Output space
+
+A run that was resampled to axial reconstructs on the resampled grid, and by
+default its derivatives are returned to the grid the data arrived on. This
+matters more than it sounds: a FLIRT matrix is defined in a space derived from
+the image's dimensions and voxel sizes, so applying one to a volume on a
+different grid gives a wrong registration rather than an error.
+
+- `--output-space acquired` (default) writes derivatives on the acquired grid.
+  Costs a second interpolation, so the result is slightly smoother than a
+  reconstruction that was never resampled.
+- `--output-space working` leaves them on the resampled grid.
+
+Masks travel by nearest neighbour and phase travels with its magnitude through
+the complex domain, for the same reason phase went out that way.
+
+## Grid padding and cropping
+
+Both of these trade reconstruction cost against the grid the FFT stages run on,
+and both are off by default.
+
+### `--fft-padding`
+
+FFT cost is `O(N log N)` in the whole grid, and the transform is much faster on
+sizes built from small prime factors. Resampling has no reason to land on one:
+the UK Biobank grid above comes out 272×339×77, which is 2⁴·17, 3·113 and 7·11.
+Growing it to 280×343×80 took one FFT from 131 ms to 71 ms for 8% more voxels.
+
+Padding discards nothing, but it is **not** a no-op. The dipole kernel is
+sampled at `k = n / (N·Δx)`, so changing `N` changes where k-space is sampled
+and the deconvolution with it. Measured end to end on that acquisition, against
+the same run unpadded:
+
+| inversion | median difference | p99 | as % of dynamic range |
+|---|---|---|---|
+| TKD (direct) | 4e-7 ppm | 9.4e-3 ppm | 0.000% / 5.7% |
+| WH-QSM (iterative) | 8.3e-5 ppm | 3.7e-3 ppm | 0.06% / 2.8% |
+
+A direct inversion is unchanged for the typical voxel and moves only where the
+deconvolution is ill-conditioned. An iterative one moves slightly everywhere,
+since it is solving on a different grid. Neither is evidence that padding is
+worse — a finer k-space sampling with the boundary further from the object has
+reason to be better — but nothing here establishes that it is better, so it does
+not change anyone's numbers unless asked for.
+
+Note that an acquisition usually arrives on a friendly grid already: 256×288×48
+is 2⁸, 2⁵·3² and 2⁴·3. Padding earns its keep on grids that resampling created.
+
+### `--crop-to-mask`
+
+Reconstructing only inside a box around the brain cut background removal from
+11.5 s to 7.2 s and inversion from 6.0 s to 3.0 s on the same acquisition. But
+the FFT stages were 5% of wall time there — HD-BET masking was 289 s of 338 s —
+so the end-to-end saving was inside noise. Use it for grids with large empty
+regions, not as a general speedup.
+
+`--crop-margin-mm` defaults to 32. At 16 mm the reconstruction differed from the
+uncropped one by 0.8% of dynamic range at the median and 5.1% at p99; at 32 mm
+and 64 mm it was identical. The margin must also clear the largest SMV kernel in
+use, and V-SHARP defaults to 12 mm.
 
 ## Coil combination
 

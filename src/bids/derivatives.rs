@@ -19,7 +19,7 @@ impl DerivativeOutputs {
     }
 
     /// Build the subject/session anat directory for final outputs.
-    fn anat_dir(&self, key: &AcquisitionKey) -> PathBuf {
+    pub fn anat_dir(&self, key: &AcquisitionKey) -> PathBuf {
         let mut dir = self.output_dir.join(format!("sub-{}", key.subject));
         if let Some(ref ses) = key.session {
             dir = dir.join(format!("ses-{}", ses));

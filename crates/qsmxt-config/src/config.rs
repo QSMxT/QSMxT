@@ -407,10 +407,38 @@ pub struct PipelineToggles {
     pub do_chi_separation: bool,
     pub export_dicom: bool,
     pub obliquity_threshold: f64,
+    /// Reconstruct inside a box around the mask rather than the whole field of view. Pure speed
+    /// on paper, but it moves the FFT's periodic boundary closer to the object, so it is opt-in.
+    #[serde(default)]
+    pub crop_to_mask: bool,
+    /// Margin in millimetres around the mask when `crop_to_mask` is set. Measured on a UK
+    /// Biobank acquisition, 16 mm moved chi by 0.8% of dynamic range at the median and 5.1% at
+    /// p99; 32 mm and 64 mm were identical to the uncropped reconstruction. 32 mm is the
+    /// smallest margin that costs nothing in accuracy.
+    /// Grow the grid outward to an FFT-friendly size before the FFT-bound stages.
+    ///
+    /// Off by default. It discards nothing, but it is not a no-op: the dipole kernel is sampled
+    /// at `k = n / (N dx)`, so changing `N` changes where k-space is sampled and the
+    /// deconvolution along with it. Measured on a resampled UK Biobank grid, a TKD
+    /// reconstruction was unchanged at the median (4e-7 ppm) with a tail reaching 5.7% of
+    /// dynamic range at p99; WH-QSM, being iterative, moved 0.06% at the median. Worth having
+    /// where an awkward grid makes the FFT expensive, but not worth changing everyone's numbers
+    /// for by default.
+    #[serde(default)]
+    pub fft_padding: bool,
+    #[serde(default = "default_crop_margin_mm")]
+    pub crop_margin_mm: f64,
+    /// Which grid the derivatives are written on when the run was resampled to axial. `Acquired`
+    /// (the default) puts them back where the data came from, so transforms the caller already
+    /// holds still apply; `Working` leaves them on the resampled grid.
+    #[serde(default)]
+    pub output_space: OutputSpace,
 }
 impl Default for PipelineToggles {
     fn default() -> Self {
-        Self { do_qsm: true, do_swi: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, obliquity_threshold: -1.0 }
+        Self { do_qsm: true, do_swi: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, obliquity_threshold: -1.0,
+            crop_to_mask: false, fft_padding: false, crop_margin_mm: default_crop_margin_mm(),
+            output_space: OutputSpace::Acquired }
     }
 }
 
@@ -431,6 +459,29 @@ pub struct FieldMappingConfig {
     pub linear_fit: LinearFitConfig,
 }
 fn default_coil_combination_sigma() -> [f64; 3] { [10.0, 10.0, 5.0] }
+
+fn default_crop_margin_mm() -> f64 { 32.0 }
+
+/// Grid the derivatives are written on after an axial resampling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum OutputSpace {
+    /// The grid the data was acquired on — a second interpolation, but the space any
+    /// precomputed transform expects.
+    #[default]
+    Acquired,
+    /// The grid the pipeline reconstructed on.
+    Working,
+}
+
+impl std::fmt::Display for OutputSpace {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            OutputSpace::Acquired => write!(f, "acquired"),
+            OutputSpace::Working => write!(f, "working"),
+        }
+    }
+}
 
 impl Default for FieldMappingConfig {
     fn default() -> Self {
