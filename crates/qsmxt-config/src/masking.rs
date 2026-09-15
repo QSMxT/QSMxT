@@ -131,6 +131,52 @@ impl MaskOp {
     }
 }
 
+impl MaskOp {
+    /// The shortest spec that [`parse_mask_op`] turns back into this op.
+    ///
+    /// [`Display`](fmt::Display) deliberately states every parameter, because that string is the
+    /// mask stage's cache key: a change in a qsm-core default has to invalidate the cache rather
+    /// than quietly reuse a mask built with the old value. A command line has the opposite need,
+    /// so this drops parameters that are already the default. Only the multi-parameter ops
+    /// (`hd-bet`, `signal-erode`) differ from `Display`; the rest are short and explicit already,
+    /// and `erode:1` reads better than a bare `erode`.
+    pub fn compact_spec(&self) -> String {
+        match self {
+            Self::HdBet { patch, tta, tile_step } => {
+                let mut spec = String::from("hd-bet");
+                if *patch == hd_bet_low_memory_patch() {
+                    spec += ":low-memory";
+                } else if *patch != hd_bet_patch() {
+                    spec += &format!(":{}x{}x{}", patch[0], patch[1], patch[2]);
+                }
+                if *tta { spec += ":tta"; }
+                if (*tile_step - hd_bet_tile_step()).abs() > f64::EPSILON {
+                    spec += &format!(":step={tile_step}");
+                }
+                spec
+            }
+            Self::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } => {
+                let d = se_default();
+                // Keep every field up to the last one that differs from the default: parsing
+                // fills in the ones left off, and a half-empty `signal-erode:::0` reads as noise.
+                let fields = [
+                    (format!("{threshold:.2}"), (*threshold - d.threshold).abs() > f64::EPSILON),
+                    (format!("{depth_cap}"), *depth_cap != d.depth_cap),
+                    (format!("{global_erosions}"), *global_erosions != d.global_erosions),
+                    (format!("{bias_sigma:.1}"), (*bias_sigma - d.bias_sigma).abs() > f64::EPSILON),
+                    (format!("{min_component}"), *min_component != d.min_component),
+                ];
+                let keep = fields.iter().rposition(|(_, differs)| *differs).map_or(0, |i| i + 1);
+                std::iter::once("signal-erode".to_string())
+                    .chain(fields[..keep].iter().map(|(v, _)| v.clone()))
+                    .collect::<Vec<_>>()
+                    .join(":")
+            }
+            other => format!("{other}"),
+        }
+    }
+}
+
 impl fmt::Display for MaskOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -180,6 +226,17 @@ impl fmt::Display for MaskSection {
             .chain(self.all_ops().iter().map(|op| format!("{}", op)))
             .collect();
         write!(f, "{}", parts.join(","))
+    }
+}
+
+impl MaskSection {
+    /// The section as a `--mask` argument, with default parameters left off.
+    /// See [`MaskOp::compact_spec`] for why this is not `Display`.
+    pub fn compact_spec(&self) -> String {
+        std::iter::once(format!("{}", self.input))
+            .chain(self.all_ops().iter().map(|op| op.compact_spec()))
+            .collect::<Vec<_>>()
+            .join(",")
     }
 }
 
@@ -257,6 +314,47 @@ pub fn bet_and_phase_mask_recipe() -> MaskRecipe {
             MaskOp::Erode { iterations: 1 },
         ],
     }
+}
+
+/// Every `--mask-preset`, in the order the TUI lists them. One list, so the CLI, the TUI and the
+/// generated command cannot disagree about what a preset means.
+pub fn mask_presets() -> Vec<(&'static str, MaskRecipe)> {
+    vec![
+        ("robust-threshold", MaskRecipe::from_sections(default_mask_sections())),
+        ("bet", MaskRecipe::from_sections(vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Bet { fractional_intensity: 0.5 },
+            refinements: vec![MaskOp::Erode { iterations: 2 }],
+        }])),
+        ("hd-bet", MaskRecipe::from_sections(hd_bet_mask_sections())),
+        ("bet-and-phase", bet_and_phase_mask_recipe()),
+    ]
+}
+
+/// The preset a masking config reproduces, for writing `--mask-preset <name>` instead of spelling
+/// every section out. Returns the preset name and, when the only difference is that every section
+/// reads a different image, the `--masking-input` that goes with it.
+///
+/// Exact matches win: `--mask-preset bet` and `--mask-preset bet --masking-input magnitude` mean
+/// the same thing, and the shorter one is the one to print.
+pub fn masking_preset_command(masking: &crate::config::MaskingConfig) -> Option<(&'static str, Option<MaskingInput>)> {
+    let presets = mask_presets();
+    let tail_matches = |r: &MaskRecipe| r.combine == masking.combine && r.refinements == masking.refinements;
+
+    if let Some((name, _)) = presets.iter().find(|(_, r)| r.sections == masking.sections && tail_matches(r)) {
+        return Some((name, None));
+    }
+
+    // Every section reading the same image is what `--masking-input` produces.
+    let input = masking.sections.first()?.input;
+    if !masking.sections.iter().all(|s| s.input == input) {
+        return None;
+    }
+    presets.iter().find_map(|(name, r)| {
+        let overridden: Vec<MaskSection> =
+            r.sections.iter().map(|s| MaskSection { input, ..s.clone() }).collect();
+        (overridden == masking.sections && tail_matches(r)).then_some((*name, Some(input)))
+    })
 }
 
 pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
@@ -503,6 +601,73 @@ mod tests {
         assert_eq!(sections[0].input, MaskingInput::PhaseQuality);
         assert!(sections[0].has_generator());
         assert_eq!(sections[0].refinements.len(), 3);
+    }
+
+    /// The whole contract of the compact form: shorter than `Display`, and parses back to the
+    /// same op. If those two hold, the command line can use it and the cache key cannot drift.
+    #[test]
+    fn compact_specs_round_trip_and_are_no_longer() {
+        let ops = [
+            MaskOp::hd_bet_default(),
+            MaskOp::HdBet { patch: hd_bet_low_memory_patch(), tta: false, tile_step: hd_bet_default_tile_step() },
+            MaskOp::HdBet { patch: [160, 160, 128], tta: true, tile_step: 0.75 },
+            MaskOp::signal_erode_default(),
+            parse_mask_op("signal-erode:0.70").unwrap(),
+            parse_mask_op("signal-erode:0.80:5:1:12:500").unwrap(),
+            MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
+            MaskOp::Erode { iterations: 2 },
+            MaskOp::FillHoles { max_size: 0 },
+            MaskOp::Bet { fractional_intensity: 0.35 },
+        ];
+        for op in ops {
+            let compact = op.compact_spec();
+            assert_eq!(parse_mask_op(&compact).unwrap_or_else(|e| panic!("{compact}: {e}")), op,
+                       "compact form of {op} does not parse back");
+            assert!(compact.len() <= format!("{op}").len(), "{compact} is longer than {op}");
+        }
+
+        // The two that motivated it: all-default parameters collapse to the bare op name.
+        assert_eq!(MaskOp::hd_bet_default().compact_spec(), "hd-bet");
+        assert_eq!(MaskOp::signal_erode_default().compact_spec(), "signal-erode");
+        assert_eq!(MaskOp::HdBet { patch: hd_bet_low_memory_patch(), tta: false,
+                                   tile_step: hd_bet_default_tile_step() }.compact_spec(), "hd-bet:low-memory");
+        // Only trailing defaults drop: a changed last field keeps the ones before it.
+        assert_eq!(parse_mask_op("signal-erode:0.80:5:1:12:500").unwrap().compact_spec(),
+                   "signal-erode:0.80:5:1:12.0:500");
+        // Display stays fully explicit — it is the cache key.
+        assert_eq!(format!("{}", MaskOp::hd_bet_default()), "hd-bet:192x192x96:step=0.5");
+    }
+
+    /// The preset list is what `--mask-preset` and the TUI both build from, and the command
+    /// generator recognises every entry in it.
+    #[test]
+    fn every_preset_is_recognised_from_its_config() {
+        for (name, recipe) in mask_presets() {
+            let masking = crate::config::MaskingConfig {
+                sections: recipe.sections.clone(), combine: recipe.combine,
+                refinements: recipe.refinements.clone(), ..Default::default()
+            };
+            assert_eq!(masking_preset_command(&masking), Some((name, None)), "{name}");
+
+            // ...and with every section's input swapped, as `--masking-input` does.
+            for input in [MaskingInput::Magnitude, MaskingInput::MagnitudeFirst,
+                          MaskingInput::MagnitudeLast, MaskingInput::PhaseQuality] {
+                let swapped = crate::config::MaskingConfig {
+                    sections: recipe.sections.iter().map(|s| MaskSection { input, ..s.clone() }).collect(),
+                    ..masking.clone()
+                };
+                let (got, got_input) = masking_preset_command(&swapped)
+                    .unwrap_or_else(|| panic!("{name} + {input} not recognised"));
+                assert_eq!(got, name, "{name} + {input}");
+                // An exact match reports no override, whatever the input happens to be.
+                assert!(got_input.is_none() || got_input == Some(input), "{name} + {input}");
+            }
+        }
+
+        // A hand-edited recipe is not a preset.
+        let mut masking = crate::config::MaskingConfig::default();
+        masking.sections[0].refinements.push(MaskOp::Erode { iterations: 7 });
+        assert_eq!(masking_preset_command(&masking), None);
     }
 
     #[test]

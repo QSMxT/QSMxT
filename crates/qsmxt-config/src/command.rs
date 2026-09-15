@@ -71,16 +71,32 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     if r.mag_weight != rd.mag_weight && !r.mag_weight { parts.push("--no-romeo-mag-weight".into()); }
 
     // ── Masking ──
-    if config.masking.sections != d.masking.sections {
-        for section in &config.masking.sections {
-            parts.push(format!("--mask {}", section));
+    // A preset says in three words what spelling the sections out takes a line and a half to say,
+    // so print the preset whenever the configuration is one. `masking_input` is emitted here
+    // rather than with the other field-mapping flags because it only ever qualifies a preset.
+    let masking_default = config.masking.sections == d.masking.sections
+        && config.masking.combine == d.masking.combine
+        && config.masking.refinements == d.masking.refinements;
+    match crate::masking::masking_preset_command(&config.masking) {
+        // The default recipe is a preset too; saying so adds noise rather than removing it.
+        _ if masking_default => {}
+        Some((preset, input)) => {
+            parts.push(format!("--mask-preset {preset}"));
+            if let Some(input) = input {
+                parts.push(format!("--masking-input {input}"));
+            }
         }
-    }
-    if config.masking.combine != d.masking.combine {
-        parts.push(format!("--mask-combine {}", config.masking.combine));
-    }
-    for op in &config.masking.refinements {
-        parts.push(format!("--mask-refine {}", op));
+        None => {
+            for section in &config.masking.sections {
+                parts.push(format!("--mask {}", section.compact_spec()));
+            }
+            if config.masking.combine != d.masking.combine {
+                parts.push(format!("--mask-combine {}", config.masking.combine));
+            }
+            for op in &config.masking.refinements {
+                parts.push(format!("--mask-refine {}", op.compact_spec()));
+            }
+        }
     }
 
     // ── BET ──

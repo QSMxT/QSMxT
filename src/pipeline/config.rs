@@ -387,16 +387,14 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(preset) = args.mask_preset {
             // A preset is a whole recipe — it replaces the combine mode and the post-combine
             // refinements too, not just the sections.
-            let recipe = match preset {
-                cli::MaskPresetArg::RobustThreshold => MaskRecipe::from_sections(default_mask_sections()),
-                cli::MaskPresetArg::Bet => MaskRecipe::from_sections(vec![MaskSection {
-                    input: MaskingInput::Magnitude,
-                    generator: MaskOp::Bet { fractional_intensity: 0.5 },
-                    refinements: vec![MaskOp::Erode { iterations: 2 }],
-                }]),
-                cli::MaskPresetArg::HdBet => MaskRecipe::from_sections(hd_bet_mask_sections()),
-                cli::MaskPresetArg::BetAndPhase => bet_and_phase_mask_recipe(),
+            let name = match preset {
+                cli::MaskPresetArg::RobustThreshold => "robust-threshold",
+                cli::MaskPresetArg::Bet => "bet",
+                cli::MaskPresetArg::HdBet => "hd-bet",
+                cli::MaskPresetArg::BetAndPhase => "bet-and-phase",
             };
+            let (_, recipe) = mask_presets().into_iter().find(|(n, _)| *n == name)
+                .expect("every MaskPresetArg is in mask_presets()");
             config.masking.sections = recipe.sections;
             config.masking.combine = recipe.combine;
             config.masking.refinements = recipe.refinements;
@@ -633,29 +631,84 @@ mod tests {
         assert!(matches!(c.masking.sections[0].generator, MaskOp::Bet { .. }));
     }
 
-    /// The generated `qsmxt run` command has to carry the combine mode and the post-combine
-    /// steps, or a TUI-configured intersection silently runs as a union.
-    #[test]
-    fn generated_command_round_trips_an_and_recipe() {
-        let recipe = bet_and_phase_mask_recipe();
-        let mut config = PipelineConfig::default();
-        config.masking.sections = recipe.sections.clone();
-        config.masking.combine = recipe.combine;
-        config.masking.refinements = recipe.refinements.clone();
-
-        let cmd = generate_command(&config);
-        assert!(cmd.contains("--mask-combine and"), "cmd: {cmd}");
-        assert!(cmd.contains("--mask-refine fill-holes:0"), "cmd: {cmd}");
-
+    /// Round-trip a config's masking through `generate_command` and back.
+    fn masking_round_trip(config: &PipelineConfig) -> (String, MaskingConfig) {
+        let cmd = generate_command(config);
         let argv: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
         let cli = cli::Cli::try_parse_from(&argv)
             .unwrap_or_else(|e| panic!("generated command did not parse: {e}\ncmd: {cmd}"));
         let run_args = match cli.command { cli::Command::Run(a) => a, _ => panic!("expected Run") };
         let mut rebuilt = PipelineConfig::default();
         apply_run_overrides(&mut rebuilt, &run_args.pipeline);
-        assert_eq!(rebuilt.masking.sections, recipe.sections);
-        assert_eq!(rebuilt.masking.combine, recipe.combine);
-        assert_eq!(rebuilt.masking.refinements, recipe.refinements);
+        (cmd, rebuilt.masking)
+    }
+
+    /// The generated `qsmxt run` command has to carry the combine mode and the post-combine
+    /// steps, or a hand-built intersection silently runs as a union.
+    #[test]
+    fn generated_command_round_trips_an_and_recipe() {
+        // Not one of the presets — this is the path that spells the sections out.
+        let mut config = PipelineConfig::default();
+        config.masking.sections = vec![
+            MaskSection { input: MaskingInput::Magnitude,
+                          generator: MaskOp::Bet { fractional_intensity: 0.4 }, refinements: vec![] },
+            MaskSection { input: MaskingInput::Magnitude,
+                          generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
+                          refinements: vec![] },
+        ];
+        config.masking.combine = MaskCombine::And;
+        config.masking.refinements = vec![MaskOp::FillHoles { max_size: 0 }];
+
+        let (cmd, masking) = masking_round_trip(&config);
+        assert!(cmd.contains("--mask-combine and"), "cmd: {cmd}");
+        assert!(cmd.contains("--mask-refine fill-holes:0"), "cmd: {cmd}");
+        assert_eq!(masking.sections, config.masking.sections);
+        assert_eq!(masking.combine, config.masking.combine);
+        assert_eq!(masking.refinements, config.masking.refinements);
+    }
+
+    /// Choosing a preset should read as choosing a preset, not as its expansion — and it still
+    /// has to rebuild the same masking.
+    #[test]
+    fn generated_command_names_the_preset() {
+        for (preset, recipe) in mask_presets() {
+            let mut config = PipelineConfig::default();
+            config.masking.sections = recipe.sections.clone();
+            config.masking.combine = recipe.combine;
+            config.masking.refinements = recipe.refinements.clone();
+
+            let (cmd, masking) = masking_round_trip(&config);
+            if preset == "robust-threshold" {
+                // The default: saying it adds noise rather than removing it.
+                assert!(!cmd.contains("--mask"), "default masking should print nothing: {cmd}");
+            } else {
+                assert!(cmd.contains(&format!("--mask-preset {preset}")), "cmd: {cmd}");
+                assert!(!cmd.contains("--mask "), "preset should replace the expansion: {cmd}");
+                assert!(!cmd.contains("--mask-refine"), "preset should replace the expansion: {cmd}");
+            }
+            assert_eq!(masking.sections, recipe.sections, "{preset} did not rebuild");
+            assert_eq!(masking.combine, recipe.combine, "{preset} did not rebuild");
+            assert_eq!(masking.refinements, recipe.refinements, "{preset} did not rebuild");
+        }
+    }
+
+    /// A preset whose sections all read a different image is still a preset, plus one flag.
+    #[test]
+    fn generated_command_names_the_preset_with_an_input_override() {
+        let mut config = PipelineConfig::default();
+        config.masking.sections = default_mask_sections();
+        for section in &mut config.masking.sections { section.input = MaskingInput::Magnitude; }
+
+        let (cmd, masking) = masking_round_trip(&config);
+        assert!(cmd.contains("--mask-preset robust-threshold"), "cmd: {cmd}");
+        assert!(cmd.contains("--masking-input magnitude"), "cmd: {cmd}");
+        assert_eq!(masking.sections, config.masking.sections);
+
+        // Editing a parameter as well takes it back to the spelled-out form.
+        config.masking.sections[0].refinements.push(MaskOp::Erode { iterations: 3 });
+        let (cmd, masking) = masking_round_trip(&config);
+        assert!(cmd.contains("--mask magnitude,"), "cmd: {cmd}");
+        assert_eq!(masking.sections, config.masking.sections);
     }
 
     #[test]

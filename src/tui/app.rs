@@ -2735,17 +2735,9 @@ impl PipelineFormState {
     /// refinements that run on the combined mask).
     pub fn apply_mask_preset(&mut self, preset: usize) {
         use crate::pipeline::config::*;
-        let recipe = match preset {
-            0 => MaskRecipe::from_sections(default_mask_sections()),
-            1 => MaskRecipe::from_sections(vec![MaskSection {
-                input: MaskingInput::Magnitude,
-                generator: MaskOp::Bet { fractional_intensity: 0.5 },
-                refinements: vec![MaskOp::Erode { iterations: 2 }],
-            }]),
-            2 => MaskRecipe::from_sections(hd_bet_mask_sections()),
-            3 => bet_and_phase_mask_recipe(),
-            _ => return, // Custom: don't touch the recipe
-        };
+        // MASK_PRESET_OPTIONS is mask_presets() plus the trailing "custom" entry, which leaves
+        // the recipe alone (see the alignment test).
+        let Some((_, recipe)) = mask_presets().into_iter().nth(preset) else { return };
         self.mask_sections = recipe.sections;
         self.mask_combine = recipe.combine;
         self.mask_combined_refinements = recipe.refinements;
@@ -7588,6 +7580,21 @@ mod tests {
         assert!(app.algo_modal.is_none());
     }
 
+    /// The preset row, the CLI's `--mask-preset` values and `mask_presets()` are three views of
+    /// one list; `apply_mask_preset` indexes straight into it, so they have to stay aligned.
+    #[test]
+    fn test_mask_preset_options_match_the_preset_list() {
+        use clap::ValueEnum;
+        let names: Vec<&str> = crate::pipeline::config::mask_presets().iter().map(|(n, _)| *n).collect();
+        assert_eq!(&MASK_PRESET_OPTIONS[..MASK_PRESET_CUSTOM], &names[..]);
+        assert_eq!(MASK_PRESET_OPTIONS[MASK_PRESET_CUSTOM], "custom");
+        assert_eq!(MASK_PRESET_OPTIONS.len(), MASK_PRESET_HELP.len());
+
+        let cli_names: Vec<String> = crate::cli::MaskPresetArg::value_variants().iter()
+            .map(|v| v.to_possible_value().unwrap().get_name().to_string()).collect();
+        assert_eq!(cli_names, names, "--mask-preset values drifted from mask_presets()");
+    }
+
     /// Every signal-erode parameter is reachable and adjustable with ←/→ from the pipeline form,
     /// and what the CLI preview says is what the rows show.
     #[test]
@@ -7642,8 +7649,10 @@ mod tests {
         assert!(matches!(op(&app), MaskOp::SignalErode { depth_cap: 0, .. }));
 
         // The generated command carries the edited values.
-        assert!(crate::tui::command::build_command_string(&app).contains("signal-erode:0.85:0:"),
-                "the edited signal-erode parameters are not in the generated command");
+        // Edited away from the preset, so the command spells the recipe out — with the
+        // parameters that are still at their default left off.
+        let cmd = crate::tui::command::build_command_string(&app);
+        assert!(cmd.contains("--mask magnitude,hd-bet,signal-erode:0.85:0"), "cmd: {cmd}");
     }
 
     /// The combine row only appears once there is more than one section, and ←/→ toggles it.
