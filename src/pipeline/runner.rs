@@ -330,6 +330,8 @@ pub fn run_pipeline_cached(
         stage_chi_separation(&mut ctx, &mask_path, progress)?;
     }
 
+    stage_output_space(&mut ctx, progress)?;
+
     ctx.state.mark_run_complete();
     ctx.state.save(&state_path)?;
 
@@ -387,6 +389,152 @@ fn validate_run_dims(run: &QsmRun, reference: &NiftiData) -> crate::Result<()> {
     Ok(())
 }
 
+/// Put the derivatives back on the grid the data was acquired on.
+///
+/// A run that was resampled to axial reconstructs, and by default writes, on the cardinal grid.
+/// That is the wrong place for anything the caller already holds in the acquired space — a FLIRT
+/// matrix is defined in a coordinate space derived from the image's dimensions and voxel sizes,
+/// so applying one to a volume on a different grid gives a wrong registration rather than an
+/// error. `--output-space working` keeps the resampled grid for callers who want it.
+///
+/// Each kind of volume travels the way it must: masks by nearest neighbour, wrapped phase with
+/// its magnitude through the complex domain, everything else trilinearly. This is a second
+/// interpolation on top of the first, so the result is slightly smoother than a reconstruction
+/// that was never resampled.
+fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
+    let Some((dst_dims, dst_affine)) = ctx.meta.source_geometry else { return Ok(()) };
+    if ctx.config.pipeline.output_space != crate::pipeline::config::OutputSpace::Acquired {
+        log::info!("Leaving outputs on the resampled grid (--output-space working)");
+        return Ok(());
+    }
+    let params = serde_json::json!({ "space": "acquired", "dims": [dst_dims.0, dst_dims.1, dst_dims.2] });
+    if ctx.is_cached_with_params("output_space", None, &params) {
+        return Ok(());
+    }
+    let t = Instant::now();
+    progress("Resampling outputs to the acquired grid");
+    log::info!(
+        "Returning outputs to the acquired grid: {}x{}x{} -> {}x{}x{}",
+        ctx.meta.dims.0, ctx.meta.dims.1, ctx.meta.dims.2, dst_dims.0, dst_dims.1, dst_dims.2
+    );
+
+    let src_dims = ctx.meta.dims;
+    let src_affine = ctx.meta.affine;
+    let anat = ctx.output.anat_dir(&ctx.run.key);
+    let mut files: Vec<PathBuf> = std::fs::read_dir(&anat)
+        .map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path()))
+            .filter(|p| p.extension().map(|e| e == "nii").unwrap_or(false))
+            .collect())
+        .unwrap_or_default();
+    files.sort();
+
+    // Phase is only meaningful alongside its magnitude, so handle those pairs first and skip
+    // them in the scalar pass.
+    let mut done: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    for phase_path in files.iter().filter(|p| p.to_string_lossy().contains("part-phase")) {
+        let mag_path = PathBuf::from(phase_path.to_string_lossy().replace("part-phase", "part-mag"));
+        if !mag_path.exists() {
+            continue;
+        }
+        let (phase, mag) = (load_volume(phase_path)?, load_volume(&mag_path)?);
+        let resampled = qsm_core::geometry::resample_complex_onto(
+            &mag, &phase, src_dims, &src_affine, dst_dims, &dst_affine,
+        );
+        if let Some((new_mag, new_phase)) = resampled {
+            write_on_grid(phase_path, &new_phase, dst_dims, &dst_affine)?;
+            write_on_grid(&mag_path, &new_mag, dst_dims, &dst_affine)?;
+            done.insert(phase_path.clone());
+            done.insert(mag_path);
+        }
+    }
+
+    for f in files.iter().filter(|f| !done.contains(*f)) {
+        let is_mask = f.file_name().map(|n| n.to_string_lossy().contains("mask")).unwrap_or(false);
+        if is_mask {
+            let m: Vec<u8> = load_volume(f)?.iter().map(|v| if *v > 0.5 { 1u8 } else { 0u8 }).collect();
+            if let Some(out) = qsm_core::geometry::resample_mask_onto(&m, src_dims, &src_affine, dst_dims, &dst_affine) {
+                let as_f64: Vec<f64> = out.iter().map(|v| *v as f64).collect();
+                write_on_grid(f, &as_f64, dst_dims, &dst_affine)?;
+            }
+        } else if let Some(out) =
+            qsm_core::geometry::resample_onto(&load_volume(f)?, src_dims, &src_affine, dst_dims, &dst_affine)
+        {
+            write_on_grid(f, &out, dst_dims, &dst_affine)?;
+        }
+    }
+
+    ctx.complete_step("output_space", None, params, &[], files, t)?;
+    log_step_done("Output space", t);
+    Ok(())
+}
+
+/// Overwrite a NIfTI with data on a different grid.
+fn write_on_grid(path: &Path, data: &[f64], dims: (usize, usize, usize), affine: &[f64; 16]) -> crate::Result<()> {
+    let voxel_size = qsm_core::geometry::voxel_sizes_from_affine(affine);
+    io::save_nifti_to_file(path, data, dims, voxel_size, affine).map_err(QsmxtError::NiftiIo)
+}
+
+/// The box the FFT-based stages reconstruct in.
+///
+/// Two levers on the same cost, both opt-in, for different reasons.
+///
+/// `--fft-padding` grows the grid to a size `rustfft` likes. It discards nothing and an awkward
+/// grid can get most of a transform's time back, but it changes where the dipole kernel is
+/// sampled in k-space, so the reconstruction shifts slightly. `--crop-to-mask` reconstructs only
+/// around the brain, which is faster still but genuinely discards field. See `qsm_core::crop`.
+fn crop_box_for(ctx: &StageContext, mask: &[u8], stage: &str) -> qsm_core::crop::CropBox {
+    let cropping = ctx.config.pipeline.crop_to_mask;
+    let margin = ctx.config.pipeline.crop_margin_mm;
+    let b = reconstruction_box(
+        cropping, ctx.config.pipeline.fft_padding,
+        mask, ctx.meta.dims, ctx.meta.voxel_size, margin,
+    );
+
+    if b.dims == ctx.meta.dims {
+        return b;
+    }
+    if cropping {
+        log::info!(
+            "{}: reconstructing in {}x{}x{} instead of {}x{}x{} ({:.1}x fewer voxels, {:.0} mm margin)",
+            stage, b.dims.0, b.dims.1, b.dims.2,
+            b.full_dims.0, b.full_dims.1, b.full_dims.2, b.reduction(), margin,
+        );
+    } else {
+        log::info!(
+            "{}: padding {}x{}x{} to {}x{}x{} for a cheaper FFT",
+            stage, b.full_dims.0, b.full_dims.1, b.full_dims.2,
+            b.dims.0, b.dims.1, b.dims.2,
+        );
+    }
+    b
+}
+
+/// Which box, given the setting — split out from the logging so it can be tested directly.
+///
+/// Falls back to the full grid when the chosen box would not change it, since copying volumes in
+/// and out only pays for itself if the grid actually moves.
+fn reconstruction_box(
+    crop_to_mask: bool,
+    fft_padding: bool,
+    mask: &[u8],
+    dims: (usize, usize, usize),
+    voxel_size: (f64, f64, f64),
+    margin_mm: f64,
+) -> qsm_core::crop::CropBox {
+    let b = if crop_to_mask {
+        qsm_core::crop::crop_box_for_mask(mask, dims, voxel_size, margin_mm)
+    } else if fft_padding {
+        qsm_core::crop::fft_pad_box(dims)
+    } else {
+        qsm_core::crop::CropBox::full(dims)
+    };
+    if b.dims == dims {
+        qsm_core::crop::CropBox::full(dims)
+    } else {
+        b
+    }
+}
+
 /// Work out the grid and B0 direction the pipeline will actually reconstruct on.
 ///
 /// The dipole kernel is built in voxel space, so an oblique acquisition has to be handled one of
@@ -397,6 +545,11 @@ fn validate_run_dims(run: &QsmRun, reference: &NiftiData) -> crate::Result<()> {
 /// 2. **Keep the grid and rotate the kernel**, using the true B0 direction from the affine.
 ///
 /// A sidecar `B0_dir` always wins, since it describes the acquisition better than the affine can.
+/// How far B0 may sit from the slice normal before an axial-only algorithm is given resampled
+/// data. Acquisitions carry sub-degree tilts from rounding in the affine; resampling for those
+/// costs an interpolation and buys nothing.
+const AXIAL_ONLY_TOLERANCE_DEG: f64 = 1.0;
+
 fn resolve_geometry(
     run: &QsmRun,
     first_phase: &NiftiData,
@@ -427,16 +580,35 @@ fn resolve_geometry(
         );
     }
 
-    // A sidecar B0_dir is authoritative and is never overridden by resampling.
-    if let Some(dir) = run.b0_dir {
-        meta.b0_direction = dir;
-        log::info!("B0 direction {:?} (from the JSON sidecar)", dir);
-        return Ok(meta);
+    // An algorithm that only understands axial data settles the question before anything else
+    // does. It takes no B0 direction, so neither a sidecar nor the affine can help it: the only
+    // way to reconstruct correctly is to move the data. Below the obliquity threshold the tilt
+    // is small enough not to bother.
+    let axial_only = qsmxt_config::bridge::axial_only_algorithms(config);
+    let forced_axial = !axial_only.is_empty() && tilt > AXIAL_ONLY_TOLERANCE_DEG;
+    if forced_axial {
+        log::info!(
+            "Resampling to axial because {} {} no B0 direction and {} assume it is +z; B0 is \
+             {:.1}° from the slice normal here",
+            axial_only.join(", "),
+            if axial_only.len() == 1 { "takes" } else { "take" },
+            if axial_only.len() == 1 { "it assumes" } else { "they assume" },
+            tilt
+        );
     }
 
-    let resample = threshold >= 0.0 && obliquity > threshold;
+    // A sidecar B0_dir is authoritative for anything that can use a direction at all.
+    if !forced_axial {
+        if let Some(dir) = run.b0_dir {
+            meta.b0_direction = dir;
+            log::info!("B0 direction {:?} (from the JSON sidecar)", dir);
+            return Ok(meta);
+        }
+    }
+
+    let resample = forced_axial || (threshold >= 0.0 && obliquity > threshold);
     if resample {
-        if run.mese.is_some() {
+        if run.mese.is_some() && !forced_axial {
             // The MESE is read straight from BIDS for R2/R2', so resampling only the GRE would
             // leave the two on different grids. Rotate the kernel instead — equally correct.
             log::warn!(
@@ -445,15 +617,29 @@ fn resolve_geometry(
                  direction instead of resampling.",
                 obliquity, threshold
             );
+        } else if run.mese.is_some() {
+            // Forced by an axial-only algorithm, but resampling would split the GRE from its
+            // MESE. Neither outcome is defensible, so refuse rather than pick one silently.
+            return Err(QsmxtError::Config(format!(
+                "{} cannot reconstruct this {:.1}° oblique acquisition (it assumes B0 is +z), but \
+                 this run has a matching MESE acquisition that resampling would leave on a \
+                 different grid. Choose a classical algorithm, which takes the B0 direction as a \
+                 parameter, or process the GRE without the MESE.",
+                axial_only.join(", "), obliquity
+            )));
         } else {
             let grid = qsm_core::geometry::axial_grid_for(
                 first_phase.dims.0, first_phase.dims.1, first_phase.dims.2, &affine,
             );
+            let why = if forced_axial {
+                "required by the chosen algorithm".to_string()
+            } else {
+                format!("obliquity {obliquity:.1}° > threshold {threshold:.1}°")
+            };
             log::info!(
-                "Resampling to axial: {}x{}x{} -> {}x{}x{} (obliquity {:.1}° > threshold {:.1}°); \
-                 B0 becomes (0, 0, 1)",
+                "Resampling to axial: {}x{}x{} -> {}x{}x{} ({}); B0 becomes (0, 0, 1)",
                 first_phase.dims.0, first_phase.dims.1, first_phase.dims.2,
-                grid.dims.0, grid.dims.1, grid.dims.2, obliquity, threshold
+                grid.dims.0, grid.dims.1, grid.dims.2, why
             );
             meta.source_geometry = Some((first_phase.dims, affine));
             meta.dims = grid.dims;
@@ -1744,8 +1930,9 @@ fn stage_standard_qsm(
         let mask = load_mask(mask_path)?;
 
         let (_, bg_config, _, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
+        let cb = crop_box_for(ctx, &mask, "Background removal");
         let scan_meta = crate::pipeline::config::to_scan_metadata(
-            ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
+            cb.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
             ctx.meta.field_strength, ctx.meta.b0_direction,
         );
 
@@ -1754,10 +1941,17 @@ fn stage_standard_qsm(
         log::info!("Background removal ({})", bf_name);
         let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &bf_name);
         let bg_result = qsm_core::pipeline::run_bg_removal(
-            &field_ppm, &mask, &scan_meta, &bg_config, &mut *prog,
+            &qsm_core::crop::crop_volume(&field_ppm, &cb),
+            &qsm_core::crop::crop_volume(&mask, &cb),
+            &scan_meta, &bg_config, &mut *prog,
         ).map_err(|e| QsmxtError::Config(format!("bg removal: {}", e)))?;
 
-        let (local_field, eroded_mask) = (bg_result.local_field_ppm, bg_result.eroded_mask);
+        // Back onto the full grid: the local field and the eroded mask are both undefined
+        // outside the box, so zero is the right fill for each.
+        let (local_field, eroded_mask) = (
+            qsm_core::crop::uncrop_volume(&bg_result.local_field_ppm, &cb, 0.0),
+            qsm_core::crop::uncrop_volume(&bg_result.eroded_mask, &cb, 0u8),
+        );
         save_volume(&local_field_path, &local_field, ctx.meta)?;
         save_mask(&bg_mask_path, &eroded_mask, ctx.meta)?;
         ctx.complete_step("bgremove", Some(&bf_name),
@@ -1836,15 +2030,18 @@ fn stage_standard_qsm(
         let eroded_mask = if skip_bgremove { load_mask(mask_path)? } else { load_mask(&bg_mask_path)? };
 
         let (_, _, inv_config, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
+        // The dipole kernel has infinite support, so this is the stage most exposed to the
+        // periodic boundary moving inward; the margin is there to keep it off the object.
+        let cb = crop_box_for(ctx, &eroded_mask, "Dipole inversion");
         let scan_meta = crate::pipeline::config::to_scan_metadata(
-            ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
+            cb.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
             ctx.meta.field_strength, ctx.meta.b0_direction,
         );
 
         // Load combined magnitude for MEDI edge weighting
         let mag_combined_path = ctx.output.magnitude_path(&ctx.run.key);
         let magnitude: Option<Vec<f64>> = if mag_combined_path.exists() {
-            Some(load_volume(&mag_combined_path)?)
+            Some(qsm_core::crop::crop_volume(&load_volume(&mag_combined_path)?, &cb))
         } else {
             None
         };
@@ -1854,9 +2051,11 @@ fn stage_standard_qsm(
         log::info!("Dipole inversion ({})", alg_name);
         let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &alg_name);
         let chi = qsm_core::pipeline::run_dipole_inversion(
-            &local_field, &eroded_mask, &scan_meta, &inv_config,
-            magnitude.as_deref(), &mut *prog,
+            &qsm_core::crop::crop_volume(&local_field, &cb),
+            &qsm_core::crop::crop_volume(&eroded_mask, &cb),
+            &scan_meta, &inv_config, magnitude.as_deref(), &mut *prog,
         ).map_err(|e| QsmxtError::Config(format!("inversion: {}", e)))?;
+        let chi = qsm_core::crop::uncrop_volume(&chi, &cb, 0.0);
         save_volume(&chi_raw_path, &chi, ctx.meta)?;
         let lf_input = if skip_bgremove { field_path } else { local_field_path.as_path() };
         let mask_input = if skip_bgremove { mask_path } else { bg_mask_path.as_path() };
@@ -2234,6 +2433,119 @@ mod tests {
         assert!(meta.source_geometry.is_none(),
                 "resampling the GRE alone would strand the MESE on another grid");
         assert!(meta.b0_direction.2 < 0.99, "falls back to the affine direction");
+    }
+
+    // --- which box the FFT stages reconstruct in ---
+
+    /// The grid a 32.5-degree oblique UK Biobank SWI resamples to. Awkward on every axis:
+    /// 272 = 2^4 * 17, 339 = 3 * 113, 77 = 7 * 11.
+    const UKB_RESAMPLED: (usize, usize, usize) = (272, 339, 77);
+
+    #[test]
+    fn reconstruction_box_pads_to_a_friendly_size_when_asked() {
+        let mask = vec![1u8; 8];
+        let b = super::reconstruction_box(false, true, &mask, UKB_RESAMPLED, (0.8, 0.8, 3.0), 32.0);
+        assert_eq!(b.dims, (280, 343, 80), "every awkward axis should grow");
+        assert!(b.dims.0 >= UKB_RESAMPLED.0 && b.dims.1 >= UKB_RESAMPLED.1 && b.dims.2 >= UKB_RESAMPLED.2,
+                "padding must never discard a voxel");
+    }
+
+    #[test]
+    fn reconstruction_box_leaves_an_already_friendly_grid_alone() {
+        let mask = vec![1u8; 8];
+        let friendly = (256, 288, 48); // 2^8, 2^5*3^2, 2^4*3
+        let b = super::reconstruction_box(false, true, &mask, friendly, (0.8, 0.8, 3.0), 32.0);
+        assert_eq!(b.dims, friendly, "nothing to gain, so no copy");
+        assert_eq!(b.origin, (0, 0, 0));
+    }
+
+    #[test]
+    fn reconstruction_box_does_not_pad_by_default() {
+        let mask = vec![1u8; 8];
+        let b = super::reconstruction_box(false, false, &mask, UKB_RESAMPLED, (0.8, 0.8, 3.0), 32.0);
+        assert_eq!(b.dims, UKB_RESAMPLED,
+                   "padding changes where k-space is sampled, so it must be asked for");
+        assert_eq!(b.origin, (0, 0, 0));
+    }
+
+    #[test]
+    fn reconstruction_box_crops_to_the_mask_when_asked() {
+        // A small blob in the middle of a large grid: the case cropping is actually for.
+        let dims = (64, 64, 64);
+        let mut mask = vec![0u8; dims.0 * dims.1 * dims.2];
+        for k in 30..34 {
+            for j in 30..34 {
+                for i in 30..34 {
+                    mask[i + j * dims.0 + k * dims.0 * dims.1] = 1;
+                }
+            }
+        }
+        let cropped = super::reconstruction_box(true, false, &mask, dims, (1.0, 1.0, 1.0), 4.0);
+        assert!(cropped.dims.0 < dims.0, "a 4-voxel blob with a 4 mm margin should shrink 64");
+        let padded = super::reconstruction_box(false, true, &mask, dims, (1.0, 1.0, 1.0), 4.0);
+        assert_eq!(padded.dims, dims, "padding ignores the mask; 64 is already friendly");
+    }
+
+    // --- an algorithm that only understands axial data outranks everything else ---
+
+    /// A deep-learning inversion: no B0 direction to set, an axial prior baked into the weights.
+    fn cfg_with_axial_only_inversion() -> crate::pipeline::config::PipelineConfig {
+        let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.inversion.algorithm = crate::pipeline::config::QsmAlgorithm::Qsmnet;
+        cfg
+    }
+
+    #[test]
+    fn geometry_axial_only_algorithm_resamples_without_a_threshold() {
+        let cfg = cfg_with_axial_only_inversion(); // threshold stays -1 (disabled)
+        let meta = super::resolve_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
+        assert!(meta.source_geometry.is_some(),
+                "a network that assumes B0 is +z must be given axial data, threshold or not");
+        assert_eq!(meta.b0_direction, (0.0, 0.0, 1.0));
+    }
+
+    #[test]
+    fn geometry_axial_only_algorithm_outranks_a_sidecar_b0() {
+        let cfg = cfg_with_axial_only_inversion();
+        let run = run_for_geometry(Some((0.0, 0.5, 0.866)));
+        let meta = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
+        assert!(meta.source_geometry.is_some(),
+                "the sidecar describes the acquisition, but the network cannot be told about it");
+        assert_eq!(meta.b0_direction, (0.0, 0.0, 1.0));
+    }
+
+    #[test]
+    fn geometry_axial_only_algorithm_leaves_axial_data_alone() {
+        let cfg = cfg_with_axial_only_inversion();
+        let affine = [
+            0.8, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        let meta = super::resolve_geometry(&run_for_geometry(None), &nifti_with(affine, (4, 4, 4)), &cfg).unwrap();
+        assert!(meta.source_geometry.is_none(), "already axial: nothing to fix");
+        assert_eq!(meta.dims, (4, 4, 4));
+    }
+
+    #[test]
+    fn geometry_axial_only_algorithm_with_a_mese_is_refused() {
+        let cfg = cfg_with_axial_only_inversion();
+        let mut run = run_for_geometry(None);
+        run.mese = Some(crate::bids::discovery::MeseRun {
+            key: run.key.clone(),
+            magnitude_niftis: vec![std::path::PathBuf::from("mese.nii")],
+            echo_times: vec![0.01],
+        });
+        let err = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg)
+            .expect_err("resampling would strand the MESE; not resampling would feed the network \
+                         oblique data. Neither is defensible, so this must not be guessed at");
+        let msg = err.to_string();
+        assert!(msg.contains("MESE"), "the error should say why: {msg}");
+    }
+
+    #[test]
+    fn geometry_classical_algorithm_needs_no_resampling() {
+        let cfg = crate::pipeline::config::PipelineConfig::default(); // iLSQR by default
+        assert!(qsmxt_config::bridge::axial_only_algorithms(&cfg).is_empty(),
+                "the default pipeline takes B0 as a parameter throughout");
     }
 
     fn meta_4x4x4() -> crate::pipeline::graph::RunMetadata {

@@ -1060,6 +1060,32 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub obliquity_threshold: Option<f64>,
 
+    /// Reconstruct inside a box around the mask instead of the whole field of view. Cuts the
+    /// FFT-bound stages roughly in proportion to the voxels removed, but those stages are a
+    /// small share of a full run, so the end-to-end gain is usually modest. Off by default.
+    /// Outputs are written on the full grid either way; this only changes where the arithmetic
+    /// happens. Padding to an FFT-friendly size happens regardless.
+    #[arg(long)]
+    pub crop_to_mask: bool,
+
+    /// Pad the grid outward to an FFT-friendly size before the FFT-bound stages. Much faster on
+    /// an awkward grid, and discards nothing, but it changes where k-space is sampled and so
+    /// shifts the reconstruction slightly. Off by default.
+    #[arg(long)]
+    pub fft_padding: bool,
+
+    /// Margin in mm around the mask when --crop-to-mask is set (default 32). Below ~32 mm the
+    /// reconstruction starts to differ from the uncropped one; it must also clear the largest
+    /// SMV kernel in use, and V-SHARP defaults to 12 mm.
+    #[arg(long)]
+    pub crop_margin_mm: Option<f64>,
+
+    /// Grid to write derivatives on when the run was resampled to axial. `acquired` (default)
+    /// puts them back where the data came from, so transforms you already hold still apply;
+    /// `working` leaves them on the resampled grid and avoids a second interpolation.
+    #[arg(long, value_enum)]
+    pub output_space: Option<OutputSpaceArg>,
+
     /// Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction +
     /// signal-gated erosion; needs a deep-learning build), or bet-and-phase (BET on the
     /// magnitude AND a thresholded phase-quality map, then hole-filled and eroded)
@@ -2763,6 +2789,11 @@ pub enum QsmAlgorithmArg {
     Xqsm, Qsmnet, QsmnetPlus, Autoqsm, Qsmgan, Ir2qsm, Lpcnn, ModlQsm, Nextqsm,
     // End-to-end DL reconstructions from wrapped phase (no separate unwrap/BFR).
     Iqsm, IqsmPlus,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum OutputSpaceArg {
+    Acquired, Working,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

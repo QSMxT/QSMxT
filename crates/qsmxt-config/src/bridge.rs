@@ -63,6 +63,25 @@ fn map_alg(alg: QsmAlgorithm) -> PInvAlg {
     }
 }
 
+/// Map a qsmxt-config background field removal algorithm to its qsm-core equivalent.
+fn map_bf_alg(alg: BfAlgorithm) -> PBgAlg {
+    match alg {
+        BfAlgorithm::Vsharp => PBgAlg::Vsharp,
+        BfAlgorithm::Pdf => PBgAlg::Pdf,
+        BfAlgorithm::Lbv => PBgAlg::Lbv,
+        BfAlgorithm::Ismv => PBgAlg::Ismv,
+        BfAlgorithm::Sharp => PBgAlg::Sharp,
+        BfAlgorithm::Resharp => PBgAlg::Resharp,
+        BfAlgorithm::Harperella => PBgAlg::Harperella,
+        BfAlgorithm::Iharperella => PBgAlg::Iharperella,
+        BfAlgorithm::Bfrnet => PBgAlg::Bfrnet,
+        // iQFM has no qsm-core BgRemovalAlgorithm (its input is phase, not a total field):
+        // the qsmxt runner intercepts it and calls run_iqfm, so this value is never used.
+        // Map to a harmless placeholder to keep the config well-formed.
+        BfAlgorithm::Iqfm => PBgAlg::Vsharp,
+    }
+}
+
 /// Convert a PipelineConfig to qsm-core pipeline stage configs.
 pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     PFieldMapping,
@@ -113,21 +132,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     };
 
     let bg_removal = PBgRemoval {
-        algorithm: match cfg.bg_removal.algorithm {
-            BfAlgorithm::Vsharp => PBgAlg::Vsharp,
-            BfAlgorithm::Pdf => PBgAlg::Pdf,
-            BfAlgorithm::Lbv => PBgAlg::Lbv,
-            BfAlgorithm::Ismv => PBgAlg::Ismv,
-            BfAlgorithm::Sharp => PBgAlg::Sharp,
-            BfAlgorithm::Resharp => PBgAlg::Resharp,
-            BfAlgorithm::Harperella => PBgAlg::Harperella,
-            BfAlgorithm::Iharperella => PBgAlg::Iharperella,
-            BfAlgorithm::Bfrnet => PBgAlg::Bfrnet,
-            // iQFM has no qsm-core BgRemovalAlgorithm (its input is phase, not a total field):
-            // the qsmxt runner intercepts it and calls run_iqfm, so this value is never used.
-            // Map to a harmless placeholder to keep the config well-formed.
-            BfAlgorithm::Iqfm => PBgAlg::Vsharp,
-        },
+        algorithm: map_bf_alg(cfg.bg_removal.algorithm),
         vsharp: qsm_core::bgremove::VsharpParams {
             threshold: cfg.bg_removal.vsharp.threshold,
             max_radius: cfg.bg_removal.vsharp.max_radius,
@@ -435,6 +440,49 @@ fn convert_mask_op(op: &crate::masking::MaskOp) -> PMaskOp {
             tile_step: *tile_step,
         }),
     }
+}
+
+/// The configured algorithms that cannot reconstruct a non-axial acquisition.
+///
+/// Classical methods take the B0 direction as a parameter and build their dipole kernel from
+/// it, so they are correct on the grid the data arrived on. Deep-learning methods learned the
+/// dipole relationship from axially-acquired training data and expose no direction at all —
+/// give them oblique data and the reconstruction completes with wrong values and no warning.
+/// Callers use this to resample first. See `qsm_core::pipeline::OrientationSupport`.
+///
+/// Only stages this run will actually execute are considered.
+pub fn axial_only_algorithms(cfg: &PipelineConfig) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut note = |requires: bool, stage: &str, name: String| {
+        if requires {
+            out.push(format!("{stage} ({name})"));
+        }
+    };
+
+    if cfg.pipeline.do_qsm {
+        let inv = map_alg(cfg.inversion.algorithm);
+        note(inv.orientation_support().requires_axial(), "dipole inversion",
+             cfg.inversion.algorithm.to_string());
+
+        // QSMART runs its own inversion inside, so that is the one that matters.
+        if cfg.inversion.algorithm == QsmAlgorithm::Qsmart {
+            let inner = map_alg(cfg.inversion.qsmart.inversion);
+            note(inner.orientation_support().requires_axial(), "QSMART inversion",
+                 cfg.inversion.qsmart.inversion.to_string());
+        }
+
+        let bf = map_bf_alg(cfg.bg_removal.algorithm);
+        note(bf.orientation_support().requires_axial(), "background field removal",
+             cfg.bg_removal.algorithm.to_string());
+    }
+
+    if cfg.pipeline.do_chi_separation {
+        let sep = map_sep_alg(cfg.separation.algorithm);
+        note(sep.orientation_support().requires_axial(), "chi-separation",
+             cfg.separation.algorithm.to_string());
+    }
+
+    out
 }
 
 #[cfg(test)]

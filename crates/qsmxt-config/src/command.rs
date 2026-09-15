@@ -30,6 +30,16 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     if let Some(tool) = &config.separation.custom_r2prime_tool { parts.push(format!("--use-custom-r2prime {}", tool)); }
     if config.pipeline.export_dicom { parts.push("--export-dicom".into()); }
     emit_f64(&mut parts, "--obliquity-threshold", config.pipeline.obliquity_threshold, d.pipeline.obliquity_threshold);
+    if config.pipeline.crop_to_mask != d.pipeline.crop_to_mask {
+        parts.push("--crop-to-mask".to_string());
+    }
+    if config.pipeline.fft_padding != d.pipeline.fft_padding {
+        parts.push("--fft-padding".to_string());
+    }
+    emit_f64(&mut parts, "--crop-margin-mm", config.pipeline.crop_margin_mm, d.pipeline.crop_margin_mm);
+    if config.pipeline.output_space != d.pipeline.output_space {
+        parts.push(format!("--output-space {}", config.pipeline.output_space));
+    }
 
     // ── Inhomogeneity ──
     if config.masking.inhomogeneity_correction != d.masking.inhomogeneity_correction {
@@ -837,6 +847,26 @@ algorithm = "tv"
         let config = PipelineConfig::from_toml("").unwrap();
         assert_eq!(config.inversion.algorithm, QsmAlgorithm::Rts);
         assert!(config.pipeline.do_qsm);
+    }
+
+    #[test]
+    fn test_output_space() {
+        let mut c = PipelineConfig::default();
+        assert_eq!(c.pipeline.output_space, OutputSpace::Acquired, "acquired is the default");
+        assert!(!generate_command(&c).contains("--output-space"));
+        c.pipeline.output_space = OutputSpace::Working;
+        assert!(generate_command(&c).contains("--output-space working"));
+    }
+
+    #[test]
+    fn test_crop_options() {
+        let mut c = PipelineConfig::default();
+        assert!(!generate_command(&c).contains("--crop"));
+        c.pipeline.crop_to_mask = true;
+        c.pipeline.crop_margin_mm = 24.0;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--crop-to-mask"), "{cmd}");
+        assert!(cmd.contains("--crop-margin-mm 24"), "{cmd}");
     }
 
     #[test]
