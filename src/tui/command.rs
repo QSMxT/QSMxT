@@ -894,10 +894,21 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         if vals.len() == 3 { config.field_mapping.phase_offset_sigma = [vals[0], vals[1], vals[2]]; }
     }
 
-    // ROMEO weight flags
+    // ROMEO weight flags and unwrapping options — every field the pipeline screen edits,
+    // so a saved config reproduces what the TUI shows.
     config.field_mapping.romeo.phase_gradient_coherence = ps.romeo_phase_gradient_coherence;
+    config.field_mapping.romeo.phase_linearity = ps.romeo_phase_linearity;
     config.field_mapping.romeo.mag_coherence = ps.romeo_mag_coherence;
     config.field_mapping.romeo.mag_weight = ps.romeo_mag_weight;
+    config.field_mapping.romeo.mag_weight2 = ps.romeo_mag_weight2;
+    config.field_mapping.romeo.bestpath = ps.romeo_bestpath;
+    config.field_mapping.romeo.merge_regions = ps.romeo_merge_regions;
+    config.field_mapping.romeo.correct_regions = ps.romeo_correct_regions;
+    set_f64!(config.field_mapping.romeo.temporal_uncertain_unwrapping, ps.romeo_temporal_uncertain_unwrapping);
+    set_f64!(config.field_mapping.romeo.wrap_addition, ps.romeo_wrap_addition);
+    if let Ok(v) = ps.romeo_max_seeds.trim().parse::<u8>() {
+        config.field_mapping.romeo.max_seeds = v;
+    }
 
     // Chi-separation forces the relaxometry maps it depends on (R2/R2'/R2*).
     enforce_separation_dependencies(&mut config);

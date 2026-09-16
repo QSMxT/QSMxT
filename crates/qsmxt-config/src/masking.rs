@@ -293,7 +293,9 @@ impl MaskRecipe {
 /// eroded — the two-mask recipe recommended by the ISMRM electro-magnetic tissue properties study
 /// group consensus (Bilgic et al., MRM 2024; doi:10.1002/mrm.30006). BET bounds the head while the
 /// phase-quality threshold drops voxels whose phase cannot be unwrapped reliably; the holes that
-/// intersection leaves inside the brain are filled afterwards.
+/// intersection leaves inside the brain are filled afterwards. The phase-quality section carries
+/// the same dilate/fill-holes/erode refinements as the `robust-threshold` preset, so each side of
+/// the intersection is the mask its own preset would produce.
 pub fn bet_and_phase_mask_recipe() -> MaskRecipe {
     MaskRecipe {
         sections: vec![
@@ -305,7 +307,14 @@ pub fn bet_and_phase_mask_recipe() -> MaskRecipe {
             MaskSection {
                 input: MaskingInput::PhaseQuality,
                 generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
-                refinements: vec![],
+                // The same refinements the `robust-threshold` preset applies to a
+                // thresholded quality map, so the phase side of the intersection is the
+                // mask that preset would have produced.
+                refinements: vec![
+                    MaskOp::Dilate { iterations: 1 },
+                    MaskOp::FillHoles { max_size: 0 },
+                    MaskOp::Erode { iterations: 1 },
+                ],
             },
         ],
         combine: MaskCombine::And,
