@@ -34,6 +34,10 @@ gradient-echo, acquired on a Siemens MAGNETOM Prisma Fit. The archive is cached
 under `~/.cache/qsmxt/examples` (override with `$QSMXT_EXAMPLE_CACHE`), so
 fetching it again into another directory costs nothing.
 
+If OSF is unreachable from your network, set `$QSMXT_EXAMPLE_BASE_URL` to a mirror
+holding the archives as `<id>.zip` — checksums are still enforced, so a mirror
+serving the wrong bytes is rejected exactly as a corrupted download would be.
+
 The data comes from a QSM harmonization acquisition in which the same subject was
 scanned on two Siemens 3T scanners under four protocols, three runs each. List
 everything available with:

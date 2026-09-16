@@ -5403,6 +5403,160 @@ mod tests {
         KeyEvent::new(code, KeyModifiers::NONE)
     }
 
+    // ─── Example-dataset input mode ───
+
+    /// An app parked in Example mode with focus on the picker.
+    fn example_app() -> App {
+        let mut app = App::new();
+        app.active_tab = TAB_INPUT;
+        app.input_mode = InputMode::Example;
+        app.active_field = App::INPUT_IO_FIELDS;
+        app
+    }
+
+    #[test]
+    fn example_state_starts_on_the_button_with_the_default_ticked() {
+        let app = example_app();
+        assert_eq!(app.example_state.cursor, ExampleState::button_index());
+        let picked = app.example_state.selected_examples();
+        assert_eq!(picked.len(), 1);
+        assert_eq!(picked[0].id, crate::example::DEFAULT_ID);
+        assert_eq!(app.example_state.selected_bytes(), picked[0].bytes);
+    }
+
+    #[test]
+    fn example_picker_navigates_and_ticks() {
+        let mut app = example_app();
+        let button = ExampleState::button_index();
+
+        // Up from the button walks into the list; Space ticks a second acquisition.
+        app.handle_key(key(KeyCode::Up));
+        assert_eq!(app.example_state.cursor, button - 1);
+        app.handle_key(key(KeyCode::Char(' ')));
+        assert_eq!(app.example_state.selected_examples().len(), 2);
+
+        // Space again unticks it.
+        app.handle_key(key(KeyCode::Char(' ')));
+        assert_eq!(app.example_state.selected_examples().len(), 1);
+
+        // Down cannot walk past the button.
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.example_state.cursor, button);
+    }
+
+    #[test]
+    fn example_picker_returns_to_the_io_fields_from_the_top() {
+        let mut app = example_app();
+        app.example_state.cursor = 0;
+        app.handle_key(key(KeyCode::Up));
+        assert_eq!(app.active_field, App::INPUT_IO_FIELDS - 1);
+    }
+
+    #[test]
+    fn example_download_refuses_an_empty_selection() {
+        let mut app = example_app();
+        app.example_state.selected = vec![false; crate::example::EXAMPLES.len()];
+        app.handle_key(key(KeyCode::Enter)); // cursor starts on the button
+        assert_eq!(app.example_state.status, ConvertStatus::Idle);
+        assert!(
+            app.error_message.as_deref().unwrap_or("").contains("Select at least one"),
+            "{:?}",
+            app.error_message
+        );
+    }
+
+    #[test]
+    fn example_reset_is_blocked_while_a_download_runs() {
+        // Resetting mid-fetch would orphan the worker thread mid-write.
+        let mut app = example_app();
+        app.example_state.status = ConvertStatus::Converting;
+        app.example_state.output_dir = "somewhere".to_string();
+        app.handle_key(key(KeyCode::Char('r')));
+        assert_eq!(app.example_state.output_dir, "somewhere", "state must survive");
+        assert!(app.error_message.is_some());
+    }
+
+    #[test]
+    fn example_reset_clears_state_when_idle() {
+        let mut app = example_app();
+        app.example_state.output_dir = "somewhere".to_string();
+        app.example_state.cursor = 0;
+        app.handle_key(key(KeyCode::Char('r')));
+        assert!(app.example_state.output_dir.is_empty());
+        assert_eq!(app.example_state.cursor, ExampleState::button_index());
+    }
+
+    #[test]
+    fn example_dataset_dir_defaults_and_expands_tilde() {
+        let mut app = example_app();
+        assert_eq!(app.example_state.resolved_dir(), std::path::PathBuf::from(EXAMPLE_DEFAULT_DIR));
+
+        app.example_state.output_dir = "  ~/data/example  ".to_string();
+        if let Some(home) = std::env::var_os("HOME") {
+            assert_eq!(
+                app.example_state.resolved_dir(),
+                std::path::Path::new(&home).join("data/example")
+            );
+        }
+
+        app.example_state.output_dir = "/abs/path".to_string();
+        assert_eq!(app.example_state.resolved_dir(), std::path::PathBuf::from("/abs/path"));
+    }
+
+    #[test]
+    fn example_poll_is_inert_without_a_worker() {
+        let mut app = example_app();
+        assert!(app.example_state.poll().is_none());
+        assert!(app.example_state.progress().is_none());
+    }
+
+    #[test]
+    fn example_mode_blocks_a_run_until_the_dataset_exists() {
+        let mut app = example_app();
+        app.form.bids_dir = "/some/dir".to_string();
+        app.try_run();
+        assert!(!app.should_run);
+        assert!(
+            app.error_message.as_deref().unwrap_or("").contains("Download the example dataset"),
+            "{:?}",
+            app.error_message
+        );
+    }
+
+    #[test]
+    fn example_mode_edits_the_dataset_dir_not_the_bids_dir() {
+        // Field 1 in Example mode is the dataset directory; the pipeline's own output
+        // directory stays on field 2, unlike the DICOM/NIfTI modes.
+        let mut app = App::new();
+        app.active_tab = TAB_INPUT;
+        app.input_mode = InputMode::Example;
+        app.active_field = 1;
+        app.handle_key(key(KeyCode::Enter));
+        for c in "mydata".chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+        assert_eq!(app.example_state.output_dir, "mydata");
+        assert!(app.form.bids_dir.is_empty(), "the BIDS dir must not be touched");
+    }
+
+    #[test]
+    fn input_mode_cycles_through_all_four_modes() {
+        let mut app = App::new();
+        app.active_tab = TAB_INPUT;
+        app.active_field = 0;
+        let seen: Vec<InputMode> = (0..4)
+            .map(|_| {
+                app.handle_key(key(KeyCode::Right));
+                app.input_mode
+            })
+            .collect();
+        assert_eq!(
+            seen,
+            vec![InputMode::NIfTI, InputMode::DicomToBids, InputMode::Example, InputMode::Bids]
+        );
+    }
+
     #[test]
     fn test_algo_modal_opens_on_enter_over_algoselect() {
         let mut app = App::new();
