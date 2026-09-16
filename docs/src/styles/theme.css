@@ -132,48 +132,10 @@ starlight-menu-button + * nav[class],
 	background: var(--sl-color-accent-low);
 }
 
-/* ─────────────────────────── Terminal demo ─────────────────────────── */
+/* ───────────────────────── Hero illustration ───────────────────────── */
 
-.qsmxt-term {
-	border-radius: 0.8rem;
-	border: 1px solid var(--sl-color-gray-5);
-	background: #0d1117;
-	box-shadow: 0 24px 60px -24px rgba(10, 8, 30, 0.7);
-	overflow: hidden;
-	font-size: 0.86rem;
-	text-align: left;
+.qsmxt-hero-art {
+	width: 100%;
+	height: auto;
+	display: block;
 }
-.qsmxt-term__bar {
-	display: flex;
-	align-items: center;
-	gap: 0.45rem;
-	padding: 0.6rem 0.8rem;
-	background: #161b22;
-	border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-}
-.qsmxt-term__dot {
-	width: 0.72rem;
-	height: 0.72rem;
-	border-radius: 50%;
-	display: inline-block;
-}
-.qsmxt-term__title {
-	margin-left: 0.4rem;
-	color: #8b949e;
-	font-size: 0.78rem;
-	font-family: var(--sl-font-mono);
-}
-.qsmxt-term__body {
-	margin: 0;
-	padding: 0.9rem 1rem 1.1rem;
-	color: #d6deeb;
-	font-family: var(--sl-font-mono);
-	line-height: 1.6;
-	white-space: pre;
-	overflow-x: auto;
-}
-.qsmxt-term__body .c-prompt { color: #7c6cff; }
-.qsmxt-term__body .c-cmd { color: #e6edf3; font-weight: 600; }
-.qsmxt-term__body .c-ok { color: #3fb950; }
-.qsmxt-term__body .c-dim { color: #6e7681; }
-.qsmxt-term__body .c-acc { color: #d2a8ff; }
