@@ -17,6 +17,11 @@ qsmxt tui
   series classification, relabel anything that needs it, and convert. (See
   [DICOM → BIDS](/QSMxT/guides/running-noninteractively/#converting-dicoms-to-bids) for what the classifier handles.)
 - **Point at a dataset** and let QSMxT discover the phase/magnitude runs.
+- **Download an example dataset** — no data of your own to hand? Set
+  **Input Mode → Example dataset**, tick one or more real in-vivo acquisitions,
+  and press Download. The TUI fetches them, writes a BIDS dataset, and drops you
+  straight into BIDS mode pointed at it. (See
+  [Fetch an example](/QSMxT/getting-started/quick-start/#no-data-yet-fetch-an-example).)
 - **Choose algorithms** for masking, unwrapping, background-field removal, and
   dipole inversion from menus — no need to memorise flag names or valid values.
 - **Adjust parameters** for each stage, with sensible defaults pre-filled.

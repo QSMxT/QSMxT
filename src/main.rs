@@ -3,6 +3,7 @@ mod cli;
 mod commands;
 mod dicom;
 mod error;
+mod example;
 mod nifti;
 mod executor;
 mod pipeline;
@@ -49,6 +50,7 @@ fn main() {
         Command::Homogeneity(args) => commands::homogeneity::execute(args),
         Command::Resample(args) => commands::resample::execute(args),
         Command::QualityMap(args) => commands::quality_map::execute(args),
+        Command::Example(args) => commands::example::execute(args),
         Command::Tui => tui::run_tui(),
         Command::Update(args) => commands::update::execute(args),
     };

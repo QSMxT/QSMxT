@@ -14,6 +14,7 @@ for the complete, authoritative options of any command.
 | `init` | Generate a pipeline configuration file (TOML) |
 | [`validate`](/QSMxT/reference/inputs/) | Validate BIDS dataset structure for QSM processing |
 | [`dicom-convert`](/QSMxT/guides/running-noninteractively/#converting-dicoms-to-bids) | Convert a DICOM directory to BIDS with automatic classification |
+| [`example`](/QSMxT/getting-started/quick-start/#no-data-yet-fetch-an-example) | Download an example BIDS dataset to try the pipeline on |
 | [`slurm`](/QSMxT/guides/running-noninteractively/#hpc--slurm) | Generate SLURM job scripts for HPC execution |
 | [`tui`](/QSMxT/guides/running-interactively/) | Launch the interactive TUI |
 | `update` | Check for and install the latest release |

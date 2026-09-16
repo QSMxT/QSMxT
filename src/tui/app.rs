@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
 
@@ -17,6 +17,8 @@ pub enum InputMode {
     Bids,
     NIfTI,
     DicomToBids,
+    /// Download a ready-made example dataset instead of pointing at your own data.
+    Example,
 }
 
 // ─── DICOM conversion state ───
@@ -496,6 +498,221 @@ pub const TAB_SEPARATION: usize = 2;
 pub const TAB_SUPPLEMENTARY: usize = 3;
 pub const TAB_EXECUTION: usize = 4;
 pub const TAB_METHODS: usize = 5;
+
+// ─── Example dataset state ───
+
+/// What a background example download reports back to the UI thread.
+pub enum ExampleMessage {
+    Log(String),
+    /// Every selected acquisition is in place; carries the dataset directory.
+    Done(std::path::PathBuf),
+    Error(String),
+}
+
+/// Default dataset directory when the user leaves the field blank.
+pub const EXAMPLE_DEFAULT_DIR: &str = "qsmxt-example";
+
+pub struct ExampleState {
+    /// Directory the BIDS dataset is created in (or added to). Blank means
+    /// [`EXAMPLE_DEFAULT_DIR`].
+    pub output_dir: String,
+    /// Focus within the picker: an index into [`crate::example::EXAMPLES`], or
+    /// `EXAMPLES.len()` for the Download button below the list.
+    pub cursor: usize,
+    /// Which acquisitions are ticked. Parallel to `EXAMPLES`.
+    pub selected: Vec<bool>,
+    pub scroll_offset: usize,
+    pub status: ConvertStatus,
+    pub log: Vec<String>,
+    /// `(bytes downloaded, bytes total)` for the archive in flight. Written by the
+    /// worker thread at download speed and read once per frame, so it does not go
+    /// through the message channel.
+    progress: Arc<(AtomicU64, AtomicU64)>,
+    receiver: Option<mpsc::Receiver<ExampleMessage>>,
+}
+
+impl Default for ExampleState {
+    fn default() -> Self {
+        let mut selected = vec![false; crate::example::EXAMPLES.len()];
+        // Tick the default acquisition and start on the Download button: the common
+        // case is "just give me an example dataset", which is then a single Enter.
+        // Arrowing up from the button walks into the list to pick something else.
+        let default_idx = crate::example::EXAMPLES
+            .iter()
+            .position(|e| e.id == crate::example::DEFAULT_ID)
+            .unwrap_or(0);
+        selected[default_idx] = true;
+        Self {
+            output_dir: String::new(),
+            cursor: Self::button_index(),
+            selected,
+            scroll_offset: 0,
+            status: ConvertStatus::Idle,
+            log: Vec::new(),
+            progress: Arc::new((AtomicU64::new(0), AtomicU64::new(0))),
+            receiver: None,
+        }
+    }
+}
+
+impl ExampleState {
+    /// Index of the Download button in the focus order (one past the last acquisition).
+    pub fn button_index() -> usize {
+        crate::example::EXAMPLES.len()
+    }
+
+    /// The dataset directory, with `~` expanded and the default applied.
+    pub fn resolved_dir(&self) -> std::path::PathBuf {
+        let trimmed = self.output_dir.trim();
+        let raw = if trimmed.is_empty() { EXAMPLE_DEFAULT_DIR } else { trimmed };
+        expand_tilde(raw)
+    }
+
+    pub fn selected_examples(&self) -> Vec<&'static crate::example::Example> {
+        crate::example::EXAMPLES
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| self.selected.get(*i).copied().unwrap_or(false))
+            .map(|(_, e)| e)
+            .collect()
+    }
+
+    /// Total download size of the current selection, in bytes.
+    pub fn selected_bytes(&self) -> u64 {
+        self.selected_examples().iter().map(|e| e.bytes).sum()
+    }
+
+    /// `(downloaded, total)` for the archive currently in flight, or `None` when
+    /// nothing is downloading.
+    pub fn progress(&self) -> Option<(u64, u64)> {
+        let total = self.progress.1.load(Ordering::Relaxed);
+        (total > 0).then(|| (self.progress.0.load(Ordering::Relaxed), total))
+    }
+
+    pub fn toggle_selected(&mut self) {
+        if let Some(slot) = self.selected.get_mut(self.cursor) {
+            *slot = !*slot;
+        }
+    }
+
+    /// Start fetching the ticked acquisitions in the background. Returns an error
+    /// message for the status bar if the request is not actionable.
+    pub fn start_download(&mut self) -> Result<(), String> {
+        if self.status == ConvertStatus::Converting {
+            return Err("A download is already running".to_string());
+        }
+        let examples = self.selected_examples();
+        if examples.is_empty() {
+            return Err("Select at least one acquisition (Space to tick)".to_string());
+        }
+
+        let dir = self.resolved_dir();
+        self.status = ConvertStatus::Converting;
+        self.log.clear();
+        self.log.push(format!(
+            "Fetching {} acquisition{} ({:.0} MB) into {}",
+            examples.len(),
+            if examples.len() == 1 { "" } else { "s" },
+            self.selected_bytes() as f64 / 1e6,
+            dir.display()
+        ));
+
+        let (tx, rx) = mpsc::channel();
+        self.receiver = Some(rx);
+        let progress = Arc::clone(&self.progress);
+        progress.0.store(0, Ordering::Relaxed);
+        progress.1.store(0, Ordering::Relaxed);
+
+        std::thread::spawn(move || {
+            for example in examples {
+                let _ = tx.send(ExampleMessage::Log(format!("Downloading {}", example.id)));
+                progress.0.store(0, Ordering::Relaxed);
+                progress.1.store(example.bytes, Ordering::Relaxed);
+
+                let zip = match crate::example::download::ensure(example, &mut |done, total| {
+                    progress.0.store(done, Ordering::Relaxed);
+                    progress.1.store(total.max(1), Ordering::Relaxed);
+                }) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        let _ = tx.send(ExampleMessage::Error(e.to_string()));
+                        return;
+                    }
+                };
+                progress.1.store(0, Ordering::Relaxed);
+
+                let tx_step = tx.clone();
+                match crate::example::materialize::materialize(example, &zip, &dir, false, &mut |s| {
+                    let _ = tx_step.send(ExampleMessage::Log(s));
+                }) {
+                    Ok(crate::example::materialize::Outcome::Written(n)) => {
+                        let _ = tx.send(ExampleMessage::Log(format!(
+                            "Added {} (ses-{}, acq-{}, run-{}, {n} echoes)",
+                            example.id, example.scanner, example.acq, example.run
+                        )));
+                    }
+                    Ok(crate::example::materialize::Outcome::Skipped) => {
+                        let _ = tx.send(ExampleMessage::Log(format!(
+                            "{} is already in this dataset — skipped",
+                            example.id
+                        )));
+                    }
+                    Err(e) => {
+                        let _ = tx.send(ExampleMessage::Error(e.to_string()));
+                        return;
+                    }
+                }
+            }
+            let _ = tx.send(ExampleMessage::Done(dir));
+        });
+        Ok(())
+    }
+
+    /// Drain worker messages. Returns the dataset directory once every selected
+    /// acquisition is in place, so the caller can switch to BIDS mode.
+    pub fn poll(&mut self) -> Option<std::path::PathBuf> {
+        let rx = self.receiver.as_ref()?;
+        let mut done = None;
+        loop {
+            match rx.try_recv() {
+                Ok(ExampleMessage::Log(line)) => self.log.push(line),
+                Ok(ExampleMessage::Done(dir)) => {
+                    self.status = ConvertStatus::Done;
+                    self.log.push("Dataset ready".to_string());
+                    done = Some(dir);
+                    break;
+                }
+                Ok(ExampleMessage::Error(e)) => {
+                    self.status = ConvertStatus::Error;
+                    self.log.push(format!("Error: {e}"));
+                    break;
+                }
+                Err(mpsc::TryRecvError::Empty) => return None,
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    // The worker vanished without reporting; do not spin on a dead channel.
+                    if self.status == ConvertStatus::Converting {
+                        self.status = ConvertStatus::Error;
+                        self.log.push("Error: download thread stopped unexpectedly".to_string());
+                    }
+                    break;
+                }
+            }
+        }
+        self.receiver = None;
+        self.progress.1.store(0, Ordering::Relaxed);
+        done
+    }
+}
+
+/// Expand a leading `~/` against `$HOME`, leaving anything else untouched.
+fn expand_tilde(path: &str) -> std::path::PathBuf {
+    if let Some(rest) = path.strip_prefix("~/") {
+        if let Some(home) = std::env::var_os("HOME") {
+            return std::path::Path::new(&home).join(rest);
+        }
+    }
+    std::path::PathBuf::from(path)
+}
 
 pub const TAB_NAMES: [&str; 6] = [
     "Input",
@@ -3034,6 +3251,7 @@ pub struct App {
     pub methods_scroll_offset: usize,
     pub error_message: Option<String>,
     pub input_mode: InputMode,
+    pub example_state: ExampleState,
     pub dicom_state: DicomConvertState,
     pub nifti_state: NiftiState,
     /// When set, an algorithm-selection modal is open over the QSM/Separation tab.
@@ -3285,6 +3503,7 @@ impl App {
             error_message: None,
             algo_modal: None,
             input_mode: InputMode::Bids,
+            example_state: ExampleState::default(),
             dicom_state: DicomConvertState::default(),
             nifti_state: NiftiState::default(),
         }
@@ -3316,6 +3535,16 @@ impl App {
             && self.nifti_state.convert_status != ConvertStatus::Done
         {
             self.error_message = Some("Convert NIfTI to BIDS first (Enter on Convert button)".to_string());
+            self.active_tab = 0;
+            return;
+        }
+
+        // Example mode: the dataset has to exist before it can be run
+        if self.input_mode == InputMode::Example
+            && self.example_state.status != ConvertStatus::Done
+        {
+            self.error_message =
+                Some("Download the example dataset first (Enter on Download)".to_string());
             self.active_tab = 0;
             return;
         }
@@ -3470,6 +3699,11 @@ impl App {
             self.handle_nifti_tab_key(key);
             return;
         }
+        // Example mode: the acquisition picker lives past the IO fields
+        if self.input_mode == InputMode::Example && self.active_field >= Self::INPUT_IO_FIELDS {
+            self.handle_example_tab_key(key);
+            return;
+        }
 
         let in_io = self.active_field < Self::INPUT_IO_FIELDS;
 
@@ -3518,6 +3752,7 @@ impl App {
                             InputMode::Bids => self.filter_state.tree.is_some(),
                             InputMode::NIfTI => true, // always has NIfTI fields below
                             InputMode::DicomToBids => self.dicom_state.session.is_some(),
+                            InputMode::Example => true, // always has the acquisition picker
                         };
                         if has_content {
                             self.active_field = Self::INPUT_IO_FIELDS;
@@ -3558,6 +3793,60 @@ impl App {
         }
     }
 
+    /// Keys for the example-dataset picker (Input tab, past the IO fields).
+    fn handle_example_tab_key(&mut self, key: KeyEvent) {
+        let button = ExampleState::button_index();
+        match key.code {
+            KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
+            KeyCode::Char(c @ '1'..='6') => {
+                self.active_tab = (c as usize) - ('1' as usize);
+                self.active_field = 0;
+            }
+            KeyCode::Tab => {
+                self.active_tab = (self.active_tab + 1) % TAB_NAMES.len();
+                self.active_field = 0;
+            }
+            KeyCode::BackTab => {
+                self.active_tab = (self.active_tab + TAB_NAMES.len() - 1) % TAB_NAMES.len();
+                self.active_field = 0;
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if self.example_state.cursor == 0 {
+                    // Back up into the IO fields above the picker.
+                    self.active_field = Self::INPUT_IO_FIELDS - 1;
+                } else {
+                    self.example_state.cursor -= 1;
+                }
+            }
+            KeyCode::Down | KeyCode::Char('j') if self.example_state.cursor < button => {
+                self.example_state.cursor += 1;
+            }
+            KeyCode::Char(' ') if self.example_state.cursor < button => {
+                self.example_state.toggle_selected();
+            }
+            KeyCode::Enter => {
+                if self.example_state.cursor < button {
+                    self.example_state.toggle_selected();
+                } else if let Err(msg) = self.example_state.start_download() {
+                    self.error_message = Some(msg);
+                }
+            }
+            KeyCode::Char('r') | KeyCode::Char('R') => {
+                // Resetting mid-fetch would orphan the worker thread while it is still
+                // writing into the dataset directory, so leave it alone until it lands.
+                if self.example_state.status == ConvertStatus::Converting {
+                    self.error_message =
+                        Some("A download is running — wait for it to finish".to_string());
+                } else {
+                    self.example_state = ExampleState::default();
+                    self.active_field = Self::INPUT_IO_FIELDS;
+                }
+            }
+            KeyCode::F(5) => self.try_run(),
+            _ => {}
+        }
+    }
+
     fn interact_io_field(&mut self) {
         if self.active_field == 0 {
             // Mode selector: open a modal listing all input modes.
@@ -3568,16 +3857,19 @@ impl App {
                     "BIDS".to_string(),
                     "NIfTI -> BIDS".to_string(),
                     "DICOM -> BIDS".to_string(),
+                    "Example dataset".to_string(),
                 ],
                 help: vec![
                     "Standard BIDS dataset input".to_string(),
                     "Convert loose NIfTI files to BIDS (experimental)".to_string(),
                     "Convert DICOM series to BIDS (experimental)".to_string(),
+                    "Download a ready-made example dataset to try the pipeline on".to_string(),
                 ],
                 cursor: match self.input_mode {
                     InputMode::Bids => 0,
                     InputMode::NIfTI => 1,
                     InputMode::DicomToBids => 2,
+                    InputMode::Example => 3,
                 },
             });
             return;
@@ -3589,11 +3881,13 @@ impl App {
                 InputMode::Bids => self.form.bids_dir.len(),
                 InputMode::NIfTI => self.nifti_state.input_dir.len(),
                 InputMode::DicomToBids => self.dicom_state.dicom_dir.len(),
+                InputMode::Example => self.example_state.output_dir.len(),
             },
             2 => match self.input_mode {
                 InputMode::Bids => self.form.output_dir.len(),
                 InputMode::NIfTI => self.nifti_state.output_dir.len(),
                 InputMode::DicomToBids => self.dicom_state.output_dir.len(),
+                InputMode::Example => self.form.output_dir.len(),
             },
             3 => self.form.config_file.len(),
             _ => 0,
@@ -3608,7 +3902,8 @@ impl App {
     }
 
     fn cycle_input_mode(&mut self, delta: isize) {
-        const MODES: [InputMode; 3] = [InputMode::Bids, InputMode::NIfTI, InputMode::DicomToBids];
+        const MODES: [InputMode; 4] =
+            [InputMode::Bids, InputMode::NIfTI, InputMode::DicomToBids, InputMode::Example];
         let cur = MODES.iter().position(|m| *m == self.input_mode).unwrap_or(0) as isize;
         let next = (cur + delta).rem_euclid(MODES.len() as isize) as usize;
         self.input_mode = MODES[next];
@@ -3635,11 +3930,13 @@ impl App {
                     self.dicom_state.scanned_dir = None;
                     self.dicom_state.session = None;
                 }
+                InputMode::Example => self.example_state.output_dir = String::new(),
             },
             (0, 2) => match self.input_mode {
                 InputMode::Bids => self.form.output_dir = defaults.output_dir.clone(),
                 InputMode::NIfTI => self.nifti_state.output_dir = String::new(),
                 InputMode::DicomToBids => self.dicom_state.output_dir = String::new(),
+                InputMode::Example => self.form.output_dir = defaults.output_dir.clone(),
             },
             (0, 3) => self.form.config_file = defaults.config_file.clone(),
             // Tab 2 (Supplementary)
@@ -3681,6 +3978,7 @@ impl App {
                 self.form.config_file = defaults.config_file.clone();
                 self.dicom_state = DicomConvertState::default();
                 self.nifti_state = NiftiState::default();
+                self.example_state = ExampleState::default();
             }
             TAB_SUPPLEMENTARY => {
                 self.form.do_swi = defaults.do_swi;
@@ -4389,7 +4687,8 @@ impl App {
 
     /// Set the Input-tab mode by index (BIDS / NIfTI / DICOM).
     fn set_input_mode(&mut self, idx: usize) {
-        const MODES: [InputMode; 3] = [InputMode::Bids, InputMode::NIfTI, InputMode::DicomToBids];
+        const MODES: [InputMode; 4] =
+            [InputMode::Bids, InputMode::NIfTI, InputMode::DicomToBids, InputMode::Example];
         if let Some(&m) = MODES.get(idx) {
             self.input_mode = m;
             self.form_scroll_offset = 0;
@@ -4906,11 +5205,13 @@ impl App {
                 InputMode::Bids => &self.form.bids_dir,
                 InputMode::NIfTI => &self.nifti_state.input_dir,
                 InputMode::DicomToBids => &self.dicom_state.dicom_dir,
+                InputMode::Example => &self.example_state.output_dir,
             },
             (0, 2) => match self.input_mode {
                 InputMode::Bids => &self.form.output_dir,
                 InputMode::NIfTI => &self.nifti_state.output_dir,
                 InputMode::DicomToBids => &self.dicom_state.output_dir,
+                InputMode::Example => &self.form.output_dir,
             },
             (0, 3) => &self.form.config_file,
             (TAB_SUPPLEMENTARY, 2) => &self.form.swi_strength,
@@ -4934,11 +5235,13 @@ impl App {
                 InputMode::Bids => &mut self.form.bids_dir,
                 InputMode::NIfTI => &mut self.nifti_state.input_dir,
                 InputMode::DicomToBids => &mut self.dicom_state.dicom_dir,
+                InputMode::Example => &mut self.example_state.output_dir,
             },
             (0, 2) => match self.input_mode {
                 InputMode::Bids => &mut self.form.output_dir,
                 InputMode::NIfTI => &mut self.nifti_state.output_dir,
                 InputMode::DicomToBids => &mut self.dicom_state.output_dir,
+                InputMode::Example => &mut self.form.output_dir,
             },
             (0, 3) => &mut self.form.config_file,
             (TAB_SUPPLEMENTARY, 2) => &mut self.form.swi_strength,
@@ -5188,7 +5491,7 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         let modal = app.algo_modal.as_ref().expect("modal should open over Input Mode");
         assert!(matches!(modal.target, AlgoModalTarget::InputMode));
-        assert_eq!(modal.options.len(), 3);
+        assert_eq!(modal.options.len(), 4);
         app.handle_key(key(KeyCode::Down)); // NIfTI
         app.handle_key(key(KeyCode::Enter));
         assert!(app.algo_modal.is_none());
@@ -7291,9 +7594,11 @@ mod tests {
         app.handle_key(key(KeyCode::Right));
         assert_eq!(app.input_mode, InputMode::DicomToBids);
         app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.input_mode, InputMode::Example);
+        app.handle_key(key(KeyCode::Right));
         assert_eq!(app.input_mode, InputMode::Bids); // wraps around
         app.handle_key(key(KeyCode::Left));
-        assert_eq!(app.input_mode, InputMode::DicomToBids); // wraps other way
+        assert_eq!(app.input_mode, InputMode::Example); // wraps other way
     }
 
     #[test]

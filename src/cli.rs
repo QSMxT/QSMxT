@@ -94,10 +94,31 @@ pub enum Command {
     /// Compute ROMEO phase quality map
     #[command(name = "quality-map")]
     QualityMap(QualityMapArgs),
+    /// Download an example BIDS dataset to try the pipeline on
+    Example(ExampleArgs),
     /// Launch interactive TUI for pipeline configuration
     Tui,
     /// Check for updates and optionally install the latest version
     Update(UpdateArgs),
+}
+
+#[derive(Parser, Debug)]
+pub struct ExampleArgs {
+    /// Directory to create or add the BIDS dataset in [default: qsmxt-example]
+    pub output_dir: Option<PathBuf>,
+
+    /// Which acquisition to fetch; repeat to add several to the one dataset
+    /// [default: prisma-bridge-run1]
+    #[arg(short, long, value_delimiter = ',')]
+    pub name: Vec<String>,
+
+    /// List the available acquisitions and exit
+    #[arg(long)]
+    pub list: bool,
+
+    /// Rewrite acquisitions that are already present in the dataset
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Parser, Debug)]

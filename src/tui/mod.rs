@@ -42,6 +42,15 @@ pub fn run_tui() -> crate::Result<()> {
         app.dicom_state.poll_scan();
         // Resolve dcm2niix once for the availability indicator (cached).
         app.dicom_state.ensure_dcm2niix_checked();
+        // Example-dataset fetch: on completion hand the dataset to BIDS mode, the same
+        // way the DICOM conversion does.
+        if let Some(dataset_dir) = app.example_state.poll() {
+            app.form.bids_dir = dataset_dir.to_string_lossy().to_string();
+            app.input_mode = app::InputMode::Bids;
+            app.active_field = 0;
+            app.form_scroll_offset = 0;
+            app.filter_state.scanned_bids_dir = None;
+        }
         if let Some(bids_dir) = app.dicom_state.poll_convert() {
             if app.dicom_state.convert_status == app::ConvertStatus::Done {
                 app.form.bids_dir = bids_dir.to_string_lossy().to_string();

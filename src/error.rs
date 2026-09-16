@@ -44,6 +44,9 @@ pub enum QsmxtError {
 
     #[error("DICOM conversion error: {0}")]
     Dicom(String),
+
+    #[error("Example dataset error: {0}")]
+    Example(String),
 }
 
 pub type Result<T> = std::result::Result<T, QsmxtError>;
