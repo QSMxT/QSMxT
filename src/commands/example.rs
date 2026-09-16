@@ -135,3 +135,69 @@ fn print_list() {
     println!("    qsmxt example --name prisma-bridge-run1 --name cima-bridge-run1 ~/data/example");
     println!("\nArchives are cached in {}", example::download::cache_dir().display());
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn args(name: Vec<&str>, list: bool) -> ExampleArgs {
+        ExampleArgs {
+            output_dir: Some(PathBuf::from("/nonexistent-should-not-be-reached")),
+            name: name.into_iter().map(String::from).collect(),
+            list,
+            force: false,
+        }
+    }
+
+    #[test]
+    fn list_succeeds_without_touching_the_network_or_disk() {
+        execute(args(vec![], true)).unwrap();
+    }
+
+    #[test]
+    fn an_unknown_name_fails_before_anything_is_downloaded() {
+        // Names are resolved up front precisely so a typo does not cost a 100 MB fetch.
+        let err = execute(args(vec!["prisma-bridge-run9"], false)).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("prisma-bridge-run9"), "{msg}");
+        assert!(msg.contains("--list"), "the message should point at --list: {msg}");
+    }
+
+    #[test]
+    fn one_bad_name_among_good_ones_still_fails_up_front() {
+        let err = execute(args(vec!["prisma-bridge-run1", "nope"], false)).unwrap_err();
+        assert!(err.to_string().contains("nope"), "{err}");
+    }
+
+
+    #[test]
+    fn a_fetch_failure_is_reported_rather_than_leaving_a_half_built_dataset() {
+        // Point the fetch at a dead mirror: execute must surface the failure and leave
+        // no dataset directory behind for the caller to mistake for a good one.
+        let _guard = example::download::env_lock();
+        let cache = tempfile::tempdir().unwrap();
+        let out = tempfile::tempdir().unwrap();
+        let dataset = out.path().join("bids");
+        std::env::set_var("QSMXT_EXAMPLE_CACHE", cache.path());
+        // Port 1 on loopback: nothing listens, so this fails without leaving the machine.
+        std::env::set_var(example::BASE_URL_ENV, "http://127.0.0.1:1");
+
+        let mut a = args(vec!["prisma-bridge-run1"], false);
+        a.output_dir = Some(dataset.clone());
+        let err = execute(a).unwrap_err();
+
+        assert!(matches!(err, QsmxtError::Example(_)), "{err}");
+        assert!(!dataset.exists(), "a failed fetch must not leave a dataset directory");
+
+        std::env::remove_var(example::BASE_URL_ENV);
+        std::env::remove_var("QSMXT_EXAMPLE_CACHE");
+    }
+
+    #[test]
+    fn every_registry_id_resolves() {
+        // `--list` prints these, so each must be usable as a `--name`.
+        for e in example::EXAMPLES {
+            assert!(example::find(e.id).is_some(), "{} does not resolve", e.id);
+        }
+    }
+}

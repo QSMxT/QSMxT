@@ -281,6 +281,253 @@ Pulseq protocols.
 mod tests {
     use super::*;
     use crate::example::find;
+    use std::io::Write as _;
+
+    // ─── Synthetic archive fixtures ───
+    //
+    // qsm-core writes 3D NIfTIs only, but the published bundles are 4D (one volume per
+    // echo), so the fixtures build the 4D header here. Layout mirrors what
+    // `qsm_core::io::save_nifti` emits: 348-byte NIfTI-1 header, 4-byte extension gap,
+    // float32 data, sform from the affine.
+    fn nifti_4d(dims: (usize, usize, usize), nt: usize, fill: impl Fn(usize) -> f32) -> Vec<u8> {
+        let (nx, ny, nz) = dims;
+        let mut h = [0u8; 348];
+        h[0..4].copy_from_slice(&348i32.to_le_bytes());
+        let dim: [i16; 8] = [4, nx as i16, ny as i16, nz as i16, nt as i16, 1, 1, 1];
+        for (i, &d) in dim.iter().enumerate() {
+            h[40 + i * 2..42 + i * 2].copy_from_slice(&d.to_le_bytes());
+        }
+        h[70..72].copy_from_slice(&16i16.to_le_bytes()); // datatype = FLOAT32
+        h[72..74].copy_from_slice(&32i16.to_le_bytes()); // bitpix
+        let pixdim: [f32; 8] = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
+        for (i, &p) in pixdim.iter().enumerate() {
+            h[76 + i * 4..80 + i * 4].copy_from_slice(&p.to_le_bytes());
+        }
+        h[108..112].copy_from_slice(&352.0f32.to_le_bytes()); // vox_offset
+        h[112..116].copy_from_slice(&1.0f32.to_le_bytes()); // scl_slope
+        h[254..256].copy_from_slice(&1i16.to_le_bytes()); // sform_code = scanner anat
+        for (row, vals) in [(280usize, [1.0f32, 0.0, 0.0, 0.0]),
+                            (296, [0.0, 1.0, 0.0, 0.0]),
+                            (312, [0.0, 0.0, 1.0, 0.0])] {
+            for (i, &v) in vals.iter().enumerate() {
+                h[row + i * 4..row + i * 4 + 4].copy_from_slice(&v.to_le_bytes());
+            }
+        }
+        h[344..348].copy_from_slice(b"n+1\0");
+
+        let mut out = Vec::with_capacity(352 + nx * ny * nz * nt * 4);
+        out.extend_from_slice(&h);
+        out.extend_from_slice(&[0u8; 4]);
+        for i in 0..nx * ny * nz * nt {
+            out.extend_from_slice(&fill(i).to_le_bytes());
+        }
+        out
+    }
+
+    /// Build an archive in the shape QSM-CI publishes: `inputs/` holding a 4D magnitude,
+    /// a 4D phase and a params.json.
+    fn write_archive(path: &Path, nt_mag: usize, nt_phase: usize, te: &[f64]) {
+        let dims = (4, 5, 3);
+        let file = fs::File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let opts: zip::write::FileOptions<'_, ()> =
+            zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
+
+        let params = serde_json::json!({
+            "TE": te,
+            "B0": 2.8946,
+            "B0_dir": [0.0, 0.0, 1.0],
+            "TR": 0.035,
+            "flip_angle": 15,
+            "f0_MHz": 123.243444,
+            "scanner": "MAGNETOM Prisma Fit (XR VA30A)",
+            "sequence": "gre_bridge_1mm_psn_adapt",
+        });
+        zip.start_file("inputs/params.json", opts).unwrap();
+        zip.write_all(serde_json::to_string(&params).unwrap().as_bytes()).unwrap();
+
+        zip.start_file("inputs/magnitude.nii.gz", opts).unwrap();
+        zip.write_all(&nifti_4d(dims, nt_mag, |i| i as f32)).unwrap();
+
+        zip.start_file("inputs/phase.nii.gz", opts).unwrap();
+        zip.write_all(&nifti_4d(dims, nt_phase, |i| (i as f32 % 6.0) - 3.0)).unwrap();
+
+        zip.finish().unwrap();
+    }
+
+    /// Materialize the default example from a synthetic archive into a temp dataset.
+    fn materialize_fixture(
+        dir: &Path,
+        nt_mag: usize,
+        nt_phase: usize,
+        te: &[f64],
+        force: bool,
+    ) -> crate::Result<Outcome> {
+        let zip_path = dir.join("bundle.zip");
+        if !zip_path.exists() {
+            write_archive(&zip_path, nt_mag, nt_phase, te);
+        }
+        materialize(
+            find("prisma-bridge-run1").unwrap(),
+            &zip_path,
+            &dir.join("bids"),
+            force,
+            &mut |_| {},
+        )
+    }
+
+    #[test]
+    fn materialize_writes_a_bids_tree_qsmxt_can_read_back() {
+        let dir = tempfile::tempdir().unwrap();
+        let te = [0.005, 0.011, 0.017];
+        let outcome = materialize_fixture(dir.path(), 3, 3, &te, false).unwrap();
+        assert_eq!(outcome, Outcome::Written(3));
+
+        let anat = dir.path().join("bids/sub-01/ses-prisma/anat");
+        for echo in 1..=3 {
+            for part in ["mag", "phase"] {
+                let stem = format!("sub-01_ses-prisma_acq-bridge_run-1_echo-{echo}_part-{part}_MEGRE");
+                assert!(anat.join(format!("{stem}.nii.gz")).is_file(), "missing {stem}.nii.gz");
+                assert!(anat.join(format!("{stem}.json")).is_file(), "missing {stem}.json");
+            }
+        }
+        assert!(dir.path().join("bids/dataset_description.json").is_file());
+        assert!(dir.path().join("bids/README").is_file());
+
+        // Each echo must carry its own TE, in ascending order — the split is the part
+        // most likely to silently transpose volumes.
+        for (i, expected) in te.iter().enumerate() {
+            let p = anat.join(format!(
+                "sub-01_ses-prisma_acq-bridge_run-1_echo-{}_part-phase_MEGRE.json",
+                i + 1
+            ));
+            assert_eq!(crate::bids::sidecar::read_sidecar(&p).unwrap().echo_time, *expected);
+        }
+
+        // The real discovery pass is the contract that matters.
+        let runs =
+            crate::bids::discovery::discover_runs(&dir.path().join("bids"), &Default::default())
+                .unwrap();
+        assert_eq!(runs.len(), 1);
+        assert_eq!(runs[0].echo_times, te.to_vec());
+        assert_eq!(runs[0].magnetic_field_strength, 2.8946);
+        assert!(runs[0].has_magnitude);
+    }
+
+    #[test]
+    fn materialize_splits_volumes_in_echo_order() {
+        // Echo N must be the Nth volume of the 4D file, not a transposed slice of it.
+        let dir = tempfile::tempdir().unwrap();
+        materialize_fixture(dir.path(), 2, 2, &[0.005, 0.011], false).unwrap();
+        let anat = dir.path().join("bids/sub-01/ses-prisma/anat");
+        let vol = 4 * 5 * 3;
+        for echo in 1..=2 {
+            let bytes = fs::read(anat.join(format!(
+                "sub-01_ses-prisma_acq-bridge_run-1_echo-{echo}_part-mag_MEGRE.nii.gz"
+            )))
+            .unwrap();
+            let (data, dims, _, _) = qsm_core::io::load_nifti_4d(&bytes).unwrap();
+            assert_eq!(dims, (4, 5, 3, 1));
+            // write_archive fills magnitude with its flat index, so volume N starts at N*vol.
+            assert_eq!(data[0], ((echo - 1) * vol) as f64, "echo {echo} is the wrong volume");
+        }
+    }
+
+    #[test]
+    fn materialize_is_idempotent_and_force_overrides() {
+        let dir = tempfile::tempdir().unwrap();
+        let te = [0.005, 0.011];
+        assert_eq!(materialize_fixture(dir.path(), 2, 2, &te, false).unwrap(), Outcome::Written(2));
+        // Second call finds the acquisition already present and leaves it alone.
+        assert_eq!(materialize_fixture(dir.path(), 2, 2, &te, false).unwrap(), Outcome::Skipped);
+        // --force rewrites it.
+        assert_eq!(materialize_fixture(dir.path(), 2, 2, &te, true).unwrap(), Outcome::Written(2));
+    }
+
+    #[test]
+    fn materialize_adds_a_second_acquisition_to_an_existing_dataset() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let zip_path = dir.path().join("bundle.zip");
+        write_archive(&zip_path, 2, 2, &[0.005, 0.011]);
+
+        // Two acquisitions from different scanners share one subject and must not collide.
+        for id in ["prisma-bridge-run1", "cima-bridge-run2"] {
+            let outcome =
+                materialize(find(id).unwrap(), &zip_path, &bids, false, &mut |_| {}).unwrap();
+            assert_eq!(outcome, Outcome::Written(2), "{id}");
+        }
+
+        let runs = crate::bids::discovery::discover_runs(&bids, &Default::default()).unwrap();
+        assert_eq!(runs.len(), 2, "both acquisitions should be discoverable");
+        let mut keys: Vec<String> = runs.iter().map(|r| r.key.to_string()).collect();
+        keys.sort();
+        assert_eq!(keys, vec![
+            "sub-01_ses-cima_acq-bridge_run-2_MEGRE".to_string(),
+            "sub-01_ses-prisma_acq-bridge_run-1_MEGRE".to_string(),
+        ]);
+    }
+
+    #[test]
+    fn materialize_rejects_an_echo_count_that_disagrees_with_params() {
+        let dir = tempfile::tempdir().unwrap();
+        // 3 volumes but only 2 declared echo times — a repack error we must not paper over.
+        let err = materialize_fixture(dir.path(), 3, 3, &[0.005, 0.011], false).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("3 volumes"), "unhelpful message: {msg}");
+        assert!(msg.contains("2 echo times"), "unhelpful message: {msg}");
+    }
+
+    #[test]
+    fn materialize_rejects_an_archive_missing_its_params() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("empty.zip");
+        let file = fs::File::create(&zip_path).unwrap();
+        zip::ZipWriter::new(file).finish().unwrap();
+        let err = materialize(
+            find("prisma-bridge-run1").unwrap(),
+            &zip_path,
+            &dir.path().join("bids"),
+            false,
+            &mut |_| {},
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("params.json"), "{err}");
+    }
+
+    #[test]
+    fn materialize_rejects_a_file_that_is_not_an_archive() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("nonsense.zip");
+        fs::write(&zip_path, b"this is not a zip").unwrap();
+        let err = materialize(
+            find("prisma-bridge-run1").unwrap(),
+            &zip_path,
+            &dir.path().join("bids"),
+            false,
+            &mut |_| {},
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("not a readable zip"), "{err}");
+    }
+
+    #[test]
+    fn materialize_reports_progress_steps() {
+        let dir = tempfile::tempdir().unwrap();
+        let zip_path = dir.path().join("bundle.zip");
+        write_archive(&zip_path, 2, 2, &[0.005, 0.011]);
+        let mut steps = Vec::new();
+        materialize(
+            find("prisma-bridge-run1").unwrap(),
+            &zip_path,
+            &dir.path().join("bids"),
+            false,
+            &mut |s| steps.push(s),
+        )
+        .unwrap();
+        assert!(steps.iter().any(|s| s.contains("mag")), "{steps:?}");
+        assert!(steps.iter().any(|s| s.contains("phase")), "{steps:?}");
+    }
 
     #[test]
     fn prefix_orders_bids_entities_correctly() {

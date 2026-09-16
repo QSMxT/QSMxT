@@ -41,7 +41,16 @@ pub struct Example {
 impl Example {
     /// Download URL. A public OSF project serves `osf.io/download/<id>/` without a token;
     /// the bare waterbutler URL only 302-redirects and then 400s for anonymous callers.
+    ///
+    /// `$QSMXT_EXAMPLE_BASE_URL` overrides the host with a mirror, which is how an
+    /// air-gapped or bandwidth-constrained site serves these locally: archives are then
+    /// fetched as `<base>/<id>.zip`. Checksums are still enforced, so a mirror serving
+    /// the wrong bytes is rejected exactly as a corrupted download would be.
     pub fn url(&self) -> String {
+        if let Ok(base) = std::env::var(BASE_URL_ENV) {
+            let base = base.trim_end_matches('/');
+            return format!("{base}/{}.zip", self.id);
+        }
         format!("https://osf.io/download/{}/", self.osf_id)
     }
 
@@ -80,6 +89,9 @@ impl Example {
 /// Landing page for the public OSF project (`gkemr`) hosting the packed acquisitions.
 /// Cited in the generated `dataset_description.json` and sidecars.
 pub const DATASET_URL: &str = "https://osf.io/gkemr/";
+
+/// Environment variable naming a mirror to fetch archives from instead of OSF.
+pub const BASE_URL_ENV: &str = "QSMXT_EXAMPLE_BASE_URL";
 
 /// The example used when `--name` is not given: an ordinary product-GRE acquisition.
 pub const DEFAULT_ID: &str = "prisma-bridge-run1";
@@ -191,9 +203,22 @@ mod tests {
 
     #[test]
     fn url_uses_the_public_download_endpoint() {
+        let _guard = crate::example::download::env_lock();
+        std::env::remove_var(BASE_URL_ENV);
         assert_eq!(
             default_example().url(),
             "https://osf.io/download/6a8c4b1138a9a828b5ff21a9/"
         );
+    }
+
+    #[test]
+    fn url_honours_a_mirror_override() {
+        let _guard = crate::example::download::env_lock();
+        std::env::set_var(BASE_URL_ENV, "https://mirror.example.org/qsmxt/");
+        assert_eq!(
+            default_example().url(),
+            "https://mirror.example.org/qsmxt/prisma-bridge-run1.zip"
+        );
+        std::env::remove_var(BASE_URL_ENV);
     }
 }
