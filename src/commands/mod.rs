@@ -2,6 +2,7 @@ pub mod common;
 pub mod bgremove;
 pub mod combine;
 pub mod dicom;
+pub mod example;
 pub mod fieldmap;
 pub mod homogeneity;
 pub mod init;

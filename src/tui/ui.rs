@@ -388,6 +388,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let in_io = app.active_field < io_field_count;
     let is_bids = app.input_mode == super::app::InputMode::Bids;
     let is_nifti = app.input_mode == super::app::InputMode::NIfTI;
+    let is_example = app.input_mode == super::app::InputMode::Example;
 
     // Build lines for IO fields
     let mut lines: Vec<Line> = Vec::new();
@@ -403,8 +404,10 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         super::app::InputMode::Bids => "BIDS",
         super::app::InputMode::NIfTI => "NIfTI -> BIDS",
         super::app::InputMode::DicomToBids => "DICOM -> BIDS",
+        super::app::InputMode::Example => "Example dataset",
     };
-    let is_experimental = !matches!(app.input_mode, super::app::InputMode::Bids);
+    // The example dataset lands in a plain BIDS tree, so it carries no experimental caveat.
+    let is_experimental = !matches!(app.input_mode, super::app::InputMode::Bids | super::app::InputMode::Example);
     let mode_style = Style::default().fg(Color::Cyan);
     let experimental_span = Span::styled(" (experimental)", Style::default().fg(Color::Yellow));
     if mode_focused {
@@ -430,6 +433,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         super::app::InputMode::Bids => ["BIDS Directory", "Output Directory", "Config File"],
         super::app::InputMode::NIfTI => ["Input Directory", "Output BIDS Dir", "Config File"],
         super::app::InputMode::DicomToBids => ["DICOM Directory", "Output BIDS Dir", "Config File"],
+        super::app::InputMode::Example => ["Dataset Directory", "Output Directory", "Config File"],
     };
 
     // Fields 1-3 are the text IO fields
@@ -447,9 +451,11 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             (0, super::app::InputMode::Bids) => &app.form.bids_dir,
             (0, super::app::InputMode::NIfTI) => &app.nifti_state.input_dir,
             (0, super::app::InputMode::DicomToBids) => &app.dicom_state.dicom_dir,
+            (0, super::app::InputMode::Example) => &app.example_state.output_dir,
             (1, super::app::InputMode::Bids) => &app.form.output_dir,
             (1, super::app::InputMode::NIfTI) => &app.nifti_state.output_dir,
             (1, super::app::InputMode::DicomToBids) => &app.dicom_state.output_dir,
+            (1, super::app::InputMode::Example) => &app.form.output_dir,
             (2, _) => &app.form.config_file,
             _ => "",
         };
@@ -459,8 +465,19 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             super::app::InputMode::Bids => &app.form.bids_dir,
             super::app::InputMode::NIfTI => &app.nifti_state.input_dir,
             super::app::InputMode::DicomToBids => &app.dicom_state.dicom_dir,
+            super::app::InputMode::Example => &app.example_state.output_dir,
         };
-        let display_val = if label_idx == 1 && value.is_empty() && !primary_dir.is_empty() && !(focused && app.editing) {
+        let display_val = if label_idx == 0 && is_example && value.is_empty() && !(focused && app.editing) {
+            Span::styled(
+                format!("(default: {}/)", super::app::EXAMPLE_DEFAULT_DIR),
+                Style::default().fg(Color::DarkGray),
+            )
+        } else if label_idx == 1 && is_example && value.is_empty() && !(focused && app.editing) {
+            Span::styled(
+                "(defaults to the dataset directory)".to_string(),
+                Style::default().fg(Color::DarkGray),
+            )
+        } else if label_idx == 1 && value.is_empty() && !primary_dir.is_empty() && !(focused && app.editing) {
             if is_bids {
                 Span::styled(primary_dir.to_string(), Style::default().fg(Color::DarkGray))
             } else {
@@ -607,6 +624,9 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 )));
             }
         }
+    } else if is_example {
+        // ─── Example mode: acquisition picker ───
+        draw_example_section(&app.example_state, in_io, &mut lines);
     } else {
         // ─── DICOM mode: series classification ───
         draw_dicom_series_section(&app.dicom_state, &mut lines, in_io);
@@ -655,6 +675,17 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         } else {
             None
         }
+    } else if is_example {
+        // Picker rows start after the IO fields + blank + header. The cursor indexes the
+        // registry, but only `example_rows` is rendered, so map through it; a cursor with
+        // no rendered row (the list collapsed mid-fetch) falls back to the button.
+        let offset = io_field_count + 2;
+        let rows = example_rows(&app.example_state);
+        let row = rows.iter().position(|(i, _)| *i == app.example_state.cursor);
+        Some(match row {
+            Some(r) => offset + r,
+            None => offset + example_button_offset(&app.example_state),
+        })
     } else {
         // DICOM series area
         let offset = io_field_count + 2; // blank + header
@@ -690,19 +721,21 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         super::app::InputMode::Bids => &mut app.form_scroll_offset,
         super::app::InputMode::NIfTI => &mut app.nifti_state.scroll_offset,
         super::app::InputMode::DicomToBids => &mut app.dicom_state.scroll_offset,
+        super::app::InputMode::Example => &mut app.example_state.scroll_offset,
     };
     render_scrollable(f, content_area, lines, scroll_offset, focused_line);
 
     // Help text
     let help_text = if in_io {
         match app.active_field {
-            0 => "Left/Right to switch input mode (BIDS / NIfTI / DICOM)",
+            0 => "Left/Right to switch input mode (BIDS / NIfTI / DICOM / Example)",
             1 => match app.input_mode {
                 super::app::InputMode::Bids => "Path to BIDS-formatted dataset directory",
                 super::app::InputMode::NIfTI => "Directory with NIfTI files + JSON sidecars (optional, for auto-scan)",
                 super::app::InputMode::DicomToBids => "Path to directory containing DICOM files",
+                super::app::InputMode::Example => "Directory to create the example dataset in (added to if it exists)",
             },
-            2 => if is_bids { "Output directory (defaults to BIDS directory)" } else { "Output BIDS directory (empty = auto-generate)" },
+            2 => if is_bids || is_example { "Output directory (defaults to BIDS directory)" } else { "Output BIDS directory (empty = auto-generate)" },
             3 => "Optional pipeline configuration file (TOML)",
             _ => "",
         }
@@ -721,6 +754,12 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             super::app::FilterFocus::Exclude => "Glob patterns to exclude (space-separated, e.g. *mygrea*)",
             super::app::FilterFocus::TreeNode(_) => "Space: toggle, Enter: expand/collapse",
             super::app::FilterFocus::NumEchoes => "Limit number of echoes to process",
+        }
+    } else if is_example {
+        if app.example_state.cursor >= super::app::ExampleState::button_index() {
+            "Enter: download the ticked acquisitions and build the dataset"
+        } else {
+            "Space/Enter: tick an acquisition (several can share one dataset), r: reset"
         }
     } else {
         match app.dicom_state.focus {
@@ -742,6 +781,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             super::app::InputMode::Bids => app.form_scroll_offset,
             super::app::InputMode::NIfTI => app.nifti_state.scroll_offset,
             super::app::InputMode::DicomToBids => app.dicom_state.scroll_offset,
+            super::app::InputMode::Example => app.example_state.scroll_offset,
         };
         let line = app.active_field;
         if line >= scroll && line < scroll + content_area.height as usize {
@@ -801,6 +841,122 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 }
 
 /// Render the NIfTI configuration section (used within the unified input tab).
+/// Which acquisition rows the picker renders, as `(registry index, example)`.
+///
+/// While idle it is the whole catalogue. Once a fetch starts the catalogue is just
+/// noise and would push the progress log off a short terminal, so it collapses to the
+/// acquisitions actually being fetched.
+fn example_rows(
+    state: &super::app::ExampleState,
+) -> Vec<(usize, &'static crate::example::Example)> {
+    crate::example::EXAMPLES
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| {
+            state.status == super::app::ConvertStatus::Idle
+                || state.selected.get(*i).copied().unwrap_or(false)
+        })
+        .collect()
+}
+
+/// Line offset of the Download button within the picker, relative to the first
+/// acquisition row (the list, then a blank line).
+fn example_button_offset(state: &super::app::ExampleState) -> usize {
+    example_rows(state).len() + 1
+}
+
+/// Render the example-dataset picker: the acquisition rows from [`example_rows`],
+/// then a Download button carrying the current status, then the progress log.
+fn draw_example_section(
+    state: &super::app::ExampleState,
+    in_io: bool,
+    lines: &mut Vec<Line<'_>>,
+) {
+    use super::app::ConvertStatus;
+
+    lines.push(Line::from(Span::styled(
+        "  -- Example acquisitions (one in-vivo subject, Siemens 3T) --",
+        Style::default().fg(Color::DarkGray).add_modifier(Modifier::BOLD),
+    )));
+
+    let button = super::app::ExampleState::button_index();
+    for (i, example) in example_rows(state) {
+        let ticked = state.selected.get(i).copied().unwrap_or(false);
+        let focused = !in_io && state.cursor == i;
+        let name_style = if focused {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else if ticked {
+            Style::default().fg(Color::Cyan)
+        } else {
+            Style::default().fg(Color::Gray)
+        };
+        lines.push(Line::from(vec![
+            Span::styled(
+                format!("  [{}] ", if ticked { "x" } else { " " }),
+                if ticked { Style::default().fg(Color::Green) } else { Style::default().fg(Color::DarkGray) },
+            ),
+            Span::styled(format!("{:<28}", example.id), name_style),
+            Span::styled(example.describe(), Style::default().fg(Color::DarkGray)),
+        ]));
+    }
+
+    lines.push(Line::from(""));
+
+    // Download button, carrying the current status.
+    let focused = !in_io && state.cursor >= button;
+    let (label, style) = match state.status {
+        ConvertStatus::Converting => (
+            match state.progress() {
+                Some((done, total)) => format!(
+                    "  Downloading... {:>3}%  ({:.0}/{:.0} MB)",
+                    done * 100 / total.max(1),
+                    done as f64 / 1e6,
+                    total as f64 / 1e6
+                ),
+                None => "  Writing dataset...".to_string(),
+            },
+            Style::default().fg(Color::Yellow),
+        ),
+        ConvertStatus::Done => (
+            "  [ Download ]  (dataset ready)".to_string(),
+            Style::default().fg(Color::Green),
+        ),
+        ConvertStatus::Error => (
+            "  [ Download ]  (failed - see below)".to_string(),
+            Style::default().fg(Color::Red),
+        ),
+        ConvertStatus::Idle => {
+            let n = state.selected_examples().len();
+            (
+                format!(
+                    "  [ Download ]  {n} selected, {:.0} MB",
+                    state.selected_bytes() as f64 / 1e6
+                ),
+                Style::default().fg(Color::White),
+            )
+        }
+    };
+    let style = if focused && state.status != ConvertStatus::Converting {
+        style.add_modifier(Modifier::BOLD | Modifier::REVERSED)
+    } else {
+        style
+    };
+    lines.push(Line::from(Span::styled(label, style)));
+
+    if !state.log.is_empty() {
+        lines.push(Line::from(""));
+        // Only the tail matters while a long multi-acquisition fetch runs.
+        for line in state.log.iter().rev().take(8).rev() {
+            let style = if line.starts_with("Error:") {
+                Style::default().fg(Color::Red)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            lines.push(Line::from(Span::styled(format!("  {line}"), style)));
+        }
+    }
+}
+
 fn draw_nifti_section(
     ns: &super::app::NiftiState,
     in_io: bool,
@@ -1803,6 +1959,96 @@ mod tests {
     fn test_draw_default_app_no_panic() {
         let mut app = App::new();
         let _ = render_app(&mut app);
+    }
+
+    /// The rendered screen as one string, for substring assertions.
+    fn screen_text(terminal: &Terminal<TestBackend>) -> String {
+        let buf = terminal.backend().buffer();
+        (0..buf.area.height)
+            .map(|y| {
+                (0..buf.area.width)
+                    .map(|x| buf[(x, y)].symbol())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    fn example_app() -> App {
+        let mut app = App::new();
+        app.input_mode = crate::tui::app::InputMode::Example;
+        app
+    }
+
+    #[test]
+    fn example_mode_renders_the_picker() {
+        // Focus on the IO fields: the top of the panel is in view.
+        let mut app = example_app();
+        let text = screen_text(&render_app(&mut app));
+        assert!(text.contains("Example dataset"), "mode label missing:\n{text}");
+        assert!(text.contains("Dataset Directory"), "IO label missing:\n{text}");
+        assert!(text.contains("prisma-bridge-run1"), "default acquisition missing:\n{text}");
+        assert!(text.contains("[x]"), "default acquisition not ticked:\n{text}");
+    }
+
+    #[test]
+    fn example_mode_opens_on_the_download_button() {
+        // Moving focus into the picker scrolls to the cursor, which starts on the
+        // button so that fetching the default acquisition is a single Enter.
+        let mut app = example_app();
+        app.active_field = App::INPUT_IO_FIELDS;
+        assert_eq!(
+            app.example_state.cursor,
+            crate::tui::app::ExampleState::button_index()
+        );
+        let text = screen_text(&render_app(&mut app));
+        assert!(text.contains("Download"), "button missing:\n{text}");
+        assert!(text.contains("1 selected"), "selection summary missing:\n{text}");
+    }
+
+    #[test]
+    fn example_mode_shows_the_default_dataset_directory() {
+        let mut app = example_app();
+        let text = screen_text(&render_app(&mut app));
+        assert!(
+            text.contains(crate::tui::app::EXAMPLE_DEFAULT_DIR),
+            "default dir placeholder missing:\n{text}"
+        );
+    }
+
+    #[test]
+    fn example_picker_tracks_the_cursor_without_panicking() {
+        // Walk from the IO fields to the Download button and back, rendering each step.
+        // This is what catches focused-line arithmetic that runs off the end of `lines`.
+        let mut app = example_app();
+        app.active_field = App::INPUT_IO_FIELDS;
+        for cursor in 0..=crate::tui::app::ExampleState::button_index() {
+            app.example_state.cursor = cursor;
+            let _ = render_app(&mut app);
+        }
+    }
+
+    #[test]
+    fn example_mode_renders_download_progress() {
+        let mut app = example_app();
+        app.active_field = App::INPUT_IO_FIELDS;
+        app.example_state.status = crate::tui::app::ConvertStatus::Converting;
+        app.example_state.log.push("Downloading prisma-bridge-run1".to_string());
+        let text = screen_text(&render_app(&mut app));
+        // No progress counters yet, so the button shows the post-download phase.
+        assert!(text.contains("Writing dataset"), "status missing:\n{text}");
+        assert!(text.contains("Downloading prisma-bridge-run1"), "log missing:\n{text}");
+    }
+
+    #[test]
+    fn example_mode_renders_an_error_from_the_worker() {
+        let mut app = example_app();
+        app.active_field = App::INPUT_IO_FIELDS;
+        app.example_state.status = crate::tui::app::ConvertStatus::Error;
+        app.example_state.log.push("Error: checksum mismatch".to_string());
+        let text = screen_text(&render_app(&mut app));
+        assert!(text.contains("failed"), "failed marker missing:\n{text}");
+        assert!(text.contains("Error: checksum mismatch"), "error text missing:\n{text}");
     }
 
     #[test]

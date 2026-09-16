@@ -51,6 +51,13 @@ qsmxt dicom-convert /path/to/dicoms study/bids   # DICOM → BIDS
 qsmxt run study/bids                             # run the pipeline
 ```
 
+No data to hand? Fetch a real in-vivo subject and reconstruct it:
+
+```sh
+qsmxt example study/bids                         # download an example dataset
+qsmxt run study/bids                             # run the pipeline
+```
+
 Full guides and the complete command reference are on the
 **[documentation site](https://qsmxt.github.io/QSMxT/)** (or run `qsmxt --help`).
 
