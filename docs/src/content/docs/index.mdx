@@ -6,23 +6,39 @@ hero:
   tagline: Quantitative Susceptibility Mapping, in Rust — a fast, BIDS-native pipeline and interactive TUI.
   image:
     html: |
-      <div class="qsmxt-term">
-        <div class="qsmxt-term__bar">
-          <span class="qsmxt-term__dot" style="background:#ff5f56"></span>
-          <span class="qsmxt-term__dot" style="background:#ffbd2e"></span>
-          <span class="qsmxt-term__dot" style="background:#27c93f"></span>
-          <span class="qsmxt-term__title">qsmxt — run</span>
-        </div>
-        <pre class="qsmxt-term__body"><span class="c-prompt">$</span> <span class="c-cmd">qsmxt run study/bids</span>
-      <span class="c-dim">  discovered</span> 24 runs · 12 subjects
-        <span class="c-ok">✓</span> masking          <span class="c-acc">threshold</span>
-        <span class="c-ok">✓</span> phase unwrapping  <span class="c-acc">romeo</span>
-        <span class="c-ok">✓</span> B0 mapping        <span class="c-acc">multi-echo</span>
-        <span class="c-ok">✓</span> background field   <span class="c-acc">v-sharp</span>
-        <span class="c-ok">✓</span> dipole inversion  <span class="c-acc">rts</span>
-        <span class="c-ok">✓</span> referencing       <span class="c-acc">mean</span>
-      <span class="c-dim">  →</span> derivatives/qsmxt/  <span class="c-dim">·  24 χ-maps in 3m12s</span></pre>
-      </div>
+      <svg class="qsmxt-hero-art" viewBox="0 0 400 310" xmlns="http://www.w3.org/2000/svg" role="img"
+           aria-label="A terminal window running the QSMxT interactive TUI, with a susceptibility map produced from it">
+        <defs>
+          <linearGradient id="qxt-g" x1="0" y1="0" x2="1" y2="1">
+            <stop stop-color="#c084fc"/><stop offset="1" stop-color="#7e22ce"/>
+          </linearGradient>
+          <radialGradient id="qxt-glow" cx=".5" cy=".5" r=".5">
+            <stop stop-color="#a855f7" stop-opacity=".3"/><stop offset="1" stop-color="#a855f7" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="qxt-void" cx=".5" cy=".42" r=".55">
+            <stop stop-color="#1e1a2b"/><stop offset=".7" stop-color="#110f18"/><stop offset="1" stop-color="#0b0e14"/>
+          </radialGradient>
+        </defs>
+        <ellipse cx="200" cy="150" rx="215" ry="145" fill="url(#qxt-glow)"/>
+        <ellipse cx="200" cy="268" rx="170" ry="14" fill="#a855f7" fill-opacity=".08"/>
+        <polygon points="60,56 340,56 362,40 82,40" fill="#c084fc" fill-opacity=".16"
+                 stroke="url(#qxt-g)" stroke-width="2.5" stroke-linejoin="round"/>
+        <polygon points="340,56 362,40 362,230 340,246" fill="#7e22ce" fill-opacity=".30"
+                 stroke="url(#qxt-g)" stroke-width="2.5" stroke-linejoin="round"/>
+        <rect x="60" y="56" width="280" height="190" rx="10" fill="url(#qxt-void)" stroke="url(#qxt-g)" stroke-width="3"/>
+        <rect x="60" y="56" width="280" height="22" fill="#c084fc" fill-opacity=".10"/>
+        <line x1="60" y1="78" x2="340" y2="78" stroke="#c084fc" stroke-opacity=".35" stroke-width="1.5"/>
+        <circle cx="76" cy="67" r="3.5" fill="#c084fc" fill-opacity=".55"/>
+        <circle cx="89" cy="67" r="3.5" fill="#c084fc" fill-opacity=".55"/>
+        <circle cx="102" cy="67" r="3.5" fill="#c084fc" fill-opacity=".55"/>
+        <rect x="70" y="88" width="260" height="20" rx="2" fill="none" stroke="#c084fc" stroke-opacity="0.5" stroke-width="1.5"/><rect x="76" y="86" width="50" height="4" fill="#0b0e14"/><line x1="79" y1="88" x2="123" y2="88" stroke="#c084fc" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="99" x2="96" y2="99" stroke="#c084fc" stroke-opacity="0.9" stroke-width="2" stroke-linecap="round"/><line x1="101" y1="95" x2="101" y2="103" stroke="#c084fc" stroke-opacity=".3" stroke-width="1.5"/><line x1="106" y1="99" x2="120" y2="99" stroke="#c084fc" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/><line x1="125" y1="95" x2="125" y2="103" stroke="#c084fc" stroke-opacity=".3" stroke-width="1.5"/><line x1="130" y1="99" x2="152" y2="99" stroke="#c084fc" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/><line x1="157" y1="95" x2="157" y2="103" stroke="#c084fc" stroke-opacity=".3" stroke-width="1.5"/><line x1="162" y1="99" x2="188" y2="99" stroke="#c084fc" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/><line x1="193" y1="95" x2="193" y2="103" stroke="#c084fc" stroke-opacity=".3" stroke-width="1.5"/><line x1="198" y1="99" x2="218" y2="99" stroke="#c084fc" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/><line x1="223" y1="95" x2="223" y2="103" stroke="#c084fc" stroke-opacity=".3" stroke-width="1.5"/><line x1="228" y1="99" x2="244" y2="99" stroke="#c084fc" stroke-opacity="0.4" stroke-width="2" stroke-linecap="round"/><rect x="70" y="116" width="260" height="82" rx="2" fill="none" stroke="#c084fc" stroke-opacity="0.5" stroke-width="1.5"/><rect x="76" y="114" width="30" height="4" fill="#0b0e14"/><line x1="79" y1="116" x2="103" y2="116" stroke="#c084fc" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="130" x2="110" y2="130" stroke="#c084fc" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round"/><line x1="142" y1="130" x2="160" y2="130" stroke="#c084fc" stroke-opacity="0.9" stroke-width="2" stroke-linecap="round"/><path d="M136 127 l-3 3 l3 3 M164 127 l3 3 l-3 3" fill="none" stroke="#c084fc" stroke-opacity=".9" stroke-width="1.5"/><line x1="80" y1="141" x2="118" y2="141" stroke="#c084fc" stroke-opacity="0.6" stroke-width="2" stroke-linecap="round"/><line x1="142" y1="141" x2="168" y2="141" stroke="#c084fc" stroke-opacity="0.3" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="152" x2="120" y2="152" stroke="#c084fc" stroke-opacity="0.6" stroke-width="2" stroke-linecap="round"/><line x1="142" y1="152" x2="162" y2="152" stroke="#c084fc" stroke-opacity="0.3" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="163" x2="108" y2="163" stroke="#c084fc" stroke-opacity="0.6" stroke-width="2" stroke-linecap="round"/><line x1="142" y1="163" x2="162" y2="163" stroke="#c084fc" stroke-opacity="0.3" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="184" x2="120" y2="184" stroke="#c084fc" stroke-opacity="0.3" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="192" x2="176" y2="192" stroke="#c084fc" stroke-opacity="0.25" stroke-width="2" stroke-linecap="round"/><rect x="70" y="204" width="260" height="16" rx="2" fill="none" stroke="#c084fc" stroke-opacity="0.5" stroke-width="1.5"/><rect x="76" y="202" width="56" height="4" fill="#0b0e14"/><line x1="79" y1="204" x2="129" y2="204" stroke="#c084fc" stroke-opacity="0.8" stroke-width="2" stroke-linecap="round"/><line x1="80" y1="212" x2="164" y2="212" stroke="#c084fc" stroke-opacity="0.95" stroke-width="2.5" stroke-linecap="round"/><line x1="76" y1="232" x2="80" y2="232" stroke="#c084fc" stroke-opacity="0.9" stroke-width="2" stroke-linecap="round"/><line x1="83" y1="232" x2="97" y2="232" stroke="#c084fc" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/><line x1="106" y1="232" x2="110" y2="232" stroke="#c084fc" stroke-opacity="0.9" stroke-width="2" stroke-linecap="round"/><line x1="113" y1="232" x2="135" y2="232" stroke="#c084fc" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/><line x1="144" y1="232" x2="148" y2="232" stroke="#c084fc" stroke-opacity="0.9" stroke-width="2" stroke-linecap="round"/><line x1="151" y1="232" x2="177" y2="232" stroke="#c084fc" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/><line x1="186" y1="232" x2="190" y2="232" stroke="#c084fc" stroke-opacity="0.9" stroke-width="2" stroke-linecap="round"/><line x1="193" y1="232" x2="209" y2="232" stroke="#c084fc" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/><line x1="218" y1="232" x2="222" y2="232" stroke="#c084fc" stroke-opacity="0.9" stroke-width="2" stroke-linecap="round"/><line x1="225" y1="232" x2="239" y2="232" stroke="#c084fc" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/><line x1="248" y1="232" x2="252" y2="232" stroke="#c084fc" stroke-opacity="0.9" stroke-width="2" stroke-linecap="round"/><line x1="255" y1="232" x2="269" y2="232" stroke="#c084fc" stroke-opacity="0.35" stroke-width="2" stroke-linecap="round"/>
+        <path d="M262 110 C 282 92, 302 74, 326 58" fill="none" stroke="#c084fc" stroke-opacity=".6"
+              stroke-width="2" stroke-dasharray="3 5" stroke-linecap="round"/>
+        <g transform="translate(322 8)">
+          <rect width="64" height="64" rx="16" fill="url(#qxt-g)"/>
+          <g transform="matrix(0.05572,0,0,-0.05572,19.5728,38.5758)"><path d="M265 -28 252 95 498 431H406L240 203L227 332C222 375 219 441 158 441C90 441 64 356 60 303L81 296C88 339 109 361 149 361C192 361 193 314 197 282L210 164L-52 -195H40L222 57L236 -62C241 -103 246 -205 307 -205C363 -205 398 -133 402 -73L381 -66C374 -86 370 -130 319 -130C279 -130 268 -59 265 -28Z" fill="#fff"/></g>
+        </g>
+      </svg>
   actions:
     - text: Get started
       link: /QSMxT/getting-started/installation/
