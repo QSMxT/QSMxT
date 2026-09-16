@@ -21,20 +21,30 @@ fn main() {
     }
     println!("cargo:rustc-env=QSM_CORE_GIT_HASH={}", qsm_core_hash);
 
-    // Extract qsm-core tag from Cargo.toml
+    // Extract qsm-core tag from Cargo.toml. Match the dependency declaration itself
+    // (`qsm-core = { ... }`), not any line that merely mentions the crate — the `dl`
+    // feature lists `qsm-core/onnx`, and matching that first left the version "unknown".
     let toml = fs::read_to_string("Cargo.toml").unwrap_or_default();
     let mut qsm_core_version = String::from("unknown");
     for line in toml.lines() {
-        if line.contains("qsm-core") {
-            // Look for tag = "v0.10.0" or similar
-            if let Some(tag_start) = line.find("tag = \"") {
-                let rest = &line[tag_start + 7..];
-                if let Some(end) = rest.find('"') {
-                    qsm_core_version = rest[..end].to_string();
-                }
-            }
-            break;
+        let trimmed = line.trim_start();
+        let is_dep_decl = trimmed
+            .strip_prefix("qsm-core")
+            .is_some_and(|rest| rest.trim_start().starts_with('='));
+        if !is_dep_decl {
+            continue;
         }
+        // Look for tag = "v0.10.0" or similar
+        if let Some(tag_start) = line.find("tag = \"") {
+            let rest = &line[tag_start + 7..];
+            if let Some(end) = rest.find('"') {
+                qsm_core_version = rest[..end].to_string();
+            }
+        } else if line.contains("path = ") {
+            // Local path dependency (used while a QSM.rs change is unreleased).
+            qsm_core_version = String::from("local");
+        }
+        break;
     }
     println!("cargo:rustc-env=QSM_CORE_VERSION={}", qsm_core_version);
 
