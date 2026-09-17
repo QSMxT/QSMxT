@@ -44,17 +44,10 @@ hero:
       link: /QSMxT/getting-started/installation/
       icon: right-arrow
       variant: primary
-    - text: Try in your browser
-      link: https://qsmbly.neurodesk.org/
-      icon: external
-      variant: secondary
-      attrs:
-        target: _blank
-        rel: noopener
     - text: Try in Neurodesk
       link: https://www.neurodesk.org/
       icon: external
-      variant: minimal
+      variant: secondary
       attrs:
         target: _blank
         rel: noopener
@@ -62,20 +55,13 @@ hero:
 
 import { Card, CardGrid, LinkCard, Tabs, TabItem } from '@astrojs/starlight/components';
 
-QSMxT takes you from raw scanner DICOMs to quantitative susceptibility maps with a
-single self-contained binary. It finds the phase and magnitude pairs in a
-[BIDS](https://bids.neuroimaging.io/) dataset, runs the reconstruction with
-sensible defaults, and writes BIDS derivatives.
-
-**Install** it with a single command:
-
 <Tabs syncKey="os">
-  <TabItem label="macOS / Linux">
+  <TabItem label="macOS / Linux install">
     ```sh
     curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.sh | sh
     ```
   </TabItem>
-  <TabItem label="Windows">
+  <TabItem label="Windows install">
     ```powershell
     irm https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.ps1 | iex
     ```
@@ -83,18 +69,22 @@ sensible defaults, and writes BIDS derivatives.
 </Tabs>
 
 See the [installation guide](/QSMxT/getting-started/installation/) for other
-options, or skip installing entirely and [try it in your browser](https://qsmbly.neurodesk.org/).
+options, including building from source.
 
 ## Why QSMxT
 
 <CardGrid>
 	<Card title="End-to-end pipeline" icon="rocket">
 		Masking, phase unwrapping, echo combination, background field removal,
-		dipole inversion, and referencing — orchestrated for you.
+		dipole inversion, and referencing — orchestrated for you by a single
+		self-contained binary, with defaults that work on human brain GRE data
+		as they come.
 	</Card>
-	<Card title="10 inversion algorithms" icon="random">
-		RTS, TV, TKD, TSVD, TGV, Tikhonov, NLTV, MEDI, iLSQR, and QSMART, all
-		provided by [QSM.rs](https://github.com/astewartau/QSM.rs).
+	<Card title="50+ algorithms" icon="random">
+		Swap the method at any stage: four masking recipes, eight
+		background-field removers, 18 classical and 11 deep-learning dipole
+		inversions, and eight source-separation methods — all provided by
+		[QSM.rs](https://github.com/astewartau/QSM.rs).
 	</Card>
 	<Card title="Interactive TUI" icon="laptop">
 		Convert, configure, and run from a polished terminal interface — the

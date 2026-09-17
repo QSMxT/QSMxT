@@ -36,12 +36,6 @@ The TUI writes the same configuration the CLI consumes, so anything you set up
 interactively can be saved and reproduced [noninteractively](/QSMxT/guides/running-noninteractively/)
 with `qsmxt run --config` — or by copying the generated command.
 
-:::tip[Prefer the browser?]
-You can try the same reconstruction algorithms with no installation at all in
-**[qsmbly](https://qsmbly.neurodesk.org/)** — a browser build of the QSM engine.
-It's a great way to experiment before processing a full dataset with QSMxT.
-:::
-
 :::note
 The TUI is ideal for exploring a new dataset and dialling in parameters. Once
 you're happy, capture the configuration to a TOML file and reuse it

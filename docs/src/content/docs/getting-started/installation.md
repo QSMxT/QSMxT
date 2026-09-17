@@ -6,12 +6,6 @@ description: Install QSMxT on Linux, macOS, or Windows — or build it from sour
 QSMxT ships as a single self-contained binary. There is no environment to manage
 and no toolbox to assemble.
 
-:::tip[Just want to try it?]
-You don't have to install anything to experiment with the algorithms —
-**[qsmbly](https://qsmbly.neurodesk.org/)** runs the same QSM engine in your
-browser.
-:::
-
 ## Quick install
 
 ### Linux / macOS

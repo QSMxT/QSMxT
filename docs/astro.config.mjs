@@ -44,12 +44,31 @@ export default defineConfig({
 						"document.documentElement.dataset.theme='dark';}})();",
 				},
 				{
+					// Preselect the install tab matching the visitor's OS. Starlight's
+					// synced tabs restore from this localStorage key while the page
+					// parses, so seeding it here avoids a flash of the wrong command.
+					// Only seeded when unset, so an explicit tab click still wins.
 					tag: 'script',
 					content:
-						"(function(){var s=document.createElement('script');" +
+						"(function(){try{var k='starlight-synced-tabs__os';" +
+						"if(localStorage.getItem(k))return;" +
+						"var d=navigator.userAgentData,p=(d&&d.platform)||navigator.platform||'';" +
+						"var win=/win/i.test(p)||/Windows/i.test(navigator.userAgent||'');" +
+						"localStorage.setItem(k,win?'Windows install':'macOS / Linux install');}catch(e){}})();",
+				},
+				{
+					tag: 'script',
+					content:
+						"(function(){var hosted='https://qsmxt.github.io/qsm-nav.js';" +
 						"var local=location.hostname==='localhost'||location.hostname==='127.0.0.1';" +
-						"s.src=local?'/qsm-nav.js':'https://qsmxt.github.io/qsm-nav.js';" +
-						"s.dataset.current='xt';document.head.appendChild(s);})();",
+						"function load(src,onfail){var s=document.createElement('script');" +
+						"s.src=src;s.dataset.current='xt';s.onerror=onfail||null;" +
+						"document.head.appendChild(s);}" +
+						// Locally, prefer a checked-out copy of the bar so it can be edited
+						// alongside the site — but fall back to the hosted one when there
+						// isn't one, so dev doesn't render a headerless dead strip.
+						"if(local){load('/qsm-nav.js',function(){load(hosted);});}" +
+						"else{load(hosted);}})();",
 				},
 			],
 			social: [
