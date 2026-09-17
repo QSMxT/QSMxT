@@ -65,6 +65,13 @@ starlight-menu-button + * nav[class],
 
 .hero {
 	position: relative;
+	/* Top-align the two columns (Starlight centres them) so the logo badge in
+	   the illustration lines up with the title's cap height, as on the other
+	   QSM sites — centring leaves the art hanging low against shorter copy. */
+	align-items: start;
+	/* Match the other QSM sites' hero rhythm (80/64) rather than Starlight's
+	   even 96/96, which leaves a large dead band under the shorter copy. */
+	padding-block: 5rem 4rem;
 }
 
 /* soft brand glow behind the hero */

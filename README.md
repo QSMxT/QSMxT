@@ -17,8 +17,9 @@ algorithm details. This README is just a quick pointer.
 - **Interactive TUI** — convert, configure, and run from the terminal; it also
   shows the equivalent CLI command as you go.
 - **DICOM → BIDS** — built-in conversion with automatic series classification.
-- **10 inversion algorithms**, 8 background-field methods, flexible masking,
-  plus SWI / T2\* / R2\* outputs.
+- **50+ algorithms** — four masking recipes, 8 background-field removers, 18
+  classical and 11 deep-learning dipole inversions, and 8 source-separation
+  methods, plus SWI / T2\* / R2\* outputs.
 - **Built for scale** — disk caching, memory-aware parallelism, and SLURM support.
 
 All reconstruction algorithms are provided by

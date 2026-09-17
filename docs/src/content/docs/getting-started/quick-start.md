@@ -102,11 +102,6 @@ qsmxt run study/bids --qsm-algorithm rts --include "sub-01*"
 
 See [Running noninteractively](/QSMxT/guides/running-noninteractively/).
 
-## No install? Try it in the browser
-
-Want to experiment first without installing anything? **[qsmbly](https://qsmbly.neurodesk.org/)**
-runs the same reconstruction algorithms entirely in your browser.
-
 ## What you get
 
 Outputs land under `derivatives/qsmxt/` as BIDS-compliant NIfTIs — one QSM map
