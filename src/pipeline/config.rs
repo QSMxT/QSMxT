@@ -57,6 +57,30 @@ fn parse_mask_sections(specs: &[String], flag: &str) -> Vec<MaskSection> {
     sections
 }
 
+/// Whether a mask op closes the holes the reliable pass is built around.
+///
+/// Hole-filling is the obvious one; `close` bridges a hole's rim across it, and a Gaussian smooth
+/// followed by re-thresholding swallows small ones. Any of them turns the reliable mask back into
+/// the ordinary one.
+fn closes_holes(op: &MaskOp) -> bool {
+    matches!(op, MaskOp::FillHoles { .. } | MaskOp::Close { .. } | MaskOp::GaussianSmooth { .. })
+}
+
+/// Warnings for a reliable-phase mask whose refinements defeat the method.
+///
+/// Returned rather than logged so the rule can be tested: a `--two-pass-mask` that fills its own
+/// holes still runs, and still costs a second reconstruction, but reproduces the first one.
+fn hole_closing_warnings(sections: &[MaskSection]) -> Vec<String> {
+    sections.iter()
+        .filter(|s| s.refinements.iter().any(closes_holes))
+        .map(|s| format!(
+            "--two-pass-mask {}: this closes the holes two-pass reconstructs around, which \
+             collapses the reliable pass onto the ordinary one",
+            s.compact_spec(),
+        ))
+        .collect()
+}
+
 /// Apply CLI overrides onto a config.
 /// Map a CLI dipole-inversion algorithm argument to the config enum.
 fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
@@ -474,16 +498,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(ref sections) = args.two_pass_sections_cli {
             let new_sections = parse_mask_sections(sections, "--two-pass-mask");
             if !new_sections.is_empty() {
-                for section in &new_sections {
-                    if section.refinements.iter().any(|op| matches!(op,
-                        MaskOp::FillHoles { .. } | MaskOp::Close { .. } | MaskOp::GaussianSmooth { .. }))
-                    {
-                        log::warn!(
-                            "--two-pass-mask {}: this closes the holes two-pass reconstructs around, \
-                             which collapses the reliable pass onto the ordinary one",
-                            section.compact_spec(),
-                        );
-                    }
+                for warning in hole_closing_warnings(&new_sections) {
+                    log::warn!("{warning}");
                 }
                 config.masking.two_pass_sections = Some(new_sections);
                 config.masking.two_pass = true;
@@ -828,6 +844,33 @@ mod tests {
         ]);
         let sections = c.masking.two_pass_sections.expect("sections");
         assert_eq!(sections[0].refinements, vec![MaskOp::FillHoles { max_size: 0 }]);
+
+        // ...and the user is told, rather than paying for a second reconstruction in silence.
+        let warnings = super::hole_closing_warnings(&sections);
+        assert_eq!(warnings.len(), 1, "{warnings:?}");
+        assert!(warnings[0].contains("closes the holes"), "{}", warnings[0]);
+        assert!(warnings[0].contains("fill-holes"), "the message should quote the recipe: {}", warnings[0]);
+    }
+
+    /// Every op that can swallow a hole has to trigger the warning, not just the obvious one —
+    /// `close` bridges a hole's rim and a Gaussian smooth re-thresholds small ones away.
+    #[test]
+    fn every_hole_closing_op_is_warned_about() {
+        let section = |op: MaskOp| MaskSection {
+            input: MaskingInput::PhaseQuality,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
+            refinements: vec![op],
+        };
+        for op in [MaskOp::FillHoles { max_size: 0 }, MaskOp::Close { radius: 1 },
+                   MaskOp::GaussianSmooth { sigma_mm: 4.0 }] {
+            assert_eq!(super::hole_closing_warnings(&[section(op.clone())]).len(), 1, "{op} should warn");
+        }
+        // Ops that only shrink or grow the mask leave its holes intact.
+        for op in [MaskOp::Erode { iterations: 1 }, MaskOp::Dilate { iterations: 1 }] {
+            assert!(super::hole_closing_warnings(&[section(op.clone())]).is_empty(), "{op} should not warn");
+        }
+        // The default recipe must be silent, or the warning is noise.
+        assert!(super::hole_closing_warnings(&default_two_pass_sections()).is_empty());
     }
 
     /// A generator in --mask-refine has nothing to refine — it would throw the combined mask

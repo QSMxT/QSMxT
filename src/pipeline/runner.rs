@@ -264,23 +264,7 @@ pub fn run_pipeline_cached(
         || config.pipeline.do_chi_separation;
     let needs_phase = needs_mask || config.pipeline.do_qsm;
 
-    // Two-pass needs a mask recipe to derive the reliable mask from, so a bring-your-own mask
-    // rules it out — there is nothing to leave unfilled. v8 disabled it for the same reason.
-    let two_pass = config.pipeline.do_qsm && config.masking.two_pass && {
-        let byo = config.masking.custom_mask_tool.as_deref()
-            .and_then(|tool| find_custom_mask(qsm_run, tool));
-        match byo {
-            Some(path) => {
-                log::warn!(
-                    "Ignoring two-pass artefact reduction: the mask comes from {}, so there is no \
-                     recipe to derive a reliable-phase mask from",
-                    path.display(),
-                );
-                false
-            }
-            None => true,
-        }
-    };
+    let two_pass = two_pass_enabled(config, qsm_run);
 
     if !needs_phase {
         log::info!("No outputs enabled — nothing to process");
@@ -1833,6 +1817,32 @@ fn load_phase_echoes(ctx: &StageContext) -> crate::Result<PhaseEchoes> {
 }
 
 /// iQSM / iQSM+ end-to-end reconstruction from wrapped **phase** (joint unwrapping +
+/// Whether this run actually gets two-pass artefact reduction.
+///
+/// Two-pass derives its reliable mask from a mask recipe, so a bring-your-own mask rules it out:
+/// a mask read off disk has no recipe to leave unfilled, and `--two-pass` with
+/// `--use-custom-masks` would otherwise reconstruct twice from the same mask and combine a map
+/// with itself. v8 disabled it for the same reason. The fallback matters too — `--use-custom-masks`
+/// falls back to computing the mask when no derivative is found, and then two-pass is fine.
+fn two_pass_enabled(config: &PipelineConfig, run: &QsmRun) -> bool {
+    if !config.pipeline.do_qsm || !config.masking.two_pass {
+        return false;
+    }
+    let byo = config.masking.custom_mask_tool.as_deref()
+        .and_then(|tool| find_custom_mask(run, tool));
+    match byo {
+        Some(path) => {
+            log::warn!(
+                "Ignoring two-pass artefact reduction: the mask comes from {}, so there is no \
+                 recipe to derive a reliable-phase mask from",
+                path.display(),
+            );
+            false
+        }
+        None => true,
+    }
+}
+
 /// Run one pass's reconstruction — background removal and dipole inversion, by whichever route
 /// the chosen algorithm takes.
 ///
@@ -2454,6 +2464,56 @@ mod tests {
         assert!(super::two_pass_coverage_advice(0, 0).is_none());
     }
 
+    /// The chain the warning exists for, end to end on real masking: a reliable recipe that fills
+    /// its holes produces a mask covering the whole brain, and the advice fires on it — while the
+    /// default recipe keeps its holes and stays silent.
+    ///
+    /// The pieces were tested separately before; this is the join between them, which is where the
+    /// feature would quietly become a no-op that costs a second reconstruction.
+    #[test]
+    fn hole_filling_collapses_the_reliable_mask_onto_the_brain() {
+        use crate::pipeline::config::{MaskCombine, MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
+        use super::combine_mask_sections;
+
+        // A 12³ block of bright signal with a dark 3³ void inside it — a strong susceptibility
+        // source as a quality map sees it.
+        let dims = (12usize, 12, 12);
+        let (nx, ny, nz) = dims;
+        let mut quality = vec![1.0f64; nx * ny * nz];
+        for z in 4..7 { for y in 4..7 { for x in 4..7 {
+            quality[z * nx * ny + y * nx + x] = 0.0;
+        }}}
+        let meta = crate::pipeline::config::to_scan_metadata(dims, (1.0, 1.0, 1.0), &[0.005], 3.0, (0.0, 0.0, 1.0));
+
+        let recipe = |refinements: Vec<MaskOp>| crate::pipeline::config::to_mask_sections(&[MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(0.5) },
+            refinements,
+        }]);
+        let build = |refinements: Vec<MaskOp>| {
+            combine_mask_sections(&recipe(refinements), MaskCombine::Or, &[], &[], Some(&quality), &meta).unwrap()
+        };
+        let count = |m: &[u8]| m.iter().filter(|&&v| v != 0).count();
+
+        // The brain mask, standing in for the main pass: holes filled.
+        let brain = build(vec![MaskOp::FillHoles { max_size: 0 }]);
+        assert_eq!(count(&brain), nx * ny * nz, "the filled mask should have swallowed the void");
+
+        // The default reliable recipe keeps the void, so the two passes reconstruct different
+        // regions and the advice stays quiet.
+        let unfilled = build(vec![]);
+        assert_eq!(count(&unfilled), nx * ny * nz - 27, "the void is what the reliable pass excludes");
+        assert!(super::two_pass_coverage_advice(count(&unfilled), count(&brain)).is_none());
+
+        // Fill the holes in the *reliable* mask and it becomes the brain mask — a second
+        // reconstruction of the same region.
+        let filled = build(vec![MaskOp::FillHoles { max_size: 0 }]);
+        assert_eq!(count(&filled), count(&brain));
+        let advice = super::two_pass_coverage_advice(count(&filled), count(&brain))
+            .expect("a reliable mask with no holes must be flagged");
+        assert!(advice.contains("almost nothing to reduce"), "{advice}");
+    }
+
     /// The support is the eroded mask when background removal ran, and the brain mask when the
     /// inversion did its own — picking the wrong one would hand the combination a mask that does
     /// not exist on disk.
@@ -2495,6 +2555,47 @@ mod tests {
         assert!(!super::skips_bgremove(&config));
         config.inversion.medi.smv = true;
         assert!(super::skips_bgremove(&config));
+    }
+
+    /// A bring-your-own mask has no recipe to leave unfilled, so two-pass has nothing to build a
+    /// reliable mask from. Without this gate the run would reconstruct twice from the same mask
+    /// and "combine" a map with itself — twice the time, and an output indistinguishable from the
+    /// single-pass one.
+    #[test]
+    fn a_custom_mask_turns_two_pass_off() {
+        use crate::pipeline::config::PipelineConfig;
+
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path();
+        let anat = bids.join("sub-1/anat");
+        std::fs::create_dir_all(&anat).unwrap();
+        let phase = anat.join("sub-1_echo-1_part-phase_MEGRE.nii");
+        write_vol(&phase, (2, 2, 2));
+        let run = run_with_echoes(vec![(phase, None)]);
+
+        let mut config = PipelineConfig::default();
+        config.masking.two_pass = true;
+        assert!(super::two_pass_enabled(&config, &run), "computed mask: two-pass applies");
+
+        // Asking for a BYO mask that is actually there turns it off.
+        let deriv_anat = bids.join("derivatives/bet/sub-1/anat");
+        std::fs::create_dir_all(&deriv_anat).unwrap();
+        write_vol(&deriv_anat.join("sub-1_MEGRE_mask.nii"), (2, 2, 2));
+        config.masking.custom_mask_tool = Some("bet".to_string());
+        assert!(!super::two_pass_enabled(&config, &run));
+
+        // --use-custom-masks falls back to computing the mask when nothing matches, and then
+        // there *is* a recipe — so two-pass applies after all.
+        config.masking.custom_mask_tool = Some("nonexistent".to_string());
+        assert!(super::two_pass_enabled(&config, &run), "a BYO mask that isn't there is not a BYO mask");
+
+        // And it is off whenever QSM is, or whenever it was not asked for.
+        config.masking.custom_mask_tool = None;
+        config.pipeline.do_qsm = false;
+        assert!(!super::two_pass_enabled(&config, &run));
+        config.pipeline.do_qsm = true;
+        config.masking.two_pass = false;
+        assert!(!super::two_pass_enabled(&config, &run));
     }
 
     /// A bring-your-own mask must be the brain mask, not a two-pass reliable mask that happens
