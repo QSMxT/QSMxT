@@ -109,6 +109,20 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         }
     }
 
+    // ── Two-pass ──
+    // Off by default, so the bare flag is enough to turn it on; the reliable mask only needs
+    // spelling out once it differs from the default recipe.
+    if config.masking.two_pass {
+        parts.push("--two-pass".into());
+        if let Some(sections) = &config.masking.two_pass_sections {
+            if *sections != crate::masking::default_two_pass_sections() {
+                for section in sections {
+                    parts.push(format!("--two-pass-mask {}", section.compact_spec()));
+                }
+            }
+        }
+    }
+
     // ── BET ──
     emit_f64(&mut parts, "--bet-fractional-intensity", config.bet.fractional_intensity, d.bet.fractional_intensity);
     emit_f64(&mut parts, "--bet-smoothness", config.bet.smoothness, d.bet.smoothness);
@@ -787,6 +801,39 @@ frangi_c = 400.0
         let cmd = generate_command(&c);
         assert!(cmd.contains("--mask"));
         assert!(cmd.contains("erode:3"));
+    }
+
+    /// Off by default, so the bare flag says everything when the reliable mask is the default one.
+    #[test]
+    fn two_pass_emits_a_bare_flag() {
+        let mut c = PipelineConfig::default();
+        assert!(!generate_command(&c).contains("--two-pass"));
+
+        c.masking.two_pass = true;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--two-pass"), "{cmd}");
+        assert!(!cmd.contains("--two-pass-mask"), "default recipe should not be spelled out: {cmd}");
+
+        // Explicitly setting the default recipe means the same thing as leaving it unset.
+        c.masking.two_pass_sections = Some(crate::masking::default_two_pass_sections());
+        assert!(!generate_command(&c).contains("--two-pass-mask"));
+    }
+
+    #[test]
+    fn two_pass_spells_out_an_edited_reliable_mask() {
+        let mut c = PipelineConfig::default();
+        c.masking.two_pass = true;
+        c.masking.two_pass_sections = Some(vec![crate::masking::MaskSection {
+            input: crate::masking::MaskingInput::Magnitude,
+            generator: crate::masking::MaskOp::Threshold {
+                method: crate::masking::MaskThresholdMethod::Percentile,
+                value: Some(30.0),
+            },
+            refinements: vec![],
+        }]);
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--two-pass"), "{cmd}");
+        assert!(cmd.contains("--two-pass-mask magnitude,threshold:percentile:30.0"), "{cmd}");
     }
 
     #[test]

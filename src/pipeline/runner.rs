@@ -7,6 +7,7 @@ use qsm_core::io::{self, NiftiData};
 use serde::Serialize;
 
 use crate::bids::derivatives::DerivativeOutputs;
+use crate::bids::entities::AcquisitionKey;
 use crate::bids::discovery::QsmRun;
 use crate::pipeline::config::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
@@ -263,6 +264,24 @@ pub fn run_pipeline_cached(
         || config.pipeline.do_chi_separation;
     let needs_phase = needs_mask || config.pipeline.do_qsm;
 
+    // Two-pass needs a mask recipe to derive the reliable mask from, so a bring-your-own mask
+    // rules it out — there is nothing to leave unfilled. v8 disabled it for the same reason.
+    let two_pass = config.pipeline.do_qsm && config.masking.two_pass && {
+        let byo = config.masking.custom_mask_tool.as_deref()
+            .and_then(|tool| find_custom_mask(qsm_run, tool));
+        match byo {
+            Some(path) => {
+                log::warn!(
+                    "Ignoring two-pass artefact reduction: the mask comes from {}, so there is no \
+                     recipe to derive a reliable-phase mask from",
+                    path.display(),
+                );
+                false
+            }
+            None => true,
+        }
+    };
+
     if !needs_phase {
         log::info!("No outputs enabled — nothing to process");
         state.mark_run_complete();
@@ -309,18 +328,36 @@ pub fn run_pipeline_cached(
         let need_field = !matches!(config.inversion.algorithm, QsmAlgorithm::Tgv if meta.n_echoes == 1)
             && !starts_from_phase;
 
+        // The field map is computed once, on the brain mask, and shared by both passes. The
+        // reliable mask is a subset of it, so its pass needs no field values the shared map does
+        // not already carry — and unwrapping twice would be a second ROMEO run for nothing.
         if need_field {
             stage_unwrap(&mut ctx, &mask_path, &field_path, progress)?;
         }
 
-        match config.inversion.algorithm {
-            QsmAlgorithm::Tgv => stage_tgv(&mut ctx, &mask_path, &field_path, progress)?,
-            QsmAlgorithm::Qsmart => stage_qsmart(&mut ctx, &mask_path, &field_path, progress)?,
-            QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => stage_iqsm(&mut ctx, &mask_path, progress)?,
-            _ => stage_standard_qsm(&mut ctx, &mask_path, &field_path, progress)?,
-        }
+        let main = Pass::main(output, &qsm_run.key);
+        reconstruct(&mut ctx, &main, &field_path, progress)?;
 
-        stage_reference(&mut ctx, &mask_path, progress)?;
+        if two_pass {
+            let reliable = Pass::reliable(output, &qsm_run.key);
+            stage_two_pass_mask(&mut ctx, &mask_path, &reliable.mask, progress)?;
+            reconstruct(&mut ctx, &reliable, &field_path, progress)?;
+            stage_two_pass_combine(&mut ctx, &main, &reliable, skips_bgremove(config), progress)?;
+
+            // Both maps are referenced against the brain mask, so they can be compared directly.
+            stage_reference(
+                &mut ctx, &mask_path, &main.chi_raw, output.singlepass_qsm_path(&qsm_run.key),
+                "reference-singlepass", progress,
+            )?;
+            let combined = output.two_pass_chi_raw_path(&qsm_run.key);
+            stage_reference(
+                &mut ctx, &mask_path, &combined, output.qsm_path(&qsm_run.key), "reference", progress,
+            )?;
+        } else {
+            stage_reference(
+                &mut ctx, &mask_path, &main.chi_raw, output.qsm_path(&qsm_run.key), "reference", progress,
+            )?;
+        }
     }
 
     if config.pipeline.do_chi_separation {
@@ -1012,9 +1049,12 @@ fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Re
 
 /// Locate a bring-your-own derivative under `<bids>/derivatives/<tool>/sub-*/[ses-*/]anat/<glob>`
 /// for this run. `tool == "*"` searches every derivatives dir alphabetically; within a tool the
-/// first matching file (alphabetical) wins. When `skip_desc` is set, `desc-*` files are ignored so
-/// a custom `Chimap` query never returns a chi-separation output. Returns None if nothing matches.
-fn find_custom_derivative(run: &QsmRun, tool: &str, suffix_glob: &str, skip_desc: bool) -> Option<PathBuf> {
+/// first matching file (alphabetical) wins. Any candidate whose name contains one of `exclude` is
+/// passed over — `desc-` for a `Chimap` query, so it never returns a chi-separation output.
+/// Returns None if nothing matches.
+fn find_custom_derivative(
+    run: &QsmRun, tool: &str, suffix_glob: &str, exclude: &[&str],
+) -> Option<PathBuf> {
     // BIDS root = strip <sub-X>[/ses-Y]/anat/<file> off the first echo's phase path.
     let anat = run.echoes.first()?.phase_nifti.parent()?;   // .../sub-X[/ses-Y]/anat
     let sub_or_ses = anat.parent()?;
@@ -1047,7 +1087,10 @@ fn find_custom_derivative(run: &QsmRun, tool: &str, suffix_glob: &str, skip_desc
         let pattern = format!("{}/{}", anat_dir.display(), suffix_glob);
         if let Ok(paths) = glob(&pattern) {
             let mut hits: Vec<PathBuf> = paths.filter_map(|r| r.ok())
-                .filter(|p| !skip_desc || !p.to_string_lossy().contains("desc-"))
+                .filter(|p| {
+                    let name = p.to_string_lossy().to_string();
+                    !exclude.iter().any(|e| name.contains(e))
+                })
                 .collect();
             hits.sort();
             if let Some(p) = hits.into_iter().next() {
@@ -1059,8 +1102,14 @@ fn find_custom_derivative(run: &QsmRun, tool: &str, suffix_glob: &str, skip_desc
 }
 
 /// Bring-your-own brain mask (`*_mask.nii*`).
+///
+/// `desc-` masks are accepted here, unlike for a `Chimap` — `desc-brain_mask` and `desc-bet_mask`
+/// are how most tools name a brain mask. The one exclusion is our own reliable-phase mask: a
+/// two-pass run writes `_desc-reliable_mask.nii` into the same folder, it sorts *before* the brain
+/// mask, and a later run pointed at those derivatives would reconstruct inside the holey mask and
+/// call it the brain — with no error anywhere to say so.
 fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
-    find_custom_derivative(run, tool, "*_mask.nii*", false)
+    find_custom_derivative(run, tool, "*_mask.nii*", &["_desc-reliable_"])
 }
 
 fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
@@ -1113,6 +1162,20 @@ fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
     log::info!("Creating mask ({} section(s), combined with {})",
                ctx.config.masking.sections.len(), ctx.config.masking.combine);
 
+    let working_mask = build_mask_from_sections(ctx, &ctx.config.masking.sections.clone())?;
+    save_mask(mask_path, &working_mask, ctx.meta)?;
+    let mag_path = ctx.output.magnitude_path(&ctx.run.key);
+    ctx.complete_step("mask", None, mask_params, &[mag_path.as_path()], vec![mask_path.to_path_buf()], t)?;
+    log_step_done("Mask creation", t);
+    Ok(())
+}
+
+/// Build a mask from a list of sections, folded with the configured combine mode and post-combine
+/// refinements. Shared by the main mask and the two-pass reliable mask, so both read the same
+/// images and honour the same folding rules.
+fn build_mask_from_sections(
+    ctx: &mut StageContext, sections: &[MaskSection],
+) -> crate::Result<Vec<u8>> {
     // Load phases (needed for PhaseQuality masking input)
     let mut phases: Vec<Vec<f64>> = Vec::new();
     for i in 0..ctx.meta.n_echoes {
@@ -1127,7 +1190,7 @@ fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
     let mag_data: Option<Vec<f64>> = magnitude.first().map(|m| m.data.clone());
 
     // Convert config masking sections to qsm-core types
-    let core_sections = crate::pipeline::config::to_mask_sections(&ctx.config.masking.sections);
+    let core_sections = crate::pipeline::config::to_mask_sections(sections);
     let scan_meta = crate::pipeline::config::to_scan_metadata(
         ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
         ctx.meta.field_strength, ctx.meta.b0_direction,
@@ -1141,14 +1204,77 @@ fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
     }
 
     let core_refinements = qsmxt_config::to_mask_ops(&ctx.config.masking.refinements);
-    let working_mask = combine_mask_sections(
+    combine_mask_sections(
         &core_sections, ctx.config.masking.combine, &core_refinements,
         &phase_refs, mag_data.as_deref(), &scan_meta,
-    ).map_err(|e| QsmxtError::Config(format!("masking: {}", e)))?;
-    save_mask(mask_path, &working_mask, ctx.meta)?;
-    let mag_path = ctx.output.magnitude_path(&ctx.run.key);
-    ctx.complete_step("mask", None, mask_params, &[mag_path.as_path()], vec![mask_path.to_path_buf()], t)?;
-    log_step_done("Mask creation", t);
+    ).map_err(|e| QsmxtError::Config(format!("masking: {}", e)))
+}
+
+/// Warn when the reliable mask leaves two-pass with nothing useful to do.
+///
+/// The holes are what the method works with, so a reliable mask that has (almost) none is a
+/// second reconstruction spent reproducing the first, and one with no voxels at all produces a
+/// combined map identical to the single-pass one. Neither is an error — the user may be
+/// exploring — but neither is worth the run time in silence. The 99.9% tolerance is there because
+/// a slightly-too-loose threshold leaves a handful of voxels rather than exactly zero.
+fn two_pass_coverage_advice(kept: usize, brain: usize) -> Option<&'static str> {
+    if brain == 0 {
+        return None;
+    }
+    if kept == 0 {
+        return Some("The reliable-phase mask is empty, so the two-pass output will be identical \
+                     to the single-pass one. Loosen --two-pass-mask, or turn two-pass off.");
+    }
+    if kept as f64 >= 0.999 * brain as f64 {
+        return Some("The reliable-phase mask covers essentially the whole brain mask, so \
+                     two-pass has almost nothing to reduce — it will spend a second \
+                     reconstruction reproducing the first. Tighten --two-pass-mask (and drop any \
+                     hole-filling from it), or turn two-pass off.");
+    }
+    None
+}
+
+/// Build the reliable-phase mask of a two-pass run, restricted to the main mask.
+///
+/// The restriction is not optional: the reliable mask decides where its pass's values are
+/// preferred, so a section reaching past the brain mask would promote a reconstruction over a
+/// region the run excluded outright.
+fn stage_two_pass_mask(
+    ctx: &mut StageContext, main_mask: &Path, out_path: &Path, progress: &dyn Fn(&str),
+) -> crate::Result<()> {
+    let sections = ctx.config.masking.resolved_two_pass_sections();
+    let params = serde_json::json!({
+        "sections": sections.iter().map(|s| format!("{}", s)).collect::<Vec<_>>(),
+        "combine": format!("{}", ctx.config.masking.combine),
+        "refinements": ctx.config.masking.refinements.iter().map(|o| format!("{}", o)).collect::<Vec<_>>(),
+    });
+    let step = format!("mask{}", crate::pipeline::graph::RELIABLE_SUFFIX);
+    if ctx.is_cached_with_params(&step, None, &params) {
+        log::info!("Skipping reliable-phase mask (cached)");
+        return Ok(());
+    }
+    let t = Instant::now();
+    progress("Creating the reliable-phase mask");
+    log::info!("Creating the reliable-phase mask ({} section(s))", sections.len());
+
+    let reliable = build_mask_from_sections(ctx, &sections)?;
+    let main = load_mask(main_mask)?;
+    let restricted = qsm_core::pipeline::restrict_reliable_mask(&reliable, &main)
+        .map_err(|e| QsmxtError::Config(format!("reliable mask: {}", e)))?;
+
+    let (kept, brain) = (
+        restricted.iter().filter(|&&v| v != 0).count(),
+        main.iter().filter(|&&v| v != 0).count(),
+    );
+    log::info!("Reliable-phase mask: {kept} of {brain} brain voxels ({:.1}%)",
+               100.0 * kept as f64 / brain.max(1) as f64);
+    if let Some(advice) = two_pass_coverage_advice(kept, brain) {
+        log::warn!("{advice}");
+    }
+
+    save_mask(out_path, &restricted, ctx.meta)?;
+    ctx.complete_step(&step, None, params, &[main_mask], vec![out_path.to_path_buf()], t)?;
+    log_step_done("Reliable-phase mask", t);
     Ok(())
 }
 
@@ -1395,7 +1521,7 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
 
     // ── R2 map (Hz) ──
     let r2: Option<Vec<f64>> = if let Some(tool) = ctx.config.separation.custom_r2_tool.clone() {
-        match find_custom_derivative(ctx.run, &tool, "*_R2map.nii*", false) {
+        match find_custom_derivative(ctx.run, &tool, "*_R2map.nii*", &[]) {
             Some(p) => { log::info!("Using custom R2 map from {}", p.display()); Some(load_volume(&p)?) }
             None => { log::warn!("no custom R2 map under derivatives (tool: {}) — skipping R2", tool); None }
         }
@@ -1423,7 +1549,7 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
     // ── R2' map (Hz) = R2* − R2 ──
     if want_r2p {
         let r2p: Option<Vec<f64>> = if let Some(tool) = ctx.config.separation.custom_r2prime_tool.clone() {
-            match find_custom_derivative(ctx.run, &tool, "*_R2primemap.nii*", false) {
+            match find_custom_derivative(ctx.run, &tool, "*_R2primemap.nii*", &[]) {
                 Some(p) => { log::info!("Using custom R2' map from {}", p.display()); Some(load_volume(&p)?) }
                 None => { log::warn!("no custom R2' map under derivatives (tool: {}) — skipping R2'", tool); None }
             }
@@ -1463,7 +1589,7 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
 
     // Every method needs a conventional QSM (χ_total) — pipeline output or a custom derivative.
     let qsm_path = match ctx.config.separation.custom_qsm_tool.clone() {
-        Some(tool) => match find_custom_derivative(ctx.run, &tool, "*_Chimap.nii*", true) {
+        Some(tool) => match find_custom_derivative(ctx.run, &tool, "*_Chimap.nii*", &["desc-"]) {
             Some(p) => { log::info!("Using custom QSM from {}", p.display()); p }
             None => {
                 log::warn!("Skipping chi-separation ({}): no custom QSM under derivatives (tool: {})", alg_name, tool);
@@ -1528,7 +1654,7 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
         if p.exists() { Some(load_volume(&p)?) } else { None }
     };
     let r2prime: Option<Vec<f64>> = match ctx.config.separation.custom_r2prime_tool.clone() {
-        Some(tool) => find_custom_derivative(ctx.run, &tool, "*_R2primemap.nii*", false)
+        Some(tool) => find_custom_derivative(ctx.run, &tool, "*_R2primemap.nii*", &[])
             .map(|p| load_volume(&p)).transpose()?,
         None => {
             let p = ctx.output.r2prime_path(&ctx.run.key);
@@ -1707,23 +1833,107 @@ fn load_phase_echoes(ctx: &StageContext) -> crate::Result<PhaseEchoes> {
 }
 
 /// iQSM / iQSM+ end-to-end reconstruction from wrapped **phase** (joint unwrapping +
+/// Run one pass's reconstruction — background removal and dipole inversion, by whichever route
+/// the chosen algorithm takes.
+///
+/// Both passes of a two-pass run go through here, so neither can end up on a different code path
+/// from the other.
+fn reconstruct(
+    ctx: &mut StageContext, pass: &Pass, field_path: &Path, progress: &dyn Fn(&str),
+) -> crate::Result<()> {
+    match ctx.config.inversion.algorithm {
+        QsmAlgorithm::Tgv => stage_tgv(ctx, pass, field_path, progress),
+        QsmAlgorithm::Qsmart => stage_qsmart(ctx, pass, field_path, progress),
+        QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => stage_iqsm(ctx, pass, progress),
+        _ => stage_standard_qsm(ctx, pass, field_path, progress),
+    }
+}
+
+/// Whether the configured inversion runs without a separate background-removal stage, and so
+/// leaves its map defined over the brain mask rather than an eroded one.
+fn skips_bgremove(config: &PipelineConfig) -> bool {
+    matches!(config.inversion.algorithm,
+             QsmAlgorithm::Autoqsm | QsmAlgorithm::Nextqsm | QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus)
+        || (config.inversion.algorithm == QsmAlgorithm::Medi && config.inversion.medi.smv)
+        || matches!(config.inversion.algorithm, QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart)
+}
+
+/// One reconstruction pass: the mask it runs on, where its outputs go, and how its steps are
+/// named in the pipeline state.
+///
+/// Two-pass runs background removal and dipole inversion twice, so neither the step names nor the
+/// intermediate paths can be derived from the run alone — a second pass writing to the first's
+/// `bgremove/` outputs would corrupt the very map it is supposed to be compared against. Every
+/// stage from background removal to inversion takes one of these instead.
+struct Pass {
+    /// Appended to each step name; empty for the main pass.
+    suffix: &'static str,
+    mask: PathBuf,
+    local_field: PathBuf,
+    bg_mask: PathBuf,
+    chi_raw: PathBuf,
+}
+
+impl Pass {
+    /// The ordinary, single-pass reconstruction — also the "filled mask" pass of a two-pass run.
+    fn main(output: &DerivativeOutputs, key: &AcquisitionKey) -> Self {
+        Self {
+            suffix: "",
+            mask: output.mask_path(key),
+            local_field: output.local_field_path(key),
+            bg_mask: output.bg_mask_path(key),
+            chi_raw: output.chi_raw_path(key),
+        }
+    }
+
+    /// The reliable pass of a two-pass run: the mask with its holes left unfilled.
+    fn reliable(output: &DerivativeOutputs, key: &AcquisitionKey) -> Self {
+        Self {
+            suffix: crate::pipeline::graph::RELIABLE_SUFFIX,
+            mask: output.two_pass_mask_path(key),
+            local_field: output.reliable_local_field_path(key),
+            bg_mask: output.reliable_bg_mask_path(key),
+            chi_raw: output.reliable_chi_raw_path(key),
+        }
+    }
+
+    /// This pass's name for a pipeline step.
+    fn step(&self, name: &str) -> String {
+        format!("{name}{}", self.suffix)
+    }
+
+    /// How this pass is named in progress messages and the log. Empty for a single-pass run, so
+    /// nothing changes for the runs that are not two-pass; without it the two passes' background
+    /// removal and inversion lines are indistinguishable in the log.
+    fn label(&self) -> &'static str {
+        if self.suffix.is_empty() { "" } else { " (reliable pass)" }
+    }
+
+    /// Where this pass's susceptibility map is actually defined: the eroded mask background
+    /// removal produced, or the brain mask when the inversion did its own background removal.
+    fn support(&self, skip_bgremove: bool) -> &Path {
+        if skip_bgremove { &self.mask } else { &self.bg_mask }
+    }
+}
+
 /// background removal + dipole inversion in one network). Writes the raw susceptibility
 /// map; referencing is applied downstream by [`stage_reference`].
-fn stage_iqsm(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
+fn stage_iqsm(ctx: &mut StageContext, pass: &Pass, progress: &dyn Fn(&str)) -> crate::Result<()> {
     let plus = matches!(ctx.config.inversion.algorithm, QsmAlgorithm::IqsmPlus);
     let alg = if plus { "iqsm-plus" } else { "iqsm" };
-    let chi_raw_path = ctx.output.chi_raw_path(&ctx.run.key);
+    let (mask_path, chi_raw_path) = (pass.mask.as_path(), pass.chi_raw.clone());
+    let invert_step = pass.step("invert");
     let params = serde_json::json!({
         "echo_times": ctx.meta.echo_times,
         "field_strength": ctx.meta.field_strength,
         "b0_direction": [ctx.meta.b0_direction.0, ctx.meta.b0_direction.1, ctx.meta.b0_direction.2],
     });
-    if ctx.is_cached_with_params("invert", Some(alg), &params) {
+    if ctx.is_cached_with_params(&invert_step, Some(alg), &params) {
         log::info!("Skipping {} (cached)", alg);
         return Ok(());
     }
     let t = Instant::now();
-    progress("iQSM reconstruction");
+    progress(&format!("iQSM reconstruction{}", pass.label()));
     let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
     let mask = load_mask(mask_path)?;
     let scan_meta = crate::pipeline::config::to_scan_metadata(
@@ -1743,15 +1953,16 @@ fn stage_iqsm(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
     save_volume(&chi_raw_path, &chi, ctx.meta)?;
     let mut inputs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).collect();
     inputs.push(mask_path);
-    ctx.complete_step("invert", Some(alg), params, &inputs, vec![chi_raw_path], t)?;
-    log_step_done(if plus { "iQSM+" } else { "iQSM" }, t);
+    ctx.complete_step(&invert_step, Some(alg), params, &inputs, vec![chi_raw_path], t)?;
+    log_step_done(&format!("{}{}", if plus { "iQSM+" } else { "iQSM" }, pass.label()), t);
     Ok(())
 }
 
 fn stage_tgv(
-    ctx: &mut StageContext, mask_path: &Path, field_path: &Path, progress: &dyn Fn(&str),
+    ctx: &mut StageContext, pass: &Pass, field_path: &Path, progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
-    let chi_raw_path = ctx.output.chi_raw_path(&ctx.run.key);
+    let (mask_path, chi_raw_path) = (pass.mask.as_path(), pass.chi_raw.clone());
+    let tgv_step = pass.step("tgv");
     let tgv_params = serde_json::json!({
         "iterations": ctx.config.inversion.tgv.iterations,
         "alphas": [ctx.config.inversion.tgv.alpha1, ctx.config.inversion.tgv.alpha0],
@@ -1761,7 +1972,7 @@ fn stage_tgv(
         "te_ms": ctx.meta.echo_times[0] * 1000.0,
         "field_strength": ctx.meta.field_strength,
     });
-    if ctx.is_cached_with_params("tgv", Some("tgv"), &tgv_params) {
+    if ctx.is_cached_with_params(&tgv_step, Some("tgv"), &tgv_params) {
         log::info!("Skipping tgv (cached)");
         return Ok(());
     }
@@ -1771,7 +1982,7 @@ fn stage_tgv(
         ctx.config.inversion.tgv.iterations, ctx.config.inversion.tgv.alpha1, ctx.config.inversion.tgv.alpha0,
         ctx.config.inversion.tgv.erosions, ctx.meta.echo_times[0] * 1000.0, ctx.meta.field_strength,
     );
-    progress("TGV-QSM reconstruction");
+    progress(&format!("TGV-QSM reconstruction{}", pass.label()));
     let mask = load_mask(mask_path)?;
     let bdir = ctx.meta.b0_direction;
 
@@ -1799,15 +2010,16 @@ fn stage_tgv(
     );
 
     save_volume(&chi_raw_path, &chi, ctx.meta)?;
-    ctx.complete_step("tgv", Some("tgv"), tgv_params, &[mask_path, field_path], vec![chi_raw_path], t)?;
-    log_step_done("TGV-QSM", t);
+    ctx.complete_step(&tgv_step, Some("tgv"), tgv_params, &[mask_path, field_path], vec![chi_raw_path], t)?;
+    log_step_done(&format!("TGV-QSM{}", pass.label()), t);
     Ok(())
 }
 
 fn stage_qsmart(
-    ctx: &mut StageContext, mask_path: &Path, field_path: &Path, progress: &dyn Fn(&str),
+    ctx: &mut StageContext, pass: &Pass, field_path: &Path, progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
-    let chi_raw_path = ctx.output.chi_raw_path(&ctx.run.key);
+    let (mask_path, chi_raw_path) = (pass.mask.as_path(), pass.chi_raw.clone());
+    let qsmart_step = pass.step("qsmart");
     let qsmart_params = serde_json::json!({
         "inversion": format!("{}", ctx.config.inversion.qsmart.inversion),
         "sdf_spatial_radius": ctx.config.inversion.qsmart.sdf_spatial_radius,
@@ -1825,7 +2037,7 @@ fn stage_qsmart(
         "frangi_scale_ratio": ctx.config.inversion.qsmart.frangi_scale_ratio,
         "frangi_c": ctx.config.inversion.qsmart.frangi_c,
     });
-    if ctx.is_cached_with_params("qsmart", Some("qsmart"), &qsmart_params) {
+    if ctx.is_cached_with_params(&qsmart_step, Some("qsmart"), &qsmart_params) {
         log::info!("Skipping qsmart (cached)");
         return Ok(());
     }
@@ -1876,14 +2088,16 @@ fn stage_qsmart(
     ).map_err(|e| QsmxtError::Config(format!("qsmart: {}", e)))?;
 
     save_volume(&chi_raw_path, &chi, ctx.meta)?;
-    ctx.complete_step("qsmart", Some("qsmart"), qsmart_params, &[mask_path, field_path], vec![chi_raw_path], t)?;
-    log_step_done("QSMART", t);
+    ctx.complete_step(&qsmart_step, Some("qsmart"), qsmart_params, &[mask_path, field_path], vec![chi_raw_path], t)?;
+    log_step_done(&format!("QSMART{}", pass.label()), t);
     Ok(())
 }
 
 fn stage_standard_qsm(
-    ctx: &mut StageContext, mask_path: &Path, field_path: &Path, progress: &dyn Fn(&str),
+    ctx: &mut StageContext, pass: &Pass, field_path: &Path, progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
+    let mask_path = pass.mask.as_path();
+    let (bgremove_step, invert_step) = (pass.step("bgremove"), pass.step("invert"));
     // --- Background removal ---
     // MEDI+SMV, AutoQSM and NeXtQSM do their own background removal from the total field, so
     // the standalone BFR stage is skipped and the (unwrapped) total field is fed straight in.
@@ -1891,8 +2105,8 @@ fn stage_standard_qsm(
         || matches!(ctx.config.inversion.algorithm, QsmAlgorithm::Autoqsm | QsmAlgorithm::Nextqsm);
     // iQFM replaces unwrap+BFR: it produces the local field directly from wrapped phase.
     let is_iqfm = ctx.config.bg_removal.algorithm == BfAlgorithm::Iqfm;
-    let local_field_path = ctx.output.local_field_path(&ctx.run.key);
-    let bg_mask_path = ctx.output.bg_mask_path(&ctx.run.key);
+    let local_field_path = pass.local_field.clone();
+    let bg_mask_path = pass.bg_mask.clone();
     let bf_name = format!("{}", ctx.config.bg_removal.algorithm);
     let bf_params = match ctx.config.bg_removal.algorithm {
         BfAlgorithm::Vsharp => serde_json::json!({
@@ -1934,9 +2148,9 @@ fn stage_standard_qsm(
         log::info!("Skipping background removal (single-step inversion handles it internally)");
     }
     // iQFM: produce the local field directly from wrapped phase (joint unwrap + BFR).
-    if is_iqfm && !skip_bgremove && !ctx.is_cached_with_params("bgremove", Some(&bf_name), &bf_params) {
+    if is_iqfm && !skip_bgremove && !ctx.is_cached_with_params(&bgremove_step, Some(&bf_name), &bf_params) {
         let t = Instant::now();
-        progress("iQFM field preparation");
+        progress(&format!("iQFM field preparation{}", pass.label()));
         let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
         let mask = load_mask(mask_path)?;
         let scan_meta = crate::pipeline::config::to_scan_metadata(
@@ -1954,15 +2168,15 @@ fn stage_standard_qsm(
         save_mask(&bg_mask_path, &mask, ctx.meta)?;
         let mut inputs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).collect();
         inputs.push(mask_path);
-        ctx.complete_step("bgremove", Some(&bf_name), bf_params.clone(), &inputs,
+        ctx.complete_step(&bgremove_step, Some(&bf_name), bf_params.clone(), &inputs,
             vec![local_field_path.clone(), bg_mask_path.clone()], t)?;
-        log_step_done("Background removal (iQFM)", t);
+        log_step_done(&format!("Background removal (iQFM){}", pass.label()), t);
     } else if is_iqfm {
         log::info!("Skipping iQFM field preparation (cached)");
     }
-    if !is_iqfm && !skip_bgremove && !ctx.is_cached_with_params("bgremove", Some(&bf_name), &bf_params) {
+    if !is_iqfm && !skip_bgremove && !ctx.is_cached_with_params(&bgremove_step, Some(&bf_name), &bf_params) {
         let t = Instant::now();
-        progress("Background field removal");
+        progress(&format!("Background field removal{}", pass.label()));
         let field_ppm = load_volume(field_path)?;
         let mask = load_mask(mask_path)?;
 
@@ -1975,7 +2189,7 @@ fn stage_standard_qsm(
 
         // Fetch DL weights (BFRnet) with a download bar before removal; no-op otherwise.
         prefetch_weights(&bf_name, &ctx.run.key.to_string())?;
-        log::info!("Background removal ({})", bf_name);
+        log::info!("Background removal ({}){}", bf_name, pass.label());
         let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &bf_name);
         let bg_result = qsm_core::pipeline::run_bg_removal(
             &qsm_core::crop::crop_volume(&field_ppm, &cb),
@@ -1991,17 +2205,17 @@ fn stage_standard_qsm(
         );
         save_volume(&local_field_path, &local_field, ctx.meta)?;
         save_mask(&bg_mask_path, &eroded_mask, ctx.meta)?;
-        ctx.complete_step("bgremove", Some(&bf_name),
+        ctx.complete_step(&bgremove_step, Some(&bf_name),
             bf_params.clone(), &[field_path, mask_path],
             vec![local_field_path.clone(), bg_mask_path.clone()], t,
         )?;
-        log_step_done(&format!("Background removal ({})", bf_name), t);
+        log_step_done(&format!("Background removal ({}){}", bf_name, pass.label()), t);
     } else if !skip_bgremove {
         log::info!("Skipping bgremove (cached)");
     }
 
     // --- Dipole inversion ---
-    let chi_raw_path = ctx.output.chi_raw_path(&ctx.run.key);
+    let chi_raw_path = pass.chi_raw.clone();
     let alg_name = format!("{}", ctx.config.inversion.algorithm);
     let invert_params = match ctx.config.inversion.algorithm {
         QsmAlgorithm::Rts => serde_json::json!({
@@ -2060,9 +2274,9 @@ fn stage_standard_qsm(
         }),
         _ => serde_json::json!({}),
     };
-    if !ctx.is_cached_with_params("invert", Some(&alg_name), &invert_params) {
+    if !ctx.is_cached_with_params(&invert_step, Some(&alg_name), &invert_params) {
         let t = Instant::now();
-        progress("Dipole inversion");
+        progress(&format!("Dipole inversion{}", pass.label()));
         let local_field = if skip_bgremove { load_volume(field_path)? } else { load_volume(&local_field_path)? };
         let eroded_mask = if skip_bgremove { load_mask(mask_path)? } else { load_mask(&bg_mask_path)? };
 
@@ -2085,7 +2299,7 @@ fn stage_standard_qsm(
 
         // Fetch DL weights (with a download bar) before inference; no-op for classical algs.
         prefetch_weights(&alg_name, &ctx.run.key.to_string())?;
-        log::info!("Dipole inversion ({})", alg_name);
+        log::info!("Dipole inversion ({}){}", alg_name, pass.label());
         let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &alg_name);
         let chi = qsm_core::pipeline::run_dipole_inversion(
             &qsm_core::crop::crop_volume(&local_field, &cb),
@@ -2096,35 +2310,93 @@ fn stage_standard_qsm(
         save_volume(&chi_raw_path, &chi, ctx.meta)?;
         let lf_input = if skip_bgremove { field_path } else { local_field_path.as_path() };
         let mask_input = if skip_bgremove { mask_path } else { bg_mask_path.as_path() };
-        ctx.complete_step("invert", Some(&alg_name),
+        ctx.complete_step(&invert_step, Some(&alg_name),
             invert_params, &[lf_input, mask_input], vec![chi_raw_path], t,
         )?;
-        log_step_done(&format!("Dipole inversion ({})", ctx.config.inversion.algorithm), t);
+        log_step_done(&format!("Dipole inversion ({}){}", ctx.config.inversion.algorithm, pass.label()), t);
     } else {
         log::info!("Skipping invert (cached)");
     }
     Ok(())
 }
 
-fn stage_reference(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let qsm_path = ctx.output.qsm_path(&ctx.run.key);
+/// Reference a raw susceptibility map and write it out as a final derivative.
+///
+/// A two-pass run calls this twice — once for the combined map and once for the single-pass one —
+/// so the input, the output and the step name are all explicit. Both are referenced against the
+/// same brain mask, which is what makes them comparable.
+fn stage_reference(
+    ctx: &mut StageContext, mask_path: &Path, chi_raw_path: &Path, qsm_path: PathBuf,
+    step: &str, progress: &dyn Fn(&str),
+) -> crate::Result<()> {
     let ref_method = format!("{}", ctx.config.qsm.reference);
     let ref_params = serde_json::json!({ "method": ref_method });
-    if ctx.is_cached_with_params("reference", Some(&ref_method), &ref_params) {
-        log::info!("Skipping reference (cached)");
+    if ctx.is_cached_with_params(step, Some(&ref_method), &ref_params) {
+        log::info!("Skipping {} (cached)", step);
         return Ok(());
     }
     let t = Instant::now();
     log::info!("QSM referencing ({})", ctx.config.qsm.reference);
     progress("Referencing QSM");
-    let chi_raw_path = ctx.output.chi_raw_path(&ctx.run.key);
-    let chi = load_volume(&chi_raw_path)?;
+    let chi = load_volume(chi_raw_path)?;
     let mask = load_mask(mask_path)?;
     let (_, _, _, ref_method_core) = crate::pipeline::config::to_pipeline_stages(ctx.config);
     let chi_final = qsm_core::pipeline::apply_reference(&chi, &mask, ref_method_core);
     save_volume(&qsm_path, &chi_final, ctx.meta)?;
-    ctx.complete_step("reference", Some(&ref_method), ref_params, &[chi_raw_path.as_path(), mask_path], vec![qsm_path], t)?;
+    ctx.complete_step(step, Some(&ref_method), ref_params, &[chi_raw_path, mask_path], vec![qsm_path], t)?;
     log_step_done("QSM referencing", t);
+    Ok(())
+}
+
+/// Combine the two reconstructions of a two-pass run into one raw susceptibility map.
+///
+/// The reliable pass wins wherever it produced a value; the ordinary pass fills the holes its mask
+/// left, and the rim background removal eroded off it. Nothing is averaged — each voxel comes from
+/// exactly one pass — so this cannot blur the reliable pass's values with the ones it was run to
+/// avoid.
+fn stage_two_pass_combine(
+    ctx: &mut StageContext, main: &Pass, reliable: &Pass, skip_bgremove: bool,
+    progress: &dyn Fn(&str),
+) -> crate::Result<()> {
+    let out_path = ctx.output.two_pass_chi_raw_path(&ctx.run.key);
+    let params = serde_json::json!({ "support": reliable.support(skip_bgremove).to_string_lossy() });
+    if ctx.is_cached_with_params("twopass", None, &params) {
+        log::info!("Skipping twopass (cached)");
+        return Ok(());
+    }
+    let t = Instant::now();
+    progress("Combining two-pass reconstructions");
+
+    let support_path = reliable.support(skip_bgremove).to_path_buf();
+    let chi_reliable = load_volume(&reliable.chi_raw)?;
+    let chi_main = load_volume(&main.chi_raw)?;
+
+    // Where the reliable pass actually produced a value: its declared mask, minus any voxel the
+    // reconstruction left at exactly zero. Several algorithms erode beyond the mask they were
+    // handed — V-SHARP by its kernel radius, TGV by `tgv_erosions` — and trusting the mask file
+    // over that rim would ring every hole with a seam of zeros instead of filling it from the
+    // single-pass map. An exact 0.0 inside a reconstruction is masking, not a measurement.
+    let declared = load_mask(&support_path)?;
+    let support: Vec<u8> = declared.iter().zip(&chi_reliable)
+        .map(|(&m, &chi)| u8::from(m != 0 && chi != 0.0))
+        .collect();
+    let kept = support.iter().filter(|&&v| v != 0).count();
+    log::info!(
+        "Two-pass combination: reliable pass over {} voxels ({:.1}% of the brain mask), \
+         single-pass elsewhere",
+        kept,
+        100.0 * kept as f64 / load_mask(&main.mask)?.iter().filter(|&&v| v != 0).count().max(1) as f64,
+    );
+
+    let combined = qsm_core::pipeline::combine_two_pass(&chi_reliable, &chi_main, &support)
+        .map_err(|e| QsmxtError::Config(format!("two-pass combination: {}", e)))?;
+    save_volume(&out_path, &combined, ctx.meta)?;
+    ctx.complete_step(
+        "twopass", None, params,
+        &[reliable.chi_raw.as_path(), main.chi_raw.as_path(), support_path.as_path()],
+        vec![out_path], t,
+    )?;
+    log_step_done("Two-pass combination", t);
     Ok(())
 }
 
@@ -2132,6 +2404,131 @@ fn stage_reference(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&
 #[cfg(test)]
 mod tests {
     use qsm_core::pipeline::config::QsmReference as CoreRef;
+
+    /// The two passes must not share a single output path. If they did, the second pass would
+    /// overwrite the first's local field, eroded mask or raw map — and the combination would be
+    /// one reconstruction blended with itself.
+    #[test]
+    fn the_two_passes_write_to_different_places() {
+        use crate::bids::derivatives::DerivativeOutputs;
+        use crate::bids::entities::AcquisitionKey;
+
+        let output = DerivativeOutputs::new(std::path::Path::new("/out"));
+        let key = AcquisitionKey {
+            subject: "1".into(), session: None, acquisition: None,
+            reconstruction: None, inversion: None, run: None, suffix: "MEGRE".into(),
+        };
+        let (main, reliable) = (super::Pass::main(&output, &key), super::Pass::reliable(&output, &key));
+
+        for (a, b) in [
+            (&main.mask, &reliable.mask),
+            (&main.local_field, &reliable.local_field),
+            (&main.bg_mask, &reliable.bg_mask),
+            (&main.chi_raw, &reliable.chi_raw),
+        ] {
+            assert_ne!(a, b, "the two passes share an output path");
+        }
+
+        // And their steps are cached separately, or one pass's cache hit would skip the other.
+        for step in ["mask", "bgremove", "invert", "tgv", "qsmart"] {
+            assert_ne!(main.step(step), reliable.step(step));
+        }
+        assert_eq!(main.step("invert"), "invert", "the main pass keeps the unsuffixed step names");
+    }
+
+    /// A reliable mask with no holes, or no voxels, makes the second reconstruction pointless —
+    /// and both are easy to produce by mistake with a slightly-wrong threshold.
+    #[test]
+    fn two_pass_coverage_advice_flags_a_useless_reliable_mask() {
+        // A mask with real holes is the working case: no advice.
+        assert!(super::two_pass_coverage_advice(800, 1000).is_none());
+        assert!(super::two_pass_coverage_advice(997, 1000).is_none());
+
+        // Essentially the whole brain — including the handful-of-voxels case that is not
+        // exactly equal but is just as useless.
+        assert!(super::two_pass_coverage_advice(1000, 1000).unwrap().contains("almost nothing"));
+        assert!(super::two_pass_coverage_advice(999, 1000).unwrap().contains("almost nothing"));
+
+        assert!(super::two_pass_coverage_advice(0, 1000).unwrap().contains("empty"));
+        // No brain mask at all is someone else's error to report.
+        assert!(super::two_pass_coverage_advice(0, 0).is_none());
+    }
+
+    /// The support is the eroded mask when background removal ran, and the brain mask when the
+    /// inversion did its own — picking the wrong one would hand the combination a mask that does
+    /// not exist on disk.
+    #[test]
+    fn pass_support_follows_the_background_removal_route() {
+        use crate::bids::derivatives::DerivativeOutputs;
+        use crate::bids::entities::AcquisitionKey;
+
+        let output = DerivativeOutputs::new(std::path::Path::new("/out"));
+        let key = AcquisitionKey {
+            subject: "1".into(), session: None, acquisition: None,
+            reconstruction: None, inversion: None, run: None, suffix: "MEGRE".into(),
+        };
+        let pass = super::Pass::reliable(&output, &key);
+        assert_eq!(pass.support(false), pass.bg_mask.as_path());
+        assert_eq!(pass.support(true), pass.mask.as_path());
+    }
+
+    /// Single-step and end-to-end algorithms produce a map over the brain mask, with no separate
+    /// background-removal stage to erode it.
+    #[test]
+    fn single_step_algorithms_skip_background_removal() {
+        use crate::pipeline::config::{PipelineConfig, QsmAlgorithm};
+        let mut config = PipelineConfig::default();
+
+        for alg in [QsmAlgorithm::Rts, QsmAlgorithm::Tkd, QsmAlgorithm::Ilsqr] {
+            config.inversion.algorithm = alg;
+            assert!(!super::skips_bgremove(&config), "{alg} runs its own background removal stage");
+        }
+        for alg in [QsmAlgorithm::Nextqsm, QsmAlgorithm::Autoqsm, QsmAlgorithm::Iqsm,
+                    QsmAlgorithm::IqsmPlus, QsmAlgorithm::Tgv, QsmAlgorithm::Qsmart] {
+            config.inversion.algorithm = alg;
+            assert!(super::skips_bgremove(&config), "{alg} has no separate background removal");
+        }
+
+        // MEDI only skips it with SMV enabled.
+        config.inversion.algorithm = QsmAlgorithm::Medi;
+        config.inversion.medi.smv = false;
+        assert!(!super::skips_bgremove(&config));
+        config.inversion.medi.smv = true;
+        assert!(super::skips_bgremove(&config));
+    }
+
+    /// A bring-your-own mask must be the brain mask, not a two-pass reliable mask that happens
+    /// to sit next to it. `desc-reliable` sorts before the plain `_mask` file, so the first
+    /// alphabetical match is the wrong one — and reconstructing inside a holey mask while calling
+    /// it the brain produces a plausible-looking map with no error anywhere.
+    #[test]
+    fn a_custom_mask_lookup_ignores_the_reliable_mask() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path();
+        let anat = bids.join("sub-1/anat");
+        std::fs::create_dir_all(&anat).unwrap();
+        let phase = anat.join("sub-1_echo-1_part-phase_MEGRE.nii");
+        write_vol(&phase, (2, 2, 2));
+
+        let deriv_anat = bids.join("derivatives/qsmxt/sub-1/anat");
+        std::fs::create_dir_all(&deriv_anat).unwrap();
+        let brain = deriv_anat.join("sub-1_MEGRE_mask.nii");
+        let reliable = deriv_anat.join("sub-1_MEGRE_desc-reliable_mask.nii");
+        write_vol(&brain, (2, 2, 2));
+        write_vol(&reliable, (2, 2, 2));
+        assert!(reliable < brain, "the reliable mask sorts first — that is the trap");
+
+        let run = run_with_echoes(vec![(phase, None)]);
+        assert_eq!(super::find_custom_mask(&run, "qsmxt"), Some(brain.clone()));
+        assert_eq!(super::find_custom_mask(&run, "*"), Some(brain.clone()));
+
+        // Only *our* reliable mask is excluded: `desc-brain`/`desc-bet` is how most tools name a
+        // brain mask, and those must still be found — including when they are the only candidate.
+        std::fs::remove_file(&brain).unwrap();
+        let desc_brain = deriv_anat.join("sub-1_MEGRE_desc-brain_mask.nii");
+        write_vol(&desc_brain, (2, 2, 2));
+        assert_eq!(super::find_custom_mask(&run, "qsmxt"), Some(desc_brain));
+    }
 
     #[test]
     fn test_prefetch_weights_noop_and_download_bar() {

@@ -1461,8 +1461,9 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 Line::from(spans)
             }
             PipelineRow::MaskSectionHeader { section } => {
+                let (two_pass, i) = crate::tui::app::PipelineFormState::mask_section_slot(*section);
                 Line::from(Span::styled(
-                    format!("  ── Mask {} ──", section + 1),
+                    format!("  ── {} {} ──", if two_pass { "Reliable mask" } else { "Mask" }, i + 1),
                     Style::default().fg(Color::DarkGray),
                 ))
             }
@@ -1491,8 +1492,14 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                     Style::default().fg(Color::DarkGray),
                 ))
             }
+            PipelineRow::MaskTwoPassHeader => {
+                Line::from(Span::styled(
+                    "  ── Reliable-phase mask (holes left unfilled) ──",
+                    Style::default().fg(Color::DarkGray),
+                ))
+            }
             PipelineRow::MaskOpInput { section } => {
-                let input = &app.pipeline_state.mask_sections[*section].input;
+                let Some(input) = app.pipeline_state.mask_section(*section).map(|s| &s.input) else { continue };
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
@@ -1516,7 +1523,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 }
             }
             PipelineRow::MaskOpGenerator { section } => {
-                let gen = &app.pipeline_state.mask_sections[*section].generator;
+                let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
                 let algo_name = match gen {
                     crate::pipeline::config::MaskOp::Threshold { .. } => "threshold",
                     crate::pipeline::config::MaskOp::Bet { .. } => "bet",
@@ -1546,7 +1553,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 }
             }
             PipelineRow::MaskOpGeneratorParam { section } => {
-                let gen = &app.pipeline_state.mask_sections[*section].generator;
+                let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
@@ -1589,7 +1596,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 }
             }
             PipelineRow::MaskOpThresholdValue { section } => {
-                let gen = &app.pipeline_state.mask_sections[*section].generator;
+                let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
@@ -1618,7 +1625,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 ])
             }
             PipelineRow::MaskOpHdBetStep { section } => {
-                let gen = &app.pipeline_state.mask_sections[*section].generator;
+                let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
@@ -1741,17 +1748,23 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                     Line::from(Span::styled("  + Add step...", label_style))
                 }
             }
-            PipelineRow::MaskOpAddSection => {
-
+            PipelineRow::MaskOpAddSection { two_pass } => {
                 let label_style = if focused {
                     Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
                 } else {
                     Style::default().fg(Color::DarkGray)
                 };
                 if focused && focused_help.is_none() {
-                    focused_help = Some("Enter to add a new OR'd mask section".to_string());
+                    focused_help = Some(if *two_pass {
+                        "Enter to add a section to the reliable-phase mask".to_string()
+                    } else {
+                        "Enter to add a new OR'd mask section".to_string()
+                    });
                 }
-                Line::from(Span::styled("  + Add mask...", label_style))
+                Line::from(Span::styled(
+                    if *two_pass { "  + Add reliable mask..." } else { "  + Add mask..." },
+                    label_style,
+                ))
             }
         };
         lines.push(line);

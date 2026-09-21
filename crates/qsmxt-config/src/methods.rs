@@ -272,6 +272,11 @@ const CITE_QSMCI_SIGNAL_EROSION: Citation = Citation {
     text: "QSM-CI: signal-gated mask erosion (QSM-CI harmonization masking, `hd-bet-qsmci`). https://github.com/QSMxT/QSM-CI",
 };
 
+const CITE_TWOPASS: Citation = Citation {
+    key: "stewart2022",
+    text: "Stewart, A.W., Robinson, S.D., O'Brien, K., et al. (2022). \"QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 87(3):1289-1300. https://doi.org/10.1002/mrm.29048",
+};
+
 const CITE_BIPOLAR: Citation = Citation {
     key: "eckstein2021phd",
     text: "Eckstein, K. (2021). \"Advanced Methods for Quantitative Susceptibility Mapping and Susceptibility Weighted Imaging.\" PhD thesis, Medical University of Vienna. https://doi.org/10.34726/hss.2021.43447",
@@ -392,6 +397,10 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 }
             }
         }
+
+        // Two-pass wraps background removal and inversion, so it is described after both and
+        // before referencing, which runs on the combined map.
+        describe_two_pass(config, &mut sentences, &mut citations);
 
         // Referencing
         match config.qsm.reference {
@@ -523,6 +532,97 @@ fn describe_refinements(ops: &[MaskOp], citations: &mut Vec<&Citation>) -> Vec<S
     }).collect()
 }
 
+/// Prose for a mask section's input image and generator op — "Otsu thresholding of the ROMEO
+/// phase quality map", and so on. Shared by the main mask and the two-pass reliable mask, so the
+/// same recipe never gets described two different ways.
+fn describe_generator(
+    section: &MaskSection, config: &PipelineConfig, citations: &mut Vec<&Citation>,
+) -> String {
+    // Input description — clarify which magnitude goes into ROMEO
+    let corrected = config.masking.inhomogeneity_correction;
+    let input_desc = match section.input {
+        MaskingInput::PhaseQuality => {
+            add_citation(citations, &CITE_ROMEO);
+            if corrected {
+                "the ROMEO phase quality map (computed from phase data and the inhomogeneity-corrected RSS-combined magnitude)"
+            } else {
+                "the ROMEO phase quality map (computed from phase data and the RSS-combined magnitude)"
+            }
+        }
+        MaskingInput::Magnitude => {
+            if corrected { "the inhomogeneity-corrected RSS-combined magnitude image" }
+            else { "the RSS-combined magnitude image" }
+        }
+        MaskingInput::MagnitudeFirst => {
+            if corrected { "the inhomogeneity-corrected first-echo magnitude image" }
+            else { "the first-echo magnitude image" }
+        }
+        MaskingInput::MagnitudeLast => {
+            if corrected { "the inhomogeneity-corrected last-echo magnitude image" }
+            else { "the last-echo magnitude image" }
+        }
+    };
+
+    match &section.generator {
+        MaskOp::Threshold { method: MaskThresholdMethod::Otsu, .. } => {
+            add_citation(citations, &CITE_OTSU);
+            format!("Otsu thresholding (Otsu, 1979) of {}", input_desc)
+        }
+        MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value } => {
+            format!("fixed thresholding (value={:.4}) of {}", value.unwrap_or(0.5), input_desc)
+        }
+        MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value } => {
+            format!("percentile thresholding ({}th percentile) of {}", value.unwrap_or(75.0), input_desc)
+        }
+        MaskOp::Bet { fractional_intensity } => {
+            add_citation(citations, &CITE_BET);
+            format!("BET brain extraction (Smith, 2002; f={:.2}) of {}", fractional_intensity, input_desc)
+        }
+        MaskOp::HdBet { patch, tta, tile_step } => {
+            add_citation(citations, &CITE_HDBET);
+            // Always stated: a methods section should name every parameter the run used.
+            format!(
+                "HD-BET deep-learning brain extraction (Isensee et al., 2019; {}x{}x{}-voxel \
+                 sliding-window patches stepped by {:.0}% of the patch{}) of {}",
+                patch[0], patch[1], patch[2], tile_step * 100.0,
+                if *tta { ", mirroring test-time augmentation" } else { "" }, input_desc,
+            )
+        }
+        _ => format!("{} of {}", section.generator, input_desc),
+    }
+}
+
+/// Prose for two-pass artefact reduction, including the reliable-pass mask recipe.
+///
+/// Named as "two-pass" throughout, matching both the paper and the `_desc-singlepass_` derivative
+/// that carries the other pass's map.
+fn describe_two_pass(config: &PipelineConfig, sentences: &mut Vec<String>, citations: &mut Vec<&Citation>) {
+    if !config.masking.two_pass {
+        return;
+    }
+    add_citation(citations, &CITE_TWOPASS);
+
+    let sections = config.masking.resolved_two_pass_sections();
+    let mut descs = Vec::new();
+    for section in &sections {
+        let mut parts = vec![describe_generator(section, config, citations)];
+        let refinements = describe_refinements(&section.refinements, citations);
+        if !refinements.is_empty() {
+            parts.push(format!("followed by {}", join_list(&refinements)));
+        }
+        descs.push(parts.join(", "));
+    }
+
+    sentences.push(format!(
+        "Two-pass artefact reduction (Stewart et al., 2022) was applied: background field removal \
+         and dipole inversion were repeated against a second mask generated using {}, whose holes \
+         around strong susceptibility sources were left unfilled, and the two susceptibility maps \
+         were combined by taking the second reconstruction wherever it was defined and the first \
+         elsewhere.",
+        join_list(&descs),
+    ));
+}
+
 fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citations: &mut Vec<&Citation>) {
     if config.masking.sections.is_empty() {
         return;
@@ -567,70 +667,7 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
     let mut section_descs = Vec::new();
 
     for section in &config.masking.sections {
-        let mut parts = Vec::new();
-
-        // Input description — clarify which magnitude goes into ROMEO
-        let input_desc = match section.input {
-            MaskingInput::PhaseQuality => {
-                add_citation(citations, &CITE_ROMEO);
-                if config.masking.inhomogeneity_correction {
-                    "the ROMEO phase quality map (computed from phase data and the inhomogeneity-corrected RSS-combined magnitude)"
-                } else {
-                    "the ROMEO phase quality map (computed from phase data and the RSS-combined magnitude)"
-                }
-            }
-            MaskingInput::Magnitude => {
-                if config.masking.inhomogeneity_correction {
-                    "the inhomogeneity-corrected RSS-combined magnitude image"
-                } else {
-                    "the RSS-combined magnitude image"
-                }
-            }
-            MaskingInput::MagnitudeFirst => {
-                if config.masking.inhomogeneity_correction {
-                    "the inhomogeneity-corrected first-echo magnitude image"
-                } else {
-                    "the first-echo magnitude image"
-                }
-            }
-            MaskingInput::MagnitudeLast => {
-                if config.masking.inhomogeneity_correction {
-                    "the inhomogeneity-corrected last-echo magnitude image"
-                } else {
-                    "the last-echo magnitude image"
-                }
-            }
-        };
-
-        // Generator
-        let gen_desc = match &section.generator {
-            MaskOp::Threshold { method: MaskThresholdMethod::Otsu, .. } => {
-                add_citation(citations, &CITE_OTSU);
-                format!("Otsu thresholding (Otsu, 1979) of {}", input_desc)
-            }
-            MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value } => {
-                format!("fixed thresholding (value={:.4}) of {}", value.unwrap_or(0.5), input_desc)
-            }
-            MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value } => {
-                format!("percentile thresholding ({}th percentile) of {}", value.unwrap_or(75.0), input_desc)
-            }
-            MaskOp::Bet { fractional_intensity } => {
-                add_citation(citations, &CITE_BET);
-                format!("BET brain extraction (Smith, 2002; f={:.2}) of {}", fractional_intensity, input_desc)
-            }
-            MaskOp::HdBet { patch, tta, tile_step } => {
-                add_citation(citations, &CITE_HDBET);
-                // Always stated: a methods section should name every parameter the run used.
-                format!(
-                    "HD-BET deep-learning brain extraction (Isensee et al., 2019; {}x{}x{}-voxel \
-                     sliding-window patches stepped by {:.0}% of the patch{}) of {}",
-                    patch[0], patch[1], patch[2], tile_step * 100.0,
-                    if *tta { ", mirroring test-time augmentation" } else { "" }, input_desc,
-                )
-            }
-            _ => format!("{} of {}", section.generator, input_desc),
-        };
-        parts.push(gen_desc);
+        let mut parts = vec![describe_generator(section, config, citations)];
 
         // Refinements
         let refinement_descs = describe_refinements(&section.refinements, citations);
@@ -797,6 +834,59 @@ fn join_list(items: &[String]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Methods text is prose meant to be pasted into a paper, so a run of whitespace in the middle
+    /// of a sentence is a defect. A Rust string continuation that loses its backslash produces
+    /// exactly that, and every other assertion in this file still passes when it happens.
+    #[test]
+    fn methods_prose_has_no_stray_whitespace() {
+        let mut config = PipelineConfig::default();
+        config.masking.two_pass = true;
+        config.pipeline.do_swi = true;
+        config.pipeline.do_chi_separation = true;
+        crate::config::enforce_separation_dependencies(&mut config);
+
+        for line in generate_methods(&config).lines() {
+            assert!(!line.contains("  "), "run of spaces in methods prose: {line:?}");
+        }
+    }
+
+    /// The two-pass sentence has to name the second mask's recipe, say which pass wins where, and
+    /// bring the MRM 2022 citation with it.
+    #[test]
+    fn two_pass_methods_describe_the_reliable_mask() {
+        let mut config = PipelineConfig::default();
+        assert!(!generate_methods(&config).contains("Two-pass"));
+
+        config.masking.two_pass = true;
+        let out = generate_methods(&config);
+        assert!(out.contains("Two-pass artefact reduction (Stewart et al., 2022)"), "out: {out}");
+        assert!(out.contains("Otsu thresholding (Otsu, 1979) of the ROMEO phase quality map"), "out: {out}");
+        assert!(out.contains("left unfilled"), "out: {out}");
+        assert!(out.contains("10.1002/mrm.29048"), "two-pass citation missing: {out}");
+
+        // It describes the reconstruction, so it belongs after inversion and before referencing.
+        let inv = out.find("Dipole inversion was performed").expect("inversion sentence");
+        let two = out.find("Two-pass artefact reduction").expect("two-pass sentence");
+        let reference = out.find("mean-referenced").expect("referencing sentence");
+        assert!(inv < two && two < reference, "out-of-order methods: {out}");
+    }
+
+    /// An edited reliable mask must be described as configured, not as the default.
+    #[test]
+    fn two_pass_methods_follow_an_edited_reliable_mask() {
+        let mut config = PipelineConfig::default();
+        config.masking.two_pass = true;
+        config.masking.two_pass_sections = Some(vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Bet { fractional_intensity: 0.4 },
+            refinements: vec![MaskOp::Erode { iterations: 2 }],
+        }]);
+        let out = generate_methods(&config);
+        assert!(out.contains("BET brain extraction (Smith, 2002; f=0.40)"), "out: {out}");
+        assert!(out.contains("followed by erosion (2 iterations)"), "out: {out}");
+        assert!(!out.contains("phase quality map, whose holes"), "out: {out}");
+    }
 
     /// The `bet-and-phase` recipe names the operation, the intersection it means, and the
     /// consensus it comes from — with the citation in the reference list.
