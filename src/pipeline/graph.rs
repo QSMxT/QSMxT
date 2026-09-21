@@ -174,10 +174,8 @@ impl PipelineState {
     #[allow(dead_code)]
     pub fn invalidate(&mut self, step_name: &str) {
         self.completed_steps.remove(step_name);
-        // Also invalidate downstream steps
-        let downstream = downstream_steps(step_name);
-        for ds in downstream {
-            self.completed_steps.remove(*ds);
+        for ds in downstream_of(step_name) {
+            self.completed_steps.remove(&ds);
         }
     }
 
@@ -212,6 +210,50 @@ fn md5_simple(s: &str) -> u64 {
 
 /// Return step names that depend on the given step (for invalidation).
 #[allow(dead_code)]
+/// Suffix on the reliable pass's step names — see [`RELIABLE_SUFFIX`] users in the runner.
+pub const RELIABLE_SUFFIX: &str = "-reliable";
+
+/// Every step that has to be re-run when `step_name` changes, the two-pass steps included.
+///
+/// Two-pass duplicates the mask, background-removal and inversion steps under
+/// [`RELIABLE_SUFFIX`], so each of those is stale exactly when its main-pass twin is; and the
+/// `twopass` combination is stale whenever either pass's inversion is. Deriving that from
+/// [`downstream_steps`] rather than listing it keeps one table to maintain — a stale entry here
+/// means silently reusing a cached output computed with different parameters.
+pub fn downstream_of(step_name: &str) -> Vec<String> {
+    // A reliable-pass step invalidates what its main-pass twin invalidates, on its own side.
+    if let Some(base) = step_name.strip_suffix(RELIABLE_SUFFIX) {
+        let mut out: Vec<String> = downstream_steps(base)
+            .iter()
+            .filter(|ds| PASS_STEPS.contains(ds))
+            .map(|ds| format!("{ds}{RELIABLE_SUFFIX}"))
+            .collect();
+        out.push("twopass".to_string());
+        out.push("reference".to_string());
+        return out;
+    }
+    if step_name == "twopass" {
+        return vec!["reference".to_string()];
+    }
+
+    let direct = downstream_steps(step_name);
+    let mut out: Vec<String> = direct.iter().map(|s| s.to_string()).collect();
+    out.extend(
+        direct.iter()
+            .filter(|ds| PASS_STEPS.contains(ds))
+            .map(|ds| format!("{ds}{RELIABLE_SUFFIX}")),
+    );
+    if direct.iter().any(|ds| PASS_STEPS.contains(ds)) {
+        out.push("twopass".to_string());
+    }
+    out
+}
+
+/// The steps two-pass runs once per pass. Everything before them (loading, phase scaling, the
+/// field map) is shared, and everything after them (referencing, output space) runs on the
+/// combined map.
+const PASS_STEPS: [&str; 5] = ["mask", "bgremove", "invert", "tgv", "qsmart"];
+
 fn downstream_steps(step_name: &str) -> &'static [&'static str] {
     match step_name {
         "load" => &[
@@ -319,8 +361,13 @@ pub fn state_file_path(output_dir: &Path, key: &AcquisitionKey) -> PathBuf {
 
 /// Remove intermediate files (workflow dir), keeping only final outputs.
 pub fn clean_intermediates(state: &PipelineState, output_dir: &Path, key: &AcquisitionKey) {
-    let final_steps: HashSet<&str> =
-        ["mask", "magnitude", "reference", "swi", "t2star_r2star"].iter().copied().collect();
+    // Steps whose outputs are final derivatives rather than workflow intermediates. The
+    // reliable-phase mask and the single-pass map are both written into `anat/`, so cleaning them
+    // would delete outputs the run is meant to produce.
+    let final_steps: HashSet<&str> = [
+        "mask", "magnitude", "reference", "swi", "t2star_r2star",
+        "mask-reliable", "reference-singlepass",
+    ].iter().copied().collect();
 
     for (step_name, record) in &state.completed_steps {
         if !final_steps.contains(step_name.as_str()) {
@@ -341,6 +388,44 @@ pub fn clean_intermediates(state: &PipelineState, output_dir: &Path, key: &Acqui
 #[cfg(test)]
 mod tests {
     use super::*;
+    /// Changing the mask has to invalidate both passes and the combination — a reliable-pass
+    /// inversion left cached against a new mask is the silent-wrong-output case this table exists
+    /// to prevent.
+    #[test]
+    fn mask_invalidates_both_passes_and_the_combination() {
+        let ds = downstream_of("mask");
+        for step in ["bgremove", "invert", "tgv", "qsmart",
+                     "bgremove-reliable", "invert-reliable", "tgv-reliable", "qsmart-reliable",
+                     "twopass", "reference"] {
+            assert!(ds.contains(&step.to_string()), "mask should invalidate {step}: {ds:?}");
+        }
+    }
+
+    /// A reliable-pass step invalidates its own side and the combination, and leaves the main
+    /// pass's cached reconstruction alone — re-running it would double the cost of an edit that
+    /// cannot have changed it.
+    #[test]
+    fn a_reliable_step_leaves_the_main_pass_cached() {
+        let ds = downstream_of("mask-reliable");
+        assert!(ds.contains(&"invert-reliable".to_string()), "{ds:?}");
+        assert!(ds.contains(&"twopass".to_string()), "{ds:?}");
+        assert!(ds.contains(&"reference".to_string()), "{ds:?}");
+        assert!(!ds.contains(&"invert".to_string()), "main pass must stay cached: {ds:?}");
+        assert!(!ds.contains(&"bgremove".to_string()), "main pass must stay cached: {ds:?}");
+    }
+
+    #[test]
+    fn the_combination_only_invalidates_referencing() {
+        assert_eq!(downstream_of("twopass"), vec!["reference".to_string()]);
+    }
+
+    /// Steps with nothing downstream must not grow a two-pass tail.
+    #[test]
+    fn leaf_steps_stay_leaves() {
+        assert!(downstream_of("swi").is_empty());
+        assert!(downstream_of("reference").is_empty());
+    }
+
     #[test]
     fn test_new_state() {
         let config = PipelineConfig::default();

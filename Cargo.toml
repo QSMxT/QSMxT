@@ -23,8 +23,9 @@ default = ["dl"]
 dl = ["qsm-core/onnx", "qsm-core/download"]
 
 [dependencies]
-# TEMPORARY: local path while QSM.rs#106 is unmerged. Flip back to a tag before merging.
-qsm-core = { path = "/home/ashley/repos/qsm/QSM.rs-mip-geometry", features = ["parallel"] }
+# TEMPORARY: local path while the two-pass primitives are unreleased. Flip back to a tag
+# before merging.
+qsm-core = { path = "/home/ashley/repos/qsm/QSM.rs-two-pass", features = ["parallel"] }
 qsmxt-config = { path = "crates/qsmxt-config" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"

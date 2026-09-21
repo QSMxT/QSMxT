@@ -27,6 +27,36 @@ pub fn mask_preset_recipe(preset: cli::MaskPresetArg) -> MaskRecipe {
         .expect("every MaskPresetArg is in mask_presets()")
 }
 
+/// Parse `<input>,<op>,<op>,...` mask-section specs — the `--mask` and `--two-pass-mask` grammar.
+///
+/// Invalid pieces are warned about and skipped rather than failing the run, so one typo in one
+/// section does not throw away a batch. `flag` names the option in those warnings. A section with
+/// no generator op gets an Otsu threshold, which is what its input implies.
+fn parse_mask_sections(specs: &[String], flag: &str) -> Vec<MaskSection> {
+    let mut sections = Vec::new();
+    for spec in specs {
+        let parts: Vec<&str> = spec.split(',').collect();
+        if parts.is_empty() { continue; }
+        let input = match parse_masking_input(parts[0]) {
+            Some(i) => i,
+            None => { log::warn!("Ignoring invalid {} section input: '{}'", flag, parts[0]); continue; }
+        };
+        let mut ops: Vec<MaskOp> = Vec::new();
+        for part in &parts[1..] {
+            match parse_mask_op(part) {
+                Ok(op) => ops.push(op),
+                Err(e) => log::warn!("Ignoring invalid mask op '{}': {}", part, e),
+            }
+        }
+        let gen_idx = ops.iter().position(MaskOp::is_generator);
+        let generator = if let Some(gi) = gen_idx { ops.remove(gi) } else {
+            MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }
+        };
+        sections.push(MaskSection { input, generator, refinements: ops });
+    }
+    sections
+}
+
 /// Apply CLI overrides onto a config.
 /// Map a CLI dipole-inversion algorithm argument to the config enum.
 fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
@@ -415,27 +445,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             config.masking.refinements = recipe.refinements;
         }
         if let Some(ref sections) = args.mask_sections_cli {
-            let mut new_sections = Vec::new();
-            for s in sections {
-                let parts: Vec<&str> = s.split(',').collect();
-                if parts.is_empty() { continue; }
-                let input = match parse_masking_input(parts[0]) {
-                    Some(i) => i,
-                    None => { log::warn!("Ignoring invalid mask section input: '{}'", parts[0]); continue; }
-                };
-                let mut ops: Vec<MaskOp> = Vec::new();
-                for part in &parts[1..] {
-                    match parse_mask_op(part) {
-                        Ok(op) => ops.push(op),
-                        Err(e) => log::warn!("Ignoring invalid mask op '{}': {}", part, e),
-                    }
-                }
-                let gen_idx = ops.iter().position(MaskOp::is_generator);
-                let generator = if let Some(gi) = gen_idx { ops.remove(gi) } else {
-                    MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }
-                };
-                new_sections.push(MaskSection { input, generator, refinements: ops });
-            }
+            let new_sections = parse_mask_sections(sections, "--mask");
             if !new_sections.is_empty() { config.masking.sections = new_sections; }
         }
         if let Some(combine) = args.mask_combine {
@@ -457,6 +467,29 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             }
             config.masking.refinements = ops;
         }
+
+        // ── Two-pass ──
+        // Giving a reliable mask implies the method: asking for one and not getting the second
+        // pass would be the more surprising reading of `--two-pass-mask ... ` on its own.
+        if let Some(ref sections) = args.two_pass_sections_cli {
+            let new_sections = parse_mask_sections(sections, "--two-pass-mask");
+            if !new_sections.is_empty() {
+                for section in &new_sections {
+                    if section.refinements.iter().any(|op| matches!(op,
+                        MaskOp::FillHoles { .. } | MaskOp::Close { .. } | MaskOp::GaussianSmooth { .. }))
+                    {
+                        log::warn!(
+                            "--two-pass-mask {}: this closes the holes two-pass reconstructs around, \
+                             which collapses the reliable pass onto the ordinary one",
+                            section.compact_spec(),
+                        );
+                    }
+                }
+                config.masking.two_pass_sections = Some(new_sections);
+                config.masking.two_pass = true;
+            }
+        }
+        if args.two_pass { config.masking.two_pass = true; }
 
         // ── Masking input / erosion overrides ──
         // These rewrite the configured sections (default or --mask-preset). Full
@@ -745,6 +778,56 @@ mod tests {
         let c = config_from_cli(&["qsmxt", "run", "<bids>"]);
         assert_eq!(c.masking.combine, MaskCombine::Or);
         assert!(c.masking.refinements.is_empty());
+    }
+
+    #[test]
+    fn two_pass_is_off_unless_asked_for() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>"]);
+        assert!(!c.masking.two_pass);
+        assert!(c.masking.two_pass_sections.is_none());
+
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--two-pass"]);
+        assert!(c.masking.two_pass);
+        // Left unset, so the default recipe is what resolves — and the generated command stays
+        // a bare --two-pass.
+        assert!(c.masking.two_pass_sections.is_none());
+        assert_eq!(c.masking.resolved_two_pass_sections(), default_two_pass_sections());
+    }
+
+    /// Spelling out a reliable mask is an unambiguous request for the method; making the user
+    /// pass `--two-pass` as well would only be a way to get it silently ignored.
+    #[test]
+    fn two_pass_mask_implies_two_pass() {
+        let c = config_from_cli(&[
+            "qsmxt", "run", "<bids>", "--two-pass-mask", "magnitude,threshold:percentile:30",
+        ]);
+        assert!(c.masking.two_pass);
+        let sections = c.masking.two_pass_sections.expect("sections");
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].input, MaskingInput::Magnitude);
+        assert!(matches!(sections[0].generator,
+                         MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(v) } if v == 30.0));
+    }
+
+    /// Two-pass leaves the main mask alone — it adds a second one rather than replacing the first.
+    #[test]
+    fn two_pass_does_not_disturb_the_main_mask() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--two-pass"]);
+        assert_eq!(c.masking.sections, default_mask_sections());
+        assert_eq!(c.masking.combine, MaskCombine::Or);
+        assert!(c.masking.refinements.is_empty());
+    }
+
+    /// A reliable mask that fills its own holes reconstructs the same region as the main pass. It
+    /// is honoured (the user may have a reason) but warned about rather than silently doubling the
+    /// run time for nothing.
+    #[test]
+    fn two_pass_mask_keeps_hole_filling_the_user_asked_for() {
+        let c = config_from_cli(&[
+            "qsmxt", "run", "<bids>", "--two-pass-mask", "phase-quality,threshold:otsu,fill-holes:0",
+        ]);
+        let sections = c.masking.two_pass_sections.expect("sections");
+        assert_eq!(sections[0].refinements, vec![MaskOp::FillHoles { max_size: 0 }]);
     }
 
     /// A generator in --mask-refine has nothing to refine — it would throw the combined mask

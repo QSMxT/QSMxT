@@ -516,6 +516,17 @@ pub struct MaskingConfig {
     /// `None` = always compute the mask from `sections`.
     #[serde(default)]
     pub custom_mask_tool: Option<String>,
+    /// Reconstruct a second time against a mask whose holes are intact, and keep that
+    /// reconstruction wherever it is defined. See [`two_pass_sections`](Self::two_pass_sections).
+    #[serde(default)]
+    pub two_pass: bool,
+    /// The reliable-pass mask, when `two_pass` is set. `None` = [`default_two_pass_sections`]
+    /// (an Otsu threshold on the phase-quality map, unfilled).
+    ///
+    /// An ordinary list of mask sections, folded with the same `combine` and `refinements` as the
+    /// main mask, so anything expressible for one mask is expressible for this one.
+    #[serde(default)]
+    pub two_pass_sections: Option<Vec<MaskSection>>,
 }
 impl Default for MaskingConfig {
     fn default() -> Self {
@@ -525,7 +536,16 @@ impl Default for MaskingConfig {
             combine: MaskCombine::default(),
             refinements: vec![],
             custom_mask_tool: None,
+            two_pass: false,
+            two_pass_sections: None,
         }
+    }
+}
+
+impl MaskingConfig {
+    /// The reliable-pass mask sections: the configured ones, or the default recipe.
+    pub fn resolved_two_pass_sections(&self) -> Vec<MaskSection> {
+        self.two_pass_sections.clone().unwrap_or_else(default_two_pass_sections)
     }
 }
 

@@ -252,6 +252,21 @@ pub fn default_mask_sections() -> Vec<MaskSection> {
     }]
 }
 
+/// The reliable-pass mask for two-pass artefact reduction, when none is configured.
+///
+/// An Otsu threshold on the phase-quality map and nothing else. The dilate/fill-holes/erode
+/// refinements `robust-threshold` applies are deliberately absent: the holes strong susceptibility
+/// sources punch in a phase-quality mask are what this pass is built around, and filling them
+/// would collapse it onto the main pass. Mirrors qsm-core's `default_reliable_sections`, which
+/// `two_pass_default_matches_qsm_core` holds it to.
+pub fn default_two_pass_sections() -> Vec<MaskSection> {
+    vec![MaskSection {
+        input: MaskingInput::PhaseQuality,
+        generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
+        refinements: vec![],
+    }]
+}
+
 /// QSMART has no internal mask erosion (unlike V-SHARP), so it needs a tight
 /// brain mask — a loose threshold mask leaks non-brain phase into the global
 /// dipole inversion and produces streaking. Default QSMART to BET-on-magnitude.
@@ -724,6 +739,27 @@ mod tests {
 
         assert_eq!(MaskRecipe::from_sections(default_mask_sections()).combine, MaskCombine::Or);
         assert!(MaskRecipe::from_sections(default_mask_sections()).refinements.is_empty());
+    }
+
+    /// The reliable-pass default has to be the same recipe on both sides of the bridge — qsm-core
+    /// owns it for qsmbly, this crate owns it for the CLI and TUI, and a drift between them would
+    /// mean `--two-pass` reconstructed different regions in the browser and on the command line.
+    #[test]
+    fn two_pass_default_matches_qsm_core() {
+        assert_eq!(
+            crate::to_mask_sections(&default_two_pass_sections()),
+            qsm_core::pipeline::default_reliable_sections(),
+        );
+    }
+
+    /// Filling or closing here would make the reliable mask a copy of the main one, and the second
+    /// reconstruction pure wasted time.
+    #[test]
+    fn two_pass_default_keeps_its_holes() {
+        let sections = default_two_pass_sections();
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].input, MaskingInput::PhaseQuality);
+        assert!(sections[0].refinements.is_empty());
     }
 
     #[test]
