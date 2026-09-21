@@ -1,14 +1,14 @@
-//! Writing volumes out as NIfTI, with the header and the payload kept in step.
+//! Writing volumes out as NIfTI.
 
 use std::path::Path;
 use crate::error::QsmxtError;
 
-/// Write an `f64` volume as NIfTI, refusing any payload that does not match `dims`.
+/// Write an `f64` volume as NIfTI, creating the output directory if it does not exist.
 ///
-/// A NIfTI header states a matrix size and every reader trusts it, so a writer that accepts a
-/// mismatched buffer produces a file that opens fine and then fails — or shows nothing — the
-/// moment something reads the voxels (issue #211). Every volume QSMxT writes goes out through
-/// here, so a mismatch is an error where it is made rather than a corrupt file on disk.
+/// `qsm_core::io::save_nifti` refuses a payload that does not match the dimensions it is handed,
+/// so a header that promises voxels the file does not hold (issue #211) is an error here rather
+/// than a file someone opens later. Every volume QSMxT writes goes out through this one door, so
+/// that guarantee covers all of them.
 pub fn write_volume(
     path: &Path,
     data: &[f64],
@@ -16,14 +16,6 @@ pub fn write_volume(
     voxel_size: (f64, f64, f64),
     affine: &[f64; 16],
 ) -> crate::Result<()> {
-    let (nx, ny, nz) = dims;
-    let expected = nx * ny * nz;
-    if data.len() != expected {
-        return Err(QsmxtError::DimensionMismatch(format!(
-            "refusing to write {}: the header would say {}x{}x{} ({} voxels) but {} values were given",
-            path.display(), nx, ny, nz, expected, data.len(),
-        )));
-    }
     // A bare filename has an empty parent, which `create_dir_all` rejects.
     match path.parent() {
         Some(parent) if !parent.as_os_str().is_empty() => std::fs::create_dir_all(parent)?,
@@ -45,7 +37,7 @@ mod tests {
     ];
 
     #[test]
-    fn writes_a_matching_volume() {
+    fn writes_a_matching_volume_into_a_new_directory() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("nested").join("vol.nii");
         write_volume(&path, &vec![1.0; 4 * 5 * 6], (4, 5, 6), (1.0, 1.0, 1.0), &AFFINE).unwrap();
@@ -54,23 +46,17 @@ mod tests {
         assert_eq!(back.data.len(), 4 * 5 * 6);
     }
 
+    /// The guard lives in qsm-core; this pins that QSMxT surfaces it instead of writing the file.
     #[test]
-    fn rejects_a_short_payload() {
+    fn a_payload_that_does_not_match_the_dimensions_never_reaches_disk() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("short.nii");
         let err = write_volume(&path, &vec![1.0; 100], (4, 5, 6), (1.0, 1.0, 1.0), &AFFINE)
             .unwrap_err()
             .to_string();
+        assert!(err.contains("short.nii"), "{err}");
         assert!(err.contains("120 voxels"), "{err}");
-        assert!(err.contains("100 values"), "{err}");
         assert!(!path.exists(), "nothing should be written for a mismatch");
-    }
-
-    #[test]
-    fn rejects_a_long_payload() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("long.nii");
-        assert!(write_volume(&path, &vec![1.0; 200], (4, 5, 6), (1.0, 1.0, 1.0), &AFFINE).is_err());
     }
 
     #[test]
@@ -82,5 +68,4 @@ mod tests {
         assert_eq!(back.dims, (2, 2, 2));
         assert_eq!(back.data, vec![2.0; 8]);
     }
-
 }

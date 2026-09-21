@@ -11,7 +11,6 @@ use crate::bids::discovery::QsmRun;
 use crate::pipeline::config::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
 use crate::pipeline::memory;
-use crate::pipeline::mip::mip_geometry;
 use crate::pipeline::phase;
 use crate::nifti::write::write_volume;
 use crate::error::QsmxtError;
@@ -480,16 +479,15 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
     // slices are slabs, not samples — so it is rebuilt from the SWI that just landed there.
     let swi_path = ctx.output.swi_path(&ctx.run.key);
     if mip_path.exists() && swi_path.exists() {
-        let window = ctx.config.swi.mip_window;
-        let (mip_dims, mip_affine) = mip_geometry(dst_dims, &dst_affine, window)?;
         let dst_voxel_size = qsm_core::geometry::voxel_sizes_from_affine(&dst_affine);
-        let swi = load_volume(&swi_path)?;
         let grid = qsm_core::Grid::new(
             dst_dims.0, dst_dims.1, dst_dims.2,
             dst_voxel_size.0, dst_voxel_size.1, dst_voxel_size.2,
         );
-        let mip = qsm_core::swi::create_mip(&swi, &grid, window);
-        write_volume(&mip_path, &mip, mip_dims, dst_voxel_size, &mip_affine)?;
+        let swi = load_volume(&swi_path)?;
+        let mip = qsm_core::swi::create_mip(&swi, &grid, &dst_affine, ctx.config.swi.mip_window)
+            .map_err(QsmxtError::Config)?;
+        write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
     }
 
     ctx.complete_step("output_space", None, params, &[], files, t)?;
@@ -1242,7 +1240,9 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let (vsx, vsy, vsz) = ctx.voxel_size();
     // Checked up front so an impossible window fails before the SWI is computed, not after.
     let window = ctx.config.swi.mip_window;
-    let (mip_dims, mip_affine) = mip_geometry((nx, ny, nz), &ctx.meta.affine, window)?;
+    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+    let (mip_grid, _) = qsm_core::swi::mip_geometry(&grid, &ctx.meta.affine, window)
+        .map_err(QsmxtError::Config)?;
     let swi_params = serde_json::json!({
         "scaling": ctx.config.swi.scaling,
         "strength": ctx.config.swi.strength,
@@ -1250,7 +1250,7 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
         "mip_window": window,
         // Part of the cache key so a minIP written with full-volume dimensions before this was
         // fixed (issue #211) is rebuilt rather than kept.
-        "mip_dims": [mip_dims.0, mip_dims.1, mip_dims.2],
+        "mip_dims": [mip_grid.nx(), mip_grid.ny(), mip_grid.nz()],
     });
     if ctx.is_cached_with_params("swi", Some("clear-swi"), &swi_params) {
         log::info!("Skipping swi (cached)");
@@ -1263,7 +1263,6 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let mag_data = load_volume(&ctx.output.magnitude_path(&ctx.run.key))?;
     let mask = load_mask(mask_path)?;
 
-    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
     let unwrapped = qsm_core::unwrap::laplacian_unwrap(&phase_data, &mask, &grid);
     let swi_scaling = match ctx.config.swi.scaling.as_str() {
         "negative_tanh" => qsm_core::swi::PhaseScaling::NegativeTanh,
@@ -1279,14 +1278,15 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let swi = qsm_core::swi::calculate_swi(
         &unwrapped, &mag_data, &mask, &grid, &swi_params_core,
     );
-    let mip = qsm_core::swi::create_mip(&swi, &grid, window);
+    // The projection carries its own geometry: shorter than the SWI along the slice axis, and
+    // centred on each slab. Writing it under the run's dimensions is issue #211.
+    let mip = qsm_core::swi::create_mip(&swi, &grid, &ctx.meta.affine, window)
+        .map_err(QsmxtError::Config)?;
 
     let swi_path = ctx.output.swi_path(&ctx.run.key);
     let mip_path = ctx.output.swi_mip_path(&ctx.run.key);
     save_volume(&swi_path, &swi, ctx.meta)?;
-    // The projection is `window - 1` slices shorter than the SWI and sits half a slab further
-    // along the slice direction, so it gets its own geometry rather than the run's.
-    write_volume(&mip_path, &mip, mip_dims, (vsx, vsy, vsz), &mip_affine)?;
+    write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
     let phase_path = ctx.output.phase_scaled_path(&ctx.run.key, 1);
     let mag_input = ctx.output.magnitude_path(&ctx.run.key);
     ctx.complete_step("swi", Some("clear-swi"), swi_params, &[phase_path.as_path(), mag_input.as_path(), mask_path], vec![swi_path, mip_path], t)?;
