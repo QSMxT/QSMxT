@@ -172,14 +172,13 @@ pub fn split_4d_nifti(
         let vol_data = &data[start..end];
 
         let out_path = output_dir.join(format!("{}_echo-{}.nii.gz", base_name, t + 1));
-        qsm_core::io::save_nifti_to_file(
+        crate::nifti::write::write_volume(
             &out_path,
             vol_data,
             (nx, ny, nz),
             voxel_size,
             &affine,
-        )
-        .map_err(crate::error::QsmxtError::NiftiIo)?;
+        )?;
 
         paths.push(out_path);
     }

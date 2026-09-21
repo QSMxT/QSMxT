@@ -11,7 +11,9 @@ use crate::bids::discovery::QsmRun;
 use crate::pipeline::config::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
 use crate::pipeline::memory;
+use crate::pipeline::mip::mip_geometry;
 use crate::pipeline::phase;
+use crate::nifti::write::write_volume;
 use crate::error::QsmxtError;
 
 /// Provenance record written to each workflow step directory.
@@ -216,11 +218,7 @@ fn log_step_done(step_name: &str, start: Instant) {
 
 /// Helper: save a f64 volume to NIfTI using metadata from RunMetadata.
 fn save_volume(path: &Path, data: &[f64], meta: &RunMetadata) -> crate::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    io::save_nifti_to_file(path, data, meta.dims, meta.voxel_size, &meta.affine)
-        .map_err(QsmxtError::NiftiIo)
+    write_volume(path, data, meta.dims, meta.voxel_size, &meta.affine)
 }
 
 /// Helper: save a u8 mask as f64 NIfTI.
@@ -431,6 +429,10 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
     // Phase is only meaningful alongside its magnitude, so handle those pairs first and skip
     // them in the scalar pass.
     let mut done: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    // The minIP is on its own, shorter grid, so it cannot travel with the volumes that share the
+    // working grid; it is recomputed from the resampled SWI below.
+    let mip_path = ctx.output.swi_mip_path(&ctx.run.key);
+    done.insert(mip_path.clone());
     for phase_path in files.iter().filter(|p| p.to_string_lossy().contains("part-phase")) {
         let mag_path = PathBuf::from(phase_path.to_string_lossy().replace("part-phase", "part-mag"));
         if !mag_path.exists() {
@@ -448,19 +450,46 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
         }
     }
 
+    let src_voxels = src_dims.0 * src_dims.1 * src_dims.2;
     for f in files.iter().filter(|f| !done.contains(*f)) {
+        let data = load_volume(f)?;
+        // Resampling indexes the source by the working grid, so anything on a different grid
+        // would be read out of bounds. Leave it where it is rather than corrupt it.
+        if data.len() != src_voxels {
+            log::warn!(
+                "Leaving {} on its own grid: {} voxels, not the {} of the working grid",
+                f.display(), data.len(), src_voxels,
+            );
+            continue;
+        }
         let is_mask = f.file_name().map(|n| n.to_string_lossy().contains("mask")).unwrap_or(false);
         if is_mask {
-            let m: Vec<u8> = load_volume(f)?.iter().map(|v| if *v > 0.5 { 1u8 } else { 0u8 }).collect();
+            let m: Vec<u8> = data.iter().map(|v| if *v > 0.5 { 1u8 } else { 0u8 }).collect();
             if let Some(out) = qsm_core::geometry::resample_mask_onto(&m, src_dims, &src_affine, dst_dims, &dst_affine) {
                 let as_f64: Vec<f64> = out.iter().map(|v| *v as f64).collect();
                 write_on_grid(f, &as_f64, dst_dims, &dst_affine)?;
             }
         } else if let Some(out) =
-            qsm_core::geometry::resample_onto(&load_volume(f)?, src_dims, &src_affine, dst_dims, &dst_affine)
+            qsm_core::geometry::resample_onto(&data, src_dims, &src_affine, dst_dims, &dst_affine)
         {
             write_on_grid(f, &out, dst_dims, &dst_affine)?;
         }
+    }
+
+    // A projection cannot be interpolated onto the acquired grid as if it were a volume — its
+    // slices are slabs, not samples — so it is rebuilt from the SWI that just landed there.
+    let swi_path = ctx.output.swi_path(&ctx.run.key);
+    if mip_path.exists() && swi_path.exists() {
+        let window = ctx.config.swi.mip_window;
+        let (mip_dims, mip_affine) = mip_geometry(dst_dims, &dst_affine, window)?;
+        let dst_voxel_size = qsm_core::geometry::voxel_sizes_from_affine(&dst_affine);
+        let swi = load_volume(&swi_path)?;
+        let grid = qsm_core::Grid::new(
+            dst_dims.0, dst_dims.1, dst_dims.2,
+            dst_voxel_size.0, dst_voxel_size.1, dst_voxel_size.2,
+        );
+        let mip = qsm_core::swi::create_mip(&swi, &grid, window);
+        write_volume(&mip_path, &mip, mip_dims, dst_voxel_size, &mip_affine)?;
     }
 
     ctx.complete_step("output_space", None, params, &[], files, t)?;
@@ -471,7 +500,7 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
 /// Overwrite a NIfTI with data on a different grid.
 fn write_on_grid(path: &Path, data: &[f64], dims: (usize, usize, usize), affine: &[f64; 16]) -> crate::Result<()> {
     let voxel_size = qsm_core::geometry::voxel_sizes_from_affine(affine);
-    io::save_nifti_to_file(path, data, dims, voxel_size, affine).map_err(QsmxtError::NiftiIo)
+    write_volume(path, data, dims, voxel_size, affine)
 }
 
 /// The box the FFT-based stages reconstruct in.
@@ -1209,19 +1238,25 @@ fn resolve_mask_magnitude(ctx: &StageContext) -> crate::Result<Vec<NiftiData>> {
 }
 
 fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
+    let (nx, ny, nz) = ctx.dims();
+    let (vsx, vsy, vsz) = ctx.voxel_size();
+    // Checked up front so an impossible window fails before the SWI is computed, not after.
+    let window = ctx.config.swi.mip_window;
+    let (mip_dims, mip_affine) = mip_geometry((nx, ny, nz), &ctx.meta.affine, window)?;
     let swi_params = serde_json::json!({
         "scaling": ctx.config.swi.scaling,
         "strength": ctx.config.swi.strength,
         "hp_sigma": ctx.config.swi.hp_sigma,
-        "mip_window": ctx.config.swi.mip_window,
+        "mip_window": window,
+        // Part of the cache key so a minIP written with full-volume dimensions before this was
+        // fixed (issue #211) is rebuilt rather than kept.
+        "mip_dims": [mip_dims.0, mip_dims.1, mip_dims.2],
     });
     if ctx.is_cached_with_params("swi", Some("clear-swi"), &swi_params) {
         log::info!("Skipping swi (cached)");
         return Ok(());
     }
     let t = Instant::now();
-    let (nx, ny, nz) = ctx.dims();
-    let (vsx, vsy, vsz) = ctx.voxel_size();
     log::info!("Computing SWI (Laplacian unwrap + CLEAR-SWI + MIP)");
     progress("Computing SWI");
     let phase_data = load_volume(&ctx.output.phase_scaled_path(&ctx.run.key, 1))?;
@@ -1239,17 +1274,19 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     };
     let swi_params_core = qsm_core::swi::SwiParams {
         hp_sigma: ctx.config.swi.hp_sigma, scaling: swi_scaling,
-        strength: ctx.config.swi.strength, mip_window: ctx.config.swi.mip_window,
+        strength: ctx.config.swi.strength, mip_window: window,
     };
     let swi = qsm_core::swi::calculate_swi(
         &unwrapped, &mag_data, &mask, &grid, &swi_params_core,
     );
-    let mip = qsm_core::swi::create_mip(&swi, &grid, ctx.config.swi.mip_window);
+    let mip = qsm_core::swi::create_mip(&swi, &grid, window);
 
     let swi_path = ctx.output.swi_path(&ctx.run.key);
     let mip_path = ctx.output.swi_mip_path(&ctx.run.key);
     save_volume(&swi_path, &swi, ctx.meta)?;
-    save_volume(&mip_path, &mip, ctx.meta)?;
+    // The projection is `window - 1` slices shorter than the SWI and sits half a slab further
+    // along the slice direction, so it gets its own geometry rather than the run's.
+    write_volume(&mip_path, &mip, mip_dims, (vsx, vsy, vsz), &mip_affine)?;
     let phase_path = ctx.output.phase_scaled_path(&ctx.run.key, 1);
     let mag_input = ctx.output.magnitude_path(&ctx.run.key);
     ctx.complete_step("swi", Some("clear-swi"), swi_params, &[phase_path.as_path(), mag_input.as_path(), mask_path], vec![swi_path, mip_path], t)?;
@@ -2579,4 +2616,243 @@ mod tests {
         assert!(out.iter().all(|v| v.is_finite()));
     }
 
+}
+
+#[cfg(test)]
+mod swi_export_tests {
+    use super::*;
+
+    const IDENTITY: [f64; 16] = [
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ];
+
+    fn key() -> crate::bids::entities::AcquisitionKey {
+        crate::bids::entities::AcquisitionKey {
+            subject: "01".into(), session: None, acquisition: None,
+            reconstruction: None, inversion: None, run: None, suffix: "MEGRE".into(),
+        }
+    }
+
+    fn run_for(key: crate::bids::entities::AcquisitionKey) -> crate::bids::discovery::QsmRun {
+        crate::bids::discovery::QsmRun {
+            key,
+            coils: None,
+            echoes: vec![crate::bids::discovery::EchoFiles {
+                echo_number: 1,
+                phase_json: PathBuf::from("p.json"),
+                phase_nifti: PathBuf::from("p.nii"),
+                magnitude_json: None,
+                magnitude_nifti: None,
+            }],
+            magnetic_field_strength: 3.0,
+            echo_times: vec![0.004],
+            b0_dir: None,
+            dims: (0, 0, 0),
+            has_magnitude: true,
+            mese: None,
+        }
+    }
+
+    fn meta_for(dims: (usize, usize, usize), affine: [f64; 16]) -> RunMetadata {
+        RunMetadata {
+            dims,
+            voxel_size: qsm_core::geometry::voxel_sizes_from_affine(&affine),
+            affine,
+            n_echoes: 1,
+            echo_times: vec![0.004],
+            b0_direction: (0.0, 0.0, 1.0),
+            field_strength: 3.0,
+            has_magnitude: true,
+            source_geometry: None,
+        }
+    }
+
+    /// Something with structure in every direction, so a projection is not trivially constant.
+    fn textured(dims: (usize, usize, usize)) -> Vec<f64> {
+        let (nx, ny, nz) = dims;
+        let mut data = vec![0.0; nx * ny * nz];
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let (x, y, z) = (i as f64, j as f64, k as f64);
+                    data[i + j * nx + k * nx * ny] =
+                        100.0 + 20.0 * (x * 0.7).sin() + 15.0 * (y * 0.4).cos() + 10.0 * (z * 0.9).sin();
+                }
+            }
+        }
+        data
+    }
+
+    /// Run `stage_swi` end to end over synthetic inputs on the given grid.
+    fn run_swi_stage(
+        dir: &Path,
+        dims: (usize, usize, usize),
+        affine: [f64; 16],
+        window: usize,
+    ) -> (crate::Result<()>, DerivativeOutputs, crate::bids::entities::AcquisitionKey) {
+        let (nx, ny, nz) = dims;
+        let k = key();
+        let run = run_for(k.clone());
+        let output = DerivativeOutputs::new(dir);
+        let meta = meta_for(dims, affine);
+
+        let mut config = PipelineConfig::default();
+        config.swi.mip_window = window;
+
+        let mask_path = output.mask_path(&k);
+        write_volume(&output.phase_scaled_path(&k, 1), &textured(dims), dims, meta.voxel_size, &affine).unwrap();
+        write_volume(&output.magnitude_path(&k), &textured(dims), dims, meta.voxel_size, &affine).unwrap();
+        write_volume(&mask_path, &vec![1.0; nx * ny * nz], dims, meta.voxel_size, &affine).unwrap();
+
+        let state_path = dir.join("state.json");
+        let mut state = PipelineState::load_or_create(&state_path, &config, &k, true);
+        let mut ctx = StageContext {
+            run: &run, config: &config, output: &output, meta: &meta,
+            state: &mut state, state_path: &state_path,
+        };
+        let result = stage_swi(&mut ctx, &mask_path, &|_| {});
+        (result, output, k)
+    }
+
+    /// The projection a viewer should see: a sliding minimum over `window` slices.
+    fn expected_mip(swi: &[f64], dims: (usize, usize, usize), window: usize) -> Vec<f64> {
+        let (nx, ny, nz) = dims;
+        let nxy = nx * ny;
+        let mut out = Vec::with_capacity(nxy * (nz - window + 1));
+        for k in 0..=(nz - window) {
+            for v in 0..nxy {
+                out.push((0..window).map(|w| swi[v + (k + w) * nxy]).fold(f64::INFINITY, f64::min));
+            }
+        }
+        out
+    }
+
+    /// The whole export path, not just `create_mip`: a header-only load hid this (issue #211).
+    #[test]
+    fn minip_header_matches_its_payload() {
+        let dir = tempfile::tempdir().unwrap();
+        let dims = (12, 10, 32);
+        let (result, output, k) = run_swi_stage(dir.path(), dims, IDENTITY, 7);
+        result.unwrap();
+
+        let mip = qsm_core::io::read_nifti_file(&output.swi_mip_path(&k)).unwrap();
+        assert_eq!(mip.dims, (12, 10, 26));
+        // Every voxel the header promises is really there.
+        assert_eq!(mip.data.len(), 12 * 10 * 26);
+
+        // The file on disk holds exactly the payload, not the full-volume length.
+        let bytes = std::fs::metadata(output.swi_mip_path(&k)).unwrap().len();
+        assert_eq!(bytes, 352 + (12 * 10 * 26 * 4) as u64);
+
+        // And it is the projection of the SWI that was saved beside it, zeros included.
+        let swi = qsm_core::io::read_nifti_file(&output.swi_path(&k)).unwrap();
+        assert_eq!(swi.dims, dims);
+        let expected = expected_mip(&swi.data, dims, 7);
+        for (i, (got, want)) in mip.data.iter().zip(expected.iter()).enumerate() {
+            assert!((got - want).abs() < 1e-3, "voxel {i}: {got} != {want}");
+        }
+    }
+
+    #[test]
+    fn minip_origin_sits_at_the_slab_centre() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut affine = IDENTITY;
+        affine[10] = 3.0; // 3 mm slices
+        affine[11] = -60.0;
+        let (result, output, k) = run_swi_stage(dir.path(), (8, 8, 24), affine, 7);
+        result.unwrap();
+
+        let mip = qsm_core::io::read_nifti_file(&output.swi_mip_path(&k)).unwrap();
+        assert_eq!(mip.dims, (8, 8, 18));
+        // Three 3 mm slices along k from the SWI origin.
+        assert!((mip.affine[11] - (-51.0)).abs() < 1e-3, "{:?}", mip.affine);
+        // The SWI itself keeps the acquisition geometry.
+        let swi = qsm_core::io::read_nifti_file(&output.swi_path(&k)).unwrap();
+        assert!((swi.affine[11] - (-60.0)).abs() < 1e-3, "{:?}", swi.affine);
+    }
+
+    #[test]
+    fn a_window_of_one_keeps_the_full_depth() {
+        let dir = tempfile::tempdir().unwrap();
+        let (result, output, k) = run_swi_stage(dir.path(), (8, 8, 10), IDENTITY, 1);
+        result.unwrap();
+        let mip = qsm_core::io::read_nifti_file(&output.swi_mip_path(&k)).unwrap();
+        let swi = qsm_core::io::read_nifti_file(&output.swi_path(&k)).unwrap();
+        assert_eq!(mip.dims, (8, 8, 10));
+        assert_eq!(mip.data, swi.data);
+    }
+
+    #[test]
+    fn a_window_of_the_full_depth_leaves_one_slice() {
+        let dir = tempfile::tempdir().unwrap();
+        let (result, output, k) = run_swi_stage(dir.path(), (8, 8, 10), IDENTITY, 10);
+        result.unwrap();
+        let mip = qsm_core::io::read_nifti_file(&output.swi_mip_path(&k)).unwrap();
+        assert_eq!(mip.dims, (8, 8, 1));
+        assert_eq!(mip.data.len(), 64);
+    }
+
+    #[test]
+    fn a_window_deeper_than_the_volume_is_refused_before_any_work() {
+        let dir = tempfile::tempdir().unwrap();
+        let (result, output, k) = run_swi_stage(dir.path(), (8, 8, 10), IDENTITY, 11);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("deeper than the 10-slice volume"), "{err}");
+        // create_mip would have returned an empty vector here; nothing must reach disk.
+        assert!(!output.swi_mip_path(&k).exists());
+        assert!(!output.swi_path(&k).exists());
+    }
+
+    #[test]
+    fn a_zero_window_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let (result, _, _) = run_swi_stage(dir.path(), (8, 8, 10), IDENTITY, 0);
+        let err = result.unwrap_err().to_string();
+        assert!(err.contains("at least 1 slice"), "{err}");
+    }
+
+    /// A minIP written with full-volume dimensions must not survive as a cache hit.
+    #[test]
+    fn a_stale_minip_cache_is_rebuilt() {
+        let dir = tempfile::tempdir().unwrap();
+        let dims = (8, 8, 16);
+        let (result, _, _) = run_swi_stage(dir.path(), dims, IDENTITY, 7);
+        result.unwrap();
+
+        // Replay the pre-fix parameter set: same window, no minIP dimensions recorded.
+        let stale = serde_json::json!({
+            "scaling": PipelineConfig::default().swi.scaling,
+            "strength": PipelineConfig::default().swi.strength,
+            "hp_sigma": PipelineConfig::default().swi.hp_sigma,
+            "mip_window": 7,
+        });
+        let stale_hash = crate::pipeline::graph::step_params_hash(Some("clear-swi"), &stale);
+        let state_path = dir.path().join("state.json");
+        let mut state: PipelineState =
+            serde_json::from_str(&std::fs::read_to_string(&state_path).unwrap()).unwrap();
+        assert_ne!(
+            state.completed_steps.get("swi").unwrap().params_hash.as_deref(),
+            Some(stale_hash.as_str()),
+            "the fix must change the swi cache key so old minIPs are regenerated",
+        );
+
+        // With the old hash stored, the step is not treated as cached.
+        state.completed_steps.get_mut("swi").unwrap().params_hash = Some(stale_hash);
+        assert!(!state.is_step_cached_with_hash(
+            "swi",
+            Some(&crate::pipeline::graph::step_params_hash(
+                Some("clear-swi"),
+                &serde_json::json!({
+                    "scaling": PipelineConfig::default().swi.scaling,
+                    "strength": PipelineConfig::default().swi.strength,
+                    "hp_sigma": PipelineConfig::default().swi.hp_sigma,
+                    "mip_window": 7,
+                    "mip_dims": [8, 8, 10],
+                }),
+            )),
+        ));
+    }
 }

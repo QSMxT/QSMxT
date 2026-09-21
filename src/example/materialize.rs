@@ -118,14 +118,13 @@ pub fn materialize(
         for echo in 0..nt {
             let name = format!("{}_echo-{}_part-{}_MEGRE", prefix(example), echo + 1, part);
             let nii = anat_dir.join(format!("{name}.nii.gz"));
-            qsm_core::io::save_nifti_to_file(
+            crate::nifti::write::write_volume(
                 &nii,
                 &data[echo * vol..(echo + 1) * vol],
                 (nx, ny, nz),
                 voxel_size,
                 &affine,
-            )
-            .map_err(QsmxtError::NiftiIo)?;
+            )?;
             write_sidecar(&anat_dir.join(format!("{name}.json")), example, &params, echo, part)?;
         }
         echoes = nt;
