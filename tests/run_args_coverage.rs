@@ -66,3 +66,39 @@ fn slurm_flattens_and_applies_pipeline_args() {
         "slurm::execute() must apply the pipeline overrides before generating job scripts"
     );
 }
+
+/// The logger must be up before the config is built, because building it is what validates the
+/// CLI. Every "ignoring invalid ..." warning `apply_run_overrides` emits went to a logger that did
+/// not exist yet and was silently dropped — including the two-pass hole-filling warning, and the
+/// `Discovered N run(s)` line. The check is positional because that is exactly the bug: both calls
+/// were present, just in the wrong order.
+#[test]
+fn logging_is_initialised_before_the_config_is_validated() {
+    let src = include_str!("../src/commands/run.rs");
+    let body = &src[src.find("pub fn execute(").expect("execute() not found")..];
+
+    let init = body.find("init_logging(").expect("run::execute must initialise logging");
+    let overrides = body
+        .find("apply_run_overrides(")
+        .expect("run::execute must apply CLI overrides");
+
+    assert!(
+        init < overrides,
+        "init_logging() must come before apply_run_overrides(), or the warnings it emits are \
+         written to a logger that does not exist yet and are silently dropped"
+    );
+}
+
+/// A dry run must not create directories in the dataset — it reports what a real run would do.
+#[test]
+fn a_dry_run_does_not_create_the_derivatives_directory() {
+    let src = include_str!("../src/commands/run.rs");
+    let body = &src[src.find("pub fn execute(").expect("execute() not found")..];
+    let guard = body.find("if args.dry {").expect("dry-run logging branch not found");
+    let create = body.find("create_dir_all(&derivatives_dir)").expect("derivatives dir creation not found");
+    let else_arm = body[guard..].find("} else {").expect("dry-run else arm not found") + guard;
+    assert!(
+        create > else_arm,
+        "creating derivatives/ must sit in the non-dry branch, so `--dry` writes nothing"
+    );
+}

@@ -10,7 +10,59 @@ use crate::executor;
 use crate::pipeline::config::PipelineConfig;
 use crate::pipeline::memory;
 
+/// Route `log` records to stderr (through the progress-bar multiplexer) and, for a real run, to
+/// `derivatives/qsmxt/qsmxt.log`.
+fn init_logging(log_file: Option<std::fs::File>, debug: bool) {
+    let log_file = log_file.map(Mutex::new);
+    let log_level = if debug { log::LevelFilter::Debug } else { log::LevelFilter::Info };
+    env_logger::Builder::new()
+        .filter_level(log_level)
+        .format_timestamp(None)
+        .format(move |_buf, record| {
+            use env_logger::fmt::style::{AnsiColor, Style};
+            let level = record.level();
+            let style = match level {
+                log::Level::Error => Style::new().fg_color(Some(AnsiColor::Red.into())),
+                log::Level::Warn  => Style::new().fg_color(Some(AnsiColor::Yellow.into())),
+                log::Level::Info  => Style::new().fg_color(Some(AnsiColor::Green.into())),
+                log::Level::Debug => Style::new().fg_color(Some(AnsiColor::Blue.into())),
+                log::Level::Trace => Style::new().fg_color(Some(AnsiColor::Cyan.into())),
+            };
+            // Use MultiProgress.println to properly coordinate with progress bars
+            let line = format!("[{style}{level:5}{style:#} {}] {}",
+                record.target(), record.args());
+            let _ = crate::pipeline::runner::MULTI_PROGRESS.println(line);
+            // Plain text to log file
+            if let Some(ref f) = log_file {
+                if let Ok(mut f) = f.lock() {
+                    let _ = writeln!(f, "[{level:5} {}] {}", record.target(), record.args());
+                }
+            }
+            Ok(())
+        })
+        .try_init()
+        .ok();
+}
+
 pub fn execute(args: RunArgs) -> crate::Result<()> {
+    // Resolve output: <dir>/derivatives/qsmxt/. Both come from args alone, so this can happen
+    // before anything else — which it must, because the logger writes there.
+    let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
+    let derivatives_dir = base_dir.join("derivatives").join("qsmxt");
+
+    // The logger goes up before the config is built, because building it is the step that
+    // validates the CLI: every "ignoring invalid ..." warning apply_run_overrides emits was
+    // being written to a logger that did not exist yet, and silently dropped. A dry run gets
+    // stderr only — it must not create directories in the dataset, and its whole purpose is to
+    // show what a real run would do, warnings included.
+    if args.dry {
+        init_logging(None, args.debug);
+    } else {
+        std::fs::create_dir_all(&derivatives_dir)?;
+        let log_file = std::fs::File::create(derivatives_dir.join("qsmxt.log"))?;
+        init_logging(Some(log_file), args.debug);
+    }
+
     // Build config: file -> CLI overrides
     let mut config = if let Some(ref path) = args.config {
         crate::pipeline::config::load_config(path)?
@@ -123,42 +175,6 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         }
         return Ok(());
     }
-
-    // Resolve output: <dir>/derivatives/qsmxt/
-    let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
-    let derivatives_dir = base_dir.join("derivatives").join("qsmxt");
-    std::fs::create_dir_all(&derivatives_dir)?;
-
-    // Set up logger: write to both stderr and a log file
-    let log_path = derivatives_dir.join("qsmxt.log");
-    let log_file = std::fs::File::create(&log_path)?;
-    let log_file = Mutex::new(log_file);
-    let log_level = if args.debug { log::LevelFilter::Debug } else { log::LevelFilter::Info };
-    env_logger::Builder::new()
-        .filter_level(log_level)
-        .format_timestamp(None)
-        .format(move |_buf, record| {
-            use env_logger::fmt::style::{AnsiColor, Style};
-            let level = record.level();
-            let style = match level {
-                log::Level::Error => Style::new().fg_color(Some(AnsiColor::Red.into())),
-                log::Level::Warn  => Style::new().fg_color(Some(AnsiColor::Yellow.into())),
-                log::Level::Info  => Style::new().fg_color(Some(AnsiColor::Green.into())),
-                log::Level::Debug => Style::new().fg_color(Some(AnsiColor::Blue.into())),
-                log::Level::Trace => Style::new().fg_color(Some(AnsiColor::Cyan.into())),
-            };
-            // Use MultiProgress.println to properly coordinate with progress bars
-            let line = format!("[{style}{level:5}{style:#} {}] {}",
-                record.target(), record.args());
-            let _ = crate::pipeline::runner::MULTI_PROGRESS.println(line);
-            // Plain text to log file
-            if let Ok(mut f) = log_file.lock() {
-                let _ = writeln!(f, "[{level:5} {}] {}", record.target(), record.args());
-            }
-            Ok(())
-        })
-        .try_init()
-        .ok();
 
     // Log version info
     info!("qsmxt {}", env!("CARGO_PKG_VERSION"));
