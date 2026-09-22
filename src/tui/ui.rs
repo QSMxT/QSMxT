@@ -272,7 +272,9 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 
         // Indent sub-fields under a parent checkbox
         let indent = match (app.active_tab, i) {
-            (TAB_SUPPLEMENTARY, 1..=6) => true, // SWI settings under "Compute SWI"
+            (TAB_SUPPLEMENTARY, 1..=6) => true,   // SWI settings under "Compute SWI"
+            (TAB_SUPPLEMENTARY, 13..=15) => true, // SMWI settings under "Compute SMWI"
+            (TAB_SUPPLEMENTARY, 17..=21) => true, // SynthSeg settings under "Segment (SynthSeg)"
             (TAB_EXECUTION, 4..=9) => true,     // SLURM settings under "Execution Mode"
             _ => false,
         };
@@ -1961,11 +1963,56 @@ mod tests {
     use super::*;
     use ratatui::{backend::TestBackend, Terminal};
 
+    /// Render at a given size, for tabs that are taller than the default 30-row terminal.
+    fn render_app_sized(app: &mut App, width: u16, height: u16) -> Terminal<TestBackend> {
+        let backend = TestBackend::new(width, height);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|f| draw(f, app)).unwrap();
+        terminal
+    }
+
     fn render_app(app: &mut App) -> Terminal<TestBackend> {
         let backend = TestBackend::new(120, 30);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| draw(f, app)).unwrap();
         terminal
+    }
+
+    /// SMWI's and SynthSeg's settings are sub-fields of their checkbox and have to read as such.
+    /// Without the indent they sit flush against it and look like independent outputs.
+    #[test]
+    fn smwi_and_synthseg_settings_are_indented_under_their_checkbox() {
+        let mut app = App::new();
+        app.active_tab = TAB_SUPPLEMENTARY;
+        app.form.do_swi = true; // so the SWI block it should match is on screen too
+        app.form.do_smwi = true;
+        app.form.do_segmentation = true;
+        // Tall enough that the whole tab is on screen at once; it now runs past 30 rows.
+        let text = screen_text(&render_app_sized(&mut app, 120, 60));
+
+        // Measured as the label's column on the rendered row — the panel border means the row does
+        // not start at the text.
+        let indent_of = |label: &str| -> usize {
+            let line = text.lines().find(|l| l.contains(label))
+                .unwrap_or_else(|| panic!("{label} not on screen:\n{text}"));
+            line.find(label).expect("just matched")
+        };
+
+        // The parents sit at the shallower level; every child is deeper than both of them.
+        let parents = [indent_of("Compute SMWI"), indent_of("Segment (SynthSeg)")];
+        for child in ["SMWI Threshold", "SMWI Power", "SMWI mIP Window",
+                      "SynthSeg Version", "SynthSeg Crop", "Flip Averaging",
+                      "Topology Cleanup", "Posterior Smoothing"] {
+            let c = indent_of(child);
+            for p in parents {
+                assert!(c > p, "{child} is indented {c}, its parent {p} — it should be deeper");
+            }
+        }
+        // The statistics are a peer that forces segmentation, not a child of it, so they stay flush.
+        assert_eq!(indent_of("Per-structure Stats"), parents[1],
+                   "the statistics toggle is a peer, not a SynthSeg sub-setting");
+        // And it matches how the SWI block already reads.
+        assert_eq!(indent_of("SWI Strength"), indent_of("SMWI Power"));
     }
 
     #[test]

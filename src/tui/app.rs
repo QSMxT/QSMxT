@@ -5619,7 +5619,7 @@ impl App {
             (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
             (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi,
-            (TAB_SUPPLEMENTARY, 16) => self.form.do_segmentation,
+            (TAB_SUPPLEMENTARY, 16) => self.form.do_segmentation || self.segmentation_forced(),
             (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging,
             (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup,
             (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis,
@@ -5638,6 +5638,11 @@ impl App {
     /// R2' is forced when the method needs it and no custom R2' map is supplied.
     fn r2prime_map_forced(&self) -> bool {
         self.separation_needs_r2prime() && self.pipeline_state.custom_r2prime_tool.trim().is_empty()
+    }
+    /// Segmentation is forced by the per-structure statistics: they have no structures to average
+    /// over without it. Mirrors how chi-separation forces the relaxometry maps it consumes.
+    fn segmentation_forced(&self) -> bool {
+        self.form.do_analysis
     }
     /// R2 is forced only when needed to compute a forced R2' (and no custom R2 map).
     fn r2_map_forced(&self) -> bool {
@@ -5665,7 +5670,13 @@ impl App {
             }
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom = !self.form.export_dicom,
             (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi = !self.form.do_smwi,
-            (TAB_SUPPLEMENTARY, 16) => self.form.do_segmentation = !self.form.do_segmentation,
+            (TAB_SUPPLEMENTARY, 16) => {
+                if self.segmentation_forced() {
+                    self.error_message = Some("Segmentation is required by the per-structure statistics — turn those off first.".to_string());
+                } else {
+                    self.form.do_segmentation = !self.form.do_segmentation;
+                }
+            }
             (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging = !self.form.synthseg_flip_averaging,
             (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup = !self.form.synthseg_topology_cleanup,
             (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis = !self.form.do_analysis,
@@ -5684,8 +5695,8 @@ impl App {
             (TAB_SUPPLEMENTARY, 1..=6) => self.form.do_swi,
             // SMWI settings (13-15) likewise under Compute SMWI (12)
             (TAB_SUPPLEMENTARY, 13..=15) => self.form.do_smwi,
-            // SynthSeg settings (17-21) under Segment (16)
-            (TAB_SUPPLEMENTARY, 17..=21) => self.form.do_segmentation,
+            // SynthSeg settings (17-21) under Segment (16), which the statistics may be forcing
+            (TAB_SUPPLEMENTARY, 17..=21) => self.form.do_segmentation || self.form.do_analysis,
             // SLURM fields (4-9) only visible in SLURM mode
             (TAB_EXECUTION, 4..=9) => self.form.execution_mode == 1,
             // Dry Run and Num Processes only in Local mode
@@ -5734,7 +5745,7 @@ impl App {
             (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
             (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi,
-            (TAB_SUPPLEMENTARY, 16) => self.form.do_segmentation,
+            (TAB_SUPPLEMENTARY, 16) => self.form.do_segmentation || self.segmentation_forced(),
             (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging,
             (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup,
             (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis,
@@ -8465,6 +8476,44 @@ mod tests {
         // parameters that are still at their default left off.
         let cmd = crate::tui::command::build_command_string(&app);
         assert!(cmd.contains("--mask magnitude,hd-bet,signal-erode:0.85:0"), "cmd: {cmd}");
+    }
+
+    /// The per-structure statistics force segmentation on, so the checkbox has to read as checked
+    /// and its settings has to be reachable — otherwise the run segments while the TUI says it will
+    /// not, and the SynthSeg parameters that shape that segmentation cannot be seen or edited.
+    #[test]
+    fn statistics_force_segmentation_visibly() {
+        let mut app = App::new();
+        app.active_tab = TAB_SUPPLEMENTARY;
+
+        // Off by default: unchecked, and its settings hidden.
+        assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16));
+        for f in 17..=21 {
+            assert!(!app.is_field_visible(TAB_SUPPLEMENTARY, f), "field {f} should be hidden");
+        }
+
+        // Asking for the statistics alone forces it.
+        app.form.do_analysis = true;
+        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16),
+                "segmentation is forced, so it must read as checked");
+        for f in 17..=21 {
+            assert!(app.is_field_visible(TAB_SUPPLEMENTARY, f),
+                    "field {f} shapes the forced segmentation and must be reachable");
+        }
+
+        // And it cannot be turned off from under them; the refusal says why.
+        app.active_field = 16;
+        app.toggle_checkbox();
+        assert!(!app.form.do_segmentation, "the underlying flag is untouched");
+        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "still forced, so still checked");
+        let msg = app.error_message.clone().expect("a refusal should explain itself");
+        assert!(msg.contains("per-structure statistics"), "unhelpful message: {msg}");
+
+        // With the statistics off again it is an ordinary toggle.
+        app.form.do_analysis = false;
+        app.error_message = None;
+        app.toggle_checkbox();
+        assert!(app.form.do_segmentation);
     }
 
     /// Selecting HEIDI shows both parameter groups (its seed is an LSQR solve); selecting plain
