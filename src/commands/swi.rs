@@ -1,6 +1,7 @@
 use log::info;
 use super::common::{load_nifti, load_mask, save_nifti, nifti_grid};
 use crate::cli::SwiArgs;
+use crate::nifti::write::write_volume;
 use crate::pipeline::phase;
 
 pub fn execute(args: SwiArgs) -> crate::Result<()> {
@@ -40,9 +41,12 @@ pub fn execute(args: SwiArgs) -> crate::Result<()> {
 
     if args.mip {
         let mip_window = args.swi_params.swi_mip_window.unwrap_or(d.mip_window);
-        let mip = qsm_core::swi::create_mip(&swi, &grid, mip_window);
+        // The projection is shorter than the SWI and centred on each slab, so it is written with
+        // the geometry it reports rather than the input's (issue #211).
+        let mip = qsm_core::swi::create_mip(&swi, &grid, &phase_nifti.affine, mip_window)
+            .map_err(crate::error::QsmxtError::Config)?;
         let mip_path = args.mip_output.unwrap_or_else(|| args.output.with_extension("mip.nii"));
-        save_nifti(&mip_path, &mip, &phase_nifti)?;
+        write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
         info!("MIP saved to {}", mip_path.display());
     }
 

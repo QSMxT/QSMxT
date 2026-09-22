@@ -304,6 +304,11 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         // `tile_halo` defaults to 8 (qsm-core's TileConfig default) when omitted. `None` =
         // whole-volume. Stored as `(core, halo)` so this crate needn't pull qsm-core's onnx feature.
         tile: cfg.inversion.tile_size.map(|core| (core, cfg.inversion.tile_halo.unwrap_or(8))),
+        // LSQR and HEIDI arrived in qsm-core v0.36.0 and are not selectable from this crate yet
+        // (no `QsmAlgorithm` variant, so `map_alg` can never return them). Their qsm-core defaults
+        // go through unread; exposing them is its own change.
+        lsqr: qsm_core::inversion::LsqrQsmParams::default(),
+        heidi: qsm_core::inversion::HeidiParams::default(),
     };
 
     let reference = match cfg.qsm.reference {

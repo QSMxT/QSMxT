@@ -155,8 +155,9 @@ pub fn load_mask(path: &Path) -> crate::Result<(Vec<u8>, NiftiData)> {
 
 /// Save a f64 volume to NIfTI, preserving geometry from a reference.
 pub fn save_nifti(path: &Path, data: &[f64], reference: &NiftiData) -> crate::Result<()> {
-    io::save_nifti_to_file(path, data, reference.dims, reference.voxel_size, &reference.affine)
-        .map_err(QsmxtError::NiftiIo)
+    crate::nifti::write::write_volume(
+        path, data, reference.dims, reference.voxel_size, &reference.affine,
+    )
 }
 
 /// Save a u8 mask as f64 NIfTI, preserving geometry from a reference.
