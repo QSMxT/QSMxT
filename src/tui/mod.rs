@@ -38,6 +38,8 @@ pub fn run_tui() -> crate::Result<()> {
 
     // Main loop
     loop {
+        // Pick up the launch-time release check (no-op once it has been handled).
+        app.poll_update_check();
         // Always poll for background DICOM scan/convert completion
         app.dicom_state.poll_scan();
         // Resolve dcm2niix once for the availability indicator (cached).
@@ -83,6 +85,23 @@ pub fn run_tui() -> crate::Result<()> {
         if app.should_quit {
             restore_terminal(&mut terminal);
             return Ok(());
+        }
+
+        if app.should_update {
+            // Leave the alternate screen first so the installer's progress bar and any
+            // sudo prompt are visible on the real terminal.
+            restore_terminal(&mut terminal);
+            env_logger::Builder::new()
+                .filter_level(log::LevelFilter::Info)
+                .format_timestamp(None)
+                .try_init()
+                .ok();
+            println!();
+            let result = crate::commands::update::execute(crate::cli::UpdateArgs { yes: true });
+            if result.is_ok() {
+                println!("\nRestart qsmxt to use the new version.");
+            }
+            return result;
         }
 
         if app.should_run {

@@ -6,7 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{AlgoModal, App, FieldKind, PipelineRow, TAB_NAMES,
+use super::app::{AlgoModal, App, FieldKind, PipelineRow, UpdateModal, TAB_NAMES,
     TAB_INPUT, TAB_QSM, TAB_SEPARATION, TAB_SUPPLEMENTARY, TAB_EXECUTION, TAB_METHODS};
 use super::command;
 
@@ -38,6 +38,60 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     if let Some(ref modal) = app.algo_modal {
         draw_algo_modal(f, modal, f.area());
     }
+
+    // Drawn last so it sits above an algorithm modal, matching the input routing.
+    if let Some(ref modal) = app.update_modal {
+        draw_update_modal(f, modal, f.area());
+    }
+}
+
+
+/// "A new version is available" pop-up, raised once by the launch-time release check.
+fn draw_update_modal(f: &mut Frame, modal: &UpdateModal, area: Rect) {
+    let running = crate::commands::update::current_version();
+    let lines = vec![
+        Line::from(vec![
+            Span::raw("  You are running "),
+            Span::styled(format!("v{running}"), Style::default().fg(Color::Yellow)),
+            Span::raw("  →  "),
+            Span::styled(
+                modal.tag.clone(),
+                Style::default().fg(Color::Green).add_modifier(Modifier::BOLD),
+            ),
+        ]),
+        Line::from(""),
+        Line::from(Span::styled(
+            format!("  {}", modal.html_url),
+            Style::default().fg(Color::DarkGray),
+        )),
+        Line::from(""),
+        Line::from(vec![
+            Span::raw("  "),
+            Span::styled("Enter", Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)),
+            Span::raw(" update now   "),
+            Span::styled("Esc", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" later   "),
+            Span::styled("d", Style::default().add_modifier(Modifier::BOLD)),
+            Span::raw(" skip this version"),
+        ]),
+    ];
+
+    // Wide enough for the release URL, which is the longest line.
+    let content_w = lines
+        .iter()
+        .map(|l| l.width())
+        .max()
+        .unwrap_or(40) as u16;
+    let popup = centered_rect(content_w + 4, lines.len() as u16 + 2, area);
+
+    f.render_widget(Clear, popup);
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::Green))
+        .title(" Update available ");
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    f.render_widget(Paragraph::new(lines).wrap(Wrap { trim: false }), inner);
 }
 
 /// A horizontally+vertically centered rectangle of at most `w`×`h`, clamped to `area`.
@@ -2110,6 +2164,64 @@ mod tests {
         let text = screen_text(&render_app(&mut app));
         assert!(text.contains("failed"), "failed marker missing:\n{text}");
         assert!(text.contains("Error: checksum mismatch"), "error text missing:\n{text}");
+    }
+
+    /// The prompt has to name both versions and every key it accepts, or it is just an
+    /// interruption the user cannot act on.
+    #[test]
+    fn update_modal_shows_both_versions_and_its_choices() {
+        use crate::tui::app::UpdateModal;
+        let mut app = App::new();
+        app.update_modal = Some(UpdateModal {
+            tag: "v9.23.0".into(),
+            html_url: "https://github.com/QSMxT/QSMxT/releases/tag/v9.23.0".into(),
+        });
+
+        let text = screen_text(&render_app(&mut app));
+        assert!(text.contains("Update available"), "missing title:\n{text}");
+        assert!(text.contains("v9.23.0"), "missing the new version:\n{text}");
+        assert!(
+            text.contains(crate::commands::update::current_version()),
+            "missing the running version:\n{text}"
+        );
+        assert!(text.contains("update now"), "missing the accept hint:\n{text}");
+        assert!(text.contains("later"), "missing the defer hint:\n{text}");
+        assert!(text.contains("skip this version"), "missing the skip hint:\n{text}");
+    }
+
+    /// The prompt is drawn after the algorithm modal so it is answered first — the key
+    /// handler routes to it unconditionally, so it must not render underneath.
+    #[test]
+    fn update_modal_draws_on_top_of_an_algorithm_modal() {
+        use crate::tui::app::{AlgoModalTarget, UpdateModal};
+        let mut app = App::new();
+        app.algo_modal = Some(AlgoModal {
+            target: AlgoModalTarget::PipelineSelect("qsm_algorithm".into()),
+            title: "QSM Inversion".into(),
+            options: (0..20).map(|i| format!("algo-{i}")).collect(),
+            help: (0..20).map(|i| format!("help {i}")).collect(),
+            cursor: 0,
+        });
+        app.update_modal = Some(UpdateModal {
+            tag: "v9.23.0".into(),
+            html_url: "https://example.com/r".into(),
+        });
+
+        let text = screen_text(&render_app(&mut app));
+        assert!(text.contains("Update available"), "the update prompt must win:\n{text}");
+    }
+
+    /// A narrow terminal must not panic or clip the prompt out of existence.
+    #[test]
+    fn update_modal_survives_a_small_terminal() {
+        use crate::tui::app::UpdateModal;
+        let mut app = App::new();
+        app.update_modal = Some(UpdateModal {
+            tag: "v9.23.0".into(),
+            html_url: "https://github.com/QSMxT/QSMxT/releases/tag/v9.23.0".into(),
+        });
+        let text = screen_text(&render_app_sized(&mut app, 40, 12));
+        assert!(text.contains("Update"), "prompt vanished on a narrow screen:\n{text}");
     }
 
     #[test]

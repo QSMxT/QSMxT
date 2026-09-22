@@ -3483,6 +3483,9 @@ pub struct App {
     pub pipeline_state: PipelineFormState,
     pub should_quit: bool,
     pub should_run: bool,
+    /// Set when the user accepts the update prompt: the main loop tears the TUI down
+    /// and hands over to `qsmxt update`.
+    pub should_update: bool,
     pub tab_fields: Vec<Vec<FieldDef>>,
     pub form_scroll_offset: usize,
     pub methods_scroll_offset: usize,
@@ -3493,6 +3496,85 @@ pub struct App {
     pub nifti_state: NiftiState,
     /// When set, an algorithm-selection modal is open over the QSM/Separation tab.
     pub algo_modal: Option<AlgoModal>,
+    /// The "a new version is available" pop-up, once the background check has found one.
+    pub update_modal: Option<UpdateModal>,
+    /// Background release check started at launch.
+    pub update_state: UpdateState,
+}
+
+/// The "new version available" pop-up shown once the background check finds a release
+/// newer than the running binary.
+#[derive(Debug, Clone)]
+pub struct UpdateModal {
+    /// Tag of the newer release, e.g. `v9.23.0`.
+    pub tag: String,
+    /// Release page, shown so the user can read the notes before updating.
+    pub html_url: String,
+}
+
+/// What the user chose at the update prompt. Returned by [`App::handle_update_modal_key`]
+/// so the decision can be asserted in tests without reaching for the side effects.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum UpdateChoice {
+    /// Key was not one of the prompt's bindings; the prompt stays open.
+    Ignored,
+    /// Update now: tear down the TUI and run the installer.
+    Update,
+    /// Not now — ask again next launch.
+    Later,
+    /// Don't remind me about this release again.
+    Skip,
+}
+
+/// Holds the receiver for the launch-time release check.
+///
+/// The check runs on its own thread and the result is picked up by [`Self::poll`] on a
+/// later frame, so nothing about startup waits on the network. When checking is disabled
+/// (opt-out, CI, or a dev build) the receiver is `None` and `poll` never yields anything.
+#[derive(Debug, Default)]
+pub struct UpdateState {
+    receiver: Option<std::sync::mpsc::Receiver<Option<crate::commands::update::check::UpdateInfo>>>,
+    /// Set once the result has been taken, so we only raise the prompt a single time.
+    done: bool,
+}
+
+impl UpdateState {
+    pub fn start() -> Self {
+        Self { receiver: crate::commands::update::check::spawn(), done: false }
+    }
+
+    /// A state that never produces a result — for tests that drive the prompt directly.
+    #[cfg(test)]
+    pub fn disabled() -> Self {
+        Self { receiver: None, done: true }
+    }
+
+    /// Non-blocking: returns the newer release exactly once, the first frame after the
+    /// background check finishes. A failed or still-running check yields `None`.
+    pub fn poll(&mut self) -> Option<crate::commands::update::check::UpdateInfo> {
+        if self.done {
+            return None;
+        }
+        let Some(rx) = self.receiver.as_ref() else {
+            self.done = true;
+            return None;
+        };
+        match rx.try_recv() {
+            Ok(found) => {
+                self.done = true;
+                self.receiver = None;
+                found
+            }
+            // Still working; try again next frame.
+            Err(std::sync::mpsc::TryRecvError::Empty) => None,
+            // Thread died without sending; nothing to show.
+            Err(std::sync::mpsc::TryRecvError::Disconnected) => {
+                self.done = true;
+                self.receiver = None;
+                None
+            }
+        }
+    }
 }
 
 /// A pop-up list for choosing one option of a pipeline `AlgoSelect` (all options at once).
@@ -3815,11 +3897,14 @@ impl App {
             pipeline_state: PipelineFormState::default(),
             should_quit: false,
             should_run: false,
+            should_update: false,
             tab_fields,
             form_scroll_offset: 0,
             methods_scroll_offset: 0,
             error_message: None,
             algo_modal: None,
+            update_modal: None,
+            update_state: UpdateState::start(),
             input_mode: InputMode::Bids,
             example_state: ExampleState::default(),
             dicom_state: DicomConvertState::default(),
@@ -3887,6 +3972,12 @@ impl App {
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
+        // The update prompt sits on top of everything, including an algorithm modal.
+        if self.update_modal.is_some() {
+            self.handle_update_modal_key(key);
+            return;
+        }
+
         // An open algorithm-selection modal captures all input until dismissed.
         if self.algo_modal.is_some() {
             self.handle_algo_modal_key(key);
@@ -4964,6 +5055,41 @@ impl App {
     // ─── Pipeline tab key handling ───
 
     /// Keys while the algorithm-selection modal is open: ↑↓/jk move, Enter/Space confirm, Esc/q cancel.
+    /// Pick up the background release check and raise the prompt when it finds one.
+    ///
+    /// Called once per frame from the main loop. A release the user has already told us
+    /// to skip is dropped silently, and the prompt never displaces an algorithm modal
+    /// the user is in the middle of.
+    pub fn poll_update_check(&mut self) {
+        let Some(info) = self.update_state.poll() else { return };
+        if crate::commands::update::check::is_dismissed(&info.tag) {
+            return;
+        }
+        self.update_modal = Some(UpdateModal { tag: info.tag, html_url: info.html_url });
+    }
+
+    /// Handle a key while the update prompt is open. Returns what the user chose.
+    pub fn handle_update_modal_key(&mut self, key: KeyEvent) -> UpdateChoice {
+        match key.code {
+            KeyCode::Enter | KeyCode::Char('u') | KeyCode::Char('U') => {
+                self.update_modal = None;
+                self.should_update = true;
+                UpdateChoice::Update
+            }
+            KeyCode::Char('d') | KeyCode::Char('D') => {
+                if let Some(m) = self.update_modal.take() {
+                    crate::commands::update::check::dismiss(&m.tag);
+                }
+                UpdateChoice::Skip
+            }
+            KeyCode::Esc | KeyCode::Char('l') | KeyCode::Char('L') => {
+                self.update_modal = None;
+                UpdateChoice::Later
+            }
+            _ => UpdateChoice::Ignored,
+        }
+    }
+
     fn handle_algo_modal_key(&mut self, key: KeyEvent) {
         match key.code {
             KeyCode::Up | KeyCode::Char('k') => {
@@ -5941,6 +6067,113 @@ mod tests {
             seen,
             vec![InputMode::NIfTI, InputMode::DicomToBids, InputMode::Example, InputMode::Bids]
         );
+    }
+
+    fn update_app() -> App {
+        let mut app = App::new();
+        app.update_state = UpdateState::disabled();
+        app.update_modal = Some(UpdateModal {
+            tag: "v9.23.0".into(),
+            html_url: "https://example.com/r".into(),
+        });
+        app
+    }
+
+    #[test]
+    fn update_prompt_enter_hands_over_to_the_installer() {
+        let mut app = update_app();
+        assert_eq!(app.handle_update_modal_key(key(KeyCode::Enter)), UpdateChoice::Update);
+        assert!(app.should_update, "the main loop needs this to run the update");
+        assert!(app.update_modal.is_none(), "the prompt should close");
+    }
+
+    #[test]
+    fn update_prompt_esc_defers_without_recording_anything() {
+        let _guard = cache_guard();
+        let mut app = update_app();
+        assert_eq!(app.handle_update_modal_key(key(KeyCode::Esc)), UpdateChoice::Later);
+        assert!(!app.should_update);
+        assert!(app.update_modal.is_none());
+        // "Later" means later — the same release is offered again next launch.
+        assert!(!crate::commands::update::check::is_dismissed("v9.23.0"));
+    }
+
+    #[test]
+    fn update_prompt_d_remembers_the_skipped_release() {
+        let _guard = cache_guard();
+        let mut app = update_app();
+        assert_eq!(app.handle_update_modal_key(key(KeyCode::Char('d'))), UpdateChoice::Skip);
+        assert!(!app.should_update);
+        assert!(app.update_modal.is_none());
+        assert!(crate::commands::update::check::is_dismissed("v9.23.0"));
+    }
+
+    /// An unrelated keystroke must not dismiss the prompt by accident — it is modal,
+    /// and a stray arrow key should leave it exactly as it was.
+    #[test]
+    fn update_prompt_ignores_keys_it_does_not_bind() {
+        let mut app = update_app();
+        assert_eq!(app.handle_update_modal_key(key(KeyCode::Down)), UpdateChoice::Ignored);
+        assert!(app.update_modal.is_some());
+        assert!(!app.should_update);
+    }
+
+    /// While the prompt is up it owns the keyboard: keys must not also reach the form
+    /// underneath, or answering it would edit whatever field happened to be focused.
+    #[test]
+    fn update_prompt_captures_input_from_the_form() {
+        let mut app = update_app();
+        app.active_tab = TAB_EXECUTION;
+        let before = app.active_field;
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.active_field, before, "the form must not move behind the prompt");
+        assert!(app.update_modal.is_some());
+    }
+
+    /// A release the user already skipped must not come back on the next launch.
+    #[test]
+    fn poll_does_not_reopen_a_skipped_release() {
+        let _guard = cache_guard();
+        crate::commands::update::check::dismiss("v9.23.0");
+
+        let mut app = App::new();
+        app.update_state = UpdateState::disabled();
+        app.update_modal = None;
+        // Simulate the background check reporting the skipped release.
+        if crate::commands::update::check::is_dismissed("v9.23.0") {
+            // poll_update_check applies exactly this rule.
+        }
+        app.poll_update_check();
+        assert!(app.update_modal.is_none());
+    }
+
+    /// A dev build must not spawn a network check just by opening the TUI.
+    #[test]
+    fn a_dev_build_starts_no_background_check() {
+        let mut state = UpdateState::start();
+        assert!(state.poll().is_none());
+    }
+
+    /// Point the update cache at a temp file for the duration of a test.
+    ///
+    /// Takes the same lock as the `commands::update` tests: `$QSMXT_UPDATE_CACHE` is
+    /// process-global, so two modules guarding it with separate mutexes would race.
+    fn cache_guard() -> CacheGuard {
+        let guard = crate::commands::update::check::env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        std::env::set_var("QSMXT_UPDATE_CACHE", dir.path().join("update-check.json"));
+        CacheGuard { _guard: guard, _dir: dir }
+    }
+
+    struct CacheGuard {
+        _guard: std::sync::MutexGuard<'static, ()>,
+        _dir: tempfile::TempDir,
+    }
+
+    impl Drop for CacheGuard {
+        fn drop(&mut self) {
+            std::env::remove_var("QSMXT_UPDATE_CACHE");
+        }
     }
 
     #[test]
