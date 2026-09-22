@@ -3527,6 +3527,13 @@ pub struct RunForm {
     pub do_r2primemap: bool,
     pub export_dicom: bool,
     pub do_smwi: bool,
+    pub do_segmentation: bool,
+    pub do_analysis: bool,
+    pub synthseg_version: usize,
+    pub synthseg_crop: String,
+    pub synthseg_flip_averaging: bool,
+    pub synthseg_topology_cleanup: bool,
+    pub synthseg_sigma: String,
     pub smwi_threshold: String,
     pub smwi_power: String,
     pub smwi_mip_window: String,
@@ -3549,6 +3556,7 @@ impl Default for RunForm {
     fn default() -> Self {
         let swi = qsm_core::swi::SwiParams::default();
         let smwi = qsm_core::swi::SmwiParams::default();
+        let seg = crate::pipeline::config::SegmentationConfig::default();
         Self {
             bids_dir: String::new(),
             output_dir: String::new(),
@@ -3566,6 +3574,13 @@ impl Default for RunForm {
             do_r2primemap: false,
             export_dicom: false,
             do_smwi: false,
+            do_segmentation: false,
+            do_analysis: false,
+            synthseg_version: 0,
+            synthseg_crop: seg.crop.map(|c| format!("{c}")).unwrap_or_default(),
+            synthseg_flip_averaging: seg.flip_averaging,
+            synthseg_topology_cleanup: seg.topology_cleanup,
+            synthseg_sigma: format!("{}", seg.sigma_smoothing),
             smwi_threshold: format!("{}", smwi.threshold_ppm),
             smwi_power: format!("{}", smwi.power),
             smwi_mip_window: format!("{}", smwi.mip_window),
@@ -3675,6 +3690,41 @@ impl App {
                     label: "SMWI mIP Window",
                     kind: FieldKind::Text,
                     help: "Minimum-intensity-projection window in slices",
+                },
+                FieldDef {
+                    label: "Segment (SynthSeg)",
+                    kind: FieldKind::Checkbox,
+                    help: "Whole-brain parcellation straight off the GRE magnitude — no T1w, no registration. Needs a deep-learning build",
+                },
+                FieldDef {
+                    label: "SynthSeg Version",
+                    kind: FieldKind::Select { options: vec!["v1", "v2"] },
+                    help: "v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF), weights are a separate download",
+                },
+                FieldDef {
+                    label: "SynthSeg Crop",
+                    kind: FieldKind::Text,
+                    help: "Cubic centre-crop in voxels at 1 mm before inference; empty processes the whole volume",
+                },
+                FieldDef {
+                    label: "Flip Averaging",
+                    kind: FieldKind::Checkbox,
+                    help: "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time",
+                },
+                FieldDef {
+                    label: "Topology Cleanup",
+                    kind: FieldKind::Checkbox,
+                    help: "Reset each topological class to its largest connected component",
+                },
+                FieldDef {
+                    label: "Posterior Smoothing",
+                    kind: FieldKind::Text,
+                    help: "Gaussian blur on the posteriors, in voxels (0 disables it)",
+                },
+                FieldDef {
+                    label: "Per-structure Stats",
+                    kind: FieldKind::Checkbox,
+                    help: "Summarise susceptibility per structure into a TSV (median, mean, SD, 5th/95th percentiles). Implies segmentation and QSM",
                 },
             ],
             // Tab 4: Execution
@@ -4204,6 +4254,13 @@ impl App {
             (TAB_SUPPLEMENTARY, 13) => self.form.smwi_threshold = defaults.smwi_threshold.clone(),
             (TAB_SUPPLEMENTARY, 14) => self.form.smwi_power = defaults.smwi_power.clone(),
             (TAB_SUPPLEMENTARY, 15) => self.form.smwi_mip_window = defaults.smwi_mip_window.clone(),
+            (TAB_SUPPLEMENTARY, 16) => self.form.do_segmentation = defaults.do_segmentation,
+            (TAB_SUPPLEMENTARY, 17) => self.form.synthseg_version = defaults.synthseg_version,
+            (TAB_SUPPLEMENTARY, 18) => self.form.synthseg_crop = defaults.synthseg_crop.clone(),
+            (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging = defaults.synthseg_flip_averaging,
+            (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup = defaults.synthseg_topology_cleanup,
+            (TAB_SUPPLEMENTARY, 21) => self.form.synthseg_sigma = defaults.synthseg_sigma.clone(),
+            (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis = defaults.do_analysis,
             // Tab 3 (Execution)
             (TAB_EXECUTION, 0) => self.form.execution_mode = defaults.execution_mode,
             (TAB_EXECUTION, 1) => self.form.dry_run = defaults.dry_run,
@@ -5477,6 +5534,8 @@ impl App {
             (TAB_SUPPLEMENTARY, 13) => &self.form.smwi_threshold,
             (TAB_SUPPLEMENTARY, 14) => &self.form.smwi_power,
             (TAB_SUPPLEMENTARY, 15) => &self.form.smwi_mip_window,
+            (TAB_SUPPLEMENTARY, 18) => &self.form.synthseg_crop,
+            (TAB_SUPPLEMENTARY, 21) => &self.form.synthseg_sigma,
             (TAB_SUPPLEMENTARY, 3) => &self.form.swi_hp_sigma_x,
             (TAB_SUPPLEMENTARY, 4) => &self.form.swi_hp_sigma_y,
             (TAB_SUPPLEMENTARY, 5) => &self.form.swi_hp_sigma_z,
@@ -5510,6 +5569,8 @@ impl App {
             (TAB_SUPPLEMENTARY, 13) => &mut self.form.smwi_threshold,
             (TAB_SUPPLEMENTARY, 14) => &mut self.form.smwi_power,
             (TAB_SUPPLEMENTARY, 15) => &mut self.form.smwi_mip_window,
+            (TAB_SUPPLEMENTARY, 18) => &mut self.form.synthseg_crop,
+            (TAB_SUPPLEMENTARY, 21) => &mut self.form.synthseg_sigma,
             (TAB_SUPPLEMENTARY, 3) => &mut self.form.swi_hp_sigma_x,
             (TAB_SUPPLEMENTARY, 4) => &mut self.form.swi_hp_sigma_y,
             (TAB_SUPPLEMENTARY, 5) => &mut self.form.swi_hp_sigma_z,
@@ -5527,6 +5588,7 @@ impl App {
     pub fn select_value(&self) -> usize {
         match (self.active_tab, self.active_field) {
             (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling,
+            (TAB_SUPPLEMENTARY, 17) => self.form.synthseg_version,
             (TAB_EXECUTION, 0) => self.form.execution_mode,
             _ => 0,
         }
@@ -5535,6 +5597,7 @@ impl App {
     fn set_select_value(&mut self, val: usize) {
         match (self.active_tab, self.active_field) {
             (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling = val,
+            (TAB_SUPPLEMENTARY, 17) => self.form.synthseg_version = val,
             (TAB_EXECUTION, 0) => {
                 self.form.execution_mode = val;
                 // Clamp active_field if it landed on a now-hidden field
@@ -5556,6 +5619,10 @@ impl App {
             (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
             (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi,
+            (TAB_SUPPLEMENTARY, 16) => self.form.do_segmentation || self.segmentation_forced(),
+            (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging,
+            (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup,
+            (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis,
             (TAB_EXECUTION, 1) => self.form.dry_run,
             (TAB_EXECUTION, 2) => self.form.debug,
             (TAB_EXECUTION, 9) => self.form.slurm_submit,
@@ -5571,6 +5638,11 @@ impl App {
     /// R2' is forced when the method needs it and no custom R2' map is supplied.
     fn r2prime_map_forced(&self) -> bool {
         self.separation_needs_r2prime() && self.pipeline_state.custom_r2prime_tool.trim().is_empty()
+    }
+    /// Segmentation is forced by the per-structure statistics: they have no structures to average
+    /// over without it. Mirrors how chi-separation forces the relaxometry maps it consumes.
+    fn segmentation_forced(&self) -> bool {
+        self.form.do_analysis
     }
     /// R2 is forced only when needed to compute a forced R2' (and no custom R2 map).
     fn r2_map_forced(&self) -> bool {
@@ -5598,6 +5670,16 @@ impl App {
             }
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom = !self.form.export_dicom,
             (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi = !self.form.do_smwi,
+            (TAB_SUPPLEMENTARY, 16) => {
+                if self.segmentation_forced() {
+                    self.error_message = Some("Segmentation is required by the per-structure statistics — turn those off first.".to_string());
+                } else {
+                    self.form.do_segmentation = !self.form.do_segmentation;
+                }
+            }
+            (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging = !self.form.synthseg_flip_averaging,
+            (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup = !self.form.synthseg_topology_cleanup,
+            (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis = !self.form.do_analysis,
             (TAB_EXECUTION, 1) => self.form.dry_run = !self.form.dry_run,
             (TAB_EXECUTION, 2) => self.form.debug = !self.form.debug,
             (TAB_EXECUTION, 9) => self.form.slurm_submit = !self.form.slurm_submit,
@@ -5613,6 +5695,10 @@ impl App {
             (TAB_SUPPLEMENTARY, 1..=6) => self.form.do_swi,
             // SMWI settings (13-15) likewise under Compute SMWI (12)
             (TAB_SUPPLEMENTARY, 13..=15) => self.form.do_smwi,
+            // SynthSeg settings (17-22), the per-structure statistics among them, under
+            // Segment (16). `do_analysis` can still arrive set from a config file or the CLI, so
+            // the block stays visible in that case rather than hiding a setting that is in force.
+            (TAB_SUPPLEMENTARY, 17..=22) => self.form.do_segmentation || self.form.do_analysis,
             // SLURM fields (4-9) only visible in SLURM mode
             (TAB_EXECUTION, 4..=9) => self.form.execution_mode == 1,
             // Dry Run and Num Processes only in Local mode
@@ -5627,6 +5713,8 @@ impl App {
             (TAB_SUPPLEMENTARY, 13) => &self.form.smwi_threshold,
             (TAB_SUPPLEMENTARY, 14) => &self.form.smwi_power,
             (TAB_SUPPLEMENTARY, 15) => &self.form.smwi_mip_window,
+            (TAB_SUPPLEMENTARY, 18) => &self.form.synthseg_crop,
+            (TAB_SUPPLEMENTARY, 21) => &self.form.synthseg_sigma,
             (TAB_SUPPLEMENTARY, 3) => &self.form.swi_hp_sigma_x,
             (TAB_SUPPLEMENTARY, 4) => &self.form.swi_hp_sigma_y,
             (TAB_SUPPLEMENTARY, 5) => &self.form.swi_hp_sigma_z,
@@ -5644,6 +5732,7 @@ impl App {
     pub fn get_select_value(&self, tab: usize, field: usize) -> usize {
         match (tab, field) {
             (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling,
+            (TAB_SUPPLEMENTARY, 17) => self.form.synthseg_version,
             (TAB_EXECUTION, 0) => self.form.execution_mode,
             _ => 0,
         }
@@ -5658,6 +5747,10 @@ impl App {
             (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
             (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi,
+            (TAB_SUPPLEMENTARY, 16) => self.form.do_segmentation || self.segmentation_forced(),
+            (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging,
+            (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup,
+            (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis,
             (TAB_EXECUTION, 1) => self.form.dry_run,
             (TAB_EXECUTION, 2) => self.form.debug,
             (TAB_EXECUTION, 9) => self.form.slurm_submit,
@@ -8385,6 +8478,45 @@ mod tests {
         // parameters that are still at their default left off.
         let cmd = crate::tui::command::build_command_string(&app);
         assert!(cmd.contains("--mask magnitude,hd-bet,signal-erode:0.85:0"), "cmd: {cmd}");
+    }
+
+    /// The per-structure statistics force segmentation on, so the checkbox has to read as checked
+    /// and its settings has to be reachable — otherwise the run segments while the TUI says it will
+    /// not, and the SynthSeg parameters that shape that segmentation cannot be seen or edited.
+    #[test]
+    fn statistics_force_segmentation_visibly() {
+        let mut app = App::new();
+        app.active_tab = TAB_SUPPLEMENTARY;
+
+        // Off by default: unchecked, and its settings hidden.
+        assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16));
+        for f in 17..=22 {
+            assert!(!app.is_field_visible(TAB_SUPPLEMENTARY, f), "field {f} should be hidden");
+        }
+
+        // A config or CLI run can arrive with the statistics already on; segmentation is then in
+        // force, so the block must be visible rather than hiding a setting that is taking effect.
+        app.form.do_analysis = true;
+        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16),
+                "segmentation is forced, so it must read as checked");
+        for f in 17..=22 {
+            assert!(app.is_field_visible(TAB_SUPPLEMENTARY, f),
+                    "field {f} shapes the forced segmentation and must be reachable");
+        }
+
+        // And it cannot be turned off from under them; the refusal says why.
+        app.active_field = 16;
+        app.toggle_checkbox();
+        assert!(!app.form.do_segmentation, "the underlying flag is untouched");
+        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "still forced, so still checked");
+        let msg = app.error_message.clone().expect("a refusal should explain itself");
+        assert!(msg.contains("per-structure statistics"), "unhelpful message: {msg}");
+
+        // With the statistics off again it is an ordinary toggle.
+        app.form.do_analysis = false;
+        app.error_message = None;
+        app.toggle_checkbox();
+        assert!(app.form.do_segmentation);
     }
 
     /// Selecting HEIDI shows both parameter groups (its seed is an LSQR solve); selecting plain

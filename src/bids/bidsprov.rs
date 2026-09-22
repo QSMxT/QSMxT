@@ -185,6 +185,8 @@ fn final_outputs(output: &DerivativeOutputs, key: &AcquisitionKey) -> Vec<FinalO
         FinalOutput { path: output.swi_mip_path(key), step: "swi", forward_meta: true, skull_stripped: Some(false) },
         // SMWI is the magnitude weighted by a χ-derived mask, so it is confined to the brain mask
         // the way the Chimap is — unlike SWI, which keeps full field-of-view signal.
+        // A dseg carries labels, not intensities, so it takes no SkullStripped — like the mask.
+        FinalOutput { path: output.dseg_path(key), step: "segmentation", forward_meta: false, skull_stripped: None },
         FinalOutput { path: output.smwi_path(key, "paramagnetic"), step: "smwi", forward_meta: true, skull_stripped: Some(true) },
         FinalOutput { path: output.smwi_path(key, "diamagnetic"), step: "smwi", forward_meta: true, skull_stripped: Some(true) },
         FinalOutput { path: output.smwi_mip_path(key, "paramagnetic"), step: "smwi", forward_meta: true, skull_stripped: Some(true) },

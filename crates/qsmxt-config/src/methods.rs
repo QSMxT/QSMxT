@@ -272,6 +272,11 @@ const CITE_QSMCI_SIGNAL_EROSION: Citation = Citation {
     text: "QSM-CI: signal-gated mask erosion (QSM-CI harmonization masking, `hd-bet-qsmci`). https://github.com/QSMxT/QSM-CI",
 };
 
+const CITE_SYNTHSEG: Citation = Citation {
+    key: "billot2023",
+    text: "Billot, B., Greve, D.N., Puonti, O., et al. (2023). \"SynthSeg: Segmentation of brain MRI scans of any contrast and resolution without retraining.\" *Medical Image Analysis*, 86:102789. https://doi.org/10.1016/j.media.2023.102789",
+};
+
 const CITE_SMWI: Citation = Citation {
     key: "gho2014",
     text: "Gho, S.-M., Liu, C., Li, W., et al. (2014). \"Susceptibility map-weighted imaging (SMWI) for neuroimaging.\" *Magnetic Resonance in Medicine*, 72(2):337-346. https://doi.org/10.1002/mrm.24920",
@@ -426,6 +431,26 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 sentences.push("No susceptibility referencing was applied.".to_string());
             }
         }
+    }
+
+    if config.pipeline.do_segmentation {
+        add_citation(&mut citations, &CITE_SYNTHSEG);
+        let labels = if config.segmentation.version == SynthSegVersion::V2 { 33 } else { 32 };
+        sentences.push(format!(
+            "The brain was parcellated directly from the GRE magnitude using SynthSeg {} \
+             (Billot et al., 2023), a network trained on synthetic images of randomised contrast, \
+             yielding {} FreeSurfer-labelled structures without a separate T1w acquisition or \
+             registration step{}.",
+            config.segmentation.version, labels,
+            if config.segmentation.flip_averaging {
+                "; posteriors were averaged with a left-right flipped second pass"
+            } else { "" },
+        ));
+    }
+    if config.pipeline.do_analysis {
+        sentences.push(
+            "Susceptibility was then summarised within each segmented structure (median, mean, \
+             standard deviation and 5th/95th percentiles over the structure's voxels).".to_string());
     }
 
     if config.pipeline.do_smwi {
@@ -877,6 +902,27 @@ mod tests {
         for line in generate_methods(&config).lines() {
             assert!(!line.contains("  "), "run of spaces in methods prose: {line:?}");
         }
+    }
+
+    #[test]
+    fn segmentation_and_analysis_methods_are_stated_and_cited() {
+        let mut config = PipelineConfig::default();
+        config.pipeline.do_segmentation = true;
+        let out = generate_methods(&config);
+        assert!(out.contains("SynthSeg v1"), "out: {out}");
+        assert!(out.contains("32 FreeSurfer-labelled structures"), "out: {out}");
+        assert!(out.contains("without a separate T1w"), "out: {out}");
+        assert!(out.contains("10.1016/j.media.2023.102789"), "SynthSeg citation missing: {out}");
+        assert!(!out.contains("summarised within each segmented structure"),
+                "no statistics were asked for: {out}");
+
+        config.pipeline.do_analysis = true;
+        config.segmentation.version = crate::enums::SynthSegVersion::V2;
+        let out = generate_methods(&config);
+        assert!(out.contains("SynthSeg v2"), "out: {out}");
+        assert!(out.contains("33 FreeSurfer-labelled structures"), "out: {out}");
+        assert!(out.contains("summarised within each segmented structure"), "out: {out}");
+        assert!(out.contains("5th/95th percentiles"), "out: {out}");
     }
 
     #[test]

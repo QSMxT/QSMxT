@@ -208,6 +208,19 @@ impl Default for SeparationConfig {
 /// needs R2 and R2* unless a custom R2'/R2 map is supplied. Enabling chi-separation turns on exactly
 /// those maps. Keeps a `--do-chisep` run self-consistent, and is what the TUI validates against (it
 /// must not let the user disable a map the current method requires).
+/// Per-structure statistics need a parcellation to average over and a map to average, so asking
+/// for the analysis forces both. A bring-your-own dseg or Chimap satisfies its side.
+pub fn enforce_analysis_dependencies(config: &mut PipelineConfig) {
+    if config.pipeline.do_analysis {
+        if config.segmentation.custom_dseg_tool.is_none() {
+            config.pipeline.do_segmentation = true;
+        }
+        if config.separation.custom_qsm_tool.is_none() {
+            config.pipeline.do_qsm = true;
+        }
+    }
+}
+
 /// SMWI weights the magnitude by the susceptibility map, so it cannot run without one.
 ///
 /// Turning it on forces QSM, the same way chi-separation forces the relaxometry maps it consumes.
@@ -433,6 +446,45 @@ impl Default for RomeoConfig {
     }
 }
 
+/// Whole-brain segmentation via SynthSeg, and the per-structure statistics drawn from it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct SegmentationConfig {
+    /// Weights generation: `v1` (32 labels, ships with SynthSeg) or `v2` (33 labels, adds CSF).
+    /// Selects the label table, so it must match the weights being run.
+    pub version: SynthSegVersion,
+    /// Cubic centre-crop in voxels at 1 mm before inference, rounded up to a multiple of 32.
+    /// `None` processes the whole volume, as the SynthSeg CLI does.
+    pub crop: Option<usize>,
+    /// Average the posteriors with a left-right flipped second pass. SynthSeg's default; doubles
+    /// inference time.
+    pub flip_averaging: bool,
+    /// Reset each topological class to its largest connected component.
+    pub topology_cleanup: bool,
+    /// Gaussian blur on the posteriors, in voxels. Zero disables it.
+    pub sigma_smoothing: f64,
+    /// Prefer a bring-your-own segmentation from `<bids>/derivatives/<tool>/…` over running
+    /// SynthSeg, mirroring `masking.custom_mask_tool`. Always falls back to computing one.
+    #[serde(default)]
+    pub custom_dseg_tool: Option<String>,
+}
+impl Default for SegmentationConfig {
+    fn default() -> Self {
+        let p = qsm_core::segment::SynthSegParams::default();
+        Self {
+            version: match p.version {
+                qsm_core::segment::SynthSegVersion::V1 => SynthSegVersion::V1,
+                qsm_core::segment::SynthSegVersion::V2 => SynthSegVersion::V2,
+            },
+            crop: p.crop,
+            flip_averaging: p.flip_averaging,
+            topology_cleanup: p.topology_cleanup,
+            sigma_smoothing: p.sigma_smoothing,
+            custom_dseg_tool: None,
+        }
+    }
+}
+
 // SWI config (special: scaling is a string mapped from enum)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -492,6 +544,7 @@ pub struct PipelineConfig {
     pub qsm: QsmConfig,
     pub swi: SwiConfig,
     pub smwi: SmwiConfig,
+    pub segmentation: SegmentationConfig,
     pub bet: BetConfig,
     pub homogeneity: HomogeneityConfig,
 }
@@ -505,6 +558,13 @@ pub struct PipelineToggles {
     /// than from filtered phase. Needs a susceptibility map, so it implies QSM.
     #[serde(default)]
     pub do_smwi: bool,
+    /// Whole-brain parcellation of the GRE magnitude via SynthSeg (`_dseg.nii`).
+    #[serde(default)]
+    pub do_segmentation: bool,
+    /// Per-structure susceptibility statistics over the segmentation. Needs both a segmentation
+    /// and a susceptibility map, so it implies each.
+    #[serde(default)]
+    pub do_analysis: bool,
     pub do_t2starmap: bool,
     pub do_r2starmap: bool,
     /// Compute an R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG.
@@ -543,7 +603,8 @@ pub struct PipelineToggles {
 }
 impl Default for PipelineToggles {
     fn default() -> Self {
-        Self { do_qsm: true, do_swi: false, do_smwi: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, obliquity_threshold: -1.0,
+        Self { do_qsm: true, do_swi: false, do_smwi: false,
+            do_segmentation: false, do_analysis: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, obliquity_threshold: -1.0,
             crop_to_mask: false, fft_padding: false, crop_margin_mm: default_crop_margin_mm(),
             output_space: OutputSpace::Acquired }
     }
@@ -863,6 +924,37 @@ mod selected_toml_tests {
         // Pruned algorithms came back as their defaults.
         assert_eq!(loaded.inversion.tkd, super::TkdConfig::default());
         assert_eq!(loaded.bg_removal.pdf, super::PdfConfig::default());
+    }
+}
+
+#[cfg(test)]
+mod analysis_dependency_tests {
+    /// The statistics need something to average over and something to average, so asking for them
+    /// forces both — and a supplied input satisfies its own side without forcing a recomputation.
+    #[test]
+    fn analysis_forces_segmentation_and_qsm() {
+        let mut c = crate::config::PipelineConfig::default();
+        c.pipeline.do_qsm = false;
+        c.pipeline.do_analysis = true;
+        crate::config::enforce_analysis_dependencies(&mut c);
+        assert!(c.pipeline.do_segmentation);
+        assert!(c.pipeline.do_qsm);
+
+        let mut c = crate::config::PipelineConfig::default();
+        c.pipeline.do_qsm = false;
+        c.pipeline.do_analysis = true;
+        c.segmentation.custom_dseg_tool = Some("freesurfer".to_string());
+        c.separation.custom_qsm_tool = Some("*".to_string());
+        crate::config::enforce_analysis_dependencies(&mut c);
+        assert!(!c.pipeline.do_segmentation, "a supplied dseg needs no SynthSeg run");
+        assert!(!c.pipeline.do_qsm, "a supplied Chimap needs no reconstruction");
+
+        // Segmentation on its own forces nothing: it reads the magnitude, not χ.
+        let mut c = crate::config::PipelineConfig::default();
+        c.pipeline.do_qsm = false;
+        c.pipeline.do_segmentation = true;
+        crate::config::enforce_analysis_dependencies(&mut c);
+        assert!(!c.pipeline.do_qsm);
     }
 }
 
