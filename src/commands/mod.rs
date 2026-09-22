@@ -482,6 +482,178 @@ mod integration_tests {
                    crate::pipeline::config::MaskOp::FillHoles { max_size: 0 });
     }
 
+    // ── `qsmxt separate` and `qsmxt segment` ──
+    // Neither had any coverage: separate.rs was 0/151 lines and segment.rs 0/47, which put the
+    // whole workspace under the release gate.
+
+    fn separate_common(dir: &Path, prefix: &str) -> SeparateCommonArgs {
+        let qsm = dir.join("qsm.nii");
+        let mask = dir.join("mask.nii");
+        testutils::write_field(&qsm);
+        testutils::write_mask(&mask);
+        SeparateCommonArgs {
+            qsm,
+            mask,
+            output: dir.join(prefix),
+            field_strength: 3.0,
+            b0_direction: vec![0.0, 0.0, 1.0],
+        }
+    }
+
+    /// The three maps land under the prefix, and χ_total is the sum of its parts — the property
+    /// that makes a separation a separation.
+    #[test]
+    fn test_separate_r2star_qsm() {
+        let dir = tempfile::tempdir().unwrap();
+        let common = separate_common(dir.path(), "sep");
+        let r2star = dir.path().join("r2star.nii");
+        testutils::write_field(&r2star);
+
+        super::separate::execute(SeparateCommand::R2starQsm(SeparateR2starQsmArgs {
+            common,
+            r2star: Some(r2star),
+            magnitude: vec![],
+            echo_times: vec![],
+            r_const_3t: None,
+        }))
+        .unwrap();
+
+        let para = dir.path().join("sep_paramagnetic.nii");
+        let dia = dir.path().join("sep_diamagnetic.nii");
+        let total = dir.path().join("sep_total.nii");
+        for p in [&para, &dia, &total] {
+            assert!(p.exists(), "{} was not written", p.display());
+        }
+        let load = |p: &Path| qsm_core::io::read_nifti_file(p).unwrap().data;
+        let (p, d, t) = (load(&para), load(&dia), load(&total));
+        for i in 0..t.len() {
+            assert!((p[i] - d[i] - t[i]).abs() < 1e-6 || (p[i] + d[i] - t[i]).abs() < 1e-6,
+                "total is not the combination of the two sources at {i}: {} / {} / {}",
+                p[i], d[i], t[i]);
+        }
+    }
+
+    /// r2star-qsm needs an R2* map or the magnitude to fit one from; with neither it must say so
+    /// rather than run on nothing.
+    #[test]
+    fn test_separate_r2star_qsm_needs_an_input() {
+        let dir = tempfile::tempdir().unwrap();
+        let err = super::separate::execute(SeparateCommand::R2starQsm(SeparateR2starQsmArgs {
+            common: separate_common(dir.path(), "sep"),
+            r2star: None,
+            magnitude: vec![],
+            echo_times: vec![],
+            r_const_3t: None,
+        }))
+        .unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("--r2star") && msg.contains("--magnitude"),
+                "the error should name both ways in: {msg}");
+    }
+
+    /// A method taking R2' rather than R2*, to cover the other input-loading path.
+    #[test]
+    fn test_separate_wavesep() {
+        let dir = tempfile::tempdir().unwrap();
+        let r2prime = dir.path().join("r2prime.nii");
+        testutils::write_field(&r2prime);
+
+        super::separate::execute(SeparateCommand::Wavesep(SeparateWavesepArgs {
+            common: separate_common(dir.path(), "wv"),
+            r2prime,
+            dr_pos: None,
+            dr_neg: None,
+            alpha: None,
+            lambda: None,
+            wavelet_order: None,
+            // Two iterations: this is a plumbing test, not a convergence one.
+            max_iter: Some(2),
+            tol: None,
+        }))
+        .unwrap();
+        assert!(dir.path().join("wv_paramagnetic.nii").exists());
+        assert!(dir.path().join("wv_diamagnetic.nii").exists());
+    }
+
+    /// DECOMPOSE fits the multi-echo magnitude signal directly, so it exercises the multi-echo
+    /// loading path the R2*/R2' methods do not.
+    #[test]
+    fn test_separate_decompose() {
+        let dir = tempfile::tempdir().unwrap();
+        let mags: Vec<PathBuf> = (1..=3)
+            .map(|e| {
+                let p = dir.path().join(format!("mag{e}.nii"));
+                testutils::write_magnitude(&p);
+                p
+            })
+            .collect();
+
+        super::separate::execute(SeparateCommand::Decompose(SeparateDecomposeArgs {
+            common: separate_common(dir.path(), "dc"),
+            magnitude: mags,
+            echo_times: vec![0.004, 0.008, 0.012],
+            n_inner: Some(1),
+            chi_bound: None,
+            max_lm_iter: Some(1),
+        }))
+        .unwrap();
+        assert!(dir.path().join("dc_paramagnetic.nii").exists());
+        assert!(dir.path().join("dc_total.nii").exists());
+    }
+
+    /// χ-sep iLSQR takes the local field and R2' together — the four-input path.
+    #[test]
+    fn test_separate_chi_sep_ilsqr() {
+        let dir = tempfile::tempdir().unwrap();
+        let local_field = dir.path().join("lfs.nii");
+        let r2prime = dir.path().join("r2p.nii");
+        let mag = dir.path().join("mag.nii");
+        testutils::write_field(&local_field);
+        testutils::write_field(&r2prime);
+        testutils::write_magnitude(&mag);
+
+        super::separate::execute(SeparateCommand::ChiSepIlsqr(SeparateChiSepIlsqrArgs {
+            common: separate_common(dir.path(), "il"),
+            local_field,
+            r2prime,
+            magnitude: vec![mag],
+            dr_pos: None,
+            dr_neg: None,
+            percentage: None,
+            max_iter: Some(1),
+            tol: None,
+            cg_max_iter: Some(1),
+            cg_tol: None,
+            lambda1: None,
+            r2p_min: None,
+            r2p_max: None,
+        }))
+        .unwrap();
+        assert!(dir.path().join("il_paramagnetic.nii").exists());
+        assert!(dir.path().join("il_diamagnetic.nii").exists());
+    }
+
+    /// `qsmxt segment` rejects a version it does not know rather than silently choosing one — the
+    /// version selects the label table, so the wrong one mislabels every structure.
+    #[test]
+    fn test_segment_rejects_an_unknown_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let mag = dir.path().join("mag.nii");
+        testutils::write_magnitude(&mag);
+        let err = super::segment::execute(SegmentArgs {
+            magnitude: mag,
+            output: dir.path().join("dseg.nii"),
+            lookup: None,
+            params: SegmentationParamArgs {
+                synthseg_version: Some("v3".into()),
+                ..Default::default()
+            },
+        })
+        .unwrap_err();
+        let msg = format!("{err}");
+        assert!(msg.contains("v1") && msg.contains("v2"), "the error should name the options: {msg}");
+    }
+
     #[test]
     fn test_mask_smooth() {
         let dir = tempfile::tempdir().unwrap();

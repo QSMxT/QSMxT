@@ -56,7 +56,9 @@ jobs:
         # ptrace crashes ("tarpaulin being signaled") on the subprocess-spawning
         # integration/self-update tests; llvm handles them and --exclude-files only
         # affects the report, not execution.
-        run: cargo tarpaulin --engine llvm --workspace --out json --output-dir target/tarpaulin --exclude-files src/main.rs --exclude-files src/tui/mod.rs --exclude-files src/tui/ui.rs --exclude-files src/commands/update.rs -- --test-threads=1
+        # --timeout: as in ci.yml — tarpaulin's 60s default is shorter than the instrumented
+        # single-echo TGV run, and a release must not fail on a budget rather than a defect.
+        run: cargo tarpaulin --timeout 300 --engine llvm --workspace --out json --output-dir target/tarpaulin --exclude-files src/main.rs --exclude-files src/tui/mod.rs --exclude-files src/tui/ui.rs --exclude-files src/commands/update.rs -- --test-threads=1
 
       - name: Enforce 70% coverage
         run: |
