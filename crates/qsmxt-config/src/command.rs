@@ -12,6 +12,12 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     // ── Pipeline toggles ──
     if !config.pipeline.do_qsm { parts.push("--no-qsm".into()); }
     if config.pipeline.do_swi { parts.push("--do-swi".into()); }
+    if config.pipeline.do_smwi {
+        parts.push("--do-smwi".into());
+        emit_f64(&mut parts, "--smwi-threshold", config.smwi.threshold_ppm, d.smwi.threshold_ppm);
+        emit_f64(&mut parts, "--smwi-power", config.smwi.power, d.smwi.power);
+        emit_usize(&mut parts, "--smwi-mip-window", config.smwi.mip_window, d.smwi.mip_window);
+    }
     if config.pipeline.do_t2starmap { parts.push("--do-t2starmap".into()); }
     // R2*, R2 and R2' are chained: chi-separation implies R2' implies (R2 + R2*). Only surface each
     // flag when it is set on its own, so `--do-chisep` doesn't drag redundant relaxometry flags in.
@@ -843,6 +849,24 @@ frangi_c = 400.0
     /// Off by default, so the bare flag says everything when the reliable mask is the default one.
     /// HEIDI's seed is an LSQR solve, so `--qsm-algorithm heidi` has to emit both groups; plain
     /// LSQR must not emit HEIDI's.
+    #[test]
+    fn smwi_emits_its_flag_and_non_default_params() {
+        let mut c = PipelineConfig::default();
+        assert!(!generate_command(&c).contains("--do-smwi"));
+
+        c.pipeline.do_smwi = true;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--do-smwi"), "{cmd}");
+        assert!(!cmd.contains("--smwi-threshold"), "defaults stay off: {cmd}");
+
+        c.smwi.threshold_ppm = 0.2;
+        c.smwi.mip_window = 7;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--smwi-threshold 0.2"), "{cmd}");
+        assert!(cmd.contains("--smwi-mip-window 7"), "{cmd}");
+        assert!(!cmd.contains("--smwi-power"), "an untouched parameter stays off: {cmd}");
+    }
+
     #[test]
     fn heidi_emits_the_lsqr_group_too() {
         let mut c = PipelineConfig::default();

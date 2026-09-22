@@ -272,6 +272,11 @@ const CITE_QSMCI_SIGNAL_EROSION: Citation = Citation {
     text: "QSM-CI: signal-gated mask erosion (QSM-CI harmonization masking, `hd-bet-qsmci`). https://github.com/QSMxT/QSM-CI",
 };
 
+const CITE_SMWI: Citation = Citation {
+    key: "gho2014",
+    text: "Gho, S.-M., Liu, C., Li, W., et al. (2014). \"Susceptibility map-weighted imaging (SMWI) for neuroimaging.\" *Magnetic Resonance in Medicine*, 72(2):337-346. https://doi.org/10.1002/mrm.24920",
+};
+
 const CITE_LSQR: Citation = Citation {
     key: "schweser2010",
     text: "Schweser, F., Deistung, A., Lehr, B.W., Reichenbach, J.R. (2010). \"Differentiation between diamagnetic and paramagnetic cerebral lesions based on magnetic susceptibility mapping.\" *Medical Physics*, 37(10):5165-5178. https://doi.org/10.1118/1.3481505",
@@ -421,6 +426,17 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 sentences.push("No susceptibility referencing was applied.".to_string());
             }
         }
+    }
+
+    if config.pipeline.do_smwi {
+        add_citation(&mut citations, &CITE_SMWI);
+        sentences.push(format!(
+            "Susceptibility map-weighted images were computed (Gho et al., 2014) by weighting the \
+             magnitude with a mask derived from the susceptibility map (|χ| threshold {:.2} ppm, \
+             mask raised to the power {:.1}), separately for paramagnetic and diamagnetic sources, \
+             each followed by a minimum-intensity projection over {} slices.",
+            config.smwi.threshold_ppm, config.smwi.power, config.smwi.mip_window,
+        ));
     }
 
     // SWI
@@ -861,6 +877,20 @@ mod tests {
         for line in generate_methods(&config).lines() {
             assert!(!line.contains("  "), "run of spaces in methods prose: {line:?}");
         }
+    }
+
+    #[test]
+    fn smwi_methods_name_its_parameters_and_cite_it() {
+        let mut config = PipelineConfig::default();
+        assert!(!generate_methods(&config).contains("map-weighted"));
+
+        config.pipeline.do_smwi = true;
+        config.smwi.threshold_ppm = 0.2;
+        let out = generate_methods(&config);
+        assert!(out.contains("Susceptibility map-weighted images"), "out: {out}");
+        assert!(out.contains("0.20 ppm"), "the threshold must be stated: {out}");
+        assert!(out.contains("paramagnetic and diamagnetic"), "out: {out}");
+        assert!(out.contains("10.1002/mrm.24920"), "SMWI citation missing: {out}");
     }
 
     #[test]

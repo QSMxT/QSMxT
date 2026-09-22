@@ -3526,6 +3526,10 @@ pub struct RunForm {
     pub do_r2map: bool,
     pub do_r2primemap: bool,
     pub export_dicom: bool,
+    pub do_smwi: bool,
+    pub smwi_threshold: String,
+    pub smwi_power: String,
+    pub smwi_mip_window: String,
 
     // Tab 4: Execution
     pub execution_mode: usize, // 0=Local, 1=SLURM
@@ -3544,6 +3548,7 @@ pub struct RunForm {
 impl Default for RunForm {
     fn default() -> Self {
         let swi = qsm_core::swi::SwiParams::default();
+        let smwi = qsm_core::swi::SmwiParams::default();
         Self {
             bids_dir: String::new(),
             output_dir: String::new(),
@@ -3560,6 +3565,10 @@ impl Default for RunForm {
             do_r2map: false,
             do_r2primemap: false,
             export_dicom: false,
+            do_smwi: false,
+            smwi_threshold: format!("{}", smwi.threshold_ppm),
+            smwi_power: format!("{}", smwi.power),
+            smwi_mip_window: format!("{}", smwi.mip_window),
             execution_mode: 0,
             dry_run: false,
             debug: false,
@@ -3644,6 +3653,28 @@ impl App {
                     label: "Export DICOM",
                     kind: FieldKind::Checkbox,
                     help: "Also write final maps as DICOM series into each subject's extra_files/ folder",
+                },
+                // Appended rather than placed next to SWI: this tab is addressed by positional
+                // index in dozens of places, and inserting mid-list silently repoints all of them.
+                FieldDef {
+                    label: "Compute SMWI",
+                    kind: FieldKind::Checkbox,
+                    help: "Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ, not from filtered phase. Needs QSM",
+                },
+                FieldDef {
+                    label: "SMWI Threshold",
+                    kind: FieldKind::Text,
+                    help: "|χ| in ppm at which the weighting mask reaches zero. The 1 ppm default targets strong sources; brain tissue wants far less",
+                },
+                FieldDef {
+                    label: "SMWI Power",
+                    kind: FieldKind::Text,
+                    help: "Power the mask is raised to (contrast strength)",
+                },
+                FieldDef {
+                    label: "SMWI mIP Window",
+                    kind: FieldKind::Text,
+                    help: "Minimum-intensity-projection window in slices",
                 },
             ],
             // Tab 4: Execution
@@ -4169,6 +4200,10 @@ impl App {
             (TAB_SUPPLEMENTARY, 9) => self.form.do_r2map = defaults.do_r2map,
             (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap = defaults.do_r2primemap,
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom = defaults.export_dicom,
+            (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi = defaults.do_smwi,
+            (TAB_SUPPLEMENTARY, 13) => self.form.smwi_threshold = defaults.smwi_threshold.clone(),
+            (TAB_SUPPLEMENTARY, 14) => self.form.smwi_power = defaults.smwi_power.clone(),
+            (TAB_SUPPLEMENTARY, 15) => self.form.smwi_mip_window = defaults.smwi_mip_window.clone(),
             // Tab 3 (Execution)
             (TAB_EXECUTION, 0) => self.form.execution_mode = defaults.execution_mode,
             (TAB_EXECUTION, 1) => self.form.dry_run = defaults.dry_run,
@@ -5439,6 +5474,9 @@ impl App {
             },
             (0, 3) => &self.form.config_file,
             (TAB_SUPPLEMENTARY, 2) => &self.form.swi_strength,
+            (TAB_SUPPLEMENTARY, 13) => &self.form.smwi_threshold,
+            (TAB_SUPPLEMENTARY, 14) => &self.form.smwi_power,
+            (TAB_SUPPLEMENTARY, 15) => &self.form.smwi_mip_window,
             (TAB_SUPPLEMENTARY, 3) => &self.form.swi_hp_sigma_x,
             (TAB_SUPPLEMENTARY, 4) => &self.form.swi_hp_sigma_y,
             (TAB_SUPPLEMENTARY, 5) => &self.form.swi_hp_sigma_z,
@@ -5469,6 +5507,9 @@ impl App {
             },
             (0, 3) => &mut self.form.config_file,
             (TAB_SUPPLEMENTARY, 2) => &mut self.form.swi_strength,
+            (TAB_SUPPLEMENTARY, 13) => &mut self.form.smwi_threshold,
+            (TAB_SUPPLEMENTARY, 14) => &mut self.form.smwi_power,
+            (TAB_SUPPLEMENTARY, 15) => &mut self.form.smwi_mip_window,
             (TAB_SUPPLEMENTARY, 3) => &mut self.form.swi_hp_sigma_x,
             (TAB_SUPPLEMENTARY, 4) => &mut self.form.swi_hp_sigma_y,
             (TAB_SUPPLEMENTARY, 5) => &mut self.form.swi_hp_sigma_z,
@@ -5514,6 +5555,7 @@ impl App {
             (TAB_SUPPLEMENTARY, 9) => self.form.do_r2map || self.r2_map_forced(),
             (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
+            (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi,
             (TAB_EXECUTION, 1) => self.form.dry_run,
             (TAB_EXECUTION, 2) => self.form.debug,
             (TAB_EXECUTION, 9) => self.form.slurm_submit,
@@ -5555,6 +5597,7 @@ impl App {
                 }
             }
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom = !self.form.export_dicom,
+            (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi = !self.form.do_smwi,
             (TAB_EXECUTION, 1) => self.form.dry_run = !self.form.dry_run,
             (TAB_EXECUTION, 2) => self.form.debug = !self.form.debug,
             (TAB_EXECUTION, 9) => self.form.slurm_submit = !self.form.slurm_submit,
@@ -5568,6 +5611,8 @@ impl App {
         match (tab, field) {
             // SWI settings (1-6) only visible when Compute SWI is checked
             (TAB_SUPPLEMENTARY, 1..=6) => self.form.do_swi,
+            // SMWI settings (13-15) likewise under Compute SMWI (12)
+            (TAB_SUPPLEMENTARY, 13..=15) => self.form.do_smwi,
             // SLURM fields (4-9) only visible in SLURM mode
             (TAB_EXECUTION, 4..=9) => self.form.execution_mode == 1,
             // Dry Run and Num Processes only in Local mode
@@ -5579,6 +5624,9 @@ impl App {
     pub fn get_text_value(&self, tab: usize, field: usize) -> &str {
         match (tab, field) {
             (TAB_SUPPLEMENTARY, 2) => &self.form.swi_strength,
+            (TAB_SUPPLEMENTARY, 13) => &self.form.smwi_threshold,
+            (TAB_SUPPLEMENTARY, 14) => &self.form.smwi_power,
+            (TAB_SUPPLEMENTARY, 15) => &self.form.smwi_mip_window,
             (TAB_SUPPLEMENTARY, 3) => &self.form.swi_hp_sigma_x,
             (TAB_SUPPLEMENTARY, 4) => &self.form.swi_hp_sigma_y,
             (TAB_SUPPLEMENTARY, 5) => &self.form.swi_hp_sigma_z,
@@ -5609,6 +5657,7 @@ impl App {
             (TAB_SUPPLEMENTARY, 9) => self.form.do_r2map || self.r2_map_forced(),
             (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
+            (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi,
             (TAB_EXECUTION, 1) => self.form.dry_run,
             (TAB_EXECUTION, 2) => self.form.debug,
             (TAB_EXECUTION, 9) => self.form.slurm_submit,

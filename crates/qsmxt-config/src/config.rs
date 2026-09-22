@@ -208,6 +208,16 @@ impl Default for SeparationConfig {
 /// needs R2 and R2* unless a custom R2'/R2 map is supplied. Enabling chi-separation turns on exactly
 /// those maps. Keeps a `--do-chisep` run self-consistent, and is what the TUI validates against (it
 /// must not let the user disable a map the current method requires).
+/// SMWI weights the magnitude by the susceptibility map, so it cannot run without one.
+///
+/// Turning it on forces QSM, the same way chi-separation forces the relaxometry maps it consumes.
+/// A custom QSM from derivatives counts: that is a susceptibility map too.
+pub fn enforce_smwi_dependencies(config: &mut PipelineConfig) {
+    if config.pipeline.do_smwi && config.separation.custom_qsm_tool.is_none() {
+        config.pipeline.do_qsm = true;
+    }
+}
+
 pub fn enforce_separation_dependencies(config: &mut PipelineConfig) {
     if config.pipeline.do_chi_separation {
         match config.separation.algorithm {
@@ -426,6 +436,22 @@ impl Default for RomeoConfig {
 // SWI config (special: scaling is a string mapped from enum)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
+pub struct SmwiConfig {
+    /// |χ| (ppm) at which the weighting mask reaches zero.
+    pub threshold_ppm: f64,
+    /// Power the mask is raised to — contrast strength.
+    pub power: f64,
+    pub mip_window: usize,
+}
+impl Default for SmwiConfig {
+    fn default() -> Self {
+        let p = qsm_core::swi::SmwiParams::default();
+        Self { threshold_ppm: p.threshold_ppm, power: p.power, mip_window: p.mip_window }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
 pub struct SwiConfig {
     pub hp_sigma: [f64; 3],
     pub scaling: String,
@@ -465,6 +491,7 @@ pub struct PipelineConfig {
     pub separation: SeparationConfig,
     pub qsm: QsmConfig,
     pub swi: SwiConfig,
+    pub smwi: SmwiConfig,
     pub bet: BetConfig,
     pub homogeneity: HomogeneityConfig,
 }
@@ -474,6 +501,10 @@ pub struct PipelineConfig {
 pub struct PipelineToggles {
     pub do_qsm: bool,
     pub do_swi: bool,
+    /// Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ rather
+    /// than from filtered phase. Needs a susceptibility map, so it implies QSM.
+    #[serde(default)]
+    pub do_smwi: bool,
     pub do_t2starmap: bool,
     pub do_r2starmap: bool,
     /// Compute an R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG.
@@ -512,7 +543,7 @@ pub struct PipelineToggles {
 }
 impl Default for PipelineToggles {
     fn default() -> Self {
-        Self { do_qsm: true, do_swi: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, obliquity_threshold: -1.0,
+        Self { do_qsm: true, do_swi: false, do_smwi: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, obliquity_threshold: -1.0,
             crop_to_mask: false, fft_padding: false, crop_margin_mm: default_crop_margin_mm(),
             output_space: OutputSpace::Acquired }
     }
@@ -832,6 +863,34 @@ mod selected_toml_tests {
         // Pruned algorithms came back as their defaults.
         assert_eq!(loaded.inversion.tkd, super::TkdConfig::default());
         assert_eq!(loaded.bg_removal.pdf, super::PdfConfig::default());
+    }
+}
+
+#[cfg(test)]
+mod smwi_dependency_tests {
+    /// SMWI weights the magnitude by χ, so asking for it without a susceptibility map is a request
+    /// that cannot be honoured. Turning it on forces QSM rather than silently producing nothing.
+    #[test]
+    fn smwi_forces_qsm() {
+        let mut c = crate::config::PipelineConfig::default();
+        c.pipeline.do_qsm = false;
+        c.pipeline.do_smwi = true;
+        crate::config::enforce_smwi_dependencies(&mut c);
+        assert!(c.pipeline.do_qsm, "SMWI needs a susceptibility map");
+
+        // A bring-your-own Chimap is a susceptibility map too — no need to recompute one.
+        let mut c = crate::config::PipelineConfig::default();
+        c.pipeline.do_qsm = false;
+        c.pipeline.do_smwi = true;
+        c.separation.custom_qsm_tool = Some("*".to_string());
+        crate::config::enforce_smwi_dependencies(&mut c);
+        assert!(!c.pipeline.do_qsm, "a custom Chimap should not force a reconstruction");
+
+        // And it leaves an ordinary run alone.
+        let mut c = crate::config::PipelineConfig::default();
+        c.pipeline.do_qsm = false;
+        crate::config::enforce_smwi_dependencies(&mut c);
+        assert!(!c.pipeline.do_qsm);
     }
 }
 

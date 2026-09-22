@@ -104,6 +104,14 @@ impl DerivativeOutputs {
     }
     pub fn swi_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "swi") }
     pub fn swi_mip_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "minIP") }
+    /// SMWI and its minIP, per contrast. The `desc-` values match the chi-separation outputs, which
+    /// split the same two ways.
+    pub fn smwi_path(&self, key: &AcquisitionKey, contrast: &str) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-{}_smwi.nii", key.basename(), contrast))
+    }
+    pub fn smwi_mip_path(&self, key: &AcquisitionKey, contrast: &str) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-{}_minIP.nii", key.basename(), contrast))
+    }
     pub fn t2star_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "T2starmap") }
     pub fn r2star_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "R2starmap") }
     /// R2 map (Hz) from the MESE acquisition (EPG fit).

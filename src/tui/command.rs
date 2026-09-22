@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::cli::*;
-use crate::pipeline::config::{PipelineConfig, QsmAlgorithm, SeparationAlgorithm, UnwrappingAlgorithm, BfAlgorithm, QsmReference, B0Estimation, B0WeightType, enforce_separation_dependencies};
+use crate::pipeline::config::{PipelineConfig, QsmAlgorithm, SeparationAlgorithm, UnwrappingAlgorithm, BfAlgorithm, QsmReference, B0Estimation, B0WeightType, enforce_separation_dependencies, enforce_smwi_dependencies};
 use super::app::App;
 
 /// Trimmed non-empty string → Some, else None (for bring-your-own tool fields).
@@ -515,6 +515,12 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         linear_fit_estimate_offset: Some(ps.linear_fit_estimate_offset),
         no_qsm: !ps.do_qsm,
         do_swi: form.do_swi,
+        do_smwi: form.do_smwi,
+        smwi_params: crate::cli::SmwiParamArgs {
+            smwi_threshold: parse_optional_f64(&form.smwi_threshold),
+            smwi_power: parse_optional_f64(&form.smwi_power),
+            smwi_mip_window: parse_optional_usize(&form.smwi_mip_window),
+        },
         do_t2starmap: form.do_t2starmap,
         do_r2starmap: form.do_r2starmap,
         do_r2map: form.do_r2map,
@@ -675,6 +681,10 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     let mut config = PipelineConfig::default();
     config.pipeline.do_qsm = ps.do_qsm;
     config.pipeline.do_swi = app.form.do_swi;
+    config.pipeline.do_smwi = app.form.do_smwi;
+    if let Ok(v) = app.form.smwi_threshold.trim().parse::<f64>() { config.smwi.threshold_ppm = v; }
+    if let Ok(v) = app.form.smwi_power.trim().parse::<f64>() { config.smwi.power = v; }
+    if let Ok(v) = app.form.smwi_mip_window.trim().parse::<usize>() { config.smwi.mip_window = v; }
     config.pipeline.do_t2starmap = app.form.do_t2starmap;
     config.pipeline.do_r2starmap = app.form.do_r2starmap;
     config.pipeline.do_r2map = app.form.do_r2map;
@@ -959,6 +969,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     }
 
     // Chi-separation forces the relaxometry maps it depends on (R2/R2'/R2*).
+    enforce_smwi_dependencies(&mut config);
     enforce_separation_dependencies(&mut config);
     config
 }
