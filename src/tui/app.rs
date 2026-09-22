@@ -5695,8 +5695,10 @@ impl App {
             (TAB_SUPPLEMENTARY, 1..=6) => self.form.do_swi,
             // SMWI settings (13-15) likewise under Compute SMWI (12)
             (TAB_SUPPLEMENTARY, 13..=15) => self.form.do_smwi,
-            // SynthSeg settings (17-21) under Segment (16), which the statistics may be forcing
-            (TAB_SUPPLEMENTARY, 17..=21) => self.form.do_segmentation || self.form.do_analysis,
+            // SynthSeg settings (17-22), the per-structure statistics among them, under
+            // Segment (16). `do_analysis` can still arrive set from a config file or the CLI, so
+            // the block stays visible in that case rather than hiding a setting that is in force.
+            (TAB_SUPPLEMENTARY, 17..=22) => self.form.do_segmentation || self.form.do_analysis,
             // SLURM fields (4-9) only visible in SLURM mode
             (TAB_EXECUTION, 4..=9) => self.form.execution_mode == 1,
             // Dry Run and Num Processes only in Local mode
@@ -8488,15 +8490,16 @@ mod tests {
 
         // Off by default: unchecked, and its settings hidden.
         assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16));
-        for f in 17..=21 {
+        for f in 17..=22 {
             assert!(!app.is_field_visible(TAB_SUPPLEMENTARY, f), "field {f} should be hidden");
         }
 
-        // Asking for the statistics alone forces it.
+        // A config or CLI run can arrive with the statistics already on; segmentation is then in
+        // force, so the block must be visible rather than hiding a setting that is taking effect.
         app.form.do_analysis = true;
         assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16),
                 "segmentation is forced, so it must read as checked");
-        for f in 17..=21 {
+        for f in 17..=22 {
             assert!(app.is_field_visible(TAB_SUPPLEMENTARY, f),
                     "field {f} shapes the forced segmentation and must be reachable");
         }
