@@ -52,7 +52,12 @@ URL="https://github.com/${REPO}/releases/download/${TAG}/qsmxt-${TAG}-${TARGET}.
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
 
-curl -fsSL "$URL" -o "${TMPDIR}/qsmxt.tar.gz"
+# Show a progress bar when attached to a terminal; stay quiet in CI/logs.
+if [ -t 2 ]; then
+    curl -fL --progress-bar "$URL" -o "${TMPDIR}/qsmxt.tar.gz"
+else
+    curl -fsSL "$URL" -o "${TMPDIR}/qsmxt.tar.gz"
+fi
 tar xzf "${TMPDIR}/qsmxt.tar.gz" -C "$TMPDIR"
 
 # Install

@@ -48,6 +48,15 @@ qsmxt update
 This checks the [latest release](https://github.com/QSMxT/QSMxT/releases),
 installs it if newer, and keeps the bundled `dcm2niix` in sync.
 
+`qsmxt tui` also checks for new releases in the background and offers the update
+in a pop-up when one is available. The check runs on its own thread and its
+result is cached for 24 hours, so it never delays startup. From the pop-up,
+`Enter` installs the update, `Esc` defers it to the next launch, and `d` skips
+that release for good.
+
+Set `QSMXT_NO_UPDATE_CHECK=1` to turn the background check off entirely. It is
+also skipped automatically when `CI` is set and in local development builds.
+
 ## Manual download
 
 Grab the archive for your platform from the

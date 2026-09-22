@@ -3,6 +3,69 @@
 
 $ErrorActionPreference = "Stop"
 
+# Stream a download to disk with a progress bar. Invoke-WebRequest's own progress
+# rendering makes downloads dramatically slower on Windows PowerShell 5.1, so we
+# suppress it and report progress ourselves.
+function Save-FileWithProgress {
+    param(
+        [Parameter(Mandatory = $true)][string]$Uri,
+        [Parameter(Mandatory = $true)][string]$OutFile,
+        [string]$Activity = "Downloading"
+    )
+
+    try { Add-Type -AssemblyName System.Net.Http } catch { }
+    if (-not ("System.Net.Http.HttpClient" -as [type])) {
+        # No HttpClient to stream from; fall back to a plain download.
+        Write-Host "$Activity..."
+        Invoke-WebRequest -Uri $Uri -OutFile $OutFile
+        return
+    }
+
+    $previousProgress = $ProgressPreference
+    $ProgressPreference = "SilentlyContinue"
+    try {
+        $client = [System.Net.Http.HttpClient]::new()
+        $client.Timeout = [TimeSpan]::FromMinutes(30)
+        try {
+            $response = $client.GetAsync($Uri, [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead).GetAwaiter().GetResult()
+            $response.EnsureSuccessStatusCode() | Out-Null
+            $total = $response.Content.Headers.ContentLength
+
+            $stream = $response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+            $output = [System.IO.File]::Create($OutFile)
+            try {
+                $buffer = New-Object byte[] 81920
+                $downloaded = 0
+                $lastReport = 0
+                while (($read = $stream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+                    $output.Write($buffer, 0, $read)
+                    $downloaded += $read
+                    # Report at most once per MB so the bar doesn't dominate the transfer.
+                    if (($downloaded - $lastReport) -ge 1MB) {
+                        $lastReport = $downloaded
+                        if ($total) {
+                            Write-Progress -Activity $Activity `
+                                -Status ("{0:N1} MB of {1:N1} MB" -f ($downloaded / 1MB), ($total / 1MB)) `
+                                -PercentComplete ([int](100 * $downloaded / $total))
+                        } else {
+                            Write-Progress -Activity $Activity -Status ("{0:N1} MB" -f ($downloaded / 1MB))
+                        }
+                    }
+                }
+            } finally {
+                $output.Dispose()
+                $stream.Dispose()
+                $response.Dispose()
+            }
+        } finally {
+            $client.Dispose()
+        }
+        Write-Progress -Activity $Activity -Completed
+    } finally {
+        $ProgressPreference = $previousProgress
+    }
+}
+
 $repo = "QSMxT/QSMxT"
 $target = "x86_64-pc-windows-msvc"
 
@@ -30,7 +93,7 @@ $url = "https://github.com/$repo/releases/download/$tag/qsmxt-$tag-$target.zip"
 $tmpZip = Join-Path $env:TEMP "qsmxt.zip"
 $tmpDir = Join-Path $env:TEMP "qsmxt-extract"
 
-Invoke-WebRequest -Uri $url -OutFile $tmpZip
+Save-FileWithProgress -Uri $url -OutFile $tmpZip -Activity "Downloading qsmxt $tag"
 
 # Extract
 if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }
