@@ -1276,6 +1276,49 @@ mod integration_tests {
     }
 
     #[test]
+    fn test_invert_lsqr() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("field.nii");
+        let mask = dir.path().join("mask.nii");
+        let output = dir.path().join("chi.nii");
+        testutils::write_field(&input);
+        testutils::write_mask(&mask);
+
+        super::invert::execute(InvertCommand::Lsqr(InvertLsqrArgs {
+            common: common_invert(input, mask, output.clone()),
+            magnitude: None,
+            b0: 3.0,
+            lsqr_params: LsqrParamArgs { lsqr_max_iter: Some(5), ..Default::default() },
+        })).unwrap();
+        assert!(output.exists());
+    }
+
+    /// HEIDI runs its LSQR seed and then the NESTA loop; both budgets are cut to keep the test
+    /// quick, since what is under test is the wiring, not the reconstruction.
+    #[test]
+    fn test_invert_heidi() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("field.nii");
+        let mask = dir.path().join("mask.nii");
+        let output = dir.path().join("chi.nii");
+        testutils::write_field(&input);
+        testutils::write_mask(&mask);
+
+        super::invert::execute(InvertCommand::Heidi(InvertHeidiArgs {
+            common: common_invert(input, mask, output.clone()),
+            magnitude: None,
+            b0: 3.0,
+            lsqr_params: LsqrParamArgs { lsqr_max_iter: Some(5), ..Default::default() },
+            heidi_params: HeidiParamArgs {
+                heidi_continuation_steps: Some(1),
+                heidi_inner_iterations: Some(2),
+                ..Default::default()
+            },
+        })).unwrap();
+        assert!(output.exists());
+    }
+
+    #[test]
     fn test_invert_tgv() {
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("field.nii");

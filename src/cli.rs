@@ -1985,6 +1985,10 @@ pub enum InvertCommand {
     Tfi(InvertTfiArgs),
     /// Iterative Least Squares QR
     Ilsqr(InvertIlsqrArgs),
+    /// Minimally regularised LSQR
+    Lsqr(InvertLsqrArgs),
+    /// HEIDI (Homogeneity Enabled Incremental Dipole Inversion), seeded by an LSQR solve
+    Heidi(InvertHeidiArgs),
     /// Nonlinear Dipole Inversion
     Ndi(InvertNdiArgs),
     /// FANSI Nonlinear Total Variation
@@ -2243,6 +2247,40 @@ pub struct InvertIlsqrArgs {
     /// Max iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
+}
+
+/// Minimally regularised LSQR. The residual-field weight (`--lsqr-residual-weighting`) is the only
+/// thing regularising the solve, so on its own this streaks; it exists mainly as HEIDI's seed.
+/// Flags carry the `--lsqr-` prefix so they read the same here as under `qsmxt run`.
+#[derive(Parser, Debug)]
+pub struct InvertLsqrArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    /// Magnitude NIfTI file (optional SNR row weight, normalised to unit mean inside the mask)
+    #[arg(long)]
+    pub magnitude: Option<PathBuf>,
+    /// B0 field strength in Tesla — sets the default residual weighting
+    #[arg(long, default_value_t = 3.0)]
+    pub b0: f64,
+    #[command(flatten)]
+    pub lsqr_params: LsqrParamArgs,
+}
+
+/// HEIDI. Its seed is an LSQR solve, so the `--lsqr-*` flags apply here too.
+#[derive(Parser, Debug)]
+pub struct InvertHeidiArgs {
+    #[command(flatten)]
+    pub common: InvertCommonArgs,
+    /// Magnitude NIfTI file (optional SNR row weight for the LSQR seed)
+    #[arg(long)]
+    pub magnitude: Option<PathBuf>,
+    /// B0 field strength in Tesla — sets the LSQR seed's default residual weighting
+    #[arg(long, default_value_t = 3.0)]
+    pub b0: f64,
+    #[command(flatten)]
+    pub lsqr_params: LsqrParamArgs,
+    #[command(flatten)]
+    pub heidi_params: HeidiParamArgs,
 }
 
 #[derive(Parser, Debug)]
