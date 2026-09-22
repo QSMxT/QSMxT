@@ -738,7 +738,7 @@ fn load_multiorient(
     let check = check_directions(&orientations, kind);
     match (&check.verdict, c.force) {
         (Ok(()), _) => info!("  {}", check.summary()),
-        (Err(why), false) => return Err(QsmxtError::Config(format!("{why}"))),
+        (Err(why), false) => return Err(QsmxtError::Config(why.to_string())),
         (Err(why), true) => warn!("--force: reconstructing anyway, but {why}"),
     }
 

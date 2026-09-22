@@ -117,11 +117,20 @@ pub fn kind_of(config: &PipelineConfig) -> MultiOrientKind {
     }
 }
 
+/// The grid a group is reconstructed on: dimensions, voxel size, affine. Every member must
+/// agree on all three, which is what "already co-registered" means in practice.
+type Geometry = ((usize, usize, usize), (f64, f64, f64), [f64; 16]);
+
+/// One member's contribution: its local field, the mask that field is defined on, and the
+/// geometry both sit in.
+struct MemberData {
+    field: Vec<f64>,
+    mask: Vec<u8>,
+    geometry: Geometry,
+}
+
 /// Load one member's local field and background-removal mask.
-fn load_member(
-    output: &DerivativeOutputs,
-    run: &QsmRun,
-) -> crate::Result<(Vec<f64>, Vec<u8>, (usize, usize, usize), (f64, f64, f64), [f64; 16])> {
+fn load_member(output: &DerivativeOutputs, run: &QsmRun) -> crate::Result<MemberData> {
     let field_path = output.local_field_path(&run.key);
     if !field_path.exists() {
         return Err(QsmxtError::Config(format!(
@@ -145,7 +154,11 @@ fn load_member(
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", mask_path.display(), e)))?;
     let mask: Vec<u8> = mask_nifti.data.iter().map(|&v| (v > 0.5) as u8).collect();
 
-    Ok((field.data, mask, field.dims, field.voxel_size, field.affine))
+    Ok(MemberData {
+        field: field.data,
+        mask,
+        geometry: (field.dims, field.voxel_size, field.affine),
+    })
 }
 
 /// Reconstruct one orientation group.
@@ -165,10 +178,11 @@ pub fn reconstruct_group(
     let mut fields = Vec::with_capacity(members.len());
     let mut masks = Vec::with_capacity(members.len());
     let mut affines = Vec::with_capacity(members.len());
-    let mut geometry: Option<((usize, usize, usize), (f64, f64, f64), [f64; 16])> = None;
+    let mut geometry: Option<Geometry> = None;
 
     for run in members {
-        let (field, mask, dims, voxel_size, affine) = load_member(output, run)?;
+        let member = load_member(output, run)?;
+        let (dims, voxel_size, affine) = member.geometry;
         match geometry {
             None => geometry = Some((dims, voxel_size, affine)),
             Some((d, _, a)) => {
@@ -191,8 +205,8 @@ pub fn reconstruct_group(
             }
         }
         affines.push(affine);
-        fields.push(field);
-        masks.push(mask);
+        fields.push(member.field);
+        masks.push(member.mask);
     }
     let (dims, voxel_size, affine) = geometry.expect("a group has at least two members");
 
