@@ -51,7 +51,11 @@ jobs:
 
       - name: Run coverage
         # --engine llvm (source-based): ptrace engine crashes on subprocess-spawning tests.
-        run: cargo tarpaulin --engine llvm --workspace --out json --output-dir target/tarpaulin --exclude-files src/main.rs --exclude-files src/tui/mod.rs --exclude-files src/tui/ui.rs --exclude-files src/commands/update.rs -- --test-threads=1
+        # --timeout: tarpaulin waits 60s by default for a test to respond, and the instrumented
+        # single-echo TGV run sits right on that line — it passed on qsm-core v0.35.0 and times out
+        # on v0.36.0. The test is slow, not hung (the uninstrumented suite finishes in under two
+        # minutes), so the budget is the thing that was wrong.
+        run: cargo tarpaulin --timeout 300 --engine llvm --workspace --out json --output-dir target/tarpaulin --exclude-files src/main.rs --exclude-files src/tui/mod.rs --exclude-files src/tui/ui.rs --exclude-files src/commands/update.rs -- --test-threads=1
 
       - name: Check coverage threshold
         run: |
