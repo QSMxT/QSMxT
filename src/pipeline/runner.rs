@@ -1536,6 +1536,34 @@ fn structure_stats(vals: &mut [f64]) -> StructureStats {
     StructureStats { median: pct(0.5), mean, sd, p5: pct(0.05), p95: pct(0.95) }
 }
 
+/// R2PRIMEnet inference. Gated in one place so a non-`dl` build says why it cannot run rather
+/// than failing to link.
+#[cfg(feature = "dl")]
+fn run_r2primenet(
+    ctx: &StageContext, r2star: &[f64], mask: &[u8], grid: &qsm_core::Grid,
+) -> crate::Result<Vec<f64>> {
+    let weights = qsm_core::models::primary_weight("r2primenet")
+        .map_err(|e| QsmxtError::Config(format!("r2primenet weights: {}", e)))?;
+    let (prog, _) = iter_progress_bar(&ctx.run.key.to_string(), "r2primenet");
+    qsm_core::relaxometry::r2primenet(
+        r2star, mask, grid, &weights,
+        &qsm_core::relaxometry::R2PrimeNetNorm::default(),
+        &qsm_core::relaxometry::R2PrimeNetParams::default(),
+        prog,
+    )
+    .map_err(|e| QsmxtError::Config(format!("r2primenet: {}", e)))
+}
+
+#[cfg(not(feature = "dl"))]
+fn run_r2primenet(
+    _ctx: &StageContext, _r2star: &[f64], _mask: &[u8], _grid: &qsm_core::Grid,
+) -> crate::Result<Vec<f64>> {
+    Err(QsmxtError::Config(
+        "estimating R2' needs a deep-learning build: R2PRIMEnet runs an ONNX network, which this \
+         binary was compiled without (--no-default-features). Supply a custom R2' map, or a MESE \
+         acquisition to measure it from".into()))
+}
+
 /// Bring-your-own segmentation (`*_dseg.nii*`).
 fn find_custom_dseg(run: &QsmRun, tool: &str) -> Option<PathBuf> {
     find_custom_derivative(run, tool, "*_dseg.nii*", &[])
@@ -1838,6 +1866,7 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
         "custom_r2prime": ctx.config.separation.custom_r2prime_tool,
         "echo_times": ctx.meta.echo_times,
         "has_mese": ctx.run.mese.is_some(),
+        "r2prime_strategy": format!("{}", ctx.config.separation.r2prime_strategy),
     });
     if ctx.is_cached_with_params("r2_r2prime", Some("epg"), &params) {
         log::info!("Skipping r2_r2prime (cached)");
@@ -1887,12 +1916,40 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
             }
         } else {
             let r2star_path = ctx.output.r2star_path(&ctx.run.key);
-            match (r2star_path.exists(), r2.as_ref()) {
-                (true, Some(r2map)) => {
-                    let r2s = load_volume(&r2star_path)?;
-                    Some(qsm_core::relaxometry::r2prime(&r2s, r2map, &mask))
+            let strategy = ctx.config.separation.r2prime_strategy;
+            // Measuring wins wherever it is possible and allowed: R2' = R2* - R2 is a measurement,
+            // and R2PRIMEnet's is an estimate standing in for one.
+            let can_measure = r2.is_some() && strategy != R2PrimeStrategy::R2primenet;
+            if can_measure {
+                match (r2star_path.exists(), r2.as_ref()) {
+                    (true, Some(r2map)) => {
+                        log::info!("R2' measured as R2* - R2");
+                        let r2s = load_volume(&r2star_path)?;
+                        Some(qsm_core::relaxometry::r2prime(&r2s, r2map, &mask))
+                    }
+                    _ => { log::warn!("R2' needs both R2* and R2 - one is missing; skipping R2'"); None }
                 }
-                _ => { log::warn!("R2' needs both R2* and R2 — one is missing; skipping R2'"); None }
+            } else if strategy == R2PrimeStrategy::Mese {
+                log::warn!(
+                    "Skipping R2': no R2 to subtract (no MESE acquisition and no custom R2 map), \
+                     and --r2prime-strategy mese does not estimate one. Use `auto` or \
+                     `r2primenet` to predict R2' from R2* instead."
+                );
+                None
+            } else if !r2star_path.exists() {
+                log::warn!("Skipping R2': R2PRIMEnet predicts it from R2*, which was not computed");
+                None
+            } else {
+                // Auto with no MESE, or r2primenet outright.
+                if strategy == R2PrimeStrategy::Auto {
+                    log::info!("No R2 to subtract - estimating R2' from R2* with R2PRIMEnet");
+                }
+                prefetch_weights("r2primenet", &ctx.run.key.to_string())?;
+                progress("Estimating R2' (R2PRIMEnet)");
+                let r2s = load_volume(&r2star_path)?;
+                let predicted = run_r2primenet(ctx, &r2s, &mask, &grid)?;
+                log::info!("R2' estimated by R2PRIMEnet (an estimate, not a measurement)");
+                Some(predicted)
             }
         };
         if let Some(ref r2pv) = r2p {

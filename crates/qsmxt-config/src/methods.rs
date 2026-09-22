@@ -272,6 +272,16 @@ const CITE_QSMCI_SIGNAL_EROSION: Citation = Citation {
     text: "QSM-CI: signal-gated mask erosion (QSM-CI harmonization masking, `hd-bet-qsmci`). https://github.com/QSMxT/QSM-CI",
 };
 
+const CITE_EPG: Citation = Citation {
+    key: "weigel2015",
+    text: "Weigel, M. (2015). \"Extended phase graphs: dephasing, RF pulses, and echoes - pure and simple.\" *Journal of Magnetic Resonance Imaging*, 41(2):266-295. https://doi.org/10.1002/jmri.24619",
+};
+
+const CITE_R2PRIMENET: Citation = Citation {
+    key: "kim2025",
+    text: "Kim, M., Ji, S., Lee, J., et al. (2025). \"chi-sepnet: Deep neural network for magnetic susceptibility source separation.\" *Human Brain Mapping*, 46(4):e70136. https://doi.org/10.1002/hbm.70136",
+};
+
 const CITE_SYNTHSEG: Citation = Citation {
     key: "billot2023",
     text: "Billot, B., Greve, D.N., Puonti, O., et al. (2023). \"SynthSeg: Segmentation of brain MRI scans of any contrast and resolution without retraining.\" *Medical Image Analysis*, 86:102789. https://doi.org/10.1016/j.media.2023.102789",
@@ -480,6 +490,43 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     } else if config.pipeline.do_r2starmap {
         sentences.push("R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015).".to_string());
         add_citation(&mut citations, &CITE_ARLO);
+    }
+
+    // R2 / R2'. Worth stating how R2' was obtained, not just that it was: a measured R2' and an
+    // estimated one support different claims, and only one of them is a measurement.
+    if config.pipeline.do_r2map || config.pipeline.do_r2primemap {
+        if config.pipeline.do_r2map {
+            add_citation(&mut citations, &CITE_EPG);
+            sentences.push(
+                "R2 maps were fitted from multi-echo spin-echo magnitude data using an Extended \
+                 Phase Graph dictionary (Weigel, 2015), which models imperfect refocusing and so \
+                 removes the stimulated-echo bias of a mono-exponential fit.".to_string());
+        }
+        if config.pipeline.do_r2primemap {
+            match config.separation.custom_r2prime_tool.as_deref() {
+                Some(_) => sentences.push(
+                    "R2' maps were taken from the supplied BIDS derivatives.".to_string()),
+                None => match config.separation.r2prime_strategy {
+                    R2PrimeStrategy::Mese => sentences.push(
+                        "R2' was computed as R2* - R2.".to_string()),
+                    R2PrimeStrategy::R2primenet => {
+                        add_citation(&mut citations, &CITE_R2PRIMENET);
+                        sentences.push(
+                            "R2' was estimated from the R2* map with R2PRIMEnet (Kim et al., \
+                             2025) rather than measured, no spin-echo R2 being subtracted."
+                            .to_string());
+                    }
+                    R2PrimeStrategy::Auto => {
+                        add_citation(&mut citations, &CITE_R2PRIMENET);
+                        sentences.push(
+                            "R2' was computed as R2* - R2 where a multi-echo spin-echo \
+                             acquisition was available, and estimated from R2* with R2PRIMEnet \
+                             (Kim et al., 2025) otherwise."
+                            .to_string());
+                    }
+                },
+            }
+        }
     }
 
     // Chi-separation (susceptibility source separation)
@@ -902,6 +949,44 @@ mod tests {
         for line in generate_methods(&config).lines() {
             assert!(!line.contains("  "), "run of spaces in methods prose: {line:?}");
         }
+    }
+
+    /// A measured R2' and an estimated one support different claims, so the methods text has to
+    /// distinguish them rather than just say R2' was computed.
+    #[test]
+    fn r2prime_methods_distinguish_measurement_from_estimate() {
+        let cfg = |s| {
+            let mut c = PipelineConfig::default();
+            c.pipeline.do_r2primemap = true;
+            c.separation.r2prime_strategy = s;
+            crate::config::enforce_separation_dependencies(&mut c);
+            c
+        };
+
+        let out = generate_methods(&cfg(crate::enums::R2PrimeStrategy::Mese));
+        assert!(out.contains("R2' was computed as R2* - R2"), "out: {out}");
+        assert!(!out.contains("R2PRIMEnet"), "nothing was estimated: {out}");
+        // The measuring route reports its R2 fit, and cites EPG for it.
+        assert!(out.contains("Extended Phase Graph"), "out: {out}");
+        assert!(out.contains("10.1002/jmri.24619"), "EPG citation missing: {out}");
+
+        let out = generate_methods(&cfg(crate::enums::R2PrimeStrategy::R2primenet));
+        assert!(out.contains("estimated from the R2* map with R2PRIMEnet"), "out: {out}");
+        assert!(out.contains("rather than measured"), "the distinction must be explicit: {out}");
+        assert!(out.contains("10.1002/hbm.70136"), "R2PRIMEnet citation missing: {out}");
+        // Nothing measured R2 on this route, so it must not claim to have fitted one.
+        assert!(!out.contains("Extended Phase Graph"), "out: {out}");
+
+        let out = generate_methods(&cfg(crate::enums::R2PrimeStrategy::Auto));
+        assert!(out.contains("where a multi-echo spin-echo acquisition was available"), "out: {out}");
+        assert!(out.contains("estimated from R2* with R2PRIMEnet"), "out: {out}");
+
+        // A supplied map is neither, and says so.
+        let mut c = cfg(crate::enums::R2PrimeStrategy::Auto);
+        c.separation.custom_r2prime_tool = Some("sepia".to_string());
+        let out = generate_methods(&c);
+        assert!(out.contains("taken from the supplied BIDS derivatives"), "out: {out}");
+        assert!(!out.contains("R2PRIMEnet"), "out: {out}");
     }
 
     #[test]
