@@ -130,11 +130,13 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
 ///
 /// Shared by the local (`RunArgs`) and SLURM (`SlurmArgs`) paths so both
 /// execute the pipeline the user configured, not the defaults.
-pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
-    let form = &app.form;
-    let ps = &app.pipeline_state;
-
-    let qsm_options = [
+/// The CLI algorithm argument for each entry of [`QSM_ALGO_OPTIONS`], in that order.
+///
+/// The TUI carries the user's choice as an index into `QSM_ALGO_OPTIONS`, and this is what turns it
+/// back into an algorithm. The two lists must stay in step: insert an algorithm into one and not
+/// the other and the TUI silently runs a *different* algorithm than the one on screen, with no
+/// error anywhere. `qsm_algo_args_match_the_option_list` holds them together.
+pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 31] = [
         QsmAlgorithmArg::Rts,
         QsmAlgorithmArg::Tv,
         QsmAlgorithmArg::Tkd,
@@ -145,6 +147,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         QsmAlgorithmArg::Medi,
         QsmAlgorithmArg::Tfi,
         QsmAlgorithmArg::Ilsqr,
+        QsmAlgorithmArg::Lsqr,
+        QsmAlgorithmArg::Heidi,
         QsmAlgorithmArg::Qsmart,
         QsmAlgorithmArg::Ndi,
         QsmAlgorithmArg::Fansi,
@@ -164,7 +168,13 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         QsmAlgorithmArg::Nextqsm,
         QsmAlgorithmArg::Iqsm,
         QsmAlgorithmArg::IqsmPlus,
-    ];
+];
+
+pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
+    let form = &app.form;
+    let ps = &app.pipeline_state;
+
+    let qsm_options = QSM_ALGO_ARGS;
     let unwrap_options = [UnwrapAlgorithmArg::Romeo, UnwrapAlgorithmArg::Laplacian];
     let bf_options = [
         BfAlgorithmArg::Vsharp,
@@ -270,6 +280,27 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             tfi_cg_max_iter: parse_optional_usize(&ps.tfi_cg_max_iter),
             tfi_max_iter: parse_optional_usize(&ps.tfi_max_iter),
             tfi_tol: parse_optional_f64(&ps.tfi_tol),
+        },
+        lsqr_params: crate::cli::LsqrParamArgs {
+            lsqr_residual_weighting: parse_optional_f64(&ps.lsqr_residual_weighting),
+            no_lsqr_global_offset: !ps.lsqr_fit_global_offset,
+            lsqr_tol: parse_optional_f64(&ps.lsqr_tol),
+            lsqr_max_iter: parse_optional_usize(&ps.lsqr_max_iter),
+        },
+        heidi_params: crate::cli::HeidiParamArgs {
+            heidi_cone_threshold: parse_optional_f64(&ps.heidi_cone_threshold),
+            heidi_gradient_threshold: parse_optional_f64(&ps.heidi_gradient_threshold),
+            no_heidi_laplacian_correction: !ps.heidi_apply_laplacian_correction,
+            heidi_laplacian_threshold: parse_optional_f64(&ps.heidi_laplacian_threshold),
+            heidi_gradient_mask_floor: parse_optional_f64(&ps.heidi_gradient_mask_floor),
+            heidi_continuation_steps: parse_optional_usize(&ps.heidi_continuation_steps),
+            heidi_inner_iterations: parse_optional_usize(&ps.heidi_inner_iterations),
+            heidi_mu_min: parse_optional_f64(&ps.heidi_mu_min),
+            heidi_tol: parse_optional_f64(&ps.heidi_tol),
+            no_heidi_denoise: !ps.heidi_denoise,
+            heidi_denoise_iterations: parse_optional_usize(&ps.heidi_denoise_iterations),
+            heidi_denoise_time_step: parse_optional_f64(&ps.heidi_denoise_time_step),
+            heidi_denoise_conductance: parse_optional_f64(&ps.heidi_denoise_conductance),
         },
         ilsqr_params: crate::cli::IlsqrParamArgs {
             ilsqr_tol: parse_optional_f64(&ps.ilsqr_tol),
@@ -936,6 +967,22 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
 mod tests {
     use super::*;
     use super::super::app::App;
+
+    /// The TUI holds the chosen algorithm as an index into `QSM_ALGO_OPTIONS`, and
+    /// [`QSM_ALGO_ARGS`] is what turns it back into an algorithm. If the two lists drift — insert
+    /// an algorithm into one and not the other — the TUI runs a different algorithm than the one
+    /// it displays, silently. Nothing else would catch that.
+    #[test]
+    fn qsm_algo_args_match_the_option_list() {
+        use crate::tui::app::QSM_ALGO_OPTIONS;
+        assert_eq!(QSM_ALGO_ARGS.len(), QSM_ALGO_OPTIONS.len(),
+                   "QSM_ALGO_ARGS and QSM_ALGO_OPTIONS have different lengths");
+        for (i, arg) in QSM_ALGO_ARGS.iter().enumerate() {
+            let name = format!("{}", crate::pipeline::config::qsm_algorithm_arg_to_config(*arg));
+            assert_eq!(name, QSM_ALGO_OPTIONS[i],
+                       "row {i} shows {:?} but would run {name}", QSM_ALGO_OPTIONS[i]);
+        }
+    }
 
     fn default_app() -> App {
         App::new()

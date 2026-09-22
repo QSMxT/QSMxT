@@ -177,6 +177,11 @@ fn estimate_standard_pipeline(n: usize, n_echoes: usize, config: &PipelineConfig
         QsmAlgorithm::Tikhonov => 40 * n,
         // iLSQR: iterative LSQR with dipole kernel + workspace buffers
         QsmAlgorithm::Ilsqr => 160 * n,
+        // LSQR (Schweser 2010): like iLSQR, but the unknown vector is ~2n — χ over the grid plus a
+        // residual-field unknown per masked voxel — and LSQR keeps several vectors that size.
+        QsmAlgorithm::Lsqr => 200 * n,
+        // HEIDI: an LSQR solve for the seed, then NESTA/TV continuation on top of it.
+        QsmAlgorithm::Heidi => 280 * n,
         // TV-ADMM: kernels + 9 ADMM buffers + FFT workspace + inv_a
         QsmAlgorithm::Tv => 120 * n,
         // NLTV: similar to TV + reweighting buffers

@@ -272,6 +272,16 @@ const CITE_QSMCI_SIGNAL_EROSION: Citation = Citation {
     text: "QSM-CI: signal-gated mask erosion (QSM-CI harmonization masking, `hd-bet-qsmci`). https://github.com/QSMxT/QSM-CI",
 };
 
+const CITE_LSQR: Citation = Citation {
+    key: "schweser2010",
+    text: "Schweser, F., Deistung, A., Lehr, B.W., Reichenbach, J.R. (2010). \"Differentiation between diamagnetic and paramagnetic cerebral lesions based on magnetic susceptibility mapping.\" *Medical Physics*, 37(10):5165-5178. https://doi.org/10.1118/1.3481505",
+};
+
+const CITE_HEIDI: Citation = Citation {
+    key: "schweser2012",
+    text: "Schweser, F., Sommer, K., Deistung, A., Reichenbach, J.R. (2012). \"Quantitative susceptibility mapping for investigating subtle susceptibility variations in the human brain.\" *NeuroImage*, 62(3):2083-2100. https://doi.org/10.1016/j.neuroimage.2012.05.067",
+};
+
 const CITE_TWOPASS: Citation = Citation {
     key: "stewart2022",
     text: "Stewart, A.W., Robinson, S.D., O'Brien, K., et al. (2022). \"QSMxT: Robust masking and artifact reduction for quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 87(3):1289-1300. https://doi.org/10.1002/mrm.29048",
@@ -729,6 +739,8 @@ fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
         QsmAlgorithm::Medi => ("MEDI (Morphology Enabled Dipole Inversion)", &CITE_MEDI),
         QsmAlgorithm::Tfi => ("TFI (Total Field Inversion)", &CITE_TFI),
         QsmAlgorithm::Ilsqr => ("iLSQR", &CITE_ILSQR),
+        QsmAlgorithm::Lsqr => ("minimally regularised LSQR", &CITE_LSQR),
+        QsmAlgorithm::Heidi => ("HEIDI (Homogeneity Enabled Incremental Dipole Inversion)", &CITE_HEIDI),
         QsmAlgorithm::Ndi => ("NDI (Nonlinear Dipole Inversion)", &CITE_NDI),
         QsmAlgorithm::Fansi => ("FANSI (Nonlinear TV)", &CITE_NLTV),
         QsmAlgorithm::FansiTgv => ("FANSI (Nonlinear TGV)", &CITE_NLTV),
@@ -849,6 +861,20 @@ mod tests {
         for line in generate_methods(&config).lines() {
             assert!(!line.contains("  "), "run of spaces in methods prose: {line:?}");
         }
+    }
+
+    #[test]
+    fn lsqr_and_heidi_are_named_and_cited() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Lsqr;
+        let out = generate_methods(&config);
+        assert!(out.contains("minimally regularised LSQR"), "out: {out}");
+        assert!(out.contains("10.1118/1.3481505"), "LSQR citation missing: {out}");
+
+        config.inversion.algorithm = QsmAlgorithm::Heidi;
+        let out = generate_methods(&config);
+        assert!(out.contains("HEIDI (Homogeneity Enabled Incremental Dipole Inversion)"), "out: {out}");
+        assert!(out.contains("10.1016/j.neuroimage.2012.05.067"), "HEIDI citation missing: {out}");
     }
 
     /// The two-pass sentence has to name the second mask's recipe, say which pass wins where, and

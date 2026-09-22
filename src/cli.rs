@@ -610,6 +610,70 @@ pub struct IlsqrParamArgs {
 }
 
 #[derive(Args, Debug, Default, Clone)]
+pub struct LsqrParamArgs {
+    /// LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use
+    /// qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly
+    #[arg(long)]
+    pub lsqr_residual_weighting: Option<f64>,
+    /// Do not fit a global field offset alongside χ
+    #[arg(long)]
+    pub no_lsqr_global_offset: bool,
+    /// LSQR convergence tolerance
+    #[arg(long)]
+    pub lsqr_tol: Option<f64>,
+    /// LSQR max iterations
+    #[arg(long)]
+    pub lsqr_max_iter: Option<usize>,
+}
+
+/// HEIDI's own knobs. Its seed is an LSQR solve, so `--lsqr-*` applies to
+/// `--qsm-algorithm heidi` as well.
+#[derive(Args, Debug, Default, Clone)]
+pub struct HeidiParamArgs {
+    /// |D(k)| above which a coefficient is well-conditioned and kept from the LSQR seed
+    #[arg(long)]
+    pub heidi_cone_threshold: Option<f64>,
+    /// Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous
+    #[arg(long)]
+    pub heidi_gradient_threshold: Option<f64>,
+    /// Do not open the homogeneity masks where the field's Laplacian is large
+    #[arg(long)]
+    pub no_heidi_laplacian_correction: bool,
+    /// Field-Laplacian threshold (ppm per voxel²)
+    #[arg(long)]
+    pub heidi_laplacian_threshold: Option<f64>,
+    /// TV weight kept where every direction reads as an edge (0 reproduces upstream's shipped
+    /// binarised masks)
+    #[arg(long)]
+    pub heidi_gradient_mask_floor: Option<f64>,
+    /// NESTA continuation steps on μ. The dominant quality knob, and more is not better — on the
+    /// QSM-CI phantom 6 steps beat 8. Worth sweeping on your own data
+    #[arg(long)]
+    pub heidi_continuation_steps: Option<usize>,
+    /// Accelerated-gradient iterations per continuation step
+    #[arg(long)]
+    pub heidi_inner_iterations: Option<usize>,
+    /// Final (smallest) smoothing parameter μ
+    #[arg(long)]
+    pub heidi_mu_min: Option<f64>,
+    /// Relative objective change that ends an inner loop early
+    #[arg(long)]
+    pub heidi_tol: Option<f64>,
+    /// Skip the anisotropic-diffusion smoothing of the field before its gradients are taken
+    #[arg(long)]
+    pub no_heidi_denoise: bool,
+    /// Anisotropic-diffusion iterations
+    #[arg(long)]
+    pub heidi_denoise_iterations: Option<usize>,
+    /// Anisotropic-diffusion time step
+    #[arg(long)]
+    pub heidi_denoise_time_step: Option<f64>,
+    /// Anisotropic-diffusion conductance
+    #[arg(long)]
+    pub heidi_denoise_conductance: Option<f64>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
 pub struct QsmartParamArgs {
     /// QSMART iLSQR tolerance
     #[arg(long)]
@@ -964,6 +1028,10 @@ pub struct PipelineArgs {
     pub tfi_params: TfiParamArgs,
     #[command(flatten)]
     pub ilsqr_params: IlsqrParamArgs,
+    #[command(flatten)]
+    pub lsqr_params: LsqrParamArgs,
+    #[command(flatten)]
+    pub heidi_params: HeidiParamArgs,
     #[command(flatten)]
     pub qsmart_params: QsmartParamArgs,
     #[command(flatten)]
@@ -2823,7 +2891,7 @@ pub struct QualityMapArgs {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum QsmAlgorithmArg {
-    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Qsmart,
+    Rts, Tv, Tkd, Tsvd, Tgv, Tikhonov, Nltv, Medi, Tfi, Ilsqr, Lsqr, Heidi, Qsmart,
     Ndi, Fansi, FansiTgv, L1qsm, Whqsm, Hdqsm, AmpPe,
     // Deep-learning dipole inversions (weights downloaded on first use).
     Xqsm, Qsmnet, QsmnetPlus, Autoqsm, Qsmgan, Ir2qsm, Lpcnn, ModlQsm, Nextqsm,

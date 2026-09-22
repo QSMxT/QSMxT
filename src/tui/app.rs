@@ -1182,6 +1182,8 @@ const QSM_ALGO_HELP: &[&str] = &[
     "MEDI (Morphology Enabled Dipole Inversion) — magnitude-guided edge weighting. https://doi.org/10.1002/mrm.22816",
     "TFI (Total Field Inversion) — inverts the total field directly (its own background removal). https://doi.org/10.1002/mrm.26331",
     "iLSQR — iterative LSQR with streaking-artifact correction. https://doi.org/10.1016/j.neuroimage.2014.12.043",
+    "LSQR (minimally regularised) — one least-squares solve for χ plus a residual field; the residual weight is the only regularisation. https://doi.org/10.1118/1.3481505",
+    "HEIDI (Homogeneity Enabled Incremental Dipole Inversion) — keeps the well-conditioned k-space of an LSQR solve and re-derives the dipole cone under a homogeneity prior. https://doi.org/10.1016/j.neuroimage.2012.05.067",
     "QSMART — two-stage spatially-dependent filtering plus inversion. https://doi.org/10.1016/j.neuroimage.2020.117701",
     "NDI (Nonlinear Dipole Inversion) — gradient-descent nonlinear fit. https://doi.org/10.1002/nbm.4271",
     "FANSI (Nonlinear TV) — fast nonlinear susceptibility inversion with a TV prior. https://doi.org/10.1002/mrm.27073",
@@ -1274,6 +1276,27 @@ pub struct PipelineFormState {
     // iLSQR
     pub ilsqr_tol: String,
     pub ilsqr_max_iter: String,
+
+    // LSQR (also HEIDI's seed)
+    pub lsqr_residual_weighting: String,
+    pub lsqr_fit_global_offset: bool,
+    pub lsqr_tol: String,
+    pub lsqr_max_iter: String,
+
+    // HEIDI
+    pub heidi_cone_threshold: String,
+    pub heidi_gradient_threshold: String,
+    pub heidi_apply_laplacian_correction: bool,
+    pub heidi_laplacian_threshold: String,
+    pub heidi_gradient_mask_floor: String,
+    pub heidi_continuation_steps: String,
+    pub heidi_inner_iterations: String,
+    pub heidi_mu_min: String,
+    pub heidi_tol: String,
+    pub heidi_denoise: bool,
+    pub heidi_denoise_iterations: String,
+    pub heidi_denoise_time_step: String,
+    pub heidi_denoise_conductance: String,
 
     // TGV
     pub tgv_iterations: String,
@@ -1541,6 +1564,11 @@ impl Default for PipelineFormState {
         let rts = qsm_core::inversion::RtsParams::default();
         let tv = qsm_core::inversion::TvParams::default();
         let tkd = qsm_core::inversion::TkdParams::default();
+        // These two come from qsmxt-config, not qsm-core: it owns which of qsm-core's fields are
+        // the user's (LSQR's b0 and mask_output are the dispatcher's) and flattens HEIDI's
+        // optional denoise struct into a switch plus three numbers.
+        let lsqr = crate::pipeline::config::LsqrConfig::default();
+        let heidi = crate::pipeline::config::HeidiConfig::default();
         let tgv = qsm_core::inversion::TgvParams::default();
         let ndi = qsm_core::inversion::NdiParams::default();
         let fansi = qsm_core::inversion::FansiParams::default();
@@ -1579,6 +1607,26 @@ impl Default for PipelineFormState {
             tsvd_threshold: format!("{}", tkd.threshold),
             ilsqr_tol: format!("{}", qsm_core::inversion::IlsqrParams::default().tol),
             ilsqr_max_iter: format!("{}", qsm_core::inversion::IlsqrParams::default().max_iter),
+            // Via qsmxt-config rather than qsm-core: it is the layer that decides which of
+            // qsm-core's fields are the user's (LSQR's b0 and mask_output are not), and it
+            // flattens HEIDI's optional denoise struct into the four values shown here.
+            lsqr_residual_weighting: lsqr.residual_weighting.map(|w| format!("{w}")).unwrap_or_default(),
+            lsqr_fit_global_offset: lsqr.fit_global_offset,
+            lsqr_tol: format!("{}", lsqr.tol),
+            lsqr_max_iter: format!("{}", lsqr.max_iter),
+            heidi_cone_threshold: format!("{}", heidi.cone_threshold),
+            heidi_gradient_threshold: format!("{}", heidi.gradient_threshold),
+            heidi_apply_laplacian_correction: heidi.apply_laplacian_correction,
+            heidi_laplacian_threshold: format!("{}", heidi.laplacian_threshold),
+            heidi_gradient_mask_floor: format!("{}", heidi.gradient_mask_floor),
+            heidi_continuation_steps: format!("{}", heidi.continuation_steps),
+            heidi_inner_iterations: format!("{}", heidi.inner_iterations),
+            heidi_mu_min: format!("{}", heidi.mu_min),
+            heidi_tol: format!("{}", heidi.tol),
+            heidi_denoise: heidi.denoise,
+            heidi_denoise_iterations: format!("{}", heidi.denoise_iterations),
+            heidi_denoise_time_step: format!("{}", heidi.denoise_time_step),
+            heidi_denoise_conductance: format!("{}", heidi.denoise_conductance),
             tgv_iterations: format!("{}", tgv.iterations),
             tgv_erosions: format!("{}", tgv.erosions),
             tgv_alpha1: format!("{}", tgv.alpha1),
@@ -1773,7 +1821,7 @@ impl Default for PipelineFormState {
     }
 }
 
-pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
+pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "lsqr", "heidi", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
 pub const SEP_ALGO_OPTIONS: &[&str] = &["r2star-qsm", "decompose", "chi-sep-ilsqr", "chi-sep-medi", "wavesep", "hc-chisep", "susep-net", "chi-sepnet"];
 const SEP_ALGO_HELP: &[&str] = &[
     "R2*-QSM closed-form (Dimov 2022) — QSM + R2*, GRE-only",
@@ -1930,16 +1978,20 @@ impl PipelineFormState {
             return self.separation_visible_rows();
         }
         let mut rows = Vec::new();
-        let is_tgv = self.qsm_algorithm == 4;
-        let is_qsmart = self.qsm_algorithm == 10;
-        let is_medi_smv = self.qsm_algorithm == 7 && self.medi_smv;
+        // Compared by name, not by index: the indices into QSM_ALGO_OPTIONS shift whenever an
+        // algorithm is inserted rather than appended, and a stale one silently shows the wrong
+        // rows (or hides background removal for the wrong algorithm).
+        let alg = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
+        let is_tgv = alg == "tgv";
+        let is_qsmart = alg == "qsmart";
+        let is_medi_smv = alg == "medi" && self.medi_smv;
         // AutoQSM / NeXtQSM are single-step (own background removal from the total field), so
         // the BG-removal section is hidden — but field mapping/unwrapping still runs.
-        let is_autoqsm = self.qsm_algorithm == 21;
-        let is_nextqsm = self.qsm_algorithm == 26;
+        let is_autoqsm = alg == "autoqsm";
+        let is_nextqsm = alg == "nextqsm";
         let is_single_step = is_autoqsm || is_nextqsm;
         // iQSM / iQSM+ reconstruct end-to-end from raw phase: no field mapping or BG removal.
-        let is_iqsm = self.qsm_algorithm == 27 || self.qsm_algorithm == 28;
+        let is_iqsm = alg == "iqsm" || alg == "iqsm-plus";
 
         // QSM toggle
         rows.push(PipelineRow::Toggle {
@@ -2183,8 +2235,8 @@ impl PipelineFormState {
         });
 
         // Algorithm-specific params
-        match self.qsm_algorithm {
-            0 => { // RTS
+        match alg {
+            "rts" => { // RTS
                 rows.push(PipelineRow::Param { label: "  Delta", field: "rts_delta", help: "Threshold for ill-conditioned k-space region" });
                 rows.push(PipelineRow::Param { label: "  Mu", field: "rts_mu", help: "Regularization parameter for well-conditioned region" });
                 rows.push(PipelineRow::Param { label: "  Rho", field: "rts_rho", help: "ADMM penalty parameter" });
@@ -2192,35 +2244,35 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Max Iter", field: "rts_max_iter", help: "Maximum ADMM iterations" });
                 rows.push(PipelineRow::Param { label: "  LSMR Iter", field: "rts_lsmr_iter", help: "LSMR iterations for step 1 (well-conditioned solve)" });
             }
-            1 => { // TV
+            "tv" => { // TV
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "tv_lambda", help: "L1 regularization weight (smaller = smoother)" });
                 rows.push(PipelineRow::Param { label: "  Rho", field: "tv_rho", help: "ADMM penalty parameter (typically 100×lambda)" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "tv_tol", help: "Convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Max Iter", field: "tv_max_iter", help: "Maximum ADMM iterations" });
             }
-            2 => { // TKD
+            "tkd" => { // TKD
                 rows.push(PipelineRow::Param { label: "  Threshold", field: "tkd_threshold", help: "Truncation threshold for k-space division (0.1-0.2)" });
             }
-            3 => { // TSVD
+            "tsvd" => { // TSVD
                 rows.push(PipelineRow::Param { label: "  Threshold", field: "tsvd_threshold", help: "Truncation threshold for SVD (0.1-0.2)" });
             }
-            4 => { // TGV
+            "tgv" => { // TGV
                 rows.push(PipelineRow::Param { label: "  Iterations", field: "tgv_iterations", help: "Primal-dual iterations" });
                 rows.push(PipelineRow::Param { label: "  Erosions", field: "tgv_erosions", help: "Mask erosions before TGV solve" });
                 rows.push(PipelineRow::Param { label: "  Alpha1", field: "tgv_alpha1", help: "First-order TGV weight (gradient term)" });
                 rows.push(PipelineRow::Param { label: "  Alpha0", field: "tgv_alpha0", help: "Second-order TGV weight (symmetric gradient term)" });
             }
-            5 => { // Tikhonov
+            "tikhonov" => { // Tikhonov
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "tikhonov_lambda", help: "L2 regularization weight" });
             }
-            6 => { // NLTV
+            "nltv" => { // NLTV
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "nltv_lambda", help: "Regularization parameter" });
                 rows.push(PipelineRow::Param { label: "  Mu", field: "nltv_mu", help: "Penalty parameter" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "nltv_tol", help: "Convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Max Iter", field: "nltv_max_iter", help: "Maximum ADMM iterations" });
                 rows.push(PipelineRow::Param { label: "  Newton Iter", field: "nltv_newton_iter", help: "Newton iterations for weight update" });
             }
-            7 => { // MEDI
+            "medi" => { // MEDI
                 rows.push(PipelineRow::Toggle { label: "  SMV Mode", field: "medi_smv",
                     help: "MEDI handles background removal internally using spherical mean value preprocessing (skips the BG removal step)" });
                 rows.push(PipelineRow::Param { label: "  SMV Radius", field: "medi_smv_radius", help: "SMV preprocessing radius in mm" });
@@ -2231,7 +2283,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "medi_tol", help: "Outer convergence tolerance" });
             }
-            8 => { // TFI
+            "tfi" => { // TFI
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "tfi_lambda", help: "Regularization weight" });
                 rows.push(PipelineRow::Param { label: "  Precond", field: "tfi_precond", help: "Preconditioner value (susceptibility scaling outside the mask)" });
                 rows.push(PipelineRow::Param { label: "  Percentage", field: "tfi_percentage", help: "Fraction of voxels considered edges (0.0-1.0)" });
@@ -2240,11 +2292,49 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "tfi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "tfi_tol", help: "Outer convergence tolerance" });
             }
-            9 => { // iLSQR
+            "ilsqr" => { // iLSQR
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "ilsqr_tol", help: "Convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Max Iter", field: "ilsqr_max_iter", help: "Maximum iterations" });
             }
-            10 => { // QSMART
+            // HEIDI seeds itself with an LSQR solve, so it shows both groups.
+            "lsqr" | "heidi" => {
+                rows.push(PipelineRow::Param { label: "  Residual Weight", field: "lsqr_residual_weighting",
+                    help: "Weight w on the residual field — the only regularisation. Blank = scaled from B0; 0 drops the term and streaks badly" });
+                rows.push(PipelineRow::Toggle { label: "  Fit Global Offset", field: "lsqr_fit_global_offset",
+                    help: "Fit a single global field offset alongside χ" });
+                rows.push(PipelineRow::Param { label: "  LSQR Tolerance", field: "lsqr_tol", help: "LSQR convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  LSQR Max Iter", field: "lsqr_max_iter", help: "Maximum LSQR iterations" });
+                if alg == "heidi" {
+                    rows.push(PipelineRow::Note { text: "HEIDI keeps the LSQR solution's well-conditioned k-space and re-derives the dipole cone" });
+                    rows.push(PipelineRow::Param { label: "  Cone Threshold", field: "heidi_cone_threshold",
+                        help: "|D(k)| above which a coefficient is taken from the LSQR seed unchanged" });
+                    rows.push(PipelineRow::Param { label: "  Gradient Threshold", field: "heidi_gradient_threshold",
+                        help: "Field-gradient threshold (ppm/mm); below it a direction reads as homogeneous" });
+                    rows.push(PipelineRow::Toggle { label: "  Laplacian Correction", field: "heidi_apply_laplacian_correction",
+                        help: "Open the homogeneity masks where the field's Laplacian is large" });
+                    if self.heidi_apply_laplacian_correction {
+                        rows.push(PipelineRow::Param { label: "    Laplacian Threshold", field: "heidi_laplacian_threshold",
+                            help: "Field-Laplacian threshold (ppm per voxel²)" });
+                    }
+                    rows.push(PipelineRow::Param { label: "  Gradient Mask Floor", field: "heidi_gradient_mask_floor",
+                        help: "TV weight kept where every direction reads as an edge (0 = upstream's binarised masks)" });
+                    rows.push(PipelineRow::Param { label: "  Continuation Steps", field: "heidi_continuation_steps",
+                        help: "NESTA continuation steps on μ. The dominant quality knob, and more is not better — worth sweeping" });
+                    rows.push(PipelineRow::Param { label: "  Inner Iterations", field: "heidi_inner_iterations",
+                        help: "Accelerated-gradient iterations per continuation step" });
+                    rows.push(PipelineRow::Param { label: "  Mu Min", field: "heidi_mu_min", help: "Final (smallest) smoothing parameter μ" });
+                    rows.push(PipelineRow::Param { label: "  HEIDI Tolerance", field: "heidi_tol",
+                        help: "Relative objective change that ends an inner loop early" });
+                    rows.push(PipelineRow::Toggle { label: "  Denoise Field", field: "heidi_denoise",
+                        help: "Anisotropic-diffusion smoothing of the field before its gradients are taken" });
+                    if self.heidi_denoise {
+                        rows.push(PipelineRow::Param { label: "    Denoise Iter", field: "heidi_denoise_iterations", help: "Anisotropic-diffusion iterations" });
+                        rows.push(PipelineRow::Param { label: "    Time Step", field: "heidi_denoise_time_step", help: "Anisotropic-diffusion time step" });
+                        rows.push(PipelineRow::Param { label: "    Conductance", field: "heidi_denoise_conductance", help: "Anisotropic-diffusion conductance" });
+                    }
+                }
+            }
+            "qsmart" => { // QSMART
                 rows.push(PipelineRow::Note {
                     text: "⚠ QSMART needs a tight BET brain mask — loose masks cause streaking (set mask below)",
                 });
@@ -2316,13 +2406,13 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Frangi Step (mm)", field: "qsmart_frangi_scale_ratio", help: "Frangi scale step (mm)" });
                 rows.push(PipelineRow::Param { label: "  Frangi C", field: "qsmart_frangi_c", help: "Frangi C noise threshold" });
             }
-            11 => { // NDI
+            "ndi" => { // NDI
                 rows.push(PipelineRow::Param { label: "  Tau", field: "ndi_tau", help: "Gradient-descent step size" });
                 rows.push(PipelineRow::Param { label: "  Alpha", field: "ndi_alpha", help: "L2 regularization weight" });
                 rows.push(PipelineRow::Param { label: "  Max Iter", field: "ndi_max_iter", help: "Number of iterations" });
                 rows.push(PipelineRow::Param { label: "  Phase Scale", field: "ndi_phase_scale", help: "ppm -> working-scale multiplier" });
             }
-            12 | 13 => { // FANSI nlTV (12) / nlTGV (13) — shared params
+            "fansi" | "fansi-tgv" => { // shared params
                 rows.push(PipelineRow::Param { label: "  Alpha1", field: "fansi_alpha1", help: "First-order (TV/TGV) L1 penalty weight" });
                 rows.push(PipelineRow::Param { label: "  Mu1", field: "fansi_mu1", help: "Gradient-consistency ADMM weight" });
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "fansi_mu2", help: "Fidelity-consistency ADMM weight" });
@@ -2333,7 +2423,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Tol Delta", field: "fansi_tol_delta", help: "Inner Newton convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Phase Scale", field: "fansi_phase_scale", help: "ppm -> working-scale multiplier" });
             }
-            14 => { // L1-QSM
+            "l1qsm" => { // L1-QSM
                 rows.push(PipelineRow::Param { label: "  Alpha1", field: "l1qsm_alpha1", help: "Gradient (TV) L1 penalty weight" });
                 rows.push(PipelineRow::Param { label: "  Mu1", field: "l1qsm_mu1", help: "Gradient-consistency ADMM weight" });
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "l1qsm_mu2", help: "Fidelity-consistency ADMM weight" });
@@ -2344,7 +2434,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Tol Delta", field: "l1qsm_tol_delta", help: "Inner Newton convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Phase Scale", field: "l1qsm_phase_scale", help: "ppm -> working-scale multiplier" });
             }
-            15 => { // WH-QSM
+            "whqsm" => { // WH-QSM
                 rows.push(PipelineRow::Param { label: "  Alpha1", field: "whqsm_alpha1", help: "TV regularization weight" });
                 rows.push(PipelineRow::Param { label: "  Mu1", field: "whqsm_mu1", help: "ADMM penalty for TV splitting" });
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "whqsm_mu2", help: "ADMM penalty for data-fidelity splitting" });
@@ -2355,7 +2445,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Tol Delta", field: "whqsm_tol_delta", help: "Inner Newton stopping tolerance" });
                 rows.push(PipelineRow::Param { label: "  Phase Scale", field: "whqsm_phase_scale", help: "ppm -> working-scale multiplier" });
             }
-            16 => { // HD-QSM
+            "hdqsm" => { // HD-QSM
                 rows.push(PipelineRow::Param { label: "  Alpha L2", field: "hdqsm_alpha_l2", help: "L2-stage TV weight" });
                 rows.push(PipelineRow::Param { label: "  Mu1 L2", field: "hdqsm_mu1_l2", help: "L2-stage gradient-consistency ADMM weight" });
                 rows.push(PipelineRow::Param { label: "  Mu2", field: "hdqsm_mu2", help: "Fidelity consistency weight" });
@@ -2363,7 +2453,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Max Iter L2", field: "hdqsm_max_iter_l2", help: "Stage-2 (L2) iterations" });
                 rows.push(PipelineRow::Param { label: "  Tol Update", field: "hdqsm_tol_update", help: "Stage-2 percent-update stopping tolerance" });
             }
-            17 => { // AMP-PE
+            "amp-pe" => { // AMP-PE
                 rows.push(PipelineRow::Param { label: "  Wave Order", field: "amp_pe_wave_order", help: "Daubechies wavelet order (1=db1, 2=db2)" });
                 rows.push(PipelineRow::Param { label: "  N Level", field: "amp_pe_nlevel", help: "Wavelet decomposition levels" });
                 rows.push(PipelineRow::Param { label: "  Wave Pec", field: "amp_pe_wave_pec", help: "Morphology-mask energy retention fraction (0.0-1.0)" });
@@ -2452,6 +2542,20 @@ impl PipelineFormState {
             "tkd_threshold" => &self.tkd_threshold,
             "tsvd_threshold" => &self.tsvd_threshold,
             "ilsqr_tol" => &self.ilsqr_tol,
+            "lsqr_residual_weighting" => &self.lsqr_residual_weighting,
+            "lsqr_tol" => &self.lsqr_tol,
+            "lsqr_max_iter" => &self.lsqr_max_iter,
+            "heidi_cone_threshold" => &self.heidi_cone_threshold,
+            "heidi_gradient_threshold" => &self.heidi_gradient_threshold,
+            "heidi_laplacian_threshold" => &self.heidi_laplacian_threshold,
+            "heidi_gradient_mask_floor" => &self.heidi_gradient_mask_floor,
+            "heidi_continuation_steps" => &self.heidi_continuation_steps,
+            "heidi_inner_iterations" => &self.heidi_inner_iterations,
+            "heidi_mu_min" => &self.heidi_mu_min,
+            "heidi_tol" => &self.heidi_tol,
+            "heidi_denoise_iterations" => &self.heidi_denoise_iterations,
+            "heidi_denoise_time_step" => &self.heidi_denoise_time_step,
+            "heidi_denoise_conductance" => &self.heidi_denoise_conductance,
             "ilsqr_max_iter" => &self.ilsqr_max_iter,
             "tgv_iterations" => &self.tgv_iterations,
             "tgv_erosions" => &self.tgv_erosions,
@@ -2626,6 +2730,20 @@ impl PipelineFormState {
             "tkd_threshold" => Some(&mut self.tkd_threshold),
             "tsvd_threshold" => Some(&mut self.tsvd_threshold),
             "ilsqr_tol" => Some(&mut self.ilsqr_tol),
+            "lsqr_residual_weighting" => Some(&mut self.lsqr_residual_weighting),
+            "lsqr_tol" => Some(&mut self.lsqr_tol),
+            "lsqr_max_iter" => Some(&mut self.lsqr_max_iter),
+            "heidi_cone_threshold" => Some(&mut self.heidi_cone_threshold),
+            "heidi_gradient_threshold" => Some(&mut self.heidi_gradient_threshold),
+            "heidi_laplacian_threshold" => Some(&mut self.heidi_laplacian_threshold),
+            "heidi_gradient_mask_floor" => Some(&mut self.heidi_gradient_mask_floor),
+            "heidi_continuation_steps" => Some(&mut self.heidi_continuation_steps),
+            "heidi_inner_iterations" => Some(&mut self.heidi_inner_iterations),
+            "heidi_mu_min" => Some(&mut self.heidi_mu_min),
+            "heidi_tol" => Some(&mut self.heidi_tol),
+            "heidi_denoise_iterations" => Some(&mut self.heidi_denoise_iterations),
+            "heidi_denoise_time_step" => Some(&mut self.heidi_denoise_time_step),
+            "heidi_denoise_conductance" => Some(&mut self.heidi_denoise_conductance),
             "ilsqr_max_iter" => Some(&mut self.ilsqr_max_iter),
             "tgv_iterations" => Some(&mut self.tgv_iterations),
             "tgv_erosions" => Some(&mut self.tgv_erosions),
@@ -2838,6 +2956,9 @@ impl PipelineFormState {
             "do_chi_separation" => self.do_chi_separation,
             "msmv_refine" => self.msmv_refine,
             "two_pass" => self.two_pass,
+            "lsqr_fit_global_offset" => self.lsqr_fit_global_offset,
+            "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction,
+            "heidi_denoise" => self.heidi_denoise,
             _ => false,
         }
     }
@@ -2864,6 +2985,9 @@ impl PipelineFormState {
             "medi_smv" => self.medi_smv = !self.medi_smv,
             "msmv_refine" => self.msmv_refine = !self.msmv_refine,
             "two_pass" => self.two_pass = !self.two_pass,
+            "lsqr_fit_global_offset" => self.lsqr_fit_global_offset = !self.lsqr_fit_global_offset,
+            "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction = !self.heidi_apply_laplacian_correction,
+            "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
             _ => {}
         }
     }
@@ -8212,6 +8336,79 @@ mod tests {
         // parameters that are still at their default left off.
         let cmd = crate::tui::command::build_command_string(&app);
         assert!(cmd.contains("--mask magnitude,hd-bet,signal-erode:0.85:0"), "cmd: {cmd}");
+    }
+
+    /// Selecting HEIDI shows both parameter groups (its seed is an LSQR solve); selecting plain
+    /// LSQR shows only its own. The nested rows appear and disappear with their switches.
+    #[test]
+    fn heidi_shows_the_lsqr_group_and_its_own() {
+        let idx = |name: &str| QSM_ALGO_OPTIONS.iter().position(|o| *o == name)
+            .unwrap_or_else(|| panic!("{name} missing from QSM_ALGO_OPTIONS"));
+        let fields = |ps: &PipelineFormState| -> Vec<String> {
+            ps.visible_rows().iter().filter_map(|r| match r {
+                PipelineRow::Param { field, .. } | PipelineRow::Toggle { field, .. } => Some(field.to_string()),
+                _ => None,
+            }).collect()
+        };
+
+        let mut ps = PipelineFormState::default();
+        ps.collapsed_sections.clear();
+        ps.qsm_algorithm = idx("lsqr");
+        let f = fields(&ps);
+        assert!(f.contains(&"lsqr_tol".to_string()), "{f:?}");
+        assert!(f.contains(&"lsqr_fit_global_offset".to_string()), "{f:?}");
+        assert!(!f.iter().any(|x| x.starts_with("heidi_")), "plain LSQR must not show HEIDI rows: {f:?}");
+
+        ps.qsm_algorithm = idx("heidi");
+        let f = fields(&ps);
+        assert!(f.contains(&"lsqr_tol".to_string()), "HEIDI seeds with LSQR: {f:?}");
+        assert!(f.contains(&"heidi_cone_threshold".to_string()), "{f:?}");
+        assert!(f.contains(&"heidi_continuation_steps".to_string()), "{f:?}");
+
+        // The sub-parameters follow their switches.
+        assert!(f.contains(&"heidi_denoise_iterations".to_string()), "denoise is on by default: {f:?}");
+        assert!(f.contains(&"heidi_laplacian_threshold".to_string()), "{f:?}");
+        ps.heidi_denoise = false;
+        ps.heidi_apply_laplacian_correction = false;
+        let f = fields(&ps);
+        assert!(!f.contains(&"heidi_denoise_iterations".to_string()), "{f:?}");
+        assert!(!f.contains(&"heidi_laplacian_threshold".to_string()), "{f:?}");
+    }
+
+    /// Inserting an algorithm mid-list used to shift the hardcoded indices that decide which
+    /// stages are shown. They are compared by name now; this pins the behaviour for the algorithms
+    /// that hide a stage, at whatever index they end up on.
+    #[test]
+    fn stage_visibility_follows_the_algorithm_not_its_index() {
+        let idx = |name: &str| QSM_ALGO_OPTIONS.iter().position(|o| *o == name).expect(name);
+        let has_section = |ps: &PipelineFormState, id: &str| ps.visible_rows().iter()
+            .any(|r| matches!(r, PipelineRow::SectionHeader { id: hid, .. } if *hid == id));
+
+        let mut ps = PipelineFormState::default();
+        ps.collapsed_sections.clear();
+
+        ps.qsm_algorithm = idx("rts");
+        assert!(has_section(&ps, "bgremoval"), "RTS needs background removal");
+        assert!(has_section(&ps, "fieldmap"), "RTS needs a field map");
+
+        // Single-step: own background removal, but still unwraps.
+        for alg in ["nextqsm", "autoqsm"] {
+            ps.qsm_algorithm = idx(alg);
+            assert!(!has_section(&ps, "bgremoval"), "{alg} does its own background removal");
+            assert!(has_section(&ps, "fieldmap"), "{alg} still needs a field map");
+        }
+        // End-to-end from wrapped phase: neither.
+        for alg in ["iqsm", "iqsm-plus", "tgv"] {
+            ps.qsm_algorithm = idx(alg);
+            assert!(!has_section(&ps, "bgremoval"), "{alg} takes wrapped phase");
+            assert!(!has_section(&ps, "fieldmap"), "{alg} takes wrapped phase");
+        }
+        // LSQR and HEIDI are ordinary local-field inversions.
+        for alg in ["lsqr", "heidi"] {
+            ps.qsm_algorithm = idx(alg);
+            assert!(has_section(&ps, "bgremoval"), "{alg} inverts the local field");
+            assert!(has_section(&ps, "fieldmap"), "{alg} needs a field map");
+        }
     }
 
     /// The reliable-mask editor only exists once two-pass is on, and it is the ordinary mask

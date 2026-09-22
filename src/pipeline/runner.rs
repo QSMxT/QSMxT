@@ -1817,6 +1817,99 @@ fn load_phase_echoes(ctx: &StageContext) -> crate::Result<PhaseEchoes> {
 }
 
 /// iQSM / iQSM+ end-to-end reconstruction from wrapped **phase** (joint unwrapping +
+/// The inversion stage's cache key: the algorithm's user-facing parameters, as JSON.
+///
+/// A parameter missing here is a parameter whose change does not invalidate a cached
+/// reconstruction, so the run silently reuses a map computed with the old value. Extracted from
+/// the stage so it can be tested directly.
+fn invert_params(config: &PipelineConfig) -> serde_json::Value {
+    match config.inversion.algorithm {
+        QsmAlgorithm::Rts => serde_json::json!({
+            "delta": config.inversion.rts.delta, "mu": config.inversion.rts.mu,
+            "tol": config.inversion.rts.tol, "max_iter": config.inversion.rts.max_iter,
+        }),
+        QsmAlgorithm::Tv => serde_json::json!({
+            "lambda": config.inversion.tv.lambda, "max_iter": config.inversion.tv.max_iter,
+        }),
+        QsmAlgorithm::Tkd => serde_json::json!({ "threshold": config.inversion.tkd.threshold }),
+        QsmAlgorithm::Tsvd => serde_json::json!({ "threshold": config.inversion.tsvd.threshold }),
+        QsmAlgorithm::Ilsqr => serde_json::json!({
+            "tol": config.inversion.ilsqr.tol, "max_iter": config.inversion.ilsqr.max_iter,
+        }),
+        // HEIDI's cache key carries the LSQR group too — its seed is an LSQR solve, so changing
+        // `--lsqr-tol` changes the HEIDI result and has to invalidate it.
+        QsmAlgorithm::Lsqr | QsmAlgorithm::Heidi => {
+            let l = &config.inversion.lsqr;
+            let mut key = serde_json::json!({
+                "lsqr_residual_weighting": l.residual_weighting,
+                "lsqr_fit_global_offset": l.fit_global_offset,
+                "lsqr_tol": l.tol, "lsqr_max_iter": l.max_iter,
+            });
+            if config.inversion.algorithm == QsmAlgorithm::Heidi {
+                let h = &config.inversion.heidi;
+                key["heidi"] = serde_json::json!({
+                    "cone_threshold": h.cone_threshold,
+                    "gradient_threshold": h.gradient_threshold,
+                    "apply_laplacian_correction": h.apply_laplacian_correction,
+                    "laplacian_threshold": h.laplacian_threshold,
+                    "gradient_mask_floor": h.gradient_mask_floor,
+                    "continuation_steps": h.continuation_steps,
+                    "inner_iterations": h.inner_iterations,
+                    "mu_min": h.mu_min, "tol": h.tol,
+                    "denoise": h.denoise,
+                    "denoise_iterations": h.denoise_iterations,
+                    "denoise_time_step": h.denoise_time_step,
+                    "denoise_conductance": h.denoise_conductance,
+                });
+            }
+            key
+        }
+        QsmAlgorithm::Tikhonov => serde_json::json!({ "lambda": config.inversion.tikhonov.lambda }),
+        QsmAlgorithm::Nltv => serde_json::json!({
+            "lambda": config.inversion.nltv.lambda, "max_iter": config.inversion.nltv.max_iter,
+        }),
+        QsmAlgorithm::Medi => serde_json::json!({
+            "lambda": config.inversion.medi.lambda, "max_iter": config.inversion.medi.max_iter,
+            "smv": config.inversion.medi.smv,
+        }),
+        QsmAlgorithm::Ndi => serde_json::json!({
+            "tau": config.inversion.ndi.tau, "alpha": config.inversion.ndi.alpha,
+            "max_iter": config.inversion.ndi.max_iter,
+        }),
+        QsmAlgorithm::Fansi => serde_json::json!({
+            "is_tgv": false, "alpha1": config.inversion.fansi.alpha1,
+            "max_iter": config.inversion.fansi.max_iter,
+        }),
+        QsmAlgorithm::FansiTgv => serde_json::json!({
+            "is_tgv": true, "alpha1": config.inversion.fansi.alpha1,
+            "alpha0": config.inversion.fansi.alpha0,
+            "max_iter": config.inversion.fansi.max_iter,
+        }),
+        QsmAlgorithm::L1qsm => serde_json::json!({
+            "alpha1": config.inversion.l1qsm.alpha1, "lambda": config.inversion.l1qsm.lambda,
+            "max_iter": config.inversion.l1qsm.max_iter,
+        }),
+        QsmAlgorithm::Whqsm => serde_json::json!({
+            "alpha1": config.inversion.whqsm.alpha1, "beta": config.inversion.whqsm.beta,
+            "max_iter": config.inversion.whqsm.max_iter,
+        }),
+        QsmAlgorithm::Hdqsm => serde_json::json!({
+            "alpha_l2": config.inversion.hdqsm.alpha_l2,
+            "max_iter_l1": config.inversion.hdqsm.max_iter_l1,
+            "max_iter_l2": config.inversion.hdqsm.max_iter_l2,
+        }),
+        QsmAlgorithm::AmpPe => serde_json::json!({
+            "wave_order": config.inversion.amp_pe.wave_order,
+            "nlevel": config.inversion.amp_pe.nlevel,
+            "wave_pec": config.inversion.amp_pe.wave_pec,
+            "simulated_te": config.inversion.amp_pe.simulated_te,
+            "max_linearization_ite": config.inversion.amp_pe.max_linearization_ite,
+            "tikhonov_beta": config.inversion.amp_pe.tikhonov_beta,
+        }),
+        _ => serde_json::json!({}),
+    }
+}
+
 /// Whether this run actually gets two-pass artefact reduction.
 ///
 /// Two-pass derives its reliable mask from a mask recipe, so a bring-your-own mask rules it out:
@@ -2227,63 +2320,7 @@ fn stage_standard_qsm(
     // --- Dipole inversion ---
     let chi_raw_path = pass.chi_raw.clone();
     let alg_name = format!("{}", ctx.config.inversion.algorithm);
-    let invert_params = match ctx.config.inversion.algorithm {
-        QsmAlgorithm::Rts => serde_json::json!({
-            "delta": ctx.config.inversion.rts.delta, "mu": ctx.config.inversion.rts.mu,
-            "tol": ctx.config.inversion.rts.tol, "max_iter": ctx.config.inversion.rts.max_iter,
-        }),
-        QsmAlgorithm::Tv => serde_json::json!({
-            "lambda": ctx.config.inversion.tv.lambda, "max_iter": ctx.config.inversion.tv.max_iter,
-        }),
-        QsmAlgorithm::Tkd => serde_json::json!({ "threshold": ctx.config.inversion.tkd.threshold }),
-        QsmAlgorithm::Tsvd => serde_json::json!({ "threshold": ctx.config.inversion.tsvd.threshold }),
-        QsmAlgorithm::Ilsqr => serde_json::json!({
-            "tol": ctx.config.inversion.ilsqr.tol, "max_iter": ctx.config.inversion.ilsqr.max_iter,
-        }),
-        QsmAlgorithm::Tikhonov => serde_json::json!({ "lambda": ctx.config.inversion.tikhonov.lambda }),
-        QsmAlgorithm::Nltv => serde_json::json!({
-            "lambda": ctx.config.inversion.nltv.lambda, "max_iter": ctx.config.inversion.nltv.max_iter,
-        }),
-        QsmAlgorithm::Medi => serde_json::json!({
-            "lambda": ctx.config.inversion.medi.lambda, "max_iter": ctx.config.inversion.medi.max_iter,
-            "smv": ctx.config.inversion.medi.smv,
-        }),
-        QsmAlgorithm::Ndi => serde_json::json!({
-            "tau": ctx.config.inversion.ndi.tau, "alpha": ctx.config.inversion.ndi.alpha,
-            "max_iter": ctx.config.inversion.ndi.max_iter,
-        }),
-        QsmAlgorithm::Fansi => serde_json::json!({
-            "is_tgv": false, "alpha1": ctx.config.inversion.fansi.alpha1,
-            "max_iter": ctx.config.inversion.fansi.max_iter,
-        }),
-        QsmAlgorithm::FansiTgv => serde_json::json!({
-            "is_tgv": true, "alpha1": ctx.config.inversion.fansi.alpha1,
-            "alpha0": ctx.config.inversion.fansi.alpha0,
-            "max_iter": ctx.config.inversion.fansi.max_iter,
-        }),
-        QsmAlgorithm::L1qsm => serde_json::json!({
-            "alpha1": ctx.config.inversion.l1qsm.alpha1, "lambda": ctx.config.inversion.l1qsm.lambda,
-            "max_iter": ctx.config.inversion.l1qsm.max_iter,
-        }),
-        QsmAlgorithm::Whqsm => serde_json::json!({
-            "alpha1": ctx.config.inversion.whqsm.alpha1, "beta": ctx.config.inversion.whqsm.beta,
-            "max_iter": ctx.config.inversion.whqsm.max_iter,
-        }),
-        QsmAlgorithm::Hdqsm => serde_json::json!({
-            "alpha_l2": ctx.config.inversion.hdqsm.alpha_l2,
-            "max_iter_l1": ctx.config.inversion.hdqsm.max_iter_l1,
-            "max_iter_l2": ctx.config.inversion.hdqsm.max_iter_l2,
-        }),
-        QsmAlgorithm::AmpPe => serde_json::json!({
-            "wave_order": ctx.config.inversion.amp_pe.wave_order,
-            "nlevel": ctx.config.inversion.amp_pe.nlevel,
-            "wave_pec": ctx.config.inversion.amp_pe.wave_pec,
-            "simulated_te": ctx.config.inversion.amp_pe.simulated_te,
-            "max_linearization_ite": ctx.config.inversion.amp_pe.max_linearization_ite,
-            "tikhonov_beta": ctx.config.inversion.amp_pe.tikhonov_beta,
-        }),
-        _ => serde_json::json!({}),
-    };
+    let invert_params = invert_params(ctx.config);
     if !ctx.is_cached_with_params(&invert_step, Some(&alg_name), &invert_params) {
         let t = Instant::now();
         progress(&format!("Dipole inversion{}", pass.label()));
@@ -2444,6 +2481,52 @@ mod tests {
             assert_ne!(main.step(step), reliable.step(step));
         }
         assert_eq!(main.step("invert"), "invert", "the main pass keeps the unsuffixed step names");
+    }
+
+    /// HEIDI seeds itself with an LSQR solve, so an LSQR parameter changes the HEIDI result and
+    /// must invalidate it. Its cache key therefore has to carry both groups — otherwise editing
+    /// `--lsqr-tol` silently reuses a HEIDI map computed with the old tolerance.
+    #[test]
+    fn the_heidi_cache_key_covers_its_lsqr_seed() {
+        use crate::pipeline::config::{PipelineConfig, QsmAlgorithm};
+        let key = |c: &PipelineConfig| crate::pipeline::graph::step_params_hash(
+            Some(&format!("{}", c.inversion.algorithm)), &super::invert_params(c));
+
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Heidi;
+        let base = key(&c);
+
+        let mut edited = c.clone();
+        edited.inversion.lsqr.tol *= 10.0;
+        assert_ne!(key(&edited), base, "an LSQR tolerance change must invalidate HEIDI");
+
+        let mut edited = c.clone();
+        edited.inversion.lsqr.max_iter += 1;
+        assert_ne!(key(&edited), base, "an LSQR iteration change must invalidate HEIDI");
+
+        // And HEIDI's own knobs, including the flattened denoise sub-parameters.
+        for mutate in [
+            (|c: &mut PipelineConfig| c.inversion.heidi.cone_threshold += 0.05) as fn(&mut PipelineConfig),
+            |c: &mut PipelineConfig| c.inversion.heidi.continuation_steps += 1,
+            |c: &mut PipelineConfig| c.inversion.heidi.denoise = !c.inversion.heidi.denoise,
+            |c: &mut PipelineConfig| c.inversion.heidi.denoise_conductance += 0.5,
+            |c: &mut PipelineConfig| c.inversion.heidi.gradient_mask_floor += 0.05,
+        ] {
+            let mut edited = c.clone();
+            mutate(&mut edited);
+            assert_ne!(key(&edited), base, "a HEIDI parameter change must invalidate the cache");
+        }
+
+        // Plain LSQR must not be invalidated by HEIDI-only knobs it never reads.
+        let mut l = PipelineConfig::default();
+        l.inversion.algorithm = QsmAlgorithm::Lsqr;
+        let lbase = key(&l);
+        let mut edited = l.clone();
+        edited.inversion.heidi.cone_threshold += 0.05;
+        assert_eq!(key(&edited), lbase, "plain LSQR does not read HEIDI's parameters");
+        let mut edited = l.clone();
+        edited.inversion.lsqr.tol *= 10.0;
+        assert_ne!(key(&edited), lbase, "but it does read its own");
     }
 
     /// A reliable mask with no holes, or no voxels, makes the second reconstruction pointless —
