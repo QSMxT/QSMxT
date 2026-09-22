@@ -183,6 +183,11 @@ pub struct SeparationConfig {
     pub custom_r2_tool: Option<String>,
     #[serde(default)]
     pub custom_r2prime_tool: Option<String>,
+    /// How R2′ is obtained when `custom_r2prime_tool` supplies nothing. A custom map always wins;
+    /// this decides between measuring R2′ from a MESE acquisition and predicting it with
+    /// R2PRIMEnet.
+    #[serde(default)]
+    pub r2prime_strategy: R2PrimeStrategy,
 }
 impl Default for SeparationConfig {
     fn default() -> Self {
@@ -197,6 +202,7 @@ impl Default for SeparationConfig {
             custom_qsm_tool: None,
             custom_r2_tool: None,
             custom_r2prime_tool: None,
+            r2prime_strategy: R2PrimeStrategy::default(),
         }
     }
 }
@@ -252,12 +258,15 @@ pub fn enforce_separation_dependencies(config: &mut PipelineConfig) {
             }
         }
     }
-    // R2' = R2* − R2 → computing it (no custom map) requires R2 and R2*.
+    // Computing R2' (no custom map) always needs R2*: it is the minuend of R2* − R2, and it is
+    // also R2PRIMEnet's only input. R2 is needed only on the routes that can measure R2' —
+    // predicting it from R2* does not subtract anything.
     if config.pipeline.do_r2primemap && config.separation.custom_r2prime_tool.is_none() {
-        if config.separation.custom_r2_tool.is_none() {
+        config.pipeline.do_r2starmap = true;
+        let may_measure = config.separation.r2prime_strategy != R2PrimeStrategy::R2primenet;
+        if may_measure && config.separation.custom_r2_tool.is_none() {
             config.pipeline.do_r2map = true;
         }
-        config.pipeline.do_r2starmap = true;
     }
 }
 param_config!(VsharpConfig from qsm_core::bgremove::VsharpParams {
@@ -924,6 +933,62 @@ mod selected_toml_tests {
         // Pruned algorithms came back as their defaults.
         assert_eq!(loaded.inversion.tkd, super::TkdConfig::default());
         assert_eq!(loaded.bg_removal.pdf, super::PdfConfig::default());
+    }
+}
+
+#[cfg(test)]
+mod r2prime_strategy_tests {
+    use crate::config::{enforce_separation_dependencies, PipelineConfig};
+    use crate::enums::R2PrimeStrategy;
+
+    /// R2' needs R2* on every route — it is the minuend of R2* - R2 and R2PRIMEnet's only input.
+    /// R2 is needed only where R2' can actually be *measured*; forcing a MESE-derived R2 map for a
+    /// run that is going to predict R2' instead would be work with nothing to consume it.
+    #[test]
+    fn only_the_measuring_routes_force_r2() {
+        let cfg = |s| {
+            let mut c = PipelineConfig::default();
+            c.pipeline.do_r2primemap = true;
+            c.separation.r2prime_strategy = s;
+            enforce_separation_dependencies(&mut c);
+            c
+        };
+
+        for s in [R2PrimeStrategy::Auto, R2PrimeStrategy::Mese] {
+            let c = cfg(s);
+            assert!(c.pipeline.do_r2map, "{s} can measure R2', so it needs R2");
+            assert!(c.pipeline.do_r2starmap, "{s} needs R2*");
+        }
+
+        let c = cfg(R2PrimeStrategy::R2primenet);
+        assert!(!c.pipeline.do_r2map, "predicting R2' subtracts nothing, so it needs no R2");
+        assert!(c.pipeline.do_r2starmap, "R2* is R2PRIMEnet's input");
+
+        // A supplied R2' map means none of it has to be computed.
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_r2primemap = true;
+        c.separation.custom_r2prime_tool = Some("*".to_string());
+        enforce_separation_dependencies(&mut c);
+        assert!(!c.pipeline.do_r2map);
+        assert!(!c.pipeline.do_r2starmap);
+    }
+
+    /// Chi-separation forces R2', which in turn must not drag in R2 on the predicting route.
+    #[test]
+    fn chi_separation_inherits_the_strategy() {
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepIlsqr;
+        c.separation.r2prime_strategy = R2PrimeStrategy::R2primenet;
+        enforce_separation_dependencies(&mut c);
+        assert!(c.pipeline.do_r2primemap, "the method consumes R2'");
+        assert!(c.pipeline.do_r2starmap);
+        assert!(!c.pipeline.do_r2map, "R2PRIMEnet needs no spin-echo R2");
+    }
+
+    #[test]
+    fn auto_is_the_default() {
+        assert_eq!(PipelineConfig::default().separation.r2prime_strategy, R2PrimeStrategy::Auto);
     }
 }
 

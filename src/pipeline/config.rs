@@ -445,6 +445,13 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(t) = &args.use_custom_qsm { config.separation.custom_qsm_tool = Some(t.clone()); }
         if let Some(t) = &args.use_custom_r2 { config.separation.custom_r2_tool = Some(t.clone()); }
         if let Some(t) = &args.use_custom_r2prime { config.separation.custom_r2prime_tool = Some(t.clone()); }
+        if let Some(v) = args.r2prime_strategy {
+            config.separation.r2prime_strategy = match v {
+                cli::R2PrimeStrategyArg::Auto => R2PrimeStrategy::Auto,
+                cli::R2PrimeStrategyArg::Mese => R2PrimeStrategy::Mese,
+                cli::R2PrimeStrategyArg::R2primenet => R2PrimeStrategy::R2primenet,
+            };
+        }
         let sp = &args.separation_params;
         if let Some(v) = sp.r2star_qsm_r_const_3t { config.separation.r2star_qsm.r_const_3t = v; }
         if let Some(v) = sp.decompose_n_inner { config.separation.decompose.n_inner = v; }

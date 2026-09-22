@@ -1127,6 +1127,14 @@ pub const MASK_OP_TYPES: &[&str] = &[
 /// Ops that create a mask (the section's generator); the rest are refinements.
 pub const MASK_GENERATOR_TYPES: &[&str] = &["threshold", "bet", "hd-bet"];
 
+/// How R2' is obtained when no custom map is supplied.
+pub const R2PRIME_STRATEGY_OPTIONS: &[&str] = &["auto", "mese", "r2primenet"];
+pub const R2PRIME_STRATEGY_HELP: &[&str] = &[
+    "Measure R2' = R2* - R2 from a MESE acquisition when one is present, else predict it from R2* with R2PRIMEnet",
+    "Only ever measure R2' from a MESE acquisition - produces no R2' without spin-echo data",
+    "Always predict R2' from R2* with R2PRIMEnet, even when a MESE acquisition is available (an estimate, not a measurement)",
+];
+
 pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "bet-and-phase", "custom"];
 pub const MASK_PRESET_HELP: &[&str] = &[
     "Otsu threshold + dilate + fill holes + erode (recommended for brain)",
@@ -1495,6 +1503,8 @@ pub struct PipelineFormState {
     pub custom_qsm_tool: String,     // empty=off; "*"=any; else a derivatives tool name
     pub custom_r2_tool: String,
     pub custom_r2prime_tool: String,
+    /// Index into [`R2PRIME_STRATEGY_OPTIONS`].
+    pub r2prime_strategy: usize,
     // R2*-QSM
     pub sep_r2starqsm_r_const_3t: String,
     // DECOMPOSE
@@ -1773,6 +1783,7 @@ impl Default for PipelineFormState {
             custom_qsm_tool: String::new(),
             custom_r2_tool: String::new(),
             custom_r2prime_tool: String::new(),
+            r2prime_strategy: 0,
             sep_r2starqsm_r_const_3t: fmt_default(sep_r2starqsm.r_const_3t),
             sep_decompose_n_inner: sep_decompose.n_inner.to_string(),
             sep_decompose_chi_bound: fmt_default(sep_decompose.chi_bound),
@@ -1933,6 +1944,13 @@ impl PipelineFormState {
         rows.push(PipelineRow::Param { label: "  Custom QSM tool", field: "custom_qsm_tool", help: "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM" });
         rows.push(PipelineRow::Param { label: "  Custom R2 tool", field: "custom_r2_tool", help: "Use an R2 map from derivatives instead of computing from MESE" });
         rows.push(PipelineRow::Param { label: "  Custom R2' tool", field: "custom_r2prime_tool", help: "Use an R2' map from derivatives instead of computing" });
+        // Only consulted when no custom R2' map is supplied — that always wins.
+        if self.custom_r2prime_tool.trim().is_empty() {
+            rows.push(PipelineRow::AlgoSelect {
+                label: "  R2' Source", field: "r2prime_strategy",
+                options: R2PRIME_STRATEGY_OPTIONS, help: R2PRIME_STRATEGY_HELP,
+            });
+        }
         rows
     }
 
@@ -2907,6 +2925,7 @@ impl PipelineFormState {
             "unwrapping_algorithm" => self.unwrapping_algorithm,
             "bf_algorithm" => self.bf_algorithm,
             "qsm_reference" => self.qsm_reference,
+            "r2prime_strategy" => self.r2prime_strategy,
             "b0_estimation" => self.b0_estimation,
             "b0_weight_type" => self.b0_weight_type,
             "mask_preset" => self.mask_preset,
@@ -2923,6 +2942,7 @@ impl PipelineFormState {
             "unwrapping_algorithm" => self.unwrapping_algorithm = val,
             "bf_algorithm" => self.bf_algorithm = val,
             "qsm_reference" => self.qsm_reference = val,
+            "r2prime_strategy" => self.r2prime_strategy = val,
             "b0_estimation" => self.b0_estimation = val,
             "b0_weight_type" => self.b0_weight_type = val,
             "mask_preset" => {

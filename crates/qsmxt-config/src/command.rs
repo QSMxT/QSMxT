@@ -54,6 +54,12 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     if let Some(tool) = &config.separation.custom_qsm_tool { parts.push(format!("--use-custom-qsm {}", tool)); }
     if let Some(tool) = &config.separation.custom_r2_tool { parts.push(format!("--use-custom-r2 {}", tool)); }
     if let Some(tool) = &config.separation.custom_r2prime_tool { parts.push(format!("--use-custom-r2prime {}", tool)); }
+    // Only meaningful without a custom map, which always wins.
+    if config.separation.r2prime_strategy != d.separation.r2prime_strategy
+        && config.separation.custom_r2prime_tool.is_none()
+    {
+        parts.push(format!("--r2prime-strategy {}", config.separation.r2prime_strategy));
+    }
     if config.pipeline.export_dicom { parts.push("--export-dicom".into()); }
     emit_f64(&mut parts, "--obliquity-threshold", config.pipeline.obliquity_threshold, d.pipeline.obliquity_threshold);
     if config.pipeline.crop_to_mask != d.pipeline.crop_to_mask {

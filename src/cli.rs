@@ -1194,6 +1194,14 @@ pub struct PipelineArgs {
     #[arg(long, value_name = "TOOL")]
     pub use_custom_r2prime: Option<String>,
 
+    /// How to obtain R2' when no custom map is supplied. `auto` (default) measures it as R2* - R2
+    /// from a MESE acquisition when one is present and predicts it from R2* with R2PRIMEnet when
+    /// it is not; `mese` only ever measures it, producing nothing without spin-echo data;
+    /// `r2primenet` always predicts it. A measurement and an estimate are not the same thing —
+    /// the generated methods text says which route was configured
+    #[arg(long, value_enum)]
+    pub r2prime_strategy: Option<R2PrimeStrategyArg>,
+
     /// Also export final maps as DICOM series into each subject's extra_files/ folder
     #[arg(long)]
     pub export_dicom: bool,
@@ -2973,6 +2981,16 @@ pub enum QsmAlgorithmArg {
     Xqsm, Qsmnet, QsmnetPlus, Autoqsm, Qsmgan, Ir2qsm, Lpcnn, ModlQsm, Nextqsm,
     // End-to-end DL reconstructions from wrapped phase (no separate unwrap/BFR).
     Iqsm, IqsmPlus,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum R2PrimeStrategyArg {
+    /// Measure from MESE where available, else predict with R2PRIMEnet
+    Auto,
+    /// Only ever measure it (R2* - R2)
+    Mese,
+    /// Always predict it from R2*
+    R2primenet,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

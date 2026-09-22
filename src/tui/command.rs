@@ -540,6 +540,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         use_custom_qsm: if ps.custom_qsm_tool.trim().is_empty() { None } else { Some(ps.custom_qsm_tool.trim().to_string()) },
         use_custom_r2: if ps.custom_r2_tool.trim().is_empty() { None } else { Some(ps.custom_r2_tool.trim().to_string()) },
         use_custom_r2prime: if ps.custom_r2prime_tool.trim().is_empty() { None } else { Some(ps.custom_r2prime_tool.trim().to_string()) },
+        r2prime_strategy: Some(match ps.r2prime_strategy {
+            1 => crate::cli::R2PrimeStrategyArg::Mese,
+            2 => crate::cli::R2PrimeStrategyArg::R2primenet,
+            _ => crate::cli::R2PrimeStrategyArg::Auto,
+        }),
         export_dicom: form.export_dicom,
         inhomogeneity_correction: ps.inhomogeneity_correction,
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
@@ -723,6 +728,11 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     config.separation.custom_qsm_tool = non_empty(&ps.custom_qsm_tool);
     config.separation.custom_r2_tool = non_empty(&ps.custom_r2_tool);
     config.separation.custom_r2prime_tool = non_empty(&ps.custom_r2prime_tool);
+    config.separation.r2prime_strategy = match app.pipeline_state.r2prime_strategy {
+        1 => crate::pipeline::config::R2PrimeStrategy::Mese,
+        2 => crate::pipeline::config::R2PrimeStrategy::R2primenet,
+        _ => crate::pipeline::config::R2PrimeStrategy::Auto,
+    };
     config.masking.inhomogeneity_correction = ps.inhomogeneity_correction;
     config.inversion.algorithm = qsm_algorithm;
     if !is_end_to_end {

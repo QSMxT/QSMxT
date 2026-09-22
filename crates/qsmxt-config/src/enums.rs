@@ -148,3 +148,37 @@ pub fn parse_synthseg_version(s: &str) -> Option<SynthSegVersion> {
         _ => None,
     }
 }
+
+/// How R2′ is obtained when no custom map is supplied.
+///
+/// R2′ = R2* − R2 is a *measurement*, and it needs a spin-echo acquisition to measure R2 from.
+/// R2PRIMEnet predicts it from the GRE-derived R2* instead, which is an *estimate* — so which of
+/// these ran changes how a result should be reported, and the methods text says which it was.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum R2PrimeStrategy {
+    /// Measure it from a MESE acquisition when one is present; fall back to R2PRIMEnet when it is
+    /// not, so a gradient-echo-only dataset still gets the R2′ that χ-separation needs.
+    #[default]
+    Auto,
+    /// Measure it, or produce nothing. The pre-R2PRIMEnet behaviour, and the choice for anyone who
+    /// would rather have no R2′ than an estimated one.
+    Mese,
+    /// Predict it from R2*, even when a MESE acquisition is available.
+    R2primenet,
+}
+impl fmt::Display for R2PrimeStrategy {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self {
+            Self::Auto => "auto", Self::Mese => "mese", Self::R2primenet => "r2primenet",
+        })
+    }
+}
+pub fn parse_r2prime_strategy(s: &str) -> Option<R2PrimeStrategy> {
+    match s.trim() {
+        "auto" => Some(R2PrimeStrategy::Auto),
+        "mese" => Some(R2PrimeStrategy::Mese),
+        "r2primenet" => Some(R2PrimeStrategy::R2primenet),
+        _ => None,
+    }
+}

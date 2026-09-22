@@ -116,6 +116,7 @@ mod integration_tests {
                 use_custom_qsm: None,
                 use_custom_r2: None,
                 use_custom_r2prime: None,
+                r2prime_strategy: None,
                 export_dicom: false,
                 inhomogeneity_correction: false,
                 no_inhomogeneity_correction: false,
