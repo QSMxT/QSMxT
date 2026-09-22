@@ -431,6 +431,8 @@ pub struct BidsRunLeaf {
     pub display: String,
     /// Full AcquisitionKey as string for pattern matching
     pub key_string: String,
+    /// The parsed key, so the TUI can group orientations without re-parsing filenames.
+    pub key: AcquisitionKey,
     /// Whether this run is selected for processing
     pub selected: bool,
 }
@@ -599,7 +601,7 @@ pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
                 if has_mese {
                     display.push_str(" (+MESE)");
                 }
-                BidsRunLeaf { display, key_string, selected: true }
+                BidsRunLeaf { display, key_string, key, selected: true }
             }).collect();
 
             match session {

@@ -162,6 +162,10 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                 memory::format_bytes(est),
             );
         }
+        if let Err(e) = print_orientation_groups(&runs, &config) {
+            eprintln!("  orientation grouping: {e}");
+        }
+
         if let Some(mem) = mem_limit_bytes {
             let per_run_max = runs
                 .iter()
@@ -242,6 +246,45 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         warn!("Failed to write BIDS-Prov provenance records: {}", e);
     }
 
+    // Multi-orientation fan-in. Members have just produced their own local fields (and their
+    // own single-orientation maps, which are what you check registration against), so the
+    // groups can now be combined. A group that fails is reported and the rest continue: one
+    // bad direction table should not throw away a dataset's worth of work.
+    let mut group_failures = Vec::new();
+    if config.multi_orientation.enabled() {
+        match crate::bids::orientation::parse_pattern(&config.multi_orientation.group_by) {
+            Err(e) => group_failures.push(e),
+            Ok(None) => {}
+            Ok(Some(pattern)) => {
+                let groups = crate::bids::orientation::group_runs(&runs, &pattern);
+                if groups.is_empty() {
+                    warn!(
+                        "--orientation-group '{}' matched no set of 2+ runs in a session;                          everything was processed one orientation at a time",
+                        config.multi_orientation.group_by
+                    );
+                }
+                for group in &groups {
+                    let members: Vec<&discovery::QsmRun> =
+                        group.members.iter().map(|&i| &runs[i]).collect();
+                    let progress = |msg: &str| info!("{msg}");
+                    match crate::pipeline::multiorient::reconstruct_group(
+                        group, &members, &config, &output, &progress,
+                    ) {
+                        Ok(paths) => {
+                            for p in paths {
+                                info!("  wrote {}", p.display());
+                            }
+                        }
+                        Err(e) => {
+                            error!("{}: {}", group.label, e);
+                            group_failures.push(format!("{}: {}", group.label, e));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let failures: Vec<_> = results.iter().filter(|r| r.is_err()).collect();
     if !failures.is_empty() {
         error!("{} run(s) failed:", failures.len());
@@ -256,6 +299,57 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         });
     }
 
+    if !group_failures.is_empty() {
+        error!("{} orientation group(s) failed:", group_failures.len());
+        for f in &group_failures {
+            error!("  {}", f);
+        }
+        return Err(crate::error::QsmxtError::Algorithm {
+            stage: "multi-orientation".to_string(),
+            message: format!("{} orientation group(s) failed", group_failures.len()),
+        });
+    }
+
     info!("All runs completed successfully — results in {}", derivatives_dir.display());
+    Ok(())
+}
+
+/// Print the orientation groups a `--dry` run would reconstruct, with the direction table and
+/// the go/no-go verdict for each.
+///
+/// This is where a multi-orientation run should be checked before it is started. The TUI shows
+/// which runs group together; only here are the B0 directions actually read, and they are what
+/// decides whether the reconstruction means anything.
+fn print_orientation_groups(
+    runs: &[discovery::QsmRun],
+    config: &crate::pipeline::config::PipelineConfig,
+) -> Result<(), String> {
+    if !config.multi_orientation.enabled() {
+        return Ok(());
+    }
+    let kind = crate::pipeline::multiorient::kind_of(config);
+    let pattern = crate::bids::orientation::parse_pattern(&config.multi_orientation.group_by)?
+        .ok_or_else(|| "pattern is empty".to_string())?;
+    let groups = crate::bids::orientation::group_runs(runs, &pattern);
+
+    println!();
+    if groups.is_empty() {
+        println!(
+            "Multi-orientation ({kind}): '{}' matched no set of 2+ runs in a session — every              run would be processed on its own",
+            config.multi_orientation.group_by
+        );
+        return Ok(());
+    }
+    println!("Multi-orientation ({kind}), {} group(s):", groups.len());
+    for group in &groups {
+        let members: Vec<&discovery::QsmRun> = group.members.iter().map(|&i| &runs[i]).collect();
+        let (orientations, check) = crate::pipeline::multiorient::preview_group(&members, kind);
+        let mark = if check.is_ok() { "ok" } else { "REFUSED" };
+        println!("  {} ({} orientations) [{mark}]", group.label, members.len());
+        for row in crate::multiorient::direction_table(&orientations) {
+            println!("      {row}");
+        }
+        println!("      {}", check.summary());
+    }
     Ok(())
 }

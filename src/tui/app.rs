@@ -731,6 +731,12 @@ pub const TAB_NAMES: [&str; 6] = [
 pub enum FilterFocus {
     Include,
     Exclude,
+    /// The orientation-group pattern: which runs are the same object at a different angle.
+    OrientationGroup,
+    /// COSMOS or STI — only reachable when a pattern is set.
+    OrientationAlgorithm,
+    /// Regularization for whichever of the two is selected.
+    OrientationLambda,
     TreeNode(usize), // index into the flattened visible node list
     NumEchoes,
 }
@@ -751,10 +757,30 @@ fn word_boundary_left(text: &str, cursor: usize) -> usize {
     pos
 }
 
+/// COSMOS or STI, in the order the TUI cycles them.
+pub const ORIENTATION_ALGORITHMS: [&str; 2] = ["cosmos", "sti"];
+pub const ORIENTATION_ALGORITHM_HELP: [&str; 2] = [
+    "COSMOS — scalar susceptibility from 2+ co-registered orientations, closed form in k-space",
+    "STI — rank-2 susceptibility tensor; needs 6+ orientations that are not coplanar",
+];
+
+/// What an orientation-group pattern currently matches.
+#[derive(Debug, Clone, Default)]
+pub struct OrientationPreview {
+    /// The pattern itself was rejected — shown instead of any groups.
+    pub error: Option<String>,
+    /// One entry per group: its label and its members' display names.
+    pub groups: Vec<(String, Vec<String>)>,
+    /// Selected runs the pattern did not put in any group. These process normally.
+    pub ungrouped: usize,
+}
+
 /// Which text field is being edited in the filter area.
 enum FilterTextField {
     Include,
     Exclude,
+    OrientationGroup,
+    OrientationLambda,
 }
 
 /// A single visible row in the flattened tree (for navigation/rendering).
@@ -780,6 +806,15 @@ pub struct FilterTreeState {
     pub num_echoes: String,
     pub num_echoes_editing: bool,
     pub num_echoes_cursor: usize,
+    /// Orientation-group pattern; empty = multi-orientation off.
+    pub orientation_group: String,
+    pub orientation_editing: bool,
+    pub orientation_cursor: usize,
+    /// Index into [`ORIENTATION_ALGORITHMS`].
+    pub orientation_algorithm: usize,
+    pub orientation_lambda: String,
+    pub orientation_lambda_editing: bool,
+    pub orientation_lambda_cursor: usize,
     pub scanned_bids_dir: Option<String>,
     pub scroll_offset: usize,
     /// Set when the user manually toggles tree checkboxes (pattern may not match)
@@ -801,6 +836,15 @@ impl Default for FilterTreeState {
             num_echoes: String::new(),
             num_echoes_editing: false,
             num_echoes_cursor: 0,
+            // Off by default: most datasets are single-orientation, and grouping runs that are
+            // merely repeats would quietly turn a repeat into a bogus COSMOS set.
+            orientation_group: String::new(),
+            orientation_editing: false,
+            orientation_cursor: 0,
+            orientation_algorithm: 0,
+            orientation_lambda: String::new(),
+            orientation_lambda_editing: false,
+            orientation_lambda_cursor: 0,
             scanned_bids_dir: None,
             scroll_offset: 0,
             manual_override: false,
@@ -844,12 +888,17 @@ impl FilterTreeState {
                 self.focus = FilterFocus::Exclude;
             }
             FilterFocus::Exclude => {
-                if !self.visible_rows().is_empty() {
-                    self.focus = FilterFocus::TreeNode(0);
-                } else {
-                    self.focus = FilterFocus::NumEchoes;
-                }
+                self.focus = FilterFocus::OrientationGroup;
             }
+            FilterFocus::OrientationGroup => {
+                self.focus = if self.multi_orientation_on() {
+                    FilterFocus::OrientationAlgorithm
+                } else {
+                    self.first_tree_focus()
+                };
+            }
+            FilterFocus::OrientationAlgorithm => self.focus = FilterFocus::OrientationLambda,
+            FilterFocus::OrientationLambda => self.focus = self.first_tree_focus(),
             FilterFocus::TreeNode(i) => {
                 let rows = self.visible_rows().len();
                 if i + 1 < rows {
@@ -867,17 +916,102 @@ impl FilterTreeState {
         match self.focus {
             FilterFocus::Include => {} // already at top
             FilterFocus::Exclude => self.focus = FilterFocus::Include,
-            FilterFocus::TreeNode(0) => self.focus = FilterFocus::Exclude,
+            FilterFocus::OrientationGroup => self.focus = FilterFocus::Exclude,
+            FilterFocus::OrientationAlgorithm => self.focus = FilterFocus::OrientationGroup,
+            FilterFocus::OrientationLambda => self.focus = FilterFocus::OrientationAlgorithm,
+            FilterFocus::TreeNode(0) => self.focus = self.last_orientation_focus(),
             FilterFocus::TreeNode(i) => self.focus = FilterFocus::TreeNode(i - 1),
             FilterFocus::NumEchoes => {
                 let rows = self.visible_rows().len();
                 if rows > 0 {
                     self.focus = FilterFocus::TreeNode(rows - 1);
                 } else {
-                    self.focus = FilterFocus::Exclude;
+                    self.focus = self.last_orientation_focus();
                 }
             }
         }
+    }
+
+    /// Whether the orientation-group pattern is set to anything active.
+    pub fn multi_orientation_on(&self) -> bool {
+        let p = self.orientation_group.trim();
+        !p.is_empty() && !p.eq_ignore_ascii_case("none")
+    }
+
+    fn first_tree_focus(&self) -> FilterFocus {
+        if self.visible_rows().is_empty() {
+            FilterFocus::NumEchoes
+        } else {
+            FilterFocus::TreeNode(0)
+        }
+    }
+
+    fn last_orientation_focus(&self) -> FilterFocus {
+        if self.multi_orientation_on() {
+            FilterFocus::OrientationLambda
+        } else {
+            FilterFocus::OrientationGroup
+        }
+    }
+
+    /// What the current orientation-group pattern matches, recomputed on every keystroke.
+    ///
+    /// This is the part that makes the pattern usable. Nobody gets a grouping pattern right
+    /// first try, and the cost of getting it wrong is not an error — it is a reconstruction
+    /// that combines the wrong runs, or silently combines none and falls back to ordinary
+    /// single-orientation processing. Showing the groups as they are typed turns that into
+    /// something you can see.
+    ///
+    /// Only structure is previewed here, not physics: B0 directions live in sidecars and
+    /// affines that would have to be read from disk on every keystroke. `qsmxt run --dry`
+    /// prints the direction table and the degeneracy verdict for each group.
+    pub fn orientation_preview(&self) -> OrientationPreview {
+        if !self.multi_orientation_on() {
+            return OrientationPreview::default();
+        }
+        let pattern = match crate::bids::orientation::parse_pattern(&self.orientation_group) {
+            Ok(Some(p)) => p,
+            Ok(None) => return OrientationPreview::default(),
+            Err(e) => return OrientationPreview { error: Some(e), ..Default::default() },
+        };
+        let Some(ref tree) = self.tree else { return OrientationPreview::default() };
+
+        // Only selected runs can form a group — an orientation excluded by the filters above
+        // is not going to be reconstructed, so counting it here would be a lie.
+        let mut keys = Vec::new();
+        let mut displays = Vec::new();
+        tree.for_each_run(|leaf| {
+            if leaf.selected {
+                keys.push((leaf.key.clone(), leaf.key_string.clone()));
+                displays.push(leaf.display.clone());
+            }
+        });
+
+        let groups = crate::bids::orientation::group_keys(&keys, &pattern);
+        let grouped: usize = groups.iter().map(|g| g.members.len()).sum();
+        OrientationPreview {
+            error: None,
+            groups: groups
+                .into_iter()
+                .map(|g| {
+                    let members = g.members.iter().map(|&i| displays[i].clone()).collect();
+                    (g.label, members)
+                })
+                .collect(),
+            ungrouped: keys.len().saturating_sub(grouped),
+        }
+    }
+
+    /// The multi-orientation settings, in the form the command builder wants.
+    pub fn orientation_args(&self) -> (Option<String>, usize, Option<f64>) {
+        if !self.multi_orientation_on() {
+            return (None, 0, None);
+        }
+        (
+            Some(self.orientation_group.trim().to_string()),
+            self.orientation_algorithm,
+            self.orientation_lambda.trim().parse::<f64>().ok(),
+        )
     }
 
     /// Scan BIDS directory if it changed since last scan.
@@ -4520,6 +4654,14 @@ impl App {
             self.handle_filter_text_key(key, FilterTextField::Exclude);
             return;
         }
+        if self.filter_state.orientation_editing {
+            self.handle_filter_text_key(key, FilterTextField::OrientationGroup);
+            return;
+        }
+        if self.filter_state.orientation_lambda_editing {
+            self.handle_filter_text_key(key, FilterTextField::OrientationLambda);
+            return;
+        }
         if self.filter_state.num_echoes_editing {
             self.handle_filter_num_echoes_key(key);
             return;
@@ -4547,9 +4689,24 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => self.filter_state.focus_prev(),
             KeyCode::Down | KeyCode::Char('j') => self.filter_state.focus_next(),
 
-            // Collapse/expand
-            KeyCode::Left => self.filter_state.toggle_collapse(),
-            KeyCode::Right => self.filter_state.toggle_collapse(),
+            // Collapse/expand — or cycle the algorithm when that row has focus.
+            KeyCode::Left => {
+                if self.filter_state.focus == FilterFocus::OrientationAlgorithm {
+                    let n = ORIENTATION_ALGORITHMS.len();
+                    self.filter_state.orientation_algorithm =
+                        (self.filter_state.orientation_algorithm + n - 1) % n;
+                } else {
+                    self.filter_state.toggle_collapse();
+                }
+            }
+            KeyCode::Right => {
+                if self.filter_state.focus == FilterFocus::OrientationAlgorithm {
+                    self.filter_state.orientation_algorithm =
+                        (self.filter_state.orientation_algorithm + 1) % ORIENTATION_ALGORITHMS.len();
+                } else {
+                    self.filter_state.toggle_collapse();
+                }
+            }
 
             // Toggle / interact
             KeyCode::Char(' ') => {
@@ -4569,6 +4726,19 @@ impl App {
                     FilterFocus::TreeNode(_) => {
                         self.filter_state.toggle_focused();
                         self.filter_state.manual_override = true;
+                    }
+                    FilterFocus::OrientationGroup => {
+                        self.filter_state.orientation_editing = true;
+                        self.filter_state.orientation_cursor = self.filter_state.orientation_group.len();
+                    }
+                    FilterFocus::OrientationAlgorithm => {
+                        self.filter_state.orientation_algorithm =
+                            (self.filter_state.orientation_algorithm + 1) % ORIENTATION_ALGORITHMS.len();
+                    }
+                    FilterFocus::OrientationLambda => {
+                        self.filter_state.orientation_lambda_editing = true;
+                        self.filter_state.orientation_lambda_cursor =
+                            self.filter_state.orientation_lambda.len();
                     }
                     FilterFocus::NumEchoes => {
                         self.filter_state.num_echoes_editing = true;
@@ -4608,6 +4778,16 @@ impl App {
                 &mut self.filter_state.exclude_pattern,
                 &mut self.filter_state.exclude_cursor,
                 &mut self.filter_state.exclude_editing,
+            ),
+            FilterTextField::OrientationGroup => (
+                &mut self.filter_state.orientation_group,
+                &mut self.filter_state.orientation_cursor,
+                &mut self.filter_state.orientation_editing,
+            ),
+            FilterTextField::OrientationLambda => (
+                &mut self.filter_state.orientation_lambda,
+                &mut self.filter_state.orientation_lambda_cursor,
+                &mut self.filter_state.orientation_lambda_editing,
             ),
         };
         match key.code {
@@ -6811,6 +6991,10 @@ mod tests {
         assert_eq!(fs.focus, super::FilterFocus::Include);
         fs.focus_next(); // -> Exclude
         assert_eq!(fs.focus, super::FilterFocus::Exclude);
+        fs.focus_next(); // -> orientation group pattern
+        assert_eq!(fs.focus, super::FilterFocus::OrientationGroup);
+        // With no pattern set, its settings rows are skipped entirely — the single-orientation
+        // majority should not have to tab past a feature they are not using.
         fs.focus_next(); // -> tree node 0 (subject)
         assert!(matches!(fs.focus, super::FilterFocus::TreeNode(0)));
         fs.focus_next(); // -> tree node 1 (run)
@@ -6830,6 +7014,7 @@ mod tests {
         fs.maybe_rescan(dir.path().to_str().unwrap());
 
         // Navigate to the run leaf
+        fs.focus_next(); // orientation group pattern
         fs.focus_next(); // subject
         fs.focus_next(); // run leaf
         let tree = fs.tree.as_ref().unwrap();
@@ -6837,6 +7022,67 @@ mod tests {
         fs.toggle_focused();
         let tree = fs.tree.as_ref().unwrap();
         assert!(!tree.subjects[0].runs[0].selected);
+    }
+
+    /// With a pattern set, the algorithm and lambda rows appear in the tab order; without
+    /// one they are skipped, so the feature costs nothing to navigate past.
+    #[test]
+    fn orientation_rows_appear_only_when_a_pattern_is_set() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::testutils::create_single_echo_bids(dir.path());
+        let mut fs = super::FilterTreeState::default();
+        fs.maybe_rescan(dir.path().to_str().unwrap());
+
+        fs.orientation_group = "*acq-dir*".into();
+        fs.focus = super::FilterFocus::OrientationGroup;
+        fs.focus_next();
+        assert_eq!(fs.focus, super::FilterFocus::OrientationAlgorithm);
+        fs.focus_next();
+        assert_eq!(fs.focus, super::FilterFocus::OrientationLambda);
+        fs.focus_next();
+        assert!(matches!(fs.focus, super::FilterFocus::TreeNode(0)));
+        // ...and back up through the same rows.
+        fs.focus_prev();
+        assert_eq!(fs.focus, super::FilterFocus::OrientationLambda);
+
+        fs.orientation_group.clear();
+        fs.focus = super::FilterFocus::OrientationGroup;
+        fs.focus_next();
+        assert!(matches!(fs.focus, super::FilterFocus::TreeNode(0)));
+    }
+
+    /// The preview is the safety feature: it has to report a bad pattern rather than
+    /// silently matching nothing.
+    #[test]
+    fn orientation_preview_reports_a_bad_pattern() {
+        let mut fs = super::FilterTreeState::default();
+        fs.orientation_group = "chunk".into();
+        let preview = fs.orientation_preview();
+        assert!(preview.error.unwrap().contains("chunk"));
+
+        fs.orientation_group = "re:(a)(b)".into();
+        assert!(fs.orientation_preview().error.is_some());
+    }
+
+    #[test]
+    fn orientation_preview_is_empty_when_off() {
+        let fs = super::FilterTreeState::default();
+        let preview = fs.orientation_preview();
+        assert!(preview.error.is_none());
+        assert!(preview.groups.is_empty());
+    }
+
+    #[test]
+    fn orientation_args_are_none_until_a_pattern_is_set() {
+        let mut fs = super::FilterTreeState::default();
+        assert_eq!(fs.orientation_args().0, None);
+        fs.orientation_group = "  acq  ".into();
+        fs.orientation_algorithm = 1;
+        fs.orientation_lambda = "1e-3".into();
+        let (pattern, algo, lambda) = fs.orientation_args();
+        assert_eq!(pattern.as_deref(), Some("acq"), "the pattern is trimmed");
+        assert_eq!(algo, 1);
+        assert_eq!(lambda, Some(1e-3));
     }
 
     #[test]

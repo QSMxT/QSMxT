@@ -154,6 +154,25 @@ impl DerivativeOutputs {
     pub fn r2_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "R2map") }
     /// R2' = R2* − R2 (Hz), used by the R2'-based chi-separation methods.
     pub fn r2prime_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "R2primemap") }
+    /// Multi-orientation outputs. The key is the group key — the entities every member of the
+    /// orientation set shares, with the one that varied between orientations dropped — so a
+    /// COSMOS map made from `acq-dir1/2/3` lands at `sub-01_ses-01_desc-cosmos_Chimap.nii`
+    /// rather than claiming to belong to any one orientation.
+    pub fn cosmos_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-cosmos_Chimap.nii", key.basename()))
+    }
+    /// One STI output. `desc` is the component or derived map: `sti11`..`sti33`, `mms`, `msa`,
+    /// `pevx`/`pevy`/`pevz`.
+    pub fn sti_path(&self, key: &AcquisitionKey, desc: &str, suffix: &str) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-{desc}_{suffix}.nii", key.basename()))
+    }
+    /// Sidecar recording the direction table a multi-orientation reconstruction actually used.
+    /// Without it the result is not reproducible: the directions are the half of the input
+    /// that does not live in the NIfTI files.
+    pub fn multiorient_sidecar_path(&self, key: &AcquisitionKey, desc: &str) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-{desc}_Chimap.json", key.basename()))
+    }
+
     /// Chi-separation outputs, using the BIDS `desc-` entity on the `Chimap` suffix.
     pub fn chi_para_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.anat_dir(key).join(format!("{}_desc-paramagnetic_Chimap.nii", key.basename()))

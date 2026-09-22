@@ -112,6 +112,21 @@ pub fn write_sidecar(path: &Path, echo_time: f64, field_strength: f64) {
         .expect("write sidecar");
 }
 
+/// A sidecar that may declare `B0_dir` — the field that makes an orientation set
+/// reconstructable when every affine is identical.
+pub fn write_sidecar_with_b0(
+    path: &Path, echo_time: f64, field_strength: f64, b0_dir: Option<(f64, f64, f64)>,
+) {
+    let mut json = serde_json::json!({
+        "EchoTime": echo_time,
+        "MagneticFieldStrength": field_strength,
+    });
+    if let Some((x, y, z)) = b0_dir {
+        json["B0_dir"] = serde_json::json!([x, y, z]);
+    }
+    std::fs::write(path, serde_json::to_string_pretty(&json).unwrap()).expect("write sidecar");
+}
+
 // --- BIDS directory builders ---
 
 /// Minimal single-echo BIDS dataset (T2starw suffix, like the minimal example).
@@ -144,6 +159,34 @@ pub fn create_multi_echo_bids(root: &Path) -> PathBuf {
             (-R2STAR_HZ * te).exp());
         write_sidecar(&anat.join(format!("sub-1_echo-{}_part-mag_MEGRE.json", echo_num)), te, 3.0);
     }
+
+    root.to_path_buf()
+}
+
+/// Three-orientation BIDS dataset in the shape real COSMOS data ships in: `acq-dir1/2/3`
+/// on one shared grid with a declared `B0_dir`, plus an unrelated `acq-highres` in the same
+/// session that a grouping pattern must not sweep in.
+pub fn create_multi_orientation_bids(root: &Path) -> PathBuf {
+    let anat = root.join("sub-1/ses-1/anat");
+    std::fs::create_dir_all(&anat).unwrap();
+
+    let dirs = [(0.0, 0.0, 1.0), (0.0, 0.5, 0.866), (0.5, 0.0, 0.866)];
+    for (i, &b0) in dirs.iter().enumerate() {
+        let acq = format!("acq-dir{}", i + 1);
+        write_phase(&anat.join(format!("sub-1_ses-1_{acq}_echo-1_part-phase_MEGRE.nii")));
+        write_sidecar_with_b0(
+            &anat.join(format!("sub-1_ses-1_{acq}_echo-1_part-phase_MEGRE.json")), 0.012, 3.0, Some(b0),
+        );
+        write_magnitude(&anat.join(format!("sub-1_ses-1_{acq}_echo-1_part-mag_MEGRE.nii")));
+        write_sidecar_with_b0(
+            &anat.join(format!("sub-1_ses-1_{acq}_echo-1_part-mag_MEGRE.json")), 0.012, 3.0, Some(b0),
+        );
+    }
+
+    write_phase(&anat.join("sub-1_ses-1_acq-highres_echo-1_part-phase_MEGRE.nii"));
+    write_sidecar(&anat.join("sub-1_ses-1_acq-highres_echo-1_part-phase_MEGRE.json"), 0.012, 3.0);
+    write_magnitude(&anat.join("sub-1_ses-1_acq-highres_echo-1_part-mag_MEGRE.nii"));
+    write_sidecar(&anat.join("sub-1_ses-1_acq-highres_echo-1_part-mag_MEGRE.json"), 0.012, 3.0);
 
     root.to_path_buf()
 }
@@ -247,4 +290,98 @@ fn mask_data() -> Vec<u8> {
         }
     }
     mask
+}
+
+/// Synthetic multi-orientation data: a susceptibility phantom forward-projected through the
+/// dipole kernel at several B0 directions.
+///
+/// Unlike the 8³ fixtures above, these are big enough that a reconstruction can be checked
+/// for *accuracy*, not just for running without crashing — the whole point of COSMOS is that
+/// combining orientations recovers what one orientation cannot, and a test that never looks
+/// at the numbers would not notice if the orientations were being ignored.
+pub mod multiorient {
+    use std::path::Path;
+
+    pub const MO_N: usize = 24;
+    pub const MO_DIMS: (usize, usize, usize) = (MO_N, MO_N, MO_N);
+    pub const MO_VOXEL: (f64, f64, f64) = (1.0, 1.0, 1.0);
+    pub const MO_AFFINE: [f64; 16] = super::IDENTITY_AFFINE;
+
+    pub fn grid() -> qsm_core::Grid {
+        qsm_core::Grid::new(MO_N, MO_N, MO_N, MO_VOXEL.0, MO_VOXEL.1, MO_VOXEL.2)
+    }
+
+    /// Three spheres of different susceptibility inside a spherical "brain".
+    pub fn chi_phantom() -> Vec<f64> {
+        let c = MO_N as f64 / 2.0;
+        let mut chi = vec![0.0; MO_N * MO_N * MO_N];
+        let blobs = [
+            ((c - 4.0, c, c), 3.0, 0.15),
+            ((c + 4.0, c + 2.0, c), 2.5, -0.10),
+            ((c, c - 4.0, c + 3.0), 2.0, 0.20),
+        ];
+        for z in 0..MO_N {
+            for y in 0..MO_N {
+                for x in 0..MO_N {
+                    let p = (x as f64 + 0.5, y as f64 + 0.5, z as f64 + 0.5);
+                    for &((bx, by, bz), r, value) in &blobs {
+                        let d = ((p.0 - bx).powi(2) + (p.1 - by).powi(2) + (p.2 - bz).powi(2)).sqrt();
+                        if d < r {
+                            chi[x + y * MO_N + z * MO_N * MO_N] = value;
+                        }
+                    }
+                }
+            }
+        }
+        chi
+    }
+
+    /// A spherical mask well inside the volume, so the reconstruction is scored away from the
+    /// FFT wrap-around at the edges.
+    pub fn mask() -> Vec<u8> {
+        let c = MO_N as f64 / 2.0;
+        let mut m = vec![0u8; MO_N * MO_N * MO_N];
+        for z in 0..MO_N {
+            for y in 0..MO_N {
+                for x in 0..MO_N {
+                    let d = ((x as f64 + 0.5 - c).powi(2)
+                        + (y as f64 + 0.5 - c).powi(2)
+                        + (z as f64 + 0.5 - c).powi(2))
+                    .sqrt();
+                    if d < c - 4.0 {
+                        m[x + y * MO_N + z * MO_N * MO_N] = 1;
+                    }
+                }
+            }
+        }
+        m
+    }
+
+    /// Forward-project `chi` through the dipole kernel for one B0 direction.
+    pub fn forward_field(chi: &[f64], bdir: (f64, f64, f64)) -> Vec<f64> {
+        let kernel = qsm_core::kernels::dipole::dipole_kernel(&grid(), bdir);
+        qsm_core::fft::apply_real_kernel(chi, &kernel, MO_N, MO_N, MO_N)
+    }
+
+    pub fn write(path: &Path, data: &[f64]) {
+        qsm_core::io::save_nifti_to_file(path, data, MO_DIMS, MO_VOXEL, &MO_AFFINE)
+            .expect("write multi-orientation volume");
+    }
+
+    pub fn write_mask(path: &Path) {
+        let data: Vec<f64> = mask().iter().map(|&m| m as f64).collect();
+        write(path, &data);
+    }
+
+    /// Normalised RMS error between `got` and `want` inside `mask`.
+    pub fn nrmse(got: &[f64], want: &[f64], mask: &[u8]) -> f64 {
+        let (mut num, mut den) = (0.0, 0.0);
+        for i in 0..want.len() {
+            if mask[i] == 1 {
+                num += (got[i] - want[i]).powi(2);
+                den += want[i].powi(2);
+            }
+        }
+        (num / den.max(1e-30)).sqrt()
+    }
 }

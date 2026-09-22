@@ -49,6 +49,10 @@ mod integration_tests {
             clean_intermediates: false,
             pipeline: PipelineArgs {
                 qsm_algorithm: None,
+                orientation_group: None,
+                multi_orientation_algorithm: None,
+                multi_orientation_lambda: None,
+                multi_orientation_force: false,
                 unwrapping_algorithm: None,
                 bf_algorithm: None,
                 masking_input: None,
@@ -1653,5 +1657,300 @@ mod integration_tests {
         super::validate::execute(ValidateArgs {
             bids_dir: dir.path().to_path_buf(), include: None, exclude: None,
         }).unwrap();
+    }
+}
+/// End-to-end tests for the multi-orientation reconstructions.
+///
+/// These check numbers, not just exit codes: the point of COSMOS is that combining
+/// orientations recovers what a single orientation cannot, so a test that only asserted
+/// "it wrote a file" would pass just as happily if the extra orientations were dropped.
+#[cfg(test)]
+mod multiorient_tests {
+    use crate::cli::*;
+    use crate::testutils::multiorient as mo;
+    use std::path::{Path, PathBuf};
+
+    /// Three orientations spanning a realistic in-vivo range (0–30°).
+    const DIRS: [(f64, f64, f64); 3] = [
+        (0.0, 0.0, 1.0),
+        (0.0, 0.5, 0.866_025_4),
+        (0.5, 0.0, 0.866_025_4),
+    ];
+
+    /// Six orientations that span all three axes, as STI requires.
+    const SIX_DIRS: [(f64, f64, f64); 6] = [
+        (0.0, 0.0, 1.0),
+        (0.0, 0.5, 0.866_025_4),
+        (0.5, 0.0, 0.866_025_4),
+        (0.4, 0.4, 0.824_620_9),
+        (-0.4, 0.3, 0.866_025_4),
+        (0.3, -0.45, 0.840_000_0),
+    ];
+
+    /// Write the forward fields for `dirs` and return their paths.
+    fn write_fields(dir: &Path, chi: &[f64], dirs: &[(f64, f64, f64)]) -> Vec<PathBuf> {
+        dirs.iter()
+            .enumerate()
+            .map(|(i, &b)| {
+                let p = dir.join(format!("field{i}.nii"));
+                mo::write(&p, &mo::forward_field(chi, b));
+                p
+            })
+            .collect()
+    }
+
+    fn flat_dirs(dirs: &[(f64, f64, f64)]) -> Vec<f64> {
+        dirs.iter().flat_map(|d| [d.0, d.1, d.2]).collect()
+    }
+
+    fn common(
+        inputs: Vec<PathBuf>,
+        mask: PathBuf,
+        b0_direction: Vec<f64>,
+    ) -> MultiOrientCommonArgs {
+        MultiOrientCommonArgs { inputs, b0_direction, b0_dirs: None, mask, force: false }
+    }
+
+    #[test]
+    fn cosmos_recovers_the_phantom_from_three_orientations() {
+        let dir = tempfile::tempdir().unwrap();
+        let chi = mo::chi_phantom();
+        let inputs = write_fields(dir.path(), &chi, &DIRS);
+        let mask_path = dir.path().join("mask.nii");
+        mo::write_mask(&mask_path);
+        let out = dir.path().join("cosmos.nii");
+
+        super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
+            common: common(inputs, mask_path, flat_dirs(&DIRS)),
+            output: out.clone(),
+            lambda: None,
+            magnitudes: vec![],
+            tol: None,
+            max_iter: None,
+        }))
+        .unwrap();
+
+        let got = qsm_core::io::read_nifti_file(&out).unwrap();
+        let mask = mo::mask();
+        // COSMOS is referenced to zero mean, as the phantom is; an inverse-crime forward model
+        // means the residual should be small, but leave room for FFT edge effects.
+        let err = mo::nrmse(&got.data, &chi, &mask);
+        assert!(err < 0.25, "COSMOS NRMSE {err:.3} is too high to be a real reconstruction");
+    }
+
+    /// The load-bearing claim: three orientations beat one. If the extra orientations were
+    /// being ignored, this is the assertion that would fail.
+    #[test]
+    fn three_orientations_beat_one() {
+        let dir = tempfile::tempdir().unwrap();
+        let chi = mo::chi_phantom();
+        let inputs = write_fields(dir.path(), &chi, &DIRS);
+        let mask_path = dir.path().join("mask.nii");
+        mo::write_mask(&mask_path);
+        let mask = mo::mask();
+
+        let run = |inputs: Vec<PathBuf>, dirs: &[(f64, f64, f64)], name: &str| -> f64 {
+            let out = dir.path().join(format!("{name}.nii"));
+            let mut c = common(inputs, mask_path.clone(), flat_dirs(dirs));
+            // The single-orientation leg is exactly what the degeneracy gate exists to
+            // refuse; here it is the baseline being measured, so it has to be forced.
+            c.force = true;
+            super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
+                common: c,
+                output: out.clone(),
+                // One orientation leaves the magic-angle cone uncovered, so it needs the
+                // regularization COSMOS proper does not.
+                lambda: Some(1e-2),
+                magnitudes: vec![],
+                tol: None,
+                max_iter: None,
+            }))
+            .unwrap();
+            let got = qsm_core::io::read_nifti_file(&out).unwrap();
+            mo::nrmse(&got.data, &chi, &mask)
+        };
+
+        let one = run(inputs[..1].to_vec(), &DIRS[..1], "one");
+        let three = run(inputs.clone(), &DIRS, "three");
+        assert!(
+            three < one,
+            "three orientations (NRMSE {three:.3}) should beat one (NRMSE {one:.3})"
+        );
+    }
+
+    /// The degenerate set that this feature exists to refuse: same direction N times.
+    #[test]
+    fn refuses_identical_directions() {
+        let dir = tempfile::tempdir().unwrap();
+        let chi = mo::chi_phantom();
+        let same = [DIRS[0], DIRS[0], DIRS[0]];
+        let inputs = write_fields(dir.path(), &chi, &same);
+        let mask_path = dir.path().join("mask.nii");
+        mo::write_mask(&mask_path);
+
+        let err = super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
+            common: common(inputs, mask_path, flat_dirs(&same)),
+            output: dir.path().join("out.nii"),
+            lambda: None,
+            magnitudes: vec![],
+            tol: None,
+            max_iter: None,
+        }))
+        .unwrap_err();
+        assert!(format!("{err}").contains("one orientation measured 3 times"), "{err}");
+    }
+
+    /// ...and reconstructs it anyway under --force, because refusing is a guard rail, not a veto.
+    #[test]
+    fn force_overrides_the_degeneracy_check() {
+        let dir = tempfile::tempdir().unwrap();
+        let chi = mo::chi_phantom();
+        let same = [DIRS[0], DIRS[0]];
+        let inputs = write_fields(dir.path(), &chi, &same);
+        let mask_path = dir.path().join("mask.nii");
+        mo::write_mask(&mask_path);
+        let out = dir.path().join("out.nii");
+
+        let mut c = common(inputs, mask_path, flat_dirs(&same));
+        c.force = true;
+        super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
+            common: c,
+            output: out.clone(),
+            lambda: Some(1e-2),
+            magnitudes: vec![],
+            tol: None,
+            max_iter: None,
+        }))
+        .unwrap();
+        assert!(out.exists());
+    }
+
+    #[test]
+    fn rejects_a_direction_count_that_does_not_match_the_inputs() {
+        let dir = tempfile::tempdir().unwrap();
+        let chi = mo::chi_phantom();
+        let inputs = write_fields(dir.path(), &chi, &DIRS);
+        let mask_path = dir.path().join("mask.nii");
+        mo::write_mask(&mask_path);
+
+        let err = super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
+            common: common(inputs, mask_path, flat_dirs(&DIRS[..2])),
+            output: dir.path().join("out.nii"),
+            lambda: None,
+            magnitudes: vec![],
+            tol: None,
+            max_iter: None,
+        }))
+        .unwrap_err();
+        assert!(format!("{err}").contains("2 B0 direction(s) for 3 input(s)"), "{err}");
+    }
+
+    /// Same dimensions, different affine: the volumes are not on a common grid, and combining
+    /// them voxel-for-voxel would silently mix different physical space.
+    #[test]
+    fn rejects_inputs_whose_affines_disagree() {
+        let dir = tempfile::tempdir().unwrap();
+        let chi = mo::chi_phantom();
+        let inputs = write_fields(dir.path(), &chi, &DIRS);
+        // Rewrite the second input with a shifted affine.
+        let mut shifted = mo::MO_AFFINE;
+        shifted[3] = 10.0;
+        qsm_core::io::save_nifti_to_file(
+            &inputs[1],
+            &mo::forward_field(&chi, DIRS[1]),
+            mo::MO_DIMS,
+            mo::MO_VOXEL,
+            &shifted,
+        )
+        .unwrap();
+        let mask_path = dir.path().join("mask.nii");
+        mo::write_mask(&mask_path);
+
+        let err = super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
+            common: common(inputs, mask_path, flat_dirs(&DIRS)),
+            output: dir.path().join("out.nii"),
+            lambda: None,
+            magnitudes: vec![],
+            tol: None,
+            max_iter: None,
+        }))
+        .unwrap_err();
+        assert!(format!("{err}").contains("not on a common grid"), "{err}");
+    }
+
+    #[test]
+    fn cosmos_reads_directions_from_a_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let chi = mo::chi_phantom();
+        let inputs = write_fields(dir.path(), &chi, &DIRS);
+        let mask_path = dir.path().join("mask.nii");
+        mo::write_mask(&mask_path);
+        let dirs_file = dir.path().join("dirs.txt");
+        std::fs::write(
+            &dirs_file,
+            "# B0 directions, one per orientation\n0 0 1\n0, 0.5, 0.8660254\n0.5 0 0.8660254\n",
+        )
+        .unwrap();
+        let out = dir.path().join("cosmos.nii");
+
+        let mut c = common(inputs, mask_path, vec![]);
+        c.b0_dirs = Some(dirs_file);
+        super::invert::execute(InvertCommand::Cosmos(InvertCosmosArgs {
+            common: c,
+            output: out.clone(),
+            lambda: None,
+            magnitudes: vec![],
+            tol: None,
+            max_iter: None,
+        }))
+        .unwrap();
+        let got = qsm_core::io::read_nifti_file(&out).unwrap();
+        assert!(mo::nrmse(&got.data, &chi, &mo::mask()) < 0.25);
+    }
+
+    #[test]
+    fn sti_writes_the_tensor_and_its_derived_maps() {
+        let dir = tempfile::tempdir().unwrap();
+        let chi = mo::chi_phantom();
+        let inputs = write_fields(dir.path(), &chi, &SIX_DIRS);
+        let mask_path = dir.path().join("mask.nii");
+        mo::write_mask(&mask_path);
+        let prefix = dir.path().join("sti");
+
+        super::invert::execute(InvertCommand::Sti(InvertStiArgs {
+            common: common(inputs, mask_path, flat_dirs(&SIX_DIRS)),
+            output: prefix.clone(),
+            lambda: Some(1e-3),
+        }))
+        .unwrap();
+
+        for name in ["tensor-11", "tensor-12", "tensor-13", "tensor-22", "tensor-23",
+                     "tensor-33", "mms", "msa", "pev-x", "pev-y", "pev-z"] {
+            let p = dir.path().join(format!("sti_{name}.nii"));
+            assert!(p.exists(), "missing {}", p.display());
+        }
+
+        // The phantom is isotropic, so STI's mean magnetic susceptibility should reproduce
+        // the scalar map it was built from — the sense in which STI contains scalar QSM.
+        let mms = qsm_core::io::read_nifti_file(&dir.path().join("sti_mms.nii")).unwrap();
+        let err = mo::nrmse(&mms.data, &chi, &mo::mask());
+        assert!(err < 0.35, "STI MMS NRMSE {err:.3} should track the isotropic phantom");
+    }
+
+    #[test]
+    fn sti_refuses_fewer_than_six_orientations() {
+        let dir = tempfile::tempdir().unwrap();
+        let chi = mo::chi_phantom();
+        let inputs = write_fields(dir.path(), &chi, &DIRS);
+        let mask_path = dir.path().join("mask.nii");
+        mo::write_mask(&mask_path);
+
+        let err = super::invert::execute(InvertCommand::Sti(InvertStiArgs {
+            common: common(inputs, mask_path, flat_dirs(&DIRS)),
+            output: dir.path().join("sti"),
+            lambda: None,
+        }))
+        .unwrap_err();
+        assert!(format!("{err}").contains("at least 6"), "{err}");
     }
 }

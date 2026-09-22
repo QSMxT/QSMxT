@@ -600,6 +600,69 @@ pub struct PipelineConfig {
     pub segmentation: SegmentationConfig,
     pub bet: BetConfig,
     pub homogeneity: HomogeneityConfig,
+    #[serde(default)]
+    pub multi_orientation: MultiOrientationConfig,
+}
+
+/// Multi-orientation reconstruction (COSMOS / STI) over a group of runs.
+///
+/// Off unless `group_by` names a pattern. BIDS has no entity meaning "same object, different
+/// orientation", so the dataset cannot declare the intention — the user does, by setting
+/// this. The pattern's only job is to say *which runs* belong together; see
+/// `crate::bids::orientation` in the qsmxt crate for its three tiers.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct MultiOrientationConfig {
+    /// Orientation-group pattern: an entity name (`acq`, `run`, `rec`, `inv`), a glob over the
+    /// run key (`*acq-dir*`), or `re:` and a regex with one capture group. Empty = off.
+    pub group_by: String,
+    /// Which reconstruction to run over each group.
+    pub algorithm: MultiOrientAlgorithm,
+    /// Regularization: COSMOS's k-space L2 weight, or STI's per-k-point ridge term. 0 is plain
+    /// least squares, which is right whenever the orientations cover k-space.
+    pub lambda: f64,
+    /// Reconstruct even when the direction set looks degenerate. The check exists because a
+    /// degenerate set produces a plausible map that is not the method asked for, so this
+    /// should stay off unless the metadata is known-good and the check is known-wrong.
+    pub force: bool,
+}
+
+impl Default for MultiOrientationConfig {
+    fn default() -> Self {
+        Self {
+            group_by: String::new(),
+            algorithm: MultiOrientAlgorithm::Cosmos,
+            lambda: 0.0,
+            force: false,
+        }
+    }
+}
+
+impl MultiOrientationConfig {
+    /// Whether multi-orientation grouping is switched on.
+    pub fn enabled(&self) -> bool {
+        let g = self.group_by.trim();
+        !g.is_empty() && !g.eq_ignore_ascii_case("none")
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum MultiOrientAlgorithm {
+    /// Scalar susceptibility from 2+ orientations, closed form in k-space.
+    #[default]
+    Cosmos,
+    /// Rank-2 susceptibility tensor from 6+ orientations.
+    Sti,
+}
+
+impl std::fmt::Display for MultiOrientAlgorithm {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MultiOrientAlgorithm::Cosmos => write!(f, "cosmos"),
+            MultiOrientAlgorithm::Sti => write!(f, "sti"),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

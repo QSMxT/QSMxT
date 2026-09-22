@@ -210,8 +210,25 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         SeparationAlgorithmArg::ChiSepNet,
     ];
 
+    // Multi-orientation settings live on the Input tab, next to the grouping they depend on.
+    let (orientation_group, orientation_algorithm, orientation_lambda) =
+        app.filter_state.orientation_args();
+
     PipelineArgs {
+        // Bounds-checked rather than indexed: the option list shrinks with the build (see #227).
         qsm_algorithm: Some(qsm_options.get(ps.qsm_algorithm).copied().unwrap_or(QsmAlgorithmArg::Rts)),
+        multi_orientation_algorithm: orientation_group.as_ref().map(|_| {
+            if orientation_algorithm == 1 {
+                crate::cli::MultiOrientAlgorithmArg::Sti
+            } else {
+                crate::cli::MultiOrientAlgorithmArg::Cosmos
+            }
+        }),
+        multi_orientation_lambda: orientation_lambda,
+        orientation_group,
+        // The TUI never forces past the degeneracy check: the preview is there to fix the
+        // input instead, and an override buried in a form is how a bad run gets normalised.
+        multi_orientation_force: false,
         unwrapping_algorithm: Some(unwrap_options[ps.unwrapping_algorithm]),
         bf_algorithm: Some(bf_options[ps.bf_algorithm]),
         masking_input: None,
@@ -730,6 +747,18 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     };
     config.masking.inhomogeneity_correction = ps.inhomogeneity_correction;
     config.inversion.algorithm = qsm_algorithm;
+
+    // Multi-orientation settings come from the Input tab, where the grouping is defined.
+    let (group, algo_idx, lambda) = app.filter_state.orientation_args();
+    if let Some(pattern) = group {
+        config.multi_orientation.group_by = pattern;
+        config.multi_orientation.algorithm = if algo_idx == 1 {
+            qsmxt_config::MultiOrientAlgorithm::Sti
+        } else {
+            qsmxt_config::MultiOrientAlgorithm::Cosmos
+        };
+        config.multi_orientation.lambda = lambda.unwrap_or(0.0);
+    }
     if !is_end_to_end {
         config.field_mapping.unwrapping_algorithm = unwrap_algorithms[ps.unwrapping_algorithm];
         config.bg_removal.algorithm = bf_algorithms[ps.bf_algorithm];

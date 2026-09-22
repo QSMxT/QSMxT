@@ -608,6 +608,8 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     Span::styled(&app.filter_state.exclude_pattern, Style::default().fg(Color::Cyan))
                 };
                 lines.push(Line::from(vec![exclude_label, exclude_val]));
+
+                lines.extend(orientation_block(app, in_io));
                 lines.push(Line::from(""));
 
                 let visible = app.filter_state.visible_rows();
@@ -696,13 +698,19 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     } else if is_bids {
         // Filter area starts after IO fields + separator + header
         let offset = io_field_count + 2; // +2 for blank + header
+        // The orientation block sits between Exclude and the tree, so it pushes everything
+        // below it down. One helper renders it and reports its height, so the two cannot drift.
+        let ori = orientation_block(app, in_io).len();
         match app.filter_state.focus {
             super::app::FilterFocus::Include => Some(offset),
             super::app::FilterFocus::Exclude => Some(offset + 1),
-            super::app::FilterFocus::TreeNode(i) => Some(offset + i + 3),
+            super::app::FilterFocus::OrientationGroup => Some(offset + 2),
+            super::app::FilterFocus::OrientationAlgorithm => Some(offset + 3),
+            super::app::FilterFocus::OrientationLambda => Some(offset + 4),
+            super::app::FilterFocus::TreeNode(i) => Some(offset + ori + i + 3),
             super::app::FilterFocus::NumEchoes => {
                 let vis_len = app.filter_state.visible_rows().len();
-                Some(offset + vis_len + 4)
+                Some(offset + ori + vis_len + 4)
             }
         }
     } else if is_nifti {
@@ -810,6 +818,15 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         match app.filter_state.focus {
             super::app::FilterFocus::Include => "Glob patterns to include (space-separated, e.g. sub-1* *ses-pre*)",
             super::app::FilterFocus::Exclude => "Glob patterns to exclude (space-separated, e.g. *mygrea*)",
+            super::app::FilterFocus::OrientationGroup => {
+                "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), or re:<regex>. Empty = off"
+            }
+            super::app::FilterFocus::OrientationAlgorithm => {
+                super::app::ORIENTATION_ALGORITHM_HELP[app.filter_state.orientation_algorithm.min(1)]
+            }
+            super::app::FilterFocus::OrientationLambda => {
+                "Regularization (blank = 0, plain least squares). Raise for 2 orientations or single-axis rotations"
+            }
             super::app::FilterFocus::TreeNode(_) => "Space: toggle, Enter: expand/collapse",
             super::app::FilterFocus::NumEchoes => "Limit number of echoes to process",
         }
@@ -2020,14 +2037,14 @@ mod tests {
     use ratatui::{backend::TestBackend, Terminal};
 
     /// Render at a given size, for tabs that are taller than the default 30-row terminal.
-    fn render_app_sized(app: &mut App, width: u16, height: u16) -> Terminal<TestBackend> {
+    pub(super) fn render_app_sized(app: &mut App, width: u16, height: u16) -> Terminal<TestBackend> {
         let backend = TestBackend::new(width, height);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| draw(f, app)).unwrap();
         terminal
     }
 
-    fn render_app(app: &mut App) -> Terminal<TestBackend> {
+    pub(super) fn render_app(app: &mut App) -> Terminal<TestBackend> {
         let backend = TestBackend::new(120, 30);
         let mut terminal = Terminal::new(backend).unwrap();
         terminal.draw(|f| draw(f, app)).unwrap();
@@ -2082,7 +2099,7 @@ mod tests {
     }
 
     /// The rendered screen as one string, for substring assertions.
-    fn screen_text(terminal: &Terminal<TestBackend>) -> String {
+    pub(super) fn screen_text(terminal: &Terminal<TestBackend>) -> String {
         let buf = terminal.backend().buffer();
         (0..buf.area.height)
             .map(|y| {
@@ -2390,5 +2407,206 @@ mod tests {
         app.active_tab = 0;
         app.active_field = 0;
         let _ = render_app(&mut app);
+    }
+}
+
+/// The multi-orientation block of the Input tab: the pattern, its settings, and a live
+/// preview of what it currently matches.
+///
+/// One function produces the lines and, by its length, their count — the focused-line
+/// arithmetic below the block depends on that height, and computing it twice is how such
+/// things drift out of sync.
+///
+/// The preview is the reason this is a live field rather than a config key. A grouping
+/// pattern that matches the wrong runs does not error: it silently reconstructs the wrong
+/// set, or matches nothing and falls back to ordinary single-orientation processing. Showing
+/// the groups as they are typed is what makes that visible.
+fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
+    use super::app::{FilterFocus, ORIENTATION_ALGORITHMS};
+
+    let fs = &app.filter_state;
+    let focused = |f: FilterFocus| !in_io && fs.focus == f;
+    let label_style = |f: FilterFocus| {
+        if focused(f) {
+            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+        } else {
+            Style::default().fg(Color::White)
+        }
+    };
+
+    let mut lines = Vec::new();
+
+    let value = if fs.orientation_group.is_empty() && !fs.orientation_editing {
+        Span::styled("(off)", Style::default().fg(Color::DarkGray))
+    } else {
+        Span::styled(fs.orientation_group.clone(), Style::default().fg(Color::Cyan))
+    };
+    lines.push(Line::from(vec![
+        Span::styled("  Orientations: ", label_style(FilterFocus::OrientationGroup)),
+        value,
+    ]));
+
+    if !fs.multi_orientation_on() {
+        return lines;
+    }
+
+    let algo = ORIENTATION_ALGORITHMS[fs.orientation_algorithm.min(ORIENTATION_ALGORITHMS.len() - 1)];
+    lines.push(Line::from(vec![
+        Span::styled("    Combine as: ", label_style(FilterFocus::OrientationAlgorithm)),
+        Span::styled(format!("◀ {algo} ▶"), Style::default().fg(Color::Cyan)),
+    ]));
+    let lambda = if fs.orientation_lambda.is_empty() && !fs.orientation_lambda_editing {
+        Span::styled("0 (none)", Style::default().fg(Color::DarkGray))
+    } else {
+        Span::styled(fs.orientation_lambda.clone(), Style::default().fg(Color::Cyan))
+    };
+    lines.push(Line::from(vec![
+        Span::styled("    Lambda:     ", label_style(FilterFocus::OrientationLambda)),
+        lambda,
+    ]));
+
+    let preview = fs.orientation_preview();
+    if let Some(err) = preview.error {
+        lines.push(Line::from(Span::styled(
+            format!("    ✗ {err}"),
+            Style::default().fg(Color::Red),
+        )));
+        return lines;
+    }
+
+    if preview.groups.is_empty() {
+        lines.push(Line::from(Span::styled(
+            "    ✗ no orientation groups — the pattern matches fewer than 2 runs per session",
+            Style::default().fg(Color::Red),
+        )));
+        return lines;
+    }
+
+    // STI needs six orientations and COSMOS two; flagging a short group here saves a run that
+    // would only fail once the field maps had been computed.
+    let need = if fs.orientation_algorithm == 1 { 6 } else { 2 };
+    for (label, members) in &preview.groups {
+        let short = members.len() < need;
+        let style = if short {
+            Style::default().fg(Color::Red)
+        } else {
+            Style::default().fg(Color::Green)
+        };
+        let marker = if short { "✗" } else { "◉" };
+        lines.push(Line::from(Span::styled(
+            format!(
+                "    {marker} {label}: {} orientation{} ({}){}",
+                members.len(),
+                if members.len() == 1 { "" } else { "s" },
+                members.join(", "),
+                if short { format!(" — needs {need}") } else { String::new() },
+            ),
+            style,
+        )));
+    }
+    if preview.ungrouped > 0 {
+        lines.push(Line::from(Span::styled(
+            format!(
+                "    {} selected run(s) matched no group — processed one orientation at a time",
+                preview.ungrouped
+            ),
+            Style::default().fg(Color::DarkGray),
+        )));
+    }
+    lines.push(Line::from(Span::styled(
+        "    B0 directions are checked at run time — `qsmxt run --dry` prints them per group",
+        Style::default().fg(Color::DarkGray),
+    )));
+
+    lines
+}
+
+#[cfg(test)]
+mod orientation_block_tests {
+    use super::tests::*;
+    use super::*;
+    use crate::tui::app::{App, FilterFocus, TAB_INPUT};
+
+    /// Build an app sitting on the Input tab with a scanned three-orientation dataset.
+    fn app_with_orientations() -> (App, tempfile::TempDir) {
+        let dir = tempfile::tempdir().unwrap();
+        crate::testutils::create_multi_orientation_bids(dir.path());
+        let mut app = App::new();
+        app.active_tab = TAB_INPUT;
+        app.form.bids_dir = dir.path().to_string_lossy().into_owned();
+        app.filter_state.maybe_rescan(&app.form.bids_dir.clone());
+        (app, dir)
+    }
+
+    /// Off by default, and taking up exactly one line, so the single-orientation majority
+    /// sees a field rather than a feature.
+    #[test]
+    fn the_block_is_one_line_when_off() {
+        let (mut app, _d) = app_with_orientations();
+        let text = screen_text(&render_app_sized(&mut app, 140, 60));
+        assert!(text.contains("Orientations:"), "{text}");
+        assert!(text.contains("(off)"), "{text}");
+        assert!(!text.contains("Combine as:"), "settings should stay hidden:\n{text}");
+    }
+
+    /// With a pattern, the groups and their members are on screen — this is the preview the
+    /// whole pattern field depends on.
+    #[test]
+    fn a_matching_pattern_lists_its_groups() {
+        let (mut app, _d) = app_with_orientations();
+        app.filter_state.orientation_group = "*acq-dir*".into();
+        let text = screen_text(&render_app_sized(&mut app, 140, 60));
+        assert!(text.contains("Combine as:"), "{text}");
+        assert!(text.contains("cosmos"), "{text}");
+        assert!(text.contains("3 orientations"), "{text}");
+        // The unrelated acquisition is reported as left out, not silently swallowed.
+        assert!(text.contains("matched no group"), "{text}");
+    }
+
+    /// A pattern that matches nothing has to say so — the failure it prevents is a run that
+    /// quietly processes every orientation separately.
+    #[test]
+    fn a_pattern_that_matches_nothing_says_so() {
+        let (mut app, _d) = app_with_orientations();
+        app.filter_state.orientation_group = "*acq-nothinghere*".into();
+        let text = screen_text(&render_app_sized(&mut app, 140, 60));
+        assert!(text.contains("no orientation groups"), "{text}");
+    }
+
+    /// STI needs six orientations; a three-orientation group is flagged before the run.
+    #[test]
+    fn a_group_too_small_for_sti_is_flagged() {
+        let (mut app, _d) = app_with_orientations();
+        app.filter_state.orientation_group = "*acq-dir*".into();
+        app.filter_state.orientation_algorithm = 1; // sti
+        let text = screen_text(&render_app_sized(&mut app, 140, 60));
+        assert!(text.contains("needs 6"), "{text}");
+    }
+
+    #[test]
+    fn an_invalid_pattern_is_reported_inline() {
+        let (mut app, _d) = app_with_orientations();
+        app.filter_state.orientation_group = "chunk".into();
+        let text = screen_text(&render_app_sized(&mut app, 140, 60));
+        assert!(text.contains("does not tell"), "{text}");
+    }
+
+    /// The help line has to follow focus onto the new rows.
+    #[test]
+    fn focus_reaches_the_orientation_rows() {
+        let (mut app, _d) = app_with_orientations();
+        app.filter_state.orientation_group = "*acq-dir*".into();
+        // Focus has to be past the input/output fields for the filter area to own it.
+        app.active_field = App::INPUT_IO_FIELDS;
+        app.filter_state.focus = FilterFocus::OrientationAlgorithm;
+        let text = screen_text(&render_app_sized(&mut app, 140, 60));
+        assert!(
+            text.contains("COSMOS — scalar susceptibility"),
+            "the help line should describe the selected algorithm:\n{text}"
+        );
+
+        app.filter_state.orientation_algorithm = 1;
+        let text = screen_text(&render_app_sized(&mut app, 140, 60));
+        assert!(text.contains("STI — rank-2"), "the help line should follow the choice:\n{text}");
     }
 }
