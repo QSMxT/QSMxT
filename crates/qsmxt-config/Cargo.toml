@@ -6,8 +6,7 @@ description = "Pipeline configuration, command generation, and methods text for 
 license = "GPL-3.0-only"
 
 [dependencies]
-# TEMPORARY: local path while QSM.rs#106 is unmerged. Flip back to a tag before merging.
-qsm-core = { path = "/home/ashley/repos/qsm/QSM.rs-mip-geometry" }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.36.0" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
