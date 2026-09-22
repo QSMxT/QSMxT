@@ -101,6 +101,8 @@ Invert a local field map into a susceptibility map. One subcommand per method:
 | `nltv` | Nonlocal Total Variation |
 | `medi` | Morphology-Enabled Dipole Inversion |
 | `ilsqr` | Iterative Least-Squares QR |
+| `lsqr` | Minimally regularised LSQR |
+| `heidi` | HEIDI — Homogeneity Enabled Incremental Dipole Inversion |
 
 ```sh
 # e.g. inspect the parameters of a method

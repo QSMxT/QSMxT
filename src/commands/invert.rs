@@ -33,6 +33,69 @@ fn run_dl_inversion(
     Ok((c, (chi, field_nifti)))
 }
 
+/// Load the optional magnitude used by LSQR (and so by HEIDI's seed) as an SNR row weight.
+/// A multi-echo (4D) magnitude is RSS-combined; qsm-core renormalises it to unit mean inside
+/// the mask, so the units it arrives in do not matter.
+fn load_snr_weight(path: Option<&std::path::Path>, n_voxels: usize) -> crate::Result<Option<Vec<f64>>> {
+    match path {
+        Some(p) => Ok(Some(super::common::load_magnitude_rss(p, n_voxels)?)),
+        None => {
+            warn!("No --magnitude provided; the LSQR solve uses uniform row weights");
+            Ok(None)
+        }
+    }
+}
+
+/// Build `LsqrQsmParams` from the shared `--lsqr-*` group.
+///
+/// Defaults come from [`LsqrConfig`] — the same struct `qsmxt run` starts from — so the two
+/// surfaces cannot drift apart. `mask_output` is not a user flag: a standalone LSQR map is masked,
+/// while HEIDI's seed must not be (HEIDI low-passes χ through the dipole cone, and a hard mask
+/// edge rings).
+fn lsqr_params(
+    args: &crate::cli::LsqrParamArgs, b0: f64, mask_output: bool,
+) -> qsm_core::inversion::LsqrQsmParams {
+    let d = crate::pipeline::config::LsqrConfig::default();
+    qsm_core::inversion::LsqrQsmParams {
+        b0,
+        // `None` here is meaningful — it selects qsm-core's field-strength-scaled default — so an
+        // unset flag keeps the `None` rather than collapsing to a concrete 3T number.
+        residual_weighting: args.lsqr_residual_weighting.or(d.residual_weighting),
+        fit_global_offset: d.fit_global_offset && !args.no_lsqr_global_offset,
+        tol: args.lsqr_tol.unwrap_or(d.tol),
+        max_iter: args.lsqr_max_iter.unwrap_or(d.max_iter),
+        mask_output,
+    }
+}
+
+/// Build `HeidiParams` from the `--heidi-*` group.
+///
+/// [`HeidiConfig`] is the pipeline's flattening of qsm-core's optional denoise struct into a
+/// switch plus three values; taking the defaults from it keeps `invert heidi` and
+/// `run --qsm-algorithm heidi` on one set of numbers.
+fn heidi_params(args: &crate::cli::HeidiParamArgs) -> qsm_core::inversion::HeidiParams {
+    let d = crate::pipeline::config::HeidiConfig::default();
+    qsm_core::inversion::HeidiParams {
+        cone_threshold: args.heidi_cone_threshold.unwrap_or(d.cone_threshold),
+        gradient_threshold: args.heidi_gradient_threshold.unwrap_or(d.gradient_threshold),
+        apply_laplacian_correction: d.apply_laplacian_correction
+            && !args.no_heidi_laplacian_correction,
+        laplacian_threshold: args.heidi_laplacian_threshold.unwrap_or(d.laplacian_threshold),
+        gradient_mask_floor: args.heidi_gradient_mask_floor.unwrap_or(d.gradient_mask_floor),
+        continuation_steps: args.heidi_continuation_steps.unwrap_or(d.continuation_steps),
+        inner_iterations: args.heidi_inner_iterations.unwrap_or(d.inner_iterations),
+        mu_min: args.heidi_mu_min.unwrap_or(d.mu_min),
+        tol: args.heidi_tol.unwrap_or(d.tol),
+        denoise: (d.denoise && !args.no_heidi_denoise).then(|| {
+            qsm_core::utils::AnisotropicDiffusionParams {
+                iterations: args.heidi_denoise_iterations.unwrap_or(d.denoise_iterations),
+                time_step: args.heidi_denoise_time_step.unwrap_or(d.denoise_time_step),
+                conductance: args.heidi_denoise_conductance.unwrap_or(d.denoise_conductance),
+            }
+        }),
+    }
+}
+
 pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
     let (common, chi) = match cmd {
         InvertCommand::Rts(args) => {
@@ -122,6 +185,44 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             };
             let (chi, _, _, _) = qsm_core::inversion::ilsqr(
                 &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
+            );
+            (c, (chi, field_nifti))
+        }
+        InvertCommand::Lsqr(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let grid = super::common::nifti_grid(&field_nifti);
+            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
+            info!("Dipole inversion (LSQR, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            let magnitude = load_snr_weight(args.magnitude.as_deref(), field_nifti.data.len())?;
+            let params = lsqr_params(&args.lsqr_params, args.b0, true);
+            let chi = qsm_core::inversion::lsqr_qsm(
+                &field_nifti.data, &mask, magnitude.as_deref(), &grid, bdir, &params, |_, _| {},
+            );
+            (c, (chi, field_nifti))
+        }
+        InvertCommand::Heidi(args) => {
+            let c = args.common;
+            let field_nifti = load_nifti(&c.input)?;
+            let (mask, _) = load_mask(&c.mask)?;
+            let grid = super::common::nifti_grid(&field_nifti);
+            let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
+            info!("Dipole inversion (HEIDI, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
+
+            let magnitude = load_snr_weight(args.magnitude.as_deref(), field_nifti.data.len())?;
+            // HEIDI is incremental: it keeps the well-conditioned k-space of a seed map and
+            // re-derives the cone. The seed is the minimally regularised LSQR solution, left
+            // unmasked so the cone projection does not ring off a hard mask edge — the same
+            // arrangement the pipeline dispatcher uses for `--qsm-algorithm heidi`.
+            let seed = lsqr_params(&args.lsqr_params, args.b0, false);
+            let params = heidi_params(&args.heidi_params);
+            let chi_init = qsm_core::inversion::lsqr_qsm(
+                &field_nifti.data, &mask, magnitude.as_deref(), &grid, bdir, &seed, |_, _| {},
+            );
+            let chi = qsm_core::inversion::heidi(
+                &field_nifti.data, &mask, &chi_init, &grid, bdir, &params, |_, _| {},
             );
             (c, (chi, field_nifti))
         }
@@ -476,4 +577,75 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
     save_nifti(&common.output, &chi_data, &field_nifti)?;
     info!("Susceptibility map saved to {}", common.output.display());
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{heidi_params, lsqr_params};
+    use crate::cli::{HeidiParamArgs, LsqrParamArgs};
+
+    /// With no flags set, the `invert` surface must reproduce qsm-core's own defaults — the same
+    /// parameters `qsmxt run --qsm-algorithm lsqr` would build. A hand-written `unwrap_or` chain
+    /// is exactly where a default silently drifts from the library's.
+    #[test]
+    fn unset_flags_give_the_qsm_core_defaults() {
+        let d = qsm_core::inversion::LsqrQsmParams::default();
+        let p = lsqr_params(&LsqrParamArgs::default(), d.b0, d.mask_output);
+        assert_eq!(p.residual_weighting, d.residual_weighting);
+        assert_eq!(p.fit_global_offset, d.fit_global_offset);
+        assert_eq!(p.tol, d.tol);
+        assert_eq!(p.max_iter, d.max_iter);
+
+        let h = qsm_core::inversion::HeidiParams::default();
+        let p = heidi_params(&HeidiParamArgs::default());
+        assert_eq!(p.cone_threshold, h.cone_threshold);
+        assert_eq!(p.gradient_threshold, h.gradient_threshold);
+        assert_eq!(p.apply_laplacian_correction, h.apply_laplacian_correction);
+        assert_eq!(p.laplacian_threshold, h.laplacian_threshold);
+        assert_eq!(p.gradient_mask_floor, h.gradient_mask_floor);
+        assert_eq!(p.continuation_steps, h.continuation_steps);
+        assert_eq!(p.inner_iterations, h.inner_iterations);
+        assert_eq!(p.mu_min, h.mu_min);
+        assert_eq!(p.tol, h.tol);
+        let (a, b) = (p.denoise.unwrap(), h.denoise.unwrap());
+        assert_eq!((a.iterations, a.time_step, a.conductance), (b.iterations, b.time_step, b.conductance));
+    }
+
+    /// `--lsqr-residual-weighting` is `Option<f64>` in qsm-core because `None` means
+    /// "scale with field strength" — collapsing it to a concrete number would silently pin the
+    /// weight to 3T behaviour on every other scanner.
+    #[test]
+    fn an_unset_residual_weighting_stays_none() {
+        assert_eq!(lsqr_params(&LsqrParamArgs::default(), 7.0, true).residual_weighting, None);
+        let explicit = LsqrParamArgs { lsqr_residual_weighting: Some(0.0), ..Default::default() };
+        assert_eq!(lsqr_params(&explicit, 7.0, true).residual_weighting, Some(0.0));
+    }
+
+    /// HEIDI low-passes its seed through the dipole cone, so a hard mask edge rings. The seed
+    /// must therefore be unmasked while a standalone `invert lsqr` map is masked — and neither is
+    /// a user flag, so only a test pins it.
+    #[test]
+    fn the_heidi_seed_is_unmasked_and_standalone_lsqr_is_not() {
+        assert!(!lsqr_params(&LsqrParamArgs::default(), 3.0, false).mask_output);
+        assert!(lsqr_params(&LsqrParamArgs::default(), 3.0, true).mask_output);
+    }
+
+    /// The denoise switch is a negative flag over a `Some(..)` default: `--no-heidi-denoise` has
+    /// to clear the whole struct, not just zero its fields.
+    #[test]
+    fn no_denoise_clears_the_diffusion_params() {
+        let off = HeidiParamArgs { no_heidi_denoise: true, ..Default::default() };
+        assert!(heidi_params(&off).denoise.is_none());
+        let tuned = HeidiParamArgs { heidi_denoise_iterations: Some(9), ..Default::default() };
+        assert_eq!(heidi_params(&tuned).denoise.unwrap().iterations, 9);
+    }
+
+    /// `--b0` feeds the seed's field-strength-scaled residual weight; passing it through the
+    /// wrong argument would leave every solve at the 3T default.
+    #[test]
+    fn b0_reaches_the_effective_residual_weighting() {
+        let at3 = lsqr_params(&LsqrParamArgs::default(), 3.0, true).effective_residual_weighting();
+        let at7 = lsqr_params(&LsqrParamArgs::default(), 7.0, true).effective_residual_weighting();
+        assert!(at7 > at3, "7T weight {at7} should exceed 3T {at3}");
+    }
 }

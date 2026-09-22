@@ -268,6 +268,8 @@ reconstructions and deep-learning networks.
 | `medi` | MEDI — Morphology-Enabled Dipole Inversion |
 | `tfi` | TFI — Total Field Inversion |
 | `ilsqr` | iLSQR |
+| `lsqr` | Minimally regularised LSQR — HEIDI's seed |
+| `heidi` | HEIDI — Homogeneity Enabled Incremental Dipole Inversion |
 | `qsmart` | QSMART two-stage reconstruction |
 | `ndi` | NDI — Nonlinear Dipole Inversion |
 | `fansi` | FANSI — Nonlinear TV |
