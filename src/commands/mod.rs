@@ -73,6 +73,8 @@ mod integration_tests {
                 medi_params: Default::default(),
                 tfi_params: Default::default(),
                 ilsqr_params: Default::default(),
+                lsqr_params: Default::default(),
+                heidi_params: Default::default(),
                 qsmart_params: Default::default(),
                 ndi_params: Default::default(),
                 fansi_params: Default::default(),

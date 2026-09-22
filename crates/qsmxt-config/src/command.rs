@@ -228,6 +228,43 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             emit_f64(&mut parts, "--ilsqr-tol", config.inversion.ilsqr.tol, d.inversion.ilsqr.tol);
             emit_usize(&mut parts, "--ilsqr-max-iter", config.inversion.ilsqr.max_iter, d.inversion.ilsqr.max_iter);
         }
+        // HEIDI's seed is an LSQR solve, so it emits both groups.
+        QsmAlgorithm::Lsqr | QsmAlgorithm::Heidi => {
+            let (c, dd) = (&config.inversion.lsqr, &d.inversion.lsqr);
+            if c.residual_weighting != dd.residual_weighting {
+                if let Some(w) = c.residual_weighting {
+                    parts.push(format!("--lsqr-residual-weighting {w}"));
+                }
+            }
+            if c.fit_global_offset != dd.fit_global_offset && !c.fit_global_offset {
+                parts.push("--no-lsqr-global-offset".into());
+            }
+            emit_f64(&mut parts, "--lsqr-tol", c.tol, dd.tol);
+            emit_usize(&mut parts, "--lsqr-max-iter", c.max_iter, dd.max_iter);
+
+            if config.inversion.algorithm == QsmAlgorithm::Heidi {
+                let (c, dd) = (&config.inversion.heidi, &d.inversion.heidi);
+                emit_f64(&mut parts, "--heidi-cone-threshold", c.cone_threshold, dd.cone_threshold);
+                emit_f64(&mut parts, "--heidi-gradient-threshold", c.gradient_threshold, dd.gradient_threshold);
+                if c.apply_laplacian_correction != dd.apply_laplacian_correction && !c.apply_laplacian_correction {
+                    parts.push("--no-heidi-laplacian-correction".into());
+                }
+                emit_f64(&mut parts, "--heidi-laplacian-threshold", c.laplacian_threshold, dd.laplacian_threshold);
+                emit_f64(&mut parts, "--heidi-gradient-mask-floor", c.gradient_mask_floor, dd.gradient_mask_floor);
+                emit_usize(&mut parts, "--heidi-continuation-steps", c.continuation_steps, dd.continuation_steps);
+                emit_usize(&mut parts, "--heidi-inner-iterations", c.inner_iterations, dd.inner_iterations);
+                emit_f64(&mut parts, "--heidi-mu-min", c.mu_min, dd.mu_min);
+                emit_f64(&mut parts, "--heidi-tol", c.tol, dd.tol);
+                if c.denoise != dd.denoise && !c.denoise {
+                    parts.push("--no-heidi-denoise".into());
+                }
+                if c.denoise {
+                    emit_usize(&mut parts, "--heidi-denoise-iterations", c.denoise_iterations, dd.denoise_iterations);
+                    emit_f64(&mut parts, "--heidi-denoise-time-step", c.denoise_time_step, dd.denoise_time_step);
+                    emit_f64(&mut parts, "--heidi-denoise-conductance", c.denoise_conductance, dd.denoise_conductance);
+                }
+            }
+        }
         QsmAlgorithm::Tgv => {
             emit_usize(&mut parts, "--tgv-iterations", config.inversion.tgv.iterations, d.inversion.tgv.iterations);
             emit_usize(&mut parts, "--tgv-erosions", config.inversion.tgv.erosions, d.inversion.tgv.erosions);
@@ -804,6 +841,47 @@ frangi_c = 400.0
     }
 
     /// Off by default, so the bare flag says everything when the reliable mask is the default one.
+    /// HEIDI's seed is an LSQR solve, so `--qsm-algorithm heidi` has to emit both groups; plain
+    /// LSQR must not emit HEIDI's.
+    #[test]
+    fn heidi_emits_the_lsqr_group_too() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Lsqr;
+        c.inversion.lsqr.tol = 1e-7;
+        c.inversion.heidi.cone_threshold = 0.2;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--qsm-algorithm lsqr"), "{cmd}");
+        assert!(cmd.contains("--lsqr-tol 0.0000001"), "{cmd}");
+        assert!(!cmd.contains("--heidi-"), "plain LSQR should not emit HEIDI params: {cmd}");
+
+        c.inversion.algorithm = QsmAlgorithm::Heidi;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--qsm-algorithm heidi"), "{cmd}");
+        assert!(cmd.contains("--lsqr-tol 0.0000001"), "HEIDI's seed is LSQR: {cmd}");
+        assert!(cmd.contains("--heidi-cone-threshold 0.2"), "{cmd}");
+    }
+
+    /// Defaults stay off the command line, and the two `no-` flags only appear when the switch is
+    /// actually turned off.
+    #[test]
+    fn lsqr_and_heidi_defaults_are_silent() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Heidi;
+        let cmd = generate_command(&c);
+        assert!(!cmd.contains("--lsqr-tol"), "{cmd}");
+        assert!(!cmd.contains("--no-lsqr-global-offset"), "{cmd}");
+        assert!(!cmd.contains("--no-heidi-denoise"), "{cmd}");
+        assert!(!cmd.contains("--heidi-denoise-iterations"), "defaults stay off: {cmd}");
+
+        c.inversion.lsqr.fit_global_offset = false;
+        c.inversion.heidi.denoise = false;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--no-lsqr-global-offset"), "{cmd}");
+        assert!(cmd.contains("--no-heidi-denoise"), "{cmd}");
+        // With denoising off, its three parameters are noise on the command line.
+        assert!(!cmd.contains("--heidi-denoise-iterations"), "{cmd}");
+    }
+
     #[test]
     fn two_pass_emits_a_bare_flag() {
         let mut c = PipelineConfig::default();

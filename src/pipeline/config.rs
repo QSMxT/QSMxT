@@ -83,7 +83,7 @@ fn hole_closing_warnings(sections: &[MaskSection]) -> Vec<String> {
 
 /// Apply CLI overrides onto a config.
 /// Map a CLI dipole-inversion algorithm argument to the config enum.
-fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
+pub fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
     match a {
         cli::QsmAlgorithmArg::Rts => QsmAlgorithm::Rts,
         cli::QsmAlgorithmArg::Tv => QsmAlgorithm::Tv,
@@ -95,6 +95,8 @@ fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
         cli::QsmAlgorithmArg::Medi => QsmAlgorithm::Medi,
         cli::QsmAlgorithmArg::Tfi => QsmAlgorithm::Tfi,
         cli::QsmAlgorithmArg::Ilsqr => QsmAlgorithm::Ilsqr,
+        cli::QsmAlgorithmArg::Lsqr => QsmAlgorithm::Lsqr,
+        cli::QsmAlgorithmArg::Heidi => QsmAlgorithm::Heidi,
         cli::QsmAlgorithmArg::Qsmart => QsmAlgorithm::Qsmart,
         cli::QsmAlgorithmArg::Ndi => QsmAlgorithm::Ndi,
         cli::QsmAlgorithmArg::Fansi => QsmAlgorithm::Fansi,
@@ -266,6 +268,24 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.tsvd_params.tsvd_threshold { config.inversion.tsvd.threshold = v; }
         if let Some(v) = args.ilsqr_params.ilsqr_tol { config.inversion.ilsqr.tol = v; }
         if let Some(v) = args.ilsqr_params.ilsqr_max_iter { config.inversion.ilsqr.max_iter = v; }
+        // LSQR's params serve HEIDI too — its seed is an LSQR solve.
+        if let Some(v) = args.lsqr_params.lsqr_residual_weighting { config.inversion.lsqr.residual_weighting = Some(v); }
+        if args.lsqr_params.no_lsqr_global_offset { config.inversion.lsqr.fit_global_offset = false; }
+        if let Some(v) = args.lsqr_params.lsqr_tol { config.inversion.lsqr.tol = v; }
+        if let Some(v) = args.lsqr_params.lsqr_max_iter { config.inversion.lsqr.max_iter = v; }
+        if let Some(v) = args.heidi_params.heidi_cone_threshold { config.inversion.heidi.cone_threshold = v; }
+        if let Some(v) = args.heidi_params.heidi_gradient_threshold { config.inversion.heidi.gradient_threshold = v; }
+        if args.heidi_params.no_heidi_laplacian_correction { config.inversion.heidi.apply_laplacian_correction = false; }
+        if let Some(v) = args.heidi_params.heidi_laplacian_threshold { config.inversion.heidi.laplacian_threshold = v; }
+        if let Some(v) = args.heidi_params.heidi_gradient_mask_floor { config.inversion.heidi.gradient_mask_floor = v; }
+        if let Some(v) = args.heidi_params.heidi_continuation_steps { config.inversion.heidi.continuation_steps = v; }
+        if let Some(v) = args.heidi_params.heidi_inner_iterations { config.inversion.heidi.inner_iterations = v; }
+        if let Some(v) = args.heidi_params.heidi_mu_min { config.inversion.heidi.mu_min = v; }
+        if let Some(v) = args.heidi_params.heidi_tol { config.inversion.heidi.tol = v; }
+        if args.heidi_params.no_heidi_denoise { config.inversion.heidi.denoise = false; }
+        if let Some(v) = args.heidi_params.heidi_denoise_iterations { config.inversion.heidi.denoise_iterations = v; }
+        if let Some(v) = args.heidi_params.heidi_denoise_time_step { config.inversion.heidi.denoise_time_step = v; }
+        if let Some(v) = args.heidi_params.heidi_denoise_conductance { config.inversion.heidi.denoise_conductance = v; }
         if let Some(v) = args.tikhonov_params.tikhonov_lambda { config.inversion.tikhonov.lambda = v; }
         if let Some(v) = args.nltv_params.nltv_lambda { config.inversion.nltv.lambda = v; }
         if let Some(v) = args.nltv_params.nltv_mu { config.inversion.nltv.mu = v; }

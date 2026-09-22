@@ -69,6 +69,12 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     cover!(q::inversion::TfiParams => c::TfiConfig);
     cover!(q::inversion::AmpPeParams => c::AmpPeConfig);
     cover!(q::inversion::IlsqrParams => c::IlsqrConfig);
+    // `b0` comes from scan metadata and `mask_output` is forced off when HEIDI consumes the
+    // solution, so qsm-core's dispatcher owns both — neither is the user's to set.
+    cover!(q::inversion::LsqrQsmParams => c::LsqrConfig, ignore: ["b0", "mask_output"]);
+    // `denoise` is an Option<AnisotropicDiffusionParams> in qsm-core; LsqrConfig's sibling
+    // flattens it into `denoise` + three `denoise_*` values, which is what the TUI and CLI show.
+    cover!(q::inversion::HeidiParams => c::HeidiConfig, ignore: ["denoise"]);
 
     // Chi-separation methods. cf/b0 come from scan metadata; se_echo_times is set by the
     // runner from spin-echo data — none are user knobs.

@@ -39,6 +39,8 @@ fn map_alg(alg: QsmAlgorithm) -> PInvAlg {
         QsmAlgorithm::Medi => PInvAlg::Medi,
         QsmAlgorithm::Tfi => PInvAlg::Tfi,
         QsmAlgorithm::Ilsqr => PInvAlg::Ilsqr,
+        QsmAlgorithm::Lsqr => PInvAlg::Lsqr,
+        QsmAlgorithm::Heidi => PInvAlg::Heidi,
         QsmAlgorithm::Qsmart => PInvAlg::Qsmart,
         QsmAlgorithm::Ndi => PInvAlg::Ndi,
         QsmAlgorithm::Fansi => PInvAlg::Fansi,
@@ -304,11 +306,33 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         // `tile_halo` defaults to 8 (qsm-core's TileConfig default) when omitted. `None` =
         // whole-volume. Stored as `(core, halo)` so this crate needn't pull qsm-core's onnx feature.
         tile: cfg.inversion.tile_size.map(|core| (core, cfg.inversion.tile_halo.unwrap_or(8))),
-        // LSQR and HEIDI arrived in qsm-core v0.36.0 and are not selectable from this crate yet
-        // (no `QsmAlgorithm` variant, so `map_alg` can never return them). Their qsm-core defaults
-        // go through unread; exposing them is its own change.
-        lsqr: qsm_core::inversion::LsqrQsmParams::default(),
-        heidi: qsm_core::inversion::HeidiParams::default(),
+        // `b0` and `mask_output` are the dispatcher's: it sets b0 from scan metadata and forces
+        // mask_output off when HEIDI consumes the solution, so neither is in LsqrConfig.
+        lsqr: qsm_core::inversion::LsqrQsmParams {
+            residual_weighting: cfg.inversion.lsqr.residual_weighting,
+            fit_global_offset: cfg.inversion.lsqr.fit_global_offset,
+            tol: cfg.inversion.lsqr.tol,
+            max_iter: cfg.inversion.lsqr.max_iter,
+            ..Default::default()
+        },
+        heidi: qsm_core::inversion::HeidiParams {
+            cone_threshold: cfg.inversion.heidi.cone_threshold,
+            gradient_threshold: cfg.inversion.heidi.gradient_threshold,
+            apply_laplacian_correction: cfg.inversion.heidi.apply_laplacian_correction,
+            laplacian_threshold: cfg.inversion.heidi.laplacian_threshold,
+            gradient_mask_floor: cfg.inversion.heidi.gradient_mask_floor,
+            continuation_steps: cfg.inversion.heidi.continuation_steps,
+            inner_iterations: cfg.inversion.heidi.inner_iterations,
+            mu_min: cfg.inversion.heidi.mu_min,
+            tol: cfg.inversion.heidi.tol,
+            // Flattened in the config (a switch plus three numbers) so it can be a checkbox and
+            // three rows rather than a nested table.
+            denoise: cfg.inversion.heidi.denoise.then_some(qsm_core::utils::AnisotropicDiffusionParams {
+                iterations: cfg.inversion.heidi.denoise_iterations,
+                time_step: cfg.inversion.heidi.denoise_time_step,
+                conductance: cfg.inversion.heidi.denoise_conductance,
+            }),
+        },
     };
 
     let reference = match cfg.qsm.reference {
