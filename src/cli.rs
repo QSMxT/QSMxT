@@ -1139,6 +1139,25 @@ pub struct PipelineArgs {
     /// Example: --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1
     #[arg(long = "mask-refine", num_args = 1)]
     pub mask_refinements_cli: Option<Vec<String>>,
+
+    /// Two-pass artefact reduction: reconstruct a second time against a mask whose holes are left
+    /// unfilled, and keep that reconstruction wherever it is defined. Strong susceptibility sources
+    /// (air-tissue interfaces, haemorrhage, implants) make the phase around them unrecoverable;
+    /// leaving those voxels out keeps their streaking from spreading, while the ordinary mask still
+    /// supplies values inside the holes. Roughly doubles background removal and inversion time, and
+    /// is not free of downsides — where the holes were not artefactual it can be worse than a single
+    /// pass. Based on doi:10.1002/mrm.29048 (Stewart et al.). Off by default.
+    /// The conventional single-pass map is kept alongside as `_desc-singlepass_Chimap.nii`.
+    #[arg(long)]
+    pub two_pass: bool,
+
+    /// Define the reliable-pass mask used by --two-pass (repeatable; same format as --mask).
+    /// Defaults to `phase-quality,threshold:otsu` — an unfilled threshold on the phase-quality
+    /// map. Its holes are the point, so refinements that close them (fill-holes, close, gaussian)
+    /// defeat the method. Folded with --mask-combine and --mask-refine like the main mask, and
+    /// always intersected with it.
+    #[arg(long = "two-pass-mask", num_args = 1)]
+    pub two_pass_sections_cli: Option<Vec<String>>,
 }
 
 #[derive(Parser, Debug)]

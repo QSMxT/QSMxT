@@ -121,11 +121,38 @@ impl DerivativeOutputs {
         self.anat_dir(key).join(format!("{}_desc-total_Chimap.nii", key.basename()))
     }
 
+    /// The conventional single-pass map, kept alongside the combined one when two-pass runs.
+    ///
+    /// Named `_desc-singlepass_Chimap` as v8 named it, so scripts that already read it keep working.
+    pub fn singlepass_qsm_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-singlepass_Chimap.nii", key.basename()))
+    }
+    /// The reliable-phase mask of a two-pass run — worth keeping, since it is what decides which
+    /// pass won where.
+    pub fn two_pass_mask_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-reliable_mask.nii", key.basename()))
+    }
+
     // Intermediate outputs (in workflow step directories)
     pub fn field_ppm_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "unwrap", "field-ppm") }
     pub fn local_field_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "bgremove", "localfield") }
     pub fn bg_mask_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "bgremove", "bgmask") }
     pub fn chi_raw_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "invert", "Chimap-raw") }
+    /// The reliable pass's intermediates, in step directories of their own so the two passes
+    /// cannot overwrite each other's background-removal or inversion outputs.
+    pub fn reliable_local_field_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_nifti_path(key, "bgremove-reliable", "localfield")
+    }
+    pub fn reliable_bg_mask_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_nifti_path(key, "bgremove-reliable", "bgmask")
+    }
+    pub fn reliable_chi_raw_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_nifti_path(key, "invert-reliable", "Chimap-raw")
+    }
+    /// The combined (two-pass) raw map, before referencing.
+    pub fn two_pass_chi_raw_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_nifti_path(key, "twopass", "Chimap-raw")
+    }
 
     // Per-echo intermediates (in scale_phase step directory)
     /// MCPC-3D-S combined phase of one echo, exported next to the other derivatives

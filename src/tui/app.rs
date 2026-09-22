@@ -1093,6 +1093,8 @@ pub enum PipelineRow {
     MaskSectionHeader { section: usize },
     /// Header for the steps that run on the combined mask (not focusable)
     MaskCombinedHeader,
+    /// Header for the two-pass reliable mask (not focusable)
+    MaskTwoPassHeader,
     /// "── OR ──" separator between sections (not focusable)
     /// "COMBINED WITH ◀ OR ▶" between sections (focusable, ←/→ toggles OR/AND)
     MaskCombineOp,
@@ -1113,8 +1115,9 @@ pub enum PipelineRow {
     MaskOpSignalErodeParam { section: usize, index: usize, param: usize },
     /// "Add step..." row for appending new ops to a section
     MaskOpAddStep { section: usize },
-    /// "Add mask..." row for adding a new OR'd section
-    MaskOpAddSection,
+    /// "Add mask..." row for adding a new OR'd section — to the main mask, or to the two-pass
+    /// reliable mask when `two_pass` is set
+    MaskOpAddSection { two_pass: bool },
 }
 
 pub const MASK_OP_TYPES: &[&str] = &[
@@ -1148,6 +1151,19 @@ pub const SIGNAL_ERODE_PARAMS: &[(&str, &str)] = &[
 /// Pseudo-section index for the refinements that run on the combined mask, so the mask-step rows
 /// and their key handling are shared with the per-section refinements.
 pub const MASK_COMBINED_SECTION: usize = usize::MAX;
+
+/// Base of the pseudo-section range addressing the two-pass reliable mask: `MASK_TWO_PASS_BASE + i`
+/// is `two_pass_sections[i]`.
+///
+/// The reliable mask is an ordinary mask, so it gets the ordinary mask editor — every row type,
+/// key binding and validation rule, unchanged — rather than a parallel set that could drift. Only
+/// the indexing distinguishes it.
+pub const MASK_TWO_PASS_BASE: usize = usize::MAX / 2;
+
+/// Whether a section index addresses the two-pass reliable mask.
+pub fn is_two_pass_section(section: usize) -> bool {
+    section >= MASK_TWO_PASS_BASE && section != MASK_COMBINED_SECTION
+}
 
 // ─── Algorithm help text (name + DOI) ───
 
@@ -1440,6 +1456,13 @@ pub struct PipelineFormState {
     pub mask_combine: crate::pipeline::config::MaskCombine,
     /// Refinements applied to the combined mask, after `mask_combine`.
     pub mask_combined_refinements: Vec<crate::pipeline::config::MaskOp>,
+    /// Two-pass artefact reduction: reconstruct again against `two_pass_sections` and keep that
+    /// reconstruction where it is defined.
+    pub two_pass: bool,
+    /// The reliable-pass mask. Edited with the same rows as `mask_sections`, addressed by
+    /// [`MASK_TWO_PASS_BASE`] + index, and folded with the same combine mode and post-combine
+    /// refinements as the main mask.
+    pub two_pass_sections: Vec<crate::pipeline::config::MaskSection>,
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
@@ -1693,6 +1716,8 @@ impl Default for PipelineFormState {
             mask_sections: crate::pipeline::config::default_mask_sections(),
             mask_combine: crate::pipeline::config::MaskCombine::Or,
             mask_combined_refinements: vec![],
+            two_pass: false,
+            two_pass_sections: qsmxt_config::default_two_pass_sections(),
             mask_preset: 0, // robust threshold
             custom_mask_tool: String::new(),
             do_chi_separation: false,
@@ -2067,33 +2092,25 @@ impl PipelineFormState {
 
         // Mask sections
         let multi_section = self.mask_sections.len() > 1;
-        for si in 0..self.mask_sections.len() {
-            if si > 0 {
-                rows.push(PipelineRow::MaskCombineOp);
-            }
-            if multi_section {
-                rows.push(PipelineRow::MaskSectionHeader { section: si });
-            }
-            rows.push(PipelineRow::MaskOpInput { section: si });
-            rows.push(PipelineRow::MaskOpGenerator { section: si });
-            rows.push(PipelineRow::MaskOpGeneratorParam { section: si });
-            if let crate::pipeline::config::MaskOp::Threshold { method, .. } = &self.mask_sections[si].generator {
-                if matches!(method, crate::pipeline::config::MaskThresholdMethod::Fixed | crate::pipeline::config::MaskThresholdMethod::Percentile) {
-                    rows.push(PipelineRow::MaskOpThresholdValue { section: si });
-                }
-            }
-            if matches!(&self.mask_sections[si].generator, crate::pipeline::config::MaskOp::HdBet { .. }) {
-                rows.push(PipelineRow::MaskOpHdBetStep { section: si });
-            }
-            self.push_refinement_rows(&mut rows, si);
-            rows.push(PipelineRow::MaskOpAddStep { section: si });
-        }
-        rows.push(PipelineRow::MaskOpAddSection);
+        self.push_mask_section_rows(&mut rows, false);
+        rows.push(PipelineRow::MaskOpAddSection { two_pass: false });
         // Steps that run on the combined mask — only meaningful with more than one section.
         if multi_section {
             rows.push(PipelineRow::MaskCombinedHeader);
             self.push_refinement_rows(&mut rows, MASK_COMBINED_SECTION);
             rows.push(PipelineRow::MaskOpAddStep { section: MASK_COMBINED_SECTION });
+        }
+
+        // Two-pass artefact reduction. Configured here because what it needs is a second mask;
+        // what it does is repeat background removal and dipole inversion against it.
+        rows.push(PipelineRow::Toggle {
+            label: "Two-pass Artefact Reduction", field: "two_pass",
+            help: "Reconstruct again on a mask whose holes are left unfilled and keep that result where it is defined — keeps streaking from strong sources out of the rest of the brain, at roughly double the reconstruction time (doi:10.1002/mrm.29048)",
+        });
+        if self.two_pass {
+            rows.push(PipelineRow::MaskTwoPassHeader);
+            self.push_mask_section_rows(&mut rows, true);
+            rows.push(PipelineRow::MaskOpAddSection { two_pass: true });
         }
 
         rows.push(PipelineRow::Separator);
@@ -2820,6 +2837,7 @@ impl PipelineFormState {
             "medi_smv" => self.medi_smv,
             "do_chi_separation" => self.do_chi_separation,
             "msmv_refine" => self.msmv_refine,
+            "two_pass" => self.two_pass,
             _ => false,
         }
     }
@@ -2845,6 +2863,7 @@ impl PipelineFormState {
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset = !self.linear_fit_estimate_offset,
             "medi_smv" => self.medi_smv = !self.medi_smv,
             "msmv_refine" => self.msmv_refine = !self.msmv_refine,
+            "two_pass" => self.two_pass = !self.two_pass,
             _ => {}
         }
     }
@@ -2960,12 +2979,38 @@ impl PipelineFormState {
         self.mask_combined_refinements = recipe.refinements;
     }
 
+    /// The mask list a section index addresses, and the index within it.
+    pub fn mask_section_slot(section: usize) -> (bool, usize) {
+        if is_two_pass_section(section) {
+            (true, section - MASK_TWO_PASS_BASE)
+        } else {
+            (false, section)
+        }
+    }
+
+    /// The section a mask row edits — from the main mask or the two-pass reliable mask.
+    pub fn mask_section(&self, section: usize) -> Option<&crate::pipeline::config::MaskSection> {
+        let (two_pass, i) = Self::mask_section_slot(section);
+        if two_pass { self.two_pass_sections.get(i) } else { self.mask_sections.get(i) }
+    }
+
+    /// Mutable counterpart of [`Self::mask_section`].
+    pub fn mask_section_mut(&mut self, section: usize) -> Option<&mut crate::pipeline::config::MaskSection> {
+        let (two_pass, i) = Self::mask_section_slot(section);
+        if two_pass { self.two_pass_sections.get_mut(i) } else { self.mask_sections.get_mut(i) }
+    }
+
+    /// How many sections the mask a row belongs to has.
+    pub fn mask_section_count(&self, two_pass: bool) -> usize {
+        if two_pass { self.two_pass_sections.len() } else { self.mask_sections.len() }
+    }
+
     /// The refinement list a mask-step row edits — a section's, or the combined mask's.
     pub fn mask_refinements(&self, section: usize) -> Option<&Vec<crate::pipeline::config::MaskOp>> {
         if section == MASK_COMBINED_SECTION {
             Some(&self.mask_combined_refinements)
         } else {
-            self.mask_sections.get(section).map(|s| &s.refinements)
+            self.mask_section(section).map(|s| &s.refinements)
         }
     }
 
@@ -2974,7 +3019,51 @@ impl PipelineFormState {
         if section == MASK_COMBINED_SECTION {
             Some(&mut self.mask_combined_refinements)
         } else {
-            self.mask_sections.get_mut(section).map(|s| &mut s.refinements)
+            self.mask_section_mut(section).map(|s| &mut s.refinements)
+        }
+    }
+
+    /// Rows for every section of one mask — the main mask, or the two-pass reliable mask.
+    ///
+    /// Both get the identical row set; only the section index differs (see [`MASK_TWO_PASS_BASE`]),
+    /// which is what keeps the reliable mask editable in exactly the ways the main mask is.
+    fn push_mask_section_rows(&self, rows: &mut Vec<PipelineRow>, two_pass: bool) {
+        use crate::pipeline::config::{MaskOp, MaskThresholdMethod};
+        let count = self.mask_section_count(two_pass);
+        let base = if two_pass { MASK_TWO_PASS_BASE } else { 0 };
+        for i in 0..count {
+            let si = base + i;
+            if i > 0 {
+                // The reliable mask folds with the main mask's combine mode, so it reports that
+                // mode rather than offering a second control over the same setting.
+                if two_pass {
+                    rows.push(PipelineRow::Note {
+                        text: match self.mask_combine_recipe().0 {
+                            crate::pipeline::config::MaskCombine::Or => "── combined with OR ──",
+                            crate::pipeline::config::MaskCombine::And => "── combined with AND ──",
+                        },
+                    });
+                } else {
+                    rows.push(PipelineRow::MaskCombineOp);
+                }
+            }
+            if count > 1 {
+                rows.push(PipelineRow::MaskSectionHeader { section: si });
+            }
+            rows.push(PipelineRow::MaskOpInput { section: si });
+            rows.push(PipelineRow::MaskOpGenerator { section: si });
+            rows.push(PipelineRow::MaskOpGeneratorParam { section: si });
+            let generator = self.mask_section(si).map(|s| &s.generator);
+            if let Some(MaskOp::Threshold { method, .. }) = generator {
+                if matches!(method, MaskThresholdMethod::Fixed | MaskThresholdMethod::Percentile) {
+                    rows.push(PipelineRow::MaskOpThresholdValue { section: si });
+                }
+            }
+            if matches!(generator, Some(MaskOp::HdBet { .. })) {
+                rows.push(PipelineRow::MaskOpHdBetStep { section: si });
+            }
+            self.push_refinement_rows(rows, si);
+            rows.push(PipelineRow::MaskOpAddStep { section: si });
         }
     }
 
@@ -3007,26 +3096,30 @@ impl PipelineFormState {
     pub fn toggle_mask_combine(&mut self) {
         use crate::pipeline::config::MaskCombine;
         self.mask_combine = match self.mask_combine { MaskCombine::Or => MaskCombine::And, MaskCombine::And => MaskCombine::Or };
-        self.mark_mask_custom();
+        self.mark_mask_custom(0);
     }
 
-    /// Mark preset as "Custom" when user manually edits mask sections.
-    fn mark_mask_custom(&mut self) {
-        if self.mask_preset != MASK_PRESET_CUSTOM {
+    /// Mark the preset as "Custom" when the user edits the main mask by hand.
+    ///
+    /// The preset names the main mask's recipe, so editing the two-pass reliable mask leaves it
+    /// alone — otherwise turning two-pass on and adjusting its threshold would appear to abandon
+    /// the `robust-threshold` preset the main mask still follows.
+    fn mark_mask_custom(&mut self, section: usize) {
+        if !is_two_pass_section(section) && self.mask_preset != MASK_PRESET_CUSTOM {
             self.mask_preset = MASK_PRESET_CUSTOM;
         }
     }
 
     /// Index of a section's generator in [`MASK_GENERATOR_TYPES`].
     pub fn mask_generator_index(&self, section: usize) -> usize {
-        self.mask_sections.get(section)
+        self.mask_section(section)
             .and_then(|s| MASK_GENERATOR_TYPES.iter().position(|&t| t == Self::mask_op_label_value(&s.generator).0))
             .unwrap_or(0)
     }
 
     /// Cycle the generator of a mask section (threshold → BET → HD-BET) with left/right.
     pub fn adjust_mask_generator(&mut self, section: usize, delta: isize) {
-        if section >= self.mask_sections.len() { return; }
+        if self.mask_section(section).is_none() { return; }
         let n = MASK_GENERATOR_TYPES.len() as isize;
         let new = (self.mask_generator_index(section) as isize + delta).rem_euclid(n) as usize;
         self.set_mask_generator(section, new);
@@ -3035,8 +3128,8 @@ impl PipelineFormState {
     /// Adjust the generator's parameter (threshold method or BET fractional intensity).
     pub fn adjust_mask_generator_param(&mut self, section: usize, delta: isize) {
         use crate::pipeline::config::*;
-        if section >= self.mask_sections.len() { return; }
-        match &mut self.mask_sections[section].generator {
+        let Some(section_ref) = self.mask_section_mut(section) else { return };
+        match &mut section_ref.generator {
             MaskOp::Threshold { method, .. } => {
                 let methods = [MaskThresholdMethod::Otsu, MaskThresholdMethod::Fixed, MaskThresholdMethod::Percentile];
                 let cur = methods.iter().position(|m| m == method).unwrap_or(0) as isize;
@@ -3053,7 +3146,7 @@ impl PipelineFormState {
             }
             _ => {}
         }
-        self.mark_mask_custom();
+        self.mark_mask_custom(section);
     }
 
     /// HD-BET's sliding-window step, cycled through the useful strides.
@@ -3063,14 +3156,14 @@ impl PipelineFormState {
     pub fn adjust_hd_bet_tile_step(&mut self, section: usize, delta: isize) {
         use crate::pipeline::config::MaskOp;
         const STEPS: [f64; 4] = [0.5, 0.625, 0.75, 1.0];
-        if section >= self.mask_sections.len() { return; }
-        if let MaskOp::HdBet { tile_step, .. } = &mut self.mask_sections[section].generator {
+        let Some(section_ref) = self.mask_section_mut(section) else { return };
+        if let MaskOp::HdBet { tile_step, .. } = &mut section_ref.generator {
             let cur = STEPS.iter()
                 .position(|s| (s - *tile_step).abs() < 1e-9)
                 .unwrap_or(0) as isize;
             let new = (cur + delta).rem_euclid(STEPS.len() as isize) as usize;
             *tile_step = STEPS[new];
-            self.mark_mask_custom();
+            self.mark_mask_custom(section);
         }
     }
 
@@ -3082,28 +3175,28 @@ impl PipelineFormState {
 
     /// Current masking-input source index for a section (for populating the modal).
     pub fn mask_input_index(&self, section: usize) -> usize {
-        self.mask_sections.get(section)
+        self.mask_section(section)
             .and_then(|s| Self::MASK_INPUT_SOURCES.iter().position(|x| *x == s.input))
             .unwrap_or(0)
     }
 
     /// Set a section's masking input source by index (from the modal).
     pub fn set_mask_input(&mut self, section: usize, idx: usize) {
-        if section >= self.mask_sections.len() { return; }
-        if let Some(&src) = Self::MASK_INPUT_SOURCES.get(idx) {
-            self.mask_sections[section].input = src;
-            self.mark_mask_custom();
-        }
+        let Some(&src) = Self::MASK_INPUT_SOURCES.get(idx) else { return };
+        let Some(section_ref) = self.mask_section_mut(section) else { return };
+        section_ref.input = src;
+        self.mark_mask_custom(section);
     }
 
     /// Set a section's generator algorithm by index into [`MASK_GENERATOR_TYPES`]. Only rewrites
     /// the generator when the algorithm type actually changes, preserving existing parameters.
     pub fn set_mask_generator(&mut self, section: usize, idx: usize) {
-        if section >= self.mask_sections.len() || idx == self.mask_generator_index(section) { return; }
-        if let Some(op) = MASK_GENERATOR_TYPES.get(idx).and_then(|t| Self::default_mask_op(t)) {
-            self.mask_sections[section].generator = op;
-            self.mark_mask_custom();
+        if self.mask_section(section).is_none() || idx == self.mask_generator_index(section) { return; }
+        let Some(op) = MASK_GENERATOR_TYPES.get(idx).and_then(|t| Self::default_mask_op(t)) else { return };
+        if let Some(section_ref) = self.mask_section_mut(section) {
+            section_ref.generator = op;
         }
+        self.mark_mask_custom(section);
     }
 
     /// Ordered threshold methods, matching the modal/cycle option order.
@@ -3115,7 +3208,7 @@ impl PipelineFormState {
     /// Current threshold-method index for a section (0 if the generator isn't a threshold).
     pub fn mask_threshold_method_index(&self, section: usize) -> usize {
         use crate::pipeline::config::MaskOp;
-        match self.mask_sections.get(section).map(|s| &s.generator) {
+        match self.mask_section(section).map(|s| &s.generator) {
             Some(MaskOp::Threshold { method, .. }) => {
                 Self::MASK_THRESHOLD_METHODS.iter().position(|m| m == method).unwrap_or(0)
             }
@@ -3127,24 +3220,23 @@ impl PipelineFormState {
     /// generator is a threshold; the existing threshold value is preserved.
     pub fn set_mask_threshold_method(&mut self, section: usize, idx: usize) {
         use crate::pipeline::config::MaskOp;
-        if section >= self.mask_sections.len() { return; }
-        if let (MaskOp::Threshold { method, .. }, Some(&new_method)) =
-            (&mut self.mask_sections[section].generator, Self::MASK_THRESHOLD_METHODS.get(idx))
-        {
+        let Some(&new_method) = Self::MASK_THRESHOLD_METHODS.get(idx) else { return };
+        let Some(section_ref) = self.mask_section_mut(section) else { return };
+        if let MaskOp::Threshold { method, .. } = &mut section_ref.generator {
             *method = new_method;
-            self.mark_mask_custom();
+            self.mark_mask_custom(section);
         }
     }
 
     /// Adjust the input source of a mask section with left/right.
     pub fn adjust_mask_input(&mut self, section: usize, delta: isize) {
         use crate::pipeline::config::MaskingInput;
-        if section >= self.mask_sections.len() { return; }
         let sources = [MaskingInput::MagnitudeFirst, MaskingInput::Magnitude, MaskingInput::MagnitudeLast, MaskingInput::PhaseQuality];
-        let cur = sources.iter().position(|s| *s == self.mask_sections[section].input).unwrap_or(0) as isize;
+        let Some(section_ref) = self.mask_section_mut(section) else { return };
+        let cur = sources.iter().position(|s| *s == section_ref.input).unwrap_or(0) as isize;
         let new = (cur + delta).rem_euclid(sources.len() as isize) as usize;
-        self.mask_sections[section].input = sources[new];
-        self.mark_mask_custom();
+        section_ref.input = sources[new];
+        self.mark_mask_custom(section);
     }
 
     /// Adjust a mask op parameter with left/right.
@@ -3181,7 +3273,7 @@ impl PipelineFormState {
                 *threshold = ((*threshold + delta as f64 * 0.05).clamp(0.05, 0.95) * 100.0).round() / 100.0;
             }
         }
-        self.mark_mask_custom();
+        self.mark_mask_custom(section);
     }
 
     /// Label and current value of one extra signal-erode parameter, for its own row.
@@ -3212,7 +3304,7 @@ impl PipelineFormState {
             2 => *bias_sigma = (*bias_sigma + delta as f64).max(1.0),
             _ => step_usize(min_component, 100),
         }
-        self.mark_mask_custom();
+        self.mark_mask_custom(section);
     }
 
     /// Get available op types for adding refinement steps (morphological only).
@@ -3230,7 +3322,8 @@ impl PipelineFormState {
             .iter()
             .enumerate()
             .filter(|(_, r)| !matches!(r, PipelineRow::Separator | PipelineRow::Note { .. }
-                | PipelineRow::MaskSectionHeader { .. } | PipelineRow::MaskCombinedHeader))
+                | PipelineRow::MaskSectionHeader { .. } | PipelineRow::MaskCombinedHeader
+                | PipelineRow::MaskTwoPassHeader))
             .map(|(i, _)| i)
             .collect()
     }
@@ -4773,13 +4866,17 @@ impl App {
                     let rows = ps.visible_rows();
                     let focusable = ps.focusable_rows();
                     let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
+                    let mut edited_section = 0;
                     if let Some(PipelineRow::MaskOpThresholdValue { section }) = rows.get(focus_idx) {
-                        if let crate::pipeline::config::MaskOp::Threshold { value, .. } = &mut ps.mask_sections[*section].generator {
+                        edited_section = *section;
+                        if let Some(crate::pipeline::config::MaskOp::Threshold { value, .. }) =
+                            ps.mask_section_mut(*section).map(|s| &mut s.generator)
+                        {
                             *value = val;
                         }
                     }
                     ps.mask_threshold_editing = false;
-                    ps.mark_mask_custom();
+                    ps.mark_mask_custom(edited_section);
                     return;
                 }
                 KeyCode::Char(c) if c.is_ascii_digit() || c == '.' => {
@@ -4835,7 +4932,7 @@ impl App {
                     let n = ps.mask_refinements(si).map_or(0, |r| r.len());
                     if oi > 0 && oi < n {
                         if let Some(refs) = ps.mask_refinements_mut(si) { refs.swap(oi, oi - 1); }
-                        ps.mark_mask_custom();
+                        ps.mark_mask_custom(si);
                         if ps.focus > 0 { ps.focus -= 1; }
                     }
                 }
@@ -4849,7 +4946,7 @@ impl App {
                     let (si, oi) = (*section, *index);
                     if oi + 1 < ps.mask_refinements(si).map_or(0, |r| r.len()) {
                         if let Some(refs) = ps.mask_refinements_mut(si) { refs.swap(oi, oi + 1); }
-                        ps.mark_mask_custom();
+                        ps.mark_mask_custom(si);
                         let max = ps.focusable_rows().len().saturating_sub(1);
                         if ps.focus < max { ps.focus += 1; }
                     }
@@ -4978,21 +5075,23 @@ impl App {
                                 }
                             }
                             ps.mask_ops_adding = false;
-                            ps.mark_mask_custom();
+                            ps.mark_mask_custom(section);
                         } else {
                             ps.mask_ops_adding = true;
                             ps.mask_ops_add_idx = 0;
                             ps.mask_ops_add_section = section;
                         }
                     }
-                    Some(PipelineRow::MaskOpAddSection) => {
+                    Some(PipelineRow::MaskOpAddSection { two_pass }) => {
                         use crate::pipeline::config::*;
-                        ps.mask_sections.push(MaskSection {
+                        let section = MaskSection {
                             input: MaskingInput::Magnitude,
                             generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
                             refinements: vec![],
-                        });
-                        ps.mark_mask_custom();
+                        };
+                        let added = if two_pass { MASK_TWO_PASS_BASE + ps.two_pass_sections.len() } else { ps.mask_sections.len() };
+                        if two_pass { ps.two_pass_sections.push(section); } else { ps.mask_sections.push(section); }
+                        ps.mark_mask_custom(added);
                     }
                     Some(PipelineRow::MaskOpThresholdValue { section }) => {
                         // Start editing threshold value
@@ -5026,7 +5125,7 @@ impl App {
                         let (si, oi) = (*section, *index);
                         if oi < ps.mask_refinements(si).map_or(0, |r| r.len()) {
                             if let Some(refs) = ps.mask_refinements_mut(si) { refs.remove(oi); }
-                            ps.mark_mask_custom();
+                            ps.mark_mask_custom(si);
                             let max = ps.focusable_rows().len().saturating_sub(1);
                             if ps.focus > max { ps.focus = max; }
                         }
@@ -5034,9 +5133,10 @@ impl App {
                     // Delete entire section (only if >1 sections) when focused on section header-adjacent rows
                     Some(PipelineRow::MaskOpGenerator { section }) | Some(PipelineRow::MaskOpInput { section }) => {
                         let si = *section;
-                        if ps.mask_sections.len() > 1 && si < ps.mask_sections.len() {
-                            ps.mask_sections.remove(si);
-                            ps.mark_mask_custom();
+                        let (two_pass, i) = PipelineFormState::mask_section_slot(si);
+                        if ps.mask_section_count(two_pass) > 1 && i < ps.mask_section_count(two_pass) {
+                            if two_pass { ps.two_pass_sections.remove(i); } else { ps.mask_sections.remove(i); }
+                            ps.mark_mask_custom(si);
                             let max = ps.focusable_rows().len().saturating_sub(1);
                             if ps.focus > max { ps.focus = max; }
                         }
@@ -8114,6 +8214,99 @@ mod tests {
         assert!(cmd.contains("--mask magnitude,hd-bet,signal-erode:0.85:0"), "cmd: {cmd}");
     }
 
+    /// The reliable-mask editor only exists once two-pass is on, and it is the ordinary mask
+    /// editor — input, generator and refinement rows — addressed at the two-pass index.
+    #[test]
+    fn two_pass_toggle_reveals_the_reliable_mask_editor() {
+        use crate::pipeline::config::{MaskOp, MaskThresholdMethod, MaskingInput};
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
+
+        let reliable_rows = |app: &App| app.pipeline_state.visible_rows().into_iter()
+            .filter(|r| match r {
+                PipelineRow::MaskOpInput { section } | PipelineRow::MaskOpGenerator { section }
+                | PipelineRow::MaskOpAddStep { section } => is_two_pass_section(*section),
+                PipelineRow::MaskTwoPassHeader => true,
+                _ => false,
+            })
+            .count();
+        assert_eq!(reliable_rows(&app), 0, "no reliable mask while two-pass is off");
+
+        let focus_on = |app: &App, pred: fn(&PipelineRow) -> bool| {
+            let rows = app.pipeline_state.visible_rows();
+            app.pipeline_state.focusable_rows().iter().position(|&ri| pred(&rows[ri]))
+        };
+        app.pipeline_state.focus =
+            focus_on(&app, |r| matches!(r, PipelineRow::Toggle { field: "two_pass", .. }))
+                .expect("two-pass toggle not focusable");
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.pipeline_state.two_pass);
+        assert!(reliable_rows(&app) > 0, "the reliable mask editor appears with the toggle");
+
+        // It starts as the default recipe: an unfilled Otsu threshold on phase quality.
+        let sections = &app.pipeline_state.two_pass_sections;
+        assert_eq!(sections.len(), 1);
+        assert_eq!(sections[0].input, MaskingInput::PhaseQuality);
+        assert!(matches!(sections[0].generator,
+                         MaskOp::Threshold { method: MaskThresholdMethod::Otsu, .. }));
+        assert!(sections[0].refinements.is_empty());
+
+        // Default recipe → a bare --two-pass in the generated command.
+        let cmd = crate::tui::command::build_command_string(&app);
+        assert!(cmd.contains("--two-pass"), "cmd: {cmd}");
+        assert!(!cmd.contains("--two-pass-mask"), "cmd: {cmd}");
+    }
+
+    /// Editing the reliable mask must not claim the main mask stopped following its preset — and
+    /// it must edit the reliable mask, not the main one.
+    #[test]
+    fn editing_the_reliable_mask_leaves_the_main_preset_alone() {
+        use crate::pipeline::config::MaskingInput;
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
+        app.pipeline_state.two_pass = true;
+        let main_before = app.pipeline_state.mask_sections.clone();
+
+        let rows = app.pipeline_state.visible_rows();
+        let focus = app.pipeline_state.focusable_rows().iter()
+            .position(|&ri| matches!(&rows[ri], PipelineRow::MaskOpInput { section } if is_two_pass_section(*section)))
+            .expect("reliable input row not focusable");
+        app.pipeline_state.focus = focus;
+        app.handle_key(key(KeyCode::Right));
+
+        assert_ne!(app.pipeline_state.two_pass_sections[0].input, MaskingInput::PhaseQuality,
+                   "the reliable mask's input should have changed");
+        assert_eq!(app.pipeline_state.mask_sections, main_before, "the main mask must be untouched");
+        assert_eq!(app.pipeline_state.mask_preset, 0, "the main mask still follows its preset");
+
+        // Edited away from the default, so the command now spells the reliable mask out.
+        let cmd = crate::tui::command::build_command_string(&app);
+        assert!(cmd.contains("--two-pass-mask"), "cmd: {cmd}");
+    }
+
+    /// Turning two-pass off hides the editor but keeps what was typed into it, so toggling back
+    /// on does not silently discard the recipe.
+    #[test]
+    fn two_pass_remembers_its_mask_while_off() {
+        use crate::pipeline::config::{MaskOp, MaskThresholdMethod};
+        let mut app = App::new();
+        app.pipeline_state.two_pass = true;
+        app.pipeline_state.two_pass_sections[0].generator =
+            MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(40.0) };
+
+        app.pipeline_state.toggle("two_pass");
+        assert!(!app.pipeline_state.two_pass);
+        // Off, so it contributes nothing to the config...
+        let config = crate::tui::command::config_from_app(&app);
+        assert!(!config.masking.two_pass);
+        assert!(config.masking.two_pass_sections.is_none());
+        // ...but the edit survives.
+        assert!(matches!(app.pipeline_state.two_pass_sections[0].generator,
+                         MaskOp::Threshold { method: MaskThresholdMethod::Percentile, .. }));
+    }
+
     /// The combine row only appears once there is more than one section, and ←/→ toggles it.
     #[test]
     fn test_pipeline_mask_combine_row_toggles() {
@@ -8131,7 +8324,7 @@ mod tests {
             let rows = app.pipeline_state.visible_rows();
             app.pipeline_state.focusable_rows().iter().position(|&ri| pred(&rows[ri]))
         };
-        app.pipeline_state.focus = focus_on(&app, |r| matches!(r, PipelineRow::MaskOpAddSection))
+        app.pipeline_state.focus = focus_on(&app, |r| matches!(r, PipelineRow::MaskOpAddSection { .. }))
             .expect("MaskOpAddSection not found");
         app.handle_key(key(KeyCode::Enter));
         assert!(has_combine_row(&app), "two sections show how they combine");
@@ -8189,7 +8382,7 @@ mod tests {
         let focusable = app.pipeline_state.focusable_rows();
         let mut add_sec_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
-            if matches!(&rows[ri], PipelineRow::MaskOpAddSection) {
+            if matches!(&rows[ri], PipelineRow::MaskOpAddSection { .. }) {
                 add_sec_focus = Some(fi);
                 break;
             }
@@ -8577,7 +8770,7 @@ mod tests {
             method: crate::pipeline::config::MaskThresholdMethod::Fixed,
             value: Some(0.5),
         };
-        app.pipeline_state.mark_mask_custom();
+        app.pipeline_state.mark_mask_custom(0);
 
         // Find MaskOpThresholdValue focus
         let rows = app.pipeline_state.visible_rows();
@@ -8620,7 +8813,7 @@ mod tests {
         app.active_tab = TAB_QSM;
         app.pipeline_state.collapsed_sections.clear();
         app.pipeline_state.mask_sections[0].generator = MaskOp::hd_bet_default();
-        app.pipeline_state.mark_mask_custom();
+        app.pipeline_state.mark_mask_custom(0);
 
         let find_step_row = |app: &App| {
             let rows = app.pipeline_state.visible_rows();
@@ -8657,7 +8850,7 @@ mod tests {
             method: crate::pipeline::config::MaskThresholdMethod::Fixed,
             value: Some(0.5),
         };
-        app.pipeline_state.mark_mask_custom();
+        app.pipeline_state.mark_mask_custom(0);
         let rows = app.pipeline_state.visible_rows();
         let focusable = app.pipeline_state.focusable_rows();
         let mut tv_focus = None;

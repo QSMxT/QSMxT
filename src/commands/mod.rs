@@ -121,6 +121,8 @@ mod integration_tests {
                 mask_sections_cli: None,
                 mask_combine: None,
                 mask_refinements_cli: None,
+                two_pass: false,
+                two_pass_sections_cli: None,
             },
         }
     }

@@ -177,6 +177,9 @@ fn final_outputs(output: &DerivativeOutputs, key: &AcquisitionKey) -> Vec<FinalO
     vec![
         FinalOutput { path: output.qsm_path(key), step: "reference", forward_meta: true, skull_stripped: Some(true) },
         FinalOutput { path: output.mask_path(key), step: "mask", forward_meta: false, skull_stripped: None },
+        // Two-pass only; skipped when absent, like every other optional output here.
+        FinalOutput { path: output.singlepass_qsm_path(key), step: "reference-singlepass", forward_meta: true, skull_stripped: Some(true) },
+        FinalOutput { path: output.two_pass_mask_path(key), step: "mask-reliable", forward_meta: false, skull_stripped: None },
         FinalOutput { path: output.magnitude_path(key), step: "magnitude", forward_meta: true, skull_stripped: Some(false) },
         FinalOutput { path: output.swi_path(key), step: "swi", forward_meta: true, skull_stripped: Some(false) },
         FinalOutput { path: output.swi_mip_path(key), step: "swi", forward_meta: true, skull_stripped: Some(false) },

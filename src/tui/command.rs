@@ -522,6 +522,17 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             ops if ops.is_empty() => None,
             ops => Some(ops.iter().map(|op| format!("{op}")).collect()),
         },
+        two_pass: ps.two_pass,
+        // Spelled out whenever two-pass is on: this is the run's own argument list, not the command
+        // shown to the user, so there is nothing to be gained by leaning on the default.
+        two_pass_sections_cli: ps.two_pass.then(|| {
+            ps.two_pass_sections.iter().map(|section| {
+                std::iter::once(format!("{}", section.input))
+                    .chain(section.all_ops().iter().map(|op| format!("{op}")))
+                    .collect::<Vec<_>>()
+                    .join(",")
+            }).collect()
+        }),
     }
 }
 
@@ -682,6 +693,12 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     config.masking.combine = combine;
     config.masking.refinements = refinements;
     config.masking.custom_mask_tool = if ps.custom_mask_tool.trim().is_empty() { None } else { Some(ps.custom_mask_tool.trim().to_string()) };
+    config.masking.two_pass = ps.two_pass;
+    // Left as None while the rows still hold the default recipe, so the generated command stays a
+    // bare `--two-pass`.
+    config.masking.two_pass_sections =
+        (ps.two_pass && ps.two_pass_sections != qsmxt_config::default_two_pass_sections())
+            .then(|| ps.two_pass_sections.clone());
 
     // Obliquity
     if let Ok(v) = ps.obliquity_threshold.trim().parse::<f64>() { config.pipeline.obliquity_threshold = v; }
