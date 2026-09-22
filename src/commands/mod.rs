@@ -312,7 +312,7 @@ mod integration_tests {
         testutils::write_magnitude(&input);
         let err = super::mask::execute(MaskCommand::HdBet(MaskHdBetArgs {
             common: common_mask(input, dir.path().join("mask.nii")),
-            low_memory: false, patch: None, tta: false,
+            low_memory: false, patch: None, tta: false, tile_step: None,
         })).unwrap_err();
         assert!(format!("{err}").contains("deep-learning"), "{err}");
     }
