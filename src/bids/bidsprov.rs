@@ -183,6 +183,12 @@ fn final_outputs(output: &DerivativeOutputs, key: &AcquisitionKey) -> Vec<FinalO
         FinalOutput { path: output.magnitude_path(key), step: "magnitude", forward_meta: true, skull_stripped: Some(false) },
         FinalOutput { path: output.swi_path(key), step: "swi", forward_meta: true, skull_stripped: Some(false) },
         FinalOutput { path: output.swi_mip_path(key), step: "swi", forward_meta: true, skull_stripped: Some(false) },
+        // SMWI is the magnitude weighted by a χ-derived mask, so it is confined to the brain mask
+        // the way the Chimap is — unlike SWI, which keeps full field-of-view signal.
+        FinalOutput { path: output.smwi_path(key, "paramagnetic"), step: "smwi", forward_meta: true, skull_stripped: Some(true) },
+        FinalOutput { path: output.smwi_path(key, "diamagnetic"), step: "smwi", forward_meta: true, skull_stripped: Some(true) },
+        FinalOutput { path: output.smwi_mip_path(key, "paramagnetic"), step: "smwi", forward_meta: true, skull_stripped: Some(true) },
+        FinalOutput { path: output.smwi_mip_path(key, "diamagnetic"), step: "smwi", forward_meta: true, skull_stripped: Some(true) },
         FinalOutput { path: output.t2star_path(key), step: "t2star_r2star", forward_meta: true, skull_stripped: Some(true) },
         FinalOutput { path: output.r2star_path(key), step: "t2star_r2star", forward_meta: true, skull_stripped: Some(true) },
     ]

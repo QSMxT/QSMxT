@@ -917,6 +917,20 @@ impl RomeoParamArgs {
 }
 
 #[derive(Args, Debug, Default, Clone)]
+pub struct SmwiParamArgs {
+    /// SMWI susceptibility threshold in ppm — the |χ| at which the weighting mask reaches zero.
+    /// The 1 ppm default follows SEPIA and targets strong sources; brain tissue wants far less
+    #[arg(long)]
+    pub smwi_threshold: Option<f64>,
+    /// SMWI mask power (contrast strength)
+    #[arg(long)]
+    pub smwi_power: Option<f64>,
+    /// SMWI mIP window size in slices
+    #[arg(long)]
+    pub smwi_mip_window: Option<usize>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
 pub struct SwiParamArgs {
     /// SWI high-pass filter sigma (3 values, in voxels)
     #[arg(long, num_args = 3)]
@@ -1071,6 +1085,8 @@ pub struct PipelineArgs {
     #[command(flatten)]
     pub swi_params: SwiParamArgs,
     #[command(flatten)]
+    pub smwi_params: SmwiParamArgs,
+    #[command(flatten)]
     pub tiling_params: TilingParamArgs,
 
     /// Inhomogeneity correction smoothing sigma in mm
@@ -1096,6 +1112,12 @@ pub struct PipelineArgs {
     /// Also compute SWI
     #[arg(long)]
     pub do_swi: bool,
+
+    /// Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask
+    /// built from the susceptibility map rather than from high-pass filtered phase, so the contrast
+    /// stays where the source is. Needs χ, so it implies QSM. doi:10.1002/mrm.24920
+    #[arg(long)]
+    pub do_smwi: bool,
 
     /// Compute T2* relaxation map from multi-echo magnitude data
     #[arg(long)]

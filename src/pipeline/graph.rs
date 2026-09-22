@@ -230,14 +230,22 @@ pub fn downstream_of(step_name: &str) -> Vec<String> {
             .collect();
         out.push("twopass".to_string());
         out.push("reference".to_string());
+        out.push("smwi".to_string());
         return out;
     }
     if step_name == "twopass" {
-        return vec!["reference".to_string()];
+        return vec!["reference".to_string(), "smwi".to_string()];
     }
 
     let direct = downstream_steps(step_name);
     let mut out: Vec<String> = direct.iter().map(|s| s.to_string()).collect();
+    // SMWI weights the magnitude by the *referenced* susceptibility map, so it is stale whenever
+    // referencing is. Derived rather than listed in each of the seven sets that reach `reference`:
+    // a missing entry there would show a new reconstruction with weighting from the old one, and
+    // nothing would say so.
+    if out.iter().any(|d| d == "reference") && !out.iter().any(|d| d == "smwi") {
+        out.push("smwi".to_string());
+    }
     out.extend(
         direct.iter()
             .filter(|ds| PASS_STEPS.contains(ds))
@@ -329,7 +337,9 @@ fn downstream_steps(step_name: &str) -> &'static [&'static str] {
         "unwrap" => &["bgremove", "invert", "tgv", "qsmart", "reference"],
         "bgremove" => &["invert", "reference"],
         "invert" | "tgv" | "qsmart" => &["reference"],
-        "reference" => &[],
+        // SMWI weights by the referenced χ map, so it is stale whenever referencing is.
+        "reference" => &["smwi"],
+        "smwi" => &[],
         _ => &[],
     }
 }
@@ -365,7 +375,7 @@ pub fn clean_intermediates(state: &PipelineState, output_dir: &Path, key: &Acqui
     // reliable-phase mask and the single-pass map are both written into `anat/`, so cleaning them
     // would delete outputs the run is meant to produce.
     let final_steps: HashSet<&str> = [
-        "mask", "magnitude", "reference", "swi", "t2star_r2star",
+        "mask", "magnitude", "reference", "swi", "smwi", "t2star_r2star",
         "mask-reliable", "reference-singlepass",
     ].iter().copied().collect();
 
@@ -414,16 +424,32 @@ mod tests {
         assert!(!ds.contains(&"bgremove".to_string()), "main pass must stay cached: {ds:?}");
     }
 
+    /// The combination is the last χ-producing step, so only referencing — and SMWI, which weights
+    /// by the referenced map — depend on it. Neither pass's reconstruction does.
     #[test]
-    fn the_combination_only_invalidates_referencing() {
-        assert_eq!(downstream_of("twopass"), vec!["reference".to_string()]);
+    fn the_combination_only_invalidates_referencing_and_smwi() {
+        assert_eq!(downstream_of("twopass"), vec!["reference".to_string(), "smwi".to_string()]);
     }
 
     /// Steps with nothing downstream must not grow a two-pass tail.
     #[test]
     fn leaf_steps_stay_leaves() {
         assert!(downstream_of("swi").is_empty());
-        assert!(downstream_of("reference").is_empty());
+        assert!(downstream_of("smwi").is_empty());
+    }
+
+    /// SMWI reads the referenced χ map, so anything that changes χ has to invalidate it — right
+    /// back through the inversion and the mask. Otherwise a new reconstruction is displayed with
+    /// weighting computed from the old one.
+    #[test]
+    fn smwi_is_invalidated_by_everything_that_changes_chi() {
+        for step in ["mask", "unwrap", "bgremove", "invert", "tgv", "qsmart", "reference", "load"] {
+            assert!(downstream_of(step).contains(&"smwi".to_string()),
+                    "{step} should invalidate smwi: {:?}", downstream_of(step));
+        }
+        // Both passes of a two-pass run, too.
+        assert!(downstream_of("invert-reliable").contains(&"reference".to_string()));
+        assert!(downstream_of("twopass").contains(&"reference".to_string()));
     }
 
     #[test]
@@ -713,7 +739,9 @@ mod tests {
     #[test]
     fn test_downstream_steps_leaf() {
         assert!(downstream_steps("swi").is_empty());
-        assert!(downstream_steps("reference").is_empty());
+        assert!(downstream_steps("smwi").is_empty());
+        // `reference` is not a leaf: SMWI weights by the referenced χ map.
+        assert_eq!(downstream_steps("reference"), &["smwi"]);
     }
 
     #[test]

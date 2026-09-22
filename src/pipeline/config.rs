@@ -416,6 +416,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         // ── Pipeline toggles ──
         if args.no_qsm { config.pipeline.do_qsm = false; }
         if args.do_swi { config.pipeline.do_swi = true; }
+        if args.do_smwi { config.pipeline.do_smwi = true; }
+        if let Some(v) = args.smwi_params.smwi_threshold { config.smwi.threshold_ppm = v; }
+        if let Some(v) = args.smwi_params.smwi_power { config.smwi.power = v; }
+        if let Some(v) = args.smwi_params.smwi_mip_window { config.smwi.mip_window = v; }
         if args.do_t2starmap { config.pipeline.do_t2starmap = true; }
         if args.do_r2starmap { config.pipeline.do_r2starmap = true; }
         if args.do_r2map { config.pipeline.do_r2map = true; }
@@ -463,6 +467,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = sp.hc_chisep_bin_hz { config.separation.hc_chisep.bin_hz = v; }
         // Chi-separation depends on R2*/R2/R2'; enabling it implies computing them
         // (a custom R2' or R2 map, when supplied, is used instead — see the runner).
+        enforce_smwi_dependencies(config);
         enforce_separation_dependencies(config);
         if args.export_dicom { config.pipeline.export_dicom = true; }
         if args.no_inhomogeneity_correction { config.masking.inhomogeneity_correction = false; }

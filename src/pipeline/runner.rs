@@ -257,7 +257,7 @@ pub fn run_pipeline_cached(
 
     let meta = stage_load(qsm_run, config, &mut state, &state_path, progress)?;
 
-    let needs_mask = config.pipeline.do_qsm || config.pipeline.do_swi
+    let needs_mask = config.pipeline.do_qsm || config.pipeline.do_swi || config.pipeline.do_smwi
         || (config.pipeline.do_t2starmap && meta.n_echoes >= 3 && meta.has_magnitude)
         || (config.pipeline.do_r2starmap && meta.n_echoes >= 3 && meta.has_magnitude)
         || config.pipeline.do_r2map || config.pipeline.do_r2primemap
@@ -342,6 +342,11 @@ pub fn run_pipeline_cached(
                 &mut ctx, &mask_path, &main.chi_raw, output.qsm_path(&qsm_run.key), "reference", progress,
             )?;
         }
+    }
+
+    // After referencing: SMWI weights by the final, referenced susceptibility map.
+    if config.pipeline.do_smwi && meta.has_magnitude {
+        stage_smwi(&mut ctx, &mask_path, progress)?;
     }
 
     if config.pipeline.do_chi_separation {
@@ -1401,6 +1406,76 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let mag_input = ctx.output.magnitude_path(&ctx.run.key);
     ctx.complete_step("swi", Some("clear-swi"), swi_params, &[phase_path.as_path(), mag_input.as_path(), mask_path], vec![swi_path, mip_path], t)?;
     log_step_done("SWI", t);
+    Ok(())
+}
+
+/// Susceptibility map-weighted imaging: weight the magnitude by a mask built from χ.
+///
+/// Unlike SWI, the weighting comes from the susceptibility map rather than from high-pass filtered
+/// phase, so the contrast sits where the source is instead of spreading with the dipole field. It
+/// therefore runs after referencing, on the final `Chimap`.
+///
+/// Both contrasts are written: the paramagnetic mask suppresses positive χ (iron, haemorrhage), the
+/// diamagnetic one negative χ (calcification, myelin). Each gets a minIP, carrying the projection's
+/// own shorter geometry as the SWI minIP does.
+fn stage_smwi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
+    let (nx, ny, nz) = ctx.dims();
+    let (vsx, vsy, vsz) = ctx.voxel_size();
+    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+    let window = ctx.config.smwi.mip_window;
+    // Checked before any work, so an impossible window fails early rather than after the weighting.
+    let (mip_grid, _) = qsm_core::swi::mip_geometry(&grid, &ctx.meta.affine, window)
+        .map_err(QsmxtError::Config)?;
+    let params = serde_json::json!({
+        "threshold_ppm": ctx.config.smwi.threshold_ppm,
+        "power": ctx.config.smwi.power,
+        "mip_window": window,
+        "mip_dims": [mip_grid.nx(), mip_grid.ny(), mip_grid.nz()],
+    });
+    if ctx.is_cached_with_params("smwi", Some("smwi"), &params) {
+        log::info!("Skipping smwi (cached)");
+        return Ok(());
+    }
+
+    let qsm_path = ctx.output.qsm_path(&ctx.run.key);
+    if !qsm_path.exists() {
+        log::warn!("Skipping SMWI: no susceptibility map at {}", qsm_path.display());
+        return Ok(());
+    }
+    let t = Instant::now();
+    log::info!("Computing SMWI (threshold {} ppm, power {}, mIP over {} slices)",
+               ctx.config.smwi.threshold_ppm, ctx.config.smwi.power, window);
+    progress("Computing SMWI");
+
+    let chi = load_volume(&qsm_path)?;
+    let mag = load_volume(&ctx.output.magnitude_path(&ctx.run.key))?;
+    let mask = load_mask(mask_path)?;
+    let core = qsm_core::swi::SmwiParams {
+        threshold_ppm: ctx.config.smwi.threshold_ppm,
+        power: ctx.config.smwi.power,
+        mip_window: window,
+    };
+    let (para, dia) = qsm_core::swi::calculate_smwi(&mag, &chi, Some(&mask), &grid, &core);
+
+    let mut outputs = Vec::new();
+    for (contrast, data) in [("paramagnetic", &para), ("diamagnetic", &dia)] {
+        let smwi_path = ctx.output.smwi_path(&ctx.run.key, contrast);
+        let mip_path = ctx.output.smwi_mip_path(&ctx.run.key, contrast);
+        // The combined magnitude is one volume here, but calculate_smwi also accepts echoes
+        // stacked along the slowest axis; collapse before projecting either way.
+        let collapsed = qsm_core::swi::average_echoes(data, &grid);
+        let mip = qsm_core::swi::create_mip(&collapsed, &grid, &ctx.meta.affine, window)
+            .map_err(QsmxtError::Config)?;
+        save_volume(&smwi_path, &collapsed, ctx.meta)?;
+        write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
+        outputs.push(smwi_path);
+        outputs.push(mip_path);
+    }
+
+    let mag_input = ctx.output.magnitude_path(&ctx.run.key);
+    ctx.complete_step("smwi", Some("smwi"), params,
+                      &[qsm_path.as_path(), mag_input.as_path(), mask_path], outputs, t)?;
+    log_step_done("SMWI", t);
     Ok(())
 }
 

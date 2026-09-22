@@ -69,6 +69,7 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     cover!(q::inversion::TfiParams => c::TfiConfig);
     cover!(q::inversion::AmpPeParams => c::AmpPeConfig);
     cover!(q::inversion::IlsqrParams => c::IlsqrConfig);
+    cover!(q::swi::SmwiParams => c::SmwiConfig);
     // `b0` comes from scan metadata and `mask_output` is forced off when HEIDI consumes the
     // solution, so qsm-core's dispatcher owns both — neither is the user's to set.
     cover!(q::inversion::LsqrQsmParams => c::LsqrConfig, ignore: ["b0", "mask_output"]);
