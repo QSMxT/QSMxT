@@ -79,6 +79,8 @@ pub enum Command {
     Qsmart(QsmartArgs),
     /// Susceptibility-weighted imaging
     Swi(SwiArgs),
+    /// Whole-brain segmentation of a magnitude image with SynthSeg
+    Segment(SegmentArgs),
     /// R2* mapping from multi-echo magnitude data
     R2star(R2starArgs),
     /// T2* mapping from multi-echo magnitude data
@@ -917,6 +919,30 @@ impl RomeoParamArgs {
 }
 
 #[derive(Args, Debug, Default, Clone)]
+pub struct SegmentationParamArgs {
+    /// SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF)
+    #[arg(long, value_name = "VERSION")]
+    pub synthseg_version: Option<String>,
+    /// Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32).
+    /// Omit to process the whole volume, as the SynthSeg CLI does
+    #[arg(long)]
+    pub synthseg_crop: Option<usize>,
+    /// Skip the left-right flipped second pass. Halves inference time, as SynthSeg's --fast does
+    #[arg(long)]
+    pub no_synthseg_flip_averaging: bool,
+    /// Skip resetting each topological class to its largest connected component
+    #[arg(long)]
+    pub no_synthseg_topology_cleanup: bool,
+    /// Gaussian blur on the posteriors, in voxels (0 disables it)
+    #[arg(long)]
+    pub synthseg_sigma: Option<f64>,
+    /// Prefer a bring-your-own segmentation from <bids>/derivatives/<TOOL>/ when present.
+    /// Bare flag = first matching tool alphabetically. Always falls back to running SynthSeg
+    #[arg(long, num_args = 0..=1, default_missing_value = "*", value_name = "TOOL")]
+    pub use_custom_dseg: Option<String>,
+}
+
+#[derive(Args, Debug, Default, Clone)]
 pub struct SmwiParamArgs {
     /// SMWI susceptibility threshold in ppm — the |χ| at which the weighting mask reaches zero.
     /// The 1 ppm default follows SEPIA and targets strong sources; brain tissue wants far less
@@ -1087,6 +1113,8 @@ pub struct PipelineArgs {
     #[command(flatten)]
     pub smwi_params: SmwiParamArgs,
     #[command(flatten)]
+    pub segmentation_params: SegmentationParamArgs,
+    #[command(flatten)]
     pub tiling_params: TilingParamArgs,
 
     /// Inhomogeneity correction smoothing sigma in mm
@@ -1112,6 +1140,17 @@ pub struct PipelineArgs {
     /// Also compute SWI
     #[arg(long)]
     pub do_swi: bool,
+
+    /// Also segment the brain from the GRE magnitude with SynthSeg, writing a FreeSurfer-labelled
+    /// `_dseg.nii` and its BIDS lookup table. Needs no T1w and no registration. Needs a
+    /// deep-learning build. doi:10.1016/j.media.2023.102789
+    #[arg(long)]
+    pub do_segmentation: bool,
+
+    /// Also summarise susceptibility per segmented structure into a TSV (median, mean, SD and
+    /// 5th/95th percentiles). Implies --do-segmentation and QSM, unless a custom one is supplied
+    #[arg(long)]
+    pub do_analysis: bool,
 
     /// Also compute SMWI (susceptibility map-weighted imaging): weights the magnitude by a mask
     /// built from the susceptibility map rather than from high-pass filtered phase, so the contrast
@@ -2706,6 +2745,21 @@ pub struct QsmartArgs {
     pub magnitude: Option<PathBuf>,
     #[command(flatten)]
     pub qsmart_params: QsmartParamArgs,
+}
+
+#[derive(Parser, Debug)]
+pub struct SegmentArgs {
+    /// Input magnitude NIfTI file. Not a susceptibility map: SynthSeg reads anatomy, and χ has
+    /// none of the tissue contrast it was trained to recognise
+    pub magnitude: PathBuf,
+    /// Output label NIfTI file (FreeSurfer label ids)
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// Also write the BIDS label lookup table (index/name) to this path
+    #[arg(long)]
+    pub lookup: Option<PathBuf>,
+    #[command(flatten)]
+    pub params: SegmentationParamArgs,
 }
 
 #[derive(Parser, Debug)]

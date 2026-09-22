@@ -417,6 +417,20 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if args.no_qsm { config.pipeline.do_qsm = false; }
         if args.do_swi { config.pipeline.do_swi = true; }
         if args.do_smwi { config.pipeline.do_smwi = true; }
+        if args.do_segmentation { config.pipeline.do_segmentation = true; }
+        if args.do_analysis { config.pipeline.do_analysis = true; }
+        let sg = &args.segmentation_params;
+        if let Some(ref v) = sg.synthseg_version {
+            match parse_synthseg_version(v) {
+                Some(parsed) => config.segmentation.version = parsed,
+                None => log::warn!("Ignoring --synthseg-version '{}': expected v1 or v2", v),
+            }
+        }
+        if let Some(v) = sg.synthseg_crop { config.segmentation.crop = Some(v); }
+        if sg.no_synthseg_flip_averaging { config.segmentation.flip_averaging = false; }
+        if sg.no_synthseg_topology_cleanup { config.segmentation.topology_cleanup = false; }
+        if let Some(v) = sg.synthseg_sigma { config.segmentation.sigma_smoothing = v; }
+        if let Some(ref tool) = sg.use_custom_dseg { config.segmentation.custom_dseg_tool = Some(tool.clone()); }
         if let Some(v) = args.smwi_params.smwi_threshold { config.smwi.threshold_ppm = v; }
         if let Some(v) = args.smwi_params.smwi_power { config.smwi.power = v; }
         if let Some(v) = args.smwi_params.smwi_mip_window { config.smwi.mip_window = v; }
@@ -467,6 +481,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = sp.hc_chisep_bin_hz { config.separation.hc_chisep.bin_hz = v; }
         // Chi-separation depends on R2*/R2/R2'; enabling it implies computing them
         // (a custom R2' or R2 map, when supplied, is used instead — see the runner).
+        enforce_analysis_dependencies(config);
         enforce_smwi_dependencies(config);
         enforce_separation_dependencies(config);
         if args.export_dicom { config.pipeline.export_dicom = true; }

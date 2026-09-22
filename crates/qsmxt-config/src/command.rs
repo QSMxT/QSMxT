@@ -12,6 +12,26 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     // ── Pipeline toggles ──
     if !config.pipeline.do_qsm { parts.push("--no-qsm".into()); }
     if config.pipeline.do_swi { parts.push("--do-swi".into()); }
+    if config.pipeline.do_segmentation && !config.pipeline.do_analysis {
+        parts.push("--do-segmentation".into());
+    }
+    if config.pipeline.do_analysis {
+        // --do-analysis implies segmentation, so saying both adds noise.
+        parts.push("--do-analysis".into());
+    }
+    if config.pipeline.do_segmentation || config.pipeline.do_analysis {
+        let (c, dd) = (&config.segmentation, &d.segmentation);
+        if c.version != dd.version { parts.push(format!("--synthseg-version {}", c.version)); }
+        if let Some(crop) = c.crop { parts.push(format!("--synthseg-crop {crop}")); }
+        if !c.flip_averaging { parts.push("--no-synthseg-flip-averaging".into()); }
+        if !c.topology_cleanup { parts.push("--no-synthseg-topology-cleanup".into()); }
+        emit_f64(&mut parts, "--synthseg-sigma", c.sigma_smoothing, dd.sigma_smoothing);
+        match c.custom_dseg_tool.as_deref() {
+            Some("*") => parts.push("--use-custom-dseg".into()),
+            Some(tool) => parts.push(format!("--use-custom-dseg {tool}")),
+            None => {}
+        }
+    }
     if config.pipeline.do_smwi {
         parts.push("--do-smwi".into());
         emit_f64(&mut parts, "--smwi-threshold", config.smwi.threshold_ppm, d.smwi.threshold_ppm);
@@ -849,6 +869,31 @@ frangi_c = 400.0
     /// Off by default, so the bare flag says everything when the reliable mask is the default one.
     /// HEIDI's seed is an LSQR solve, so `--qsm-algorithm heidi` has to emit both groups; plain
     /// LSQR must not emit HEIDI's.
+    #[test]
+    fn segmentation_and_analysis_emit_their_flags() {
+        let mut c = PipelineConfig::default();
+        assert!(!generate_command(&c).contains("--do-segmentation"));
+
+        c.pipeline.do_segmentation = true;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--do-segmentation"), "{cmd}");
+        assert!(!cmd.contains("--synthseg-version"), "the default version stays off: {cmd}");
+
+        // --do-analysis implies segmentation, so emitting both would be noise.
+        c.pipeline.do_analysis = true;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--do-analysis"), "{cmd}");
+        assert!(!cmd.contains("--do-segmentation"), "implied, so not repeated: {cmd}");
+
+        c.segmentation.version = crate::enums::SynthSegVersion::V2;
+        c.segmentation.flip_averaging = false;
+        c.segmentation.crop = Some(192);
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--synthseg-version v2"), "{cmd}");
+        assert!(cmd.contains("--no-synthseg-flip-averaging"), "{cmd}");
+        assert!(cmd.contains("--synthseg-crop 192"), "{cmd}");
+    }
+
     #[test]
     fn smwi_emits_its_flag_and_non_default_params() {
         let mut c = PipelineConfig::default();

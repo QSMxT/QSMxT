@@ -126,3 +126,25 @@ impl fmt::Display for QsmReference {
         write!(f, "{}", match self { Self::Mean => "mean", Self::None => "none" })
     }
 }
+
+/// SynthSeg weights generation. Mirrors `qsm_core::segment::SynthSegVersion`; it selects the label
+/// table, so it has to match the weights actually being run.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum SynthSegVersion {
+    #[default]
+    V1,
+    V2,
+}
+impl fmt::Display for SynthSegVersion {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::V1 => "v1", Self::V2 => "v2" })
+    }
+}
+pub fn parse_synthseg_version(s: &str) -> Option<SynthSegVersion> {
+    match s.trim() {
+        "v1" => Some(SynthSegVersion::V1),
+        "v2" => Some(SynthSegVersion::V2),
+        _ => None,
+    }
+}

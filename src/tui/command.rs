@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::cli::*;
-use crate::pipeline::config::{PipelineConfig, QsmAlgorithm, SeparationAlgorithm, UnwrappingAlgorithm, BfAlgorithm, QsmReference, B0Estimation, B0WeightType, enforce_separation_dependencies, enforce_smwi_dependencies};
+use crate::pipeline::config::{PipelineConfig, QsmAlgorithm, SeparationAlgorithm, UnwrappingAlgorithm, BfAlgorithm, QsmReference, B0Estimation, B0WeightType, enforce_separation_dependencies, enforce_smwi_dependencies, enforce_analysis_dependencies};
 use super::app::App;
 
 /// Trimmed non-empty string → Some, else None (for bring-your-own tool fields).
@@ -516,6 +516,16 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         no_qsm: !ps.do_qsm,
         do_swi: form.do_swi,
         do_smwi: form.do_smwi,
+        do_segmentation: form.do_segmentation,
+        do_analysis: form.do_analysis,
+        segmentation_params: crate::cli::SegmentationParamArgs {
+            synthseg_version: Some(if form.synthseg_version == 1 { "v2".into() } else { "v1".into() }),
+            synthseg_crop: parse_optional_usize(&form.synthseg_crop),
+            no_synthseg_flip_averaging: !form.synthseg_flip_averaging,
+            no_synthseg_topology_cleanup: !form.synthseg_topology_cleanup,
+            synthseg_sigma: parse_optional_f64(&form.synthseg_sigma),
+            use_custom_dseg: None,
+        },
         smwi_params: crate::cli::SmwiParamArgs {
             smwi_threshold: parse_optional_f64(&form.smwi_threshold),
             smwi_power: parse_optional_f64(&form.smwi_power),
@@ -682,6 +692,17 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     config.pipeline.do_qsm = ps.do_qsm;
     config.pipeline.do_swi = app.form.do_swi;
     config.pipeline.do_smwi = app.form.do_smwi;
+    config.pipeline.do_segmentation = app.form.do_segmentation;
+    config.pipeline.do_analysis = app.form.do_analysis;
+    config.segmentation.version = if app.form.synthseg_version == 1 {
+        crate::pipeline::config::SynthSegVersion::V2
+    } else {
+        crate::pipeline::config::SynthSegVersion::V1
+    };
+    config.segmentation.crop = app.form.synthseg_crop.trim().parse::<usize>().ok();
+    config.segmentation.flip_averaging = app.form.synthseg_flip_averaging;
+    config.segmentation.topology_cleanup = app.form.synthseg_topology_cleanup;
+    if let Ok(v) = app.form.synthseg_sigma.trim().parse::<f64>() { config.segmentation.sigma_smoothing = v; }
     if let Ok(v) = app.form.smwi_threshold.trim().parse::<f64>() { config.smwi.threshold_ppm = v; }
     if let Ok(v) = app.form.smwi_power.trim().parse::<f64>() { config.smwi.power = v; }
     if let Ok(v) = app.form.smwi_mip_window.trim().parse::<usize>() { config.smwi.mip_window = v; }
@@ -969,6 +990,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     }
 
     // Chi-separation forces the relaxometry maps it depends on (R2/R2'/R2*).
+    enforce_analysis_dependencies(&mut config);
     enforce_smwi_dependencies(&mut config);
     enforce_separation_dependencies(&mut config);
     config

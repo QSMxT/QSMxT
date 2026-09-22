@@ -83,6 +83,24 @@ impl StageContext<'_> {
         self.state.mark_completed(step, output_paths, Some(hash));
         self.state.save(self.state_path)
     }
+
+    /// [`Self::complete_step`], plus step metadata kept in the state file for a later stage.
+    #[allow(clippy::too_many_arguments)]
+    fn complete_step_with_metadata(
+        &mut self,
+        step: &str,
+        algorithm: Option<&str>,
+        parameters: serde_json::Value,
+        inputs: &[&Path],
+        output_paths: Vec<PathBuf>,
+        metadata: Option<serde_json::Value>,
+        start: Instant,
+    ) -> crate::Result<()> {
+        self.complete_step(step, algorithm, parameters.clone(), inputs, output_paths.clone(), start)?;
+        let hash = crate::pipeline::graph::step_params_hash(algorithm, &parameters);
+        self.state.mark_completed_with_metadata(step, output_paths, Some(hash), metadata);
+        self.state.save(self.state_path)
+    }
 }
 
 /// Global multi-progress for coordinating parallel progress bars.
@@ -262,7 +280,8 @@ pub fn run_pipeline_cached(
         || (config.pipeline.do_r2starmap && meta.n_echoes >= 3 && meta.has_magnitude)
         || config.pipeline.do_r2map || config.pipeline.do_r2primemap
         || config.pipeline.do_chi_separation;
-    let needs_phase = needs_mask || config.pipeline.do_qsm;
+    let needs_phase = needs_mask || config.pipeline.do_qsm
+        || config.pipeline.do_segmentation || config.pipeline.do_analysis;
 
     let two_pass = two_pass_enabled(config, qsm_run);
 
@@ -347,6 +366,15 @@ pub fn run_pipeline_cached(
     // After referencing: SMWI weights by the final, referenced susceptibility map.
     if config.pipeline.do_smwi && meta.has_magnitude {
         stage_smwi(&mut ctx, &mask_path, progress)?;
+    }
+
+    let dseg_path = output.dseg_path(&qsm_run.key);
+    if config.pipeline.do_segmentation && meta.has_magnitude {
+        stage_segmentation(&mut ctx, &dseg_path, progress)?;
+    }
+    // Last: it reads both the referenced χ map and the segmentation.
+    if config.pipeline.do_analysis {
+        stage_analysis(&mut ctx, &dseg_path, progress)?;
     }
 
     if config.pipeline.do_chi_separation {
@@ -1406,6 +1434,251 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let mag_input = ctx.output.magnitude_path(&ctx.run.key);
     ctx.complete_step("swi", Some("clear-swi"), swi_params, &[phase_path.as_path(), mag_input.as_path(), mask_path], vec![swi_path, mip_path], t)?;
     log_step_done("SWI", t);
+    Ok(())
+}
+
+/// Per-structure susceptibility statistics over a segmentation.
+///
+/// One row per label present in the volume. Both a median and a mean are reported because they
+/// answer different questions: susceptibility distributions inside a structure are skewed and
+/// carry outliers (vessels, partial volume at a boundary), so the median is the robust summary,
+/// while the mean is what most of the literature quotes. The percentiles show the spread without a
+/// single voxel setting it.
+///
+/// `volume_mm3` is SynthSeg's own partial-volume-aware figure — the sum of the soft posteriors,
+/// which is not the same as counting labelled voxels, so `n_voxels` is reported alongside it
+/// rather than in its place. A supplied segmentation has no posteriors, so its volume is left
+/// empty rather than guessed at from the voxel count.
+fn stage_analysis(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
+    let out_path = ctx.output.qsm_stats_path(&ctx.run.key);
+    let params = serde_json::json!({ "version": format!("{}", ctx.config.segmentation.version) });
+    if ctx.is_cached_with_params("analysis", None, &params) {
+        log::info!("Skipping analysis (cached)");
+        return Ok(());
+    }
+
+    let qsm_path = ctx.output.qsm_path(&ctx.run.key);
+    for (what, p) in [("susceptibility map", &qsm_path), ("segmentation", &dseg_path.to_path_buf())] {
+        if !p.exists() {
+            log::warn!("Skipping analysis: no {} at {}", what, p.display());
+            return Ok(());
+        }
+    }
+    let t = Instant::now();
+    progress("Summarising QSM per structure");
+
+    let chi = load_volume(&qsm_path)?;
+    let seg = load_volume(dseg_path)?;
+    if seg.len() != chi.len() {
+        return Err(QsmxtError::DimensionMismatch(format!(
+            "segmentation has {} voxels but the susceptibility map has {}",
+            seg.len(), chi.len())));
+    }
+
+    let labels = to_core_synthseg_version(ctx.config.segmentation.version).labels();
+    // SynthSeg's per-label volumes, when this run produced them itself.
+    let volumes: Option<Vec<f64>> = ctx.state.completed_steps.get("segmentation")
+        .and_then(|r| r.metadata.as_ref())
+        .and_then(|m| m.get("volumes"))
+        .and_then(|v| serde_json::from_value(v.clone()).ok());
+
+    let mut rows = String::from(
+        "index\tname\tn_voxels\tvolume_mm3\tmedian_ppm\tmean_ppm\tsd_ppm\tp5_ppm\tp95_ppm\n");
+    let mut reported = 0usize;
+    for (ch, (&id, name)) in labels.ids.iter().zip(labels.names).enumerate() {
+        if id == 0 {
+            continue; // background
+        }
+        let mut vals: Vec<f64> = chi.iter().zip(&seg)
+            .filter(|(_, &l)| (l.round() as i32) == id)
+            .map(|(&c, _)| c)
+            .filter(|v| v.is_finite())
+            .collect();
+        if vals.is_empty() {
+            continue;
+        }
+        reported += 1;
+        let n = vals.len();
+        let st = structure_stats(&mut vals);
+        let vol = volumes.as_ref().and_then(|v| v.get(ch))
+            .map(|v| format!("{v:.1}")).unwrap_or_default();
+        rows.push_str(&format!(
+            "{id}\t{name}\t{n}\t{vol}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\n",
+            st.median, st.mean, st.sd, st.p5, st.p95));
+    }
+
+    if let Some(parent) = out_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&out_path, rows)?;
+    log::info!("Per-structure QSM statistics for {} structures -> {}", reported, out_path.display());
+    ctx.complete_step("analysis", None, params, &[qsm_path.as_path(), dseg_path],
+                      vec![out_path], t)?;
+    log_step_done("Per-structure analysis", t);
+    Ok(())
+}
+
+/// Summary statistics for one structure's susceptibility values.
+struct StructureStats { median: f64, mean: f64, sd: f64, p5: f64, p95: f64 }
+
+/// Summarise a structure's voxels. Sorts `vals` in place.
+///
+/// The SD is the population one: these are every voxel of the structure, not a sample drawn from
+/// it, so there is no degree of freedom to lose. Percentiles use nearest-rank on the sorted values
+/// rather than interpolating — an interpolated percentile invents a susceptibility no voxel had.
+fn structure_stats(vals: &mut [f64]) -> StructureStats {
+    assert!(!vals.is_empty(), "structure_stats needs at least one value");
+    vals.sort_by(|a, b| a.partial_cmp(b).expect("non-finite values are filtered out"));
+    let n = vals.len();
+    let mean = vals.iter().sum::<f64>() / n as f64;
+    let sd = (vals.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n as f64).sqrt();
+    let pct = |q: f64| vals[(((n - 1) as f64) * q).round() as usize];
+    StructureStats { median: pct(0.5), mean, sd, p5: pct(0.05), p95: pct(0.95) }
+}
+
+/// Bring-your-own segmentation (`*_dseg.nii*`).
+fn find_custom_dseg(run: &QsmRun, tool: &str) -> Option<PathBuf> {
+    find_custom_derivative(run, tool, "*_dseg.nii*", &[])
+}
+
+/// Whole-brain parcellation of the GRE magnitude via SynthSeg.
+///
+/// SynthSeg is trained on synthetic images with randomised contrast, which is what lets one set of
+/// weights segment a GRE magnitude — so susceptibility can be reported per structure without
+/// acquiring and registering a separate T1w. It takes no brain mask: it finds the brain itself.
+///
+/// Writes the label volume and the BIDS lookup table that gives its integers names.
+fn stage_segmentation(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
+    let cfg = &ctx.config.segmentation;
+    let params_json = serde_json::json!({
+        "version": format!("{}", cfg.version),
+        "crop": cfg.crop,
+        "flip_averaging": cfg.flip_averaging,
+        "topology_cleanup": cfg.topology_cleanup,
+        "sigma_smoothing": cfg.sigma_smoothing,
+        "custom_dseg_tool": cfg.custom_dseg_tool,
+    });
+    if ctx.is_cached_with_params("segmentation", Some("synthseg"), &params_json) {
+        log::info!("Skipping segmentation (cached)");
+        return Ok(());
+    }
+    let t = Instant::now();
+
+    let version = to_core_synthseg_version(cfg.version);
+    let labels_table = version.labels();
+
+    // Prefer a bring-your-own segmentation, as masking does. Its integers are assumed to be
+    // FreeSurfer ids, which is what the lookup table is written from.
+    if let Some(tool) = cfg.custom_dseg_tool.clone() {
+        if let Some(path) = find_custom_dseg(ctx.run, &tool) {
+            match io::read_nifti_file(&path) {
+                Ok(nd) if nd.dims == ctx.meta.dims => {
+                    log::info!("Using custom segmentation from {}", path.display());
+                    progress("Reading the supplied segmentation");
+                    save_volume(dseg_path, &nd.data, ctx.meta)?;
+                    let lut = ctx.output.dseg_lookup_path(&ctx.run.key);
+                    write_dseg_lookup(&lut, labels_table)?;
+                    ctx.complete_step("segmentation", Some("synthseg"), params_json,
+                                      &[path.as_path()], vec![dseg_path.to_path_buf(), lut], t)?;
+                    log_step_done("Segmentation (custom)", t);
+                    return Ok(());
+                }
+                Ok(nd) => log::warn!(
+                    "custom segmentation {} is {}x{}x{}, not the run's {}x{}x{} — computing instead",
+                    path.display(), nd.dims.0, nd.dims.1, nd.dims.2,
+                    ctx.meta.dims.0, ctx.meta.dims.1, ctx.meta.dims.2),
+                Err(e) => log::warn!("could not read custom segmentation {} ({}) — computing instead",
+                                     path.display(), e),
+            }
+        } else {
+            log::info!("no custom segmentation under derivatives (tool: {}) — computing", tool);
+        }
+    }
+
+    let mag_path = ctx.output.magnitude_path(&ctx.run.key);
+    if !mag_path.exists() {
+        log::warn!("Skipping segmentation: no combined magnitude at {}", mag_path.display());
+        return Ok(());
+    }
+
+    prefetch_weights("synthseg", &ctx.run.key.to_string())?;
+    progress("Segmenting (SynthSeg)");
+    log::info!("Segmentation (SynthSeg {}, {} labels{}{})",
+               cfg.version, labels_table.ids.len(),
+               if cfg.flip_averaging { ", flip-averaged" } else { "" },
+               if cfg.topology_cleanup { ", topology cleanup" } else { "" });
+
+    let (result, volumes) = run_synthseg(ctx, &mag_path, version)?;
+
+    // FreeSurfer ids are integers; they travel through the f64 writer exactly (all are < 2^53).
+    let as_f64: Vec<f64> = result.iter().map(|&l| l as f64).collect();
+    save_volume(dseg_path, &as_f64, ctx.meta)?;
+    let lut = ctx.output.dseg_lookup_path(&ctx.run.key);
+    write_dseg_lookup(&lut, labels_table)?;
+
+    let present = labels_table.ids.iter().skip(1).zip(volumes.iter().skip(1))
+        .filter(|(_, &v)| v > 0.0).count();
+    log::info!("Segmented {} of {} structures", present, labels_table.ids.len() - 1);
+
+    ctx.complete_step_with_metadata(
+        "segmentation", Some("synthseg"), params_json, &[mag_path.as_path()],
+        vec![dseg_path.to_path_buf(), lut],
+        Some(serde_json::json!({ "volumes": volumes })), t)?;
+    log_step_done("Segmentation", t);
+    Ok(())
+}
+
+fn to_core_synthseg_version(v: crate::pipeline::config::SynthSegVersion) -> qsm_core::segment::SynthSegVersion {
+    match v {
+        crate::pipeline::config::SynthSegVersion::V1 => qsm_core::segment::SynthSegVersion::V1,
+        crate::pipeline::config::SynthSegVersion::V2 => qsm_core::segment::SynthSegVersion::V2,
+    }
+}
+
+/// Run the network. Split out so the `dl`-feature gate sits in one place: without it the weights
+/// cannot be run at all, and saying so plainly beats a missing-symbol build error.
+#[cfg(feature = "dl")]
+fn run_synthseg(
+    ctx: &StageContext, mag_path: &Path, version: qsm_core::segment::SynthSegVersion,
+) -> crate::Result<(Vec<i32>, Vec<f64>)> {
+    let mag = load_volume(mag_path)?;
+    let (nx, ny, nz) = ctx.meta.dims;
+    let (vsx, vsy, vsz) = ctx.meta.voxel_size;
+    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
+    let params = qsm_core::segment::SynthSegParams {
+        version,
+        crop: ctx.config.segmentation.crop,
+        flip_averaging: ctx.config.segmentation.flip_averaging,
+        topology_cleanup: ctx.config.segmentation.topology_cleanup,
+        sigma_smoothing: ctx.config.segmentation.sigma_smoothing,
+    };
+    let weights = qsm_core::models::primary_weight("synthseg")
+        .map_err(|e| QsmxtError::Config(format!("synthseg weights: {}", e)))?;
+    let (prog, _) = iter_progress_bar(&ctx.run.key.to_string(), "synthseg");
+    let out = qsm_core::segment::synthseg(&mag, &grid, &ctx.meta.affine, &weights, &params, prog)
+        .map_err(|e| QsmxtError::Config(format!("synthseg: {}", e)))?;
+    Ok((out.labels, out.volumes))
+}
+
+#[cfg(not(feature = "dl"))]
+fn run_synthseg(
+    _ctx: &StageContext, _mag_path: &Path, _version: qsm_core::segment::SynthSegVersion,
+) -> crate::Result<(Vec<i32>, Vec<f64>)> {
+    Err(QsmxtError::Config(
+        "segmentation needs a deep-learning build: SynthSeg runs an ONNX network, which this \
+         binary was compiled without (--no-default-features)".into()))
+}
+
+/// The BIDS lookup table pairing each label integer with its name.
+fn write_dseg_lookup(path: &Path, labels: &qsm_core::segment::SynthSegLabels) -> crate::Result<()> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let mut out = String::from("index\tname\n");
+    for (id, name) in labels.ids.iter().zip(labels.names) {
+        out.push_str(&format!("{id}\t{name}\n"));
+    }
+    std::fs::write(path, out)?;
     Ok(())
 }
 
@@ -2556,6 +2829,39 @@ mod tests {
             assert_ne!(main.step(step), reliable.step(step));
         }
         assert_eq!(main.step("invert"), "invert", "the main pass keeps the unsuffixed step names");
+    }
+
+    /// Percentile indexing is easy to get subtly wrong, and a wrong p5/p95 looks entirely
+    /// plausible in a results table.
+    #[test]
+    fn structure_stats_summarise_a_structure() {
+        // 0..=100: every statistic has an exact expected value.
+        let mut vals: Vec<f64> = (0..=100).map(|i| i as f64).collect();
+        let st = super::structure_stats(&mut vals);
+        assert_eq!(st.median, 50.0);
+        assert_eq!(st.mean, 50.0);
+        assert_eq!(st.p5, 5.0);
+        assert_eq!(st.p95, 95.0);
+
+        // Population SD of 0..=100 is sqrt((n²-1)/12) = sqrt(850).
+        assert!((st.sd - 850f64.sqrt()).abs() < 1e-9, "sd was {}", st.sd);
+
+        // Unsorted input is sorted in place, and the answer does not depend on the order.
+        let mut shuffled = vec![95.0, 5.0, 50.0, 0.0, 100.0];
+        let a = super::structure_stats(&mut shuffled);
+        let mut sorted = vec![0.0, 5.0, 50.0, 95.0, 100.0];
+        let b = super::structure_stats(&mut sorted);
+        assert_eq!((a.median, a.p5, a.p95), (b.median, b.p5, b.p95));
+
+        // A single voxel: every statistic is that voxel, and the SD is zero rather than NaN.
+        let st = super::structure_stats(&mut [0.25]);
+        assert_eq!((st.median, st.mean, st.p5, st.p95), (0.25, 0.25, 0.25, 0.25));
+        assert_eq!(st.sd, 0.0);
+
+        // Percentiles are real observations, never interpolated between two voxels.
+        let mut two = vec![0.0, 1.0];
+        let st = super::structure_stats(&mut two);
+        assert!(st.median == 0.0 || st.median == 1.0, "median was interpolated: {}", st.median);
     }
 
     /// HEIDI seeds itself with an LSQR solve, so an LSQR parameter changes the HEIDI result and

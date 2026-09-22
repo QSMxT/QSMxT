@@ -17,6 +17,7 @@ pub mod separate;
 pub mod resample;
 pub mod run;
 pub mod slurm;
+pub mod segment;
 pub mod swi;
 pub mod t2star;
 pub mod unwrap;
@@ -95,6 +96,7 @@ mod integration_tests {
                 romeo_params: Default::default(),
                 swi_params: Default::default(),
                 smwi_params: Default::default(),
+                segmentation_params: Default::default(),
                 tiling_params: Default::default(),
                 homogeneity_sigma_mm: None,
                 homogeneity_nbox: None,
@@ -103,6 +105,8 @@ mod integration_tests {
                 no_qsm: false,
                 do_swi: false,
                 do_smwi: false,
+                do_segmentation: false,
+                do_analysis: false,
                 do_t2starmap: false,
                 do_r2starmap: false,
                 do_r2map: false,

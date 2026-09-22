@@ -104,6 +104,19 @@ impl DerivativeOutputs {
     }
     pub fn swi_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "swi") }
     pub fn swi_mip_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "minIP") }
+    /// Discrete whole-brain segmentation (`_dseg.nii`) and its BIDS label lookup table.
+    ///
+    /// BIDS pairs a `dseg` image with a `.tsv` carrying `index` and `name` columns, so the integer
+    /// labels in the volume mean something without consulting FreeSurfer's table.
+    pub fn dseg_path(&self, key: &AcquisitionKey) -> PathBuf { self.nifti_path(key, "dseg") }
+    pub fn dseg_lookup_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_dseg.tsv", key.basename()))
+    }
+    /// Per-structure susceptibility statistics over the segmentation.
+    pub fn qsm_stats_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-segmentation_qsmstats.tsv", key.basename()))
+    }
+
     /// SMWI and its minIP, per contrast. The `desc-` values match the chi-separation outputs, which
     /// split the same two ways.
     pub fn smwi_path(&self, key: &AcquisitionKey, contrast: &str) -> PathBuf {

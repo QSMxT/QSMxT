@@ -43,6 +43,7 @@ fn main() {
         Command::Separate { command } => commands::separate::execute(command),
         Command::Qsmart(args) => commands::qsmart::execute(args),
         Command::Swi(args) => commands::swi::execute(args),
+        Command::Segment(args) => commands::segment::execute(args),
         Command::R2star(args) => commands::r2star::execute(args),
         Command::T2star(args) => commands::t2star::execute(args),
         Command::R2(args) => commands::r2::execute(args),

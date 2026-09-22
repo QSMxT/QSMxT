@@ -156,6 +156,21 @@ impl PipelineState {
         self.current_step = None;
     }
 
+    /// Like [`Self::mark_completed`], but keeping a step's own metadata in the state file.
+    ///
+    /// Used for figures a later stage needs and cannot recompute — SynthSeg's per-label volumes
+    /// come from the soft posteriors, which are gone by the time the label volume is on disk.
+    pub fn mark_completed_with_metadata(
+        &mut self, step_name: &str, outputs: Vec<PathBuf>, params_hash: Option<String>,
+        metadata: Option<serde_json::Value>,
+    ) {
+        self.completed_steps.insert(
+            step_name.to_string(),
+            StepRecord { outputs, metadata, params_hash },
+        );
+        self.current_step = None;
+    }
+
     /// Mark the entire run as complete.
     pub fn mark_run_complete(&mut self) {
         self.status = "complete".to_string();
@@ -231,10 +246,11 @@ pub fn downstream_of(step_name: &str) -> Vec<String> {
         out.push("twopass".to_string());
         out.push("reference".to_string());
         out.push("smwi".to_string());
+        out.push("analysis".to_string());
         return out;
     }
     if step_name == "twopass" {
-        return vec!["reference".to_string(), "smwi".to_string()];
+        return vec!["reference".to_string(), "smwi".to_string(), "analysis".to_string()];
     }
 
     let direct = downstream_steps(step_name);
@@ -243,8 +259,10 @@ pub fn downstream_of(step_name: &str) -> Vec<String> {
     // referencing is. Derived rather than listed in each of the seven sets that reach `reference`:
     // a missing entry there would show a new reconstruction with weighting from the old one, and
     // nothing would say so.
-    if out.iter().any(|d| d == "reference") && !out.iter().any(|d| d == "smwi") {
-        out.push("smwi".to_string());
+    for derived in ["smwi", "analysis"] {
+        if out.iter().any(|d| d == "reference") && !out.iter().any(|d| d == derived) {
+            out.push(derived.to_string());
+        }
     }
     out.extend(
         direct.iter()
@@ -321,6 +339,7 @@ fn downstream_steps(step_name: &str) -> &'static [&'static str] {
             "invert",
             "qsmart",
             "reference",
+            "segmentation",
         ],
         "mask" => &[
             "swi",
@@ -337,9 +356,11 @@ fn downstream_steps(step_name: &str) -> &'static [&'static str] {
         "unwrap" => &["bgremove", "invert", "tgv", "qsmart", "reference"],
         "bgremove" => &["invert", "reference"],
         "invert" | "tgv" | "qsmart" => &["reference"],
-        // SMWI weights by the referenced χ map, so it is stale whenever referencing is.
-        "reference" => &["smwi"],
+        // Both consumers of the referenced χ map: SMWI's weighting, and the per-structure stats.
+        "reference" => &["smwi", "analysis"],
         "smwi" => &[],
+        "segmentation" => &["analysis"],
+        "analysis" => &[],
         _ => &[],
     }
 }
@@ -376,6 +397,7 @@ pub fn clean_intermediates(state: &PipelineState, output_dir: &Path, key: &Acqui
     // would delete outputs the run is meant to produce.
     let final_steps: HashSet<&str> = [
         "mask", "magnitude", "reference", "swi", "smwi", "t2star_r2star",
+        "segmentation", "analysis",
         "mask-reliable", "reference-singlepass",
     ].iter().copied().collect();
 
@@ -424,11 +446,28 @@ mod tests {
         assert!(!ds.contains(&"bgremove".to_string()), "main pass must stay cached: {ds:?}");
     }
 
-    /// The combination is the last χ-producing step, so only referencing — and SMWI, which weights
-    /// by the referenced map — depend on it. Neither pass's reconstruction does.
+    /// The combination is the last χ-producing step, so what depends on it is referencing and the
+    /// two consumers of the referenced map: SMWI's weighting and the per-structure statistics.
+    /// Neither pass's own reconstruction does.
     #[test]
-    fn the_combination_only_invalidates_referencing_and_smwi() {
-        assert_eq!(downstream_of("twopass"), vec!["reference".to_string(), "smwi".to_string()]);
+    fn the_combination_only_invalidates_the_consumers_of_chi() {
+        assert_eq!(downstream_of("twopass"),
+                   vec!["reference".to_string(), "smwi".to_string(), "analysis".to_string()]);
+    }
+
+    /// The statistics summarise the referenced χ map over the segmentation, so either changing must
+    /// invalidate them. `segmentation` is not otherwise upstream of `reference`, so it needs its
+    /// own edge.
+    #[test]
+    fn the_analysis_follows_both_of_its_inputs() {
+        assert_eq!(downstream_of("segmentation"), vec!["analysis".to_string()]);
+        for step in ["reference", "invert", "mask", "magnitude", "load"] {
+            assert!(downstream_of(step).contains(&"analysis".to_string()),
+                    "{step} should invalidate analysis: {:?}", downstream_of(step));
+        }
+        // The magnitude feeds the segmentation, not just the reconstruction.
+        assert!(downstream_of("magnitude").contains(&"segmentation".to_string()));
+        assert!(downstream_of("analysis").is_empty());
     }
 
     /// Steps with nothing downstream must not grow a two-pass tail.
@@ -740,8 +779,9 @@ mod tests {
     fn test_downstream_steps_leaf() {
         assert!(downstream_steps("swi").is_empty());
         assert!(downstream_steps("smwi").is_empty());
-        // `reference` is not a leaf: SMWI weights by the referenced χ map.
-        assert_eq!(downstream_steps("reference"), &["smwi"]);
+        // `reference` is not a leaf: SMWI and the per-structure stats both read the referenced map.
+        assert_eq!(downstream_steps("reference"), &["smwi", "analysis"]);
+        assert!(downstream_steps("analysis").is_empty());
     }
 
     #[test]
