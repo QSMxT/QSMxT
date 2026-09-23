@@ -38,6 +38,19 @@ algorithm has its own parameters, the config is the place to tune things like
 regularisation weights and iteration counts that aren't exposed as top-level
 flags.
 
+Multi-orientation reconstruction lives in its own `[multi_orientation]` section,
+off unless `group_by` names a pattern:
+
+```toml
+[multi_orientation]
+group_by = "*acq-dir*"   # entity name, glob, or re:<regex> — empty = off
+algorithm = "cosmos"     # or "sti"
+lambda = 0.0
+```
+
+See [multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti)
+for what the pattern matches and what will be refused.
+
 :::tip
 Rather than writing flags or TOML by hand, configure interactively in the
 [TUI](/QSMxT/guides/running-interactively/) — it shows the equivalent `qsmxt run`

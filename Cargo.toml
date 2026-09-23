@@ -23,7 +23,11 @@ default = ["dl"]
 dl = ["qsm-core/onnx", "qsm-core/download"]
 
 [dependencies]
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.38.0", features = ["parallel"] }
+# TEMP: pinned to the COSMOS/STI merge (QSM.rs#115), one commit past v0.38.0 and not yet in a
+# release. A `rev` pin is what CI can actually resolve — a `path` pin cannot — but it must become
+# a `tag` pin before merging, or qsmbly (which pins qsmxt-config) has no release to match.
+# qsmxt-config must move in lockstep.
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "fc677f977f7cff8cdb62661b9b676139456d73ae", features = ["parallel"] }
 qsmxt-config = { path = "crates/qsmxt-config" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"

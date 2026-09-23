@@ -6,7 +6,8 @@ description = "Pipeline configuration, command generation, and methods text for 
 license = "GPL-3.0-only"
 
 [dependencies]
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.38.0" }
+# TEMP: see the note in the root Cargo.toml. Must match the root pin exactly.
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "fc677f977f7cff8cdb62661b9b676139456d73ae" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"

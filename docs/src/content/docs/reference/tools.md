@@ -103,11 +103,17 @@ Invert a local field map into a susceptibility map. One subcommand per method:
 | `ilsqr` | Iterative Least-Squares QR |
 | `lsqr` | Minimally regularised LSQR |
 | `heidi` | HEIDI — Homogeneity Enabled Incremental Dipole Inversion |
+| `cosmos` | COSMOS — multi-orientation least squares (2+ orientations) |
+| `sti` | Susceptibility tensor imaging (6+ orientations) |
 
 ```sh
 # e.g. inspect the parameters of a method
 qsmxt invert tgv --help
 ```
+
+`cosmos` and `sti` take several `--input` field maps plus one `--b0-direction` per
+orientation, and expect them already co-registered onto a common grid. See
+[multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti).
 
 ## Supplementary maps
 

@@ -196,6 +196,24 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             config.inversion.algorithm = qsm_algorithm_arg_to_config(a);
         }
 
+        // ── Multi-orientation (COSMOS / STI) ──
+        // The pattern is what switches the feature on; the rest only matter once it is.
+        if let Some(ref p) = args.orientation_group {
+            config.multi_orientation.group_by = p.clone();
+        }
+        if let Some(a) = args.multi_orientation_algorithm {
+            config.multi_orientation.algorithm = match a {
+                cli::MultiOrientAlgorithmArg::Cosmos => MultiOrientAlgorithm::Cosmos,
+                cli::MultiOrientAlgorithmArg::Sti => MultiOrientAlgorithm::Sti,
+            };
+        }
+        if let Some(l) = args.multi_orientation_lambda {
+            config.multi_orientation.lambda = l;
+        }
+        if args.multi_orientation_force {
+            config.multi_orientation.force = true;
+        }
+
         // ── Unwrapping ──
         if let Some(a) = args.unwrapping_algorithm {
             config.field_mapping.unwrapping_algorithm = match a {

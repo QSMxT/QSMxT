@@ -9,6 +9,16 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     let d = PipelineConfig::default();
     let mut parts: Vec<String> = vec!["qsmxt".into(), "run".into(), "<bids_dir>".into()];
 
+    // ── Multi-orientation (COSMOS / STI) ──
+    // The pattern is what switches it on, so the other flags only appear alongside it.
+    if config.multi_orientation.enabled() {
+        let m = &config.multi_orientation;
+        parts.push(format!("--orientation-group {}", shell_quote(&m.group_by)));
+        parts.push(format!("--multi-orientation-algorithm {}", m.algorithm));
+        emit_f64(&mut parts, "--multi-orientation-lambda", m.lambda, d.multi_orientation.lambda);
+        if m.force { parts.push("--multi-orientation-force".into()); }
+    }
+
     // ── Pipeline toggles ──
     if !config.pipeline.do_qsm { parts.push("--no-qsm".into()); }
     if config.pipeline.do_swi { parts.push("--do-swi".into()); }
@@ -1095,5 +1105,53 @@ algorithm = "tv"
         c.field_mapping.phase_offset_sigma = [10.0, 10.0, 5.0];
         let cmd = generate_command(&c);
         assert!(cmd.contains("--phase-offset-sigma 10 10 5"));
+    }
+}
+
+/// Quote a pattern for a shell when it contains glob metacharacters.
+///
+/// An orientation-group pattern is almost always a glob (`*acq-dir*`), and an unquoted glob
+/// in the displayed command is one the user's shell would expand against their working
+/// directory before qsmxt ever saw it.
+fn shell_quote(s: &str) -> String {
+    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        s.to_string()
+    } else {
+        format!("'{}'", s.replace('\'', r"'\''"))
+    }
+}
+
+#[cfg(test)]
+mod multiorient_command_tests {
+    use super::*;
+
+    #[test]
+    fn nothing_is_emitted_when_grouping_is_off() {
+        let cmd = generate_command(&PipelineConfig::default());
+        assert!(!cmd.contains("--orientation-group"), "{cmd}");
+        assert!(!cmd.contains("--multi-orientation"), "{cmd}");
+    }
+
+    #[test]
+    fn a_glob_pattern_is_quoted_so_the_shell_leaves_it_alone() {
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "*acq-dir*".into();
+        let cmd = generate_command(&config);
+        assert!(cmd.contains("--orientation-group '*acq-dir*'"), "{cmd}");
+        assert!(cmd.contains("--multi-orientation-algorithm cosmos"), "{cmd}");
+        // Lambda is at its default, so it should not add noise.
+        assert!(!cmd.contains("--multi-orientation-lambda"), "{cmd}");
+    }
+
+    #[test]
+    fn a_bare_entity_needs_no_quoting() {
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        config.multi_orientation.algorithm = MultiOrientAlgorithm::Sti;
+        config.multi_orientation.lambda = 1e-3;
+        let cmd = generate_command(&config);
+        assert!(cmd.contains("--orientation-group acq"), "{cmd}");
+        assert!(cmd.contains("--multi-orientation-algorithm sti"), "{cmd}");
+        assert!(cmd.contains("--multi-orientation-lambda 0.001"), "{cmd}");
     }
 }

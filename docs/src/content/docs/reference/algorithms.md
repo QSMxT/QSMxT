@@ -339,6 +339,149 @@ you change them. You can also set them in a
 [standalone tool](/QSMxT/reference/tools/) (e.g. `qsmxt invert tgv --help`) to
 experiment directly.
 
+## Multi-orientation (COSMOS and STI)
+
+Single-orientation dipole inversion is ill-posed because the dipole kernel
+vanishes on a pair of cones at the magic angle. Re-imaging the same object at a
+different orientation moves those cones, so combining orientations conditions the
+inverse problem at acquisition time rather than with a regulariser. COSMOS does
+that for a scalar susceptibility; STI keeps the orientations but models
+susceptibility as a rank-2 tensor, describing white-matter anisotropy instead of
+averaging it away.
+
+Both are off unless you name an **orientation group**.
+
+### Naming the orientation group
+
+BIDS has no entity meaning "the same object at a different orientation", so
+nothing in the dataset can declare the intention to do COSMOS — you do, with
+`--orientation-group`. The pattern's only job is to say which runs belong
+together, and it takes three forms:
+
+| Form | Example | Use it when |
+| --- | --- | --- |
+| Entity name | `acq` | Every run with that entity in the session is an orientation |
+| Glob over the run key | `*acq-dir*` | The session also holds unrelated acquisitions |
+| `re:` + regex with one capture | `re:.*-dir(\d+)_.*` | One session holds *two* orientation sets |
+
+The glob form is usually what you want. A session like this:
+
+```
+sub-01_ses-01_acq-dir1_MEGRE     ┐
+sub-01_ses-01_acq-dir2_MEGRE     ├─ *acq-dir* matches these three
+sub-01_ses-01_acq-dir3_MEGRE     ┘
+sub-01_ses-01_acq-highres_MEGRE  ← and leaves this one alone
+```
+
+groups all four under `acq` and only the intended three under `*acq-dir*`. The
+glob language is the same one `--include` and `--exclude` use, and matches against
+the full run key (`sub-01_ses-01_acq-dir2_MEGRE`), case-insensitively.
+
+Groups never cross a subject or session, and a pattern matching only one run in a
+session is not a group — that run is processed on its own.
+
+`chunk-` and `desc-` are rejected: QSMxT's filename parser does not distinguish
+them, so grouping by one would silently merge two orientations into a single run.
+Published multi-orientation datasets use `acq-` (for example OpenNeuro
+[ds007958](https://openneuro.org/datasets/ds007958), an in-vivo 7T COSMOS set
+named `acq-dir1/2/3`).
+
+### B0 directions, and what will be refused
+
+Each orientation contributes its B0 direction **in the common grid's voxel
+frame**. QSMxT takes it from a sidecar `B0_dir` when one is present, and otherwise
+derives it from the NIfTI affine.
+
+The affine is only meaningful when the orientations were separately prescribed, so
+the slab followed the head and the affines genuinely differ. Two very common
+dataset shapes break that while leaving the affine perfectly readable:
+
+- the head rotated inside an **identically prescribed slab** — every affine is the
+  same, and the anatomy moved in voxel space instead;
+- the orientations were **already resampled into a reference frame** before
+  distribution, which is how `ds007958` ships.
+
+In both, the affine yields the *same* direction for every orientation. Handed to
+COSMOS, N identical directions collapse the closed form to an unregularised
+single-orientation inversion — which does not error and does not look obviously
+wrong. So QSMxT refuses rather than guesses:
+
+- every direction came from the affines and they agree to within 3° → error naming
+  the likely cause and the fix;
+- the directions differ but span less than 3° → error;
+- STI with fewer than six orientations, or with a coplanar direction set → error.
+
+`--multi-orientation-force` overrides the check. Prefer fixing the metadata:
+declare `B0_dir` in each orientation's sidecar.
+
+### Registration
+
+QSMxT has no registration of its own, so **the orientations must already sit on
+one common grid**. Disagreeing dimensions or affines are an error, not a guess.
+Co-register the orientations first (and, if your tool reports the rotation, write
+the resulting B0 directions into each sidecar's `B0_dir`).
+
+### Running it
+
+```bash
+qsmxt run bids/ out/ --orientation-group '*acq-dir*'
+qsmxt run bids/ out/ --orientation-group acq --multi-orientation-algorithm sti
+```
+
+Check it before committing to a long run — `--dry` prints each group's direction
+table, where each direction came from, and the verdict:
+
+```
+Multi-orientation (COSMOS), 1 group(s):
+  sub-01_ses-01 (3 orientations) [ok]
+      acq-dir1         B0 [ 0.000  0.000  1.000]  sidecar
+      acq-dir2         B0 [ 0.000  0.500  0.866]  sidecar
+      acq-dir3         B0 [ 0.500  0.000  0.866]  sidecar
+      3 orientations, spread 41°, rank 3
+```
+
+In the [TUI](/QSMxT/guides/running-interactively/) the same pattern is the
+**Orientations** field on the Input tab, below Include/Exclude, and it previews
+the groups as you type.
+
+`--multi-orientation-lambda` sets the regularisation: 0 (the default) is plain
+least squares and is right whenever three or more orientations cover k-space; 1e-3
+to 1e-2 helps with two orientations, or when the rotations share a single axis and
+streaking survives.
+
+### Outputs
+
+Each member run still produces its own single-orientation `Chimap` — the first
+thing to check when a COSMOS map looks wrong is whether the orientations were
+actually aligned, and the per-orientation maps are how you see that. The combined
+result drops the entity that varied:
+
+| File | Contents |
+| --- | --- |
+| `…_desc-cosmos_Chimap.nii` | COSMOS susceptibility map (ppm) |
+| `…_desc-mms_Chimap.nii` | STI mean magnetic susceptibility |
+| `…_desc-msa_Chimap.nii` | STI magnetic susceptibility anisotropy |
+| `…_desc-sti11_Chitensor.nii` … `sti33` | The six independent tensor components |
+| `…_desc-pevx_Chitensor.nii` … `pevz` | Principal eigenvector, in voxel coordinates |
+
+A `…_desc-cosmos_Chimap.json` sidecar records the source runs, the direction table
+and where each direction came from — the half of the input that does not live in
+the NIfTI files, and without which the result cannot be reproduced.
+
+### Standalone
+
+If you already have local field maps, skip BIDS entirely:
+
+```bash
+qsmxt invert cosmos -i f1.nii -i f2.nii -i f3.nii \
+  --b0-direction 0 0 1 --b0-direction 0 0.5 0.866 --b0-direction 0.5 0 0.866 \
+  --mask mask.nii --output cosmos.nii
+
+qsmxt invert sti -i f1.nii … -i f6.nii --b0-dirs dirs.txt --mask mask.nii --output sti
+```
+
+`--b0-dirs` takes a text file with one `x y z` per line, in `--input` order.
+
 ## Susceptibility source separation
 
 Enable with `--do-chisep` to split susceptibility into paramagnetic and

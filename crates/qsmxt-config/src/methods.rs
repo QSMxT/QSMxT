@@ -47,6 +47,16 @@ const CITE_LBV: Citation = Citation {
     text: "Zhou, D., et al. (2014). \"Background field removal by solving the Laplacian boundary value problem.\" *NMR in Biomedicine*, 27(3):312-319. https://doi.org/10.1002/nbm.3064",
 };
 
+const CITE_COSMOS: Citation = Citation {
+    key: "liu2009cosmos",
+    text: "Liu, T., Spincemaille, P., de Rochefort, L., Kressler, B., Wang, Y. (2009). \"Calculation of susceptibility through multiple orientation sampling (COSMOS): a method for conditioning the inverse problem from measured magnetic field map to susceptibility source image in MRI.\" *Magnetic Resonance in Medicine*, 61:196-204. https://doi.org/10.1002/mrm.21828",
+};
+
+const CITE_STI: Citation = Citation {
+    key: "liu2010sti",
+    text: "Liu, C. (2010). \"Susceptibility tensor imaging.\" *Magnetic Resonance in Medicine*, 63:1471-1477. https://doi.org/10.1002/mrm.22482",
+};
+
 const CITE_RTS: Citation = Citation {
     key: "kames2018",
     text: "Kames, C., Wiggermann, V., Rauscher, A. (2018). \"Rapid two-step dipole inversion for susceptibility mapping with sparsity priors.\" *NeuroImage*, 167:276-283. https://doi.org/10.1016/j.neuroimage.2017.11.018",
@@ -547,6 +557,41 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
             sep_name, cite_inline(sep_cite),
         ));
         add_citation(&mut citations, sep_cite);
+    }
+
+    // Multi-orientation. Described after the per-orientation pipeline because that is the
+    // order it runs in: each orientation is unwrapped and background-corrected on its own,
+    // and only the local fields are combined.
+    if config.multi_orientation.enabled() {
+        match config.multi_orientation.algorithm {
+            MultiOrientAlgorithm::Cosmos => {
+                sentences.push(
+                    "Local field maps from multiple head orientations, co-registered onto a common \
+                     grid, were combined by Calculation Of Susceptibility through Multiple \
+                     Orientation Sampling (COSMOS; Liu et al., 2009), using each orientation's B0 \
+                     direction expressed in that common frame."
+                        .to_string(),
+                );
+                add_citation(&mut citations, &CITE_COSMOS);
+            }
+            MultiOrientAlgorithm::Sti => {
+                sentences.push(
+                    "Local field maps from multiple head orientations, co-registered onto a common \
+                     grid, were combined by susceptibility tensor imaging (STI; Liu, 2010), \
+                     yielding the six independent components of the symmetric susceptibility \
+                     tensor along with mean magnetic susceptibility (MMS), magnetic susceptibility \
+                     anisotropy (MSA) and the principal eigenvector."
+                        .to_string(),
+                );
+                add_citation(&mut citations, &CITE_STI);
+            }
+        }
+        if config.multi_orientation.lambda > 0.0 {
+            sentences.push(format!(
+                "The multi-orientation inversion was regularized with lambda = {}.",
+                config.multi_orientation.lambda
+            ));
+        }
     }
 
     // DICOM export
@@ -1734,5 +1779,40 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("R2* maps were computed"));
         assert!(!out.contains("T2* maps"));
+    }
+}
+
+#[cfg(test)]
+mod multiorient_methods_tests {
+    use super::*;
+
+    #[test]
+    fn nothing_is_said_when_grouping_is_off() {
+        let text = generate_methods(&PipelineConfig::default());
+        assert!(!text.contains("COSMOS"), "{text}");
+        assert!(!text.contains("orientation"), "{text}");
+    }
+
+    #[test]
+    fn cosmos_is_described_and_cited() {
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "*acq-dir*".into();
+        let text = generate_methods(&config);
+        assert!(text.contains("Multiple Orientation Sampling (COSMOS; Liu et al., 2009)"), "{text}");
+        assert!(text.contains("10.1002/mrm.21828"), "the reference list should carry it: {text}");
+        // Default lambda is zero, so it should not be claimed.
+        assert!(!text.contains("lambda"), "{text}");
+    }
+
+    #[test]
+    fn sti_is_described_and_cited() {
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        config.multi_orientation.algorithm = MultiOrientAlgorithm::Sti;
+        config.multi_orientation.lambda = 1e-3;
+        let text = generate_methods(&config);
+        assert!(text.contains("susceptibility tensor imaging (STI; Liu, 2010)"), "{text}");
+        assert!(text.contains("10.1002/mrm.22482"), "{text}");
+        assert!(text.contains("lambda = 0.001"), "{text}");
     }
 }

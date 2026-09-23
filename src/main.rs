@@ -4,6 +4,7 @@ mod commands;
 mod dicom;
 mod error;
 mod example;
+mod multiorient;
 mod nifti;
 mod executor;
 mod pipeline;

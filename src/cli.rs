@@ -985,6 +985,24 @@ pub struct PipelineArgs {
     #[arg(long, value_enum)]
     pub qsm_algorithm: Option<QsmAlgorithmArg>,
 
+    /// Group runs into multi-orientation sets and reconstruct each with COSMOS or STI.
+    /// Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or
+    /// `re:` and a regex with one capture group. Orientations must already be co-registered
+    #[arg(long, value_name = "PATTERN")]
+    pub orientation_group: Option<String>,
+
+    /// Which reconstruction to run over each orientation group
+    #[arg(long, value_enum)]
+    pub multi_orientation_algorithm: Option<MultiOrientAlgorithmArg>,
+
+    /// Regularization for the multi-orientation reconstruction (COSMOS k-space L2, or STI ridge)
+    #[arg(long)]
+    pub multi_orientation_lambda: Option<f64>,
+
+    /// Reconstruct an orientation group even when its B0 directions look degenerate
+    #[arg(long)]
+    pub multi_orientation_force: bool,
+
     /// Unwrapping algorithm
     #[arg(long, value_enum)]
     pub unwrapping_algorithm: Option<UnwrapAlgorithmArg>,
@@ -1969,6 +1987,80 @@ pub struct InvertCommonArgs {
     pub tiling_params: TilingParamArgs,
 }
 
+/// Which multi-orientation reconstruction `qsmxt run` should apply to each group.
+#[derive(clap::ValueEnum, Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MultiOrientAlgorithmArg {
+    /// Scalar susceptibility from 2+ orientations
+    Cosmos,
+    /// Rank-2 susceptibility tensor from 6+ orientations
+    Sti,
+}
+
+/// Args shared by the multi-orientation reconstructions (COSMOS, STI).
+///
+/// These take N field maps rather than one, and they carry the direction table that makes the
+/// reconstruction meaningful. The inputs must **already be co-registered onto one common
+/// grid** — QSMxT does not register them for you, and silently reconstructing from
+/// unregistered orientations would produce a map that looks fine and is wrong.
+#[derive(Parser, Debug)]
+pub struct MultiOrientCommonArgs {
+    /// Local field NIfTI in ppm — repeat once per orientation, all on one common grid
+    #[arg(short = 'i', long = "input", required = true, action = clap::ArgAction::Append)]
+    pub inputs: Vec<PathBuf>,
+    /// B0 direction for one orientation in the common grid's voxel frame (3 values) — repeat
+    /// once per --input, in the same order. Omitted, each volume's own affine is used instead,
+    /// which is only valid when the orientations were separately prescribed.
+    #[arg(long, num_args = 3, action = clap::ArgAction::Append)]
+    pub b0_direction: Vec<f64>,
+    /// Text file of B0 directions, one "x y z" per line, in --input order
+    #[arg(long, conflicts_with = "b0_direction")]
+    pub b0_dirs: Option<PathBuf>,
+    /// Binary mask NIfTI file, on the common grid
+    #[arg(short, long)]
+    pub mask: PathBuf,
+    /// Reconstruct even when the B0 directions look degenerate. A degenerate set yields a
+    /// plausible-looking map that is not the method you asked for; prefer fixing the metadata
+    #[arg(long)]
+    pub force: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct InvertCosmosArgs {
+    #[command(flatten)]
+    pub common: MultiOrientCommonArgs,
+    /// Output susceptibility map NIfTI file
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// L2 regularization on the k-space denominator. 0 (default) is plain least squares and is
+    /// right for 3+ covering orientations; 1e-3..1e-2 helps with 2, or single-axis rotations
+    #[arg(long)]
+    pub lambda: Option<f64>,
+    /// Magnitude NIfTI for one orientation — repeat once per --input to use the
+    /// magnitude-weighted formulation (conjugate gradient) instead of the closed form
+    #[arg(long = "magnitude", action = clap::ArgAction::Append)]
+    pub magnitudes: Vec<PathBuf>,
+    /// Conjugate-gradient tolerance (weighted formulation only)
+    #[arg(long)]
+    pub tol: Option<f64>,
+    /// Maximum conjugate-gradient iterations (weighted formulation only)
+    #[arg(long)]
+    pub max_iter: Option<usize>,
+}
+
+#[derive(Parser, Debug)]
+pub struct InvertStiArgs {
+    #[command(flatten)]
+    pub common: MultiOrientCommonArgs,
+    /// Output prefix; writes {prefix}_tensor-11.nii .. _tensor-33.nii (6 components),
+    /// {prefix}_mms.nii, {prefix}_msa.nii and {prefix}_pev-x/y/z.nii
+    #[arg(short, long)]
+    pub output: PathBuf,
+    /// Ridge term on the 6x6 normal equations at each k-point. Raise when orientations are
+    /// few, clustered or near-coplanar
+    #[arg(long)]
+    pub lambda: Option<f64>,
+}
+
 #[derive(Subcommand, Debug)]
 pub enum InvertCommand {
     /// Regularized Total Strength (RTS)
@@ -2028,6 +2120,10 @@ pub enum InvertCommand {
     ModlQsm(InvertDlArgs),
     /// NeXtQSM single-step reconstruction — input is the TOTAL field (weights downloaded on first use)
     Nextqsm(InvertDlArgs),
+    /// COSMOS — multi-orientation least squares over 2+ co-registered orientations
+    Cosmos(InvertCosmosArgs),
+    /// STI (susceptibility tensor imaging) — 6+ co-registered orientations to a rank-2 tensor
+    Sti(InvertStiArgs),
 }
 
 /// Args for the deep-learning dipole inversions. They have no tunable parameters;
