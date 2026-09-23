@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use crate::cli::*;
-use crate::pipeline::config::{PipelineConfig, QsmAlgorithm, SeparationAlgorithm, UnwrappingAlgorithm, BfAlgorithm, QsmReference, B0Estimation, B0WeightType, enforce_separation_dependencies, enforce_smwi_dependencies, enforce_analysis_dependencies};
+use crate::pipeline::config::{PipelineConfig, QsmAlgorithm, SeparationAlgorithm, UnwrappingAlgorithm, BfAlgorithm, B0Estimation, B0WeightType, enforce_separation_dependencies, enforce_smwi_dependencies, enforce_analysis_dependencies, enforce_reference_dependencies};
 use super::app::App;
 
 /// Trimmed non-empty string → Some, else None (for bring-your-own tool fields).
@@ -226,11 +226,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bet_gradient_threshold: parse_optional_f64(&ps.bet_gradient_threshold),
         bet_iterations: parse_optional_usize(&ps.bet_iterations),
         bet_subdivisions: parse_optional_usize(&ps.bet_subdivisions),
-        qsm_reference: match ps.qsm_reference {
-            0 => Some(crate::cli::QsmReferenceArg::Mean),
-            1 => Some(crate::cli::QsmReferenceArg::None),
-            _ => None,
-        },
+        qsm_reference: Some(crate::tui::app::qsm_reference_spec(ps.qsm_reference)),
         rts_params: crate::cli::RtsParamArgs {
             rts_delta: parse_optional_f64(&ps.rts_delta),
             rts_mu: parse_optional_f64(&ps.rts_mu),
@@ -755,10 +751,10 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         3 => B0WeightType::TEs,
         _ => B0WeightType::Mag,
     };
-    config.qsm.reference = match ps.qsm_reference {
-        0 => QsmReference::Mean,
-        _ => QsmReference::None,
-    };
+    let (reference, region) =
+        crate::pipeline::config::parse_reference_spec(&crate::tui::app::qsm_reference_spec(ps.qsm_reference));
+    config.qsm.reference = reference;
+    config.qsm.reference_region = region;
     config.masking.sections = ps.mask_sections.clone();
     let (combine, refinements) = ps.mask_combine_recipe();
     config.masking.combine = combine;
@@ -1000,6 +996,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
 
     // Chi-separation forces the relaxometry maps it depends on (R2/R2'/R2*).
     enforce_analysis_dependencies(&mut config);
+    enforce_reference_dependencies(&mut config);
     enforce_smwi_dependencies(&mut config);
     enforce_separation_dependencies(&mut config);
     config

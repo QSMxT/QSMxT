@@ -31,7 +31,16 @@ fn init_logging(log_file: Option<std::fs::File>, debug: bool) {
             // Use MultiProgress.println to properly coordinate with progress bars
             let line = format!("[{style}{level:5}{style:#} {}] {}",
                 record.target(), record.args());
-            let _ = crate::pipeline::runner::MULTI_PROGRESS.println(line);
+            // When stderr is not a terminal — a SLURM job, a CI log, any redirect — indicatif's
+            // draw target is hidden and `println` silently discards the line. That would take
+            // every warning and every fatal error with it, leaving a bare exit code and no
+            // explanation, so write straight to stderr in that case.
+            if crate::pipeline::runner::MULTI_PROGRESS.is_hidden() {
+                let _ = writeln!(std::io::stderr(), "[{level:5} {}] {}",
+                                 record.target(), record.args());
+            } else {
+                let _ = crate::pipeline::runner::MULTI_PROGRESS.println(line);
+            }
             // Plain text to log file
             if let Some(ref f) = log_file {
                 if let Ok(mut f) = f.lock() {
@@ -71,7 +80,8 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     };
 
     crate::pipeline::config::apply_run_overrides(&mut config, &args.pipeline);
-    
+    crate::pipeline::config::validate_reference_region(&config)?;
+
 
     // Discover BIDS runs
     let filter = DiscoveryFilter {

@@ -6,6 +6,7 @@
 pub mod error;
 pub mod enums;
 pub mod masking;
+pub mod regions;
 pub mod config;
 pub mod command;
 pub mod methods;

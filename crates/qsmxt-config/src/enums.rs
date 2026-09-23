@@ -118,12 +118,19 @@ impl fmt::Display for B0WeightType {
     }
 }
 
+/// What the susceptibility map's zero is pinned to.
+///
+/// `Region` names a parcellation structure rather than carrying it, so this stays `Copy` and the
+/// serde derives stay simple; the structure itself is [`QsmConfig::reference_region`]. The two
+/// always travel together — see [`crate::config::enforce_reference_dependencies`].
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
-pub enum QsmReference { Mean, None }
+pub enum QsmReference { Mean, None, Region }
 impl fmt::Display for QsmReference {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self { Self::Mean => "mean", Self::None => "none" })
+        write!(f, "{}", match self {
+            Self::Mean => "mean", Self::None => "none", Self::Region => "region",
+        })
     }
 }
 

@@ -1288,6 +1288,68 @@ mod integration_tests {
         assert!(deriv.join("desc-segmentation_stats.tsv").exists(), "the group table too");
     }
 
+    /// Referencing to a structure means that structure's mean χ ends up at zero — that is the
+    /// whole contract, and it is worth asserting on a real run rather than on the arithmetic
+    /// alone, because the map, the mask and the parcellation all have to line up for it to hold.
+    #[test]
+    fn qsm_can_be_referenced_to_a_parcellation_region() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_echo_bids(&bids);
+        let dseg_path = bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii");
+        testutils::write_dseg(&dseg_path);
+
+        let mut args = default_run_args(bids, out.clone());
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+        args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
+        args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
+        args.dry = false;
+        args.no_mem_limit = true;
+        // Both thalami, supplied rather than segmented so the test needs no network weights.
+        args.pipeline.qsm_reference = Some("thalamus".to_string());
+        args.pipeline.segmentation_params.use_custom_dseg = Some("mydseg".to_string());
+        super::run::execute(args).unwrap();
+
+        let deriv = out.join("derivatives/qsmxt");
+        let chi = qsm_core::io::read_nifti_file(&deriv.join("sub-1/anat/sub-1_Chimap.nii")).unwrap();
+        let dseg = qsm_core::io::read_nifti_file(&dseg_path).unwrap();
+        let mask = qsm_core::io::read_nifti_file(&deriv.join("sub-1/anat/sub-1_mask.nii")).unwrap();
+
+        let vals: Vec<f64> = chi.data.iter().zip(&dseg.data).zip(&mask.data)
+            .filter(|((_, &l), &m)| m > 0.5 && matches!(l.round() as i32, 10 | 49))
+            .map(|((&c, _), _)| c)
+            .collect();
+        assert!(!vals.is_empty(), "the test dseg should put thalamus voxels inside the mask");
+        let mean = vals.iter().sum::<f64>() / vals.len() as f64;
+        assert!(mean.abs() < 1e-9, "thalamus mean should be 0 after referencing, was {mean}");
+
+        // Only the offset moved: voxels outside the brain mask stay zero, as the other
+        // referencing modes leave them.
+        assert!(chi.data.iter().zip(&mask.data).all(|(&c, &m)| m > 0.5 || c == 0.0));
+    }
+
+    /// A mistyped region has to fail before any data is touched — the alternative is an hours-long
+    /// run whose maps are referenced to something nobody asked for.
+    #[test]
+    fn an_unknown_reference_region_fails_before_the_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_echo_bids(&bids);
+
+        let mut args = default_run_args(bids, out.clone());
+        args.dry = false;
+        args.no_mem_limit = true;
+        args.pipeline.qsm_reference = Some("thalmus".to_string()); // typo
+        let err = format!("{}", super::run::execute(args).unwrap_err());
+        assert!(err.contains("unknown reference region"), "{err}");
+        assert!(err.contains("thalamus"), "the error should list the valid names: {err}");
+        assert!(!out.join("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii").exists(),
+                "nothing should have been reconstructed");
+    }
+
     #[test]
     fn test_run_single_echo_tgv() {
         let dir = tempfile::tempdir().unwrap();

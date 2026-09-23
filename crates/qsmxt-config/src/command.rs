@@ -470,7 +470,11 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     }
 
     // ── QSM reference ──
-    emit_enum(&mut parts, "--qsm-reference", &config.qsm.reference, &d.qsm.reference);
+    // One flag carries both fields: the method, or the region spec that replaces it.
+    let (spec, default_spec) = (config.qsm.reference_spec(), d.qsm.reference_spec());
+    if spec != default_spec {
+        parts.push(format!("--qsm-reference {spec}"));
+    }
 
     // ── SWI params ──
     if config.pipeline.do_swi {
@@ -1017,6 +1021,14 @@ frangi_c = 400.0
         c.qsm.reference = QsmReference::None;
         let cmd = generate_command(&c);
         assert!(cmd.contains("--qsm-reference none"));
+
+        // A region reference travels as the spec itself, not as the word "region".
+        let mut c = PipelineConfig::default();
+        c.qsm.reference = QsmReference::Region;
+        c.qsm.reference_region = Some("left-thalamus,right-thalamus".to_string());
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--qsm-reference left-thalamus,right-thalamus"), "{cmd}");
+        assert!(!cmd.contains("--qsm-reference region"), "{cmd}");
     }
 
     #[test]

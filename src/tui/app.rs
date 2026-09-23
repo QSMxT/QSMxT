@@ -3,6 +3,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::LazyLock;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
@@ -1228,10 +1229,47 @@ const BF_HELP: &[&str] = &[
     "BFRnet deep-learning background removal (weights auto-downloaded) — https://github.com/sunhongfu/BFRnet",
     "iQFM deep-learning joint unwrapping + background removal from phase (weights auto-downloaded) — https://doi.org/10.1016/j.neuroimage.2022.119410",
 ];
-const QSM_REF_HELP: &[&str] = &[
-    "Subtract mean susceptibility within mask (recommended)",
-    "No referencing (raw susceptibility values)",
+/// The two reference methods that need no parcellation, ahead of every region.
+const QSM_REF_METHODS: [(&str, &str); 2] = [
+    ("mean", "Subtract mean susceptibility within mask (recommended)"),
+    ("none", "No referencing (raw susceptibility values)"),
 ];
+
+/// The reference picker's options: the two methods, then every SynthSeg region.
+///
+/// Built from the label table rather than listed, so a table that gains a label gains a reference
+/// option. Leaked to `&'static` once at first use — the set is fixed and bounded, and the row
+/// types hold `&'static [&'static str]`.
+static QSM_REF_ENTRIES: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
+    let mut out: Vec<(&'static str, &'static str)> = QSM_REF_METHODS.to_vec();
+    for r in qsmxt_config::regions::REGIONS.iter() {
+        let ids = r.ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
+        let help = format!(
+            "Reference χ to the mean of the {} (FreeSurfer {} {}){}. Enables SynthSeg",
+            r.label,
+            if r.ids.len() == 1 { "label" } else { "labels" },
+            ids,
+            if r.v2_only { " — needs --synthseg-version v2" } else { "" },
+        );
+        out.push((r.slug, Box::leak(help.into_boxed_str())));
+    }
+    out
+});
+
+static QSM_REF_OPTIONS_V: LazyLock<Vec<&'static str>> =
+    LazyLock::new(|| QSM_REF_ENTRIES.iter().map(|(o, _)| *o).collect());
+static QSM_REF_HELP_V: LazyLock<Vec<&'static str>> =
+    LazyLock::new(|| QSM_REF_ENTRIES.iter().map(|(_, h)| *h).collect());
+
+/// The `--qsm-reference` value for a picker index (`mean`, `none`, or a region slug).
+pub fn qsm_reference_spec(index: usize) -> String {
+    QSM_REF_OPTIONS_V.get(index).copied().unwrap_or("mean").to_string()
+}
+
+/// Whether a picker index selects a parcellation region (rather than `mean`/`none`).
+pub fn qsm_reference_is_region(index: usize) -> bool {
+    index >= QSM_REF_METHODS.len() && index < QSM_REF_OPTIONS_V.len()
+}
 
 /// All pipeline form values (algorithms + parameters).
 #[derive(Debug, Clone)]
@@ -1871,7 +1909,9 @@ const B0_WEIGHT_TYPE_HELP: &[&str] = &[
     "TE only",
     "Magnitude only",
 ];
-pub const QSM_REF_OPTIONS: &[&str] = &["mean", "none"];
+/// Borrowed from the statics above so the row types keep their `&'static` slices.
+pub fn qsm_ref_options() -> &'static [&'static str] { &QSM_REF_OPTIONS_V }
+pub fn qsm_ref_help() -> &'static [&'static str] { &QSM_REF_HELP_V }
 
 impl PipelineFormState {
     /// Build the visible rows based on current algorithm selections.
@@ -2495,10 +2535,10 @@ impl PipelineFormState {
 
         // QSM Reference
         rows.push(self.section_header("reference", "Referencing",
-            QSM_REF_OPTIONS.get(self.get_select("qsm_reference")).copied().unwrap_or("").to_string()));
+            qsm_ref_options().get(self.get_select("qsm_reference")).copied().unwrap_or("").to_string()));
         rows.push(PipelineRow::AlgoSelect {
             label: "QSM Reference", field: "qsm_reference",
-            options: QSM_REF_OPTIONS, help: QSM_REF_HELP,
+            options: qsm_ref_options(), help: qsm_ref_help(),
         });
         } // end if do_qsm (unwrapping/inversion/reference)
 
@@ -3827,6 +3867,14 @@ impl App {
                     kind: FieldKind::Checkbox,
                     help: "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Implies segmentation; implies QSM only if no other map is enabled",
                 },
+                // The same control as the QSM tab's "QSM Reference" row, editing the same value —
+                // a region reference is a SynthSeg setting as much as a referencing one, and it
+                // should be where the user is already looking. See `select_value`.
+                FieldDef {
+                    label: "QSM Reference",
+                    kind: FieldKind::Select { options: qsm_ref_options().to_vec() },
+                    help: "What χ's zero is pinned to: the brain-mask mean, nothing, or the mean of a parcellation region. Same setting as QSM Reference on the QSM tab",
+                },
             ],
             // Tab 4: Execution
             vec![
@@ -3918,6 +3966,9 @@ impl App {
     pub fn current_field(&self) -> &FieldDef {
         &self.tab_fields[self.active_tab][self.active_field]
     }
+
+    /// Index of the Supplementary tab's duplicate "QSM Reference" row.
+    pub const SUPP_QSM_REFERENCE: usize = 23;
 
     /// Validate required fields and either set should_run or show error.
     pub fn try_run(&mut self) {
@@ -4371,6 +4422,8 @@ impl App {
             (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup = defaults.synthseg_topology_cleanup,
             (TAB_SUPPLEMENTARY, 21) => self.form.synthseg_sigma = defaults.synthseg_sigma.clone(),
             (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis = defaults.do_analysis,
+            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) =>
+                self.pipeline_state.set_select("qsm_reference", 0),
             // Tab 3 (Execution)
             (TAB_EXECUTION, 0) => self.form.execution_mode = defaults.execution_mode,
             (TAB_EXECUTION, 1) => self.form.dry_run = defaults.dry_run,
@@ -5734,6 +5787,7 @@ impl App {
         match (self.active_tab, self.active_field) {
             (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling,
             (TAB_SUPPLEMENTARY, 17) => self.form.synthseg_version,
+            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) => self.pipeline_state.get_select("qsm_reference"),
             (TAB_EXECUTION, 0) => self.form.execution_mode,
             _ => 0,
         }
@@ -5743,6 +5797,7 @@ impl App {
         match (self.active_tab, self.active_field) {
             (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling = val,
             (TAB_SUPPLEMENTARY, 17) => self.form.synthseg_version = val,
+            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) => self.pipeline_state.set_select("qsm_reference", val),
             (TAB_EXECUTION, 0) => {
                 self.form.execution_mode = val;
                 // Clamp active_field if it landed on a now-hidden field
@@ -5787,7 +5842,13 @@ impl App {
     /// Segmentation is forced by the per-structure statistics: they have no structures to average
     /// over without it. Mirrors how chi-separation forces the relaxometry maps it consumes.
     fn segmentation_forced(&self) -> bool {
-        self.form.do_analysis
+        self.form.do_analysis || self.reference_region_selected()
+    }
+
+    /// Whether the QSM reference is a parcellation region, which only SynthSeg can measure.
+    fn reference_region_selected(&self) -> bool {
+        self.pipeline_state.do_qsm
+            && qsm_reference_is_region(self.pipeline_state.get_select("qsm_reference"))
     }
     /// R2 is forced only when needed to compute a forced R2' (and no custom R2 map).
     fn r2_map_forced(&self) -> bool {
@@ -5817,7 +5878,12 @@ impl App {
             (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi = !self.form.do_smwi,
             (TAB_SUPPLEMENTARY, 16) => {
                 if self.segmentation_forced() {
-                    self.error_message = Some("Segmentation is required by the per-structure statistics — turn those off first.".to_string());
+                    self.error_message = Some(if self.reference_region_selected() {
+                        format!("Segmentation is required by the QSM reference ({}) — set QSM Reference to mean or none first.",
+                                qsm_reference_spec(self.pipeline_state.get_select("qsm_reference")))
+                    } else {
+                        "Segmentation is required by the per-structure statistics — turn those off first.".to_string()
+                    });
                 } else {
                     self.form.do_segmentation = !self.form.do_segmentation;
                 }
@@ -5840,10 +5906,14 @@ impl App {
             (TAB_SUPPLEMENTARY, 1..=6) => self.form.do_swi,
             // SMWI settings (13-15) likewise under Compute SMWI (12)
             (TAB_SUPPLEMENTARY, 13..=15) => self.form.do_smwi,
+            // The reference row (23) is always reachable: picking a region is how a user turns
+            // segmentation *on* from here, so gating it behind segmentation would deadlock.
+            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) => true,
             // SynthSeg settings (17-22), the per-structure statistics among them, under
-            // Segment (16). `do_analysis` can still arrive set from a config file or the CLI, so
-            // the block stays visible in that case rather than hiding a setting that is in force.
-            (TAB_SUPPLEMENTARY, 17..=22) => self.form.do_segmentation || self.form.do_analysis,
+            // Segment (16). Whatever forces segmentation — the statistics, or a region
+            // reference — reveals these too: the checkbox above then reads as checked, and hiding
+            // the settings that shape the segmentation it promises would be a lie.
+            (TAB_SUPPLEMENTARY, 17..=22) => self.form.do_segmentation || self.segmentation_forced(),
             // SLURM fields (4-9) only visible in SLURM mode
             (TAB_EXECUTION, 4..=9) => self.form.execution_mode == 1,
             // Dry Run and Num Processes only in Local mode
@@ -5878,6 +5948,7 @@ impl App {
         match (tab, field) {
             (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling,
             (TAB_SUPPLEMENTARY, 17) => self.form.synthseg_version,
+            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) => self.pipeline_state.get_select("qsm_reference"),
             (TAB_EXECUTION, 0) => self.form.execution_mode,
             _ => 0,
         }
@@ -6850,7 +6921,7 @@ mod tests {
             ("qsmart-inner", QSMART_INV_OPTIONS.len(), QSMART_INV_HELP.len()),
             ("unwrap", UNWRAP_OPTIONS.len(), UNWRAP_HELP.len()),
             ("bg-removal", BF_OPTIONS.len(), BF_HELP.len()),
-            ("qsm-reference", QSM_REF_OPTIONS.len(), QSM_REF_HELP.len()),
+            ("qsm-reference", qsm_ref_options().len(), qsm_ref_help().len()),
             ("mask-preset", MASK_PRESET_OPTIONS.len(), MASK_PRESET_HELP.len()),
         ] {
             assert_eq!(opts, help, "{label}: {opts} options but {help} help entries");
@@ -8730,6 +8801,76 @@ mod tests {
         // parameters that are still at their default left off.
         let cmd = crate::tui::command::build_command_string(&app);
         assert!(cmd.contains("--mask magnitude,hd-bet,signal-erode:0.85:0"), "cmd: {cmd}");
+    }
+
+    /// The reference is offered in two places — the QSM tab where referencing is configured, and
+    /// the Supplementary tab beside the SynthSeg settings it depends on. They must be one control:
+    /// two rows that drifted apart would silently disagree about what the run references to.
+    #[test]
+    fn both_reference_rows_edit_one_value() {
+        let mut app = App::new();
+        let thalamus = qsm_ref_options().iter().position(|o| *o == "thalamus")
+            .expect("thalamus should be offered");
+
+        // Set it from the Supplementary tab; the QSM tab's row sees it.
+        app.active_tab = TAB_SUPPLEMENTARY;
+        app.active_field = App::SUPP_QSM_REFERENCE;
+        app.set_select_value(thalamus);
+        assert_eq!(app.pipeline_state.get_select("qsm_reference"), thalamus);
+        assert_eq!(app.select_value(), thalamus, "the duplicate row must read it back");
+
+        // And the other way around.
+        app.pipeline_state.set_select("qsm_reference", 1); // none
+        assert_eq!(app.select_value(), 1);
+
+        // The row is reachable whether or not segmentation is on — picking a region is how a user
+        // turns segmentation on from here, so gating it behind segmentation would be a deadlock.
+        assert!(!app.form.do_segmentation);
+        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, App::SUPP_QSM_REFERENCE));
+    }
+
+    /// A region reference is measured on the parcellation, so choosing one forces segmentation the
+    /// same way the statistics do — visibly, and without letting it be switched back off.
+    #[test]
+    fn a_region_reference_forces_segmentation_visibly() {
+        let mut app = App::new();
+        app.active_tab = TAB_SUPPLEMENTARY;
+        assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "off by default");
+
+        let region = qsm_ref_options().iter().position(|o| *o == "ventricles").unwrap();
+        app.pipeline_state.set_select("qsm_reference", region);
+        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16),
+                "a region reference needs SynthSeg, so it must read as checked");
+        for f in 17..=22 {
+            assert!(app.is_field_visible(TAB_SUPPLEMENTARY, f),
+                    "field {f} shapes the parcellation the reference is measured on");
+        }
+
+        app.active_field = 16;
+        app.toggle_checkbox();
+        assert!(!app.form.do_segmentation, "the underlying flag is untouched");
+        let msg = app.error_message.clone().expect("a refusal should explain itself");
+        assert!(msg.contains("ventricles"), "the refusal should name the reference: {msg}");
+
+        // `mean` and `none` force nothing.
+        for idx in [0, 1] {
+            app.pipeline_state.set_select("qsm_reference", idx);
+            assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "option {idx} forces nothing");
+        }
+    }
+
+    /// The generated command carries the region as the reference value itself.
+    #[test]
+    fn a_region_reference_reaches_the_command() {
+        let mut app = App::new();
+        let idx = qsm_ref_options().iter().position(|o| *o == "left-thalamus").unwrap();
+        app.pipeline_state.set_select("qsm_reference", idx);
+        let cmd = crate::tui::command::build_command_string(&app);
+        assert!(cmd.contains("--qsm-reference left-thalamus"), "cmd: {cmd}");
+
+        // The default stays off the command line.
+        app.pipeline_state.set_select("qsm_reference", 0);
+        assert!(!crate::tui::command::build_command_string(&app).contains("--qsm-reference"));
     }
 
     /// The per-structure statistics force segmentation on, so the checkbox has to read as checked

@@ -1044,9 +1044,13 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub bet_subdivisions: Option<usize>,
 
-    /// QSM reference method (mean or none)
-    #[arg(long, value_enum)]
-    pub qsm_reference: Option<QsmReferenceArg>,
+    /// What the susceptibility map's zero is pinned to: `mean` (brain-mask mean, the default),
+    /// `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side
+    /// (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a
+    /// comma-separated list of any of those. A region implies --do-segmentation. An unrecognised
+    /// name lists the valid ones
+    #[arg(long, value_name = "SPEC")]
+    pub qsm_reference: Option<String>,
 
     #[command(flatten)]
     pub rts_params: RtsParamArgs,
@@ -3065,11 +3069,6 @@ pub enum B0WeightTypeArg {
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum MaskInputArg {
     MagnitudeFirst, Magnitude, MagnitudeLast, PhaseQuality,
-}
-
-#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
-pub enum QsmReferenceArg {
-    Mean, None,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

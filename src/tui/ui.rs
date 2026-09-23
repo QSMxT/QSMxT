@@ -328,8 +328,9 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         let indent = match (app.active_tab, i) {
             (TAB_SUPPLEMENTARY, 1..=6) => true,   // SWI settings under "Compute SWI"
             (TAB_SUPPLEMENTARY, 13..=15) => true, // SMWI settings under "Compute SMWI"
-            (TAB_SUPPLEMENTARY, 17..=22) => true, // SynthSeg settings, and the statistics drawn from
-                                                  // the segmentation, under "Segment (SynthSeg)"
+            (TAB_SUPPLEMENTARY, 17..=23) => true, // SynthSeg settings, under "Segment (SynthSeg)" —
+                                                  // the statistics drawn from the segmentation and
+                                                  // the reference measured on it among them
             (TAB_EXECUTION, 4..=9) => true,     // SLURM settings under "Execution Mode"
             _ => false,
         };
@@ -2066,6 +2067,10 @@ mod tests {
         // The statistics are drawn from the segmentation, so they read as one of its settings.
         assert!(indent_of("Per-structure Stats") > parents[1],
                 "the statistics are a SynthSeg sub-setting and should be indented under it");
+        // The reference region is measured on the parcellation, so it reads as one too — and it
+        // has to actually be on screen, since its row index is mapped by hand.
+        assert!(indent_of("QSM Reference") > parents[1],
+                "the reference region belongs under Segment (SynthSeg)");
         // And it matches how the SWI block already reads.
         assert_eq!(indent_of("SWI Strength"), indent_of("SMWI Power"));
     }

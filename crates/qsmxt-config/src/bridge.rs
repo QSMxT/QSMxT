@@ -337,7 +337,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
 
     let reference = match cfg.qsm.reference {
         QsmReference::Mean => PRef::Mean,
-        QsmReference::None => PRef::None,
+        // A region reference is subtracted by QSMxT, which has the parcellation; the core stage
+        // only masks, or it would mean-reference the map a second time.
+        QsmReference::None | QsmReference::Region => PRef::None,
     };
 
     (field_mapping, bg_removal, inversion, reference)

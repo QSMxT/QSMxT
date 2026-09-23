@@ -311,6 +311,15 @@ pub fn run_pipeline_cached(
         stage_swi(&mut ctx, &mask_path, progress)?;
     }
 
+    // Before reconstruction, not after: a region reference is measured on the parcellation, so
+    // referencing cannot run until this has. It needs only the combined magnitude, which
+    // `stage_magnitude` has already written. Running it early also means a missing-weights
+    // failure lands before a reconstruction has been paid for rather than after.
+    let dseg_path = output.dseg_path(&qsm_run.key);
+    if config.pipeline.do_segmentation && meta.has_magnitude {
+        stage_segmentation(&mut ctx, &dseg_path, progress)?;
+    }
+
     if (config.pipeline.do_t2starmap || config.pipeline.do_r2starmap) && meta.n_echoes >= 3 && meta.has_magnitude {
         stage_t2star_r2star(&mut ctx, &mask_path, progress)?;
     }
@@ -368,11 +377,6 @@ pub fn run_pipeline_cached(
     // After referencing: SMWI weights by the final, referenced susceptibility map.
     if config.pipeline.do_smwi && meta.has_magnitude {
         stage_smwi(&mut ctx, &mask_path, progress)?;
-    }
-
-    let dseg_path = output.dseg_path(&qsm_run.key);
-    if config.pipeline.do_segmentation && meta.has_magnitude {
-        stage_segmentation(&mut ctx, &dseg_path, progress)?;
     }
 
     if config.pipeline.do_chi_separation {
@@ -2873,7 +2877,26 @@ fn stage_reference(
     step: &str, progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
     let ref_method = format!("{}", ctx.config.qsm.reference);
-    let ref_params = serde_json::json!({ "method": ref_method });
+    let mut ref_params = serde_json::json!({ "method": ref_method });
+
+    // A region reference depends on the parcellation as well as the map. Rather than a static
+    // `segmentation -> reference` edge — which would invalidate referencing, and everything that
+    // reads the referenced map, whenever any SynthSeg setting changed on a `mean` run — the
+    // dependency is carried here, only when it is real: the region, and the hash of the
+    // segmentation that measured it.
+    let region = if ctx.config.qsm.reference == QsmReference::Region {
+        let spec = ctx.config.qsm.reference_region.clone().unwrap_or_default();
+        let ids = qsmxt_config::regions::resolve(&spec, ctx.config.segmentation.version)
+            .map_err(|e| QsmxtError::Config(format!("--qsm-reference: {e}")))?;
+        ref_params["region"] = serde_json::json!(spec);
+        ref_params["region_ids"] = serde_json::json!(ids);
+        ref_params["segmentation"] = serde_json::json!(
+            ctx.state.completed_steps.get("segmentation").and_then(|r| r.params_hash.clone()));
+        Some((spec, ids))
+    } else {
+        None
+    };
+
     if ctx.is_cached_with_params(step, Some(&ref_method), &ref_params) {
         log::info!("Skipping {} (cached)", step);
         return Ok(());
@@ -2883,10 +2906,35 @@ fn stage_reference(
     progress("Referencing QSM");
     let chi = load_volume(chi_raw_path)?;
     let mask = load_mask(mask_path)?;
-    let (_, _, _, ref_method_core) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-    let chi_final = qsm_core::pipeline::apply_reference(&chi, &mask, ref_method_core);
+
+    let mut inputs: Vec<PathBuf> = vec![chi_raw_path.to_path_buf(), mask_path.to_path_buf()];
+    let chi_final = match region {
+        Some((spec, ids)) => {
+            let dseg_path = resolve_input(
+                ctx, &ctx.output.dseg_path(&ctx.run.key),
+                ctx.config.segmentation.custom_dseg_tool.as_deref(), "*_dseg.nii*", &[],
+            )
+            .ok_or_else(|| QsmxtError::Config(format!(
+                "--qsm-reference {spec}: no segmentation to measure the region on. Enable                  --do-segmentation, or supply one with --use-custom-dseg")))?;
+            let dseg = load_volume(&dseg_path)?;
+            if dseg.len() != chi.len() {
+                return Err(QsmxtError::DimensionMismatch(format!(
+                    "segmentation has {} voxels but the susceptibility map has {}",
+                    dseg.len(), chi.len())));
+            }
+            let roi = crate::pipeline::referencing::region_mask(&dseg, &ids);
+            inputs.push(dseg_path);
+            crate::pipeline::referencing::reference_to_region(&chi, &mask, &roi, &spec)?
+        }
+        None => {
+            let (_, _, _, ref_method_core) = crate::pipeline::config::to_pipeline_stages(ctx.config);
+            qsm_core::pipeline::apply_reference(&chi, &mask, ref_method_core)
+        }
+    };
+
     save_volume(&qsm_path, &chi_final, ctx.meta)?;
-    ctx.complete_step(step, Some(&ref_method), ref_params, &[chi_raw_path, mask_path], vec![qsm_path], t)?;
+    let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).collect();
+    ctx.complete_step(step, Some(&ref_method), ref_params, &input_refs, vec![qsm_path], t)?;
     log_step_done("QSM referencing", t);
     Ok(())
 }
