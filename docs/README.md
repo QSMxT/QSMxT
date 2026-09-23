@@ -31,6 +31,14 @@ Images can be added to `src/assets/` and embedded in Markdown with a relative li
 
 Static assets, like favicons, can be placed in the `public/` directory.
 
+## Legacy 8.x docs
+
+The Python QSMxT 8.x docs (a Jekyll site on the `python-legacy` branch) are still
+served at https://qsmxt.github.io/QSMxT/v8/. The docs workflow builds them with
+`legacy/build.sh` and copies the result into `dist/v8/` after the Astro build. To
+build them locally: `bundle install` in `legacy/`, then
+`legacy/build.sh <python-legacy checkout> dist/v8`.
+
 ## 🧞 Commands
 
 All commands are run from the root of the project, from a terminal:

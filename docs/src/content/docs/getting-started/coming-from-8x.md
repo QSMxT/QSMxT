@@ -36,5 +36,6 @@ Some parts of the 8.x line are not included in v9:
 - the web UI
 
 If you rely on those, 8.x is still available: see the
+[8.x documentation](https://qsmxt.github.io/QSMxT/v8/), the
 [`python-legacy` branch](https://github.com/QSMxT/QSMxT/tree/python-legacy) and the
 [8.x releases](https://github.com/QSMxT/QSMxT/releases).
