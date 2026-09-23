@@ -450,7 +450,25 @@ prefer that. Voxels a map does not cover are excluded rather than averaged in as
 zeros, which is why `n_valid` can be smaller than `n_voxels` — `R2map` only
 exists where the spin-echo acquisition reached, for instance.
 
-Two copies are written:
+### Figures
+
+Each table comes with a PNG per map — a ranked horizontal bar chart of the mean
+per structure, with ±1 SD whiskers:
+
+- `sub-<X>/anat/sub-<X>_desc-<map>_stats.png` — one run.
+- `desc-<map>_stats.png` at the derivatives root — the cohort: each bar is the
+  mean of the runs' means, and its whisker is the spread **across runs**, which
+  is a different quantity from the per-run whisker (the spread of voxels inside
+  one structure). Each figure's subtitle says which. Written only when more than
+  one run contributed, since with a single run it would restate that run's
+  figure with every whisker at zero.
+
+Colour encodes sign where a map has both — paramagnetic and diamagnetic χ, with
+a legend — and is a single hue where it does not, so colour never sits on a
+figure encoding nothing. Values are printed only on the extremes; the axis and
+the TSV carry the rest.
+
+Two copies of the table are written:
 
 - `sub-<X>/anat/sub-<X>_desc-segmentation_stats.tsv` — one run, next to the
   images it describes.

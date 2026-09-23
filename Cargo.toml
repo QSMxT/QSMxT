@@ -46,6 +46,11 @@ tempfile = "3"
 ureq = "2"
 sha2 = "0.10"
 zip = { version = "8", default-features = false, features = ["deflate-flate2-zlib"] }
+# Per-structure figures. Glyph rasterisation + PNG encoding only: the marks are axis-aligned
+# rectangles and lines, which is not worth a 2D graphics stack. Five crates and ~270 KB, against
+# ~40 crates for an SVG renderer (which also drags in JPEG/GIF/WebP decoders and font discovery).
+fontdue = "0.9"
+png = "0.17"
 
 [dev-dependencies]
 tempfile = "3"
