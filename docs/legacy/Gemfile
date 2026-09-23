@@ -1,0 +1,12 @@
+# Builds the legacy QSMxT 8.x (Python) docs — a Jekyll/just-the-docs site — so it
+# can be served under /QSMxT/v8/ next to the current site. See build.sh.
+source "https://rubygems.org"
+
+# Same Jekyll stack GitHub Pages used to build the 8.x site from the `docs/` folder.
+gem "github-pages", group: :jekyll_plugins
+
+# Ruby 3.4 moved these out of the default gems; Jekyll 3.x still requires them.
+gem "csv"
+gem "base64"
+gem "bigdecimal"
+gem "logger"

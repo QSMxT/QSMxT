@@ -27,6 +27,17 @@ jobs:
         working-directory: docs
     steps:
       - uses: actions/checkout@v4
+      # The 8.x (Python) docs are served under /v8/ — see docs/legacy/build.sh.
+      - uses: actions/checkout@v4
+        with:
+          ref: python-legacy
+          path: legacy-src
+          sparse-checkout: docs
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.4'
+          bundler-cache: true
+          working-directory: docs/legacy
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -34,6 +45,7 @@ jobs:
           cache-dependency-path: docs/package-lock.json
       - run: npm ci
       - run: npm run build
+      - run: legacy/build.sh "$GITHUB_WORKSPACE/legacy-src" dist/v8
       - uses: actions/upload-pages-artifact@v3
         with:
           path: docs/dist
