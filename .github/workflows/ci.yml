@@ -3,8 +3,12 @@ name: CI
 on:
   push:
     branches: [main]
+  # Every pull request, whatever it targets. Filtering this to `main` meant a PR stacked on
+  # another feature branch reported no checks at all — not a red X, just silence, which is worse
+  # than a failure because nothing says the code was never tested. Pushes stay `main`-only, so a
+  # feature branch is still built once (as its PR) rather than twice.
   pull_request:
-    branches: [main]
+    branches: ['**']
 
 env:
   CARGO_TERM_COLOR: always
