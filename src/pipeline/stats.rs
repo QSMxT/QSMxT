@@ -22,10 +22,109 @@ use crate::bids::entities::AcquisitionKey;
 /// R2 only exists where the MESE acquisition reached, and every map is zero outside the brain
 /// mask while the parcellation may spill slightly past it.
 pub const HEADER: &str = "map\tunit\tindex\tname\tn_voxels\tn_valid\tvolume_mm3\t\
-                          mean\tsd\tmedian\tmin\tmax\tp5\tp95\n";
+                          mean\tsd\tmedian\tmin\tmax\tp5\tp95\t\
+                          reference\treference_offset_ppm\n";
 
 /// BIDS entities identifying the run a row came from, prepended to every row of the group table.
 const GROUP_HEADER: &str = "subject\tsession\tacquisition\treconstruction\tinversion\trun\t";
+
+/// One parsed row of a statistics table.
+///
+/// The tables are written as text and read back by the figure renderer rather than kept in
+/// memory: the per-run tables are written inside each run's process, and the dataset-level view is
+/// assembled afterwards from the files. Parsing our own output keeps one definition of the table.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Row {
+    pub map: String,
+    pub unit: String,
+    pub name: String,
+    pub mean: f64,
+    pub sd: f64,
+    /// The structure's volume, when the segmentation carried posteriors to measure it from. A
+    /// property of the parcellation rather than of the map, so it repeats across a run's rows.
+    pub volume_mm3: Option<f64>,
+    /// Spread of `volume_mm3` across the runs a cohort row was built from. In-memory only: a
+    /// per-run table has one volume per structure and so no spread to report.
+    pub volume_sd_mm3: Option<f64>,
+    /// What the susceptibility map was referenced to, on the rows where that means something.
+    pub reference: Option<String>,
+    /// The offset referencing removed, in ppm.
+    pub reference_offset_ppm: Option<f64>,
+}
+
+/// What a run's susceptibility map was referenced to.
+///
+/// Carried onto every susceptibility row so the table stands on its own: a spreadsheet of χ values
+/// whose zero is undocumented cannot be compared with anyone else's, and the reader should not
+/// have to find a sidecar to learn what it was.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ReferenceInfo {
+    pub spec: String,
+    pub offset_ppm: Option<f64>,
+}
+
+impl ReferenceInfo {
+    /// Read it from a susceptibility map's JSON sidecar, where `stage_reference` recorded it.
+    pub fn from_sidecar(sidecar: &Path) -> Option<Self> {
+        let v: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(sidecar).ok()?).ok()?;
+        Some(Self {
+            spec: v.get("QsmReference")?.as_str()?.to_string(),
+            offset_ppm: v.get("QsmReferenceOffsetPpm").and_then(|x| x.as_f64()),
+        })
+    }
+
+    /// How a figure says it.
+    pub fn caption(&self) -> String {
+        match self.offset_ppm {
+            Some(o) => format!("Referenced to {} (offset {o:.4} ppm)", self.spec),
+            None => format!("Referenced to {}", self.spec),
+        }
+    }
+}
+
+/// Whether a map is a susceptibility map, and so carries a reference.
+///
+/// R2* has no reference to speak of, and stamping one on its rows would suggest it did.
+pub fn is_susceptibility(map: &str) -> bool {
+    map == CHIMAP || map.ends_with("_Chimap")
+}
+
+/// Read back a table written with [`HEADER`], ignoring any entity columns a group table prepends.
+///
+/// Columns are found by name rather than by position, so a table that grows a column still reads.
+/// Malformed rows are skipped rather than failing: a figure is a convenience, and refusing to draw
+/// one because a single row is odd would be worse than drawing the rest.
+pub fn parse_tsv(text: &str) -> Vec<Row> {
+    let mut lines = text.lines();
+    let Some(header) = lines.next() else { return Vec::new() };
+    let cols: Vec<&str> = header.split('\t').collect();
+    let idx = |name: &str| cols.iter().position(|c| *c == name);
+    let (Some(i_map), Some(i_unit), Some(i_name), Some(i_mean), Some(i_sd)) =
+        (idx("map"), idx("unit"), idx("name"), idx("mean"), idx("sd")) else { return Vec::new() };
+    // Optional: a supplied segmentation has no posteriors, so its volume column is empty.
+    let i_vol = idx("volume_mm3");
+    let (i_ref, i_off) = (idx("reference"), idx("reference_offset_ppm"));
+
+    lines
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|line| {
+            let f: Vec<&str> = line.split('\t').collect();
+            Some(Row {
+                map: f.get(i_map)?.to_string(),
+                unit: f.get(i_unit)?.to_string(),
+                name: f.get(i_name)?.to_string(),
+                mean: f.get(i_mean)?.parse().ok()?,
+                sd: f.get(i_sd)?.parse().ok()?,
+                volume_mm3: i_vol.and_then(|i| f.get(i)).and_then(|v| v.parse().ok()),
+                volume_sd_mm3: None,
+                reference: i_ref.and_then(|i| f.get(i))
+                    .filter(|v| !v.trim().is_empty()).map(|v| v.to_string()),
+                reference_offset_ppm: i_off.and_then(|i| f.get(i)).and_then(|v| v.parse().ok()),
+            })
+        })
+        .collect()
+}
 
 /// The conventional susceptibility map, named as it is in the table.
 pub const CHIMAP: &str = "Chimap";
@@ -142,7 +241,13 @@ pub fn map_rows(
     seg: &[f64],
     labels: &qsm_core::segment::SynthSegLabels,
     volumes: Option<&[f64]>,
+    reference: Option<&ReferenceInfo>,
 ) -> String {
+    // Only susceptibility rows carry it; on an R2* row it would be a claim about nothing.
+    let (ref_spec, ref_off) = match reference.filter(|_| is_susceptibility(spec.name)) {
+        Some(r) => (r.spec.clone(), r.offset_ppm.map(|o| format!("{o:.6}")).unwrap_or_default()),
+        None => (String::new(), String::new()),
+    };
     let by_label = values_by_label(map, seg);
     let counts = voxels_by_label(seg);
     let mut rows = String::new();
@@ -155,7 +260,8 @@ pub fn map_rows(
         let st = structure_stats(&mut vals);
         let vol = volumes.and_then(|v| v.get(ch)).map(|v| format!("{v:.1}")).unwrap_or_default();
         rows.push_str(&format!(
-            "{}\t{}\t{id}\t{name}\t{}\t{}\t{vol}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\n",
+            "{}\t{}\t{id}\t{name}\t{}\t{}\t{vol}\t\
+             {:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{ref_spec}\t{ref_off}\n",
             spec.name, spec.unit,
             counts.get(&id).copied().unwrap_or(0), vals.len(),
             st.mean, st.sd, st.median, st.min, st.max, st.p5, st.p95,
@@ -251,6 +357,67 @@ mod tests {
         assert_eq!(voxels_by_label(&seg)[&3], 4, "n_voxels counts the label, not the valid values");
     }
 
+    /// Volumes arrive as a bare array indexed by the network's output channel and are matched to
+    /// labels by position. A misalignment there would give every structure a plausible volume
+    /// belonging to a different one — invisible unless each is checked against its own label.
+    #[test]
+    fn each_label_gets_its_own_volume() {
+        let labels = qsm_core::segment::SynthSegVersion::V2.labels();
+        // One voxel of every label, so every row is present.
+        let seg: Vec<f64> = labels.ids.iter().map(|&i| i as f64).collect();
+        let map = vec![1.0; seg.len()];
+        // A distinct volume per channel, derived from the channel index.
+        let volumes: Vec<f64> = (0..labels.ids.len()).map(|c| 1000.0 + c as f64).collect();
+
+        let spec = MapSpec { name: CHIMAP, unit: "ppm", path: PathBuf::new() };
+        let rows = map_rows(&spec, &map, &seg, labels, Some(&volumes), None);
+
+        let mut seen = 0;
+        for line in rows.lines() {
+            let f: Vec<&str> = line.split('\t').collect();
+            let id: i32 = f[2].parse().unwrap();
+            let ch = labels.ids.iter().position(|&i| i == id).unwrap();
+            assert_eq!(f[6], format!("{:.1}", volumes[ch]),
+                       "label {id} ({}) got channel {}'s volume", f[3], f[6]);
+            seen += 1;
+        }
+        assert_eq!(seen, labels.ids.len() - 1, "every label but the background gets a row");
+
+        // And volumes really do differ per structure — a constant column would pass the check
+        // above while telling the reader nothing.
+        let vols: std::collections::HashSet<&str> =
+            rows.lines().map(|l| l.split('\t').nth(6).unwrap()).collect();
+        assert_eq!(vols.len(), seen, "each structure should carry its own volume");
+    }
+
+    /// The table is the interchange format between the run and the figure, so it has to read back.
+    #[test]
+    fn a_written_table_parses_back() {
+        let table = format!("{HEADER}\
+            Chimap\tppm\t10\tleft thalamus\t36\t36\t1187.4\t0.012000\t0.030000\t\
+            0.011000\t-0.050000\t0.080000\t-0.030000\t0.060000\t\t\n");
+        let rows = parse_tsv(&table);
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0], Row {
+            map: "Chimap".into(), unit: "ppm".into(), name: "left thalamus".into(),
+            mean: 0.012, sd: 0.03, volume_mm3: Some(1187.4), volume_sd_mm3: None,
+            reference: None, reference_offset_ppm: None,
+        });
+
+        // A group table prepends entity columns; the figure must read those too.
+        let group = format!("subject\tsession\t{HEADER}01\t\tChimap\tppm\t10\t\
+            left thalamus\t36\t36\t\t0.012000\t0.030000\t0.011000\t-0.05\t0.08\t-0.03\t0.06\t\t\n");
+        // The group sample below has an empty volume column, which must read as absent.
+        let group_rows = parse_tsv(&group);
+        assert_eq!(group_rows.len(), 1);
+        assert_eq!(group_rows[0].volume_mm3, None, "an empty volume is absent, not zero");
+        assert_eq!(group_rows[0].name, rows[0].name, "columns are found by name, not position");
+
+        // Junk is skipped, not fatal.
+        assert!(parse_tsv("").is_empty());
+        assert!(parse_tsv(&format!("{HEADER}not\ta\trow\n")).is_empty());
+    }
+
     /// A row has to carry its map's identity and unit, or a long table cannot be pivoted back.
     #[test]
     fn rows_name_their_map_and_unit() {
@@ -259,12 +426,22 @@ mod tests {
         let seg = vec![id as f64; 4];
         let map = vec![0.1, 0.2, 0.3, 0.4];
         let spec = MapSpec { name: "R2starmap", unit: "s-1", path: PathBuf::new() };
-        let rows = map_rows(&spec, &map, &seg, labels, None);
+        let rows = map_rows(&spec, &map, &seg, labels, None, None);
         let first = rows.lines().next().expect("one row per present label");
         let cols: Vec<&str> = first.split('\t').collect();
         assert_eq!(cols.len(), HEADER.trim_end().split('\t').count(),
                    "row width must match the header");
         assert_eq!((cols[0], cols[1]), ("R2starmap", "s-1"));
         assert_eq!(cols[6], "", "volume is left empty when there are no posteriors");
+        assert_eq!((cols[14], cols[15]), ("", ""), "R2* has no reference to claim");
+
+        // A susceptibility row does carry it, on every row, so the table stands on its own.
+        let chi = MapSpec { name: CHIMAP, unit: "ppm", path: PathBuf::new() };
+        let r = ReferenceInfo { spec: "thalamus".into(), offset_ppm: Some(0.0125) };
+        let rows = map_rows(&chi, &map, &seg, labels, None, Some(&r));
+        let cols: Vec<&str> = rows.lines().next().unwrap().split('\t').collect();
+        assert_eq!(cols[14], "thalamus");
+        assert_eq!(cols[15], "0.012500");
+        assert_eq!(r.caption(), "Referenced to thalamus (offset 0.0125 ppm)");
     }
 }

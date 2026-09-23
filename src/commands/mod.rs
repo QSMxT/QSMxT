@@ -1246,6 +1246,23 @@ mod integration_tests {
             assert!(f(5) >= 1.0, "a row must summarise at least one voxel: {line}");
         }
 
+        // A figure per map, beside the table, named so it sorts next to it.
+        let figs: Vec<String> = std::fs::read_dir(deriv.join("sub-1/anat")).unwrap()
+            .filter_map(|e| e.ok().map(|e| e.file_name().to_string_lossy().to_string()))
+            .filter(|n| n.ends_with("_stats.png"))
+            .collect();
+        for want in ["sub-1_desc-chimap_stats.png", "sub-1_desc-t2starmap_stats.png",
+                     "sub-1_desc-r2starmap_stats.png"] {
+            assert!(figs.contains(&want.to_string()), "missing {want}: {figs:?}");
+        }
+        // Real PNGs, not empty files.
+        for f in &figs {
+            let p = deriv.join("sub-1/anat").join(f);
+            let head = std::fs::read(&p).unwrap();
+            assert!(head.starts_with(&[0x89, b'P', b'N', b'G']), "{f} is not a PNG");
+            assert!(head.len() > 1000, "{f} is suspiciously small");
+        }
+
         // The dataset-level table repeats those rows behind the run's BIDS entities.
         let group = std::fs::read_to_string(deriv.join("desc-segmentation_stats.tsv")).unwrap();
         assert!(group.lines().next().unwrap().starts_with("subject\tsession\t"));
@@ -1309,6 +1326,7 @@ mod integration_tests {
         args.no_mem_limit = true;
         // Both thalami, supplied rather than segmented so the test needs no network weights.
         args.pipeline.qsm_reference = Some("thalamus".to_string());
+        args.pipeline.do_analysis = true;
         args.pipeline.segmentation_params.use_custom_dseg = Some("mydseg".to_string());
         super::run::execute(args).unwrap();
 
@@ -1328,6 +1346,40 @@ mod integration_tests {
         // Only the offset moved: voxels outside the brain mask stay zero, as the other
         // referencing modes leave them.
         assert!(chi.data.iter().zip(&mask.data).all(|(&c, &m)| m > 0.5 || c == 0.0));
+
+        // The reference is recorded beside the map it produced, with what it removed.
+        let sidecar: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(deriv.join("sub-1/anat/sub-1_Chimap.json")).unwrap()).unwrap();
+        assert_eq!(sidecar["QsmReference"], "thalamus");
+        assert_eq!(sidecar["QsmReferenceLabels"], serde_json::json!([10, 49]));
+        assert!(sidecar["QsmReferenceVoxels"].as_u64().unwrap() > 0);
+        let offset = sidecar["QsmReferenceOffsetPpm"].as_f64().unwrap();
+        assert!(offset.is_finite());
+        // BIDS-Prov writes to the same sidecar and must not have wiped those fields.
+        assert!(sidecar.get("GeneratedBy").is_some(), "provenance clobbered the reference fields");
+
+        // And on every susceptibility row of the run's table, so the spreadsheet stands alone.
+        let table = std::fs::read_to_string(
+            deriv.join("sub-1/anat/sub-1_desc-segmentation_stats.tsv")).unwrap();
+        let cols: Vec<&str> = table.lines().next().unwrap().split('\t').collect();
+        let (ir, io) = (cols.iter().position(|c| *c == "reference").unwrap(),
+                        cols.iter().position(|c| *c == "reference_offset_ppm").unwrap());
+        let mut chi_rows = 0;
+        for line in table.lines().skip(1) {
+            let f: Vec<&str> = line.split('\t').collect();
+            if f[0] == "Chimap" {
+                chi_rows += 1;
+                assert_eq!(f[ir], "thalamus", "{line}");
+                assert!((f[io].parse::<f64>().unwrap() - offset).abs() < 1e-6, "{line}");
+            } else {
+                assert_eq!(f[ir], "", "{} has no reference to claim: {line}", f[0]);
+            }
+        }
+        assert!(chi_rows > 0, "the run produced no susceptibility rows to check");
+
+        // The reference summary names the run and what it referenced to.
+        let summary = std::fs::read_to_string(deriv.join("desc-reference_summary.tsv")).unwrap();
+        assert!(summary.lines().nth(1).unwrap().contains("thalamus"), "{summary}");
     }
 
     /// A mistyped region has to fail before any data is touched — the alternative is an hours-long

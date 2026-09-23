@@ -1591,6 +1591,12 @@ fn stage_analysis(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn Fn(&s
         .and_then(|m| m.get("volumes"))
         .and_then(|v| serde_json::from_value(v.clone()).ok());
 
+    // What the susceptibility map was referenced to, read back from the sidecar the referencing
+    // stage wrote. Carried onto the χ rows so the table says what its zero means.
+    let reference = crate::bids::entities::sidecar_path(&ctx.output.qsm_path(&ctx.run.key))
+        .as_deref()
+        .and_then(stats::ReferenceInfo::from_sidecar);
+
     let mut table = String::from(stats::HEADER);
     let mut summarised: Vec<&str> = Vec::new();
     for spec in &maps {
@@ -1600,19 +1606,39 @@ fn stage_analysis(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn Fn(&s
                 "segmentation has {} voxels but {} has {}",
                 seg.len(), spec.path.display(), map.len())));
         }
-        table.push_str(&stats::map_rows(spec, &map, &seg, labels, volumes.as_deref()));
+        table.push_str(&stats::map_rows(spec, &map, &seg, labels, volumes.as_deref(),
+                                        reference.as_ref()));
         summarised.push(spec.name);
     }
 
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&out_path, table)?;
+    std::fs::write(&out_path, table.clone())?;
     log::info!("Per-structure statistics for {} -> {}", summarised.join(", "), out_path.display());
+
+    // One figure per map, beside the table. Best-effort: the numbers are the deliverable, and a
+    // figure that fails to draw must not cost the run the statistics it already computed.
+    let mut outputs = vec![out_path.clone()];
+    let anat = ctx.output.anat_dir(&ctx.run.key);
+    match crate::pipeline::figure::render_all(
+        &stats::parse_tsv(&table),
+        &ctx.run.key.to_string(),
+        "Mean per structure; whiskers ±1 SD over the structure's voxels",
+        "Volume from the SynthSeg posteriors, partial volume included",
+    ) {
+        Ok(figs) => for f in figs {
+            match f.save_in(&anat, &ctx.run.key.basename()) {
+                Ok(p) => { log::info!("Figure -> {}", p.display()); outputs.push(p); }
+                Err(e) => log::warn!("Could not write {}: {e}", f.stem),
+            }
+        },
+        Err(e) => log::warn!("Could not draw the per-structure figures: {e}"),
+    }
     let inputs: Vec<&Path> = std::iter::once(dseg.as_path())
         .chain(maps.iter().map(|m| m.path.as_path()))
         .collect();
-    ctx.complete_step("analysis", None, params, &inputs, vec![out_path], t)?;
+    ctx.complete_step("analysis", None, params, &inputs, outputs, t)?;
     log_step_done("Per-structure analysis", t);
     Ok(())
 }
@@ -2908,7 +2934,7 @@ fn stage_reference(
     let mask = load_mask(mask_path)?;
 
     let mut inputs: Vec<PathBuf> = vec![chi_raw_path.to_path_buf(), mask_path.to_path_buf()];
-    let chi_final = match region {
+    let (chi_final, offset) = match region {
         Some((spec, ids)) => {
             let dseg_path = resolve_input(
                 ctx, &ctx.output.dseg_path(&ctx.run.key),
@@ -2924,19 +2950,73 @@ fn stage_reference(
             }
             let roi = crate::pipeline::referencing::region_mask(&dseg, &ids);
             inputs.push(dseg_path);
-            crate::pipeline::referencing::reference_to_region(&chi, &mask, &roi, &spec)?
+            let (out, off) = crate::pipeline::referencing::reference_to_region(&chi, &mask, &roi, &spec)?;
+            (out, Some(off))
         }
         None => {
             let (_, _, _, ref_method_core) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-            qsm_core::pipeline::apply_reference(&chi, &mask, ref_method_core)
+            // What the mean reference removed is worth recording for the same reason a region's
+            // offset is; `apply_reference` applies it without saying.
+            let off = (ctx.config.qsm.reference == QsmReference::Mean)
+                .then(|| crate::pipeline::referencing::mask_mean(&chi, &mask))
+                .flatten();
+            (qsm_core::pipeline::apply_reference(&chi, &mask, ref_method_core), off)
         }
     };
 
     save_volume(&qsm_path, &chi_final, ctx.meta)?;
+
+    // Record what the map was referenced to, beside the map itself. Only for the main pass: the
+    // single-pass map of a two-pass run is a by-product, and two sidecars disagreeing about "the"
+    // reference would be worse than one.
+    if step == "reference" {
+        write_reference_sidecar(ctx, &qsm_path, offset)?;
+    }
+
     let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).collect();
     ctx.complete_step(step, Some(&ref_method), ref_params, &input_refs, vec![qsm_path], t)?;
     log_step_done("QSM referencing", t);
     Ok(())
+}
+
+/// Record the reference in the susceptibility map's JSON sidecar.
+///
+/// The offset is a measurement in its own right — the susceptibility of the reference tissue — and
+/// it is what shows whether a subject's reference was sound: one far from the cohort, or measured
+/// on a handful of voxels, means a parcellation that went wrong rather than a brain that differs.
+///
+/// Merged into whatever is already there, since BIDS-Prov adds `GeneratedBy` to the same file.
+fn write_reference_sidecar(
+    ctx: &StageContext, qsm_path: &Path,
+    offset: Option<crate::pipeline::referencing::Offset>,
+) -> crate::Result<()> {
+    let Some(sidecar) = crate::bids::entities::sidecar_path(qsm_path) else { return Ok(()) };
+    let mut obj = read_json_object(&sidecar);
+    obj.insert("QsmReference".into(), serde_json::json!(ctx.config.qsm.reference_spec()));
+    if let Some(off) = offset {
+        obj.insert("QsmReferenceOffsetPpm".into(), serde_json::json!(off.ppm));
+        obj.insert("QsmReferenceVoxels".into(), serde_json::json!(off.voxels));
+    }
+    if ctx.config.qsm.reference == QsmReference::Region {
+        let spec = ctx.config.qsm.reference_region.clone().unwrap_or_default();
+        if let Ok(ids) = qsmxt_config::regions::resolve(&spec, ctx.config.segmentation.version) {
+            obj.insert("QsmReferenceLabels".into(), serde_json::json!(ids));
+        }
+    }
+    if let Some(parent) = sidecar.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    std::fs::write(&sidecar, serde_json::to_string_pretty(&obj)
+        .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
+    Ok(())
+}
+
+/// A JSON file's top-level object, or an empty one if it is absent or unreadable.
+fn read_json_object(path: &Path) -> serde_json::Map<String, serde_json::Value> {
+    std::fs::read_to_string(path).ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(|v| v.as_object().cloned())
+        .unwrap_or_default()
 }
 
 /// Combine the two reconstructions of a two-pass run into one raw susceptibility map.

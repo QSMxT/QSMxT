@@ -368,7 +368,12 @@ pub fn write_provenance(
             let Some(sidecar) = entities::sidecar_path(&fo.path) else {
                 continue;
             };
-            let mut obj = Map::new();
+            // Start from what is already there: the pipeline writes its own fields into this
+            // sidecar (the QSM reference, for one), and clobbering them here would lose them.
+            let mut obj: Map<String, Value> = std::fs::read_to_string(&sidecar).ok()
+                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+                .and_then(|v| v.as_object().cloned())
+                .unwrap_or_default();
             // Required for derivative anat images (except mask).
             if let Some(ss) = fo.skull_stripped {
                 obj.insert("SkullStripped".to_string(), Value::Bool(ss));

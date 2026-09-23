@@ -1,4 +1,6 @@
 pub mod config;
+pub mod canvas;
+pub mod figure;
 pub mod graph;
 pub mod memory;
 pub mod methods;

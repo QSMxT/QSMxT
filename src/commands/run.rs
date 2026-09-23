@@ -53,6 +53,82 @@ fn init_logging(log_file: Option<std::fs::File>, debug: bool) {
         .ok();
 }
 
+/// One row per run: what its susceptibility map was referenced to, and what that removed.
+///
+/// The same facts are in each map's JSON sidecar, but reading forty sidecars to find the subject
+/// whose reference region came out empty is not a thing anyone does. This is the file you scan.
+fn write_reference_summary(
+    derivatives_dir: &std::path::Path, output: &DerivativeOutputs,
+    runs: &[discovery::QsmRun],
+) {
+    let mut body = String::new();
+    for run in runs {
+        let Some(sidecar) = crate::bids::entities::sidecar_path(&output.qsm_path(&run.key)) else {
+            continue;
+        };
+        let Ok(text) = std::fs::read_to_string(&sidecar) else { continue };
+        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+        let Some(reference) = v.get("QsmReference").and_then(|r| r.as_str()) else { continue };
+        let num = |k: &str| v.get(k).and_then(|x| x.as_f64())
+            .map(|x| format!("{x:.6}")).unwrap_or_default();
+        let k = &run.key;
+        body.push_str(&format!(
+            "{}	{}	{}	{}	{}	{}	{reference}	{}	{}
+",
+            k.subject,
+            k.session.as_deref().unwrap_or(""),
+            k.acquisition.as_deref().unwrap_or(""),
+            k.reconstruction.as_deref().unwrap_or(""),
+            k.inversion.as_deref().unwrap_or(""),
+            k.run.as_deref().unwrap_or(""),
+            num("QsmReferenceOffsetPpm"),
+            v.get("QsmReferenceVoxels").and_then(|x| x.as_u64())
+                .map(|x| x.to_string()).unwrap_or_default(),
+        ));
+    }
+    if body.is_empty() {
+        return;
+    }
+    let path = derivatives_dir.join("desc-reference_summary.tsv");
+    let header = "subject	session	acquisition	reconstruction	inversion	run	                  reference	offset_ppm	n_voxels
+";
+    match std::fs::write(&path, format!("{header}{body}")) {
+        Ok(()) => info!("QSM reference per run -> {}", path.display()),
+        Err(e) => warn!("Could not write the reference summary: {}", e),
+    }
+}
+
+/// Draw the cohort figures from the dataset-level table.
+///
+/// Each bar is the mean of the runs' means and its whisker is the spread *across* runs — a
+/// different quantity from the per-run figures, whose whiskers are the spread of voxels inside one
+/// structure. The subtitle says which, because the two look identical and a reader would otherwise
+/// take cohort variability for within-structure variability.
+///
+/// Best-effort throughout: the table is the deliverable and is already written.
+fn write_group_figures(derivatives_dir: &std::path::Path, table_path: &std::path::Path) {
+    let Ok(text) = std::fs::read_to_string(table_path) else { return };
+    let (rows, n_runs) = crate::pipeline::figure::aggregate_runs(
+        &crate::pipeline::stats::parse_tsv(&text));
+    if rows.is_empty() || n_runs < 2 {
+        // With a single run the cohort view would just restate that run's figure, with every
+        // whisker at zero.
+        return;
+    }
+    let subtitle = format!("Mean of {n_runs} run means; whiskers ±1 SD across runs");
+    let vol_subtitle = format!("Mean volume over {n_runs} runs; ± is 1 SD across runs");
+    match crate::pipeline::figure::render_all(
+        &rows, &format!("All runs (n = {n_runs})"), &subtitle, &vol_subtitle) {
+        Ok(figs) => for f in figs {
+            match f.save_in(derivatives_dir, "") {
+                Ok(p) => info!("Cohort figure -> {}", p.display()),
+                Err(e) => warn!("Could not write {}: {}", f.stem, e),
+            }
+        },
+        Err(e) => warn!("Could not draw the cohort figures: {}", e),
+    }
+}
+
 pub fn execute(args: RunArgs) -> crate::Result<()> {
     // Resolve output: <dir>/derivatives/qsmxt/. Both come from args alone, so this can happen
     // before anything else — which it must, because the logger writes there.
@@ -223,13 +299,22 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
 
     let results = executor::local::execute_local(&runs, &config, &output, &exec_config);
 
+    // What each run's map was referenced to — written whether or not the statistics were asked
+    // for, since it describes the susceptibility maps themselves.
+    if config.pipeline.do_qsm {
+        write_reference_summary(&derivatives_dir, &output, &runs);
+    }
+
     // Gather every run's per-structure table into one dataset-level TSV. Best-effort, and after
     // the runs rather than inside them: it is a convenience view of files already written, so a
     // failure here must not fail an otherwise-successful run.
     if config.pipeline.do_analysis {
         let keys: Vec<_> = runs.iter().map(|r| &r.key).collect();
         match crate::pipeline::stats::write_group_table(&derivatives_dir, &output, &keys) {
-            Ok(Some(path)) => info!("Per-structure statistics for all runs -> {}", path.display()),
+            Ok(Some(path)) => {
+                info!("Per-structure statistics for all runs -> {}", path.display());
+                write_group_figures(&derivatives_dir, &path);
+            }
             Ok(None) => {}
             Err(e) => warn!("Failed to write the dataset-level statistics table: {}", e),
         }
