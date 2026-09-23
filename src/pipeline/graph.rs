@@ -244,22 +244,21 @@ pub fn downstream_of(step_name: &str) -> Vec<String> {
             .map(|ds| format!("{ds}{RELIABLE_SUFFIX}"))
             .collect();
         out.push("twopass".to_string());
-        out.push("reference".to_string());
-        out.push("smwi".to_string());
-        out.push("analysis".to_string());
+        out.extend(CHI_CONSUMERS.iter().map(|s| s.to_string()));
         return out;
     }
     if step_name == "twopass" {
-        return vec!["reference".to_string(), "smwi".to_string(), "analysis".to_string()];
+        return CHI_CONSUMERS.iter().map(|s| s.to_string()).collect();
     }
 
     let direct = downstream_steps(step_name);
     let mut out: Vec<String> = direct.iter().map(|s| s.to_string()).collect();
-    // SMWI weights the magnitude by the *referenced* susceptibility map, so it is stale whenever
-    // referencing is. Derived rather than listed in each of the seven sets that reach `reference`:
-    // a missing entry there would show a new reconstruction with weighting from the old one, and
-    // nothing would say so.
-    for derived in ["smwi", "analysis"] {
+    // SMWI weights the magnitude by the *referenced* susceptibility map, chi-separation starts
+    // from it and the statistics summarise it, so all three are stale whenever referencing is.
+    // Derived rather than listed in each of the seven sets that reach `reference`: a missing entry
+    // there would show a new reconstruction with weighting from the old one, and nothing would
+    // say so.
+    for &derived in CHI_CONSUMERS.iter().skip(1) {
         if out.iter().any(|d| d == "reference") && !out.iter().any(|d| d == derived) {
             out.push(derived.to_string());
         }
@@ -274,6 +273,10 @@ pub fn downstream_of(step_name: &str) -> Vec<String> {
     }
     out
 }
+
+/// Referencing and everything that reads the referenced susceptibility map, in the order a run
+/// produces them. Anything that invalidates the reconstruction invalidates all of it.
+const CHI_CONSUMERS: [&str; 4] = ["reference", "smwi", "chi_separation", "analysis"];
 
 /// The steps two-pass runs once per pass. Everything before them (loading, phase scaling, the
 /// field map) is shared, and everything after them (referencing, output space) runs on the
@@ -352,12 +355,16 @@ fn downstream_steps(step_name: &str) -> &'static [&'static str] {
             "reference",
         ],
         "swi" => &[],
-        "t2star_r2star" => &[],
+        // R2* feeds both the R2' it is differenced into and the per-structure table it appears in.
+        "t2star_r2star" => &["r2_r2prime", "chi_separation", "analysis"],
+        "r2_r2prime" => &["chi_separation", "analysis"],
+        "chi_separation" => &["analysis"],
         "unwrap" => &["bgremove", "invert", "tgv", "qsmart", "reference"],
         "bgremove" => &["invert", "reference"],
         "invert" | "tgv" | "qsmart" => &["reference"],
         // Both consumers of the referenced χ map: SMWI's weighting, and the per-structure stats.
-        "reference" => &["smwi", "analysis"],
+        // Chi-separation starts from it too.
+        "reference" => &["smwi", "chi_separation", "analysis"],
         "smwi" => &[],
         "segmentation" => &["analysis"],
         "analysis" => &[],
@@ -397,7 +404,7 @@ pub fn clean_intermediates(state: &PipelineState, output_dir: &Path, key: &Acqui
     // would delete outputs the run is meant to produce.
     let final_steps: HashSet<&str> = [
         "mask", "magnitude", "reference", "swi", "smwi", "t2star_r2star",
-        "segmentation", "analysis",
+        "r2_r2prime", "chi_separation", "segmentation", "analysis",
         "mask-reliable", "reference-singlepass",
     ].iter().copied().collect();
 
@@ -452,16 +459,19 @@ mod tests {
     #[test]
     fn the_combination_only_invalidates_the_consumers_of_chi() {
         assert_eq!(downstream_of("twopass"),
-                   vec!["reference".to_string(), "smwi".to_string(), "analysis".to_string()]);
+                   vec!["reference".to_string(), "smwi".to_string(),
+                        "chi_separation".to_string(), "analysis".to_string()]);
     }
 
-    /// The statistics summarise the referenced χ map over the segmentation, so either changing must
+    /// The statistics summarise every map over the segmentation, so any of them changing must
     /// invalidate them. `segmentation` is not otherwise upstream of `reference`, so it needs its
-    /// own edge.
+    /// own edge, and so do the relaxometry and chi-separation stages that reach none of the χ
+    /// steps.
     #[test]
-    fn the_analysis_follows_both_of_its_inputs() {
+    fn the_analysis_follows_all_of_its_inputs() {
         assert_eq!(downstream_of("segmentation"), vec!["analysis".to_string()]);
-        for step in ["reference", "invert", "mask", "magnitude", "load"] {
+        for step in ["reference", "invert", "mask", "magnitude", "load",
+                     "t2star_r2star", "r2_r2prime", "chi_separation"] {
             assert!(downstream_of(step).contains(&"analysis".to_string()),
                     "{step} should invalidate analysis: {:?}", downstream_of(step));
         }
@@ -779,8 +789,9 @@ mod tests {
     fn test_downstream_steps_leaf() {
         assert!(downstream_steps("swi").is_empty());
         assert!(downstream_steps("smwi").is_empty());
-        // `reference` is not a leaf: SMWI and the per-structure stats both read the referenced map.
-        assert_eq!(downstream_steps("reference"), &["smwi", "analysis"]);
+        // `reference` is not a leaf: SMWI, chi-separation and the per-structure stats all read
+        // the referenced map.
+        assert_eq!(downstream_steps("reference"), &["smwi", "chi_separation", "analysis"]);
         assert!(downstream_steps("analysis").is_empty());
     }
 

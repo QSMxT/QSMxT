@@ -1147,8 +1147,10 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub do_segmentation: bool,
 
-    /// Also summarise susceptibility per segmented structure into a TSV (median, mean, SD and
-    /// 5th/95th percentiles). Implies --do-segmentation and QSM, unless a custom one is supplied
+    /// Also summarise every quantitative map (χ, χ+/χ−, T2*, R2*, R2, R2') per segmented
+    /// structure into a TSV: mean, SD, median, min, max and the 5th/95th percentiles, one row per
+    /// map and structure, plus a dataset-level table gathering all runs. Summarises whatever the
+    /// run made — it implies --do-segmentation, and QSM only if no other map was asked for
     #[arg(long)]
     pub do_analysis: bool,
 

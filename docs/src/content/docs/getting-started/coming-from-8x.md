@@ -29,11 +29,14 @@ configuration, and running.
 
 Some parts of the 8.x line are not included in v9:
 
-- anatomical segmentation
 - template and group-space building
-- group statistics
 - NextQSM
 - the web UI
+
+Anatomical segmentation is back, by a different route: v9 parcellates the GRE
+magnitude directly with SynthSeg rather than registering a T1w atlas, and
+summarises every quantitative map per structure. See
+[Segmentation and per-structure statistics](/QSMxT/reference/algorithms/#segmentation-and-per-structure-statistics).
 
 If you rely on those, 8.x is still available: see the
 [8.x documentation](https://qsmxt.github.io/QSMxT/v8/), the

@@ -214,17 +214,38 @@ impl Default for SeparationConfig {
 /// needs R2 and R2* unless a custom R2'/R2 map is supplied. Enabling chi-separation turns on exactly
 /// those maps. Keeps a `--do-chisep` run self-consistent, and is what the TUI validates against (it
 /// must not let the user disable a map the current method requires).
-/// Per-structure statistics need a parcellation to average over and a map to average, so asking
-/// for the analysis forces both. A bring-your-own dseg or Chimap satisfies its side.
+/// Per-structure statistics need a parcellation to average over and at least one map to average,
+/// so asking for the analysis forces both. A bring-your-own dseg satisfies the parcellation.
+///
+/// The map side is satisfied by *any* quantitative map, not χ specifically: the table summarises
+/// everything the run produced, so `--no-qsm --do-r2starmap --do-analysis` is a perfectly good
+/// request and must not have QSM forced back on behind the user's back. Reconstruction is only
+/// implied when nothing else would produce a map at all — the difference between filling in an
+/// obvious omission and overriding a stated choice.
 pub fn enforce_analysis_dependencies(config: &mut PipelineConfig) {
     if config.pipeline.do_analysis {
         if config.segmentation.custom_dseg_tool.is_none() {
             config.pipeline.do_segmentation = true;
         }
-        if config.separation.custom_qsm_tool.is_none() {
+        if !produces_a_quantitative_map(config) {
             config.pipeline.do_qsm = true;
         }
     }
+}
+
+/// Whether the run will produce anything the per-structure table can summarise.
+///
+/// Chi-separation counts because it writes χ+/χ−, and a custom Chimap counts because the analysis
+/// reads it from derivatives. The custom R2/R2' tools do not count on their own: those maps are
+/// only pulled in when their own toggle asks for them.
+fn produces_a_quantitative_map(config: &PipelineConfig) -> bool {
+    config.pipeline.do_qsm
+        || config.pipeline.do_t2starmap
+        || config.pipeline.do_r2starmap
+        || config.pipeline.do_r2map
+        || config.pipeline.do_r2primemap
+        || config.pipeline.do_chi_separation
+        || config.separation.custom_qsm_tool.is_some()
 }
 
 /// SMWI weights the magnitude by the susceptibility map, so it cannot run without one.
@@ -570,8 +591,9 @@ pub struct PipelineToggles {
     /// Whole-brain parcellation of the GRE magnitude via SynthSeg (`_dseg.nii`).
     #[serde(default)]
     pub do_segmentation: bool,
-    /// Per-structure susceptibility statistics over the segmentation. Needs both a segmentation
-    /// and a susceptibility map, so it implies each.
+    /// Per-structure statistics over the segmentation, for every quantitative map the run made.
+    /// Needs a segmentation, so it implies one; and needs at least one map, so it implies QSM only
+    /// when nothing else would produce one.
     #[serde(default)]
     pub do_analysis: bool,
     pub do_t2starmap: bool,
@@ -1013,6 +1035,24 @@ mod analysis_dependency_tests {
         crate::config::enforce_analysis_dependencies(&mut c);
         assert!(!c.pipeline.do_segmentation, "a supplied dseg needs no SynthSeg run");
         assert!(!c.pipeline.do_qsm, "a supplied Chimap needs no reconstruction");
+
+        // Any map satisfies the map side: the table summarises whatever the run made, so asking
+        // for R2* and the statistics must not quietly switch reconstruction back on.
+        for other in ["t2star", "r2star", "r2", "r2prime", "chisep"] {
+            let mut c = crate::config::PipelineConfig::default();
+            c.pipeline.do_qsm = false;
+            c.pipeline.do_analysis = true;
+            match other {
+                "t2star" => c.pipeline.do_t2starmap = true,
+                "r2star" => c.pipeline.do_r2starmap = true,
+                "r2" => c.pipeline.do_r2map = true,
+                "r2prime" => c.pipeline.do_r2primemap = true,
+                _ => c.pipeline.do_chi_separation = true,
+            }
+            crate::config::enforce_analysis_dependencies(&mut c);
+            assert!(!c.pipeline.do_qsm, "{other} is a map to summarise — QSM must stay off");
+            assert!(c.pipeline.do_segmentation, "{other} still needs something to average over");
+        }
 
         // Segmentation on its own forces nothing: it reads the magnitude, not χ.
         let mut c = crate::config::PipelineConfig::default();

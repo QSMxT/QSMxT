@@ -361,3 +361,53 @@ bring-your-own R2' map. See [Input data](/QSMxT/reference/inputs/).
 
 Outputs are written as `desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap` and
 `desc-total_Chimap`.
+
+## Segmentation and per-structure statistics
+
+`--do-segmentation` parcellates the brain straight from the GRE magnitude with
+[SynthSeg](https://doi.org/10.1016/j.media.2023.102789). It is trained on
+synthetic images of randomised contrast, so one set of weights segments a GRE
+magnitude directly — no T1w acquisition, and no registration. Outputs are a
+FreeSurfer-labelled `_dseg.nii` and the `_dseg.tsv` lookup table that names its
+integers. Use `--synthseg-version v2` for the better (separately downloaded)
+model, or `--use-custom-dseg <TOOL>` to bring your own parcellation from
+`<bids>/derivatives/<TOOL>/`.
+
+`--do-analysis` then summarises **every quantitative map the run produced**
+inside each structure — `Chimap`, the chi-separation maps, `T2starmap`,
+`R2starmap`, `R2map` and `R2primemap` — and writes them as a tab-separated
+table:
+
+| Column | Meaning |
+| --- | --- |
+| `map` | The map summarised, by its BIDS suffix (e.g. `desc-paramagnetic_Chimap`) |
+| `unit` | `ppm` for susceptibility, `s` for T2\*, `s-1` for the R2 family |
+| `index`, `name` | FreeSurfer label id and structure name |
+| `n_voxels` | Voxels the structure occupies in the segmentation |
+| `n_valid` | Of those, the voxels the map actually covers — the ones summarised |
+| `volume_mm3` | SynthSeg's partial-volume-aware volume (blank for a supplied `dseg`) |
+| `mean`, `sd` | Mean and population standard deviation |
+| `median`, `min`, `max` | Median and the extremes |
+| `p5`, `p95` | 5th and 95th percentiles, nearest-rank (never interpolated) |
+
+One row per map and structure, so the table keeps the same shape whatever the
+run produced; pivot it to one-column-per-map in a line of pandas or R if you
+prefer that. Voxels a map does not cover are excluded rather than averaged in as
+zeros, which is why `n_valid` can be smaller than `n_voxels` — `R2map` only
+exists where the spin-echo acquisition reached, for instance.
+
+Two copies are written:
+
+- `sub-<X>/anat/sub-<X>_desc-segmentation_stats.tsv` — one run, next to the
+  images it describes.
+- `desc-segmentation_stats.tsv` at the top of the derivatives directory — every
+  run in the dataset, each row prefixed with its BIDS entities (`subject`,
+  `session`, `acquisition`, `reconstruction`, `inversion`, `run`). This is the
+  one to open for a group analysis.
+
+The table covers whatever the run produced, so it does not force you to compute
+maps you did not ask for: `--no-qsm --do-r2starmap --do-segmentation
+--do-analysis` is a valid request and gives you an R2\*/T2\* table with no
+susceptibility map in sight. `--do-analysis` implies `--do-segmentation` (unless
+you supply a `dseg`), and implies QSM only when nothing else would produce a map
+at all.

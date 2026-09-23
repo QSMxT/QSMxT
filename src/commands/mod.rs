@@ -1198,6 +1198,96 @@ mod integration_tests {
         assert!(deriv.join("sub-1/anat/sub-1_R2starmap.nii").exists());
     }
 
+    /// The per-structure tables are the point of `--do-analysis`, so the run has to produce one
+    /// covering every map it made — not χ alone — and gather them into a dataset-level table.
+    /// The segmentation is supplied so the test needs no network weights.
+    #[test]
+    fn analysis_tabulates_every_map_per_structure() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_echo_bids(&bids);
+        testutils::write_dseg(&bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii"));
+
+        let mut args = default_run_args(bids, out.clone());
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+        args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
+        args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
+        args.dry = false;
+        args.no_mem_limit = true;
+        args.pipeline.do_t2starmap = true;
+        args.pipeline.do_r2starmap = true;
+        args.pipeline.do_analysis = true;
+        args.pipeline.segmentation_params.use_custom_dseg = Some("mydseg".to_string());
+        super::run::execute(args).unwrap();
+
+        let deriv = out.join("derivatives/qsmxt");
+        let per_run = std::fs::read_to_string(
+            deriv.join("sub-1/anat/sub-1_desc-segmentation_stats.tsv")).unwrap();
+        let header: Vec<&str> = per_run.lines().next().unwrap().split('\t').collect();
+        for col in ["map", "unit", "index", "name", "n_voxels", "n_valid",
+                    "mean", "sd", "median", "min", "max", "p5", "p95"] {
+            assert!(header.contains(&col), "column {col} missing from {header:?}");
+        }
+        let maps: std::collections::HashSet<&str> =
+            per_run.lines().skip(1).map(|l| l.split('\t').next().unwrap()).collect();
+        assert!(maps.contains("Chimap"), "{maps:?}");
+        assert!(maps.contains("T2starmap"), "{maps:?}");
+        assert!(maps.contains("R2starmap"), "{maps:?}");
+
+        // Every row is complete, and min <= median <= max on all of them.
+        for line in per_run.lines().skip(1) {
+            let c: Vec<&str> = line.split('\t').collect();
+            assert_eq!(c.len(), header.len(), "ragged row: {line}");
+            let f = |i: usize| c[i].parse::<f64>().unwrap();
+            let (median, min, max) = (f(9), f(10), f(11));
+            assert!(min <= median && median <= max, "{line}");
+            assert!(f(5) >= 1.0, "a row must summarise at least one voxel: {line}");
+        }
+
+        // The dataset-level table repeats those rows behind the run's BIDS entities.
+        let group = std::fs::read_to_string(deriv.join("desc-segmentation_stats.tsv")).unwrap();
+        assert!(group.lines().next().unwrap().starts_with("subject\tsession\t"));
+        assert_eq!(group.lines().count(), per_run.lines().count());
+        assert!(group.lines().skip(1).all(|l| l.starts_with("1\t\t\t\t\t\t")),
+                "every row should carry sub-1 and no other entities");
+    }
+
+    /// The table summarises what the run made, so a run that makes no susceptibility map at all
+    /// still produces one. `--no-qsm --do-r2starmap --do-analysis` has to stay a no-QSM run:
+    /// reconstruction must not be switched back on behind the request.
+    #[test]
+    fn analysis_works_without_qsm() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_echo_bids(&bids);
+        testutils::write_dseg(&bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii"));
+
+        let mut args = default_run_args(bids, out.clone());
+        args.dry = false;
+        args.no_mem_limit = true;
+        args.pipeline.no_qsm = true;
+        args.pipeline.do_r2starmap = true;
+        args.pipeline.do_analysis = true;
+        args.pipeline.segmentation_params.use_custom_dseg = Some("mydseg".to_string());
+        super::run::execute(args).unwrap();
+
+        let deriv = out.join("derivatives/qsmxt");
+        assert!(!deriv.join("sub-1/anat/sub-1_Chimap.nii").exists(),
+                "--no-qsm must survive: the analysis needs a map, not χ specifically");
+
+        let table = std::fs::read_to_string(
+            deriv.join("sub-1/anat/sub-1_desc-segmentation_stats.tsv")).unwrap();
+        let maps: std::collections::HashSet<&str> =
+            table.lines().skip(1).map(|l| l.split('\t').next().unwrap()).collect();
+        // The R2*/T2* stage always writes both — T2* is 1/R2* — so both are there to summarise,
+        // and χ is not.
+        assert_eq!(maps, ["R2starmap", "T2starmap"].into_iter().collect(), "{maps:?}");
+        assert!(deriv.join("desc-segmentation_stats.tsv").exists(), "the group table too");
+    }
+
     #[test]
     fn test_run_single_echo_tgv() {
         let dir = tempfile::tempdir().unwrap();
