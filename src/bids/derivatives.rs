@@ -71,6 +71,26 @@ impl DerivativeOutputs {
         dir
     }
 
+    /// Where a run resampled to axial keeps the working-grid copies of its final outputs.
+    ///
+    /// Returning the outputs to the acquired grid overwrites them in `anat/`, but later steps
+    /// read them back on the working grid (the mask, the combined magnitude, ...), so a re-run
+    /// restores them from here first.
+    pub fn working_grid_dir(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_run_dir(key).join("working-grid")
+    }
+
+    /// Whether `path` is one of this run's final outputs rather than another run's.
+    ///
+    /// Every run of a subject/session writes into the same `anat/` directory, and one run's
+    /// basename can be a prefix of another's (`acq-a` and `acq-a_run-2`), so the name has to
+    /// continue with something other than a further entity of the key.
+    pub fn is_run_output(&self, key: &AcquisitionKey, path: &Path) -> bool {
+        let Some(name) = path.file_name().map(|n| n.to_string_lossy().into_owned()) else { return false };
+        let Some(rest) = name.strip_prefix(&format!("{}_", key.basename())) else { return false };
+        !["acq-", "rec-", "inv-", "run-"].iter().any(|e| rest.starts_with(e))
+    }
+
     /// Build the workflow step directory for a given step.
     fn workflow_step_dir(&self, key: &AcquisitionKey, step: &str) -> PathBuf {
         self.workflow_run_dir(key).join(step)

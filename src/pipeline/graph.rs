@@ -405,7 +405,7 @@ pub fn clean_intermediates(state: &PipelineState, output_dir: &Path, key: &Acqui
     let final_steps: HashSet<&str> = [
         "mask", "magnitude", "reference", "swi", "smwi", "t2star_r2star",
         "r2_r2prime", "chi_separation", "segmentation", "analysis",
-        "mask-reliable", "reference-singlepass",
+        "mask-reliable", "reference-singlepass", "output_space",
     ].iter().copied().collect();
 
     for (step_name, record) in &state.completed_steps {

@@ -275,6 +275,7 @@ pub fn run_pipeline_cached(
     let mut state = PipelineState::load_or_create(&state_path, config, &qsm_run.key, force);
 
     let meta = stage_load(qsm_run, config, &mut state, &state_path, progress)?;
+    restore_working_grid(qsm_run, output, &mut state, &state_path)?;
 
     let needs_mask = config.pipeline.do_qsm || config.pipeline.do_swi || config.pipeline.do_smwi
         || (config.pipeline.do_t2starmap && meta.n_echoes >= 3 && meta.has_magnitude)
@@ -391,6 +392,7 @@ pub fn run_pipeline_cached(
 
     if clean_intermediates {
         crate::pipeline::graph::clean_intermediates(ctx.state, &output.output_dir, &qsm_run.key);
+        let _ = std::fs::remove_dir_all(output.working_grid_dir(&qsm_run.key));
     }
 
     Ok(())
@@ -443,6 +445,41 @@ fn validate_run_dims(run: &QsmRun, reference: &NiftiData) -> crate::Result<()> {
     Ok(())
 }
 
+/// Undo a previous run's return to the acquired grid before any step reads `anat/` again.
+///
+/// Cached steps hand their outputs to the steps after them on the working grid, but
+/// [`stage_output_space`] rewrote them in place. Put the working-grid copies back and let it run
+/// again at the end. Without the copies (a run from before they were kept), nothing in `anat/`
+/// can be trusted on the working grid, so everything after loading is redone.
+fn restore_working_grid(
+    run: &QsmRun, output: &DerivativeOutputs, state: &mut PipelineState, state_path: &Path,
+) -> crate::Result<()> {
+    if !state.completed_steps.contains_key("output_space") {
+        return Ok(());
+    }
+    let stash = output.working_grid_dir(&run.key);
+    let saved: Vec<PathBuf> = std::fs::read_dir(&stash)
+        .map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path())).collect())
+        .unwrap_or_default();
+    if saved.is_empty() {
+        log::warn!(
+            "Outputs of {} were returned to the acquired grid by an earlier run that kept no \
+             working-grid copies; recomputing them",
+            run.key
+        );
+        state.completed_steps.retain(|step, _| step == "load");
+    } else {
+        let anat = output.anat_dir(&run.key);
+        for f in &saved {
+            if let Some(name) = f.file_name() {
+                std::fs::copy(f, anat.join(name))?;
+            }
+        }
+        state.completed_steps.remove("output_space");
+    }
+    state.save(state_path)
+}
+
 /// Put the derivatives back on the grid the data was acquired on.
 ///
 /// A run that was resampled to axial reconstructs, and by default writes, on the cardinal grid.
@@ -474,13 +511,29 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
 
     let src_dims = ctx.meta.dims;
     let src_affine = ctx.meta.affine;
+    // Only this run's files: every run of the session shares `anat/`, and another run's outputs
+    // may be on its own working grid, or still being read by a reconstruction in progress.
     let anat = ctx.output.anat_dir(&ctx.run.key);
     let mut files: Vec<PathBuf> = std::fs::read_dir(&anat)
         .map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path()))
             .filter(|p| p.extension().map(|e| e == "nii").unwrap_or(false))
+            .filter(|p| ctx.output.is_run_output(&ctx.run.key, p))
             .collect())
         .unwrap_or_default();
     files.sort();
+
+    // Keep the working-grid originals: later steps read these back (the mask, the combined
+    // magnitude, ...), so a re-run has to start from them rather than from what lands in `anat/`.
+    let stash = ctx.output.working_grid_dir(&ctx.run.key);
+    if stash.exists() {
+        std::fs::remove_dir_all(&stash)?;
+    }
+    std::fs::create_dir_all(&stash)?;
+    for f in &files {
+        if let Some(name) = f.file_name() {
+            std::fs::copy(f, stash.join(name))?;
+        }
+    }
 
     // Phase is only meaningful alongside its magnitude, so handle those pairs first and skip
     // them in the scalar pass.
@@ -753,6 +806,19 @@ fn stage_load(
     state_path: &Path,
     progress: &dyn Fn(&str),
 ) -> crate::Result<RunMetadata> {
+    // The grid every other step works on is decided here, so a setting that changes it leaves
+    // nothing cached valid. A cache from before this was recorded is taken as it stands.
+    let geometry = serde_json::json!({
+        "obliquity_threshold": config.pipeline.obliquity_threshold,
+        "axial_only": qsmxt_config::bridge::axial_only_algorithms(config),
+    });
+    let geometry_hash = crate::pipeline::graph::step_params_hash(None, &geometry);
+    if let Some(Some(stored)) = state.completed_steps.get("load").map(|r| r.params_hash.as_ref()) {
+        if *stored != geometry_hash {
+            log::info!("Geometry settings changed (obliquity threshold or algorithm) — recomputing everything");
+            state.completed_steps.clear();
+        }
+    }
     if !state.is_step_cached("load") {
         let t = Instant::now();
         progress("Loading NIfTI metadata");
@@ -770,7 +836,7 @@ fn stage_load(
             meta.field_strength, meta.echo_times,
         );
         state.run_metadata = Some(meta.clone());
-        state.mark_completed("load", vec![], None);
+        state.mark_completed("load", vec![], Some(geometry_hash));
         state.save(state_path)?;
         log_step_done("Load", t);
         Ok(meta)
@@ -1791,6 +1857,30 @@ fn stage_smwi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
     Ok(())
 }
 
+/// One echo's magnitude on the working grid (0-based `echo`).
+///
+/// The scale_phase intermediate is the one to read: it is the same echo, already resampled when
+/// the run was moved to axial, and it is the only copy when the coils were combined. The source
+/// file is the fallback, and is only on the working grid when the run was not resampled.
+fn load_echo_magnitude(ctx: &StageContext, echo: usize) -> crate::Result<Vec<f64>> {
+    let intermediate = ctx.output.mag_path(&ctx.run.key, echo + 1);
+    let path = match ctx.run.echoes[echo].magnitude_nifti.as_ref() {
+        Some(raw) if !intermediate.exists() => raw.clone(),
+        _ => intermediate,
+    };
+    let data = io::read_nifti_file(&path)
+        .map_err(|e| QsmxtError::NiftiIo(format!("mag echo {} ({}): {}", echo + 1, path.display(), e)))?
+        .data;
+    let (nx, ny, nz) = ctx.meta.dims;
+    if data.len() != nx * ny * nz {
+        return Err(QsmxtError::Config(format!(
+            "mag echo {}: {} has {} voxels, but this run is processed on a {}x{}x{} grid",
+            echo + 1, path.display(), data.len(), nx, ny, nz,
+        )));
+    }
+    Ok(data)
+}
+
 fn stage_t2star_r2star(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
     let t2r2_params = serde_json::json!({
         "n_echoes": ctx.meta.n_echoes,
@@ -1809,13 +1899,7 @@ fn stage_t2star_r2star(ctx: &mut StageContext, mask_path: &Path, progress: &dyn 
 
     let mut interleaved = vec![0.0f64; n_voxels * ctx.meta.n_echoes];
     for i in 0..ctx.meta.n_echoes {
-        let mag_data = if let Some(ref raw_path) = ctx.run.echoes[i].magnitude_nifti {
-            let nifti = io::read_nifti_file(raw_path)
-                .map_err(|e| QsmxtError::NiftiIo(format!("mag echo {}: {}", i + 1, e)))?;
-            nifti.data
-        } else {
-            load_volume(&ctx.output.mag_path(&ctx.run.key, i + 1))?
-        };
+        let mag_data = load_echo_magnitude(ctx, i)?;
         for vox in 0..n_voxels {
             interleaved[vox * ctx.meta.n_echoes + i] = mag_data[vox];
         }
@@ -2032,11 +2116,7 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
         let mut interleaved = vec![0.0f64; n_voxels * ctx.meta.n_echoes];
         let mut rss = vec![0.0f64; n_voxels];
         for i in 0..ctx.meta.n_echoes {
-            let mag = if let Some(ref raw) = ctx.run.echoes[i].magnitude_nifti {
-                io::read_nifti_file(raw).map_err(|e| QsmxtError::NiftiIo(format!("mag echo {}: {}", i + 1, e)))?.data
-            } else {
-                load_volume(&ctx.output.mag_path(&ctx.run.key, i + 1))?
-            };
+            let mag = load_echo_magnitude(ctx, i)?;
             for vox in 0..n_voxels {
                 interleaved[vox * ctx.meta.n_echoes + i] = mag[vox];
                 rss[vox] += mag[vox] * mag[vox];
@@ -3283,7 +3363,7 @@ mod tests {
     }
 
     /// Build a `QsmRun` whose echoes point at the given (phase, magnitude) file pairs.
-    fn run_with_echoes(echoes: Vec<(std::path::PathBuf, Option<std::path::PathBuf>)>) -> crate::bids::discovery::QsmRun {
+    pub(super) fn run_with_echoes(echoes: Vec<(std::path::PathBuf, Option<std::path::PathBuf>)>) -> crate::bids::discovery::QsmRun {
         use crate::bids::discovery::{EchoFiles, QsmRun};
         use crate::bids::entities::AcquisitionKey;
         let n = echoes.len();
@@ -3851,5 +3931,156 @@ mod swi_export_tests {
                 }),
             )),
         ));
+    }
+
+}
+
+/// End-to-end runs of an oblique acquisition resampled to axial (issue #223).
+#[cfg(test)]
+mod oblique_run_tests {
+    use super::*;
+
+    const DIMS: (usize, usize, usize) = (20, 22, 18);
+
+    fn key(acq: &str) -> AcquisitionKey {
+        AcquisitionKey {
+            subject: "1".into(), session: None, acquisition: Some(acq.into()),
+            reconstruction: None, inversion: None, run: None, suffix: "MEGRE".into(),
+        }
+    }
+
+    /// A small multi-echo GRE of a sphere, 1 mm isotropic and tilted 30 degrees about x.
+    fn oblique_run(dir: &Path, acq: &str, n_echoes: usize) -> QsmRun {
+        let (nx, ny, nz) = DIMS;
+        let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
+        let affine = [
+            1.0, 0.0, 0.0, -10.0,
+            0.0, c, -s, -11.0,
+            0.0, s, c, -9.0,
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let mut echoes = Vec::new();
+        for e in 0..n_echoes {
+            let (mut mag, mut phase) = (vec![0.0; nx * ny * nz], vec![0.0; nx * ny * nz]);
+            for k in 0..nz {
+                for j in 0..ny {
+                    for i in 0..nx {
+                        let v = i + j * nx + k * nx * ny;
+                        let (x, y, z) = (i as f64 - 10.0, j as f64 - 11.0, k as f64 - 9.0);
+                        let r = (x * x + y * y + z * z).sqrt();
+                        mag[v] = if r < 7.0 { 100.0 * (-0.02 * (e + 1) as f64).exp() + x } else { 1.0 };
+                        phase[v] = (0.05 * (e + 1) as f64 * (x + 0.5 * y)).sin() * 3.0;
+                    }
+                }
+            }
+            let p = dir.join(format!("acq-{acq}_echo{}_phase.nii", e + 1));
+            let m = dir.join(format!("acq-{acq}_echo{}_mag.nii", e + 1));
+            io::save_nifti_to_file(&p, &phase, DIMS, (1.0, 1.0, 1.0), &affine).unwrap();
+            io::save_nifti_to_file(&m, &mag, DIMS, (1.0, 1.0, 1.0), &affine).unwrap();
+            echoes.push((p, Some(m)));
+        }
+        let mut run = super::tests::run_with_echoes(echoes);
+        run.key = key(acq);
+        run.dims = DIMS;
+        run
+    }
+
+    fn resampling_config() -> PipelineConfig {
+        let mut config = PipelineConfig::default();
+        config.pipeline.obliquity_threshold = 5.0;
+        config
+    }
+
+    fn voxels(path: &Path) -> usize {
+        io::read_nifti_file(path).unwrap().data.len()
+    }
+
+    const ACQUIRED: usize = DIMS.0 * DIMS.1 * DIMS.2;
+
+    /// ARLO and chi-separation read the acquired-grid source magnitudes and indexed past their end.
+    #[test]
+    fn r2star_is_computed_on_the_working_grid() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 3);
+        let mut config = resampling_config();
+        config.pipeline.do_t2starmap = true;
+        config.pipeline.do_r2starmap = true;
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        run_pipeline_cached(&run, &config, &output, true, false, &|_| {}).unwrap();
+        assert_eq!(voxels(&output.r2star_path(&run.key)), ACQUIRED);
+    }
+
+    /// Returning the outputs to the acquired grid rewrote the mask and magnitude in place, so a
+    /// re-run that recomputed the inversion cropped acquired-grid data against the working grid.
+    #[test]
+    fn a_rerun_after_returning_to_the_acquired_grid_reads_the_working_grid() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 3);
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let mut config = resampling_config();
+        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+
+        config.inversion.algorithm = QsmAlgorithm::Tkd;
+        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+        assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
+        assert_eq!(voxels(&output.mask_path(&run.key)), ACQUIRED);
+
+        // Asking for the working grid on a re-run brings the working-grid outputs back.
+        config.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
+        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+        assert_ne!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
+    }
+
+    /// Runs of one session share `anat/`, so returning one run to the acquired grid must leave the
+    /// others alone — they may be mid-reconstruction on their own working grid.
+    #[test]
+    fn returning_to_the_acquired_grid_leaves_other_runs_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let a = oblique_run(dir.path(), "a", 1);
+        let mut working = resampling_config();
+        working.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
+        run_pipeline_cached(&a, &working, &output, false, false, &|_| {}).unwrap();
+        let a_working = voxels(&output.mask_path(&a.key));
+        assert_ne!(a_working, ACQUIRED);
+
+        // `acq-a_run-2` starts with `acq-a`'s basename, so it is the harder neighbour to tell apart.
+        let mut b = oblique_run(dir.path(), "a", 1);
+        b.key.run = Some("2".into());
+        run_pipeline_cached(&b, &resampling_config(), &output, false, false, &|_| {}).unwrap();
+        assert_eq!(voxels(&output.mask_path(&b.key)), ACQUIRED);
+        assert_eq!(voxels(&output.mask_path(&a.key)), a_working, "run a's mask was resampled by run b");
+    }
+
+    /// `--clean-intermediates` treated the output-space step's files, which are the final
+    /// outputs, as intermediates and deleted them.
+    #[test]
+    fn cleaning_intermediates_keeps_the_outputs() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 1);
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        run_pipeline_cached(&run, &resampling_config(), &output, false, true, &|_| {}).unwrap();
+        assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
+        assert!(!output.working_grid_dir(&run.key).exists());
+    }
+
+    /// The grid was cached with the first run's geometry, so a new threshold was ignored.
+    #[test]
+    fn a_new_obliquity_threshold_is_honoured_on_a_rerun() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 1);
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let resampled = |output: &DerivativeOutputs| -> bool {
+            let state: PipelineState = serde_json::from_str(
+                &std::fs::read_to_string(output.state_path(&run.key)).unwrap()).unwrap();
+            state.run_metadata.unwrap().source_geometry.is_some()
+        };
+        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, false, &|_| {}).unwrap();
+        assert!(!resampled(&output));
+        run_pipeline_cached(&run, &resampling_config(), &output, false, false, &|_| {}).unwrap();
+        assert!(resampled(&output));
+        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, false, &|_| {}).unwrap();
+        assert!(!resampled(&output));
+        assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
     }
 }
