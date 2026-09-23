@@ -4,3 +4,4 @@ pub mod memory;
 pub mod methods;
 pub mod phase;
 pub mod runner;
+pub mod stats;

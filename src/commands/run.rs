@@ -213,6 +213,18 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
 
     let results = executor::local::execute_local(&runs, &config, &output, &exec_config);
 
+    // Gather every run's per-structure table into one dataset-level TSV. Best-effort, and after
+    // the runs rather than inside them: it is a convenience view of files already written, so a
+    // failure here must not fail an otherwise-successful run.
+    if config.pipeline.do_analysis {
+        let keys: Vec<_> = runs.iter().map(|r| &r.key).collect();
+        match crate::pipeline::stats::write_group_table(&derivatives_dir, &output, &keys) {
+            Ok(Some(path)) => info!("Per-structure statistics for all runs -> {}", path.display()),
+            Ok(None) => {}
+            Err(e) => warn!("Failed to write the dataset-level statistics table: {}", e),
+        }
+    }
+
     // Write BEP028 (BIDS-Prov) records and per-output GeneratedBy sidecars.
     // Best-effort: provenance output must never fail an otherwise-successful run.
     let command_line = std::env::args().collect::<Vec<_>>().join(" ");

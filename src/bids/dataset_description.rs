@@ -90,6 +90,9 @@ const BIDSIGNORE: &str = "\
 methods.md
 pipeline_config.toml
 workflow
+# Per-structure statistics tables — `stats` is not a BIDS suffix
+*_desc-segmentation_stats.tsv
+desc-segmentation_stats.tsv
 # BEP028 (BIDS-Prov) records — not yet in the released BIDS schema
 prov
 ";
@@ -112,6 +115,9 @@ It contains Quantitative Susceptibility Mapping (QSM) outputs and related maps
 
 - `dataset_description.json` — dataset-level provenance (`GeneratedBy`, `SourceDatasets`).
 - `methods.md` — a human-readable description of the processing pipeline.
+- `desc-segmentation_stats.tsv` — every run's per-structure statistics in one
+  table, when `--do-analysis` was used. The same rows for a single run are in
+  that run's `anat/*_desc-segmentation_stats.tsv`.
 - `prov/` — BEP028 (BIDS-Prov) provenance records: one Activity per pipeline
   stage, with Entity/Agent/Environment records. Each output NIfTI also carries a
   `GeneratedBy` reference in its JSON sidecar.

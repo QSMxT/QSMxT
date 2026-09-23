@@ -23,7 +23,15 @@ const VOXEL_SIZE: (f64, f64, f64) = (1.0, 1.0, 1.0);
 
 /// Write a synthetic magnitude volume (positive values, brighter in centre).
 pub fn write_magnitude(path: &Path) {
-    let data = magnitude_data();
+    write_magnitude_decayed(path, 1.0);
+}
+
+/// The same volume scaled by `attenuation`, so a multi-echo series decays like a real one.
+///
+/// Identical echoes would fit R2* = 0 exactly, which makes every R2*/T2* assertion pass on a map
+/// of zeros. A monoexponential decay gives the fit something to find.
+pub fn write_magnitude_decayed(path: &Path, attenuation: f64) {
+    let data: Vec<f64> = magnitude_data().iter().map(|v| v * attenuation).collect();
     qsm_core::io::save_nifti_to_file(path, &data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
         .expect("write magnitude");
 }
@@ -74,6 +82,26 @@ pub fn write_field(path: &Path) {
         .expect("write field");
 }
 
+/// Write a synthetic discrete segmentation on the test grid: a handful of real FreeSurfer ids,
+/// each covering a slab of slices, with a background rim so label 0 is exercised too.
+pub fn write_dseg(path: &Path) {
+    // Left/right thalamus, caudate and putamen — ids SynthSeg's label table carries.
+    const IDS: [f64; 6] = [10.0, 11.0, 12.0, 49.0, 50.0, 51.0];
+    let mut data = vec![0.0f64; N];
+    for z in 1..NZ - 1 {
+        for y in 1..NY - 1 {
+            for x in 1..NX - 1 {
+                data[z * NY * NX + y * NX + x] = IDS[z % IDS.len()];
+            }
+        }
+    }
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).unwrap();
+    }
+    qsm_core::io::save_nifti_to_file(path, &data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
+        .expect("write dseg");
+}
+
 /// Write a JSON sidecar with echo time and field strength.
 pub fn write_sidecar(path: &Path, echo_time: f64, field_strength: f64) {
     let json = serde_json::json!({
@@ -105,11 +133,15 @@ pub fn create_multi_echo_bids(root: &Path) -> PathBuf {
     std::fs::create_dir_all(&anat).unwrap();
 
     let echo_times = [0.004, 0.008, 0.012];
+    // A plausible grey-matter R2* at 3 T, so the echoes decay instead of repeating.
+    const R2STAR_HZ: f64 = 30.0;
     for (i, &te) in echo_times.iter().enumerate() {
         let echo_num = i + 1;
         write_phase(&anat.join(format!("sub-1_echo-{}_part-phase_MEGRE.nii", echo_num)));
         write_sidecar(&anat.join(format!("sub-1_echo-{}_part-phase_MEGRE.json", echo_num)), te, 3.0);
-        write_magnitude(&anat.join(format!("sub-1_echo-{}_part-mag_MEGRE.nii", echo_num)));
+        write_magnitude_decayed(
+            &anat.join(format!("sub-1_echo-{}_part-mag_MEGRE.nii", echo_num)),
+            (-R2STAR_HZ * te).exp());
         write_sidecar(&anat.join(format!("sub-1_echo-{}_part-mag_MEGRE.json", echo_num)), te, 3.0);
     }
 

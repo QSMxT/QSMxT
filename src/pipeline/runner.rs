@@ -13,6 +13,7 @@ use crate::pipeline::config::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
 use crate::pipeline::memory;
 use crate::pipeline::phase;
+use crate::pipeline::stats;
 use crate::nifti::write::write_volume;
 use crate::error::QsmxtError;
 
@@ -372,13 +373,15 @@ pub fn run_pipeline_cached(
     if config.pipeline.do_segmentation && meta.has_magnitude {
         stage_segmentation(&mut ctx, &dseg_path, progress)?;
     }
-    // Last: it reads both the referenced χ map and the segmentation.
-    if config.pipeline.do_analysis {
-        stage_analysis(&mut ctx, &dseg_path, progress)?;
-    }
 
     if config.pipeline.do_chi_separation {
         stage_chi_separation(&mut ctx, &mask_path, progress)?;
+    }
+
+    // Last of the map-producing stages: it summarises every map on disk, so it has to run after
+    // all of them — chi-separation included.
+    if config.pipeline.do_analysis {
+        stage_analysis(&mut ctx, &dseg_path, progress)?;
     }
 
     stage_output_space(&mut ctx, progress)?;
@@ -1437,44 +1440,80 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     Ok(())
 }
 
-/// Per-structure susceptibility statistics over a segmentation.
+/// The pipeline's own output for an input, or the bring-your-own derivative standing in for it.
 ///
-/// One row per label present in the volume. Both a median and a mean are reported because they
-/// answer different questions: susceptibility distributions inside a structure are skewed and
-/// carry outliers (vessels, partial volume at a boundary), so the median is the robust summary,
-/// while the mean is what most of the literature quotes. The percentiles show the spread without a
-/// single voxel setting it.
+/// A custom tool means the stage that would have written `path` never ran, so the file has to be
+/// found under `<bids>/derivatives/<tool>/` instead. The pipeline's own output still wins when it
+/// exists: a run that computed the map should be summarised on what it computed.
+fn resolve_input(
+    ctx: &StageContext, path: &Path, custom_tool: Option<&str>, glob: &str, exclude: &[&str],
+) -> Option<PathBuf> {
+    if path.exists() {
+        return Some(path.to_path_buf());
+    }
+    let found = find_custom_derivative(ctx.run, custom_tool?, glob, exclude)?;
+    log::info!("Summarising the supplied {}", found.display());
+    Some(found)
+}
+
+/// Per-structure statistics over a segmentation.
 ///
-/// `volume_mm3` is SynthSeg's own partial-volume-aware figure — the sum of the soft posteriors,
-/// which is not the same as counting labelled voxels, so `n_voxels` is reported alongside it
-/// rather than in its place. A supplied segmentation has no posteriors, so its volume is left
-/// empty rather than guessed at from the voxel count.
+/// One row per (map, structure), covering every quantitative map the run produced: χ, the
+/// chi-separation maps, T2*, R2*, R2 and R2'. The maps are found on disk rather than inferred from
+/// the config, so a bring-your-own derivative is summarised the same as one this run computed, and
+/// a map that was enabled but could not be made (no MESE for R2, say) simply contributes no rows.
+///
+/// Both a median and a mean are reported because they answer different questions: the
+/// distributions inside a structure are skewed and carry outliers (vessels, partial volume at a
+/// boundary), so the median is the robust summary while the mean is what most of the literature
+/// quotes. Min/max and the 5th/95th percentiles bracket the spread from both ends — the
+/// percentiles without a single voxel setting them, the extremes saying how far that voxel went.
 fn stage_analysis(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let out_path = ctx.output.qsm_stats_path(&ctx.run.key);
-    let params = serde_json::json!({ "version": format!("{}", ctx.config.segmentation.version) });
+    let out_path = ctx.output.segmentation_stats_path(&ctx.run.key);
+
+    // A supplied dseg or Chimap is read where it lies, as chi-separation reads its custom inputs:
+    // `--use-custom-dseg`/`--use-custom-qsm` mean the run never computed one, so nothing was
+    // written to the pipeline's own path for it.
+    let dseg = resolve_input(
+        ctx, dseg_path, ctx.config.segmentation.custom_dseg_tool.as_deref(), "*_dseg.nii*", &[]);
+    let Some(dseg) = dseg else {
+        log::warn!("Skipping analysis: no segmentation at {}", dseg_path.display());
+        return Ok(());
+    };
+    let qsm = resolve_input(
+        ctx, &ctx.output.qsm_path(&ctx.run.key),
+        ctx.config.separation.custom_qsm_tool.as_deref(), "*_Chimap.nii*", &["desc-"]);
+
+    let mut maps: Vec<stats::MapSpec> = stats::candidate_maps(ctx.output, &ctx.run.key)
+        .into_iter()
+        .filter(|m| m.path.exists())
+        .collect();
+    if let Some(qsm) = qsm {
+        if !maps.iter().any(|m| m.name == stats::CHIMAP) {
+            maps.insert(0, stats::MapSpec { name: stats::CHIMAP, unit: "ppm", path: qsm });
+        }
+    }
+
+    // The cache key carries which maps were summarised: computing R2* on a re-run has to add its
+    // rows rather than leave the table as it was.
+    let params = serde_json::json!({
+        "version": format!("{}", ctx.config.segmentation.version),
+        "dseg": dseg.display().to_string(),
+        "maps": maps.iter().map(|m| (m.name, m.path.display().to_string())).collect::<Vec<_>>(),
+    });
     if ctx.is_cached_with_params("analysis", None, &params) {
         log::info!("Skipping analysis (cached)");
         return Ok(());
     }
 
-    let qsm_path = ctx.output.qsm_path(&ctx.run.key);
-    for (what, p) in [("susceptibility map", &qsm_path), ("segmentation", &dseg_path.to_path_buf())] {
-        if !p.exists() {
-            log::warn!("Skipping analysis: no {} at {}", what, p.display());
-            return Ok(());
-        }
+    if maps.is_empty() {
+        log::warn!("Skipping analysis: the run produced no quantitative map to summarise");
+        return Ok(());
     }
     let t = Instant::now();
-    progress("Summarising QSM per structure");
+    progress("Summarising maps per structure");
 
-    let chi = load_volume(&qsm_path)?;
-    let seg = load_volume(dseg_path)?;
-    if seg.len() != chi.len() {
-        return Err(QsmxtError::DimensionMismatch(format!(
-            "segmentation has {} voxels but the susceptibility map has {}",
-            seg.len(), chi.len())));
-    }
-
+    let seg = load_volume(&dseg)?;
     let labels = to_core_synthseg_version(ctx.config.segmentation.version).labels();
     // SynthSeg's per-label volumes, when this run produced them itself.
     let volumes: Option<Vec<f64>> = ctx.state.completed_steps.get("segmentation")
@@ -1482,58 +1521,30 @@ fn stage_analysis(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn Fn(&s
         .and_then(|m| m.get("volumes"))
         .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-    let mut rows = String::from(
-        "index\tname\tn_voxels\tvolume_mm3\tmedian_ppm\tmean_ppm\tsd_ppm\tp5_ppm\tp95_ppm\n");
-    let mut reported = 0usize;
-    for (ch, (&id, name)) in labels.ids.iter().zip(labels.names).enumerate() {
-        if id == 0 {
-            continue; // background
+    let mut table = String::from(stats::HEADER);
+    let mut summarised: Vec<&str> = Vec::new();
+    for spec in &maps {
+        let map = load_volume(&spec.path)?;
+        if map.len() != seg.len() {
+            return Err(QsmxtError::DimensionMismatch(format!(
+                "segmentation has {} voxels but {} has {}",
+                seg.len(), spec.path.display(), map.len())));
         }
-        let mut vals: Vec<f64> = chi.iter().zip(&seg)
-            .filter(|(_, &l)| (l.round() as i32) == id)
-            .map(|(&c, _)| c)
-            .filter(|v| v.is_finite())
-            .collect();
-        if vals.is_empty() {
-            continue;
-        }
-        reported += 1;
-        let n = vals.len();
-        let st = structure_stats(&mut vals);
-        let vol = volumes.as_ref().and_then(|v| v.get(ch))
-            .map(|v| format!("{v:.1}")).unwrap_or_default();
-        rows.push_str(&format!(
-            "{id}\t{name}\t{n}\t{vol}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\t{:.6}\n",
-            st.median, st.mean, st.sd, st.p5, st.p95));
+        table.push_str(&stats::map_rows(spec, &map, &seg, labels, volumes.as_deref()));
+        summarised.push(spec.name);
     }
 
     if let Some(parent) = out_path.parent() {
         std::fs::create_dir_all(parent)?;
     }
-    std::fs::write(&out_path, rows)?;
-    log::info!("Per-structure QSM statistics for {} structures -> {}", reported, out_path.display());
-    ctx.complete_step("analysis", None, params, &[qsm_path.as_path(), dseg_path],
-                      vec![out_path], t)?;
+    std::fs::write(&out_path, table)?;
+    log::info!("Per-structure statistics for {} -> {}", summarised.join(", "), out_path.display());
+    let inputs: Vec<&Path> = std::iter::once(dseg.as_path())
+        .chain(maps.iter().map(|m| m.path.as_path()))
+        .collect();
+    ctx.complete_step("analysis", None, params, &inputs, vec![out_path], t)?;
     log_step_done("Per-structure analysis", t);
     Ok(())
-}
-
-/// Summary statistics for one structure's susceptibility values.
-struct StructureStats { median: f64, mean: f64, sd: f64, p5: f64, p95: f64 }
-
-/// Summarise a structure's voxels. Sorts `vals` in place.
-///
-/// The SD is the population one: these are every voxel of the structure, not a sample drawn from
-/// it, so there is no degree of freedom to lose. Percentiles use nearest-rank on the sorted values
-/// rather than interpolating — an interpolated percentile invents a susceptibility no voxel had.
-fn structure_stats(vals: &mut [f64]) -> StructureStats {
-    assert!(!vals.is_empty(), "structure_stats needs at least one value");
-    vals.sort_by(|a, b| a.partial_cmp(b).expect("non-finite values are filtered out"));
-    let n = vals.len();
-    let mean = vals.iter().sum::<f64>() / n as f64;
-    let sd = (vals.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / n as f64).sqrt();
-    let pct = |q: f64| vals[(((n - 1) as f64) * q).round() as usize];
-    StructureStats { median: pct(0.5), mean, sd, p5: pct(0.05), p95: pct(0.95) }
 }
 
 /// R2PRIMEnet inference. Gated in one place so a non-`dl` build says why it cannot run rather
@@ -2886,39 +2897,6 @@ mod tests {
             assert_ne!(main.step(step), reliable.step(step));
         }
         assert_eq!(main.step("invert"), "invert", "the main pass keeps the unsuffixed step names");
-    }
-
-    /// Percentile indexing is easy to get subtly wrong, and a wrong p5/p95 looks entirely
-    /// plausible in a results table.
-    #[test]
-    fn structure_stats_summarise_a_structure() {
-        // 0..=100: every statistic has an exact expected value.
-        let mut vals: Vec<f64> = (0..=100).map(|i| i as f64).collect();
-        let st = super::structure_stats(&mut vals);
-        assert_eq!(st.median, 50.0);
-        assert_eq!(st.mean, 50.0);
-        assert_eq!(st.p5, 5.0);
-        assert_eq!(st.p95, 95.0);
-
-        // Population SD of 0..=100 is sqrt((n²-1)/12) = sqrt(850).
-        assert!((st.sd - 850f64.sqrt()).abs() < 1e-9, "sd was {}", st.sd);
-
-        // Unsorted input is sorted in place, and the answer does not depend on the order.
-        let mut shuffled = vec![95.0, 5.0, 50.0, 0.0, 100.0];
-        let a = super::structure_stats(&mut shuffled);
-        let mut sorted = vec![0.0, 5.0, 50.0, 95.0, 100.0];
-        let b = super::structure_stats(&mut sorted);
-        assert_eq!((a.median, a.p5, a.p95), (b.median, b.p5, b.p95));
-
-        // A single voxel: every statistic is that voxel, and the SD is zero rather than NaN.
-        let st = super::structure_stats(&mut [0.25]);
-        assert_eq!((st.median, st.mean, st.p5, st.p95), (0.25, 0.25, 0.25, 0.25));
-        assert_eq!(st.sd, 0.0);
-
-        // Percentiles are real observations, never interpolated between two voxels.
-        let mut two = vec![0.0, 1.0];
-        let st = super::structure_stats(&mut two);
-        assert!(st.median == 0.0 || st.median == 1.0, "median was interpolated: {}", st.median);
     }
 
     /// HEIDI seeds itself with an LSQR solve, so an LSQR parameter changes the HEIDI result and

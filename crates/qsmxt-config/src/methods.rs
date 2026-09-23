@@ -459,8 +459,9 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     }
     if config.pipeline.do_analysis {
         sentences.push(
-            "Susceptibility was then summarised within each segmented structure (median, mean, \
-             standard deviation and 5th/95th percentiles over the structure's voxels).".to_string());
+            "Each quantitative map was then summarised within every segmented structure (mean, \
+             standard deviation, median, minimum, maximum and 5th/95th percentiles over the \
+             structure's voxels), excluding voxels the map does not cover.".to_string());
     }
 
     if config.pipeline.do_smwi {
@@ -998,7 +999,7 @@ mod tests {
         assert!(out.contains("32 FreeSurfer-labelled structures"), "out: {out}");
         assert!(out.contains("without a separate T1w"), "out: {out}");
         assert!(out.contains("10.1016/j.media.2023.102789"), "SynthSeg citation missing: {out}");
-        assert!(!out.contains("summarised within each segmented structure"),
+        assert!(!out.contains("summarised within every segmented structure"),
                 "no statistics were asked for: {out}");
 
         config.pipeline.do_analysis = true;
@@ -1006,7 +1007,8 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("SynthSeg v2"), "out: {out}");
         assert!(out.contains("33 FreeSurfer-labelled structures"), "out: {out}");
-        assert!(out.contains("summarised within each segmented structure"), "out: {out}");
+        assert!(out.contains("Each quantitative map was then summarised within every segmented structure"),
+                "out: {out}");
         assert!(out.contains("5th/95th percentiles"), "out: {out}");
     }
 

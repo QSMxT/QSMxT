@@ -3826,7 +3826,7 @@ impl App {
                 FieldDef {
                     label: "Per-structure Stats",
                     kind: FieldKind::Checkbox,
-                    help: "Summarise susceptibility per structure into a TSV (median, mean, SD, 5th/95th percentiles). Implies segmentation and QSM",
+                    help: "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Implies segmentation; implies QSM only if no other map is enabled",
                 },
             ],
             // Tab 4: Execution

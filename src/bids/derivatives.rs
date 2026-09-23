@@ -112,9 +112,12 @@ impl DerivativeOutputs {
     pub fn dseg_lookup_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.anat_dir(key).join(format!("{}_dseg.tsv", key.basename()))
     }
-    /// Per-structure susceptibility statistics over the segmentation.
-    pub fn qsm_stats_path(&self, key: &AcquisitionKey) -> PathBuf {
-        self.anat_dir(key).join(format!("{}_desc-segmentation_qsmstats.tsv", key.basename()))
+    /// Per-structure statistics over the segmentation, for every quantitative map the run made.
+    ///
+    /// One table per run rather than one per map: the rows carry the map's name, so a single file
+    /// holds χ, χ+/χ−, T2*, R2*, R2 and R2' together and nothing has to be joined to compare them.
+    pub fn segmentation_stats_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-segmentation_stats.tsv", key.basename()))
     }
 
     /// SMWI and its minIP, per contrast. The `desc-` values match the chi-separation outputs, which
