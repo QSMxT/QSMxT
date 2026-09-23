@@ -440,6 +440,15 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
             QsmReference::None => {
                 sentences.push("No susceptibility referencing was applied.".to_string());
             }
+            QsmReference::Region => {
+                let region = config.qsm.reference_region.as_deref().unwrap_or("");
+                let pretty = region.replace('-', " ").replace(',', ", ");
+                sentences.push(format!(
+                    "The resulting susceptibility map was referenced to the mean susceptibility of                      the {pretty} ({}), taken from the SynthSeg parcellation, so that zero                      corresponds to that tissue rather than to the whole-brain average.",
+                    if region.contains(',') { "a union of parcellation labels" }
+                    else { "a parcellation label" },
+                ));
+            }
         }
     }
 
@@ -1324,6 +1333,23 @@ mod tests {
         config.qsm.reference = QsmReference::None;
         let out = generate_methods(&config);
         assert!(out.contains("No susceptibility referencing"));
+    }
+
+    /// A methods paragraph that does not say what the map was referenced to is not reproducible:
+    /// the same pipeline referenced to CSF and to white matter gives different numbers.
+    #[test]
+    fn a_region_reference_is_named_in_the_methods() {
+        let mut config = PipelineConfig::default();
+        config.qsm.reference = QsmReference::Region;
+        config.qsm.reference_region = Some("left-thalamus".to_string());
+        let out = generate_methods(&config);
+        assert!(out.contains("left thalamus"), "the region must be named: {out}");
+        assert!(out.contains("SynthSeg parcellation"), "and where it came from: {out}");
+        assert!(!out.contains("mean-referenced within the brain mask"), "{out}");
+
+        config.qsm.reference_region = Some("left-thalamus,right-thalamus".to_string());
+        let out = generate_methods(&config);
+        assert!(out.contains("union of parcellation labels"), "a list reads as a union: {out}");
     }
 
     #[test]

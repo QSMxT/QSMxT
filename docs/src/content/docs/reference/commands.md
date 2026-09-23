@@ -65,6 +65,7 @@ qsmxt <cmd> --help # full help for a command
 | `--romeo-*` | Fine-grained ROMEO unwrapping controls |
 | `--do-chisep` / `--chisep <M>` | [Susceptibility source separation](/QSMxT/reference/algorithms/#susceptibility-source-separation) |
 | `--do-segmentation` / `--do-analysis` | [SynthSeg parcellation and per-structure statistics](/QSMxT/reference/algorithms/#segmentation-and-per-structure-statistics) |
+| `--qsm-reference <SPEC>` | [What χ's zero is pinned to](/QSMxT/reference/algorithms/#referencing): `mean`, `none`, or a parcellation region |
 
 See [Algorithms](/QSMxT/reference/algorithms/) for the valid values of each
 algorithm option.

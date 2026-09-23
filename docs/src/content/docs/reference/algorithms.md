@@ -362,6 +362,60 @@ bring-your-own R2' map. See [Input data](/QSMxT/reference/inputs/).
 Outputs are written as `desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap` and
 `desc-total_Chimap`.
 
+## Referencing
+
+A susceptibility map has no absolute zero — only differences within it mean
+anything — so every map is referenced to something. Choose what with
+`--qsm-reference`:
+
+| Value | What zero means |
+| --- | --- |
+| `mean` (default) | The mean χ inside the brain mask |
+| `none` | Nothing is subtracted; raw reconstruction values |
+| a region | The mean χ of a SynthSeg structure |
+
+`mean` needs no extra information, but it moves with whatever else is in the
+mask: two subjects with different amounts of iron-rich tissue in the field of
+view get different zeros. Referencing to a structure pins zero to tissue
+instead, which is what makes values comparable between subjects and studies.
+
+### Naming a region
+
+```bash
+qsmxt run bids/ --qsm-reference thalamus            # both sides merged
+qsmxt run bids/ --qsm-reference left-thalamus       # one side
+qsmxt run bids/ --qsm-reference cerebral-white-matter
+qsmxt run bids/ --qsm-reference ventricles          # a named composite
+qsmxt run bids/ --qsm-reference 4                   # a raw FreeSurfer id
+qsmxt run bids/ --qsm-reference left-caudate,right-putamen   # your own list
+```
+
+A term is a structure name with both sides merged, one sided label, a raw
+FreeSurfer id, or the `ventricles` composite (ids 4, 5, 14, 15, 43, 44 — the CSF
+spaces a QSM paper usually means by "CSF reference"). Comma-separate terms to
+use their union, so `thalamus` and `left-thalamus,right-thalamus` are the same
+reference. Slugs are the parcellation's own label names, lowercased with spaces
+as hyphens; an unrecognised name lists the valid ones rather than guessing.
+
+:::caution[`csf` is a label, not the composite]
+SynthSeg 2.0 has a label of its own named `csf` (id 24), which covers
+extraventricular CSF too. `--qsm-reference csf` means *that label* and needs
+`--synthseg-version v2`; it is not the same ROI as `ventricles`, and it does not
+exist on v1. Pick deliberately — the two give different numbers.
+:::
+
+A region reference implies `--do-segmentation`, since the region has to be
+measured on a parcellation; `--use-custom-dseg` satisfies that instead. If the
+region turns out to have no voxels inside the brain mask for a subject, that
+subject's run **fails** rather than falling back to `mean` — a map that was
+quietly referenced to something else looks fine and cannot be compared with the
+rest of the cohort.
+
+In the TUI the same setting appears in two places, editing one value: **QSM →
+Referencing → QSM Reference**, and **Supplementary → QSM Reference**, beside the
+SynthSeg settings it depends on. Picking a region there ticks *Segment
+(SynthSeg)* and reveals its settings.
+
 ## Segmentation and per-structure statistics
 
 `--do-segmentation` parcellates the brain straight from the GRE magnitude with

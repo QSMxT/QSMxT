@@ -156,6 +156,40 @@ pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamA
 ///
 /// Shared by `qsmxt run` and `qsmxt slurm` (both flatten `PipelineArgs`), so a
 /// pipeline configured once resolves identically in either execution mode.
+/// Split a `--qsm-reference` value into the method and, when it names one, the region spec.
+///
+/// `mean` and `none` are the two reserved words; everything else is a region, which is why they
+/// are matched case-insensitively and nothing else is guessed at here. Whether the region exists
+/// is [`validate_reference_region`]'s job — it needs the SynthSeg generation, which this function
+/// is called too early to know.
+pub fn parse_reference_spec(spec: &str) -> (QsmReference, Option<String>) {
+    match spec.trim().to_lowercase().as_str() {
+        "mean" => (QsmReference::Mean, None),
+        "none" => (QsmReference::None, None),
+        _ => (QsmReference::Region, Some(spec.trim().to_string())),
+    }
+}
+
+/// Check that a region reference names labels the selected SynthSeg generation actually has.
+///
+/// Called once the config is complete, before any data is touched: a mistyped region is otherwise
+/// a run that finishes hours later having referenced every map to something nobody asked for.
+pub fn validate_reference_region(config: &PipelineConfig) -> crate::Result<()> {
+    if config.qsm.reference != QsmReference::Region {
+        return Ok(());
+    }
+    let spec = config.qsm.reference_region.as_deref().unwrap_or_default();
+    let ids = qsmxt_config::regions::resolve(spec, config.segmentation.version)
+        .map_err(|e| QsmxtError::Config(format!("--qsm-reference: {e}")))?;
+    log::info!(
+        "Referencing χ to `{spec}` (SynthSeg {} label{} {})",
+        config.segmentation.version,
+        if ids.len() == 1 { "" } else { "s" },
+        ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", "),
+    );
+    Ok(())
+}
+
 pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs) {
         // ── Inversion algorithm ──
         if let Some(a) = args.qsm_algorithm {
@@ -239,11 +273,13 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         }
 
         // ── QSM reference ──
-        if let Some(a) = args.qsm_reference {
-            config.qsm.reference = match a {
-                cli::QsmReferenceArg::Mean => QsmReference::Mean,
-                cli::QsmReferenceArg::None => QsmReference::None,
-            };
+        // Anything that is not `mean` or `none` is a region spec; whether it names real labels
+        // depends on the SynthSeg generation, which later arguments can still change, so it is
+        // validated once the whole config exists (see `validate_reference_region`).
+        if let Some(ref a) = args.qsm_reference {
+            let (reference, region) = parse_reference_spec(a);
+            config.qsm.reference = reference;
+            config.qsm.reference_region = region;
         }
 
         // ── BET ──
@@ -491,6 +527,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         enforce_analysis_dependencies(config);
         enforce_smwi_dependencies(config);
         enforce_separation_dependencies(config);
+        enforce_reference_dependencies(config);
         if args.export_dicom { config.pipeline.export_dicom = true; }
         if args.no_inhomogeneity_correction { config.masking.inhomogeneity_correction = false; }
         else if args.inhomogeneity_correction { config.masking.inhomogeneity_correction = true; }
