@@ -2523,8 +2523,9 @@ fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
 
 #[cfg(test)]
 mod orientation_block_tests {
+    // `super::tests::*` re-exports the render helpers this module needs; `super::*` on top of it
+    // brings in nothing further.
     use super::tests::*;
-    use super::*;
     use crate::tui::app::{App, FilterFocus, TAB_INPUT};
 
     /// Build an app sitting on the Input tab with a scanned three-orientation dataset.

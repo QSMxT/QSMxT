@@ -7055,8 +7055,10 @@ mod tests {
     /// silently matching nothing.
     #[test]
     fn orientation_preview_reports_a_bad_pattern() {
-        let mut fs = super::FilterTreeState::default();
-        fs.orientation_group = "chunk".into();
+        let mut fs = super::FilterTreeState {
+            orientation_group: "chunk".into(),
+            ..Default::default()
+        };
         let preview = fs.orientation_preview();
         assert!(preview.error.unwrap().contains("chunk"));
 

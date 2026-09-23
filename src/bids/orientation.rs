@@ -199,7 +199,10 @@ mod tests {
         }
     }
 
-    fn keys(specs: &[(&str, Option<&str>, Option<&str>, Option<&str>)]) -> Vec<(AcquisitionKey, String)> {
+    /// `(subject, session, acquisition, run)` as the tests write them.
+    type KeySpec<'a> = (&'a str, Option<&'a str>, Option<&'a str>, Option<&'a str>);
+
+    fn keys(specs: &[KeySpec]) -> Vec<(AcquisitionKey, String)> {
         specs
             .iter()
             .map(|&(s, ses, acq, run)| {
@@ -210,7 +213,7 @@ mod tests {
             .collect()
     }
 
-    fn group(specs: &[(&str, Option<&str>, Option<&str>, Option<&str>)], pattern: &str) -> Vec<OrientationGroup> {
+    fn group(specs: &[KeySpec], pattern: &str) -> Vec<OrientationGroup> {
         let p = parse_pattern(pattern).unwrap().expect("pattern should be active");
         group_keys(&keys(specs), &p)
     }
