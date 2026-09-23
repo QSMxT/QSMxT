@@ -170,6 +170,17 @@ pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 31] = [
         QsmAlgorithmArg::IqsmPlus,
 ];
 
+/// The algorithm the inversion row is currently showing.
+///
+/// Reads it out of [`QSM_ALGO_ARGS`] rather than a second list of its own: the row's index means
+/// whatever that list says it means, and a parallel copy here would silently disagree the moment
+/// an algorithm is inserted. Out-of-range indices fall back to the first entry instead of
+/// panicking, so a stale index from a saved form can never take the TUI down.
+pub fn selected_qsm_algorithm(ps: &super::app::PipelineFormState) -> QsmAlgorithm {
+    let arg = QSM_ALGO_ARGS.get(ps.qsm_algorithm).copied().unwrap_or(QsmAlgorithmArg::Rts);
+    crate::pipeline::config::qsm_algorithm_arg_to_config(arg)
+}
+
 pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     let form = &app.form;
     let ps = &app.pipeline_state;
@@ -200,7 +211,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     ];
 
     PipelineArgs {
-        qsm_algorithm: Some(qsm_options[ps.qsm_algorithm]),
+        qsm_algorithm: Some(qsm_options.get(ps.qsm_algorithm).copied().unwrap_or(QsmAlgorithmArg::Rts)),
         unwrapping_algorithm: Some(unwrap_options[ps.unwrapping_algorithm]),
         bf_algorithm: Some(bf_options[ps.bf_algorithm]),
         masking_input: None,
@@ -311,7 +322,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             qsmart_ilsqr_max_iter: parse_optional_usize(&ps.qsmart_ilsqr_max_iter),
             qsmart_vasc_sphere_radius: ps.qsmart_vasc_sphere_radius.trim().parse::<i32>().ok(),
             qsmart_sdf_spatial_radius: ps.qsmart_sdf_spatial_radius.trim().parse::<i32>().ok(),
-            qsmart_inversion: if ps.qsm_algorithm == 10 {
+            qsmart_inversion: if selected_qsm_algorithm(ps) == QsmAlgorithm::Qsmart {
                 [
                     crate::cli::QsmAlgorithmArg::Ilsqr, crate::cli::QsmAlgorithmArg::Rts,
                     crate::cli::QsmAlgorithmArg::Tv, crate::cli::QsmAlgorithmArg::Tkd,
@@ -671,18 +682,6 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
 /// Build a PipelineConfig reflecting the current TUI state (for methods preview).
 pub fn config_from_app(app: &App) -> PipelineConfig {
     let ps = &app.pipeline_state;
-    let qsm_algorithms = [
-        QsmAlgorithm::Rts, QsmAlgorithm::Tv, QsmAlgorithm::Tkd, QsmAlgorithm::Tsvd,
-        QsmAlgorithm::Tgv, QsmAlgorithm::Tikhonov, QsmAlgorithm::Nltv, QsmAlgorithm::Medi,
-        QsmAlgorithm::Tfi,
-        QsmAlgorithm::Ilsqr, QsmAlgorithm::Qsmart,
-        QsmAlgorithm::Ndi, QsmAlgorithm::Fansi, QsmAlgorithm::FansiTgv,
-        QsmAlgorithm::L1qsm, QsmAlgorithm::Whqsm, QsmAlgorithm::Hdqsm,
-        QsmAlgorithm::AmpPe,
-        QsmAlgorithm::Xqsm, QsmAlgorithm::Qsmnet, QsmAlgorithm::QsmnetPlus, QsmAlgorithm::Autoqsm,
-        QsmAlgorithm::Qsmgan, QsmAlgorithm::Ir2qsm, QsmAlgorithm::Lpcnn, QsmAlgorithm::ModlQsm,
-        QsmAlgorithm::Nextqsm, QsmAlgorithm::Iqsm, QsmAlgorithm::IqsmPlus,
-    ];
     let unwrap_algorithms = [UnwrappingAlgorithm::Romeo, UnwrappingAlgorithm::Laplacian];
     let bf_algorithms = [
         BfAlgorithm::Vsharp, BfAlgorithm::Pdf, BfAlgorithm::Lbv,
@@ -690,7 +689,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         BfAlgorithm::Harperella, BfAlgorithm::Iharperella, BfAlgorithm::Bfrnet, BfAlgorithm::Iqfm,
     ];
 
-    let qsm_algorithm = qsm_algorithms[ps.qsm_algorithm];
+    let qsm_algorithm = selected_qsm_algorithm(ps);
     let is_end_to_end = matches!(qsm_algorithm, QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart);
 
     let mut config = PipelineConfig::default();
@@ -1025,6 +1024,54 @@ mod tests {
             assert_eq!(name, QSM_ALGO_OPTIONS[i],
                        "row {i} shows {:?} but would run {name}", QSM_ALGO_OPTIONS[i]);
         }
+    }
+
+    /// Every row of the inversion list must survive being selected.
+    ///
+    /// `config_from_app` used to carry its own copy of the algorithm list; when `lsqr` and `heidi`
+    /// were added to `QSM_ALGO_OPTIONS` the copy stayed 29 long, so scrolling onto the last two
+    /// rows panicked with "index out of bounds" and took the whole TUI down (issue #225). Walking
+    /// the full list here catches any future drift at the only place that matters — what the row
+    /// actually runs.
+    #[test]
+    fn every_inversion_row_builds_the_algorithm_it_shows() {
+        use crate::tui::app::QSM_ALGO_OPTIONS;
+        for (i, name) in QSM_ALGO_OPTIONS.iter().enumerate() {
+            let mut app = default_app();
+            app.pipeline_state.qsm_algorithm = i;
+            let config = config_from_app(&app);
+            assert_eq!(&format!("{}", config.inversion.algorithm), name,
+                       "row {i} shows {name} but configures {}", config.inversion.algorithm);
+            let args = pipeline_args_from_app(&app);
+            let arg = args.qsm_algorithm.expect("row sets an algorithm");
+            assert_eq!(&format!("{}", crate::pipeline::config::qsm_algorithm_arg_to_config(arg)), name,
+                       "row {i} shows {name} but passes a different --qsm-algorithm");
+        }
+    }
+
+    /// The inner-inversion choice belongs to QSMART and to nothing else. It used to be gated on a
+    /// hardcoded row index, which `lsqr` and `heidi` shifted out from under it — QSMART silently
+    /// lost its inner inversion, and LSQR picked one up.
+    #[test]
+    fn qsmart_inner_inversion_follows_qsmart_not_a_row_index() {
+        use crate::tui::app::QSM_ALGO_OPTIONS;
+        let qsmart = QSM_ALGO_OPTIONS.iter().position(|o| *o == "qsmart").expect("qsmart");
+        for (i, name) in QSM_ALGO_OPTIONS.iter().enumerate() {
+            let mut app = default_app();
+            app.pipeline_state.qsm_algorithm = i;
+            let set = pipeline_args_from_app(&app).qsmart_params.qsmart_inversion.is_some();
+            assert_eq!(set, i == qsmart, "qsmart_inversion set for {name} (row {i})");
+        }
+    }
+
+    /// A saved form from an older version can carry an index past the end of today's list. That is
+    /// a stale setting, not a reason to crash.
+    #[test]
+    fn an_out_of_range_inversion_index_falls_back_instead_of_panicking() {
+        let mut app = default_app();
+        app.pipeline_state.qsm_algorithm = 999;
+        assert_eq!(format!("{}", config_from_app(&app).inversion.algorithm), "rts");
+        assert_eq!(pipeline_args_from_app(&app).qsm_algorithm, Some(QsmAlgorithmArg::Rts));
     }
 
     fn default_app() -> App {

@@ -2323,7 +2323,6 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  LSQR Tolerance", field: "lsqr_tol", help: "LSQR convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  LSQR Max Iter", field: "lsqr_max_iter", help: "Maximum LSQR iterations" });
                 if alg == "heidi" {
-                    rows.push(PipelineRow::Note { text: "HEIDI keeps the LSQR solution's well-conditioned k-space and re-derives the dipole cone" });
                     rows.push(PipelineRow::Param { label: "  Cone Threshold", field: "heidi_cone_threshold",
                         help: "|D(k)| above which a coefficient is taken from the LSQR seed unchanged" });
                     rows.push(PipelineRow::Param { label: "  Gradient Threshold", field: "heidi_gradient_threshold",
