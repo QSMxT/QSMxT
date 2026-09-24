@@ -103,6 +103,10 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     cover!(q::bgremove::MsmvParams => c::MsmvConfig, ignore: ["b0", "te", "prefilter"]);
 
     // Masking / field mapping / misc
+    // HdBetParams / Rs2NetParams have no *Config pair by design: a DL brain extractor's
+    // parameters live on its MaskOp variant (MaskOp::HdBet, MaskOp::Rs2Net), because they are
+    // per-mask-section, not global. BetParams is the odd one out — it predates mask sections
+    // and still backs the --bet-* flags.
     cover!(q::bet::BetParams => c::BetConfig);
     cover!(q::utils::HomogeneityParams => c::HomogeneityConfig);
     cover!(q::utils::LinearFitParams => c::LinearFitConfig);

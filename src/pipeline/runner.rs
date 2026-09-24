@@ -3557,6 +3557,18 @@ mod tests {
         assert!(format!("{}", err).contains("deep-learning"), "got: {}", err);
     }
 
+    #[cfg(not(feature = "dl"))]
+    #[test]
+    fn test_rs2_net_mask_needs_dl_feature() {
+        // RS2-Net is a DL generator like HD-BET, so it must reach the same prefetch error
+        // rather than failing later with something about ONNX.
+        let sections = crate::pipeline::config::to_mask_sections(&crate::pipeline::config::rs2_net_mask_sections());
+        let ids: Vec<&str> = sections.iter().flat_map(|s| s.all_ops()).filter_map(|op| op.dl_model_id()).collect();
+        assert_eq!(ids, ["rs2-net"]);
+        let err = super::prefetch_weights(ids[0], "test").unwrap_err();
+        assert!(format!("{}", err).contains("deep-learning"), "got: {}", err);
+    }
+
     /// Two magnitude sections with fixed thresholds, so the section masks are known exactly:
     /// OR is their union, AND their intersection, and the post-combine refinements run once on
     /// the result rather than per section.

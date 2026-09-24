@@ -99,6 +99,16 @@ pub enum MaskOp {
         #[serde(default)] tta: bool,
         #[serde(default = "hd_bet_tile_step")] tile_step: f64,
     },
+    /// RS2-Net deep-learning **rodent** brain extraction from the magnitude (needs a `dl`
+    /// build). `tile_step` is the sliding-window stride as a fraction of the patch, in `(0, 1]`.
+    ///
+    /// There is no `patch`, unlike HD-BET: RS2-Net's Swin-UNETR computes its window padding with
+    /// Python ints, so the exported graph is traced at one fixed size and only runs at that size
+    /// (`qsm_core::bet::RS2_NET_PATCH`). Larger volumes are tiled.
+    Rs2Net {
+        #[serde(default)] tta: bool,
+        #[serde(default = "rs2_net_tile_step")] tile_step: f64,
+    },
 }
 
 // Defaults come from qsm-core so the two never drift apart.
@@ -111,6 +121,13 @@ fn se_min_component() -> usize { se_default().min_component }
 fn bet_voxel_scale() -> f64 { bet_default_voxel_scale() }
 /// qsm-core's default BET voxel scaling — 1.0, the acquisition's own geometry.
 pub fn bet_default_voxel_scale() -> f64 { qsm_core::bet::BetParams::default().voxel_scale }
+/// The preclinical voxel scaling that brings a mouse brain up to human dimensions, for
+/// `--mask-preset mouse-bet`. Not a qsm-core default (which is "unscaled"): it is the
+/// convention the preclinical `fslchpixdim` x10 workaround established.
+pub fn mouse_bet_voxel_scale() -> f64 { 10.0 }
+fn rs2_net_tile_step() -> f64 { rs2_net_default_tile_step() }
+/// qsm-core's default RS2-Net sliding-window step (nnU-Net's `tile_step_size`).
+pub fn rs2_net_default_tile_step() -> f64 { qsm_core::bet::Rs2NetParams::default().tile_step }
 fn hd_bet_patch() -> [usize; 3] { let p = qsm_core::bet::HdBetParams::default().patch; [p.0, p.1, p.2] }
 fn hd_bet_tile_step() -> f64 { hd_bet_default_tile_step() }
 /// qsm-core's default HD-BET sliding-window step (nnU-Net's `tile_step_size`).
@@ -134,6 +151,10 @@ impl MaskOp {
     pub fn bet(fractional_intensity: f64) -> Self {
         Self::Bet { fractional_intensity, voxel_scale: bet_voxel_scale() }
     }
+    /// RS2-Net with qsm-core's defaults and no test-time augmentation.
+    pub fn rs2_net_default() -> Self {
+        Self::Rs2Net { tta: false, tile_step: rs2_net_tile_step() }
+    }
     /// HD-BET with the native (training-size) patch and no test-time augmentation.
     pub fn hd_bet_default() -> Self {
         Self::HdBet { patch: hd_bet_patch(), tta: false, tile_step: hd_bet_tile_step() }
@@ -142,7 +163,7 @@ impl MaskOp {
     pub fn hd_bet_default_patch() -> [usize; 3] { hd_bet_patch() }
     /// Whether this op creates a mask (as opposed to refining one).
     pub fn is_generator(&self) -> bool {
-        matches!(self, Self::Threshold { .. } | Self::Bet { .. } | Self::HdBet { .. })
+        matches!(self, Self::Threshold { .. } | Self::Bet { .. } | Self::HdBet { .. } | Self::Rs2Net { .. })
     }
 }
 
@@ -153,8 +174,8 @@ impl MaskOp {
     /// mask stage's cache key: a change in a qsm-core default has to invalidate the cache rather
     /// than quietly reuse a mask built with the old value. A command line has the opposite need,
     /// so this drops parameters that are already the default. Only the multi-parameter ops
-    /// (`bet`, `hd-bet`, `signal-erode`) differ from `Display`; the rest are short and explicit
-    /// already, and `erode:1` reads better than a bare `erode`.
+    /// (`bet`, `rs2-net`, `hd-bet`, `signal-erode`) differ from `Display`; the rest are short
+    /// and explicit already, and `erode:1` reads better than a bare `erode`.
     pub fn compact_spec(&self) -> String {
         match self {
             // `scale=` only earns its place on preclinical data; `bet:0.50` is the usual form.
@@ -162,6 +183,14 @@ impl MaskOp {
                 let mut spec = format!("bet:{fractional_intensity:.2}");
                 if (*voxel_scale - bet_voxel_scale()).abs() > f64::EPSILON {
                     spec += &format!(":scale={voxel_scale}");
+                }
+                spec
+            }
+            Self::Rs2Net { tta, tile_step } => {
+                let mut spec = String::from("rs2-net");
+                if *tta { spec += ":tta"; }
+                if (*tile_step - rs2_net_tile_step()).abs() > f64::EPSILON {
+                    spec += &format!(":step={tile_step}");
                 }
                 spec
             }
@@ -217,6 +246,12 @@ impl fmt::Display for MaskOp {
                 write!(f, "signal-erode:{:.2}:{}:{}:{:.1}:{}", threshold, depth_cap, global_erosions, bias_sigma, min_component),
             Self::HdBet { patch, tta, tile_step } => {
                 write!(f, "hd-bet:{}x{}x{}", patch[0], patch[1], patch[2])?;
+                if *tta { write!(f, ":tta")?; }
+                write!(f, ":step={}", tile_step)?;
+                Ok(())
+            }
+            Self::Rs2Net { tta, tile_step } => {
+                write!(f, "rs2-net")?;
                 if *tta { write!(f, ":tta")?; }
                 write!(f, ":step={}", tile_step)?;
                 Ok(())
@@ -312,6 +347,28 @@ pub fn hd_bet_mask_sections() -> Vec<MaskSection> {
     }]
 }
 
+/// RS2-Net on the magnitude (the `rs2-net` mask preset). No refinements: RS2-Net follows the
+/// inner skull directly and applies no post-processing of its own, so there is no skull-base
+/// dropout for signal-gated erosion to peel — unlike the HD-BET recipe.
+pub fn rs2_net_mask_sections() -> Vec<MaskSection> {
+    vec![MaskSection {
+        input: MaskingInput::Magnitude,
+        generator: MaskOp::rs2_net_default(),
+        refinements: vec![],
+    }]
+}
+
+/// Voxel-scaled BET on the magnitude (the `mouse-bet` mask preset) — the rodent fallback for
+/// when RS2-Net's weights cannot be fetched. It leaks into the skull base on thick-slice data;
+/// prefer [`rs2_net_mask_sections`].
+pub fn mouse_bet_mask_sections() -> Vec<MaskSection> {
+    vec![MaskSection {
+        input: MaskingInput::Magnitude,
+        generator: MaskOp::Bet { fractional_intensity: 0.5, voxel_scale: mouse_bet_voxel_scale() },
+        refinements: vec![MaskOp::Erode { iterations: 1 }],
+    }]
+}
+
 /// A complete masking recipe: the sections, how they fold together, and the refinements that
 /// run on the combined mask. Presets that need more than one section return one of these.
 #[derive(Debug, Clone, PartialEq)]
@@ -376,6 +433,8 @@ pub fn mask_presets() -> Vec<(&'static str, MaskRecipe)> {
         }])),
         ("hd-bet", MaskRecipe::from_sections(hd_bet_mask_sections())),
         ("bet-and-phase", bet_and_phase_mask_recipe()),
+        ("rs2-net", MaskRecipe::from_sections(rs2_net_mask_sections())),
+        ("mouse-bet", MaskRecipe::from_sections(mouse_bet_mask_sections())),
     ]
 }
 
@@ -461,11 +520,24 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
                     "tta" => tta = true,
                     "native" => patch = hd_bet_patch(),
                     "low-memory" => patch = hd_bet_low_memory_patch(),
-                    s if s.starts_with("step=") => tile_step = parse_hd_bet_step(&s[5..])?,
+                    s if s.starts_with("step=") => tile_step = parse_window_step("hd-bet", &s[5..])?,
                     dims => patch = parse_hd_bet_patch(dims)?,
                 }
             }
             Ok(MaskOp::HdBet { patch, tta, tile_step })
+        }
+        "rs2-net" => {
+            let mut tta = false;
+            let mut tile_step = rs2_net_tile_step();
+            for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
+                match *part {
+                    "tta" => tta = true,
+                    s if s.starts_with("step=") => tile_step = parse_window_step("rs2-net", &s[5..])?,
+                    s => return Err(ConfigError::Parse(
+                        format!("rs2-net: expected 'tta' or 'step=<f>', got '{s}'"))),
+                }
+            }
+            Ok(MaskOp::Rs2Net { tta, tile_step })
         }
         _ => Err(ConfigError::Parse(format!("Unknown mask-op: '{}'", parts[0]))),
     }
@@ -483,15 +555,16 @@ fn parse_bet_voxel_scale(s: &str) -> crate::Result<f64> {
     }
 }
 
-/// `step=<f>` HD-BET sliding-window stride, as a fraction of the patch. qsm-core requires
-/// `(0, 1]`: at 1.0 the windows abut, and anything larger would leave gaps in the volume.
-fn parse_hd_bet_step(s: &str) -> crate::Result<f64> {
+/// `step=<f>` sliding-window stride, as a fraction of the patch. qsm-core requires `(0, 1]`:
+/// at 1.0 the windows abut, and anything larger would leave gaps in the volume. Shared by the
+/// two nnU-Net-style generators, `hd-bet` and `rs2-net`.
+fn parse_window_step(op: &str, s: &str) -> crate::Result<f64> {
     let v: f64 = s.trim().parse()
-        .map_err(|_| ConfigError::Parse(format!("hd-bet: step must be a number, got '{s}'")))?;
+        .map_err(|_| ConfigError::Parse(format!("{op}: step must be a number, got '{s}'")))?;
     if v > 0.0 && v <= 1.0 {
         Ok(v)
     } else {
-        Err(ConfigError::Parse(format!("hd-bet: step {v} must be greater than 0 and at most 1")))
+        Err(ConfigError::Parse(format!("{op}: step {v} must be greater than 0 and at most 1")))
     }
 }
 
@@ -551,6 +624,9 @@ mod tests {
                    MaskOp::Bet { fractional_intensity: 0.5, voxel_scale: 10.0 });
         assert_eq!(parse_mask_op("bet:0.35").unwrap(), MaskOp::bet(0.35));
         assert_eq!(parse_mask_op("bet").unwrap(), MaskOp::bet(0.5));
+        // Order-independent, like hd-bet's flags.
+        assert_eq!(parse_mask_op("bet:scale=10:0.35").unwrap(),
+                   MaskOp::Bet { fractional_intensity: 0.35, voxel_scale: 10.0 });
 
         // Display is the cache key, so it always states the scale; the compact form drops it
         // when it is the default, and both parse back.
@@ -662,6 +738,52 @@ mod tests {
         assert_eq!(parse_mask_op(&format!("{op}")).unwrap(), op);
         assert!(op.is_generator());
         assert!(!MaskOp::signal_erode_default().is_generator());
+    }
+
+    #[test]
+    fn test_parse_rs2_net() {
+        let step = rs2_net_tile_step();
+        assert_eq!(parse_mask_op("rs2-net").unwrap(), MaskOp::Rs2Net { tta: false, tile_step: step });
+        assert_eq!(parse_mask_op("rs2-net:tta").unwrap(), MaskOp::Rs2Net { tta: true, tile_step: step });
+        assert_eq!(parse_mask_op("rs2-net:step=0.75").unwrap(), MaskOp::Rs2Net { tta: false, tile_step: 0.75 });
+        assert_eq!(parse_mask_op("rs2-net:tta:step=1").unwrap(), MaskOp::Rs2Net { tta: true, tile_step: 1.0 });
+
+        // Same stride rule as hd-bet — they share the parser.
+        assert!(parse_mask_op("rs2-net:step=0").is_err(), "stride must be > 0");
+        assert!(parse_mask_op("rs2-net:step=1.5").is_err(), "stride > 1 would leave gaps");
+        // There is no patch to set: the exported graph is traced at one fixed size.
+        assert!(parse_mask_op("rs2-net:128x96x128").is_err());
+
+        // Display states every parameter (it is the mask stage's cache key) and round-trips.
+        assert_eq!(format!("{}", MaskOp::rs2_net_default()), "rs2-net:step=0.5");
+        for spec in ["rs2-net", "rs2-net:tta", "rs2-net:step=0.75", "rs2-net:tta:step=1"] {
+            let op = parse_mask_op(spec).expect(spec);
+            let printed = format!("{op}");
+            assert_eq!(parse_mask_op(&printed).expect(&printed), op, "round-trip of {spec}");
+        }
+        // compact_spec drops what is already the default; both spellings mean the same op.
+        assert_eq!(MaskOp::rs2_net_default().compact_spec(), "rs2-net");
+        assert_eq!(MaskOp::Rs2Net { tta: true, tile_step: 0.75 }.compact_spec(), "rs2-net:tta:step=0.75");
+
+        assert!(MaskOp::rs2_net_default().is_generator());
+    }
+
+    /// The rodent presets are the two rodent paths, and `mouse-bet` is the one that does not
+    /// need a weight download.
+    #[test]
+    fn test_rodent_presets() {
+        let presets = mask_presets();
+        let by_name = |n: &str| presets.iter().find(|(k, _)| *k == n).map(|(_, r)| r.clone()).expect(n);
+
+        let rs2 = by_name("rs2-net");
+        assert_eq!(rs2.sections.len(), 1);
+        assert_eq!(rs2.sections[0].generator, MaskOp::rs2_net_default());
+        assert!(rs2.sections[0].refinements.is_empty(), "RS2-Net needs no post-processing");
+
+        let mouse = by_name("mouse-bet");
+        assert_eq!(mouse.sections[0].generator,
+                   MaskOp::Bet { fractional_intensity: 0.5, voxel_scale: mouse_bet_voxel_scale() });
+        assert_eq!(format!("{}", mouse.sections[0]), "magnitude,bet:0.50:scale=10,erode:1");
     }
 
     #[test]

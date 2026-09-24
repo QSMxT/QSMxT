@@ -100,6 +100,15 @@ fn hd_bet_op(args: &crate::cli::MaskHdBetArgs) -> crate::Result<MaskOp> {
     Ok(parse_mask_op(&spec)?)
 }
 
+/// Build the `rs2-net` op from its flags, through the same parser the `--mask` strings use, so
+/// the flags and the spec cannot drift.
+fn rs2_net_op(args: &crate::cli::MaskRs2NetArgs) -> crate::Result<MaskOp> {
+    let mut spec = String::from("rs2-net");
+    if args.tta { spec += ":tta"; }
+    if let Some(step) = args.tile_step { spec += &format!(":step={step}"); }
+    Ok(parse_mask_op(&spec)?)
+}
+
 /// Run a whole `--mask-preset` recipe on files: each section reads the input image, or
 /// `--quality` for the phase-quality sections when it is given; the sections fold with the
 /// recipe's combine mode; the recipe's own refinements run on the result, then the `--op` chain.
@@ -188,6 +197,7 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
             voxel_scale: args.voxel_scale.unwrap_or_else(qsmxt_config::bet_default_voxel_scale),
         }),
         MaskCommand::HdBet(args) => { let op = hd_bet_op(&args)?; generate(&args.common, op) }
+        MaskCommand::Rs2Net(args) => { let op = rs2_net_op(&args)?; generate(&args.common, op) }
         MaskCommand::Preset(args) => { let recipe = mask_preset_recipe(args.preset); preset(&args, recipe) }
         MaskCommand::Robust(args) => preset(
             &MaskPresetArgs { preset: crate::cli::MaskPresetArg::RobustThreshold, common: args.common, quality: None },

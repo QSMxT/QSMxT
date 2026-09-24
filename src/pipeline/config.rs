@@ -21,6 +21,8 @@ pub fn mask_preset_recipe(preset: cli::MaskPresetArg) -> MaskRecipe {
         cli::MaskPresetArg::Bet => "bet",
         cli::MaskPresetArg::HdBet => "hd-bet",
         cli::MaskPresetArg::BetAndPhase => "bet-and-phase",
+        cli::MaskPresetArg::Rs2Net => "rs2-net",
+        cli::MaskPresetArg::MouseBet => "mouse-bet",
     };
     mask_presets().into_iter().find(|(n, _)| *n == name)
         .map(|(_, r)| r)

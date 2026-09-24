@@ -1499,7 +1499,10 @@ pub enum MaskCommand {
     Bet(MaskBetArgs),
     /// Deep-learning brain extraction (HD-BET; downloads weights on first use)
     HdBet(MaskHdBetArgs),
-    /// Run a `--mask-preset` recipe on an image (robust-threshold, bet, hd-bet, bet-and-phase)
+    /// Deep-learning rodent brain extraction (RS2-Net; downloads weights on first use)
+    Rs2Net(MaskRs2NetArgs),
+    /// Run a `--mask-preset` recipe on an image (robust-threshold, bet, hd-bet, bet-and-phase,
+    /// rs2-net, mouse-bet)
     Preset(MaskPresetArgs),
     /// Alias for `preset robust-threshold`
     Robust(MaskRobustArgs),
@@ -1568,7 +1571,8 @@ pub struct MaskBetArgs {
     #[arg(long, default_value_t = 0.5)]
     pub fractional_intensity: f64,
     /// Factor applied to the voxel sizes before BET runs — 10 for mouse data, 1 for the
-    /// acquisition's own geometry (see --bet-voxel-scale)
+    /// acquisition's own geometry (see --bet-voxel-scale). Prefer `mask rs2-net`, which masks
+    /// rodent brains without the trick
     #[arg(long, value_name = "FACTOR")]
     pub voxel_scale: Option<f64>,
 }
@@ -1588,6 +1592,19 @@ pub struct MaskHdBetArgs {
     pub tta: bool,
     /// Sliding-window step as a fraction of the patch, in (0, 1]. Larger steps mean fewer
     /// patches and a shorter run: 0.5 (default) is HD-BET's own, 1.0 abuts the patches.
+    #[arg(long)]
+    pub tile_step: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct MaskRs2NetArgs {
+    #[command(flatten)]
+    pub common: MaskCommonArgs,
+    /// 8-fold mirroring test-time augmentation (about 8x slower)
+    #[arg(long)]
+    pub tta: bool,
+    /// Sliding-window step as a fraction of the patch, in (0, 1]. Larger steps mean fewer
+    /// patches and a shorter run: 0.5 (default) is nnU-Net's own, 1.0 abuts the patches.
     #[arg(long)]
     pub tile_step: Option<f64>,
 }
@@ -3180,7 +3197,7 @@ pub enum MaskInputArg {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum MaskPresetArg {
-    RobustThreshold, Bet, HdBet, BetAndPhase,
+    RobustThreshold, Bet, HdBet, BetAndPhase, Rs2Net, MouseBet,
 }
 
 /// How multiple `--mask` sections fold into the final mask.

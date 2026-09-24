@@ -1262,7 +1262,7 @@ pub const MASK_OP_TYPES: &[&str] = &[
 ];
 
 /// Ops that create a mask (the section's generator); the rest are refinements.
-pub const MASK_GENERATOR_TYPES: &[&str] = &["threshold", "bet", "hd-bet"];
+pub const MASK_GENERATOR_TYPES: &[&str] = &["threshold", "bet", "hd-bet", "rs2-net"];
 
 /// How R2' is obtained when no custom map is supplied.
 pub const R2PRIME_STRATEGY_OPTIONS: &[&str] = &["auto", "mese", "r2primenet"];
@@ -1272,17 +1272,20 @@ pub const R2PRIME_STRATEGY_HELP: &[&str] = &[
     "Always predict R2' from R2* with R2PRIMEnet, even when a MESE acquisition is available (an estimate, not a measurement)",
 ];
 
-pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "bet-and-phase", "custom"];
+pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "bet-and-phase", "rs2-net", "mouse-bet", "custom"];
 pub const MASK_PRESET_HELP: &[&str] = &[
     "Otsu threshold + dilate + fill holes + erode (recommended for brain)",
     "BET brain extraction + erode",
     "HD-BET deep-learning brain extraction + signal-gated erosion (QSM-CI harmonization masking)",
     "BET on the magnitude AND thresholded phase quality, then fill holes + erode (ISMRM EMTP consensus)",
+    "RS2-Net deep-learning rodent brain extraction (mouse, rat)",
+    "BET on voxel sizes scaled x10 for rodent data — the fallback when RS2-Net's weights are unavailable",
     "Fully custom mask pipeline (edit steps below)",
 ];
 /// Index of the "custom" preset — set automatically when the steps are edited by hand, and
-/// skipped when cycling presets with ←/→.
-pub const MASK_PRESET_CUSTOM: usize = 4;
+/// skipped when cycling presets with ←/→. Derived, because it is always the trailing entry:
+/// a hardcoded index silently goes stale the moment a preset is added.
+pub const MASK_PRESET_CUSTOM: usize = MASK_PRESET_OPTIONS.len() - 1;
 
 /// The signal-erode parameters that get a row of their own, past the threshold shown on the step
 /// row itself: label, help, and how ←/→ moves them. Order matches the row order.
@@ -3252,6 +3255,14 @@ impl PipelineFormState {
                 };
                 ("hd-bet", format!("{}x{}x{}{}{}", patch[0], patch[1], patch[2], step, if *tta { " tta" } else { "" }))
             }
+            MaskOp::Rs2Net { tta, tile_step } => {
+                let step = if (*tile_step - crate::pipeline::config::rs2_net_default_tile_step()).abs() > f64::EPSILON {
+                    format!(" step={tile_step}")
+                } else {
+                    String::new()
+                };
+                ("rs2-net", format!("rodent{}{}", step, if *tta { " tta" } else { "" }))
+            }
             // Only the threshold: every other parameter has a row of its own below.
             MaskOp::SignalErode { threshold, .. } => ("signal-erode", format!("{:.2}", threshold)),
         }
@@ -3262,13 +3273,14 @@ impl PipelineFormState {
         use crate::pipeline::config::MaskOp;
         match op {
             MaskOp::Threshold { .. } => "Threshold method (←/→ to change, Enter to edit value)",
-            MaskOp::Bet { .. } => "BET fractional intensity (Enter to edit)",
+            MaskOp::Bet { .. } => "BET fractional intensity (Enter to edit); scale= inflates the voxel sizes for rodent data",
             MaskOp::Erode { .. } => "Erosion iterations (←/→ to adjust)",
             MaskOp::Dilate { .. } => "Dilation iterations (←/→ to adjust)",
             MaskOp::Close { .. } => "Morphological close radius (←/→ to adjust)",
             MaskOp::FillHoles { .. } => "Fill holes max size (0=auto, Enter to edit)",
             MaskOp::GaussianSmooth { .. } => "Gaussian sigma in mm (Enter to edit)",
             MaskOp::HdBet { .. } => "HD-BET deep-learning brain extraction (needs a deep-learning build)",
+            MaskOp::Rs2Net { .. } => "RS2-Net deep-learning rodent brain extraction (needs a deep-learning build)",
             MaskOp::SignalErode { .. } =>
                 "Signal gate as a fraction of the in-mask median magnitude (←/→ to adjust); above ~0.85 it over-carves",
         }
@@ -3286,6 +3298,7 @@ impl PipelineFormState {
             "fill-holes" => Some(MaskOp::FillHoles { max_size: 0 }),
             "gaussian" => Some(MaskOp::GaussianSmooth { sigma_mm: 4.0 }),
             "hd-bet" => Some(MaskOp::hd_bet_default()),
+            "rs2-net" => Some(MaskOp::rs2_net_default()),
             "signal-erode" => Some(MaskOp::signal_erode_default()),
             _ => None,
         }
@@ -3444,7 +3457,8 @@ impl PipelineFormState {
             .unwrap_or(0)
     }
 
-    /// Cycle the generator of a mask section (threshold → BET → HD-BET) with left/right.
+    /// Cycle the generator of a mask section (threshold → BET → HD-BET → RS2-Net) with
+    /// left/right.
     pub fn adjust_mask_generator(&mut self, section: usize, delta: isize) {
         if self.mask_section(section).is_none() { return; }
         let n = MASK_GENERATOR_TYPES.len() as isize;
@@ -3614,7 +3628,7 @@ impl PipelineFormState {
             MaskOp::GaussianSmooth { sigma_mm } => {
                 *sigma_mm = (*sigma_mm + delta as f64 * 0.5).max(0.5);
             }
-            MaskOp::HdBet { .. } => {}
+            MaskOp::HdBet { .. } | MaskOp::Rs2Net { .. } => {}
             MaskOp::SignalErode { threshold, .. } => {
                 *threshold = ((*threshold + delta as f64 * 0.05).clamp(0.05, 0.95) * 100.0).round() / 100.0;
             }
@@ -8951,10 +8965,16 @@ mod tests {
         assert_eq!(app.pipeline_state.mask_combine, recipe.combine);
         assert_eq!(app.pipeline_state.mask_combined_refinements, recipe.refinements);
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.pipeline_state.mask_preset, 0, "cycling skips 'custom'");
+        assert_eq!(app.pipeline_state.mask_preset, 4); // RS2-Net (rodent)
+        assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::rs2_net_mask_sections());
         // Leaving the two-section preset resets the combine mode and the combined-mask steps.
         assert_eq!(app.pipeline_state.mask_combine, crate::pipeline::config::MaskCombine::Or);
         assert!(app.pipeline_state.mask_combined_refinements.is_empty());
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.pipeline_state.mask_preset, 5); // voxel-scaled BET (rodent fallback)
+        assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::mouse_bet_mask_sections());
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.pipeline_state.mask_preset, 0, "cycling skips 'custom'");
     }
 
     #[test]
@@ -9575,12 +9595,18 @@ mod tests {
         app.handle_key(key(KeyCode::Right));
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
+            crate::pipeline::config::MaskOp::Rs2Net { .. }
+        ));
+        // Wraps back round to the first generator.
+        app.handle_key(key(KeyCode::Right));
+        assert!(matches!(
+            app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::Threshold { .. }
         ));
         app.handle_key(key(KeyCode::Left));
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
-            crate::pipeline::config::MaskOp::HdBet { .. }
+            crate::pipeline::config::MaskOp::Rs2Net { .. }
         ));
     }
 
