@@ -229,6 +229,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         // The TUI never forces past the degeneracy check: the preview is there to fix the
         // input instead, and an override buried in a form is how a bad run gets normalised.
         multi_orientation_force: false,
+        // Registration stays on. It only runs when the group needs it, and the TUI's own
+        // orientation preview says whether it will.
+        no_orientation_registration: false,
         unwrapping_algorithm: Some(unwrap_options[ps.unwrapping_algorithm]),
         bf_algorithm: Some(bf_options[ps.bf_algorithm]),
         masking_input: None,

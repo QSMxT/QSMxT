@@ -625,6 +625,23 @@ pub struct MultiOrientationConfig {
     /// degenerate set produces a plausible map that is not the method asked for, so this
     /// should stay off unless the metadata is known-good and the check is known-wrong.
     pub force: bool,
+    /// Allow QSMxT to rigidly co-register the orientations onto the first member's grid.
+    ///
+    /// On by default, and it costs nothing when there is nothing to do: registration runs only
+    /// when the group actually needs it — the members disagree on dimensions or affine, or the
+    /// only directions available came from affines that cannot tell the orientations apart.
+    /// A group already on one grid with declared `B0_dir`s is left alone.
+    ///
+    /// Turn it off when the orientations were co-registered externally (FLIRT, ANTs) and you do
+    /// not want a second interpolation on top. Then a group that still needs registration is
+    /// refused rather than reconstructed, which is the behaviour QSMxT had before it could
+    /// register at all.
+    #[serde(default = "default_true")]
+    pub register: bool,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 impl Default for MultiOrientationConfig {
@@ -634,6 +651,7 @@ impl Default for MultiOrientationConfig {
             algorithm: MultiOrientAlgorithm::Cosmos,
             lambda: 0.0,
             force: false,
+            register: true,
         }
     }
 }

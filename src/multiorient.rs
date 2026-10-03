@@ -15,8 +15,10 @@
 //! 2. **The NIfTI affine**, via [`qsm_core::geometry::b0_direction_from_affine`] — but *only*
 //!    when the orientations were separately prescribed, so the slab followed the head and the
 //!    affines genuinely differ.
-//! 3. **A rigid registration** between orientations. QSMxT cannot do this yet; see the module
-//!    note on [`DirectionSource::Affine`] below.
+//! 3. **A rigid registration** between orientations. The object rotates and B0 does not, so the
+//!    rotation that aligns one orientation to the reference *is* where B0 pointed during that
+//!    orientation, relative to the common grid. This is the only route that works when the
+//!    affines are identical, and it is what [`DirectionSource::Registration`] marks.
 //!
 //! # The failure this module exists to prevent
 //!
@@ -34,6 +36,12 @@
 //! obviously wrong, and is not COSMOS. So [`check_directions`] refuses rather than guesses,
 //! and every direction carries a [`DirectionSource`] so the user can see which of the three
 //! routes above actually produced it.
+//!
+//! The first of those two shapes is now recoverable rather than merely refusable: the anatomy
+//! did move, so registering the magnitudes finds the rotation and
+//! [`resolve_directions_registered`] turns it into the direction table. The refusal still
+//! stands for the second shape and for anything registration was not allowed to touch —
+//! guessing remains worse than stopping.
 
 use std::fmt;
 
@@ -48,6 +56,10 @@ pub enum DirectionSource {
     Affine,
     /// Given explicitly on the command line.
     Explicit,
+    /// Recovered from a rigid registration against the reference orientation: the rotation that
+    /// aligns the anatomy, read as where B0 pointed relative to the common grid. The only source
+    /// that can tell identically-prescribed orientations apart.
+    Registration,
 }
 
 impl fmt::Display for DirectionSource {
@@ -56,6 +68,7 @@ impl fmt::Display for DirectionSource {
             DirectionSource::Sidecar => write!(f, "sidecar"),
             DirectionSource::Affine => write!(f, "affine"),
             DirectionSource::Explicit => write!(f, "explicit"),
+            DirectionSource::Registration => write!(f, "registration"),
         }
     }
 }
@@ -215,8 +228,9 @@ pub fn check_directions(orientations: &[Orientation], kind: MultiOrientKind) -> 
                 "all {n} B0 directions came from the NIfTI affines and are within {max_deg:.1}° \
                  of each other — the affines are effectively identical, so they cannot describe \
                  a rotation. Either the orientations share one prescribed slab, or they were \
-                 already resampled into a common frame. Supply a `B0_dir` in each sidecar, or \
-                 pass the directions explicitly"
+                 already resampled into a common frame. Let QSMxT recover the rotations by \
+                 co-registering the orientations, supply a `B0_dir` in each sidecar, or pass \
+                 the directions explicitly"
             ))
         } else {
             Err(format!(
@@ -260,6 +274,40 @@ pub fn resolve_directions(
                     DirectionSource::Affine,
                 ),
             };
+            let b0 = normalise(b0).unwrap_or((0.0, 0.0, 1.0));
+            Orientation { label: label.clone(), b0, source }
+        })
+        .collect()
+}
+
+/// Resolve B0 directions for a group that has been co-registered, carrying each orientation's
+/// direction into the common grid's voxel frame through its own transform.
+///
+/// This is the half of registration that is easy to get backwards. A direction is a free vector
+/// in the *scanner's* world, so moving it into the common frame means rotating it by the inverse
+/// of the recovered transform and then resolving it onto the reference grid's voxel axes — which
+/// is exactly what `qsm_core::registration::RigidTransform::b0_direction_in_fixed` does, and the
+/// reason this calls it rather than re-deriving the chain here. Apply the rotation the other way
+/// round and COSMOS gets a kernel rotated by twice the head motion, with no symptom except a
+/// wrong map.
+///
+/// A sidecar-declared direction still wins over the affine, and is transported the same way; its
+/// [`DirectionSource`] stays [`DirectionSource::Sidecar`], because that is where the direction
+/// came from and registration only moved it. Only directions that registration *produced* are
+/// marked [`DirectionSource::Registration`].
+pub fn resolve_directions_registered(
+    labels: &[String],
+    declared: &[Option<(f64, f64, f64)>],
+    transforms: &[qsm_core::registration::RigidTransform],
+    declared_source: DirectionSource,
+) -> Vec<Orientation> {
+    labels
+        .iter()
+        .enumerate()
+        .map(|(i, label)| {
+            let d = declared.get(i).copied().flatten();
+            let source = if d.is_some() { declared_source } else { DirectionSource::Registration };
+            let b0 = transforms[i].b0_direction_in_fixed(d);
             let b0 = normalise(b0).unwrap_or((0.0, 0.0, 1.0));
             Orientation { label: label.clone(), b0, source }
         })
@@ -417,6 +465,118 @@ mod tests {
         );
         let n = (out[0].b0.0.powi(2) + out[0].b0.1.powi(2) + out[0].b0.2.powi(2)).sqrt();
         assert!((n - 1.0).abs() < 1e-9);
+    }
+
+    /// A transform built by rotating the fixed volume's world about its centre, which is the
+    /// shape `register_rigid` returns. Written out here rather than taken from qsm-core so the
+    /// expected direction and the thing producing it do not share a code path.
+    fn rotated_transform(deg_x: f64) -> qsm_core::registration::RigidTransform {
+        let dims = (16, 16, 16);
+        let affine = [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let (s, c) = deg_x.to_radians().sin_cos();
+        // Rotation about world x, through the volume centre so nothing translates away.
+        let ctr = 7.5;
+        let mut t = qsm_core::registration::RigidTransform::identity(dims, &affine, dims, &affine);
+        t.matrix = [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, c, -s, ctr - (c * ctr - s * ctr), //
+            0.0, s, c, ctr - (s * ctr + c * ctr), //
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        t
+    }
+
+    /// The case the whole feature exists for. Both affines say B0 is `(0,0,1)`; the recovered
+    /// rotation is what makes the two orientations different, and the direction has to come out
+    /// tilted *with* the rotation's inverse, not against it.
+    ///
+    /// A 20-degree rotation of the object about world x puts B0 at `(0, sin 20, cos 20)` in the
+    /// common frame. The sign is the entire point: backwards, COSMOS gets a kernel 40 degrees
+    /// from the truth and nothing looks wrong.
+    #[test]
+    fn registration_directions_follow_the_recovered_rotation() {
+        let identity = qsm_core::registration::RigidTransform::identity(
+            (16, 16, 16),
+            &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+            (16, 16, 16),
+            &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        );
+        let transforms = vec![identity, rotated_transform(20.0)];
+        let out = resolve_directions_registered(
+            &["dir1".into(), "dir2".into()],
+            &[None, None],
+            &transforms,
+            DirectionSource::Sidecar,
+        );
+
+        // The reference keeps the affine's own direction.
+        assert!((out[0].b0.2 - 1.0).abs() < 1e-9, "{:?}", out[0].b0);
+        // The rotated one tilts by the rotation, in the positive y direction.
+        let a = 20.0f64.to_radians();
+        assert!((out[1].b0.1 - a.sin()).abs() < 1e-6, "{:?} vs y={}", out[1].b0, a.sin());
+        assert!((out[1].b0.2 - a.cos()).abs() < 1e-6, "{:?}", out[1].b0);
+        assert!(out[1].b0.1 > 0.1, "B0 tilted the wrong way: {:?}", out[1].b0);
+
+        // Both came out of the registration, so both say so.
+        assert!(out.iter().all(|o| o.source == DirectionSource::Registration), "{out:?}");
+
+        // And the pair is now a usable multi-orientation set, where the affines alone were not.
+        let check = check_directions(&out, MultiOrientKind::Cosmos);
+        assert!(check.is_ok(), "{:?}", check.verdict);
+        assert!(check.max_pairwise_deg > 15.0, "spread {}", check.max_pairwise_deg);
+    }
+
+    /// Without the registration this set is exactly the one `check_directions` refuses. Pinned so
+    /// the test above is measuring the registration and not a set that was already fine.
+    #[test]
+    fn the_same_group_is_refused_without_registration() {
+        let dirs: Vec<_> = (1..=2)
+            .map(|i| orient(&format!("dir{i}"), (0.0, 0.0, 1.0), DirectionSource::Affine))
+            .collect();
+        assert!(check_directions(&dirs, MultiOrientKind::Cosmos).verdict.is_err());
+    }
+
+    /// A declared direction still wins, and is transported the same way — a sidecar `B0_dir` is
+    /// in its *own* volume's voxel frame, so landing it in the common frame is not a no-op.
+    #[test]
+    fn declared_directions_are_transported_but_keep_their_provenance() {
+        let transforms = vec![rotated_transform(0.0), rotated_transform(30.0)];
+        let declared = vec![Some((0.0, 0.0, 1.0)), Some((0.0, 0.0, 1.0))];
+        let out = resolve_directions_registered(
+            &["a".into(), "b".into()],
+            &declared,
+            &transforms,
+            DirectionSource::Sidecar,
+        );
+        assert_eq!(out[0].source, DirectionSource::Sidecar);
+        assert_eq!(out[1].source, DirectionSource::Sidecar, "the sidecar is still the source");
+        // Transported, not passed through: the declared (0,0,1) comes out tilted by 30 degrees.
+        let a = 30.0f64.to_radians();
+        assert!((out[1].b0.1 - a.sin()).abs() < 1e-6, "{:?}", out[1].b0);
+
+        // A *different* declared direction must give a different answer, or it is being ignored.
+        let other = resolve_directions_registered(
+            &["a".into(), "b".into()],
+            &[Some((0.0, 0.0, 1.0)), Some((1.0, 0.0, 0.0))],
+            &transforms,
+            DirectionSource::Sidecar,
+        );
+        assert!(
+            (other[1].b0.0 - out[1].b0.0).abs() > 0.5,
+            "declared direction had no effect: {:?} vs {:?}",
+            other[1].b0, out[1].b0
+        );
+    }
+
+    #[test]
+    fn registration_source_renders_in_the_table() {
+        let rows = direction_table(&[orient("dir2", (0.0, 0.4, 0.9), DirectionSource::Registration)]);
+        assert!(rows[0].contains("registration"), "{}", rows[0]);
     }
 
     #[test]
