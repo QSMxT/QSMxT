@@ -1967,11 +1967,7 @@ fn stage_t2star_r2star(ctx: &mut StageContext, mask_path: &Path, progress: &dyn 
 /// that never materialised (a missing `--custom-r2-tool` derivative, an unreadable MESE). The
 /// grid cannot be changed this late, so the one useful thing is to not be silent about it.
 fn warn_if_r2primenet_grid_is_oblique(ctx: &StageContext) {
-    if ctx.meta.source_geometry.is_some() {
-        return; // already resampled to a cardinal grid
-    }
-    let tilt = qsm_core::geometry::b0_angle_from_affine(&ctx.meta.affine);
-    if tilt > AXIAL_ONLY_TOLERANCE_DEG {
+    if let Some(tilt) = r2primenet_grid_tilt(ctx.meta.source_geometry.is_some(), &ctx.meta.affine) {
         log::warn!(
             "R2PRIMEnet assumes B0 lies along +z, but this run is reconstructing on its acquired \
              grid with B0 {tilt:.1}° from the slice normal, so its R2' is off-distribution. The \
@@ -1980,6 +1976,18 @@ fn warn_if_r2primenet_grid_is_oblique(ctx: &StageContext) {
              R2' at all."
         );
     }
+}
+
+/// The tilt worth warning about before R2PRIMEnet runs, or `None` when there is nothing to say.
+///
+/// Split out from the logging so the decision can be asserted: a run resampled to a cardinal grid
+/// has nothing wrong with it, and a sub-tolerance tilt is the rounding every affine carries.
+fn r2primenet_grid_tilt(was_resampled: bool, affine: &[f64; 16]) -> Option<f64> {
+    if was_resampled {
+        return None;
+    }
+    let tilt = qsm_core::geometry::b0_angle_from_affine(affine);
+    (tilt > AXIAL_ONLY_TOLERANCE_DEG).then_some(tilt)
 }
 
 /// The mask a MESE-measured R2 is valid over: the brain mask, narrowed to where the MESE's FOV
@@ -3997,6 +4005,23 @@ mod tests {
         let brain = [1u8, 1, 0];
         let r2p = super::measured_r2prime(&[30.0, 30.0, 30.0], &[10.0, 10.0, 10.0], &brain, None);
         assert_eq!(r2p, vec![20.0, 20.0, 0.0]);
+    }
+
+    /// The backstop for the residual case the gate judges optimistically: a declared R2 source
+    /// that never materialises leaves R2PRIMEnet running on an unresampled grid, and this is the
+    /// only thing that says so.
+    #[test]
+    fn r2primenet_warns_only_when_the_grid_was_left_oblique() {
+        let oblique = oblique_affine();
+        assert!(super::r2primenet_grid_tilt(false, &oblique).is_some_and(|t| t > 1.0),
+                "an unresampled oblique grid is exactly the case worth warning about");
+        assert!(super::r2primenet_grid_tilt(true, &oblique).is_none(),
+                "a run resampled to a cardinal grid has nothing wrong with it");
+        let axial = [
+            0.8, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        assert!(super::r2primenet_grid_tilt(false, &axial).is_none(),
+                "an axial acquisition needs no warning");
     }
 
     #[test]
