@@ -987,9 +987,15 @@ pub struct PipelineArgs {
 
     /// Group runs into multi-orientation sets and reconstruct each with COSMOS or STI.
     /// Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or
-    /// `re:` and a regex with one capture group. Orientations must already be co-registered
+    /// `re:` and a regex with one capture group. Orientations are co-registered if they need it
     #[arg(long, value_name = "PATTERN")]
     pub orientation_group: Option<String>,
+
+    /// Do not co-register the orientations in a group — use this when they were already
+    /// registered externally and a second interpolation is not wanted. A group that still needs
+    /// registration is then refused instead of reconstructed
+    #[arg(long)]
+    pub no_orientation_registration: bool,
 
     /// Which reconstruction to run over each orientation group
     #[arg(long, value_enum)]
@@ -2000,8 +2006,14 @@ pub enum MultiOrientAlgorithmArg {
 ///
 /// These take N field maps rather than one, and they carry the direction table that makes the
 /// reconstruction meaningful. The inputs must **already be co-registered onto one common
-/// grid** — QSMxT does not register them for you, and silently reconstructing from
-/// unregistered orientations would produce a map that looks fine and is wrong.
+/// grid**: these subcommands are the bare inversions, and silently reconstructing from
+/// unregistered orientations would produce a map that looks fine and is wrong. They have no
+/// magnitude to register on, and a local field cannot stand in — its contrast is the dipole
+/// response, which changes with orientation by construction.
+///
+/// The pipeline path does register: `qsmxt run --orientation-group` co-registers a group's
+/// orientations on their magnitudes and recovers the B0 directions from the rotations. Use that
+/// unless the fields were produced elsewhere.
 #[derive(Parser, Debug)]
 pub struct MultiOrientCommonArgs {
     /// Local field NIfTI in ppm — repeat once per orientation, all on one common grid

@@ -389,12 +389,17 @@ named `acq-dir1/2/3`).
 ### B0 directions, and what will be refused
 
 Each orientation contributes its B0 direction **in the common grid's voxel
-frame**. QSMxT takes it from a sidecar `B0_dir` when one is present, and otherwise
-derives it from the NIfTI affine.
+frame**. There are exactly three ways to know it, and the direction table prints
+which one was used:
 
-The affine is only meaningful when the orientations were separately prescribed, so
-the slab followed the head and the affines genuinely differ. Two very common
-dataset shapes break that while leaving the affine perfectly readable:
+| Source | When it applies |
+|---|---|
+| `sidecar` | the orientation's JSON declares `B0_dir`. Authoritative for any dataset shape, and what a curated multi-orientation dataset should ship |
+| `affine` | derived from the NIfTI affine. Only meaningful when the orientations were separately prescribed, so the slab followed the head and the affines genuinely differ |
+| `registration` | read off the rigid rotation that aligns this orientation to the reference. The object rotates and B0 does not, so that rotation *is* where B0 pointed relative to the common grid |
+
+The affine route breaks on two very common dataset shapes while remaining
+perfectly readable:
 
 - the head rotated inside an **identically prescribed slab** — every affine is the
   same, and the anatomy moved in voxel space instead;
@@ -404,22 +409,91 @@ dataset shapes break that while leaving the affine perfectly readable:
 In both, the affine yields the *same* direction for every orientation. Handed to
 COSMOS, N identical directions collapse the closed form to an unregularised
 single-orientation inversion — which does not error and does not look obviously
-wrong. So QSMxT refuses rather than guesses:
+wrong.
 
-- every direction came from the affines and they agree to within 3° → error naming
-  the likely cause and the fix;
-- the directions differ but span less than 3° → error;
+The first shape is now recovered rather than refused: the anatomy really did move,
+so QSMxT registers the orientations and reads the directions off the rotations
+(see [Registration](#registration) below). The second is a genuine dead end —
+the orientations were resampled into one frame before you got them, so the images
+no longer record the rotation — and it still needs a declared `B0_dir`.
+
+What QSMxT still refuses rather than guesses:
+
+- every direction came from the affines, they agree to within 3°, **and**
+  registration could not change that (it was switched off, or it ran and found the
+  orientations really are the same) → error naming the likely cause and the fix;
+- the directions were *declared* and span less than 3° → error. The dataset is
+  stating that the orientations are the same; contradicting it from the images
+  would be guessing;
 - STI with fewer than six orientations, or with a coplanar direction set → error.
+  Neither is something registration can fix: they are properties of the
+  acquisition.
 
 `--multi-orientation-force` overrides the check. Prefer fixing the metadata:
 declare `B0_dir` in each orientation's sidecar.
 
 ### Registration
 
-QSMxT has no registration of its own, so **the orientations must already sit on
-one common grid**. Disagreeing dimensions or affines are an error, not a guess.
-Co-register the orientations first (and, if your tool reports the rotation, write
-the resulting B0 directions into each sidecar's `B0_dir`).
+COSMOS and STI need the orientations on one grid, and QSMxT puts them there. The
+first member of a group is the reference, and every other member is rigidly
+co-registered onto it before its local field is resampled across.
+
+Two things to know about how it works:
+
+- **It registers magnitude, never the field.** A local field is not an anatomical
+  image — its contrast is the dipole response, which changes with orientation by
+  construction, so correlating two orientations' fields would be matching the very
+  thing the reconstruction is trying to measure. A group with no magnitude cannot
+  be registered.
+- **It only runs when the group needs it.** Already on one grid with declared
+  `B0_dir`s, there is nothing to find and an interpolation would only blur, so the
+  group passes through untouched. It runs when the members disagree on dimensions
+  or affine, or when the only available directions came from affines that cannot
+  tell the orientations apart.
+
+The method is 6-DOF rigid (three rotations, three translations), maximising
+normalised cross-correlation over a coarse-to-fine pyramid. NCC rather than mutual
+information because the inputs are mono-modal — GRE magnitude against GRE
+magnitude of one subject — so NCC's invariance to gain and offset is exactly the
+invariance needed, at a fraction of the cost. What NCC cannot absorb is the
+receive field: it is fixed to the coil, so when the head rotates the shading
+rotates with the coil and not with the anatomy. The brain mask keeps most of that
+out of the metric; if a group registers poorly, enabling inhomogeneity correction
+on the magnitude is the next thing to try.
+
+Each registration is reported, and recorded in the reconstruction's sidecar
+alongside the directions it produced:
+
+```
+  co-registering: the affines are identical, so they cannot describe the rotations
+  registration:
+    sub-01_ses-01_acq-dir1  reference
+    sub-01_ses-01_acq-dir2  rotation 17.61°  translation [  0.02  -0.11   0.04] mm  NCC 0.9475  overlap 1.00
+    sub-01_ses-01_acq-dir3  rotation 24.99°  translation [ -0.05   0.08  -0.02] mm  NCC 0.9475  overlap 1.00
+  directions:
+    acq-dir1         B0 [ 0.000  0.000  1.000]  registration
+    acq-dir2         B0 [-0.223  0.205  0.953]  registration
+    acq-dir3         B0 [ 0.037 -0.421  0.906]  registration
+    3 orientations, spread 29°, rank 3
+```
+
+How far apart the orientations may be: measured on an in-vivo-sized phantom,
+registration recovers rotations across the whole range tested, 5° to 70°, to
+within 0.01°. That is the search's capture range rather than a property of your
+data, and it is set by the pyramid depth — worth knowing because it is finite.
+Beyond it the failure is not subtle: the search lands in a local minimum tens of
+degrees out, correlation collapses, and the group is refused by the floor below.
+
+A correlation below 0.5 is treated as a failed registration and the group is
+refused — a bad alignment produces a plausible-looking susceptibility map, which
+is the failure this whole feature is built to avoid. Between 0.5 and 0.8 it runs
+with a warning; check the per-orientation χ maps, which members produce anyway and
+which are the fastest way to see whether the orientations really lined up.
+
+`--no-orientation-registration` switches it off, for orientations you co-registered
+externally and do not want interpolated a second time. A group that then still
+needs registration is refused, which is what QSMxT did before it could register at
+all.
 
 ### Running it
 
@@ -439,6 +513,25 @@ Multi-orientation (COSMOS), 1 group(s):
       acq-dir3         B0 [ 0.500  0.000  0.866]  sidecar
       3 orientations, spread 41°, rank 3
 ```
+
+A group that will be co-registered says so, and flags that the directions shown
+are placeholders — they came off the affines and the run will replace them with
+ones recovered from the rotations:
+
+```
+Multi-orientation (COSMOS), 1 group(s):
+  sub-01_ses-01 (3 orientations) [will co-register]
+      acq-dir1         B0 [ 0.000  0.000  1.000]  affine
+      acq-dir2         B0 [ 0.000  0.000  1.000]  affine
+      acq-dir3         B0 [ 0.000  0.000  1.000]  affine
+      directions above are from the affines; they will be replaced by ones recovered from the registration against sub-01_ses-01_acq-dir1
+```
+
+`--dry` compares the *source* headers, while the run compares the derivative grids
+it actually produces. Those differ when a stage resamples — an oblique acquisition
+taken to an axial grid, say — so the forecast can be wrong, but only in the safe
+direction: the decision is remade on the real grids, so a group that turns out to
+need registration gets it.
 
 In the [TUI](/QSMxT/guides/running-interactively/) the same pattern is the
 **Orientations** field on the Input tab, below Include/Exclude, and it previews

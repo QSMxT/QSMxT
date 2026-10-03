@@ -17,6 +17,7 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         parts.push(format!("--multi-orientation-algorithm {}", m.algorithm));
         emit_f64(&mut parts, "--multi-orientation-lambda", m.lambda, d.multi_orientation.lambda);
         if m.force { parts.push("--multi-orientation-force".into()); }
+        if !m.register { parts.push("--no-orientation-registration".into()); }
     }
 
     // ── Pipeline toggles ──

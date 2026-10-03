@@ -103,7 +103,10 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     cover!(q::bgremove::MsmvParams => c::MsmvConfig, ignore: ["b0", "te", "prefilter"]);
 
     // Masking / field mapping / misc
-    cover!(q::bet::BetParams => c::BetConfig);
+    // `voxel_scale` runs BET as if the voxels were N times larger, for preclinical data
+    // (QSM.rs #127). QSMxT has no config surface for it yet and passes 1.0; exposing it is its
+    // own job, so it is ignored here rather than silently half-wired.
+    cover!(q::bet::BetParams => c::BetConfig, ignore: ["voxel_scale"]);
     cover!(q::utils::HomogeneityParams => c::HomogeneityConfig);
     cover!(q::utils::LinearFitParams => c::LinearFitConfig);
     cover!(q::swi::SwiParams => c::SwiConfig);

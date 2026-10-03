@@ -586,6 +586,22 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 add_citation(&mut citations, &CITE_STI);
             }
         }
+        // How the orientations got onto one grid is part of the method, not an implementation
+        // detail: it determines where the B0 directions came from, which is half the input.
+        if config.multi_orientation.register {
+            sentences.push(
+                "Orientations that were not already on a common grid were rigidly co-registered \
+                 (6 degrees of freedom, normalized cross-correlation over a multi-resolution \
+                 pyramid) onto the first orientation's grid using the magnitude images, and each \
+                 orientation's B0 direction was derived from the recovered rotation."
+                    .to_string(),
+            );
+        } else {
+            sentences.push(
+                "The orientations were taken to be already co-registered onto a common grid."
+                    .to_string(),
+            );
+        }
         if config.multi_orientation.lambda > 0.0 {
             sentences.push(format!(
                 "The multi-orientation inversion was regularized with lambda = {}.",
@@ -1814,5 +1830,21 @@ mod multiorient_methods_tests {
         assert!(text.contains("susceptibility tensor imaging (STI; Liu, 2010)"), "{text}");
         assert!(text.contains("10.1002/mrm.22482"), "{text}");
         assert!(text.contains("lambda = 0.001"), "{text}");
+    }
+
+    /// How the orientations reached a common grid is part of the method — it is where the B0
+    /// directions came from — so the paragraph has to say which of the two it was.
+    #[test]
+    fn the_methods_say_how_the_orientations_were_registered() {
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        let text = generate_methods(&config);
+        assert!(text.contains("rigidly co-registered"), "{text}");
+        assert!(text.contains("derived from the recovered rotation"), "{text}");
+
+        config.multi_orientation.register = false;
+        let text = generate_methods(&config);
+        assert!(text.contains("taken to be already co-registered"), "{text}");
+        assert!(!text.contains("rigidly co-registered"), "{text}");
     }
 }

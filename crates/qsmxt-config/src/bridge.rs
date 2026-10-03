@@ -451,7 +451,11 @@ fn convert_mask_op(op: &crate::masking::MaskOp) -> PMaskOp {
             },
             value: *value,
         },
-        crate::masking::MaskOp::Bet { fractional_intensity } => PMaskOp::Bet { fractional_intensity: *fractional_intensity },
+        // `voxel_scale` is qsm-core's preclinical-geometry knob (QSM.rs #127). QSMxT has no
+        // config surface for it yet, so pass the acquisition's own geometry; exposing it is a
+        // separate job from wiring it through here.
+        crate::masking::MaskOp::Bet { fractional_intensity } =>
+            PMaskOp::Bet { fractional_intensity: *fractional_intensity, voxel_scale: 1.0 },
         crate::masking::MaskOp::Erode { iterations } => PMaskOp::Erode { iterations: *iterations },
         crate::masking::MaskOp::Dilate { iterations } => PMaskOp::Dilate { iterations: *iterations },
         crate::masking::MaskOp::Close { radius } => PMaskOp::Close { radius: *radius },

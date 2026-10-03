@@ -53,6 +53,7 @@ mod integration_tests {
                 multi_orientation_algorithm: None,
                 multi_orientation_lambda: None,
                 multi_orientation_force: false,
+                no_orientation_registration: false,
                 unwrapping_algorithm: None,
                 bf_algorithm: None,
                 masking_input: None,

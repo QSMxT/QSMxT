@@ -213,6 +213,9 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if args.multi_orientation_force {
             config.multi_orientation.force = true;
         }
+        if args.no_orientation_registration {
+            config.multi_orientation.register = false;
+        }
 
         // ── Unwrapping ──
         if let Some(a) = args.unwrapping_algorithm {
