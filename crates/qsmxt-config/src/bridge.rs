@@ -473,6 +473,18 @@ fn convert_mask_op(op: &crate::masking::MaskOp) -> PMaskOp {
     }
 }
 
+/// What the orientation gate needs to know about one run, which the config cannot tell it.
+///
+/// `--r2prime-strategy auto` resolves to R2PRIMEnet only when the run has no measured R2 to
+/// subtract, so whether an orientation-sensitive network runs is a per-run question while the
+/// config is shared across runs.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct RunOrientationFacts {
+    /// Whether a measured R2 is available for this run: a matched MESE acquisition, or a custom
+    /// R2 map under `derivatives/`.
+    pub has_measured_r2: bool,
+}
+
 /// The configured algorithms that cannot reconstruct a non-axial acquisition.
 ///
 /// Classical methods take the B0 direction as a parameter and build their dipole kernel from
@@ -482,7 +494,23 @@ fn convert_mask_op(op: &crate::masking::MaskOp) -> PMaskOp {
 /// Callers use this to resample first. See `qsm_core::pipeline::OrientationSupport`.
 ///
 /// Only stages this run will actually execute are considered.
-pub fn axial_only_algorithms(cfg: &PipelineConfig) -> Vec<String> {
+///
+/// Where the answer comes from matters, because this list drifting out of date is silent.
+/// `OrientationSupport` in qsm-core is the authority wherever a stage has an algorithm enum, so
+/// every such stage asks it rather than carrying its own opinion. Two things here have no enum of
+/// their own, and both are deferred to the enum of the network they are:
+///
+/// - **R2′ generation** is an input-preparation step feeding the R2′-consuming separation
+///   methods, not a stage, so qsm-core has no `R2PrimeAlgorithm` to hang support off. R2PRIMEnet
+///   is a χ-sepnet-family network (SNU-LIST), trained on axial data with the slice axis along B0
+///   (Kim et al. 2025, doi:10.1002/hbm.70136), and takes no B0 direction — so it belongs here
+///   with the rest of that family. The match over `R2PrimeStrategy` below is exhaustive, so a new
+///   strategy cannot be added without answering the orientation question for it.
+/// - **iQFM** has no `BgRemovalAlgorithm`: its input is phase rather than a total field, so the
+///   runner intercepts it and `map_bf_alg` sends it to a placeholder. Asking the placeholder about
+///   orientation answers for the wrong method; it is the local-field head of the *same* network as
+///   iQSM, so it takes iQSM's answer.
+pub fn axial_only_algorithms(cfg: &PipelineConfig, facts: RunOrientationFacts) -> Vec<String> {
     let mut out = Vec::new();
     let mut note = |requires: bool, stage: &str, name: String| {
         if requires {
@@ -502,9 +530,26 @@ pub fn axial_only_algorithms(cfg: &PipelineConfig) -> Vec<String> {
                  cfg.inversion.qsmart.inversion.to_string());
         }
 
-        let bf = map_bf_alg(cfg.bg_removal.algorithm);
-        note(bf.orientation_support().requires_axial(), "background field removal",
+        // iQFM is iQSM's local-field head, so ask about iQSM: `map_bf_alg` has no iQFM to map to
+        // and would answer for its placeholder instead.
+        let bf = match cfg.bg_removal.algorithm {
+            BfAlgorithm::Iqfm => map_alg(QsmAlgorithm::Iqsm).orientation_support(),
+            other => map_bf_alg(other).orientation_support(),
+        };
+        note(bf.requires_axial(), "background field removal",
              cfg.bg_removal.algorithm.to_string());
+    }
+
+    // R2′ generation. A custom R2′ map under `derivatives/` means nothing is generated at all.
+    if cfg.pipeline.do_r2primemap && cfg.separation.custom_r2prime_tool.is_none() {
+        let uses_r2primenet = match cfg.separation.r2prime_strategy {
+            // R2′ = R2* − R2 is a measurement, computed voxelwise; no network, no orientation.
+            R2PrimeStrategy::Mese => false,
+            R2PrimeStrategy::R2primenet => true,
+            // Measures when it can, predicts when it cannot — so this depends on the run.
+            R2PrimeStrategy::Auto => !facts.has_measured_r2,
+        };
+        note(uses_r2primenet, "R2' generation", "r2primenet".to_string());
     }
 
     if cfg.pipeline.do_chi_separation {
@@ -600,5 +645,92 @@ mod tests {
     fn qsmart_inversion_defaults_to_ilsqr() {
         let (_, _, inv, _) = to_pipeline_stages(&PipelineConfig::default());
         assert_eq!(inv.qsmart.inversion, PInvAlg::Ilsqr);
+    }
+
+    // ── which methods the orientation gate covers ──
+
+    /// A config that needs R2′ from a stage that is itself orientation-agnostic, so the only thing
+    /// the gate can be reacting to is R2′ generation. χ-sep-iLSQR takes B0 as a parameter.
+    fn cfg_needing_r2prime() -> PipelineConfig {
+        let mut cfg = PipelineConfig::default();
+        cfg.pipeline.do_chi_separation = true;
+        cfg.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepIlsqr;
+        crate::config::enforce_separation_dependencies(&mut cfg);
+        assert!(cfg.pipeline.do_r2primemap, "χ-sep-iLSQR should have asked for R2′");
+        cfg
+    }
+
+    fn gate(cfg: &PipelineConfig, has_measured_r2: bool) -> Vec<String> {
+        axial_only_algorithms(cfg, RunOrientationFacts { has_measured_r2 })
+    }
+
+    /// R2PRIMEnet used to sit outside the gate entirely: a run could have everything else
+    /// resampled, or nothing resampled, and still feed the network the acquired oblique grid.
+    #[test]
+    fn r2primenet_is_gated_when_auto_has_no_measured_r2() {
+        let cfg = cfg_needing_r2prime();
+        let listed = gate(&cfg, false);
+        assert!(listed.iter().any(|s| s.contains("r2primenet")),
+                "`auto` with nothing to subtract predicts R2′ with R2PRIMEnet: {listed:?}");
+    }
+
+    /// ... and only when it actually runs. A MESE (or a custom R2 map) means `auto` measures R2′
+    /// instead, and resampling the run for a network that never runs costs an interpolation.
+    #[test]
+    fn r2primenet_is_not_gated_when_auto_can_measure() {
+        let cfg = cfg_needing_r2prime();
+        let listed = gate(&cfg, true);
+        assert!(listed.is_empty(),
+                "nothing orientation-sensitive runs in this configuration: {listed:?}");
+    }
+
+    #[test]
+    fn r2primenet_strategy_is_gated_even_with_a_measured_r2() {
+        let mut cfg = cfg_needing_r2prime();
+        cfg.separation.r2prime_strategy = R2PrimeStrategy::R2primenet;
+        let listed = gate(&cfg, true);
+        assert!(listed.iter().any(|s| s.contains("r2primenet")),
+                "`--r2prime-strategy r2primenet` predicts regardless: {listed:?}");
+    }
+
+    #[test]
+    fn the_mese_strategy_never_reaches_the_gate() {
+        let mut cfg = cfg_needing_r2prime();
+        cfg.separation.r2prime_strategy = R2PrimeStrategy::Mese;
+        assert!(gate(&cfg, false).is_empty(),
+                "`mese` produces nothing rather than estimating, so no network runs");
+        assert!(gate(&cfg, true).is_empty(), "R2′ = R2* − R2 is a voxelwise measurement");
+    }
+
+    #[test]
+    fn a_custom_r2prime_map_means_no_network_runs() {
+        let mut cfg = cfg_needing_r2prime();
+        cfg.separation.r2prime_strategy = R2PrimeStrategy::R2primenet;
+        cfg.separation.custom_r2prime_tool = Some("sepia".to_string());
+        assert!(gate(&cfg, false).is_empty(),
+                "a supplied R2′ map wins over every strategy, so nothing is generated");
+    }
+
+    /// iQFM has no `BgRemovalAlgorithm` of its own, so `map_bf_alg` sends it to a placeholder.
+    /// Asking the placeholder about orientation answers for V-SHARP. iQFM is the local-field head
+    /// of the same network as iQSM, which is axial-only, so it must be gated.
+    #[test]
+    fn iqfm_is_gated_like_the_iqsm_network_it_is() {
+        let mut cfg = PipelineConfig::default();
+        cfg.bg_removal.algorithm = crate::enums::BfAlgorithm::Iqfm;
+        let listed = gate(&cfg, true);
+        assert!(listed.iter().any(|s| s.contains("iqfm")),
+                "iQFM is iQSM's other head and learned the same axial prior: {listed:?}");
+        // The placeholder it maps to must not be what answered.
+        assert_eq!(map_bf_alg(crate::enums::BfAlgorithm::Iqfm), PBgAlg::Vsharp);
+        assert!(!PBgAlg::Vsharp.orientation_support().requires_axial());
+    }
+
+    /// Classical background removal is unaffected by the iQFM special case.
+    #[test]
+    fn classical_background_removal_is_still_not_gated() {
+        let mut cfg = PipelineConfig::default();
+        cfg.bg_removal.algorithm = crate::enums::BfAlgorithm::Vsharp;
+        assert!(gate(&cfg, true).is_empty());
     }
 }

@@ -59,6 +59,16 @@ pub struct MeseRun {
     pub magnitude_niftis: Vec<PathBuf>,
     /// Echo times in seconds, ordered by echo number.
     pub echo_times: Vec<f64>,
+    /// Volume dimensions of the echoes, from the first echo's header.
+    pub dims: (usize, usize, usize),
+    /// Affine of the echoes, from the first echo's header.
+    ///
+    /// A MESE is its own acquisition and routinely sits on its own grid — a 2D stack with
+    /// thicker slices, a smaller matrix, a different FOV — so the pipeline has to reconcile the
+    /// two geometries rather than hope they agree. Carrying the affine is what makes that
+    /// possible: without it the only available comparison was voxel count, which both discarded
+    /// a differently-gridded MESE and accepted a same-sized one that was mis-registered.
+    pub affine: [f64; 16],
 }
 
 /// Filters for BIDS discovery.
@@ -404,11 +414,29 @@ fn attach_mese(runs: &mut [QsmRun], bids_dir: &Path) {
                 Err(e) => warn!("Skipping MESE echo (bad sidecar {}): {}", json_path.display(), e),
             }
         }
-        if magnitude_niftis.len() >= 3 {
-            mese_runs.push(MeseRun { key, magnitude_niftis, echo_times });
-        } else if !magnitude_niftis.is_empty() {
-            warn!("Ignoring MESE acquisition with <3 usable echoes: {}", key);
+        if magnitude_niftis.len() < 3 {
+            if !magnitude_niftis.is_empty() {
+                warn!("Ignoring MESE acquisition with <3 usable echoes: {}", key);
+            }
+            continue;
         }
+        // The grid comes from the first echo, read here rather than at processing time so that
+        // the geometry travels with the acquisition and anything holding a `MeseRun` can compare
+        // it against the GRE. One volume read per MESE acquisition; `read_nifti_dims` would be
+        // cheaper but gives no affine, and re-deriving one here would duplicate the qform/sform
+        // precedence that `qsm_core::io` already implements.
+        let geometry = match qsm_core::io::read_nifti_file(&magnitude_niftis[0]) {
+            Ok(nf) => (nf.dims, nf.affine),
+            Err(e) => {
+                warn!("Ignoring MESE acquisition {} (cannot read {}): {}",
+                      key, magnitude_niftis[0].display(), e);
+                continue;
+            }
+        };
+        mese_runs.push(MeseRun {
+            key, magnitude_niftis, echo_times,
+            dims: geometry.0, affine: geometry.1,
+        });
     }
 
     // Attach by subject/session (ignoring acq/run differences between GRE and MESE).

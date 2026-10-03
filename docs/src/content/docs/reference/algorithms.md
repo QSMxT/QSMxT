@@ -117,7 +117,7 @@ see [Output space](#output-space).
 |---|---|
 | all 18 classical dipole inversions, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
 | SHARP, V-SHARP, RESHARP, iSMV, LBV, HARPERELLA, iHARPERELLA, BFRnet | unaffected — never uses B0 |
-| all 11 deep-learning inversions, SUSEP-Net, χ-sepnet | **resampled first** — assumes B0 is +z |
+| all 11 deep-learning inversions, SUSEP-Net, χ-sepnet, R2PRIMEnet, iQFM | **resampled first** — assumes B0 is +z |
 
 Background removal by the spherical mean value property is genuinely
 direction-independent rather than merely untested, which is why PDF is the only
@@ -144,12 +144,22 @@ magnitude and phase together; if you use `qsmxt resample` by hand, pass
 `--phase` with `--magnitude` rather than resampling phase as a plain volume.
 :::
 
-Runs with a matching MESE acquisition (for R2′ / χ-separation) are not
-resampled by the obliquity threshold — the MESE is read from BIDS on its own
-grid, so moving only the GRE would leave the two inconsistent. Those runs use
-the affine-derived B0 direction instead, and say so in the log. A
-deep-learning method on an oblique run with a MESE has no good answer available
-and is refused rather than guessed at.
+R2PRIMEnet is in the third row because it is a χ-sepnet-family network, trained
+on the same axial data and taking no B0 direction. It only runs when R2′ is
+being estimated rather than measured, so whether a run is resampled on its
+account depends on whether that run has an R2 to subtract: a MESE (or
+`--custom-r2-tool`) with `--r2prime-strategy auto` measures R2′ instead, and
+nothing is resampled. iQFM is there because it is the local-field head of the
+same network as iQSM.
+
+A matching MESE acquisition no longer changes any of this. The MESE is resampled
+onto whatever grid the run reconstructs on, so an oblique run with a MESE
+resamples like any other, and a deep-learning method on one is no longer
+refused. The MESE is also no longer required to share the GRE's grid at all: a
+2D spin-echo stack with thicker slices or a smaller matrix is reconciled by its
+affine, where it used to be dropped and R2′ silently never computed. Where the
+MESE's field of view does not cover all of the brain, R2 and a measured R2′ are
+reported only inside it, and the log says how much of the mask that was.
 
 ## Output space
 
