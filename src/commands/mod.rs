@@ -1175,6 +1175,65 @@ mod integration_tests {
         assert!(deriv.join("sub-1/anat/sub-1_T2starmap.nii").exists());
     }
 
+    /// End to end, the behaviour #242 is actually about: a MESE on a grid of its own produces R2
+    /// and R2'. It used to be dropped on a voxel-count check, so neither map was ever written and
+    /// chi-separation quietly fell back to whatever was left — with nothing in the output saying
+    /// an acquisition had been discarded.
+    #[test]
+    fn test_run_computes_r2_from_a_mese_on_its_own_grid() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_echo_bids(&bids);
+
+        // A 2D-style spin-echo companion: half the matrix, twice the slice pitch, covering the
+        // same box as the 8x8x8 1 mm GRE. Nothing about it matches the GRE's grid.
+        let anat = bids.join("sub-1/anat");
+        let mese_dims = (4, 4, 4);
+        let mese_affine = [
+            2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        for echo in 1..=4 {
+            let te = 0.012 * echo as f64;
+            // Decaying, so the EPG fit has something to find rather than R2 = 0 everywhere.
+            let signal = 1000.0 * (-15.0 * te).exp();
+            let data = vec![signal; mese_dims.0 * mese_dims.1 * mese_dims.2];
+            qsm_core::io::save_nifti_to_file(
+                &anat.join(format!("sub-1_echo-{}_MESE.nii", echo)),
+                &data, mese_dims, (2.0, 2.0, 2.0), &mese_affine,
+            ).unwrap();
+            testutils::write_sidecar(
+                &anat.join(format!("sub-1_echo-{}_MESE.json", echo)), te, 3.0);
+        }
+
+        let mut args = default_run_args(bids, out.clone());
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+        args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Vsharp);
+        args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
+        args.dry = false;
+        args.no_mem_limit = true;
+        args.pipeline.do_r2starmap = true;
+        args.pipeline.do_r2map = true;
+        args.pipeline.do_r2primemap = true;
+        // `mese` rather than `auto` deliberately: it removes the R2PRIMEnet fallback, so this can
+        // only pass by actually measuring R2' from the spin-echo data, and the test never reaches
+        // for network weights. Under the old voxel-count behaviour `auto` quietly went and
+        // downloaded R2PRIMEnet instead — which is the "falls back to whatever remains" in #242,
+        // and took eight minutes to do it.
+        args.pipeline.r2prime_strategy = Some(R2PrimeStrategyArg::Mese);
+        super::run::execute(args).unwrap();
+
+        let deriv = out.join("derivatives/qsmxt");
+        assert!(deriv.join("sub-1/anat/sub-1_R2map.nii").exists(),
+                "a differently-gridded MESE must still yield R2");
+        assert!(deriv.join("sub-1/anat/sub-1_R2primemap.nii").exists(),
+                "and so R2' = R2* - R2");
+        // On the GRE's grid, not the MESE's: everything downstream indexes it that way.
+        let r2 = qsm_core::io::read_nifti_file(&deriv.join("sub-1/anat/sub-1_R2map.nii")).unwrap();
+        assert_eq!(r2.dims, (8, 8, 8), "R2 belongs on the reconstruction grid");
+    }
+
     #[test]
     fn test_run_multi_echo_with_extras() {
         let dir = tempfile::tempdir().unwrap();
