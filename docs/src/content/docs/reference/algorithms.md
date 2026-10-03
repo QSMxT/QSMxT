@@ -477,6 +477,13 @@ alongside the directions it produced:
     3 orientations, spread 29°, rank 3
 ```
 
+How far apart the orientations may be: measured on an in-vivo-sized phantom,
+registration recovers rotations across the whole range tested, 5° to 70°, to
+within 0.01°. That is the search's capture range rather than a property of your
+data, and it is set by the pyramid depth — worth knowing because it is finite.
+Beyond it the failure is not subtle: the search lands in a local minimum tens of
+degrees out, correlation collapses, and the group is refused by the floor below.
+
 A correlation below 0.5 is treated as a failed registration and the group is
 refused — a bad alignment produces a plausible-looking susceptibility map, which
 is the failure this whole feature is built to avoid. Between 0.5 and 0.8 it runs
