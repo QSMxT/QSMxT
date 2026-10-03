@@ -760,7 +760,7 @@ fn word_boundary_left(text: &str, cursor: usize) -> usize {
 /// COSMOS or STI, in the order the TUI cycles them.
 pub const ORIENTATION_ALGORITHMS: [&str; 2] = ["cosmos", "sti"];
 pub const ORIENTATION_ALGORITHM_HELP: [&str; 2] = [
-    "COSMOS — scalar susceptibility from 2+ co-registered orientations, closed form in k-space",
+    "COSMOS — scalar susceptibility from 2+ orientations, co-registered if needed, closed form in k-space",
     "STI — rank-2 susceptibility tensor; needs 6+ orientations that are not coplanar",
 ];
 
