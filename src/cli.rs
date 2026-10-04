@@ -3027,9 +3027,16 @@ pub struct R2primeArgs {
     /// Binary mask NIfTI file
     #[arg(short, long)]
     pub mask: PathBuf,
+    /// Binary mask of where the R2 acquisition reached, if it does not cover the whole mask
+    /// (a MESE slab). Without it, coverage is inferred from R2 > 0
+    #[arg(long)]
+    pub r2_coverage: Option<PathBuf>,
     /// Output R2' map NIfTI file
     #[arg(short, long)]
     pub output: PathBuf,
+    /// Also write the mask of voxels where R2' is a measurement
+    #[arg(long)]
+    pub output_coverage: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]

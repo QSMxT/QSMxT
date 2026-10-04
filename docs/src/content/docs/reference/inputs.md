@@ -90,7 +90,7 @@ This table lists what each output needs in addition to it.
 | SWI (`--do-swi`) | magnitude |
 | R2\*/T2\* (`--do-r2starmap`, `--do-t2starmap`) | magnitude, at least 3 echoes |
 | R2 (`--do-r2map`) | a MESE acquisition, at least 3 echoes |
-| R2' (`--do-r2primemap`) | magnitude and a MESE acquisition, for R2\* and R2 |
+| R2' (`--do-r2primemap`) | magnitude and a MESE acquisition, for R2\* and R2. Reported only where the MESE reached; without one, predicted from R2\* by R2PRIMEnet, which is 3 T only |
 
 [Source separation](/QSMxT/reference/algorithms/#susceptibility-source-separation)
 (`--do-chisep`) splits into two groups. The `r2star-qsm` and `decompose` methods
@@ -119,3 +119,8 @@ following the same `sub-*/[ses-*/]anat/` layout:
 Supplying R2' directly removes the MESE requirement for source separation, since
 R2 is only needed to compute it. `qsmxt validate` lists the derivative tools it
 can see for each run.
+
+A bring-your-own R2 or R2' map that only covers part of the brain carries the
+same caveat as a MESE slab: leave the uncovered voxels at zero rather than
+filling them, since a zero R2 is read as an absent measurement and excluded,
+while a small non-zero one is taken at face value.
