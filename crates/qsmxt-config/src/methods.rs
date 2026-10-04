@@ -272,6 +272,11 @@ const CITE_HDBET: Citation = Citation {
     text: "Isensee, F., Schell, M., Pflueger, I., et al. (2019). \"Automated brain extraction of multisequence MRI using artificial neural networks.\" *Human Brain Mapping*, 40(17):4952-4964. https://doi.org/10.1002/hbm.24750",
 };
 
+const CITE_RS2NET: Citation = Citation {
+    key: "lin2024",
+    text: "Lin, Y., Ding, Y., Chang, S., Ge, X., Sui, X., Jiang, Y. (2024). \"RS2-Net: An end-to-end deep learning framework for rodent skull stripping in multi-center brain MRI.\" *NeuroImage*, 298:120769. https://doi.org/10.1016/j.neuroimage.2024.120769",
+};
+
 const CITE_QSM_CONSENSUS: Citation = Citation {
     key: "bilgic2024consensus",
     text: "Bilgic, B., Costagli, M., Chan, K.-S., et al. (2024). \"Recommended implementation of quantitative susceptibility mapping for clinical research in the brain: A consensus of the ISMRM electro-magnetic tissue properties study group.\" *Magnetic Resonance in Medicine*, 91(5):1834-1862. https://doi.org/10.1002/mrm.30006",
@@ -737,6 +742,15 @@ fn describe_generator(
                 String::new()
             };
             format!("BET brain extraction (Smith, 2002; f={:.2}{}) of {}", fractional_intensity, scaled, input_desc)
+        }
+        MaskOp::Rs2Net { tta, tile_step } => {
+            add_citation(citations, &CITE_RS2NET);
+            format!(
+                "RS2-Net deep-learning rodent brain extraction (Lin et al., 2024; \
+                 sliding-window patches stepped by {:.0}% of the patch{}) of {}",
+                tile_step * 100.0,
+                if *tta { ", mirroring test-time augmentation" } else { "" }, input_desc,
+            )
         }
         MaskOp::HdBet { patch, tta, tile_step } => {
             add_citation(citations, &CITE_HDBET);
@@ -1460,6 +1474,26 @@ mod tests {
         assert!(out.contains("BET brain extraction"));
         assert!(out.contains("Smith, 2002"));
         assert!(out.contains("f=0.35"));
+    }
+
+    #[test]
+    fn test_masking_rs2_net() {
+        let mut config = PipelineConfig::default();
+        config.masking.sections = vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::rs2_net_default(),
+            refinements: vec![],
+        }];
+        let out = generate_methods(&config);
+        assert!(out.contains("RS2-Net deep-learning rodent brain extraction (Lin et al., 2024;"), "{out}");
+        assert!(out.contains("stepped by 50% of the patch"), "{out}");
+        assert!(out.contains("https://doi.org/10.1016/j.neuroimage.2024.120769"), "{out}");
+        // Otsu is not cited by a run that never thresholded.
+        assert!(!out.contains("Otsu, 1979"), "{out}");
+
+        config.masking.sections[0].generator = MaskOp::Rs2Net { tta: true, tile_step: 0.5 };
+        let tta = generate_methods(&config);
+        assert!(tta.contains("mirroring test-time augmentation"), "{tta}");
     }
 
     #[test]

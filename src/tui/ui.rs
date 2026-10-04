@@ -211,7 +211,7 @@ fn is_deep_learning_algo(name: &str) -> bool {
         name,
         "xqsm" | "qsmnet" | "qsmnet-plus" | "autoqsm" | "qsmgan" | "ir2qsm" | "lpcnn"
             | "modl-qsm" | "nextqsm" | "iqsm" | "iqsm-plus" | "bfrnet" | "iqfm"
-            | "susep-net" | "chi-sepnet" | "hd-bet"
+            | "susep-net" | "chi-sepnet" | "hd-bet" | "rs2-net"
     )
 }
 
@@ -1603,6 +1603,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                     crate::pipeline::config::MaskOp::Threshold { .. } => "threshold",
                     crate::pipeline::config::MaskOp::Bet { .. } => "bet",
                     crate::pipeline::config::MaskOp::HdBet { .. } => "hd-bet",
+                    crate::pipeline::config::MaskOp::Rs2Net { .. } => "rs2-net",
                     _ => "?",
                 };
                 let label_style = if focused {
@@ -1650,6 +1651,11 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                         let low = *patch == crate::pipeline::config::hd_bet_low_memory_patch();
                         ("Patch:", format!("{}x{}x{}{}", patch[0], patch[1], patch[2], if low { " (low memory)" } else { "" }),
                          "HD-BET sliding-window patch: native ~4.5 GB peak, low memory ~1.9 GB (←/→ to toggle)")
+                    }
+                    // RS2-Net's graph is traced at one fixed patch, so there is nothing to cycle.
+                    crate::pipeline::config::MaskOp::Rs2Net { tta, .. } => {
+                        ("Augmentation:", if *tta { "mirroring TTA".to_string() } else { "none".to_string() },
+                         "RS2-Net rodent brain extraction: the patch is fixed by the exported graph")
                     }
                     _ => ("?:", "?".to_string(), ""),
                 };

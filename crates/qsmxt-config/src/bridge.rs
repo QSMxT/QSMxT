@@ -471,6 +471,10 @@ fn convert_mask_op(op: &crate::masking::MaskOp) -> PMaskOp {
             mirror_tta: *tta,
             tile_step: *tile_step,
         }),
+        crate::masking::MaskOp::Rs2Net { tta, tile_step } => PMaskOp::Rs2Net(qsm_core::bet::Rs2NetParams {
+            mirror_tta: *tta,
+            tile_step: *tile_step,
+        }),
     }
 }
 
