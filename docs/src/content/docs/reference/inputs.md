@@ -51,7 +51,10 @@ Two further acquisitions are recognised when present:
 | `sub-*/[ses-*/]anat/*_part-mag_*.nii[.gz]` | magnitude, for R2\*/T2\*, SWI and masking |
 | `sub-*/[ses-*/]anat/*_echo-*_MESE.nii[.gz]` | multi-echo spin-echo, for R2 and hence R2' |
 
-A MESE acquisition needs at least three echoes to fit R2. Fewer are ignored.
+A MESE acquisition needs at least three echoes to fit R2. Fewer are ignored. It
+does not have to be on the same grid as the GRE — a 2D stack with thicker slices
+or a smaller matrix is resampled onto whatever grid the run reconstructs on,
+using its affine. R2 is reported only where the MESE's field of view reaches.
 
 ### Uncombined receive coils
 

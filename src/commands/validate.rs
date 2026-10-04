@@ -91,16 +91,28 @@ pub fn execute(args: ValidateArgs) -> crate::Result<()> {
         let n_echoes = run.echoes.len();
         let has_mag = run.has_magnitude;
         let mese = run.mese.as_ref();
+        // One read of the first echo per run, shared by the grid line and the B0 block below.
+        // The volume itself is dropped immediately; only the geometry is kept.
+        //
+        // Voxel sizes are `pixdim`, via `NiftiData::voxel_size` — deliberately, because that is
+        // the field the pipeline carries into `RunMetadata` and builds the dipole kernel from on
+        // the acquired grid. Deriving them from the affine instead would read better but would
+        // report a number the reconstruction does not use when a header has the two disagreeing.
+        // (A run that gets resampled to axial reconstructs on `axial_grid_for`'s spacings, which
+        // *are* affine-derived; this line describes the data as acquired.)
+        let gre_geometry = qsm_core::io::read_nifti_file(&run.echoes[0].phase_nifti)
+            .map(|n| (n.voxel_size, n.affine))
+            .ok();
 
         println!("  {}", run.key);
         println!("    Echoes: {}", n_echoes);
         println!("    Echo times: {:?} s", run.echo_times);
+        println!("    {}", volume_line(run.dims, gre_geometry.map(|(vs, _)| vs)));
         println!("    Field strength: {:.1} T", run.magnetic_field_strength);
         match run.b0_dir {
             Some((x, y, z)) => println!("    B0 direction: ({x:.2}, {y:.2}, {z:.2}) (from sidecar)"),
             None => {
-                let affine = qsm_core::io::read_nifti_file(&run.echoes[0].phase_nifti)
-                    .map(|n| n.affine)
+                let affine = gre_geometry.map(|(_, a)| a)
                     .unwrap_or([1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0]);
                 let (x, y, z) = qsm_core::geometry::b0_direction_from_affine(&affine);
                 let obliquity = qsm_core::geometry::obliquity_from_affine(&affine);
@@ -157,4 +169,40 @@ pub fn execute(args: ValidateArgs) -> crate::Result<()> {
     }
 
     Ok(())
+}
+
+/// The grid line for one run: dimensions always, voxel sizes when the first echo could be read.
+///
+/// Dimensions come from the header at discovery, so they stand even when the volume cannot be
+/// read back here — the two are worth reporting independently rather than losing both.
+fn volume_line(dims: (usize, usize, usize), voxel_size: Option<(f64, f64, f64)>) -> String {
+    let (nx, ny, nz) = dims;
+    match voxel_size {
+        Some((vx, vy, vz)) => format!("Volume: {nx}x{ny}x{nz}, {vx:.2}x{vy:.2}x{vz:.2}mm"),
+        None => format!("Volume: {nx}x{ny}x{nz} (voxel size unavailable: cannot read the first echo)"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::volume_line;
+
+    /// The same shape the runner logs its `Volume:` line in, so the two can be read against each
+    /// other. Anisotropic on purpose: a thick-slice stack is where a wrong spacing would matter.
+    #[test]
+    fn the_volume_line_reports_dims_and_spacings() {
+        assert_eq!(
+            volume_line((184, 256, 128), Some((0.8, 0.8, 3.0))),
+            "Volume: 184x256x128, 0.80x0.80x3.00mm",
+        );
+    }
+
+    /// An unreadable first echo loses the spacings but not the dimensions, which came from the
+    /// header at discovery.
+    #[test]
+    fn the_volume_line_keeps_the_dims_when_the_voxel_size_is_unknown() {
+        let line = volume_line((64, 64, 20), None);
+        assert!(line.starts_with("Volume: 64x64x20 "), "dims should survive: {line}");
+        assert!(line.contains("voxel size unavailable"), "and say what is missing: {line}");
+    }
 }

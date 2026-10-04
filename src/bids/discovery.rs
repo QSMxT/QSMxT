@@ -59,6 +59,16 @@ pub struct MeseRun {
     pub magnitude_niftis: Vec<PathBuf>,
     /// Echo times in seconds, ordered by echo number.
     pub echo_times: Vec<f64>,
+    /// Volume dimensions of the echoes, from the first echo's header.
+    pub dims: (usize, usize, usize),
+    /// Affine of the echoes, from the first echo's header.
+    ///
+    /// A MESE is its own acquisition and routinely sits on its own grid — a 2D stack with
+    /// thicker slices, a smaller matrix, a different FOV — so the pipeline has to reconcile the
+    /// two geometries rather than hope they agree. Carrying the affine is what makes that
+    /// possible: without it the only available comparison was voxel count, which both discarded
+    /// a differently-gridded MESE and accepted a same-sized one that was mis-registered.
+    pub affine: [f64; 16],
 }
 
 /// Filters for BIDS discovery.
@@ -404,11 +414,29 @@ fn attach_mese(runs: &mut [QsmRun], bids_dir: &Path) {
                 Err(e) => warn!("Skipping MESE echo (bad sidecar {}): {}", json_path.display(), e),
             }
         }
-        if magnitude_niftis.len() >= 3 {
-            mese_runs.push(MeseRun { key, magnitude_niftis, echo_times });
-        } else if !magnitude_niftis.is_empty() {
-            warn!("Ignoring MESE acquisition with <3 usable echoes: {}", key);
+        if magnitude_niftis.len() < 3 {
+            if !magnitude_niftis.is_empty() {
+                warn!("Ignoring MESE acquisition with <3 usable echoes: {}", key);
+            }
+            continue;
         }
+        // The grid comes from the first echo, read here rather than at processing time so that
+        // the geometry travels with the acquisition and anything holding a `MeseRun` can compare
+        // it against the GRE. One volume read per MESE acquisition; `read_nifti_dims` would be
+        // cheaper but gives no affine, and re-deriving one here would duplicate the qform/sform
+        // precedence that `qsm_core::io` already implements.
+        let geometry = match qsm_core::io::read_nifti_file(&magnitude_niftis[0]) {
+            Ok(nf) => (nf.dims, nf.affine),
+            Err(e) => {
+                warn!("Ignoring MESE acquisition {} (cannot read {}): {}",
+                      key, magnitude_niftis[0].display(), e);
+                continue;
+            }
+        };
+        mese_runs.push(MeseRun {
+            key, magnitude_niftis, echo_times,
+            dims: geometry.0, affine: geometry.1,
+        });
     }
 
     // Attach by subject/session (ignoring acq/run differences between GRE and MESE).
@@ -782,6 +810,76 @@ mod tests {
         assert_eq!(tree.subjects[0].sessions.len(), 2);
         assert_eq!(tree.total_runs(), 2);
         assert_eq!(tree.selected_runs(), 2);
+    }
+
+    // --- attaching a MESE, and the grid it brings with it ---
+
+    /// Write `n` MESE echoes with sidecars on the given grid, under an existing `anat` dir.
+    fn write_mese_echoes(
+        anat: &std::path::Path, n: usize, dims: (usize, usize, usize), affine: [f64; 16],
+    ) {
+        for echo in 1..=n {
+            let path = anat.join(format!("sub-1_echo-{}_MESE.nii", echo));
+            let data = vec![100.0f64; dims.0 * dims.1 * dims.2];
+            qsm_core::io::save_nifti_to_file(
+                &path, &data, dims,
+                qsm_core::geometry::voxel_sizes_from_affine(&affine), &affine,
+            ).unwrap();
+            testutils::write_sidecar(
+                &anat.join(format!("sub-1_echo-{}_MESE.json", echo)), 0.01 * echo as f64, 3.0);
+        }
+    }
+
+    /// The MESE's own grid travels with it. Without this there is nothing to compare against the
+    /// GRE, which is how a differently-gridded MESE came to be matched by voxel count alone.
+    #[test]
+    fn test_attach_mese_records_its_own_grid() {
+        let dir = tempfile::tempdir().unwrap();
+        testutils::create_multi_echo_bids(dir.path());
+        // A 2D-style spin-echo stack: half the matrix, four times the slice thickness, and
+        // nothing like the 8x8x8 1 mm grid the GRE is on.
+        let affine = [
+            2.0, 0.0, 0.0, 0.0, 0.0, 2.0, 0.0, 0.0, 0.0, 0.0, 4.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        write_mese_echoes(&dir.path().join("sub-1/anat"), 3, (4, 4, 2), affine);
+
+        let runs = discover_runs(dir.path(), &DiscoveryFilter::default()).unwrap();
+        let mese = runs[0].mese.as_ref().expect("the MESE should attach");
+        assert_eq!(mese.dims, (4, 4, 2), "its own dims, not the GRE's");
+        assert_ne!(mese.dims, runs[0].dims, "the point of the test is that they differ");
+        for (i, (got, want)) in mese.affine.iter().zip(affine.iter()).enumerate() {
+            assert!((got - want).abs() < 1e-6, "affine[{i}]: got {got}, want {want}");
+        }
+        assert_eq!(mese.echo_times.len(), 3);
+    }
+
+    /// An unreadable MESE is dropped at discovery rather than carrying a geometry nothing could
+    /// be derived from into the pipeline.
+    #[test]
+    fn test_attach_mese_drops_an_unreadable_acquisition() {
+        let dir = tempfile::tempdir().unwrap();
+        testutils::create_multi_echo_bids(dir.path());
+        let anat = dir.path().join("sub-1/anat");
+        write_mese_echoes(&anat, 3, (4, 4, 2), [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ]);
+        // The sidecars still parse, so the acquisition is found; the volume is not a NIfTI.
+        std::fs::write(anat.join("sub-1_echo-1_MESE.nii"), b"not a nifti at all").unwrap();
+
+        let runs = discover_runs(dir.path(), &DiscoveryFilter::default()).unwrap();
+        assert!(runs[0].mese.is_none(), "a MESE whose grid cannot be read must not attach");
+    }
+
+    /// Fewer than three echoes cannot fit R2, and are ignored before the grid is ever read.
+    #[test]
+    fn test_attach_mese_ignores_fewer_than_three_echoes() {
+        let dir = tempfile::tempdir().unwrap();
+        testutils::create_multi_echo_bids(dir.path());
+        write_mese_echoes(&dir.path().join("sub-1/anat"), 2, (4, 4, 2), [
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ]);
+        let runs = discover_runs(dir.path(), &DiscoveryFilter::default()).unwrap();
+        assert!(runs[0].mese.is_none(), "two echoes are not enough to fit R2");
     }
 
     #[test]

@@ -691,6 +691,22 @@ fn reconstruction_box(
 /// costs an interpolation and buys nothing.
 const AXIAL_ONLY_TOLERANCE_DEG: f64 = 1.0;
 
+/// What the orientation gate cannot read from the config alone.
+///
+/// Only whether a measured R2 exists, which is what decides whether `--r2prime-strategy auto`
+/// falls back to R2PRIMEnet. Both sources are judged optimistically — a declared
+/// `--custom-r2-tool` whose derivative turns out to be missing, or a MESE that turns out to be
+/// unreadable, both leave `auto` predicting R2′ after all. `stage_r2_r2prime` warns when that
+/// happens on a grid that was left oblique.
+fn run_orientation_facts(
+    run: &QsmRun,
+    config: &PipelineConfig,
+) -> qsmxt_config::bridge::RunOrientationFacts {
+    qsmxt_config::bridge::RunOrientationFacts {
+        has_measured_r2: run.mese.is_some() || config.separation.custom_r2_tool.is_some(),
+    }
+}
+
 fn resolve_geometry(
     run: &QsmRun,
     first_phase: &NiftiData,
@@ -725,7 +741,7 @@ fn resolve_geometry(
     // does. It takes no B0 direction, so neither a sidecar nor the affine can help it: the only
     // way to reconstruct correctly is to move the data. Below the obliquity threshold the tilt
     // is small enough not to bother.
-    let axial_only = qsmxt_config::bridge::axial_only_algorithms(config);
+    let axial_only = qsmxt_config::bridge::axial_only_algorithms(config, run_orientation_facts(run, config));
     let forced_axial = !axial_only.is_empty() && tilt > AXIAL_ONLY_TOLERANCE_DEG;
     if forced_axial {
         log::info!(
@@ -749,46 +765,33 @@ fn resolve_geometry(
 
     let resample = forced_axial || (threshold >= 0.0 && obliquity > threshold);
     if resample {
-        if run.mese.is_some() && !forced_axial {
-            // The MESE is read straight from BIDS for R2/R2', so resampling only the GRE would
-            // leave the two on different grids. Rotate the kernel instead — equally correct.
-            log::warn!(
-                "Obliquity {:.1}° exceeds the {:.1}° threshold, but this run has a matching MESE \
-                 acquisition that would be left on the original grid; using the affine-derived B0 \
-                 direction instead of resampling.",
-                obliquity, threshold
-            );
-        } else if run.mese.is_some() {
-            // Forced by an axial-only algorithm, but resampling would split the GRE from its
-            // MESE. Neither outcome is defensible, so refuse rather than pick one silently.
-            return Err(QsmxtError::Config(format!(
-                "{} cannot reconstruct this {:.1}° oblique acquisition (it assumes B0 is +z), but \
-                 this run has a matching MESE acquisition that resampling would leave on a \
-                 different grid. Choose a classical algorithm, which takes the B0 direction as a \
-                 parameter, or process the GRE without the MESE.",
-                axial_only.join(", "), obliquity
-            )));
+        // A matched MESE used to veto this, on both branches: the GRE would move to a cardinal
+        // grid and the MESE, read straight from BIDS, would be left behind. It no longer does,
+        // because the MESE is no longer assumed to share the GRE's grid — `load_mese_voxel_major`
+        // resamples it onto whatever grid is chosen here. That also makes a MESE acquired on its
+        // own grid usable, which is the ordinary case and used to be discarded.
+        let grid = qsm_core::geometry::axial_grid_for(
+            first_phase.dims.0, first_phase.dims.1, first_phase.dims.2, &affine,
+        );
+        let why = if forced_axial {
+            "required by the chosen algorithm".to_string()
         } else {
-            let grid = qsm_core::geometry::axial_grid_for(
-                first_phase.dims.0, first_phase.dims.1, first_phase.dims.2, &affine,
-            );
-            let why = if forced_axial {
-                "required by the chosen algorithm".to_string()
-            } else {
-                format!("obliquity {obliquity:.1}° > threshold {threshold:.1}°")
-            };
-            log::info!(
-                "Resampling to axial: {}x{}x{} -> {}x{}x{} ({}); B0 becomes (0, 0, 1)",
-                first_phase.dims.0, first_phase.dims.1, first_phase.dims.2,
-                grid.dims.0, grid.dims.1, grid.dims.2, why
-            );
-            meta.source_geometry = Some((first_phase.dims, affine));
-            meta.dims = grid.dims;
-            meta.voxel_size = grid.voxel_size;
-            meta.affine = grid.affine;
-            meta.b0_direction = (0.0, 0.0, 1.0);
-            return Ok(meta);
+            format!("obliquity {obliquity:.1}° > threshold {threshold:.1}°")
+        };
+        log::info!(
+            "Resampling to axial: {}x{}x{} -> {}x{}x{} ({}); B0 becomes (0, 0, 1)",
+            first_phase.dims.0, first_phase.dims.1, first_phase.dims.2,
+            grid.dims.0, grid.dims.1, grid.dims.2, why
+        );
+        if run.mese.is_some() {
+            log::info!("The matched MESE acquisition will be resampled onto the same grid");
         }
+        meta.source_geometry = Some((first_phase.dims, affine));
+        meta.dims = grid.dims;
+        meta.voxel_size = grid.voxel_size;
+        meta.affine = grid.affine;
+        meta.b0_direction = (0.0, 0.0, 1.0);
+        return Ok(meta);
     }
 
     // No resampling: build the kernel on the acquired grid, with B0 where it actually points.
@@ -814,7 +817,8 @@ fn stage_load(
     // nothing cached valid. A cache from before this was recorded is taken as it stands.
     let geometry = serde_json::json!({
         "obliquity_threshold": config.pipeline.obliquity_threshold,
-        "axial_only": qsmxt_config::bridge::axial_only_algorithms(config),
+        "axial_only": qsmxt_config::bridge::axial_only_algorithms(
+            config, run_orientation_facts(qsm_run, config)),
     });
     let geometry_hash = crate::pipeline::graph::step_params_hash(None, &geometry);
     if let Some(Some(stored)) = state.completed_steps.get("load").map(|r| r.params_hash.as_ref()) {
@@ -1955,22 +1959,173 @@ fn stage_t2star_r2star(ctx: &mut StageContext, mask_path: &Path, progress: &dyn 
     Ok(())
 }
 
-/// Load a matched MESE acquisition's magnitude as a voxel-major `(n_voxels, n_se)` buffer.
-fn load_mese_voxel_major(mese: &crate::bids::discovery::MeseRun, n_voxels: usize) -> Option<Vec<f64>> {
+/// Say so when R2PRIMEnet is about to run on a grid that was not brought to axial.
+///
+/// `axial_only_algorithms` normally resamples first — R2PRIMEnet assumes B0 along `+z` and has no
+/// way to be told otherwise. It decides from the config and `run_orientation_facts`, which judge
+/// a declared R2 source optimistically, so a run can reach here having been promised a measured R2
+/// that never materialised (a missing `--custom-r2-tool` derivative, an unreadable MESE). The
+/// grid cannot be changed this late, so the one useful thing is to not be silent about it.
+fn warn_if_r2primenet_grid_is_oblique(ctx: &StageContext) {
+    if let Some(tilt) = r2primenet_grid_tilt(ctx.meta.source_geometry.is_some(), &ctx.meta.affine) {
+        log::warn!(
+            "R2PRIMEnet assumes B0 lies along +z, but this run is reconstructing on its acquired \
+             grid with B0 {tilt:.1}° from the slice normal, so its R2' is off-distribution. The \
+             run was not resampled because a measured R2 was expected and did not materialise. \
+             Pass --obliquity-threshold to resample, or --r2prime-strategy mese to not estimate \
+             R2' at all."
+        );
+    }
+}
+
+/// The tilt worth warning about before R2PRIMEnet runs, or `None` when there is nothing to say.
+///
+/// Split out from the logging so the decision can be asserted: a run resampled to a cardinal grid
+/// has nothing wrong with it, and a sub-tolerance tilt is the rounding every affine carries.
+fn r2primenet_grid_tilt(was_resampled: bool, affine: &[f64; 16]) -> Option<f64> {
+    if was_resampled {
+        return None;
+    }
+    let tilt = qsm_core::geometry::b0_angle_from_affine(affine);
+    (tilt > AXIAL_ONLY_TOLERANCE_DEG).then_some(tilt)
+}
+
+/// The mask a MESE-measured R2 is valid over: the brain mask, narrowed to where the MESE's FOV
+/// reached.
+///
+/// Outside that FOV the resampled echoes are zero because nothing was acquired there, not because
+/// the tissue is dark, so a fit there invents an R2 out of interpolated nothing.
+fn mese_measured_mask(brain: &[u8], coverage: &[u8]) -> Vec<u8> {
+    brain.iter().zip(coverage.iter()).map(|(&m, &c)| ((m > 0) && (c > 0)) as u8).collect()
+}
+
+fn count_set(mask: &[u8]) -> usize {
+    mask.iter().filter(|&&m| m > 0).count()
+}
+
+/// R2' = R2* - R2, over the voxels where R2 was actually measured.
+///
+/// `r2_mask` narrows the brain mask when R2 came from a MESE that does not cover all of it. Using
+/// the brain mask there would subtract a zero R2 and report the whole of R2* as reversible —
+/// a plausible-looking number standing in for an absent measurement.
+fn measured_r2prime(r2star: &[f64], r2: &[f64], brain: &[u8], r2_mask: Option<&[u8]>) -> Vec<f64> {
+    qsm_core::relaxometry::r2prime(r2star, r2, r2_mask.unwrap_or(brain))
+}
+
+/// Whether two grids are the same one, to within the precision a NIfTI header stores.
+///
+/// Affines come back from 32-bit header fields, so bitwise equality is the wrong test: a volume
+/// round-tripped through a header can differ in the last few bits and is still the same grid.
+/// A millimetre is far below any real difference in FOV, position or orientation and far above
+/// that noise.
+fn same_grid(
+    a_dims: (usize, usize, usize), a_affine: &[f64; 16],
+    b_dims: (usize, usize, usize), b_affine: &[f64; 16],
+) -> bool {
+    a_dims == b_dims && a_affine.iter().zip(b_affine.iter()).all(|(x, y)| (x - y).abs() < 1e-3)
+}
+
+/// A matched MESE acquisition's magnitude, voxel-major `(n_voxels, n_se)`, on this run's grid.
+///
+/// The MESE is a separate acquisition, so its geometry is reconciled with the reconstruction grid
+/// here instead of being assumed. Two things make them disagree, and both are ordinary rather
+/// than exceptional:
+///
+/// - the MESE was acquired on its own grid (a 2D stack with thicker slices, a smaller matrix, a
+///   tighter FOV), which is the usual shape of a spin-echo companion to a 3D GRE;
+/// - the GRE was resampled to a cardinal grid, which moves it away from whatever the MESE shares.
+///
+/// Either way the echoes are resampled onto `dst_dims`/`dst_affine` — magnitude is continuous, so
+/// trilinear interpolation is safe (wrapped phase would have to go through the complex domain
+/// instead; see the `qsm_core::geometry` module docs). This used to compare voxel counts, which
+/// silently dropped the whole MESE when the grids differed and silently accepted a mis-registered
+/// one when they happened to agree in size.
+///
+/// Returns the buffer and a coverage mask marking which destination voxels the MESE's FOV
+/// actually reaches: a MESE with fewer slices than the GRE leaves the rest of the grid empty, and
+/// R2 must not be reported where nothing was measured.
+fn load_mese_voxel_major(
+    mese: &crate::bids::discovery::MeseRun,
+    dst_dims: (usize, usize, usize),
+    dst_affine: &[f64; 16],
+) -> crate::Result<Option<(Vec<f64>, Vec<u8>)>> {
+    let n_voxels = dst_dims.0 * dst_dims.1 * dst_dims.2;
     let n_se = mese.echo_times.len();
+    let on_grid = same_grid(mese.dims, &mese.affine, dst_dims, dst_affine);
+
+    // Where the MESE's FOV lands on the destination grid. Resampling ones rather than inspecting
+    // the data keeps this about geometry: a genuinely dark voxel inside the FOV is measured.
+    let coverage: Vec<u8> = if on_grid {
+        vec![1u8; n_voxels]
+    } else {
+        let src_n = mese.dims.0 * mese.dims.1 * mese.dims.2;
+        let Some(c) = qsm_core::geometry::resample_onto(
+            &vec![1.0f64; src_n], mese.dims, &mese.affine, dst_dims, dst_affine,
+        ) else {
+            log::warn!(
+                "MESE acquisition {} has an affine that cannot be inverted; ignoring the MESE",
+                mese.key
+            );
+            return Ok(None);
+        };
+        c.iter().map(|&v| (v > 0.5) as u8).collect()
+    };
+    let covered = coverage.iter().filter(|&&c| c > 0).count();
+    if covered == 0 {
+        // Not a grid difference to interpolate across: the two acquisitions do not occupy the
+        // same space at all, so there is no reading of this that produces an R2 map.
+        return Err(QsmxtError::Config(format!(
+            "The MESE acquisition {} shares no space with the grid this run reconstructs on \
+             ({}x{}x{} vs {}x{}x{}), so R2 cannot be computed from it. Check that the MESE and \
+             the GRE belong to the same subject and that their affines are not corrupt.",
+            mese.key, mese.dims.0, mese.dims.1, mese.dims.2, dst_dims.0, dst_dims.1, dst_dims.2,
+        )));
+    }
+    if !on_grid {
+        log::info!(
+            "Resampling the MESE onto this run's grid: {}x{}x{} -> {}x{}x{} ({:.0}% of the grid \
+             is inside its FOV)",
+            mese.dims.0, mese.dims.1, mese.dims.2, dst_dims.0, dst_dims.1, dst_dims.2,
+            100.0 * covered as f64 / n_voxels as f64,
+        );
+    }
+
     let mut se = vec![0.0f64; n_voxels * n_se];
     for (i, p) in mese.magnitude_niftis.iter().enumerate() {
-        match io::read_nifti_file(p) {
-            Ok(nf) if nf.data.len() == n_voxels => {
-                for vox in 0..n_voxels { se[vox * n_se + i] = nf.data[vox]; }
+        let nf = match io::read_nifti_file(p) {
+            Ok(nf) => nf,
+            Err(e) => {
+                log::warn!("MESE echo unreadable ({}): {}; ignoring the MESE", p.display(), e);
+                return Ok(None);
             }
-            _ => {
-                log::warn!("MESE echo unreadable/mismatched dims ({}); ignoring MESE", p.display());
-                return None;
-            }
+        };
+        // The acquisition's grid was taken from its first echo. An echo that disagrees with it is
+        // a broken series, not a second geometry to reconcile.
+        if !same_grid(nf.dims, &nf.affine, mese.dims, &mese.affine) {
+            log::warn!(
+                "MESE echo {} is on a different grid from the first echo of its own acquisition \
+                 ({}x{}x{} vs {}x{}x{}); ignoring the MESE",
+                p.display(), nf.dims.0, nf.dims.1, nf.dims.2,
+                mese.dims.0, mese.dims.1, mese.dims.2,
+            );
+            return Ok(None);
         }
+        let values = if on_grid {
+            nf.data
+        } else {
+            match qsm_core::geometry::resample_onto(
+                &nf.data, mese.dims, &mese.affine, dst_dims, dst_affine,
+            ) {
+                Some(v) => v,
+                None => {
+                    log::warn!("Cannot resample MESE echo {}; ignoring the MESE", p.display());
+                    return Ok(None);
+                }
+            }
+        };
+        for vox in 0..n_voxels { se[vox * n_se + i] = values[vox]; }
     }
-    Some(se)
+    Ok(Some((se, coverage)))
 }
 
 /// Supplementary R2 (EPG from a MESE acquisition) and R2' = R2* − R2 maps.
@@ -1991,6 +2146,10 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
         "custom_r2prime": ctx.config.separation.custom_r2prime_tool,
         "echo_times": ctx.meta.echo_times,
         "has_mese": ctx.run.mese.is_some(),
+        // The MESE is reconciled onto this run's grid, so both grids belong in the cache key:
+        // a MESE swapped for one on another grid produces a different R2 map from the same config.
+        "mese_grid": ctx.run.mese.as_ref().map(|m| (m.dims, m.affine)),
+        "grid": (ctx.meta.dims, ctx.meta.affine),
         "r2prime_strategy": format!("{}", ctx.config.separation.r2prime_strategy),
     });
     if ctx.is_cached_with_params("r2_r2prime", Some("epg"), &params) {
@@ -1999,11 +2158,13 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
     }
     let t = Instant::now();
     let (nx, ny, nz) = ctx.dims();
-    let n_voxels = nx * ny * nz;
     let (vsx, vsy, vsz) = ctx.voxel_size();
     let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
     let mask = load_mask(mask_path)?;
     let mut outputs: Vec<PathBuf> = Vec::new();
+    // The mask R2 was actually measured over. Narrower than the brain mask when the MESE's FOV
+    // does not reach all of it; `None` means R2 came from somewhere other than a MESE.
+    let mut r2_mask: Option<Vec<u8>> = None;
 
     // ── R2 map (Hz) ──
     let r2: Option<Vec<f64>> = if let Some(tool) = ctx.config.separation.custom_r2_tool.clone() {
@@ -2014,11 +2175,27 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
     } else if let Some(mese) = ctx.run.mese.clone() {
         if mese.echo_times.len() >= 3 {
             progress("Computing R2 (EPG) from MESE");
-            load_mese_voxel_major(&mese, n_voxels).map(|se| {
-                let p = qsm_core::relaxometry::R2EpgParams::default();
-                let (r2_map, _b1) = qsm_core::relaxometry::r2_epg(&se, &mask, &mese.echo_times, &grid, &p, None);
-                r2_map
-            })
+            match load_mese_voxel_major(&mese, ctx.meta.dims, &ctx.meta.affine)? {
+                Some((se, coverage)) => {
+                    // R2 is only measured where the MESE's FOV reaches. Fitting outside it would
+                    // put a number on interpolated zeros, and R2' = R2* - R2 would then quietly
+                    // take that number as a measurement.
+                    let fit_mask = mese_measured_mask(&mask, &coverage);
+                    let (in_mask, in_both) = (count_set(&mask), count_set(&fit_mask));
+                    if in_mask > 0 && in_both < in_mask {
+                        log::warn!(
+                            "The MESE covers {:.0}% of the brain mask; R2 (and so a measured R2') \
+                             is left at zero over the remaining {} voxels.",
+                            100.0 * in_both as f64 / in_mask as f64, in_mask - in_both,
+                        );
+                    }
+                    let p = qsm_core::relaxometry::R2EpgParams::default();
+                    let (r2_map, _b1) = qsm_core::relaxometry::r2_epg(&se, &fit_mask, &mese.echo_times, &grid, &p, None);
+                    r2_mask = Some(fit_mask);
+                    Some(r2_map)
+                }
+                None => None,
+            }
         } else {
             None
         }
@@ -2050,7 +2227,10 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
                     (true, Some(r2map)) => {
                         log::info!("R2' measured as R2* - R2");
                         let r2s = load_volume(&r2star_path)?;
-                        Some(qsm_core::relaxometry::r2prime(&r2s, r2map, &mask))
+                        // Subtract only where R2 was measured: outside the MESE's FOV, R2 is zero
+                        // because nothing was acquired there, and R2' = R2* - 0 would report the
+                        // whole of R2* as reversible.
+                        Some(measured_r2prime(&r2s, r2map, &mask, r2_mask.as_deref()))
                     }
                     _ => { log::warn!("R2' needs both R2* and R2 - one is missing; skipping R2'"); None }
                 }
@@ -2069,6 +2249,7 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
                 if strategy == R2PrimeStrategy::Auto {
                     log::info!("No R2 to subtract - estimating R2' from R2* with R2PRIMEnet");
                 }
+                warn_if_r2primenet_grid_is_oblique(ctx);
                 prefetch_weights("r2primenet", &ctx.run.key.to_string())?;
                 progress("Estimating R2' (R2PRIMEnet)");
                 let r2s = load_volume(&r2star_path)?;
@@ -2172,8 +2353,12 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
         }
     };
 
-    // Multi-echo spin-echo magnitude (voxel-major) for HC-ChiSep.
-    let se_multi: Option<Vec<f64>> = ctx.run.mese.as_ref().and_then(|mese| load_mese_voxel_major(mese, n_voxels));
+    // Multi-echo spin-echo magnitude (voxel-major) for HC-ChiSep, on this run's grid. Voxels
+    // outside the MESE's FOV come back zero, the same as voxels outside the brain.
+    let se_multi: Option<Vec<f64>> = match ctx.run.mese.as_ref() {
+        Some(mese) => load_mese_voxel_major(mese, ctx.meta.dims, &ctx.meta.affine)?.map(|(se, _)| se),
+        None => None,
+    };
 
     // Local field (ppm) for the field-based methods.
     let local_field: Vec<f64> = {
@@ -3661,20 +3846,222 @@ mod tests {
         assert_eq!(meta.b0_direction, (0.0, 0.5, 0.866));
     }
 
+    // --- reconciling a MESE's geometry with the grid the run reconstructs on ---
+
+    /// Write `n_echoes` MESE magnitude volumes on `dims`/`affine`, echo `i` filled by `value(i)`,
+    /// and return a `MeseRun` pointing at them.
+    fn mese_files(
+        dir: &std::path::Path,
+        dims: (usize, usize, usize),
+        affine: [f64; 16],
+        n_echoes: usize,
+        value: impl Fn(usize, usize, usize, usize) -> f64,
+    ) -> crate::bids::discovery::MeseRun {
+        let mut run = mese_on(dims, affine);
+        run.magnitude_niftis.clear();
+        run.echo_times.clear();
+        for e in 0..n_echoes {
+            let mut data = vec![0.0f64; dims.0 * dims.1 * dims.2];
+            for k in 0..dims.2 {
+                for j in 0..dims.1 {
+                    for i in 0..dims.0 {
+                        data[i + j * dims.0 + k * dims.0 * dims.1] = value(e, i, j, k);
+                    }
+                }
+            }
+            let path = dir.join(format!("mese_echo-{}.nii", e + 1));
+            qsm_core::io::save_nifti_to_file(
+                &path, &data, dims,
+                qsm_core::geometry::voxel_sizes_from_affine(&affine), &affine,
+            ).unwrap();
+            run.magnitude_niftis.push(path);
+            run.echo_times.push(0.01 * (e + 1) as f64);
+        }
+        run
+    }
+
+    fn diag_affine(vs: f64, origin_x: f64) -> [f64; 16] {
+        [
+            vs, 0.0, 0.0, origin_x,
+            0.0, vs, 0.0, 0.0,
+            0.0, 0.0, vs, 0.0,
+            0.0, 0.0, 0.0, 1.0,
+        ]
+    }
+
+    /// The broad case: a 2D-style MESE on a coarser grid of its own. The whole acquisition used to
+    /// be discarded here (the voxel counts disagree), so R2 and R2' were never computed.
     #[test]
-    fn geometry_mese_run_is_not_resampled() {
+    fn mese_on_a_different_grid_is_resampled_rather_than_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        // 4x4x4 at 2 mm: voxel centres span 0..6 mm on every axis.
+        let mese = mese_files(dir.path(), (4, 4, 4), diag_affine(2.0, 0.0), 3,
+                              |e, _, _, _| 7.0 * (e + 1) as f64);
+        // 7x7x7 at 1 mm over the same 0..6 mm box: every destination centre is inside the source.
+        let dst_dims = (7, 7, 7);
+        let dst_affine = diag_affine(1.0, 0.0);
+
+        let (se, coverage) = super::load_mese_voxel_major(&mese, dst_dims, &dst_affine)
+            .expect("a differently-gridded MESE is reconcilable, not an error")
+            .expect("and must not be dropped");
+
+        let n = dst_dims.0 * dst_dims.1 * dst_dims.2;
+        assert_eq!(se.len(), n * 3, "one value per destination voxel per echo");
+        assert!(coverage.iter().all(|&c| c > 0), "the destination box is inside the MESE's FOV");
+        // Each echo is constant, so interpolation must reproduce it exactly — and land on the
+        // right echo: the buffer is voxel-major, (n_voxels, n_se).
+        for vox in 0..n {
+            for e in 0..3 {
+                let got = se[vox * 3 + e];
+                let want = 7.0 * (e + 1) as f64;
+                assert!((got - want).abs() < 1e-9,
+                        "voxel {vox} echo {e}: got {got}, want {want}");
+            }
+        }
+    }
+
+    /// The correctness case: the same voxel count, so the old length check waved it through, but a
+    /// FOV shifted 2 mm along x. Copying it voxel-for-voxel would use it mis-registered.
+    #[test]
+    fn mese_with_a_matching_voxel_count_but_a_shifted_fov_is_registered_not_copied() {
+        let dir = tempfile::tempdir().unwrap();
+        // Source value is the x index, so a mis-registration along x is visible in the values.
+        let mese = mese_files(dir.path(), (8, 8, 8), diag_affine(1.0, 0.0), 3,
+                              |_, i, _, _| i as f64);
+        let dst_dims = (8, 8, 8);                       // same voxel count
+        let dst_affine = diag_affine(1.0, 2.0);         // ... shifted 2 mm along x
+
+        let (se, coverage) = super::load_mese_voxel_major(&mese, dst_dims, &dst_affine)
+            .unwrap()
+            .expect("a shifted FOV is reconcilable");
+
+        // Along the row y = 0, z = 0, where the voxel index is just the x index.
+        let at = |i: usize, e: usize| se[i * 3 + e];
+        // Destination voxel i sits at world x = i + 2, which is source voxel i + 2.
+        for i in 0..6 {
+            assert!((at(i, 0) - (i + 2) as f64).abs() < 1e-9,
+                    "dst x={i} should sample source x={}, got {}", i + 2, at(i, 0));
+        }
+        assert!((at(0, 0) - 2.0).abs() < 1e-9,
+                "a voxel-for-voxel copy would have put source x=0 here, not x=2");
+        // The two rightmost columns fall outside the source entirely.
+        let covered = |i: usize| coverage[i] > 0;
+        assert!(covered(5) && !covered(6) && !covered(7),
+                "the shift leaves the last two columns outside the MESE's FOV");
+    }
+
+    /// The genuinely undecidable case, which still refuses: the two acquisitions do not occupy the
+    /// same space, so there is no interpolation that produces an R2 map.
+    #[test]
+    fn mese_sharing_no_space_with_the_run_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        let mese = mese_files(dir.path(), (4, 4, 4), diag_affine(1.0, 0.0), 3, |_, _, _, _| 1.0);
+        let err = super::load_mese_voxel_major(&mese, (4, 4, 4), &diag_affine(1.0, 1000.0))
+            .expect_err("a metre apart is not a grid difference to interpolate across");
+        let msg = err.to_string();
+        assert!(msg.contains("shares no space"), "the error should say why: {msg}");
+    }
+
+    /// Echoes of one acquisition must agree with each other. That is a broken series rather than a
+    /// second geometry to reconcile, so the MESE is dropped (with a warning) and the run goes on.
+    #[test]
+    fn mese_whose_echoes_disagree_with_each_other_is_dropped() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut mese = mese_files(dir.path(), (4, 4, 4), diag_affine(1.0, 0.0), 3, |_, _, _, _| 1.0);
+        // Overwrite the last echo on a grid of its own.
+        let odd = dir.path().join("mese_echo-3.nii");
+        qsm_core::io::save_nifti_to_file(
+            &odd, &[1.0f64; 2 * 2 * 2], (2, 2, 2), (1.0, 1.0, 1.0), &diag_affine(1.0, 0.0),
+        ).unwrap();
+        mese.magnitude_niftis[2] = odd;
+        assert!(super::load_mese_voxel_major(&mese, (4, 4, 4), &diag_affine(1.0, 0.0))
+                    .unwrap().is_none(),
+                "a series whose echoes are on different grids cannot be fitted");
+    }
+
+    /// A MESE that does not reach all of the brain leaves R2 unmeasured there, and R2' must not
+    /// quietly report R2* - 0 as if the whole of R2* were reversible.
+    #[test]
+    fn r2_outside_the_mese_fov_is_not_subtracted_as_a_measurement() {
+        // Four voxels of brain; the MESE's FOV reaches the first two.
+        let brain = [1u8, 1, 1, 1];
+        let coverage = [1u8, 1, 0, 0];
+        let measured = super::mese_measured_mask(&brain, &coverage);
+        assert_eq!(measured, vec![1, 1, 0, 0]);
+        assert_eq!(super::count_set(&measured), 2);
+
+        let r2star = [30.0, 30.0, 30.0, 30.0];
+        // R2 was fitted only inside the FOV; outside it the echoes were zero, so it is zero.
+        let r2 = [10.0, 10.0, 0.0, 0.0];
+        let r2p = super::measured_r2prime(&r2star, &r2, &brain, Some(&measured));
+        assert_eq!(&r2p[..2], &[20.0, 20.0], "measured where the MESE reached");
+        assert_eq!(&r2p[2..], &[0.0, 0.0],
+                   "R2* - 0 = 30 here would be an estimate dressed as a measurement");
+    }
+
+    /// With R2 from a custom derivative there is no FOV to narrow by, so the brain mask stands.
+    #[test]
+    fn a_custom_r2_map_is_subtracted_over_the_whole_brain() {
+        let brain = [1u8, 1, 0];
+        let r2p = super::measured_r2prime(&[30.0, 30.0, 30.0], &[10.0, 10.0, 10.0], &brain, None);
+        assert_eq!(r2p, vec![20.0, 20.0, 0.0]);
+    }
+
+    /// The backstop for the residual case the gate judges optimistically: a declared R2 source
+    /// that never materialises leaves R2PRIMEnet running on an unresampled grid, and this is the
+    /// only thing that says so.
+    #[test]
+    fn r2primenet_warns_only_when_the_grid_was_left_oblique() {
+        let oblique = oblique_affine();
+        assert!(super::r2primenet_grid_tilt(false, &oblique).is_some_and(|t| t > 1.0),
+                "an unresampled oblique grid is exactly the case worth warning about");
+        assert!(super::r2primenet_grid_tilt(true, &oblique).is_none(),
+                "a run resampled to a cardinal grid has nothing wrong with it");
+        let axial = [
+            0.8, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ];
+        assert!(super::r2primenet_grid_tilt(false, &axial).is_none(),
+                "an axial acquisition needs no warning");
+    }
+
+    #[test]
+    fn same_grid_tolerates_header_precision_but_not_a_real_difference() {
+        let a = diag_affine(1.0, 0.0);
+        let mut rounded = a;
+        rounded[3] = 1e-5; // what a 32-bit header field can cost
+        assert!(super::same_grid((4, 4, 4), &a, (4, 4, 4), &rounded));
+        assert!(!super::same_grid((4, 4, 4), &a, (4, 4, 4), &diag_affine(1.0, 0.5)),
+                "half a millimetre of offset is a real difference");
+        assert!(!super::same_grid((4, 4, 4), &a, (4, 4, 5), &a), "dims count too");
+    }
+
+    /// A MESE attached to a run, on whatever grid is given.
+    fn mese_on(dims: (usize, usize, usize), affine: [f64; 16]) -> crate::bids::discovery::MeseRun {
+        crate::bids::discovery::MeseRun {
+            key: crate::bids::entities::AcquisitionKey {
+                subject: "1".to_string(), session: None, acquisition: None,
+                reconstruction: None, inversion: None, run: None,
+                suffix: "MESE".to_string(),
+            },
+            magnitude_niftis: vec![std::path::PathBuf::from("mese.nii")],
+            echo_times: vec![0.01],
+            dims, affine,
+        }
+    }
+
+    /// Used to assert the opposite: a MESE made the oblique run keep its grid, because resampling
+    /// the GRE alone would have stranded the MESE. The MESE is now resampled onto whatever grid
+    /// this picks, so it no longer has a vote.
+    #[test]
+    fn geometry_mese_run_is_resampled_like_any_other() {
         let mut cfg = crate::pipeline::config::PipelineConfig::default();
         cfg.pipeline.obliquity_threshold = 10.0;
         let mut run = run_for_geometry(None);
-        run.mese = Some(crate::bids::discovery::MeseRun {
-            key: run.key.clone(),
-            magnitude_niftis: vec![std::path::PathBuf::from("mese.nii")],
-            echo_times: vec![0.01],
-        });
+        run.mese = Some(mese_on((16, 16, 8), oblique_affine()));
         let meta = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
-        assert!(meta.source_geometry.is_none(),
-                "resampling the GRE alone would strand the MESE on another grid");
-        assert!(meta.b0_direction.2 < 0.99, "falls back to the affine direction");
+        assert!(meta.source_geometry.is_some(),
+                "a MESE no longer suppresses a resample the threshold asked for");
+        assert_eq!(meta.b0_direction, (0.0, 0.0, 1.0));
     }
 
     // --- which box the FFT stages reconstruct in ---
@@ -3767,26 +4154,87 @@ mod tests {
         assert_eq!(meta.dims, (4, 4, 4));
     }
 
+    /// Used to be refused outright: resampling would have stranded the MESE, not resampling would
+    /// have fed the network oblique data. The third option it skipped — resample both — is what
+    /// happens now, so the refusal is gone and the network still gets axial data.
     #[test]
-    fn geometry_axial_only_algorithm_with_a_mese_is_refused() {
+    fn geometry_axial_only_algorithm_with_a_mese_resamples_both() {
         let cfg = cfg_with_axial_only_inversion();
         let mut run = run_for_geometry(None);
-        run.mese = Some(crate::bids::discovery::MeseRun {
-            key: run.key.clone(),
-            magnitude_niftis: vec![std::path::PathBuf::from("mese.nii")],
-            echo_times: vec![0.01],
-        });
-        let err = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg)
-            .expect_err("resampling would strand the MESE; not resampling would feed the network \
-                         oblique data. Neither is defensible, so this must not be guessed at");
-        let msg = err.to_string();
-        assert!(msg.contains("MESE"), "the error should say why: {msg}");
+        run.mese = Some(mese_on((16, 16, 8), oblique_affine()));
+        let meta = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg)
+            .expect("resampling both is defensible, so this no longer refuses");
+        assert!(meta.source_geometry.is_some(), "the network must still be given axial data");
+        assert_eq!(meta.b0_direction, (0.0, 0.0, 1.0));
+        assert!(qsm_core::geometry::obliquity_from_affine(&meta.affine) < 1e-9);
+    }
+
+    /// The MESE being on a grid of its own — the usual case for a 2D spin-echo companion to a 3D
+    /// GRE — changes nothing about the decision here. It used to mean the MESE was dropped
+    /// entirely at load time, so R2' was never computed.
+    #[test]
+    fn geometry_mese_on_its_own_grid_does_not_change_the_decision() {
+        let cfg = cfg_with_axial_only_inversion();
+        let mut run = run_for_geometry(None);
+        // Half the matrix, four times the slice thickness, and an axial affine of its own.
+        run.mese = Some(mese_on((8, 8, 2), [
+            1.6, 0.0, 0.0, 0.0, 0.0, 1.6, 0.0, 0.0, 0.0, 0.0, 12.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ]));
+        let meta = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg)
+            .expect("the MESE's own grid is reconciled at load time, not here");
+        assert!(meta.source_geometry.is_some());
+        assert_eq!(meta.b0_direction, (0.0, 0.0, 1.0));
+    }
+
+    /// #243: R2PRIMEnet was outside the axial-only gate, so an oblique run whose other stages all
+    /// take B0 as a parameter was reconstructed on the acquired grid and the network was handed it.
+    #[test]
+    fn geometry_r2primenet_on_an_oblique_grid_forces_a_resample() {
+        let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.do_chi_separation = true;
+        // χ-sep-iLSQR takes B0 as a parameter, so nothing else in this run wants axial data.
+        cfg.separation.algorithm = crate::pipeline::config::SeparationAlgorithm::ChiSepIlsqr;
+        qsmxt_config::config::enforce_separation_dependencies(&mut cfg);
+        // No MESE, so `--r2prime-strategy auto` predicts R2′ with R2PRIMEnet.
+        let run = run_for_geometry(None);
+        let meta = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
+        assert!(meta.source_geometry.is_some(),
+                "R2PRIMEnet assumes B0 is +z and takes no direction, so the data must move");
+        assert_eq!(meta.b0_direction, (0.0, 0.0, 1.0));
+    }
+
+    /// The same config with a MESE attached: `auto` measures R2′ = R2* − R2 instead, no network
+    /// runs, and the run keeps its grid. A resample here would cost an interpolation for nothing.
+    #[test]
+    fn geometry_a_mese_removes_the_r2primenet_reason_to_resample() {
+        let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.do_chi_separation = true;
+        cfg.separation.algorithm = crate::pipeline::config::SeparationAlgorithm::ChiSepIlsqr;
+        qsmxt_config::config::enforce_separation_dependencies(&mut cfg);
+        let mut run = run_for_geometry(None);
+        run.mese = Some(mese_on((16, 16, 8), oblique_affine()));
+        let meta = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
+        assert!(meta.source_geometry.is_none(),
+                "nothing in this run assumes B0 is +z, so the kernel is rotated instead");
+        assert!(meta.b0_direction.2 < 0.99, "B0 comes from the affine");
+    }
+
+    /// iQFM is iQSM's local-field head, and `map_bf_alg` has no iQFM to map to — it answers for a
+    /// placeholder. The gate asks about iQSM instead, so an oblique run is resampled.
+    #[test]
+    fn geometry_iqfm_on_an_oblique_grid_forces_a_resample() {
+        let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.bg_removal.algorithm = crate::pipeline::config::BfAlgorithm::Iqfm;
+        let meta = super::resolve_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
+        assert!(meta.source_geometry.is_some(),
+                "iQFM learned the same axial prior as iQSM and takes no B0 direction");
+        assert_eq!(meta.b0_direction, (0.0, 0.0, 1.0));
     }
 
     #[test]
     fn geometry_classical_algorithm_needs_no_resampling() {
         let cfg = crate::pipeline::config::PipelineConfig::default(); // iLSQR by default
-        assert!(qsmxt_config::bridge::axial_only_algorithms(&cfg).is_empty(),
+        assert!(qsmxt_config::bridge::axial_only_algorithms(&cfg, Default::default()).is_empty(),
                 "the default pipeline takes B0 as a parameter throughout");
     }
 
