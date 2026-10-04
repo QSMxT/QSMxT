@@ -1243,6 +1243,8 @@ pub enum PipelineRow {
     MaskOpThresholdValue { section: usize },
     /// HD-BET sliding-window step (only shown when the generator is HD-BET)
     MaskOpHdBetStep { section: usize },
+    /// BET voxel-size scaling (only shown when the generator is BET)
+    MaskOpBetVoxelScale { section: usize },
     /// A refinement step (editable, deletable, reorderable)
     MaskOpEntry { section: usize, index: usize },
     /// One extra parameter of a multi-parameter refinement step (signal-erode), indexed into
@@ -3231,7 +3233,12 @@ impl PipelineFormState {
                 ("threshold", format!("fixed:{}", value.unwrap_or(0.5))),
             MaskOp::Threshold { method: crate::pipeline::config::MaskThresholdMethod::Percentile, value } =>
                 ("threshold", format!("percentile:{}", value.unwrap_or(75.0))),
-            MaskOp::Bet { fractional_intensity } => ("bet", format!("{}", fractional_intensity)),
+            MaskOp::Bet { fractional_intensity, voxel_scale } => ("bet", format!("{}{}", fractional_intensity,
+                if (*voxel_scale - crate::pipeline::config::bet_default_voxel_scale()).abs() > f64::EPSILON {
+                    format!(" scale={voxel_scale}")
+                } else {
+                    String::new()
+                })),
             MaskOp::Erode { iterations } => ("erode", format!("{}", iterations)),
             MaskOp::Dilate { iterations } => ("dilate", format!("{}", iterations)),
             MaskOp::Close { radius } => ("close", format!("{}", radius)),
@@ -3272,7 +3279,7 @@ impl PipelineFormState {
         use crate::pipeline::config::*;
         match type_name {
             "threshold" => Some(MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }),
-            "bet" => Some(MaskOp::Bet { fractional_intensity: 0.5 }),
+            "bet" => Some(MaskOp::bet(0.5)),
             "erode" => Some(MaskOp::Erode { iterations: 1 }),
             "dilate" => Some(MaskOp::Dilate { iterations: 1 }),
             "close" => Some(MaskOp::Close { radius: 1 }),
@@ -3379,6 +3386,9 @@ impl PipelineFormState {
             if matches!(generator, Some(MaskOp::HdBet { .. })) {
                 rows.push(PipelineRow::MaskOpHdBetStep { section: si });
             }
+            if matches!(generator, Some(MaskOp::Bet { .. })) {
+                rows.push(PipelineRow::MaskOpBetVoxelScale { section: si });
+            }
             self.push_refinement_rows(rows, si);
             rows.push(PipelineRow::MaskOpAddStep { section: si });
         }
@@ -3453,7 +3463,7 @@ impl PipelineFormState {
                 let new = (cur + delta).rem_euclid(methods.len() as isize) as usize;
                 *method = methods[new];
             }
-            MaskOp::Bet { fractional_intensity } => {
+            MaskOp::Bet { fractional_intensity, .. } => {
                 *fractional_intensity = (*fractional_intensity + delta as f64 * 0.05).clamp(0.05, 1.0);
             }
             // Toggle between the native patch and the low-memory one.
@@ -3480,6 +3490,25 @@ impl PipelineFormState {
                 .unwrap_or(0) as isize;
             let new = (cur + delta).rem_euclid(STEPS.len() as isize) as usize;
             *tile_step = STEPS[new];
+            self.mark_mask_custom(section);
+        }
+    }
+
+    /// BET's voxel-size scaling, cycled through the scales worth offering.
+    ///
+    /// Any positive factor is valid, but only two matter in practice: 1.0 for clinical data at
+    /// its own geometry, and 10.0 for rodent brains, which BET's millimetre-scale surface model
+    /// otherwise cannot find. The steps between are there for the in-between field strengths.
+    pub fn adjust_bet_voxel_scale(&mut self, section: usize, delta: isize) {
+        use crate::pipeline::config::MaskOp;
+        const SCALES: [f64; 4] = [1.0, 2.0, 5.0, 10.0];
+        let Some(section_ref) = self.mask_section_mut(section) else { return };
+        if let MaskOp::Bet { voxel_scale, .. } = &mut section_ref.generator {
+            let cur = SCALES.iter()
+                .position(|s| (s - *voxel_scale).abs() < 1e-9)
+                .unwrap_or(0) as isize;
+            let new = (cur + delta).rem_euclid(SCALES.len() as isize) as usize;
+            *voxel_scale = SCALES[new];
             self.mark_mask_custom(section);
         }
     }
@@ -3567,7 +3596,7 @@ impl PipelineFormState {
                 let new = (cur + delta).rem_euclid(methods.len() as isize) as usize;
                 *method = methods[new];
             }
-            MaskOp::Bet { fractional_intensity } => {
+            MaskOp::Bet { fractional_intensity, .. } => {
                 *fractional_intensity = (*fractional_intensity + delta as f64 * 0.1).clamp(0.0, 1.0);
             }
             MaskOp::Erode { iterations } => {
@@ -5782,6 +5811,9 @@ impl App {
                         }
                         Some(PipelineRow::MaskOpHdBetStep { section }) => {
                             ps.adjust_hd_bet_tile_step(*section, delta);
+                        }
+                        Some(PipelineRow::MaskOpBetVoxelScale { section }) => {
+                            ps.adjust_bet_voxel_scale(*section, delta);
                         }
                         Some(PipelineRow::MaskOpInput { section }) => {
                             ps.adjust_mask_input(*section, delta);
@@ -8965,7 +8997,7 @@ mod tests {
         app.pipeline_state.collapsed_sections.clear();
         app.sync_pipeline_mode();
         // Switch the generator to BET so the param row is a numeric frac-intensity slider.
-        app.pipeline_state.mask_sections[0].generator = MaskOp::Bet { fractional_intensity: 0.5 };
+        app.pipeline_state.mask_sections[0].generator = MaskOp::bet(0.5);
         let rows = app.pipeline_state.visible_rows();
         let target = app.pipeline_state.focusable_rows().iter().position(|&ri| {
             matches!(rows.get(ri), Some(PipelineRow::MaskOpGeneratorParam { .. }))
@@ -9826,6 +9858,44 @@ mod tests {
     }
 
     #[test]
+    fn test_pipeline_bet_voxel_scale_row() {
+        use crate::pipeline::config::MaskOp;
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
+        app.pipeline_state.mask_sections[0].generator = MaskOp::bet(0.5);
+        app.pipeline_state.mark_mask_custom(0);
+
+        let find_scale_row = |app: &App| {
+            let rows = app.pipeline_state.visible_rows();
+            let focusable = app.pipeline_state.focusable_rows();
+            focusable.iter().position(|&ri| matches!(&rows[ri], PipelineRow::MaskOpBetVoxelScale { .. }))
+        };
+        let fi = find_scale_row(&app).expect("BET voxel-scale row should be shown and focusable");
+        app.pipeline_state.focus = fi;
+
+        let scale_of = |app: &App| match &app.pipeline_state.mask_sections[0].generator {
+            MaskOp::Bet { voxel_scale, .. } => *voxel_scale,
+            other => panic!("expected bet, got {other:?}"),
+        };
+        assert_eq!(scale_of(&app), crate::pipeline::config::bet_default_voxel_scale());
+
+        // Right scales up (towards the preclinical setting), left comes back.
+        app.handle_key(key(KeyCode::Right));
+        assert!(scale_of(&app) > 1.0, "right should scale up, got {}", scale_of(&app));
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(scale_of(&app), 1.0);
+
+        // Left from the default wraps to the mouse setting, which is the point of the row.
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(scale_of(&app), 10.0);
+
+        // The row belongs to BET only.
+        app.pipeline_state.mask_sections[0].generator = MaskOp::hd_bet_default();
+        assert!(find_scale_row(&app).is_none(), "scale row should not show for HD-BET");
+    }
+
+    #[test]
     fn test_pipeline_hd_bet_step_row() {
         use crate::pipeline::config::MaskOp;
         let mut app = App::new();
@@ -9856,7 +9926,7 @@ mod tests {
         assert_eq!(step_of(&app), 0.5);
 
         // The row belongs to HD-BET only.
-        app.pipeline_state.mask_sections[0].generator = MaskOp::Bet { fractional_intensity: 0.5 };
+        app.pipeline_state.mask_sections[0].generator = MaskOp::bet(0.5);
         assert!(find_step_row(&app).is_none(), "step row should not show for BET");
     }
 

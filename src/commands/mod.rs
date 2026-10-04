@@ -67,6 +67,7 @@ mod integration_tests {
                 bet_gradient_threshold: None,
                 bet_iterations: None,
                 bet_subdivisions: None,
+                bet_voxel_scale: None,
                 qsm_reference: None,
                 rts_params: Default::default(),
                 tv_params: Default::default(),
@@ -205,6 +206,7 @@ mod integration_tests {
         super::mask::execute(MaskCommand::Bet(MaskBetArgs {
             common: common_mask(input, output.clone()),
             fractional_intensity: 0.5,
+            voxel_scale: None,
         })).unwrap();
         assert!(output.exists());
     }

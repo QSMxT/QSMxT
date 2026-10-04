@@ -1062,6 +1062,13 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub bet_subdivisions: Option<usize>,
 
+    /// Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a
+    /// human brain in millimetres, so preclinical data has to be presented at human scale:
+    /// 10 is the usual setting for mouse. 1 (the default) is the acquisition's own geometry.
+    /// Applies to every BET step in the masking recipe
+    #[arg(long, value_name = "FACTOR")]
+    pub bet_voxel_scale: Option<f64>,
+
     /// What the susceptibility map's zero is pinned to: `mean` (brain-mask mean, the default),
     /// `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side
     /// (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a
@@ -1560,6 +1567,10 @@ pub struct MaskBetArgs {
     /// Fractional intensity (0.0-1.0, smaller = larger brain)
     #[arg(long, default_value_t = 0.5)]
     pub fractional_intensity: f64,
+    /// Factor applied to the voxel sizes before BET runs — 10 for mouse data, 1 for the
+    /// acquisition's own geometry (see --bet-voxel-scale)
+    #[arg(long, value_name = "FACTOR")]
+    pub voxel_scale: Option<f64>,
 }
 
 #[derive(Parser, Debug)]

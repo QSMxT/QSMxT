@@ -171,6 +171,7 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     emit_f64(&mut parts, "--bet-gradient-threshold", config.bet.gradient_threshold, d.bet.gradient_threshold);
     emit_usize(&mut parts, "--bet-iterations", config.bet.iterations, d.bet.iterations);
     emit_usize(&mut parts, "--bet-subdivisions", config.bet.subdivisions, d.bet.subdivisions);
+    emit_f64(&mut parts, "--bet-voxel-scale", config.bet.voxel_scale, d.bet.voxel_scale);
 
     // ── Background removal ──
     emit_enum(&mut parts, "--bf-algorithm", &config.bg_removal.algorithm, &d.bg_removal.algorithm);
@@ -524,6 +525,27 @@ mod tests {
         let config = PipelineConfig::default();
         let cmd = generate_command(&config);
         assert_eq!(cmd, "qsmxt run <bids_dir>");
+    }
+
+    /// A preclinical run has to be reproducible from the command the TUI prints: the scaling
+    /// shows up both as the recipe-wide flag and in the BET step's own spec.
+    #[test]
+    fn test_bet_voxel_scale_command() {
+        let mut config = PipelineConfig::default();
+        config.bet.voxel_scale = 10.0;
+        config.masking.sections = vec![crate::masking::MaskSection {
+            input: crate::masking::MaskingInput::Magnitude,
+            generator: crate::masking::MaskOp::Bet { fractional_intensity: 0.5, voxel_scale: 10.0 },
+            refinements: vec![],
+        }];
+        let cmd = generate_command(&config);
+        assert!(cmd.contains("--bet-voxel-scale 10"), "cmd: {cmd}");
+        assert!(cmd.contains("--mask magnitude,bet:0.50:scale=10"), "cmd: {cmd}");
+
+        // The default is silent — the clinical command line is unchanged.
+        let cmd = generate_command(&PipelineConfig::default());
+        assert!(!cmd.contains("--bet-voxel-scale"), "cmd: {cmd}");
+        assert!(!cmd.contains("scale="), "cmd: {cmd}");
     }
 
     #[test]

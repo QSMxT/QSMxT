@@ -1643,7 +1643,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                         };
                         ("Method:", method_name.to_string(), "Threshold method (←/→ to change)")
                     }
-                    crate::pipeline::config::MaskOp::Bet { fractional_intensity } => {
+                    crate::pipeline::config::MaskOp::Bet { fractional_intensity, .. } => {
                         ("Frac. Intensity:", format!("{:.2}", fractional_intensity), "BET fractional intensity 0.0-1.0, smaller = larger brain (←/→ to adjust)")
                     }
                     crate::pipeline::config::MaskOp::HdBet { patch, .. } => {
@@ -1730,6 +1730,39 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 } else {
                     Line::from(vec![
                         Span::styled(format!("  {:22}", "Patch Step:"), label_style),
+                        Span::styled(val, Style::default().fg(Color::Gray)),
+                    ])
+                }
+            }
+            PipelineRow::MaskOpBetVoxelScale { section } => {
+                let Some(gen) = app.pipeline_state.mask_section(*section).map(|s| &s.generator) else { continue };
+                let label_style = if focused {
+                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
+                } else {
+                    Style::default().fg(Color::White)
+                };
+                let scale = match gen {
+                    crate::pipeline::config::MaskOp::Bet { voxel_scale, .. } => *voxel_scale,
+                    _ => crate::pipeline::config::bet_default_voxel_scale(),
+                };
+                let default = (scale - crate::pipeline::config::bet_default_voxel_scale()).abs() < f64::EPSILON;
+                let val = format!("{}x{}", scale, if default { " (acquired geometry)" } else { "" });
+                if focused && focused_help.is_none() {
+                    focused_help = Some(
+                        "Voxel sizes are multiplied by this before BET runs: its surface model is \
+                         tuned to a human brain in mm, so preclinical data needs presenting at human \
+                         scale — 10x for mouse (←/→ to change)".to_string());
+                }
+                if focused {
+                    Line::from(vec![
+                        Span::styled(format!("  {:22}", "Voxel Scale:"), label_style),
+                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
+                        Span::styled(val, Style::default().fg(Color::Cyan)),
+                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::styled(format!("  {:22}", "Voxel Scale:"), label_style),
                         Span::styled(val, Style::default().fg(Color::Gray)),
                     ])
                 }

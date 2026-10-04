@@ -451,7 +451,8 @@ fn convert_mask_op(op: &crate::masking::MaskOp) -> PMaskOp {
             },
             value: *value,
         },
-        crate::masking::MaskOp::Bet { fractional_intensity } => PMaskOp::Bet { fractional_intensity: *fractional_intensity },
+        crate::masking::MaskOp::Bet { fractional_intensity, voxel_scale } =>
+            PMaskOp::Bet { fractional_intensity: *fractional_intensity, voxel_scale: *voxel_scale },
         crate::masking::MaskOp::Erode { iterations } => PMaskOp::Erode { iterations: *iterations },
         crate::masking::MaskOp::Dilate { iterations } => PMaskOp::Dilate { iterations: *iterations },
         crate::masking::MaskOp::Close { radius } => PMaskOp::Close { radius: *radius },
@@ -535,6 +536,18 @@ mod tests {
                 // Used to be pinned to the default here: the config type had no field for it.
                 assert_eq!(p.tile_step, 0.75);
             }
+            other => panic!("wrong op {other:?}"),
+        }
+        // BET's preclinical voxel scaling reaches qsm-core, where the mask is actually built.
+        match convert_mask_op(&parse_mask_op("bet:0.35:scale=10").unwrap()) {
+            PMaskOp::Bet { fractional_intensity, voxel_scale } => {
+                assert_eq!(fractional_intensity, 0.35);
+                assert_eq!(voxel_scale, 10.0);
+            }
+            other => panic!("wrong op {other:?}"),
+        }
+        match convert_mask_op(&MaskOp::bet(0.5)) {
+            PMaskOp::Bet { voxel_scale, .. } => assert_eq!(voxel_scale, 1.0),
             other => panic!("wrong op {other:?}"),
         }
         // A parsed op carries its step through to qsm-core too.

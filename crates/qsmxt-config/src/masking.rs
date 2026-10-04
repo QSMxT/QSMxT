@@ -69,7 +69,14 @@ pub enum MaskThresholdMethod { Otsu, Fixed, Percentile }
 #[serde(tag = "op", rename_all = "kebab-case")]
 pub enum MaskOp {
     Threshold { method: MaskThresholdMethod, #[serde(default)] value: Option<f64> },
-    Bet { fractional_intensity: f64 },
+    /// BET brain extraction from the magnitude. `voxel_scale` multiplies the voxel sizes
+    /// before BET runs: its surface model is tuned to a human brain in mm, so preclinical
+    /// data has to be presented at human scale (10.0 for mouse). 1.0 is the acquisition's
+    /// own geometry.
+    Bet {
+        fractional_intensity: f64,
+        #[serde(default = "bet_voxel_scale")] voxel_scale: f64,
+    },
     Erode { iterations: usize },
     Dilate { iterations: usize },
     Close { radius: usize },
@@ -101,6 +108,9 @@ fn se_depth_cap() -> usize { se_default().depth_cap }
 fn se_global_erosions() -> usize { se_default().global_erosions }
 fn se_bias_sigma() -> f64 { se_default().bias_sigma }
 fn se_min_component() -> usize { se_default().min_component }
+fn bet_voxel_scale() -> f64 { bet_default_voxel_scale() }
+/// qsm-core's default BET voxel scaling — 1.0, the acquisition's own geometry.
+pub fn bet_default_voxel_scale() -> f64 { qsm_core::bet::BetParams::default().voxel_scale }
 fn hd_bet_patch() -> [usize; 3] { let p = qsm_core::bet::HdBetParams::default().patch; [p.0, p.1, p.2] }
 fn hd_bet_tile_step() -> f64 { hd_bet_default_tile_step() }
 /// qsm-core's default HD-BET sliding-window step (nnU-Net's `tile_step_size`).
@@ -118,6 +128,11 @@ impl MaskOp {
             threshold: se_threshold(), depth_cap: se_depth_cap(), global_erosions: se_global_erosions(),
             bias_sigma: se_bias_sigma(), min_component: se_min_component(),
         }
+    }
+    /// BET at the acquisition's own voxel sizes — the clinical case, and every preset's.
+    /// Preclinical data needs [`MaskOp::Bet::voxel_scale`] set instead.
+    pub fn bet(fractional_intensity: f64) -> Self {
+        Self::Bet { fractional_intensity, voxel_scale: bet_voxel_scale() }
     }
     /// HD-BET with the native (training-size) patch and no test-time augmentation.
     pub fn hd_bet_default() -> Self {
@@ -138,10 +153,18 @@ impl MaskOp {
     /// mask stage's cache key: a change in a qsm-core default has to invalidate the cache rather
     /// than quietly reuse a mask built with the old value. A command line has the opposite need,
     /// so this drops parameters that are already the default. Only the multi-parameter ops
-    /// (`hd-bet`, `signal-erode`) differ from `Display`; the rest are short and explicit already,
-    /// and `erode:1` reads better than a bare `erode`.
+    /// (`bet`, `hd-bet`, `signal-erode`) differ from `Display`; the rest are short and explicit
+    /// already, and `erode:1` reads better than a bare `erode`.
     pub fn compact_spec(&self) -> String {
         match self {
+            // `scale=` only earns its place on preclinical data; `bet:0.50` is the usual form.
+            Self::Bet { fractional_intensity, voxel_scale } => {
+                let mut spec = format!("bet:{fractional_intensity:.2}");
+                if (*voxel_scale - bet_voxel_scale()).abs() > f64::EPSILON {
+                    spec += &format!(":scale={voxel_scale}");
+                }
+                spec
+            }
             Self::HdBet { patch, tta, tile_step } => {
                 let mut spec = String::from("hd-bet");
                 if *patch == hd_bet_low_memory_patch() {
@@ -183,7 +206,8 @@ impl fmt::Display for MaskOp {
             Self::Threshold { method: MaskThresholdMethod::Otsu, .. } => write!(f, "threshold:otsu"),
             Self::Threshold { method: MaskThresholdMethod::Fixed, value } => write!(f, "threshold:fixed:{:.4}", value.unwrap_or(0.5)),
             Self::Threshold { method: MaskThresholdMethod::Percentile, value } => write!(f, "threshold:percentile:{:.1}", value.unwrap_or(75.0)),
-            Self::Bet { fractional_intensity } => write!(f, "bet:{:.2}", fractional_intensity),
+            Self::Bet { fractional_intensity, voxel_scale } =>
+                write!(f, "bet:{:.2}:scale={}", fractional_intensity, voxel_scale),
             Self::Erode { iterations } => write!(f, "erode:{}", iterations),
             Self::Dilate { iterations } => write!(f, "dilate:{}", iterations),
             Self::Close { radius } => write!(f, "close:{}", radius),
@@ -273,7 +297,7 @@ pub fn default_two_pass_sections() -> Vec<MaskSection> {
 pub fn qsmart_default_mask_sections() -> Vec<MaskSection> {
     vec![MaskSection {
         input: MaskingInput::Magnitude,
-        generator: MaskOp::Bet { fractional_intensity: 0.5 },
+        generator: MaskOp::bet(0.5),
         refinements: vec![MaskOp::Erode { iterations: 2 }],
     }]
 }
@@ -316,7 +340,7 @@ pub fn bet_and_phase_mask_recipe() -> MaskRecipe {
         sections: vec![
             MaskSection {
                 input: MaskingInput::MagnitudeFirst,
-                generator: MaskOp::Bet { fractional_intensity: 0.5 },
+                generator: MaskOp::bet(0.5),
                 refinements: vec![],
             },
             MaskSection {
@@ -347,7 +371,7 @@ pub fn mask_presets() -> Vec<(&'static str, MaskRecipe)> {
         ("robust-threshold", MaskRecipe::from_sections(default_mask_sections())),
         ("bet", MaskRecipe::from_sections(vec![MaskSection {
             input: MaskingInput::Magnitude,
-            generator: MaskOp::Bet { fractional_intensity: 0.5 },
+            generator: MaskOp::bet(0.5),
             refinements: vec![MaskOp::Erode { iterations: 2 }],
         }])),
         ("hd-bet", MaskRecipe::from_sections(hd_bet_mask_sections())),
@@ -390,7 +414,22 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
             Some("percentile") => Ok(MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(75.0)) }),
             Some(other) => Err(ConfigError::Parse(format!("Invalid threshold method: '{}'", other))),
         },
-        "bet" => Ok(MaskOp::Bet { fractional_intensity: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0.5) }),
+        // `bet[:<f>][:scale=<s>]` — the fractional intensity stays positional (every preset and
+        // every command line has it there); the preclinical scaling is named, like hd-bet's
+        // `step=`, so it reads as what it is wherever it turns up.
+        "bet" => {
+            let mut fractional_intensity = 0.5;
+            let mut voxel_scale = bet_voxel_scale();
+            for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
+                match *part {
+                    s if s.starts_with("scale=") => voxel_scale = parse_bet_voxel_scale(&s[6..])?,
+                    s => fractional_intensity = s.parse().map_err(|_| {
+                        ConfigError::Parse(format!("bet: fractional intensity must be a number, got '{s}'"))
+                    })?,
+                }
+            }
+            Ok(MaskOp::Bet { fractional_intensity, voxel_scale })
+        }
         "erode" => Ok(MaskOp::Erode { iterations: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1) }),
         "dilate" => Ok(MaskOp::Dilate { iterations: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1) }),
         "close" => Ok(MaskOp::Close { radius: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1) }),
@@ -429,6 +468,18 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
             Ok(MaskOp::HdBet { patch, tta, tile_step })
         }
         _ => Err(ConfigError::Parse(format!("Unknown mask-op: '{}'", parts[0]))),
+    }
+}
+
+/// `scale=<s>` BET voxel-size multiplier. qsm-core treats a non-positive scale as 1.0 rather
+/// than failing, but a command line that asks for one is a mistake worth reporting.
+fn parse_bet_voxel_scale(s: &str) -> crate::Result<f64> {
+    let v: f64 = s.trim().parse()
+        .map_err(|_| ConfigError::Parse(format!("bet: scale must be a number, got '{s}'")))?;
+    if v > 0.0 && v.is_finite() {
+        Ok(v)
+    } else {
+        Err(ConfigError::Parse(format!("bet: scale must be positive, got {v}")))
     }
 }
 
@@ -483,9 +534,42 @@ mod tests {
     #[test]
     fn test_parse_bet() {
         let op = parse_mask_op("bet:0.35").unwrap();
-        if let MaskOp::Bet { fractional_intensity } = op {
+        if let MaskOp::Bet { fractional_intensity, .. } = op {
             assert!((fractional_intensity - 0.35).abs() < 1e-10);
         } else { panic!("wrong variant"); }
+    }
+
+    /// `scale=` is the preclinical knob: named (not positional) wherever it appears, so it
+    /// cannot be confused with the fractional intensity, and it survives a round trip through
+    /// both the cache-key form and the command-line form.
+    #[test]
+    fn test_parse_bet_voxel_scale() {
+        let op = parse_mask_op("bet:0.35:scale=10").unwrap();
+        assert_eq!(op, MaskOp::Bet { fractional_intensity: 0.35, voxel_scale: 10.0 });
+        // Either part may be left off.
+        assert_eq!(parse_mask_op("bet:scale=10").unwrap(),
+                   MaskOp::Bet { fractional_intensity: 0.5, voxel_scale: 10.0 });
+        assert_eq!(parse_mask_op("bet:0.35").unwrap(), MaskOp::bet(0.35));
+        assert_eq!(parse_mask_op("bet").unwrap(), MaskOp::bet(0.5));
+
+        // Display is the cache key, so it always states the scale; the compact form drops it
+        // when it is the default, and both parse back.
+        assert_eq!(format!("{op}"), "bet:0.35:scale=10");
+        assert_eq!(op.compact_spec(), "bet:0.35:scale=10");
+        assert_eq!(format!("{}", MaskOp::bet(0.35)), "bet:0.35:scale=1");
+        assert_eq!(MaskOp::bet(0.35).compact_spec(), "bet:0.35");
+        assert_eq!(parse_mask_op(&op.compact_spec()).unwrap(), op);
+    }
+
+    /// qsm-core silently treats a non-positive scale as 1.0; a command line that asks for one
+    /// is a typo, and saying so beats running something the user did not ask for.
+    #[test]
+    fn test_parse_bet_voxel_scale_rejects_nonsense() {
+        for spec in ["bet:0.5:scale=0", "bet:0.5:scale=-10", "bet:0.5:scale=abc", "bet:0.5:scale="] {
+            assert!(parse_mask_op(spec).is_err(), "{spec} should not parse");
+        }
+        // An unparseable fractional intensity used to fall back to 0.5 in silence.
+        assert!(parse_mask_op("bet:huge").is_err());
     }
 
     #[test]
@@ -643,7 +727,8 @@ mod tests {
             MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
             MaskOp::Erode { iterations: 2 },
             MaskOp::FillHoles { max_size: 0 },
-            MaskOp::Bet { fractional_intensity: 0.35 },
+            MaskOp::bet(0.35),
+            MaskOp::Bet { fractional_intensity: 0.35, voxel_scale: 10.0 },
         ];
         for op in ops {
             let compact = op.compact_spec();

@@ -183,7 +183,10 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
         MaskCommand::Otsu(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }),
         MaskCommand::Value(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(args.threshold) }),
         MaskCommand::Percentile(args) => generate(&args.common, MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(args.percentile) }),
-        MaskCommand::Bet(args) => generate(&args.common, MaskOp::Bet { fractional_intensity: args.fractional_intensity }),
+        MaskCommand::Bet(args) => generate(&args.common, MaskOp::Bet {
+            fractional_intensity: args.fractional_intensity,
+            voxel_scale: args.voxel_scale.unwrap_or_else(qsmxt_config::bet_default_voxel_scale),
+        }),
         MaskCommand::HdBet(args) => { let op = hd_bet_op(&args)?; generate(&args.common, op) }
         MaskCommand::Preset(args) => { let recipe = mask_preset_recipe(args.preset); preset(&args, recipe) }
         MaskCommand::Robust(args) => preset(
