@@ -243,6 +243,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bet_gradient_threshold: parse_optional_f64(&ps.bet_gradient_threshold),
         bet_iterations: parse_optional_usize(&ps.bet_iterations),
         bet_subdivisions: parse_optional_usize(&ps.bet_subdivisions),
+        // The TUI's voxel scale lives on the mask recipe's BET step, so it travels in
+        // `mask_sections_cli` below rather than as a recipe-wide flag.
+        bet_voxel_scale: None,
         qsm_reference: Some(crate::tui::app::qsm_reference_spec(ps.qsm_reference)),
         rts_params: crate::cli::RtsParamArgs {
             rts_delta: parse_optional_f64(&ps.rts_delta),

@@ -306,6 +306,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.bet_gradient_threshold { config.bet.gradient_threshold = v; }
         if let Some(v) = args.bet_iterations { config.bet.iterations = v; }
         if let Some(v) = args.bet_subdivisions { config.bet.subdivisions = v; }
+        if let Some(v) = args.bet_voxel_scale { config.bet.voxel_scale = v; }
 
         // ── Inversion params ──
         if let Some(v) = args.rts_params.rts_delta { config.inversion.rts.delta = v; }
@@ -647,6 +648,33 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 );
             }
         }
+
+        // ── BET voxel scaling ──
+        // `config.bet` is the one-value-per-parameter view of BET, but the value BET actually
+        // runs with lives on each `MaskOp::Bet` in the recipe. Push it out last, so it reaches
+        // the sections a preset, `--mask` or the QSMART default has just installed — and so
+        // `--bet-voxel-scale` is the whole recipe's answer either way, whether or not the
+        // `--mask` spec also spelled out a `scale=`.
+        if let Some(scale) = args.bet_voxel_scale {
+            apply_bet_voxel_scale(&mut config.masking, scale);
+        }
+}
+
+/// Set `voxel_scale` on every BET step in a masking recipe — the sections, the refinements that
+/// run on the combined mask, and the two-pass sections, wherever BET appears as a generator or a
+/// refinement. One flag for the whole recipe: a run where one BET step saw mouse-scale voxels and
+/// another saw the acquisition's would be a configuration mistake, not a feature.
+fn apply_bet_voxel_scale(masking: &mut MaskingConfig, scale: f64) {
+    fn set(op: &mut MaskOp, scale: f64) {
+        if let MaskOp::Bet { voxel_scale, .. } = op { *voxel_scale = scale; }
+    }
+    let sections = masking.two_pass_sections.iter_mut().flatten()
+        .chain(masking.sections.iter_mut());
+    for section in sections {
+        set(&mut section.generator, scale);
+        for op in &mut section.refinements { set(op, scale); }
+    }
+    for op in &mut masking.refinements { set(op, scale); }
 }
 
 #[cfg(test)]
@@ -762,6 +790,63 @@ mod tests {
         ]).is_err());
     }
 
+    /// `--bet-voxel-scale` has to reach the BET step the recipe actually runs, whichever
+    /// recipe that is — qsm-core reads `voxel_scale` off the op, not off `config.bet`.
+    #[test]
+    fn bet_voxel_scale_reaches_every_bet_step() {
+        // `--mask-preset bet`, resolved after the flag is read.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--mask-preset", "bet",
+                                  "--bet-voxel-scale", "10"]);
+        assert_eq!(c.bet.voxel_scale, 10.0);
+        assert!(matches!(c.masking.sections[0].generator, MaskOp::Bet { voxel_scale, .. }
+                         if voxel_scale == 10.0));
+
+        // A BET step anywhere in a `--mask` section, and one among the combined refinements.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>",
+                                  "--mask", "magnitude,bet:0.4,erode:2",
+                                  "--mask", "phase-quality,threshold:otsu",
+                                  "--bet-voxel-scale", "10"]);
+        assert!(matches!(c.masking.sections[0].generator, MaskOp::Bet { voxel_scale, .. }
+                         if voxel_scale == 10.0));
+
+        // The QSMART default mask is installed later still, and is BET.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-algorithm", "qsmart",
+                                  "--bet-voxel-scale", "10"]);
+        assert_eq!(c.masking.sections, qsmart_default_mask_sections().into_iter()
+                   .map(|mut s| { s.generator = MaskOp::Bet { fractional_intensity: 0.5, voxel_scale: 10.0 }; s })
+                   .collect::<Vec<_>>());
+    }
+
+    /// The flag is the whole recipe's answer: it also wins over a `scale=` spelled out in
+    /// `--mask`, so the command a saved config generates (which carries both) round-trips.
+    #[test]
+    fn bet_voxel_scale_flag_wins_over_a_spelled_out_scale() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>",
+                                  "--mask", "magnitude,bet:0.4:scale=2",
+                                  "--bet-voxel-scale", "10"]);
+        assert!(matches!(c.masking.sections[0].generator, MaskOp::Bet { voxel_scale, .. }
+                         if voxel_scale == 10.0));
+        // Without the flag, the per-step `scale=` stands on its own.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--mask", "magnitude,bet:0.4:scale=2"]);
+        assert!(matches!(c.masking.sections[0].generator, MaskOp::Bet { voxel_scale, .. }
+                         if voxel_scale == 2.0));
+        assert_eq!(c.bet.voxel_scale, 1.0, "config.bet is untouched by a per-step scale");
+    }
+
+    /// Default: nothing anywhere is scaled, so no existing run changes behaviour.
+    #[test]
+    fn bet_voxel_scale_defaults_to_the_acquired_geometry() {
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--mask-preset", "bet-and-phase"]);
+        assert_eq!(c.bet.voxel_scale, 1.0);
+        for section in &c.masking.sections {
+            for op in section.all_ops() {
+                if let MaskOp::Bet { voxel_scale, .. } = op {
+                    assert_eq!(voxel_scale, 1.0);
+                }
+            }
+        }
+    }
+
     #[test]
     fn masking_input_overrides_default_sections() {
         let c = config_from_cli(&["qsmxt", "run", "<bids>", "--masking-input", "magnitude"]);
@@ -809,6 +894,22 @@ mod tests {
         (cmd, rebuilt.masking)
     }
 
+    /// A preclinical recipe survives the trip out to a command line and back. The command
+    /// carries the scaling twice (the flag and the BET step's own `scale=`); both say 10, so
+    /// it does not matter which one the rebuild reads.
+    #[test]
+    fn generated_command_round_trips_a_scaled_bet_recipe() {
+        let mut config = PipelineConfig::default();
+        config.bet.voxel_scale = 10.0;
+        config.masking.sections = vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Bet { fractional_intensity: 0.4, voxel_scale: 10.0 },
+            refinements: vec![MaskOp::Erode { iterations: 2 }],
+        }];
+        let (cmd, masking) = masking_round_trip(&config);
+        assert_eq!(masking.sections, config.masking.sections, "cmd: {cmd}");
+    }
+
     /// The generated `qsmxt run` command has to carry the combine mode and the post-combine
     /// steps, or a hand-built intersection silently runs as a union.
     #[test]
@@ -817,7 +918,7 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.masking.sections = vec![
             MaskSection { input: MaskingInput::Magnitude,
-                          generator: MaskOp::Bet { fractional_intensity: 0.4 }, refinements: vec![] },
+                          generator: MaskOp::bet(0.4), refinements: vec![] },
             MaskSection { input: MaskingInput::Magnitude,
                           generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
                           refinements: vec![] },

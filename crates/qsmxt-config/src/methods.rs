@@ -727,9 +727,16 @@ fn describe_generator(
         MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value } => {
             format!("percentile thresholding ({}th percentile) of {}", value.unwrap_or(75.0), input_desc)
         }
-        MaskOp::Bet { fractional_intensity } => {
+        MaskOp::Bet { fractional_intensity, voxel_scale } => {
             add_citation(citations, &CITE_BET);
-            format!("BET brain extraction (Smith, 2002; f={:.2}) of {}", fractional_intensity, input_desc)
+            // A scaled run did not see the acquisition's own geometry, which changes what BET's
+            // millimetre-scale surface model was fitted to. Stated whenever it happened.
+            let scaled = if (*voxel_scale - crate::masking::bet_default_voxel_scale()).abs() > f64::EPSILON {
+                format!("; voxel sizes scaled by {voxel_scale}x to present the brain at human scale")
+            } else {
+                String::new()
+            };
+            format!("BET brain extraction (Smith, 2002; f={:.2}{}) of {}", fractional_intensity, scaled, input_desc)
         }
         MaskOp::HdBet { patch, tta, tile_step } => {
             add_citation(citations, &CITE_HDBET);
@@ -1122,13 +1129,34 @@ mod tests {
         config.masking.two_pass = true;
         config.masking.two_pass_sections = Some(vec![MaskSection {
             input: MaskingInput::Magnitude,
-            generator: MaskOp::Bet { fractional_intensity: 0.4 },
+            generator: MaskOp::bet(0.4),
             refinements: vec![MaskOp::Erode { iterations: 2 }],
         }]);
         let out = generate_methods(&config);
         assert!(out.contains("BET brain extraction (Smith, 2002; f=0.40)"), "out: {out}");
         assert!(out.contains("followed by erosion (2 iterations)"), "out: {out}");
         assert!(!out.contains("phase quality map, whose holes"), "out: {out}");
+    }
+
+    /// A preclinical mask was not fitted to the acquisition's own geometry, which is exactly
+    /// the kind of thing a methods section exists to state.
+    #[test]
+    fn scaled_bet_says_so_in_the_methods() {
+        let mut config = PipelineConfig::default();
+        config.masking.sections = vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Bet { fractional_intensity: 0.5, voxel_scale: 10.0 },
+            refinements: vec![],
+        }];
+        let out = generate_methods(&config);
+        assert!(out.contains("voxel sizes scaled by 10x to present the brain at human scale"),
+                "out: {out}");
+
+        // Unscaled BET reads as it always did.
+        config.masking.sections[0].generator = MaskOp::bet(0.5);
+        let out = generate_methods(&config);
+        assert!(out.contains("BET brain extraction (Smith, 2002; f=0.50)"), "out: {out}");
+        assert!(!out.contains("voxel sizes scaled"), "out: {out}");
     }
 
     /// The `bet-and-phase` recipe names the operation, the intersection it means, and the
@@ -1425,7 +1453,7 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.masking.sections = vec![MaskSection {
             input: MaskingInput::Magnitude,
-            generator: MaskOp::Bet { fractional_intensity: 0.35 },
+            generator: MaskOp::bet(0.35),
             refinements: vec![],
         }];
         let out = generate_methods(&config);

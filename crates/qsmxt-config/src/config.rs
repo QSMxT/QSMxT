@@ -336,7 +336,7 @@ param_config!(MsmvConfig from qsm_core::bgremove::MsmvParams {
 });
 param_config!(BetConfig from qsm_core::bet::BetParams {
     fractional_intensity: f64, smoothness: f64, gradient_threshold: f64,
-    iterations: usize, subdivisions: usize
+    iterations: usize, subdivisions: usize, voxel_scale: f64
 });
 param_config!(HomogeneityConfig from qsm_core::utils::HomogeneityParams {
     sigma_mm: f64, nbox: usize
