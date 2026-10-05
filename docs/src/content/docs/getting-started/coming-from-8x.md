@@ -13,6 +13,7 @@ conversion are fully reimplemented and faster, and there is a new interactive TU
 | --- | --- |
 | `qsmxt <bids>` | `qsmxt run <bids>` |
 | `dicom-convert` | `qsmxt dicom-convert` |
+| `--export_dicoms` | [`--export-dicom`](/QSMxT/guides/running-noninteractively/#exporting-results-as-dicom) |
 
 The easiest way in is `qsmxt tui`, which walks you through conversion,
 configuration, and running.

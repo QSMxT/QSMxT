@@ -28,6 +28,10 @@ qsmxt tui
 - **Copy the equivalent command** — as you configure, the TUI shows the matching
   `qsmxt run` command and updates it live, and saves your settings to a config
   file. It's the easiest way to build a run command without memorising flags.
+- **Export results as DICOM** — tick *Export DICOM* on the Supplementary tab to
+  write every final map as a DICOM series alongside the NIfTIs, ready for a PACS
+  or a clinical viewer. (See
+  [Exporting results as DICOM](/QSMxT/guides/running-noninteractively/#exporting-results-as-dicom).)
 - **Run the pipeline** and watch progress without leaving the terminal.
 - **Submit to a cluster** — generate and launch SLURM jobs for large cohorts
   directly from the TUI; scaling out doesn't require the command line.
