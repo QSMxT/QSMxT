@@ -125,6 +125,102 @@ study/bids/derivatives/qsmxt/
 A `references.txt` accompanies the outputs, citing the exact methods used for
 your data and parameters.
 
+### Exporting results as DICOM
+
+Some workflows want the maps back in DICOM — to push them into a PACS, open them
+in a clinical viewer, or hand them to a radiologist beside the source study.
+`--export-dicom` writes a DICOM series for every final map alongside the NIfTIs:
+
+```sh
+qsmxt run study/bids --export-dicom
+```
+
+Each map gets its own folder under the subject's `extra_files/`, one file per
+slice:
+
+```
+study/bids/derivatives/qsmxt/
+└── sub-01/
+    ├── anat/
+    │   └── sub-01_…_Chimap.nii.gz
+    └── extra_files/
+        └── sub-01_Chimap_dicoms/
+            ├── sub-01_Chimap_0001.dcm
+            ├── sub-01_Chimap_0002.dcm
+            └── …
+```
+
+Every final map the run produced is exported. χ needs no extra flag; the
+supplementary maps are exported once you've asked for them:
+
+| Map | Produced by | Folder suffix / `--dicom-outputs` token |
+| --- | --- | --- |
+| Susceptibility (χ) | the default pipeline | `Chimap` |
+| SWI | `--do-swi` | `swi` |
+| SWI minIP | `--do-swi` | `minIP` |
+| T2\* | `--do-t2starmap` | `T2starmap` |
+| R2\* | `--do-r2starmap` | `R2starmap` |
+| R2 | `--do-r2map` | `R2map` |
+| R2′ | `--do-r2primemap` | `R2primemap` |
+| Paramagnetic χ | `--do-chisep` | `desc-paramagnetic_Chimap` |
+| Diamagnetic χ | `--do-chisep` | `desc-diamagnetic_Chimap` |
+| Total χ | `--do-chisep` | `desc-total_Chimap` |
+
+To export only some of them, pass those tokens to `--dicom-outputs`
+(case-insensitive, comma- or space-separated):
+
+```sh
+qsmxt run study/bids --do-chisep --export-dicom \
+  --dicom-outputs chimap,desc-paramagnetic_chimap,desc-diamagnetic_chimap
+```
+
+SMWI, the [segmentation](/QSMxT/reference/algorithms/#segmentation-and-per-structure-statistics)
+and the [multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti)
+reconstructions stay NIfTI-only.
+
+**Filing them beside the source study.** By default the derived series carry a synthesised identity: patient fields are
+left empty and a stable `StudyInstanceUID` is derived from the subject and
+session. That's fine for a local viewer, but a PACS will file the maps as a study
+of their own. Point `--source-dicom` at the original DICOMs and QSMxT inherits the
+identity from the first readable DICOM it finds there — `PatientID`,
+`StudyInstanceUID`, `FrameOfReferenceUID`, study date/time, accession number — so
+the maps land beside the acquisition they came from:
+
+```sh
+qsmxt run study/bids --export-dicom --source-dicom /data/dicoms/sub-01
+```
+
+`SeriesInstanceUID` and `SOPInstanceUID` are always newly generated: these are
+distinct derived series, never a rewrite of the originals. Every instance is
+tagged `DERIVED\SECONDARY`, and each map gets a stable `SeriesNumber` so viewers
+list them in a predictable order.
+
+:::caution[Values are rescaled to integers]
+DICOM pixel data is integer, so each volume is linearly rescaled into unsigned
+16-bit with `RescaleSlope` and `RescaleIntercept` set to match. A viewer that
+honours those tags recovers the true values (χ in ppm, R2\* in s⁻¹); one that
+ignores them shows raw 0–65535 counts. The scaling is fitted per volume, so it is
+not comparable across subjects — **for quantitative analysis use the NIfTIs**.
+:::
+
+A few more things worth knowing:
+
+- Slice geometry (`ImageOrientationPatient`, `ImagePositionPatient`,
+  `SliceLocation`, spacing) is read from the output NIfTI's affine, so the series
+  overlays the source acquisition in a viewer and reflects any
+  [oblique resampling](/QSMxT/reference/algorithms/#oblique-acquisitions) the run
+  applied.
+- Instances are uncompressed *MR Image Storage*, Explicit VR Little Endian.
+- Export is best-effort: a failure is logged and the run still succeeds.
+- `--export-dicom` is a pipeline setting, so it can live in a
+  [config file](/QSMxT/reference/configuration/) as `export_dicom = true` under
+  `[pipeline]`, and it carries through to [`qsmxt slurm`](#hpc--slurm).
+  `--source-dicom` and `--dicom-outputs` are flags on `qsmxt run` itself.
+
+This is the mirror image of [`dicom-convert`](#converting-dicoms-to-bids) below,
+which brings DICOMs *in*. Both directions are built into the binary — no external
+converter to install.
+
 ## Converting DICOMs to BIDS
 
 QSMxT needs [BIDS](https://bids.neuroimaging.io/)-formatted input. The

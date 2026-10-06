@@ -66,6 +66,9 @@ qsmxt <cmd> --help # full help for a command
 | `--do-chisep` / `--chisep <M>` | [Susceptibility source separation](/QSMxT/reference/algorithms/#susceptibility-source-separation) |
 | `--do-segmentation` / `--do-analysis` | [SynthSeg parcellation and per-structure statistics](/QSMxT/reference/algorithms/#segmentation-and-per-structure-statistics) |
 | `--qsm-reference <SPEC>` | [What χ's zero is pinned to](/QSMxT/reference/algorithms/#referencing): `mean`, `none`, or a parcellation region |
+| `--export-dicom` | Also write each final map as a [DICOM series](/QSMxT/guides/running-noninteractively/#exporting-results-as-dicom) |
+| `--source-dicom <DIR>` | Inherit patient/study identity from the original DICOMs when exporting |
+| `--dicom-outputs <TOKEN>…` | Restrict the DICOM export to these maps (default: all produced) |
 
 See [Algorithms](/QSMxT/reference/algorithms/) for the valid values of each
 algorithm option.
