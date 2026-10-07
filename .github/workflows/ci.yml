@@ -61,12 +61,20 @@ jobs:
         # minutes), so the budget is the thing that was wrong.
         run: cargo tarpaulin --timeout 300 --engine llvm --workspace --out json --output-dir target/tarpaulin --exclude-files src/main.rs --exclude-files src/tui/mod.rs --exclude-files src/tui/ui.rs --exclude-files src/commands/update.rs -- --test-threads=1
 
+      # Two thresholds, deliberately. 70% is the gate `release.yml` enforces, so failing here is
+      # what stops a PR discovering at release time that it cannot ship. 90% is the target, and
+      # stays advisory. Before this, both branches of the check ended in `echo`, so the step always
+      # exited 0 — a green tick said nothing at all about coverage.
       - name: Check coverage threshold
         run: |
           COVERAGE=$(python3 -c "import json; data=json.load(open('target/tarpaulin/tarpaulin-report.json')); print(f\"{data['coverage']:.2f}\")")
           echo "Coverage: ${COVERAGE}%"
+          if ! python3 -c "import sys; sys.exit(0 if float('${COVERAGE}') >= 70.0 else 1)"; then
+            echo "::error::Coverage ${COVERAGE}% is below the 70% gate enforced by the release workflow"
+            exit 1
+          fi
           if python3 -c "import sys; sys.exit(0 if float('${COVERAGE}') >= 90.0 else 1)"; then
-            echo "::notice::Coverage ${COVERAGE}% meets 90% threshold"
+            echo "::notice::Coverage ${COVERAGE}% meets the 90% target"
           else
-            echo "::warning::Coverage ${COVERAGE}% is below 90% threshold"
+            echo "::warning::Coverage ${COVERAGE}% is below the 90% target (release gate is 70%)"
           fi
