@@ -242,6 +242,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                          B0WeightTypeArg::TEs, B0WeightTypeArg::Mag, B0WeightTypeArg::T2star]
             .get(ps.b0_weight_type).copied().filter(|&w| w != B0WeightTypeArg::PhaseSNR),
         b0_weight_t2star: if ps.b0_weight_type == 5 { parse_optional_f64(&ps.b0_weight_t2star_ms) } else { None },
+        laplacian_kernel: None,
         bet_fractional_intensity: parse_optional_f64(&ps.bet_fractional_intensity),
         bet_smoothness: parse_optional_f64(&ps.bet_smoothness),
         bet_gradient_threshold: parse_optional_f64(&ps.bet_gradient_threshold),

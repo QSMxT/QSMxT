@@ -743,6 +743,9 @@ pub struct FieldMappingConfig {
     /// Tissue T2* (ms) assumed by `b0_weight_type = "t2star"`. Default 40 ms, UK Biobank's.
     #[serde(default = "default_b0_weight_t2star_ms")]
     pub b0_weight_t2star_ms: f64,
+    /// Poisson solver used by `unwrapping_algorithm = "laplacian"`.
+    #[serde(default)]
+    pub laplacian_kernel: LaplacianKernel,
     pub romeo: RomeoConfig,
     pub linear_fit: LinearFitConfig,
 }
@@ -783,6 +786,7 @@ impl Default for FieldMappingConfig {
             b0_estimation: B0Estimation::WeightedAvg,
             b0_weight_type: B0WeightType::PhaseSNR,
             b0_weight_t2star_ms: default_b0_weight_t2star_ms(),
+            laplacian_kernel: LaplacianKernel::Dct,
             romeo: RomeoConfig::default(),
             linear_fit: LinearFitConfig::default(),
         }

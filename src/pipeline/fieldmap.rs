@@ -27,6 +27,12 @@ use qsm_core::pipeline::config::{
 };
 use qsm_core::Grid;
 
+pub use qsmxt_config::LaplacianKernel;
+
+/// Zero-padding (voxels per side) for the STI kernel: UK Biobank's `'padsize', [64 64 64]`.
+#[cfg(feature = "laplacian-sti")]
+const STI_PAD: [usize; 3] = [64, 64, 64];
+
 /// How echoes are weighted in a weighted-average B0 estimate.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum EchoWeighting {
@@ -64,11 +70,26 @@ impl EchoWeighting {
 /// Biobank (`mask .* phase`): the Poisson solve is global, so noise outside the brain otherwise
 /// leaks into it. The result is defined up to a constant and is zero outside `mask`.
 ///
-/// This is the one place the Laplacian kernel is called, so a different kernel (e.g. one that
-/// matches STI Suite exactly) is a change here only.
-pub fn unwrap_echo_laplacian(phase: &[f64], mask: &[u8], grid: &Grid) -> Vec<f64> {
+/// This is the one place a Laplacian kernel is called. `kernel` must be available in this build
+/// (see [`kernel_available`]); [`run_field_mapping`] checks that before getting here.
+pub fn unwrap_echo_laplacian(phase: &[f64], mask: &[u8], grid: &Grid, kernel: LaplacianKernel) -> Vec<f64> {
     let masked: Vec<f64> = phase.iter().zip(mask).map(|(&p, &m)| if m != 0 { p } else { 0.0 }).collect();
-    qsm_core::unwrap::laplacian_unwrap(&masked, mask, grid)
+    match kernel {
+        LaplacianKernel::Dct => qsm_core::unwrap::laplacian_unwrap(&masked, mask, grid),
+        #[cfg(feature = "laplacian-sti")]
+        LaplacianKernel::Sti => {
+            let params = qsm_core::unwrap::LaplacianStiParams { pad: STI_PAD };
+            let u = qsm_core::unwrap::laplacian_unwrap_sti(&masked, grid, &params);
+            u.iter().zip(mask).map(|(&v, &m)| if m != 0 { v } else { 0.0 }).collect()
+        }
+        #[cfg(not(feature = "laplacian-sti"))]
+        LaplacianKernel::Sti => unreachable!("the STI Laplacian kernel is not in this build"),
+    }
+}
+
+/// Whether this build has `kernel`.
+pub fn kernel_available(kernel: LaplacianKernel) -> bool {
+    kernel == LaplacianKernel::Dct || cfg!(feature = "laplacian-sti")
 }
 
 /// Subtract the mean over `mask` from `values` inside `mask`.
@@ -171,11 +192,11 @@ fn validate(
 /// Per-echo Laplacian unwrapping followed by the configured echo combination. Returns Hz.
 fn laplacian_field_hz(
     phases: &[&[f64]], mags: &[&[f64]], mask: &[u8], meta: &ScanMetadata,
-    config: &FieldMappingConfig, weighting: EchoWeighting,
+    config: &FieldMappingConfig, weighting: EchoWeighting, kernel: LaplacianKernel,
 ) -> Vec<f64> {
     let grid = grid(meta);
     let unwrapped: Vec<Vec<f64>> = phases.iter().map(|p| {
-        let mut u = unwrap_echo_laplacian(p, mask, &grid);
+        let mut u = unwrap_echo_laplacian(p, mask, &grid, kernel);
         remove_masked_mean(&mut u, mask);
         u
     }).collect();
@@ -210,7 +231,8 @@ fn grid(meta: &ScanMetadata) -> Grid {
 /// `mask`. `magnitudes` = `None` weights every echo and voxel equally.
 ///
 /// `weighting` replaces `config.b0_weight_type` (it can express weightings qsm-core cannot); pass
-/// [`EchoWeighting::Core`]`(config.b0_weight_type)` for qsm-core's own.
+/// [`EchoWeighting::Core`]`(config.b0_weight_type)` for qsm-core's own. `kernel` is the Poisson
+/// solver for Laplacian unwrapping (ignored with ROMEO).
 pub fn run_field_mapping(
     phases: &[&[f64]],
     magnitudes: Option<&[&[f64]]>,
@@ -218,8 +240,14 @@ pub fn run_field_mapping(
     meta: &ScanMetadata,
     config: &FieldMappingConfig,
     weighting: EchoWeighting,
+    kernel: LaplacianKernel,
 ) -> Result<Vec<f64>, PipelineError> {
     validate(phases, magnitudes, mask, meta, weighting)?;
+    if config.unwrapping_algorithm == UnwrappingAlgorithm::Laplacian && !kernel_available(kernel) {
+        return Err(PipelineError::InvalidConfig(format!(
+            "the `{kernel}` Laplacian kernel needs a QSMxT built with the `laplacian-sti` feature \
+             (and a QSM.rs with laplacian_unwrap_sti)")));
+    }
     let n = mask.len();
     let ones = vec![1.0; n];
     let uniform: Vec<&[f64]> = phases.iter().map(|_| ones.as_slice()).collect();
@@ -228,7 +256,7 @@ pub fn run_field_mapping(
     let weighted_avg = config.b0_estimation == B0EstimationMethod::WeightedAvg;
 
     let hz = match (config.unwrapping_algorithm, weighting) {
-        (UnwrappingAlgorithm::Laplacian, _) => laplacian_field_hz(phases, mags, mask, meta, config, weighting),
+        (UnwrappingAlgorithm::Laplacian, _) => laplacian_field_hz(phases, mags, mask, meta, config, weighting, kernel),
         (UnwrappingAlgorithm::Romeo, EchoWeighting::T2star { .. })
             if n_echoes > 1 && weighted_avg && config.phase_offset_removal =>
         {
@@ -259,6 +287,7 @@ mod tests {
     use std::f64::consts::PI;
 
     const N: usize = 24;
+    const DCT: LaplacianKernel = LaplacianKernel::Dct;
 
     fn meta(tes: &[f64]) -> ScanMetadata {
         ScanMetadata {
@@ -363,7 +392,7 @@ mod tests {
             let (ph, mg) = echoes_of(&tes, om);
             let truth = truth_of(&mask, om);
             for w in ALL_WEIGHTINGS {
-                let f = run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &lap_config(), w).unwrap();
+                let f = run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &lap_config(), w, DCT).unwrap();
                 let err = max_abs_diff(&demeaned(&f, &mask), &truth, &mask);
                 assert!(err < 1e-6, "{w:?}: max error {err} ppm");
                 assert!(f.iter().zip(&mask).all(|(&v, &m)| m != 0 || v == 0.0), "{w:?}: nonzero outside mask");
@@ -385,7 +414,7 @@ mod tests {
             }
         }
         let mask = sphere_mask();
-        let run = |w| run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &lap_config(), w).unwrap();
+        let run = |w| run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &lap_config(), w, DCT).unwrap();
         let a = run(EchoWeighting::Core(W::PhaseSNR));
         let b = run(EchoWeighting::Core(W::TEs));
         let c = run(EchoWeighting::T2star { t2star_s: 0.040 });
@@ -402,7 +431,7 @@ mod tests {
         let mask = vec![1u8; N * N * N];
         let mut cfg = lap_config();
         cfg.b0_estimation = B0EstimationMethod::LinearFit;
-        let ours = run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &cfg, EchoWeighting::Core(W::PhaseSNR)).unwrap();
+        let ours = run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &cfg, EchoWeighting::Core(W::PhaseSNR), DCT).unwrap();
         let core = qsm_core::pipeline::run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &cfg, &mut |_, _| {}).unwrap();
         assert!(max_abs_diff(&ours, &core.b0_field_ppm, &mask) < 1e-9);
     }
@@ -417,12 +446,12 @@ mod tests {
         let inf = EchoWeighting::T2star { t2star_s: 1e30 };
         for alg in [UnwrappingAlgorithm::Laplacian, UnwrappingAlgorithm::Romeo] {
             let cfg = FieldMappingConfig { unwrapping_algorithm: alg, b0_weight_type: W::PhaseVar, ..Default::default() };
-            let a = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, inf).unwrap();
-            let b = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, EchoWeighting::Core(W::PhaseVar)).unwrap();
+            let a = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, inf, DCT).unwrap();
+            let b = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, EchoWeighting::Core(W::PhaseVar), DCT).unwrap();
             assert!(max_abs_diff(&a, &b, &mask) < 1e-9, "{alg:?}");
         }
         let cfg = FieldMappingConfig { b0_weight_type: W::PhaseVar, ..Default::default() };
-        let ours = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, inf).unwrap();
+        let ours = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, inf, DCT).unwrap();
         let core = qsm_core::pipeline::run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, &mut |_, _| {}).unwrap();
         assert!(max_abs_diff(&ours, &core.b0_field_ppm, &mask) < 1e-9);
     }
@@ -434,7 +463,7 @@ mod tests {
         let mask = vec![1u8; N * N * N];
         let mut cfg = lap_config();
         cfg.b0_estimation = B0EstimationMethod::LinearFit; // must not degenerate to zero
-        let f = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, EchoWeighting::Core(W::PhaseSNR)).unwrap();
+        let f = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, EchoWeighting::Core(W::PhaseSNR), DCT).unwrap();
         assert!(max_abs_diff(&demeaned(&f, &mask), &truth_ppm(&mask), &mask) < 1e-6);
     }
 
@@ -453,9 +482,40 @@ mod tests {
             }
         }
         let w = EchoWeighting::T2star { t2star_s: 0.040 };
-        let a = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &lap_config(), w).unwrap();
-        let b = run_field_mapping(&refs(&noisy), None, &mask, &meta(&tes), &lap_config(), w).unwrap();
+        let a = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &lap_config(), w, DCT).unwrap();
+        let b = run_field_mapping(&refs(&noisy), None, &mask, &meta(&tes), &lap_config(), w, DCT).unwrap();
         assert!(max_abs_diff(&a, &b, &mask) < 1e-12);
+    }
+
+    #[test]
+    fn sti_kernel_needs_its_feature() {
+        let tes = [0.004, 0.009];
+        let (ph, _) = echoes(&tes);
+        let mask = sphere_mask();
+        let r = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &lap_config(),
+                                  EchoWeighting::T2star { t2star_s: 0.040 }, LaplacianKernel::Sti);
+        assert_eq!(r.is_ok(), cfg!(feature = "laplacian-sti"));
+        // ROMEO does not use the kernel, so it is never an error there.
+        let romeo = FieldMappingConfig::default();
+        assert!(run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &romeo,
+                                  EchoWeighting::Core(W::PhaseSNR), LaplacianKernel::Sti).is_ok());
+    }
+
+    #[cfg(feature = "laplacian-sti")]
+    #[test]
+    fn sti_kernel_recovers_wrapped_field() {
+        // The masked phase falls smoothly to zero at the sphere edge, so the padded FFT solve
+        // recovers it (up to a constant), approximately: STI's kernel is a continuous-k one.
+        let tes = [0.004, 0.009, 0.014];
+        let mask = sphere_mask();
+        let (ph, _) = echoes_of(&tes, omega_sphere);
+        let f = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &lap_config(),
+                                  EchoWeighting::T2star { t2star_s: 0.040 }, LaplacianKernel::Sti).unwrap();
+        let truth = truth_of(&mask, omega_sphere);
+        let rms_truth = (truth.iter().zip(&mask).filter(|(_, &m)| m != 0).map(|(t, _)| t * t).sum::<f64>()
+            / mask.iter().filter(|&&m| m != 0).count() as f64).sqrt();
+        let err = max_abs_diff(&demeaned(&f, &mask), &truth, &mask);
+        assert!(err < 0.2 * rms_truth, "max error {err} vs field rms {rms_truth}");
     }
 
     #[test]
@@ -464,11 +524,11 @@ mod tests {
         let p = vec![0.0; n];
         let mask = vec![1u8; n];
         let w = EchoWeighting::Core(W::PhaseSNR);
-        assert!(run_field_mapping(&[], None, &mask, &meta(&[]), &lap_config(), w).is_err());
-        assert!(run_field_mapping(&[&p], None, &mask, &meta(&[0.01, 0.02]), &lap_config(), w).is_err());
-        assert!(run_field_mapping(&[&p[1..]], None, &mask, &meta(&[0.01]), &lap_config(), w).is_err());
-        assert!(run_field_mapping(&[&p], None, &mask, &meta(&[0.0]), &lap_config(), w).is_err());
+        assert!(run_field_mapping(&[], None, &mask, &meta(&[]), &lap_config(), w, DCT).is_err());
+        assert!(run_field_mapping(&[&p], None, &mask, &meta(&[0.01, 0.02]), &lap_config(), w, DCT).is_err());
+        assert!(run_field_mapping(&[&p[1..]], None, &mask, &meta(&[0.01]), &lap_config(), w, DCT).is_err());
+        assert!(run_field_mapping(&[&p], None, &mask, &meta(&[0.0]), &lap_config(), w, DCT).is_err());
         let t0 = EchoWeighting::T2star { t2star_s: 0.0 };
-        assert!(run_field_mapping(&[&p], None, &mask, &meta(&[0.01]), &lap_config(), t0).is_err());
+        assert!(run_field_mapping(&[&p], None, &mask, &meta(&[0.01]), &lap_config(), t0, DCT).is_err());
     }
 }

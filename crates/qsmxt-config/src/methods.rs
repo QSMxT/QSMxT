@@ -652,7 +652,11 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
             add_citation(citations, &CITE_ROMEO);
         }
         UnwrappingAlgorithm::Laplacian => {
-            sentences.push("Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003).".to_string());
+            let kernel = match config.field_mapping.laplacian_kernel {
+                LaplacianKernel::Dct => "",
+                LaplacianKernel::Sti => " (STI Suite formulation)",
+            };
+            sentences.push(format!("Phase unwrapping was performed separately for each echo using the Laplacian method{} (Schofield & Zhu, 2003).", kernel));
             add_citation(citations, &CITE_LAPLACIAN_UNWRAP);
         }
     }

@@ -20,6 +20,11 @@ path = "src/main.rs"
 # such a build keeps all classical algorithms and reports a clear error if a DL algorithm
 # is selected.
 default = ["dl"]
+# STI Suite-matched Laplacian unwrapping kernel (`--laplacian-kernel sti`). Needs a QSM.rs with
+# `qsm_core::unwrap::laplacian_unwrap_sti` (feat/laplacian-unwrap-sti), which the pinned rev does
+# not have yet: build with a local [patch] of qsm-core. Without it, `sti` is rejected at run time.
+# Once the pin has the function, drop this feature and the cfg in src/pipeline/fieldmap.rs.
+laplacian-sti = []
 dl = ["qsm-core/onnx", "qsm-core/download"]
 
 [dependencies]

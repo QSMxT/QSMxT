@@ -1048,6 +1048,11 @@ pub struct PipelineArgs {
     #[arg(long, value_name = "MS")]
     pub b0_weight_t2star: Option<f64>,
 
+    /// Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (QSM.rs, default) or `sti`
+    /// (STI Suite's MRPhaseUnwrap, as UK Biobank; needs a build with the `laplacian-sti` feature)
+    #[arg(long, value_enum)]
+    pub laplacian_kernel: Option<LaplacianKernelArg>,
+
     /// BET fractional intensity (0.0-1.0)
     #[arg(long)]
     pub bet_fractional_intensity: Option<f64>,
@@ -1788,6 +1793,10 @@ pub struct FieldmapRomeoArgs {
 pub struct FieldmapLaplacianArgs {
     #[command(flatten)]
     pub common: FieldmapCommonArgs,
+    /// Poisson solver: `dct` (QSM.rs) or `sti` (STI Suite's MRPhaseUnwrap, as UK Biobank;
+    /// needs a build with the `laplacian-sti` feature)
+    #[arg(long, value_enum, default_value = "dct")]
+    pub laplacian_kernel: LaplacianKernelArg,
     // Note: phase offset removal and bipolar correction are not applied with Laplacian
     // unwrapping, so they are intentionally not exposed here. Each echo is unwrapped on its
     // own and the echoes are then combined by b0-estimation / b0-weight-type / linear-fit-*
@@ -3189,6 +3198,11 @@ pub enum BfAlgorithmArg {
     Bfrnet,
     /// iQFM deep-learning joint unwrapping + background removal from phase (weights downloaded on first use)
     Iqfm,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum LaplacianKernelArg {
+    Dct, Sti,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

@@ -2455,6 +2455,7 @@ fn stage_unwrap(
         // Per-echo masked Laplacian + echo combination (pipeline::fieldmap); bump on a change
         // to that path so field maps from the old one are recomputed.
         "laplacian_echo_combination": if unwrap_name == "laplacian" { 2 } else { 0 },
+        "laplacian_kernel": format!("{}", ctx.config.field_mapping.laplacian_kernel),
     });
     if ctx.is_cached_with_params("unwrap", Some(unwrap_alg), &unwrap_params) {
         log::info!("Skipping unwrap (cached)");
@@ -2504,11 +2505,13 @@ fn stage_unwrap(
         _ => crate::pipeline::fieldmap::EchoWeighting::Core(fm_config.b0_weight_type),
     };
     if unwrap_name == "laplacian" && ctx.meta.n_echoes > 1 {
-        log::info!("Laplacian unwrapping per echo, then {} ({} weighting)",
+        log::info!("Laplacian unwrapping per echo ({} kernel), then {} ({} weighting)",
+            ctx.config.field_mapping.laplacian_kernel,
             ctx.config.field_mapping.b0_estimation, ctx.config.field_mapping.b0_weight_type);
     }
     let field_ppm = crate::pipeline::fieldmap::run_field_mapping(
         &phase_slices, mag_option, &mask, &scan_meta, &fm_config, weighting,
+        ctx.config.field_mapping.laplacian_kernel,
     ).map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
 
     save_volume(field_path, &field_ppm, ctx.meta)?;

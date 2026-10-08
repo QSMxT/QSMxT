@@ -64,6 +64,23 @@ impl fmt::Display for SeparationAlgorithm {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum UnwrappingAlgorithm { Romeo, Laplacian }
+
+/// Poisson solver behind Laplacian unwrapping.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LaplacianKernel {
+    /// QSM.rs `laplacian_unwrap`: Neumann boundary, DCT solve over the array.
+    #[default]
+    Dct,
+    /// STI Suite 3.0 `MRPhaseUnwrap` (sin/cos formulation, zero-padded FFT; padding 64 as UK
+    /// Biobank calls it). Needs a build with the `laplacian-sti` feature.
+    Sti,
+}
+impl fmt::Display for LaplacianKernel {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Dct => "dct", Self::Sti => "sti" })
+    }
+}
 impl fmt::Display for UnwrappingAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match self { Self::Romeo => "romeo", Self::Laplacian => "laplacian" })

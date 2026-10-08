@@ -109,6 +109,7 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     emit_f64_arr3(&mut parts, "--coil-combination-sigma", &config.field_mapping.coil_combination_sigma, &d.field_mapping.coil_combination_sigma);
     if config.field_mapping.bipolar_correction { parts.push("--bipolar-correction".into()); }
     emit_enum(&mut parts, "--unwrapping-algorithm", &config.field_mapping.unwrapping_algorithm, &d.field_mapping.unwrapping_algorithm);
+    emit_enum(&mut parts, "--laplacian-kernel", &config.field_mapping.laplacian_kernel, &d.field_mapping.laplacian_kernel);
     emit_enum(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation);
     emit_enum(&mut parts, "--b0-weight-type", &config.field_mapping.b0_weight_type, &d.field_mapping.b0_weight_type);
     if config.field_mapping.b0_weight_type == B0WeightType::T2star {
@@ -872,6 +873,14 @@ frangi_c = 400.0
         c.field_mapping.b0_weight_type = B0WeightType::Average;
         let cmd = generate_command(&c);
         assert!(cmd.contains("--b0-weight-type average"));
+    }
+
+    #[test]
+    fn test_laplacian_kernel() {
+        let mut c = PipelineConfig::default();
+        assert!(!generate_command(&c).contains("--laplacian-kernel"));
+        c.field_mapping.laplacian_kernel = LaplacianKernel::Sti;
+        assert!(generate_command(&c).contains("--laplacian-kernel sti"));
     }
 
     #[test]

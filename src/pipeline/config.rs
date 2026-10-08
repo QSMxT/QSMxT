@@ -260,6 +260,12 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             };
         }
         if let Some(v) = args.b0_weight_t2star { config.field_mapping.b0_weight_t2star_ms = v; }
+        if let Some(k) = args.laplacian_kernel {
+            config.field_mapping.laplacian_kernel = match k {
+                cli::LaplacianKernelArg::Dct => LaplacianKernel::Dct,
+                cli::LaplacianKernelArg::Sti => LaplacianKernel::Sti,
+            };
+        }
         if let Some(ref s) = args.coil_combination_sigma {
             if s.len() == 3 { config.field_mapping.coil_combination_sigma = [s[0], s[1], s[2]]; }
         }
