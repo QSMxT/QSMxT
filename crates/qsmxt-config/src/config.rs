@@ -740,9 +740,13 @@ pub struct FieldMappingConfig {
     pub unwrapping_algorithm: UnwrappingAlgorithm,
     pub b0_estimation: B0Estimation,
     pub b0_weight_type: B0WeightType,
+    /// Tissue T2* (ms) assumed by `b0_weight_type = "t2star"`. Default 40 ms, UK Biobank's.
+    #[serde(default = "default_b0_weight_t2star_ms")]
+    pub b0_weight_t2star_ms: f64,
     pub romeo: RomeoConfig,
     pub linear_fit: LinearFitConfig,
 }
+pub fn default_b0_weight_t2star_ms() -> f64 { 40.0 }
 fn default_coil_combination_sigma() -> [f64; 3] { [10.0, 10.0, 5.0] }
 
 fn default_crop_margin_mm() -> f64 { 32.0 }
@@ -778,6 +782,7 @@ impl Default for FieldMappingConfig {
             unwrapping_algorithm: UnwrappingAlgorithm::Romeo,
             b0_estimation: B0Estimation::WeightedAvg,
             b0_weight_type: B0WeightType::PhaseSNR,
+            b0_weight_t2star_ms: default_b0_weight_t2star_ms(),
             romeo: RomeoConfig::default(),
             linear_fit: LinearFitConfig::default(),
         }

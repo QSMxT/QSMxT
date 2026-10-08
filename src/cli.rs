@@ -1038,9 +1038,15 @@ pub struct PipelineArgs {
     #[arg(long, value_enum)]
     pub b0_estimation: Option<B0EstimationArg>,
 
-    /// B0 weighted averaging weight type
+    /// B0 weighted averaging weight type. `t2star` weights each echo's phase by
+    /// TE·exp(−TE/T2*) (UK Biobank / STI Suite); with `--unwrapping-algorithm laplacian` that is
+    /// UK Biobank's field map. Applies to Laplacian unwrapping as well as ROMEO
     #[arg(long, value_enum)]
     pub b0_weight_type: Option<B0WeightTypeArg>,
+
+    /// T2* in ms assumed by `--b0-weight-type t2star` (default 40, UK Biobank's)
+    #[arg(long, value_name = "MS")]
+    pub b0_weight_t2star: Option<f64>,
 
     /// BET fractional intensity (0.0-1.0)
     #[arg(long)]
@@ -1738,9 +1744,13 @@ pub struct FieldmapCommonArgs {
     /// B0 field estimation method
     #[arg(long, value_enum, default_value = "weighted-avg")]
     pub b0_estimation: B0EstimationArg,
-    /// B0 weighted-averaging weight type
+    /// B0 weighted-averaging weight type. `t2star` weights each echo's phase by
+    /// TE·exp(−TE/T2*) (UK Biobank / STI Suite)
     #[arg(long, value_enum, default_value = "phase-snr")]
     pub b0_weight_type: B0WeightTypeArg,
+    /// T2* in ms assumed by `--b0-weight-type t2star`
+    #[arg(long, value_name = "MS", default_value_t = 40.0)]
+    pub b0_weight_t2star: f64,
     /// Linear fit reliability threshold percentile (degrees)
     #[arg(long)]
     pub linear_fit_reliability_threshold: Option<f64>,
@@ -1753,7 +1763,7 @@ pub struct FieldmapCommonArgs {
 pub enum FieldmapCommand {
     /// ROMEO-based multi-echo field mapping (phase offset removal + unwrap + B0 fit)
     Romeo(FieldmapRomeoArgs),
-    /// Laplacian-based multi-echo field mapping
+    /// Laplacian-based multi-echo field mapping (per-echo unwrap + echo combination)
     Laplacian(FieldmapLaplacianArgs),
 }
 
@@ -1778,9 +1788,10 @@ pub struct FieldmapRomeoArgs {
 pub struct FieldmapLaplacianArgs {
     #[command(flatten)]
     pub common: FieldmapCommonArgs,
-    // Note: phase offset removal is inert for Laplacian (skipped by the engine),
-    // so it is intentionally not exposed here. b0-estimation / b0-weight-type /
-    // linear-fit-* on `common` still apply.
+    // Note: phase offset removal and bipolar correction are not applied with Laplacian
+    // unwrapping, so they are intentionally not exposed here. Each echo is unwrapped on its
+    // own and the echoes are then combined by b0-estimation / b0-weight-type / linear-fit-*
+    // on `common` (see `pipeline::fieldmap`).
 }
 
 // ── Bgremove ──
@@ -3187,7 +3198,10 @@ pub enum B0EstimationArg {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum B0WeightTypeArg {
-    PhaseSNR, PhaseVar, Average, TEs, Mag,
+    PhaseSNR, PhaseVar, Average,
+    #[value(alias = "tes")]
+    TEs,
+    Mag, T2star,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

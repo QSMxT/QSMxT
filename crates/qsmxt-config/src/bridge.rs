@@ -109,6 +109,11 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             B0WeightType::Average => qsm_core::utils::B0WeightType::Average,
             B0WeightType::TEs => qsm_core::utils::B0WeightType::TEs,
             B0WeightType::Mag => qsm_core::utils::B0WeightType::Mag,
+            // qsm-core has no T2*-weighted average. QSMxT computes that field map itself
+            // (`qsmxt::pipeline::fieldmap`), so this placeholder only reaches qsm-core where the
+            // weights are not used; a consumer calling qsm-core's field mapping directly gets
+            // TE weighting instead.
+            B0WeightType::T2star => qsm_core::utils::B0WeightType::TEs,
         },
         romeo_params: qsm_core::unwrap::RomeoParams {
             individual: cfg.field_mapping.romeo.individual,

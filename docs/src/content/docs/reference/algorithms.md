@@ -244,6 +244,33 @@ Set with `--unwrapping-algorithm`.
 | `romeo` | Rapid Opensource Minimum-spanning-tree Echo Optimisation (default) |
 | `laplacian` | Laplacian-based unwrapping |
 
+With `laplacian`, each echo is unwrapped on its own (the phase is zeroed outside the
+mask first, as STI Suite is used by UK Biobank) and the echoes are then combined by
+`--b0-estimation` / `--b0-weight-type`, the same options as with ROMEO. Phase offset
+removal and bipolar correction are not applied, so use it on phase that is already
+offset-free (single-channel or prescan-normalised reconstructions, MCPC-3D-S combined
+coils).
+
+## Echo combination (B0 estimation)
+
+Multi-echo field maps combine the unwrapped echoes with `--b0-estimation`:
+`weighted-avg` (default) averages phase/TE across echoes with the weights chosen by
+`--b0-weight-type`; `linear-fit` fits phase against TE (with an intercept unless
+`--linear-fit-estimate-offset false`).
+
+| `--b0-weight-type` | Weight on phase/TE |
+| --- | --- |
+| `phase-snr` | magnitude × TE (default) |
+| `phase-var` | magnitude² × TE² |
+| `average` | uniform |
+| `tes` | TE |
+| `mag` | magnitude |
+| `t2star` | TE² × exp(−TE/T2\*), i.e. TE × exp(−TE/T2\*) on the phase, with T2\* from `--b0-weight-t2star` (ms, default 40) |
+
+`t2star` is UK Biobank's weighting (STI Suite): `--unwrapping-algorithm laplacian
+--b0-weight-type t2star` reproduces UK Biobank's field map — per-echo Laplacian
+unwrapping and a TE·exp(−TE/T2\*)-weighted mean with T2\* = 40 ms.
+
 ## Background field removal
 
 Set with `--bf-algorithm`.

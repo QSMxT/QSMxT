@@ -108,12 +108,16 @@ pub enum B0WeightType {
     PhaseVar, Average,
     #[serde(rename = "tes")] TEs,
     Mag,
+    /// `TE·exp(−TE/T2*)` on the phase (UK Biobank / STI Suite), with T2* from
+    /// `field_mapping.b0_weight_t2star_ms`.
+    #[serde(rename = "t2star")] T2star,
 }
 impl fmt::Display for B0WeightType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match self {
             Self::PhaseSNR => "phase-snr", Self::PhaseVar => "phase-var",
             Self::Average => "average", Self::TEs => "tes", Self::Mag => "mag",
+            Self::T2star => "t2star",
         })
     }
 }

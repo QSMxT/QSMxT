@@ -111,6 +111,9 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     emit_enum(&mut parts, "--unwrapping-algorithm", &config.field_mapping.unwrapping_algorithm, &d.field_mapping.unwrapping_algorithm);
     emit_enum(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation);
     emit_enum(&mut parts, "--b0-weight-type", &config.field_mapping.b0_weight_type, &d.field_mapping.b0_weight_type);
+    if config.field_mapping.b0_weight_type == B0WeightType::T2star {
+        emit_f64(&mut parts, "--b0-weight-t2star", config.field_mapping.b0_weight_t2star_ms, d.field_mapping.b0_weight_t2star_ms);
+    }
 
     // ROMEO params
     let r = &config.field_mapping.romeo;
@@ -869,6 +872,20 @@ frangi_c = 400.0
         c.field_mapping.b0_weight_type = B0WeightType::Average;
         let cmd = generate_command(&c);
         assert!(cmd.contains("--b0-weight-type average"));
+    }
+
+    #[test]
+    fn test_b0_weight_type_t2star() {
+        let mut c = PipelineConfig::default();
+        c.field_mapping.b0_weight_type = B0WeightType::T2star;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--b0-weight-type t2star"), "{cmd}");
+        assert!(!cmd.contains("--b0-weight-t2star"), "default T2* is not emitted: {cmd}");
+        c.field_mapping.b0_weight_t2star_ms = 35.0;
+        assert!(generate_command(&c).contains("--b0-weight-t2star 35"));
+        // only meaningful with t2star weighting
+        c.field_mapping.b0_weight_type = B0WeightType::TEs;
+        assert!(!generate_command(&c).contains("--b0-weight-t2star"));
     }
 
     #[test]

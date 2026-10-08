@@ -39,7 +39,8 @@ configurable — see [Algorithms](/QSMxT/reference/algorithms/).
 1. **Masking** — generate a brain/region mask (`threshold` or `bet`).
 2. **Phase offset removal** — remove receiver phase offsets on multi-echo data.
 3. **Phase unwrapping** — `romeo` or `laplacian`.
-4. **Echo combination / B0 mapping** — combine echoes into a field map.
+4. **Echo combination / B0 mapping** — combine echoes into a field map
+   (`--b0-estimation`, `--b0-weight-type`).
 5. **Background field removal** — `vsharp`, `pdf`, `lbv`, and more.
 6. **Dipole inversion** — `rts`, `tv`, `tgv`, `medi`, … (10 algorithms).
 7. **Referencing** — reference the susceptibility values (e.g. to the mean).

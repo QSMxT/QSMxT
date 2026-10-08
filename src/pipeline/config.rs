@@ -256,8 +256,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 cli::B0WeightTypeArg::Average => B0WeightType::Average,
                 cli::B0WeightTypeArg::TEs => B0WeightType::TEs,
                 cli::B0WeightTypeArg::Mag => B0WeightType::Mag,
+                cli::B0WeightTypeArg::T2star => B0WeightType::T2star,
             };
         }
+        if let Some(v) = args.b0_weight_t2star { config.field_mapping.b0_weight_t2star_ms = v; }
         if let Some(ref s) = args.coil_combination_sigma {
             if s.len() == 3 { config.field_mapping.coil_combination_sigma = [s[0], s[1], s[2]]; }
         }
