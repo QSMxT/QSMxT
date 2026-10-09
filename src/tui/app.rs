@@ -1428,8 +1428,8 @@ pub struct PipelineFormState {
     pub romeo_correct_global: bool,
     pub romeo_template: String,
     pub b0_estimation: usize,    // 0=weighted_avg, 1=linear_fit
-    pub b0_weight_type: usize,   // 0=phase_snr, 1=phase_var, 2=average, 3=tes, 4=mag, 5=t2star
-    pub b0_weight_t2star_ms: String,
+    pub b0_weight_type: usize,   // 0=phase_snr, 1=phase_var, 2=average, 3=tes, 4=mag, 5=assumed-decay
+    pub b0_weight_assumed_t2star_ms: String,
 
     // Parameters (as Strings for text editing)
     pub inhomogeneity_correction: bool,
@@ -1777,7 +1777,7 @@ impl Default for PipelineFormState {
             romeo_template: "1".to_string(),
             b0_estimation: 0,    // weighted_avg
             b0_weight_type: 0,   // phase_snr
-            b0_weight_t2star_ms: format!("{}", qsmxt_config::default_b0_weight_t2star_ms()),
+            b0_weight_assumed_t2star_ms: format!("{}", qsmxt_config::default_b0_weight_assumed_t2star_ms()),
             inhomogeneity_correction: true,
             obliquity_threshold: "-1".to_string(),
             dl_tile_size: String::new(),
@@ -2038,7 +2038,7 @@ const QSMART_INV_HELP: &[&str] = &[
 pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian"];
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
 pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit"];
-pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average", "tes", "mag", "t2star"];
+pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average", "tes", "mag", "assumed-decay"];
 const B0_ESTIMATION_HELP: &[&str] = &[
     "Weighted average of phase/TE across echoes (default)",
     "Magnitude-weighted linear fit of phase vs TE",
@@ -2049,7 +2049,7 @@ const B0_WEIGHT_TYPE_HELP: &[&str] = &[
     "Uniform weights (unweighted average)",
     "TE only",
     "Magnitude only",
-    "TE·exp(−TE/T2*) on the phase — UK Biobank / STI Suite",
+    "Fixed TE·exp(−TE/T2*) per echo from an assumed T2* (no T2* map, no magnitude) — UK Biobank's; phase-snr is generally better",
 ];
 /// Borrowed from the statics above so the row types keep their `&'static` slices.
 pub fn qsm_ref_options() -> &'static [&'static str] { &QSM_REF_OPTIONS_V }
@@ -2320,9 +2320,9 @@ impl PipelineFormState {
                     label: "  Weight Type", field: "b0_weight_type",
                     options: B0_WEIGHT_TYPE_OPTIONS, help: B0_WEIGHT_TYPE_HELP,
                 });
-                if self.b0_weight_type == 5 { // t2star
-                    rows.push(PipelineRow::Param { label: "    T2* (ms)", field: "b0_weight_t2star_ms",
-                        help: "Tissue T2* assumed by the T2* weighting (UK Biobank: 40 ms)" });
+                if self.b0_weight_type == 5 { // assumed-decay
+                    rows.push(PipelineRow::Param { label: "    Assumed T2* (ms)", field: "b0_weight_assumed_t2star_ms",
+                        help: "T2* assumed to compute the fixed echo weights; no T2* map is used (UK Biobank: 40 ms)" });
                 }
             } else { // linear_fit
                 rows.push(PipelineRow::Toggle {
@@ -2751,7 +2751,7 @@ impl PipelineFormState {
             "heidi_cone_threshold" => &self.heidi_cone_threshold,
             "heidi_gradient_threshold" => &self.heidi_gradient_threshold,
             "heidi_laplacian_threshold" => &self.heidi_laplacian_threshold,
-            "b0_weight_t2star_ms" => &self.b0_weight_t2star_ms,
+            "b0_weight_assumed_t2star_ms" => &self.b0_weight_assumed_t2star_ms,
             "heidi_gradient_mask_floor" => &self.heidi_gradient_mask_floor,
             "heidi_continuation_steps" => &self.heidi_continuation_steps,
             "heidi_inner_iterations" => &self.heidi_inner_iterations,
@@ -2940,7 +2940,7 @@ impl PipelineFormState {
             "heidi_cone_threshold" => Some(&mut self.heidi_cone_threshold),
             "heidi_gradient_threshold" => Some(&mut self.heidi_gradient_threshold),
             "heidi_laplacian_threshold" => Some(&mut self.heidi_laplacian_threshold),
-            "b0_weight_t2star_ms" => Some(&mut self.b0_weight_t2star_ms),
+            "b0_weight_assumed_t2star_ms" => Some(&mut self.b0_weight_assumed_t2star_ms),
             "heidi_gradient_mask_floor" => Some(&mut self.heidi_gradient_mask_floor),
             "heidi_continuation_steps" => Some(&mut self.heidi_continuation_steps),
             "heidi_inner_iterations" => Some(&mut self.heidi_inner_iterations),

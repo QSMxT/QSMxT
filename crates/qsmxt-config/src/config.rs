@@ -740,9 +740,10 @@ pub struct FieldMappingConfig {
     pub unwrapping_algorithm: UnwrappingAlgorithm,
     pub b0_estimation: B0Estimation,
     pub b0_weight_type: B0WeightType,
-    /// Tissue T2* (ms) assumed by `b0_weight_type = "t2star"`. Default 40 ms, UK Biobank's.
-    #[serde(default = "default_b0_weight_t2star_ms")]
-    pub b0_weight_t2star_ms: f64,
+    /// T2* (ms) assumed by `b0_weight_type = "assumed-decay"` to compute its fixed per-echo
+    /// weights (no T2* map is used). Default 40 ms, UK Biobank's.
+    #[serde(default = "default_b0_weight_assumed_t2star_ms")]
+    pub b0_weight_assumed_t2star_ms: f64,
     /// Poisson solver used by `unwrapping_algorithm = "laplacian"`.
     #[serde(default, alias = "laplacian_kernel")]
     pub laplacian_solver: LaplacianSolver,
@@ -752,7 +753,7 @@ pub struct FieldMappingConfig {
     pub romeo: RomeoConfig,
     pub linear_fit: LinearFitConfig,
 }
-pub fn default_b0_weight_t2star_ms() -> f64 { 40.0 }
+pub fn default_b0_weight_assumed_t2star_ms() -> f64 { 40.0 }
 pub fn default_laplacian_fft_pad() -> usize { 64 }
 fn default_coil_combination_sigma() -> [f64; 3] { [10.0, 10.0, 5.0] }
 
@@ -789,7 +790,7 @@ impl Default for FieldMappingConfig {
             unwrapping_algorithm: UnwrappingAlgorithm::Romeo,
             b0_estimation: B0Estimation::WeightedAvg,
             b0_weight_type: B0WeightType::PhaseSNR,
-            b0_weight_t2star_ms: default_b0_weight_t2star_ms(),
+            b0_weight_assumed_t2star_ms: default_b0_weight_assumed_t2star_ms(),
             laplacian_solver: LaplacianSolver::Dct,
             laplacian_fft_pad: default_laplacian_fft_pad(),
             romeo: RomeoConfig::default(),

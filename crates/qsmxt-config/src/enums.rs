@@ -128,16 +128,18 @@ pub enum B0WeightType {
     PhaseVar, Average,
     #[serde(rename = "tes")] TEs,
     Mag,
-    /// `TE·exp(−TE/T2*)` on the phase (UK Biobank / STI Suite), with T2* from
-    /// `field_mapping.b0_weight_t2star_ms`.
-    #[serde(rename = "t2star")] T2star,
+    /// Fixed per-echo weights `TE·exp(−TE/T2*)` on the phase, from the echo times and an
+    /// *assumed* T2* (`field_mapping.b0_weight_assumed_t2star_ms`): the same weights in every
+    /// voxel, with no T2* map and no magnitude. UK Biobank's echo combination (Wang et al. 2022,
+    /// Nat. Neurosci. 25:818). `phase-snr` is generally preferable when magnitude is available.
+    AssumedDecay,
 }
 impl fmt::Display for B0WeightType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match self {
             Self::PhaseSNR => "phase-snr", Self::PhaseVar => "phase-var",
             Self::Average => "average", Self::TEs => "tes", Self::Mag => "mag",
-            Self::T2star => "t2star",
+            Self::AssumedDecay => "assumed-decay",
         })
     }
 }

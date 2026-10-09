@@ -1038,15 +1038,20 @@ pub struct PipelineArgs {
     #[arg(long, value_enum)]
     pub b0_estimation: Option<B0EstimationArg>,
 
-    /// B0 weighted averaging weight type. `t2star` weights each echo's phase by
-    /// TE·exp(−TE/T2*) (UK Biobank / STI Suite); with `--unwrapping-algorithm laplacian` that is
-    /// UK Biobank's field map. Applies to Laplacian unwrapping as well as ROMEO
+    /// B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight
+    /// TE·exp(−TE/T2*) computed from the echo times and an assumed T2*
+    /// (`--b0-weight-assumed-t2star`), the same in every voxel: no T2* map, no magnitude. It is
+    /// UK Biobank's echo combination (Wang et al. 2022, Nat Neurosci 25:818); with
+    /// `--unwrapping-algorithm laplacian` it gives UK Biobank's field map. `phase-snr`, which uses
+    /// the measured magnitude in each voxel, is generally preferable when magnitude is available.
+    /// Applies to Laplacian unwrapping as well as ROMEO
     #[arg(long, value_enum)]
     pub b0_weight_type: Option<B0WeightTypeArg>,
 
-    /// T2* in ms assumed by `--b0-weight-type t2star` (default 40, UK Biobank's)
+    /// T2* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights
+    /// (default 40, UK Biobank's; no T2* map is used)
     #[arg(long, value_name = "MS")]
-    pub b0_weight_t2star: Option<f64>,
+    pub b0_weight_assumed_t2star: Option<f64>,
 
     /// Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares,
     /// Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a
@@ -1755,13 +1760,14 @@ pub struct FieldmapCommonArgs {
     /// B0 field estimation method
     #[arg(long, value_enum, default_value = "weighted-avg")]
     pub b0_estimation: B0EstimationArg,
-    /// B0 weighted-averaging weight type. `t2star` weights each echo's phase by
-    /// TE·exp(−TE/T2*) (UK Biobank / STI Suite)
+    /// B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight
+    /// TE·exp(−TE/T2*) from the echo times and an assumed T2* (no T2* map, no magnitude):
+    /// UK Biobank's echo combination. `phase-snr` is generally preferable with magnitude
     #[arg(long, value_enum, default_value = "phase-snr")]
     pub b0_weight_type: B0WeightTypeArg,
-    /// T2* in ms assumed by `--b0-weight-type t2star`
+    /// T2* in ms assumed by `--b0-weight-type assumed-decay` (no T2* map is used)
     #[arg(long, value_name = "MS", default_value_t = 40.0)]
-    pub b0_weight_t2star: f64,
+    pub b0_weight_assumed_t2star: f64,
     /// Linear fit reliability threshold percentile (degrees)
     #[arg(long)]
     pub linear_fit_reliability_threshold: Option<f64>,
@@ -3227,7 +3233,7 @@ pub enum B0WeightTypeArg {
     PhaseSNR, PhaseVar, Average,
     #[value(alias = "tes")]
     TEs,
-    Mag, T2star,
+    Mag, AssumedDecay,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

@@ -256,10 +256,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 cli::B0WeightTypeArg::Average => B0WeightType::Average,
                 cli::B0WeightTypeArg::TEs => B0WeightType::TEs,
                 cli::B0WeightTypeArg::Mag => B0WeightType::Mag,
-                cli::B0WeightTypeArg::T2star => B0WeightType::T2star,
+                cli::B0WeightTypeArg::AssumedDecay => B0WeightType::AssumedDecay,
             };
         }
-        if let Some(v) = args.b0_weight_t2star { config.field_mapping.b0_weight_t2star_ms = v; }
+        if let Some(v) = args.b0_weight_assumed_t2star { config.field_mapping.b0_weight_assumed_t2star_ms = v; }
         if let Some(k) = args.laplacian_solver {
             config.field_mapping.laplacian_solver = match k {
                 cli::LaplacianSolverArg::Dct => LaplacianSolver::Dct,
@@ -757,6 +757,21 @@ mod tests {
         let mut config = PipelineConfig::default();
         apply_run_overrides(&mut config, &run_args.pipeline);
         config
+    }
+
+    #[test]
+    fn assumed_decay_b0_weighting_from_cli() {
+        let c = config_from_cli(&[
+            "qsmxt", "run", "<bids>", "--b0-weight-type", "assumed-decay",
+            "--b0-weight-assumed-t2star", "35",
+        ]);
+        assert_eq!(c.field_mapping.b0_weight_type, B0WeightType::AssumedDecay);
+        assert_eq!(c.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
+        let d = config_from_cli(&["qsmxt", "run", "<bids>", "--b0-weight-type", "assumed-decay"]);
+        assert_eq!(d.field_mapping.b0_weight_assumed_t2star_ms, 40.0);
+        // The never-released `t2star` spelling is gone, not aliased.
+        assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--b0-weight-type", "t2star"]).is_err());
+        assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--b0-weight-t2star", "40"]).is_err());
     }
 
     #[test]

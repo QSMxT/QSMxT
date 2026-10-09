@@ -2449,7 +2449,7 @@ fn stage_unwrap(
         // The echo combination: changing it must not reuse a field map cached under another.
         "b0_estimation": format!("{}", ctx.config.field_mapping.b0_estimation),
         "b0_weight_type": format!("{}", ctx.config.field_mapping.b0_weight_type),
-        "b0_weight_t2star_ms": ctx.config.field_mapping.b0_weight_t2star_ms,
+        "b0_weight_assumed_t2star_ms": ctx.config.field_mapping.b0_weight_assumed_t2star_ms,
         "linear_fit_estimate_offset": ctx.config.field_mapping.linear_fit.estimate_offset,
         "linear_fit_reliability_threshold": ctx.config.field_mapping.linear_fit.reliability_threshold_percentile,
         // Per-echo masked Laplacian + echo combination (pipeline::fieldmap); bump on a change
@@ -2500,8 +2500,8 @@ fn stage_unwrap(
     );
 
     let weighting = match ctx.config.field_mapping.b0_weight_type {
-        crate::pipeline::config::B0WeightType::T2star => crate::pipeline::fieldmap::EchoWeighting::T2star {
-            t2star_s: ctx.config.field_mapping.b0_weight_t2star_ms * 1e-3,
+        crate::pipeline::config::B0WeightType::AssumedDecay => crate::pipeline::fieldmap::EchoWeighting::AssumedDecay {
+            t2star_s: ctx.config.field_mapping.b0_weight_assumed_t2star_ms * 1e-3,
         },
         _ => crate::pipeline::fieldmap::EchoWeighting::Core(fm_config.b0_weight_type),
     };

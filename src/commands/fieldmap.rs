@@ -91,7 +91,7 @@ fn apply_common_config(
         B0WeightTypeArg::TEs => qsm_core::utils::B0WeightType::TEs,
         B0WeightTypeArg::Mag => qsm_core::utils::B0WeightType::Mag,
         // No qsm-core counterpart: carried by `echo_weighting` instead (placeholder here).
-        B0WeightTypeArg::T2star => qsm_core::utils::B0WeightType::TEs,
+        B0WeightTypeArg::AssumedDecay => qsm_core::utils::B0WeightType::TEs,
     };
     if let Some(v) = common.linear_fit_reliability_threshold {
         config.linear_fit_params.reliability_threshold_percentile = v;
@@ -107,7 +107,7 @@ fn echo_weighting(
     common: &FieldmapCommonArgs,
 ) -> EchoWeighting {
     match common.b0_weight_type {
-        B0WeightTypeArg::T2star => EchoWeighting::T2star { t2star_s: common.b0_weight_t2star * 1e-3 },
+        B0WeightTypeArg::AssumedDecay => EchoWeighting::AssumedDecay { t2star_s: common.b0_weight_assumed_t2star * 1e-3 },
         _ => EchoWeighting::Core(config.b0_weight_type),
     }
 }
@@ -339,7 +339,7 @@ mod tests {
             params: None,
             b0_estimation: B0EstimationArg::WeightedAvg,
             b0_weight_type: B0WeightTypeArg::PhaseSNR,
-            b0_weight_t2star: 40.0,
+            b0_weight_assumed_t2star: 40.0,
             linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
         };
@@ -384,7 +384,7 @@ mod tests {
             params: Some(params_path),
             b0_estimation: B0EstimationArg::WeightedAvg,
             b0_weight_type: B0WeightTypeArg::PhaseSNR,
-            b0_weight_t2star: 40.0,
+            b0_weight_assumed_t2star: 40.0,
             linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
         };
@@ -417,7 +417,7 @@ mod tests {
             params: None,
             b0_estimation: B0EstimationArg::WeightedAvg,
             b0_weight_type: B0WeightTypeArg::PhaseSNR,
-            b0_weight_t2star: 40.0,
+            b0_weight_assumed_t2star: 40.0,
             linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
         };

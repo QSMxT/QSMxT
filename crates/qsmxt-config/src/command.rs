@@ -115,8 +115,8 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     }
     emit_enum(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation);
     emit_enum(&mut parts, "--b0-weight-type", &config.field_mapping.b0_weight_type, &d.field_mapping.b0_weight_type);
-    if config.field_mapping.b0_weight_type == B0WeightType::T2star {
-        emit_f64(&mut parts, "--b0-weight-t2star", config.field_mapping.b0_weight_t2star_ms, d.field_mapping.b0_weight_t2star_ms);
+    if config.field_mapping.b0_weight_type == B0WeightType::AssumedDecay {
+        emit_f64(&mut parts, "--b0-weight-assumed-t2star", config.field_mapping.b0_weight_assumed_t2star_ms, d.field_mapping.b0_weight_assumed_t2star_ms);
     }
 
     // ROMEO params
@@ -899,17 +899,21 @@ frangi_c = 400.0
     }
 
     #[test]
-    fn test_b0_weight_type_t2star() {
+    fn test_b0_weight_type_assumed_decay() {
         let mut c = PipelineConfig::default();
-        c.field_mapping.b0_weight_type = B0WeightType::T2star;
+        c.field_mapping.b0_weight_type = B0WeightType::AssumedDecay;
         let cmd = generate_command(&c);
-        assert!(cmd.contains("--b0-weight-type t2star"), "{cmd}");
-        assert!(!cmd.contains("--b0-weight-t2star"), "default T2* is not emitted: {cmd}");
-        c.field_mapping.b0_weight_t2star_ms = 35.0;
-        assert!(generate_command(&c).contains("--b0-weight-t2star 35"));
-        // only meaningful with t2star weighting
+        assert!(cmd.contains("--b0-weight-type assumed-decay"), "{cmd}");
+        assert!(!cmd.contains("--b0-weight-assumed-t2star"), "default T2* is not emitted: {cmd}");
+        c.field_mapping.b0_weight_assumed_t2star_ms = 35.0;
+        assert!(generate_command(&c).contains("--b0-weight-assumed-t2star 35"));
+        // only meaningful with assumed-decay weighting
         c.field_mapping.b0_weight_type = B0WeightType::TEs;
-        assert!(!generate_command(&c).contains("--b0-weight-t2star"));
+        assert!(!generate_command(&c).contains("--b0-weight-assumed-t2star"));
+        // The config spelling round-trips, and the never-released "t2star" is not accepted.
+        assert_eq!(serde_json::from_str::<B0WeightType>("\"assumed-decay\"").unwrap(), B0WeightType::AssumedDecay);
+        assert_eq!(B0WeightType::AssumedDecay.to_string(), "assumed-decay");
+        assert!(serde_json::from_str::<B0WeightType>("\"t2star\"").is_err());
     }
 
     #[test]

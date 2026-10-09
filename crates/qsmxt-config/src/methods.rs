@@ -22,6 +22,11 @@ const CITE_LAPLACIAN_UNWRAP: Citation = Citation {
     text: "Schofield, M.A., Zhu, Y. (2003). \"Fast phase unwrapping algorithm for interferometric applications.\" *Optics Letters*, 28(14):1194-1196. https://doi.org/10.1364/OL.28.001194",
 };
 
+const CITE_UKB_QSM: Citation = Citation {
+    key: "wang2022",
+    text: "Wang, C., et al. (2022). \"Phenotypic and genetic associations of quantitative magnetic susceptibility in UK Biobank brain imaging.\" *Nature Neuroscience*, 25(6):818-831. https://doi.org/10.1038/s41593-022-01074-w",
+};
+
 const CITE_VSHARP: Citation = Citation {
     key: "wu2012",
     text: "Wu, B., et al. (2012). \"Whole brain susceptibility mapping using compressed sensing.\" *Magnetic Resonance in Medicine*, 67(1):137-147. https://doi.org/10.1002/mrm.23000",
@@ -665,10 +670,11 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
     // B0 estimation
     match config.field_mapping.b0_estimation {
         B0Estimation::WeightedAvg => {
-            if config.field_mapping.b0_weight_type == B0WeightType::T2star {
+            if config.field_mapping.b0_weight_type == B0WeightType::AssumedDecay {
                 sentences.push(format!(
-                    "The B0 field map was estimated as a weighted average across echoes with weights TE·exp(−TE/T2*), T2* = {} ms.",
-                    config.field_mapping.b0_weight_t2star_ms));
+                    "The B0 field map was estimated as a weighted average of the unwrapped echo phases with fixed per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2* of {} ms (no T2* map; the same weights in every voxel), as in the UK Biobank QSM pipeline (Wang et al., 2022).",
+                    config.field_mapping.b0_weight_assumed_t2star_ms));
+                add_citation(citations, &CITE_UKB_QSM);
             } else {
                 let wt = format!("{}", config.field_mapping.b0_weight_type);
                 sentences.push(format!("The B0 field map was estimated using weighted averaging ({} weighting).", wt));
@@ -1358,11 +1364,12 @@ mod tests {
     }
 
     #[test]
-    fn test_b0_t2star_methods() {
+    fn test_b0_assumed_decay_methods() {
         let mut config = PipelineConfig::default();
-        config.field_mapping.b0_weight_type = B0WeightType::T2star;
+        config.field_mapping.b0_weight_type = B0WeightType::AssumedDecay;
         let out = generate_methods(&config);
-        assert!(out.contains("TE·exp(−TE/T2*), T2* = 40 ms"), "{out}");
+        assert!(out.contains("TE·exp(−TE/T2*), computed from the echo times and an assumed T2* of 40 ms"), "{out}");
+        assert!(out.contains("Wang, C., et al. (2022)"), "{out}");
     }
 
     #[test]

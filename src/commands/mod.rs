@@ -62,7 +62,7 @@ mod integration_tests {
                 bipolar_correction: false,
                 b0_estimation: None,
                 b0_weight_type: None,
-                b0_weight_t2star: None,
+                b0_weight_assumed_t2star: None,
                 laplacian_solver: None,
                 laplacian_fft_pad: None,
                 bet_fractional_intensity: None,

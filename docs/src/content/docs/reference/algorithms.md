@@ -245,7 +245,7 @@ Set with `--unwrapping-algorithm`.
 | `laplacian` | Laplacian-based unwrapping |
 
 With `laplacian`, each echo is unwrapped on its own (the phase is zeroed outside the
-mask first, as STI Suite is used by UK Biobank) and the echoes are then combined by
+mask first, as UK Biobank calls STI Suite's unwrapper) and the echoes are then combined by
 `--b0-estimation` / `--b0-weight-type`, the same options as with ROMEO. Phase offset
 removal and bipolar correction are not applied, so use it on phase that is already
 offset-free (single-channel or prescan-normalised reconstructions, MCPC-3D-S combined
@@ -275,11 +275,17 @@ Multi-echo field maps combine the unwrapped echoes with `--b0-estimation`:
 | `average` | uniform |
 | `tes` | TE |
 | `mag` | magnitude |
-| `t2star` | TE² × exp(−TE/T2\*), i.e. TE × exp(−TE/T2\*) on the phase, with T2\* from `--b0-weight-t2star` (ms, default 40) |
+| `assumed-decay` | TE² × exp(−TE/T2\*), i.e. TE × exp(−TE/T2\*) on the phase, with an assumed T2\* from `--b0-weight-assumed-t2star` (ms, default 40) |
 
-`t2star` is UK Biobank's weighting (STI Suite): `--unwrapping-algorithm laplacian
---b0-weight-type t2star` (with `--laplacian-solver fft` for STI's solver) reproduces UK Biobank's field map — per-echo Laplacian
-unwrapping and a TE·exp(−TE/T2\*)-weighted mean with T2\* = 40 ms.
+`assumed-decay` is a fixed per-echo weighting computed from the echo times and an
+*assumed* T2\*: every voxel gets the same weights, and neither a T2\* map nor the
+magnitude is used. It is UK Biobank's echo-combination weighting, with T2\* = 40 ms for
+every participant ([Wang et al. 2022, *Nat. Neurosci.* 25:818](https://doi.org/10.1038/s41593-022-01074-w)):
+`--unwrapping-algorithm laplacian --b0-weight-type assumed-decay` (with
+`--laplacian-solver fft` for STI Suite's solver) reproduces UK Biobank's field map, i.e.
+per-echo Laplacian unwrapping and a TE·exp(−TE/T2\*)-weighted mean of the unwrapped phases.
+When magnitude images are available, `phase-snr`, which uses the measured magnitude in each
+voxel, is generally preferable.
 
 ## Background field removal
 

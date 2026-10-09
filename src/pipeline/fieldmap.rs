@@ -14,13 +14,15 @@
 //!   is aligned across echoes, and the echoes are combined with the configured estimator — so
 //!   `--b0-estimation` and `--b0-weight-type` mean the same thing as they do with ROMEO, and
 //!   `--b0-estimation linear-fit` still gives the old fit.
-//! * **`t2star` weighting** ([`EchoWeighting::T2star`]), which qsm-core has no weight type for.
-//!   With ROMEO it reproduces qsm-core's offset-removal path (offset removal → bipolar correction
-//!   → multi-echo ROMEO) with the T2*-weighted average as its last step.
+//! * **`assumed-decay` weighting** ([`EchoWeighting::AssumedDecay`]), which the pinned qsm-core
+//!   has no weight type for. With ROMEO it reproduces qsm-core's offset-removal path (offset
+//!   removal → bipolar correction → multi-echo ROMEO) with the assumed-decay weighted average as
+//!   its last step.
 //!
-//! The UK Biobank / STI Suite recipe — per-echo Laplacian unwrapping, then a mean weighted by
-//! `TE·exp(−TE/T2*)` with T2* = 40 ms — is `--unwrapping-algorithm laplacian
-//! --b0-weight-type t2star`, with `--laplacian-solver fft` (pad 64) for STI's exact solver.
+//! The UK Biobank recipe — per-echo Laplacian unwrapping (STI Suite's `MRPhaseUnwrap`), then a
+//! mean weighted by `TE·exp(−TE/T2*)` with an assumed T2* of 40 ms — is
+//! `--unwrapping-algorithm laplacian --b0-weight-type assumed-decay`, with
+//! `--laplacian-solver fft` (pad 64) for STI's exact solver.
 
 use qsm_core::pipeline::config::{
     B0EstimationMethod, FieldMappingConfig, PipelineError, ScanMetadata, UnwrappingAlgorithm,
@@ -72,15 +74,16 @@ pub fn laplacian_unwrap_dct(phase: &[f64], mask: &[u8], grid: &Grid) -> Vec<f64>
 pub enum EchoWeighting {
     /// One of qsm-core's weight types (`config.b0_weight_type`).
     Core(qsm_core::utils::B0WeightType),
-    /// UK Biobank / STI Suite weighting with an assumed tissue T2* (seconds).
+    /// Fixed per-echo weights from the echo times and an *assumed* T2* (seconds): UK Biobank's
+    /// echo combination (Wang et al. 2022, Nat. Neurosci. 25:818; T2* = 40 ms for everyone).
     ///
     /// UKB averages the unwrapped *phases* with `Wₑ = TEₑ·exp(−TEₑ/T2*)` and divides by the
     /// equally weighted mean TE, i.e. `f = Σ Wₑ φₑ / Σ Wₑ TEₑ`. In the phase/TE form every other
-    /// weight type uses (`f = Σ wₑ (φₑ/TEₑ) / Σ wₑ`) that is `wₑ = TEₑ² · exp(−TEₑ/T2*)`: the
-    /// phase-variance weighting `mag²·TE²` with a modelled rather than measured magnitude decay
-    /// (and half its decay rate). It does not depend on the voxel's magnitude, so the relative
-    /// echo weights are the same everywhere.
-    T2star { t2star_s: f64 },
+    /// weight type uses (`f = Σ wₑ (φₑ/TEₑ) / Σ wₑ`) that is `wₑ = TEₑ² · exp(−TEₑ/T2*)`. No T2*
+    /// map and no magnitude enter it, so every voxel gets the same echo weights. It is a
+    /// heuristic, not the inverse-variance weighting for that decay; `PhaseSNR`, which uses the
+    /// measured magnitude in each voxel, is generally preferable when magnitude is available.
+    AssumedDecay { t2star_s: f64 },
 }
 
 impl EchoWeighting {
@@ -93,7 +96,7 @@ impl EchoWeighting {
             EchoWeighting::Core(W::Average) => 1.0,
             EchoWeighting::Core(W::TEs) => te,
             EchoWeighting::Core(W::Mag) => mag,
-            EchoWeighting::T2star { t2star_s } => te * te * (-te / t2star_s).exp(),
+            EchoWeighting::AssumedDecay { t2star_s } => te * te * (-te / t2star_s).exp(),
         }
     }
 }
@@ -188,9 +191,9 @@ fn combine_echoes(
 fn validate(
     phases: &[&[f64]], mags: Option<&[&[f64]]>, mask: &[u8], meta: &ScanMetadata, weighting: EchoWeighting,
 ) -> Result<(), PipelineError> {
-    if let EchoWeighting::T2star { t2star_s } = weighting {
+    if let EchoWeighting::AssumedDecay { t2star_s } = weighting {
         if !(t2star_s.is_finite() && t2star_s > 0.0) {
-            return Err(PipelineError::InvalidConfig(format!("T2* for t2star weighting must be positive, got {} s", t2star_s)));
+            return Err(PipelineError::InvalidConfig(format!("assumed T2* for assumed-decay weighting must be positive, got {} s", t2star_s)));
         }
     }
     let n = meta.dims.0 * meta.dims.1 * meta.dims.2;
@@ -283,17 +286,17 @@ pub fn run_field_mapping(
 
     let hz = match (config.unwrapping_algorithm, weighting) {
         (UnwrappingAlgorithm::Laplacian, _) => laplacian_field_hz(phases, mags, mask, meta, config, weighting, solver),
-        (UnwrappingAlgorithm::Romeo, EchoWeighting::T2star { .. })
+        (UnwrappingAlgorithm::Romeo, EchoWeighting::AssumedDecay { .. })
             if n_echoes > 1 && weighted_avg && config.phase_offset_removal =>
         {
             romeo_offset_field_hz(phases, mags, mask, meta, config, weighting)
         }
         (UnwrappingAlgorithm::Romeo, w) => {
-            if matches!(w, EchoWeighting::T2star { .. }) && n_echoes > 1 && weighted_avg {
+            if matches!(w, EchoWeighting::AssumedDecay { .. }) && n_echoes > 1 && weighted_avg {
                 // qsm-core's ROMEO path without offset removal always fits a line; say so rather
                 // than quietly ignore the weighting.
                 log::warn!("ROMEO without phase offset removal estimates B0 with a linear fit; \
-                            --b0-weight-type t2star is not used");
+                            --b0-weight-type assumed-decay is not used");
             }
             let mut core = config.clone();
             if let EchoWeighting::Core(t) = w {
@@ -395,7 +398,7 @@ mod tests {
     }
 
     #[test]
-    fn t2star_weight_matches_ukb_formula() {
+    fn assumed_decay_weight_matches_ukb_formula() {
         // UKB: f = (W1 φ1 + W2 φ2) / (W1 TE1 + W2 TE2), W = TE·exp(−TE/T2*), in rad/s.
         let tes = [0.00942, 0.0197];
         let (p1, p2) = (0.7, 1.9);
@@ -403,13 +406,13 @@ mod tests {
         let ukb = (w[0] * p1 + w[1] * p2) / (w[0] * tes[0] + w[1] * tes[1]) / (2.0 * PI);
         let uw = vec![vec![p1], vec![p2]];
         let ones = [1.0];
-        let got = weighted_b0_hz(&uw, &[&ones, &ones], &tes, &[1], EchoWeighting::T2star { t2star_s: 0.040 });
+        let got = weighted_b0_hz(&uw, &[&ones, &ones], &tes, &[1], EchoWeighting::AssumedDecay { t2star_s: 0.040 });
         assert!((got[0] - ukb).abs() < 1e-12, "{} vs {}", got[0], ukb);
     }
 
     const ALL_WEIGHTINGS: [EchoWeighting; 6] = [
         EchoWeighting::Core(W::PhaseSNR), EchoWeighting::Core(W::PhaseVar), EchoWeighting::Core(W::Average),
-        EchoWeighting::Core(W::TEs), EchoWeighting::Core(W::Mag), EchoWeighting::T2star { t2star_s: 0.040 },
+        EchoWeighting::Core(W::TEs), EchoWeighting::Core(W::Mag), EchoWeighting::AssumedDecay { t2star_s: 0.040 },
     ];
 
     #[test]
@@ -444,7 +447,7 @@ mod tests {
         let run = |w| run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &lap_config(), w, DCT).unwrap();
         let a = run(EchoWeighting::Core(W::PhaseSNR));
         let b = run(EchoWeighting::Core(W::TEs));
-        let c = run(EchoWeighting::T2star { t2star_s: 0.040 });
+        let c = run(EchoWeighting::AssumedDecay { t2star_s: 0.040 });
         assert!(max_abs_diff(&a, &b, &mask) > 1e-4);
         assert!(max_abs_diff(&b, &c, &mask) > 1e-4);
     }
@@ -464,13 +467,13 @@ mod tests {
     }
 
     #[test]
-    fn t2star_with_infinite_t2star_is_phase_var_without_magnitude() {
+    fn assumed_decay_with_infinite_t2star_is_phase_var_without_magnitude() {
         // TE²·exp(−TE/∞) = TE² = mag²·TE² at unit magnitude: checks the weight on both paths,
         // and on the ROMEO path that the reproduction of qsm-core's offset-removal path matches it.
         let tes = [0.004, 0.009, 0.014];
         let (ph, _) = echoes(&tes);
         let mask = sphere_mask();
-        let inf = EchoWeighting::T2star { t2star_s: 1e30 };
+        let inf = EchoWeighting::AssumedDecay { t2star_s: 1e30 };
         for alg in [UnwrappingAlgorithm::Laplacian, UnwrappingAlgorithm::Romeo] {
             let cfg = FieldMappingConfig { unwrapping_algorithm: alg, b0_weight_type: W::PhaseVar, ..Default::default() };
             let a = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, inf, DCT).unwrap();
@@ -508,7 +511,7 @@ mod tests {
                 if m == 0 { *v = ((s >> 33) as f64 / (1u64 << 31) as f64 - 0.5) * 2.0 * PI; }
             }
         }
-        let w = EchoWeighting::T2star { t2star_s: 0.040 };
+        let w = EchoWeighting::AssumedDecay { t2star_s: 0.040 };
         let a = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &lap_config(), w, DCT).unwrap();
         let b = run_field_mapping(&refs(&noisy), None, &mask, &meta(&tes), &lap_config(), w, DCT).unwrap();
         assert!(max_abs_diff(&a, &b, &mask) < 1e-12);
@@ -520,7 +523,7 @@ mod tests {
         let (ph, _) = echoes(&tes);
         let mask = sphere_mask();
         let r = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &lap_config(),
-                                  EchoWeighting::T2star { t2star_s: 0.040 }, FFT);
+                                  EchoWeighting::AssumedDecay { t2star_s: 0.040 }, FFT);
         assert_eq!(r.is_ok(), cfg!(feature = "laplacian-fft"));
         // ROMEO does not use the solver, so it is never an error there.
         let romeo = FieldMappingConfig::default();
@@ -537,7 +540,7 @@ mod tests {
         let mask = sphere_mask();
         let (ph, _) = echoes_of(&tes, omega_sphere);
         let f = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &lap_config(),
-                                  EchoWeighting::T2star { t2star_s: 0.040 }, FFT).unwrap();
+                                  EchoWeighting::AssumedDecay { t2star_s: 0.040 }, FFT).unwrap();
         let truth = truth_of(&mask, omega_sphere);
         let rms_truth = (truth.iter().zip(&mask).filter(|(_, &m)| m != 0).map(|(t, _)| t * t).sum::<f64>()
             / mask.iter().filter(|&&m| m != 0).count() as f64).sqrt();
@@ -555,7 +558,7 @@ mod tests {
         assert!(run_field_mapping(&[&p], None, &mask, &meta(&[0.01, 0.02]), &lap_config(), w, DCT).is_err());
         assert!(run_field_mapping(&[&p[1..]], None, &mask, &meta(&[0.01]), &lap_config(), w, DCT).is_err());
         assert!(run_field_mapping(&[&p], None, &mask, &meta(&[0.0]), &lap_config(), w, DCT).is_err());
-        let t0 = EchoWeighting::T2star { t2star_s: 0.0 };
+        let t0 = EchoWeighting::AssumedDecay { t2star_s: 0.0 };
         assert!(run_field_mapping(&[&p], None, &mask, &meta(&[0.01]), &lap_config(), t0, DCT).is_err());
     }
 }
