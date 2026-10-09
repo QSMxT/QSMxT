@@ -12,7 +12,7 @@ pub fn execute(args: SwiArgs) -> crate::Result<()> {
 
     let mut phase_data = phase_nifti.data.clone();
     phase::scale_phase_to_pi(&mut phase_data);
-    let unwrapped = qsm_core::unwrap::laplacian_unwrap(&phase_data, &mask, &grid);
+    let unwrapped = crate::pipeline::fieldmap::laplacian_unwrap_dct(&phase_data, &mask, &grid);
 
     info!("Computing SWI ({}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 

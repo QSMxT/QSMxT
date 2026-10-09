@@ -1483,7 +1483,7 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let mag_data = load_volume(&ctx.output.magnitude_path(&ctx.run.key))?;
     let mask = load_mask(mask_path)?;
 
-    let unwrapped = qsm_core::unwrap::laplacian_unwrap(&phase_data, &mask, &grid);
+    let unwrapped = crate::pipeline::fieldmap::laplacian_unwrap_dct(&phase_data, &mask, &grid);
     let swi_scaling = match ctx.config.swi.scaling.as_str() {
         "negative_tanh" => qsm_core::swi::PhaseScaling::NegativeTanh,
         "positive" => qsm_core::swi::PhaseScaling::Positive,
@@ -2455,7 +2455,8 @@ fn stage_unwrap(
         // Per-echo masked Laplacian + echo combination (pipeline::fieldmap); bump on a change
         // to that path so field maps from the old one are recomputed.
         "laplacian_echo_combination": if unwrap_name == "laplacian" { 2 } else { 0 },
-        "laplacian_kernel": format!("{}", ctx.config.field_mapping.laplacian_kernel),
+        "laplacian_solver": format!("{}", ctx.config.field_mapping.laplacian_solver),
+        "laplacian_fft_pad": ctx.config.field_mapping.laplacian_fft_pad,
     });
     if ctx.is_cached_with_params("unwrap", Some(unwrap_alg), &unwrap_params) {
         log::info!("Skipping unwrap (cached)");
@@ -2505,13 +2506,13 @@ fn stage_unwrap(
         _ => crate::pipeline::fieldmap::EchoWeighting::Core(fm_config.b0_weight_type),
     };
     if unwrap_name == "laplacian" && ctx.meta.n_echoes > 1 {
-        log::info!("Laplacian unwrapping per echo ({} kernel), then {} ({} weighting)",
-            ctx.config.field_mapping.laplacian_kernel,
+        log::info!("Laplacian unwrapping per echo ({} solver), then {} ({} weighting)",
+            ctx.config.field_mapping.laplacian_solver,
             ctx.config.field_mapping.b0_estimation, ctx.config.field_mapping.b0_weight_type);
     }
     let field_ppm = crate::pipeline::fieldmap::run_field_mapping(
         &phase_slices, mag_option, &mask, &scan_meta, &fm_config, weighting,
-        ctx.config.field_mapping.laplacian_kernel,
+        crate::pipeline::fieldmap::Solver::from_config(&ctx.config.field_mapping),
     ).map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
 
     save_volume(field_path, &field_ppm, ctx.meta)?;

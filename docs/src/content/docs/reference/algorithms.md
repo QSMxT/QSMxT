@@ -251,10 +251,15 @@ removal and bipolar correction are not applied, so use it on phase that is alrea
 offset-free (single-channel or prescan-normalised reconstructions, MCPC-3D-S combined
 coils).
 
-`--laplacian-kernel` picks the Poisson solver: `dct` (QSM.rs, Neumann boundary, the
-default) or `sti` (STI Suite's `MRPhaseUnwrap` formulation with 64 voxels of zero
-padding, as UK Biobank calls it). `sti` needs a build with the `laplacian-sti` cargo
-feature against a QSM.rs that provides `laplacian_unwrap_sti`.
+`--laplacian-solver` picks the Poisson solver (QSM.jl's names):
+
+| Value | Method |
+| --- | --- |
+| `dct` | Unweighted least squares with a Neumann-boundary DCT solve (Ghiglia & Romero, 1994), as QSM.jl `:dct` (default) |
+| `fft` | Schofield & Zhu (2003): sin/cos Laplacian with an FFT Poisson solve on the volume zero-padded by `--laplacian-fft-pad` voxels per side (default 64, UK Biobank's), reproducing STI Suite 3.0's `MRPhaseUnwrap` |
+
+`fft` needs a build with the `laplacian-fft` cargo feature against a QSM.rs that provides
+`unwrap::LaplacianSolver`.
 
 ## Echo combination (B0 estimation)
 
@@ -273,7 +278,7 @@ Multi-echo field maps combine the unwrapped echoes with `--b0-estimation`:
 | `t2star` | TE² × exp(−TE/T2\*), i.e. TE × exp(−TE/T2\*) on the phase, with T2\* from `--b0-weight-t2star` (ms, default 40) |
 
 `t2star` is UK Biobank's weighting (STI Suite): `--unwrapping-algorithm laplacian
---b0-weight-type t2star` (with `--laplacian-kernel sti` for STI's solver) reproduces UK Biobank's field map — per-echo Laplacian
+--b0-weight-type t2star` (with `--laplacian-solver fft` for STI's solver) reproduces UK Biobank's field map — per-echo Laplacian
 unwrapping and a TE·exp(−TE/T2\*)-weighted mean with T2\* = 40 ms.
 
 ## Background field removal

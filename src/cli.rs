@@ -1048,10 +1048,16 @@ pub struct PipelineArgs {
     #[arg(long, value_name = "MS")]
     pub b0_weight_t2star: Option<f64>,
 
-    /// Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (QSM.rs, default) or `sti`
-    /// (STI Suite's MRPhaseUnwrap, as UK Biobank; needs a build with the `laplacian-sti` feature)
-    #[arg(long, value_enum)]
-    pub laplacian_kernel: Option<LaplacianKernelArg>,
+    /// Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares,
+    /// Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a
+    /// zero-padded volume = STI Suite's MRPhaseUnwrap, as UK Biobank; needs a build with the
+    /// `laplacian-fft` feature)
+    #[arg(long, value_enum, alias = "laplacian-kernel")]
+    pub laplacian_solver: Option<LaplacianSolverArg>,
+
+    /// Zero-padding in voxels per side for `--laplacian-solver fft` (default 64, UK Biobank's)
+    #[arg(long, value_name = "VOXELS")]
+    pub laplacian_fft_pad: Option<usize>,
 
     /// BET fractional intensity (0.0-1.0)
     #[arg(long)]
@@ -1793,10 +1799,14 @@ pub struct FieldmapRomeoArgs {
 pub struct FieldmapLaplacianArgs {
     #[command(flatten)]
     pub common: FieldmapCommonArgs,
-    /// Poisson solver: `dct` (QSM.rs) or `sti` (STI Suite's MRPhaseUnwrap, as UK Biobank;
-    /// needs a build with the `laplacian-sti` feature)
-    #[arg(long, value_enum, default_value = "dct")]
-    pub laplacian_kernel: LaplacianKernelArg,
+    /// Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve) or `fft` (Schofield &
+    /// Zhu, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap; needs a build with
+    /// the `laplacian-fft` feature)
+    #[arg(long, value_enum, default_value = "dct", alias = "laplacian-kernel")]
+    pub laplacian_solver: LaplacianSolverArg,
+    /// Zero-padding in voxels per side for `--laplacian-solver fft` (UK Biobank: 64)
+    #[arg(long, value_name = "VOXELS", default_value_t = 64)]
+    pub laplacian_fft_pad: usize,
     // Note: phase offset removal and bipolar correction are not applied with Laplacian
     // unwrapping, so they are intentionally not exposed here. Each echo is unwrapped on its
     // own and the echoes are then combined by b0-estimation / b0-weight-type / linear-fit-*
@@ -3201,8 +3211,10 @@ pub enum BfAlgorithmArg {
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
-pub enum LaplacianKernelArg {
-    Dct, Sti,
+pub enum LaplacianSolverArg {
+    Dct,
+    #[value(alias = "sti")]
+    Fft,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

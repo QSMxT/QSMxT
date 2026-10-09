@@ -65,20 +65,23 @@ impl fmt::Display for SeparationAlgorithm {
 #[serde(rename_all = "lowercase")]
 pub enum UnwrappingAlgorithm { Romeo, Laplacian }
 
-/// Poisson solver behind Laplacian unwrapping.
+/// Poisson solver behind Laplacian unwrapping (QSM.jl's `solver` names).
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
 #[serde(rename_all = "lowercase")]
-pub enum LaplacianKernel {
-    /// QSM.rs `laplacian_unwrap`: Neumann boundary, DCT solve over the array.
+pub enum LaplacianSolver {
+    /// Unweighted least squares with a Neumann-boundary DCT solve (Ghiglia & Romero, 1994),
+    /// as QSM.jl's `:dct`.
     #[default]
     Dct,
-    /// STI Suite 3.0 `MRPhaseUnwrap` (sin/cos formulation, zero-padded FFT; padding 64 as UK
-    /// Biobank calls it). Needs a build with the `laplacian-sti` feature.
-    Sti,
+    /// Schofield & Zhu (2003): sin/cos Laplacian with an FFT Poisson solve on the zero-padded
+    /// volume (`field_mapping.laplacian_fft_pad`), reproducing STI Suite 3.0's `MRPhaseUnwrap`.
+    /// Needs a build with the `laplacian-fft` feature.
+    #[serde(alias = "sti")]
+    Fft,
 }
-impl fmt::Display for LaplacianKernel {
+impl fmt::Display for LaplacianSolver {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self { Self::Dct => "dct", Self::Sti => "sti" })
+        write!(f, "{}", match self { Self::Dct => "dct", Self::Fft => "fft" })
     }
 }
 impl fmt::Display for UnwrappingAlgorithm {

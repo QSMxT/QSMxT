@@ -744,12 +744,16 @@ pub struct FieldMappingConfig {
     #[serde(default = "default_b0_weight_t2star_ms")]
     pub b0_weight_t2star_ms: f64,
     /// Poisson solver used by `unwrapping_algorithm = "laplacian"`.
-    #[serde(default)]
-    pub laplacian_kernel: LaplacianKernel,
+    #[serde(default, alias = "laplacian_kernel")]
+    pub laplacian_solver: LaplacianSolver,
+    /// Zero-padding (voxels per side) of the `fft` solver. Default 64, UK Biobank's.
+    #[serde(default = "default_laplacian_fft_pad")]
+    pub laplacian_fft_pad: usize,
     pub romeo: RomeoConfig,
     pub linear_fit: LinearFitConfig,
 }
 pub fn default_b0_weight_t2star_ms() -> f64 { 40.0 }
+pub fn default_laplacian_fft_pad() -> usize { 64 }
 fn default_coil_combination_sigma() -> [f64; 3] { [10.0, 10.0, 5.0] }
 
 fn default_crop_margin_mm() -> f64 { 32.0 }
@@ -786,7 +790,8 @@ impl Default for FieldMappingConfig {
             b0_estimation: B0Estimation::WeightedAvg,
             b0_weight_type: B0WeightType::PhaseSNR,
             b0_weight_t2star_ms: default_b0_weight_t2star_ms(),
-            laplacian_kernel: LaplacianKernel::Dct,
+            laplacian_solver: LaplacianSolver::Dct,
+            laplacian_fft_pad: default_laplacian_fft_pad(),
             romeo: RomeoConfig::default(),
             linear_fit: LinearFitConfig::default(),
         }

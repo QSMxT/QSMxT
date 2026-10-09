@@ -12,8 +12,8 @@ use crate::cli::{
     B0EstimationArg, B0WeightTypeArg, FieldmapCommand, FieldmapCommonArgs,
 };
 use crate::error::QsmxtError;
-use crate::cli::LaplacianKernelArg;
-use crate::pipeline::fieldmap::{EchoWeighting, LaplacianKernel};
+use crate::cli::LaplacianSolverArg;
+use crate::pipeline::fieldmap::{EchoWeighting, Solver};
 use crate::pipeline::phase;
 
 /// TE / B0 / geometry resolved from `--tes` / `--b0` / `--params`.
@@ -132,16 +132,16 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
                     c.bipolar_correction = bipolar_correction;
                     c.romeo_params = romeo_params.clone();
                 },
-                LaplacianKernel::Dct,
+                Solver::Dct,
             )
         }
         FieldmapCommand::Laplacian(args) => run_field_mapping(
             &args.common,
             qsm_core::pipeline::config::UnwrappingAlgorithm::Laplacian,
             &|_| {},
-            match args.laplacian_kernel {
-                LaplacianKernelArg::Dct => LaplacianKernel::Dct,
-                LaplacianKernelArg::Sti => LaplacianKernel::Sti,
+            match args.laplacian_solver {
+                LaplacianSolverArg::Dct => Solver::Dct,
+                LaplacianSolverArg::Fft => Solver::Fft { pad: args.laplacian_fft_pad },
             },
         ),
     }
@@ -151,7 +151,7 @@ fn run_field_mapping(
     common: &FieldmapCommonArgs,
     algorithm: qsm_core::pipeline::config::UnwrappingAlgorithm,
     apply_algo: &dyn Fn(&mut qsm_core::pipeline::config::FieldMappingConfig),
-    kernel: LaplacianKernel,
+    solver: Solver,
 ) -> crate::Result<()> {
     let params = resolve_scan_params(common)?;
 
@@ -237,7 +237,7 @@ fn run_field_mapping(
         &scan_meta,
         &config,
         echo_weighting(&config, common),
-        kernel,
+        solver,
     )
     .map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
 

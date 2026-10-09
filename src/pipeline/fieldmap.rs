@@ -20,18 +20,52 @@
 //!
 //! The UK Biobank / STI Suite recipe — per-echo Laplacian unwrapping, then a mean weighted by
 //! `TE·exp(−TE/T2*)` with T2* = 40 ms — is `--unwrapping-algorithm laplacian
-//! --b0-weight-type t2star`.
+//! --b0-weight-type t2star`, with `--laplacian-solver fft` (pad 64) for STI's exact solver.
 
 use qsm_core::pipeline::config::{
     B0EstimationMethod, FieldMappingConfig, PipelineError, ScanMetadata, UnwrappingAlgorithm,
 };
 use qsm_core::Grid;
 
-pub use qsmxt_config::LaplacianKernel;
+/// Poisson solver for Laplacian unwrapping, with its parameters (`field_mapping.laplacian_*`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Solver {
+    /// Unweighted least squares, Neumann/DCT solve (Ghiglia & Romero 1994; QSM.jl `:dct`).
+    Dct,
+    /// Schofield & Zhu (2003) sin/cos Laplacian, FFT solve on the volume zero-padded by `pad`
+    /// voxels per side: STI Suite 3.0's `MRPhaseUnwrap` (UK Biobank: pad 64).
+    Fft { pad: usize },
+}
 
-/// Zero-padding (voxels per side) for the STI kernel: UK Biobank's `'padsize', [64 64 64]`.
-#[cfg(feature = "laplacian-sti")]
-const STI_PAD: [usize; 3] = [64, 64, 64];
+impl std::fmt::Display for Solver {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self { Solver::Dct => write!(f, "dct"), Solver::Fft { pad } => write!(f, "fft (pad {pad})") }
+    }
+}
+
+impl Solver {
+    pub fn from_config(cfg: &qsmxt_config::FieldMappingConfig) -> Self {
+        match cfg.laplacian_solver {
+            qsmxt_config::LaplacianSolver::Dct => Solver::Dct,
+            qsmxt_config::LaplacianSolver::Fft => Solver::Fft { pad: cfg.laplacian_fft_pad },
+        }
+    }
+
+    /// Whether this build has the solver.
+    pub fn available(self) -> bool {
+        self == Solver::Dct || cfg!(feature = "laplacian-fft")
+    }
+}
+
+/// QSM.rs's Laplacian unwrap with the DCT solver (output zeroed outside `mask`). The one call
+/// that has to follow QSM.rs's `laplacian_unwrap` signature, which gains a solver argument in
+/// the QSM.rs the `laplacian-fft` feature builds against.
+pub fn laplacian_unwrap_dct(phase: &[f64], mask: &[u8], grid: &Grid) -> Vec<f64> {
+    #[cfg(feature = "laplacian-fft")]
+    return qsm_core::unwrap::laplacian_unwrap(phase, mask, grid, qsm_core::unwrap::LaplacianSolver::Dct);
+    #[cfg(not(feature = "laplacian-fft"))]
+    return qsm_core::unwrap::laplacian_unwrap(phase, mask, grid);
+}
 
 /// How echoes are weighted in a weighted-average B0 estimate.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -70,26 +104,18 @@ impl EchoWeighting {
 /// Biobank (`mask .* phase`): the Poisson solve is global, so noise outside the brain otherwise
 /// leaks into it. The result is defined up to a constant and is zero outside `mask`.
 ///
-/// This is the one place a Laplacian kernel is called. `kernel` must be available in this build
-/// (see [`kernel_available`]); [`run_field_mapping`] checks that before getting here.
-pub fn unwrap_echo_laplacian(phase: &[f64], mask: &[u8], grid: &Grid, kernel: LaplacianKernel) -> Vec<f64> {
+/// This is the one place the field-mapping Laplacian unwrap is called. `solver` must be
+/// available in this build ([`Solver::available`]); [`run_field_mapping`] checks that first.
+pub fn unwrap_echo_laplacian(phase: &[f64], mask: &[u8], grid: &Grid, solver: Solver) -> Vec<f64> {
     let masked: Vec<f64> = phase.iter().zip(mask).map(|(&p, &m)| if m != 0 { p } else { 0.0 }).collect();
-    match kernel {
-        LaplacianKernel::Dct => qsm_core::unwrap::laplacian_unwrap(&masked, mask, grid),
-        #[cfg(feature = "laplacian-sti")]
-        LaplacianKernel::Sti => {
-            let params = qsm_core::unwrap::LaplacianStiParams { pad: STI_PAD };
-            let u = qsm_core::unwrap::laplacian_unwrap_sti(&masked, grid, &params);
-            u.iter().zip(mask).map(|(&v, &m)| if m != 0 { v } else { 0.0 }).collect()
-        }
-        #[cfg(not(feature = "laplacian-sti"))]
-        LaplacianKernel::Sti => unreachable!("the STI Laplacian kernel is not in this build"),
+    match solver {
+        Solver::Dct => laplacian_unwrap_dct(&masked, mask, grid),
+        #[cfg(feature = "laplacian-fft")]
+        Solver::Fft { pad } => qsm_core::unwrap::laplacian_unwrap(
+            &masked, mask, grid, qsm_core::unwrap::LaplacianSolver::Fft { pad: [pad; 3] }),
+        #[cfg(not(feature = "laplacian-fft"))]
+        Solver::Fft { .. } => unreachable!("the FFT Laplacian solver is not in this build"),
     }
-}
-
-/// Whether this build has `kernel`.
-pub fn kernel_available(kernel: LaplacianKernel) -> bool {
-    kernel == LaplacianKernel::Dct || cfg!(feature = "laplacian-sti")
 }
 
 /// Subtract the mean over `mask` from `values` inside `mask`.
@@ -192,11 +218,11 @@ fn validate(
 /// Per-echo Laplacian unwrapping followed by the configured echo combination. Returns Hz.
 fn laplacian_field_hz(
     phases: &[&[f64]], mags: &[&[f64]], mask: &[u8], meta: &ScanMetadata,
-    config: &FieldMappingConfig, weighting: EchoWeighting, kernel: LaplacianKernel,
+    config: &FieldMappingConfig, weighting: EchoWeighting, solver: Solver,
 ) -> Vec<f64> {
     let grid = grid(meta);
     let unwrapped: Vec<Vec<f64>> = phases.iter().map(|p| {
-        let mut u = unwrap_echo_laplacian(p, mask, &grid, kernel);
+        let mut u = unwrap_echo_laplacian(p, mask, &grid, solver);
         remove_masked_mean(&mut u, mask);
         u
     }).collect();
@@ -231,7 +257,7 @@ fn grid(meta: &ScanMetadata) -> Grid {
 /// `mask`. `magnitudes` = `None` weights every echo and voxel equally.
 ///
 /// `weighting` replaces `config.b0_weight_type` (it can express weightings qsm-core cannot); pass
-/// [`EchoWeighting::Core`]`(config.b0_weight_type)` for qsm-core's own. `kernel` is the Poisson
+/// [`EchoWeighting::Core`]`(config.b0_weight_type)` for qsm-core's own. `solver` is the Poisson
 /// solver for Laplacian unwrapping (ignored with ROMEO).
 pub fn run_field_mapping(
     phases: &[&[f64]],
@@ -240,13 +266,13 @@ pub fn run_field_mapping(
     meta: &ScanMetadata,
     config: &FieldMappingConfig,
     weighting: EchoWeighting,
-    kernel: LaplacianKernel,
+    solver: Solver,
 ) -> Result<Vec<f64>, PipelineError> {
     validate(phases, magnitudes, mask, meta, weighting)?;
-    if config.unwrapping_algorithm == UnwrappingAlgorithm::Laplacian && !kernel_available(kernel) {
+    if config.unwrapping_algorithm == UnwrappingAlgorithm::Laplacian && !solver.available() {
         return Err(PipelineError::InvalidConfig(format!(
-            "the `{kernel}` Laplacian kernel needs a QSMxT built with the `laplacian-sti` feature \
-             (and a QSM.rs with laplacian_unwrap_sti)")));
+            "the `{solver}` Laplacian solver needs a QSMxT built with the `laplacian-fft` feature \
+             (and a QSM.rs with unwrap::LaplacianSolver)")));
     }
     let n = mask.len();
     let ones = vec![1.0; n];
@@ -256,7 +282,7 @@ pub fn run_field_mapping(
     let weighted_avg = config.b0_estimation == B0EstimationMethod::WeightedAvg;
 
     let hz = match (config.unwrapping_algorithm, weighting) {
-        (UnwrappingAlgorithm::Laplacian, _) => laplacian_field_hz(phases, mags, mask, meta, config, weighting, kernel),
+        (UnwrappingAlgorithm::Laplacian, _) => laplacian_field_hz(phases, mags, mask, meta, config, weighting, solver),
         (UnwrappingAlgorithm::Romeo, EchoWeighting::T2star { .. })
             if n_echoes > 1 && weighted_avg && config.phase_offset_removal =>
         {
@@ -287,7 +313,8 @@ mod tests {
     use std::f64::consts::PI;
 
     const N: usize = 24;
-    const DCT: LaplacianKernel = LaplacianKernel::Dct;
+    const DCT: Solver = Solver::Dct;
+    const FFT: Solver = Solver::Fft { pad: 64 };
 
     fn meta(tes: &[f64]) -> ScanMetadata {
         ScanMetadata {
@@ -488,29 +515,29 @@ mod tests {
     }
 
     #[test]
-    fn sti_kernel_needs_its_feature() {
+    fn fft_solver_needs_its_feature() {
         let tes = [0.004, 0.009];
         let (ph, _) = echoes(&tes);
         let mask = sphere_mask();
         let r = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &lap_config(),
-                                  EchoWeighting::T2star { t2star_s: 0.040 }, LaplacianKernel::Sti);
-        assert_eq!(r.is_ok(), cfg!(feature = "laplacian-sti"));
-        // ROMEO does not use the kernel, so it is never an error there.
+                                  EchoWeighting::T2star { t2star_s: 0.040 }, FFT);
+        assert_eq!(r.is_ok(), cfg!(feature = "laplacian-fft"));
+        // ROMEO does not use the solver, so it is never an error there.
         let romeo = FieldMappingConfig::default();
         assert!(run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &romeo,
-                                  EchoWeighting::Core(W::PhaseSNR), LaplacianKernel::Sti).is_ok());
+                                  EchoWeighting::Core(W::PhaseSNR), FFT).is_ok());
     }
 
-    #[cfg(feature = "laplacian-sti")]
+    #[cfg(feature = "laplacian-fft")]
     #[test]
-    fn sti_kernel_recovers_wrapped_field() {
+    fn fft_solver_recovers_wrapped_field() {
         // The masked phase falls smoothly to zero at the sphere edge, so the padded FFT solve
-        // recovers it (up to a constant), approximately: STI's kernel is a continuous-k one.
+        // recovers it (up to a constant), approximately: the FFT solver's kernel is a continuous-k one.
         let tes = [0.004, 0.009, 0.014];
         let mask = sphere_mask();
         let (ph, _) = echoes_of(&tes, omega_sphere);
         let f = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &lap_config(),
-                                  EchoWeighting::T2star { t2star_s: 0.040 }, LaplacianKernel::Sti).unwrap();
+                                  EchoWeighting::T2star { t2star_s: 0.040 }, FFT).unwrap();
         let truth = truth_of(&mask, omega_sphere);
         let rms_truth = (truth.iter().zip(&mask).filter(|(_, &m)| m != 0).map(|(t, _)| t * t).sum::<f64>()
             / mask.iter().filter(|&&m| m != 0).count() as f64).sqrt();

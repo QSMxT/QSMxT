@@ -109,7 +109,10 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     emit_f64_arr3(&mut parts, "--coil-combination-sigma", &config.field_mapping.coil_combination_sigma, &d.field_mapping.coil_combination_sigma);
     if config.field_mapping.bipolar_correction { parts.push("--bipolar-correction".into()); }
     emit_enum(&mut parts, "--unwrapping-algorithm", &config.field_mapping.unwrapping_algorithm, &d.field_mapping.unwrapping_algorithm);
-    emit_enum(&mut parts, "--laplacian-kernel", &config.field_mapping.laplacian_kernel, &d.field_mapping.laplacian_kernel);
+    emit_enum(&mut parts, "--laplacian-solver", &config.field_mapping.laplacian_solver, &d.field_mapping.laplacian_solver);
+    if config.field_mapping.laplacian_solver == LaplacianSolver::Fft {
+        emit_usize(&mut parts, "--laplacian-fft-pad", config.field_mapping.laplacian_fft_pad, d.field_mapping.laplacian_fft_pad);
+    }
     emit_enum(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation);
     emit_enum(&mut parts, "--b0-weight-type", &config.field_mapping.b0_weight_type, &d.field_mapping.b0_weight_type);
     if config.field_mapping.b0_weight_type == B0WeightType::T2star {
@@ -876,11 +879,23 @@ frangi_c = 400.0
     }
 
     #[test]
-    fn test_laplacian_kernel() {
+    fn test_laplacian_solver() {
         let mut c = PipelineConfig::default();
-        assert!(!generate_command(&c).contains("--laplacian-kernel"));
-        c.field_mapping.laplacian_kernel = LaplacianKernel::Sti;
-        assert!(generate_command(&c).contains("--laplacian-kernel sti"));
+        assert!(!generate_command(&c).contains("--laplacian-solver"));
+        c.field_mapping.laplacian_solver = LaplacianSolver::Fft;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--laplacian-solver fft"), "{cmd}");
+        assert!(!cmd.contains("--laplacian-fft-pad"), "default pad is not emitted: {cmd}");
+        c.field_mapping.laplacian_fft_pad = 12;
+        assert!(generate_command(&c).contains("--laplacian-fft-pad 12"));
+    }
+
+    #[test]
+    fn test_laplacian_solver_old_config_names() {
+        // `laplacian_kernel = "sti"` was the (unreleased) earlier spelling.
+        let c: FieldMappingConfig = toml::from_str("laplacian_kernel = \"sti\"").unwrap();
+        assert_eq!(c.laplacian_solver, LaplacianSolver::Fft);
+        assert_eq!(c.laplacian_fft_pad, 64);
     }
 
     #[test]

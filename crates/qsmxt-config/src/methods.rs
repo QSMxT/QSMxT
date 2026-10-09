@@ -652,11 +652,12 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
             add_citation(citations, &CITE_ROMEO);
         }
         UnwrappingAlgorithm::Laplacian => {
-            let kernel = match config.field_mapping.laplacian_kernel {
-                LaplacianKernel::Dct => "",
-                LaplacianKernel::Sti => " (STI Suite formulation)",
-            };
-            sentences.push(format!("Phase unwrapping was performed separately for each echo using the Laplacian method{} (Schofield & Zhu, 2003).", kernel));
+            sentences.push(match config.field_mapping.laplacian_solver {
+                LaplacianSolver::Dct => "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003), solved as unweighted least squares with a Neumann-boundary DCT (Ghiglia & Romero, 1994).".to_string(),
+                LaplacianSolver::Fft => format!(
+                    "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003), with an FFT Poisson solve on the volume zero-padded by {} voxels (as STI Suite's MRPhaseUnwrap).",
+                    config.field_mapping.laplacian_fft_pad),
+            });
             add_citation(citations, &CITE_LAPLACIAN_UNWRAP);
         }
     }
