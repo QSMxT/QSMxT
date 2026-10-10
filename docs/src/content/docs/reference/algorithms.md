@@ -566,9 +566,18 @@ anything — so every map is referenced to something. Choose what with
 
 | Value | What zero means |
 | --- | --- |
-| `mean` (default) | The mean χ inside the brain mask |
+| `mean` (default) | The mean χ over the voxels the map is defined on |
 | `none` | Nothing is subtracted; raw reconstruction values |
-| a region | The mean χ of a SynthSeg structure |
+| a region | The mean χ of a SynthSeg structure, over the voxels the map is defined on |
+
+Every reference is measured over the map's **support** — the voxels the
+reconstruction actually produced — not over the whole brain mask. Background-field
+removal erodes the mask (V-SHARP by its kernel radius, a few millimetres), and
+some inversions erode further (TGV by its `erosions`); the map has no values on
+that rim. The final `Chimap` is 0 outside the support, and the support itself is
+written beside it as `desc-qsm_mask` — a 0 in the map outside that mask means
+"not reconstructed", not χ = 0. For a two-pass run it is the union of both
+passes' supports.
 
 `mean` needs no extra information, but it moves with whatever else is in the
 mask: two subjects with different amounts of iron-rich tissue in the field of
@@ -602,7 +611,7 @@ exist on v1. Pick deliberately — the two give different numbers.
 
 A region reference implies `--do-segmentation`, since the region has to be
 measured on a parcellation; `--use-custom-dseg` satisfies that instead. If the
-region turns out to have no voxels inside the brain mask for a subject, that
+region turns out to have no voxels inside the support for a subject, that
 subject's run **fails** rather than falling back to `mean` — a map that was
 quietly referenced to something else looks fine and cannot be compared with the
 rest of the cohort.

@@ -196,6 +196,14 @@ impl DerivativeOutputs {
         self.anat_dir(key).join(format!("{}_desc-reliable_mask.nii", key.basename()))
     }
 
+    /// Where the final susceptibility map is defined: the brain mask less the rim that
+    /// background-field removal (or the inversion itself) eroded, and the union of both passes'
+    /// supports for a two-pass map. The `Chimap` is referenced over exactly these voxels and is 0
+    /// outside them, so a 0 in the map outside this mask means "not reconstructed", not χ = 0.
+    pub fn qsm_support_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-qsm_mask.nii", key.basename()))
+    }
+
     // Intermediate outputs (in workflow step directories)
     pub fn field_ppm_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "unwrap", "field-ppm") }
     pub fn local_field_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "bgremove", "localfield") }
@@ -312,6 +320,12 @@ mod tests {
     fn test_mask_path() {
         let path = output().mask_path(&key_no_session());
         assert_eq!(path, PathBuf::from("/out/sub-01/anat/sub-01_mask.nii"));
+    }
+
+    #[test]
+    fn test_qsm_support_path() {
+        let path = output().qsm_support_path(&key_with_session());
+        assert_eq!(path, PathBuf::from("/out/sub-01/ses-pre/anat/sub-01_ses-pre_desc-qsm_mask.nii"));
     }
 
     #[test]

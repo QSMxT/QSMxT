@@ -4,17 +4,40 @@
 //! cannot do this one: it zeroes everything outside the mask it is handed, so passing the region
 //! as that mask would subtract the right number and then throw away the rest of the brain. The
 //! region is a place to *measure* the offset, not the extent to keep.
+//!
+//! Every reference is measured and applied over the map's *support* — the voxels the
+//! reconstruction actually defined — not over the brain mask. Background-field removal erodes
+//! the mask (V-SHARP by its kernel radius, TGV by its erosions), and the raw map is 0 on that
+//! eroded rim. Averaging over the brain mask pulls the offset toward zero by the rim's share of
+//! the mask, and subtracting it there turns the rim into a shell of constant `-offset`. See
+//! [`defined_support`].
 
 use crate::error::QsmxtError;
 
-/// Subtract the region's mean susceptibility from the whole brain.
+/// The voxels a raw susceptibility map is defined on.
 ///
-/// `roi` selects where the offset is measured; `brain` selects what is kept. Voxels outside the
-/// brain mask stay zero, exactly as the mean and none paths leave them.
+/// `declared` are the masks the reconstruction was run on — the background-removal mask, or the
+/// brain mask when the inversion removed the background itself; two for a two-pass map, whose
+/// support is their union. A voxel inside them that the reconstruction still left at exactly 0
+/// (or non-finite) is excluded too: several inversions erode beyond the mask they are handed
+/// (TGV by its `erosions`), and an exact 0.0 inside a reconstruction is masking, not a
+/// measurement. This is the same rule the two-pass combination uses to decide where the
+/// reliable pass produced a value.
+pub fn defined_support(declared: &[&[u8]], chi: &[f64]) -> Vec<u8> {
+    chi.iter().enumerate()
+        .map(|(i, &c)| u8::from(c != 0.0 && c.is_finite() && declared.iter().any(|m| m[i] != 0)))
+        .collect()
+}
+
+/// Subtract the region's mean susceptibility from the map's support.
+///
+/// `roi` selects where the offset is measured; `brain` — the map's support, see
+/// [`defined_support`] — selects what is kept. Voxels outside it are written as zero, exactly as
+/// the mean and none paths leave them.
 ///
 /// Only voxels inside *both* masks count toward the offset: a parcellation is computed on the
-/// magnitude and can spill past the brain mask the reconstruction used, and a structure's voxels
-/// outside that mask hold no susceptibility to average.
+/// magnitude and can spill past the region the reconstruction defined, and a structure's voxels
+/// outside it hold no susceptibility to average.
 ///
 /// Fails rather than falling back when the region is empty. A run that quietly reverts to a
 /// different reference produces a map that looks fine and cannot be compared with its cohort —
@@ -32,9 +55,10 @@ pub fn reference_to_region(
     }
     if count == 0 {
         return Err(QsmxtError::Config(format!(
-            "QSM reference region `{region}` has no voxels inside the brain mask, so there is \
-             nothing to reference to. The parcellation may have missed the structure, or it may \
-             lie outside the mask. Check the segmentation, pick another region, or use \
+            "QSM reference region `{region}` has no voxels where the susceptibility map is \
+             defined, so there is nothing to reference to. The parcellation may have missed the \
+             structure, or it may lie outside the brain mask or in the rim background-field \
+             removal eroded. Check the segmentation, pick another region, or use \
              --qsm-reference mean"
         )));
     }
@@ -132,6 +156,25 @@ mod tests {
 
         // A region that exists only outside the brain mask is just as empty.
         assert!(reference_to_region(&[1.0, 2.0], &[1, 0], &[0, 1], "x").is_err());
+    }
+
+    /// The support is where the reconstruction wrote a value: inside a declared mask, and not
+    /// left at exactly 0 by an inversion that eroded further than the mask it was handed.
+    #[test]
+    fn the_support_excludes_eroded_and_unwritten_voxels() {
+        let chi = [0.1, 0.0, 0.2, f64::NAN, 0.3, 0.4];
+        let bg = [1, 1, 1, 1, 0, 0];
+        assert_eq!(defined_support(&[&bg], &chi), vec![1, 0, 1, 0, 0, 0]);
+    }
+
+    /// A two-pass map takes each voxel from one pass or the other, so its support is the union of
+    /// both passes' supports.
+    #[test]
+    fn a_two_pass_support_is_the_union_of_both_passes() {
+        let chi = [0.1, 0.2, 0.3, 0.4];
+        let main = [1, 1, 0, 0];
+        let reliable = [0, 1, 1, 0];
+        assert_eq!(defined_support(&[&main, &reliable], &chi), vec![1, 1, 1, 0]);
     }
 
     /// The mean reference's offset has to be recoverable too, on the same terms as a region's.
