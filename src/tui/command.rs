@@ -236,8 +236,14 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         phase_offset_sigma: None,
                 coil_combination_sigma: None,
         bipolar_correction: ps.bipolar_correction,
-        b0_estimation: None,
-        b0_weight_type: None,
+        // Only when changed from the default, so a default form still yields a bare command.
+        b0_estimation: (ps.b0_estimation != 0).then_some(B0EstimationArg::LinearFit),
+        b0_weight_type: [B0WeightTypeArg::PhaseSNR, B0WeightTypeArg::PhaseVar, B0WeightTypeArg::Average,
+                         B0WeightTypeArg::TEs, B0WeightTypeArg::Mag, B0WeightTypeArg::AssumedDecay]
+            .get(ps.b0_weight_type).copied().filter(|&w| w != B0WeightTypeArg::PhaseSNR),
+        b0_weight_assumed_t2star: if ps.b0_weight_type == 5 { parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) } else { None },
+        laplacian_solver: None,
+        laplacian_fft_pad: None,
         bet_fractional_intensity: parse_optional_f64(&ps.bet_fractional_intensity),
         bet_smoothness: parse_optional_f64(&ps.bet_smoothness),
         bet_gradient_threshold: parse_optional_f64(&ps.bet_gradient_threshold),
@@ -781,8 +787,12 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         1 => B0WeightType::PhaseVar,
         2 => B0WeightType::Average,
         3 => B0WeightType::TEs,
+        5 => B0WeightType::AssumedDecay,
         _ => B0WeightType::Mag,
     };
+    if let Some(v) = parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) {
+        config.field_mapping.b0_weight_assumed_t2star_ms = v;
+    }
     let (reference, region) =
         crate::pipeline::config::parse_reference_spec(&crate::tui::app::qsm_reference_spec(ps.qsm_reference));
     config.qsm.reference = reference;
@@ -1550,6 +1560,29 @@ mod tests {
         assert_eq!(slurm.pipeline.bf_algorithm, Some(crate::cli::BfAlgorithmArg::Pdf));
         assert_eq!(slurm.pipeline.bet_fractional_intensity, Some(0.3));
         assert!(slurm.pipeline.do_swi);
+    }
+
+    /// The B0 echo-combination rows reach the run (they used to be dropped, so the TUI's weight
+    /// type was ignored), including the assumed-decay weighting and its assumed T2*.
+    #[test]
+    fn test_run_args_carry_b0_combination() {
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".to_string();
+        let run = build_run_args(&app).unwrap();
+        assert_eq!(run.pipeline.b0_weight_type, None);
+        assert_eq!(run.pipeline.b0_estimation, None);
+        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        app.pipeline_state.b0_weight_type = 5; // assumed-decay
+        app.pipeline_state.b0_weight_assumed_t2star_ms = "35".to_string();
+        let mut cfg = PipelineConfig::default();
+        crate::pipeline::config::apply_run_overrides(&mut cfg, &build_run_args(&app).unwrap().pipeline);
+        assert_eq!(cfg.field_mapping.b0_weight_type, crate::pipeline::config::B0WeightType::AssumedDecay);
+        assert_eq!(cfg.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
+        let c = config_from_app(&app);
+        assert_eq!(c.field_mapping.b0_weight_type, crate::pipeline::config::B0WeightType::AssumedDecay);
+        assert_eq!(c.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
+        app.pipeline_state.b0_estimation = 1;
+        assert_eq!(build_run_args(&app).unwrap().pipeline.b0_estimation, Some(B0EstimationArg::LinearFit));
     }
 
     /// The pipeline the SLURM jobs get must be the one a local run would use.

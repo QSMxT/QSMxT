@@ -1483,7 +1483,7 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let mag_data = load_volume(&ctx.output.magnitude_path(&ctx.run.key))?;
     let mask = load_mask(mask_path)?;
 
-    let unwrapped = qsm_core::unwrap::laplacian_unwrap(&phase_data, &mask, &grid);
+    let unwrapped = crate::pipeline::fieldmap::laplacian_unwrap_dct(&phase_data, &mask, &grid);
     let swi_scaling = match ctx.config.swi.scaling.as_str() {
         "negative_tanh" => qsm_core::swi::PhaseScaling::NegativeTanh,
         "positive" => qsm_core::swi::PhaseScaling::Positive,
@@ -2446,6 +2446,17 @@ fn stage_unwrap(
         "romeo_correct_global": ctx.config.field_mapping.romeo.correct_global,
         "echo_times": ctx.meta.echo_times,
         "field_strength": ctx.meta.field_strength,
+        // The echo combination: changing it must not reuse a field map cached under another.
+        "b0_estimation": format!("{}", ctx.config.field_mapping.b0_estimation),
+        "b0_weight_type": format!("{}", ctx.config.field_mapping.b0_weight_type),
+        "b0_weight_assumed_t2star_ms": ctx.config.field_mapping.b0_weight_assumed_t2star_ms,
+        "linear_fit_estimate_offset": ctx.config.field_mapping.linear_fit.estimate_offset,
+        "linear_fit_reliability_threshold": ctx.config.field_mapping.linear_fit.reliability_threshold_percentile,
+        // Per-echo masked Laplacian + echo combination (pipeline::fieldmap); bump on a change
+        // to that path so field maps from the old one are recomputed.
+        "laplacian_echo_combination": if unwrap_name == "laplacian" { 2 } else { 0 },
+        "laplacian_solver": format!("{}", ctx.config.field_mapping.laplacian_solver),
+        "laplacian_fft_pad": ctx.config.field_mapping.laplacian_fft_pad,
     });
     if ctx.is_cached_with_params("unwrap", Some(unwrap_alg), &unwrap_params) {
         log::info!("Skipping unwrap (cached)");
@@ -2488,12 +2499,21 @@ fn stage_unwrap(
         ctx.meta.field_strength, ctx.meta.b0_direction,
     );
 
-    let result = qsm_core::pipeline::run_field_mapping(
-        &phase_slices, mag_option, &mask, &scan_meta, &fm_config,
-        &mut |_, _| {},
+    let weighting = match ctx.config.field_mapping.b0_weight_type {
+        crate::pipeline::config::B0WeightType::AssumedDecay => crate::pipeline::fieldmap::EchoWeighting::AssumedDecay {
+            t2star_s: ctx.config.field_mapping.b0_weight_assumed_t2star_ms * 1e-3,
+        },
+        _ => crate::pipeline::fieldmap::EchoWeighting::Core(fm_config.b0_weight_type),
+    };
+    if unwrap_name == "laplacian" && ctx.meta.n_echoes > 1 {
+        log::info!("Laplacian unwrapping per echo ({} solver), then {} ({} weighting)",
+            ctx.config.field_mapping.laplacian_solver,
+            ctx.config.field_mapping.b0_estimation, ctx.config.field_mapping.b0_weight_type);
+    }
+    let field_ppm = crate::pipeline::fieldmap::run_field_mapping(
+        &phase_slices, mag_option, &mask, &scan_meta, &fm_config, weighting,
+        crate::pipeline::fieldmap::Solver::from_config(&ctx.config.field_mapping),
     ).map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
-
-    let field_ppm = result.b0_field_ppm;
 
     save_volume(field_path, &field_ppm, ctx.meta)?;
     let phase_inputs: Vec<PathBuf> = (0..ctx.meta.n_echoes).map(|i| ctx.output.phase_scaled_path(&ctx.run.key, i + 1)).collect();

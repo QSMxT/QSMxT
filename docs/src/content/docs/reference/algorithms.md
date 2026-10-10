@@ -244,6 +244,49 @@ Set with `--unwrapping-algorithm`.
 | `romeo` | Rapid Opensource Minimum-spanning-tree Echo Optimisation (default) |
 | `laplacian` | Laplacian-based unwrapping |
 
+With `laplacian`, each echo is unwrapped on its own (the phase is zeroed outside the
+mask first, as UK Biobank calls STI Suite's unwrapper) and the echoes are then combined by
+`--b0-estimation` / `--b0-weight-type`, the same options as with ROMEO. Phase offset
+removal and bipolar correction are not applied, so use it on phase that is already
+offset-free (single-channel or prescan-normalised reconstructions, MCPC-3D-S combined
+coils).
+
+`--laplacian-solver` picks the Poisson solver (QSM.jl's names):
+
+| Value | Method |
+| --- | --- |
+| `dct` | Unweighted least squares with a Neumann-boundary DCT solve (Ghiglia & Romero, 1994), as QSM.jl `:dct` (default) |
+| `fft` | Schofield & Zhu (2003): sin/cos Laplacian with an FFT Poisson solve on the volume zero-padded by `--laplacian-fft-pad` voxels per side (default 64, UK Biobank's), reproducing STI Suite 3.0's `MRPhaseUnwrap` |
+
+`fft` needs a build with the `laplacian-fft` cargo feature against a QSM.rs that provides
+`unwrap::LaplacianSolver`.
+
+## Echo combination (B0 estimation)
+
+Multi-echo field maps combine the unwrapped echoes with `--b0-estimation`:
+`weighted-avg` (default) averages phase/TE across echoes with the weights chosen by
+`--b0-weight-type`; `linear-fit` fits phase against TE (with an intercept unless
+`--linear-fit-estimate-offset false`).
+
+| `--b0-weight-type` | Weight on phase/TE |
+| --- | --- |
+| `phase-snr` | magnitude × TE (default) |
+| `phase-var` | magnitude² × TE² |
+| `average` | uniform |
+| `tes` | TE |
+| `mag` | magnitude |
+| `assumed-decay` | TE² × exp(−TE/T2\*), i.e. TE × exp(−TE/T2\*) on the phase, with an assumed T2\* from `--b0-weight-assumed-t2star` (ms, default 40) |
+
+`assumed-decay` is a fixed per-echo weighting computed from the echo times and an
+*assumed* T2\*: every voxel gets the same weights, and neither a T2\* map nor the
+magnitude is used. It is UK Biobank's echo-combination weighting, with T2\* = 40 ms for
+every participant ([Wang et al. 2022, *Nat. Neurosci.* 25:818](https://doi.org/10.1038/s41593-022-01074-w)):
+`--unwrapping-algorithm laplacian --b0-weight-type assumed-decay` (with
+`--laplacian-solver fft` for STI Suite's solver) reproduces UK Biobank's field map, i.e.
+per-echo Laplacian unwrapping and a TE·exp(−TE/T2\*)-weighted mean of the unwrapped phases.
+When magnitude images are available, `phase-snr`, which uses the measured magnitude in each
+voxel, is generally preferable.
+
 ## Background field removal
 
 Set with `--bf-algorithm`.

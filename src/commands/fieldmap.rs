@@ -12,6 +12,8 @@ use crate::cli::{
     B0EstimationArg, B0WeightTypeArg, FieldmapCommand, FieldmapCommonArgs,
 };
 use crate::error::QsmxtError;
+use crate::cli::LaplacianSolverArg;
+use crate::pipeline::fieldmap::{EchoWeighting, Solver};
 use crate::pipeline::phase;
 
 /// TE / B0 / geometry resolved from `--tes` / `--b0` / `--params`.
@@ -88,12 +90,25 @@ fn apply_common_config(
         B0WeightTypeArg::Average => qsm_core::utils::B0WeightType::Average,
         B0WeightTypeArg::TEs => qsm_core::utils::B0WeightType::TEs,
         B0WeightTypeArg::Mag => qsm_core::utils::B0WeightType::Mag,
+        // No qsm-core counterpart: carried by `echo_weighting` instead (placeholder here).
+        B0WeightTypeArg::AssumedDecay => qsm_core::utils::B0WeightType::TEs,
     };
     if let Some(v) = common.linear_fit_reliability_threshold {
         config.linear_fit_params.reliability_threshold_percentile = v;
     }
     if let Some(v) = common.linear_fit_estimate_offset {
         config.linear_fit_params.estimate_offset = v;
+    }
+}
+
+/// The echo weighting for a weighted-average B0 estimate, including the ones qsm-core lacks.
+fn echo_weighting(
+    config: &qsm_core::pipeline::config::FieldMappingConfig,
+    common: &FieldmapCommonArgs,
+) -> EchoWeighting {
+    match common.b0_weight_type {
+        B0WeightTypeArg::AssumedDecay => EchoWeighting::AssumedDecay { t2star_s: common.b0_weight_assumed_t2star * 1e-3 },
+        _ => EchoWeighting::Core(config.b0_weight_type),
     }
 }
 
@@ -117,12 +132,17 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
                     c.bipolar_correction = bipolar_correction;
                     c.romeo_params = romeo_params.clone();
                 },
+                Solver::Dct,
             )
         }
         FieldmapCommand::Laplacian(args) => run_field_mapping(
             &args.common,
             qsm_core::pipeline::config::UnwrappingAlgorithm::Laplacian,
             &|_| {},
+            match args.laplacian_solver {
+                LaplacianSolverArg::Dct => Solver::Dct,
+                LaplacianSolverArg::Fft => Solver::Fft { pad: args.laplacian_fft_pad },
+            },
         ),
     }
 }
@@ -131,6 +151,7 @@ fn run_field_mapping(
     common: &FieldmapCommonArgs,
     algorithm: qsm_core::pipeline::config::UnwrappingAlgorithm,
     apply_algo: &dyn Fn(&mut qsm_core::pipeline::config::FieldMappingConfig),
+    solver: Solver,
 ) -> crate::Result<()> {
     let params = resolve_scan_params(common)?;
 
@@ -209,19 +230,19 @@ fn run_field_mapping(
         algorithm, nx, ny, nz, n_echoes, params.field_strength
     );
 
-    let result = qsm_core::pipeline::run_field_mapping(
+    let mut field_ppm = crate::pipeline::fieldmap::run_field_mapping(
         &phase_slices,
         mag_option,
         &mask,
         &scan_meta,
         &config,
-        &mut |_, _| {},
+        echo_weighting(&config, common),
+        solver,
     )
     .map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
 
     // run_field_mapping already restricts to the mask, but multiply defensively so
     // out-of-brain voxels are exactly zero (matching the qsm-ci masked-ppm output).
-    let mut field_ppm = result.b0_field_ppm;
     for (v, &m) in field_ppm.iter_mut().zip(mask.iter()) {
         if m == 0 {
             *v = 0.0;
@@ -318,6 +339,7 @@ mod tests {
             params: None,
             b0_estimation: B0EstimationArg::WeightedAvg,
             b0_weight_type: B0WeightTypeArg::PhaseSNR,
+            b0_weight_assumed_t2star: 40.0,
             linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
         };
@@ -362,6 +384,7 @@ mod tests {
             params: Some(params_path),
             b0_estimation: B0EstimationArg::WeightedAvg,
             b0_weight_type: B0WeightTypeArg::PhaseSNR,
+            b0_weight_assumed_t2star: 40.0,
             linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
         };
@@ -394,6 +417,7 @@ mod tests {
             params: None,
             b0_estimation: B0EstimationArg::WeightedAvg,
             b0_weight_type: B0WeightTypeArg::PhaseSNR,
+            b0_weight_assumed_t2star: 40.0,
             linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
         };

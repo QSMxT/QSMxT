@@ -20,6 +20,13 @@ path = "src/main.rs"
 # such a build keeps all classical algorithms and reports a clear error if a DL algorithm
 # is selected.
 default = ["dl"]
+# The FFT Laplacian solver (`--laplacian-solver fft`, STI Suite's MRPhaseUnwrap). Needs a QSM.rs
+# with `qsm_core::unwrap::LaplacianSolver` (feat/laplacian-fft-solver), which the pinned rev does
+# not have yet: build with a local [patch] of qsm-core. Without it, `fft` is rejected at run time.
+# Once the pin has it, drop this feature and the cfgs in src/pipeline/fieldmap.rs.
+laplacian-fft = []
+# Old name of `laplacian-fft` (never released).
+laplacian-sti = ["laplacian-fft"]
 dl = ["qsm-core/onnx", "qsm-core/download"]
 
 [dependencies]

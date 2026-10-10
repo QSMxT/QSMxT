@@ -22,6 +22,11 @@ const CITE_LAPLACIAN_UNWRAP: Citation = Citation {
     text: "Schofield, M.A., Zhu, Y. (2003). \"Fast phase unwrapping algorithm for interferometric applications.\" *Optics Letters*, 28(14):1194-1196. https://doi.org/10.1364/OL.28.001194",
 };
 
+const CITE_UKB_QSM: Citation = Citation {
+    key: "wang2022",
+    text: "Wang, C., et al. (2022). \"Phenotypic and genetic associations of quantitative magnetic susceptibility in UK Biobank brain imaging.\" *Nature Neuroscience*, 25(6):818-831. https://doi.org/10.1038/s41593-022-01074-w",
+};
+
 const CITE_VSHARP: Citation = Citation {
     key: "wu2012",
     text: "Wu, B., et al. (2012). \"Whole brain susceptibility mapping using compressed sensing.\" *Magnetic Resonance in Medicine*, 67(1):137-147. https://doi.org/10.1002/mrm.23000",
@@ -625,8 +630,9 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 /// unwrapping, and B0 estimation. Shared by the standard pipeline and QSMART
 /// (which consumes a pre-computed total field, so these steps still run).
 fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, citations: &mut Vec<&Citation>) {
-    // Phase offset removal and/or bipolar correction
-    match (config.field_mapping.phase_offset_removal, config.field_mapping.bipolar_correction) {
+    // Phase offset removal and/or bipolar correction (ROMEO only: the Laplacian path skips both)
+    let romeo = config.field_mapping.unwrapping_algorithm == UnwrappingAlgorithm::Romeo;
+    match (config.field_mapping.phase_offset_removal && romeo, config.field_mapping.bipolar_correction && romeo) {
         (true, true) => {
             sentences.push("Phase offset removal (Eckstein et al., 2018) and bipolar gradient correction (Eckstein, 2021) were applied.".to_string());
             add_citation(citations, &CITE_MCPC3DS);
@@ -651,7 +657,12 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
             add_citation(citations, &CITE_ROMEO);
         }
         UnwrappingAlgorithm::Laplacian => {
-            sentences.push("Phase unwrapping was performed using the Laplacian method (Schofield & Zhu, 2003).".to_string());
+            sentences.push(match config.field_mapping.laplacian_solver {
+                LaplacianSolver::Dct => "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003), solved as unweighted least squares with a Neumann-boundary DCT (Ghiglia & Romero, 1994).".to_string(),
+                LaplacianSolver::Fft => format!(
+                    "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003), with an FFT Poisson solve on the volume zero-padded by {} voxels (as STI Suite's MRPhaseUnwrap).",
+                    config.field_mapping.laplacian_fft_pad),
+            });
             add_citation(citations, &CITE_LAPLACIAN_UNWRAP);
         }
     }
@@ -659,8 +670,15 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
     // B0 estimation
     match config.field_mapping.b0_estimation {
         B0Estimation::WeightedAvg => {
-            let wt = format!("{}", config.field_mapping.b0_weight_type);
-            sentences.push(format!("The B0 field map was estimated using weighted averaging ({} weighting).", wt));
+            if config.field_mapping.b0_weight_type == B0WeightType::AssumedDecay {
+                sentences.push(format!(
+                    "The B0 field map was estimated as a weighted average of the unwrapped echo phases with fixed per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2* of {} ms (no T2* map; the same weights in every voxel), as in the UK Biobank QSM pipeline (Wang et al., 2022).",
+                    config.field_mapping.b0_weight_assumed_t2star_ms));
+                add_citation(citations, &CITE_UKB_QSM);
+            } else {
+                let wt = format!("{}", config.field_mapping.b0_weight_type);
+                sentences.push(format!("The B0 field map was estimated using weighted averaging ({} weighting).", wt));
+            }
         }
         B0Estimation::LinearFit => {
             sentences.push("The B0 field map was estimated using magnitude-weighted linear fit of phase vs echo time.".to_string());
@@ -1334,6 +1352,24 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("weighted averaging"));
         assert!(out.contains("phase-snr"));
+    }
+
+    #[test]
+    fn test_laplacian_methods_skip_offset_removal() {
+        let mut config = PipelineConfig::default();
+        config.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        let out = generate_methods(&config);
+        assert!(!out.contains("Phase offset removal"), "{out}");
+        assert!(out.contains("separately for each echo"), "{out}");
+    }
+
+    #[test]
+    fn test_b0_assumed_decay_methods() {
+        let mut config = PipelineConfig::default();
+        config.field_mapping.b0_weight_type = B0WeightType::AssumedDecay;
+        let out = generate_methods(&config);
+        assert!(out.contains("TE·exp(−TE/T2*), computed from the echo times and an assumed T2* of 40 ms"), "{out}");
+        assert!(out.contains("Wang, C., et al. (2022)"), "{out}");
     }
 
     #[test]

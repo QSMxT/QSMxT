@@ -1038,9 +1038,31 @@ pub struct PipelineArgs {
     #[arg(long, value_enum)]
     pub b0_estimation: Option<B0EstimationArg>,
 
-    /// B0 weighted averaging weight type
+    /// B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight
+    /// TE·exp(−TE/T2*) computed from the echo times and an assumed T2*
+    /// (`--b0-weight-assumed-t2star`), the same in every voxel: no T2* map, no magnitude. It is
+    /// UK Biobank's echo combination (Wang et al. 2022, Nat Neurosci 25:818); with
+    /// `--unwrapping-algorithm laplacian` it gives UK Biobank's field map. `phase-snr`, which uses
+    /// the measured magnitude in each voxel, is generally preferable when magnitude is available.
+    /// Applies to Laplacian unwrapping as well as ROMEO
     #[arg(long, value_enum)]
     pub b0_weight_type: Option<B0WeightTypeArg>,
+
+    /// T2* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights
+    /// (default 40, UK Biobank's; no T2* map is used)
+    #[arg(long, value_name = "MS")]
+    pub b0_weight_assumed_t2star: Option<f64>,
+
+    /// Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares,
+    /// Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a
+    /// zero-padded volume = STI Suite's MRPhaseUnwrap, as UK Biobank; needs a build with the
+    /// `laplacian-fft` feature)
+    #[arg(long, value_enum, alias = "laplacian-kernel")]
+    pub laplacian_solver: Option<LaplacianSolverArg>,
+
+    /// Zero-padding in voxels per side for `--laplacian-solver fft` (default 64, UK Biobank's)
+    #[arg(long, value_name = "VOXELS")]
+    pub laplacian_fft_pad: Option<usize>,
 
     /// BET fractional intensity (0.0-1.0)
     #[arg(long)]
@@ -1738,9 +1760,14 @@ pub struct FieldmapCommonArgs {
     /// B0 field estimation method
     #[arg(long, value_enum, default_value = "weighted-avg")]
     pub b0_estimation: B0EstimationArg,
-    /// B0 weighted-averaging weight type
+    /// B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight
+    /// TE·exp(−TE/T2*) from the echo times and an assumed T2* (no T2* map, no magnitude):
+    /// UK Biobank's echo combination. `phase-snr` is generally preferable with magnitude
     #[arg(long, value_enum, default_value = "phase-snr")]
     pub b0_weight_type: B0WeightTypeArg,
+    /// T2* in ms assumed by `--b0-weight-type assumed-decay` (no T2* map is used)
+    #[arg(long, value_name = "MS", default_value_t = 40.0)]
+    pub b0_weight_assumed_t2star: f64,
     /// Linear fit reliability threshold percentile (degrees)
     #[arg(long)]
     pub linear_fit_reliability_threshold: Option<f64>,
@@ -1753,7 +1780,7 @@ pub struct FieldmapCommonArgs {
 pub enum FieldmapCommand {
     /// ROMEO-based multi-echo field mapping (phase offset removal + unwrap + B0 fit)
     Romeo(FieldmapRomeoArgs),
-    /// Laplacian-based multi-echo field mapping
+    /// Laplacian-based multi-echo field mapping (per-echo unwrap + echo combination)
     Laplacian(FieldmapLaplacianArgs),
 }
 
@@ -1778,9 +1805,18 @@ pub struct FieldmapRomeoArgs {
 pub struct FieldmapLaplacianArgs {
     #[command(flatten)]
     pub common: FieldmapCommonArgs,
-    // Note: phase offset removal is inert for Laplacian (skipped by the engine),
-    // so it is intentionally not exposed here. b0-estimation / b0-weight-type /
-    // linear-fit-* on `common` still apply.
+    /// Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve) or `fft` (Schofield &
+    /// Zhu, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap; needs a build with
+    /// the `laplacian-fft` feature)
+    #[arg(long, value_enum, default_value = "dct", alias = "laplacian-kernel")]
+    pub laplacian_solver: LaplacianSolverArg,
+    /// Zero-padding in voxels per side for `--laplacian-solver fft` (UK Biobank: 64)
+    #[arg(long, value_name = "VOXELS", default_value_t = 64)]
+    pub laplacian_fft_pad: usize,
+    // Note: phase offset removal and bipolar correction are not applied with Laplacian
+    // unwrapping, so they are intentionally not exposed here. Each echo is unwrapped on its
+    // own and the echoes are then combined by b0-estimation / b0-weight-type / linear-fit-*
+    // on `common` (see `pipeline::fieldmap`).
 }
 
 // ── Bgremove ──
@@ -3181,13 +3217,23 @@ pub enum BfAlgorithmArg {
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum LaplacianSolverArg {
+    Dct,
+    #[value(alias = "sti")]
+    Fft,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum B0EstimationArg {
     WeightedAvg, LinearFit,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum B0WeightTypeArg {
-    PhaseSNR, PhaseVar, Average, TEs, Mag,
+    PhaseSNR, PhaseVar, Average,
+    #[value(alias = "tes")]
+    TEs,
+    Mag, AssumedDecay,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

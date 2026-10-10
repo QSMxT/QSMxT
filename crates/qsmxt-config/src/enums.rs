@@ -64,6 +64,26 @@ impl fmt::Display for SeparationAlgorithm {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum UnwrappingAlgorithm { Romeo, Laplacian }
+
+/// Poisson solver behind Laplacian unwrapping (QSM.jl's `solver` names).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum LaplacianSolver {
+    /// Unweighted least squares with a Neumann-boundary DCT solve (Ghiglia & Romero, 1994),
+    /// as QSM.jl's `:dct`.
+    #[default]
+    Dct,
+    /// Schofield & Zhu (2003): sin/cos Laplacian with an FFT Poisson solve on the zero-padded
+    /// volume (`field_mapping.laplacian_fft_pad`), reproducing STI Suite 3.0's `MRPhaseUnwrap`.
+    /// Needs a build with the `laplacian-fft` feature.
+    #[serde(alias = "sti")]
+    Fft,
+}
+impl fmt::Display for LaplacianSolver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Dct => "dct", Self::Fft => "fft" })
+    }
+}
 impl fmt::Display for UnwrappingAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match self { Self::Romeo => "romeo", Self::Laplacian => "laplacian" })
@@ -108,12 +128,18 @@ pub enum B0WeightType {
     PhaseVar, Average,
     #[serde(rename = "tes")] TEs,
     Mag,
+    /// Fixed per-echo weights `TE·exp(−TE/T2*)` on the phase, from the echo times and an
+    /// *assumed* T2* (`field_mapping.b0_weight_assumed_t2star_ms`): the same weights in every
+    /// voxel, with no T2* map and no magnitude. UK Biobank's echo combination (Wang et al. 2022,
+    /// Nat. Neurosci. 25:818). `phase-snr` is generally preferable when magnitude is available.
+    AssumedDecay,
 }
 impl fmt::Display for B0WeightType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match self {
             Self::PhaseSNR => "phase-snr", Self::PhaseVar => "phase-var",
             Self::Average => "average", Self::TEs => "tes", Self::Mag => "mag",
+            Self::AssumedDecay => "assumed-decay",
         })
     }
 }
