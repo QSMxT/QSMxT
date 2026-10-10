@@ -127,7 +127,8 @@ study/bids/derivatives/qsmxt/
 
 `mask` is the brain mask; `desc-qsm_mask` is the part of it the susceptibility map
 is defined on — the brain mask less the rim that background-field removal eroded.
-The `Chimap` is referenced over, and is 0 outside, `desc-qsm_mask`.
+The `Chimap` is referenced over, and is 0 outside, `desc-qsm_mask`; the χ-separation
+maps (`--do-chisep`) are fitted over it and are 0 outside it too.
 
 A `references.txt` accompanies the outputs, citing the exact methods used for
 your data and parameters.
