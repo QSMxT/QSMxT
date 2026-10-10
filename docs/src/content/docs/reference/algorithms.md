@@ -558,6 +558,14 @@ bring-your-own R2' map. See [Input data](/QSMxT/reference/inputs/).
 Outputs are written as `desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap` and
 `desc-total_Chimap`.
 
+Separation is fitted over the voxels the susceptibility map is defined on — its
+support, written as `desc-qsm_mask` (see [Referencing](#referencing)) — not over
+the whole brain mask: the rim that background-field removal eroded has no χ to
+separate. The methods that also fit the local field are limited to where that
+field is defined. R2' and R2\* are restricted to the same voxels before fitting,
+and all three outputs are 0 outside them. With a bring-your-own QSM, the support
+is the brain mask less the voxels where that map is 0.
+
 ## Referencing
 
 A susceptibility map has no absolute zero — only differences within it mean

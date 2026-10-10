@@ -2288,6 +2288,39 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
 /// Inputs are loaded from pipeline outputs (or bring-your-own derivatives): the QSM (`Chimap`),
 /// local field, multi-echo magnitude (+ RSS), R2* and R2' (produced by earlier stages). Methods
 /// whose required inputs are unavailable are skipped with a warning rather than failing the run.
+/// The voxels χ-separation is fitted on and writes.
+///
+/// `published` is the support referencing wrote for the pipeline's own χ (`desc-qsm_mask`); with
+/// none — a bring-your-own χ — it is the brain mask less the voxels `chi` leaves undefined (the
+/// rule of [`crate::pipeline::referencing::defined_support`]). `local_field`, for the methods that
+/// fit it, limits the support further to where the field is defined: a two-pass χ is the union
+/// of both passes' supports, but the local field is the main pass's alone.
+fn separation_support(
+    brain: &[u8], published: Option<&[u8]>, chi: &[f64], local_field: Option<&[f64]>,
+) -> Vec<u8> {
+    let mut support: Vec<u8> = match published {
+        Some(p) => p.iter().zip(brain).map(|(&p, &b)| u8::from(p != 0 && b != 0)).collect(),
+        None => crate::pipeline::referencing::defined_support(&[brain], chi),
+    };
+    if let Some(field) = local_field {
+        for (s, &f) in support.iter_mut().zip(field) {
+            if f == 0.0 || !f.is_finite() {
+                *s = 0;
+            }
+        }
+    }
+    support
+}
+
+/// Write 0 wherever `support` is 0.
+fn zero_outside(support: &[u8], map: &mut [f64]) {
+    for (v, &s) in map.iter_mut().zip(support) {
+        if s == 0 {
+            *v = 0.0;
+        }
+    }
+}
+
 fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
     let alg = ctx.config.separation.algorithm;
     let alg_name = format!("{}", alg);
@@ -2318,6 +2351,9 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
         "has_mese": ctx.run.mese.is_some(),
         "custom_qsm": ctx.config.separation.custom_qsm_tool,
         "custom_r2prime": ctx.config.separation.custom_r2prime_tool,
+        // `domain` versions where the fit runs, so maps fitted over the whole brain mask by an
+        // older release (the eroded rim taken as χ = 0) are recomputed rather than reused.
+        "domain": "support",
     });
     if ctx.is_cached_with_params("chi_separation", Some(&alg_name), &sep_params) {
         log::info!("Skipping chi_separation (cached)");
@@ -2329,8 +2365,8 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
     let n_voxels = nx * ny * nz;
     progress("Chi-separation");
     log::info!("Chi-separation ({})", alg_name);
-    let mask = load_mask(mask_path)?;
-    let qsm = load_volume(&qsm_path)?;
+    let brain = load_mask(mask_path)?;
+    let mut qsm = load_volume(&qsm_path)?;
 
     // Multi-echo magnitude (voxel-major) + RSS over echoes, when magnitude is available.
     let (magnitude_multi, magnitude_rss): (Option<Vec<f64>>, Option<Vec<f64>>) = if ctx.meta.has_magnitude {
@@ -2350,11 +2386,11 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
     };
 
     // R2* / R2' — from stage_t2star_r2star / stage_r2_r2prime, or a bring-your-own R2' map.
-    let r2star: Option<Vec<f64>> = {
+    let mut r2star: Option<Vec<f64>> = {
         let p = ctx.output.r2star_path(&ctx.run.key);
         if p.exists() { Some(load_volume(&p)?) } else { None }
     };
-    let r2prime: Option<Vec<f64>> = match ctx.config.separation.custom_r2prime_tool.clone() {
+    let mut r2prime: Option<Vec<f64>> = match ctx.config.separation.custom_r2prime_tool.clone() {
         Some(tool) => find_custom_derivative(ctx.run, &tool, "*_R2primemap.nii*", &[])
             .map(|p| load_volume(&p)).transpose()?,
         None => {
@@ -2371,7 +2407,7 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
     };
 
     // Local field (ppm) for the field-based methods.
-    let local_field: Vec<f64> = {
+    let mut local_field: Vec<f64> = {
         let p = ctx.output.local_field_path(&ctx.run.key);
         if p.exists() { load_volume(&p)? } else { Vec::new() }
     };
@@ -2402,6 +2438,49 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
         return Ok(());
     }
 
+    // Fit, and write, only where χ is defined. The pipeline's χ is 0 on the rim background-field
+    // removal eroded; fitting the brain mask would treat that rim as measured χ = 0. Its support
+    // is the one referencing published (`desc-qsm_mask`); a bring-your-own χ has no published
+    // support, so it is the brain mask less the voxels that χ leaves undefined. The field-based
+    // methods also need the local field there, so they are further limited to where it exists.
+    let support_path = ctx.output.qsm_support_path(&ctx.run.key);
+    let published = match ctx.config.separation.custom_qsm_tool {
+        None if support_path.exists() => Some(load_mask(&support_path)?),
+        _ => None,
+    };
+    let uses_field = matches!(alg,
+        SeparationAlgorithm::ChiSepIlsqr | SeparationAlgorithm::ChiSepMedi
+        | SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet);
+    for (what, len) in [("brain mask", brain.len()), ("QSM", qsm.len())]
+        .into_iter()
+        .chain(published.as_ref().map(|p| ("QSM support", p.len())))
+        .chain(uses_field.then_some(("local field", local_field.len())))
+    {
+        if len != n_voxels {
+            return Err(QsmxtError::DimensionMismatch(format!(
+                "chi-separation: {what} has {len} voxels but this run is processed on {n_voxels}")));
+        }
+    }
+    let support = separation_support(
+        &brain, published.as_deref(), &qsm, uses_field.then_some(local_field.as_slice()),
+    );
+    log::info!("Chi-separation over the χ support: {} of {} brain-mask voxels",
+        support.iter().filter(|&&s| s != 0).count(), brain.iter().filter(|&&b| b != 0).count());
+    // The maps combined with χ voxel by voxel take the same support, so no method — the spatial
+    // and deep-learning ones included — sees values on the rim that χ does not have.
+    zero_outside(&support, &mut qsm);
+    if uses_field {
+        zero_outside(&support, &mut local_field);
+    }
+    for map in [r2prime.as_mut(), r2star.as_mut()].into_iter().flatten() {
+        if map.len() != n_voxels {
+            return Err(QsmxtError::DimensionMismatch(format!(
+                "chi-separation: a relaxation map has {} voxels but this run is processed on {n_voxels}",
+                map.len())));
+        }
+        zero_outside(&support, map);
+    }
+
     let metadata = crate::pipeline::config::to_scan_metadata(
         ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times, ctx.meta.field_strength, ctx.meta.b0_direction,
     );
@@ -2413,7 +2492,7 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
     let inputs = qsm_core::pipeline::SeparationInputs {
         local_field_ppm: &local_field,
         qsm: &qsm,
-        mask: &mask,
+        mask: &support,
         r2prime: r2prime.as_deref(),
         r2star: r2star.as_deref(),
         magnitude_rss: magnitude_rss.as_deref(),
@@ -2424,8 +2503,12 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
     // Fetch DL weights (SUSEP-Net / χ-sepnet) with a download bar; no-op for classical methods.
     prefetch_weights(&alg_name, &ctx.run.key.to_string())?;
     let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &alg_name);
-    let result = qsm_core::pipeline::run_separation(inputs, &metadata, &sep_config, &mut *prog)
+    let mut result = qsm_core::pipeline::run_separation(inputs, &metadata, &sep_config, &mut *prog)
         .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
+    // Not every method zeroes outside the mask it is given (the networks predict everywhere).
+    for map in [&mut result.chi_pos, &mut result.chi_neg, &mut result.chi_total] {
+        zero_outside(&support, map);
+    }
 
     let para_path = ctx.output.chi_para_path(&ctx.run.key);
     let dia_path = ctx.output.chi_dia_path(&ctx.run.key);
@@ -2436,7 +2519,11 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
     save_volume(&para_path, &result.chi_pos, ctx.meta)?;
     save_volume(&dia_path, &chi_dia, ctx.meta)?;
     save_volume(&total_path, &result.chi_total, ctx.meta)?;
-    ctx.complete_step("chi_separation", Some(&alg_name), sep_params, &[mask_path, &qsm_path],
+    let mut inputs: Vec<&Path> = vec![mask_path, &qsm_path];
+    if published.is_some() {
+        inputs.push(&support_path);
+    }
+    ctx.complete_step("chi_separation", Some(&alg_name), sep_params, &inputs,
         vec![para_path, dia_path, total_path], t)?;
     log_step_done(&format!("Chi-separation ({})", alg_name), t);
     Ok(())
@@ -4775,7 +4862,7 @@ mod reference_support_tests {
         0.0, 0.0, 0.0, 1.0,
     ];
 
-    fn meta() -> RunMetadata {
+    pub(super) fn meta() -> RunMetadata {
         RunMetadata {
             dims: DIMS, voxel_size: (1.0, 1.0, 1.0), affine: IDENTITY, n_echoes: 1,
             echo_times: vec![0.004], b0_direction: (0.0, 0.0, 1.0), field_strength: 3.0,
@@ -4797,18 +4884,18 @@ mod reference_support_tests {
         m
     }
 
-    struct Fixture {
+    pub(super) struct Fixture {
         _dir: tempfile::TempDir,
-        output: DerivativeOutputs,
-        run: QsmRun,
-        brain: Vec<u8>,
-        support: Vec<u8>,
-        chi_raw: Vec<f64>,
+        pub(super) output: DerivativeOutputs,
+        pub(super) run: QsmRun,
+        pub(super) brain: Vec<u8>,
+        pub(super) support: Vec<u8>,
+        pub(super) chi_raw: Vec<f64>,
     }
 
     /// A brain mask of 6³ voxels, of which background removal kept the inner 4³: the raw map is
     /// non-zero (and offset from zero by 0.05 ppm) on the support and exactly 0 on the eroded rim.
-    fn fixture() -> Fixture {
+    pub(super) fn fixture() -> Fixture {
         let dir = tempfile::tempdir().unwrap();
         let output = DerivativeOutputs::new(&dir.path().join("out"));
         let mut run = super::tests::run_with_echoes(vec![(dir.path().join("p.nii"), None)]);
@@ -4922,5 +5009,163 @@ mod reference_support_tests {
             let expected = if s != 0 { c } else { 0.0 };
             assert!((o - expected).abs() < 1e-6, "voxel {i}");
         }
+    }
+}
+
+/// χ-separation over the support χ is defined on, not the brain mask.
+///
+/// Referencing writes χ as 0 on the rim background removal eroded. Fitting χ-separation over the
+/// brain mask took that rim as measured χ = 0 and published para/dia maps there.
+#[cfg(test)]
+mod chisep_support_tests {
+    use super::*;
+    use super::reference_support_tests::{fixture, meta, Fixture};
+
+    fn sep_config(alg: SeparationAlgorithm) -> PipelineConfig {
+        let mut config = PipelineConfig::default();
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = alg;
+        config
+    }
+
+    /// Reference the fixture, add the relaxation, magnitude and local-field inputs (defined over
+    /// the whole brain mask, or the field over the support as background removal leaves it), and
+    /// run the `chi_separation` step. Returns the (para, dia, total) maps it wrote.
+    fn separate(f: &Fixture, config: &PipelineConfig) -> [Vec<f64>; 3] {
+        let m = meta();
+        let k = &f.run.key;
+        let over = |mask: &[u8], base: f64| -> Vec<f64> {
+            mask.iter().enumerate()
+                .map(|(i, &b)| if b != 0 { base + 0.1 * (i % 5) as f64 } else { 0.0 }).collect()
+        };
+        save_volume(&f.output.r2star_path(k), &over(&f.brain, 20.0), &m).unwrap();
+        save_volume(&f.output.r2prime_path(k), &over(&f.brain, 5.0), &m).unwrap();
+        save_volume(&f.output.mag_path(k, 1), &over(&f.brain, 100.0), &m).unwrap();
+        let field: Vec<f64> = over(&f.support, 0.0).iter().zip(&f.support)
+            .map(|(&v, &s)| if s != 0 { 0.01 + 0.001 * v } else { 0.0 }).collect();
+        save_volume(&f.output.local_field_path(k), &field, &m).unwrap();
+
+        let state_path = f.output.state_path(k);
+        let mut state = PipelineState::load_or_create(&state_path, config, k, true);
+        let mut ctx = StageContext {
+            run: &f.run, config, output: &f.output, meta: &m,
+            state: &mut state, state_path: &state_path,
+        };
+        let pass = Pass::main(&f.output, k);
+        stage_reference(
+            &mut ctx, &[pass.support(false)], &pass.chi_raw, f.output.qsm_path(k),
+            Some(f.output.qsm_support_path(k)), "reference", &|_| {},
+        ).unwrap();
+        stage_chi_separation(&mut ctx, &f.output.mask_path(k), &|_| {}).unwrap();
+        [f.output.chi_para_path(k), f.output.chi_dia_path(k), f.output.chi_sep_total_path(k)]
+            .map(|p| load_volume(&p).unwrap())
+    }
+
+    /// The method run directly on `mask`, with every input zeroed outside it and the outputs
+    /// zeroed outside it: what the step must produce when it fits over `mask`.
+    fn direct(f: &Fixture, config: &PipelineConfig, mask: &[u8]) -> [Vec<f64>; 3] {
+        let m = meta();
+        let k = &f.run.key;
+        let masked = |p: PathBuf| -> Vec<f64> {
+            let mut v = load_volume(&p).unwrap();
+            zero_outside(mask, &mut v);
+            v
+        };
+        let qsm = masked(f.output.qsm_path(k));
+        let field = masked(f.output.local_field_path(k));
+        let r2prime = masked(f.output.r2prime_path(k));
+        let r2star = masked(f.output.r2star_path(k));
+        let mag = load_volume(&f.output.mag_path(k, 1)).unwrap();
+        let inputs = qsm_core::pipeline::SeparationInputs {
+            local_field_ppm: &field, qsm: &qsm, mask, r2prime: Some(&r2prime), r2star: Some(&r2star),
+            magnitude_rss: Some(&mag), magnitude_multi: Some(&mag), se_magnitude_multi: None,
+        };
+        let metadata = crate::pipeline::config::to_scan_metadata(
+            m.dims, m.voxel_size, &m.echo_times, m.field_strength, m.b0_direction);
+        let r = qsm_core::pipeline::run_separation(
+            inputs, &metadata, &qsmxt_config::bridge::to_separation_config(config), &mut |_, _| {},
+        ).unwrap();
+        let mut out = [r.chi_pos, r.chi_neg.iter().map(|v| v.abs()).collect(), r.chi_total];
+        for map in out.iter_mut() {
+            zero_outside(mask, map);
+        }
+        out
+    }
+
+    fn assert_zero_outside(maps: &[Vec<f64>; 3], support: &[u8]) {
+        for (name, map) in ["para", "dia", "total"].iter().zip(maps) {
+            for (i, (&v, &s)) in map.iter().zip(support).enumerate() {
+                if s == 0 {
+                    assert_eq!(v, 0.0, "{name} voxel {i} lies outside the support");
+                }
+            }
+        }
+    }
+
+    fn assert_close(a: &[Vec<f64>; 3], b: &[Vec<f64>; 3]) {
+        for (name, (x, y)) in ["para", "dia", "total"].iter().zip(a.iter().zip(b)) {
+            for (i, (&p, &q)) in x.iter().zip(y).enumerate() {
+                assert!((p - q).abs() <= 1e-6 * (1.0 + q.abs()), "{name} voxel {i}: {p} vs {q}");
+            }
+        }
+    }
+
+    /// A voxel-wise method: 0 on the eroded rim, fitted everywhere on the support.
+    #[test]
+    fn r2star_qsm_is_zero_on_the_rim_and_fitted_over_the_support() {
+        let f = fixture();
+        let config = sep_config(SeparationAlgorithm::R2starQsm);
+        let out = separate(&f, &config);
+        assert!(f.brain.iter().zip(&f.support).any(|(&b, &s)| b != 0 && s == 0), "the fixture has a rim");
+        assert_zero_outside(&out, &f.support);
+        for (i, &s) in f.support.iter().enumerate() {
+            if s != 0 {
+                assert!(out[0][i] != 0.0 || out[1][i] != 0.0, "support voxel {i} was not fitted");
+            }
+        }
+        assert_close(&out, &direct(&f, &config, &f.support));
+    }
+
+    /// A spatial method that fits the local field: its fit domain is the support. Run over the
+    /// brain mask it gives a different answer, so matching the support run is not a coincidence.
+    #[test]
+    fn chi_sep_ilsqr_fits_the_support_not_the_brain_mask() {
+        let f = fixture();
+        let config = sep_config(SeparationAlgorithm::ChiSepIlsqr);
+        let out = separate(&f, &config);
+        assert_zero_outside(&out, &f.support);
+        assert_close(&out, &direct(&f, &config, &f.support));
+
+        let over_brain = direct(&f, &config, &f.brain);
+        let differs = out[2].iter().zip(&over_brain[2]).zip(&f.support)
+            .any(|((&a, &b), &s)| s != 0 && (a - b).abs() > 1e-6);
+        assert!(differs, "fitting over the brain mask must change the support's values");
+    }
+
+    #[test]
+    fn separation_support_rules() {
+        let brain = [1u8, 1, 1, 1, 0];
+        let chi = [0.1, 0.0, 0.2, 0.3, 0.4];
+        // The published support wins over χ's own zeros (a referenced voxel can land on 0.0), and
+        // never reaches past the brain mask.
+        assert_eq!(separation_support(&brain, Some(&[1, 1, 0, 1, 1]), &chi, None), vec![1, 1, 0, 1, 0]);
+        // No published support (bring-your-own χ): the brain mask less χ's undefined voxels.
+        assert_eq!(separation_support(&brain, None, &chi, None), vec![1, 0, 1, 1, 0]);
+        // The field-based methods also need the local field.
+        let field = [0.01, 0.01, 0.01, 0.0, 0.01];
+        assert_eq!(separation_support(&brain, Some(&[1, 1, 1, 1, 0]), &chi, Some(&field)), vec![1, 1, 1, 0, 0]);
+    }
+
+    /// A rerun of a map fitted over the brain mask by an older release is not reused.
+    #[test]
+    fn the_cache_key_records_the_fit_domain() {
+        let f = fixture();
+        let config = sep_config(SeparationAlgorithm::R2starQsm);
+        separate(&f, &config);
+        let prov: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+            f.output.provenance_path(&f.run.key, "chi_separation")).unwrap()).unwrap();
+        assert_eq!(prov["parameters"]["domain"], "support");
+        let support = f.output.qsm_support_path(&f.run.key).display().to_string();
+        assert!(prov["inputs"].as_array().unwrap().iter().any(|p| p == &support), "{prov}");
     }
 }
