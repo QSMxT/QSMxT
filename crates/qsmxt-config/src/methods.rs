@@ -571,7 +571,10 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     if config.pipeline.do_chi_separation {
         let (sep_name, sep_cite) = separation_name_cite(config.separation.algorithm);
         sentences.push(format!(
-            "Paramagnetic and diamagnetic susceptibility maps were computed by susceptibility source separation using {} ({}).",
+            "Paramagnetic and diamagnetic susceptibility maps were computed by susceptibility source separation using {} ({}), \
+             over the voxels on which the susceptibility map was defined (the brain mask less any rim eroded by \
+             background-field removal), with all relaxation and field inputs restricted to those voxels; the maps \
+             were set to zero outside them.",
             sep_name, cite_inline(sep_cite),
         ));
         add_citation(&mut citations, sep_cite);
