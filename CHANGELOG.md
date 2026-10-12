@@ -25,14 +25,16 @@ upgrade.
   phase with TE1 and B0 for single-echo data (`TgvInput::WrappedPhase`), QSM.rs#170. A
   regression test checks the multi-echo and single-echo TGV χ scale against a phantom and RTS.
 - **TGV α are in ppm** (QSM.rs#170), so one α means the same at every TE and field strength.
-  The defaults are qsm-core's: α0 = 9.345e-5, α1 = 3.115e-5 (the old 0.0015 / 0.0005 rad
-  defaults at the 20 ms / 3 T reference). `--tgv-alpha0/1` and `[inversion.tgv] alpha0/alpha1`
-  in a config file are read as ppm: divide an old rad value by 2π·42.5781·B0·TE. Single-echo TGV
-  at the defaults changes wherever TE1/B0 is not 20 ms / 3 T. The methods text states the α and
+  The defaults are qsm-core's: α0 = 2.002e-4, α1 = 6.675e-5 (the old 0.0015 / 0.0005 rad
+  defaults at a 7 T / 4 ms reference, where they were tuned; QSM.rs#175). That is 2.14× stronger
+  than a 3 T / 20 ms reference would give, which a sweep favoured on the CI phantom and on UK
+  Biobank. `--tgv-alpha0/1` and `[inversion.tgv] alpha0/alpha1` in a config file are read as
+  ppm: divide an old rad value by 2π·42.5781·B0·TE. Single-echo TGV at the defaults changes
+  wherever TE1/B0 is not 4 ms / 7 T. The methods text states the α and
   units. `qsmxt invert tgv` takes a field in ppm like the other `invert` algorithms and no longer
   has `--echo-time` / `--field-strength`.
 
-These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `dba7c6f`):
+These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
 
 - **iLSQR is now STI Suite 3.0's algorithm** (QSM.rs#163, #165). The streaking-stage tolerance
   defaults to 1e-3 (was 0.01), `max_iter` caps both LSQR solves (default 100), the pipeline pads
