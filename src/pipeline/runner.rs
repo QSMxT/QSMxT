@@ -2282,12 +2282,6 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
     Ok(())
 }
 
-/// Susceptibility source separation (chi-separation).
-///
-/// Splits the conventional QSM (χ_total) into paramagnetic (χ+) and diamagnetic (χ−) maps.
-/// Inputs are loaded from pipeline outputs (or bring-your-own derivatives): the QSM (`Chimap`),
-/// local field, multi-echo magnitude (+ RSS), R2* and R2' (produced by earlier stages). Methods
-/// whose required inputs are unavailable are skipped with a warning rather than failing the run.
 /// The voxels χ-separation is fitted on and writes.
 ///
 /// `published` is the support referencing wrote for the pipeline's own χ (`desc-qsm_mask`); with
@@ -2321,6 +2315,13 @@ fn zero_outside(support: &[u8], map: &mut [f64]) {
     }
 }
 
+/// Susceptibility source separation (chi-separation).
+///
+/// Splits the conventional QSM (χ_total) into paramagnetic (χ+) and diamagnetic (χ−) maps.
+/// Inputs are loaded from pipeline outputs (or bring-your-own derivatives): the QSM (`Chimap`),
+/// local field, multi-echo magnitude (+ RSS), R2* and R2' (produced by earlier stages). Methods
+/// whose required inputs are unavailable are skipped with a warning rather than failing the run.
+/// The fit runs over, and the outputs are 0 outside, χ's support: see [`separation_support`].
 fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
     let alg = ctx.config.separation.algorithm;
     let alg_name = format!("{}", alg);
@@ -5128,6 +5129,10 @@ mod chisep_support_tests {
 
     /// A spatial method that fits the local field: its fit domain is the support. Run over the
     /// brain mask it gives a different answer, so matching the support run is not a coincidence.
+    ///
+    /// The fixture's R2' and R2* cover the whole brain mask, rim included. The classical methods
+    /// mask their inputs to the mask they are given, so restricting those maps is observable only
+    /// through the networks (SUSEP-Net, χ-sepnet), whose weights the tests do not download.
     #[test]
     fn chi_sep_ilsqr_fits_the_support_not_the_brain_mask() {
         let f = fixture();
