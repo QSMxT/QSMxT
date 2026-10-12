@@ -337,6 +337,26 @@ Set with `--bf-algorithm`.
 | `harperella` | HARPERELLA |
 | `iharperella` | Iterative HARPERELLA |
 
+### V-SHARP and its deconvolution
+
+V-SHARP (Wu et al. 2012) high-passes the field with spherical mean value (SMV)
+kernels from `--vsharp-max-radius` (default 12 mm) down to `--vsharp-min-radius`
+(default 1 mm), using at each voxel the largest kernel that fits inside the
+mask. The published method then **deconvolves** that high-pass with a
+truncated SVD (threshold `--vsharp-threshold`) to recover the local field the
+SMV filter attenuated.
+
+QSMxT skips the deconvolution by default (`--vsharp-deconvolve false`), as STI
+Suite's `V_SHARP` and the UK Biobank QSM pipeline do. The deconvolution is exact
+for a noise-free harmonic background, but on real field maps the TSVD inverse
+amplifies low-frequency noise; on UK Biobank the longitudinal sensitivity of
+iron-rich structures was higher without it, with no significant loss of
+test–retest reliability. `--vsharp-deconvolve true` restores the behaviour of
+QSMxT up to v9.22.0, and is what to use to compare against cohorts processed
+with it. In the TUI it is the "Deconvolve" toggle under V-SHARP; the threshold
+row only appears when it is on. The generated methods text says which variant
+ran.
+
 ## Dipole inversion
 
 Set with `--qsm-algorithm`. Two families are available: classical/iterative

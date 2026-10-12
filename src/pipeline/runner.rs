@@ -3166,6 +3166,7 @@ fn stage_standard_qsm(
     let bf_name = format!("{}", ctx.config.bg_removal.algorithm);
     let bf_params = match ctx.config.bg_removal.algorithm {
         BfAlgorithm::Vsharp => serde_json::json!({
+            "deconvolve": ctx.config.bg_removal.vsharp.deconvolve,
             "max_radius": ctx.config.bg_removal.vsharp.max_radius,
             "min_radius": ctx.config.bg_removal.vsharp.min_radius,
             "threshold": ctx.config.bg_removal.vsharp.threshold,

@@ -413,7 +413,19 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                         BfAlgorithm::Bfrnet => ("BFRnet (deep-learning background removal)", &CITE_BFRNET),
                         BfAlgorithm::Iqfm => ("iQFM (deep-learning joint unwrapping + background removal)", &CITE_IQSM),
                     };
-                    sentences.push(format!("Background field removal was performed using {} ({}).", name, cite_inline(cite)));
+                    if *alg == BfAlgorithm::Vsharp {
+                        let v = &config.bg_removal.vsharp;
+                        let radii = format!("SMV kernel radii from {} to {} mm", v.max_radius, v.min_radius);
+                        sentences.push(if v.deconvolve {
+                            format!("Background field removal was performed using {} ({}), {}, with a truncated-SVD deconvolution (threshold {}).",
+                                name, cite_inline(cite), radii, v.threshold)
+                        } else {
+                            format!("Background field removal was performed using {} ({}) without the final deconvolution step: an SMV high-pass with {}, the largest kernel that fits at each voxel (as in STI Suite).",
+                                name, cite_inline(cite), radii)
+                        });
+                    } else {
+                        sentences.push(format!("Background field removal was performed using {} ({}).", name, cite_inline(cite)));
+                    }
                     add_citation(&mut citations, cite);
 
                     // Optional mSMV boundary-shadow refinement layered on the primary BFR.
@@ -1236,6 +1248,18 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("AND operation"));
         assert!(!out.contains("study group consensus"), "claimed the consensus for a modified recipe: {out}");
+    }
+
+    #[test]
+    fn vsharp_methods_say_whether_it_deconvolved() {
+        let mut config = PipelineConfig::default();
+        let out = generate_methods(&config);
+        assert!(out.contains("without the final deconvolution step"), "{out}");
+        assert!(out.contains("12 to 1 mm"), "{out}");
+        config.bg_removal.vsharp.deconvolve = true;
+        let out = generate_methods(&config);
+        assert!(out.contains("truncated-SVD deconvolution (threshold 0.2)"), "{out}");
+        assert!(!out.contains("without the final deconvolution"), "{out}");
     }
 
     #[test]

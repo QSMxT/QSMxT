@@ -726,7 +726,11 @@ pub struct QsmartParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct VsharpParamArgs {
-    /// V-SHARP deconvolution threshold
+    /// Undo V-SHARP's SMV high-pass with a truncated-SVD deconvolution (default: false). Off is
+    /// STI Suite's / UK Biobank's V-SHARP; on is what QSMxT up to v9.22.0 ran
+    #[arg(long, value_name = "BOOL")]
+    pub vsharp_deconvolve: Option<bool>,
+    /// V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true
     #[arg(long)]
     pub vsharp_threshold: Option<f64>,
     /// V-SHARP max kernel radius in mm
@@ -1883,13 +1887,17 @@ pub struct BgremoveBfrnetArgs {
 pub struct BgremoveVsharpArgs {
     #[command(flatten)]
     pub common: BgremoveCommonArgs,
-    /// Deconvolution threshold
+    /// Undo the SMV high-pass with a truncated-SVD deconvolution (default: false, as STI Suite
+    /// and UK Biobank; true is what QSMxT up to v9.22.0 ran)
+    #[arg(long, value_name = "BOOL")]
+    pub deconvolve: Option<bool>,
+    /// Deconvolution (TSVD) threshold; only used with --deconvolve true
     #[arg(long)]
     pub threshold: Option<f64>,
-    /// Max radius factor (multiplied by min voxel size)
+    /// Largest SMV kernel radius, in mm (default: 12)
     #[arg(long)]
     pub max_radius: Option<f64>,
-    /// Min radius factor (multiplied by max voxel size)
+    /// Smallest SMV kernel radius, in mm (default: 1)
     #[arg(long)]
     pub min_radius: Option<f64>,
 }

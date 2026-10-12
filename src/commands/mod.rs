@@ -739,14 +739,42 @@ mod integration_tests {
         testutils::write_field(&input);
         testutils::write_mask(&mask);
 
-        let mut c = common_bgremove(input, mask, output.clone());
+        let mut c = common_bgremove(input.clone(), mask.clone(), output.clone());
         c.output_mask = Some(output_mask.clone());
         super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
             common: c,
-            threshold: None, max_radius: None, min_radius: None,
+            deconvolve: None, threshold: None, max_radius: None, min_radius: None,
         })).unwrap();
         assert!(output.exists());
         assert!(output_mask.exists());
+
+        // `--deconvolve true` is exactly qsm-core's default V-SHARP (what QSMxT <= v9.22.0 ran);
+        // the default (off) is a different map.
+        let field = qsm_core::io::read_nifti_file(&input).unwrap();
+        let (m, _) = super::common::load_mask(&mask).unwrap();
+        let (nx, ny, nz) = field.dims;
+        let (vx, vy, vz) = field.voxel_size;
+        let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
+        let core = |p: &qsm_core::bgremove::VsharpParams| {
+            qsm_core::bgremove::vsharp(&field.data, &m, &grid, p, |_, _| {}).0
+        };
+        let read = |p: &std::path::Path| qsm_core::io::read_nifti_file(p).unwrap().data;
+        let off = read(&output);
+        let mut c = common_bgremove(input.clone(), mask.clone(), output.clone());
+        c.output_mask = None;
+        super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
+            common: c,
+            deconvolve: Some(true), threshold: None, max_radius: None, min_radius: None,
+        })).unwrap();
+        let on = read(&output);
+        let as_f32 = |v: Vec<f64>| v.into_iter().map(|x| x as f32).collect::<Vec<_>>();
+        assert_eq!(as_f32(on.clone()), as_f32(core(&qsm_core::bgremove::VsharpParams::default())));
+        assert_eq!(as_f32(off), as_f32(core(&qsm_core::bgremove::VsharpParams {
+            deconvolve: false, ..Default::default()
+        })));
+        assert_ne!(as_f32(on), as_f32(core(&qsm_core::bgremove::VsharpParams {
+            deconvolve: false, ..Default::default()
+        })));
     }
 
     #[test]

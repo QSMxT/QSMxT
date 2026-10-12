@@ -196,7 +196,12 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     emit_enum(&mut parts, "--bf-algorithm", &config.bg_removal.algorithm, &d.bg_removal.algorithm);
     match config.bg_removal.algorithm {
         BfAlgorithm::Vsharp => {
-            emit_f64(&mut parts, "--vsharp-threshold", config.bg_removal.vsharp.threshold, d.bg_removal.vsharp.threshold);
+            if config.bg_removal.vsharp.deconvolve != d.bg_removal.vsharp.deconvolve {
+                parts.push(format!("--vsharp-deconvolve {}", config.bg_removal.vsharp.deconvolve));
+            }
+            if config.bg_removal.vsharp.deconvolve {
+                emit_f64(&mut parts, "--vsharp-threshold", config.bg_removal.vsharp.threshold, d.bg_removal.vsharp.threshold);
+            }
             emit_f64(&mut parts, "--vsharp-max-radius", config.bg_removal.vsharp.max_radius, d.bg_removal.vsharp.max_radius);
             emit_f64(&mut parts, "--vsharp-min-radius", config.bg_removal.vsharp.min_radius, d.bg_removal.vsharp.min_radius);
         }
@@ -891,6 +896,20 @@ frangi_c = 400.0
         // Meaningless when R2' is only ever measured.
         c.separation.r2prime_strategy = R2PrimeStrategy::Mese;
         assert!(!generate_command(&c).contains("--r2primenet"));
+    }
+
+    #[test]
+    fn test_vsharp_deconvolve_flag() {
+        let mut c = PipelineConfig::default();
+        assert!(!c.bg_removal.vsharp.deconvolve, "QSMxT's default is off");
+        c.bg_removal.vsharp.threshold = 0.1;
+        let cmd = generate_command(&c);
+        assert!(!cmd.contains("--vsharp-deconvolve"), "{cmd}");
+        assert!(!cmd.contains("--vsharp-threshold"), "unused without deconvolution: {cmd}");
+        c.bg_removal.vsharp.deconvolve = true;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--vsharp-deconvolve true"), "{cmd}");
+        assert!(cmd.contains("--vsharp-threshold 0.1"), "{cmd}");
     }
 
     #[test]

@@ -49,13 +49,13 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
             info!("Background removal (V-SHARP, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
-            let d = qsm_core::bgremove::VsharpParams::default();
+            // QSMxT's defaults (deconvolution off), the same as `qsmxt run`'s.
+            let d = qsmxt_config::VsharpConfig::default();
             let params = qsm_core::bgremove::VsharpParams {
                 threshold: args.threshold.unwrap_or(d.threshold),
                 max_radius: args.max_radius.unwrap_or(d.max_radius),
                 min_radius: args.min_radius.unwrap_or(d.min_radius),
-                // TODO(catch-up): `--deconvolve` comes with the V-SHARP deconvolution PR.
-                deconvolve: d.deconvolve,
+                deconvolve: args.deconvolve.unwrap_or(d.deconvolve),
             };
             let (lf, em) = qsm_core::bgremove::vsharp(
                 &field_nifti.data, &mask, &grid, &params, |_, _| {},
