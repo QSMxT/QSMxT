@@ -1549,17 +1549,16 @@ mod tests {
     }
 }
 
-/// Guard for "every `qsmxt run` flag is reachable from the TUI": walks every row the pipeline
-/// tab can show, changes each one, and collects the flags that change produces — through both of
-/// the TUI's routes to a config (`config_from_app`, which the methods preview and the generated
-/// command use, and `pipeline_args_from_app`, which the run itself uses), which must agree.
+/// Guard for "every `qsmxt run` flag is reachable from the TUI": changes every control the TUI
+/// has (every row the QSM and separation tabs can show, and the other tabs' controls) and checks
+/// that the change reaches the run, shows in the generated command, and that the command parses
+/// back to itself; then that the flags those commands used cover every `run` flag.
 #[cfg(test)]
 mod parity {
     use super::*;
     use crate::tui::app::{App, PipelineRow, PipelineTabMode};
     use clap::CommandFactory;
     use std::collections::{BTreeMap, BTreeSet};
-
 
     fn flags_of(cmd: &str) -> BTreeSet<String> {
         cmd.split_whitespace().filter(|t| t.starts_with("--")).map(str::to_string).collect()
