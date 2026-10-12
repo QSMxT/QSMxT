@@ -124,6 +124,14 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
   extra arguments (`erode:2:3`), and a `--mask` section with two generators is refused rather
   than silently refining with the second. The TUI shows the error in place of the command and
   the methods.
+- **`--synthseg-version v2` is refused until its weights exist** (#264). It always ran the v1
+  network (the weight file was hard-coded) and read the output through v2's 33-label table.
+  QSM.rs lists SynthSeg 2.0 but its ONNX export is not published, so a run that would segment
+  with v2 (CLI, TUI or config file, including a region reference that turns segmentation on)
+  now fails at start-up, as does `qsmxt segment --synthseg-version v2`, unless
+  `synthseg-2.0.onnx` is supplied in `$QSM_MODEL_DIR`. The weight file now follows the version,
+  so publishing the weights in QSM.rs is all that remains. With `--use-custom-dseg`, v2 still
+  selects the label table a supplied segmentation is read with.
 
 - **Provenance records the exact QSM.rs commit** (#278; no change to any image). The QSM.rs
   version was "unknown" in BIDS-Prov, the TUI header and `--version` because qsm-core is pinned

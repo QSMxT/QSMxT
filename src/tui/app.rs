@@ -4427,7 +4427,7 @@ impl App {
                 FieldDef {
                     label: "SynthSeg Version",
                     kind: FieldKind::Select { options: vec!["v1", "v2"] },
-                    help: "v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF), weights are a separate download",
+                    help: "v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF); its weights are not published yet, so a run with v2 is refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR",
                 },
                 FieldDef {
                     label: "SynthSeg Crop",
