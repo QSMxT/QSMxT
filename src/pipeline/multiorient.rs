@@ -316,7 +316,11 @@ fn register_group(
     let (ref_dims, _, ref_affine) = loaded[0].geometry;
     let reference_mag = loaded[0].magnitude.as_ref().ok_or_else(|| {
         QsmxtError::Config(format!(
-            "{} has no combined magnitude at {}, so the group cannot be co-registered —              registration is driven by magnitude, because a local field's contrast changes with              orientation by construction. Either supply magnitude for every orientation,              co-register them externally and pass --no-orientation-registration, or declare a              `B0_dir` in each sidecar if they are already on one grid",
+            "{} has no combined magnitude at {}, so the group cannot be co-registered — \
+            registration is driven by magnitude, because a local field's contrast changes with \
+            orientation by construction. Either supply magnitude for every orientation, \
+            co-register them externally and pass --no-orientation-registration, or declare a \
+            `B0_dir` in each sidecar if they are already on one grid",
             members[0].key,
             "the magnitude derivative"
         ))
@@ -361,7 +365,8 @@ fn register_group(
         )
         .ok_or_else(|| {
             QsmxtError::Config(format!(
-                "could not register {} onto {} — one of the affines is singular, or the volumes                  never overlap",
+                "could not register {} onto {} — one of the affines is singular, or the volumes \
+                never overlap",
                 members[t].key, members[0].key
             ))
         })?;
@@ -370,13 +375,17 @@ fn register_group(
         // candidate had no variance to correlate, and that is not an alignment either.
         if transform.ncc.is_nan() || transform.ncc <= MIN_REGISTRATION_NCC {
             return Err(QsmxtError::Config(format!(
-                "registering {} onto {} reached a correlation of only {:.3} (overlap {:.2}) —                  that is not an alignment. Check that the two magnitudes are of the same                  subject and that the masks cover the brain; if they were co-registered                  elsewhere, pass --no-orientation-registration",
+                "registering {} onto {} reached a correlation of only {:.3} (overlap {:.2}) — \
+                that is not an alignment. Check that the two magnitudes are of the same \
+                subject and that the masks cover the brain; if they were co-registered \
+                elsewhere, pass --no-orientation-registration",
                 members[t].key, members[0].key, transform.ncc, transform.overlap
             )));
         }
         if transform.ncc < WARN_REGISTRATION_NCC {
             warn!(
-                "  {} registered with a correlation of only {:.3} — usable, but check the                  per-orientation susceptibility maps before trusting the combination",
+                "  {} registered with a correlation of only {:.3} — usable, but check the \
+                per-orientation susceptibility maps before trusting the combination",
                 members[t].key, transform.ncc
             );
         }
@@ -407,7 +416,7 @@ fn registration_table(members: &[&QsmRun], registered: &[Registered]) -> Vec<Str
                 format!("{:<16} reference", members[t].key.to_string())
             } else {
                 format!(
-                    "{:<16} rotation {:>5.2}°  translation [{:>6.2} {:>6.2} {:>6.2}] mm                       NCC {:.4}  overlap {:.2}",
+                    "{:<16} rotation {:>5.2}°  translation [{:>6.2} {:>6.2} {:>6.2}] mm  NCC {:.4}  overlap {:.2}",
                     members[t].key.to_string(),
                     r.transform.rotation_magnitude_deg(),
                     tr[0],
@@ -482,7 +491,9 @@ pub fn reconstruct_group(
         }
         (Some(why), false) => {
             return Err(QsmxtError::DimensionMismatch(format!(
-                "{}: {why}, and registration is switched off by --no-orientation-registration.                  Either drop that flag and let QSMxT co-register the orientations, or                  co-register them externally onto one grid first",
+                "{}: {why}, and registration is switched off by --no-orientation-registration. \
+                Either drop that flag and let QSMxT co-register the orientations, or \
+                co-register them externally onto one grid first",
                 group.label
             )));
         }

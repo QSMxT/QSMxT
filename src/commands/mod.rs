@@ -1484,7 +1484,16 @@ mod integration_tests {
 
         // The reference summary names the run and what it referenced to.
         let summary = std::fs::read_to_string(deriv.join("desc-reference_summary.tsv")).unwrap();
-        assert!(summary.lines().nth(1).unwrap().contains("thalamus"), "{summary}");
+        let mut lines = summary.lines();
+        let header: Vec<&str> = lines.next().unwrap().split('\t').collect();
+        assert_eq!(header, [
+            "subject", "session", "acquisition", "reconstruction", "inversion", "run",
+            "map", "reference", "offset_ppm", "n_voxels",
+        ], "{summary}");
+        let row: Vec<&str> = lines.next().unwrap().split('\t').collect();
+        assert_eq!(row.len(), header.len(), "{summary}");
+        assert_eq!((row[0], row[6], row[7]), ("1", "Chimap", "thalamus"), "{summary}");
+        assert!((row[8].parse::<f64>().unwrap() - offset).abs() < 1e-6, "{summary}");
     }
 
     /// A mistyped region has to fail before any data is touched — the alternative is an hours-long
