@@ -132,9 +132,9 @@ It contains Quantitative Susceptibility Mapping (QSM) outputs and related maps
   that run's `anat/*_desc-segmentation_stats.tsv`.
 - `desc-<map>_stats.png` — a figure per map summarising the cohort, alongside
   the per-run figures in each `anat/`.
-- `desc-reference_summary.tsv` — what each run's susceptibility map was
-  referenced to, and the offset that removed. The same facts are in each
-  `_Chimap.json`.
+- `desc-reference_summary.tsv` — what each run's susceptibility maps were
+  referenced to (one row per map; the `map` column names it), and the offset
+  that removed. The same facts are in each map's `_Chimap.json`.
 - `prov/` — BEP028 (BIDS-Prov) provenance records: one Activity per pipeline
   stage, with Entity/Agent/Environment records. Each output NIfTI also carries a
   `GeneratedBy` reference in its JSON sidecar.

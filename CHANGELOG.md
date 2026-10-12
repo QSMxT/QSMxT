@@ -126,6 +126,18 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
   R2/R2′, the χ-separation maps and the COSMOS/STI outputs get sidecars; COSMOS/STI get their
   own activity, and provenance is now written after the multi-orientation step. A test keeps
   the list of recorded steps in step with the pipeline.
+- **`desc-reference_summary.tsv` has a correct header and one row per referenced map** (#280; no
+  change to any image). Its `reference` column was named `"                  reference"` (a
+  lost line continuation left a run of spaces in the header), and a two-pass run's single-pass
+  map was not listed. The columns are now `subject session acquisition reconstruction inversion
+  run map reference offset_ppm n_voxels`, with a row for the `Chimap` and one for the
+  `desc-singlepass_Chimap` of a two-pass run. The same lost continuations put long runs of spaces
+  into several multi-orientation log and error messages; fixed.
+- The per-structure statistics read each map's reference from that map's own sidecar. The
+  χ-separation rows (`desc-paramagnetic/diamagnetic/total_Chimap`), which are never referenced,
+  carried the main map's reference and offset, and the `desc-singlepass_Chimap` rows carried
+  the combined map's offset instead of their own. The single-pass map's sidecar now records its
+  own `QsmReference*` fields.
 
 - The TUI's configuration (methods text, generated command) is now built from the same argument
   list the run uses, through the same overrides as `qsmxt run`, so the three can no longer

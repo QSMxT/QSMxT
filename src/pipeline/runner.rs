@@ -1827,12 +1827,6 @@ fn stage_analysis(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn Fn(&s
         .and_then(|m| m.get("volumes"))
         .and_then(|v| serde_json::from_value(v.clone()).ok());
 
-    // What the susceptibility map was referenced to, read back from the sidecar the referencing
-    // stage wrote. Carried onto the χ rows so the table says what its zero means.
-    let reference = crate::bids::entities::sidecar_path(&ctx.output.qsm_path(&ctx.run.key))
-        .as_deref()
-        .and_then(stats::ReferenceInfo::from_sidecar);
-
     let mut table = String::from(stats::HEADER);
     let mut summarised: Vec<&str> = Vec::new();
     for spec in &maps {
@@ -1842,6 +1836,12 @@ fn stage_analysis(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn Fn(&s
                 "segmentation has {} voxels but {} has {}",
                 seg.len(), spec.path.display(), map.len())));
         }
+        // What this map was referenced to, read back from its own sidecar, where the referencing
+        // stage wrote it — so the table says what its zero means. A map that was never
+        // referenced (the χ-separation maps) has no such record, and its columns stay empty.
+        let reference = crate::bids::entities::sidecar_path(&spec.path)
+            .as_deref()
+            .and_then(stats::ReferenceInfo::from_sidecar);
         table.push_str(&stats::map_rows(spec, &map, &seg, labels, volumes.as_deref(),
                                         reference.as_ref()));
         summarised.push(spec.name);
@@ -3665,12 +3665,10 @@ fn stage_reference(
         outputs.push(path);
     }
 
-    // Record what the map was referenced to, beside the map itself. Only for the main pass: the
-    // single-pass map of a two-pass run is a by-product, and two sidecars disagreeing about "the"
-    // reference would be worse than one.
-    if step == "reference" {
-        write_reference_sidecar(ctx, &qsm_path, offset)?;
-    }
+    // Record what the map was referenced to, beside the map itself. Each map gets its own: the
+    // single-pass map of a two-pass run is referenced over its own support, so its offset is not
+    // the combined map's, and the tables read every map's reference from its own sidecar.
+    write_reference_sidecar(ctx, &qsm_path, offset)?;
 
     let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).collect();
     ctx.complete_step(step, Some(&ref_method), ref_params, &input_refs, outputs, t)?;
@@ -5622,6 +5620,69 @@ mod reference_support_tests {
     }
 
     /// `none` never left a shell — the raw rim is already 0 — and must keep not doing so.
+    /// Each map's rows in the statistics table carry that map's own reference (#280): the two-pass
+    /// single-pass map has its own offset, and the χ-separation maps, never referenced, have none.
+    #[test]
+    fn each_map_carries_its_own_reference_in_the_table() {
+        let f = fixture();
+        let config = PipelineConfig::default();
+        let m = meta();
+        reference(&f, &config);
+        // The single-pass map: a different raw map, so a different offset.
+        let raw2: Vec<f64> = f.chi_raw.iter().map(|&c| if c != 0.0 { c + 0.02 } else { 0.0 }).collect();
+        let raw2_path = f.output.reliable_chi_raw_path(&f.run.key);
+        save_volume(&raw2_path, &raw2, &m).unwrap();
+        let state_path = f.output.state_path(&f.run.key);
+        let mut state = PipelineState::load_or_create(&state_path, &config, &f.run.key, true);
+        let mut ctx = StageContext {
+            run: &f.run, config: &config, output: &f.output, meta: &m,
+            state: &mut state, state_path: &state_path,
+        };
+        let pass = Pass::main(&f.output, &f.run.key);
+        stage_reference(
+            &mut ctx, &[pass.support(false)], &raw2_path, f.output.singlepass_qsm_path(&f.run.key),
+            None, "reference-singlepass", &|_| {},
+        ).unwrap();
+        // χ-separation maps, which are never referenced.
+        for p in [f.output.chi_para_path(&f.run.key), f.output.chi_dia_path(&f.run.key),
+                  f.output.chi_sep_total_path(&f.run.key)] {
+            save_volume(&p, &f.chi_raw, &m).unwrap();
+        }
+        let dseg: Vec<f64> = f.brain.iter().map(|&b| if b != 0 { 10.0 } else { 0.0 }).collect();
+        let dseg_path = f.output.dseg_path(&f.run.key);
+        save_volume(&dseg_path, &dseg, &m).unwrap();
+        stage_analysis(&mut ctx, &dseg_path, &|_| {}).unwrap();
+
+        let offset_of = |path: PathBuf| -> f64 {
+            read_json_object(&crate::bids::entities::sidecar_path(&path).unwrap())
+                ["QsmReferenceOffsetPpm"].as_f64().unwrap()
+        };
+        let main_off = offset_of(f.output.qsm_path(&f.run.key));
+        let single_off = offset_of(f.output.singlepass_qsm_path(&f.run.key));
+        assert!((main_off - single_off).abs() > 0.01, "{main_off} vs {single_off}");
+
+        let table = std::fs::read_to_string(f.output.segmentation_stats_path(&f.run.key)).unwrap();
+        let rows = stats::parse_tsv(&table);
+        let by_map = |name: &str| rows.iter().filter(|r| r.map == name).collect::<Vec<_>>();
+        for r in by_map("Chimap") {
+            assert_eq!(r.reference.as_deref(), Some("mean"));
+            assert!((r.reference_offset_ppm.unwrap() - main_off).abs() < 1e-6);
+        }
+        let single = by_map("desc-singlepass_Chimap");
+        assert!(!single.is_empty());
+        for r in single {
+            assert_eq!(r.reference.as_deref(), Some("mean"));
+            assert!((r.reference_offset_ppm.unwrap() - single_off).abs() < 1e-6, "{r:?}");
+        }
+        for name in ["desc-paramagnetic_Chimap", "desc-diamagnetic_Chimap", "desc-total_Chimap"] {
+            let rows = by_map(name);
+            assert!(!rows.is_empty(), "{name} was not summarised");
+            for r in rows {
+                assert_eq!((r.reference.as_deref(), r.reference_offset_ppm), (None, None), "{r:?}");
+            }
+        }
+    }
+
     #[test]
     fn no_reference_leaves_the_rim_at_zero_and_the_support_untouched() {
         let f = fixture();

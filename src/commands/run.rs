@@ -53,7 +53,8 @@ fn init_logging(log_file: Option<std::fs::File>, debug: bool) {
         .ok();
 }
 
-/// One row per run: what its susceptibility map was referenced to, and what that removed.
+/// One row per referenced susceptibility map of each run: what it was referenced to, and what
+/// that removed.
 ///
 /// The same facts are in each map's JSON sidecar, but reading forty sidecars to find the subject
 /// whose reference region came out empty is not a thing anyone does. This is the file you scan.
@@ -63,40 +64,53 @@ fn write_reference_summary(
 ) {
     let mut body = String::new();
     for run in runs {
-        let Some(sidecar) = crate::bids::entities::sidecar_path(&output.qsm_path(&run.key)) else {
-            continue;
-        };
-        let Ok(text) = std::fs::read_to_string(&sidecar) else { continue };
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
-        let Some(reference) = v.get("QsmReference").and_then(|r| r.as_str()) else { continue };
-        let num = |k: &str| v.get(k).and_then(|x| x.as_f64())
-            .map(|x| format!("{x:.6}")).unwrap_or_default();
         let k = &run.key;
-        body.push_str(&format!(
-            "{}	{}	{}	{}	{}	{}	{reference}	{}	{}
-",
-            k.subject,
-            k.session.as_deref().unwrap_or(""),
-            k.acquisition.as_deref().unwrap_or(""),
-            k.reconstruction.as_deref().unwrap_or(""),
-            k.inversion.as_deref().unwrap_or(""),
-            k.run.as_deref().unwrap_or(""),
-            num("QsmReferenceOffsetPpm"),
-            v.get("QsmReferenceVoxels").and_then(|x| x.as_u64())
-                .map(|x| x.to_string()).unwrap_or_default(),
-        ));
+        // One row per referenced map — the two-pass single-pass map has its own offset — each
+        // read from that map's own sidecar.
+        for spec in crate::pipeline::stats::candidate_maps(output, k) {
+            if !crate::pipeline::stats::is_susceptibility(spec.name) {
+                continue;
+            }
+            let Some(sidecar) = crate::bids::entities::sidecar_path(&spec.path) else { continue };
+            let Ok(text) = std::fs::read_to_string(&sidecar) else { continue };
+            let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) else { continue };
+            let Some(reference) = v.get("QsmReference").and_then(|r| r.as_str()) else { continue };
+            let num = |k: &str| v.get(k).and_then(|x| x.as_f64())
+                .map(|x| format!("{x:.6}")).unwrap_or_default();
+            let row = [
+                k.subject.as_str(),
+                k.session.as_deref().unwrap_or(""),
+                k.acquisition.as_deref().unwrap_or(""),
+                k.reconstruction.as_deref().unwrap_or(""),
+                k.inversion.as_deref().unwrap_or(""),
+                k.run.as_deref().unwrap_or(""),
+                spec.name,
+                reference,
+                &num("QsmReferenceOffsetPpm"),
+                &v.get("QsmReferenceVoxels").and_then(|x| x.as_u64())
+                    .map(|x| x.to_string()).unwrap_or_default(),
+            ];
+            body.push_str(&row.join("\t"));
+            body.push('\n');
+        }
     }
     if body.is_empty() {
         return;
     }
     let path = derivatives_dir.join("desc-reference_summary.tsv");
-    let header = "subject	session	acquisition	reconstruction	inversion	run	                  reference	offset_ppm	n_voxels
-";
-    match std::fs::write(&path, format!("{header}{body}")) {
+    let header = REFERENCE_SUMMARY_COLUMNS.join("\t");
+    match std::fs::write(&path, format!("{header}\n{body}")) {
         Ok(()) => info!("QSM reference per run -> {}", path.display()),
         Err(e) => warn!("Could not write the reference summary: {}", e),
     }
 }
+
+/// Columns of `desc-reference_summary.tsv`: the run's entities, which map (its BIDS suffix with
+/// any `desc-`, as in the statistics table), and what it was referenced to.
+pub(crate) const REFERENCE_SUMMARY_COLUMNS: [&str; 10] = [
+    "subject", "session", "acquisition", "reconstruction", "inversion", "run",
+    "map", "reference", "offset_ppm", "n_voxels",
+];
 
 /// Draw the cohort figures from the dataset-level table.
 ///
@@ -338,7 +352,8 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                 let groups = crate::bids::orientation::group_runs(&runs, &pattern);
                 if groups.is_empty() {
                     warn!(
-                        "--orientation-group '{}' matched no set of 2+ runs in a session;                          everything was processed one orientation at a time",
+                        "--orientation-group '{}' matched no set of 2+ runs in a session; \
+                        everything was processed one orientation at a time",
                         config.multi_orientation.group_by
                     );
                 }
@@ -428,7 +443,8 @@ fn print_orientation_groups(
     println!();
     if groups.is_empty() {
         println!(
-            "Multi-orientation ({kind}): '{}' matched no set of 2+ runs in a session — every              run would be processed on its own",
+            "Multi-orientation ({kind}): '{}' matched no set of 2+ runs in a session — every \
+            run would be processed on its own",
             config.multi_orientation.group_by
         );
         return Ok(());
