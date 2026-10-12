@@ -77,8 +77,32 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `440946b`):
   is a measurement (brain mask ∩ MESE field of view ∩ R2 > 0), and the log says how much of the
   brain that is. `qsmxt r2prime` gains `--r2-coverage` and `--output-coverage`.
 
+- **TUI/CLI parity.** Every `qsmxt run` flag is now reachable from the TUI. New TUI controls:
+  Crop to Mask / Crop Margin / FFT Padding / Output Space / inhomogeneity Sigma and Box Passes /
+  Use custom dseg (QSM → General); Coil Comb. Sigma and ROMEO Phase Coherence (Field mapping);
+  TGV Step Size / Tolerance; MEDI and TFI MERIT / Data Weighting; the remaining AMP-PE settings;
+  Source DICOM Dir / DICOM Outputs (Supplementary, under Export DICOM); Memory Limit / No Memory
+  Limit / Force Re-run / Clean Intermediates (Execution, local runs). New flag `--no-medi-smv`
+  (MEDI's SMV step is on by default and could not be turned off from the CLI).
+- A guard test (`tui::command::parity`) walks every row the QSM and separation tabs can show, and
+  the other tabs' controls, and fails if a `run` flag cannot be reached from the TUI, if a TUI
+  control has no effect on the run, if a setting the run uses is missing from the generated
+  command, or if the generated command does not reproduce the configuration.
+
 ### Changed
 
+- The TUI's configuration (methods text, generated command) is now built from the same argument
+  list the run uses, through the same overrides as `qsmxt run`, so the three can no longer
+  disagree. They did: the generated command and methods text left out HEIDI/LSQR settings, the
+  QSMART radii and deep-learning tiling, though the run used them.
+- `generate_command` (shared with qsmbly) now emits every ROMEO setting, the QSMART inner
+  inversion's own settings, MEDI/TFI MERIT and data weighting, the inhomogeneity-correction
+  settings, and the multi-orientation, registration and custom-dseg settings whenever they were
+  changed; under QSMART it states the mask when it is the default threshold recipe (QSMART's own
+  default is BET).
+- Fixed: `--medi-merit` and `--medi-data-weighting` were parsed but never applied.
+- Fixed: the separation tab showed HC-χsep's parameters for SUSEP-Net and χ-sepnet, where they
+  did nothing.
 - `--qsmart-ilsqr-tol` is removed: QSMART's inner iLSQR uses `--ilsqr-tol`. New
   `--qsmart-ilsqr-pad-mm` (default 6 mm, STI Suite's) sets its zero-padding; the TUI has it as
   "iLSQR Pad (mm)" and shows the iLSQR tolerance under QSMART. A config file's

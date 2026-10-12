@@ -332,6 +332,7 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                                                   // the statistics drawn from the segmentation and
                                                   // the reference measured on it among them
             (TAB_EXECUTION, 4..=9) => true,     // SLURM settings under "Execution Mode"
+            (TAB_SUPPLEMENTARY, 24..=25) => true, // DICOM export settings under "Export DICOM"
             _ => false,
         };
         let prefix = if indent { "    " } else { "  " };

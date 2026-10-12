@@ -399,6 +399,11 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.medi_params.medi_percentage { config.inversion.medi.percentage = v; }
         if let Some(v) = args.medi_params.medi_smv_radius { config.inversion.medi.smv_radius = v; }
         if args.medi_params.medi_smv { config.inversion.medi.smv = true; }
+        if args.medi_params.no_medi_smv { config.inversion.medi.smv = false; }
+        // Parsed but never applied before the TUI parity sweep: `--medi-merit` and
+        // `--medi-data-weighting` did nothing.
+        if let Some(v) = args.medi_params.medi_merit { config.inversion.medi.merit = v; }
+        if let Some(v) = args.medi_params.medi_data_weighting { config.inversion.medi.data_weighting = v; }
         if let Some(v) = args.tfi_params.tfi_lambda { config.inversion.tfi.lambda = v; }
         if let Some(v) = args.tfi_params.tfi_precond { config.inversion.tfi.precond = v; }
         if let Some(v) = args.tfi_params.tfi_data_weighting { config.inversion.tfi.data_weighting = v; }
