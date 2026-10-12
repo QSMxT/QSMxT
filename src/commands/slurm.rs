@@ -12,7 +12,7 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
         PipelineConfig::default()
     };
 
-    crate::pipeline::config::apply_run_overrides(&mut config, &args.pipeline);
+    crate::pipeline::config::apply_run_overrides(&mut config, &args.pipeline)?;
 
     let filter = DiscoveryFilter {
         include: args.include.clone(),

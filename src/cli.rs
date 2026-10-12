@@ -1015,9 +1015,9 @@ pub struct SwiParamArgs {
     /// SWI high-pass filter sigma (3 values, in voxels)
     #[arg(long, num_args = 3)]
     pub swi_hp_sigma: Option<Vec<f64>>,
-    /// SWI phase scaling type (tanh, negative-tanh, positive, negative, triangular)
-    #[arg(long)]
-    pub swi_scaling: Option<String>,
+    /// SWI phase-mask scaling
+    #[arg(long, value_enum)]
+    pub swi_scaling: Option<SwiScalingArg>,
     /// SWI phase scaling strength
     #[arg(long)]
     pub swi_strength: Option<f64>,
@@ -3326,6 +3326,16 @@ pub enum R2PrimeStrategyArg {
     Mese,
     /// Always predict it from R2*
     R2primenet,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum SwiScalingArg {
+    Tanh,
+    #[value(alias = "negative_tanh")]
+    NegativeTanh,
+    Positive,
+    Negative,
+    Triangular,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

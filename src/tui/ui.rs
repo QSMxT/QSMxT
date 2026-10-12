@@ -1921,8 +1921,10 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
 }
 
 fn draw_methods_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
-    let config = command::config_from_app(app);
-    let methods_text = crate::pipeline::methods::generate_methods(&config);
+    let methods_text = match command::config_from_app(app) {
+        Ok(config) => crate::pipeline::methods::generate_methods(&config),
+        Err(e) => format!("# Invalid setting\n\n{e}\n\nThe run would refuse this configuration."),
+    };
 
     let block = Block::default()
         .borders(Borders::ALL)

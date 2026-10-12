@@ -1716,15 +1716,8 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let mask = load_mask(mask_path)?;
 
     let unwrapped = qsm_core::unwrap::laplacian_unwrap(&phase_data, &mask, &grid, qsm_core::unwrap::LaplacianSolver::Dct);
-    let swi_scaling = match ctx.config.swi.scaling.as_str() {
-        "negative_tanh" => qsm_core::swi::PhaseScaling::NegativeTanh,
-        "positive" => qsm_core::swi::PhaseScaling::Positive,
-        "negative" => qsm_core::swi::PhaseScaling::Negative,
-        "triangular" => qsm_core::swi::PhaseScaling::Triangular,
-        _ => qsm_core::swi::PhaseScaling::Tanh,
-    };
     let swi_params_core = qsm_core::swi::SwiParams {
-        hp_sigma: ctx.config.swi.hp_sigma, scaling: swi_scaling,
+        hp_sigma: ctx.config.swi.hp_sigma, scaling: ctx.config.swi.scaling.into(),
         strength: ctx.config.swi.strength, mip_window: window,
     };
     let swi = qsm_core::swi::calculate_swi(

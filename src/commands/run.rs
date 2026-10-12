@@ -169,7 +169,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         PipelineConfig::default()
     };
 
-    crate::pipeline::config::apply_run_overrides(&mut config, &args.pipeline);
+    crate::pipeline::config::apply_run_overrides(&mut config, &args.pipeline)?;
     crate::pipeline::config::validate_reference_region(&config)?;
 
 

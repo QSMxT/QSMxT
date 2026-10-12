@@ -466,11 +466,28 @@ pub fn masking_preset_command(masking: &crate::config::MaskingConfig) -> Option<
 
 pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
     let parts: Vec<&str> = s.split(':').collect();
+    // The positional argument `i` of a simple op: its default when absent, an error when it is
+    // there but not a number (`erode:x` used to erode once), or when more were given than the op
+    // takes.
+    fn arg<T: std::str::FromStr>(parts: &[&str], i: usize, max_args: usize, default: T) -> crate::Result<T> {
+        if parts.len() > max_args + 1 {
+            return Err(ConfigError::Parse(format!(
+                "{}: takes at most {max_args} argument(s), got '{}'", parts[0], parts[1..].join(":"))));
+        }
+        match parts.get(i).filter(|s| !s.is_empty()) {
+            None => Ok(default),
+            Some(v) => v.parse().map_err(|_| ConfigError::Parse(format!(
+                "{}: '{v}' is not a valid number", parts[0]))),
+        }
+    }
     match parts[0] {
         "threshold" => match parts.get(1).copied() {
-            Some("otsu") | None => Ok(MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }),
-            Some("fixed") => Ok(MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0.5)) }),
-            Some("percentile") => Ok(MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(75.0)) }),
+            Some("otsu") | None => {
+                arg::<f64>(&parts, 2, 1, 0.0)?;
+                Ok(MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None })
+            }
+            Some("fixed") => Ok(MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(arg(&parts, 2, 2, 0.5)?) }),
+            Some("percentile") => Ok(MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value: Some(arg(&parts, 2, 2, 75.0)?) }),
             Some(other) => Err(ConfigError::Parse(format!("Invalid threshold method: '{}'", other))),
         },
         // `bet[:<f>][:scale=<s>]` — the fractional intensity stays positional (every preset and
@@ -489,13 +506,13 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
             }
             Ok(MaskOp::Bet { fractional_intensity, voxel_scale })
         }
-        "erode" => Ok(MaskOp::Erode { iterations: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1) }),
-        "dilate" => Ok(MaskOp::Dilate { iterations: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1) }),
-        "close" => Ok(MaskOp::Close { radius: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(1) }),
+        "erode" => Ok(MaskOp::Erode { iterations: arg(&parts, 1, 1, 1)? }),
+        "dilate" => Ok(MaskOp::Dilate { iterations: arg(&parts, 1, 1, 1)? }),
+        "close" => Ok(MaskOp::Close { radius: arg(&parts, 1, 1, 1)? }),
         // Bare `fill-holes` is the automatic cap (5% of the volume) — what every preset spells as
         // `fill-holes:0` and what the TUI adds — rather than a 1000-voxel cap nothing else used.
-        "fill-holes" => Ok(MaskOp::FillHoles { max_size: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0) }),
-        "gaussian" => Ok(MaskOp::GaussianSmooth { sigma_mm: parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(4.0) }),
+        "fill-holes" => Ok(MaskOp::FillHoles { max_size: arg(&parts, 1, 1, 0)? }),
+        "gaussian" => Ok(MaskOp::GaussianSmooth { sigma_mm: arg(&parts, 1, 1, 4.0)? }),
         "signal-erode" => {
             let num = |i: usize, name: &str| -> crate::Result<Option<f64>> {
                 parts.get(i).filter(|s| !s.is_empty()).map(|s| s.parse::<f64>().map_err(|_| {

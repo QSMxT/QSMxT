@@ -4227,7 +4227,7 @@ pub struct RunForm {
 
     // Tab 3: Supplementary
     pub do_swi: bool,
-    pub swi_scaling: usize,  // 0=tanh, 1=negative-tanh, 2=positive, 3=negative, 4=triangular
+    pub swi_scaling: usize,  // index into qsmxt_config::SwiScaling::ALL (= command::SWI_SCALING_ARGS)
     pub swi_strength: String,
     pub swi_hp_sigma_x: String,
     pub swi_hp_sigma_y: String,
@@ -4342,7 +4342,9 @@ impl App {
                 },
                 FieldDef {
                     label: "SWI Scaling",
-                    kind: FieldKind::Select { options: vec!["tanh", "negative-tanh", "positive", "negative", "triangular"] },
+                    kind: FieldKind::Select {
+                        options: qsmxt_config::SwiScaling::ALL.iter().map(|s| s.as_str()).collect(),
+                    },
                     help: "Phase scaling type for SWI",
                 },
                 FieldDef {
@@ -9842,7 +9844,7 @@ mod tests {
         app.pipeline_state.toggle("two_pass");
         assert!(!app.pipeline_state.two_pass);
         // Off, so it contributes nothing to the config...
-        let config = crate::tui::command::config_from_app(&app);
+        let config = crate::tui::command::config_from_app(&app).unwrap();
         assert!(!config.masking.two_pass);
         assert!(config.masking.two_pass_sections.is_none());
         // ...but the edit survives.
