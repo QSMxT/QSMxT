@@ -760,7 +760,7 @@ fn word_boundary_left(text: &str, cursor: usize) -> usize {
 /// COSMOS or STI, in the order the TUI cycles them.
 pub const ORIENTATION_ALGORITHMS: [&str; 2] = ["cosmos", "sti"];
 pub const ORIENTATION_ALGORITHM_HELP: [&str; 2] = [
-    "COSMOS — scalar susceptibility from 2+ co-registered orientations, closed form in k-space",
+    "COSMOS — scalar susceptibility from 2+ orientations, co-registered if needed, closed form in k-space",
     "STI — rank-2 susceptibility tensor; needs 6+ orientations that are not coplanar",
 ];
 
@@ -1437,6 +1437,10 @@ pub struct PipelineFormState {
     /// Motion correction (off by default): reference index into [`MOTION_REFERENCE_OPTIONS`]
     /// (0 first, 1 last, 2 a given echo), and the rigid registration's settings.
     pub motion_correction: bool,
+    /// Multi-orientation (grouping is on the Input tab): co-register a group's orientations when
+    /// they need it, and reconstruct past the direction-degeneracy check.
+    pub orientation_registration: bool,
+    pub multi_orientation_force: bool,
     pub motion_reference: usize,
     pub motion_reference_echo: String,
     pub motion_chain: bool,
@@ -1815,6 +1819,8 @@ impl Default for PipelineFormState {
             laplacian_solver: 0, // dct
             laplacian_fft_pad: qsmxt_config::default_laplacian_fft_pad()[0].to_string(),
             motion_correction: false,
+            orientation_registration: true,
+            multi_orientation_force: false,
             motion_reference: 0,
             motion_reference_echo: "1".to_string(),
             motion_chain: qsmxt_config::MotionCorrectionConfig::default().chain,
@@ -2308,6 +2314,25 @@ impl PipelineFormState {
             label: "Ignore Slice Gap", field: "ignore_slice_gap",
             help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
         });
+        rows.push(PipelineRow::Toggle {
+            label: "Orientation Co-registration", field: "orientation_registration",
+            help: "Multi-orientation groups (Input tab): co-register orientations that need it, with the registration settings below. Off = refuse such groups",
+        });
+        rows.push(PipelineRow::Toggle {
+            label: "Force Multi-orientation", field: "multi_orientation_force",
+            help: "Multi-orientation groups: reconstruct even when the B0 directions look degenerate (wrong metadata gives a plausible wrong map)",
+        });
+        if self.motion_correction || self.orientation_registration {
+            rows.push(PipelineRow::Note { text: "Rigid registration (motion correction, orientation co-registration):" });
+            rows.push(PipelineRow::Param { label: "  Levels", field: "reg_levels", help: "Pyramid levels: the capture range; do not lower (default 5)" });
+            rows.push(PipelineRow::Param { label: "  Max Samples", field: "reg_max_samples", help: "Voxels sampled per metric evaluation, per level" });
+            rows.push(PipelineRow::Param { label: "  Max Iterations", field: "reg_max_iterations", help: "Powell cycles per level" });
+            rows.push(PipelineRow::Param { label: "  Max Evaluations", field: "reg_max_evaluations", help: "Metric evaluations across all levels (hard stop)" });
+            rows.push(PipelineRow::Param { label: "  Tolerance", field: "reg_tolerance", help: "Relative cost improvement per cycle that counts as converged" });
+            rows.push(PipelineRow::Param { label: "  Rotation Step (deg)", field: "reg_rotation_step_deg", help: "Initial rotation step at the finest level" });
+            rows.push(PipelineRow::Param { label: "  Translation Step (mm)", field: "reg_translation_step_mm", help: "Initial translation step at the finest level" });
+            rows.push(PipelineRow::Param { label: "  Min Overlap", field: "reg_min_overlap", help: "Smallest fraction of sampled voxels that must overlap" });
+        }
 
         rows.push(PipelineRow::Separator);
         } // end if do_qsm (general settings)
@@ -2341,15 +2366,6 @@ impl PipelineFormState {
                 }
                 rows.push(PipelineRow::Param { label: "  Min NCC", field: "motion_min_ncc",
                     help: "NCC below which a registration is reported as suspect (0.3 for echoes; ~0.9 for repeats)" });
-                rows.push(PipelineRow::Note { text: "  Registration:" });
-                rows.push(PipelineRow::Param { label: "    Levels", field: "reg_levels", help: "Pyramid levels: the capture range; do not lower (default 5)" });
-                rows.push(PipelineRow::Param { label: "    Max Samples", field: "reg_max_samples", help: "Voxels sampled per metric evaluation, per level" });
-                rows.push(PipelineRow::Param { label: "    Max Iterations", field: "reg_max_iterations", help: "Powell cycles per level" });
-                rows.push(PipelineRow::Param { label: "    Max Evaluations", field: "reg_max_evaluations", help: "Metric evaluations across all levels (hard stop)" });
-                rows.push(PipelineRow::Param { label: "    Tolerance", field: "reg_tolerance", help: "Relative cost improvement per cycle that counts as converged" });
-                rows.push(PipelineRow::Param { label: "    Rotation Step (deg)", field: "reg_rotation_step_deg", help: "Initial rotation step at the finest level" });
-                rows.push(PipelineRow::Param { label: "    Translation Step (mm)", field: "reg_translation_step_mm", help: "Initial translation step at the finest level" });
-                rows.push(PipelineRow::Param { label: "    Min Overlap", field: "reg_min_overlap", help: "Smallest fraction of sampled voxels that must overlap" });
             }
 
             // Phase offset removal (disabled for Laplacian)
@@ -3377,6 +3393,8 @@ impl PipelineFormState {
             "heidi_denoise" => self.heidi_denoise,
             "ignore_slice_gap" => self.ignore_slice_gap,
             "motion_correction" => self.motion_correction,
+            "orientation_registration" => self.orientation_registration,
+            "multi_orientation_force" => self.multi_orientation_force,
             "motion_chain" => self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve,
@@ -3411,6 +3429,8 @@ impl PipelineFormState {
             "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
             "ignore_slice_gap" => self.ignore_slice_gap = !self.ignore_slice_gap,
             "motion_correction" => self.motion_correction = !self.motion_correction,
+            "orientation_registration" => self.orientation_registration = !self.orientation_registration,
+            "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,
             "motion_chain" => self.motion_chain = !self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve = !self.vsharp_deconvolve,

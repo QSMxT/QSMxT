@@ -55,6 +55,15 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `440946b`):
   `--no-motion-chain`, `--motion-chain-levels`, `--motion-min-ncc` and the `--registration-*`
   group. All are in the TUI (Field mapping → Motion Correction). Needs magnitude (an error
   without). Writes `<run>_motion.json`; the mask is restricted to voxels every echo covers.
+- **Multi-orientation co-registration** (QSM.rs#134; supersedes draft #244). An
+  `--orientation-group` whose members disagree on grid/affine, or whose only B0 directions come
+  from indistinguishable affines, is now rigidly co-registered on magnitude (first member is the
+  reference) and its B0 directions are recovered from the rotations, instead of being refused.
+  Groups already on one grid with declared `B0_dir`s are untouched. Registration with NCC <= 0.5
+  is refused; 0.5-0.8 warns. `--no-orientation-registration` restores the refusal;
+  `--multi-orientation-force` and the shared `--registration-*` settings apply. All are in the
+  TUI (General: Orientation Co-registration, Force Multi-orientation, Rigid registration rows).
+  **Behaviour change:** such groups used to be refused.
 
 - **R2PRIMEnet field-strength policy** (QSM.rs#138). R2PRIMEnet is trained at 3 T only. Away
   from 3 T, `--r2prime-strategy auto` now skips R2′ with a warning when there is no R2 to

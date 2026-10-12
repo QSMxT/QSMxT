@@ -226,9 +226,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         }),
         multi_orientation_lambda: orientation_lambda,
         orientation_group,
-        // The TUI never forces past the degeneracy check: the preview is there to fix the
-        // input instead, and an override buried in a form is how a bad run gets normalised.
-        multi_orientation_force: false,
+        multi_orientation_force: ps.multi_orientation_force,
+        no_orientation_registration: !ps.orientation_registration,
         unwrapping_algorithm: Some(unwrap_options[ps.unwrapping_algorithm]),
         bf_algorithm: Some(bf_options[ps.bf_algorithm]),
         masking_input: None,
@@ -445,14 +444,14 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             no_motion_chain: ps.motion_correction && !ps.motion_chain,
             motion_chain_levels: if ps.motion_correction { parse_optional_usize(&ps.motion_chain_levels) } else { None },
             motion_min_ncc: if ps.motion_correction { parse_optional_f64(&ps.motion_min_ncc) } else { None },
-            registration_levels: if ps.motion_correction { parse_optional_usize(&ps.reg_levels) } else { None },
-            registration_max_samples: if ps.motion_correction { parse_optional_usize(&ps.reg_max_samples) } else { None },
-            registration_max_iterations: if ps.motion_correction { parse_optional_usize(&ps.reg_max_iterations) } else { None },
-            registration_max_evaluations: if ps.motion_correction { parse_optional_usize(&ps.reg_max_evaluations) } else { None },
-            registration_tolerance: if ps.motion_correction { parse_optional_f64(&ps.reg_tolerance) } else { None },
-            registration_rotation_step_deg: if ps.motion_correction { parse_optional_f64(&ps.reg_rotation_step_deg) } else { None },
-            registration_translation_step_mm: if ps.motion_correction { parse_optional_f64(&ps.reg_translation_step_mm) } else { None },
-            registration_min_overlap: if ps.motion_correction { parse_optional_f64(&ps.reg_min_overlap) } else { None },
+            registration_levels: if ps.motion_correction || ps.orientation_registration { parse_optional_usize(&ps.reg_levels) } else { None },
+            registration_max_samples: if ps.motion_correction || ps.orientation_registration { parse_optional_usize(&ps.reg_max_samples) } else { None },
+            registration_max_iterations: if ps.motion_correction || ps.orientation_registration { parse_optional_usize(&ps.reg_max_iterations) } else { None },
+            registration_max_evaluations: if ps.motion_correction || ps.orientation_registration { parse_optional_usize(&ps.reg_max_evaluations) } else { None },
+            registration_tolerance: if ps.motion_correction || ps.orientation_registration { parse_optional_f64(&ps.reg_tolerance) } else { None },
+            registration_rotation_step_deg: if ps.motion_correction || ps.orientation_registration { parse_optional_f64(&ps.reg_rotation_step_deg) } else { None },
+            registration_translation_step_mm: if ps.motion_correction || ps.orientation_registration { parse_optional_f64(&ps.reg_translation_step_mm) } else { None },
+            registration_min_overlap: if ps.motion_correction || ps.orientation_registration { parse_optional_f64(&ps.reg_min_overlap) } else { None },
         },
         separation_params: crate::cli::SeparationParamArgs {
             r2star_qsm_r_const_3t: parse_optional_f64(&ps.sep_r2starqsm_r_const_3t),
@@ -845,6 +844,8 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         };
         config.multi_orientation.lambda = lambda.unwrap_or(0.0);
     }
+    config.multi_orientation.register = ps.orientation_registration;
+    config.multi_orientation.force = ps.multi_orientation_force;
     if !is_end_to_end {
         config.field_mapping.unwrapping_algorithm = unwrap_algorithms[ps.unwrapping_algorithm];
         config.bg_removal.algorithm = bf_algorithms[ps.bf_algorithm];
@@ -1318,7 +1319,7 @@ mod tests {
             _ => None,
         }).collect::<Vec<_>>();
         assert!(fields(&app).contains(&"motion_correction".to_string()));
-        assert!(!fields(&app).contains(&"reg_levels".to_string()));
+        assert!(fields(&app).contains(&"reg_levels".to_string()), "shared with orientation co-registration, on by default");
         assert_eq!(config_from_app(&app).motion_correction, qsmxt_config::MotionCorrectionConfig::default());
         let ps = &mut app.pipeline_state;
         ps.toggle("motion_correction");
@@ -1344,6 +1345,27 @@ mod tests {
         assert!(a.motion_correction && a.no_motion_chain);
         assert_eq!(a.motion_reference.as_deref(), Some("2"));
         assert_eq!((a.motion_min_ncc, a.registration_levels, a.registration_min_overlap), (Some(0.9), Some(4), Some(0.5)));
+    }
+
+    /// Multi-orientation co-registration and force are in the TUI; the registration settings
+    /// show while either registration can run.
+    #[test]
+    fn orientation_registration_and_force_reach_config_and_args() {
+        let mut app = default_app();
+        app.pipeline_state.collapsed_sections.clear();
+        let c = config_from_app(&app);
+        assert!(c.multi_orientation.register && !c.multi_orientation.force);
+        app.pipeline_state.toggle("orientation_registration");
+        app.pipeline_state.toggle("multi_orientation_force");
+        let c = config_from_app(&app);
+        assert!(!c.multi_orientation.register && c.multi_orientation.force);
+        let a = pipeline_args_from_app(&app);
+        assert!(a.no_orientation_registration && a.multi_orientation_force);
+        let shows_reg = |app: &App| app.pipeline_state.visible_rows().iter().any(|r|
+            matches!(r, crate::tui::app::PipelineRow::Param { field: "reg_levels", .. }));
+        assert!(!shows_reg(&app), "neither registration can run");
+        app.pipeline_state.toggle("motion_correction");
+        assert!(shows_reg(&app));
     }
 
     /// The inner-inversion choice belongs to QSMART and to nothing else. It used to be gated on a

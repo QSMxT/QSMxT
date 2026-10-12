@@ -428,13 +428,39 @@ fn print_orientation_groups(
     println!("Multi-orientation ({kind}), {} group(s):", groups.len());
     for group in &groups {
         let members: Vec<&discovery::QsmRun> = group.members.iter().map(|&i| &runs[i]).collect();
-        let (orientations, check) = crate::pipeline::multiorient::preview_group(&members, kind);
-        let mark = if check.is_ok() { "ok" } else { "REFUSED" };
+        use crate::pipeline::multiorient::RegistrationPlan;
+        let (orientations, check, plan) = crate::pipeline::multiorient::preview_group(
+            &members, kind, config.multi_orientation.register,
+        );
+        // A group that will be registered must not be marked REFUSED on directions read off
+        // affines that registration is about to replace — that is the whole point of the plan.
+        let mark = match plan {
+            RegistrationPlan::WillRegister => "will co-register",
+            RegistrationPlan::Disabled => "REFUSED",
+            RegistrationPlan::NotNeeded if check.is_ok() => "ok",
+            RegistrationPlan::NotNeeded => "REFUSED",
+        };
         println!("  {} ({} orientations) [{mark}]", group.label, members.len());
         for row in crate::multiorient::direction_table(&orientations) {
             println!("      {row}");
         }
-        println!("      {}", check.summary());
+        match plan {
+            RegistrationPlan::WillRegister => {
+                println!(
+                    "      directions above are from the affines; they will be replaced by ones \
+                     recovered from the registration against {}",
+                    members[0].key
+                );
+            }
+            RegistrationPlan::Disabled => {
+                println!(
+                    "      needs co-registration, but --no-orientation-registration is set — \
+                     this group will be refused"
+                );
+                println!("      {}", check.summary());
+            }
+            RegistrationPlan::NotNeeded => println!("      {}", check.summary()),
+        }
     }
     Ok(())
 }

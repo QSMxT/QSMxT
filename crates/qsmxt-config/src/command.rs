@@ -17,6 +17,7 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         parts.push(format!("--multi-orientation-algorithm {}", m.algorithm));
         emit_f64(&mut parts, "--multi-orientation-lambda", m.lambda, d.multi_orientation.lambda);
         if m.force { parts.push("--multi-orientation-force".into()); }
+        if !m.register { parts.push("--no-orientation-registration".into()); }
     }
 
     // ── Pipeline toggles ──
@@ -143,6 +144,9 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         if !m.chain { parts.push("--no-motion-chain".into()); }
         if m.chain { emit_usize(&mut parts, "--motion-chain-levels", m.chain_levels, md.chain_levels); }
         emit_f64(&mut parts, "--motion-min-ncc", m.min_ncc, md.min_ncc);
+    }
+    // The registration settings matter to motion correction and to orientation co-registration.
+    if m.enabled || (config.multi_orientation.enabled() && config.multi_orientation.register) {
         let (r, rd) = (&config.registration, &d.registration);
         emit_usize(&mut parts, "--registration-levels", r.levels, rd.levels);
         emit_usize(&mut parts, "--registration-max-samples", r.max_samples, rd.max_samples);
