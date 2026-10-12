@@ -45,6 +45,11 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `440946b`):
 - The TUI now has the fits' reliability-threshold percentile, and its "Estimate Offset" toggle
   reaches the run (it used to reach only the generated command). `generate_command` now emits
   `--linear-fit-estimate-offset` / `--linear-fit-reliability-threshold` when they differ.
+- **Slice-gap check** (QSM.rs#139), on by default. A 2D acquisition whose sidecar
+  `SliceThickness` is thinner than the slice pitch is refused for QSM before any processing, since
+  the FFT kernels assume contiguous slices; `--ignore-slice-gap` (TUI: General → Ignore Slice Gap)
+  reconstructs anyway. **Behaviour change:** such runs used to reconstruct silently with a wrong
+  map; non-QSM-only runs continue with a warning.
 
 - **R2PRIMEnet field-strength policy** (QSM.rs#138). R2PRIMEnet is trained at 3 T only. Away
   from 3 T, `--r2prime-strategy auto` now skips R2′ with a warning when there is no R2 to

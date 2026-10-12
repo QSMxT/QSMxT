@@ -601,6 +601,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
         obliquity_threshold: parse_optional_f64(&ps.obliquity_threshold),
         crop_to_mask: false,
+        ignore_slice_gap: ps.ignore_slice_gap,
         fft_padding: false,
         crop_margin_mm: None,
         output_space: None,
@@ -789,6 +790,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         config.separation.r2primenet.patch = p;
     }
     config.masking.inhomogeneity_correction = ps.inhomogeneity_correction;
+    config.pipeline.ignore_slice_gap = ps.ignore_slice_gap;
     config.inversion.algorithm = qsm_algorithm;
 
     // Multi-orientation settings come from the Input tab, where the grouping is defined.
@@ -1247,6 +1249,19 @@ mod tests {
         assert_eq!(a.robust_fit_iterations, Some(0));
         assert_eq!(a.linear_fit_reliability_threshold, Some(80.0));
         assert_eq!(a.linear_fit_estimate_offset, Some(false));
+    }
+
+    #[test]
+    fn ignore_slice_gap_reaches_config_and_args() {
+        let mut app = default_app();
+        assert!(!config_from_app(&app).pipeline.ignore_slice_gap);
+        app.pipeline_state.toggle("ignore_slice_gap");
+        assert!(config_from_app(&app).pipeline.ignore_slice_gap);
+        assert!(pipeline_args_from_app(&app).ignore_slice_gap);
+        let mut c = config_from_app(&app);
+        assert!(qsmxt_config::generate_command(&c).contains("--ignore-slice-gap"));
+        c.pipeline.ignore_slice_gap = false;
+        assert!(!qsmxt_config::generate_command(&c).contains("--ignore-slice-gap"));
     }
 
     /// The inner-inversion choice belongs to QSMART and to nothing else. It used to be gated on a

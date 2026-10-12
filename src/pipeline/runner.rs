@@ -736,7 +736,7 @@ fn resolve_geometry(
         b0_direction: (0.0, 0.0, 1.0),
         field_strength: run.magnetic_field_strength,
         has_magnitude: run.has_magnitude,
-        source_geometry: None,
+        source_geometry: None, slice_geometry: None,
     };
 
     if obliquity > 0.01 {
@@ -815,6 +815,64 @@ fn resolve_geometry(
     Ok(meta)
 }
 
+/// qsm-core's scan metadata for a stage working on `dims` (the run's grid, or a crop of it, which
+/// keeps its voxel size), with the slice geometry for qsm-core's slice-gap check.
+fn scan_metadata(meta: &RunMetadata, dims: (usize, usize, usize)) -> qsm_core::pipeline::ScanMetadata {
+    let mut m = crate::pipeline::config::to_scan_metadata(
+        dims, meta.voxel_size, &meta.echo_times, meta.field_strength, meta.b0_direction,
+    );
+    m.slice_geometry = meta.slice_geometry.map(|(thickness, axis)| qsm_core::grid::SliceGeometry { thickness, axis });
+    m
+}
+
+/// The acquisition's slices, as `(thickness mm, voxel axis)`, when the sidecar says enough to
+/// check them for a gap: `SliceThickness`, and either `MRAcquisitionType` "2D" or a thickness
+/// that differs from the pitch (a 3D acquisition records its partition thickness, the pitch, so
+/// there is nothing to check). The axis is `SliceEncodingDirection`'s, else the coarsest one.
+fn slice_geometry_from_sidecar(
+    sc: &crate::bids::sidecar::QsmSidecar, voxel_size: (f64, f64, f64),
+) -> Option<(f64, usize)> {
+    let thickness = sc.slice_thickness?;
+    let vs = [voxel_size.0, voxel_size.1, voxel_size.2];
+    let axis = match sc.slice_encoding_direction.as_deref().map(|d| d.trim_end_matches('-')) {
+        Some("i") => 0,
+        Some("j") => 1,
+        Some("k") => 2,
+        _ => (0..3).rev().max_by(|&a, &b| vs[a].total_cmp(&vs[b])).unwrap_or(2),
+    };
+    let is_2d = sc.mr_acquisition_type.as_deref().is_some_and(|t| t.eq_ignore_ascii_case("2D"));
+    let differs = (thickness - vs[axis]).abs() > 0.01 * vs[axis];
+    (is_2d || differs).then_some((thickness, axis))
+}
+
+/// Refuse a gapped acquisition before any work, unless `--ignore-slice-gap` (or nothing that
+/// needs a contiguous grid was asked for). Checked on the acquired grid, so it holds whether or
+/// not the run is then resampled. Returns the geometry to hand qsm-core (on the working grid).
+fn check_slice_gap(
+    run: &QsmRun, first_phase: &NiftiData, meta: &RunMetadata, config: &PipelineConfig,
+) -> crate::Result<Option<(f64, usize)>> {
+    let Some(sc) = crate::bids::sidecar::read_sidecar(&run.echoes[0].phase_json).ok() else { return Ok(None) };
+    let Some((thickness, axis)) = slice_geometry_from_sidecar(&sc, first_phase.voxel_size) else { return Ok(None) };
+    let (nx, ny, nz) = first_phase.dims;
+    let (vx, vy, vz) = first_phase.voxel_size;
+    let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
+    if let Err(gap) = grid.require_contiguous_slices(thickness, axis) {
+        if config.pipeline.ignore_slice_gap {
+            log::warn!("{gap}; reconstructing anyway (--ignore-slice-gap): treat the result as unreliable");
+            return Ok(None);
+        }
+        if config.pipeline.do_qsm {
+            return Err(QsmxtError::Config(format!(
+                "{gap} (from the sidecar's SliceThickness). QSM needs contiguous slices; pass \
+                 --ignore-slice-gap to reconstruct anyway")));
+        }
+        log::warn!("{gap}; no QSM was asked for, so continuing");
+        return Ok(None);
+    }
+    // Contiguous: hand the geometry on, unless resampling moved the slices off the grid's axes.
+    Ok(if meta.source_geometry.is_none() { Some((thickness, axis)) } else { None })
+}
+
 fn stage_load(
     qsm_run: &QsmRun,
     config: &PipelineConfig,
@@ -826,6 +884,7 @@ fn stage_load(
     // nothing cached valid. A cache from before this was recorded is taken as it stands.
     let geometry = serde_json::json!({
         "obliquity_threshold": config.pipeline.obliquity_threshold,
+        "ignore_slice_gap": config.pipeline.ignore_slice_gap,
         "axial_only": qsmxt_config::bridge::axial_only_algorithms(
             config, run_orientation_facts(qsm_run, config)),
     });
@@ -843,7 +902,8 @@ fn stage_load(
             .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", qsm_run.echoes[0].phase_nifti.display(), e)))?;
         validate_run_dims(qsm_run, &first_phase)?;
 
-        let meta = resolve_geometry(qsm_run, &first_phase, config)?;
+        let mut meta = resolve_geometry(qsm_run, &first_phase, config)?;
+        meta.slice_geometry = check_slice_gap(qsm_run, &first_phase, &meta, config)?;
         log::info!(
             "Volume: {}x{}x{}, {:.2}x{:.2}x{:.2}mm, {} echoes{}, B0={:.1}T, TEs={:?}s",
             first_phase.dims.0, first_phase.dims.1, first_phase.dims.2,
@@ -1296,10 +1356,7 @@ fn build_mask_from_sections(
 
     // Convert config masking sections to qsm-core types
     let core_sections = crate::pipeline::config::to_mask_sections(sections);
-    let scan_meta = crate::pipeline::config::to_scan_metadata(
-        ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
-        ctx.meta.field_strength, ctx.meta.b0_direction,
-    );
+    let scan_meta = scan_metadata(ctx.meta, ctx.meta.dims);
     let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
 
     // Deep-learning mask ops (HD-BET): fetch the weights first, with a progress bar — or fail
@@ -2608,9 +2665,7 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
         zero_outside(&support, map);
     }
 
-    let metadata = crate::pipeline::config::to_scan_metadata(
-        ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times, ctx.meta.field_strength, ctx.meta.b0_direction,
-    );
+    let metadata = scan_metadata(ctx.meta, ctx.meta.dims);
     let mut sep_config = qsmxt_config::bridge::to_separation_config(ctx.config);
     if let Some(mese) = &ctx.run.mese {
         sep_config.hc_chisep.se_echo_times = mese.echo_times.clone();
@@ -2726,10 +2781,7 @@ fn stage_unwrap(
     let mag_option: Option<&[&[f64]]> = if mag_slices.is_empty() { None } else { Some(&mag_slices) };
 
     let (fm_config, _, _, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-    let scan_meta = crate::pipeline::config::to_scan_metadata(
-        ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
-        ctx.meta.field_strength, ctx.meta.b0_direction,
-    );
+    let scan_meta = scan_metadata(ctx.meta, ctx.meta.dims);
 
     if unwrap_name == "laplacian" && ctx.meta.n_echoes > 1 {
         log::info!("Laplacian unwrapping per echo ({} solver), then {} ({} weighting)",
@@ -3004,10 +3056,7 @@ fn stage_iqsm(ctx: &mut StageContext, pass: &Pass, progress: &dyn Fn(&str)) -> c
     progress(&format!("iQSM reconstruction{}", pass.label()));
     let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
     let mask = load_mask(mask_path)?;
-    let scan_meta = crate::pipeline::config::to_scan_metadata(
-        ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
-        ctx.meta.field_strength, ctx.meta.b0_direction,
-    );
+    let scan_meta = scan_metadata(ctx.meta, ctx.meta.dims);
     let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
     let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
     prefetch_weights(alg, &ctx.run.key.to_string())?;
@@ -3126,10 +3175,7 @@ fn stage_qsmart(
     // Delegate the full two-stage QSMART reconstruction to qsm-core. The inner
     // dipole inversion (default iLSQR) is selected via config.inversion.qsmart.inversion.
     let (_, _, mut inv_config, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-    let scan_meta = crate::pipeline::config::to_scan_metadata(
-        ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
-        ctx.meta.field_strength, ctx.meta.b0_direction,
-    );
+    let scan_meta = scan_metadata(ctx.meta, ctx.meta.dims);
 
     // The vasculature sphere radius and Frangi vessel scales are configured in mm
     // (matching qsmbly); convert to voxels using the dataset voxel size before running.
@@ -3225,10 +3271,7 @@ fn stage_standard_qsm(
         progress(&format!("iQFM field preparation{}", pass.label()));
         let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
         let mask = load_mask(mask_path)?;
-        let scan_meta = crate::pipeline::config::to_scan_metadata(
-            ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
-            ctx.meta.field_strength, ctx.meta.b0_direction,
-        );
+        let scan_meta = scan_metadata(ctx.meta, ctx.meta.dims);
         let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
         let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
         prefetch_weights("iqfm", &ctx.run.key.to_string())?;
@@ -3254,10 +3297,7 @@ fn stage_standard_qsm(
 
         let (_, bg_config, _, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
         let cb = crop_box_for(ctx, &mask, "Background removal");
-        let scan_meta = crate::pipeline::config::to_scan_metadata(
-            cb.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
-            ctx.meta.field_strength, ctx.meta.b0_direction,
-        );
+        let scan_meta = scan_metadata(ctx.meta, cb.dims);
 
         // Fetch DL weights (BFRnet) with a download bar before removal; no-op otherwise.
         prefetch_weights(&bf_name, &ctx.run.key.to_string())?;
@@ -3300,10 +3340,7 @@ fn stage_standard_qsm(
         // The dipole kernel has infinite support, so this is the stage most exposed to the
         // periodic boundary moving inward; the margin is there to keep it off the object.
         let cb = crop_box_for(ctx, &eroded_mask, "Dipole inversion");
-        let scan_meta = crate::pipeline::config::to_scan_metadata(
-            cb.dims, ctx.meta.voxel_size, &ctx.meta.echo_times,
-            ctx.meta.field_strength, ctx.meta.b0_direction,
-        );
+        let scan_meta = scan_metadata(ctx.meta, cb.dims);
 
         // Load combined magnitude for MEDI edge weighting
         let mag_combined_path = ctx.output.magnitude_path(&ctx.run.key);
@@ -4087,6 +4124,56 @@ mod tests {
         run
     }
 
+    fn sidecar(thickness: Option<f64>, acq: Option<&str>, dir: Option<&str>) -> crate::bids::sidecar::QsmSidecar {
+        crate::bids::sidecar::QsmSidecar {
+            echo_time: 0.004, magnetic_field_strength: 3.0, b0_dir: None,
+            slice_thickness: thickness, mr_acquisition_type: acq.map(str::to_string),
+            slice_encoding_direction: dir.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn slice_geometry_is_read_only_where_a_gap_can_be_checked() {
+        let vs = (0.8, 0.8, 3.0);
+        assert_eq!(super::slice_geometry_from_sidecar(&sidecar(Some(2.0), Some("2D"), None), vs), Some((2.0, 2)));
+        assert_eq!(super::slice_geometry_from_sidecar(&sidecar(Some(0.8), Some("2D"), Some("j-")), vs), Some((0.8, 1)));
+        // 3D: the partition thickness is the pitch; nothing to check.
+        assert_eq!(super::slice_geometry_from_sidecar(&sidecar(Some(3.0), Some("3D"), None), vs), None);
+        // No SliceThickness: nothing can be said.
+        assert_eq!(super::slice_geometry_from_sidecar(&sidecar(None, Some("2D"), None), vs), None);
+        // A thickness that is not the pitch is checked even without MRAcquisitionType.
+        assert_eq!(super::slice_geometry_from_sidecar(&sidecar(Some(2.0), None, None), vs), Some((2.0, 2)));
+    }
+
+    #[test]
+    fn a_gapped_2d_acquisition_is_refused_unless_ignored() {
+        let dir = tempfile::tempdir().unwrap();
+        let json = dir.path().join("p.json");
+        let mut run = run_for_geometry(None);
+        run.echoes[0].phase_json = json.clone();
+        let affine = [0.8, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let phase = nifti_with(affine, (4, 4, 4));
+        let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        let meta = super::resolve_geometry(&run, &phase, &cfg).unwrap();
+        let write = |t: f64| std::fs::write(&json, format!(
+            r#"{{"EchoTime": 0.004, "MagneticFieldStrength": 3, "SliceThickness": {t}, "MRAcquisitionType": "2D"}}"#)).unwrap();
+
+        write(3.0); // contiguous: passed on to qsm-core
+        assert_eq!(super::check_slice_gap(&run, &phase, &meta, &cfg).unwrap(), Some((3.0, 2)));
+        write(2.0); // 1 mm gap
+        let err = super::check_slice_gap(&run, &phase, &meta, &cfg).unwrap_err().to_string();
+        assert!(err.contains("--ignore-slice-gap"), "{err}");
+        cfg.pipeline.ignore_slice_gap = true;
+        assert_eq!(super::check_slice_gap(&run, &phase, &meta, &cfg).unwrap(), None);
+        cfg.pipeline.ignore_slice_gap = false;
+        cfg.pipeline.do_qsm = false; // nothing that needs a contiguous grid
+        assert_eq!(super::check_slice_gap(&run, &phase, &meta, &cfg).unwrap(), None);
+        // And qsm-core refuses it too, given the geometry.
+        let mut gapped = meta.clone();
+        gapped.slice_geometry = Some((2.0, 2));
+        assert!(super::scan_metadata(&gapped, gapped.dims).require_contiguous_slices().is_err());
+    }
+
     #[test]
     fn geometry_axial_run_is_untouched() {
         let mut cfg = crate::pipeline::config::PipelineConfig::default();
@@ -4618,7 +4705,7 @@ mod tests {
             affine: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
             n_echoes: 1, echo_times: vec![0.004], b0_direction: (0.0, 0.0, 1.0),
             field_strength: 3.0, has_magnitude: true,
-            source_geometry: None,
+            source_geometry: None, slice_geometry: None,
         }
     }
 
@@ -4693,7 +4780,7 @@ mod swi_export_tests {
             b0_direction: (0.0, 0.0, 1.0),
             field_strength: 3.0,
             has_magnitude: true,
-            source_geometry: None,
+            source_geometry: None, slice_geometry: None,
         }
     }
 
@@ -5083,7 +5170,7 @@ mod reference_support_tests {
         RunMetadata {
             dims: DIMS, voxel_size: (1.0, 1.0, 1.0), affine: IDENTITY, n_echoes: 1,
             echo_times: vec![0.004], b0_direction: (0.0, 0.0, 1.0), field_strength: 3.0,
-            has_magnitude: true, source_geometry: None,
+            has_magnitude: true, source_geometry: None, slice_geometry: None,
         }
     }
 

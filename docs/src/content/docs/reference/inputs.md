@@ -79,6 +79,22 @@ per-coil run is used and the scanner-combined one is skipped (a log line says so
 the scanner's phase combination is generally not suitable for QSM. Pass
 `--exclude "*rec-uncombined*"` to process the scanner-combined data instead.
 
+## Slice gaps in 2D acquisitions
+
+A 2D multi-slice acquisition can leave a gap between slices: the excited slice
+(`SliceThickness` in the sidecar) is thinner than the slice-to-slice pitch (the
+voxel size). The tissue in the gap was never sampled, and the FFT kernels used by
+background-field removal and dipole inversion assume a contiguous grid, so the map
+is wrong while still looking like a susceptibility map.
+
+QSMxT reads `SliceThickness`, `MRAcquisitionType` and `SliceEncodingDirection` from
+the first echo's sidecar. When the acquisition is 2D (or the thickness differs from
+the pitch) and the slices are more than 1% thinner than the pitch, a run that asks
+for QSM stops before any processing with a message saying so. `--ignore-slice-gap`
+(TUI: General → Ignore Slice Gap) reconstructs anyway, with a warning. Runs that
+only make SWI, T2\*/R2\* or other non-QSM outputs continue with a warning. Without
+`SliceThickness` nothing can be checked, and the run proceeds; dcm2niix writes it.
+
 ## What each output needs
 
 Phase is what a run is discovered from, so it is present for everything below.

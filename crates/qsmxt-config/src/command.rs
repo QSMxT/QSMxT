@@ -87,6 +87,9 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     if config.pipeline.crop_to_mask != d.pipeline.crop_to_mask {
         parts.push("--crop-to-mask".to_string());
     }
+    if config.pipeline.ignore_slice_gap {
+        parts.push("--ignore-slice-gap".to_string());
+    }
     if config.pipeline.fft_padding != d.pipeline.fft_padding {
         parts.push("--fft-padding".to_string());
     }

@@ -14,6 +14,17 @@ pub struct QsmSidecar {
 
     #[serde(rename = "B0_dir")]
     pub b0_dir: Option<Vec<f64>>,
+
+    /// `SliceThickness` (mm): the excited thickness, which for a 2D acquisition can be less than
+    /// the slice pitch.
+    #[serde(rename = "SliceThickness")]
+    pub slice_thickness: Option<f64>,
+    /// `MRAcquisitionType`: "2D" or "3D".
+    #[serde(rename = "MRAcquisitionType")]
+    pub mr_acquisition_type: Option<String>,
+    /// `SliceEncodingDirection`: "i", "j" or "k", optionally with "-".
+    #[serde(rename = "SliceEncodingDirection")]
+    pub slice_encoding_direction: Option<String>,
 }
 
 /// Read a BIDS JSON sidecar, extracting QSM-relevant fields.
@@ -51,10 +62,14 @@ pub fn read_sidecar(path: &Path) -> crate::Result<QsmSidecar> {
         })
     });
 
+    let string = |k: &str| value.get(k).and_then(|v| v.as_str()).map(str::to_string);
     Ok(QsmSidecar {
         echo_time,
         magnetic_field_strength,
         b0_dir,
+        slice_thickness: value.get("SliceThickness").and_then(|v| v.as_f64()),
+        mr_acquisition_type: string("MRAcquisitionType"),
+        slice_encoding_direction: string("SliceEncodingDirection"),
     })
 }
 

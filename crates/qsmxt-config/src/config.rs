@@ -772,13 +772,18 @@ pub struct PipelineToggles {
     /// holds still apply; `Working` leaves them on the resampled grid.
     #[serde(default)]
     pub output_space: OutputSpace,
+    /// Reconstruct even when the sidecar's `SliceThickness` says the slices leave a gap (a 2D
+    /// multi-slice acquisition thinner than its pitch). Off by default: the FFT kernels assume a
+    /// contiguous grid, so a gapped volume gives a wrong susceptibility map.
+    #[serde(default)]
+    pub ignore_slice_gap: bool,
 }
 impl Default for PipelineToggles {
     fn default() -> Self {
         Self { do_qsm: true, do_swi: false, do_smwi: false,
             do_segmentation: false, do_analysis: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, obliquity_threshold: -1.0,
             crop_to_mask: false, fft_padding: false, crop_margin_mm: default_crop_margin_mm(),
-            output_space: OutputSpace::Acquired }
+            output_space: OutputSpace::Acquired, ignore_slice_gap: false }
     }
 }
 
