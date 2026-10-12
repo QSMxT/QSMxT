@@ -25,6 +25,20 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `440946b`):
 - **Oblique, anisotropic acquisitions** pick their axial working grid differently (QSM.rs#132,
   `axial_grid_for`/`ras_axes`), which can change results under `--obliquity-threshold` resampling.
 
+### Added
+
+- **R2PRIMEnet field-strength policy** (QSM.rs#138). R2PRIMEnet is trained at 3 T only. Away
+  from 3 T, `--r2prime-strategy auto` now skips R2′ with a warning when there is no R2 to
+  subtract, and an explicit `--r2prime-strategy r2primenet` stops with an error.
+  `--r2primenet-ignore-field-mismatch` runs it anyway, with a warning and a methods-text note
+  that the R2′ is uncalibrated. `--r2primenet-patch D H W` sets its sliding-window patch. Both
+  are in the TUI under "R2' Source". **Output change:** v9.22.0 ran R2PRIMEnet at any field
+  strength, so a non-3 T run with no MESE now has no R2′ (and no R2′-based χ-separation) unless
+  the override is given.
+- **R2′ coverage.** A measured R2′ is written with `_desc-r2prime_mask.nii`, the voxels where it
+  is a measurement (brain mask ∩ MESE field of view ∩ R2 > 0), and the log says how much of the
+  brain that is. `qsmxt r2prime` gains `--r2-coverage` and `--output-coverage`.
+
 ### Changed
 
 - `--qsmart-ilsqr-tol` is removed: QSMART's inner iLSQR uses `--ilsqr-tol`. New

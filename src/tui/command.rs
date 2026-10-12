@@ -578,6 +578,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             2 => crate::cli::R2PrimeStrategyArg::R2primenet,
             _ => crate::cli::R2PrimeStrategyArg::Auto,
         }),
+        r2primenet_ignore_field_mismatch: ps.r2primenet_ignore_field_mismatch,
+        r2primenet_patch: parse_usize_triple(&ps.r2primenet_patch).map(|p| p.to_vec()),
         export_dicom: form.export_dicom,
         inhomogeneity_correction: ps.inhomogeneity_correction,
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
@@ -658,6 +660,12 @@ fn parse_optional_f64(s: &str) -> Option<f64> {
     } else {
         trimmed.parse().ok()
     }
+}
+
+/// Three whitespace-separated counts ("192 192 128"), or `None` if the field is not exactly that.
+fn parse_usize_triple(s: &str) -> Option<[usize; 3]> {
+    let v: Vec<usize> = s.split_whitespace().map(|t| t.parse().ok()).collect::<Option<_>>()?;
+    <[usize; 3]>::try_from(v).ok()
 }
 
 fn parse_optional_usize(s: &str) -> Option<usize> {
@@ -754,6 +762,10 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
         2 => crate::pipeline::config::R2PrimeStrategy::R2primenet,
         _ => crate::pipeline::config::R2PrimeStrategy::Auto,
     };
+    config.separation.r2primenet.ignore_field_mismatch = ps.r2primenet_ignore_field_mismatch;
+    if let Some(p) = parse_usize_triple(&ps.r2primenet_patch) {
+        config.separation.r2primenet.patch = p;
+    }
     config.masking.inhomogeneity_correction = ps.inhomogeneity_correction;
     config.inversion.algorithm = qsm_algorithm;
 
@@ -1086,6 +1098,22 @@ mod tests {
             assert_eq!(&format!("{}", crate::pipeline::config::qsm_algorithm_arg_to_config(arg)), name,
                        "row {i} shows {name} but passes a different --qsm-algorithm");
         }
+    }
+
+    /// R2PRIMEnet's field-strength override and patch reach both the config and the CLI args.
+    #[test]
+    fn r2primenet_settings_reach_config_and_args() {
+        let mut app = default_app();
+        let d = qsmxt_config::R2primenetConfig::default();
+        assert_eq!(config_from_app(&app).separation.r2primenet, d);
+        app.pipeline_state.toggle("r2primenet_ignore_field_mismatch");
+        app.pipeline_state.r2primenet_patch = "128 128 64".into();
+        let c = config_from_app(&app);
+        assert!(c.separation.r2primenet.ignore_field_mismatch);
+        assert_eq!(c.separation.r2primenet.patch, [128, 128, 64]);
+        let a = pipeline_args_from_app(&app);
+        assert!(a.r2primenet_ignore_field_mismatch);
+        assert_eq!(a.r2primenet_patch, Some(vec![128, 128, 64]));
     }
 
     /// The inner-inversion choice belongs to QSMART and to nothing else. It used to be gated on a

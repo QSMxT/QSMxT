@@ -1683,6 +1683,9 @@ pub struct PipelineFormState {
     pub custom_r2prime_tool: String,
     /// Index into [`R2PRIME_STRATEGY_OPTIONS`].
     pub r2prime_strategy: usize,
+    /// R2PRIMEnet: run away from 3 T (uncalibrated), and its patch as "D H W".
+    pub r2primenet_ignore_field_mismatch: bool,
+    pub r2primenet_patch: String,
     // R2*-QSM
     pub sep_r2starqsm_r_const_3t: String,
     // DECOMPOSE
@@ -1963,6 +1966,11 @@ impl Default for PipelineFormState {
             custom_r2_tool: String::new(),
             custom_r2prime_tool: String::new(),
             r2prime_strategy: 0,
+            r2primenet_ignore_field_mismatch: false,
+            r2primenet_patch: {
+                let p = qsmxt_config::R2primenetConfig::default().patch;
+                format!("{} {} {}", p[0], p[1], p[2])
+            },
             sep_r2starqsm_r_const_3t: fmt_default(sep_r2starqsm.r_const_3t),
             sep_decompose_n_inner: sep_decompose.n_inner.to_string(),
             sep_decompose_chi_bound: fmt_default(sep_decompose.chi_bound),
@@ -2132,6 +2140,17 @@ impl PipelineFormState {
                 label: "  R2' Source", field: "r2prime_strategy",
                 options: R2PRIME_STRATEGY_OPTIONS, help: R2PRIME_STRATEGY_HELP,
             });
+            // R2PRIMEnet's own settings, unless R2' is only ever measured (index 1 = mese).
+            if self.r2prime_strategy != 1 {
+                rows.push(PipelineRow::Toggle {
+                    label: "  R2PRIMEnet off 3 T", field: "r2primenet_ignore_field_mismatch",
+                    help: "Run R2PRIMEnet on non-3 T data (trained at 3 T only; the R2' is uncalibrated). Off: auto skips R2', r2primenet errors",
+                });
+                rows.push(PipelineRow::Param {
+                    label: "  R2PRIMEnet Patch", field: "r2primenet_patch",
+                    help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)",
+                });
+            }
         }
         rows
     }
@@ -2725,6 +2744,7 @@ impl PipelineFormState {
         "whqsm_alpha1", "whqsm_mu1", "whqsm_mu2", "whqsm_beta", "whqsm_muh", "whqsm_max_iter", "whqsm_tol_update", "whqsm_tol_delta", "whqsm_phase_scale",
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
         "bet_fractional_intensity", "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
+        "r2primenet_patch",
     ];
 
     /// Get a string parameter value by field name.
@@ -2879,6 +2899,7 @@ impl PipelineFormState {
             "custom_qsm_tool" => &self.custom_qsm_tool,
             "custom_r2_tool" => &self.custom_r2_tool,
             "custom_r2prime_tool" => &self.custom_r2prime_tool,
+            "r2primenet_patch" => &self.r2primenet_patch,
             "sep_r2starqsm_r_const_3t" => &self.sep_r2starqsm_r_const_3t,
             "sep_decompose_n_inner" => &self.sep_decompose_n_inner,
             "sep_decompose_chi_bound" => &self.sep_decompose_chi_bound,
@@ -3068,6 +3089,7 @@ impl PipelineFormState {
             "custom_qsm_tool" => Some(&mut self.custom_qsm_tool),
             "custom_r2_tool" => Some(&mut self.custom_r2_tool),
             "custom_r2prime_tool" => Some(&mut self.custom_r2prime_tool),
+            "r2primenet_patch" => Some(&mut self.r2primenet_patch),
             "sep_r2starqsm_r_const_3t" => Some(&mut self.sep_r2starqsm_r_const_3t),
             "sep_decompose_n_inner" => Some(&mut self.sep_decompose_n_inner),
             "sep_decompose_chi_bound" => Some(&mut self.sep_decompose_chi_bound),
@@ -3167,6 +3189,7 @@ impl PipelineFormState {
             "lsqr_fit_global_offset" => self.lsqr_fit_global_offset,
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise,
+            "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
             _ => false,
         }
     }
@@ -3196,6 +3219,7 @@ impl PipelineFormState {
             "lsqr_fit_global_offset" => self.lsqr_fit_global_offset = !self.lsqr_fit_global_offset,
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction = !self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
+            "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
             _ => {}
         }
     }

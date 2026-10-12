@@ -168,7 +168,8 @@ expensive. R2′ is only defined where R2 exists, so the voxels the MESE did not
 reach are left at zero rather than being filled with `R2* − 0 = R2*`, which
 would report the whole of R2* as reversible and overstate R2′ by roughly the
 tissue R2 (10–20 s⁻¹ at 3 T). Every χ-separation method built on that R2′
-inherits the gap, so expect the derived maps to be empty there too. What should
+inherits the gap, so expect the derived maps to be empty there too. The pipeline
+writes where its R2′ is a measurement as `_desc-r2prime_mask.nii`. What should
 happen to the uncovered region instead is still open; see
 [QSMxT#237](https://github.com/QSMxT/QSMxT/issues/237).
 
@@ -183,11 +184,20 @@ out which voxels ended up measured.
 R2PRIMEnet, which predicts R2′ from R2* when there is no R2 to subtract, is
 **trained at 3 T only**. R2* scales with field strength and the network takes
 none as an input, so on 7 T data it returns a map of the right shape and the
-right units with the wrong numbers, which nothing downstream can detect. QSMxT
-warns and continues rather than failing the run, but treat any χ-separation
-built on a non-3 T R2PRIMEnet prediction as uncalibrated: acquire a MESE, or
-supply an R2′ with `--use-custom-r2prime`. The authors publish a 7 T variant
-that maps 7 T R2* to 3 T-equivalent R2′; it is not implemented yet.
+right units with the wrong numbers, which nothing downstream can detect. So away
+from 3 T (more than 0.3 T off):
+
+| `--r2prime-strategy` | without `--r2primenet-ignore-field-mismatch` | with it |
+| --- | --- | --- |
+| `auto` (no R2 to subtract) | R2′ is skipped with a warning | R2PRIMEnet runs, with a warning |
+| `r2primenet` | the run stops with an error | R2PRIMEnet runs, with a warning |
+
+Treat any χ-separation built on a non-3 T R2PRIMEnet prediction as
+uncalibrated; better, acquire a MESE or supply an R2′ with
+`--use-custom-r2prime`. `--r2primenet-patch D H W` sets the sliding-window patch
+(default 192 192 128; each a multiple of 16). In the TUI both are under the R2′
+source row. The authors publish a 7 T variant that maps 7 T R2* to
+3 T-equivalent R2′; it is not implemented yet.
 
 ## Output space
 
@@ -587,7 +597,7 @@ regressing R2' against a single-orientation QSM. The χ-sepnet paper (Kim et al.
 baked into χ-sepnet and SUSEP-Net as a training normalisation and is not a
 parameter there. If your χ_total is COSMOS-derived, 114 is the better match for
 the analytic methods too, and `--chi-sep-ilsqr-dr-pos` and friends set it.
-Before QSMxT v9.23.0 `chi-sep-medi` defaulted to 114/30 while the other three
+Up to QSMxT v9.22.0 `chi-sep-medi` defaulted to 114/30 while the other three
 used 137/137, so results from it are not comparable across that boundary.
 
 Outputs are written as `desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap` and

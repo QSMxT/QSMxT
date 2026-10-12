@@ -204,6 +204,12 @@ impl DerivativeOutputs {
         self.anat_dir(key).join(format!("{}_desc-qsm_mask.nii", key.basename()))
     }
 
+    /// Where a measured R2′ (R2* − R2) is a measurement: the brain mask ∩ the MESE's field of
+    /// view ∩ R2 > 0. The `R2primemap` is 0 outside it because nothing was measured there.
+    pub fn r2prime_coverage_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-r2prime_mask.nii", key.basename()))
+    }
+
     // Intermediate outputs (in workflow step directories)
     pub fn field_ppm_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "unwrap", "field-ppm") }
     pub fn local_field_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "bgremove", "localfield") }
