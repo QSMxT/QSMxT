@@ -11,10 +11,12 @@ pub mod config;
 pub mod command;
 pub mod methods;
 pub mod bridge;
+pub mod motion;
 
 pub use config::*;
 pub use enums::*;
 pub use masking::*;
+pub use motion::{MotionCorrectionConfig, MotionReference, RegistrationConfig};
 pub use error::{ConfigError, Result};
 pub use command::generate_command;
 pub use methods::generate_methods;

@@ -50,6 +50,11 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `440946b`):
   the FFT kernels assume contiguous slices; `--ignore-slice-gap` (TUI: General → Ignore Slice Gap)
   reconstructs anyway. **Behaviour change:** such runs used to reconstruct silently with a wrong
   map; non-QSM-only runs continue with a warning.
+- **Retrospective motion correction** (QSM.rs#137), off by default: `--motion-correction` rigidly
+  co-registers the echoes onto a reference echo before field mapping, with `--motion-reference`,
+  `--no-motion-chain`, `--motion-chain-levels`, `--motion-min-ncc` and the `--registration-*`
+  group. All are in the TUI (Field mapping → Motion Correction). Needs magnitude (an error
+  without). Writes `<run>_motion.json`; the mask is restricted to voxels every echo covers.
 
 - **R2PRIMEnet field-strength policy** (QSM.rs#138). R2PRIMEnet is trained at 3 T only. Away
   from 3 T, `--r2prime-strategy auto` now skips R2′ with a warning when there is no R2 to

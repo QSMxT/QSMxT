@@ -257,6 +257,17 @@ impl DerivativeOutputs {
     pub fn mag_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
         self.workflow_step_dir(key, "scale_phase").join(format!("{}_echo-{}_mag.nii", key.basename(), echo))
     }
+    /// Motion-corrected echoes, the mask every echo covers, and the motion report.
+    pub fn motion_phase_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
+        self.workflow_step_dir(key, "motion").join(format!("{}_echo-{}_phase-scaled.nii", key.basename(), echo))
+    }
+    pub fn motion_mag_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
+        self.workflow_step_dir(key, "motion").join(format!("{}_echo-{}_mag.nii", key.basename(), echo))
+    }
+    pub fn motion_mask_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "motion", "mask") }
+    pub fn motion_report_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_step_dir(key, "motion").join(format!("{}_motion.json", key.basename()))
+    }
 
     // Pipeline state (per-run, in workflow directory)
     pub fn state_path(&self, key: &AcquisitionKey) -> PathBuf {
