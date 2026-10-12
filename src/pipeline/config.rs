@@ -266,7 +266,12 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 cli::LaplacianSolverArg::Fft => LaplacianSolver::Fft,
             };
         }
-        if let Some(p) = args.laplacian_fft_pad { config.field_mapping.laplacian_fft_pad = p; }
+        if let Some(ref p) = args.laplacian_fft_pad {
+            match qsmxt_config::pad3_from(p) {
+                Some(p) => config.field_mapping.laplacian_fft_pad = p,
+                None => log::warn!("Ignoring invalid --laplacian-fft-pad {:?}: give one value or three", p),
+            }
+        }
         if let Some(ref s) = args.coil_combination_sigma {
             if s.len() == 3 { config.field_mapping.coil_combination_sigma = [s[0], s[1], s[2]]; }
         }
@@ -777,6 +782,17 @@ mod tests {
         // The never-released `t2star` spelling is gone, not aliased.
         assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--b0-weight-type", "t2star"]).is_err());
         assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--b0-weight-t2star", "40"]).is_err());
+    }
+
+    #[test]
+    fn laplacian_fft_pad_takes_one_value_or_three() {
+        let base = ["qsmxt", "run", "<bids>", "--unwrapping-algorithm", "laplacian", "--laplacian-solver", "fft"];
+        let with = |extra: &[&str]| config_from_cli(&[&base[..], extra].concat());
+        assert_eq!(with(&[]).field_mapping.laplacian_fft_pad, [64; 3]);
+        assert_eq!(with(&["--laplacian-fft-pad", "12"]).field_mapping.laplacian_fft_pad, [12; 3]);
+        assert_eq!(with(&["--laplacian-fft-pad", "64", "64", "32"]).field_mapping.laplacian_fft_pad, [64, 64, 32]);
+        // Two values is neither: ignored with a warning, like other invalid run flags.
+        assert_eq!(with(&["--laplacian-fft-pad", "8", "9"]).field_mapping.laplacian_fft_pad, [64; 3]);
     }
 
     #[test]

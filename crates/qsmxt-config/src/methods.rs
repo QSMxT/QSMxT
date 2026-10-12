@@ -662,6 +662,11 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     out
 }
 
+/// "64" for a uniform pad, "64×64×32" otherwise.
+fn describe_pad(p: [usize; 3]) -> String {
+    if p[0] == p[1] && p[1] == p[2] { p[0].to_string() } else { format!("{}×{}×{}", p[0], p[1], p[2]) }
+}
+
 /// Describe the field-mapping stage: phase offset / bipolar correction, phase
 /// unwrapping, and B0 estimation. Shared by the standard pipeline and QSMART
 /// (which consumes a pre-computed total field, so these steps still run).
@@ -697,7 +702,7 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
                 LaplacianSolver::Dct => "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003), solved as unweighted least squares with a Neumann-boundary DCT (Ghiglia & Romero, 1994).".to_string(),
                 LaplacianSolver::Fft => format!(
                     "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003), with an FFT Poisson solve on the volume zero-padded by {} voxels (as STI Suite's MRPhaseUnwrap).",
-                    config.field_mapping.laplacian_fft_pad),
+                    describe_pad(config.field_mapping.laplacian_fft_pad)),
             });
             add_citation(citations, &CITE_LAPLACIAN_UNWRAP);
         }
@@ -1344,6 +1349,10 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("Laplacian method"));
         assert!(out.contains("Schofield"));
+        config.field_mapping.laplacian_solver = LaplacianSolver::Fft;
+        assert!(generate_methods(&config).contains("zero-padded by 64 voxels"));
+        config.field_mapping.laplacian_fft_pad = [64, 64, 32];
+        assert!(generate_methods(&config).contains("zero-padded by 64×64×32 voxels"));
     }
 
     #[test]

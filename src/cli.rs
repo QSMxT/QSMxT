@@ -1063,9 +1063,10 @@ pub struct PipelineArgs {
     #[arg(long, value_enum, alias = "laplacian-kernel")]
     pub laplacian_solver: Option<LaplacianSolverArg>,
 
-    /// Zero-padding in voxels per side for `--laplacian-solver fft` (default 64, UK Biobank's)
-    #[arg(long, value_name = "VOXELS")]
-    pub laplacian_fft_pad: Option<usize>,
+    /// Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or
+    /// three (x y z). Default 64, UK Biobank's (STI Suite's own default is 12)
+    #[arg(long, value_name = "VOXELS", num_args = 1..=3)]
+    pub laplacian_fft_pad: Option<Vec<usize>>,
 
     /// BET fractional intensity (0.0-1.0)
     #[arg(long)]
@@ -1824,9 +1825,10 @@ pub struct FieldmapLaplacianArgs {
     /// Zhu, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap)
     #[arg(long, value_enum, default_value = "dct", alias = "laplacian-kernel")]
     pub laplacian_solver: LaplacianSolverArg,
-    /// Zero-padding in voxels per side for `--laplacian-solver fft` (UK Biobank: 64)
-    #[arg(long, value_name = "VOXELS", default_value_t = 64)]
-    pub laplacian_fft_pad: usize,
+    /// Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or
+    /// three (x y z). Default 64, UK Biobank's (STI Suite's own default is 12)
+    #[arg(long, value_name = "VOXELS", num_args = 1..=3, default_values_t = [64])]
+    pub laplacian_fft_pad: Vec<usize>,
     // Note: phase offset removal and bipolar correction are not applied with Laplacian
     // unwrapping, so they are intentionally not exposed here. Each echo is unwrapped on its
     // own and the echoes are then combined by b0-estimation / b0-weight-type / linear-fit-*

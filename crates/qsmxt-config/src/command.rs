@@ -123,7 +123,14 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     emit_enum(&mut parts, "--unwrapping-algorithm", &config.field_mapping.unwrapping_algorithm, &d.field_mapping.unwrapping_algorithm);
     emit_enum(&mut parts, "--laplacian-solver", &config.field_mapping.laplacian_solver, &d.field_mapping.laplacian_solver);
     if config.field_mapping.laplacian_solver == LaplacianSolver::Fft {
-        emit_usize(&mut parts, "--laplacian-fft-pad", config.field_mapping.laplacian_fft_pad, d.field_mapping.laplacian_fft_pad);
+        let pad = config.field_mapping.laplacian_fft_pad;
+        if pad != d.field_mapping.laplacian_fft_pad {
+            parts.push(if pad[0] == pad[1] && pad[1] == pad[2] {
+                format!("--laplacian-fft-pad {}", pad[0])
+            } else {
+                format!("--laplacian-fft-pad {} {} {}", pad[0], pad[1], pad[2])
+            });
+        }
     }
     emit_enum(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation);
     emit_enum(&mut parts, "--b0-weight-type", &config.field_mapping.b0_weight_type, &d.field_mapping.b0_weight_type);
@@ -936,8 +943,24 @@ frangi_c = 400.0
         let cmd = generate_command(&c);
         assert!(cmd.contains("--laplacian-solver fft"), "{cmd}");
         assert!(!cmd.contains("--laplacian-fft-pad"), "default pad is not emitted: {cmd}");
-        c.field_mapping.laplacian_fft_pad = 12;
+        c.field_mapping.laplacian_fft_pad = [12; 3];
         assert!(generate_command(&c).contains("--laplacian-fft-pad 12"));
+        c.field_mapping.laplacian_fft_pad = [64, 64, 32];
+        assert!(generate_command(&c).contains("--laplacian-fft-pad 64 64 32"));
+    }
+
+    #[test]
+    fn test_laplacian_fft_pad_in_config_files() {
+        let c: FieldMappingConfig = toml::from_str("laplacian_fft_pad = 12").unwrap();
+        assert_eq!(c.laplacian_fft_pad, [12; 3]);
+        let c: FieldMappingConfig = toml::from_str("laplacian_fft_pad = [64, 64, 32]").unwrap();
+        assert_eq!(c.laplacian_fft_pad, [64, 64, 32]);
+        assert!(toml::from_str::<FieldMappingConfig>("laplacian_fft_pad = [1, 2]").is_err());
+        // What a config writes, it reads back.
+        let mut d = PipelineConfig::default();
+        d.field_mapping.laplacian_fft_pad = [64, 64, 32];
+        let back = PipelineConfig::from_toml(&toml::to_string(&d).unwrap()).unwrap();
+        assert_eq!(back.field_mapping.laplacian_fft_pad, [64, 64, 32]);
     }
 
     #[test]
@@ -945,7 +968,7 @@ frangi_c = 400.0
         // `laplacian_kernel = "sti"` was the (unreleased) earlier spelling.
         let c: FieldMappingConfig = toml::from_str("laplacian_kernel = \"sti\"").unwrap();
         assert_eq!(c.laplacian_solver, LaplacianSolver::Fft);
-        assert_eq!(c.laplacian_fft_pad, 64);
+        assert_eq!(c.laplacian_fft_pad, [64; 3]);
     }
 
     #[test]

@@ -242,8 +242,14 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                          B0WeightTypeArg::TEs, B0WeightTypeArg::Mag, B0WeightTypeArg::AssumedDecay]
             .get(ps.b0_weight_type).copied().filter(|&w| w != B0WeightTypeArg::PhaseSNR),
         b0_weight_assumed_t2star: if ps.b0_weight_type == 5 { parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) } else { None },
-        laplacian_solver: None,
-        laplacian_fft_pad: None,
+        // Only when Laplacian unwrapping is selected, and only when changed from the default.
+        laplacian_solver: (ps.unwrapping_algorithm == 1 && ps.laplacian_solver == 1)
+            .then_some(crate::cli::LaplacianSolverArg::Fft),
+        laplacian_fft_pad: if ps.unwrapping_algorithm == 1 && ps.laplacian_solver == 1 {
+            parse_pad3(&ps.laplacian_fft_pad)
+                .filter(|&p| p != qsmxt_config::default_laplacian_fft_pad())
+                .map(|p| if p[0] == p[1] && p[1] == p[2] { vec![p[0]] } else { p.to_vec() })
+        } else { None },
         bet_fractional_intensity: parse_optional_f64(&ps.bet_fractional_intensity),
         bet_smoothness: parse_optional_f64(&ps.bet_smoothness),
         bet_gradient_threshold: parse_optional_f64(&ps.bet_gradient_threshold),
@@ -669,6 +675,12 @@ fn parse_usize_triple(s: &str) -> Option<[usize; 3]> {
     <[usize; 3]>::try_from(v).ok()
 }
 
+/// "64" (every axis) or "64 64 32".
+fn parse_pad3(s: &str) -> Option<[usize; 3]> {
+    let v: Vec<usize> = s.split_whitespace().map(|t| t.parse().ok()).collect::<Option<_>>()?;
+    qsmxt_config::pad3_from(&v)
+}
+
 fn parse_optional_usize(s: &str) -> Option<usize> {
     let trimmed = s.trim();
     if trimmed.is_empty() {
@@ -805,6 +817,13 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     };
     if let Some(v) = parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) {
         config.field_mapping.b0_weight_assumed_t2star_ms = v;
+    }
+    config.field_mapping.laplacian_solver = match ps.laplacian_solver {
+        1 => qsmxt_config::LaplacianSolver::Fft,
+        _ => qsmxt_config::LaplacianSolver::Dct,
+    };
+    if let Some(p) = parse_pad3(&ps.laplacian_fft_pad) {
+        config.field_mapping.laplacian_fft_pad = p;
     }
     let (reference, region) =
         crate::pipeline::config::parse_reference_spec(&crate::tui::app::qsm_reference_spec(ps.qsm_reference));
@@ -1132,6 +1151,38 @@ mod tests {
         assert!(shows_threshold(&app));
         assert!(config_from_app(&app).bg_removal.vsharp.deconvolve);
         assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_deconvolve, Some(true));
+    }
+
+    /// The Laplacian solver and its pad are in the TUI (they used to be CLI-only): the rows
+    /// follow the selection, and the values reach both the config and the CLI args.
+    #[test]
+    fn laplacian_solver_and_pad() {
+        let mut app = default_app();
+        app.pipeline_state.collapsed_sections.clear();
+        let fields = |app: &App| app.pipeline_state.visible_rows().iter().filter_map(|r| match r {
+            crate::tui::app::PipelineRow::AlgoSelect { field, .. }
+            | crate::tui::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
+            _ => None,
+        }).collect::<Vec<_>>();
+        assert!(!fields(&app).contains(&"laplacian_solver".to_string()), "ROMEO has no solver");
+        app.pipeline_state.unwrapping_algorithm = 1; // laplacian
+        assert!(fields(&app).contains(&"laplacian_solver".to_string()));
+        assert!(!fields(&app).contains(&"laplacian_fft_pad".to_string()), "dct has no pad");
+        assert_eq!(pipeline_args_from_app(&app).laplacian_solver, None, "default stays off the command");
+        app.pipeline_state.laplacian_solver = 1; // fft
+        assert!(fields(&app).contains(&"laplacian_fft_pad".to_string()));
+        let c = config_from_app(&app);
+        assert_eq!(c.field_mapping.laplacian_solver, qsmxt_config::LaplacianSolver::Fft);
+        assert_eq!(c.field_mapping.laplacian_fft_pad, [64; 3]);
+        assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, None, "default pad not emitted");
+        app.pipeline_state.laplacian_fft_pad = "64 64 32".into();
+        assert_eq!(config_from_app(&app).field_mapping.laplacian_fft_pad, [64, 64, 32]);
+        let a = pipeline_args_from_app(&app);
+        assert!(matches!(a.laplacian_solver, Some(crate::cli::LaplacianSolverArg::Fft)));
+        assert_eq!(a.laplacian_fft_pad, Some(vec![64, 64, 32]));
+        app.pipeline_state.laplacian_fft_pad = "12".into();
+        assert_eq!(config_from_app(&app).field_mapping.laplacian_fft_pad, [12; 3]);
+        assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, Some(vec![12]));
     }
 
     /// The inner-inversion choice belongs to QSMART and to nothing else. It used to be gated on a

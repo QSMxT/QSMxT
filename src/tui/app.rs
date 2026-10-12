@@ -1430,6 +1430,10 @@ pub struct PipelineFormState {
     pub b0_estimation: usize,    // 0=weighted_avg, 1=linear_fit
     pub b0_weight_type: usize,   // 0=phase_snr, 1=phase_var, 2=average, 3=tes, 4=mag, 5=assumed-decay
     pub b0_weight_assumed_t2star_ms: String,
+    /// Index into [`LAPLACIAN_SOLVER_OPTIONS`] (0 = dct, 1 = fft).
+    pub laplacian_solver: usize,
+    /// FFT solver pad in voxels per side: "64" for every axis, or "64 64 32".
+    pub laplacian_fft_pad: String,
 
     // Parameters (as Strings for text editing)
     pub inhomogeneity_correction: bool,
@@ -1782,6 +1786,8 @@ impl Default for PipelineFormState {
             b0_estimation: 0,    // weighted_avg
             b0_weight_type: 0,   // phase_snr
             b0_weight_assumed_t2star_ms: format!("{}", qsmxt_config::default_b0_weight_assumed_t2star_ms()),
+            laplacian_solver: 0, // dct
+            laplacian_fft_pad: qsmxt_config::default_laplacian_fft_pad()[0].to_string(),
             inhomogeneity_correction: true,
             obliquity_threshold: "-1".to_string(),
             dl_tile_size: String::new(),
@@ -2048,6 +2054,11 @@ const QSMART_INV_HELP: &[&str] = &[
 pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian"];
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
 pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit"];
+pub const LAPLACIAN_SOLVER_OPTIONS: &[&str] = &["dct", "fft"];
+const LAPLACIAN_SOLVER_HELP: &[&str] = &[
+    "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
+    "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap (UK Biobank)",
+];
 pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average", "tes", "mag", "assumed-decay"];
 const B0_ESTIMATION_HELP: &[&str] = &[
     "Weighted average of phase/TE across echoes (default)",
@@ -2268,6 +2279,16 @@ impl PipelineFormState {
                 label: "Unwrapping", field: "unwrapping_algorithm",
                 options: UNWRAP_OPTIONS, help: UNWRAP_HELP,
             });
+            if is_laplacian {
+                rows.push(PipelineRow::AlgoSelect {
+                    label: "  Solver", field: "laplacian_solver",
+                    options: LAPLACIAN_SOLVER_OPTIONS, help: LAPLACIAN_SOLVER_HELP,
+                });
+                if self.laplacian_solver == 1 {
+                    rows.push(PipelineRow::Param { label: "    FFT Pad (voxels)", field: "laplacian_fft_pad",
+                        help: "Zero-padding per side: one value for every axis or three (x y z). UK Biobank: 64; STI Suite default: 12" });
+                }
+            }
 
             // ROMEO multi-echo params (only for ROMEO)
             if !is_laplacian {
@@ -2751,6 +2772,7 @@ impl PipelineFormState {
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
         "bet_fractional_intensity", "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
         "r2primenet_patch",
+        "laplacian_fft_pad",
     ];
 
     /// Get a string parameter value by field name.
@@ -2779,6 +2801,7 @@ impl PipelineFormState {
             "heidi_gradient_threshold" => &self.heidi_gradient_threshold,
             "heidi_laplacian_threshold" => &self.heidi_laplacian_threshold,
             "b0_weight_assumed_t2star_ms" => &self.b0_weight_assumed_t2star_ms,
+            "laplacian_fft_pad" => &self.laplacian_fft_pad,
             "heidi_gradient_mask_floor" => &self.heidi_gradient_mask_floor,
             "heidi_continuation_steps" => &self.heidi_continuation_steps,
             "heidi_inner_iterations" => &self.heidi_inner_iterations,
@@ -2969,6 +2992,7 @@ impl PipelineFormState {
             "heidi_gradient_threshold" => Some(&mut self.heidi_gradient_threshold),
             "heidi_laplacian_threshold" => Some(&mut self.heidi_laplacian_threshold),
             "b0_weight_assumed_t2star_ms" => Some(&mut self.b0_weight_assumed_t2star_ms),
+            "laplacian_fft_pad" => Some(&mut self.laplacian_fft_pad),
             "heidi_gradient_mask_floor" => Some(&mut self.heidi_gradient_mask_floor),
             "heidi_continuation_steps" => Some(&mut self.heidi_continuation_steps),
             "heidi_inner_iterations" => Some(&mut self.heidi_inner_iterations),
@@ -3144,6 +3168,7 @@ impl PipelineFormState {
             "r2prime_strategy" => self.r2prime_strategy,
             "b0_estimation" => self.b0_estimation,
             "b0_weight_type" => self.b0_weight_type,
+            "laplacian_solver" => self.laplacian_solver,
             "mask_preset" => self.mask_preset,
             "separation_algorithm" => self.separation_algorithm,
             _ => 0,
@@ -3161,6 +3186,7 @@ impl PipelineFormState {
             "r2prime_strategy" => self.r2prime_strategy = val,
             "b0_estimation" => self.b0_estimation = val,
             "b0_weight_type" => self.b0_weight_type = val,
+            "laplacian_solver" => self.laplacian_solver = val,
             "mask_preset" => {
                 self.mask_preset = val;
                 self.apply_mask_preset(val);
@@ -7256,6 +7282,7 @@ mod tests {
             ("separation", SEP_ALGO_OPTIONS.len(), SEP_ALGO_HELP.len()),
             ("qsmart-inner", QSMART_INV_OPTIONS.len(), QSMART_INV_HELP.len()),
             ("unwrap", UNWRAP_OPTIONS.len(), UNWRAP_HELP.len()),
+            ("laplacian-solver", LAPLACIAN_SOLVER_OPTIONS.len(), LAPLACIAN_SOLVER_HELP.len()),
             ("bg-removal", BF_OPTIONS.len(), BF_HELP.len()),
             ("qsm-reference", qsm_ref_options().len(), qsm_ref_help().len()),
             ("mask-preset", MASK_PRESET_OPTIONS.len(), MASK_PRESET_HELP.len()),
