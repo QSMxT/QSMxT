@@ -593,7 +593,6 @@ impl Default for SegmentationConfig {
     }
 }
 
-// SWI config (special: scaling is a string mapped from enum)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct SmwiConfig {
@@ -614,7 +613,7 @@ impl Default for SmwiConfig {
 #[serde(default)]
 pub struct SwiConfig {
     pub hp_sigma: [f64; 3],
-    pub scaling: String,
+    pub scaling: SwiScaling,
     pub strength: f64,
     pub mip_window: usize,
 }
@@ -623,13 +622,7 @@ impl Default for SwiConfig {
         let p = qsm_core::swi::SwiParams::default();
         Self {
             hp_sigma: p.hp_sigma,
-            scaling: match p.scaling {
-                qsm_core::swi::PhaseScaling::Tanh => "tanh",
-                qsm_core::swi::PhaseScaling::NegativeTanh => "negative-tanh",
-                qsm_core::swi::PhaseScaling::Positive => "positive",
-                qsm_core::swi::PhaseScaling::Negative => "negative",
-                qsm_core::swi::PhaseScaling::Triangular => "triangular",
-            }.to_string(),
+            scaling: p.scaling.into(),
             strength: p.strength,
             mip_window: p.mip_window,
         }

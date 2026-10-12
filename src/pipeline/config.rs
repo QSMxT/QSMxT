@@ -31,24 +31,25 @@ pub fn mask_preset_recipe(preset: cli::MaskPresetArg) -> MaskRecipe {
 
 /// Parse `<input>,<op>,<op>,...` mask-section specs — the `--mask` and `--two-pass-mask` grammar.
 ///
-/// Invalid pieces are warned about and skipped rather than failing the run, so one typo in one
-/// section does not throw away a batch. `flag` names the option in those warnings. A section with
-/// no generator op gets an Otsu threshold, which is what its input implies.
-fn parse_mask_sections(specs: &[String], flag: &str) -> Vec<MaskSection> {
+/// An invalid piece is an error: the flag was asked for, and running with a different mask than
+/// the one spelled out is worse than stopping. `flag` names the option in the error. A section
+/// with no generator op gets an Otsu threshold, which is what its input implies.
+fn parse_mask_sections(specs: &[String], flag: &str) -> crate::Result<Vec<MaskSection>> {
     let mut sections = Vec::new();
     for spec in specs {
         let parts: Vec<&str> = spec.split(',').collect();
-        if parts.is_empty() { continue; }
-        let input = match parse_masking_input(parts[0]) {
-            Some(i) => i,
-            None => { log::warn!("Ignoring invalid {} section input: '{}'", flag, parts[0]); continue; }
-        };
+        let input = parse_masking_input(parts[0]).ok_or_else(|| QsmxtError::Config(format!(
+            "{flag} {spec}: '{}' is not a mask input", parts[0])))?;
         let mut ops: Vec<MaskOp> = Vec::new();
         for part in &parts[1..] {
-            match parse_mask_op(part) {
-                Ok(op) => ops.push(op),
-                Err(e) => log::warn!("Ignoring invalid mask op '{}': {}", part, e),
-            }
+            ops.push(parse_mask_op(part).map_err(|e| QsmxtError::Config(format!(
+                "{flag} {spec}: invalid mask op '{part}': {e}")))?);
+        }
+        let generators = ops.iter().filter(|op| op.is_generator()).count();
+        if generators > 1 {
+            return Err(QsmxtError::Config(format!(
+                "{flag} {spec}: a section makes one mask, so it takes one generator (threshold, \
+                 bet, hd-bet, ...); give each its own {flag} section")));
         }
         let gen_idx = ops.iter().position(MaskOp::is_generator);
         let generator = if let Some(gi) = gen_idx { ops.remove(gi) } else {
@@ -56,7 +57,7 @@ fn parse_mask_sections(specs: &[String], flag: &str) -> Vec<MaskSection> {
         };
         sections.push(MaskSection { input, generator, refinements: ops });
     }
-    sections
+    Ok(sections)
 }
 
 /// Whether a mask op closes the holes the reliable pass is built around.
@@ -83,7 +84,19 @@ fn hole_closing_warnings(sections: &[MaskSection]) -> Vec<String> {
         .collect()
 }
 
-/// Apply CLI overrides onto a config.
+/// Map a CLI SWI scaling argument to the config enum — the one place `run` and `qsmxt swi` both
+/// go through, so the two cannot disagree about what a value means.
+pub fn swi_scaling_arg_to_config(a: cli::SwiScalingArg) -> qsmxt_config::SwiScaling {
+    use qsmxt_config::SwiScaling as S;
+    match a {
+        cli::SwiScalingArg::Tanh => S::Tanh,
+        cli::SwiScalingArg::NegativeTanh => S::NegativeTanh,
+        cli::SwiScalingArg::Positive => S::Positive,
+        cli::SwiScalingArg::Negative => S::Negative,
+        cli::SwiScalingArg::Triangular => S::Triangular,
+    }
+}
+
 /// Map a CLI dipole-inversion algorithm argument to the config enum.
 pub fn qsm_algorithm_arg_to_config(a: cli::QsmAlgorithmArg) -> QsmAlgorithm {
     match a {
@@ -135,14 +148,12 @@ fn separation_algorithm_arg_to_config(a: cli::SeparationAlgorithmArg) -> Separat
 }
 
 /// Apply the motion-correction flags onto a config.
-pub fn apply_motion_overrides(config: &mut PipelineConfig, p: &cli::MotionParamArgs) {
+pub fn apply_motion_overrides(config: &mut PipelineConfig, p: &cli::MotionParamArgs) -> crate::Result<()> {
     let m = &mut config.motion_correction;
     if p.motion_correction { m.enabled = true; }
     if let Some(ref r) = p.motion_reference {
-        match r.parse() {
-            Ok(r) => m.reference = r,
-            Err(e) => log::warn!("Ignoring invalid --motion-reference: {e}"),
-        }
+        m.reference = r.parse()
+            .map_err(|e| QsmxtError::Config(format!("--motion-reference {r}: {e}")))?;
     }
     if p.no_motion_chain { m.chain = false; }
     if let Some(v) = p.motion_chain_levels { m.chain_levels = v; }
@@ -156,6 +167,7 @@ pub fn apply_motion_overrides(config: &mut PipelineConfig, p: &cli::MotionParamA
     if let Some(v) = p.registration_rotation_step_deg { r.rotation_step_deg = v; }
     if let Some(v) = p.registration_translation_step_mm { r.translation_step_mm = v; }
     if let Some(v) = p.registration_min_overlap { r.min_overlap = v; }
+    Ok(())
 }
 
 /// Apply QSMART parameter overrides onto a config. Shared by the `run` pipeline and the standalone
@@ -216,7 +228,10 @@ pub fn validate_reference_region(config: &PipelineConfig) -> crate::Result<()> {
     Ok(())
 }
 
-pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs) {
+///
+/// A value that cannot be parsed is an error, never a warning and a default: the flag was asked
+/// for, and a run with some other setting would be worse than no run.
+pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs) -> crate::Result<()> {
         // ── Inversion algorithm ──
         if let Some(a) = args.qsm_algorithm {
             config.inversion.algorithm = qsm_algorithm_arg_to_config(a);
@@ -295,10 +310,9 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             };
         }
         if let Some(ref p) = args.laplacian_fft_pad {
-            match qsmxt_config::pad3_from(p) {
-                Some(p) => config.field_mapping.laplacian_fft_pad = p,
-                None => log::warn!("Ignoring invalid --laplacian-fft-pad {:?}: give one value or three", p),
-            }
+            config.field_mapping.laplacian_fft_pad = qsmxt_config::pad3_from(p).ok_or_else(|| {
+                QsmxtError::Config(format!("--laplacian-fft-pad {p:?}: give one value or three (x y z)"))
+            })?;
         }
         if let Some(ref s) = args.coil_combination_sigma {
             if s.len() == 3 { config.field_mapping.coil_combination_sigma = [s[0], s[1], s[2]]; }
@@ -502,7 +516,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(ref s) = args.swi_params.swi_hp_sigma {
             if s.len() == 3 { config.swi.hp_sigma = [s[0], s[1], s[2]]; }
         }
-        if let Some(ref v) = args.swi_params.swi_scaling { config.swi.scaling = v.clone(); }
+        if let Some(v) = args.swi_params.swi_scaling { config.swi.scaling = swi_scaling_arg_to_config(v); }
         if let Some(v) = args.swi_params.swi_strength { config.swi.strength = v; }
         if let Some(v) = args.swi_params.swi_mip_window { config.swi.mip_window = v; }
 
@@ -536,10 +550,9 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if args.do_analysis { config.pipeline.do_analysis = true; }
         let sg = &args.segmentation_params;
         if let Some(ref v) = sg.synthseg_version {
-            match parse_synthseg_version(v) {
-                Some(parsed) => config.segmentation.version = parsed,
-                None => log::warn!("Ignoring --synthseg-version '{}': expected v1 or v2", v),
-            }
+            config.segmentation.version = parse_synthseg_version(v).ok_or_else(|| {
+                QsmxtError::Config(format!("--synthseg-version {v}: expected v1 or v2"))
+            })?;
         }
         if let Some(v) = sg.synthseg_crop { config.segmentation.crop = Some(v); }
         if sg.no_synthseg_flip_averaging { config.segmentation.flip_averaging = false; }
@@ -571,7 +584,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(p) = &args.r2primenet_patch {
             if let [d, h, w] = p[..] { config.separation.r2primenet.patch = [d, h, w]; }
         }
-        apply_motion_overrides(config, &args.motion_params);
+        apply_motion_overrides(config, &args.motion_params)?;
         let sp = &args.separation_params;
         if let Some(v) = sp.r2star_qsm_r_const_3t { config.separation.r2star_qsm.r_const_3t = v; }
         if let Some(v) = sp.decompose_n_inner { config.separation.decompose.n_inner = v; }
@@ -638,7 +651,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             config.masking.refinements = recipe.refinements;
         }
         if let Some(ref sections) = args.mask_sections_cli {
-            let new_sections = parse_mask_sections(sections, "--mask");
+            let new_sections = parse_mask_sections(sections, "--mask")?;
             if !new_sections.is_empty() { config.masking.sections = new_sections; }
         }
         if let Some(combine) = args.mask_combine {
@@ -650,13 +663,14 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(ref refinements) = args.mask_refinements_cli {
             let mut ops: Vec<MaskOp> = Vec::new();
             for s in refinements {
-                match parse_mask_op(s) {
-                    Ok(op) if op.is_generator() => log::warn!(
-                        "Ignoring --mask-refine {}: it creates a mask rather than refining one; \
-                         put it in a --mask section instead", op),
-                    Ok(op) => ops.push(op),
-                    Err(e) => log::warn!("Ignoring invalid --mask-refine '{}': {}", s, e),
+                let op = parse_mask_op(s).map_err(|e| QsmxtError::Config(format!(
+                    "--mask-refine {s}: {e}")))?;
+                if op.is_generator() {
+                    return Err(QsmxtError::Config(format!(
+                        "--mask-refine {op}: it creates a mask rather than refining one; put it \
+                         in a --mask section instead")));
                 }
+                ops.push(op);
             }
             config.masking.refinements = ops;
         }
@@ -665,7 +679,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         // Giving a reliable mask implies the method: asking for one and not getting the second
         // pass would be the more surprising reading of `--two-pass-mask ... ` on its own.
         if let Some(ref sections) = args.two_pass_sections_cli {
-            let new_sections = parse_mask_sections(sections, "--two-pass-mask");
+            let new_sections = parse_mask_sections(sections, "--two-pass-mask")?;
             if !new_sections.is_empty() {
                 for warning in hole_closing_warnings(&new_sections) {
                     log::warn!("{warning}");
@@ -724,6 +738,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(scale) = args.bet_voxel_scale {
             apply_bet_voxel_scale(&mut config.masking, scale);
         }
+        Ok(())
 }
 
 /// Set `voxel_scale` on every BET step in a masking recipe — the sections, the refinements that
@@ -791,7 +806,7 @@ mod tests {
             _ => panic!("expected Run subcommand"),
         };
         let mut rebuilt = PipelineConfig::default();
-        apply_run_overrides(&mut rebuilt, &run_args.pipeline);
+        apply_run_overrides(&mut rebuilt, &run_args.pipeline).unwrap();
 
         assert_eq!(rebuilt.inversion.algorithm, QsmAlgorithm::Qsmart);
         assert_eq!(rebuilt.inversion.qsmart.inversion, QsmAlgorithm::Tv);
@@ -810,8 +825,39 @@ mod tests {
             _ => panic!("expected Run subcommand"),
         };
         let mut config = PipelineConfig::default();
-        apply_run_overrides(&mut config, &run_args.pipeline);
+        apply_run_overrides(&mut config, &run_args.pipeline).unwrap();
         config
+    }
+
+    /// A value the run cannot use is an error, not a warning followed by a default (#266's sweep):
+    /// each of these used to be logged and ignored, so the run went ahead with something else.
+    #[test]
+    fn unusable_flag_values_are_refused() {
+        let cases: &[&[&str]] = &[
+            &["--mask", "magnitud,threshold:otsu"],
+            &["--mask", "magnitude,threshhold:otsu"],
+            &["--mask", "magnitude,threshold:otsu,bet"],
+            &["--two-pass", "--two-pass-mask", "phase-quality,nonsense"],
+            &["--mask-refine", "erode:x"],
+            &["--mask-refine", "erode:2:3"],
+            &["--mask", "magnitude,threshold:fixed:abc"],
+            &["--mask-refine", "threshold:otsu"],
+            &["--motion-correction", "--motion-reference", "middle"],
+            &["--laplacian-fft-pad", "8", "8"],
+            &["--do-segmentation", "--synthseg-version", "v3"],
+        ];
+        for extra in cases {
+            let mut argv = vec!["qsmxt", "run", "<bids>"];
+            argv.extend_from_slice(extra);
+            let cli = cli::Cli::try_parse_from(&argv).expect("clap accepts it; the override must not");
+            let cli::Command::Run(run_args) = cli.command else { panic!("expected run") };
+            let mut config = PipelineConfig::default();
+            let err = apply_run_overrides(&mut config, &run_args.pipeline);
+            assert!(err.is_err(), "{extra:?} was accepted");
+            let msg = format!("{}", err.unwrap_err());
+            assert!(msg.contains(extra[extra.len() - 2]) || msg.contains(extra[extra.len() - 1]),
+                    "{extra:?}: the error should name the flag or value: {msg}");
+        }
     }
 
     #[test]
@@ -836,8 +882,7 @@ mod tests {
         assert_eq!(with(&[]).field_mapping.laplacian_fft_pad, [64; 3]);
         assert_eq!(with(&["--laplacian-fft-pad", "12"]).field_mapping.laplacian_fft_pad, [12; 3]);
         assert_eq!(with(&["--laplacian-fft-pad", "64", "64", "32"]).field_mapping.laplacian_fft_pad, [64, 64, 32]);
-        // Two values is neither: ignored with a warning, like other invalid run flags.
-        assert_eq!(with(&["--laplacian-fft-pad", "8", "9"]).field_mapping.laplacian_fft_pad, [64; 3]);
+        // Two values is neither: refused (see `unusable_flag_values_are_refused`).
     }
 
     #[test]
@@ -1025,7 +1070,7 @@ mod tests {
             .unwrap_or_else(|e| panic!("generated command did not parse: {e}\ncmd: {cmd}"));
         let run_args = match cli.command { cli::Command::Run(a) => a, _ => panic!("expected Run") };
         let mut rebuilt = PipelineConfig::default();
-        apply_run_overrides(&mut rebuilt, &run_args.pipeline);
+        apply_run_overrides(&mut rebuilt, &run_args.pipeline).unwrap();
         (cmd, rebuilt.masking)
     }
 
@@ -1214,12 +1259,9 @@ mod tests {
     /// A generator in --mask-refine has nothing to refine — it would throw the combined mask
     /// away. It is dropped with a warning rather than silently replacing the mask.
     #[test]
-    fn mask_refine_rejects_generators() {
-        let c = config_from_cli(&[
-            "qsmxt", "run", "<bids>",
-            "--mask-refine", "threshold:otsu",
-            "--mask-refine", "erode:2",
-        ]);
+    fn mask_refine_takes_refinements() {
+        // A generator is refused (see `unusable_flag_values_are_refused`); refinements are kept.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--mask-refine", "erode:2"]);
         assert_eq!(c.masking.refinements, vec![MaskOp::Erode { iterations: 2 }]);
     }
 
@@ -1240,7 +1282,7 @@ mod tests {
                                      refinements: recipe.refinements, ..MaskingConfig::default() },
             ..PipelineConfig::default()
         };
-        apply_run_overrides(&mut config, &run_args.pipeline);
+        apply_run_overrides(&mut config, &run_args.pipeline).unwrap();
         assert_eq!(config.masking.combine, MaskCombine::Or);
         assert!(config.masking.refinements.is_empty());
     }

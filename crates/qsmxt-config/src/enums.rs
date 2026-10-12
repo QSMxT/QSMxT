@@ -199,6 +199,65 @@ pub fn parse_synthseg_version(s: &str) -> Option<SynthSegVersion> {
     }
 }
 
+/// SWI phase-mask scaling (qsm-core's [`qsm_core::swi::PhaseScaling`]).
+///
+/// Typed end to end — CLI, config file, TUI — and mapped to qsm-core in one place, so a value
+/// QSMxT does not recognise cannot parse rather than quietly running `tanh` (#266).
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum SwiScaling {
+    #[default]
+    Tanh,
+    /// Older config files wrote it with an underscore.
+    #[serde(alias = "negative_tanh")]
+    NegativeTanh,
+    Positive,
+    Negative,
+    Triangular,
+}
+impl SwiScaling {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [SwiScaling; 5] =
+        [Self::Tanh, Self::NegativeTanh, Self::Positive, Self::Negative, Self::Triangular];
+
+    /// The name the CLI, the config file and the TUI use.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Tanh => "tanh", Self::NegativeTanh => "negative-tanh", Self::Positive => "positive",
+            Self::Negative => "negative", Self::Triangular => "triangular",
+        }
+    }
+}
+impl fmt::Display for SwiScaling {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<SwiScaling> for qsm_core::swi::PhaseScaling {
+    fn from(s: SwiScaling) -> Self {
+        use qsm_core::swi::PhaseScaling as P;
+        match s {
+            SwiScaling::Tanh => P::Tanh,
+            SwiScaling::NegativeTanh => P::NegativeTanh,
+            SwiScaling::Positive => P::Positive,
+            SwiScaling::Negative => P::Negative,
+            SwiScaling::Triangular => P::Triangular,
+        }
+    }
+}
+impl From<qsm_core::swi::PhaseScaling> for SwiScaling {
+    fn from(p: qsm_core::swi::PhaseScaling) -> Self {
+        use qsm_core::swi::PhaseScaling as P;
+        match p {
+            P::Tanh => Self::Tanh,
+            P::NegativeTanh => Self::NegativeTanh,
+            P::Positive => Self::Positive,
+            P::Negative => Self::Negative,
+            P::Triangular => Self::Triangular,
+        }
+    }
+}
+
 /// How R2′ is obtained when no custom map is supplied.
 ///
 /// R2′ = R2* − R2 is a *measurement*, and it needs a spin-echo acquisition to measure R2 from.

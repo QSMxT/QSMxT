@@ -40,8 +40,9 @@ pub fn build_command_string(app: &App) -> String {
     }
 
     // Pipeline flags — delegate to qsmxt-config library
-    {
-        let config = config_from_app(app);
+    match config_from_app(app) {
+        Err(e) => parts.push(format!("<invalid setting: {e}>")),
+        Ok(config) => {
         let lib_cmd = qsmxt_config::generate_command(&config);
         // The library generates "qsmxt run <bids_dir> [flags]"
         // Strip the prefix and append only the flags
@@ -50,6 +51,7 @@ pub fn build_command_string(app: &App) -> String {
             for flag in flags.split_whitespace() {
                 parts.push(flag.to_string());
             }
+        }
         }
     }
 
@@ -144,6 +146,13 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
 /// back into an algorithm. The two lists must stay in step: insert an algorithm into one and not
 /// the other and the TUI silently runs a *different* algorithm than the one on screen, with no
 /// error anywhere. `qsm_algo_args_match_the_option_list` holds them together.
+/// The SWI scaling each entry of the TUI's SWI "Scaling" select runs, by index. A test holds
+/// the select's labels to these.
+pub const SWI_SCALING_ARGS: [crate::cli::SwiScalingArg; 5] = {
+    use crate::cli::SwiScalingArg as S;
+    [S::Tanh, S::NegativeTanh, S::Positive, S::Negative, S::Triangular]
+};
+
 pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 31] = [
         QsmAlgorithmArg::Rts,
         QsmAlgorithmArg::Tv,
@@ -569,10 +578,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                     _ => None,
                 }
             },
-            swi_scaling: {
-                let scaling_options = ["tanh", "negative-tanh", "positive", "negative", "triangular"];
-                Some(scaling_options.get(form.swi_scaling).unwrap_or(&"tanh").to_string())
-            },
+            swi_scaling: Some(SWI_SCALING_ARGS[form.swi_scaling]),
             swi_strength: parse_optional_f64(&form.swi_strength),
             swi_mip_window: parse_optional_usize(&form.swi_mip_window),
         },
@@ -779,10 +785,13 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
 /// override path as `qsmxt run`, so the preview, the shown command and the run cannot drift apart:
 /// a setting the TUI has but the CLI cannot express simply has no effect here, which the parity
 /// test (`parity::every_run_flag_is_reachable_from_the_tui`) catches.
-pub fn config_from_app(app: &App) -> PipelineConfig {
+///
+/// An error is a setting the run would refuse (an unparseable mask section, say); the TUI shows
+/// it in place of the command and the methods rather than previewing some other configuration.
+pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
     let mut config = PipelineConfig::default();
-    crate::pipeline::config::apply_run_overrides(&mut config, &pipeline_args_from_app(app));
-    config
+    crate::pipeline::config::apply_run_overrides(&mut config, &pipeline_args_from_app(app))?;
+    Ok(config)
 }
 
 #[cfg(test)]
@@ -806,6 +815,20 @@ mod tests {
         }
     }
 
+    /// Each entry of the SWI scaling select runs the scaling it shows, and every scaling reaches
+    /// qsm-core's `PhaseScaling` unchanged (#266: `negative-tanh` used to run `tanh`).
+    #[test]
+    fn swi_scaling_select_runs_what_it_shows() {
+        use qsmxt_config::SwiScaling;
+        assert_eq!(SWI_SCALING_ARGS.len(), SwiScaling::ALL.len());
+        for (i, &expected) in SwiScaling::ALL.iter().enumerate() {
+            let mut app = App::new();
+            app.form.do_swi = true;
+            app.form.swi_scaling = i;
+            assert_eq!(config_from_app(&app).unwrap().swi.scaling, expected, "row {i}");
+        }
+    }
+
     /// Every row of the inversion list must survive being selected.
     ///
     /// `config_from_app` used to carry its own copy of the algorithm list; when `lsqr` and `heidi`
@@ -819,7 +842,7 @@ mod tests {
         for (i, name) in QSM_ALGO_OPTIONS.iter().enumerate() {
             let mut app = default_app();
             app.pipeline_state.qsm_algorithm = i;
-            let config = config_from_app(&app);
+            let config = config_from_app(&app).unwrap();
             assert_eq!(&format!("{}", config.inversion.algorithm), name,
                        "row {i} shows {name} but configures {}", config.inversion.algorithm);
             let args = pipeline_args_from_app(&app);
@@ -834,10 +857,10 @@ mod tests {
     fn r2primenet_settings_reach_config_and_args() {
         let mut app = default_app();
         let d = qsmxt_config::R2primenetConfig::default();
-        assert_eq!(config_from_app(&app).separation.r2primenet, d);
+        assert_eq!(config_from_app(&app).unwrap().separation.r2primenet, d);
         app.pipeline_state.toggle("r2primenet_ignore_field_mismatch");
         app.pipeline_state.r2primenet_patch = "128 128 64".into();
-        let c = config_from_app(&app);
+        let c = config_from_app(&app).unwrap();
         assert!(c.separation.r2primenet.ignore_field_mismatch);
         assert_eq!(c.separation.r2primenet.patch, [128, 128, 64]);
         let a = pipeline_args_from_app(&app);
@@ -853,11 +876,11 @@ mod tests {
         let shows_threshold = |app: &App| app.pipeline_state.visible_rows().iter().any(|r|
             matches!(r, crate::tui::app::PipelineRow::Param { field: "vsharp_threshold", .. }));
         app.pipeline_state.collapsed_sections.clear();
-        assert!(!config_from_app(&app).bg_removal.vsharp.deconvolve);
+        assert!(!config_from_app(&app).unwrap().bg_removal.vsharp.deconvolve);
         assert!(!shows_threshold(&app));
         app.pipeline_state.toggle("vsharp_deconvolve");
         assert!(shows_threshold(&app));
-        assert!(config_from_app(&app).bg_removal.vsharp.deconvolve);
+        assert!(config_from_app(&app).unwrap().bg_removal.vsharp.deconvolve);
         assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_deconvolve, Some(true));
     }
 
@@ -879,17 +902,17 @@ mod tests {
         assert_eq!(pipeline_args_from_app(&app).laplacian_solver, None, "default stays off the command");
         app.pipeline_state.laplacian_solver = 1; // fft
         assert!(fields(&app).contains(&"laplacian_fft_pad".to_string()));
-        let c = config_from_app(&app);
+        let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.laplacian_solver, qsmxt_config::LaplacianSolver::Fft);
         assert_eq!(c.field_mapping.laplacian_fft_pad, [64; 3]);
         assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, None, "default pad not emitted");
         app.pipeline_state.laplacian_fft_pad = "64 64 32".into();
-        assert_eq!(config_from_app(&app).field_mapping.laplacian_fft_pad, [64, 64, 32]);
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_fft_pad, [64, 64, 32]);
         let a = pipeline_args_from_app(&app);
         assert!(matches!(a.laplacian_solver, Some(crate::cli::LaplacianSolverArg::Fft)));
         assert_eq!(a.laplacian_fft_pad, Some(vec![64, 64, 32]));
         app.pipeline_state.laplacian_fft_pad = "12".into();
-        assert_eq!(config_from_app(&app).field_mapping.laplacian_fft_pad, [12; 3]);
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.laplacian_fft_pad, [12; 3]);
         assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, Some(vec![12]));
     }
 
@@ -911,7 +934,7 @@ mod tests {
                      "robust_fit_downweight_level", "robust_fit_flag_ratio", "linear_fit_reliability_threshold"] {
             assert!(f.contains(&name.to_string()), "{name} missing: {f:?}");
         }
-        assert_eq!(config_from_app(&app).field_mapping.robust_fit, qsmxt_config::RobustFitConfig::default());
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.robust_fit, qsmxt_config::RobustFitConfig::default());
         let ps = &mut app.pipeline_state;
         ps.robust_fit_loss = 1;
         ps.robust_fit_tuning = "2".into();
@@ -920,7 +943,7 @@ mod tests {
         ps.robust_fit_flag_ratio = "4".into();
         ps.linear_fit_reliability_threshold = "80".into();
         ps.toggle("linear_fit_estimate_offset");
-        let c = config_from_app(&app);
+        let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.b0_estimation, qsmxt_config::B0Estimation::RobustFit);
         assert_eq!(c.field_mapping.robust_fit, qsmxt_config::RobustFitConfig {
             loss: qsmxt_config::RobustLoss::Huber, tuning: Some(2.0), iterations: 0,
@@ -940,11 +963,11 @@ mod tests {
     #[test]
     fn ignore_slice_gap_reaches_config_and_args() {
         let mut app = default_app();
-        assert!(!config_from_app(&app).pipeline.ignore_slice_gap);
+        assert!(!config_from_app(&app).unwrap().pipeline.ignore_slice_gap);
         app.pipeline_state.toggle("ignore_slice_gap");
-        assert!(config_from_app(&app).pipeline.ignore_slice_gap);
+        assert!(config_from_app(&app).unwrap().pipeline.ignore_slice_gap);
         assert!(pipeline_args_from_app(&app).ignore_slice_gap);
-        let mut c = config_from_app(&app);
+        let mut c = config_from_app(&app).unwrap();
         assert!(qsmxt_config::generate_command(&c).contains("--ignore-slice-gap"));
         c.pipeline.ignore_slice_gap = false;
         assert!(!qsmxt_config::generate_command(&c).contains("--ignore-slice-gap"));
@@ -964,7 +987,7 @@ mod tests {
         }).collect::<Vec<_>>();
         assert!(fields(&app).contains(&"motion_correction".to_string()));
         assert!(fields(&app).contains(&"reg_levels".to_string()), "shared with orientation co-registration, on by default");
-        assert_eq!(config_from_app(&app).motion_correction, qsmxt_config::MotionCorrectionConfig::default());
+        assert_eq!(config_from_app(&app).unwrap().motion_correction, qsmxt_config::MotionCorrectionConfig::default());
         let ps = &mut app.pipeline_state;
         ps.toggle("motion_correction");
         ps.motion_reference = 2;
@@ -980,10 +1003,10 @@ mod tests {
             assert!(f.contains(&name.to_string()), "{name} missing: {f:?}");
         }
         assert!(!f.contains(&"motion_chain_levels".to_string()), "chain levels hidden when chain is off");
-        let m = config_from_app(&app).motion_correction;
+        let m = config_from_app(&app).unwrap().motion_correction;
         assert!(m.enabled && !m.chain);
         assert_eq!(m.reference, qsmxt_config::MotionReference::Echo(2));
-        let reg = config_from_app(&app).registration;
+        let reg = config_from_app(&app).unwrap().registration;
         assert_eq!((m.min_ncc, reg.levels, reg.min_overlap), (0.9, 4, 0.5));
         let a = pipeline_args_from_app(&app).motion_params;
         assert!(a.motion_correction && a.no_motion_chain);
@@ -997,11 +1020,11 @@ mod tests {
     fn orientation_registration_and_force_reach_config_and_args() {
         let mut app = default_app();
         app.pipeline_state.collapsed_sections.clear();
-        let c = config_from_app(&app);
+        let c = config_from_app(&app).unwrap();
         assert!(c.multi_orientation.register && !c.multi_orientation.force);
         app.pipeline_state.toggle("orientation_registration");
         app.pipeline_state.toggle("multi_orientation_force");
-        let c = config_from_app(&app);
+        let c = config_from_app(&app).unwrap();
         assert!(!c.multi_orientation.register && c.multi_orientation.force);
         let a = pipeline_args_from_app(&app);
         assert!(a.no_orientation_registration && a.multi_orientation_force);
@@ -1033,7 +1056,7 @@ mod tests {
     fn an_out_of_range_inversion_index_falls_back_instead_of_panicking() {
         let mut app = default_app();
         app.pipeline_state.qsm_algorithm = 999;
-        assert_eq!(format!("{}", config_from_app(&app).inversion.algorithm), "rts");
+        assert_eq!(format!("{}", config_from_app(&app).unwrap().inversion.algorithm), "rts");
         assert_eq!(pipeline_args_from_app(&app).qsm_algorithm, Some(QsmAlgorithmArg::Rts));
     }
 
@@ -1499,10 +1522,10 @@ mod tests {
         app.pipeline_state.b0_weight_type = 5; // assumed-decay
         app.pipeline_state.b0_weight_assumed_t2star_ms = "35".to_string();
         let mut cfg = PipelineConfig::default();
-        crate::pipeline::config::apply_run_overrides(&mut cfg, &build_run_args(&app).unwrap().pipeline);
+        crate::pipeline::config::apply_run_overrides(&mut cfg, &build_run_args(&app).unwrap().pipeline).unwrap();
         assert_eq!(cfg.field_mapping.b0_weight_type, crate::pipeline::config::B0WeightType::AssumedDecay);
         assert_eq!(cfg.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
-        let c = config_from_app(&app);
+        let c = config_from_app(&app).unwrap();
         assert_eq!(c.field_mapping.b0_weight_type, crate::pipeline::config::B0WeightType::AssumedDecay);
         assert_eq!(c.field_mapping.b0_weight_assumed_t2star_ms, 35.0);
         app.pipeline_state.b0_estimation = 1;
@@ -1521,9 +1544,9 @@ mod tests {
         app.pipeline_state.bipolar_correction = true;
 
         let mut local = PipelineConfig::default();
-        crate::pipeline::config::apply_run_overrides(&mut local, &build_run_args(&app).unwrap().pipeline);
+        crate::pipeline::config::apply_run_overrides(&mut local, &build_run_args(&app).unwrap().pipeline).unwrap();
         let mut slurm = PipelineConfig::default();
-        crate::pipeline::config::apply_run_overrides(&mut slurm, &build_slurm_args(&app).unwrap().pipeline);
+        crate::pipeline::config::apply_run_overrides(&mut slurm, &build_slurm_args(&app).unwrap().pipeline).unwrap();
 
         assert_eq!(slurm.to_toml().unwrap(), local.to_toml().unwrap());
         // ... and it is not merely the default pipeline.
@@ -1574,7 +1597,7 @@ mod parity {
         let parsed = crate::cli::Cli::from_arg_matches(&m).unwrap_or_else(|e| panic!("{cmd}: {e}"));
         let crate::cli::Command::Run(run) = parsed.command else { panic!("not run: {cmd}") };
         let mut back = PipelineConfig::default();
-        crate::pipeline::config::apply_run_overrides(&mut back, &run.pipeline);
+        crate::pipeline::config::apply_run_overrides(&mut back, &run.pipeline).unwrap();
         back
     }
 
@@ -1687,7 +1710,7 @@ mod parity {
         let mut cli = <crate::cli::Cli as clap::CommandFactory>::command();
         cli.build();
         let mut check = |what: String, base: &App, app: &App, problems: &mut BTreeMap<String, String>| {
-            let (before, after) = (config_from_app(base), config_from_app(app));
+            let (before, after) = (config_from_app(base).unwrap(), config_from_app(app).unwrap());
             let (cmd_before, cmd) = (qsmxt_config::generate_command(&before), qsmxt_config::generate_command(&after));
             if cmd_before == cmd {
                 let d = diff(&before, &after);
@@ -1822,7 +1845,7 @@ mod parity {
             } else if shown_before == shown {
                 problems.entry(format!("not in the command: {what}")).or_insert(what.to_string());
             }
-            let c = config_from_app(&a);
+            let c = config_from_app(&a).unwrap();
             let (cmd, back) = (qsmxt_config::generate_command(&c), qsmxt_config::generate_command(&round_trip(&mut cli, &c)));
             if cmd != back {
                 problems.entry(format!("command does not reproduce itself: {what}")).or_insert(what.to_string());

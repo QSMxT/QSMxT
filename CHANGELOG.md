@@ -108,6 +108,23 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
 
 ### Changed
 
+- **`--swi-scaling negative-tanh` runs negative-tanh** (#266). `qsmxt run` matched the scaling as
+  a string and only knew `negative_tanh`, so the spelling the help, the TUI and the generated
+  command all use fell through to plain `tanh` without a word. The scaling is now one typed enum
+  (`SwiScaling`) from the CLI (a clap value list: `tanh`, `negative-tanh`, `positive`, `negative`,
+  `triangular`; `negative_tanh` is still accepted), through the config file (`[swi] scaling`;
+  an unknown value no longer parses), to the TUI and qsm-core's `PhaseScaling`, mapped in one
+  place for `run` and `qsmxt swi`. SWI changes only for runs that asked for `negative-tanh`.
+  For qsmxt-config consumers (qsmbly): `SwiConfig::scaling` is now `SwiScaling`, not `String`.
+- **A flag value the run cannot use is an error, not a warning** (#266 sweep). `qsmxt run`
+  used to log "Ignoring ..." and carry on with the default for an unparseable `--mask` /
+  `--two-pass-mask` section input or op, a `--mask-refine` that is a generator or does not
+  parse, `--motion-reference`, a two-value `--laplacian-fft-pad` and `--synthseg-version`. Mask
+  ops no longer read an unparseable number as the default (`erode:x` eroded once) and refuse
+  extra arguments (`erode:2:3`), and a `--mask` section with two generators is refused rather
+  than silently refining with the second. The TUI shows the error in place of the command and
+  the methods.
+
 - **Provenance records the exact QSM.rs commit** (#278; no change to any image). The QSM.rs
   version was "unknown" in BIDS-Prov, the TUI header and `--version` because qsm-core is pinned
   by `rev`, not `tag`. It is now the tag when there is one, else `rev-<full 40-character commit>`
