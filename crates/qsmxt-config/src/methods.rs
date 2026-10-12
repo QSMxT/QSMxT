@@ -455,7 +455,11 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
         // Referencing
         match config.qsm.reference {
             QsmReference::Mean => {
-                sentences.push("The resulting susceptibility map was mean-referenced within the brain mask.".to_string());
+                sentences.push(
+                    "The resulting susceptibility map was mean-referenced over the voxels on which \
+                     it was reconstructed (the brain mask less any rim eroded by background-field \
+                     removal), and set to zero outside them.".to_string(),
+                );
             }
             QsmReference::None => {
                 sentences.push("No susceptibility referencing was applied.".to_string());
@@ -464,7 +468,11 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 let region = config.qsm.reference_region.as_deref().unwrap_or("");
                 let pretty = region.replace('-', " ").replace(',', ", ");
                 sentences.push(format!(
-                    "The resulting susceptibility map was referenced to the mean susceptibility of                      the {pretty} ({}), taken from the SynthSeg parcellation, so that zero                      corresponds to that tissue rather than to the whole-brain average.",
+                    "The resulting susceptibility map was referenced to the mean susceptibility of \
+                     the {pretty} ({}), taken from the SynthSeg parcellation over the voxels on \
+                     which the map was reconstructed, so that zero corresponds to that tissue \
+                     rather than to the whole-brain average; the map was set to zero outside \
+                     those voxels.",
                     if region.contains(',') { "a union of parcellation labels" }
                     else { "a parcellation label" },
                 ));

@@ -1091,7 +1091,8 @@ pub struct PipelineArgs {
     #[arg(long, value_name = "FACTOR")]
     pub bet_voxel_scale: Option<f64>,
 
-    /// What the susceptibility map's zero is pinned to: `mean` (brain-mask mean, the default),
+    /// What the susceptibility map's zero is pinned to: `mean` (the mean over the voxels the map
+    /// is defined on — the brain mask less the rim background-field removal eroded; the default),
     /// `none`, or a SynthSeg region — a structure with both sides merged (`thalamus`), one side
     /// (`left-thalamus`), the `ventricles` composite, a raw FreeSurfer id (`4`), or a
     /// comma-separated list of any of those. A region implies --do-segmentation. An unrecognised

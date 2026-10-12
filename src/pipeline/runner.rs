@@ -350,33 +350,42 @@ pub fn run_pipeline_cached(
         }
 
         let main = Pass::main(output, &qsm_run.key);
+        let skip_bgremove = skips_bgremove(config);
         reconstruct(&mut ctx, &main, &field_path, progress)?;
 
         if two_pass {
             let reliable = Pass::reliable(output, &qsm_run.key);
             stage_two_pass_mask(&mut ctx, &mask_path, &reliable.mask, progress)?;
             reconstruct(&mut ctx, &reliable, &field_path, progress)?;
-            stage_two_pass_combine(&mut ctx, &main, &reliable, skips_bgremove(config), progress)?;
+            stage_two_pass_combine(&mut ctx, &main, &reliable, skip_bgremove, progress)?;
 
-            // Both maps are referenced against the brain mask, so they can be compared directly.
+            // Each map is referenced over the voxels it is defined on. The single-pass map's
+            // support is the main pass's; the combined map takes each voxel from one pass or the
+            // other, so its support is the union of both.
             stage_reference(
-                &mut ctx, &mask_path, &main.chi_raw, output.singlepass_qsm_path(&qsm_run.key),
-                "reference-singlepass", progress,
+                &mut ctx, &[main.support(skip_bgremove)], &main.chi_raw,
+                output.singlepass_qsm_path(&qsm_run.key), None, "reference-singlepass", progress,
             )?;
             let combined = output.two_pass_chi_raw_path(&qsm_run.key);
             stage_reference(
-                &mut ctx, &mask_path, &combined, output.qsm_path(&qsm_run.key), "reference", progress,
+                &mut ctx, &[main.support(skip_bgremove), reliable.support(skip_bgremove)], &combined,
+                output.qsm_path(&qsm_run.key), Some(output.qsm_support_path(&qsm_run.key)),
+                "reference", progress,
             )?;
         } else {
             stage_reference(
-                &mut ctx, &mask_path, &main.chi_raw, output.qsm_path(&qsm_run.key), "reference", progress,
+                &mut ctx, &[main.support(skip_bgremove)], &main.chi_raw, output.qsm_path(&qsm_run.key),
+                Some(output.qsm_support_path(&qsm_run.key)), "reference", progress,
             )?;
         }
     }
 
-    // After referencing: SMWI weights by the final, referenced susceptibility map.
+    // After referencing: SMWI weights by the final, referenced susceptibility map, over the voxels
+    // that map is defined on — outside them χ is 0 by construction, not by measurement.
     if config.pipeline.do_smwi && meta.has_magnitude {
-        stage_smwi(&mut ctx, &mask_path, progress)?;
+        let support = output.qsm_support_path(&qsm_run.key);
+        let smwi_mask = if support.exists() { support } else { mask_path.clone() };
+        stage_smwi(&mut ctx, &smwi_mask, progress)?;
     }
 
     if config.pipeline.do_chi_separation {
@@ -1201,9 +1210,10 @@ fn find_custom_derivative(
 /// are how most tools name a brain mask. The one exclusion is our own reliable-phase mask: a
 /// two-pass run writes `_desc-reliable_mask.nii` into the same folder, it sorts *before* the brain
 /// mask, and a later run pointed at those derivatives would reconstruct inside the holey mask and
-/// call it the brain — with no error anywhere to say so.
+/// call it the brain — with no error anywhere to say so. The χ support mask (`_desc-qsm_mask.nii`)
+/// is excluded for the same reason: it is the brain mask less an eroded rim.
 fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
-    find_custom_derivative(run, tool, "*_mask.nii*", &["_desc-reliable_"])
+    find_custom_derivative(run, tool, "*_mask.nii*", &["_desc-reliable_", "_desc-qsm_"])
 }
 
 fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
@@ -3101,14 +3111,25 @@ fn stage_standard_qsm(
 /// Reference a raw susceptibility map and write it out as a final derivative.
 ///
 /// A two-pass run calls this twice — once for the combined map and once for the single-pass one —
-/// so the input, the output and the step name are all explicit. Both are referenced against the
-/// same brain mask, which is what makes them comparable.
+/// so the input, the output and the step name are all explicit.
+///
+/// `support_masks` are the masks the map was reconstructed on ([`Pass::support`]: the
+/// background-removal mask, or the brain mask when the inversion removed the background itself;
+/// both passes' for a two-pass map). Every reference is measured over the map's support only —
+/// see [`crate::pipeline::referencing::defined_support`] — and the map is written as 0 outside it.
+/// Referencing over the brain mask instead averaged in the rim background removal eroded (0 in
+/// the raw map), biasing the offset, and then left that rim at a constant `-offset`.
+///
+/// `support_out`, when given, is where the support is published.
+#[allow(clippy::too_many_arguments)]
 fn stage_reference(
-    ctx: &mut StageContext, mask_path: &Path, chi_raw_path: &Path, qsm_path: PathBuf,
-    step: &str, progress: &dyn Fn(&str),
+    ctx: &mut StageContext, support_masks: &[&Path], chi_raw_path: &Path, qsm_path: PathBuf,
+    support_out: Option<PathBuf>, step: &str, progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
     let ref_method = format!("{}", ctx.config.qsm.reference);
-    let mut ref_params = serde_json::json!({ "method": ref_method });
+    // `domain` versions what the reference is measured over, so maps referenced over the brain
+    // mask by an older release are re-referenced rather than reused from the cache.
+    let mut ref_params = serde_json::json!({ "method": ref_method, "domain": "support" });
 
     // A region reference depends on the parcellation as well as the map. Rather than a static
     // `segmentation -> reference` edge — which would invalidate referencing, and everything that
@@ -3136,9 +3157,20 @@ fn stage_reference(
     log::info!("QSM referencing ({})", ctx.config.qsm.reference);
     progress("Referencing QSM");
     let chi = load_volume(chi_raw_path)?;
-    let mask = load_mask(mask_path)?;
+    let declared = support_masks.iter().map(|p| load_mask(p)).collect::<crate::Result<Vec<_>>>()?;
+    if let Some(m) = declared.iter().find(|m| m.len() != chi.len()) {
+        return Err(QsmxtError::DimensionMismatch(format!(
+            "support mask has {} voxels but the susceptibility map has {}", m.len(), chi.len())));
+    }
+    let declared_refs: Vec<&[u8]> = declared.iter().map(|m| m.as_slice()).collect();
+    let mask = crate::pipeline::referencing::defined_support(&declared_refs, &chi);
+    log::info!(
+        "Referencing over the map's support: {} voxels",
+        mask.iter().filter(|&&m| m != 0).count(),
+    );
 
-    let mut inputs: Vec<PathBuf> = vec![chi_raw_path.to_path_buf(), mask_path.to_path_buf()];
+    let mut inputs: Vec<PathBuf> = vec![chi_raw_path.to_path_buf()];
+    inputs.extend(support_masks.iter().map(|p| p.to_path_buf()));
     let (chi_final, offset) = match region {
         Some((spec, ids)) => {
             let dseg_path = resolve_input(
@@ -3146,7 +3178,8 @@ fn stage_reference(
                 ctx.config.segmentation.custom_dseg_tool.as_deref(), "*_dseg.nii*", &[],
             )
             .ok_or_else(|| QsmxtError::Config(format!(
-                "--qsm-reference {spec}: no segmentation to measure the region on. Enable                  --do-segmentation, or supply one with --use-custom-dseg")))?;
+                "--qsm-reference {spec}: no segmentation to measure the region on. Enable \
+                 --do-segmentation, or supply one with --use-custom-dseg")))?;
             let dseg = load_volume(&dseg_path)?;
             if dseg.len() != chi.len() {
                 return Err(QsmxtError::DimensionMismatch(format!(
@@ -3170,6 +3203,11 @@ fn stage_reference(
     };
 
     save_volume(&qsm_path, &chi_final, ctx.meta)?;
+    let mut outputs = vec![qsm_path.clone()];
+    if let Some(path) = support_out {
+        save_mask(&path, &mask, ctx.meta)?;
+        outputs.push(path);
+    }
 
     // Record what the map was referenced to, beside the map itself. Only for the main pass: the
     // single-pass map of a two-pass run is a by-product, and two sidecars disagreeing about "the"
@@ -3179,7 +3217,7 @@ fn stage_reference(
     }
 
     let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).collect();
-    ctx.complete_step(step, Some(&ref_method), ref_params, &input_refs, vec![qsm_path], t)?;
+    ctx.complete_step(step, Some(&ref_method), ref_params, &input_refs, outputs, t)?;
     log_step_done("QSM referencing", t);
     Ok(())
 }
@@ -4672,6 +4710,33 @@ mod oblique_run_tests {
         assert!(!output.working_grid_dir(&run.key).exists());
     }
 
+    /// End to end with V-SHARP: the published χ is 0 on the rim background removal eroded, its
+    /// mean over the published support is the reference zero, and the support is smaller than
+    /// the brain mask (or the test would prove nothing).
+    #[test]
+    fn the_published_map_is_zero_outside_its_published_support() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 3);
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, false, &|_| {}).unwrap();
+
+        let chi = load_volume(&output.qsm_path(&run.key)).unwrap();
+        let brain = load_mask(&output.mask_path(&run.key)).unwrap();
+        let support = load_mask(&output.qsm_support_path(&run.key)).unwrap();
+        let count = |m: &[u8]| m.iter().filter(|&&v| v != 0).count();
+        assert!(count(&support) > 0 && count(&support) < count(&brain),
+                "support {} vs brain {}", count(&support), count(&brain));
+        assert!(support.iter().zip(&brain).all(|(&s, &b)| s <= b), "the support lies in the brain");
+        for (i, (&c, &s)) in chi.iter().zip(&support).enumerate() {
+            if s == 0 {
+                assert_eq!(c, 0.0, "voxel {i} outside the support");
+            }
+        }
+        let mean: f64 = chi.iter().zip(&support).filter(|(_, &s)| s != 0).map(|(&c, _)| c).sum::<f64>()
+            / count(&support) as f64;
+        assert!(mean.abs() < 1e-5, "mean over the support is {mean}");
+    }
+
     /// The grid was cached with the first run's geometry, so a new threshold was ignored.
     #[test]
     fn a_new_obliquity_threshold_is_honoured_on_a_rerun() {
@@ -4690,5 +4755,172 @@ mod oblique_run_tests {
         run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, false, &|_| {}).unwrap();
         assert!(!resampled(&output));
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
+    }
+}
+
+/// Referencing over the map's support rather than the brain mask.
+///
+/// Background removal erodes the mask, and the raw map is 0 on that rim. Referencing over the
+/// brain mask averaged those zeros into the offset and then wrote the rim out as a constant
+/// `-offset` — a shell of about 10% of the brain at 1 mm with V-SHARP.
+#[cfg(test)]
+mod reference_support_tests {
+    use super::*;
+
+    const DIMS: (usize, usize, usize) = (8, 8, 8);
+    const IDENTITY: [f64; 16] = [
+        1.0, 0.0, 0.0, 0.0,
+        0.0, 1.0, 0.0, 0.0,
+        0.0, 0.0, 1.0, 0.0,
+        0.0, 0.0, 0.0, 1.0,
+    ];
+
+    fn meta() -> RunMetadata {
+        RunMetadata {
+            dims: DIMS, voxel_size: (1.0, 1.0, 1.0), affine: IDENTITY, n_echoes: 1,
+            echo_times: vec![0.004], b0_direction: (0.0, 0.0, 1.0), field_strength: 3.0,
+            has_magnitude: true, source_geometry: None,
+        }
+    }
+
+    /// A box `lo..hi` on every axis.
+    fn cube(lo: usize, hi: usize) -> Vec<u8> {
+        let (nx, ny, nz) = DIMS;
+        let mut m = vec![0u8; nx * ny * nz];
+        for k in lo..hi {
+            for j in lo..hi {
+                for i in lo..hi {
+                    m[i + j * nx + k * nx * ny] = 1;
+                }
+            }
+        }
+        m
+    }
+
+    struct Fixture {
+        _dir: tempfile::TempDir,
+        output: DerivativeOutputs,
+        run: QsmRun,
+        brain: Vec<u8>,
+        support: Vec<u8>,
+        chi_raw: Vec<f64>,
+    }
+
+    /// A brain mask of 6³ voxels, of which background removal kept the inner 4³: the raw map is
+    /// non-zero (and offset from zero by 0.05 ppm) on the support and exactly 0 on the eroded rim.
+    fn fixture() -> Fixture {
+        let dir = tempfile::tempdir().unwrap();
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let mut run = super::tests::run_with_echoes(vec![(dir.path().join("p.nii"), None)]);
+        run.dims = DIMS;
+        let (brain, support) = (cube(1, 7), cube(2, 6));
+        let chi_raw: Vec<f64> = support.iter().enumerate()
+            .map(|(i, &s)| if s != 0 { 0.05 + 0.001 * (i % 7) as f64 } else { 0.0 })
+            .collect();
+        let m = meta();
+        save_mask(&output.mask_path(&run.key), &brain, &m).unwrap();
+        save_mask(&output.bg_mask_path(&run.key), &support, &m).unwrap();
+        save_volume(&output.chi_raw_path(&run.key), &chi_raw, &m).unwrap();
+        // Compare against what is on disk, in whatever precision the NIfTI holds it.
+        let chi_raw = load_volume(&output.chi_raw_path(&run.key)).unwrap();
+        Fixture { _dir: dir, output, run, brain, support, chi_raw }
+    }
+
+    fn mean_over(chi: &[f64], mask: &[u8]) -> f64 {
+        let (s, n) = chi.iter().zip(mask).filter(|(_, &m)| m != 0)
+            .fold((0.0, 0usize), |(s, n), (&c, _)| (s + c, n + 1));
+        s / n as f64
+    }
+
+    /// Run the single-pass `reference` step over the fixture with `config`.
+    fn reference(f: &Fixture, config: &PipelineConfig) -> Vec<f64> {
+        let m = meta();
+        let state_path = f.output.state_path(&f.run.key);
+        let mut state = PipelineState::load_or_create(&state_path, config, &f.run.key, true);
+        let mut ctx = StageContext {
+            run: &f.run, config, output: &f.output, meta: &m,
+            state: &mut state, state_path: &state_path,
+        };
+        let pass = Pass::main(&f.output, &f.run.key);
+        stage_reference(
+            &mut ctx, &[pass.support(false)], &pass.chi_raw, f.output.qsm_path(&f.run.key),
+            Some(f.output.qsm_support_path(&f.run.key)), "reference", &|_| {},
+        ).unwrap();
+        load_volume(&f.output.qsm_path(&f.run.key)).unwrap()
+    }
+
+    fn sidecar_offset(f: &Fixture) -> f64 {
+        let sidecar = crate::bids::entities::sidecar_path(&f.output.qsm_path(&f.run.key)).unwrap();
+        read_json_object(&sidecar)["QsmReferenceOffsetPpm"].as_f64().unwrap()
+    }
+
+    fn rim(f: &Fixture) -> impl Iterator<Item = usize> + '_ {
+        (0..f.brain.len()).filter(|&i| f.brain[i] != 0 && f.support[i] == 0)
+    }
+
+    #[test]
+    fn mean_reference_is_measured_over_the_support_and_the_rim_stays_zero() {
+        let f = fixture();
+        let out = reference(&f, &PipelineConfig::default());
+
+        let true_mean = mean_over(&f.chi_raw, &f.support);
+        let brain_mean = mean_over(&f.chi_raw, &f.brain);
+        // The fixture has a real rim, and the brain-mask mean really is biased by it.
+        assert!(rim(&f).count() > 0);
+        assert!((true_mean - brain_mean).abs() > 0.01, "{true_mean} vs {brain_mean}");
+
+        for i in rim(&f) {
+            assert_eq!(out[i], 0.0, "eroded rim voxel {i} must be 0, not -offset");
+        }
+        for (i, &s) in f.support.iter().enumerate() {
+            if s != 0 {
+                assert!((out[i] - (f.chi_raw[i] - true_mean)).abs() < 1e-6, "voxel {i}");
+            }
+        }
+        assert!(mean_over(&out, &f.support).abs() < 1e-6, "the support's mean is the zero");
+        assert!((sidecar_offset(&f) - true_mean).abs() < 1e-9, "the recorded offset is the support mean");
+
+        // The support is published, and it is exactly where the map is defined.
+        assert_eq!(load_mask(&f.output.qsm_support_path(&f.run.key)).unwrap(), f.support);
+    }
+
+    #[test]
+    fn region_reference_is_measured_only_where_the_region_meets_the_support() {
+        let f = fixture();
+        let mut config = PipelineConfig::default();
+        config.qsm.reference = QsmReference::Region;
+        config.qsm.reference_region = Some("left-thalamus".into());
+        let ids = qsmxt_config::regions::resolve("left-thalamus", config.segmentation.version).unwrap();
+
+        // The region covers the lower half of the brain: half of it lies in the eroded rim, which
+        // is where a small deep structure (the accumbens) lost about half its voxels in practice.
+        let nxy = DIMS.0 * DIMS.1;
+        let roi: Vec<u8> = f.brain.iter().enumerate()
+            .map(|(i, &b)| u8::from(b != 0 && i / nxy < 4)).collect();
+        let dseg: Vec<f64> = roi.iter().map(|&r| if r != 0 { ids[0] as f64 } else { 0.0 }).collect();
+        save_volume(&f.output.dseg_path(&f.run.key), &dseg, &meta()).unwrap();
+
+        let out = reference(&f, &config);
+        let in_both: Vec<u8> = roi.iter().zip(&f.support).map(|(&r, &s)| r & s).collect();
+        let expected = mean_over(&f.chi_raw, &in_both);
+        assert!((expected - mean_over(&f.chi_raw, &roi)).abs() > 0.01, "the rim would bias it");
+        assert!((sidecar_offset(&f) - expected).abs() < 1e-9);
+        for i in rim(&f) {
+            assert_eq!(out[i], 0.0, "eroded rim voxel {i} must be 0");
+        }
+        assert!(mean_over(&out, &in_both).abs() < 1e-6);
+    }
+
+    /// `none` never left a shell — the raw rim is already 0 — and must keep not doing so.
+    #[test]
+    fn no_reference_leaves_the_rim_at_zero_and_the_support_untouched() {
+        let f = fixture();
+        let mut config = PipelineConfig::default();
+        config.qsm.reference = QsmReference::None;
+        let out = reference(&f, &config);
+        for (i, (&o, (&s, &c))) in out.iter().zip(f.support.iter().zip(&f.chi_raw)).enumerate() {
+            let expected = if s != 0 { c } else { 0.0 };
+            assert!((o - expected).abs() < 1e-6, "voxel {i}");
+        }
     }
 }

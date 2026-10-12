@@ -1370,7 +1370,7 @@ const BF_HELP: &[&str] = &[
 ];
 /// The two reference methods that need no parcellation, ahead of every region.
 const QSM_REF_METHODS: [(&str, &str); 2] = [
-    ("mean", "Subtract mean susceptibility within mask (recommended)"),
+    ("mean", "Subtract the mean susceptibility over the voxels the map is defined on (recommended)"),
     ("none", "No referencing (raw susceptibility values)"),
 ];
 
@@ -4059,7 +4059,7 @@ impl App {
                 FieldDef {
                     label: "QSM Reference",
                     kind: FieldKind::Select { options: qsm_ref_options().to_vec() },
-                    help: "What χ's zero is pinned to: the brain-mask mean, nothing, or the mean of a parcellation region. Same setting as QSM Reference on the QSM tab",
+                    help: "What χ's zero is pinned to: the mean over the voxels χ is defined on, nothing, or the mean of a parcellation region. Same setting as QSM Reference on the QSM tab",
                 },
             ],
             // Tab 4: Execution
