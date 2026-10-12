@@ -310,6 +310,7 @@ const WARN_REGISTRATION_NCC: f64 = 0.8;
 fn register_group(
     loaded: &[MemberData],
     members: &[&QsmRun],
+    registration: &qsmxt_config::RegistrationConfig,
     progress: &dyn Fn(&str),
 ) -> crate::Result<Vec<Registered>> {
     let (ref_dims, _, ref_affine) = loaded[0].geometry;
@@ -321,7 +322,8 @@ fn register_group(
         ))
     })?;
 
-    let params = RigidParams::default();
+    // The shared `--registration-*` settings (config `registration`).
+    let params: RigidParams = registration.to_core();
     let mut out = Vec::with_capacity(loaded.len());
     for (t, member) in loaded.iter().enumerate() {
         let (dims, _, affine) = member.geometry;
@@ -459,7 +461,7 @@ pub fn reconstruct_group(
         }
         (Some(why), true) => {
             info!("  co-registering: {why}");
-            let registered = register_group(&loaded, members, progress)?;
+            let registered = register_group(&loaded, members, &config.registration, progress)?;
             info!("  registration:");
             for row in registration_table(members, &registered) {
                 info!("    {row}");
