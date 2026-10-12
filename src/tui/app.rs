@@ -1434,6 +1434,22 @@ pub struct PipelineFormState {
     pub laplacian_solver: usize,
     /// FFT solver pad in voxels per side: "64" for every axis, or "64 64 32".
     pub laplacian_fft_pad: String,
+    /// Motion correction (off by default): reference index into [`MOTION_REFERENCE_OPTIONS`]
+    /// (0 first, 1 last, 2 a given echo), and the rigid registration's settings.
+    pub motion_correction: bool,
+    pub motion_reference: usize,
+    pub motion_reference_echo: String,
+    pub motion_chain: bool,
+    pub motion_chain_levels: String,
+    pub motion_min_ncc: String,
+    pub reg_levels: String,
+    pub reg_max_samples: String,
+    pub reg_max_iterations: String,
+    pub reg_max_evaluations: String,
+    pub reg_tolerance: String,
+    pub reg_rotation_step_deg: String,
+    pub reg_translation_step_mm: String,
+    pub reg_min_overlap: String,
 
     // Parameters (as Strings for text editing)
     pub inhomogeneity_correction: bool,
@@ -1798,6 +1814,20 @@ impl Default for PipelineFormState {
             b0_weight_assumed_t2star_ms: format!("{}", qsmxt_config::default_b0_weight_assumed_t2star_ms()),
             laplacian_solver: 0, // dct
             laplacian_fft_pad: qsmxt_config::default_laplacian_fft_pad()[0].to_string(),
+            motion_correction: false,
+            motion_reference: 0,
+            motion_reference_echo: "1".to_string(),
+            motion_chain: qsmxt_config::MotionCorrectionConfig::default().chain,
+            motion_chain_levels: qsmxt_config::MotionCorrectionConfig::default().chain_levels.to_string(),
+            motion_min_ncc: format!("{}", qsmxt_config::MotionCorrectionConfig::default().min_ncc),
+            reg_levels: format!("{}", qsmxt_config::RegistrationConfig::default().levels),
+            reg_max_samples: format!("{}", qsmxt_config::RegistrationConfig::default().max_samples),
+            reg_max_iterations: format!("{}", qsmxt_config::RegistrationConfig::default().max_iterations),
+            reg_max_evaluations: format!("{}", qsmxt_config::RegistrationConfig::default().max_evaluations),
+            reg_tolerance: format!("{}", qsmxt_config::RegistrationConfig::default().tolerance),
+            reg_rotation_step_deg: format!("{}", qsmxt_config::RegistrationConfig::default().rotation_step_deg),
+            reg_translation_step_mm: format!("{}", qsmxt_config::RegistrationConfig::default().translation_step_mm),
+            reg_min_overlap: format!("{}", qsmxt_config::RegistrationConfig::default().min_overlap),
             inhomogeneity_correction: true,
             ignore_slice_gap: false,
             obliquity_threshold: "-1".to_string(),
@@ -2077,6 +2107,12 @@ const ROBUST_FIT_LOSS_HELP: &[&str] = &[
     "Huber: caps an outlying echo's influence but never rejects it",
 ];
 pub const LAPLACIAN_SOLVER_OPTIONS: &[&str] = &["dct", "fft"];
+pub const MOTION_REFERENCE_OPTIONS: &[&str] = &["first", "last", "echo"];
+const MOTION_REFERENCE_HELP: &[&str] = &[
+    "Align every echo onto the first (best SNR; the published procedure) (default)",
+    "Align every echo onto the last",
+    "Align every echo onto a given echo (Reference Echo)",
+];
 const LAPLACIAN_SOLVER_HELP: &[&str] = &[
     "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
     "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap (UK Biobank)",
@@ -2282,6 +2318,39 @@ impl PipelineFormState {
             let is_laplacian = self.unwrapping_algorithm == 1;
             rows.push(self.section_header("fieldmap", "Field mapping",
                 format!("{} unwrapping", UNWRAP_OPTIONS.get(self.unwrapping_algorithm).copied().unwrap_or(""))));
+
+            // Motion correction runs first: everything below reads the corrected echoes.
+            rows.push(PipelineRow::Toggle {
+                label: "Motion Correction", field: "motion_correction",
+                help: "Rigidly co-register every echo onto a reference echo before field mapping (needs magnitude). Off by default",
+            });
+            if self.motion_correction {
+                rows.push(PipelineRow::AlgoSelect {
+                    label: "  Reference", field: "motion_reference",
+                    options: MOTION_REFERENCE_OPTIONS, help: MOTION_REFERENCE_HELP,
+                });
+                if self.motion_reference == 2 {
+                    rows.push(PipelineRow::Param { label: "    Reference Echo", field: "motion_reference_echo",
+                        help: "1-based echo number the others are aligned onto" });
+                }
+                rows.push(PipelineRow::Toggle { label: "  Chain", field: "motion_chain",
+                    help: "Seed each echo's registration from its neighbour's solution" });
+                if self.motion_chain {
+                    rows.push(PipelineRow::Param { label: "    Chain Levels", field: "motion_chain_levels",
+                        help: "Pyramid levels for a seeded registration (default 3)" });
+                }
+                rows.push(PipelineRow::Param { label: "  Min NCC", field: "motion_min_ncc",
+                    help: "NCC below which a registration is reported as suspect (0.3 for echoes; ~0.9 for repeats)" });
+                rows.push(PipelineRow::Note { text: "  Registration:" });
+                rows.push(PipelineRow::Param { label: "    Levels", field: "reg_levels", help: "Pyramid levels: the capture range; do not lower (default 5)" });
+                rows.push(PipelineRow::Param { label: "    Max Samples", field: "reg_max_samples", help: "Voxels sampled per metric evaluation, per level" });
+                rows.push(PipelineRow::Param { label: "    Max Iterations", field: "reg_max_iterations", help: "Powell cycles per level" });
+                rows.push(PipelineRow::Param { label: "    Max Evaluations", field: "reg_max_evaluations", help: "Metric evaluations across all levels (hard stop)" });
+                rows.push(PipelineRow::Param { label: "    Tolerance", field: "reg_tolerance", help: "Relative cost improvement per cycle that counts as converged" });
+                rows.push(PipelineRow::Param { label: "    Rotation Step (deg)", field: "reg_rotation_step_deg", help: "Initial rotation step at the finest level" });
+                rows.push(PipelineRow::Param { label: "    Translation Step (mm)", field: "reg_translation_step_mm", help: "Initial translation step at the finest level" });
+                rows.push(PipelineRow::Param { label: "    Min Overlap", field: "reg_min_overlap", help: "Smallest fraction of sampled voxels that must overlap" });
+            }
 
             // Phase offset removal (disabled for Laplacian)
             if !is_laplacian {
@@ -2820,6 +2889,8 @@ impl PipelineFormState {
         "laplacian_fft_pad",
         "linear_fit_reliability_threshold", "robust_fit_tuning", "robust_fit_iterations",
         "robust_fit_downweight_level", "robust_fit_flag_ratio",
+        "motion_reference_echo", "motion_chain_levels", "motion_min_ncc",
+        "reg_levels", "reg_max_samples", "reg_max_iterations", "reg_max_evaluations", "reg_tolerance", "reg_rotation_step_deg", "reg_translation_step_mm", "reg_min_overlap",
     ];
 
     /// Get a string parameter value by field name.
@@ -2854,6 +2925,17 @@ impl PipelineFormState {
             "robust_fit_iterations" => &self.robust_fit_iterations,
             "robust_fit_downweight_level" => &self.robust_fit_downweight_level,
             "robust_fit_flag_ratio" => &self.robust_fit_flag_ratio,
+            "motion_reference_echo" => &self.motion_reference_echo,
+            "motion_chain_levels" => &self.motion_chain_levels,
+            "motion_min_ncc" => &self.motion_min_ncc,
+            "reg_levels" => &self.reg_levels,
+            "reg_max_samples" => &self.reg_max_samples,
+            "reg_max_iterations" => &self.reg_max_iterations,
+            "reg_max_evaluations" => &self.reg_max_evaluations,
+            "reg_tolerance" => &self.reg_tolerance,
+            "reg_rotation_step_deg" => &self.reg_rotation_step_deg,
+            "reg_translation_step_mm" => &self.reg_translation_step_mm,
+            "reg_min_overlap" => &self.reg_min_overlap,
             "heidi_gradient_mask_floor" => &self.heidi_gradient_mask_floor,
             "heidi_continuation_steps" => &self.heidi_continuation_steps,
             "heidi_inner_iterations" => &self.heidi_inner_iterations,
@@ -3050,6 +3132,17 @@ impl PipelineFormState {
             "robust_fit_iterations" => Some(&mut self.robust_fit_iterations),
             "robust_fit_downweight_level" => Some(&mut self.robust_fit_downweight_level),
             "robust_fit_flag_ratio" => Some(&mut self.robust_fit_flag_ratio),
+            "motion_reference_echo" => Some(&mut self.motion_reference_echo),
+            "motion_chain_levels" => Some(&mut self.motion_chain_levels),
+            "motion_min_ncc" => Some(&mut self.motion_min_ncc),
+            "reg_levels" => Some(&mut self.reg_levels),
+            "reg_max_samples" => Some(&mut self.reg_max_samples),
+            "reg_max_iterations" => Some(&mut self.reg_max_iterations),
+            "reg_max_evaluations" => Some(&mut self.reg_max_evaluations),
+            "reg_tolerance" => Some(&mut self.reg_tolerance),
+            "reg_rotation_step_deg" => Some(&mut self.reg_rotation_step_deg),
+            "reg_translation_step_mm" => Some(&mut self.reg_translation_step_mm),
+            "reg_min_overlap" => Some(&mut self.reg_min_overlap),
             "heidi_gradient_mask_floor" => Some(&mut self.heidi_gradient_mask_floor),
             "heidi_continuation_steps" => Some(&mut self.heidi_continuation_steps),
             "heidi_inner_iterations" => Some(&mut self.heidi_inner_iterations),
@@ -3227,6 +3320,7 @@ impl PipelineFormState {
             "b0_weight_type" => self.b0_weight_type,
             "laplacian_solver" => self.laplacian_solver,
             "robust_fit_loss" => self.robust_fit_loss,
+            "motion_reference" => self.motion_reference,
             "mask_preset" => self.mask_preset,
             "separation_algorithm" => self.separation_algorithm,
             _ => 0,
@@ -3246,6 +3340,7 @@ impl PipelineFormState {
             "b0_weight_type" => self.b0_weight_type = val,
             "laplacian_solver" => self.laplacian_solver = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
+            "motion_reference" => self.motion_reference = val,
             "mask_preset" => {
                 self.mask_preset = val;
                 self.apply_mask_preset(val);
@@ -3281,6 +3376,8 @@ impl PipelineFormState {
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise,
             "ignore_slice_gap" => self.ignore_slice_gap,
+            "motion_correction" => self.motion_correction,
+            "motion_chain" => self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve,
             _ => false,
@@ -3313,6 +3410,8 @@ impl PipelineFormState {
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction = !self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
             "ignore_slice_gap" => self.ignore_slice_gap = !self.ignore_slice_gap,
+            "motion_correction" => self.motion_correction = !self.motion_correction,
+            "motion_chain" => self.motion_chain = !self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve = !self.vsharp_deconvolve,
             _ => {}
@@ -7346,6 +7445,7 @@ mod tests {
             ("laplacian-solver", LAPLACIAN_SOLVER_OPTIONS.len(), LAPLACIAN_SOLVER_HELP.len()),
             ("b0-estimation", B0_ESTIMATION_OPTIONS.len(), B0_ESTIMATION_HELP.len()),
             ("robust-fit-loss", ROBUST_FIT_LOSS_OPTIONS.len(), ROBUST_FIT_LOSS_HELP.len()),
+            ("motion-reference", MOTION_REFERENCE_OPTIONS.len(), MOTION_REFERENCE_HELP.len()),
             ("bg-removal", BF_OPTIONS.len(), BF_HELP.len()),
             ("qsm-reference", qsm_ref_options().len(), qsm_ref_help().len()),
             ("mask-preset", MASK_PRESET_OPTIONS.len(), MASK_PRESET_HELP.len()),

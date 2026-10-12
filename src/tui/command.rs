@@ -435,6 +435,25 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             amp_pe_max_pe_est_ite: None,
             amp_pe_cvg_thd: None,
         },
+        motion_params: crate::cli::MotionParamArgs {
+            motion_correction: ps.motion_correction,
+            motion_reference: if !ps.motion_correction { None } else { match ps.motion_reference {
+                1 => Some("last".to_string()),
+                2 => Some(ps.motion_reference_echo.trim().to_string()),
+                _ => None,
+            } },
+            no_motion_chain: ps.motion_correction && !ps.motion_chain,
+            motion_chain_levels: if ps.motion_correction { parse_optional_usize(&ps.motion_chain_levels) } else { None },
+            motion_min_ncc: if ps.motion_correction { parse_optional_f64(&ps.motion_min_ncc) } else { None },
+            registration_levels: if ps.motion_correction { parse_optional_usize(&ps.reg_levels) } else { None },
+            registration_max_samples: if ps.motion_correction { parse_optional_usize(&ps.reg_max_samples) } else { None },
+            registration_max_iterations: if ps.motion_correction { parse_optional_usize(&ps.reg_max_iterations) } else { None },
+            registration_max_evaluations: if ps.motion_correction { parse_optional_usize(&ps.reg_max_evaluations) } else { None },
+            registration_tolerance: if ps.motion_correction { parse_optional_f64(&ps.reg_tolerance) } else { None },
+            registration_rotation_step_deg: if ps.motion_correction { parse_optional_f64(&ps.reg_rotation_step_deg) } else { None },
+            registration_translation_step_mm: if ps.motion_correction { parse_optional_f64(&ps.reg_translation_step_mm) } else { None },
+            registration_min_overlap: if ps.motion_correction { parse_optional_f64(&ps.reg_min_overlap) } else { None },
+        },
         separation_params: crate::cli::SeparationParamArgs {
             r2star_qsm_r_const_3t: parse_optional_f64(&ps.sep_r2starqsm_r_const_3t),
             decompose_n_inner: parse_optional_usize(&ps.sep_decompose_n_inner),
@@ -791,6 +810,28 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     }
     config.masking.inhomogeneity_correction = ps.inhomogeneity_correction;
     config.pipeline.ignore_slice_gap = ps.ignore_slice_gap;
+    {
+        let m = &mut config.motion_correction;
+        m.enabled = ps.motion_correction;
+        m.reference = match ps.motion_reference {
+            1 => qsmxt_config::MotionReference::Last,
+            2 => ps.motion_reference_echo.trim().parse().unwrap_or_default(),
+            _ => qsmxt_config::MotionReference::First,
+        };
+        m.chain = ps.motion_chain;
+        if let Some(v) = parse_optional_usize(&ps.motion_chain_levels) { m.chain_levels = v; }
+        if let Some(v) = parse_optional_f64(&ps.motion_min_ncc) { m.min_ncc = v; }
+        let r = &mut config.registration;
+        if let Some(v) = parse_optional_usize(&ps.reg_levels) { r.levels = v; }
+        if let Some(v) = parse_optional_usize(&ps.reg_max_samples) { r.max_samples = v; }
+        if let Some(v) = parse_optional_usize(&ps.reg_max_iterations) { r.max_iterations = v; }
+        if let Some(v) = parse_optional_usize(&ps.reg_max_evaluations) { r.max_evaluations = v; }
+        if let Some(v) = parse_optional_f64(&ps.reg_tolerance) { r.tolerance = v; }
+        if let Some(v) = parse_optional_f64(&ps.reg_rotation_step_deg) { r.rotation_step_deg = v; }
+        if let Some(v) = parse_optional_f64(&ps.reg_translation_step_mm) { r.translation_step_mm = v; }
+        if let Some(v) = parse_optional_f64(&ps.reg_min_overlap) { r.min_overlap = v; }
+    }
+
     config.inversion.algorithm = qsm_algorithm;
 
     // Multi-orientation settings come from the Input tab, where the grouping is defined.
@@ -1262,6 +1303,47 @@ mod tests {
         assert!(qsmxt_config::generate_command(&c).contains("--ignore-slice-gap"));
         c.pipeline.ignore_slice_gap = false;
         assert!(!qsmxt_config::generate_command(&c).contains("--ignore-slice-gap"));
+    }
+
+    /// Motion correction and every registration setting reach the config and the CLI args, and
+    /// its rows only appear once it is on.
+    #[test]
+    fn motion_correction_settings_reach_config_and_args() {
+        let mut app = default_app();
+        app.pipeline_state.collapsed_sections.clear();
+        let fields = |app: &App| app.pipeline_state.visible_rows().iter().filter_map(|r| match r {
+            crate::tui::app::PipelineRow::AlgoSelect { field, .. }
+            | crate::tui::app::PipelineRow::Param { field, .. }
+            | crate::tui::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
+            _ => None,
+        }).collect::<Vec<_>>();
+        assert!(fields(&app).contains(&"motion_correction".to_string()));
+        assert!(!fields(&app).contains(&"reg_levels".to_string()));
+        assert_eq!(config_from_app(&app).motion_correction, qsmxt_config::MotionCorrectionConfig::default());
+        let ps = &mut app.pipeline_state;
+        ps.toggle("motion_correction");
+        ps.motion_reference = 2;
+        ps.motion_reference_echo = "2".into();
+        ps.toggle("motion_chain");
+        ps.motion_min_ncc = "0.9".into();
+        ps.reg_levels = "4".into();
+        ps.reg_min_overlap = "0.5".into();
+        let f = fields(&app);
+        for name in ["motion_reference", "motion_reference_echo", "motion_chain", "motion_min_ncc",
+                     "reg_levels", "reg_max_samples", "reg_max_iterations", "reg_max_evaluations",
+                     "reg_tolerance", "reg_rotation_step_deg", "reg_translation_step_mm", "reg_min_overlap"] {
+            assert!(f.contains(&name.to_string()), "{name} missing: {f:?}");
+        }
+        assert!(!f.contains(&"motion_chain_levels".to_string()), "chain levels hidden when chain is off");
+        let m = config_from_app(&app).motion_correction;
+        assert!(m.enabled && !m.chain);
+        assert_eq!(m.reference, qsmxt_config::MotionReference::Echo(2));
+        let reg = config_from_app(&app).registration;
+        assert_eq!((m.min_ncc, reg.levels, reg.min_overlap), (0.9, 4, 0.5));
+        let a = pipeline_args_from_app(&app).motion_params;
+        assert!(a.motion_correction && a.no_motion_chain);
+        assert_eq!(a.motion_reference.as_deref(), Some("2"));
+        assert_eq!((a.motion_min_ncc, a.registration_levels, a.registration_min_overlap), (Some(0.9), Some(4), Some(0.5)));
     }
 
     /// The inner-inversion choice belongs to QSMART and to nothing else. It used to be gated on a

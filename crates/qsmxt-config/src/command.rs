@@ -135,6 +135,24 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             });
         }
     }
+    // Motion correction (off by default).
+    let (m, md) = (&config.motion_correction, &d.motion_correction);
+    if m.enabled {
+        parts.push("--motion-correction".into());
+        emit_enum(&mut parts, "--motion-reference", &m.reference, &md.reference);
+        if !m.chain { parts.push("--no-motion-chain".into()); }
+        if m.chain { emit_usize(&mut parts, "--motion-chain-levels", m.chain_levels, md.chain_levels); }
+        emit_f64(&mut parts, "--motion-min-ncc", m.min_ncc, md.min_ncc);
+        let (r, rd) = (&config.registration, &d.registration);
+        emit_usize(&mut parts, "--registration-levels", r.levels, rd.levels);
+        emit_usize(&mut parts, "--registration-max-samples", r.max_samples, rd.max_samples);
+        emit_usize(&mut parts, "--registration-max-iterations", r.max_iterations, rd.max_iterations);
+        emit_usize(&mut parts, "--registration-max-evaluations", r.max_evaluations, rd.max_evaluations);
+        emit_f64(&mut parts, "--registration-tolerance", r.tolerance, rd.tolerance);
+        emit_f64(&mut parts, "--registration-rotation-step-deg", r.rotation_step_deg, rd.rotation_step_deg);
+        emit_f64(&mut parts, "--registration-translation-step-mm", r.translation_step_mm, rd.translation_step_mm);
+        emit_f64(&mut parts, "--registration-min-overlap", r.min_overlap, rd.min_overlap);
+    }
     emit_enum(&mut parts, "--b0-estimation", &config.field_mapping.b0_estimation, &d.field_mapping.b0_estimation);
     emit_enum(&mut parts, "--b0-weight-type", &config.field_mapping.b0_weight_type, &d.field_mapping.b0_weight_type);
     if config.field_mapping.b0_weight_type == B0WeightType::AssumedDecay {
@@ -961,6 +979,26 @@ frangi_c = 400.0
         // The robust settings mean nothing to the weighted average.
         c.field_mapping.b0_estimation = B0Estimation::WeightedAvg;
         assert!(!generate_command(&c).contains("--robust-fit-"));
+    }
+
+    #[test]
+    fn test_motion_correction_flags() {
+        let mut c = PipelineConfig::default();
+        assert!(!generate_command(&c).contains("motion"));
+        c.motion_correction.enabled = true;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--motion-correction"), "{cmd}");
+        assert!(!cmd.contains("--motion-reference") && !cmd.contains("--registration-"), "defaults: {cmd}");
+        c.motion_correction.reference = crate::motion::MotionReference::Echo(2);
+        c.motion_correction.chain = false;
+        c.motion_correction.min_ncc = 0.9;
+        c.registration.levels = 4;
+        c.registration.min_overlap = 0.5;
+        let cmd = generate_command(&c);
+        for f in ["--motion-reference 2", "--no-motion-chain", "--motion-min-ncc 0.9",
+                  "--registration-levels 4", "--registration-min-overlap 0.5"] {
+            assert!(cmd.contains(f), "missing {f}: {cmd}");
+        }
     }
 
     #[test]

@@ -657,6 +657,13 @@ pub struct PipelineConfig {
     pub homogeneity: HomogeneityConfig,
     #[serde(default)]
     pub multi_orientation: MultiOrientationConfig,
+    /// Rigid co-registration of the echoes before field mapping. Off by default.
+    #[serde(default)]
+    pub motion_correction: crate::motion::MotionCorrectionConfig,
+    /// Rigid registration settings, shared by motion correction and multi-orientation
+    /// co-registration (`--registration-*`).
+    #[serde(default)]
+    pub registration: crate::motion::RegistrationConfig,
 }
 
 /// Multi-orientation reconstruction (COSMOS / STI) over a group of runs.

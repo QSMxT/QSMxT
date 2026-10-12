@@ -724,6 +724,54 @@ pub struct QsmartParamArgs {
     pub qsmart_frangi_c: Option<f64>,
 }
 
+/// Retrospective motion correction: rigid co-registration of every echo onto a reference echo
+/// before field mapping. The `--registration-*` group is the rigid registration's own settings.
+#[derive(Args, Debug, Default, Clone)]
+pub struct MotionParamArgs {
+    /// Rigidly co-register every echo onto a reference echo (estimated on magnitude, applied to
+    /// phase through the complex signal) before field mapping, and restrict the mask to voxels
+    /// every echo covers. Off by default. Needs magnitude images
+    #[arg(long)]
+    pub motion_correction: bool,
+    /// Echo the others are aligned onto: `first` (default), `last`, or a 1-based echo number
+    #[arg(long, value_name = "first|last|N")]
+    pub motion_reference: Option<String>,
+    /// Register every echo from the identity instead of seeding it from its neighbour's solution
+    #[arg(long)]
+    pub no_motion_chain: bool,
+    /// Pyramid levels for a seeded (chained) registration (default 3)
+    #[arg(long)]
+    pub motion_chain_levels: Option<usize>,
+    /// NCC below which an echo's registration is reported as suspect (default 0.3, set for
+    /// echoes; ~0.9 suits repeats)
+    #[arg(long)]
+    pub motion_min_ncc: Option<f64>,
+    /// Registration pyramid levels: the capture range; do not lower (default 5)
+    #[arg(long)]
+    pub registration_levels: Option<usize>,
+    /// Registration: voxels sampled per metric evaluation, per level (default 200000)
+    #[arg(long)]
+    pub registration_max_samples: Option<usize>,
+    /// Registration: Powell cycles per level (default 20)
+    #[arg(long)]
+    pub registration_max_iterations: Option<usize>,
+    /// Registration: metric evaluations across all levels, a hard stop (default 5000)
+    #[arg(long)]
+    pub registration_max_evaluations: Option<usize>,
+    /// Registration: relative cost improvement per cycle that counts as converged (default 1e-5)
+    #[arg(long)]
+    pub registration_tolerance: Option<f64>,
+    /// Registration: initial rotation step at the finest level, degrees (default 3)
+    #[arg(long)]
+    pub registration_rotation_step_deg: Option<f64>,
+    /// Registration: initial translation step at the finest level, mm (default 3)
+    #[arg(long)]
+    pub registration_translation_step_mm: Option<f64>,
+    /// Registration: smallest fraction of sampled voxels that must overlap (default 0.25)
+    #[arg(long)]
+    pub registration_min_overlap: Option<f64>,
+}
+
 #[derive(Args, Debug, Default, Clone)]
 pub struct VsharpParamArgs {
     /// Undo V-SHARP's SMV high-pass with a truncated-SVD deconvolution (default: false). Off is
@@ -1144,6 +1192,8 @@ pub struct PipelineArgs {
     pub amp_pe_params: AmpPeParamArgs,
     #[command(flatten)]
     pub separation_params: SeparationParamArgs,
+    #[command(flatten)]
+    pub motion_params: MotionParamArgs,
     #[command(flatten)]
     pub vsharp_params: VsharpParamArgs,
     #[command(flatten)]

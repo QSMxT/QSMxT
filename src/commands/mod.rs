@@ -92,6 +92,7 @@ mod integration_tests {
                 hdqsm_params: Default::default(),
                 amp_pe_params: Default::default(),
                 separation_params: Default::default(),
+                motion_params: Default::default(),
                 vsharp_params: Default::default(),
                 pdf_params: Default::default(),
                 lbv_params: Default::default(),

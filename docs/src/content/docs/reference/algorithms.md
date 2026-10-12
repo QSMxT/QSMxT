@@ -302,6 +302,39 @@ QSMxT's default of 64 is UK Biobank's; STI Suite's own default is 12. In the TUI
 choosing Laplacian unwrapping shows a "Solver" selector, and `fft` a "FFT Pad
 (voxels)" field that accepts `64` or `64 64 32`.
 
+## Motion correction
+
+`--motion-correction` (off by default) rigidly co-registers every echo onto a
+reference echo before field mapping: the registration is estimated on the
+magnitude images (normalised cross-correlation, multi-resolution) and applied to
+the phase through the complex signal, so wraps are not interpolated. The mask is
+then restricted to voxels every echo still covers, and every later stage (field
+mapping, SWI, T2\*/R2\*, inversion) reads the corrected echoes. It needs magnitude
+images, and a run without them stops with an error; a single-echo run skips it.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--motion-reference` | `first` | echo the others are aligned onto: `first`, `last` or a 1-based echo number |
+| `--no-motion-chain` | chained | register every echo from the identity rather than from its neighbour's solution |
+| `--motion-chain-levels` | 3 | pyramid levels for a chained registration |
+| `--motion-min-ncc` | 0.3 | NCC below which a registration is reported as suspect (≈0.9 suits repeats) |
+| `--registration-levels` | 5 | pyramid levels: the capture range, not to be lowered |
+| `--registration-max-samples` | 200000 | voxels sampled per metric evaluation |
+| `--registration-max-iterations` | 20 | Powell cycles per level |
+| `--registration-max-evaluations` | 5000 | metric evaluations, a hard stop |
+| `--registration-tolerance` | 1e-5 | relative improvement that counts as converged |
+| `--registration-rotation-step-deg` | 3 | initial rotation step |
+| `--registration-translation-step-mm` | 3 | initial translation step |
+| `--registration-min-overlap` | 0.25 | smallest overlapping fraction accepted |
+
+The per-echo rotation, translation, largest tissue displacement, NCC, overlap and
+B0 direction go to `<run>_motion.json` in the `motion` workflow folder, and the log
+summarises them. Field mapping uses the reference echo's B0 direction; the log
+reports how far the echoes' B0 directions spread. With `--motion-reference` other
+than `first`, a mask made on the first echo's magnitude may sit offset from the
+corrected echoes, and QSMxT warns. In the TUI it is the first row of the Field
+mapping section, with every setting below it once switched on.
+
 ## Echo combination (B0 estimation)
 
 Multi-echo field maps combine the unwrapped echoes with `--b0-estimation`:

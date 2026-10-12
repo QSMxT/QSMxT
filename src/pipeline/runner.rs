@@ -47,6 +47,25 @@ impl StageContext<'_> {
     }
 
     fn dims(&self) -> (usize, usize, usize) { self.meta.dims }
+
+    /// Whether the echoes after masking are the motion-corrected ones.
+    fn motion_corrected(&self) -> bool {
+        self.config.motion_correction.enabled && self.meta.n_echoes > 1 && self.meta.has_magnitude
+    }
+
+    /// Echo `echo` (1-based) phase, in radians on the working grid, as the stages after motion
+    /// correction should read it.
+    fn echo_phase_path(&self, echo: usize) -> PathBuf {
+        if self.motion_corrected() { self.output.motion_phase_path(&self.run.key, echo) }
+        else { self.output.phase_scaled_path(&self.run.key, echo) }
+    }
+
+    /// Echo `echo` (1-based) magnitude on the working grid, as the stages after motion
+    /// correction should read it.
+    fn echo_mag_path(&self, echo: usize) -> PathBuf {
+        if self.motion_corrected() { self.output.motion_mag_path(&self.run.key, echo) }
+        else { self.output.mag_path(&self.run.key, echo) }
+    }
     fn voxel_size(&self) -> (f64, f64, f64) { self.meta.voxel_size }
 
     /// Write provenance.json, record params hash, and save pipeline state.
@@ -302,10 +321,13 @@ pub fn run_pipeline_cached(
     stage_scale_phase(&mut ctx, progress)?;
     stage_magnitude(&mut ctx, progress)?;
 
-    let mask_path = output.mask_path(&qsm_run.key);
+    let brain_mask_path = output.mask_path(&qsm_run.key);
     if needs_mask {
-        stage_mask(&mut ctx, &mask_path, progress)?;
+        stage_mask(&mut ctx, &brain_mask_path, progress)?;
     }
+    // Every stage after this reads the motion-corrected echoes (when on) and the mask every echo
+    // still covers; the published brain mask stays the one masking made.
+    let mask_path = if needs_mask { stage_motion(&mut ctx, &brain_mask_path, progress)? } else { brain_mask_path };
 
     if config.pipeline.do_swi && meta.has_magnitude {
         stage_swi(&mut ctx, &mask_path, progress)?;
@@ -885,6 +907,10 @@ fn stage_load(
     let geometry = serde_json::json!({
         "obliquity_threshold": config.pipeline.obliquity_threshold,
         "ignore_slice_gap": config.pipeline.ignore_slice_gap,
+        // Everything after masking reads the motion-corrected echoes, and no later step's cache
+        // key says so; changing these recomputes the run, as a geometry change does.
+        "motion_correction": config.motion_correction,
+        "registration": if config.motion_correction.enabled { Some(&config.registration) } else { None },
         "axial_only": qsmxt_config::bridge::axial_only_algorithms(
             config, run_orientation_facts(qsm_run, config)),
     });
@@ -922,6 +948,125 @@ fn stage_load(
         state.run_metadata.clone().ok_or_else(|| {
             QsmxtError::Config("Cached state missing run metadata".to_string())
         })
+    }
+}
+
+/// Retrospective motion correction: rigidly co-register every echo onto the reference echo
+/// (estimated on magnitude, applied to phase through the complex signal) and shrink the mask to
+/// where every echo still has data. Returns the mask the later stages should use.
+fn stage_motion(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<PathBuf> {
+    let m = &ctx.config.motion_correction;
+    if !m.enabled {
+        return Ok(mask_path.to_path_buf());
+    }
+    if !ctx.meta.has_magnitude {
+        return Err(QsmxtError::Config(
+            "--motion-correction needs magnitude images: the registration is estimated on magnitude, \
+             and this run has none".into()));
+    }
+    if ctx.meta.n_echoes < 2 {
+        log::warn!("Motion correction needs at least two echoes; this run has one, so it is skipped");
+        return Ok(mask_path.to_path_buf());
+    }
+    let out_mask = ctx.output.motion_mask_path(&ctx.run.key);
+    let params = serde_json::json!({
+        "motion_correction": m, "registration": ctx.config.registration, "n_echoes": ctx.meta.n_echoes,
+    });
+    if ctx.is_cached_with_params("motion", None, &params) && out_mask.exists() {
+        log::info!("Skipping motion correction (cached)");
+        return Ok(out_mask);
+    }
+    let t = Instant::now();
+    progress("Motion correction (rigid co-registration of the echoes)");
+    let n = ctx.meta.n_echoes;
+    if m.reference != qsmxt_config::MotionReference::First
+        && ctx.config.masking.sections.iter().any(|s| s.input == MaskingInput::MagnitudeFirst)
+    {
+        log::warn!("Motion correction aligns the echoes onto echo {} but the mask was made on the \
+                    first echo's magnitude; if the head moved, the mask is offset from the corrected \
+                    echoes", m.reference);
+    }
+    let mut phases = Vec::with_capacity(n);
+    let mut mags = Vec::with_capacity(n);
+    let mut inputs: Vec<PathBuf> = Vec::with_capacity(2 * n + 1);
+    for e in 1..=n {
+        let p = ctx.output.phase_scaled_path(&ctx.run.key, e);
+        let q = ctx.output.mag_path(&ctx.run.key, e);
+        phases.push(load_volume(&p)?);
+        mags.push(load_volume(&q)?);
+        inputs.push(p);
+        inputs.push(q);
+    }
+    let mask = load_mask(mask_path)?;
+    let phase_refs: Vec<&[f64]> = phases.iter().map(|v| v.as_slice()).collect();
+    let mag_refs: Vec<&[f64]> = mags.iter().map(|v| v.as_slice()).collect();
+    let meta = crate::pipeline::config::to_scan_metadata(
+        ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times, ctx.meta.field_strength, ctx.meta.b0_direction,
+    );
+    let r = qsm_core::pipeline::run_motion_correction(
+        &phase_refs, &mag_refs, &mask, &meta, &m.to_core(&ctx.config.registration), &mut |_, _| {},
+    ).map_err(|e| QsmxtError::Config(format!("motion correction: {e}")))?;
+
+    let mut outputs = Vec::with_capacity(2 * n + 2);
+    for e in 0..n {
+        let p = ctx.output.motion_phase_path(&ctx.run.key, e + 1);
+        let q = ctx.output.motion_mag_path(&ctx.run.key, e + 1);
+        save_volume(&p, &r.phases[e], ctx.meta)?;
+        save_volume(&q, &r.magnitudes[e], ctx.meta)?;
+        outputs.push(p);
+        outputs.push(q);
+    }
+    save_mask(&out_mask, &r.mask, ctx.meta)?;
+    outputs.push(out_mask.clone());
+    let report = motion_report_json(&r);
+    let report_path = ctx.output.motion_report_path(&ctx.run.key);
+    std::fs::write(&report_path, serde_json::to_string_pretty(&report)
+        .map_err(|e| QsmxtError::Config(format!("motion report: {e}")))?)?;
+    outputs.push(report_path);
+
+    log_motion_summary(&r, &mask);
+    let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).chain(std::iter::once(mask_path)).collect();
+    ctx.complete_step("motion", None, params, &input_refs, outputs, t)?;
+    log_step_done("Motion correction", t);
+    Ok(out_mask)
+}
+
+/// The motion report: per echo (1-based) rotation, translation, largest tissue displacement,
+/// NCC, overlap and whether the registration is suspect, plus the series' extremes.
+fn motion_report_json(r: &qsm_core::pipeline::MotionCorrectionResult) -> serde_json::Value {
+    serde_json::json!({
+        "reference_echo": r.motion.reference + 1,
+        "max_displacement_mm": r.max_displacement_mm(),
+        "rotation_spread_deg": r.rotation_spread_deg(),
+        "echoes": r.motion.volumes.iter().map(|v| serde_json::json!({
+            "echo": v.index + 1,
+            "rotation_deg": v.rotation_deg,
+            "translation_mm": v.translation_mm,
+            "max_displacement_mm": v.max_displacement_mm,
+            "ncc": v.ncc,
+            "overlap": v.overlap,
+            "suspect": v.suspect,
+            "b0_direction": [v.bdir.0, v.bdir.1, v.bdir.2],
+        })).collect::<Vec<_>>(),
+    })
+}
+
+fn log_motion_summary(r: &qsm_core::pipeline::MotionCorrectionResult, mask_in: &[u8]) {
+    for v in &r.motion.volumes {
+        log::info!("  echo {}: rotation {:.2}°, translation {:.2} mm, max displacement {:.2} mm, NCC {:.3}, overlap {:.2}{}",
+            v.index + 1, v.rotation_deg, v.translation_mm, v.max_displacement_mm, v.ncc, v.overlap,
+            if v.suspect { "  [suspect registration]" } else { "" });
+    }
+    log::info!("Motion: max displacement {:.2} mm, B0 direction spread {:.2}° (field mapping uses the reference echo's)",
+        r.max_displacement_mm(), r.rotation_spread_deg());
+    let suspect: Vec<String> = r.motion.volumes.iter().filter(|v| v.suspect).map(|v| (v.index + 1).to_string()).collect();
+    if !suspect.is_empty() {
+        log::warn!("Motion correction: the registration of echo(es) {} may have failed (low NCC or overlap); \
+                    check the motion report", suspect.join(", "));
+    }
+    let (before, after) = (count_set(mask_in), count_set(&r.mask));
+    if after < before {
+        log::info!("Mask restricted to voxels every echo covers: {} -> {} voxels", before, after);
     }
 }
 
@@ -1547,7 +1692,7 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let t = Instant::now();
     log::info!("Computing SWI (Laplacian unwrap + CLEAR-SWI + MIP)");
     progress("Computing SWI");
-    let phase_data = load_volume(&ctx.output.phase_scaled_path(&ctx.run.key, 1))?;
+    let phase_data = load_volume(&ctx.echo_phase_path(1))?;
     let mag_data = load_volume(&ctx.output.magnitude_path(&ctx.run.key))?;
     let mask = load_mask(mask_path)?;
 
@@ -1575,7 +1720,7 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let mip_path = ctx.output.swi_mip_path(&ctx.run.key);
     save_volume(&swi_path, &swi, ctx.meta)?;
     write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
-    let phase_path = ctx.output.phase_scaled_path(&ctx.run.key, 1);
+    let phase_path = ctx.echo_phase_path(1);
     let mag_input = ctx.output.magnitude_path(&ctx.run.key);
     ctx.complete_step("swi", Some("clear-swi"), swi_params, &[phase_path.as_path(), mag_input.as_path(), mask_path], vec![swi_path, mip_path], t)?;
     log_step_done("SWI", t);
@@ -2037,7 +2182,7 @@ fn stage_smwi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
 /// the run was moved to axial, and it is the only copy when the coils were combined. The source
 /// file is the fallback, and is only on the working grid when the run was not resampled.
 fn load_echo_magnitude(ctx: &StageContext, echo: usize) -> crate::Result<Vec<f64>> {
-    let intermediate = ctx.output.mag_path(&ctx.run.key, echo + 1);
+    let intermediate = ctx.echo_mag_path(echo + 1);
     let path = match ctx.run.echoes[echo].magnitude_nifti.as_ref() {
         Some(raw) if !intermediate.exists() => raw.clone(),
         _ => intermediate,
@@ -2760,7 +2905,7 @@ fn stage_unwrap(
     progress("Phase unwrapping / echo combination");
     let mut phases: Vec<NiftiData> = Vec::new();
     for i in 0..ctx.meta.n_echoes {
-        let p = io::read_nifti_file(&ctx.output.phase_scaled_path(&ctx.run.key, i + 1))
+        let p = io::read_nifti_file(&ctx.echo_phase_path(i + 1))
             .map_err(|e| QsmxtError::NiftiIo(format!("echo {}: {}", i + 1, e)))?;
         phases.push(p);
     }
@@ -2769,7 +2914,7 @@ fn stage_unwrap(
     // Load per-echo magnitudes
     let mut magnitudes: Vec<Vec<f64>> = Vec::new();
     for i in 0..ctx.meta.n_echoes {
-        let m_path = ctx.output.mag_path(&ctx.run.key, i + 1);
+        let m_path = ctx.echo_mag_path(i + 1);
         if m_path.exists() {
             magnitudes.push(load_volume(&m_path)?);
         }
@@ -2802,7 +2947,7 @@ fn stage_unwrap(
         std::fs::write(&json_path, json)?;
         outputs.push(json_path);
     }
-    let phase_inputs: Vec<PathBuf> = (0..ctx.meta.n_echoes).map(|i| ctx.output.phase_scaled_path(&ctx.run.key, i + 1)).collect();
+    let phase_inputs: Vec<PathBuf> = (0..ctx.meta.n_echoes).map(|i| ctx.echo_phase_path(i + 1)).collect();
     let input_refs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).chain(std::iter::once(mask_path)).collect();
     ctx.complete_step("unwrap", Some(unwrap_alg), unwrap_params, &input_refs, outputs, t)?;
     log_step_done("Phase unwrapping", t);
@@ -2819,13 +2964,13 @@ fn load_phase_echoes(ctx: &StageContext) -> crate::Result<PhaseEchoes> {
     let mut phases = Vec::new();
     let mut phase_inputs = Vec::new();
     for i in 0..ctx.meta.n_echoes {
-        let p = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
+        let p = ctx.echo_phase_path(i + 1);
         phases.push(load_volume(&p)?);
         phase_inputs.push(p);
     }
     let mut magnitudes = Vec::new();
     for i in 0..ctx.meta.n_echoes {
-        let m = ctx.output.mag_path(&ctx.run.key, i + 1);
+        let m = ctx.echo_mag_path(i + 1);
         if m.exists() {
             magnitudes.push(load_volume(&m)?);
         }
@@ -3106,7 +3251,7 @@ fn stage_tgv(
     let phase_data = if ctx.meta.n_echoes > 1 {
         load_volume(field_path)?
     } else {
-        load_volume(&ctx.output.phase_scaled_path(&ctx.run.key, 1))?
+        load_volume(&ctx.echo_phase_path(1))?
     };
 
     let (nx, ny, nz) = ctx.meta.dims;
@@ -4782,6 +4927,73 @@ mod swi_export_tests {
             has_magnitude: true,
             source_geometry: None, slice_geometry: None,
         }
+    }
+
+    /// Two echoes where the head moved 2 mm along x between them: the stage recovers the shift,
+    /// puts echo 2 back over echo 1, and the later stages read the corrected echoes and the
+    /// shrunk mask. Off, or without magnitude, it does what it says.
+    #[test]
+    fn motion_correction_stage() {
+        let dims = (32, 32, 24);
+        let (nx, ny, nz) = dims;
+        let blob = |shift: f64| -> Vec<f64> {
+            let mut v = vec![0.0; nx * ny * nz];
+            for k in 0..nz { for j in 0..ny { for i in 0..nx {
+                let (x, y, z) = (i as f64 - 15.5 - shift, j as f64 - 15.5, k as f64 - 11.5);
+                v[i + j * nx + k * nx * ny] = 100.0 * (-(x * x / 40.0 + y * y / 25.0 + z * z / 15.0)).exp()
+                    + 30.0 * (-((x - 4.0).powi(2) + (y + 3.0).powi(2) + z * z) / 6.0).exp();
+            }}}
+            v
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let k = key();
+        let mut run = run_for(k.clone());
+        run.echoes.push(run.echoes[0].clone());
+        run.echo_times = vec![0.004, 0.008];
+        let output = DerivativeOutputs::new(dir.path());
+        let mut meta = meta_for(dims, IDENTITY);
+        meta.n_echoes = 2;
+        meta.echo_times = vec![0.004, 0.008];
+        let mask_path = output.mask_path(&k);
+        let vs = meta.voxel_size;
+        for (e, shift) in [(1, 0.0), (2, 2.0)] {
+            write_volume(&output.mag_path(&k, e), &blob(shift), dims, vs, &IDENTITY).unwrap();
+            write_volume(&output.phase_scaled_path(&k, e), &vec![0.3 * e as f64; nx * ny * nz], dims, vs, &IDENTITY).unwrap();
+        }
+        let brain: Vec<f64> = blob(0.0).iter().map(|&v| (v > 5.0) as u8 as f64).collect();
+        write_volume(&mask_path, &brain, dims, vs, &IDENTITY).unwrap();
+
+        let state_path = dir.path().join("state.json");
+        let mut config = PipelineConfig::default();
+        let mut state = PipelineState::load_or_create(&state_path, &config, &k, true);
+        {
+            let mut ctx = StageContext { run: &run, config: &config, output: &output, meta: &meta, state: &mut state, state_path: &state_path };
+            assert_eq!(stage_motion(&mut ctx, &mask_path, &|_| {}).unwrap(), mask_path, "off: the mask is unchanged");
+            assert_eq!(ctx.echo_mag_path(2), output.mag_path(&k, 2), "off: the echoes are the scaled ones");
+        }
+
+        config.motion_correction.enabled = true;
+        let mut ctx = StageContext { run: &run, config: &config, output: &output, meta: &meta, state: &mut state, state_path: &state_path };
+        let shrunk = stage_motion(&mut ctx, &mask_path, &|_| {}).unwrap();
+        assert_eq!(shrunk, output.motion_mask_path(&k));
+        assert_eq!(ctx.echo_mag_path(2), output.motion_mag_path(&k, 2));
+        assert_eq!(ctx.echo_phase_path(1), output.motion_phase_path(&k, 1));
+        let report: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(output.motion_report_path(&k)).unwrap()).unwrap();
+        let t = report["echoes"][1]["translation_mm"].as_f64().unwrap();
+        assert!((t - 2.0).abs() < 0.2, "recovered translation {t} mm, report {report}");
+        assert_eq!(report["echoes"][0]["translation_mm"].as_f64().unwrap(), 0.0);
+        // Echo 2 now sits over echo 1 inside the brain.
+        let (m1, m2) = (load_volume(&output.motion_mag_path(&k, 1)).unwrap(), load_volume(&output.motion_mag_path(&k, 2)).unwrap());
+        let mask = load_mask(&shrunk).unwrap();
+        let err = m1.iter().zip(&m2).zip(&mask).filter(|(_, &m)| m != 0).map(|((a, b), _)| (a - b).abs()).fold(0.0, f64::max);
+        assert!(err < 5.0, "max magnitude difference after correction {err}");
+
+        let mut no_mag = meta.clone();
+        no_mag.has_magnitude = false;
+        let mut ctx = StageContext { run: &run, config: &config, output: &output, meta: &no_mag, state: &mut state, state_path: &state_path };
+        let e = stage_motion(&mut ctx, &mask_path, &|_| {}).unwrap_err().to_string();
+        assert!(e.contains("magnitude"), "{e}");
     }
 
     /// Something with structure in every direction, so a projection is not trivially constant.

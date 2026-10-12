@@ -108,6 +108,10 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     // per-mask-section, not global. BetParams is the odd one out — it predates mask sections
     // and still backs the --bet-* flags.
     cover!(q::bet::BetParams => c::BetConfig);
+    // declared_b0 comes from the run's scan metadata; rigid is RegistrationConfig.
+    cover!(q::motion::MotionParams => c::MotionCorrectionConfig, ignore: ["declared_b0", "rigid"]);
+    // initial is per volume, and overwritten by chaining.
+    cover!(q::registration::RigidParams => c::RegistrationConfig, ignore: ["initial"]);
     cover!(q::utils::HomogeneityParams => c::HomogeneityConfig);
     cover!(q::utils::LinearFitParams => c::LinearFitConfig);
     // estimate_offset / reliability_threshold_percentile are LinearFitConfig's, shared.

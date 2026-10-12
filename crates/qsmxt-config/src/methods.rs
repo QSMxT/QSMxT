@@ -671,6 +671,17 @@ fn describe_pad(p: [usize; 3]) -> String {
 /// unwrapping, and B0 estimation. Shared by the standard pipeline and QSMART
 /// (which consumes a pre-computed total field, so these steps still run).
 fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, citations: &mut Vec<&Citation>) {
+    let m = &config.motion_correction;
+    if m.enabled {
+        let reference = match m.reference {
+            crate::motion::MotionReference::First => "the first echo".to_string(),
+            crate::motion::MotionReference::Last => "the last echo".to_string(),
+            crate::motion::MotionReference::Echo(n) => format!("echo {n}"),
+        };
+        sentences.push(format!(
+            "Before field mapping, every echo was rigidly co-registered to {reference} by maximising the normalised cross-correlation of the magnitude images (multi-resolution, {} levels), and the phase was resampled with it through the complex signal; the brain mask was restricted to voxels covered by every echo.",
+            config.registration.levels));
+    }
     // Phase offset removal and/or bipolar correction (ROMEO only: the Laplacian path skips both)
     let romeo = config.field_mapping.unwrapping_algorithm == UnwrappingAlgorithm::Romeo;
     match (config.field_mapping.phase_offset_removal && romeo, config.field_mapping.bipolar_correction && romeo) {
@@ -1366,6 +1377,14 @@ mod tests {
         assert!(out.contains("Tukey biweight loss (tuning constant 4.685)"), "{out}");
         config.field_mapping.robust_fit.loss = RobustLoss::Huber;
         assert!(generate_methods(&config).contains("Huber loss (tuning constant 1.345)"));
+    }
+
+    #[test]
+    fn motion_correction_methods() {
+        let mut config = PipelineConfig::default();
+        assert!(!generate_methods(&config).contains("co-registered"));
+        config.motion_correction.enabled = true;
+        assert!(generate_methods(&config).contains("rigidly co-registered to the first echo"));
     }
 
     #[test]

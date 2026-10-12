@@ -134,6 +134,30 @@ fn separation_algorithm_arg_to_config(a: cli::SeparationAlgorithmArg) -> Separat
     }
 }
 
+/// Apply the motion-correction flags onto a config.
+pub fn apply_motion_overrides(config: &mut PipelineConfig, p: &cli::MotionParamArgs) {
+    let m = &mut config.motion_correction;
+    if p.motion_correction { m.enabled = true; }
+    if let Some(ref r) = p.motion_reference {
+        match r.parse() {
+            Ok(r) => m.reference = r,
+            Err(e) => log::warn!("Ignoring invalid --motion-reference: {e}"),
+        }
+    }
+    if p.no_motion_chain { m.chain = false; }
+    if let Some(v) = p.motion_chain_levels { m.chain_levels = v; }
+    if let Some(v) = p.motion_min_ncc { m.min_ncc = v; }
+    let r = &mut config.registration;
+    if let Some(v) = p.registration_levels { r.levels = v; }
+    if let Some(v) = p.registration_max_samples { r.max_samples = v; }
+    if let Some(v) = p.registration_max_iterations { r.max_iterations = v; }
+    if let Some(v) = p.registration_max_evaluations { r.max_evaluations = v; }
+    if let Some(v) = p.registration_tolerance { r.tolerance = v; }
+    if let Some(v) = p.registration_rotation_step_deg { r.rotation_step_deg = v; }
+    if let Some(v) = p.registration_translation_step_mm { r.translation_step_mm = v; }
+    if let Some(v) = p.registration_min_overlap { r.min_overlap = v; }
+}
+
 /// Apply QSMART parameter overrides onto a config. Shared by the `run` pipeline and the standalone
 /// `qsmxt qsmart` command so both honour the same flags.
 pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamArgs) {
@@ -539,6 +563,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(p) = &args.r2primenet_patch {
             if let [d, h, w] = p[..] { config.separation.r2primenet.patch = [d, h, w]; }
         }
+        apply_motion_overrides(config, &args.motion_params);
         let sp = &args.separation_params;
         if let Some(v) = sp.r2star_qsm_r_const_3t { config.separation.r2star_qsm.r_const_3t = v; }
         if let Some(v) = sp.decompose_n_inner { config.separation.decompose.n_inner = v; }
@@ -827,6 +852,27 @@ mod tests {
     fn ignore_slice_gap_from_cli() {
         assert!(!config_from_cli(&["qsmxt", "run", "<bids>"]).pipeline.ignore_slice_gap);
         assert!(config_from_cli(&["qsmxt", "run", "<bids>", "--ignore-slice-gap"]).pipeline.ignore_slice_gap);
+    }
+
+    #[test]
+    fn motion_correction_from_cli() {
+        let d = config_from_cli(&["qsmxt", "run", "<bids>"]);
+        assert!(!d.motion_correction.enabled, "off by default");
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--motion-correction",
+            "--motion-reference", "3", "--no-motion-chain", "--motion-chain-levels", "2",
+            "--motion-min-ncc", "0.9", "--registration-levels", "4", "--registration-max-samples", "1000",
+            "--registration-max-iterations", "7", "--registration-max-evaluations", "99",
+            "--registration-tolerance", "0.001", "--registration-rotation-step-deg", "2",
+            "--registration-translation-step-mm", "1.5", "--registration-min-overlap", "0.4"]);
+        let m = &c.motion_correction;
+        assert!(m.enabled && !m.chain);
+        assert_eq!(m.reference, qsmxt_config::MotionReference::Echo(3));
+        assert_eq!((m.chain_levels, m.min_ncc), (2, 0.9));
+        let r = &c.registration;
+        assert_eq!((r.levels, r.max_samples, r.max_iterations, r.max_evaluations), (4, 1000, 7, 99));
+        assert_eq!((r.tolerance, r.rotation_step_deg, r.translation_step_mm, r.min_overlap), (0.001, 2.0, 1.5, 0.4));
+        let l = config_from_cli(&["qsmxt", "run", "<bids>", "--motion-correction", "--motion-reference", "last"]);
+        assert_eq!(l.motion_correction.reference, qsmxt_config::MotionReference::Last);
     }
 
     #[test]
