@@ -1437,6 +1437,8 @@ pub struct PipelineFormState {
 
     // Parameters (as Strings for text editing)
     pub inhomogeneity_correction: bool,
+    /// Reconstruct a 2D acquisition whose sidecar says its slices leave a gap.
+    pub ignore_slice_gap: bool,
     pub obliquity_threshold: String,
 
     // Deep-learning overlap-tiling (empty = off / whole-volume). Shown for tileable DL inversions.
@@ -1797,6 +1799,7 @@ impl Default for PipelineFormState {
             laplacian_solver: 0, // dct
             laplacian_fft_pad: qsmxt_config::default_laplacian_fft_pad()[0].to_string(),
             inhomogeneity_correction: true,
+            ignore_slice_gap: false,
             obliquity_threshold: "-1".to_string(),
             dl_tile_size: String::new(),
             dl_tile_halo: String::new(),
@@ -2264,6 +2267,10 @@ impl PipelineFormState {
         rows.push(PipelineRow::Toggle {
             label: "Inhomog. Correction", field: "inhomogeneity_correction",
             help: "Apply B1 field correction to magnitude (improves masking, ROMEO weights, MEDI edges, SWI)",
+        });
+        rows.push(PipelineRow::Toggle {
+            label: "Ignore Slice Gap", field: "ignore_slice_gap",
+            help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
         });
 
         rows.push(PipelineRow::Separator);
@@ -3273,6 +3280,7 @@ impl PipelineFormState {
             "lsqr_fit_global_offset" => self.lsqr_fit_global_offset,
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise,
+            "ignore_slice_gap" => self.ignore_slice_gap,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve,
             _ => false,
@@ -3304,6 +3312,7 @@ impl PipelineFormState {
             "lsqr_fit_global_offset" => self.lsqr_fit_global_offset = !self.lsqr_fit_global_offset,
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction = !self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
+            "ignore_slice_gap" => self.ignore_slice_gap = !self.ignore_slice_gap,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve = !self.vsharp_deconvolve,
             _ => {}

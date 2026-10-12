@@ -134,6 +134,7 @@ mod integration_tests {
                 no_inhomogeneity_correction: false,
                 obliquity_threshold: None,
                 crop_to_mask: false,
+                ignore_slice_gap: false,
                 fft_padding: false,
                 crop_margin_mm: None,
                 output_space: None,

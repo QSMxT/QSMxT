@@ -1315,6 +1315,12 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub crop_to_mask: bool,
 
+    /// Reconstruct even when a 2D acquisition's sidecar `SliceThickness` is thinner than the
+    /// slice pitch. Without it, QSM refuses such a run: the gap between slices is unsampled
+    /// tissue, and the FFT kernels assume a contiguous grid, so the map would be wrong
+    #[arg(long)]
+    pub ignore_slice_gap: bool,
+
     /// Pad the grid outward to an FFT-friendly size before the FFT-bound stages. Much faster on
     /// an awkward grid, and discards nothing, but it changes where k-space is sampled and so
     /// shifts the reconstruction slightly. Off by default.

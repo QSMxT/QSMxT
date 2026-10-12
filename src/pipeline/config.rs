@@ -585,6 +585,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(tool) = &args.use_custom_masks { config.masking.custom_mask_tool = Some(tool.clone()); }
         if let Some(v) = args.obliquity_threshold { config.pipeline.obliquity_threshold = v; }
         if args.crop_to_mask { config.pipeline.crop_to_mask = true; }
+        if args.ignore_slice_gap { config.pipeline.ignore_slice_gap = true; }
         if args.fft_padding { config.pipeline.fft_padding = true; }
         if let Some(v) = args.crop_margin_mm { config.pipeline.crop_margin_mm = v; }
         if let Some(v) = args.output_space {
@@ -820,6 +821,12 @@ mod tests {
         });
         assert!(!c.field_mapping.linear_fit.estimate_offset);
         assert_eq!(c.field_mapping.linear_fit.reliability_threshold_percentile, 0.0);
+    }
+
+    #[test]
+    fn ignore_slice_gap_from_cli() {
+        assert!(!config_from_cli(&["qsmxt", "run", "<bids>"]).pipeline.ignore_slice_gap);
+        assert!(config_from_cli(&["qsmxt", "run", "<bids>", "--ignore-slice-gap"]).pipeline.ignore_slice_gap);
     }
 
     #[test]

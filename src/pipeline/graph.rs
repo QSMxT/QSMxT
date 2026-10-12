@@ -23,6 +23,11 @@ pub struct RunMetadata {
     /// every stage after `scale_phase` sees, and `b0_direction` is `(0,0,1)`.
     #[serde(default)]
     pub source_geometry: Option<((usize, usize, usize), [f64; 16])>,
+    /// `(thickness mm, voxel axis)` of the acquisition's slices on the working grid, when the
+    /// sidecar records them and the grid was not resampled; qsm-core's stages check it for a
+    /// gap. `None` = not known (or `--ignore-slice-gap`).
+    #[serde(default)]
+    pub slice_geometry: Option<(f64, usize)>,
 }
 
 /// Record of a completed step.
