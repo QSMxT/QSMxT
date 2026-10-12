@@ -378,6 +378,14 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
         match config.inversion.algorithm {
             QsmAlgorithm::Tgv => {
                 sentences.push("QSM was computed using the Total Generalized Variation (TGV) algorithm (Langkammer et al., 2015), which performs phase unwrapping, background field removal, and dipole inversion in a single step.".to_string());
+                let tgv = &config.inversion.tgv;
+                sentences.push(format!(
+                    "For single-echo data TGV was applied to the wrapped phase of the echo, converted to ppm using \
+                     its echo time and the field strength; for multi-echo data it was applied to the combined B0 \
+                     field map in ppm. Regularization weights were given in ppm (α0 = {}, α1 = {}; {} iterations, \
+                     {} mask erosions).",
+                    tgv.alpha0, tgv.alpha1, tgv.iterations, tgv.erosions,
+                ));
                 add_citation(&mut citations, &CITE_TGV);
             }
             QsmAlgorithm::Qsmart => {
@@ -1329,6 +1337,8 @@ mod tests {
         config.inversion.algorithm = QsmAlgorithm::Tgv;
         let out = generate_methods(&config);
         assert!(out.contains("Total Generalized Variation (TGV)"));
+        assert!(out.contains("Regularization weights were given in ppm"));
+        assert!(out.contains(&format!("α0 = {}", config.inversion.tgv.alpha0)));
         assert!(!out.contains("Phase unwrapping was performed"));
         assert!(!out.contains("Background field removal"));
     }

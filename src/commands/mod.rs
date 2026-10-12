@@ -1809,6 +1809,88 @@ mod integration_tests {
             bids_dir: dir.path().to_path_buf(), include: None, exclude: None,
         }).unwrap();
     }
+
+    // --- TGV scale regression (multi-echo TGV used to get the field in ppm as if it were rad) ---
+
+    /// A BIDS GRE dataset forward-simulated from the multi-orientation χ phantom: wrapped phase
+    /// `2π·γ·B0·TE·field_ppm` at each TE, unit magnitude inside a sphere, nothing outside.
+    fn write_phantom_gre_bids(root: &Path, echo_times: &[f64], b0_t: f64) {
+        use crate::testutils::multiorient as mo;
+        let anat = root.join("sub-1/anat");
+        std::fs::create_dir_all(&anat).unwrap();
+        let field = mo::forward_field(&mo::chi_phantom(), (0.0, 0.0, 1.0));
+        let n = mo::MO_N;
+        let c = n as f64 / 2.0;
+        let inside = |i: usize| {
+            let (x, y, z) = (i % n, (i / n) % n, i / (n * n));
+            let d2 = (x as f64 + 0.5 - c).powi(2) + (y as f64 + 0.5 - c).powi(2) + (z as f64 + 0.5 - c).powi(2);
+            d2 < (c - 1.0).powi(2)
+        };
+        let mag: Vec<f64> = (0..n * n * n).map(|i| if inside(i) { 1.0 } else { 0.0 }).collect();
+        let suffix = if echo_times.len() > 1 { "MEGRE" } else { "T2starw" };
+        for (e, &te) in echo_times.iter().enumerate() {
+            let rad_per_ppm = 2.0 * std::f64::consts::PI * 42.5781 * b0_t * te;
+            let phase: Vec<f64> = (0..field.len())
+                .map(|i| if inside(i) { (field[i] * rad_per_ppm + std::f64::consts::PI)
+                    .rem_euclid(2.0 * std::f64::consts::PI) - std::f64::consts::PI } else { 0.0 })
+                .collect();
+            let echo = if echo_times.len() > 1 { format!("_echo-{}", e + 1) } else { String::new() };
+            for (part, data) in [("phase", &phase), ("mag", &mag)] {
+                let stem = format!("sub-1{echo}_part-{part}_{suffix}");
+                mo::write(&anat.join(format!("{stem}.nii")), data);
+                testutils::write_sidecar(&anat.join(format!("{stem}.json")), te, b0_t);
+            }
+        }
+    }
+
+    /// Run the pipeline with `algo` and return the least-squares slope of χ against the
+    /// phantom's χ inside the phantom mask (offset-invariant, so referencing does not matter).
+    fn phantom_chi_slope(echo_times: &[f64], algo: QsmAlgorithmArg) -> f64 {
+        use crate::testutils::multiorient as mo;
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        write_phantom_gre_bids(&bids, echo_times, 3.0);
+        let mut args = default_run_args(bids, out.clone());
+        args.pipeline.qsm_algorithm = Some(algo);
+        args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
+        args.dry = false;
+        args.no_mem_limit = true;
+        super::run::execute(args).unwrap();
+
+        let chimap = out.join(format!("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii"));
+        let got = qsm_core::io::read_nifti_file(&chimap).unwrap().data;
+        let truth = mo::chi_phantom();
+        let mask = mo::mask();
+        let idx: Vec<usize> = (0..truth.len()).filter(|&i| mask[i] == 1 && got[i] != 0.0).collect();
+        assert!(idx.len() > 500, "too few scored voxels ({})", idx.len());
+        let k = idx.len() as f64;
+        let (mt, mg) = (idx.iter().map(|&i| truth[i]).sum::<f64>() / k, idx.iter().map(|&i| got[i]).sum::<f64>() / k);
+        let cov: f64 = idx.iter().map(|&i| (truth[i] - mt) * (got[i] - mg)).sum();
+        let var: f64 = idx.iter().map(|&i| (truth[i] - mt).powi(2)).sum();
+        cov / var
+    }
+
+    /// Multi-echo TGV gets the B0 field map in ppm (QSM.rs#170). Before, `stage_tgv` passed that
+    /// ppm field to a solver expecting rad at TE1, so χ came out 2π·γ·B0·TE1 too small: ~4× at
+    /// 3 T with TE1 = 5 ms (slope ~0.25). Its scale must now match the truth and RTS's.
+    #[test]
+    fn multi_echo_tgv_chi_has_the_right_scale() {
+        let tes = [0.005, 0.010, 0.015];
+        let tgv = phantom_chi_slope(&tes, QsmAlgorithmArg::Tgv);
+        let rts = phantom_chi_slope(&tes, QsmAlgorithmArg::Rts);
+        eprintln!("multi-echo phantom slope vs truth: TGV {tgv:.3}, RTS {rts:.3}");
+        assert!((0.6..1.4).contains(&tgv), "multi-echo TGV slope {tgv:.3} vs truth (the ppm-as-rad bug gives ~0.25)");
+        assert!((tgv / rts - 1.0).abs() < 0.3, "multi-echo TGV slope {tgv:.3} vs RTS {rts:.3}");
+    }
+
+    /// Single-echo TGV unwraps echo 1's phase itself and needs TE1 and B0 for the rad→ppm step.
+    #[test]
+    fn single_echo_tgv_chi_has_the_right_scale() {
+        let tgv = phantom_chi_slope(&[0.010], QsmAlgorithmArg::Tgv);
+        eprintln!("single-echo phantom slope vs truth: TGV {tgv:.3}");
+        assert!((0.6..1.4).contains(&tgv), "single-echo TGV slope {tgv:.3} vs truth");
+    }
 }
 /// End-to-end tests for the multi-orientation reconstructions.
 ///
