@@ -555,11 +555,10 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
                 alpha0: args.alpha0.unwrap_or(d.alpha0 as f64) as f32,
                 step_size: args.step_size.unwrap_or(d.step_size as f64) as f32,
                 tol: args.tol.unwrap_or(d.tol as f64) as f32,
-                fieldstrength: args.field_strength as f32,
-                te: args.echo_time as f32,
             };
+            // The input is a field in ppm, like every other `invert` algorithm's.
             let chi = qsm_core::inversion::tgv_qsm(
-                &field_nifti.data, &mask, &grid, &params, bdir, |_, _| {},
+                qsm_core::inversion::TgvInput::FieldPpm(&field_nifti.data), &mask, &grid, &params, bdir, |_, _| {},
             );
             (c, (chi, field_nifti))
         }

@@ -3225,56 +3225,83 @@ fn stage_tgv(
 ) -> crate::Result<()> {
     let (mask_path, chi_raw_path) = (pass.mask.as_path(), pass.chi_raw.clone());
     let tgv_step = pass.step("tgv");
-    let tgv_params = serde_json::json!({
+    // Multi-echo: the combined B0 field map, in ppm. Single echo: echo 1's wrapped phase, which
+    // TGV unwraps itself and converts to ppm with TE1 and B0. α are in ppm either way.
+    let multi_echo = ctx.meta.n_echoes > 1;
+    let te1_s = ctx.meta.echo_times[0];
+    let b0_t = ctx.meta.field_strength;
+    let mut tgv_params = serde_json::json!({
         "iterations": ctx.config.inversion.tgv.iterations,
-        "alphas": [ctx.config.inversion.tgv.alpha1, ctx.config.inversion.tgv.alpha0],
+        "alphas_ppm": [ctx.config.inversion.tgv.alpha1, ctx.config.inversion.tgv.alpha0],
         "erosions": ctx.config.inversion.tgv.erosions,
         "step_size": ctx.config.inversion.tgv.step_size,
         "tol": ctx.config.inversion.tgv.tol,
-        "te_ms": ctx.meta.echo_times[0] * 1000.0,
-        "field_strength": ctx.meta.field_strength,
+        "input": if multi_echo { "field_ppm" } else { "wrapped_phase" },
     });
+    if !multi_echo {
+        tgv_params["te_ms"] = serde_json::json!(te1_s * 1000.0);
+        tgv_params["field_strength"] = serde_json::json!(b0_t);
+    }
     if ctx.is_cached_with_params(&tgv_step, Some("tgv"), &tgv_params) {
         log::info!("Skipping tgv (cached)");
         return Ok(());
     }
     let t = Instant::now();
-    log::info!(
-        "TGV-QSM (iterations={}, alphas=[{}, {}], erosions={}, TE={:.3}ms, B0={:.1}T)",
-        ctx.config.inversion.tgv.iterations, ctx.config.inversion.tgv.alpha1, ctx.config.inversion.tgv.alpha0,
-        ctx.config.inversion.tgv.erosions, ctx.meta.echo_times[0] * 1000.0, ctx.meta.field_strength,
-    );
+    if multi_echo {
+        log::info!(
+            "TGV-QSM on the B0 field map (iterations={}, alphas=[{}, {}] ppm, erosions={})",
+            ctx.config.inversion.tgv.iterations, ctx.config.inversion.tgv.alpha1,
+            ctx.config.inversion.tgv.alpha0, ctx.config.inversion.tgv.erosions,
+        );
+    } else {
+        log::info!(
+            "TGV-QSM on wrapped echo-1 phase (iterations={}, alphas=[{}, {}] ppm, erosions={}, TE={:.3}ms, B0={:.1}T)",
+            ctx.config.inversion.tgv.iterations, ctx.config.inversion.tgv.alpha1,
+            ctx.config.inversion.tgv.alpha0, ctx.config.inversion.tgv.erosions, te1_s * 1000.0, b0_t,
+        );
+    }
     progress(&format!("TGV-QSM reconstruction{}", pass.label()));
     let mask = load_mask(mask_path)?;
     let bdir = ctx.meta.b0_direction;
 
-    let phase_data = if ctx.meta.n_echoes > 1 {
+    let data = if multi_echo {
         load_volume(field_path)?
     } else {
         load_volume(&ctx.echo_phase_path(1))?
+    };
+    let input = if multi_echo {
+        qsm_core::inversion::TgvInput::FieldPpm(&data)
+    } else {
+        if !(te1_s.is_finite() && te1_s > 0.0 && b0_t.is_finite() && b0_t > 0.0) {
+            return Err(QsmxtError::Config(format!(
+                "single-echo TGV needs a positive echo time and field strength (TE1 = {te1_s} s, B0 = {b0_t} T)"
+            )));
+        }
+        qsm_core::inversion::TgvInput::WrappedPhase { phase: &data, te_s: te1_s, b0_t }
     };
 
     let (nx, ny, nz) = ctx.meta.dims;
     let (vsx, vsy, vsz) = ctx.meta.voxel_size;
     let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-    let params = qsm_core::inversion::TgvParams {
-        alpha0: ctx.config.inversion.tgv.alpha0 as f32,
-        alpha1: ctx.config.inversion.tgv.alpha1 as f32,
-        iterations: ctx.config.inversion.tgv.iterations,
-        erosions: ctx.config.inversion.tgv.erosions,
-        step_size: ctx.config.inversion.tgv.step_size as f32,
-        tol: ctx.config.inversion.tgv.tol as f32,
-        fieldstrength: ctx.meta.field_strength as f32,
-        te: ctx.meta.echo_times[0] as f32,
-    };
-    let chi = qsm_core::inversion::tgv_qsm(
-        &phase_data, &mask, &grid, &params, bdir, |_, _| {},
-    );
+    let params = tgv_params_from_config(&ctx.config.inversion.tgv);
+    let chi = qsm_core::inversion::tgv_qsm(input, &mask, &grid, &params, bdir, |_, _| {});
 
     save_volume(&chi_raw_path, &chi, ctx.meta)?;
     ctx.complete_step(&tgv_step, Some("tgv"), tgv_params, &[mask_path, field_path], vec![chi_raw_path], t)?;
     log_step_done(&format!("TGV-QSM{}", pass.label()), t);
     Ok(())
+}
+
+/// qsm-core's TGV parameters from QSMxT's TGV config. α are in ppm.
+fn tgv_params_from_config(c: &crate::pipeline::config::TgvConfig) -> qsm_core::inversion::TgvParams {
+    qsm_core::inversion::TgvParams {
+        alpha0: c.alpha0 as f32,
+        alpha1: c.alpha1 as f32,
+        iterations: c.iterations,
+        erosions: c.erosions,
+        step_size: c.step_size as f32,
+        tol: c.tol as f32,
+    }
 }
 
 fn stage_qsmart(

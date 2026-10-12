@@ -205,10 +205,10 @@ pub struct TgvParamArgs {
     /// TGV erosions
     #[arg(long)]
     pub tgv_erosions: Option<usize>,
-    /// TGV alpha1 (first-order weight)
+    /// TGV alpha1 (first-order weight), in ppm (TE- and B0-independent)
     #[arg(long)]
     pub tgv_alpha1: Option<f64>,
-    /// TGV alpha0 (second-order weight)
+    /// TGV alpha0 (second-order weight), in ppm (TE- and B0-independent)
     #[arg(long)]
     pub tgv_alpha0: Option<f64>,
     /// TGV primal step size multiplier
@@ -2396,22 +2396,16 @@ pub struct InvertTsvdArgs {
 pub struct InvertTgvArgs {
     #[command(flatten)]
     pub common: InvertCommonArgs,
-    /// B0 field strength in Tesla
-    #[arg(long)]
-    pub field_strength: f64,
-    /// Echo time in seconds
-    #[arg(long)]
-    pub echo_time: f64,
     /// Iterations
     #[arg(long)]
     pub iterations: Option<usize>,
     /// Erosions
     #[arg(long)]
     pub erosions: Option<usize>,
-    /// Alpha1 (first-order weight)
+    /// Alpha1 (first-order weight), in ppm
     #[arg(long)]
     pub alpha1: Option<f64>,
-    /// Alpha0 (second-order weight)
+    /// Alpha0 (second-order weight), in ppm
     #[arg(long)]
     pub alpha0: Option<f64>,
     /// Primal step size multiplier

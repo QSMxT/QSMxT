@@ -7,7 +7,7 @@ license = "GPL-3.0-only"
 
 [dependencies]
 # TEMP: see the note in the root Cargo.toml. Must match the root pin exactly.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "a4efb4e98de924c1b9ea8a3f6cda493295583fc3" }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "dba7c6f4c1e34b3a2d3a44d0c42406e40d00218b" }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"

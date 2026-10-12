@@ -817,11 +817,8 @@ mod integration_tests {
     }
 
     #[test]
-    fn test_invert_tgv_requires_field_strength() {
-        // TGV has required field_strength and echo_time — this test verifies
-        // the struct requires them (they're not Option)
-        // Since they're required args in InvertTgvArgs, this is enforced at parse time.
-        // We just test that TGV runs with valid params.
+    fn test_invert_tgv_runs_on_a_ppm_field() {
+        // `invert tgv` takes a field in ppm like the other inversions: no TE or field strength.
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("field.nii");
         let mask = dir.path().join("mask.nii");
@@ -831,8 +828,6 @@ mod integration_tests {
 
         super::invert::execute(InvertCommand::Tgv(InvertTgvArgs {
             common: common_invert(input, mask, output.clone()),
-            field_strength: 3.0,
-            echo_time: 0.02,
             iterations: Some(5),
             erosions: Some(0),
             alpha1: None, alpha0: None,
@@ -1643,8 +1638,6 @@ mod integration_tests {
 
         super::invert::execute(InvertCommand::Tgv(InvertTgvArgs {
             common: common_invert(input, mask, output.clone()),
-            field_strength: 3.0,
-            echo_time: 0.02,
             iterations: Some(5),
             erosions: Some(0),
             alpha1: None, alpha0: None,
