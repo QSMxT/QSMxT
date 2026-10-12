@@ -2723,16 +2723,14 @@ fn stage_unwrap(
         ctx.meta.field_strength, ctx.meta.b0_direction,
     );
 
-    let weighting = crate::pipeline::fieldmap::EchoWeighting::from_config(&ctx.config.field_mapping);
     if unwrap_name == "laplacian" && ctx.meta.n_echoes > 1 {
         log::info!("Laplacian unwrapping per echo ({} solver), then {} ({} weighting)",
             ctx.config.field_mapping.laplacian_solver,
             ctx.config.field_mapping.b0_estimation, ctx.config.field_mapping.b0_weight_type);
     }
     let field_ppm = crate::pipeline::fieldmap::run_field_mapping(
-        &phase_slices, mag_option, &mask, &scan_meta, &fm_config, weighting,
-        crate::pipeline::fieldmap::Solver::from_config(&ctx.config.field_mapping),
-    ).map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
+        &phase_slices, mag_option, &mask, &scan_meta, &fm_config,
+    ).map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?.b0_field_ppm;
 
     save_volume(field_path, &field_ppm, ctx.meta)?;
     let phase_inputs: Vec<PathBuf> = (0..ctx.meta.n_echoes).map(|i| ctx.output.phase_scaled_path(&ctx.run.key, i + 1)).collect();
