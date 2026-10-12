@@ -1862,7 +1862,7 @@ mod integration_tests {
         args.no_mem_limit = true;
         super::run::execute(args).unwrap();
 
-        let chimap = out.join(format!("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii"));
+        let chimap = out.join("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii");
         let got = qsm_core::io::read_nifti_file(&chimap).unwrap().data;
         let truth = mo::chi_phantom();
         let mask = mo::mask();
