@@ -30,6 +30,37 @@ struct Provenance {
     timestamp: String,
 }
 
+/// Write one step's `provenance.json` — what BIDS-Prov is assembled from after the run (see
+/// [`crate::bids::bidsprov`]). Every step that writes a file anywhere in the derivatives has to
+/// call this, under a name listed in [`crate::bids::bidsprov::STEPS`] (or `GROUP_STEPS`).
+pub(crate) fn write_step_provenance(
+    prov_path: &Path,
+    step: &str,
+    algorithm: Option<&str>,
+    parameters: &serde_json::Value,
+    inputs: &[&Path],
+    outputs: &[PathBuf],
+    start: Instant,
+) -> crate::Result<()> {
+    let prov = Provenance {
+        step: step.to_string(),
+        algorithm: algorithm.map(|s| s.to_string()),
+        parameters: parameters.clone(),
+        inputs: inputs.iter().map(|p| p.display().to_string()).collect(),
+        outputs: outputs.iter().map(|p| p.display().to_string()).collect(),
+        duration_secs: start.elapsed().as_secs_f64(),
+        peak_memory_bytes: memory::process_rss_bytes(),
+        timestamp: chrono::Utc::now().to_rfc3339(),
+    };
+    if let Some(parent) = prov_path.parent() {
+        std::fs::create_dir_all(parent)?;
+    }
+    let json = serde_json::to_string_pretty(&prov)
+        .map_err(|e| QsmxtError::Config(format!("Failed to serialize provenance: {}", e)))?;
+    std::fs::write(prov_path, json)?;
+    Ok(())
+}
+
 /// Bundles references needed by every pipeline stage.
 struct StageContext<'a> {
     run: &'a QsmRun,
@@ -78,25 +109,8 @@ impl StageContext<'_> {
         output_paths: Vec<PathBuf>,
         start: Instant,
     ) -> crate::Result<()> {
-        // Write provenance.json
-        let output_refs: Vec<String> = output_paths.iter().map(|p| p.display().to_string()).collect();
-        let prov = Provenance {
-            step: step.to_string(),
-            algorithm: algorithm.map(|s| s.to_string()),
-            parameters: parameters.clone(),
-            inputs: inputs.iter().map(|p| p.display().to_string()).collect(),
-            outputs: output_refs,
-            duration_secs: start.elapsed().as_secs_f64(),
-            peak_memory_bytes: memory::process_rss_bytes(),
-            timestamp: chrono::Utc::now().to_rfc3339(),
-        };
         let prov_path = self.output.provenance_path(&self.run.key, step);
-        if let Some(parent) = prov_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
-        let json = serde_json::to_string_pretty(&prov)
-            .map_err(|e| QsmxtError::Config(format!("Failed to serialize provenance: {}", e)))?;
-        std::fs::write(&prov_path, json)?;
+        write_step_provenance(&prov_path, step, algorithm, &parameters, inputs, &output_paths, start)?;
 
         // Mark step done with params hash
         let hash = crate::pipeline::graph::step_params_hash(algorithm, &parameters);
@@ -635,7 +649,12 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
         write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
     }
 
-    ctx.complete_step("output_space", None, params, &[], files, t)?;
+    // Used: the working-grid originals each output was resampled from.
+    let originals: Vec<PathBuf> = files.iter()
+        .filter_map(|f| f.file_name().map(|n| stash.join(n)))
+        .collect();
+    let original_refs: Vec<&Path> = originals.iter().map(|p| p.as_path()).collect();
+    ctx.complete_step("output_space", None, params, &original_refs, files, t)?;
     log_step_done("Output space", t);
     Ok(())
 }
@@ -5326,6 +5345,67 @@ mod oblique_run_tests {
         run_pipeline_cached(&b, &resampling_config(), &output, false, false, &|_| {}).unwrap();
         assert_eq!(voxels(&output.mask_path(&b.key)), ACQUIRED);
         assert_eq!(voxels(&output.mask_path(&a.key)), a_working, "run a's mask was resampled by run b");
+    }
+
+    /// Every published image carries a sidecar whose `GeneratedBy` names an activity that is in
+    /// `prov/`, and the provenance records QSM.rs by its commit rather than "unknown" (#278).
+    /// Resampled back to the acquired grid, two-pass, with SWI/SMWI and R2*, so the steps that
+    /// rewrite and combine maps are all exercised.
+    #[test]
+    fn every_published_image_has_resolvable_provenance() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 3);
+        let mut config = resampling_config();
+        config.pipeline.do_t2starmap = true;
+        config.pipeline.do_r2starmap = true;
+        config.pipeline.do_swi = true;
+        config.pipeline.do_smwi = true;
+        config.masking.two_pass = true;
+        let deriv = dir.path().join("out");
+        let output = DerivativeOutputs::new(&deriv);
+        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+        crate::bids::bidsprov::write_provenance(&deriv, std::slice::from_ref(&run), &[], &output, "qsmxt run")
+            .unwrap();
+
+        let read = |p: &Path| -> serde_json::Value {
+            serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap()
+        };
+        let act = read(&deriv.join("prov/prov-qsmxt_act.json"));
+        let ent = read(&deriv.join("prov/prov-qsmxt_ent.json"));
+        let mut images = 0;
+        for entry in std::fs::read_dir(output.anat_dir(&run.key)).unwrap() {
+            let path = entry.unwrap().path();
+            if path.extension().is_none_or(|e| e != "nii") {
+                continue;
+            }
+            images += 1;
+            let sidecar = path.with_extension("json");
+            assert!(sidecar.exists(), "{} has no sidecar", path.display());
+            let meta = read(&sidecar);
+            let by = meta["GeneratedBy"].as_str()
+                .unwrap_or_else(|| panic!("{} has no GeneratedBy", sidecar.display()));
+            assert!(act.get(by).is_some(), "{}: GeneratedBy {by} is not in prov/", sidecar.display());
+            assert_eq!(meta["QSMrsVersion"], crate::bids::bidsprov::QSM_RS_VERSION);
+        }
+        assert!(images >= 10, "only {images} published images: the run did not exercise enough");
+        // Every GeneratedBy an entity names resolves too.
+        for (iri, e) in ent.as_object().unwrap() {
+            if let Some(by) = e["GeneratedBy"].as_str() {
+                assert!(act.get(by).is_some(), "entity {iri}: GeneratedBy {by} is not in prov/");
+            }
+        }
+        // The resampled maps were used from their working-grid originals, which are linked to the
+        // activities that made them.
+        let resample = &act[format!("bids::prov/#output_space-{}", run.key.basename())];
+        assert!(resample["Used"].as_array().unwrap().len() > 1, "{resample}");
+        for dir_entry in std::fs::read_dir(deriv.join("prov")).unwrap() {
+            let text = std::fs::read_to_string(dir_entry.unwrap().path()).unwrap();
+            assert!(!text.contains("unknown"), "provenance still says unknown");
+        }
+        let soft = read(&deriv.join("prov/prov-qsmxt_soft.json"));
+        let commit = env!("QSM_CORE_GIT_HASH");
+        assert!(soft.as_object().unwrap().values().any(|a| a["Label"] == "QSM.rs"
+            && a["CodeURL"].as_str().is_some_and(|u| u.ends_with(commit))), "{soft}");
     }
 
     /// `--clean-intermediates` treated the output-space step's files, which are the final

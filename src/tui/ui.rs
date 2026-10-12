@@ -269,7 +269,7 @@ fn draw_tabs(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     let tabs = Tabs::new(titles)
         .block(Block::default().borders(Borders::ALL).title(format!(
             " QSMxT ({}) / QSM.rs ({}) ",
-            env!("CARGO_PKG_VERSION"), env!("QSM_CORE_VERSION")
+            env!("CARGO_PKG_VERSION"), env!("QSM_CORE_DESCRIBE")
         )))
         .select(app.active_tab)
         .highlight_style(

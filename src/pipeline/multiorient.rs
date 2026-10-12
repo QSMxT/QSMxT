@@ -434,6 +434,7 @@ pub fn reconstruct_group(
 ) -> crate::Result<Vec<PathBuf>> {
     let kind = kind_of(config);
     info!("{kind} for {} ({} orientations)", group.label, members.len());
+    let started = std::time::Instant::now();
 
     let loaded: Vec<MemberData> = members
         .iter()
@@ -599,6 +600,33 @@ pub fn reconstruct_group(
         }),
         "ReferenceOrientation": members[0].key.to_string(),
     });
+    // Provenance, keyed by the group (see `bidsprov::GROUP_STEPS`): what was combined, how.
+    let mut inputs: Vec<PathBuf> = Vec::new();
+    for run in members {
+        inputs.push(output.local_field_path(&run.key));
+        let bg = output.bg_mask_path(&run.key);
+        inputs.push(if bg.exists() { bg } else { output.mask_path(&run.key) });
+        if registered.is_some() {
+            inputs.push(output.magnitude_path(&run.key));
+        }
+    }
+    let input_refs: Vec<&std::path::Path> = inputs.iter().map(|p| p.as_path()).collect();
+    crate::pipeline::runner::write_step_provenance(
+        &output.provenance_path(&key, desc),
+        desc,
+        Some(desc),
+        &serde_json::json!({
+            "lambda": config.multi_orientation.lambda,
+            "orientations": members.len(),
+            "registered": registered.is_some(),
+            "force": config.multi_orientation.force,
+            "group_by": config.multi_orientation.group_by,
+        }),
+        &input_refs,
+        &written,
+        started,
+    )?;
+
     let sidecar_path = output.multiorient_sidecar_path(&key, desc);
     if let Some(parent) = sidecar_path.parent() {
         std::fs::create_dir_all(parent)?;
@@ -806,6 +834,24 @@ mod tests {
         let reg = json["Registration"].as_array().unwrap();
         assert_eq!(reg.len(), 3);
         assert!(reg[0]["Reference"].as_bool().unwrap(), "member 0 is the reference");
+
+        // The COSMOS map is in BIDS-Prov, and its sidecar names that activity (#278) while
+        // keeping the direction table written beside it.
+        let key = group_key(&members);
+        crate::bids::bidsprov::write_provenance(
+            dir.path(), &runs,
+            &[crate::bids::bidsprov::ProvGroup { key: key.clone(), magnetic_field_strength: 3.0 }],
+            &output, "qsmxt run",
+        ).unwrap();
+        let act: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("prov/prov-qsmxt_act.json")).unwrap()).unwrap();
+        let cosmos: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(output.multiorient_sidecar_path(&key, "cosmos")).unwrap()).unwrap();
+        let by = cosmos["GeneratedBy"].as_str().expect("COSMOS sidecar has a GeneratedBy");
+        assert_eq!(by, format!("bids::prov/#cosmos-{}", key.basename()));
+        assert_eq!(act[by]["Used"].as_array().unwrap().len(), 1 + 3 * 3, "env + field, mask, magnitude per member");
+        assert!(cosmos["B0_dirs"].is_array(), "the direction table survives");
+        assert_eq!(cosmos["SkullStripped"], true);
 
         // The recovered directions must match the rotations the data was built with. Rotating
         // the object by `deg` about world x puts B0 at (0, sin deg, cos deg) in the common

@@ -24,12 +24,21 @@ use crate::bids::entities::{self, AcquisitionKey};
 const BIDSPROV_VERSION: &str = "0.0.1";
 const CONTEXT_URL: &str = "https://purl.org/nidash/bidsprov/context.json";
 
-/// Pipeline steps that emit a `provenance.json` (matches the `complete_step`
-/// calls in `pipeline::runner`). `load` is excluded — it records no step.
-const STEPS: &[&str] = &[
-    "scale_phase", "magnitude", "mask", "swi", "t2star_r2star",
-    "unwrap", "tgv", "qsmart", "bgremove", "invert", "reference",
+/// Every step that records a `provenance.json` under a run (the names `complete_step` is called
+/// with in `pipeline::runner`), in pipeline order. Order matters where a later step rewrites an
+/// earlier one's file in place — `output_space` returns the published maps to the acquired grid —
+/// because the file on disk is then the later step's. `load` records no step. A test keeps this
+/// list in step with the runner.
+pub const STEPS: &[&str] = &[
+    "motion", "scale_phase", "magnitude", "mask", "mask-reliable", "segmentation", "swi",
+    "t2star_r2star", "r2_r2prime", "unwrap",
+    "bgremove", "bgremove-reliable", "tgv", "tgv-reliable", "qsmart", "qsmart-reliable",
+    "invert", "invert-reliable", "twopass", "reference-singlepass", "reference",
+    "smwi", "chi_separation", "analysis", "output_space",
 ];
+
+/// Steps recorded under a multi-orientation group's key (`pipeline::multiorient`).
+pub const GROUP_STEPS: &[&str] = &["cosmos", "sti"];
 
 /// Deserialization view of the per-step `provenance.json` written by
 /// `pipeline::runner::Provenance`. Extra fields (e.g. `peak_memory_bytes`) are
@@ -51,6 +60,8 @@ struct StepProvenance {
 struct AgentRecord {
     label: String,
     version: String,
+    #[serde(rename = "CodeURL", skip_serializing_if = "Option::is_none")]
+    code_url: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -153,49 +164,75 @@ fn stage_parameters(algorithm: Option<&str>, parameters: &Value) -> Value {
     params
 }
 
-/// A final output and how to describe it in its sidecar.
-struct FinalOutput {
-    path: PathBuf,
-    /// Step (activity) that produced this file.
-    step: &'static str,
-    /// Whether acquisition metadata (field strength / echo time) is still valid
-    /// for this output and should be forwarded into the sidecar.
-    forward_meta: bool,
-    /// `SkullStripped` value, or `None` for `mask` (where the key does not apply
-    /// per the BIDS derivatives schema).
+/// Which acquisition metadata is still true of an output, and is forwarded into its sidecar.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Forward {
+    /// Nothing: a mask or label image.
+    Nothing,
+    /// `MagneticFieldStrength` only: a map fitted across echoes, or from another acquisition.
+    FieldStrength,
+    /// `MagneticFieldStrength`, and `EchoTime` when the run had a single echo.
+    FieldAndEcho,
+}
+
+/// How a published output is described in its sidecar.
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct OutputMeta {
+    forward: Forward,
+    /// `SkullStripped`, or `None` where the key does not apply (masks and label images, per the
+    /// BIDS derivatives schema).
     skull_stripped: Option<bool>,
 }
 
-/// Final outputs and how each should be described.
+const MASK: OutputMeta = OutputMeta { forward: Forward::Nothing, skull_stripped: None };
+
+/// The sidecar description of the published outputs QSMxT knows. Which step made each file is
+/// not listed here: it is read from the provenance records, so a sidecar can only ever name an
+/// activity that exists.
 ///
-/// `SkullStripped` (required for derivative anat images except `mask`) reflects
-/// whether the pipeline confines the output to the brain mask:
-/// - Chimap is referenced within the mask, and T2star*/R2star* are masked
-///   explicitly, so they are skull-stripped;
+/// `SkullStripped` (required for derivative anat images except `mask`) reflects whether the
+/// pipeline confines the output to the brain mask:
+/// - Chimap is referenced within the mask, and T2star*/R2star* are masked explicitly, so they
+///   are skull-stripped; SMWI is the magnitude weighted by a χ-derived mask, so it is confined
+///   the way the Chimap is;
 /// - the RSS magnitude (T2starw) and SWI/minIP retain full field-of-view signal.
-fn final_outputs(output: &DerivativeOutputs, key: &AcquisitionKey) -> Vec<FinalOutput> {
+fn run_outputs(output: &DerivativeOutputs, key: &AcquisitionKey) -> Vec<(PathBuf, OutputMeta)> {
+    let image = |forward, ss| OutputMeta { forward, skull_stripped: Some(ss) };
+    use Forward::*;
     vec![
-        FinalOutput { path: output.qsm_path(key), step: "reference", forward_meta: true, skull_stripped: Some(true) },
-        FinalOutput { path: output.mask_path(key), step: "mask", forward_meta: false, skull_stripped: None },
-        // The voxels the Chimap is defined on (and referenced over); written by referencing.
-        FinalOutput { path: output.qsm_support_path(key), step: "reference", forward_meta: false, skull_stripped: None },
-        // Two-pass only; skipped when absent, like every other optional output here.
-        FinalOutput { path: output.singlepass_qsm_path(key), step: "reference-singlepass", forward_meta: true, skull_stripped: Some(true) },
-        FinalOutput { path: output.two_pass_mask_path(key), step: "mask-reliable", forward_meta: false, skull_stripped: None },
-        FinalOutput { path: output.magnitude_path(key), step: "magnitude", forward_meta: true, skull_stripped: Some(false) },
-        FinalOutput { path: output.swi_path(key), step: "swi", forward_meta: true, skull_stripped: Some(false) },
-        FinalOutput { path: output.swi_mip_path(key), step: "swi", forward_meta: true, skull_stripped: Some(false) },
-        // SMWI is the magnitude weighted by a χ-derived mask, so it is confined to the brain mask
-        // the way the Chimap is — unlike SWI, which keeps full field-of-view signal.
-        // A dseg carries labels, not intensities, so it takes no SkullStripped — like the mask.
-        FinalOutput { path: output.dseg_path(key), step: "segmentation", forward_meta: false, skull_stripped: None },
-        FinalOutput { path: output.smwi_path(key, "paramagnetic"), step: "smwi", forward_meta: true, skull_stripped: Some(true) },
-        FinalOutput { path: output.smwi_path(key, "diamagnetic"), step: "smwi", forward_meta: true, skull_stripped: Some(true) },
-        FinalOutput { path: output.smwi_mip_path(key, "paramagnetic"), step: "smwi", forward_meta: true, skull_stripped: Some(true) },
-        FinalOutput { path: output.smwi_mip_path(key, "diamagnetic"), step: "smwi", forward_meta: true, skull_stripped: Some(true) },
-        FinalOutput { path: output.t2star_path(key), step: "t2star_r2star", forward_meta: true, skull_stripped: Some(true) },
-        FinalOutput { path: output.r2star_path(key), step: "t2star_r2star", forward_meta: true, skull_stripped: Some(true) },
+        (output.qsm_path(key), image(FieldAndEcho, true)),
+        (output.singlepass_qsm_path(key), image(FieldAndEcho, true)),
+        (output.mask_path(key), MASK),
+        (output.qsm_support_path(key), MASK),
+        (output.two_pass_mask_path(key), MASK),
+        (output.magnitude_path(key), image(FieldAndEcho, false)),
+        (output.swi_path(key), image(FieldAndEcho, false)),
+        (output.swi_mip_path(key), image(FieldAndEcho, false)),
+        (output.dseg_path(key), MASK),
+        (output.smwi_path(key, "paramagnetic"), image(FieldAndEcho, true)),
+        (output.smwi_path(key, "diamagnetic"), image(FieldAndEcho, true)),
+        (output.smwi_mip_path(key, "paramagnetic"), image(FieldAndEcho, true)),
+        (output.smwi_mip_path(key, "diamagnetic"), image(FieldAndEcho, true)),
+        (output.t2star_path(key), image(FieldStrength, true)),
+        (output.r2star_path(key), image(FieldStrength, true)),
+        // R2 comes from the multi-echo spin echo, so the GRE's echo time says nothing about it.
+        (output.r2_path(key), image(FieldStrength, true)),
+        (output.r2prime_path(key), image(FieldStrength, true)),
+        (output.r2prime_coverage_path(key), MASK),
+        (output.chi_para_path(key), image(FieldAndEcho, true)),
+        (output.chi_dia_path(key), image(FieldAndEcho, true)),
+        (output.chi_sep_total_path(key), image(FieldAndEcho, true)),
     ]
+}
+
+/// A multi-orientation group's outputs: COSMOS / STI maps, all fitted across orientations.
+fn group_meta() -> OutputMeta {
+    OutputMeta { forward: Forward::FieldStrength, skull_stripped: Some(true) }
+}
+
+fn is_nifti(path: &Path) -> bool {
+    let name = path.to_string_lossy();
+    name.ends_with(".nii") || name.ends_with(".nii.gz")
 }
 
 fn write_json<T: Serialize>(path: &Path, value: &T) -> crate::Result<()> {
@@ -219,22 +256,37 @@ fn environment_record() -> (String, EnvironmentRecord) {
     (iri, rec)
 }
 
+/// The QSM.rs (qsm-core) version recorded everywhere: its tag, or `rev-<full commit>`.
+pub const QSM_RS_VERSION: &str = env!("QSM_CORE_VERSION");
+
 /// Software (Agent) records: qsmxt itself and its bundled reconstruction
 /// library QSM.rs (the `qsm-core` crate, compiled into the binary — shipped
-/// with qsmxt rather than an external dependency, but independently versioned).
+/// with qsmxt rather than an external dependency, but independently versioned
+/// and pinned to an exact commit).
 fn agent_records() -> Vec<(String, AgentRecord)> {
     let qsmxt_version = env!("CARGO_PKG_VERSION");
-    let core_version = env!("QSM_CORE_VERSION");
+    let code_url = env!("QSM_CORE_CODE_URL");
     vec![
         (
             format!("bids::prov/#qsmxt-{}", qsmxt_version),
-            AgentRecord { label: "qsmxt".to_string(), version: qsmxt_version.to_string() },
+            AgentRecord { label: "qsmxt".to_string(), version: qsmxt_version.to_string(), code_url: None },
         ),
         (
-            format!("bids::prov/#qsm-core-{}", core_version),
-            AgentRecord { label: "QSM.rs".to_string(), version: core_version.to_string() },
+            format!("bids::prov/#qsm-rs-{}", QSM_RS_VERSION),
+            AgentRecord {
+                label: "QSM.rs".to_string(),
+                version: QSM_RS_VERSION.to_string(),
+                code_url: (!code_url.is_empty()).then(|| code_url.to_string()),
+            },
         ),
     ]
+}
+
+/// A multi-orientation group whose COSMOS / STI outputs are described alongside the runs.
+pub struct ProvGroup {
+    /// The group key its outputs and records are filed under.
+    pub key: AcquisitionKey,
+    pub magnetic_field_strength: f64,
 }
 
 /// Write BIDS-Prov records (`prov/`) and per-output `GeneratedBy` sidecars.
@@ -244,11 +296,16 @@ fn agent_records() -> Vec<(String, AgentRecord)> {
 /// `Command` is this literal command — the one that genuinely produced all the
 /// outputs — while `Label` names the stage and `Parameters` holds its settings.
 ///
+/// Every published NIfTI a step recorded (anything it wrote into the key's `anat/`) gets a
+/// sidecar whose `GeneratedBy` is the activity that last wrote it, and which records the qsmxt
+/// and QSM.rs versions.
+///
 /// Best-effort: individual unreadable `provenance.json` files are skipped with a
 /// warning rather than failing the whole write.
 pub fn write_provenance(
     derivatives_dir: &Path,
     runs: &[QsmRun],
+    groups: &[ProvGroup],
     output: &DerivativeOutputs,
     command: &str,
 ) -> crate::Result<()> {
@@ -260,20 +317,52 @@ pub fn write_provenance(
     let mut activities: Map<String, Value> = Map::new();
     let mut entities: Map<String, Value> = Map::new();
 
-    // Pass 1: read every step's provenance.json; register output entities keyed
-    // to their producing activity, and build a path -> activity index so that a
-    // later step's input can be linked to the activity that produced it.
+    // Pass 1: read every step's provenance.json; build a path -> activity index so that a later
+    // step's input can be linked to the activity that produced it.
     struct ParsedStep {
         step: &'static str,
         activity: String,
         prov: StepProvenance,
+        /// Inputs that were the step's own output before it rewrote them in place, mapped to
+        /// the activity that had made them.
+        used_from: BTreeMap<String, String>,
+    }
+    /// Who a published file belongs to, and how its sidecar describes it.
+    struct Owner<'a> {
+        anat: PathBuf,
+        known: Vec<(PathBuf, OutputMeta)>,
+        default_meta: OutputMeta,
+        field_strength: f64,
+        echo_times: &'a [f64],
     }
     let mut parsed: Vec<ParsedStep> = Vec::new();
     let mut produced_by: BTreeMap<String, String> = BTreeMap::new();
-
+    let mut owners: Vec<(AcquisitionKey, Owner, &'static [&'static str])> = Vec::new();
     for run in runs {
-        for &step in STEPS {
-            let path = output.provenance_path(&run.key, step);
+        owners.push((run.key.clone(), Owner {
+            anat: output.anat_dir(&run.key),
+            known: run_outputs(output, &run.key),
+            default_meta: MASK,
+            field_strength: run.magnetic_field_strength,
+            echo_times: &run.echo_times,
+        }, STEPS));
+    }
+    for group in groups {
+        owners.push((group.key.clone(), Owner {
+            anat: output.anat_dir(&group.key),
+            known: Vec::new(),
+            default_meta: group_meta(),
+            field_strength: group.magnetic_field_strength,
+            echo_times: &[],
+        }, GROUP_STEPS));
+    }
+
+    // Which owner's step last wrote each file — runs of one session share `anat/`, so the
+    // directory alone does not say whose a file is.
+    let mut written_for: BTreeMap<String, usize> = BTreeMap::new();
+    for (owner_idx, (key, _, steps)) in owners.iter().enumerate() {
+        for &step in steps.iter() {
+            let path = output.provenance_path(key, step);
             if !path.exists() {
                 continue;
             }
@@ -291,22 +380,38 @@ pub fn write_provenance(
                     continue;
                 }
             };
-            let activity = activity_iri(step, &run.key);
+            let activity = activity_iri(step, key);
+            // A step that rewrites files in place (output_space) used the earlier version of each:
+            // the working-grid copy it read is the file an earlier activity made.
+            let mut used_from = BTreeMap::new();
+            for inp in &prov.inputs {
+                if produced_by.contains_key(inp) {
+                    continue;
+                }
+                let name = Path::new(inp).file_name();
+                if let Some(earlier) = prov.outputs.iter()
+                    .find(|o| Path::new(o).file_name() == name)
+                    .and_then(|o| produced_by.get(o))
+                {
+                    used_from.insert(inp.clone(), earlier.clone());
+                }
+            }
             for out in &prov.outputs {
                 produced_by.insert(out.clone(), activity.clone());
+                written_for.insert(out.clone(), owner_idx);
             }
-            parsed.push(ParsedStep { step, activity, prov });
+            parsed.push(ParsedStep { step, activity, prov, used_from });
         }
     }
 
-    // Output entities: generated by their producing activity.
+    // Output entities: generated by the activity that last wrote them.
     for ps in &parsed {
         for out in &ps.prov.outputs {
             let iri = entity_iri(derivatives_dir, out);
             let rec = EntityRecord {
                 label: file_label(out),
                 at_location: Some(at_location(derivatives_dir, out)),
-                generated_by: Some(ps.activity.clone()),
+                generated_by: produced_by.get(out).cloned(),
             };
             entities.insert(iri, serde_json::to_value(rec).unwrap_or(Value::Null));
         }
@@ -322,7 +427,7 @@ pub fn write_provenance(
                 let rec = EntityRecord {
                     label: file_label(inp),
                     at_location: Some(at_location(derivatives_dir, inp)),
-                    generated_by: produced_by.get(inp).cloned(),
+                    generated_by: produced_by.get(inp).or_else(|| ps.used_from.get(inp)).cloned(),
                 };
                 serde_json::to_value(rec).unwrap_or(Value::Null)
             });
@@ -361,41 +466,54 @@ pub fn write_provenance(
     write_json(&prov_dir.join("prov-qsmxt_act.json"), &Value::Object(activities))?;
     write_json(&prov_dir.join("prov-qsmxt_ent.json"), &Value::Object(entities))?;
 
-    // Per-output GeneratedBy sidecars.
-    for run in runs {
-        for fo in final_outputs(output, &run.key) {
-            if !fo.path.exists() {
-                continue;
-            }
-            let Some(sidecar) = entities::sidecar_path(&fo.path) else {
-                continue;
-            };
-            // Start from what is already there: the pipeline writes its own fields into this
-            // sidecar (the QSM reference, for one), and clobbering them here would lose them.
-            let mut obj: Map<String, Value> = std::fs::read_to_string(&sidecar).ok()
-                .and_then(|s| serde_json::from_str::<Value>(&s).ok())
-                .and_then(|v| v.as_object().cloned())
-                .unwrap_or_default();
-            // Required for derivative anat images (except mask).
-            if let Some(ss) = fo.skull_stripped {
-                obj.insert("SkullStripped".to_string(), Value::Bool(ss));
-            }
-            if fo.forward_meta {
-                obj.insert(
-                    "MagneticFieldStrength".to_string(),
-                    serde_json::json!(run.magnetic_field_strength),
+    // A published output no step claims cannot be given a GeneratedBy that resolves: say so
+    // rather than name an activity that is not in `prov/`.
+    for (_, owner, _) in &owners {
+        for (path, _) in &owner.known {
+            if path.exists() && !written_for.contains_key(&path.display().to_string()) {
+                warn!(
+                    "BIDS-Prov: no step recorded writing {}, so its sidecar names no GeneratedBy \
+                     (was its workflow directory removed?)",
+                    path.display()
                 );
-                // EchoTime remains valid only when a single echo was used.
-                if run.echo_times.len() == 1 {
-                    obj.insert("EchoTime".to_string(), serde_json::json!(run.echo_times[0]));
-                }
             }
-            obj.insert(
-                "GeneratedBy".to_string(),
-                Value::String(activity_iri(fo.step, &run.key)),
-            );
-            write_json(&sidecar, &Value::Object(obj))?;
         }
+    }
+
+    // Per-output sidecars: every published NIfTI that some step recorded writing.
+    for (file, &owner_idx) in &written_for {
+        let owner = &owners[owner_idx].1;
+        let activity = &produced_by[file];
+        let path = PathBuf::from(file);
+        if path.parent() != Some(owner.anat.as_path()) || !is_nifti(&path) || !path.exists() {
+            continue;
+        }
+        let meta = owner.known.iter().find(|(p, _)| *p == path).map(|(_, m)| *m)
+            .unwrap_or(owner.default_meta);
+        let Some(sidecar) = entities::sidecar_path(&path) else {
+            continue;
+        };
+        // Start from what is already there: the pipeline writes its own fields into this
+        // sidecar (the QSM reference, for one), and clobbering them here would lose them.
+        let mut obj: Map<String, Value> = std::fs::read_to_string(&sidecar).ok()
+            .and_then(|s| serde_json::from_str::<Value>(&s).ok())
+            .and_then(|v| v.as_object().cloned())
+            .unwrap_or_default();
+        // Required for derivative anat images (except mask).
+        if let Some(ss) = meta.skull_stripped {
+            obj.insert("SkullStripped".to_string(), Value::Bool(ss));
+        }
+        if meta.forward != Forward::Nothing {
+            obj.insert("MagneticFieldStrength".to_string(), serde_json::json!(owner.field_strength));
+        }
+        // EchoTime remains valid only when a single echo was used.
+        if meta.forward == Forward::FieldAndEcho && owner.echo_times.len() == 1 {
+            obj.insert("EchoTime".to_string(), serde_json::json!(owner.echo_times[0]));
+        }
+        obj.insert("GeneratedBy".to_string(), Value::String(activity.clone()));
+        obj.insert("QSMxTVersion".to_string(), Value::String(env!("CARGO_PKG_VERSION").to_string()));
+        obj.insert("QSMrsVersion".to_string(), Value::String(QSM_RS_VERSION.to_string()));
+        write_json(&sidecar, &Value::Object(obj))?;
     }
 
     Ok(())
@@ -415,6 +533,52 @@ mod tests {
             inversion: None,
             run: None,
             suffix: "MEGRE".to_string(),
+        }
+    }
+
+    /// `STEPS` has to name every step the runner records, or that step's provenance is never
+    /// read and the files it wrote get no `GeneratedBy` (#278). Read off the runner's source:
+    /// literal step names, each two-pass step in both passes, and the few built at run time.
+    #[test]
+    fn steps_cover_every_recorded_step() {
+        let src = include_str!("../pipeline/runner.rs");
+        let src = &src[..src.find("#[cfg(test)]").unwrap()];
+        let literal_after = |pat: &str| -> Vec<String> {
+            src.match_indices(pat)
+                .filter_map(|(i, _)| {
+                    let rest = src[i + pat.len()..].trim_start();
+                    let rest = rest.strip_prefix('"')?;
+                    Some(rest[..rest.find('"')?].to_string())
+                })
+                .collect()
+        };
+        let mut names = literal_after("complete_step(");
+        names.extend(literal_after("complete_step_with_metadata("));
+        for base in literal_after("pass.step(") {
+            names.push(format!("{base}{}", crate::pipeline::graph::RELIABLE_SUFFIX));
+            names.push(base);
+        }
+        // Built at run time: the reliable mask, and the single-pass map of a two-pass run.
+        names.push(format!("mask{}", crate::pipeline::graph::RELIABLE_SUFFIX));
+        for name in ["reference", "reference-singlepass"] {
+            assert!(src.contains(&format!("\"{name}\", progress")), "stage_reference no longer records {name:?}");
+            names.push(name.to_string());
+        }
+        for name in &names {
+            assert!(STEPS.contains(&name.as_str()), "step {name:?} is recorded but missing from STEPS");
+        }
+        // Every call site whose name is not a literal is one of the cases handled above (the
+        // two-pass stages, the reliable mask, referencing, and complete_step_with_metadata's own
+        // forwarding call). A new one has to be added here (and to STEPS).
+        let dynamic = src.match_indices("complete_step(").chain(src.match_indices("complete_step_with_metadata("))
+            .filter(|(i, pat)| {
+                let rest = src[i + pat.len()..].trim_start();
+                !rest.starts_with('"') && !rest.starts_with("&mut")
+            })
+            .count();
+        assert_eq!(dynamic, 9, "a step name is built somewhere new: cover it in STEPS and in this test");
+        for step in STEPS {
+            assert!(names.iter().any(|n| n == step), "STEPS lists {step:?}, which no step records");
         }
     }
 
@@ -503,7 +667,7 @@ mod tests {
             mese: None,
         };
 
-        write_provenance(deriv, &[run], &output, "qsmxt run /data/bids --qsm-algorithm tkd").unwrap();
+        write_provenance(deriv, &[run], &[], &output, "qsmxt run /data/bids --qsm-algorithm tkd").unwrap();
 
         // base
         let base: Value = serde_json::from_str(

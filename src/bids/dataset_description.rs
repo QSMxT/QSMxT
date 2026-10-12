@@ -19,7 +19,7 @@ struct GeneratedBy {
     name: String,
     #[serde(rename = "Version")]
     version: String,
-    #[serde(rename = "CodeURL")]
+    #[serde(rename = "CodeURL", skip_serializing_if = "String::is_empty")]
     code_url: String,
 }
 
@@ -59,11 +59,21 @@ fn build(source_bids_dir: &Path) -> DatasetDescription {
         name: "QSMxT QSM outputs".to_string(),
         bids_version: BIDS_VERSION.to_string(),
         dataset_type: "derivative".to_string(),
-        generated_by: vec![GeneratedBy {
-            name: "qsmxt".to_string(),
-            version: env!("CARGO_PKG_VERSION").to_string(),
-            code_url: CODE_URL.to_string(),
-        }],
+        // qsmxt first: BIDS requires the first entry's Name to be a substring of the
+        // derivatives directory name. QSM.rs, which does the reconstruction, is pinned to an
+        // exact commit, recorded here so every map can be traced to the code that made it.
+        generated_by: vec![
+            GeneratedBy {
+                name: "qsmxt".to_string(),
+                version: env!("CARGO_PKG_VERSION").to_string(),
+                code_url: CODE_URL.to_string(),
+            },
+            GeneratedBy {
+                name: "QSM.rs".to_string(),
+                version: env!("QSM_CORE_VERSION").to_string(),
+                code_url: env!("QSM_CORE_CODE_URL").to_string(),
+            },
+        ],
         source_datasets,
     }
 }
@@ -171,5 +181,18 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(&text).unwrap();
         assert_eq!(value["DatasetType"], "derivative");
         assert_eq!(value["GeneratedBy"][0]["Name"], "qsmxt");
+    }
+
+    /// The QSM.rs commit behind the maps has to be recoverable from the outputs (#278).
+    #[test]
+    fn qsm_rs_is_recorded_by_its_full_commit() {
+        let desc = build(Path::new("/nonexistent"));
+        let core = &desc.generated_by[1];
+        assert_eq!(core.name, "QSM.rs");
+        let commit = env!("QSM_CORE_GIT_HASH");
+        assert_eq!(commit.len(), 40, "pinned by git, so the full commit is known: {commit}");
+        assert!(core.version == format!("rev-{commit}") || !core.version.starts_with("rev-"));
+        assert!(core.code_url.ends_with(&format!("/tree/{commit}")), "{}", core.code_url);
+        assert!(!core.version.contains("unknown"));
     }
 }
