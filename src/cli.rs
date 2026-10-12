@@ -1255,6 +1255,17 @@ pub struct PipelineArgs {
     #[arg(long, value_enum)]
     pub r2prime_strategy: Option<R2PrimeStrategyArg>,
 
+    /// Run R2PRIMEnet even when the acquisition is not at 3 T, the only field strength its
+    /// weights were trained at; the predicted R2' is then uncalibrated. Without it, an explicit
+    /// `--r2prime-strategy r2primenet` refuses a non-3 T run and `auto` skips R2' with a warning
+    #[arg(long)]
+    pub r2primenet_ignore_field_mismatch: bool,
+
+    /// R2PRIMEnet sliding-window patch in voxels, D H W, each a multiple of 16
+    /// (default: 192 192 128, the authors')
+    #[arg(long, num_args = 3, value_names = ["D", "H", "W"])]
+    pub r2primenet_patch: Option<Vec<usize>>,
+
     /// Also export final maps as DICOM series into each subject's extra_files/ folder
     #[arg(long)]
     pub export_dicom: bool,
@@ -3062,9 +3073,16 @@ pub struct R2primeArgs {
     /// Binary mask NIfTI file
     #[arg(short, long)]
     pub mask: PathBuf,
+    /// Binary mask of where the R2 acquisition reached, if it does not cover the whole mask
+    /// (a MESE slab). Without it, coverage is inferred from R2 > 0
+    #[arg(long)]
+    pub r2_coverage: Option<PathBuf>,
     /// Output R2' map NIfTI file
     #[arg(short, long)]
     pub output: PathBuf,
+    /// Also write the mask of voxels where R2' is a measurement
+    #[arg(long)]
+    pub output_coverage: Option<PathBuf>,
 }
 
 #[derive(Parser, Debug)]

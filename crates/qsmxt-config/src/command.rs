@@ -70,6 +70,18 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     {
         parts.push(format!("--r2prime-strategy {}", config.separation.r2prime_strategy));
     }
+    // R2PRIMEnet settings: only meaningful when R2' may be predicted.
+    if config.separation.custom_r2prime_tool.is_none()
+        && config.separation.r2prime_strategy != R2PrimeStrategy::Mese
+    {
+        let (n, dn) = (&config.separation.r2primenet, &d.separation.r2primenet);
+        if n.patch != dn.patch {
+            parts.push(format!("--r2primenet-patch {} {} {}", n.patch[0], n.patch[1], n.patch[2]));
+        }
+        if n.ignore_field_mismatch {
+            parts.push("--r2primenet-ignore-field-mismatch".into());
+        }
+    }
     if config.pipeline.export_dicom { parts.push("--export-dicom".into()); }
     emit_f64(&mut parts, "--obliquity-threshold", config.pipeline.obliquity_threshold, d.pipeline.obliquity_threshold);
     if config.pipeline.crop_to_mask != d.pipeline.crop_to_mask {
@@ -865,6 +877,20 @@ frangi_c = 400.0
         ] {
             assert!(cmd.contains(flag), "missing `{}` in: {}", flag, cmd);
         }
+    }
+
+    #[test]
+    fn test_r2primenet_settings_round_trip() {
+        let mut c = PipelineConfig::default();
+        assert!(!generate_command(&c).contains("--r2primenet"));
+        c.separation.r2primenet.ignore_field_mismatch = true;
+        c.separation.r2primenet.patch = [128, 128, 64];
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--r2primenet-ignore-field-mismatch"), "{cmd}");
+        assert!(cmd.contains("--r2primenet-patch 128 128 64"), "{cmd}");
+        // Meaningless when R2' is only ever measured.
+        c.separation.r2prime_strategy = R2PrimeStrategy::Mese;
+        assert!(!generate_command(&c).contains("--r2primenet"));
     }
 
     #[test]

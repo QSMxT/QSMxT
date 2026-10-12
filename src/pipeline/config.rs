@@ -518,6 +518,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
                 cli::R2PrimeStrategyArg::R2primenet => R2PrimeStrategy::R2primenet,
             };
         }
+        if args.r2primenet_ignore_field_mismatch { config.separation.r2primenet.ignore_field_mismatch = true; }
+        if let Some(p) = &args.r2primenet_patch {
+            if let [d, h, w] = p[..] { config.separation.r2primenet.patch = [d, h, w]; }
+        }
         let sp = &args.separation_params;
         if let Some(v) = sp.r2star_qsm_r_const_3t { config.separation.r2star_qsm.r_const_3t = v; }
         if let Some(v) = sp.decompose_n_inner { config.separation.decompose.n_inner = v; }

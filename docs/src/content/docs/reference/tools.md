@@ -122,7 +122,20 @@ orientation, and expect them already co-registered onto a common grid. See
 | `swi` | Susceptibility-weighted image (and minimum-intensity projection) |
 | `r2star` | R2\* map from multi-echo magnitude |
 | `t2star` | T2\* map from multi-echo magnitude |
+| `r2prime` | R2' map from an R2\* and an R2 map, over the region R2 covers |
 | `quality-map` | ROMEO phase-quality map |
+
+`r2prime` computes `R2' = R2* - R2` only where R2 was actually measured, because
+a multi-echo spin-echo acquisition is often a slab and `R2' = R2* - 0 = R2*`
+outside it would put the whole of R2\* forward as reversible. Coverage is
+inferred from `R2 > 0`, which is exact for an R2 fitted on the same grid; for an
+R2 map resampled from another one, interpolation leaves plausible-looking
+non-zero values just past its field of view, so say where it reached:
+
+```sh
+qsmxt r2prime --r2star r2star.nii --r2 r2.nii -m mask.nii -o r2prime.nii \
+  --r2-coverage mese_fov.nii --output-coverage r2prime_coverage.nii
+```
 
 ## Image utilities
 

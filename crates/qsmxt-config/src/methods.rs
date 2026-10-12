@@ -556,13 +556,26 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                     }
                     R2PrimeStrategy::Auto => {
                         add_citation(&mut citations, &CITE_R2PRIMENET);
-                        sentences.push(
+                        sentences.push(if config.separation.r2primenet.ignore_field_mismatch {
                             "R2' was computed as R2* - R2 where a multi-echo spin-echo \
                              acquisition was available, and estimated from R2* with R2PRIMEnet \
                              (Kim et al., 2025) otherwise."
-                            .to_string());
+                        } else {
+                            "R2' was computed as R2* - R2 where a multi-echo spin-echo \
+                             acquisition was available, and otherwise, at 3 T only, estimated \
+                             from R2* with R2PRIMEnet (Kim et al., 2025)."
+                        }.to_string());
                     }
                 },
+            }
+            if config.separation.custom_r2prime_tool.is_none()
+                && config.separation.r2prime_strategy != R2PrimeStrategy::Mese
+                && config.separation.r2primenet.ignore_field_mismatch
+            {
+                sentences.push(
+                    "R2PRIMEnet was allowed to run on data acquired away from 3 T, the only field \
+                     strength its weights were trained at; R2' estimated that way is uncalibrated."
+                        .to_string());
             }
         }
     }

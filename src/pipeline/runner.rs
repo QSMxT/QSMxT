@@ -1211,9 +1211,10 @@ fn find_custom_derivative(
 /// two-pass run writes `_desc-reliable_mask.nii` into the same folder, it sorts *before* the brain
 /// mask, and a later run pointed at those derivatives would reconstruct inside the holey mask and
 /// call it the brain — with no error anywhere to say so. The χ support mask (`_desc-qsm_mask.nii`)
-/// is excluded for the same reason: it is the brain mask less an eroded rim.
+/// is excluded for the same reason: it is the brain mask less an eroded rim. So is the R2′
+/// coverage (`_desc-r2prime_mask.nii`), which is the brain mask cut to the MESE's field of view.
 fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
-    find_custom_derivative(run, tool, "*_mask.nii*", &["_desc-reliable_", "_desc-qsm_"])
+    find_custom_derivative(run, tool, "*_mask.nii*", &["_desc-reliable_", "_desc-qsm_", "_desc-r2prime_"])
 }
 
 fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
@@ -1659,20 +1660,92 @@ fn stage_analysis(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn Fn(&s
 
 /// R2PRIMEnet inference. Gated in one place so a non-`dl` build says why it cannot run rather
 /// than failing to link.
+///
+/// The network's weights are trained at 3 T and it takes no field strength as an input, so
+/// `qsm_core` refuses anything far from 3 T unless `separation.r2primenet.ignore_field_mismatch`
+/// is set. Whether to get this far at all off 3 T is [`r2primenet_field_policy`]'s decision.
 #[cfg(feature = "dl")]
 fn run_r2primenet(
     ctx: &StageContext, r2star: &[f64], mask: &[u8], grid: &qsm_core::Grid,
 ) -> crate::Result<Vec<f64>> {
+    let params = r2primenet_params(&ctx.config.separation.r2primenet)?;
     let weights = qsm_core::models::primary_weight("r2primenet")
         .map_err(|e| QsmxtError::Config(format!("r2primenet weights: {}", e)))?;
     let (prog, _) = iter_progress_bar(&ctx.run.key.to_string(), "r2primenet");
     qsm_core::relaxometry::r2primenet(
         r2star, mask, grid, ctx.meta.field_strength, &weights,
         &qsm_core::relaxometry::R2PrimeNetNorm::default(),
-        &qsm_core::relaxometry::R2PrimeNetParams::default(),
+        &params,
         prog,
     )
     .map_err(|e| QsmxtError::Config(format!("r2primenet: {}", e)))
+}
+
+/// qsm-core's R2PRIMEnet parameters, or why the configured patch cannot be used.
+#[cfg(feature = "dl")]
+fn r2primenet_params(
+    c: &crate::pipeline::config::R2primenetConfig,
+) -> crate::Result<qsm_core::relaxometry::R2PrimeNetParams> {
+    c.validate().map_err(QsmxtError::Config)?;
+    Ok(qsm_core::relaxometry::R2PrimeNetParams {
+        patch: (c.patch[0], c.patch[1], c.patch[2]),
+        ignore_field_mismatch: c.ignore_field_mismatch,
+    })
+}
+
+/// What to do about R2PRIMEnet's field strength before running it.
+#[derive(Debug, PartialEq)]
+enum R2primenetFieldPolicy {
+    /// At 3 T: run.
+    Run,
+    /// Off 3 T but explicitly allowed: run, and warn that the R2' is uncalibrated.
+    RunUncalibrated,
+    /// Off 3 T under `--r2prime-strategy auto`: skip R2' with a warning rather than fail the run
+    /// over a stage the user may not have asked for by name.
+    Skip,
+    /// Off 3 T and R2PRIMEnet asked for by name: refuse.
+    Refuse,
+}
+
+fn r2primenet_field_policy(
+    field_strength: f64, strategy: R2PrimeStrategy, ignore_field_mismatch: bool,
+) -> R2primenetFieldPolicy {
+    match (r2primenet_field_offset(field_strength).is_some(), ignore_field_mismatch, strategy) {
+        (false, _, _) => R2primenetFieldPolicy::Run,
+        (true, true, _) => R2primenetFieldPolicy::RunUncalibrated,
+        (true, false, R2PrimeStrategy::Auto) => R2primenetFieldPolicy::Skip,
+        (true, false, _) => R2primenetFieldPolicy::Refuse,
+    }
+}
+
+/// How far this acquisition sits outside the band R2PRIMEnet's weights were trained over, in
+/// Tesla, or `None` when it is inside it.
+///
+/// Kept separate from the inference so a non-`dl` build still compiles the check, and so the
+/// policy is decided before the weights are fetched rather than after.
+fn r2primenet_field_offset(field_strength: f64) -> Option<f64> {
+    let off = (field_strength - R2PRIMENET_TRAINED_B0_T).abs();
+    (off > R2PRIMENET_B0_TOLERANCE_T).then_some(off)
+}
+
+/// qsm-core's `relaxometry::{TRAINED_B0_T, B0_TOLERANCE_T}`, which only exist with its `onnx`
+/// feature; a non-`dl` build still needs them for the policy. Checked against qsm-core in tests.
+const R2PRIMENET_TRAINED_B0_T: f64 = 3.0;
+const R2PRIMENET_B0_TOLERANCE_T: f64 = 0.3;
+
+/// Why R2PRIMEnet off 3 T is a problem, for the warning or the error.
+///
+/// R2* scales with field strength and the network has no way to be told what it is looking at,
+/// so a 7 T R2* produces an R2' map that is the right shape, the right units and the wrong
+/// numbers. Nothing downstream can detect that, which is the reason to say it here.
+fn r2primenet_field_message(field_strength: f64) -> String {
+    format!(
+        "R2PRIMEnet's weights are trained at {} T and this acquisition is {} T. R2* scales with \
+         field strength, so a predicted R2' would be outside what the network has seen and wrong \
+         in a way that looks plausible. Acquire a MESE and use --r2prime-strategy mese to measure \
+         R2' instead, or supply one with --use-custom-r2prime",
+        R2PRIMENET_TRAINED_B0_T, field_strength,
+    )
 }
 
 #[cfg(not(feature = "dl"))]
@@ -2015,11 +2088,21 @@ fn count_set(mask: &[u8]) -> usize {
 
 /// R2' = R2* - R2, over the voxels where R2 was actually measured.
 ///
-/// `r2_mask` narrows the brain mask when R2 came from a MESE that does not cover all of it. Using
-/// the brain mask there would subtract a zero R2 and report the whole of R2* as reversible —
-/// a plausible-looking number standing in for an absent measurement.
-fn measured_r2prime(r2star: &[f64], r2: &[f64], brain: &[u8], r2_mask: Option<&[u8]>) -> Vec<f64> {
-    qsm_core::relaxometry::r2prime(r2star, r2, brain, r2_mask).r2prime
+/// `r2_mask` is where the MESE's FOV reached, when R2 came from one that does not cover the whole
+/// brain. It is passed as coverage rather than substituted for the brain mask, because the two
+/// mean different things to `r2prime`: the brain mask is where an R2' is wanted, the coverage is
+/// where R2 exists. Subtracting over the brain mask alone would take a zero R2 for a measured one
+/// and report the whole of R2* as reversible, which is a plausible-looking number standing in for
+/// an absent measurement.
+///
+/// Returns the map and the coverage it is valid over. The coverage can be narrower than
+/// `r2_mask`: `r2prime` also drops any voxel whose R2 is not finite and positive, since R2 = 0
+/// means T2 = infinity and no tissue has that.
+fn measured_r2prime(
+    r2star: &[f64], r2: &[f64], brain: &[u8], r2_mask: Option<&[u8]>,
+) -> (Vec<f64>, Vec<u8>) {
+    let out = qsm_core::relaxometry::r2prime(r2star, r2, brain, r2_mask);
+    (out.r2prime, out.coverage)
 }
 
 /// Whether two grids are the same one, to within the precision a NIfTI header stores.
@@ -2161,6 +2244,7 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
         "mese_grid": ctx.run.mese.as_ref().map(|m| (m.dims, m.affine)),
         "grid": (ctx.meta.dims, ctx.meta.affine),
         "r2prime_strategy": format!("{}", ctx.config.separation.r2prime_strategy),
+        "r2primenet": ctx.config.separation.r2primenet,
     });
     if ctx.is_cached_with_params("r2_r2prime", Some("epg"), &params) {
         log::info!("Skipping r2_r2prime (cached)");
@@ -2240,7 +2324,22 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
                         // Subtract only where R2 was measured: outside the MESE's FOV, R2 is zero
                         // because nothing was acquired there, and R2' = R2* - 0 would report the
                         // whole of R2* as reversible.
-                        Some(measured_r2prime(&r2s, r2map, &mask, r2_mask.as_deref()))
+                        let (r2p, coverage) =
+                            measured_r2prime(&r2s, r2map, &mask, r2_mask.as_deref());
+                        // Published, so a 0 in the R2' map can be told apart from R2* = R2.
+                        let cov_path = ctx.output.r2prime_coverage_path(&ctx.run.key);
+                        save_mask(&cov_path, &coverage, ctx.meta)?;
+                        outputs.push(cov_path);
+                        let (in_mask, measured) = (count_set(&mask), count_set(&coverage));
+                        if in_mask > 0 && measured < in_mask {
+                            log::warn!(
+                                "R2' is a measurement over {:.0}% of the brain mask; the \
+                                 remaining {} voxels are left at zero because no R2 was measured \
+                                 there. Maps derived from this R2' inherit that gap.",
+                                100.0 * measured as f64 / in_mask as f64, in_mask - measured,
+                            );
+                        }
+                        Some(r2p)
                     }
                     _ => { log::warn!("R2' needs both R2* and R2 - one is missing; skipping R2'"); None }
                 }
@@ -2256,16 +2355,43 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
                 None
             } else {
                 // Auto with no MESE, or r2primenet outright.
-                if strategy == R2PrimeStrategy::Auto {
-                    log::info!("No R2 to subtract - estimating R2' from R2* with R2PRIMEnet");
+                let field = ctx.meta.field_strength;
+                match r2primenet_field_policy(
+                    field, strategy, ctx.config.separation.r2primenet.ignore_field_mismatch,
+                ) {
+                    R2primenetFieldPolicy::Skip => {
+                        log::warn!(
+                            "Skipping R2': there is no R2 to subtract, and {}. Pass \
+                             --r2primenet-ignore-field-mismatch to predict it anyway (uncalibrated).",
+                            r2primenet_field_message(field));
+                        None
+                    }
+                    R2primenetFieldPolicy::Refuse => {
+                        return Err(QsmxtError::Config(format!(
+                            "--r2prime-strategy r2primenet: {}; or pass \
+                             --r2primenet-ignore-field-mismatch to run it anyway and treat the R2' \
+                             (and any chi-separation built on it) as uncalibrated.",
+                            r2primenet_field_message(field))));
+                    }
+                    policy => {
+                        if policy == R2primenetFieldPolicy::RunUncalibrated {
+                            log::warn!(
+                                "{}. Running anyway (--r2primenet-ignore-field-mismatch): treat this \
+                                 R2', and any chi-separation built on it, as uncalibrated.",
+                                r2primenet_field_message(field));
+                        }
+                        if strategy == R2PrimeStrategy::Auto {
+                            log::info!("No R2 to subtract - estimating R2' from R2* with R2PRIMEnet");
+                        }
+                        warn_if_r2primenet_grid_is_oblique(ctx);
+                        prefetch_weights("r2primenet", &ctx.run.key.to_string())?;
+                        progress("Estimating R2' (R2PRIMEnet)");
+                        let r2s = load_volume(&r2star_path)?;
+                        let predicted = run_r2primenet(ctx, &r2s, &mask, &grid)?;
+                        log::info!("R2' estimated by R2PRIMEnet (an estimate, not a measurement)");
+                        Some(predicted)
+                    }
                 }
-                warn_if_r2primenet_grid_is_oblique(ctx);
-                prefetch_weights("r2primenet", &ctx.run.key.to_string())?;
-                progress("Estimating R2' (R2PRIMEnet)");
-                let r2s = load_volume(&r2star_path)?;
-                let predicted = run_r2primenet(ctx, &r2s, &mask, &grid)?;
-                log::info!("R2' estimated by R2PRIMEnet (an estimate, not a measurement)");
-                Some(predicted)
             }
         };
         if let Some(ref r2pv) = r2p {
@@ -4149,18 +4275,86 @@ mod tests {
         let r2star = [30.0, 30.0, 30.0, 30.0];
         // R2 was fitted only inside the FOV; outside it the echoes were zero, so it is zero.
         let r2 = [10.0, 10.0, 0.0, 0.0];
-        let r2p = super::measured_r2prime(&r2star, &r2, &brain, Some(&measured));
+        let (r2p, cov) = super::measured_r2prime(&r2star, &r2, &brain, Some(&measured));
         assert_eq!(&r2p[..2], &[20.0, 20.0], "measured where the MESE reached");
         assert_eq!(&r2p[2..], &[0.0, 0.0],
                    "R2* - 0 = 30 here would be an estimate dressed as a measurement");
+        assert_eq!(cov, vec![1, 1, 0, 0], "the coverage reported back is the FOV, not the brain");
     }
 
-    /// With R2 from a custom derivative there is no FOV to narrow by, so the brain mask stands.
+    /// The FOV mask has to do the work on its own when R2 is non-zero outside it.
+    ///
+    /// A MESE resampled onto the reconstruction grid interpolates across its own boundary, so the
+    /// voxels just outside the acquired slices carry small non-zero R2 values that look exactly
+    /// like tissue. Nothing in the map distinguishes them, which is why `load_mese_voxel_major`
+    /// resamples a volume of ones to find the FOV geometrically rather than thresholding the data.
+    #[test]
+    fn interpolated_r2_outside_the_fov_is_still_not_a_measurement() {
+        let brain = [1u8, 1, 1, 1];
+        let measured = super::mese_measured_mask(&brain, &[1u8, 1, 0, 0]);
+        let r2star = [30.0, 30.0, 30.0, 30.0];
+        // Interpolation bleed: small, positive, and entirely plausible as tissue R2.
+        let r2 = [10.0, 10.0, 0.6, 0.2];
+        let (r2p, cov) = super::measured_r2prime(&r2star, &r2, &brain, Some(&measured));
+        assert_eq!(&r2p[2..], &[0.0, 0.0],
+                   "29.4 and 29.8 here would be nearly the whole of R2* called reversible");
+        assert_eq!(cov, vec![1, 1, 0, 0]);
+    }
+
+    /// With R2 from a custom derivative there is no FOV to narrow by, so the brain mask stands,
+    /// bar any voxel whose R2 is zero: T2 = infinity is not a tissue property, so a zero there is
+    /// a gap in the map rather than a measured value to subtract.
     #[test]
     fn a_custom_r2_map_is_subtracted_over_the_whole_brain() {
-        let brain = [1u8, 1, 0];
-        let r2p = super::measured_r2prime(&[30.0, 30.0, 30.0], &[10.0, 10.0, 10.0], &brain, None);
-        assert_eq!(r2p, vec![20.0, 20.0, 0.0]);
+        let brain = [1u8, 1, 0, 1];
+        let (r2p, cov) = super::measured_r2prime(
+            &[30.0, 30.0, 30.0, 30.0], &[10.0, 10.0, 10.0, 0.0], &brain, None,
+        );
+        assert_eq!(r2p, vec![20.0, 20.0, 0.0, 0.0]);
+        assert_eq!(cov, vec![1, 1, 0, 0],
+                   "a zero R2 inside the brain mask is an absent measurement, not R2' = R2*");
+    }
+
+    /// R2PRIMEnet's 3 T band: everything sold as "3 T" is inside it, 1.5 T and 7 T are not.
+    ///
+    /// The warning this drives is the only thing standing between a 7 T user and an R2' map that
+    /// is the right shape, the right units and the wrong numbers.
+    #[test]
+    fn r2primenet_field_band_covers_3t_and_excludes_7t() {
+        for inside in [3.0, 2.89, 2.8, 3.2] {
+            assert!(super::r2primenet_field_offset(inside).is_none(),
+                    "{inside} T is a 3 T acquisition");
+        }
+        for outside in [1.5, 7.0, 9.4, 0.55] {
+            assert!(super::r2primenet_field_offset(outside).is_some(),
+                    "{outside} T is not what R2PRIMEnet was trained on");
+        }
+    }
+
+    /// qsmxt-config writes R2PRIMEnet's defaults out (it builds without qsm-core's `onnx`); they
+    /// must stay qsm-core's.
+    #[cfg(feature = "dl")]
+    #[test]
+    fn r2primenet_config_defaults_are_qsm_cores() {
+        let ours = super::r2primenet_params(&Default::default()).unwrap();
+        let core = qsm_core::relaxometry::R2PrimeNetParams::default();
+        assert_eq!(ours.patch, core.patch);
+        assert_eq!(ours.ignore_field_mismatch, core.ignore_field_mismatch);
+        assert_eq!(super::R2PRIMENET_TRAINED_B0_T, qsm_core::relaxometry::TRAINED_B0_T);
+        assert_eq!(super::R2PRIMENET_B0_TOLERANCE_T, qsm_core::relaxometry::B0_TOLERANCE_T);
+    }
+
+    /// Off 3 T: `auto` skips, an explicit `r2primenet` refuses, and the override runs either.
+    #[test]
+    fn r2primenet_field_policy_by_strategy() {
+        use super::{r2primenet_field_policy as policy, R2primenetFieldPolicy as P};
+        use crate::pipeline::config::R2PrimeStrategy as S;
+        assert_eq!(policy(3.0, S::Auto, false), P::Run);
+        assert_eq!(policy(3.0, S::R2primenet, false), P::Run);
+        assert_eq!(policy(7.0, S::Auto, false), P::Skip);
+        assert_eq!(policy(7.0, S::R2primenet, false), P::Refuse);
+        assert_eq!(policy(7.0, S::Auto, true), P::RunUncalibrated);
+        assert_eq!(policy(1.5, S::R2primenet, true), P::RunUncalibrated);
     }
 
     /// The backstop for the residual case the gate judges optimistically: a declared R2 source

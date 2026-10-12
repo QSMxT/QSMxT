@@ -188,6 +188,40 @@ pub struct SeparationConfig {
     /// R2PRIMEnet.
     #[serde(default)]
     pub r2prime_strategy: R2PrimeStrategy,
+    /// R2PRIMEnet inference settings, for when R2′ is predicted rather than measured.
+    #[serde(default)]
+    pub r2primenet: R2primenetConfig,
+}
+
+/// R2PRIMEnet inference (`qsm_core::relaxometry::R2PrimeNetParams`, which only exists with
+/// qsm-core's `onnx` feature; this crate builds without it, so the defaults are written out here
+/// and the qsmxt binary's `dl` build checks them against qsm-core's).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct R2primenetConfig {
+    /// Sliding-window patch (D, H, W) in voxels; each a positive multiple of 16.
+    pub patch: [usize; 3],
+    /// Run even though the acquisition is not at 3 T, the only field strength the weights were
+    /// trained at. The R2′ is then uncalibrated. Off by default: an explicit
+    /// `r2prime_strategy = "r2primenet"` then refuses a non-3 T run, and `auto` skips R2′.
+    pub ignore_field_mismatch: bool,
+}
+impl Default for R2primenetConfig {
+    fn default() -> Self {
+        // qsm_core::relaxometry::{AUTHORS_PATCH, R2PrimeNetParams::default()}.
+        Self { patch: [192, 192, 128], ignore_field_mismatch: false }
+    }
+}
+impl R2primenetConfig {
+    /// Why the patch cannot be used, if it cannot (qsm-core panics on it).
+    pub fn validate(&self) -> Result<(), String> {
+        match self.patch.iter().find(|&&d| d == 0 || d % 16 != 0) {
+            Some(d) => Err(format!(
+                "R2PRIMEnet patch {:?}: every dimension must be a positive multiple of 16 (got {d})",
+                self.patch)),
+            None => Ok(()),
+        }
+    }
 }
 impl Default for SeparationConfig {
     fn default() -> Self {
@@ -203,6 +237,7 @@ impl Default for SeparationConfig {
             custom_r2_tool: None,
             custom_r2prime_tool: None,
             r2prime_strategy: R2PrimeStrategy::default(),
+            r2primenet: R2primenetConfig::default(),
         }
     }
 }
@@ -1076,6 +1111,21 @@ mod selected_toml_tests {
         // Pruned algorithms came back as their defaults.
         assert_eq!(loaded.inversion.tkd, super::TkdConfig::default());
         assert_eq!(loaded.bg_removal.pdf, super::PdfConfig::default());
+    }
+}
+
+#[cfg(test)]
+mod r2primenet_config_tests {
+    use super::R2primenetConfig;
+
+    #[test]
+    fn a_bad_patch_is_an_error_not_a_panic() {
+        let d = R2primenetConfig::default();
+        assert!(d.validate().is_ok());
+        for bad in [[0, 192, 128], [100, 192, 128]] {
+            let c = R2primenetConfig { patch: bad, ..d.clone() };
+            assert!(c.validate().unwrap_err().contains("multiple of 16"));
+        }
     }
 }
 
