@@ -258,9 +258,6 @@ coils).
 | `dct` | Unweighted least squares with a Neumann-boundary DCT solve (Ghiglia & Romero, 1994), as QSM.jl `:dct` (default) |
 | `fft` | Schofield & Zhu (2003): sin/cos Laplacian with an FFT Poisson solve on the volume zero-padded by `--laplacian-fft-pad` voxels per side (default 64, UK Biobank's), reproducing STI Suite 3.0's `MRPhaseUnwrap` |
 
-`fft` needs a build with the `laplacian-fft` cargo feature against a QSM.rs that provides
-`unwrap::LaplacianSolver`.
-
 ## Echo combination (B0 estimation)
 
 Multi-echo field maps combine the unwrapped echoes with `--b0-estimation`:

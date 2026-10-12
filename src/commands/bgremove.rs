@@ -54,6 +54,8 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
                 threshold: args.threshold.unwrap_or(d.threshold),
                 max_radius: args.max_radius.unwrap_or(d.max_radius),
                 min_radius: args.min_radius.unwrap_or(d.min_radius),
+                // TODO(catch-up): `--deconvolve` comes with the V-SHARP deconvolution PR.
+                deconvolve: d.deconvolve,
             };
             let (lf, em) = qsm_core::bgremove::vsharp(
                 &field_nifti.data, &mask, &grid, &params, |_, _| {},

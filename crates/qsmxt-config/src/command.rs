@@ -327,8 +327,12 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             let q = &config.inversion.qsmart;
             let dq = &d.inversion.qsmart;
             emit_enum(&mut parts, "--qsmart-inversion", &q.inversion, &dq.inversion);
-            emit_f64(&mut parts, "--qsmart-ilsqr-tol", q.ilsqr_tol, dq.ilsqr_tol);
             emit_usize(&mut parts, "--qsmart-ilsqr-max-iter", q.ilsqr_max_iter, dq.ilsqr_max_iter);
+            emit_f64(&mut parts, "--qsmart-ilsqr-pad-mm", q.ilsqr_pad_mm, dq.ilsqr_pad_mm);
+            // QSMART's inner iLSQR takes its tolerance from the iLSQR settings.
+            if q.inversion == QsmAlgorithm::Ilsqr {
+                emit_f64(&mut parts, "--ilsqr-tol", config.inversion.ilsqr.tol, d.inversion.ilsqr.tol);
+            }
             emit_i32(&mut parts, "--qsmart-vasc-sphere-radius", q.vasc_sphere_radius, dq.vasc_sphere_radius);
             emit_i32(&mut parts, "--qsmart-sdf-spatial-radius", q.sdf_spatial_radius, dq.sdf_spatial_radius);
             emit_f64(&mut parts, "--qsmart-sdf-sigma1-stage1", q.sdf_sigma1_stage1, dq.sdf_sigma1_stage1);
@@ -836,8 +840,8 @@ algorithm = "qsmart"
 
 [inversion.qsmart]
 inversion = "rts"
-ilsqr_tol = 0.01
 ilsqr_max_iter = 50
+ilsqr_pad_mm = 8.0
 vasc_sphere_radius = 8
 sdf_spatial_radius = 8
 sdf_sigma1_stage1 = 11.0
@@ -857,6 +861,7 @@ frangi_c = 400.0
             "--qsm-algorithm qsmart", "--qsmart-inversion rts",
             "--qsmart-sdf-sigma1-stage1 11", "--qsmart-sdf-lower-lim 0.45",
             "--qsmart-frangi-scale-min 1.5", "--qsmart-frangi-c 400",
+            "--qsmart-ilsqr-pad-mm 8",
         ] {
             assert!(cmd.contains(flag), "missing `{}` in: {}", flag, cmd);
         }

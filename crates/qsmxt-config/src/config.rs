@@ -412,8 +412,10 @@ impl Default for TgvConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct QsmartConfig {
-    pub ilsqr_tol: f64,
+    /// Iteration cap of QSMART's inner iLSQR solves. Its tolerance is `inversion.ilsqr.tol`.
     pub ilsqr_max_iter: usize,
+    /// Zero-padding (mm per side) of QSMART's inner iLSQR solves. Default 6 mm, STI Suite's.
+    pub ilsqr_pad_mm: f64,
     /// Bottom-hat sphere radius for vasculature detection, in mm (converted to voxels at run time)
     pub vasc_sphere_radius: i32,
     pub sdf_spatial_radius: i32,
@@ -439,7 +441,7 @@ impl Default for QsmartConfig {
     fn default() -> Self {
         let p = qsm_core::utils::QsmartParams::default();
         Self {
-            ilsqr_tol: p.ilsqr_tol, ilsqr_max_iter: p.ilsqr_max_iter,
+            ilsqr_max_iter: p.ilsqr_max_iter, ilsqr_pad_mm: p.ilsqr_pad_mm,
             vasc_sphere_radius: p.vasc_sphere_radius, sdf_spatial_radius: p.sdf_spatial_radius,
             inversion: QsmAlgorithm::Ilsqr,
             sdf_sigma1_stage1: p.sdf_sigma1_stage1,

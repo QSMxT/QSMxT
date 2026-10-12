@@ -1493,7 +1493,7 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let mag_data = load_volume(&ctx.output.magnitude_path(&ctx.run.key))?;
     let mask = load_mask(mask_path)?;
 
-    let unwrapped = crate::pipeline::fieldmap::laplacian_unwrap_dct(&phase_data, &mask, &grid);
+    let unwrapped = qsm_core::unwrap::laplacian_unwrap(&phase_data, &mask, &grid, qsm_core::unwrap::LaplacianSolver::Dct);
     let swi_scaling = match ctx.config.swi.scaling.as_str() {
         "negative_tanh" => qsm_core::swi::PhaseScaling::NegativeTanh,
         "positive" => qsm_core::swi::PhaseScaling::Positive,
@@ -1667,7 +1667,7 @@ fn run_r2primenet(
         .map_err(|e| QsmxtError::Config(format!("r2primenet weights: {}", e)))?;
     let (prog, _) = iter_progress_bar(&ctx.run.key.to_string(), "r2primenet");
     qsm_core::relaxometry::r2primenet(
-        r2star, mask, grid, &weights,
+        r2star, mask, grid, ctx.meta.field_strength, &weights,
         &qsm_core::relaxometry::R2PrimeNetNorm::default(),
         &qsm_core::relaxometry::R2PrimeNetParams::default(),
         prog,
@@ -2019,7 +2019,7 @@ fn count_set(mask: &[u8]) -> usize {
 /// the brain mask there would subtract a zero R2 and report the whole of R2* as reversible —
 /// a plausible-looking number standing in for an absent measurement.
 fn measured_r2prime(r2star: &[f64], r2: &[f64], brain: &[u8], r2_mask: Option<&[u8]>) -> Vec<f64> {
-    qsm_core::relaxometry::r2prime(r2star, r2, r2_mask.unwrap_or(brain))
+    qsm_core::relaxometry::r2prime(r2star, r2, brain, r2_mask).r2prime
 }
 
 /// Whether two grids are the same one, to within the precision a NIfTI header stores.
@@ -2597,12 +2597,7 @@ fn stage_unwrap(
         ctx.meta.field_strength, ctx.meta.b0_direction,
     );
 
-    let weighting = match ctx.config.field_mapping.b0_weight_type {
-        crate::pipeline::config::B0WeightType::AssumedDecay => crate::pipeline::fieldmap::EchoWeighting::AssumedDecay {
-            t2star_s: ctx.config.field_mapping.b0_weight_assumed_t2star_ms * 1e-3,
-        },
-        _ => crate::pipeline::fieldmap::EchoWeighting::Core(fm_config.b0_weight_type),
-    };
+    let weighting = crate::pipeline::fieldmap::EchoWeighting::from_config(&ctx.config.field_mapping);
     if unwrap_name == "laplacian" && ctx.meta.n_echoes > 1 {
         log::info!("Laplacian unwrapping per echo ({} solver), then {} ({} weighting)",
             ctx.config.field_mapping.laplacian_solver,
@@ -2956,8 +2951,10 @@ fn stage_qsmart(
         "inversion": format!("{}", ctx.config.inversion.qsmart.inversion),
         "sdf_spatial_radius": ctx.config.inversion.qsmart.sdf_spatial_radius,
         "vasc_sphere_radius": ctx.config.inversion.qsmart.vasc_sphere_radius,
-        "ilsqr_tol": ctx.config.inversion.qsmart.ilsqr_tol,
+        // The inner iLSQR's tolerance is the iLSQR stage's.
+        "ilsqr_tol": ctx.config.inversion.ilsqr.tol,
         "ilsqr_max_iter": ctx.config.inversion.qsmart.ilsqr_max_iter,
+        "ilsqr_pad_mm": ctx.config.inversion.qsmart.ilsqr_pad_mm,
         "sdf_sigma1_stage1": ctx.config.inversion.qsmart.sdf_sigma1_stage1,
         "sdf_sigma2_stage1": ctx.config.inversion.qsmart.sdf_sigma2_stage1,
         "sdf_sigma1_stage2": ctx.config.inversion.qsmart.sdf_sigma1_stage2,
@@ -2975,9 +2972,10 @@ fn stage_qsmart(
     }
     let t = Instant::now();
     log::info!(
-        "QSMART (inversion={}, ilsqr tol={:.0e}, max_iter={}, vasc_radius={}, sdf_radius={})",
+        "QSMART (inversion={}, ilsqr tol={:.0e}, max_iter={}, pad={} mm, vasc_radius={}, sdf_radius={})",
         ctx.config.inversion.qsmart.inversion,
-        ctx.config.inversion.qsmart.ilsqr_tol, ctx.config.inversion.qsmart.ilsqr_max_iter,
+        ctx.config.inversion.ilsqr.tol, ctx.config.inversion.qsmart.ilsqr_max_iter,
+        ctx.config.inversion.qsmart.ilsqr_pad_mm,
         ctx.config.inversion.qsmart.vasc_sphere_radius, ctx.config.inversion.qsmart.sdf_spatial_radius,
     );
     progress("QSMART reconstruction");

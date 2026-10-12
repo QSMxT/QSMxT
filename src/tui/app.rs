@@ -1569,8 +1569,8 @@ pub struct PipelineFormState {
     pub msmv_maxk: String,
 
     // QSMART
-    pub qsmart_ilsqr_tol: String,
     pub qsmart_ilsqr_max_iter: String,
+    pub qsmart_ilsqr_pad_mm: String,
     pub qsmart_vasc_sphere_radius: String,
     pub qsmart_sdf_spatial_radius: String,
     pub qsmart_inversion: usize,
@@ -1887,8 +1887,8 @@ impl Default for PipelineFormState {
                 let s = qsm_core::utils::PhaseOffsetParams::default().sigma;
                 format!("{} {} {}", s[0], s[1], s[2])
             },
-            qsmart_ilsqr_tol: format!("{}", qsm_core::utils::QsmartParams::default().ilsqr_tol),
             qsmart_ilsqr_max_iter: format!("{}", qsm_core::utils::QsmartParams::default().ilsqr_max_iter),
+            qsmart_ilsqr_pad_mm: format!("{}", qsm_core::utils::QsmartParams::default().ilsqr_pad_mm),
             qsmart_vasc_sphere_radius: format!("{}", qsm_core::utils::QsmartParams::default().vasc_sphere_radius),
             qsmart_sdf_spatial_radius: format!("{}", qsm_core::utils::QsmartParams::default().sdf_spatial_radius),
             qsmart_inversion: 0, // ilsqr (default)
@@ -2550,9 +2550,10 @@ impl PipelineFormState {
                 // Non-iLSQR algorithms reuse the shared inversion params (config.inversion.<algo>),
                 // which run_qsmart applies to both QSMART stages.
                 match self.qsmart_inversion {
-                    0 => { // iLSQR (uses QSMART's own tol/max_iter)
-                        rows.push(PipelineRow::Param { label: "  iLSQR Tol", field: "qsmart_ilsqr_tol", help: "iLSQR convergence tolerance" });
-                        rows.push(PipelineRow::Param { label: "  iLSQR Max Iter", field: "qsmart_ilsqr_max_iter", help: "Maximum iLSQR iterations per stage" });
+                    0 => { // iLSQR: QSMART's own max_iter/pad, iLSQR's tolerance
+                        rows.push(PipelineRow::Param { label: "  iLSQR Tolerance", field: "ilsqr_tol", help: "Streaking-stage LSQR tolerance (shared with iLSQR)" });
+                        rows.push(PipelineRow::Param { label: "  iLSQR Max Iter", field: "qsmart_ilsqr_max_iter", help: "Maximum iLSQR iterations per stage (tolerance: iLSQR's)" });
+                        rows.push(PipelineRow::Param { label: "  iLSQR Pad (mm)", field: "qsmart_ilsqr_pad_mm", help: "Zero-padding of the inner iLSQR solves, mm per side (STI Suite: 6)" });
                     }
                     1 => { // RTS
                         rows.push(PipelineRow::Param { label: "  Delta", field: "rts_delta", help: "Threshold for ill-conditioned k-space region" });
@@ -2714,7 +2715,7 @@ impl PipelineFormState {
         "harperella_radius", "harperella_max_iter", "harperella_tol",
         "iharperella_radius", "iharperella_max_iter", "iharperella_tol",
         "msmv_radius", "msmv_maxk",
-        "qsmart_ilsqr_tol", "qsmart_ilsqr_max_iter", "qsmart_vasc_sphere_radius", "qsmart_sdf_spatial_radius",
+        "qsmart_ilsqr_max_iter", "qsmart_ilsqr_pad_mm", "qsmart_vasc_sphere_radius", "qsmart_sdf_spatial_radius",
         "qsmart_sdf_sigma1_stage1", "qsmart_sdf_sigma2_stage1", "qsmart_sdf_sigma1_stage2", "qsmart_sdf_sigma2_stage2",
         "qsmart_sdf_lower_lim", "qsmart_sdf_curv_constant",
         "qsmart_frangi_scale_min", "qsmart_frangi_scale_max", "qsmart_frangi_scale_ratio", "qsmart_frangi_c",
@@ -2819,8 +2820,8 @@ impl PipelineFormState {
             "iharperella_tol" => &self.iharperella_tol,
             "msmv_radius" => &self.msmv_radius,
             "msmv_maxk" => &self.msmv_maxk,
-            "qsmart_ilsqr_tol" => &self.qsmart_ilsqr_tol,
             "qsmart_ilsqr_max_iter" => &self.qsmart_ilsqr_max_iter,
+            "qsmart_ilsqr_pad_mm" => &self.qsmart_ilsqr_pad_mm,
             "qsmart_vasc_sphere_radius" => &self.qsmart_vasc_sphere_radius,
             "qsmart_sdf_spatial_radius" => &self.qsmart_sdf_spatial_radius,
             "qsmart_sdf_sigma1_stage1" => &self.qsmart_sdf_sigma1_stage1,
@@ -3008,8 +3009,8 @@ impl PipelineFormState {
             "iharperella_tol" => Some(&mut self.iharperella_tol),
             "msmv_radius" => Some(&mut self.msmv_radius),
             "msmv_maxk" => Some(&mut self.msmv_maxk),
-            "qsmart_ilsqr_tol" => Some(&mut self.qsmart_ilsqr_tol),
             "qsmart_ilsqr_max_iter" => Some(&mut self.qsmart_ilsqr_max_iter),
+            "qsmart_ilsqr_pad_mm" => Some(&mut self.qsmart_ilsqr_pad_mm),
             "qsmart_vasc_sphere_radius" => Some(&mut self.qsmart_vasc_sphere_radius),
             "qsmart_sdf_spatial_radius" => Some(&mut self.qsmart_sdf_spatial_radius),
             "qsmart_sdf_sigma1_stage1" => Some(&mut self.qsmart_sdf_sigma1_stage1),

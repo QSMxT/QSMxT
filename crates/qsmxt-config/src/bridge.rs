@@ -84,6 +84,21 @@ fn map_bf_alg(alg: BfAlgorithm) -> PBgAlg {
     }
 }
 
+/// The per-echo weight of `b0_estimation = "weighted-avg"`, in qsm-core's terms.
+fn map_b0_weight_type(fm: &crate::config::FieldMappingConfig) -> qsm_core::utils::B0WeightType {
+    use qsm_core::utils::B0WeightType as W;
+    match fm.b0_weight_type {
+        B0WeightType::PhaseSNR => W::PhaseSNR,
+        B0WeightType::PhaseVar => W::PhaseVar,
+        B0WeightType::Average => W::Average,
+        B0WeightType::TEs => W::TEs,
+        B0WeightType::Mag => W::Mag,
+        B0WeightType::AssumedDecay => W::AssumedDecay {
+            t2star_s: fm.b0_weight_assumed_t2star_ms / 1000.0,
+        },
+    }
+}
+
 /// Convert a PipelineConfig to qsm-core pipeline stage configs.
 pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     PFieldMapping,
@@ -100,20 +115,19 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         phase_offset_sigma: cfg.field_mapping.phase_offset_sigma,
         bipolar_correction: cfg.field_mapping.bipolar_correction,
         b0_estimation: match cfg.field_mapping.b0_estimation {
-            B0Estimation::WeightedAvg => PB0Method::WeightedAvg,
-            B0Estimation::LinearFit => PB0Method::LinearFit,
+            B0Estimation::WeightedAvg => PB0Method::WeightedAvg {
+                weighting: map_b0_weight_type(&cfg.field_mapping),
+            },
+            B0Estimation::LinearFit => PB0Method::LinearFit(qsm_core::utils::LinearFitParams {
+                estimate_offset: cfg.field_mapping.linear_fit.estimate_offset,
+                reliability_threshold_percentile: cfg.field_mapping.linear_fit.reliability_threshold_percentile,
+            }),
         },
-        b0_weight_type: match cfg.field_mapping.b0_weight_type {
-            B0WeightType::PhaseSNR => qsm_core::utils::B0WeightType::PhaseSNR,
-            B0WeightType::PhaseVar => qsm_core::utils::B0WeightType::PhaseVar,
-            B0WeightType::Average => qsm_core::utils::B0WeightType::Average,
-            B0WeightType::TEs => qsm_core::utils::B0WeightType::TEs,
-            B0WeightType::Mag => qsm_core::utils::B0WeightType::Mag,
-            // The pinned qsm-core has no assumed-decay weight type. QSMxT computes that field map itself
-            // (`qsmxt::pipeline::fieldmap`), so this placeholder only reaches qsm-core where the
-            // weights are not used; a consumer calling qsm-core's field mapping directly gets
-            // TE weighting instead.
-            B0WeightType::AssumedDecay => qsm_core::utils::B0WeightType::TEs,
+        laplacian_solver: match cfg.field_mapping.laplacian_solver {
+            LaplacianSolver::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
+            LaplacianSolver::Fft => qsm_core::unwrap::LaplacianSolver::Fft {
+                pad: [cfg.field_mapping.laplacian_fft_pad; 3],
+            },
         },
         romeo_params: qsm_core::unwrap::RomeoParams {
             individual: cfg.field_mapping.romeo.individual,
@@ -132,10 +146,6 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             correct_regions: cfg.field_mapping.romeo.correct_regions,
             wrap_addition: cfg.field_mapping.romeo.wrap_addition,
         },
-        linear_fit_params: qsm_core::utils::LinearFitParams {
-            estimate_offset: cfg.field_mapping.linear_fit.estimate_offset,
-            reliability_threshold_percentile: cfg.field_mapping.linear_fit.reliability_threshold_percentile,
-        },
     };
 
     let bg_removal = PBgRemoval {
@@ -144,6 +154,9 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             threshold: cfg.bg_removal.vsharp.threshold,
             max_radius: cfg.bg_removal.vsharp.max_radius,
             min_radius: cfg.bg_removal.vsharp.min_radius,
+            // TODO(catch-up): exposed as `--vsharp-deconvolve` in its own PR. `true` is what
+            // every QSMxT release so far has run.
+            deconvolve: true,
         },
         pdf: qsm_core::bgremove::PdfParams { tol: cfg.bg_removal.pdf.tol, max_iter: None },
         lbv: qsm_core::bgremove::LbvParams { tol: cfg.bg_removal.lbv.tol, max_iter: None },
@@ -288,8 +301,8 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             ..Default::default()
         },
         qsmart: qsm_core::utils::QsmartParams {
-            ilsqr_tol: cfg.inversion.qsmart.ilsqr_tol,
             ilsqr_max_iter: cfg.inversion.qsmart.ilsqr_max_iter,
+            ilsqr_pad_mm: cfg.inversion.qsmart.ilsqr_pad_mm,
             // NOTE: vasc_sphere_radius and frangi scales are in mm here; the qsmxt
             // runner converts them to voxels using the dataset voxel size.
             vasc_sphere_radius: cfg.inversion.qsmart.vasc_sphere_radius,
@@ -424,6 +437,7 @@ pub fn to_scan_metadata(
         echo_times: echo_times.to_vec(),
         field_strength,
         b0_direction,
+        slice_geometry: None,
     }
 }
 
@@ -649,18 +663,44 @@ mod tests {
     fn qsmart_config_propagates_to_core_params() {
         // Previously the bridge punted with QsmartParams::default(), dropping config.
         let mut cfg = PipelineConfig::default();
-        cfg.inversion.qsmart.ilsqr_tol = 0.005;
+        cfg.inversion.qsmart.ilsqr_pad_mm = 12.5;
         cfg.inversion.qsmart.ilsqr_max_iter = 99;
         cfg.inversion.qsmart.vasc_sphere_radius = 5;
         cfg.inversion.qsmart.sdf_spatial_radius = 6;
         cfg.inversion.qsmart.inversion = QsmAlgorithm::Tkd;
 
         let (_, _, inv, _) = to_pipeline_stages(&cfg);
-        assert_eq!(inv.qsmart.ilsqr_tol, 0.005);
+        assert_eq!(inv.qsmart.ilsqr_pad_mm, 12.5);
         assert_eq!(inv.qsmart.ilsqr_max_iter, 99);
         assert_eq!(inv.qsmart.vasc_sphere_radius, 5);
         assert_eq!(inv.qsmart.sdf_spatial_radius, 6);
         assert_eq!(inv.qsmart.inversion, PInvAlg::Tkd);
+    }
+
+    #[test]
+    fn field_mapping_estimation_carries_its_own_settings() {
+        use qsm_core::utils::B0WeightType as W;
+        let mut cfg = PipelineConfig::default();
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert_eq!(fm.b0_estimation, PB0Method::WeightedAvg { weighting: W::PhaseSNR });
+        assert_eq!(fm.laplacian_solver, qsm_core::unwrap::LaplacianSolver::Dct);
+
+        // assumed-decay used to reach qsm-core as TE weighting; it is now the real thing.
+        cfg.field_mapping.b0_weight_type = B0WeightType::AssumedDecay;
+        cfg.field_mapping.b0_weight_assumed_t2star_ms = 25.0;
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert_eq!(fm.b0_estimation, PB0Method::WeightedAvg { weighting: W::AssumedDecay { t2star_s: 0.025 } });
+
+        cfg.field_mapping.b0_estimation = B0Estimation::LinearFit;
+        cfg.field_mapping.linear_fit.estimate_offset = false;
+        cfg.field_mapping.linear_fit.reliability_threshold_percentile = 75.0;
+        cfg.field_mapping.laplacian_solver = LaplacianSolver::Fft;
+        cfg.field_mapping.laplacian_fft_pad = 40;
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert_eq!(fm.b0_estimation, PB0Method::LinearFit(qsm_core::utils::LinearFitParams {
+            estimate_offset: false, reliability_threshold_percentile: 75.0,
+        }));
+        assert_eq!(fm.laplacian_solver, qsm_core::unwrap::LaplacianSolver::Fft { pad: [40; 3] });
     }
 
     #[test]

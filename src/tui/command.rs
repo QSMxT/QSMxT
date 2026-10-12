@@ -340,8 +340,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             ilsqr_max_iter: parse_optional_usize(&ps.ilsqr_max_iter),
         },
         qsmart_params: crate::cli::QsmartParamArgs {
-            qsmart_ilsqr_tol: parse_optional_f64(&ps.qsmart_ilsqr_tol),
             qsmart_ilsqr_max_iter: parse_optional_usize(&ps.qsmart_ilsqr_max_iter),
+            qsmart_ilsqr_pad_mm: parse_optional_f64(&ps.qsmart_ilsqr_pad_mm),
             qsmart_vasc_sphere_radius: ps.qsmart_vasc_sphere_radius.trim().parse::<i32>().ok(),
             qsmart_sdf_spatial_radius: ps.qsmart_sdf_spatial_radius.trim().parse::<i32>().ok(),
             qsmart_inversion: if selected_qsm_algorithm(ps) == QsmAlgorithm::Qsmart {
@@ -970,8 +970,8 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     set_f64!(config.inversion.tgv.alpha0, ps.tgv_alpha0);
 
     // QSMART
-    set_f64!(config.inversion.qsmart.ilsqr_tol, ps.qsmart_ilsqr_tol);
     set_usize!(config.inversion.qsmart.ilsqr_max_iter, ps.qsmart_ilsqr_max_iter);
+    set_f64!(config.inversion.qsmart.ilsqr_pad_mm, ps.qsmart_ilsqr_pad_mm);
     let qsmart_inv_algorithms = [
         QsmAlgorithm::Ilsqr, QsmAlgorithm::Rts, QsmAlgorithm::Tv, QsmAlgorithm::Tkd,
         QsmAlgorithm::Tsvd, QsmAlgorithm::Tikhonov, QsmAlgorithm::Nltv, QsmAlgorithm::Medi,

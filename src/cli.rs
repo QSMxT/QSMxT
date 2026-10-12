@@ -677,12 +677,12 @@ pub struct HeidiParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct QsmartParamArgs {
-    /// QSMART iLSQR tolerance
-    #[arg(long)]
-    pub qsmart_ilsqr_tol: Option<f64>,
-    /// QSMART iLSQR max iterations
+    /// QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol.
     #[arg(long)]
     pub qsmart_ilsqr_max_iter: Option<usize>,
+    /// Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6, STI Suite's)
+    #[arg(long, value_name = "MM")]
+    pub qsmart_ilsqr_pad_mm: Option<f64>,
     /// QSMART vasculature detection sphere radius
     #[arg(long)]
     pub qsmart_vasc_sphere_radius: Option<i32>,
@@ -1055,8 +1055,7 @@ pub struct PipelineArgs {
 
     /// Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares,
     /// Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a
-    /// zero-padded volume = STI Suite's MRPhaseUnwrap, as UK Biobank; needs a build with the
-    /// `laplacian-fft` feature)
+    /// zero-padded volume = STI Suite's MRPhaseUnwrap, as UK Biobank)
     #[arg(long, value_enum, alias = "laplacian-kernel")]
     pub laplacian_solver: Option<LaplacianSolverArg>,
 
@@ -1807,8 +1806,7 @@ pub struct FieldmapLaplacianArgs {
     #[command(flatten)]
     pub common: FieldmapCommonArgs,
     /// Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve) or `fft` (Schofield &
-    /// Zhu, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap; needs a build with
-    /// the `laplacian-fft` feature)
+    /// Zhu, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap)
     #[arg(long, value_enum, default_value = "dct", alias = "laplacian-kernel")]
     pub laplacian_solver: LaplacianSolverArg,
     /// Zero-padding in voxels per side for `--laplacian-solver fft` (UK Biobank: 64)

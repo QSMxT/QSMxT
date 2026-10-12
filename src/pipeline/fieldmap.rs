@@ -53,20 +53,13 @@ impl Solver {
         }
     }
 
-    /// Whether this build has the solver.
-    pub fn available(self) -> bool {
-        self == Solver::Dct || cfg!(feature = "laplacian-fft")
+    /// qsm-core's form of this solver.
+    pub fn to_core(self) -> qsm_core::unwrap::LaplacianSolver {
+        match self {
+            Solver::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
+            Solver::Fft { pad } => qsm_core::unwrap::LaplacianSolver::Fft { pad: [pad; 3] },
+        }
     }
-}
-
-/// QSM.rs's Laplacian unwrap with the DCT solver (output zeroed outside `mask`). The one call
-/// that has to follow QSM.rs's `laplacian_unwrap` signature, which gains a solver argument in
-/// the QSM.rs the `laplacian-fft` feature builds against.
-pub fn laplacian_unwrap_dct(phase: &[f64], mask: &[u8], grid: &Grid) -> Vec<f64> {
-    #[cfg(feature = "laplacian-fft")]
-    return qsm_core::unwrap::laplacian_unwrap(phase, mask, grid, qsm_core::unwrap::LaplacianSolver::Dct);
-    #[cfg(not(feature = "laplacian-fft"))]
-    return qsm_core::unwrap::laplacian_unwrap(phase, mask, grid);
 }
 
 /// How echoes are weighted in a weighted-average B0 estimate.
@@ -87,6 +80,20 @@ pub enum EchoWeighting {
 }
 
 impl EchoWeighting {
+    /// The weighting `field_mapping.b0_weight_type` asks for.
+    pub fn from_config(cfg: &qsmxt_config::FieldMappingConfig) -> Self {
+        use qsm_core::utils::B0WeightType as W;
+        use qsmxt_config::B0WeightType as C;
+        match cfg.b0_weight_type {
+            C::PhaseSNR => EchoWeighting::Core(W::PhaseSNR),
+            C::PhaseVar => EchoWeighting::Core(W::PhaseVar),
+            C::Average => EchoWeighting::Core(W::Average),
+            C::TEs => EchoWeighting::Core(W::TEs),
+            C::Mag => EchoWeighting::Core(W::Mag),
+            C::AssumedDecay => EchoWeighting::AssumedDecay { t2star_s: cfg.b0_weight_assumed_t2star_ms * 1e-3 },
+        }
+    }
+
     /// Per-echo weight in the phase/TE form, `f = Σ w (φ/TE) / Σ w`.
     fn weight(self, te: f64, mag: f64) -> f64 {
         use qsm_core::utils::B0WeightType as W;
@@ -96,6 +103,7 @@ impl EchoWeighting {
             EchoWeighting::Core(W::Average) => 1.0,
             EchoWeighting::Core(W::TEs) => te,
             EchoWeighting::Core(W::Mag) => mag,
+            EchoWeighting::Core(W::AssumedDecay { t2star_s }) |
             EchoWeighting::AssumedDecay { t2star_s } => te * te * (-te / t2star_s).exp(),
         }
     }
@@ -107,18 +115,10 @@ impl EchoWeighting {
 /// Biobank (`mask .* phase`): the Poisson solve is global, so noise outside the brain otherwise
 /// leaks into it. The result is defined up to a constant and is zero outside `mask`.
 ///
-/// This is the one place the field-mapping Laplacian unwrap is called. `solver` must be
-/// available in this build ([`Solver::available`]); [`run_field_mapping`] checks that first.
+/// This is the one place the field-mapping Laplacian unwrap is called.
 pub fn unwrap_echo_laplacian(phase: &[f64], mask: &[u8], grid: &Grid, solver: Solver) -> Vec<f64> {
     let masked: Vec<f64> = phase.iter().zip(mask).map(|(&p, &m)| if m != 0 { p } else { 0.0 }).collect();
-    match solver {
-        Solver::Dct => laplacian_unwrap_dct(&masked, mask, grid),
-        #[cfg(feature = "laplacian-fft")]
-        Solver::Fft { pad } => qsm_core::unwrap::laplacian_unwrap(
-            &masked, mask, grid, qsm_core::unwrap::LaplacianSolver::Fft { pad: [pad; 3] }),
-        #[cfg(not(feature = "laplacian-fft"))]
-        Solver::Fft { .. } => unreachable!("the FFT Laplacian solver is not in this build"),
-    }
+    qsm_core::unwrap::laplacian_unwrap(&masked, mask, grid, solver.to_core())
 }
 
 /// Subtract the mean over `mask` from `values` inside `mask`.
@@ -175,16 +175,15 @@ fn combine_echoes(
         // One echo: every estimator is φ/TE (a fit with an intercept would be degenerate).
         return weighted_b0_hz(unwrapped, mags, tes, mask, EchoWeighting::Core(qsm_core::utils::B0WeightType::Average));
     }
-    match config.b0_estimation {
-        B0EstimationMethod::WeightedAvg => weighted_b0_hz(unwrapped, mags, tes, mask, weighting),
-        B0EstimationMethod::LinearFit => {
+    match &config.b0_estimation {
+        B0EstimationMethod::WeightedAvg { .. } => weighted_b0_hz(unwrapped, mags, tes, mask, weighting),
+        B0EstimationMethod::LinearFit(p) => {
             let fit = qsm_core::utils::multi_echo_linear_fit(
-                unwrapped, mags, tes, mask,
-                config.linear_fit_params.estimate_offset,
-                config.linear_fit_params.reliability_threshold_percentile,
+                unwrapped, mags, tes, mask, p.estimate_offset, p.reliability_threshold_percentile,
             );
             qsm_core::utils::field_to_hz(&fit.field)
         }
+        B0EstimationMethod::RobustFit(_) => unreachable!("run_field_mapping sends robust-fit to qsm-core"),
     }
 }
 
@@ -259,8 +258,8 @@ fn grid(meta: &ScanMetadata) -> Grid {
 /// Run field mapping: per-echo wrapped phase (rad, in [−π, π]) → B0 field in ppm, zero outside
 /// `mask`. `magnitudes` = `None` weights every echo and voxel equally.
 ///
-/// `weighting` replaces `config.b0_weight_type` (it can express weightings qsm-core cannot); pass
-/// [`EchoWeighting::Core`]`(config.b0_weight_type)` for qsm-core's own. `solver` is the Poisson
+/// `weighting` replaces the weighting in `config.b0_estimation` (used only with
+/// `WeightedAvg`). `solver` is the Poisson
 /// solver for Laplacian unwrapping (ignored with ROMEO).
 pub fn run_field_mapping(
     phases: &[&[f64]],
@@ -272,17 +271,18 @@ pub fn run_field_mapping(
     solver: Solver,
 ) -> Result<Vec<f64>, PipelineError> {
     validate(phases, magnitudes, mask, meta, weighting)?;
-    if config.unwrapping_algorithm == UnwrappingAlgorithm::Laplacian && !solver.available() {
-        return Err(PipelineError::InvalidConfig(format!(
-            "the `{solver}` Laplacian solver needs a QSMxT built with the `laplacian-fft` feature \
-             (and a QSM.rs with unwrap::LaplacianSolver)")));
+    if matches!(config.b0_estimation, B0EstimationMethod::RobustFit(_)) {
+        let mut core = config.clone();
+        core.laplacian_solver = solver.to_core();
+        return qsm_core::pipeline::run_field_mapping(phases, magnitudes, mask, meta, &core, &mut |_, _| {})
+            .map(|r| r.b0_field_ppm);
     }
     let n = mask.len();
     let ones = vec![1.0; n];
     let uniform: Vec<&[f64]> = phases.iter().map(|_| ones.as_slice()).collect();
     let mags = magnitudes.unwrap_or(&uniform);
     let n_echoes = phases.len();
-    let weighted_avg = config.b0_estimation == B0EstimationMethod::WeightedAvg;
+    let weighted_avg = matches!(config.b0_estimation, B0EstimationMethod::WeightedAvg { .. });
 
     let hz = match (config.unwrapping_algorithm, weighting) {
         (UnwrappingAlgorithm::Laplacian, _) => laplacian_field_hz(phases, mags, mask, meta, config, weighting, solver),
@@ -292,15 +292,14 @@ pub fn run_field_mapping(
             romeo_offset_field_hz(phases, mags, mask, meta, config, weighting)
         }
         (UnwrappingAlgorithm::Romeo, w) => {
-            if matches!(w, EchoWeighting::AssumedDecay { .. }) && n_echoes > 1 && weighted_avg {
-                // qsm-core's ROMEO path without offset removal always fits a line; say so rather
-                // than quietly ignore the weighting.
-                log::warn!("ROMEO without phase offset removal estimates B0 with a linear fit; \
-                            --b0-weight-type assumed-decay is not used");
-            }
+            // qsm-core's ROMEO path without offset removal honours the estimator and weighting
+            // (QSM.rs#162), assumed-decay included.
             let mut core = config.clone();
-            if let EchoWeighting::Core(t) = w {
-                core.b0_weight_type = t;
+            if let B0EstimationMethod::WeightedAvg { weighting } = &mut core.b0_estimation {
+                *weighting = match w {
+                    EchoWeighting::Core(t) => t,
+                    EchoWeighting::AssumedDecay { t2star_s } => qsm_core::utils::B0WeightType::AssumedDecay { t2star_s },
+                };
             }
             return qsm_core::pipeline::run_field_mapping(phases, magnitudes, mask, meta, &core, &mut |_, _| {})
                 .map(|r| r.b0_field_ppm);
@@ -322,7 +321,7 @@ mod tests {
     fn meta(tes: &[f64]) -> ScanMetadata {
         ScanMetadata {
             dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), echo_times: tes.to_vec(),
-            field_strength: 3.0, b0_direction: (0.0, 0.0, 1.0),
+            field_strength: 3.0, b0_direction: (0.0, 0.0, 1.0), slice_geometry: None,
         }
     }
 
@@ -460,7 +459,7 @@ mod tests {
         let (ph, mg) = echoes(&tes);
         let mask = vec![1u8; N * N * N];
         let mut cfg = lap_config();
-        cfg.b0_estimation = B0EstimationMethod::LinearFit;
+        cfg.b0_estimation = B0EstimationMethod::LinearFit(Default::default());
         let ours = run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &cfg, EchoWeighting::Core(W::PhaseSNR), DCT).unwrap();
         let core = qsm_core::pipeline::run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &cfg, &mut |_, _| {}).unwrap();
         assert!(max_abs_diff(&ours, &core.b0_field_ppm, &mask) < 1e-9);
@@ -475,12 +474,19 @@ mod tests {
         let mask = sphere_mask();
         let inf = EchoWeighting::AssumedDecay { t2star_s: 1e30 };
         for alg in [UnwrappingAlgorithm::Laplacian, UnwrappingAlgorithm::Romeo] {
-            let cfg = FieldMappingConfig { unwrapping_algorithm: alg, b0_weight_type: W::PhaseVar, ..Default::default() };
+            let cfg = FieldMappingConfig {
+                unwrapping_algorithm: alg,
+                b0_estimation: B0EstimationMethod::WeightedAvg { weighting: W::PhaseVar },
+                ..Default::default()
+            };
             let a = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, inf, DCT).unwrap();
             let b = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, EchoWeighting::Core(W::PhaseVar), DCT).unwrap();
             assert!(max_abs_diff(&a, &b, &mask) < 1e-9, "{alg:?}");
         }
-        let cfg = FieldMappingConfig { b0_weight_type: W::PhaseVar, ..Default::default() };
+        let cfg = FieldMappingConfig {
+            b0_estimation: B0EstimationMethod::WeightedAvg { weighting: W::PhaseVar },
+            ..Default::default()
+        };
         let ours = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, inf, DCT).unwrap();
         let core = qsm_core::pipeline::run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, &mut |_, _| {}).unwrap();
         assert!(max_abs_diff(&ours, &core.b0_field_ppm, &mask) < 1e-9);
@@ -492,7 +498,7 @@ mod tests {
         let (ph, _) = echoes(&tes);
         let mask = vec![1u8; N * N * N];
         let mut cfg = lap_config();
-        cfg.b0_estimation = B0EstimationMethod::LinearFit; // must not degenerate to zero
+        cfg.b0_estimation = B0EstimationMethod::LinearFit(Default::default()); // must not degenerate to zero
         let f = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &cfg, EchoWeighting::Core(W::PhaseSNR), DCT).unwrap();
         assert!(max_abs_diff(&demeaned(&f, &mask), &truth_ppm(&mask), &mask) < 1e-6);
     }
@@ -517,21 +523,6 @@ mod tests {
         assert!(max_abs_diff(&a, &b, &mask) < 1e-12);
     }
 
-    #[test]
-    fn fft_solver_needs_its_feature() {
-        let tes = [0.004, 0.009];
-        let (ph, _) = echoes(&tes);
-        let mask = sphere_mask();
-        let r = run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &lap_config(),
-                                  EchoWeighting::AssumedDecay { t2star_s: 0.040 }, FFT);
-        assert_eq!(r.is_ok(), cfg!(feature = "laplacian-fft"));
-        // ROMEO does not use the solver, so it is never an error there.
-        let romeo = FieldMappingConfig::default();
-        assert!(run_field_mapping(&refs(&ph), None, &mask, &meta(&tes), &romeo,
-                                  EchoWeighting::Core(W::PhaseSNR), FFT).is_ok());
-    }
-
-    #[cfg(feature = "laplacian-fft")]
     #[test]
     fn fft_solver_recovers_wrapped_field() {
         // The masked phase falls smoothly to zero at the sphere edge, so the padded FFT solve

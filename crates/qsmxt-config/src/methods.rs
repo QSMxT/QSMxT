@@ -931,7 +931,7 @@ fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
         QsmAlgorithm::Nltv => ("NLTV (Nonlinear Total Variation)", &CITE_NLTV),
         QsmAlgorithm::Medi => ("MEDI (Morphology Enabled Dipole Inversion)", &CITE_MEDI),
         QsmAlgorithm::Tfi => ("TFI (Total Field Inversion)", &CITE_TFI),
-        QsmAlgorithm::Ilsqr => ("iLSQR", &CITE_ILSQR),
+        QsmAlgorithm::Ilsqr => ("iLSQR (the STI Suite 3.0 algorithm)", &CITE_ILSQR),
         QsmAlgorithm::Lsqr => ("minimally regularised LSQR", &CITE_LSQR),
         QsmAlgorithm::Heidi => ("HEIDI (Homogeneity Enabled Incremental Dipole Inversion)", &CITE_HEIDI),
         QsmAlgorithm::Ndi => ("NDI (Nonlinear Dipole Inversion)", &CITE_NDI),
