@@ -13,7 +13,6 @@ use crate::cli::{
 };
 use crate::error::QsmxtError;
 use crate::cli::LaplacianSolverArg;
-use crate::pipeline::fieldmap::{EchoWeighting, Solver};
 use crate::pipeline::phase;
 
 /// TE / B0 / geometry resolved from `--tes` / `--b0` / `--params`.
@@ -82,10 +81,7 @@ fn apply_common_config(
 ) {
     config.b0_estimation = match common.b0_estimation {
         B0EstimationArg::WeightedAvg => qsm_core::pipeline::config::B0EstimationMethod::WeightedAvg {
-            weighting: match echo_weighting(common) {
-                EchoWeighting::Core(t) => t,
-                EchoWeighting::AssumedDecay { t2star_s } => qsm_core::utils::B0WeightType::AssumedDecay { t2star_s },
-            },
+            weighting: echo_weighting(common),
         },
         B0EstimationArg::LinearFit => {
             let mut p = qsm_core::utils::LinearFitParams::default();
@@ -100,16 +96,16 @@ fn apply_common_config(
     };
 }
 
-/// The echo weighting for a weighted-average B0 estimate, including the ones qsm-core lacks.
-fn echo_weighting(common: &FieldmapCommonArgs) -> EchoWeighting {
+/// The echo weighting for a weighted-average B0 estimate.
+fn echo_weighting(common: &FieldmapCommonArgs) -> qsm_core::utils::B0WeightType {
     use qsm_core::utils::B0WeightType as W;
     match common.b0_weight_type {
-        B0WeightTypeArg::PhaseSNR => EchoWeighting::Core(W::PhaseSNR),
-        B0WeightTypeArg::PhaseVar => EchoWeighting::Core(W::PhaseVar),
-        B0WeightTypeArg::Average => EchoWeighting::Core(W::Average),
-        B0WeightTypeArg::TEs => EchoWeighting::Core(W::TEs),
-        B0WeightTypeArg::Mag => EchoWeighting::Core(W::Mag),
-        B0WeightTypeArg::AssumedDecay => EchoWeighting::AssumedDecay { t2star_s: common.b0_weight_assumed_t2star * 1e-3 },
+        B0WeightTypeArg::PhaseSNR => W::PhaseSNR,
+        B0WeightTypeArg::PhaseVar => W::PhaseVar,
+        B0WeightTypeArg::Average => W::Average,
+        B0WeightTypeArg::TEs => W::TEs,
+        B0WeightTypeArg::Mag => W::Mag,
+        B0WeightTypeArg::AssumedDecay => W::AssumedDecay { t2star_s: common.b0_weight_assumed_t2star * 1e-3 },
     }
 }
 
@@ -133,20 +129,19 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
                     c.bipolar_correction = bipolar_correction;
                     c.romeo_params = romeo_params.clone();
                 },
-                Solver::Dct,
             )
         }
         FieldmapCommand::Laplacian(args) => {
             let pad = qsmxt_config::pad3_from(&args.laplacian_fft_pad).ok_or_else(|| QsmxtError::Config(
                 format!("--laplacian-fft-pad {:?}: give one value or three", args.laplacian_fft_pad)))?;
+            let solver = match args.laplacian_solver {
+                LaplacianSolverArg::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
+                LaplacianSolverArg::Fft => qsm_core::unwrap::LaplacianSolver::Fft { pad },
+            };
             run_field_mapping(
                 &args.common,
                 qsm_core::pipeline::config::UnwrappingAlgorithm::Laplacian,
-                &|_| {},
-                match args.laplacian_solver {
-                    LaplacianSolverArg::Dct => Solver::Dct,
-                    LaplacianSolverArg::Fft => Solver::Fft { pad },
-                },
+                &|c| c.laplacian_solver = solver,
             )
         }
     }
@@ -156,7 +151,6 @@ fn run_field_mapping(
     common: &FieldmapCommonArgs,
     algorithm: qsm_core::pipeline::config::UnwrappingAlgorithm,
     apply_algo: &dyn Fn(&mut qsm_core::pipeline::config::FieldMappingConfig),
-    solver: Solver,
 ) -> crate::Result<()> {
     let params = resolve_scan_params(common)?;
 
@@ -242,10 +236,9 @@ fn run_field_mapping(
         &mask,
         &scan_meta,
         &config,
-        echo_weighting(common),
-        solver,
     )
-    .map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
+    .map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?
+    .b0_field_ppm;
 
     // run_field_mapping already restricts to the mask, but multiply defensively so
     // out-of-brain voxels are exactly zero (matching the qsm-ci masked-ppm output).
