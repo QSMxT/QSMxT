@@ -12,16 +12,15 @@
 //! * **`assumed-decay` weighting** is qsm-core's `B0WeightType::AssumedDecay`.
 //! * The **FFT Laplacian solver** is qsm-core's `LaplacianSolver::Fft`.
 //!
-//! Two Laplacian cases stay here, because qsm-core's result differs from QSMxT's there: a
-//! single echo, and `--b0-estimation linear-fit`. qsm-core neither masks a single echo's phase
-//! nor aligns the per-echo constants before a linear fit; [`laplacian_aligned`] does both.
+//! * A **single Laplacian echo** is masked and demeaned, and **`linear-fit`** aligns the
+//!   Laplacian per-echo constants first (QSM.rs#167).
 //!
 //! The UK Biobank recipe (per-echo Laplacian unwrapping as STI Suite's `MRPhaseUnwrap`, then a
 //! mean weighted by `TE·exp(−TE/T2*)` with an assumed T2* of 40 ms) is
 //! `--unwrapping-algorithm laplacian --laplacian-solver fft --b0-weight-type assumed-decay`.
 
 use qsm_core::pipeline::config::{
-    B0EstimationMethod, FieldMappingConfig, PipelineError, ScanMetadata, UnwrappingAlgorithm,
+    B0EstimationMethod, FieldMappingConfig, PipelineError, ScanMetadata,
 };
 pub use qsm_core::pipeline::FieldMappingResult;
 use qsm_core::utils::B0WeightType;
@@ -51,7 +50,6 @@ fn validate(
     if meta.echo_times.iter().any(|&te| !te.is_finite() || te <= 0.0) {
         return Err(PipelineError::InvalidInput("echo times must be positive".into()));
     }
-    // qsm-core checks this too, but not on the paths `laplacian_aligned` takes.
     if let B0EstimationMethod::WeightedAvg { weighting: B0WeightType::AssumedDecay { t2star_s } } = config.b0_estimation {
         if !(t2star_s.is_finite() && t2star_s > 0.0) {
             return Err(PipelineError::InvalidConfig(format!(
@@ -72,10 +70,6 @@ pub fn run_field_mapping(
     config: &FieldMappingConfig,
 ) -> Result<FieldMappingResult, PipelineError> {
     validate(phases, magnitudes, mask, meta, config)?;
-    let laplacian = config.unwrapping_algorithm == UnwrappingAlgorithm::Laplacian;
-    if laplacian && (phases.len() == 1 || matches!(config.b0_estimation, B0EstimationMethod::LinearFit(_))) {
-        return Ok(laplacian_aligned(phases, magnitudes, mask, meta, config));
-    }
     qsm_core::pipeline::run_field_mapping(phases, magnitudes, mask, meta, config, &mut |_, _| {})
 }
 
@@ -109,65 +103,6 @@ pub fn robust_fit_report_json(report: &qsm_core::pipeline::RobustFitReport) -> s
         "outlier_score": q.outlier_score,
         "flagged_echoes": q.flagged.iter().map(|e| e + 1).collect::<Vec<_>>(),
     })
-}
-
-/// Laplacian unwrapping for the two cases where qsm-core's path differs from QSMxT's: a single
-/// echo, and the linear fit. qsm-core unwraps a single echo's phase as given and leaves it
-/// unaligned, and does not align the per-echo constants before a linear fit. Here, as on qsm-core's
-/// weighted-average and robust-fit paths, each echo's phase is zeroed outside the mask before
-/// the unwrap (so noise there does not leak into the brain through the global Poisson solve, as
-/// STI Suite is called by UK Biobank) and the masked mean the unwrap leaves undetermined is
-/// removed. An unaligned per-echo constant is not linear in TE, so it biases the fitted slope.
-// TODO: drop once astewartau/QSM.rs#167 (align these two Laplacian cases) is in the pin.
-fn laplacian_aligned(
-    phases: &[&[f64]], magnitudes: Option<&[&[f64]]>, mask: &[u8], meta: &ScanMetadata,
-    config: &FieldMappingConfig,
-) -> FieldMappingResult {
-    let (nx, ny, nz) = meta.dims;
-    let (vx, vy, vz) = meta.voxel_size;
-    let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
-    let tes = &meta.echo_times;
-    let unwrapped: Vec<Vec<f64>> = phases.iter().map(|p| {
-        let masked: Vec<f64> = p.iter().zip(mask).map(|(&v, &m)| if m != 0 { v } else { 0.0 }).collect();
-        let mut u = qsm_core::unwrap::laplacian_unwrap(&masked, mask, &grid, config.laplacian_solver);
-        remove_masked_mean(&mut u, mask);
-        u
-    }).collect();
-    let hz: Vec<f64> = match (&config.b0_estimation, unwrapped.len()) {
-        (B0EstimationMethod::LinearFit(p), n) if n > 1 => {
-            let ones = vec![1.0; mask.len()];
-            let uniform: Vec<&[f64]> = phases.iter().map(|_| ones.as_slice()).collect();
-            let mags = magnitudes.unwrap_or(&uniform);
-            let fit = qsm_core::utils::multi_echo_linear_fit(
-                &unwrapped, mags, tes, mask, p.estimate_offset, p.reliability_threshold_percentile);
-            qsm_core::utils::field_to_hz(&fit.field)
-        }
-        // One echo: every estimator is φ/TE.
-        _ => unwrapped[0].iter().zip(mask)
-            .map(|(&u, &m)| if m != 0 { u / tes[0] / std::f64::consts::TAU } else { 0.0 })
-            .collect(),
-    };
-    FieldMappingResult {
-        b0_field_ppm: qsm_core::pipeline::hz_to_ppm(&hz, meta.field_strength),
-        phase_offset: None,
-        robust_fit: None,
-    }
-}
-
-/// Subtract the mean over `mask` from `values` inside `mask`: a Laplacian unwrap fixes each echo
-/// only up to its own constant.
-fn remove_masked_mean(values: &mut [f64], mask: &[u8]) {
-    let (sum, n) = values.iter().zip(mask).filter(|(_, &m)| m != 0)
-        .fold((0.0, 0usize), |(s, n), (&v, _)| (s + v, n + 1));
-    if n == 0 {
-        return;
-    }
-    let mean = sum / n as f64;
-    for (v, &m) in values.iter_mut().zip(mask) {
-        if m != 0 {
-            *v -= mean;
-        }
-    }
 }
 
 /// The field mapping this module implemented itself before qsm-core could (QSMxT#252): per-echo
@@ -469,7 +404,8 @@ pub(crate) mod legacy {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use super::legacy::{weighted_b0_hz, EchoWeighting};
+    use super::legacy::{remove_masked_mean, weighted_b0_hz, EchoWeighting};
+    use qsm_core::pipeline::config::UnwrappingAlgorithm;
     use qsm_core::unwrap::LaplacianSolver;
     use qsm_core::utils::B0WeightType as W;
     use std::f64::consts::PI;
@@ -623,20 +559,6 @@ mod tests {
         let c = run(W::AssumedDecay { t2star_s: 0.040 });
         assert!(max_abs_diff(&a, &b, &mask) > 1e-4);
         assert!(max_abs_diff(&b, &c, &mask) > 1e-4);
-    }
-
-    #[test]
-    fn laplacian_linear_fit_reproduces_qsm_core() {
-        // `--b0-estimation linear-fit` keeps qsm-core's old Laplacian behaviour (with a full mask,
-        // where masking the phase changes nothing and the intercept absorbs the demeaning).
-        let tes = [0.004, 0.009, 0.014];
-        let (ph, mg) = echoes(&tes);
-        let mask = vec![1u8; N * N * N];
-        let mut cfg = lap_config();
-        cfg.b0_estimation = B0EstimationMethod::LinearFit(Default::default());
-        let ours = run(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &cfg, W::PhaseSNR, DCT).unwrap();
-        let core = qsm_core::pipeline::run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &cfg, &mut |_, _| {}).unwrap();
-        assert!(max_abs_diff(&ours, &core.b0_field_ppm, &mask) < 1e-9);
     }
 
     #[test]

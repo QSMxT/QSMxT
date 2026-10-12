@@ -111,8 +111,8 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `440946b`):
   than TE weighting, so qsmbly and any other qsmxt-config consumer get the same field map as QSMxT.
 - Field mapping is qsm-core's `run_field_mapping` (QSM.rs#161/#162), with no output change: a
   test holds it to QSMxT's previous implementation on every path that implementation computed
-  itself. A single Laplacian-unwrapped echo and the Laplacian linear fit stay in QSMxT, where
-  qsm-core does not yet mask/align the echoes the same way.
+  itself, including a single Laplacian-unwrapped echo and the Laplacian linear fit, which
+  qsm-core masks and aligns since QSM.rs#167. QSMxT no longer computes any of it itself.
 - The FFT Laplacian solver (`--laplacian-solver fft`) is in every build; the `laplacian-fft`
   cargo feature is gone.
 - The Laplacian solver and its FFT pad are in the TUI (Field mapping → Unwrapping = laplacian →
