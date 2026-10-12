@@ -81,34 +81,35 @@ fn apply_common_config(
     common: &FieldmapCommonArgs,
 ) {
     config.b0_estimation = match common.b0_estimation {
-        B0EstimationArg::WeightedAvg => qsm_core::pipeline::config::B0EstimationMethod::WeightedAvg,
-        B0EstimationArg::LinearFit => qsm_core::pipeline::config::B0EstimationMethod::LinearFit,
+        B0EstimationArg::WeightedAvg => qsm_core::pipeline::config::B0EstimationMethod::WeightedAvg {
+            weighting: match echo_weighting(common) {
+                EchoWeighting::Core(t) => t,
+                EchoWeighting::AssumedDecay { t2star_s } => qsm_core::utils::B0WeightType::AssumedDecay { t2star_s },
+            },
+        },
+        B0EstimationArg::LinearFit => {
+            let mut p = qsm_core::utils::LinearFitParams::default();
+            if let Some(v) = common.linear_fit_reliability_threshold {
+                p.reliability_threshold_percentile = v;
+            }
+            if let Some(v) = common.linear_fit_estimate_offset {
+                p.estimate_offset = v;
+            }
+            qsm_core::pipeline::config::B0EstimationMethod::LinearFit(p)
+        }
     };
-    config.b0_weight_type = match common.b0_weight_type {
-        B0WeightTypeArg::PhaseSNR => qsm_core::utils::B0WeightType::PhaseSNR,
-        B0WeightTypeArg::PhaseVar => qsm_core::utils::B0WeightType::PhaseVar,
-        B0WeightTypeArg::Average => qsm_core::utils::B0WeightType::Average,
-        B0WeightTypeArg::TEs => qsm_core::utils::B0WeightType::TEs,
-        B0WeightTypeArg::Mag => qsm_core::utils::B0WeightType::Mag,
-        // No qsm-core counterpart: carried by `echo_weighting` instead (placeholder here).
-        B0WeightTypeArg::AssumedDecay => qsm_core::utils::B0WeightType::TEs,
-    };
-    if let Some(v) = common.linear_fit_reliability_threshold {
-        config.linear_fit_params.reliability_threshold_percentile = v;
-    }
-    if let Some(v) = common.linear_fit_estimate_offset {
-        config.linear_fit_params.estimate_offset = v;
-    }
 }
 
 /// The echo weighting for a weighted-average B0 estimate, including the ones qsm-core lacks.
-fn echo_weighting(
-    config: &qsm_core::pipeline::config::FieldMappingConfig,
-    common: &FieldmapCommonArgs,
-) -> EchoWeighting {
+fn echo_weighting(common: &FieldmapCommonArgs) -> EchoWeighting {
+    use qsm_core::utils::B0WeightType as W;
     match common.b0_weight_type {
+        B0WeightTypeArg::PhaseSNR => EchoWeighting::Core(W::PhaseSNR),
+        B0WeightTypeArg::PhaseVar => EchoWeighting::Core(W::PhaseVar),
+        B0WeightTypeArg::Average => EchoWeighting::Core(W::Average),
+        B0WeightTypeArg::TEs => EchoWeighting::Core(W::TEs),
+        B0WeightTypeArg::Mag => EchoWeighting::Core(W::Mag),
         B0WeightTypeArg::AssumedDecay => EchoWeighting::AssumedDecay { t2star_s: common.b0_weight_assumed_t2star * 1e-3 },
-        _ => EchoWeighting::Core(config.b0_weight_type),
     }
 }
 
@@ -215,6 +216,7 @@ fn run_field_mapping(
         echo_times: params.echo_times.clone(),
         field_strength: params.field_strength,
         b0_direction,
+        slice_geometry: None,
     };
 
     // ── Field-mapping config ──
@@ -236,7 +238,7 @@ fn run_field_mapping(
         &mask,
         &scan_meta,
         &config,
-        echo_weighting(&config, common),
+        echo_weighting(common),
         solver,
     )
     .map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;

@@ -20,21 +20,16 @@ path = "src/main.rs"
 # such a build keeps all classical algorithms and reports a clear error if a DL algorithm
 # is selected.
 default = ["dl"]
-# The FFT Laplacian solver (`--laplacian-solver fft`, STI Suite's MRPhaseUnwrap). Needs a QSM.rs
-# with `qsm_core::unwrap::LaplacianSolver` (feat/laplacian-fft-solver), which the pinned rev does
-# not have yet: build with a local [patch] of qsm-core. Without it, `fft` is rejected at run time.
-# Once the pin has it, drop this feature and the cfgs in src/pipeline/fieldmap.rs.
-laplacian-fft = []
-# Old name of `laplacian-fft` (never released).
-laplacian-sti = ["laplacian-fft"]
 dl = ["qsm-core/onnx", "qsm-core/download"]
 
 [dependencies]
-# TEMP: pinned to the RS2-Net merge (QSM.rs#131), past v0.38.0 and not yet in a release. A `rev`
-# pin is what CI can actually resolve — a `path` pin cannot — but it must become a `tag` pin before
-# the next QSMxT release, or qsmbly (which pins qsmxt-config) has no release to match.
-# qsmxt-config must move in lockstep.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "da8d0aa7a4e3d9e68a44d73bc1b292748f89342a", features = ["parallel"] }
+# TEMP: pinned by rev to QSM.rs main at #166 (motion-robust echo fit as a B0 estimation method),
+# past v0.38.0 and not yet in a release. It takes in #160-#163 and #165 (V-SHARP deconvolve
+# option, Laplacian FFT solver, assumed-decay B0 weighting, STI Suite 3.0 iLSQR) and #137-#139
+# (motion correction, R2PRIMEnet field gate, slice-gap check). A `rev` pin is what CI can resolve
+# (a `path` pin cannot), but it must become a `tag` pin before the next QSMxT release, or qsmbly
+# (which pins qsmxt-config) has no release to match. qsmxt-config must move in lockstep.
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "440946b804477406d2c337c77187e201f9e7daf7", features = ["parallel"] }
 qsmxt-config = { path = "crates/qsmxt-config" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"

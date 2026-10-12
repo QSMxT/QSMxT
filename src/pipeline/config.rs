@@ -137,7 +137,7 @@ fn separation_algorithm_arg_to_config(a: cli::SeparationAlgorithmArg) -> Separat
 /// Apply QSMART parameter overrides onto a config. Shared by the `run` pipeline and the standalone
 /// `qsmxt qsmart` command so both honour the same flags.
 pub fn apply_qsmart_overrides(config: &mut PipelineConfig, p: &cli::QsmartParamArgs) {
-    if let Some(v) = p.qsmart_ilsqr_tol { config.inversion.qsmart.ilsqr_tol = v; }
+    if let Some(v) = p.qsmart_ilsqr_pad_mm { config.inversion.qsmart.ilsqr_pad_mm = v; }
     if let Some(v) = p.qsmart_ilsqr_max_iter { config.inversion.qsmart.ilsqr_max_iter = v; }
     if let Some(v) = p.qsmart_vasc_sphere_radius { config.inversion.qsmart.vasc_sphere_radius = v; }
     if let Some(v) = p.qsmart_sdf_spatial_radius { config.inversion.qsmart.sdf_spatial_radius = v; }

@@ -14,7 +14,7 @@ pub fn execute(cmd: UnwrapCommand) -> crate::Result<()> {
             phase::scale_phase_to_pi(&mut phase_data);
             info!("Unwrapping phase (Laplacian, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
-            let unwrapped = crate::pipeline::fieldmap::laplacian_unwrap_dct(&phase_data, &mask, &grid);
+            let unwrapped = qsm_core::unwrap::laplacian_unwrap(&phase_data, &mask, &grid, qsm_core::unwrap::LaplacianSolver::Dct);
 
             save_nifti(&args.common.output, &unwrapped, &phase_nifti)?;
             info!("Unwrapped phase saved to {}", args.common.output.display());

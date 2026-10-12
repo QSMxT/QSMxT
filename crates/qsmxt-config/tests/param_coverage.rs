@@ -90,7 +90,8 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     cover!(q::inversion::TgvParams => c::TgvConfig, ignore: ["fieldstrength", "te"]);
 
     // Background-field removal
-    cover!(q::bgremove::VsharpParams => c::VsharpConfig);
+    // TODO(catch-up): `deconvolve` gets a config field, flag and TUI toggle in its own PR.
+    cover!(q::bgremove::VsharpParams => c::VsharpConfig, ignore: ["deconvolve"]);
     // max_iter defaults to an automatic value (None) and isn't a user knob here.
     cover!(q::bgremove::PdfParams => c::PdfConfig, ignore: ["max_iter"]);
     cover!(q::bgremove::LbvParams => c::LbvConfig, ignore: ["max_iter"]);

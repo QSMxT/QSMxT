@@ -14,8 +14,8 @@ pub fn execute(args: R2primeArgs) -> crate::Result<()> {
     }
     info!("Computing R2' = R2* - R2");
     // r2prime clamps negatives to 0 (R2* ≥ R2 physically).
-    let r2p = qsm_core::relaxometry::r2prime(&r2star.data, &r2.data, &mask);
-    save_nifti(&args.output, &r2p, &r2star)?;
+    let r2p = qsm_core::relaxometry::r2prime(&r2star.data, &r2.data, &mask, None);
+    save_nifti(&args.output, &r2p.r2prime, &r2star)?;
     info!("R2' map saved to {}", args.output.display());
     Ok(())
 }

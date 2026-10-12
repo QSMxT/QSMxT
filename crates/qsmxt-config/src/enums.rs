@@ -75,7 +75,6 @@ pub enum LaplacianSolver {
     Dct,
     /// Schofield & Zhu (2003): sin/cos Laplacian with an FFT Poisson solve on the zero-padded
     /// volume (`field_mapping.laplacian_fft_pad`), reproducing STI Suite 3.0's `MRPhaseUnwrap`.
-    /// Needs a build with the `laplacian-fft` feature.
     #[serde(alias = "sti")]
     Fft,
 }

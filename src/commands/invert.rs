@@ -24,6 +24,7 @@ fn run_dl_inversion(
         echo_times: vec![],
         field_strength,
         b0_direction: (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]),
+        slice_geometry: None,
     };
     // Opt-in overlap-tiling: presence of --tile-size enables it; halo defaults to 8.
     let tile = c.tiling_params.tile_size.map(|core| (core, c.tiling_params.tile_halo.unwrap_or(8)));
