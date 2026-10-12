@@ -1,14 +1,8 @@
 use std::path::PathBuf;
 
 use crate::cli::*;
-use crate::pipeline::config::{PipelineConfig, QsmAlgorithm, SeparationAlgorithm, UnwrappingAlgorithm, BfAlgorithm, B0Estimation, B0WeightType, enforce_separation_dependencies, enforce_smwi_dependencies, enforce_analysis_dependencies, enforce_reference_dependencies};
+use crate::pipeline::config::{PipelineConfig, QsmAlgorithm};
 use super::app::App;
-
-/// Trimmed non-empty string → Some, else None (for bring-your-own tool fields).
-fn non_empty(s: &str) -> Option<String> {
-    let t = s.trim();
-    if t.is_empty() { None } else { Some(t.to_string()) }
-}
 
 pub fn build_command_string(app: &App) -> String {
     let form = &app.form;
@@ -87,6 +81,20 @@ pub fn build_command_string(app: &App) -> String {
         if !form.n_procs.trim().is_empty() {
             parts.push(format!("--n-procs {}", form.n_procs.trim()));
         }
+        if !form.mem_limit_gb.trim().is_empty() {
+            parts.push(format!("--mem-limit-gb {}", form.mem_limit_gb.trim()));
+        }
+        if form.no_mem_limit { parts.push("--no-mem-limit".to_string()); }
+        if form.force { parts.push("--force".to_string()); }
+        if form.clean_intermediates { parts.push("--clean-intermediates".to_string()); }
+        if form.export_dicom {
+            if let Some(p) = parse_optional_path(&form.source_dicom) {
+                parts.push(format!("--source-dicom {}", p.display()));
+            }
+            if let Some(o) = parse_dicom_outputs(&form.dicom_outputs) {
+                parts.push(format!("--dicom-outputs {}", o.join(",")));
+            }
+        }
     }
 
     parts.join(" ")
@@ -114,14 +122,14 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         exclude: app.filter_state.get_include_exclude().1,
         num_echoes: parse_optional_usize(&app.filter_state.num_echoes),
         n_procs: parse_optional_usize(&form.n_procs),
-        source_dicom: None,
-        dicom_outputs: None,
+        source_dicom: if form.export_dicom { parse_optional_path(&form.source_dicom) } else { None },
+        dicom_outputs: if form.export_dicom { parse_dicom_outputs(&form.dicom_outputs) } else { None },
         dry: form.dry_run,
         debug: form.debug,
-        mem_limit_gb: None,
-        no_mem_limit: false,
-        force: false,
-        clean_intermediates: false,
+        mem_limit_gb: parse_optional_f64(&form.mem_limit_gb),
+        no_mem_limit: form.no_mem_limit,
+        force: form.force,
+        clean_intermediates: form.clean_intermediates,
         pipeline: pipeline_args_from_app(app),
     })
 }
@@ -232,8 +240,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         bf_algorithm: Some(bf_options[ps.bf_algorithm]),
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
-        phase_offset_sigma: None,
-                coil_combination_sigma: None,
+        phase_offset_sigma: parse_optional_f64_vec3(&ps.phase_offset_sigma),
+        coil_combination_sigma: parse_optional_f64_vec3(&ps.coil_combination_sigma),
         bipolar_correction: ps.bipolar_correction,
         // Only when changed from the default, so a default form still yields a bare command.
         b0_estimation: match ps.b0_estimation {
@@ -287,8 +295,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             tgv_erosions: parse_optional_usize(&ps.tgv_erosions),
             tgv_alpha1: parse_optional_f64(&ps.tgv_alpha1),
             tgv_alpha0: parse_optional_f64(&ps.tgv_alpha0),
-            tgv_step_size: None,
-            tgv_tol: None,
+            tgv_step_size: parse_optional_f64(&ps.tgv_step_size),
+            tgv_tol: parse_optional_f64(&ps.tgv_tol),
         },
         tikhonov_params: crate::cli::TikhonovParamArgs {
             tikhonov_lambda: parse_optional_f64(&ps.tikhonov_lambda),
@@ -302,10 +310,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         },
         medi_params: crate::cli::MediParamArgs {
             medi_lambda: parse_optional_f64(&ps.medi_lambda),
-            medi_merit: None,
+            medi_merit: Some(ps.medi_merit),
             medi_smv: ps.medi_smv,
+            no_medi_smv: !ps.medi_smv,
             medi_smv_radius: parse_optional_f64(&ps.medi_smv_radius),
-            medi_data_weighting: None,
+            medi_data_weighting: ps.medi_data_weighting.trim().parse().ok(),
             medi_percentage: parse_optional_f64(&ps.medi_percentage),
             medi_cg_tol: parse_optional_f64(&ps.medi_cg_tol),
             medi_cg_max_iter: parse_optional_usize(&ps.medi_cg_max_iter),
@@ -315,8 +324,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         tfi_params: crate::cli::TfiParamArgs {
             tfi_lambda: parse_optional_f64(&ps.tfi_lambda),
             tfi_precond: parse_optional_f64(&ps.tfi_precond),
-            tfi_merit: None,
-            tfi_data_weighting: None,
+            tfi_merit: Some(ps.tfi_merit),
+            tfi_data_weighting: ps.tfi_data_weighting.trim().parse().ok(),
             tfi_percentage: parse_optional_f64(&ps.tfi_percentage),
             tfi_cg_tol: parse_optional_f64(&ps.tfi_cg_tol),
             tfi_cg_max_iter: parse_optional_usize(&ps.tfi_cg_max_iter),
@@ -428,11 +437,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             amp_pe_simulated_te: parse_optional_f64(&ps.amp_pe_simulated_te),
             amp_pe_max_linearization_ite: parse_optional_usize(&ps.amp_pe_max_linearization_ite),
             amp_pe_tikhonov_beta: parse_optional_f64(&ps.amp_pe_tikhonov_beta),
-            amp_pe_damp_rate_sig: None,
-            amp_pe_damp_rate_par: None,
-            amp_pe_max_pe_spar_ite: None,
-            amp_pe_max_pe_est_ite: None,
-            amp_pe_cvg_thd: None,
+            amp_pe_damp_rate_sig: parse_optional_f64(&ps.amp_pe_damp_rate_sig),
+            amp_pe_damp_rate_par: parse_optional_f64(&ps.amp_pe_damp_rate_par),
+            amp_pe_max_pe_spar_ite: parse_optional_usize(&ps.amp_pe_max_pe_spar_ite),
+            amp_pe_max_pe_est_ite: parse_optional_usize(&ps.amp_pe_max_pe_est_ite),
+            amp_pe_cvg_thd: parse_optional_f64(&ps.amp_pe_cvg_thd),
         },
         motion_params: crate::cli::MotionParamArgs {
             motion_correction: ps.motion_correction,
@@ -531,7 +540,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             msmv_maxk: parse_optional_usize(&ps.msmv_maxk),
         },
         romeo_params: crate::cli::RomeoParamArgs {
-            no_romeo_phase_coherence: false,
+            no_romeo_phase_coherence: !ps.romeo_phase_coherence,
             no_romeo_phase_gradient_coherence: !ps.romeo_phase_gradient_coherence,
             no_romeo_phase_linearity: !ps.romeo_phase_linearity,
             no_romeo_mag_coherence: !ps.romeo_mag_coherence,
@@ -571,8 +580,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             tile_size: parse_optional_usize(&ps.dl_tile_size),
             tile_halo: parse_optional_usize(&ps.dl_tile_halo),
         },
-        homogeneity_sigma_mm: None,
-        homogeneity_nbox: None,
+        homogeneity_sigma_mm: if ps.inhomogeneity_correction { parse_optional_f64(&ps.homogeneity_sigma_mm) } else { None },
+        homogeneity_nbox: if ps.inhomogeneity_correction { parse_optional_usize(&ps.homogeneity_nbox) } else { None },
         linear_fit_reliability_threshold: parse_optional_f64(&ps.linear_fit_reliability_threshold),
         linear_fit_estimate_offset: Some(ps.linear_fit_estimate_offset),
         robust_fit_loss: (ps.b0_estimation == 2 && ps.robust_fit_loss == 1).then_some(crate::cli::RobustLossArg::Huber),
@@ -591,7 +600,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             no_synthseg_flip_averaging: !form.synthseg_flip_averaging,
             no_synthseg_topology_cleanup: !form.synthseg_topology_cleanup,
             synthseg_sigma: parse_optional_f64(&form.synthseg_sigma),
-            use_custom_dseg: None,
+            use_custom_dseg: Some(ps.custom_dseg_tool.trim()).filter(|t| !t.is_empty()).map(str::to_string),
         },
         smwi_params: crate::cli::SmwiParamArgs {
             smwi_threshold: parse_optional_f64(&form.smwi_threshold),
@@ -618,11 +627,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         inhomogeneity_correction: ps.inhomogeneity_correction,
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
         obliquity_threshold: parse_optional_f64(&ps.obliquity_threshold),
-        crop_to_mask: false,
+        crop_to_mask: ps.crop_to_mask,
         ignore_slice_gap: ps.ignore_slice_gap,
-        fft_padding: false,
-        crop_margin_mm: None,
-        output_space: None,
+        fft_padding: ps.fft_padding,
+        crop_margin_mm: if ps.crop_to_mask { parse_optional_f64(&ps.crop_margin_mm) } else { None },
+        output_space: Some(if ps.output_space == 1 { crate::cli::OutputSpaceArg::Working } else { crate::cli::OutputSpaceArg::Acquired }),
         mask_preset: None,
         use_custom_masks: if ps.custom_mask_tool.trim().is_empty() { None } else { Some(ps.custom_mask_tool.trim().to_string()) },
         mask_sections_cli: {
@@ -678,6 +687,13 @@ fn parse_optional_path(s: &str) -> Option<PathBuf> {
     }
 }
 
+/// `--dicom-outputs` takes a comma-separated list; spaces are accepted too.
+fn parse_dicom_outputs(s: &str) -> Option<Vec<String>> {
+    let v: Vec<String> = s.split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|t| !t.is_empty()).map(str::to_string).collect();
+    (!v.is_empty()).then_some(v)
+}
+
 #[allow(dead_code)]
 fn parse_optional_string_vec(s: &str) -> Option<Vec<String>> {
     let trimmed = s.trim();
@@ -707,6 +723,13 @@ fn parse_usize_triple(s: &str) -> Option<[usize; 3]> {
 fn parse_pad3(s: &str) -> Option<[usize; 3]> {
     let v: Vec<usize> = s.split_whitespace().map(|t| t.parse().ok()).collect::<Option<_>>()?;
     qsmxt_config::pad3_from(&v)
+}
+
+/// Three numbers, separated by spaces or commas; anything else is None.
+fn parse_optional_f64_vec3(s: &str) -> Option<Vec<f64>> {
+    let v: Vec<f64> = s.split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|t| !t.is_empty()).map(|t| t.parse().ok()).collect::<Option<_>>()?;
+    (v.len() == 3).then_some(v)
 }
 
 fn parse_optional_usize(s: &str) -> Option<usize> {
@@ -750,394 +773,15 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
     })
 }
 
-/// Build a PipelineConfig reflecting the current TUI state (for methods preview).
+/// The PipelineConfig the TUI's current state runs with (methods preview, generated command).
+///
+/// Built from the same argument list the run gets ([`pipeline_args_from_app`]) through the same
+/// override path as `qsmxt run`, so the preview, the shown command and the run cannot drift apart:
+/// a setting the TUI has but the CLI cannot express simply has no effect here, which the parity
+/// test (`parity::every_run_flag_is_reachable_from_the_tui`) catches.
 pub fn config_from_app(app: &App) -> PipelineConfig {
-    let ps = &app.pipeline_state;
-    let unwrap_algorithms = [UnwrappingAlgorithm::Romeo, UnwrappingAlgorithm::Laplacian];
-    let bf_algorithms = [
-        BfAlgorithm::Vsharp, BfAlgorithm::Pdf, BfAlgorithm::Lbv,
-        BfAlgorithm::Ismv, BfAlgorithm::Sharp, BfAlgorithm::Resharp,
-        BfAlgorithm::Harperella, BfAlgorithm::Iharperella, BfAlgorithm::Bfrnet, BfAlgorithm::Iqfm,
-    ];
-
-    let qsm_algorithm = selected_qsm_algorithm(ps);
-    let is_end_to_end = matches!(qsm_algorithm, QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart);
-
     let mut config = PipelineConfig::default();
-    config.pipeline.do_qsm = ps.do_qsm;
-    config.pipeline.do_swi = app.form.do_swi;
-    config.pipeline.do_smwi = app.form.do_smwi;
-    config.pipeline.do_segmentation = app.form.do_segmentation;
-    config.pipeline.do_analysis = app.form.do_analysis;
-    config.segmentation.version = if app.form.synthseg_version == 1 {
-        crate::pipeline::config::SynthSegVersion::V2
-    } else {
-        crate::pipeline::config::SynthSegVersion::V1
-    };
-    config.segmentation.crop = app.form.synthseg_crop.trim().parse::<usize>().ok();
-    config.segmentation.flip_averaging = app.form.synthseg_flip_averaging;
-    config.segmentation.topology_cleanup = app.form.synthseg_topology_cleanup;
-    if let Ok(v) = app.form.synthseg_sigma.trim().parse::<f64>() { config.segmentation.sigma_smoothing = v; }
-    if let Ok(v) = app.form.smwi_threshold.trim().parse::<f64>() { config.smwi.threshold_ppm = v; }
-    if let Ok(v) = app.form.smwi_power.trim().parse::<f64>() { config.smwi.power = v; }
-    if let Ok(v) = app.form.smwi_mip_window.trim().parse::<usize>() { config.smwi.mip_window = v; }
-    config.pipeline.do_t2starmap = app.form.do_t2starmap;
-    config.pipeline.do_r2starmap = app.form.do_r2starmap;
-    config.pipeline.do_r2map = app.form.do_r2map;
-    config.pipeline.do_r2primemap = app.form.do_r2primemap;
-    config.pipeline.do_chi_separation = ps.do_chi_separation;
-    config.pipeline.export_dicom = app.form.export_dicom;
-    // Separation
-    let sep_algorithms = [
-        SeparationAlgorithm::R2starQsm, SeparationAlgorithm::Decompose,
-        SeparationAlgorithm::ChiSepIlsqr, SeparationAlgorithm::ChiSepMedi,
-        SeparationAlgorithm::WaveSep, SeparationAlgorithm::HcChisep,
-        SeparationAlgorithm::SusepNet, SeparationAlgorithm::ChiSepNet,
-    ];
-    config.separation.algorithm = sep_algorithms[ps.separation_algorithm.min(sep_algorithms.len() - 1)];
-    config.separation.custom_qsm_tool = non_empty(&ps.custom_qsm_tool);
-    config.separation.custom_r2_tool = non_empty(&ps.custom_r2_tool);
-    config.separation.custom_r2prime_tool = non_empty(&ps.custom_r2prime_tool);
-    config.separation.r2prime_strategy = match app.pipeline_state.r2prime_strategy {
-        1 => crate::pipeline::config::R2PrimeStrategy::Mese,
-        2 => crate::pipeline::config::R2PrimeStrategy::R2primenet,
-        _ => crate::pipeline::config::R2PrimeStrategy::Auto,
-    };
-    config.separation.r2primenet.ignore_field_mismatch = ps.r2primenet_ignore_field_mismatch;
-    if let Some(p) = parse_usize_triple(&ps.r2primenet_patch) {
-        config.separation.r2primenet.patch = p;
-    }
-    config.masking.inhomogeneity_correction = ps.inhomogeneity_correction;
-    config.pipeline.ignore_slice_gap = ps.ignore_slice_gap;
-    {
-        let m = &mut config.motion_correction;
-        m.enabled = ps.motion_correction;
-        m.reference = match ps.motion_reference {
-            1 => qsmxt_config::MotionReference::Last,
-            2 => ps.motion_reference_echo.trim().parse().unwrap_or_default(),
-            _ => qsmxt_config::MotionReference::First,
-        };
-        m.chain = ps.motion_chain;
-        if let Some(v) = parse_optional_usize(&ps.motion_chain_levels) { m.chain_levels = v; }
-        if let Some(v) = parse_optional_f64(&ps.motion_min_ncc) { m.min_ncc = v; }
-        let r = &mut config.registration;
-        if let Some(v) = parse_optional_usize(&ps.reg_levels) { r.levels = v; }
-        if let Some(v) = parse_optional_usize(&ps.reg_max_samples) { r.max_samples = v; }
-        if let Some(v) = parse_optional_usize(&ps.reg_max_iterations) { r.max_iterations = v; }
-        if let Some(v) = parse_optional_usize(&ps.reg_max_evaluations) { r.max_evaluations = v; }
-        if let Some(v) = parse_optional_f64(&ps.reg_tolerance) { r.tolerance = v; }
-        if let Some(v) = parse_optional_f64(&ps.reg_rotation_step_deg) { r.rotation_step_deg = v; }
-        if let Some(v) = parse_optional_f64(&ps.reg_translation_step_mm) { r.translation_step_mm = v; }
-        if let Some(v) = parse_optional_f64(&ps.reg_min_overlap) { r.min_overlap = v; }
-    }
-
-    config.inversion.algorithm = qsm_algorithm;
-
-    // Multi-orientation settings come from the Input tab, where the grouping is defined.
-    let (group, algo_idx, lambda) = app.filter_state.orientation_args();
-    if let Some(pattern) = group {
-        config.multi_orientation.group_by = pattern;
-        config.multi_orientation.algorithm = if algo_idx == 1 {
-            qsmxt_config::MultiOrientAlgorithm::Sti
-        } else {
-            qsmxt_config::MultiOrientAlgorithm::Cosmos
-        };
-        config.multi_orientation.lambda = lambda.unwrap_or(0.0);
-    }
-    config.multi_orientation.register = ps.orientation_registration;
-    config.multi_orientation.force = ps.multi_orientation_force;
-    if !is_end_to_end {
-        config.field_mapping.unwrapping_algorithm = unwrap_algorithms[ps.unwrapping_algorithm];
-        config.bg_removal.algorithm = bf_algorithms[ps.bf_algorithm];
-        config.bg_removal.msmv_refine = ps.msmv_refine;
-    }
-    config.field_mapping.phase_offset_removal = ps.phase_offset_removal;
-    config.field_mapping.bipolar_correction = ps.bipolar_correction;
-    config.field_mapping.romeo.individual = ps.romeo_individual;
-    config.field_mapping.romeo.correct_global = ps.romeo_correct_global;
-    config.field_mapping.romeo.template = ps.romeo_template.trim().parse::<usize>().unwrap_or(1).saturating_sub(1);
-    config.field_mapping.b0_estimation = match ps.b0_estimation {
-        0 => B0Estimation::WeightedAvg,
-        2 => B0Estimation::RobustFit,
-        _ => B0Estimation::LinearFit,
-    };
-    config.field_mapping.linear_fit.estimate_offset = ps.linear_fit_estimate_offset;
-    if let Some(v) = parse_optional_f64(&ps.linear_fit_reliability_threshold) {
-        config.field_mapping.linear_fit.reliability_threshold_percentile = v;
-    }
-    let rf = &mut config.field_mapping.robust_fit;
-    rf.loss = if ps.robust_fit_loss == 1 { qsmxt_config::RobustLoss::Huber } else { qsmxt_config::RobustLoss::Tukey };
-    rf.tuning = parse_optional_f64(&ps.robust_fit_tuning);
-    if let Some(v) = parse_optional_usize(&ps.robust_fit_iterations) { rf.iterations = v; }
-    if let Some(v) = parse_optional_f64(&ps.robust_fit_downweight_level) { rf.downweight_level = v; }
-    if let Some(v) = parse_optional_f64(&ps.robust_fit_flag_ratio) { rf.flag_ratio = v; }
-    config.field_mapping.b0_weight_type = match ps.b0_weight_type {
-        0 => B0WeightType::PhaseSNR,
-        1 => B0WeightType::PhaseVar,
-        2 => B0WeightType::Average,
-        3 => B0WeightType::TEs,
-        5 => B0WeightType::AssumedDecay,
-        _ => B0WeightType::Mag,
-    };
-    if let Some(v) = parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) {
-        config.field_mapping.b0_weight_assumed_t2star_ms = v;
-    }
-    config.field_mapping.laplacian_solver = match ps.laplacian_solver {
-        1 => qsmxt_config::LaplacianSolver::Fft,
-        _ => qsmxt_config::LaplacianSolver::Dct,
-    };
-    if let Some(p) = parse_pad3(&ps.laplacian_fft_pad) {
-        config.field_mapping.laplacian_fft_pad = p;
-    }
-    let (reference, region) =
-        crate::pipeline::config::parse_reference_spec(&crate::tui::app::qsm_reference_spec(ps.qsm_reference));
-    config.qsm.reference = reference;
-    config.qsm.reference_region = region;
-    config.masking.sections = ps.mask_sections.clone();
-    let (combine, refinements) = ps.mask_combine_recipe();
-    config.masking.combine = combine;
-    config.masking.refinements = refinements;
-    config.masking.custom_mask_tool = if ps.custom_mask_tool.trim().is_empty() { None } else { Some(ps.custom_mask_tool.trim().to_string()) };
-    config.masking.two_pass = ps.two_pass;
-    // Left as None while the rows still hold the default recipe, so the generated command stays a
-    // bare `--two-pass`.
-    config.masking.two_pass_sections =
-        (ps.two_pass && ps.two_pass_sections != qsmxt_config::default_two_pass_sections())
-            .then(|| ps.two_pass_sections.clone());
-
-    // Obliquity
-    if let Ok(v) = ps.obliquity_threshold.trim().parse::<f64>() { config.pipeline.obliquity_threshold = v; }
-
-    // Parse algorithm parameters from TUI form strings
-    macro_rules! set_f64 { ($dst:expr, $src:expr) => { if let Ok(v) = $src.trim().parse::<f64>() { $dst = v; } } }
-    macro_rules! set_usize { ($dst:expr, $src:expr) => { if let Ok(v) = $src.trim().parse::<usize>() { $dst = v; } } }
-    // Separation per-method parameters (after set_f64!/set_usize! are in scope).
-    set_f64!(config.separation.r2star_qsm.r_const_3t, ps.sep_r2starqsm_r_const_3t);
-    set_usize!(config.separation.decompose.n_inner, ps.sep_decompose_n_inner);
-    set_f64!(config.separation.decompose.chi_bound, ps.sep_decompose_chi_bound);
-    set_usize!(config.separation.decompose.max_lm_iter, ps.sep_decompose_max_lm_iter);
-    set_f64!(config.separation.chi_sep_ilsqr.dr_pos, ps.sep_ilsqr_dr_pos);
-    set_f64!(config.separation.chi_sep_ilsqr.dr_neg, ps.sep_ilsqr_dr_neg);
-    set_f64!(config.separation.chi_sep_ilsqr.lambda1, ps.sep_ilsqr_lambda1);
-    set_f64!(config.separation.chi_sep_ilsqr.percentage, ps.sep_ilsqr_percentage);
-    set_f64!(config.separation.chi_sep_ilsqr.r2p_min, ps.sep_ilsqr_r2p_min);
-    set_f64!(config.separation.chi_sep_ilsqr.r2p_max, ps.sep_ilsqr_r2p_max);
-    set_usize!(config.separation.chi_sep_ilsqr.max_iter, ps.sep_ilsqr_max_iter);
-    set_f64!(config.separation.chi_sep_ilsqr.tol, ps.sep_ilsqr_tol);
-    set_usize!(config.separation.chi_sep_ilsqr.cg_max_iter, ps.sep_ilsqr_cg_max_iter);
-    set_f64!(config.separation.chi_sep_ilsqr.cg_tol, ps.sep_ilsqr_cg_tol);
-    set_f64!(config.separation.chi_sep_medi.lambda_para, ps.sep_medi_lambda_para);
-    set_f64!(config.separation.chi_sep_medi.lambda_dia, ps.sep_medi_lambda_dia);
-    set_f64!(config.separation.chi_sep_medi.lambda_cpl, ps.sep_medi_lambda_cpl);
-    set_f64!(config.separation.chi_sep_medi.dr_pos, ps.sep_medi_dr_pos);
-    set_f64!(config.separation.chi_sep_medi.dr_neg, ps.sep_medi_dr_neg);
-    set_f64!(config.separation.chi_sep_medi.percentage, ps.sep_medi_percentage);
-    set_f64!(config.separation.chi_sep_medi.cg_tol, ps.sep_medi_cg_tol);
-    set_usize!(config.separation.chi_sep_medi.cg_max_iter, ps.sep_medi_cg_max_iter);
-    set_usize!(config.separation.chi_sep_medi.max_iter, ps.sep_medi_max_iter);
-    set_f64!(config.separation.chi_sep_medi.tol, ps.sep_medi_tol);
-    set_f64!(config.separation.wavesep.dr_pos, ps.sep_wavesep_dr_pos);
-    set_f64!(config.separation.wavesep.dr_neg, ps.sep_wavesep_dr_neg);
-    set_f64!(config.separation.wavesep.alpha, ps.sep_wavesep_alpha);
-    set_f64!(config.separation.wavesep.lambda, ps.sep_wavesep_lambda);
-    set_usize!(config.separation.wavesep.wavelet_order, ps.sep_wavesep_wavelet_order);
-    set_usize!(config.separation.wavesep.max_iter, ps.sep_wavesep_max_iter);
-    set_f64!(config.separation.wavesep.tol, ps.sep_wavesep_tol);
-    set_f64!(config.separation.hc_chisep.dr_pos_3t, ps.sep_hcchisep_dr_pos_3t);
-    set_f64!(config.separation.hc_chisep.bin_hz, ps.sep_hcchisep_bin_hz);
-
-    // BET
-    set_f64!(config.bet.fractional_intensity, ps.bet_fractional_intensity);
-    set_f64!(config.bet.smoothness, ps.bet_smoothness);
-    set_f64!(config.bet.gradient_threshold, ps.bet_gradient_threshold);
-    set_usize!(config.bet.iterations, ps.bet_iterations);
-    set_usize!(config.bet.subdivisions, ps.bet_subdivisions);
-
-    // RTS
-    set_f64!(config.inversion.rts.delta, ps.rts_delta);
-    set_f64!(config.inversion.rts.mu, ps.rts_mu);
-    set_f64!(config.inversion.rts.tol, ps.rts_tol);
-    set_f64!(config.inversion.rts.rho, ps.rts_rho);
-    set_usize!(config.inversion.rts.max_iter, ps.rts_max_iter);
-    set_usize!(config.inversion.rts.lsmr_iter, ps.rts_lsmr_iter);
-
-    // TV
-    set_f64!(config.inversion.tv.lambda, ps.tv_lambda);
-    set_f64!(config.inversion.tv.rho, ps.tv_rho);
-    set_f64!(config.inversion.tv.tol, ps.tv_tol);
-    set_usize!(config.inversion.tv.max_iter, ps.tv_max_iter);
-
-    // TKD / TSVD
-    set_f64!(config.inversion.tkd.threshold, ps.tkd_threshold);
-    set_f64!(config.inversion.tsvd.threshold, ps.tsvd_threshold);
-
-    // iLSQR
-    set_f64!(config.inversion.ilsqr.tol, ps.ilsqr_tol);
-    set_usize!(config.inversion.ilsqr.max_iter, ps.ilsqr_max_iter);
-
-    // Tikhonov
-    set_f64!(config.inversion.tikhonov.lambda, ps.tikhonov_lambda);
-
-    // NLTV
-    set_f64!(config.inversion.nltv.lambda, ps.nltv_lambda);
-    set_f64!(config.inversion.nltv.mu, ps.nltv_mu);
-    set_f64!(config.inversion.nltv.tol, ps.nltv_tol);
-    set_usize!(config.inversion.nltv.max_iter, ps.nltv_max_iter);
-    set_usize!(config.inversion.nltv.newton_iter, ps.nltv_newton_iter);
-
-    // NDI
-    set_f64!(config.inversion.ndi.tau, ps.ndi_tau);
-    set_f64!(config.inversion.ndi.alpha, ps.ndi_alpha);
-    set_usize!(config.inversion.ndi.max_iter, ps.ndi_max_iter);
-    set_f64!(config.inversion.ndi.phase_scale, ps.ndi_phase_scale);
-
-    // FANSI (nlTV / nlTGV — shared)
-    set_f64!(config.inversion.fansi.alpha1, ps.fansi_alpha1);
-    set_f64!(config.inversion.fansi.mu1, ps.fansi_mu1);
-    set_f64!(config.inversion.fansi.mu2, ps.fansi_mu2);
-    set_f64!(config.inversion.fansi.alpha0, ps.fansi_alpha0);
-    set_f64!(config.inversion.fansi.mu0, ps.fansi_mu0);
-    set_usize!(config.inversion.fansi.max_iter, ps.fansi_max_iter);
-    set_f64!(config.inversion.fansi.tol_update, ps.fansi_tol_update);
-    set_f64!(config.inversion.fansi.tol_delta, ps.fansi_tol_delta);
-    set_f64!(config.inversion.fansi.phase_scale, ps.fansi_phase_scale);
-
-    // L1-QSM
-    set_f64!(config.inversion.l1qsm.alpha1, ps.l1qsm_alpha1);
-    set_f64!(config.inversion.l1qsm.mu1, ps.l1qsm_mu1);
-    set_f64!(config.inversion.l1qsm.mu2, ps.l1qsm_mu2);
-    set_f64!(config.inversion.l1qsm.mu3, ps.l1qsm_mu3);
-    set_f64!(config.inversion.l1qsm.lambda, ps.l1qsm_lambda);
-    set_usize!(config.inversion.l1qsm.max_iter, ps.l1qsm_max_iter);
-    set_f64!(config.inversion.l1qsm.tol_update, ps.l1qsm_tol_update);
-    set_f64!(config.inversion.l1qsm.tol_delta, ps.l1qsm_tol_delta);
-    set_f64!(config.inversion.l1qsm.phase_scale, ps.l1qsm_phase_scale);
-
-    // WH-QSM
-    set_f64!(config.inversion.whqsm.alpha1, ps.whqsm_alpha1);
-    set_f64!(config.inversion.whqsm.mu1, ps.whqsm_mu1);
-    set_f64!(config.inversion.whqsm.mu2, ps.whqsm_mu2);
-    set_f64!(config.inversion.whqsm.beta, ps.whqsm_beta);
-    set_f64!(config.inversion.whqsm.muh, ps.whqsm_muh);
-    set_usize!(config.inversion.whqsm.max_iter, ps.whqsm_max_iter);
-    set_f64!(config.inversion.whqsm.tol_update, ps.whqsm_tol_update);
-    set_f64!(config.inversion.whqsm.tol_delta, ps.whqsm_tol_delta);
-    set_f64!(config.inversion.whqsm.phase_scale, ps.whqsm_phase_scale);
-
-    // HD-QSM
-    set_f64!(config.inversion.hdqsm.alpha_l2, ps.hdqsm_alpha_l2);
-    set_f64!(config.inversion.hdqsm.mu1_l2, ps.hdqsm_mu1_l2);
-    set_f64!(config.inversion.hdqsm.mu2, ps.hdqsm_mu2);
-    set_usize!(config.inversion.hdqsm.max_iter_l1, ps.hdqsm_max_iter_l1);
-    set_usize!(config.inversion.hdqsm.max_iter_l2, ps.hdqsm_max_iter_l2);
-    set_f64!(config.inversion.hdqsm.tol_update, ps.hdqsm_tol_update);
-
-    // AMP-PE
-    set_usize!(config.inversion.amp_pe.wave_order, ps.amp_pe_wave_order);
-    set_usize!(config.inversion.amp_pe.nlevel, ps.amp_pe_nlevel);
-    set_f64!(config.inversion.amp_pe.wave_pec, ps.amp_pe_wave_pec);
-    set_f64!(config.inversion.amp_pe.simulated_te, ps.amp_pe_simulated_te);
-    set_usize!(config.inversion.amp_pe.max_linearization_ite, ps.amp_pe_max_linearization_ite);
-    set_f64!(config.inversion.amp_pe.tikhonov_beta, ps.amp_pe_tikhonov_beta);
-
-    // MEDI
-    set_f64!(config.inversion.medi.lambda, ps.medi_lambda);
-    set_usize!(config.inversion.medi.max_iter, ps.medi_max_iter);
-    set_usize!(config.inversion.medi.cg_max_iter, ps.medi_cg_max_iter);
-    set_f64!(config.inversion.medi.cg_tol, ps.medi_cg_tol);
-    set_f64!(config.inversion.medi.tol, ps.medi_tol);
-    set_f64!(config.inversion.medi.percentage, ps.medi_percentage);
-    set_f64!(config.inversion.medi.smv_radius, ps.medi_smv_radius);
-    config.inversion.medi.smv = ps.medi_smv;
-
-    // TFI
-    set_f64!(config.inversion.tfi.lambda, ps.tfi_lambda);
-    set_f64!(config.inversion.tfi.precond, ps.tfi_precond);
-    set_usize!(config.inversion.tfi.max_iter, ps.tfi_max_iter);
-    set_usize!(config.inversion.tfi.cg_max_iter, ps.tfi_cg_max_iter);
-    set_f64!(config.inversion.tfi.cg_tol, ps.tfi_cg_tol);
-    set_f64!(config.inversion.tfi.tol, ps.tfi_tol);
-    set_f64!(config.inversion.tfi.percentage, ps.tfi_percentage);
-
-    // TGV
-    set_usize!(config.inversion.tgv.iterations, ps.tgv_iterations);
-    set_usize!(config.inversion.tgv.erosions, ps.tgv_erosions);
-    set_f64!(config.inversion.tgv.alpha1, ps.tgv_alpha1);
-    set_f64!(config.inversion.tgv.alpha0, ps.tgv_alpha0);
-
-    // QSMART
-    set_usize!(config.inversion.qsmart.ilsqr_max_iter, ps.qsmart_ilsqr_max_iter);
-    set_f64!(config.inversion.qsmart.ilsqr_pad_mm, ps.qsmart_ilsqr_pad_mm);
-    let qsmart_inv_algorithms = [
-        QsmAlgorithm::Ilsqr, QsmAlgorithm::Rts, QsmAlgorithm::Tv, QsmAlgorithm::Tkd,
-        QsmAlgorithm::Tsvd, QsmAlgorithm::Tikhonov, QsmAlgorithm::Nltv, QsmAlgorithm::Medi,
-    ];
-    config.inversion.qsmart.inversion =
-        qsmart_inv_algorithms.get(ps.qsmart_inversion).copied().unwrap_or(QsmAlgorithm::Ilsqr);
-    set_f64!(config.inversion.qsmart.sdf_sigma1_stage1, ps.qsmart_sdf_sigma1_stage1);
-    set_f64!(config.inversion.qsmart.sdf_sigma2_stage1, ps.qsmart_sdf_sigma2_stage1);
-    set_f64!(config.inversion.qsmart.sdf_sigma1_stage2, ps.qsmart_sdf_sigma1_stage2);
-    set_f64!(config.inversion.qsmart.sdf_sigma2_stage2, ps.qsmart_sdf_sigma2_stage2);
-    set_f64!(config.inversion.qsmart.sdf_lower_lim, ps.qsmart_sdf_lower_lim);
-    set_f64!(config.inversion.qsmart.sdf_curv_constant, ps.qsmart_sdf_curv_constant);
-    set_f64!(config.inversion.qsmart.frangi_scale_min, ps.qsmart_frangi_scale_min);
-    set_f64!(config.inversion.qsmart.frangi_scale_max, ps.qsmart_frangi_scale_max);
-    set_f64!(config.inversion.qsmart.frangi_scale_ratio, ps.qsmart_frangi_scale_ratio);
-    set_f64!(config.inversion.qsmart.frangi_c, ps.qsmart_frangi_c);
-
-    // BG removal
-    config.bg_removal.vsharp.deconvolve = ps.vsharp_deconvolve;
-    set_f64!(config.bg_removal.vsharp.threshold, ps.vsharp_threshold);
-    set_f64!(config.bg_removal.vsharp.max_radius, ps.vsharp_max_radius);
-    set_f64!(config.bg_removal.vsharp.min_radius, ps.vsharp_min_radius);
-    set_f64!(config.bg_removal.pdf.tol, ps.pdf_tol);
-    set_f64!(config.bg_removal.lbv.tol, ps.lbv_tol);
-    set_f64!(config.bg_removal.ismv.tol, ps.ismv_tol);
-    set_usize!(config.bg_removal.ismv.max_iter, ps.ismv_max_iter);
-    set_f64!(config.bg_removal.ismv.radius, ps.ismv_radius);
-    set_f64!(config.bg_removal.sharp.threshold, ps.sharp_threshold);
-    set_f64!(config.bg_removal.sharp.radius, ps.sharp_radius);
-    set_f64!(config.bg_removal.resharp.radius, ps.resharp_radius);
-    set_f64!(config.bg_removal.resharp.tik_reg, ps.resharp_tik_reg);
-    set_f64!(config.bg_removal.resharp.tol, ps.resharp_tol);
-    set_usize!(config.bg_removal.resharp.max_iter, ps.resharp_max_iter);
-    set_f64!(config.bg_removal.harperella.radius, ps.harperella_radius);
-    set_usize!(config.bg_removal.harperella.max_iter, ps.harperella_max_iter);
-    set_f64!(config.bg_removal.harperella.tol, ps.harperella_tol);
-    set_f64!(config.bg_removal.iharperella.radius, ps.iharperella_radius);
-    set_usize!(config.bg_removal.iharperella.max_iter, ps.iharperella_max_iter);
-    set_f64!(config.bg_removal.iharperella.tol, ps.iharperella_tol);
-    set_f64!(config.bg_removal.msmv.radius, ps.msmv_radius);
-    set_usize!(config.bg_removal.msmv.maxk, ps.msmv_maxk);
-
-    // Phase offset sigma
-    if let Ok(vals) = ps.phase_offset_sigma.split_whitespace()
-        .map(|s| s.parse::<f64>())
-        .collect::<Result<Vec<_>, _>>() {
-        if vals.len() == 3 { config.field_mapping.phase_offset_sigma = [vals[0], vals[1], vals[2]]; }
-    }
-
-    // ROMEO weight flags and unwrapping options — every field the pipeline screen edits,
-    // so a saved config reproduces what the TUI shows.
-    config.field_mapping.romeo.phase_gradient_coherence = ps.romeo_phase_gradient_coherence;
-    config.field_mapping.romeo.phase_linearity = ps.romeo_phase_linearity;
-    config.field_mapping.romeo.mag_coherence = ps.romeo_mag_coherence;
-    config.field_mapping.romeo.mag_weight = ps.romeo_mag_weight;
-    config.field_mapping.romeo.mag_weight2 = ps.romeo_mag_weight2;
-    config.field_mapping.romeo.bestpath = ps.romeo_bestpath;
-    config.field_mapping.romeo.merge_regions = ps.romeo_merge_regions;
-    config.field_mapping.romeo.correct_regions = ps.romeo_correct_regions;
-    set_f64!(config.field_mapping.romeo.temporal_uncertain_unwrapping, ps.romeo_temporal_uncertain_unwrapping);
-    set_f64!(config.field_mapping.romeo.wrap_addition, ps.romeo_wrap_addition);
-    if let Ok(v) = ps.romeo_max_seeds.trim().parse::<u8>() {
-        config.field_mapping.romeo.max_seeds = v;
-    }
-
-    // Chi-separation forces the relaxometry maps it depends on (R2/R2'/R2*).
-    enforce_analysis_dependencies(&mut config);
-    enforce_reference_dependencies(&mut config);
-    enforce_smwi_dependencies(&mut config);
-    enforce_separation_dependencies(&mut config);
+    crate::pipeline::config::apply_run_overrides(&mut config, &pipeline_args_from_app(app));
     config
 }
 
@@ -1902,5 +1546,314 @@ mod tests {
         app.form.bids_dir = "/bids".to_string();
         let cmd = build_command_string(&app);
         assert_eq!(cmd.matches("/bids").count(), 1); // only bids_dir, no output_dir
+    }
+}
+
+/// Guard for "every `qsmxt run` flag is reachable from the TUI": changes every control the TUI
+/// has (every row the QSM and separation tabs can show, and the other tabs' controls) and checks
+/// that the change reaches the run, shows in the generated command, and that the command parses
+/// back to itself; then that the flags those commands used cover every `run` flag.
+#[cfg(test)]
+mod parity {
+    use super::*;
+    use crate::tui::app::{App, PipelineRow, PipelineTabMode};
+    use clap::CommandFactory;
+    use std::collections::{BTreeMap, BTreeSet};
+
+    fn flags_of(cmd: &str) -> BTreeSet<String> {
+        cmd.split_whitespace().filter(|t| t.starts_with("--")).map(str::to_string).collect()
+    }
+
+    /// A config, through its generated command and back. `cli` is built once by the caller:
+    /// building clap's command is most of the cost of a parse.
+    fn round_trip(cli: &mut clap::Command, c: &PipelineConfig) -> PipelineConfig {
+        use clap::FromArgMatches;
+        let cmd = qsmxt_config::generate_command(c);
+        let argv: Vec<&str> = cmd.split_whitespace().collect();
+        let m = cli.try_get_matches_from_mut(&argv).unwrap_or_else(|e| panic!("{cmd}: {e}"));
+        let parsed = crate::cli::Cli::from_arg_matches(&m).unwrap_or_else(|e| panic!("{cmd}: {e}"));
+        let crate::cli::Command::Run(run) = parsed.command else { panic!("not run: {cmd}") };
+        let mut back = PipelineConfig::default();
+        crate::pipeline::config::apply_run_overrides(&mut back, &run.pipeline);
+        back
+    }
+
+    /// The leaves where two configs differ, as dotted paths.
+    fn diff(a: &PipelineConfig, b: &PipelineConfig) -> Vec<String> {
+        fn walk(p: &str, a: &serde_json::Value, b: &serde_json::Value, out: &mut Vec<String>) {
+            match (a, b) {
+                (serde_json::Value::Object(x), serde_json::Value::Object(y)) => {
+                    for k in x.keys().chain(y.keys()).collect::<BTreeSet<_>>() {
+                        let n = serde_json::Value::Null;
+                        walk(&format!("{p}.{k}"), x.get(k).unwrap_or(&n), y.get(k).unwrap_or(&n), out);
+                    }
+                }
+                _ if a != b => out.push(format!("{p}: {a} vs {b}")),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        walk("", &serde_json::to_value(a).unwrap(), &serde_json::to_value(b).unwrap(), &mut out);
+        out
+    }
+
+    fn run_flags() -> BTreeSet<String> {
+        let cli = crate::cli::Cli::command();
+        let run = cli.find_subcommand("run").expect("run subcommand");
+        run.get_arguments().filter_map(|a| a.get_long()).map(|l| format!("--{l}")).collect()
+    }
+
+    fn rows(app: &App) -> Vec<PipelineRow> { app.pipeline_state.visible_rows() }
+
+    fn row_key(r: &PipelineRow) -> Option<(&'static str, char)> {
+        match r {
+            PipelineRow::AlgoSelect { field, .. } => Some((field, 's')),
+            PipelineRow::Param { field, .. } => Some((field, 'p')),
+            PipelineRow::Toggle { field, .. } => Some((field, 't')),
+            _ => None,
+        }
+    }
+
+    /// A different value of the same shape: each number in it moved (lists stay lists).
+    fn bumped(v: &str) -> String {
+        let bump = |t: &str| -> Option<String> {
+            if let Ok(n) = t.parse::<i64>() { return Some((n + 1).to_string()); }
+            let x = t.parse::<f64>().ok()?;
+            Some(format!("{}", if x == 0.0 { 0.1 } else { x * 0.9 }))
+        };
+        let tokens: Vec<&str> = v.split(|c: char| c == ',' || c.is_whitespace()).filter(|t| !t.is_empty()).collect();
+        match tokens.iter().map(|t| bump(t)).collect::<Option<Vec<_>>>() {
+            Some(b) if !b.is_empty() => b.join(if v.contains(',') { "," } else { " " }),
+            _ => "3".to_string(),
+        }
+    }
+
+    /// Every state worth looking at: start from the defaults in each tab mode, and keep any
+    /// select/toggle change that reveals a row not seen yet, until nothing new turns up.
+    fn explore() -> Vec<App> {
+        // A row counts as seen per inversion algorithm: the same row (an inner inversion's
+        // parameters under QSMART, say) can mean a different flag under another one.
+        let mut seen: BTreeSet<(&'static str, char, usize)> = BTreeSet::new();
+        let mut states = Vec::new();
+        let mut frontier = Vec::new();
+        for mode in [PipelineTabMode::Qsm, PipelineTabMode::Separation] {
+            let mut app = App::new();
+            app.pipeline_state.collapsed_sections.clear();
+            app.pipeline_state.mode = mode;
+            frontier.push(app);
+        }
+        while let Some(app) = frontier.pop() {
+            let rows = rows(&app);
+            let alg = app.pipeline_state.qsm_algorithm;
+            let fresh = rows.iter().filter_map(row_key)
+                .fold(false, |f, (field, kind)| seen.insert((field, kind, alg)) | f);
+            if !fresh { continue; }
+            for r in &rows {
+                match r {
+                    PipelineRow::AlgoSelect { field, options, .. } => {
+                        for i in 0..options.len() {
+                            let mut a = clone_app(&app);
+                            a.pipeline_state.set_select(field, i);
+                            frontier.push(a);
+                        }
+                    }
+                    PipelineRow::Toggle { field, .. } => {
+                        let mut a = clone_app(&app);
+                        a.pipeline_state.toggle(field);
+                        frontier.push(a);
+                    }
+                    _ => {}
+                }
+            }
+            states.push(app);
+        }
+        states
+    }
+
+    fn clone_app(app: &App) -> App {
+        let mut a = App::new();
+        a.pipeline_state = app.pipeline_state.clone();
+        a.form = app.form.clone();
+        a
+    }
+
+    #[test]
+    fn every_run_flag_is_reachable_from_the_tui() {
+        let mut covered: BTreeSet<String> = BTreeSet::new();
+        // Problem -> the first change that showed it.
+        let mut problems: BTreeMap<String, String> = BTreeMap::new();
+        // A row is checked once per combination of the selections that change what it feeds.
+        let mut checked: std::collections::HashSet<(&'static str, char, [usize; 3], [bool; 2])> = Default::default();
+        let mut cli = <crate::cli::Cli as clap::CommandFactory>::command();
+        cli.build();
+        let mut check = |what: String, base: &App, app: &App, problems: &mut BTreeMap<String, String>| {
+            let (before, after) = (config_from_app(base), config_from_app(app));
+            let (cmd_before, cmd) = (qsmxt_config::generate_command(&before), qsmxt_config::generate_command(&after));
+            if cmd_before == cmd {
+                let d = diff(&before, &after);
+                if d.is_empty() {
+                    problems.entry(format!("no effect on the run: {}", what.split('=').next().unwrap())).or_insert(what.clone());
+                } else {
+                    problems.entry(format!("not in the command: {d:?}")).or_insert(what.clone());
+                }
+            }
+            let back = qsmxt_config::generate_command(&round_trip(&mut cli, &after));
+            if back != cmd {
+                let (a, b) = (flags_of(&cmd), flags_of(&back));
+                problems.entry(format!("command does not reproduce itself: {:?}", a.symmetric_difference(&b).collect::<Vec<_>>()))
+                    .or_insert(what.clone());
+            }
+            covered.extend(flags_of(&cmd));
+        };
+        for app in explore() {
+            let rows = rows(&app);
+            let ps = &app.pipeline_state;
+            let qsmart = crate::tui::app::QSM_ALGO_OPTIONS[ps.qsm_algorithm] == "qsmart";
+            let context = (
+                [ps.qsm_algorithm, if qsmart { ps.qsmart_inversion } else { 0 },
+                 if ps.do_chi_separation { ps.separation_algorithm } else { 0 }],
+                [ps.motion_correction, ps.do_chi_separation],
+            );
+            for r in &rows {
+                let Some((field, kind)) = row_key(r) else { continue };
+                if !checked.insert((field, kind, context.0, context.1)) { continue; }
+                match r {
+                    PipelineRow::AlgoSelect { field, options, .. } => {
+                        let current = app.pipeline_state.get_select(field);
+                        // "custom" names a hand-edited mask; choosing it changes nothing by itself.
+                        let custom = |i: usize| *field == "mask_preset" && i == crate::tui::app::MASK_PRESET_CUSTOM;
+                        for i in (0..options.len()).filter(|&i| i != current && !custom(i)) {
+                            let mut a = clone_app(&app);
+                            a.pipeline_state.set_select(field, i);
+                            check(format!("{field}={i}"), &app, &a, &mut problems);
+                        }
+                    }
+                    PipelineRow::Toggle { field, .. } => {
+                        let mut a = clone_app(&app);
+                        a.pipeline_state.toggle(field);
+                        check(format!("toggle {field}"), &app, &a, &mut problems);
+                    }
+                    PipelineRow::Param { field, .. } => {
+                        let mut a = clone_app(&app);
+                        let v = bumped(a.pipeline_state.get_param(field));
+                        *a.pipeline_state.get_param_mut(field).unwrap_or_else(|| panic!("{field} not editable")) = v.clone();
+                        check(format!("{field}={v}"), &app, &a, &mut problems);
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        // The other tabs' controls: the Supplementary and Execution forms, the Input tab's
+        // filters and grouping, and the mask editor. Each is (what, setup, change): the change is
+        // checked against the state after `setup` alone.
+        type Edit = fn(&mut App);
+        let surfaces: &[(&str, Edit, Edit)] = &[
+            ("do_swi", |_| {}, |a| a.form.do_swi = true),
+            ("swi_scaling", |a| a.form.do_swi = true, |a| a.form.swi_scaling = 1),
+            ("swi_strength", |a| a.form.do_swi = true, |a| a.form.swi_strength = bumped(&a.form.swi_strength)),
+            ("swi_hp_sigma", |a| a.form.do_swi = true, |a| a.form.swi_hp_sigma_z = bumped(&a.form.swi_hp_sigma_z)),
+            ("swi_mip_window", |a| a.form.do_swi = true, |a| a.form.swi_mip_window = bumped(&a.form.swi_mip_window)),
+            ("do_t2starmap", |_| {}, |a| a.form.do_t2starmap = true),
+            ("do_r2starmap", |_| {}, |a| a.form.do_r2starmap = true),
+            ("do_r2map", |_| {}, |a| a.form.do_r2map = true),
+            ("do_r2primemap", |_| {}, |a| a.form.do_r2primemap = true),
+            ("export_dicom", |_| {}, |a| a.form.export_dicom = true),
+            ("do_smwi", |_| {}, |a| a.form.do_smwi = true),
+            ("smwi_threshold", |a| a.form.do_smwi = true, |a| a.form.smwi_threshold = bumped(&a.form.smwi_threshold)),
+            ("smwi_power", |a| a.form.do_smwi = true, |a| a.form.smwi_power = bumped(&a.form.smwi_power)),
+            ("smwi_mip_window", |a| a.form.do_smwi = true, |a| a.form.smwi_mip_window = bumped(&a.form.smwi_mip_window)),
+            ("do_segmentation", |_| {}, |a| a.form.do_segmentation = true),
+            ("do_analysis", |_| {}, |a| a.form.do_analysis = true),
+            ("synthseg_version", |a| a.form.do_segmentation = true, |a| a.form.synthseg_version = 1),
+            ("synthseg_crop", |a| a.form.do_segmentation = true, |a| a.form.synthseg_crop = "160".into()),
+            ("synthseg_flip_averaging", |a| a.form.do_segmentation = true, |a| a.form.synthseg_flip_averaging ^= true),
+            ("synthseg_topology_cleanup", |a| a.form.do_segmentation = true, |a| a.form.synthseg_topology_cleanup ^= true),
+            ("synthseg_sigma", |a| a.form.do_segmentation = true, |a| a.form.synthseg_sigma = bumped(&a.form.synthseg_sigma)),
+            ("orientation_group", |_| {}, |a| a.filter_state.orientation_group = "acq".into()),
+            ("orientation_algorithm", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_algorithm = 1),
+            ("orientation_lambda", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_lambda = "0.5".into()),
+            ("mask sections", |_| {}, |a| {
+                let mut extra = a.pipeline_state.mask_sections[0].clone();
+                extra.input = crate::pipeline::config::MaskingInput::Magnitude;
+                a.pipeline_state.mask_sections.push(extra);
+            }),
+            ("mask combine", |a| {
+                let extra = a.pipeline_state.mask_sections[0].clone();
+                a.pipeline_state.mask_sections.push(extra);
+            }, |a| a.pipeline_state.toggle_mask_combine()),
+            ("mask refinements", |a| {
+                let extra = a.pipeline_state.mask_sections[0].clone();
+                a.pipeline_state.mask_sections.push(extra);
+            }, |a| a.pipeline_state.mask_combined_refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 1 })),
+            ("masking input", |a| a.pipeline_state.set_select("mask_preset", 1), |a| {
+                for s in &mut a.pipeline_state.mask_sections { s.input = crate::pipeline::config::MaskingInput::MagnitudeLast; }
+            }),
+            ("two-pass sections", |a| a.pipeline_state.two_pass = true, |a| {
+                a.pipeline_state.two_pass_sections[0].refinements.push(crate::pipeline::config::MaskOp::Erode { iterations: 2 });
+            }),
+            // Run-level settings: not in the pipeline config, so compared on the run's arguments.
+            ("config", |_| {}, |a| a.form.config_file = "c.toml".into()),
+            ("include", |_| {}, |a| a.filter_state.include_pattern = "sub-1*".into()),
+            ("exclude", |_| {}, |a| a.filter_state.exclude_pattern = "*pre*".into()),
+            ("num_echoes", |_| {}, |a| a.filter_state.num_echoes = "2".into()),
+            ("dry", |_| {}, |a| a.form.dry_run = true),
+            ("debug", |_| {}, |a| a.form.debug = true),
+            ("n_procs", |_| {}, |a| a.form.n_procs = "4".into()),
+            ("mem_limit_gb", |_| {}, |a| a.form.mem_limit_gb = "16".into()),
+            ("no_mem_limit", |_| {}, |a| a.form.no_mem_limit = true),
+            ("force", |_| {}, |a| a.form.force = true),
+            ("clean_intermediates", |_| {}, |a| a.form.clean_intermediates = true),
+            ("source_dicom", |a| a.form.export_dicom = true, |a| a.form.source_dicom = "/dicom".into()),
+            ("dicom_outputs", |a| a.form.export_dicom = true, |a| a.form.dicom_outputs = "Chimap".into()),
+        ];
+        for (what, setup, change) in surfaces {
+            let mut base = App::new();
+            base.form.bids_dir = "/bids".into();
+            setup(&mut base);
+            let mut a = App::new();
+            a.form.bids_dir = "/bids".into();
+            setup(&mut a);
+            change(&mut a);
+            let (shown_before, shown) = (build_command_string(&base), build_command_string(&a));
+            let run_changed = format!("{:?}", build_run_args(&base).unwrap()) != format!("{:?}", build_run_args(&a).unwrap());
+            if !run_changed {
+                problems.entry(format!("no effect on the run: {what}")).or_insert(what.to_string());
+            } else if shown_before == shown {
+                problems.entry(format!("not in the command: {what}")).or_insert(what.to_string());
+            }
+            let c = config_from_app(&a);
+            let (cmd, back) = (qsmxt_config::generate_command(&c), qsmxt_config::generate_command(&round_trip(&mut cli, &c)));
+            if cmd != back {
+                problems.entry(format!("command does not reproduce itself: {what}")).or_insert(what.to_string());
+            }
+            covered.extend(flags_of(&shown));
+        }
+
+        // Flags the TUI does not emit as such, each for a stated reason.
+        let not_emitted: &[(&str, &str)] = &[
+            // The TUI edits BET per mask step, so its settings travel inside `--mask` specs.
+            ("--bet-fractional-intensity", "per BET step, in --mask"),
+            ("--bet-smoothness", "per BET step, in --mask"),
+            ("--bet-gradient-threshold", "per BET step, in --mask"),
+            ("--bet-iterations", "per BET step, in --mask"),
+            ("--bet-subdivisions", "per BET step, in --mask"),
+            ("--bet-voxel-scale", "per BET step, in --mask"),
+            // The direction that restates QSMxT's default, so the command never needs it.
+            ("--inhomogeneity-correction", "restates the default"),
+            ("--romeo-individual", "restates the default"),
+            ("--romeo-correct-global", "restates the default"),
+            ("--medi-smv", "restates the default"),
+            ("--no-romeo-mag-weight", "restates the default (kept for compatibility)"),
+        ];
+        for (flag, why) in not_emitted {
+            assert!(!covered.contains(*flag), "{flag} is allow-listed ({why}) but the TUI emits it: drop it from the list");
+            covered.insert(flag.to_string());
+        }
+        let missing: Vec<_> = run_flags().into_iter().filter(|f| !covered.contains(f)).collect();
+        eprintln!("MISSING ({}):\n{}", missing.len(), missing.join(" "));
+        eprintln!("PROBLEMS ({}):\n{}", problems.len(),
+            problems.iter().map(|(k, v)| format!("  {k}   <- {v}")).collect::<Vec<_>>().join("\n"));
+        assert!(missing.is_empty() && problems.is_empty());
     }
 }

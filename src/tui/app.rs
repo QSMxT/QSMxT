@@ -1459,6 +1459,31 @@ pub struct PipelineFormState {
     pub inhomogeneity_correction: bool,
     /// Reconstruct a 2D acquisition whose sidecar says its slices leave a gap.
     pub ignore_slice_gap: bool,
+    // Performance and output grid (General).
+    pub crop_to_mask: bool,
+    pub crop_margin_mm: String,
+    pub fft_padding: bool,
+    /// Index into [`OUTPUT_SPACE_OPTIONS`].
+    pub output_space: usize,
+    // Inhomogeneity correction's own settings.
+    pub homogeneity_sigma_mm: String,
+    pub homogeneity_nbox: String,
+    /// MCPC-3D-S coil combination smoothing (x y z voxels), for uncombined multi-coil runs.
+    pub coil_combination_sigma: String,
+    pub romeo_phase_coherence: bool,
+    pub tgv_step_size: String,
+    pub tgv_tol: String,
+    pub medi_merit: bool,
+    pub medi_data_weighting: String,
+    pub tfi_merit: bool,
+    pub tfi_data_weighting: String,
+    pub amp_pe_damp_rate_sig: String,
+    pub amp_pe_damp_rate_par: String,
+    pub amp_pe_max_pe_spar_ite: String,
+    pub amp_pe_max_pe_est_ite: String,
+    pub amp_pe_cvg_thd: String,
+    /// Bring-your-own segmentation from derivatives (empty = off, * = any tool).
+    pub custom_dseg_tool: String,
     pub obliquity_threshold: String,
 
     // Deep-learning overlap-tiling (empty = off / whole-volume). Shown for tileable DL inversions.
@@ -1836,6 +1861,29 @@ impl Default for PipelineFormState {
             reg_min_overlap: format!("{}", qsmxt_config::RegistrationConfig::default().min_overlap),
             inhomogeneity_correction: true,
             ignore_slice_gap: false,
+            crop_to_mask: false,
+            crop_margin_mm: fmt_default(qsmxt_config::PipelineToggles::default().crop_margin_mm),
+            fft_padding: false,
+            output_space: 0,
+            homogeneity_sigma_mm: fmt_default(qsmxt_config::HomogeneityConfig::default().sigma_mm),
+            homogeneity_nbox: qsmxt_config::HomogeneityConfig::default().nbox.to_string(),
+            coil_combination_sigma: {
+                let s = qsmxt_config::FieldMappingConfig::default().coil_combination_sigma;
+                format!("{} {} {}", s[0], s[1], s[2])
+            },
+            romeo_phase_coherence: qsmxt_config::RomeoConfig::default().phase_coherence,
+            tgv_step_size: fmt_default(qsmxt_config::TgvConfig::default().step_size),
+            tgv_tol: fmt_default(qsmxt_config::TgvConfig::default().tol),
+            medi_merit: qsm_core::inversion::MediParams::default().merit,
+            medi_data_weighting: qsm_core::inversion::MediParams::default().data_weighting.to_string(),
+            tfi_merit: qsm_core::inversion::TfiParams::default().merit,
+            tfi_data_weighting: qsm_core::inversion::TfiParams::default().data_weighting.to_string(),
+            amp_pe_damp_rate_sig: fmt_default(qsm_core::inversion::AmpPeParams::default().damp_rate_sig),
+            amp_pe_damp_rate_par: fmt_default(qsm_core::inversion::AmpPeParams::default().damp_rate_par),
+            amp_pe_max_pe_spar_ite: qsm_core::inversion::AmpPeParams::default().max_pe_spar_ite.to_string(),
+            amp_pe_max_pe_est_ite: qsm_core::inversion::AmpPeParams::default().max_pe_est_ite.to_string(),
+            amp_pe_cvg_thd: fmt_default(qsm_core::inversion::AmpPeParams::default().cvg_thd),
+            custom_dseg_tool: String::new(),
             obliquity_threshold: "-1".to_string(),
             dl_tile_size: String::new(),
             dl_tile_halo: String::new(),
@@ -2081,6 +2129,11 @@ impl Default for PipelineFormState {
 }
 
 pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "lsqr", "heidi", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
+pub const OUTPUT_SPACE_OPTIONS: &[&str] = &["acquired", "working"];
+const OUTPUT_SPACE_HELP: &[&str] = &[
+    "Write derivatives back on the acquired grid when the run was resampled to axial (default)",
+    "Leave derivatives on the resampled (axial) working grid, avoiding a second interpolation",
+];
 pub const SEP_ALGO_OPTIONS: &[&str] = &["r2star-qsm", "decompose", "chi-sep-ilsqr", "chi-sep-medi", "wavesep", "hc-chisep", "susep-net", "chi-sepnet"];
 const SEP_ALGO_HELP: &[&str] = &[
     "R2*-QSM closed-form (Dimov 2022) — QSM + R2*, GRE-only",
@@ -2202,10 +2255,13 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Max Iter", field: "sep_wavesep_max_iter", help: "ISTA max iterations" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "sep_wavesep_tol", help: "Relative-change stop tolerance" });
             }
-            _ => {
+            5 => {
                 rows.push(PipelineRow::Param { label: "  Dr+ @3T (Hz/ppm)", field: "sep_hcchisep_dr_pos_3t", help: "Paramagnetic relaxivity at 3T" });
                 rows.push(PipelineRow::Param { label: "  R2' bin (Hz)", field: "sep_hcchisep_bin_hz", help: "R2' bin width for anchored grid search" });
             }
+            // SUSEP-Net / χ-sepnet (deep learning) have no tunable parameters. They used to fall
+            // into the arm above and show HC-χsep's, which did nothing.
+            _ => {}
         }
         rows.push(PipelineRow::Separator);
         rows.push(PipelineRow::Note { text: "Bring-your-own inputs (derivatives tool name; blank = compute, * = any tool):" });
@@ -2310,9 +2366,35 @@ impl PipelineFormState {
             label: "Inhomog. Correction", field: "inhomogeneity_correction",
             help: "Apply B1 field correction to magnitude (improves masking, ROMEO weights, MEDI edges, SWI)",
         });
+        if self.inhomogeneity_correction {
+            rows.push(PipelineRow::Param { label: "  Sigma (mm)", field: "homogeneity_sigma_mm",
+                help: "Smoothing sigma of the bias-field estimate, in mm" });
+            rows.push(PipelineRow::Param { label: "  Box Passes", field: "homogeneity_nbox",
+                help: "Box-filter passes approximating the Gaussian" });
+        }
         rows.push(PipelineRow::Toggle {
             label: "Ignore Slice Gap", field: "ignore_slice_gap",
             help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
+        });
+        rows.push(PipelineRow::Toggle {
+            label: "Crop to Mask", field: "crop_to_mask",
+            help: "Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid). Off by default",
+        });
+        if self.crop_to_mask {
+            rows.push(PipelineRow::Param { label: "  Crop Margin (mm)", field: "crop_margin_mm",
+                help: "Margin around the mask; below ~32 mm results start to differ, and it must clear the largest SMV kernel" });
+        }
+        rows.push(PipelineRow::Toggle {
+            label: "FFT Padding", field: "fft_padding",
+            help: "Pad the grid to an FFT-friendly size before the FFT-bound stages (faster on awkward grids; shifts results slightly). Off by default",
+        });
+        rows.push(PipelineRow::AlgoSelect {
+            label: "Output Space", field: "output_space",
+            options: OUTPUT_SPACE_OPTIONS, help: OUTPUT_SPACE_HELP,
+        });
+        rows.push(PipelineRow::Param {
+            label: "Use custom dseg", field: "custom_dseg_tool",
+            help: "BYO segmentation (when segmenting: stats, region reference) from BIDS derivatives: empty=off, * =any tool, or a tool name; falls back to SynthSeg",
         });
         rows.push(PipelineRow::Toggle {
             label: "Orientation Co-registration", field: "orientation_registration",
@@ -2386,6 +2468,9 @@ impl PipelineFormState {
                 });
             }
 
+            rows.push(PipelineRow::Param { label: "Coil Comb. Sigma", field: "coil_combination_sigma",
+                help: "MCPC-3D-S smoothing of per-coil phase offsets, voxels (x y z); only for uncombined multi-coil data" });
+
             // Unwrapping
             rows.push(PipelineRow::AlgoSelect {
                 label: "Unwrapping", field: "unwrapping_algorithm",
@@ -2417,6 +2502,10 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Toggle {
                     label: "  Correct Global", field: "romeo_correct_global",
                     help: "Correct inter-echo 2π offsets after unwrapping",
+                });
+                rows.push(PipelineRow::Toggle {
+                    label: "  Phase Coherence", field: "romeo_phase_coherence",
+                    help: "Weight edges by neighbour phase coherence",
                 });
                 rows.push(PipelineRow::Toggle {
                     label: "  Phase Gradient Coherence", field: "romeo_phase_gradient_coherence",
@@ -2641,6 +2730,8 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Erosions", field: "tgv_erosions", help: "Mask erosions before TGV solve" });
                 rows.push(PipelineRow::Param { label: "  Alpha1", field: "tgv_alpha1", help: "First-order TGV weight (gradient term)" });
                 rows.push(PipelineRow::Param { label: "  Alpha0", field: "tgv_alpha0", help: "Second-order TGV weight (symmetric gradient term)" });
+                rows.push(PipelineRow::Param { label: "  Step Size", field: "tgv_step_size", help: "Primal step-size multiplier" });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "tgv_tol", help: "Convergence tolerance" });
             }
             "tikhonov" => { // Tikhonov
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "tikhonov_lambda", help: "L2 regularization weight" });
@@ -2662,6 +2753,8 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "medi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
                 rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "medi_tol", help: "Outer convergence tolerance" });
+                rows.push(PipelineRow::Toggle { label: "  MERIT", field: "medi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
+                rows.push(PipelineRow::Param { label: "  Data Weighting", field: "medi_data_weighting", help: "0 = uniform, 1 = magnitude SNR" });
             }
             "tfi" => { // TFI
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "tfi_lambda", help: "Regularization weight" });
@@ -2671,6 +2764,8 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "tfi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
                 rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "tfi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "tfi_tol", help: "Outer convergence tolerance" });
+                rows.push(PipelineRow::Toggle { label: "  MERIT", field: "tfi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
+                rows.push(PipelineRow::Param { label: "  Data Weighting", field: "tfi_data_weighting", help: "0 = uniform, 1 = magnitude SNR" });
             }
             "ilsqr" => { // iLSQR
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "ilsqr_tol", help: "Convergence tolerance" });
@@ -2768,6 +2863,8 @@ impl PipelineFormState {
                         rows.push(PipelineRow::Param { label: "  CG Max Iter", field: "medi_cg_max_iter", help: "Maximum conjugate gradient iterations" });
                         rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
                         rows.push(PipelineRow::Param { label: "  Tolerance", field: "medi_tol", help: "Outer convergence tolerance" });
+                        rows.push(PipelineRow::Toggle { label: "  MERIT", field: "medi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
+                        rows.push(PipelineRow::Param { label: "  Data Weighting", field: "medi_data_weighting", help: "0 = uniform, 1 = magnitude SNR" });
                     }
                     _ => {}
                 }
@@ -2840,6 +2937,11 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  Simulated TE", field: "amp_pe_simulated_te", help: "Simulated echo time (s) used to turn the field into phase" });
                 rows.push(PipelineRow::Param { label: "  Max Linearization Ite", field: "amp_pe_max_linearization_ite", help: "Linearization iterations per stage" });
                 rows.push(PipelineRow::Param { label: "  Tikhonov Beta", field: "amp_pe_tikhonov_beta", help: "L2-seed Tikhonov weight" });
+                rows.push(PipelineRow::Param { label: "  Damp Rate (signal)", field: "amp_pe_damp_rate_sig", help: "GAMP signal-update damping rate" });
+                rows.push(PipelineRow::Param { label: "  Damp Rate (params)", field: "amp_pe_damp_rate_par", help: "Parameter-estimation learning rate (kappa)" });
+                rows.push(PipelineRow::Param { label: "  Sparse Recon Ite", field: "amp_pe_max_pe_spar_ite", help: "Inner sparse-reconstruction iterations" });
+                rows.push(PipelineRow::Param { label: "  Param Est Ite", field: "amp_pe_max_pe_est_ite", help: "Inner parameter-estimation iterations" });
+                rows.push(PipelineRow::Param { label: "  Convergence", field: "amp_pe_cvg_thd", help: "GAMP inner convergence threshold" });
             }
             _ => {}
         }
@@ -2903,6 +3005,9 @@ impl PipelineFormState {
         "bet_fractional_intensity", "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
         "r2primenet_patch",
         "laplacian_fft_pad",
+        "crop_margin_mm", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
+        "tgv_step_size", "tgv_tol", "medi_data_weighting", "tfi_data_weighting",
+        "amp_pe_damp_rate_sig", "amp_pe_damp_rate_par", "amp_pe_max_pe_spar_ite", "amp_pe_max_pe_est_ite", "amp_pe_cvg_thd",
         "linear_fit_reliability_threshold", "robust_fit_tuning", "robust_fit_iterations",
         "robust_fit_downweight_level", "robust_fit_flag_ratio",
         "motion_reference_echo", "motion_chain_levels", "motion_min_ncc",
@@ -2913,6 +3018,20 @@ impl PipelineFormState {
     pub fn get_param(&self, field: &str) -> &str {
         match field {
             "obliquity_threshold" => &self.obliquity_threshold,
+            "crop_margin_mm" => &self.crop_margin_mm,
+            "homogeneity_sigma_mm" => &self.homogeneity_sigma_mm,
+            "homogeneity_nbox" => &self.homogeneity_nbox,
+            "coil_combination_sigma" => &self.coil_combination_sigma,
+            "tgv_step_size" => &self.tgv_step_size,
+            "tgv_tol" => &self.tgv_tol,
+            "medi_data_weighting" => &self.medi_data_weighting,
+            "tfi_data_weighting" => &self.tfi_data_weighting,
+            "amp_pe_damp_rate_sig" => &self.amp_pe_damp_rate_sig,
+            "amp_pe_damp_rate_par" => &self.amp_pe_damp_rate_par,
+            "amp_pe_max_pe_spar_ite" => &self.amp_pe_max_pe_spar_ite,
+            "amp_pe_max_pe_est_ite" => &self.amp_pe_max_pe_est_ite,
+            "amp_pe_cvg_thd" => &self.amp_pe_cvg_thd,
+            "custom_dseg_tool" => &self.custom_dseg_tool,
             "dl_tile_size" => &self.dl_tile_size,
             "dl_tile_halo" => &self.dl_tile_halo,
             "rts_delta" => &self.rts_delta,
@@ -3120,6 +3239,20 @@ impl PipelineFormState {
     pub fn get_param_mut(&mut self, field: &str) -> Option<&mut String> {
         match field {
             "obliquity_threshold" => Some(&mut self.obliquity_threshold),
+            "crop_margin_mm" => Some(&mut self.crop_margin_mm),
+            "homogeneity_sigma_mm" => Some(&mut self.homogeneity_sigma_mm),
+            "homogeneity_nbox" => Some(&mut self.homogeneity_nbox),
+            "coil_combination_sigma" => Some(&mut self.coil_combination_sigma),
+            "tgv_step_size" => Some(&mut self.tgv_step_size),
+            "tgv_tol" => Some(&mut self.tgv_tol),
+            "medi_data_weighting" => Some(&mut self.medi_data_weighting),
+            "tfi_data_weighting" => Some(&mut self.tfi_data_weighting),
+            "amp_pe_damp_rate_sig" => Some(&mut self.amp_pe_damp_rate_sig),
+            "amp_pe_damp_rate_par" => Some(&mut self.amp_pe_damp_rate_par),
+            "amp_pe_max_pe_spar_ite" => Some(&mut self.amp_pe_max_pe_spar_ite),
+            "amp_pe_max_pe_est_ite" => Some(&mut self.amp_pe_max_pe_est_ite),
+            "amp_pe_cvg_thd" => Some(&mut self.amp_pe_cvg_thd),
+            "custom_dseg_tool" => Some(&mut self.custom_dseg_tool),
             "dl_tile_size" => Some(&mut self.dl_tile_size),
             "dl_tile_halo" => Some(&mut self.dl_tile_halo),
             "rts_delta" => Some(&mut self.rts_delta),
@@ -3337,6 +3470,7 @@ impl PipelineFormState {
             "laplacian_solver" => self.laplacian_solver,
             "robust_fit_loss" => self.robust_fit_loss,
             "motion_reference" => self.motion_reference,
+            "output_space" => self.output_space,
             "mask_preset" => self.mask_preset,
             "separation_algorithm" => self.separation_algorithm,
             _ => 0,
@@ -3357,6 +3491,7 @@ impl PipelineFormState {
             "laplacian_solver" => self.laplacian_solver = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
             "motion_reference" => self.motion_reference = val,
+            "output_space" => self.output_space = val,
             "mask_preset" => {
                 self.mask_preset = val;
                 self.apply_mask_preset(val);
@@ -3392,6 +3527,11 @@ impl PipelineFormState {
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise,
             "ignore_slice_gap" => self.ignore_slice_gap,
+            "crop_to_mask" => self.crop_to_mask,
+            "fft_padding" => self.fft_padding,
+            "romeo_phase_coherence" => self.romeo_phase_coherence,
+            "medi_merit" => self.medi_merit,
+            "tfi_merit" => self.tfi_merit,
             "motion_correction" => self.motion_correction,
             "orientation_registration" => self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force,
@@ -3428,6 +3568,11 @@ impl PipelineFormState {
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction = !self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
             "ignore_slice_gap" => self.ignore_slice_gap = !self.ignore_slice_gap,
+            "crop_to_mask" => self.crop_to_mask = !self.crop_to_mask,
+            "fft_padding" => self.fft_padding = !self.fft_padding,
+            "romeo_phase_coherence" => self.romeo_phase_coherence = !self.romeo_phase_coherence,
+            "medi_merit" => self.medi_merit = !self.medi_merit,
+            "tfi_merit" => self.tfi_merit = !self.tfi_merit,
             "motion_correction" => self.motion_correction = !self.motion_correction,
             "orientation_registration" => self.orientation_registration = !self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,
@@ -4073,6 +4218,7 @@ pub enum AlgoModalTarget {
     TabSelect { tab: usize, field: usize },
 }
 
+#[derive(Clone)]
 pub struct RunForm {
     // Tab 0: Input/Output
     pub bids_dir: String,
@@ -4092,6 +4238,9 @@ pub struct RunForm {
     pub do_r2map: bool,
     pub do_r2primemap: bool,
     pub export_dicom: bool,
+    /// DICOM export: source DICOM directory to inherit identity from, and which maps to export.
+    pub source_dicom: String,
+    pub dicom_outputs: String,
     pub do_smwi: bool,
     pub do_segmentation: bool,
     pub do_analysis: bool,
@@ -4109,6 +4258,11 @@ pub struct RunForm {
     pub dry_run: bool,
     pub debug: bool,
     pub n_procs: String,
+    // Local runs: memory-aware scheduling, cache, and clean-up.
+    pub mem_limit_gb: String,
+    pub no_mem_limit: bool,
+    pub force: bool,
+    pub clean_intermediates: bool,
     // SLURM fields
     pub slurm_account: String,
     pub slurm_partition: String,
@@ -4139,6 +4293,8 @@ impl Default for RunForm {
             do_r2map: false,
             do_r2primemap: false,
             export_dicom: false,
+            source_dicom: String::new(),
+            dicom_outputs: String::new(),
             do_smwi: false,
             do_segmentation: false,
             do_analysis: false,
@@ -4154,6 +4310,10 @@ impl Default for RunForm {
             dry_run: false,
             debug: false,
             n_procs: String::new(),
+            mem_limit_gb: String::new(),
+            no_mem_limit: false,
+            force: false,
+            clean_intermediates: false,
             slurm_account: String::new(),
             slurm_partition: String::new(),
             slurm_time: "02:00:00".to_string(),
@@ -4300,6 +4460,17 @@ impl App {
                     kind: FieldKind::Select { options: qsm_ref_options().to_vec() },
                     help: "What χ's zero is pinned to: the mean over the voxels χ is defined on, nothing, or the mean of a parcellation region. Same setting as QSM Reference on the QSM tab",
                 },
+                // Appended (see above): DICOM export's settings, under Export DICOM (11).
+                FieldDef {
+                    label: "Source DICOM Dir",
+                    kind: FieldKind::Text,
+                    help: "Original DICOM directory: the exported series inherit its patient/study identity (empty = none)",
+                },
+                FieldDef {
+                    label: "DICOM Outputs",
+                    kind: FieldKind::Text,
+                    help: "Comma-separated maps to export, e.g. Chimap,desc-total_chimap (empty = all)",
+                },
             ],
             // Tab 4: Execution
             vec![
@@ -4353,6 +4524,27 @@ impl App {
                     label: "Auto-Submit",
                     kind: FieldKind::Checkbox,
                     help: "Automatically submit generated scripts via sbatch",
+                },
+                // Local-run settings (appended: this tab is addressed by index).
+                FieldDef {
+                    label: "Memory Limit (GB)",
+                    kind: FieldKind::Text,
+                    help: "Memory budget for scheduling concurrent runs (empty = auto-detect)",
+                },
+                FieldDef {
+                    label: "No Memory Limit",
+                    kind: FieldKind::Checkbox,
+                    help: "Disable memory-aware concurrency limiting",
+                },
+                FieldDef {
+                    label: "Force Re-run",
+                    kind: FieldKind::Checkbox,
+                    help: "Ignore cached pipeline state and recompute everything",
+                },
+                FieldDef {
+                    label: "Clean Intermediates",
+                    kind: FieldKind::Checkbox,
+                    help: "Remove intermediate files after the run, keeping only final outputs",
                 },
             ],
             // Tab 4: Methods (read-only, custom rendering)
@@ -4860,6 +5052,12 @@ impl App {
             (TAB_EXECUTION, 7) => self.form.slurm_mem = defaults.slurm_mem.clone(),
             (TAB_EXECUTION, 8) => self.form.slurm_cpus = defaults.slurm_cpus.clone(),
             (TAB_EXECUTION, 9) => self.form.slurm_submit = defaults.slurm_submit,
+            (TAB_EXECUTION, 10) => self.form.mem_limit_gb = defaults.mem_limit_gb.clone(),
+            (TAB_EXECUTION, 11) => self.form.no_mem_limit = defaults.no_mem_limit,
+            (TAB_EXECUTION, 12) => self.form.force = defaults.force,
+            (TAB_EXECUTION, 13) => self.form.clean_intermediates = defaults.clean_intermediates,
+            (TAB_SUPPLEMENTARY, 24) => self.form.source_dicom = defaults.source_dicom.clone(),
+            (TAB_SUPPLEMENTARY, 25) => self.form.dicom_outputs = defaults.dicom_outputs.clone(),
             _ => {}
         }
     }
@@ -6218,6 +6416,9 @@ impl App {
             (TAB_EXECUTION, 6) => &self.form.slurm_time,
             (TAB_EXECUTION, 7) => &self.form.slurm_mem,
             (TAB_EXECUTION, 8) => &self.form.slurm_cpus,
+            (TAB_EXECUTION, 10) => &self.form.mem_limit_gb,
+            (TAB_SUPPLEMENTARY, 24) => &self.form.source_dicom,
+            (TAB_SUPPLEMENTARY, 25) => &self.form.dicom_outputs,
             _ => "",
         }
     }
@@ -6253,6 +6454,9 @@ impl App {
             (TAB_EXECUTION, 6) => &mut self.form.slurm_time,
             (TAB_EXECUTION, 7) => &mut self.form.slurm_mem,
             (TAB_EXECUTION, 8) => &mut self.form.slurm_cpus,
+            (TAB_EXECUTION, 10) => &mut self.form.mem_limit_gb,
+            (TAB_SUPPLEMENTARY, 24) => &mut self.form.source_dicom,
+            (TAB_SUPPLEMENTARY, 25) => &mut self.form.dicom_outputs,
             _ => unreachable!("text_value_mut called on non-text field"),
         }
     }
@@ -6300,6 +6504,9 @@ impl App {
             (TAB_EXECUTION, 1) => self.form.dry_run,
             (TAB_EXECUTION, 2) => self.form.debug,
             (TAB_EXECUTION, 9) => self.form.slurm_submit,
+            (TAB_EXECUTION, 11) => self.form.no_mem_limit,
+            (TAB_EXECUTION, 12) => self.form.force,
+            (TAB_EXECUTION, 13) => self.form.clean_intermediates,
             _ => false,
         }
     }
@@ -6368,6 +6575,9 @@ impl App {
             (TAB_EXECUTION, 1) => self.form.dry_run = !self.form.dry_run,
             (TAB_EXECUTION, 2) => self.form.debug = !self.form.debug,
             (TAB_EXECUTION, 9) => self.form.slurm_submit = !self.form.slurm_submit,
+            (TAB_EXECUTION, 11) => self.form.no_mem_limit = !self.form.no_mem_limit,
+            (TAB_EXECUTION, 12) => self.form.force = !self.form.force,
+            (TAB_EXECUTION, 13) => self.form.clean_intermediates = !self.form.clean_intermediates,
             _ => {}
         }
     }
@@ -6392,6 +6602,10 @@ impl App {
             (TAB_EXECUTION, 4..=9) => self.form.execution_mode == 1,
             // Dry Run and Num Processes only in Local mode
             (TAB_EXECUTION, 1) | (TAB_EXECUTION, 3) => self.form.execution_mode == 0,
+            // Memory limit, force and clean-up are local-run settings too.
+            (TAB_EXECUTION, 10..=13) => self.form.execution_mode == 0,
+            // DICOM export settings under Export DICOM (11).
+            (TAB_SUPPLEMENTARY, 24..=25) => self.form.export_dicom,
             _ => true,
         }
     }
@@ -6414,6 +6628,9 @@ impl App {
             (TAB_EXECUTION, 6) => &self.form.slurm_time,
             (TAB_EXECUTION, 7) => &self.form.slurm_mem,
             (TAB_EXECUTION, 8) => &self.form.slurm_cpus,
+            (TAB_EXECUTION, 10) => &self.form.mem_limit_gb,
+            (TAB_SUPPLEMENTARY, 24) => &self.form.source_dicom,
+            (TAB_SUPPLEMENTARY, 25) => &self.form.dicom_outputs,
             _ => "",
         }
     }
@@ -6444,6 +6661,9 @@ impl App {
             (TAB_EXECUTION, 1) => self.form.dry_run,
             (TAB_EXECUTION, 2) => self.form.debug,
             (TAB_EXECUTION, 9) => self.form.slurm_submit,
+            (TAB_EXECUTION, 11) => self.form.no_mem_limit,
+            (TAB_EXECUTION, 12) => self.form.force,
+            (TAB_EXECUTION, 13) => self.form.clean_intermediates,
             _ => false,
         }
     }

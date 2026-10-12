@@ -16,9 +16,11 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         parts.push(format!("--orientation-group {}", shell_quote(&m.group_by)));
         parts.push(format!("--multi-orientation-algorithm {}", m.algorithm));
         emit_f64(&mut parts, "--multi-orientation-lambda", m.lambda, d.multi_orientation.lambda);
-        if m.force { parts.push("--multi-orientation-force".into()); }
-        if !m.register { parts.push("--no-orientation-registration".into()); }
     }
+    // Settings that only matter with a grouping, but are said whenever they were changed, so the
+    // command reproduces the configuration (the TUI shows them without a grouping too).
+    if config.multi_orientation.force { parts.push("--multi-orientation-force".into()); }
+    if !config.multi_orientation.register { parts.push("--no-orientation-registration".into()); }
 
     // ── Pipeline toggles ──
     if !config.pipeline.do_qsm { parts.push("--no-qsm".into()); }
@@ -37,11 +39,12 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         if !c.flip_averaging { parts.push("--no-synthseg-flip-averaging".into()); }
         if !c.topology_cleanup { parts.push("--no-synthseg-topology-cleanup".into()); }
         emit_f64(&mut parts, "--synthseg-sigma", c.sigma_smoothing, dd.sigma_smoothing);
-        match c.custom_dseg_tool.as_deref() {
-            Some("*") => parts.push("--use-custom-dseg".into()),
-            Some(tool) => parts.push(format!("--use-custom-dseg {tool}")),
-            None => {}
-        }
+    }
+    // Said whenever set, like the multi-orientation settings: the TUI shows it on the QSM tab.
+    match config.segmentation.custom_dseg_tool.as_deref() {
+        Some("*") => parts.push("--use-custom-dseg".into()),
+        Some(tool) => parts.push(format!("--use-custom-dseg {tool}")),
+        None => {}
     }
     if config.pipeline.do_smwi {
         parts.push("--do-smwi".into());
@@ -107,6 +110,8 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             parts.push("--no-inhomogeneity-correction".into());
         }
     }
+    emit_f64(&mut parts, "--homogeneity-sigma-mm", config.homogeneity.sigma_mm, d.homogeneity.sigma_mm);
+    emit_usize(&mut parts, "--homogeneity-nbox", config.homogeneity.nbox, d.homogeneity.nbox);
 
     // ── Custom masks (BYO from derivatives) ──
     if config.masking.custom_mask_tool != d.masking.custom_mask_tool {
@@ -145,8 +150,8 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         if m.chain { emit_usize(&mut parts, "--motion-chain-levels", m.chain_levels, md.chain_levels); }
         emit_f64(&mut parts, "--motion-min-ncc", m.min_ncc, md.min_ncc);
     }
-    // The registration settings matter to motion correction and to orientation co-registration.
-    if m.enabled || (config.multi_orientation.enabled() && config.multi_orientation.register) {
+    // Shared by motion correction and orientation co-registration; said whenever changed.
+    {
         let (r, rd) = (&config.registration, &d.registration);
         emit_usize(&mut parts, "--registration-levels", r.levels, rd.levels);
         emit_usize(&mut parts, "--registration-max-samples", r.max_samples, rd.max_samples);
@@ -179,15 +184,32 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         emit_f64(&mut parts, "--robust-fit-flag-ratio", r.flag_ratio, rd.flag_ratio);
     }
 
-    // ROMEO params
+    // ROMEO params: every one that differs from the default, in whichever direction it differs.
     let r = &config.field_mapping.romeo;
     let rd = &d.field_mapping.romeo;
-    if r.individual != rd.individual && !r.individual { parts.push("--no-romeo-individual".into()); }
+    // Each switch has a flag for the direction away from QSMxT's default.
+    let mut emit_bool = |val: bool, default: bool, on: &str, off: &str| {
+        if val != default { parts.push(if val { on } else { off }.to_string()); }
+    };
+    debug_assert!(rd.phase_coherence && rd.phase_gradient_coherence && rd.phase_linearity && rd.mag_coherence
+        && !rd.mag_weight2 && !rd.bestpath && !rd.merge_regions && !rd.correct_regions,
+        "a ROMEO default changed: check the flags below still exist for the new direction");
+    emit_bool(r.individual, rd.individual, "--romeo-individual", "--no-romeo-individual");
+    emit_bool(r.correct_global, rd.correct_global, "--romeo-correct-global", "--no-romeo-correct-global");
+    emit_bool(r.phase_coherence, rd.phase_coherence, "--romeo-phase-coherence", "--no-romeo-phase-coherence");
+    emit_bool(r.phase_gradient_coherence, rd.phase_gradient_coherence,
+              "--romeo-phase-gradient-coherence", "--no-romeo-phase-gradient-coherence");
+    emit_bool(r.phase_linearity, rd.phase_linearity, "--romeo-phase-linearity", "--no-romeo-phase-linearity");
+    emit_bool(r.mag_coherence, rd.mag_coherence, "--romeo-mag-coherence", "--no-romeo-mag-coherence");
+    emit_bool(r.mag_weight, rd.mag_weight, "--romeo-mag-weight", "--no-romeo-mag-weight");
+    emit_bool(r.mag_weight2, rd.mag_weight2, "--romeo-mag-weight2", "--no-romeo-mag-weight2");
+    emit_bool(r.bestpath, rd.bestpath, "--romeo-bestpath", "--no-romeo-bestpath");
+    emit_bool(r.merge_regions, rd.merge_regions, "--romeo-merge-regions", "--no-romeo-merge-regions");
+    emit_bool(r.correct_regions, rd.correct_regions, "--romeo-correct-regions", "--no-romeo-correct-regions");
     if !r.individual { emit_usize(&mut parts, "--romeo-template", r.template + 1, rd.template + 1); }
-    if r.correct_global != rd.correct_global && !r.correct_global { parts.push("--no-romeo-correct-global".into()); }
-    if r.phase_gradient_coherence != rd.phase_gradient_coherence && !r.phase_gradient_coherence { parts.push("--no-romeo-phase-gradient-coherence".into()); }
-    if r.mag_coherence != rd.mag_coherence && !r.mag_coherence { parts.push("--no-romeo-mag-coherence".into()); }
-    if r.mag_weight != rd.mag_weight && !r.mag_weight { parts.push("--no-romeo-mag-weight".into()); }
+    emit_f64(&mut parts, "--romeo-temporal-uncertain-unwrapping", r.temporal_uncertain_unwrapping, rd.temporal_uncertain_unwrapping);
+    emit_usize(&mut parts, "--romeo-max-seeds", r.max_seeds as usize, rd.max_seeds as usize);
+    emit_f64(&mut parts, "--romeo-wrap-addition", r.wrap_addition, rd.wrap_addition);
 
     // ── Masking ──
     // A preset says in three words what spelling the sections out takes a line and a half to say,
@@ -197,8 +219,10 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         && config.masking.combine == d.masking.combine
         && config.masking.refinements == d.masking.refinements;
     match crate::masking::masking_preset_command(&config.masking) {
-        // The default recipe is a preset too; saying so adds noise rather than removing it.
-        _ if masking_default => {}
+        // The default recipe is a preset too; saying so adds noise rather than removing it. Except
+        // under QSMART, where untouched masking means BET (see `apply_run_overrides`), so the
+        // default recipe has to be said to be kept.
+        _ if masking_default && config.inversion.algorithm != QsmAlgorithm::Qsmart => {}
         Some((preset, input)) => {
             parts.push(format!("--mask-preset {preset}"));
             if let Some(input) = input {
@@ -293,212 +317,7 @@ pub fn generate_command(config: &PipelineConfig) -> String {
 
     // ── QSM inversion ──
     emit_enum(&mut parts, "--qsm-algorithm", &config.inversion.algorithm, &d.inversion.algorithm);
-    match config.inversion.algorithm {
-        QsmAlgorithm::Rts => {
-            emit_f64(&mut parts, "--rts-delta", config.inversion.rts.delta, d.inversion.rts.delta);
-            emit_f64(&mut parts, "--rts-mu", config.inversion.rts.mu, d.inversion.rts.mu);
-            emit_f64(&mut parts, "--rts-rho", config.inversion.rts.rho, d.inversion.rts.rho);
-            emit_f64(&mut parts, "--rts-tol", config.inversion.rts.tol, d.inversion.rts.tol);
-            emit_usize(&mut parts, "--rts-max-iter", config.inversion.rts.max_iter, d.inversion.rts.max_iter);
-            emit_usize(&mut parts, "--rts-lsmr-iter", config.inversion.rts.lsmr_iter, d.inversion.rts.lsmr_iter);
-        }
-        QsmAlgorithm::Tv => {
-            emit_f64(&mut parts, "--tv-lambda", config.inversion.tv.lambda, d.inversion.tv.lambda);
-            emit_f64(&mut parts, "--tv-rho", config.inversion.tv.rho, d.inversion.tv.rho);
-            emit_f64(&mut parts, "--tv-tol", config.inversion.tv.tol, d.inversion.tv.tol);
-            emit_usize(&mut parts, "--tv-max-iter", config.inversion.tv.max_iter, d.inversion.tv.max_iter);
-        }
-        QsmAlgorithm::Tkd => { emit_f64(&mut parts, "--tkd-threshold", config.inversion.tkd.threshold, d.inversion.tkd.threshold); }
-        QsmAlgorithm::Tsvd => { emit_f64(&mut parts, "--tsvd-threshold", config.inversion.tsvd.threshold, d.inversion.tsvd.threshold); }
-        QsmAlgorithm::Tikhonov => { emit_f64(&mut parts, "--tikhonov-lambda", config.inversion.tikhonov.lambda, d.inversion.tikhonov.lambda); }
-        QsmAlgorithm::Nltv => {
-            emit_f64(&mut parts, "--nltv-lambda", config.inversion.nltv.lambda, d.inversion.nltv.lambda);
-            emit_f64(&mut parts, "--nltv-mu", config.inversion.nltv.mu, d.inversion.nltv.mu);
-            emit_f64(&mut parts, "--nltv-tol", config.inversion.nltv.tol, d.inversion.nltv.tol);
-            emit_usize(&mut parts, "--nltv-max-iter", config.inversion.nltv.max_iter, d.inversion.nltv.max_iter);
-            emit_usize(&mut parts, "--nltv-newton-iter", config.inversion.nltv.newton_iter, d.inversion.nltv.newton_iter);
-        }
-        QsmAlgorithm::Medi => {
-            emit_f64(&mut parts, "--medi-lambda", config.inversion.medi.lambda, d.inversion.medi.lambda);
-            emit_f64(&mut parts, "--medi-percentage", config.inversion.medi.percentage, d.inversion.medi.percentage);
-            emit_usize(&mut parts, "--medi-max-iter", config.inversion.medi.max_iter, d.inversion.medi.max_iter);
-            emit_usize(&mut parts, "--medi-cg-max-iter", config.inversion.medi.cg_max_iter, d.inversion.medi.cg_max_iter);
-            emit_f64(&mut parts, "--medi-cg-tol", config.inversion.medi.cg_tol, d.inversion.medi.cg_tol);
-            emit_f64(&mut parts, "--medi-tol", config.inversion.medi.tol, d.inversion.medi.tol);
-            emit_f64(&mut parts, "--medi-smv-radius", config.inversion.medi.smv_radius, d.inversion.medi.smv_radius);
-            if config.inversion.medi.smv != d.inversion.medi.smv && config.inversion.medi.smv {
-                parts.push("--medi-smv".into());
-            }
-        }
-        QsmAlgorithm::Tfi => {
-            emit_f64(&mut parts, "--tfi-lambda", config.inversion.tfi.lambda, d.inversion.tfi.lambda);
-            emit_f64(&mut parts, "--tfi-precond", config.inversion.tfi.precond, d.inversion.tfi.precond);
-            emit_f64(&mut parts, "--tfi-percentage", config.inversion.tfi.percentage, d.inversion.tfi.percentage);
-            emit_usize(&mut parts, "--tfi-max-iter", config.inversion.tfi.max_iter, d.inversion.tfi.max_iter);
-            emit_usize(&mut parts, "--tfi-cg-max-iter", config.inversion.tfi.cg_max_iter, d.inversion.tfi.cg_max_iter);
-            emit_f64(&mut parts, "--tfi-cg-tol", config.inversion.tfi.cg_tol, d.inversion.tfi.cg_tol);
-            emit_f64(&mut parts, "--tfi-tol", config.inversion.tfi.tol, d.inversion.tfi.tol);
-        }
-        QsmAlgorithm::Ilsqr => {
-            emit_f64(&mut parts, "--ilsqr-tol", config.inversion.ilsqr.tol, d.inversion.ilsqr.tol);
-            emit_usize(&mut parts, "--ilsqr-max-iter", config.inversion.ilsqr.max_iter, d.inversion.ilsqr.max_iter);
-        }
-        // HEIDI's seed is an LSQR solve, so it emits both groups.
-        QsmAlgorithm::Lsqr | QsmAlgorithm::Heidi => {
-            let (c, dd) = (&config.inversion.lsqr, &d.inversion.lsqr);
-            if c.residual_weighting != dd.residual_weighting {
-                if let Some(w) = c.residual_weighting {
-                    parts.push(format!("--lsqr-residual-weighting {w}"));
-                }
-            }
-            if c.fit_global_offset != dd.fit_global_offset && !c.fit_global_offset {
-                parts.push("--no-lsqr-global-offset".into());
-            }
-            emit_f64(&mut parts, "--lsqr-tol", c.tol, dd.tol);
-            emit_usize(&mut parts, "--lsqr-max-iter", c.max_iter, dd.max_iter);
-
-            if config.inversion.algorithm == QsmAlgorithm::Heidi {
-                let (c, dd) = (&config.inversion.heidi, &d.inversion.heidi);
-                emit_f64(&mut parts, "--heidi-cone-threshold", c.cone_threshold, dd.cone_threshold);
-                emit_f64(&mut parts, "--heidi-gradient-threshold", c.gradient_threshold, dd.gradient_threshold);
-                if c.apply_laplacian_correction != dd.apply_laplacian_correction && !c.apply_laplacian_correction {
-                    parts.push("--no-heidi-laplacian-correction".into());
-                }
-                emit_f64(&mut parts, "--heidi-laplacian-threshold", c.laplacian_threshold, dd.laplacian_threshold);
-                emit_f64(&mut parts, "--heidi-gradient-mask-floor", c.gradient_mask_floor, dd.gradient_mask_floor);
-                emit_usize(&mut parts, "--heidi-continuation-steps", c.continuation_steps, dd.continuation_steps);
-                emit_usize(&mut parts, "--heidi-inner-iterations", c.inner_iterations, dd.inner_iterations);
-                emit_f64(&mut parts, "--heidi-mu-min", c.mu_min, dd.mu_min);
-                emit_f64(&mut parts, "--heidi-tol", c.tol, dd.tol);
-                if c.denoise != dd.denoise && !c.denoise {
-                    parts.push("--no-heidi-denoise".into());
-                }
-                if c.denoise {
-                    emit_usize(&mut parts, "--heidi-denoise-iterations", c.denoise_iterations, dd.denoise_iterations);
-                    emit_f64(&mut parts, "--heidi-denoise-time-step", c.denoise_time_step, dd.denoise_time_step);
-                    emit_f64(&mut parts, "--heidi-denoise-conductance", c.denoise_conductance, dd.denoise_conductance);
-                }
-            }
-        }
-        QsmAlgorithm::Tgv => {
-            emit_usize(&mut parts, "--tgv-iterations", config.inversion.tgv.iterations, d.inversion.tgv.iterations);
-            emit_usize(&mut parts, "--tgv-erosions", config.inversion.tgv.erosions, d.inversion.tgv.erosions);
-            emit_f64(&mut parts, "--tgv-alpha0", config.inversion.tgv.alpha0, d.inversion.tgv.alpha0);
-            emit_f64(&mut parts, "--tgv-alpha1", config.inversion.tgv.alpha1, d.inversion.tgv.alpha1);
-            emit_f64(&mut parts, "--tgv-step-size", config.inversion.tgv.step_size, d.inversion.tgv.step_size);
-            emit_f64(&mut parts, "--tgv-tol", config.inversion.tgv.tol, d.inversion.tgv.tol);
-        }
-        QsmAlgorithm::Qsmart => {
-            let q = &config.inversion.qsmart;
-            let dq = &d.inversion.qsmart;
-            emit_enum(&mut parts, "--qsmart-inversion", &q.inversion, &dq.inversion);
-            emit_usize(&mut parts, "--qsmart-ilsqr-max-iter", q.ilsqr_max_iter, dq.ilsqr_max_iter);
-            emit_f64(&mut parts, "--qsmart-ilsqr-pad-mm", q.ilsqr_pad_mm, dq.ilsqr_pad_mm);
-            // QSMART's inner iLSQR takes its tolerance from the iLSQR settings.
-            if q.inversion == QsmAlgorithm::Ilsqr {
-                emit_f64(&mut parts, "--ilsqr-tol", config.inversion.ilsqr.tol, d.inversion.ilsqr.tol);
-            }
-            emit_i32(&mut parts, "--qsmart-vasc-sphere-radius", q.vasc_sphere_radius, dq.vasc_sphere_radius);
-            emit_i32(&mut parts, "--qsmart-sdf-spatial-radius", q.sdf_spatial_radius, dq.sdf_spatial_radius);
-            emit_f64(&mut parts, "--qsmart-sdf-sigma1-stage1", q.sdf_sigma1_stage1, dq.sdf_sigma1_stage1);
-            emit_f64(&mut parts, "--qsmart-sdf-sigma2-stage1", q.sdf_sigma2_stage1, dq.sdf_sigma2_stage1);
-            emit_f64(&mut parts, "--qsmart-sdf-sigma1-stage2", q.sdf_sigma1_stage2, dq.sdf_sigma1_stage2);
-            emit_f64(&mut parts, "--qsmart-sdf-sigma2-stage2", q.sdf_sigma2_stage2, dq.sdf_sigma2_stage2);
-            emit_f64(&mut parts, "--qsmart-sdf-lower-lim", q.sdf_lower_lim, dq.sdf_lower_lim);
-            emit_f64(&mut parts, "--qsmart-sdf-curv-constant", q.sdf_curv_constant, dq.sdf_curv_constant);
-            emit_f64(&mut parts, "--qsmart-frangi-scale-min", q.frangi_scale_min, dq.frangi_scale_min);
-            emit_f64(&mut parts, "--qsmart-frangi-scale-max", q.frangi_scale_max, dq.frangi_scale_max);
-            emit_f64(&mut parts, "--qsmart-frangi-scale-ratio", q.frangi_scale_ratio, dq.frangi_scale_ratio);
-            emit_f64(&mut parts, "--qsmart-frangi-c", q.frangi_c, dq.frangi_c);
-        }
-        QsmAlgorithm::Ndi => {
-            emit_f64(&mut parts, "--ndi-tau", config.inversion.ndi.tau, d.inversion.ndi.tau);
-            emit_f64(&mut parts, "--ndi-alpha", config.inversion.ndi.alpha, d.inversion.ndi.alpha);
-            emit_usize(&mut parts, "--ndi-max-iter", config.inversion.ndi.max_iter, d.inversion.ndi.max_iter);
-            emit_f64(&mut parts, "--ndi-phase-scale", config.inversion.ndi.phase_scale, d.inversion.ndi.phase_scale);
-        }
-        QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => {
-            let fa = &config.inversion.fansi;
-            let df = &d.inversion.fansi;
-            emit_f64(&mut parts, "--fansi-alpha1", fa.alpha1, df.alpha1);
-            emit_f64(&mut parts, "--fansi-mu1", fa.mu1, df.mu1);
-            emit_f64(&mut parts, "--fansi-mu2", fa.mu2, df.mu2);
-            emit_f64(&mut parts, "--fansi-alpha0", fa.alpha0, df.alpha0);
-            emit_f64(&mut parts, "--fansi-mu0", fa.mu0, df.mu0);
-            emit_usize(&mut parts, "--fansi-max-iter", fa.max_iter, df.max_iter);
-            emit_f64(&mut parts, "--fansi-tol-update", fa.tol_update, df.tol_update);
-            emit_f64(&mut parts, "--fansi-tol-delta", fa.tol_delta, df.tol_delta);
-            emit_f64(&mut parts, "--fansi-phase-scale", fa.phase_scale, df.phase_scale);
-        }
-        QsmAlgorithm::L1qsm => {
-            let l = &config.inversion.l1qsm;
-            let dl = &d.inversion.l1qsm;
-            emit_f64(&mut parts, "--l1qsm-alpha1", l.alpha1, dl.alpha1);
-            emit_f64(&mut parts, "--l1qsm-mu1", l.mu1, dl.mu1);
-            emit_f64(&mut parts, "--l1qsm-mu2", l.mu2, dl.mu2);
-            emit_f64(&mut parts, "--l1qsm-mu3", l.mu3, dl.mu3);
-            emit_f64(&mut parts, "--l1qsm-lambda", l.lambda, dl.lambda);
-            emit_usize(&mut parts, "--l1qsm-max-iter", l.max_iter, dl.max_iter);
-            emit_f64(&mut parts, "--l1qsm-tol-update", l.tol_update, dl.tol_update);
-            emit_f64(&mut parts, "--l1qsm-tol-delta", l.tol_delta, dl.tol_delta);
-            emit_f64(&mut parts, "--l1qsm-phase-scale", l.phase_scale, dl.phase_scale);
-        }
-        QsmAlgorithm::Whqsm => {
-            let w = &config.inversion.whqsm;
-            let dw = &d.inversion.whqsm;
-            emit_f64(&mut parts, "--whqsm-alpha1", w.alpha1, dw.alpha1);
-            emit_f64(&mut parts, "--whqsm-mu1", w.mu1, dw.mu1);
-            emit_f64(&mut parts, "--whqsm-mu2", w.mu2, dw.mu2);
-            emit_f64(&mut parts, "--whqsm-beta", w.beta, dw.beta);
-            emit_f64(&mut parts, "--whqsm-muh", w.muh, dw.muh);
-            emit_usize(&mut parts, "--whqsm-max-iter", w.max_iter, dw.max_iter);
-            emit_f64(&mut parts, "--whqsm-tol-update", w.tol_update, dw.tol_update);
-            emit_f64(&mut parts, "--whqsm-tol-delta", w.tol_delta, dw.tol_delta);
-            emit_f64(&mut parts, "--whqsm-phase-scale", w.phase_scale, dw.phase_scale);
-        }
-        QsmAlgorithm::Hdqsm => {
-            let h = &config.inversion.hdqsm;
-            let dh = &d.inversion.hdqsm;
-            emit_f64(&mut parts, "--hdqsm-alpha-l2", h.alpha_l2, dh.alpha_l2);
-            emit_f64(&mut parts, "--hdqsm-mu1-l2", h.mu1_l2, dh.mu1_l2);
-            emit_f64(&mut parts, "--hdqsm-mu2", h.mu2, dh.mu2);
-            emit_usize(&mut parts, "--hdqsm-max-iter-l1", h.max_iter_l1, dh.max_iter_l1);
-            emit_usize(&mut parts, "--hdqsm-max-iter-l2", h.max_iter_l2, dh.max_iter_l2);
-            emit_f64(&mut parts, "--hdqsm-tol-update", h.tol_update, dh.tol_update);
-        }
-        QsmAlgorithm::AmpPe => {
-            let a = &config.inversion.amp_pe;
-            let da = &d.inversion.amp_pe;
-            // b0 (scan) and gyro_ratio (physical constant) are not run flags.
-            emit_usize(&mut parts, "--amp-pe-wave-order", a.wave_order, da.wave_order);
-            emit_usize(&mut parts, "--amp-pe-nlevel", a.nlevel, da.nlevel);
-            emit_f64(&mut parts, "--amp-pe-wave-pec", a.wave_pec, da.wave_pec);
-            emit_f64(&mut parts, "--amp-pe-simulated-te", a.simulated_te, da.simulated_te);
-            emit_usize(&mut parts, "--amp-pe-max-linearization-ite", a.max_linearization_ite, da.max_linearization_ite);
-            emit_f64(&mut parts, "--amp-pe-damp-rate-sig", a.damp_rate_sig, da.damp_rate_sig);
-            emit_f64(&mut parts, "--amp-pe-damp-rate-par", a.damp_rate_par, da.damp_rate_par);
-            emit_usize(&mut parts, "--amp-pe-max-pe-spar-ite", a.max_pe_spar_ite, da.max_pe_spar_ite);
-            emit_usize(&mut parts, "--amp-pe-max-pe-est-ite", a.max_pe_est_ite, da.max_pe_est_ite);
-            emit_f64(&mut parts, "--amp-pe-cvg-thd", a.cvg_thd, da.cvg_thd);
-            emit_f64(&mut parts, "--amp-pe-tikhonov-beta", a.tikhonov_beta, da.tikhonov_beta);
-        }
-        // Deep-learning inversions have no per-net params (weights + fixed graph), but the
-        // tileable nets (routed through run_dipole_inversion) accept overlap-tiling options.
-        // Presence of `--tile-size` enables tiling; absence = whole-volume.
-        QsmAlgorithm::Xqsm | QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus
-        | QsmAlgorithm::Ir2qsm | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm
-        | QsmAlgorithm::Nextqsm => {
-            if let Some(sz) = config.inversion.tile_size {
-                parts.push(format!("--tile-size {}", sz));
-            }
-            if let Some(h) = config.inversion.tile_halo {
-                parts.push(format!("--tile-halo {}", h));
-            }
-        }
-        // Natively patch-based (autoqsm/qsmgan) and phase-input (iqsm/iqsm+) nets: no tiling opts.
-        QsmAlgorithm::Autoqsm | QsmAlgorithm::Qsmgan
-        | QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {}
-    }
+    emit_inversion_params(&mut parts, config, &d, config.inversion.algorithm);
 
     // ── Chi-separation method + params (only the selected method's) ──
     if config.pipeline.do_chi_separation {
@@ -575,6 +394,229 @@ pub fn generate_command(config: &PipelineConfig) -> String {
 }
 
 // ─── Helpers ───
+
+/// The flags for inversion `alg`'s own settings: the selected algorithm's, or QSMART's inner one.
+fn emit_inversion_params(parts: &mut Vec<String>, config: &PipelineConfig, d: &PipelineConfig, alg: QsmAlgorithm) {
+    match alg {
+        QsmAlgorithm::Rts => {
+            emit_f64(parts, "--rts-delta", config.inversion.rts.delta, d.inversion.rts.delta);
+            emit_f64(parts, "--rts-mu", config.inversion.rts.mu, d.inversion.rts.mu);
+            emit_f64(parts, "--rts-rho", config.inversion.rts.rho, d.inversion.rts.rho);
+            emit_f64(parts, "--rts-tol", config.inversion.rts.tol, d.inversion.rts.tol);
+            emit_usize(parts, "--rts-max-iter", config.inversion.rts.max_iter, d.inversion.rts.max_iter);
+            emit_usize(parts, "--rts-lsmr-iter", config.inversion.rts.lsmr_iter, d.inversion.rts.lsmr_iter);
+        }
+        QsmAlgorithm::Tv => {
+            emit_f64(parts, "--tv-lambda", config.inversion.tv.lambda, d.inversion.tv.lambda);
+            emit_f64(parts, "--tv-rho", config.inversion.tv.rho, d.inversion.tv.rho);
+            emit_f64(parts, "--tv-tol", config.inversion.tv.tol, d.inversion.tv.tol);
+            emit_usize(parts, "--tv-max-iter", config.inversion.tv.max_iter, d.inversion.tv.max_iter);
+        }
+        QsmAlgorithm::Tkd => { emit_f64(parts, "--tkd-threshold", config.inversion.tkd.threshold, d.inversion.tkd.threshold); }
+        QsmAlgorithm::Tsvd => { emit_f64(parts, "--tsvd-threshold", config.inversion.tsvd.threshold, d.inversion.tsvd.threshold); }
+        QsmAlgorithm::Tikhonov => { emit_f64(parts, "--tikhonov-lambda", config.inversion.tikhonov.lambda, d.inversion.tikhonov.lambda); }
+        QsmAlgorithm::Nltv => {
+            emit_f64(parts, "--nltv-lambda", config.inversion.nltv.lambda, d.inversion.nltv.lambda);
+            emit_f64(parts, "--nltv-mu", config.inversion.nltv.mu, d.inversion.nltv.mu);
+            emit_f64(parts, "--nltv-tol", config.inversion.nltv.tol, d.inversion.nltv.tol);
+            emit_usize(parts, "--nltv-max-iter", config.inversion.nltv.max_iter, d.inversion.nltv.max_iter);
+            emit_usize(parts, "--nltv-newton-iter", config.inversion.nltv.newton_iter, d.inversion.nltv.newton_iter);
+        }
+        QsmAlgorithm::Medi => {
+            emit_f64(parts, "--medi-lambda", config.inversion.medi.lambda, d.inversion.medi.lambda);
+            emit_f64(parts, "--medi-percentage", config.inversion.medi.percentage, d.inversion.medi.percentage);
+            emit_usize(parts, "--medi-max-iter", config.inversion.medi.max_iter, d.inversion.medi.max_iter);
+            emit_usize(parts, "--medi-cg-max-iter", config.inversion.medi.cg_max_iter, d.inversion.medi.cg_max_iter);
+            emit_f64(parts, "--medi-cg-tol", config.inversion.medi.cg_tol, d.inversion.medi.cg_tol);
+            emit_f64(parts, "--medi-tol", config.inversion.medi.tol, d.inversion.medi.tol);
+            emit_f64(parts, "--medi-smv-radius", config.inversion.medi.smv_radius, d.inversion.medi.smv_radius);
+            if config.inversion.medi.merit != d.inversion.medi.merit {
+                parts.push(format!("--medi-merit {}", config.inversion.medi.merit));
+            }
+            if config.inversion.medi.data_weighting != d.inversion.medi.data_weighting {
+                parts.push(format!("--medi-data-weighting {}", config.inversion.medi.data_weighting));
+            }
+            if config.inversion.medi.smv != d.inversion.medi.smv {
+                parts.push(if config.inversion.medi.smv { "--medi-smv" } else { "--no-medi-smv" }.into());
+            }
+        }
+        QsmAlgorithm::Tfi => {
+            emit_f64(parts, "--tfi-lambda", config.inversion.tfi.lambda, d.inversion.tfi.lambda);
+            emit_f64(parts, "--tfi-precond", config.inversion.tfi.precond, d.inversion.tfi.precond);
+            if config.inversion.tfi.merit != d.inversion.tfi.merit {
+                parts.push(format!("--tfi-merit {}", config.inversion.tfi.merit));
+            }
+            if config.inversion.tfi.data_weighting != d.inversion.tfi.data_weighting {
+                parts.push(format!("--tfi-data-weighting {}", config.inversion.tfi.data_weighting));
+            }
+            emit_f64(parts, "--tfi-percentage", config.inversion.tfi.percentage, d.inversion.tfi.percentage);
+            emit_usize(parts, "--tfi-max-iter", config.inversion.tfi.max_iter, d.inversion.tfi.max_iter);
+            emit_usize(parts, "--tfi-cg-max-iter", config.inversion.tfi.cg_max_iter, d.inversion.tfi.cg_max_iter);
+            emit_f64(parts, "--tfi-cg-tol", config.inversion.tfi.cg_tol, d.inversion.tfi.cg_tol);
+            emit_f64(parts, "--tfi-tol", config.inversion.tfi.tol, d.inversion.tfi.tol);
+        }
+        QsmAlgorithm::Ilsqr => {
+            emit_f64(parts, "--ilsqr-tol", config.inversion.ilsqr.tol, d.inversion.ilsqr.tol);
+            emit_usize(parts, "--ilsqr-max-iter", config.inversion.ilsqr.max_iter, d.inversion.ilsqr.max_iter);
+        }
+        // HEIDI's seed is an LSQR solve, so it emits both groups.
+        QsmAlgorithm::Lsqr | QsmAlgorithm::Heidi => {
+            let (c, dd) = (&config.inversion.lsqr, &d.inversion.lsqr);
+            if c.residual_weighting != dd.residual_weighting {
+                if let Some(w) = c.residual_weighting {
+                    parts.push(format!("--lsqr-residual-weighting {w}"));
+                }
+            }
+            if c.fit_global_offset != dd.fit_global_offset && !c.fit_global_offset {
+                parts.push("--no-lsqr-global-offset".into());
+            }
+            emit_f64(parts, "--lsqr-tol", c.tol, dd.tol);
+            emit_usize(parts, "--lsqr-max-iter", c.max_iter, dd.max_iter);
+
+            if config.inversion.algorithm == QsmAlgorithm::Heidi {
+                let (c, dd) = (&config.inversion.heidi, &d.inversion.heidi);
+                emit_f64(parts, "--heidi-cone-threshold", c.cone_threshold, dd.cone_threshold);
+                emit_f64(parts, "--heidi-gradient-threshold", c.gradient_threshold, dd.gradient_threshold);
+                if c.apply_laplacian_correction != dd.apply_laplacian_correction && !c.apply_laplacian_correction {
+                    parts.push("--no-heidi-laplacian-correction".into());
+                }
+                emit_f64(parts, "--heidi-laplacian-threshold", c.laplacian_threshold, dd.laplacian_threshold);
+                emit_f64(parts, "--heidi-gradient-mask-floor", c.gradient_mask_floor, dd.gradient_mask_floor);
+                emit_usize(parts, "--heidi-continuation-steps", c.continuation_steps, dd.continuation_steps);
+                emit_usize(parts, "--heidi-inner-iterations", c.inner_iterations, dd.inner_iterations);
+                emit_f64(parts, "--heidi-mu-min", c.mu_min, dd.mu_min);
+                emit_f64(parts, "--heidi-tol", c.tol, dd.tol);
+                if c.denoise != dd.denoise && !c.denoise {
+                    parts.push("--no-heidi-denoise".into());
+                }
+                if c.denoise {
+                    emit_usize(parts, "--heidi-denoise-iterations", c.denoise_iterations, dd.denoise_iterations);
+                    emit_f64(parts, "--heidi-denoise-time-step", c.denoise_time_step, dd.denoise_time_step);
+                    emit_f64(parts, "--heidi-denoise-conductance", c.denoise_conductance, dd.denoise_conductance);
+                }
+            }
+        }
+        QsmAlgorithm::Tgv => {
+            emit_usize(parts, "--tgv-iterations", config.inversion.tgv.iterations, d.inversion.tgv.iterations);
+            emit_usize(parts, "--tgv-erosions", config.inversion.tgv.erosions, d.inversion.tgv.erosions);
+            emit_f64(parts, "--tgv-alpha0", config.inversion.tgv.alpha0, d.inversion.tgv.alpha0);
+            emit_f64(parts, "--tgv-alpha1", config.inversion.tgv.alpha1, d.inversion.tgv.alpha1);
+            emit_f64(parts, "--tgv-step-size", config.inversion.tgv.step_size, d.inversion.tgv.step_size);
+            emit_f64(parts, "--tgv-tol", config.inversion.tgv.tol, d.inversion.tgv.tol);
+        }
+        QsmAlgorithm::Qsmart => {
+            let q = &config.inversion.qsmart;
+            let dq = &d.inversion.qsmart;
+            emit_enum(parts, "--qsmart-inversion", &q.inversion, &dq.inversion);
+            emit_usize(parts, "--qsmart-ilsqr-max-iter", q.ilsqr_max_iter, dq.ilsqr_max_iter);
+            emit_f64(parts, "--qsmart-ilsqr-pad-mm", q.ilsqr_pad_mm, dq.ilsqr_pad_mm);
+            // The inner inversion's own settings (iLSQR's tolerance, RTS's, ...), which QSMART
+            // reads from the same groups as a top-level run would. Its iteration cap is QSMART's.
+            if q.inversion != QsmAlgorithm::Qsmart {
+                emit_inversion_params(parts, config, d, q.inversion);
+            }
+            emit_i32(parts, "--qsmart-vasc-sphere-radius", q.vasc_sphere_radius, dq.vasc_sphere_radius);
+            emit_i32(parts, "--qsmart-sdf-spatial-radius", q.sdf_spatial_radius, dq.sdf_spatial_radius);
+            emit_f64(parts, "--qsmart-sdf-sigma1-stage1", q.sdf_sigma1_stage1, dq.sdf_sigma1_stage1);
+            emit_f64(parts, "--qsmart-sdf-sigma2-stage1", q.sdf_sigma2_stage1, dq.sdf_sigma2_stage1);
+            emit_f64(parts, "--qsmart-sdf-sigma1-stage2", q.sdf_sigma1_stage2, dq.sdf_sigma1_stage2);
+            emit_f64(parts, "--qsmart-sdf-sigma2-stage2", q.sdf_sigma2_stage2, dq.sdf_sigma2_stage2);
+            emit_f64(parts, "--qsmart-sdf-lower-lim", q.sdf_lower_lim, dq.sdf_lower_lim);
+            emit_f64(parts, "--qsmart-sdf-curv-constant", q.sdf_curv_constant, dq.sdf_curv_constant);
+            emit_f64(parts, "--qsmart-frangi-scale-min", q.frangi_scale_min, dq.frangi_scale_min);
+            emit_f64(parts, "--qsmart-frangi-scale-max", q.frangi_scale_max, dq.frangi_scale_max);
+            emit_f64(parts, "--qsmart-frangi-scale-ratio", q.frangi_scale_ratio, dq.frangi_scale_ratio);
+            emit_f64(parts, "--qsmart-frangi-c", q.frangi_c, dq.frangi_c);
+        }
+        QsmAlgorithm::Ndi => {
+            emit_f64(parts, "--ndi-tau", config.inversion.ndi.tau, d.inversion.ndi.tau);
+            emit_f64(parts, "--ndi-alpha", config.inversion.ndi.alpha, d.inversion.ndi.alpha);
+            emit_usize(parts, "--ndi-max-iter", config.inversion.ndi.max_iter, d.inversion.ndi.max_iter);
+            emit_f64(parts, "--ndi-phase-scale", config.inversion.ndi.phase_scale, d.inversion.ndi.phase_scale);
+        }
+        QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => {
+            let fa = &config.inversion.fansi;
+            let df = &d.inversion.fansi;
+            emit_f64(parts, "--fansi-alpha1", fa.alpha1, df.alpha1);
+            emit_f64(parts, "--fansi-mu1", fa.mu1, df.mu1);
+            emit_f64(parts, "--fansi-mu2", fa.mu2, df.mu2);
+            emit_f64(parts, "--fansi-alpha0", fa.alpha0, df.alpha0);
+            emit_f64(parts, "--fansi-mu0", fa.mu0, df.mu0);
+            emit_usize(parts, "--fansi-max-iter", fa.max_iter, df.max_iter);
+            emit_f64(parts, "--fansi-tol-update", fa.tol_update, df.tol_update);
+            emit_f64(parts, "--fansi-tol-delta", fa.tol_delta, df.tol_delta);
+            emit_f64(parts, "--fansi-phase-scale", fa.phase_scale, df.phase_scale);
+        }
+        QsmAlgorithm::L1qsm => {
+            let l = &config.inversion.l1qsm;
+            let dl = &d.inversion.l1qsm;
+            emit_f64(parts, "--l1qsm-alpha1", l.alpha1, dl.alpha1);
+            emit_f64(parts, "--l1qsm-mu1", l.mu1, dl.mu1);
+            emit_f64(parts, "--l1qsm-mu2", l.mu2, dl.mu2);
+            emit_f64(parts, "--l1qsm-mu3", l.mu3, dl.mu3);
+            emit_f64(parts, "--l1qsm-lambda", l.lambda, dl.lambda);
+            emit_usize(parts, "--l1qsm-max-iter", l.max_iter, dl.max_iter);
+            emit_f64(parts, "--l1qsm-tol-update", l.tol_update, dl.tol_update);
+            emit_f64(parts, "--l1qsm-tol-delta", l.tol_delta, dl.tol_delta);
+            emit_f64(parts, "--l1qsm-phase-scale", l.phase_scale, dl.phase_scale);
+        }
+        QsmAlgorithm::Whqsm => {
+            let w = &config.inversion.whqsm;
+            let dw = &d.inversion.whqsm;
+            emit_f64(parts, "--whqsm-alpha1", w.alpha1, dw.alpha1);
+            emit_f64(parts, "--whqsm-mu1", w.mu1, dw.mu1);
+            emit_f64(parts, "--whqsm-mu2", w.mu2, dw.mu2);
+            emit_f64(parts, "--whqsm-beta", w.beta, dw.beta);
+            emit_f64(parts, "--whqsm-muh", w.muh, dw.muh);
+            emit_usize(parts, "--whqsm-max-iter", w.max_iter, dw.max_iter);
+            emit_f64(parts, "--whqsm-tol-update", w.tol_update, dw.tol_update);
+            emit_f64(parts, "--whqsm-tol-delta", w.tol_delta, dw.tol_delta);
+            emit_f64(parts, "--whqsm-phase-scale", w.phase_scale, dw.phase_scale);
+        }
+        QsmAlgorithm::Hdqsm => {
+            let h = &config.inversion.hdqsm;
+            let dh = &d.inversion.hdqsm;
+            emit_f64(parts, "--hdqsm-alpha-l2", h.alpha_l2, dh.alpha_l2);
+            emit_f64(parts, "--hdqsm-mu1-l2", h.mu1_l2, dh.mu1_l2);
+            emit_f64(parts, "--hdqsm-mu2", h.mu2, dh.mu2);
+            emit_usize(parts, "--hdqsm-max-iter-l1", h.max_iter_l1, dh.max_iter_l1);
+            emit_usize(parts, "--hdqsm-max-iter-l2", h.max_iter_l2, dh.max_iter_l2);
+            emit_f64(parts, "--hdqsm-tol-update", h.tol_update, dh.tol_update);
+        }
+        QsmAlgorithm::AmpPe => {
+            let a = &config.inversion.amp_pe;
+            let da = &d.inversion.amp_pe;
+            // b0 (scan) and gyro_ratio (physical constant) are not run flags.
+            emit_usize(parts, "--amp-pe-wave-order", a.wave_order, da.wave_order);
+            emit_usize(parts, "--amp-pe-nlevel", a.nlevel, da.nlevel);
+            emit_f64(parts, "--amp-pe-wave-pec", a.wave_pec, da.wave_pec);
+            emit_f64(parts, "--amp-pe-simulated-te", a.simulated_te, da.simulated_te);
+            emit_usize(parts, "--amp-pe-max-linearization-ite", a.max_linearization_ite, da.max_linearization_ite);
+            emit_f64(parts, "--amp-pe-damp-rate-sig", a.damp_rate_sig, da.damp_rate_sig);
+            emit_f64(parts, "--amp-pe-damp-rate-par", a.damp_rate_par, da.damp_rate_par);
+            emit_usize(parts, "--amp-pe-max-pe-spar-ite", a.max_pe_spar_ite, da.max_pe_spar_ite);
+            emit_usize(parts, "--amp-pe-max-pe-est-ite", a.max_pe_est_ite, da.max_pe_est_ite);
+            emit_f64(parts, "--amp-pe-cvg-thd", a.cvg_thd, da.cvg_thd);
+            emit_f64(parts, "--amp-pe-tikhonov-beta", a.tikhonov_beta, da.tikhonov_beta);
+        }
+        // Deep-learning inversions have no per-net params (weights + fixed graph), but the
+        // tileable nets (routed through run_dipole_inversion) accept overlap-tiling options.
+        // Presence of `--tile-size` enables tiling; absence = whole-volume.
+        QsmAlgorithm::Xqsm | QsmAlgorithm::Qsmnet | QsmAlgorithm::QsmnetPlus
+        | QsmAlgorithm::Ir2qsm | QsmAlgorithm::Lpcnn | QsmAlgorithm::ModlQsm
+        | QsmAlgorithm::Nextqsm => {
+            if let Some(sz) = config.inversion.tile_size {
+                parts.push(format!("--tile-size {}", sz));
+            }
+            if let Some(h) = config.inversion.tile_halo {
+                parts.push(format!("--tile-halo {}", h));
+            }
+        }
+        // Natively patch-based (autoqsm/qsmgan) and phase-input (iqsm/iqsm+) nets: no tiling opts.
+        QsmAlgorithm::Autoqsm | QsmAlgorithm::Qsmgan
+        | QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {}
+    }
+}
 
 fn emit_f64(parts: &mut Vec<String>, flag: &str, val: f64, default: f64) {
     if val != default { parts.push(format!("{} {}", flag, val)); }

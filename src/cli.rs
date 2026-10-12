@@ -544,9 +544,12 @@ pub struct MediParamArgs {
     /// MEDI: enable MERIT weighting
     #[arg(long)]
     pub medi_merit: Option<bool>,
-    /// MEDI: enable SMV deconvolution
+    /// MEDI: enable SMV deconvolution (on by default)
     #[arg(long)]
     pub medi_smv: bool,
+    /// MEDI: disable SMV deconvolution
+    #[arg(long, conflicts_with = "medi_smv")]
+    pub no_medi_smv: bool,
     /// MEDI SMV radius in mm
     #[arg(long)]
     pub medi_smv_radius: Option<f64>,
