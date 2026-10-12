@@ -58,3 +58,6 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `440946b`):
   than TE weighting, so qsmbly and any other qsmxt-config consumer get the same field map as QSMxT.
 - The FFT Laplacian solver (`--laplacian-solver fft`) is in every build; the `laplacian-fft`
   cargo feature is gone.
+- The Laplacian solver and its FFT pad are in the TUI (Field mapping → Unwrapping = laplacian →
+  Solver / FFT Pad). `--laplacian-fft-pad` (and `field_mapping.laplacian_fft_pad`) takes one
+  value or three (x y z). Default unchanged (64 on every axis).

@@ -126,7 +126,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         laplacian_solver: match cfg.field_mapping.laplacian_solver {
             LaplacianSolver::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
             LaplacianSolver::Fft => qsm_core::unwrap::LaplacianSolver::Fft {
-                pad: [cfg.field_mapping.laplacian_fft_pad; 3],
+                pad: cfg.field_mapping.laplacian_fft_pad,
             },
         },
         romeo_params: qsm_core::unwrap::RomeoParams {
@@ -693,7 +693,7 @@ mod tests {
         cfg.field_mapping.linear_fit.estimate_offset = false;
         cfg.field_mapping.linear_fit.reliability_threshold_percentile = 75.0;
         cfg.field_mapping.laplacian_solver = LaplacianSolver::Fft;
-        cfg.field_mapping.laplacian_fft_pad = 40;
+        cfg.field_mapping.laplacian_fft_pad = [40, 40, 40];
         let (fm, _, _, _) = to_pipeline_stages(&cfg);
         assert_eq!(fm.b0_estimation, PB0Method::LinearFit(qsm_core::utils::LinearFitParams {
             estimate_offset: false, reliability_threshold_percentile: 75.0,

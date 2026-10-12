@@ -802,14 +802,34 @@ pub struct FieldMappingConfig {
     /// Poisson solver used by `unwrapping_algorithm = "laplacian"`.
     #[serde(default, alias = "laplacian_kernel")]
     pub laplacian_solver: LaplacianSolver,
-    /// Zero-padding (voxels per side) of the `fft` solver. Default 64, UK Biobank's.
-    #[serde(default = "default_laplacian_fft_pad")]
-    pub laplacian_fft_pad: usize,
+    /// Zero-padding (voxels per side) of the `fft` solver, per axis (x, y, z). Default 64 on
+    /// every axis, UK Biobank's (qsm-core's own default is STI Suite's 12). A config file may give
+    /// one number for all three.
+    #[serde(default = "default_laplacian_fft_pad", deserialize_with = "deserialize_pad3")]
+    pub laplacian_fft_pad: [usize; 3],
     pub romeo: RomeoConfig,
     pub linear_fit: LinearFitConfig,
 }
 pub fn default_b0_weight_assumed_t2star_ms() -> f64 { 40.0 }
-pub fn default_laplacian_fft_pad() -> usize { 64 }
+pub fn default_laplacian_fft_pad() -> [usize; 3] { [64; 3] }
+
+/// A per-axis count given as one number for every axis or as three.
+pub fn pad3_from(values: &[usize]) -> Option<[usize; 3]> {
+    match *values {
+        [n] => Some([n; 3]),
+        [x, y, z] => Some([x, y, z]),
+        _ => None,
+    }
+}
+
+fn deserialize_pad3<'de, D: serde::Deserializer<'de>>(d: D) -> Result<[usize; 3], D::Error> {
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum Pad { One(usize), Many(Vec<usize>) }
+    let v = match Pad::deserialize(d)? { Pad::One(n) => vec![n], Pad::Many(v) => v };
+    pad3_from(&v).ok_or_else(|| serde::de::Error::custom(format!(
+        "laplacian_fft_pad: give one number or three, got {v:?}")))
+}
 fn default_coil_combination_sigma() -> [f64; 3] { [10.0, 10.0, 5.0] }
 
 fn default_crop_margin_mm() -> f64 { 32.0 }

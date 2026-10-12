@@ -136,15 +136,19 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
                 Solver::Dct,
             )
         }
-        FieldmapCommand::Laplacian(args) => run_field_mapping(
-            &args.common,
-            qsm_core::pipeline::config::UnwrappingAlgorithm::Laplacian,
-            &|_| {},
-            match args.laplacian_solver {
-                LaplacianSolverArg::Dct => Solver::Dct,
-                LaplacianSolverArg::Fft => Solver::Fft { pad: args.laplacian_fft_pad },
-            },
-        ),
+        FieldmapCommand::Laplacian(args) => {
+            let pad = qsmxt_config::pad3_from(&args.laplacian_fft_pad).ok_or_else(|| QsmxtError::Config(
+                format!("--laplacian-fft-pad {:?}: give one value or three", args.laplacian_fft_pad)))?;
+            run_field_mapping(
+                &args.common,
+                qsm_core::pipeline::config::UnwrappingAlgorithm::Laplacian,
+                &|_| {},
+                match args.laplacian_solver {
+                    LaplacianSolverArg::Dct => Solver::Dct,
+                    LaplacianSolverArg::Fft => Solver::Fft { pad },
+                },
+            )
+        }
     }
 }
 

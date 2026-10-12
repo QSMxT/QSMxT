@@ -35,13 +35,17 @@ pub enum Solver {
     /// Unweighted least squares, Neumann/DCT solve (Ghiglia & Romero 1994; QSM.jl `:dct`).
     Dct,
     /// Schofield & Zhu (2003) sin/cos Laplacian, FFT solve on the volume zero-padded by `pad`
-    /// voxels per side: STI Suite 3.0's `MRPhaseUnwrap` (UK Biobank: pad 64).
-    Fft { pad: usize },
+    /// voxels per side (x, y, z): STI Suite 3.0's `MRPhaseUnwrap` (UK Biobank: pad 64).
+    Fft { pad: [usize; 3] },
 }
 
 impl std::fmt::Display for Solver {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self { Solver::Dct => write!(f, "dct"), Solver::Fft { pad } => write!(f, "fft (pad {pad})") }
+        match self {
+            Solver::Dct => write!(f, "dct"),
+            Solver::Fft { pad: [x, y, z] } if x == y && y == z => write!(f, "fft (pad {x})"),
+            Solver::Fft { pad: [x, y, z] } => write!(f, "fft (pad {x} {y} {z})"),
+        }
     }
 }
 
@@ -57,7 +61,7 @@ impl Solver {
     pub fn to_core(self) -> qsm_core::unwrap::LaplacianSolver {
         match self {
             Solver::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
-            Solver::Fft { pad } => qsm_core::unwrap::LaplacianSolver::Fft { pad: [pad; 3] },
+            Solver::Fft { pad } => qsm_core::unwrap::LaplacianSolver::Fft { pad },
         }
     }
 }
@@ -316,7 +320,7 @@ mod tests {
 
     const N: usize = 24;
     const DCT: Solver = Solver::Dct;
-    const FFT: Solver = Solver::Fft { pad: 64 };
+    const FFT: Solver = Solver::Fft { pad: [64; 3] };
 
     fn meta(tes: &[f64]) -> ScanMetadata {
         ScanMetadata {
