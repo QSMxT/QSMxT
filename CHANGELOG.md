@@ -108,6 +108,25 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
 
 ### Changed
 
+- **Provenance records the exact QSM.rs commit** (#278; no change to any image). The QSM.rs
+  version was "unknown" in BIDS-Prov, the TUI header and `--version` because qsm-core is pinned
+  by `rev`, not `tag`. It is now the tag when there is one, else `rev-<full 40-character commit>`
+  read from `Cargo.lock`, and the build fails rather than record a git pin without a commit.
+  It appears in `dataset_description.json` (a second `GeneratedBy` entry, `QSM.rs`, with a
+  `CodeURL` to that commit), in BIDS-Prov (`prov-qsmxt_soft.json`, agent
+  `bids::prov/#qsm-rs-<version>`), in every output sidecar (`QSMrsVersion`, beside
+  `QSMxTVersion`), in the log, the TUI header and `qsmxt --version`.
+- BIDS-Prov covers every step that writes a file: motion correction, segmentation, SMWI,
+  R2/R2′, χ-separation, statistics, both passes and the combination of a two-pass run, the
+  single-pass map, the return to the acquired grid and coil combination were missing, and the
+  sidecars of some outputs named activities that were never written. Each published image's
+  `GeneratedBy` is now the activity that last wrote it, read from the records rather than a
+  hand-kept list, so it always resolves in `prov/` (for a map returned to the acquired grid,
+  that is `output_space`, whose `Used` links back to the step that made the working-grid map).
+  R2/R2′, the χ-separation maps and the COSMOS/STI outputs get sidecars; COSMOS/STI get their
+  own activity, and provenance is now written after the multi-orientation step. A test keeps
+  the list of recorded steps in step with the pipeline.
+
 - The TUI's configuration (methods text, generated command) is now built from the same argument
   list the run uses, through the same overrides as `qsmxt run`, so the three can no longer
   disagree. They did: the generated command and methods text left out HEIDI/LSQR settings, the

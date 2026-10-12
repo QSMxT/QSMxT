@@ -268,7 +268,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
 
     // Log version info
     info!("qsmxt {}", env!("CARGO_PKG_VERSION"));
-    info!("QSM.rs {} ({})", env!("QSM_CORE_VERSION"), env!("QSM_CORE_GIT_HASH"));
+    info!("QSM.rs {}", env!("QSM_CORE_DESCRIBE"));
     info!(
         "Processing {} run(s) across {} subject(s)",
         runs.len(),
@@ -324,18 +324,12 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         }
     }
 
-    // Write BEP028 (BIDS-Prov) records and per-output GeneratedBy sidecars.
-    // Best-effort: provenance output must never fail an otherwise-successful run.
-    let command_line = std::env::args().collect::<Vec<_>>().join(" ");
-    if let Err(e) = crate::bids::bidsprov::write_provenance(&derivatives_dir, &runs, &output, &command_line) {
-        warn!("Failed to write BIDS-Prov provenance records: {}", e);
-    }
-
     // Multi-orientation fan-in. Members have just produced their own local fields (and their
     // own single-orientation maps, which are what you check registration against), so the
     // groups can now be combined. A group that fails is reported and the rest continue: one
     // bad direction table should not throw away a dataset's worth of work.
     let mut group_failures = Vec::new();
+    let mut prov_groups = Vec::new();
     if config.multi_orientation.enabled() {
         match crate::bids::orientation::parse_pattern(&config.multi_orientation.group_by) {
             Err(e) => group_failures.push(e),
@@ -359,6 +353,10 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                             for p in paths {
                                 info!("  wrote {}", p.display());
                             }
+                            prov_groups.push(crate::bids::bidsprov::ProvGroup {
+                                key: crate::pipeline::multiorient::group_key(&members),
+                                magnetic_field_strength: members[0].magnetic_field_strength,
+                            });
                         }
                         Err(e) => {
                             error!("{}: {}", group.label, e);
@@ -368,6 +366,16 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                 }
             }
         }
+    }
+
+    // Write BEP028 (BIDS-Prov) records and per-output GeneratedBy sidecars — last, so the
+    // multi-orientation outputs are covered too. Best-effort: provenance output must never fail
+    // an otherwise-successful run.
+    let command_line = std::env::args().collect::<Vec<_>>().join(" ");
+    if let Err(e) = crate::bids::bidsprov::write_provenance(
+        &derivatives_dir, &runs, &prov_groups, &output, &command_line,
+    ) {
+        warn!("Failed to write BIDS-Prov provenance records: {}", e);
     }
 
     let failures: Vec<_> = results.iter().filter(|r| r.is_err()).collect();

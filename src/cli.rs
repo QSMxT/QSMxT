@@ -13,10 +13,9 @@ const DL_STATUS: &str = "deep-learning models: DISABLED in this build (classical
     name = "qsmxt",
     version,
     long_version = const_format::formatcp!(
-        "{}\nqsm-core: {} ({})\n{}",
+        "{}\nQSM.rs (qsm-core): {}\n{}",
         env!("CARGO_PKG_VERSION"),
-        env!("QSM_CORE_VERSION"),
-        env!("QSM_CORE_GIT_HASH"),
+        env!("QSM_CORE_DESCRIBE"),
         DL_STATUS,
     ),
     about = "QSMxT: Quantitative Susceptibility Mapping tool (Rust)"
