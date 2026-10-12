@@ -1528,6 +1528,7 @@ pub struct PipelineFormState {
     pub amp_pe_tikhonov_beta: String,
 
     // V-SHARP
+    pub vsharp_deconvolve: bool,
     pub vsharp_threshold: String,
     pub vsharp_max_radius: String,
     pub vsharp_min_radius: String,
@@ -1850,6 +1851,7 @@ impl Default for PipelineFormState {
             amp_pe_simulated_te: format!("{}", qsm_core::inversion::AmpPeParams::default().simulated_te),
             amp_pe_max_linearization_ite: format!("{}", qsm_core::inversion::AmpPeParams::default().max_linearization_ite),
             amp_pe_tikhonov_beta: format!("{}", qsm_core::inversion::AmpPeParams::default().tikhonov_beta),
+            vsharp_deconvolve: qsmxt_config::VsharpConfig::default().deconvolve,
             vsharp_threshold: format!("{}", qsm_core::bgremove::VsharpParams::default().threshold),
             vsharp_max_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().max_radius),
             vsharp_min_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().min_radius),
@@ -2400,7 +2402,11 @@ impl PipelineFormState {
             });
             match self.bf_algorithm {
                 0 => { // V-SHARP
-                    rows.push(PipelineRow::Param { label: "  Threshold", field: "vsharp_threshold", help: "Deconvolution threshold" });
+                    rows.push(PipelineRow::Toggle { label: "  Deconvolve", field: "vsharp_deconvolve",
+                        help: "Undo the SMV high-pass (TSVD). Off = STI Suite / UK Biobank V-SHARP (QSMxT default); on = QSMxT <= v9.22" });
+                    if self.vsharp_deconvolve {
+                        rows.push(PipelineRow::Param { label: "  Threshold", field: "vsharp_threshold", help: "Deconvolution (TSVD) threshold" });
+                    }
                     rows.push(PipelineRow::Param { label: "  Max Radius", field: "vsharp_max_radius", help: "Largest SMV kernel radius (mm)" });
                     rows.push(PipelineRow::Param { label: "  Min Radius", field: "vsharp_min_radius", help: "Smallest SMV kernel radius (mm)" });
                 }
@@ -3190,6 +3196,7 @@ impl PipelineFormState {
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
+            "vsharp_deconvolve" => self.vsharp_deconvolve,
             _ => false,
         }
     }
@@ -3220,6 +3227,7 @@ impl PipelineFormState {
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction = !self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
+            "vsharp_deconvolve" => self.vsharp_deconvolve = !self.vsharp_deconvolve,
             _ => {}
         }
     }

@@ -435,6 +435,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         apply_qsmart_overrides(config, &args.qsmart_params);
 
         // ── Background removal params ──
+        if let Some(v) = args.vsharp_params.vsharp_deconvolve { config.bg_removal.vsharp.deconvolve = v; }
         if let Some(v) = args.vsharp_params.vsharp_threshold { config.bg_removal.vsharp.threshold = v; }
         if let Some(v) = args.vsharp_params.vsharp_max_radius { config.bg_removal.vsharp.max_radius = v; }
         if let Some(v) = args.vsharp_params.vsharp_min_radius { config.bg_removal.vsharp.min_radius = v; }

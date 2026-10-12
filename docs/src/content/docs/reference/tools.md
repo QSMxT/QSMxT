@@ -86,6 +86,10 @@ Unwrap a wrapped phase image (`romeo` or `laplacian`).
 Remove background fields from an unwrapped field map (`vsharp`, `pdf`, `lbv`,
 `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`).
 
+`qsmxt bgremove vsharp` takes `--deconvolve <true|false>` (default `false`, as
+`qsmxt run`), `--threshold` (used only with deconvolution) and
+`--max-radius`/`--min-radius` in mm.
+
 ## Dipole inversion — `qsmxt invert`
 
 Invert a local field map into a susceptibility map. One subcommand per method:

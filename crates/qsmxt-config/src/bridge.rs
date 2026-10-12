@@ -154,9 +154,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             threshold: cfg.bg_removal.vsharp.threshold,
             max_radius: cfg.bg_removal.vsharp.max_radius,
             min_radius: cfg.bg_removal.vsharp.min_radius,
-            // TODO(catch-up): exposed as `--vsharp-deconvolve` in its own PR. `true` is what
-            // every QSMxT release so far has run.
-            deconvolve: true,
+            deconvolve: cfg.bg_removal.vsharp.deconvolve,
         },
         pdf: qsm_core::bgremove::PdfParams { tol: cfg.bg_removal.pdf.tol, max_iter: None },
         lbv: qsm_core::bgremove::LbvParams { tol: cfg.bg_removal.lbv.tol, max_iter: None },
@@ -701,6 +699,19 @@ mod tests {
             estimate_offset: false, reliability_threshold_percentile: 75.0,
         }));
         assert_eq!(fm.laplacian_solver, qsm_core::unwrap::LaplacianSolver::Fft { pad: [40; 3] });
+    }
+
+    #[test]
+    fn vsharp_deconvolve_defaults_off_and_reaches_core() {
+        let mut cfg = PipelineConfig::default();
+        let (_, bg, _, _) = to_pipeline_stages(&cfg);
+        assert!(!bg.vsharp.deconvolve);
+        cfg.bg_removal.vsharp.deconvolve = true;
+        let (_, bg, _, _) = to_pipeline_stages(&cfg);
+        // On, it is exactly qsm-core's default V-SHARP (what QSMxT <= v9.22.0 ran).
+        let d = qsm_core::bgremove::VsharpParams::default();
+        assert_eq!((bg.vsharp.deconvolve, bg.vsharp.threshold, bg.vsharp.max_radius, bg.vsharp.min_radius),
+                   (d.deconvolve, d.threshold, d.max_radius, d.min_radius));
     }
 
     #[test]

@@ -8,6 +8,15 @@ upgrade.
 
 ### Output changes with default settings
 
+- **V-SHARP no longer deconvolves by default** (`--vsharp-deconvolve false`, QSM.rs#160). The
+  default background removal is now V-SHARP's SMV high-pass with the largest kernel that fits
+  at each voxel (12 mm down to 1 mm), as STI Suite and the UK Biobank pipeline run it, instead
+  of following it with a truncated-SVD deconvolution. On UK Biobank this raised longitudinal
+  sensitivity in iron-rich structures without a significant loss of test-retest reliability;
+  the deconvolution is exact only for noise-free backgrounds. Every default-configuration χ map
+  changes. `--vsharp-deconvolve true` (TUI: V-SHARP → Deconvolve) reproduces v9.22.0, and the
+  methods text says which ran.
+
 These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `440946b`):
 
 - **iLSQR is now STI Suite 3.0's algorithm** (QSM.rs#163, #165). The streaking-stage tolerance

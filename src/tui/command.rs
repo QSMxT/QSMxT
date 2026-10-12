@@ -461,6 +461,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             hc_chisep_bin_hz: parse_optional_f64(&ps.sep_hcchisep_bin_hz),
         },
         vsharp_params: crate::cli::VsharpParamArgs {
+            vsharp_deconvolve: Some(ps.vsharp_deconvolve),
             vsharp_threshold: parse_optional_f64(&ps.vsharp_threshold),
             vsharp_max_radius: parse_optional_f64(&ps.vsharp_max_radius),
             vsharp_min_radius: parse_optional_f64(&ps.vsharp_min_radius),
@@ -1002,6 +1003,7 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     set_f64!(config.inversion.qsmart.frangi_c, ps.qsmart_frangi_c);
 
     // BG removal
+    config.bg_removal.vsharp.deconvolve = ps.vsharp_deconvolve;
     set_f64!(config.bg_removal.vsharp.threshold, ps.vsharp_threshold);
     set_f64!(config.bg_removal.vsharp.max_radius, ps.vsharp_max_radius);
     set_f64!(config.bg_removal.vsharp.min_radius, ps.vsharp_min_radius);
@@ -1114,6 +1116,22 @@ mod tests {
         let a = pipeline_args_from_app(&app);
         assert!(a.r2primenet_ignore_field_mismatch);
         assert_eq!(a.r2primenet_patch, Some(vec![128, 128, 64]));
+    }
+
+    /// V-SHARP's deconvolution is off by default, its threshold row only shows when it is on,
+    /// and the toggle reaches both the config and the CLI args.
+    #[test]
+    fn vsharp_deconvolve_toggle() {
+        let mut app = default_app();
+        let shows_threshold = |app: &App| app.pipeline_state.visible_rows().iter().any(|r|
+            matches!(r, crate::tui::app::PipelineRow::Param { field: "vsharp_threshold", .. }));
+        app.pipeline_state.collapsed_sections.clear();
+        assert!(!config_from_app(&app).bg_removal.vsharp.deconvolve);
+        assert!(!shows_threshold(&app));
+        app.pipeline_state.toggle("vsharp_deconvolve");
+        assert!(shows_threshold(&app));
+        assert!(config_from_app(&app).bg_removal.vsharp.deconvolve);
+        assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_deconvolve, Some(true));
     }
 
     /// The inner-inversion choice belongs to QSMART and to nothing else. It used to be gated on a
