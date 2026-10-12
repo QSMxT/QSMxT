@@ -79,6 +79,38 @@ pub fn run_field_mapping(
     qsm_core::pipeline::run_field_mapping(phases, magnitudes, mask, meta, config, &mut |_, _| {})
 }
 
+/// Log what the motion-robust fit found: one line per echo, and a warning naming flagged echoes.
+pub fn log_robust_fit_report(report: &qsm_core::pipeline::RobustFitReport) {
+    let q = &report.quality;
+    log::info!("Robust echo fit over {} voxels (echo: down-weighted / rejected fraction, median weight, \
+                median |residual| rad, outlier score):", q.voxels_examined);
+    for e in 0..q.median_weight.len() {
+        log::info!("  echo {}: {:.3} / {:.3}, {:.3}, {:.4}, {:.4}", e + 1,
+            q.downweighted_fraction[e], q.rejected_fraction[e], q.median_weight[e],
+            q.median_abs_residual_rad[e], q.outlier_score[e]);
+    }
+    if !q.flagged.is_empty() {
+        let names: Vec<String> = q.flagged.iter().map(|e| (e + 1).to_string()).collect();
+        log::warn!("Robust echo fit flagged echo(es) {} as inconsistent with the rest (motion or \
+                    signal loss?); they were down-weighted where they departed, not dropped",
+                   names.join(", "));
+    }
+}
+
+/// The robust fit's per-echo report as JSON (echoes 1-based), for the field map's sidecar.
+pub fn robust_fit_report_json(report: &qsm_core::pipeline::RobustFitReport) -> serde_json::Value {
+    let q = &report.quality;
+    serde_json::json!({
+        "voxels_examined": q.voxels_examined,
+        "downweighted_fraction": q.downweighted_fraction,
+        "rejected_fraction": q.rejected_fraction,
+        "median_weight": q.median_weight,
+        "median_abs_residual_rad": q.median_abs_residual_rad,
+        "outlier_score": q.outlier_score,
+        "flagged_echoes": q.flagged.iter().map(|e| e + 1).collect::<Vec<_>>(),
+    })
+}
+
 /// Laplacian unwrapping for the two cases where qsm-core's path differs from QSMxT's: a single
 /// echo, and the linear fit. qsm-core unwraps a single echo's phase as given and leaves it
 /// unaligned, and does not align the per-echo constants before a linear fit. Here, as on qsm-core's
@@ -739,6 +771,38 @@ mod tests {
             }
         }
         eprintln!("largest difference from the old implementation: {worst:e} ppm");
+    }
+
+    /// `robust-fit` reaches qsm-core's robust fit, returns its report (which flags a corrupted
+    /// echo), and refuses a series too short for it rather than quietly fitting a line.
+    #[test]
+    fn robust_fit_reports_and_flags_a_corrupted_echo() {
+        let tes = [0.004, 0.008, 0.012, 0.016];
+        let (mut ph, mut mg) = echoes_of(&tes, omega_sphere);
+        let mask = sphere_mask();
+        // Echo 3: a slab of signal loss with a phase error, as motion leaves.
+        for idx in 0..N * N * N {
+            if idx / (N * N) < N / 2 {
+                ph[2][idx] = wrap(ph[2][idx] + 0.8);
+                mg[2][idx] *= 0.3;
+            }
+        }
+        let cfg = FieldMappingConfig {
+            b0_estimation: B0EstimationMethod::RobustFit(Default::default()),
+            phase_offset_removal: false,
+            ..Default::default()
+        };
+        let r = run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &cfg).unwrap();
+        let report = r.robust_fit.expect("robust fit reports");
+        assert_eq!(report.quality.flagged, vec![2], "{:?}", report.quality);
+        let json = robust_fit_report_json(&report);
+        assert_eq!(json["flagged_echoes"], serde_json::json!([3]), "1-based in the sidecar");
+        // Other estimators report nothing.
+        let plain = run_field_mapping(&refs(&ph), Some(&refs(&mg)), &mask, &meta(&tes), &FieldMappingConfig::default()).unwrap();
+        assert!(plain.robust_fit.is_none());
+        // Three echoes with an offset term is too few.
+        let three = run_field_mapping(&refs(&ph[..3]), Some(&refs(&mg[..3])), &mask, &meta(&tes[..3]), &cfg);
+        assert!(matches!(three, Err(PipelineError::InvalidConfig(_))), "three echoes must be refused");
     }
 
     #[test]

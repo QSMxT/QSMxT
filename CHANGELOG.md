@@ -36,6 +36,16 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `440946b`):
 
 ### Added
 
+- **Motion-robust echo combination** (QSM.rs#141/#166), off by default: `--b0-estimation
+  robust-fit`, with `--robust-fit-loss`, `--robust-fit-tuning`, `--robust-fit-iterations`,
+  `--robust-fit-downweight-level`, `--robust-fit-flag-ratio` and the shared
+  `--linear-fit-estimate-offset` / `--linear-fit-reliability-threshold`. All are in the TUI
+  under B0 Estimation = robust-fit; the per-echo report is written next to the field map
+  (`*_robustfit.json`) and flagged echoes are logged.
+- The TUI now has the fits' reliability-threshold percentile, and its "Estimate Offset" toggle
+  reaches the run (it used to reach only the generated command). `generate_command` now emits
+  `--linear-fit-estimate-offset` / `--linear-fit-reliability-threshold` when they differ.
+
 - **R2PRIMEnet field-strength policy** (QSM.rs#138). R2PRIMEnet is trained at 3 T only. Away
   from 3 T, `--r2prime-strategy auto` now skips R2′ with a warning when there is no R2 to
   subtract, and an explicit `--r2prime-strategy r2primenet` stops with an error.

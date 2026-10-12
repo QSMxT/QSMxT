@@ -1181,13 +1181,33 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub homogeneity_nbox: Option<usize>,
 
-    /// Linear fit reliability threshold percentile (degrees)
+    /// Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables)
     #[arg(long)]
     pub linear_fit_reliability_threshold: Option<f64>,
 
-    /// Linear fit: estimate a phase offset term (default: true)
+    /// Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs
+    /// 4 echoes with it, 3 without
     #[arg(long)]
     pub linear_fit_estimate_offset: Option<bool>,
+    /// Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights.
+    /// `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects
+    #[arg(long, value_enum)]
+    pub robust_fit_loss: Option<RobustLossArg>,
+    /// Motion-robust fit: tuning radius in robust-scale units (default: the loss's
+    /// conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive
+    #[arg(long)]
+    pub robust_fit_tuning: Option<f64>,
+    /// Motion-robust fit: IRLS passes (default 3; 0 = report only, the field is the linear fit's)
+    #[arg(long)]
+    pub robust_fit_iterations: Option<usize>,
+    /// Motion-robust fit (reporting only): a robust weight below this counts as down-weighted
+    /// (default 0.75; in (0, 1])
+    #[arg(long)]
+    pub robust_fit_downweight_level: Option<f64>,
+    /// Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many
+    /// times the best echo's (default 3; at least 1)
+    #[arg(long)]
+    pub robust_fit_flag_ratio: Option<f64>,
 
     /// Skip QSM processing (only run supplementary outputs like SWI, T2*, R2*)
     #[arg(long)]
@@ -1784,12 +1804,32 @@ pub struct FieldmapCommonArgs {
     /// T2* in ms assumed by `--b0-weight-type assumed-decay` (no T2* map is used)
     #[arg(long, value_name = "MS", default_value_t = 40.0)]
     pub b0_weight_assumed_t2star: f64,
-    /// Linear fit reliability threshold percentile (degrees)
+    /// Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables)
     #[arg(long)]
     pub linear_fit_reliability_threshold: Option<f64>,
-    /// Linear fit: estimate a phase offset term (default: true)
+    /// Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs
+    /// 4 echoes with it, 3 without
     #[arg(long)]
     pub linear_fit_estimate_offset: Option<bool>,
+    /// Motion-robust fit (`--b0-estimation robust-fit`): loss turning residuals into weights.
+    /// `tukey` (default) rejects echoes past the tuning radius; `huber` caps but never rejects
+    #[arg(long, value_enum)]
+    pub robust_fit_loss: Option<RobustLossArg>,
+    /// Motion-robust fit: tuning radius in robust-scale units (default: the loss's
+    /// conventional value, Tukey 4.685 / Huber 1.345). Smaller is more aggressive
+    #[arg(long)]
+    pub robust_fit_tuning: Option<f64>,
+    /// Motion-robust fit: IRLS passes (default 3; 0 = report only, the field is the linear fit's)
+    #[arg(long)]
+    pub robust_fit_iterations: Option<usize>,
+    /// Motion-robust fit (reporting only): a robust weight below this counts as down-weighted
+    /// (default 0.75; in (0, 1])
+    #[arg(long)]
+    pub robust_fit_downweight_level: Option<f64>,
+    /// Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many
+    /// times the best echo's (default 3; at least 1)
+    #[arg(long)]
+    pub robust_fit_flag_ratio: Option<f64>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -3253,6 +3293,14 @@ pub enum LaplacianSolverArg {
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum B0EstimationArg {
     WeightedAvg, LinearFit,
+    /// Motion-robust (IRLS) linear fit: down-weights echoes that depart from a straight line in
+    /// TE, voxel by voxel. Needs 4 echoes (3 with --linear-fit-estimate-offset false)
+    RobustFit,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum RobustLossArg {
+    Tukey, Huber,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

@@ -122,6 +122,21 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
                 estimate_offset: cfg.field_mapping.linear_fit.estimate_offset,
                 reliability_threshold_percentile: cfg.field_mapping.linear_fit.reliability_threshold_percentile,
             }),
+            B0Estimation::RobustFit => {
+                let r = &cfg.field_mapping.robust_fit;
+                PB0Method::RobustFit(qsm_core::fieldmap::RobustFitParams {
+                    loss: match r.loss {
+                        RobustLoss::Tukey => qsm_core::fieldmap::RobustLoss::Tukey,
+                        RobustLoss::Huber => qsm_core::fieldmap::RobustLoss::Huber,
+                    },
+                    tuning: r.tuning,
+                    iterations: r.iterations,
+                    downweight_level: r.downweight_level,
+                    flag_ratio: r.flag_ratio,
+                    estimate_offset: cfg.field_mapping.linear_fit.estimate_offset,
+                    reliability_threshold_percentile: cfg.field_mapping.linear_fit.reliability_threshold_percentile,
+                })
+            }
         },
         laplacian_solver: match cfg.field_mapping.laplacian_solver {
             LaplacianSolver::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
@@ -712,6 +727,25 @@ mod tests {
         let d = qsm_core::bgremove::VsharpParams::default();
         assert_eq!((bg.vsharp.deconvolve, bg.vsharp.threshold, bg.vsharp.max_radius, bg.vsharp.min_radius),
                    (d.deconvolve, d.threshold, d.max_radius, d.min_radius));
+    }
+
+    #[test]
+    fn robust_fit_reaches_core_with_the_shared_fit_settings() {
+        let mut cfg = PipelineConfig::default();
+        cfg.field_mapping.b0_estimation = B0Estimation::RobustFit;
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert_eq!(fm.b0_estimation, PB0Method::RobustFit(qsm_core::fieldmap::RobustFitParams::default()));
+        cfg.field_mapping.robust_fit = crate::config::RobustFitConfig {
+            loss: RobustLoss::Huber, tuning: Some(2.0), iterations: 0, downweight_level: 0.5, flag_ratio: 4.0,
+        };
+        cfg.field_mapping.linear_fit.estimate_offset = false;
+        cfg.field_mapping.linear_fit.reliability_threshold_percentile = 0.0;
+        let (fm, _, _, _) = to_pipeline_stages(&cfg);
+        assert_eq!(fm.b0_estimation, PB0Method::RobustFit(qsm_core::fieldmap::RobustFitParams {
+            loss: qsm_core::fieldmap::RobustLoss::Huber, tuning: Some(2.0), iterations: 0,
+            downweight_level: 0.5, flag_ratio: 4.0, estimate_offset: false,
+            reliability_threshold_percentile: 0.0,
+        }));
     }
 
     #[test]

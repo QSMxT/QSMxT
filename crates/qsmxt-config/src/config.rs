@@ -808,7 +808,45 @@ pub struct FieldMappingConfig {
     #[serde(default = "default_laplacian_fft_pad", deserialize_with = "deserialize_pad3")]
     pub laplacian_fft_pad: [usize; 3],
     pub romeo: RomeoConfig,
+    /// The linear fit's settings. `estimate_offset` and `reliability_threshold_percentile` are
+    /// shared with the robust fit, where they mean the same thing.
     pub linear_fit: LinearFitConfig,
+    /// The motion-robust echo fit (`b0_estimation = "robust-fit"`).
+    #[serde(default)]
+    pub robust_fit: RobustFitConfig,
+}
+
+/// Motion-robust echo fit (`qsm_core::fieldmap::RobustFitParams`): an IRLS fit of phase against
+/// TE that down-weights echoes departing from a straight line, voxel by voxel. Its
+/// `estimate_offset` and `reliability_threshold_percentile` are `linear_fit`'s.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(default)]
+pub struct RobustFitConfig {
+    pub loss: RobustLoss,
+    /// Tuning radius in robust-scale units; `None` = the loss's conventional value
+    /// (Tukey 4.685, Huber 1.345).
+    pub tuning: Option<f64>,
+    /// IRLS passes; 0 = report only (the field map is the linear fit's).
+    pub iterations: usize,
+    /// Reporting only: a weight below this counts as down-weighted.
+    pub downweight_level: f64,
+    /// Reporting only: flag an echo whose outlier score exceeds this × the best echo's.
+    pub flag_ratio: f64,
+}
+impl Default for RobustFitConfig {
+    fn default() -> Self {
+        let p = qsm_core::fieldmap::RobustFitParams::default();
+        Self {
+            loss: match p.loss {
+                qsm_core::fieldmap::RobustLoss::Tukey => RobustLoss::Tukey,
+                qsm_core::fieldmap::RobustLoss::Huber => RobustLoss::Huber,
+            },
+            tuning: p.tuning,
+            iterations: p.iterations,
+            downweight_level: p.downweight_level,
+            flag_ratio: p.flag_ratio,
+        }
+    }
 }
 pub fn default_b0_weight_assumed_t2star_ms() -> f64 { 40.0 }
 pub fn default_laplacian_fft_pad() -> [usize; 3] { [64; 3] }
@@ -870,6 +908,7 @@ impl Default for FieldMappingConfig {
             laplacian_fft_pad: default_laplacian_fft_pad(),
             romeo: RomeoConfig::default(),
             linear_fit: LinearFitConfig::default(),
+            robust_fit: RobustFitConfig::default(),
         }
     }
 }

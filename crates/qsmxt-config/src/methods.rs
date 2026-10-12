@@ -724,6 +724,21 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
         B0Estimation::LinearFit => {
             sentences.push("The B0 field map was estimated using magnitude-weighted linear fit of phase vs echo time.".to_string());
         }
+        B0Estimation::RobustFit => {
+            let r = &config.field_mapping.robust_fit;
+            let tuning = match (r.tuning, r.loss) {
+                (Some(t), _) => format!("{t}"),
+                (None, RobustLoss::Tukey) => "4.685".to_string(),
+                (None, RobustLoss::Huber) => "1.345".to_string(),
+            };
+            sentences.push(if r.iterations == 0 {
+                "The B0 field map was estimated using magnitude-weighted linear fit of phase vs echo time, with per-echo residual statistics reported to flag echoes inconsistent with the fit.".to_string()
+            } else {
+                format!(
+                    "The B0 field map was estimated with a motion-robust magnitude-weighted linear fit of phase vs echo time: {} iterations of iteratively reweighted least squares with a {} loss (tuning constant {}), which down-weights, voxel by voxel, echoes that depart from a linear phase evolution.",
+                    r.iterations, if r.loss == RobustLoss::Tukey { "Tukey biweight" } else { "Huber" }, tuning)
+            });
+        }
     }
 }
 
@@ -1340,6 +1355,17 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("Milovic"), "NLTV must cite Milovic et al. 2018: {}", out);
         assert!(!out.contains("Rapid two-step"), "NLTV must not cite the RTS paper: {}", out);
+    }
+
+    #[test]
+    fn robust_fit_methods() {
+        let mut config = PipelineConfig::default();
+        config.field_mapping.b0_estimation = B0Estimation::RobustFit;
+        let out = generate_methods(&config);
+        assert!(out.contains("motion-robust"), "{out}");
+        assert!(out.contains("Tukey biweight loss (tuning constant 4.685)"), "{out}");
+        config.field_mapping.robust_fit.loss = RobustLoss::Huber;
+        assert!(generate_methods(&config).contains("Huber loss (tuning constant 1.345)"));
     }
 
     #[test]

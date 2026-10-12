@@ -137,6 +137,22 @@ pub fn generate_command(config: &PipelineConfig) -> String {
     if config.field_mapping.b0_weight_type == B0WeightType::AssumedDecay {
         emit_f64(&mut parts, "--b0-weight-assumed-t2star", config.field_mapping.b0_weight_assumed_t2star_ms, d.field_mapping.b0_weight_assumed_t2star_ms);
     }
+    // The fits' shared settings, and the robust fit's own.
+    if config.field_mapping.b0_estimation != B0Estimation::WeightedAvg {
+        let (l, ld) = (&config.field_mapping.linear_fit, &d.field_mapping.linear_fit);
+        if l.estimate_offset != ld.estimate_offset {
+            parts.push(format!("--linear-fit-estimate-offset {}", l.estimate_offset));
+        }
+        emit_f64(&mut parts, "--linear-fit-reliability-threshold", l.reliability_threshold_percentile, ld.reliability_threshold_percentile);
+    }
+    if config.field_mapping.b0_estimation == B0Estimation::RobustFit {
+        let (r, rd) = (&config.field_mapping.robust_fit, &d.field_mapping.robust_fit);
+        emit_enum(&mut parts, "--robust-fit-loss", &r.loss, &rd.loss);
+        if let Some(t) = r.tuning { parts.push(format!("--robust-fit-tuning {}", t)); }
+        emit_usize(&mut parts, "--robust-fit-iterations", r.iterations, rd.iterations);
+        emit_f64(&mut parts, "--robust-fit-downweight-level", r.downweight_level, rd.downweight_level);
+        emit_f64(&mut parts, "--robust-fit-flag-ratio", r.flag_ratio, rd.flag_ratio);
+    }
 
     // ROMEO params
     let r = &config.field_mapping.romeo;
@@ -917,6 +933,31 @@ frangi_c = 400.0
         let cmd = generate_command(&c);
         assert!(cmd.contains("--vsharp-deconvolve true"), "{cmd}");
         assert!(cmd.contains("--vsharp-threshold 0.1"), "{cmd}");
+    }
+
+    #[test]
+    fn test_robust_fit_flags_round_trip() {
+        let mut c = PipelineConfig::default();
+        c.field_mapping.b0_estimation = B0Estimation::RobustFit;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--b0-estimation robust-fit"), "{cmd}");
+        assert!(!cmd.contains("--robust-fit-"), "defaults are not emitted: {cmd}");
+        c.field_mapping.robust_fit.loss = RobustLoss::Huber;
+        c.field_mapping.robust_fit.tuning = Some(2.5);
+        c.field_mapping.robust_fit.iterations = 5;
+        c.field_mapping.robust_fit.downweight_level = 0.5;
+        c.field_mapping.robust_fit.flag_ratio = 4.0;
+        c.field_mapping.linear_fit.estimate_offset = false;
+        c.field_mapping.linear_fit.reliability_threshold_percentile = 80.0;
+        let cmd = generate_command(&c);
+        for f in ["--robust-fit-loss huber", "--robust-fit-tuning 2.5", "--robust-fit-iterations 5",
+                  "--robust-fit-downweight-level 0.5", "--robust-fit-flag-ratio 4",
+                  "--linear-fit-estimate-offset false", "--linear-fit-reliability-threshold 80"] {
+            assert!(cmd.contains(f), "missing {f}: {cmd}");
+        }
+        // The robust settings mean nothing to the weighted average.
+        c.field_mapping.b0_estimation = B0Estimation::WeightedAvg;
+        assert!(!generate_command(&c).contains("--robust-fit-"));
     }
 
     #[test]

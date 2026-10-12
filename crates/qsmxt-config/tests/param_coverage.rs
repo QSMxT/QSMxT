@@ -110,6 +110,9 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     cover!(q::bet::BetParams => c::BetConfig);
     cover!(q::utils::HomogeneityParams => c::HomogeneityConfig);
     cover!(q::utils::LinearFitParams => c::LinearFitConfig);
+    // estimate_offset / reliability_threshold_percentile are LinearFitConfig's, shared.
+    cover!(q::fieldmap::RobustFitParams => c::RobustFitConfig,
+        ignore: ["estimate_offset", "reliability_threshold_percentile"]);
     cover!(q::swi::SwiParams => c::SwiConfig);
     cover!(q::utils::PhaseOffsetParams => c::Mcpc3dsConfig);
 
