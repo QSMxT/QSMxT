@@ -1830,10 +1830,14 @@ mod integration_tests {
         let suffix = if echo_times.len() > 1 { "MEGRE" } else { "T2starw" };
         for (e, &te) in echo_times.iter().enumerate() {
             let rad_per_ppm = 2.0 * std::f64::consts::PI * 42.5781 * b0_t * te;
-            let phase: Vec<f64> = (0..field.len())
+            let mut phase: Vec<f64> = (0..field.len())
                 .map(|i| if inside(i) { (field[i] * rad_per_ppm + std::f64::consts::PI)
                     .rem_euclid(2.0 * std::f64::consts::PI) - std::f64::consts::PI } else { 0.0 })
                 .collect();
+            // Real phase spans [-π, π]; QSMxT rescales a phase image to that range by its min/max,
+            // so pin the range in two corner voxels outside the object.
+            phase[0] = -std::f64::consts::PI;
+            *phase.last_mut().unwrap() = std::f64::consts::PI;
             let echo = if echo_times.len() > 1 { format!("_echo-{}", e + 1) } else { String::new() };
             for (part, data) in [("phase", &phase), ("mag", &mag)] {
                 let stem = format!("sub-1{echo}_part-{part}_{suffix}");
@@ -1872,24 +1876,17 @@ mod integration_tests {
     }
 
     /// Multi-echo TGV gets the B0 field map in ppm (QSM.rs#170). Before, `stage_tgv` passed that
-    /// ppm field to a solver expecting rad at TE1, so χ came out 2π·γ·B0·TE1 too small: ~4× at
-    /// 3 T with TE1 = 5 ms (slope ~0.25). Its scale must now match the truth and RTS's.
+    /// ppm field to a solver expecting rad at TE1, so χ came out 2π·γ·B0·TE1 too small: ÷4.0 at
+    /// 3 T with TE1 = 5 ms, a slope of ~0.2 here. Single-echo TGV takes echo 1's wrapped phase
+    /// and converts with TE1 and B0, so the two routes must also agree with each other.
     #[test]
-    fn multi_echo_tgv_chi_has_the_right_scale() {
-        let tes = [0.005, 0.010, 0.015];
-        let tgv = phantom_chi_slope(&tes, QsmAlgorithmArg::Tgv);
-        let rts = phantom_chi_slope(&tes, QsmAlgorithmArg::Rts);
-        eprintln!("multi-echo phantom slope vs truth: TGV {tgv:.3}, RTS {rts:.3}");
-        assert!((0.6..1.4).contains(&tgv), "multi-echo TGV slope {tgv:.3} vs truth (the ppm-as-rad bug gives ~0.25)");
-        assert!((tgv / rts - 1.0).abs() < 0.3, "multi-echo TGV slope {tgv:.3} vs RTS {rts:.3}");
-    }
-
-    /// Single-echo TGV unwraps echo 1's phase itself and needs TE1 and B0 for the rad→ppm step.
-    #[test]
-    fn single_echo_tgv_chi_has_the_right_scale() {
-        let tgv = phantom_chi_slope(&[0.010], QsmAlgorithmArg::Tgv);
-        eprintln!("single-echo phantom slope vs truth: TGV {tgv:.3}");
-        assert!((0.6..1.4).contains(&tgv), "single-echo TGV slope {tgv:.3} vs truth");
+    fn tgv_chi_has_the_right_scale() {
+        let multi = phantom_chi_slope(&[0.005, 0.010, 0.015], QsmAlgorithmArg::Tgv);
+        let single = phantom_chi_slope(&[0.010], QsmAlgorithmArg::Tgv);
+        eprintln!("phantom χ slope vs truth: multi-echo TGV {multi:.3}, single-echo TGV {single:.3}");
+        assert!((0.7..1.3).contains(&multi), "multi-echo TGV slope {multi:.3} vs truth (the ppm-as-rad bug gives ~0.2)");
+        assert!((0.7..1.3).contains(&single), "single-echo TGV slope {single:.3} vs truth");
+        assert!((multi / single - 1.0).abs() < 0.1, "multi-echo {multi:.3} vs single-echo {single:.3} TGV slope");
     }
 }
 /// End-to-end tests for the multi-orientation reconstructions.
