@@ -87,7 +87,7 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     cover!(q::separation::DecomposeParams => c::DecomposeConfig, ignore: ["b0"]);
     cover!(q::separation::HcChisepParams => c::HcChisepConfig, ignore: ["b0", "se_echo_times"]);
     // fieldstrength/te are runtime scan parameters, not user knobs.
-    cover!(q::inversion::TgvParams => c::TgvConfig, ignore: ["fieldstrength", "te"]);
+    cover!(q::inversion::TgvParams => c::TgvConfig);
 
     // Background-field removal
     cover!(q::bgremove::VsharpParams => c::VsharpConfig);

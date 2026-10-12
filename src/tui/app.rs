@@ -2728,8 +2728,8 @@ impl PipelineFormState {
             "tgv" => { // TGV
                 rows.push(PipelineRow::Param { label: "  Iterations", field: "tgv_iterations", help: "Primal-dual iterations" });
                 rows.push(PipelineRow::Param { label: "  Erosions", field: "tgv_erosions", help: "Mask erosions before TGV solve" });
-                rows.push(PipelineRow::Param { label: "  Alpha1", field: "tgv_alpha1", help: "First-order TGV weight (gradient term)" });
-                rows.push(PipelineRow::Param { label: "  Alpha0", field: "tgv_alpha0", help: "Second-order TGV weight (symmetric gradient term)" });
+                rows.push(PipelineRow::Param { label: "  Alpha1", field: "tgv_alpha1", help: "First-order TGV weight (gradient term), in ppm" });
+                rows.push(PipelineRow::Param { label: "  Alpha0", field: "tgv_alpha0", help: "Second-order TGV weight (symmetric gradient term), in ppm" });
                 rows.push(PipelineRow::Param { label: "  Step Size", field: "tgv_step_size", help: "Primal step-size multiplier" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "tgv_tol", help: "Convergence tolerance" });
             }

@@ -311,7 +311,6 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             alpha1: cfg.inversion.tgv.alpha1 as f32,
             step_size: cfg.inversion.tgv.step_size as f32,
             tol: cfg.inversion.tgv.tol as f32,
-            ..Default::default()
         },
         qsmart: qsm_core::utils::QsmartParams {
             ilsqr_max_iter: cfg.inversion.qsmart.ilsqr_max_iter,

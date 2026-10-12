@@ -17,7 +17,22 @@ upgrade.
   changes. `--vsharp-deconvolve true` (TUI: V-SHARP → Deconvolve) reproduces v9.22.0, and the
   methods text says which ran.
 
-These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `440946b`):
+- **Multi-echo TGV χ had the wrong scale** (fixed; no issue was filed). `stage_tgv` passed the
+  combined B0 field map, which is in ppm, to a TGV solver that expected phase in rad at TE1, so
+  multi-echo `--qsm-algorithm tgv` χ was too small by 2π·γ·B0·TE1 (about 4× at 3 T with TE1 = 5
+  ms, and a different factor for every TE1/B0). TGV now gets the field in ppm for multi-echo data
+  (`TgvInput::FieldPpm`, with a plain Laplacian instead of the sin/cos one) and the wrapped echo-1
+  phase with TE1 and B0 for single-echo data (`TgvInput::WrappedPhase`), QSM.rs#170. A
+  regression test checks the multi-echo and single-echo TGV χ scale against a phantom and RTS.
+- **TGV α are in ppm** (QSM.rs#170), so one α means the same at every TE and field strength.
+  The defaults are qsm-core's: α0 = 9.345e-5, α1 = 3.115e-5 (the old 0.0015 / 0.0005 rad
+  defaults at the 20 ms / 3 T reference). `--tgv-alpha0/1` and `[inversion.tgv] alpha0/alpha1`
+  in a config file are read as ppm: divide an old rad value by 2π·42.5781·B0·TE. Single-echo TGV
+  at the defaults changes wherever TE1/B0 is not 20 ms / 3 T. The methods text states the α and
+  units. `qsmxt invert tgv` takes a field in ppm like the other `invert` algorithms and no longer
+  has `--echo-time` / `--field-strength`.
+
+These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `dba7c6f`):
 
 - **iLSQR is now STI Suite 3.0's algorithm** (QSM.rs#163, #165). The streaking-stage tolerance
   defaults to 1e-3 (was 0.01), `max_iter` caps both LSQR solves (default 100), the pipeline pads
@@ -111,8 +126,8 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `440946b`):
   than TE weighting, so qsmbly and any other qsmxt-config consumer get the same field map as QSMxT.
 - Field mapping is qsm-core's `run_field_mapping` (QSM.rs#161/#162), with no output change: a
   test holds it to QSMxT's previous implementation on every path that implementation computed
-  itself. A single Laplacian-unwrapped echo and the Laplacian linear fit stay in QSMxT, where
-  qsm-core does not yet mask/align the echoes the same way.
+  itself, including a single Laplacian-unwrapped echo and the Laplacian linear fit, which
+  qsm-core masks and aligns since QSM.rs#167. QSMxT no longer computes any of it itself.
 - The FFT Laplacian solver (`--laplacian-solver fft`) is in every build; the `laplacian-fft`
   cargo feature is gone.
 - The Laplacian solver and its FFT pad are in the TUI (Field mapping → Unwrapping = laplacian →

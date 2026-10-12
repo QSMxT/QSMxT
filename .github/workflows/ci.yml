@@ -58,8 +58,9 @@ jobs:
         # --timeout: tarpaulin waits 60s by default for a test to respond, and the instrumented
         # single-echo TGV run sits right on that line — it passed on qsm-core v0.35.0 and times out
         # on v0.36.0. The test is slow, not hung (the uninstrumented suite finishes in under two
-        # minutes), so the budget is the thing that was wrong.
-        run: cargo tarpaulin --timeout 300 --engine llvm --workspace --out json --output-dir target/tarpaulin --exclude-files src/main.rs --exclude-files src/tui/mod.rs --exclude-files src/tui/ui.rs --exclude-files src/commands/update.rs -- --test-threads=1
+        # minutes), so the budget is the thing that was wrong. 600 since the phantom TGV-scale
+        # test (two full runs) put the instrumented binary near 300 s.
+        run: cargo tarpaulin --timeout 600 --engine llvm --workspace --out json --output-dir target/tarpaulin --exclude-files src/main.rs --exclude-files src/tui/mod.rs --exclude-files src/tui/ui.rs --exclude-files src/commands/update.rs -- --test-threads=1
 
       # Two thresholds, deliberately. 70% is the gate `release.yml` enforces, so failing here is
       # what stops a PR discovering at release time that it cannot ship. 90% is the target, and

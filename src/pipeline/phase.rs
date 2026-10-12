@@ -7,38 +7,6 @@ pub use qsm_core::pipeline::rss_combine;
 // B0 direction is taken, and why wrapped phase has to be resampled in the complex domain.
 pub use qsm_core::geometry::{b0_direction_from_affine, resample_mask_to_axial};
 
-/// Find the center of mass of a binary mask (for ROMEO seed point).
-#[allow(dead_code)]
-pub fn mask_center_of_mass(mask: &[u8], nx: usize, ny: usize, nz: usize) -> (usize, usize, usize) {
-    let mut sx = 0.0f64;
-    let mut sy = 0.0f64;
-    let mut sz = 0.0f64;
-    let mut count = 0.0f64;
-
-    for z in 0..nz {
-        for y in 0..ny {
-            for x in 0..nx {
-                if mask[x + y * nx + z * nx * ny] > 0 {
-                    sx += x as f64;
-                    sy += y as f64;
-                    sz += z as f64;
-                    count += 1.0;
-                }
-            }
-        }
-    }
-
-    if count < 1.0 {
-        return (nx / 2, ny / 2, nz / 2);
-    }
-
-    (
-        (sx / count) as usize,
-        (sy / count) as usize,
-        (sz / count) as usize,
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -136,35 +104,6 @@ mod tests {
         assert!(bx.abs() < 1e-6);
         assert!(by.abs() < 1e-6);
         assert!((bz - 1.0).abs() < 1e-6);
-    }
-
-    // --- mask_center_of_mass ---
-
-    #[test]
-    fn test_mask_center_of_mass_empty() {
-        let mask = vec![0u8; 27]; // 3x3x3
-        let (cx, cy, cz) = mask_center_of_mass(&mask, 3, 3, 3);
-        assert_eq!((cx, cy, cz), (1, 1, 1), "Empty mask should return volume center");
-    }
-
-    #[test]
-    fn test_mask_center_of_mass_single_voxel() {
-        let mut mask = vec![0u8; 64]; // 4x4x4
-        // Set voxel (2, 2, 2)
-        mask[2 + 2 * 4 + 2 * 16] = 1;
-        let (cx, cy, cz) = mask_center_of_mass(&mask, 4, 4, 4);
-        assert_eq!((cx, cy, cz), (2, 2, 2));
-    }
-
-    #[test]
-    fn test_mask_center_of_mass_symmetric() {
-        let mut mask = vec![0u8; 27]; // 3x3x3
-        // Set opposite corners: (0,0,0) and (2,2,2)
-        mask[0] = 1;
-        mask[2 + 2 * 3 + 2 * 9] = 1;
-        let (cx, cy, cz) = mask_center_of_mass(&mask, 3, 3, 3);
-        // CoM should be (1, 1, 1)
-        assert_eq!((cx, cy, cz), (1, 1, 1));
     }
 
     // --- obliquity_from_affine ---

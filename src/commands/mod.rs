@@ -817,11 +817,8 @@ mod integration_tests {
     }
 
     #[test]
-    fn test_invert_tgv_requires_field_strength() {
-        // TGV has required field_strength and echo_time — this test verifies
-        // the struct requires them (they're not Option)
-        // Since they're required args in InvertTgvArgs, this is enforced at parse time.
-        // We just test that TGV runs with valid params.
+    fn test_invert_tgv_runs_on_a_ppm_field() {
+        // `invert tgv` takes a field in ppm like the other inversions: no TE or field strength.
         let dir = tempfile::tempdir().unwrap();
         let input = dir.path().join("field.nii");
         let mask = dir.path().join("mask.nii");
@@ -831,8 +828,6 @@ mod integration_tests {
 
         super::invert::execute(InvertCommand::Tgv(InvertTgvArgs {
             common: common_invert(input, mask, output.clone()),
-            field_strength: 3.0,
-            echo_time: 0.02,
             iterations: Some(5),
             erosions: Some(0),
             alpha1: None, alpha0: None,
@@ -1643,8 +1638,6 @@ mod integration_tests {
 
         super::invert::execute(InvertCommand::Tgv(InvertTgvArgs {
             common: common_invert(input, mask, output.clone()),
-            field_strength: 3.0,
-            echo_time: 0.02,
             iterations: Some(5),
             erosions: Some(0),
             alpha1: None, alpha0: None,
@@ -1815,6 +1808,85 @@ mod integration_tests {
         super::validate::execute(ValidateArgs {
             bids_dir: dir.path().to_path_buf(), include: None, exclude: None,
         }).unwrap();
+    }
+
+    // --- TGV scale regression (multi-echo TGV used to get the field in ppm as if it were rad) ---
+
+    /// A BIDS GRE dataset forward-simulated from the multi-orientation χ phantom: wrapped phase
+    /// `2π·γ·B0·TE·field_ppm` at each TE, unit magnitude inside a sphere, nothing outside.
+    fn write_phantom_gre_bids(root: &Path, echo_times: &[f64], b0_t: f64) {
+        use crate::testutils::multiorient as mo;
+        let anat = root.join("sub-1/anat");
+        std::fs::create_dir_all(&anat).unwrap();
+        let field = mo::forward_field(&mo::chi_phantom(), (0.0, 0.0, 1.0));
+        let n = mo::MO_N;
+        let c = n as f64 / 2.0;
+        let inside = |i: usize| {
+            let (x, y, z) = (i % n, (i / n) % n, i / (n * n));
+            let d2 = (x as f64 + 0.5 - c).powi(2) + (y as f64 + 0.5 - c).powi(2) + (z as f64 + 0.5 - c).powi(2);
+            d2 < (c - 1.0).powi(2)
+        };
+        let mag: Vec<f64> = (0..n * n * n).map(|i| if inside(i) { 1.0 } else { 0.0 }).collect();
+        let suffix = if echo_times.len() > 1 { "MEGRE" } else { "T2starw" };
+        for (e, &te) in echo_times.iter().enumerate() {
+            let rad_per_ppm = 2.0 * std::f64::consts::PI * 42.5781 * b0_t * te;
+            let mut phase: Vec<f64> = (0..field.len())
+                .map(|i| if inside(i) { (field[i] * rad_per_ppm + std::f64::consts::PI)
+                    .rem_euclid(2.0 * std::f64::consts::PI) - std::f64::consts::PI } else { 0.0 })
+                .collect();
+            // Real phase spans [-π, π]; QSMxT rescales a phase image to that range by its min/max,
+            // so pin the range in two corner voxels outside the object.
+            phase[0] = -std::f64::consts::PI;
+            *phase.last_mut().unwrap() = std::f64::consts::PI;
+            let echo = if echo_times.len() > 1 { format!("_echo-{}", e + 1) } else { String::new() };
+            for (part, data) in [("phase", &phase), ("mag", &mag)] {
+                let stem = format!("sub-1{echo}_part-{part}_{suffix}");
+                mo::write(&anat.join(format!("{stem}.nii")), data);
+                testutils::write_sidecar(&anat.join(format!("{stem}.json")), te, b0_t);
+            }
+        }
+    }
+
+    /// Run the pipeline with `algo` and return the least-squares slope of χ against the
+    /// phantom's χ inside the phantom mask (offset-invariant, so referencing does not matter).
+    fn phantom_chi_slope(echo_times: &[f64], algo: QsmAlgorithmArg) -> f64 {
+        use crate::testutils::multiorient as mo;
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        write_phantom_gre_bids(&bids, echo_times, 3.0);
+        let mut args = default_run_args(bids, out.clone());
+        args.pipeline.qsm_algorithm = Some(algo);
+        args.pipeline.masking_input = Some(MaskInputArg::MagnitudeFirst);
+        args.dry = false;
+        args.no_mem_limit = true;
+        super::run::execute(args).unwrap();
+
+        let chimap = out.join("derivatives/qsmxt/sub-1/anat/sub-1_Chimap.nii");
+        let got = qsm_core::io::read_nifti_file(&chimap).unwrap().data;
+        let truth = mo::chi_phantom();
+        let mask = mo::mask();
+        let idx: Vec<usize> = (0..truth.len()).filter(|&i| mask[i] == 1 && got[i] != 0.0).collect();
+        assert!(idx.len() > 500, "too few scored voxels ({})", idx.len());
+        let k = idx.len() as f64;
+        let (mt, mg) = (idx.iter().map(|&i| truth[i]).sum::<f64>() / k, idx.iter().map(|&i| got[i]).sum::<f64>() / k);
+        let cov: f64 = idx.iter().map(|&i| (truth[i] - mt) * (got[i] - mg)).sum();
+        let var: f64 = idx.iter().map(|&i| (truth[i] - mt).powi(2)).sum();
+        cov / var
+    }
+
+    /// Multi-echo TGV gets the B0 field map in ppm (QSM.rs#170). Before, `stage_tgv` passed that
+    /// ppm field to a solver expecting rad at TE1, so χ came out 2π·γ·B0·TE1 too small: ÷4.0 at
+    /// 3 T with TE1 = 5 ms, a slope of ~0.2 here. Single-echo TGV takes echo 1's wrapped phase
+    /// and converts with TE1 and B0, so the two routes must also agree with each other.
+    #[test]
+    fn tgv_chi_has_the_right_scale() {
+        let multi = phantom_chi_slope(&[0.005, 0.010, 0.015], QsmAlgorithmArg::Tgv);
+        let single = phantom_chi_slope(&[0.010], QsmAlgorithmArg::Tgv);
+        eprintln!("phantom χ slope vs truth: multi-echo TGV {multi:.3}, single-echo TGV {single:.3}");
+        assert!((0.7..1.3).contains(&multi), "multi-echo TGV slope {multi:.3} vs truth (the ppm-as-rad bug gives ~0.2)");
+        assert!((0.7..1.3).contains(&single), "single-echo TGV slope {single:.3} vs truth");
+        assert!((multi / single - 1.0).abs() < 0.1, "multi-echo {multi:.3} vs single-echo {single:.3} TGV slope");
     }
 }
 /// End-to-end tests for the multi-orientation reconstructions.

@@ -450,6 +450,11 @@ reconstructions and deep-learning networks.
 | `hdqsm` | HD-QSM — Hybrid data fidelity |
 | `amp-pe` | AMP-PE — Approximate Message Passing with Parameter Estimation |
 
+TGV replaces unwrapping, background removal and inversion. With one echo it takes that echo's
+wrapped phase and converts it to ppm with the echo time and field strength. With several echoes
+it takes the combined B0 field map, in ppm. Its weights `--tgv-alpha0` / `--tgv-alpha1` are in
+ppm, so the same values suit any echo time and field strength.
+
 ### Deep learning
 
 | Value | Method | Tileable |
