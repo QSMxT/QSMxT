@@ -110,6 +110,8 @@ mod integration_tests {
                 homogeneity_nbox: None,
                 linear_fit_reliability_threshold: None,
                 linear_fit_estimate_offset: None,
+                robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
+                robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
                 no_qsm: false,
                 do_swi: false,
                 do_smwi: false,

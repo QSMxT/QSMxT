@@ -113,10 +113,28 @@ impl fmt::Display for BfAlgorithm {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "kebab-case")]
-pub enum B0Estimation { WeightedAvg, LinearFit }
+pub enum B0Estimation { WeightedAvg, LinearFit, RobustFit }
 impl fmt::Display for B0Estimation {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", match self { Self::WeightedAvg => "weighted-avg", Self::LinearFit => "linear-fit" })
+        write!(f, "{}", match self {
+            Self::WeightedAvg => "weighted-avg", Self::LinearFit => "linear-fit", Self::RobustFit => "robust-fit",
+        })
+    }
+}
+
+/// Loss of the motion-robust echo fit (`b0_estimation = "robust-fit"`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "kebab-case")]
+pub enum RobustLoss {
+    /// Rejects residuals past the tuning radius (weight 0). Conventional tuning 4.685.
+    #[default]
+    Tukey,
+    /// Caps outliers' influence but never rejects. Conventional tuning 1.345.
+    Huber,
+}
+impl fmt::Display for RobustLoss {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Tukey => "tukey", Self::Huber => "huber" })
     }
 }
 

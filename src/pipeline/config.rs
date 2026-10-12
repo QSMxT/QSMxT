@@ -247,6 +247,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             config.field_mapping.b0_estimation = match a {
                 cli::B0EstimationArg::WeightedAvg => B0Estimation::WeightedAvg,
                 cli::B0EstimationArg::LinearFit => B0Estimation::LinearFit,
+                cli::B0EstimationArg::RobustFit => B0Estimation::RobustFit,
             };
         }
         if let Some(a) = args.b0_weight_type {
@@ -481,6 +482,16 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.linear_fit_reliability_threshold {
             config.field_mapping.linear_fit.reliability_threshold_percentile = v;
         }
+        if let Some(l) = args.robust_fit_loss {
+            config.field_mapping.robust_fit.loss = match l {
+                cli::RobustLossArg::Tukey => RobustLoss::Tukey,
+                cli::RobustLossArg::Huber => RobustLoss::Huber,
+            };
+        }
+        if let Some(v) = args.robust_fit_tuning { config.field_mapping.robust_fit.tuning = Some(v); }
+        if let Some(v) = args.robust_fit_iterations { config.field_mapping.robust_fit.iterations = v; }
+        if let Some(v) = args.robust_fit_downweight_level { config.field_mapping.robust_fit.downweight_level = v; }
+        if let Some(v) = args.robust_fit_flag_ratio { config.field_mapping.robust_fit.flag_ratio = v; }
         if let Some(v) = args.linear_fit_estimate_offset {
             config.field_mapping.linear_fit.estimate_offset = v;
         }
@@ -793,6 +804,22 @@ mod tests {
         assert_eq!(with(&["--laplacian-fft-pad", "64", "64", "32"]).field_mapping.laplacian_fft_pad, [64, 64, 32]);
         // Two values is neither: ignored with a warning, like other invalid run flags.
         assert_eq!(with(&["--laplacian-fft-pad", "8", "9"]).field_mapping.laplacian_fft_pad, [64; 3]);
+    }
+
+    #[test]
+    fn robust_fit_from_cli() {
+        let d = config_from_cli(&["qsmxt", "run", "<bids>", "--b0-estimation", "robust-fit"]);
+        assert_eq!(d.field_mapping.b0_estimation, B0Estimation::RobustFit);
+        assert_eq!(d.field_mapping.robust_fit, RobustFitConfig::default());
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--b0-estimation", "robust-fit",
+            "--robust-fit-loss", "huber", "--robust-fit-tuning", "2", "--robust-fit-iterations", "4",
+            "--robust-fit-downweight-level", "0.6", "--robust-fit-flag-ratio", "5",
+            "--linear-fit-estimate-offset", "false", "--linear-fit-reliability-threshold", "0"]);
+        assert_eq!(c.field_mapping.robust_fit, RobustFitConfig {
+            loss: RobustLoss::Huber, tuning: Some(2.0), iterations: 4, downweight_level: 0.6, flag_ratio: 5.0,
+        });
+        assert!(!c.field_mapping.linear_fit.estimate_offset);
+        assert_eq!(c.field_mapping.linear_fit.reliability_threshold_percentile, 0.0);
     }
 
     #[test]

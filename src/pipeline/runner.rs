@@ -2656,6 +2656,13 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
     Ok(())
 }
 
+/// The robust echo fit's per-echo report, next to the field map: `<field map>_robustfit.json`.
+fn robust_fit_report_path(field_path: &Path) -> PathBuf {
+    let name = field_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let stem = name.strip_suffix(".nii.gz").or_else(|| name.strip_suffix(".nii")).unwrap_or(&name);
+    field_path.with_file_name(format!("{stem}_robustfit.json"))
+}
+
 fn stage_unwrap(
     ctx: &mut StageContext, mask_path: &Path, field_path: &Path, progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
@@ -2676,6 +2683,7 @@ fn stage_unwrap(
         "b0_weight_assumed_t2star_ms": ctx.config.field_mapping.b0_weight_assumed_t2star_ms,
         "linear_fit_estimate_offset": ctx.config.field_mapping.linear_fit.estimate_offset,
         "linear_fit_reliability_threshold": ctx.config.field_mapping.linear_fit.reliability_threshold_percentile,
+        "robust_fit": ctx.config.field_mapping.robust_fit,
         // Per-echo masked Laplacian + echo combination (pipeline::fieldmap); bump on a change
         // to that path so field maps from the old one are recomputed.
         "laplacian_echo_combination": if unwrap_name == "laplacian" { 2 } else { 0 },
@@ -2728,14 +2736,23 @@ fn stage_unwrap(
             ctx.config.field_mapping.laplacian_solver,
             ctx.config.field_mapping.b0_estimation, ctx.config.field_mapping.b0_weight_type);
     }
-    let field_ppm = crate::pipeline::fieldmap::run_field_mapping(
+    let field = crate::pipeline::fieldmap::run_field_mapping(
         &phase_slices, mag_option, &mask, &scan_meta, &fm_config,
-    ).map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?.b0_field_ppm;
+    ).map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
 
-    save_volume(field_path, &field_ppm, ctx.meta)?;
+    save_volume(field_path, &field.b0_field_ppm, ctx.meta)?;
+    let mut outputs = vec![field_path.to_path_buf()];
+    if let Some(report) = &field.robust_fit {
+        crate::pipeline::fieldmap::log_robust_fit_report(report);
+        let json_path = robust_fit_report_path(field_path);
+        let json = serde_json::to_string_pretty(&crate::pipeline::fieldmap::robust_fit_report_json(report))
+            .map_err(|e| QsmxtError::Config(format!("robust fit report: {e}")))?;
+        std::fs::write(&json_path, json)?;
+        outputs.push(json_path);
+    }
     let phase_inputs: Vec<PathBuf> = (0..ctx.meta.n_echoes).map(|i| ctx.output.phase_scaled_path(&ctx.run.key, i + 1)).collect();
     let input_refs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).chain(std::iter::once(mask_path)).collect();
-    ctx.complete_step("unwrap", Some(unwrap_alg), unwrap_params, &input_refs, vec![field_path.to_path_buf()], t)?;
+    ctx.complete_step("unwrap", Some(unwrap_alg), unwrap_params, &input_refs, outputs, t)?;
     log_step_done("Phase unwrapping", t);
     Ok(())
 }
@@ -4341,6 +4358,14 @@ mod tests {
         assert_eq!(ours.ignore_field_mismatch, core.ignore_field_mismatch);
         assert_eq!(super::R2PRIMENET_TRAINED_B0_T, qsm_core::relaxometry::TRAINED_B0_T);
         assert_eq!(super::R2PRIMENET_B0_TOLERANCE_T, qsm_core::relaxometry::B0_TOLERANCE_T);
+    }
+
+    #[test]
+    fn robust_fit_report_sits_next_to_the_field_map() {
+        let p = std::path::Path::new("/w/unwrap/sub-1_field-ppm.nii");
+        assert_eq!(super::robust_fit_report_path(p), std::path::PathBuf::from("/w/unwrap/sub-1_field-ppm_robustfit.json"));
+        let gz = std::path::Path::new("/w/unwrap/sub-1_field-ppm.nii.gz");
+        assert_eq!(super::robust_fit_report_path(gz), std::path::PathBuf::from("/w/unwrap/sub-1_field-ppm_robustfit.json"));
     }
 
     /// Off 3 T: `auto` skips, an explicit `r2primenet` refuses, and the override runs either.

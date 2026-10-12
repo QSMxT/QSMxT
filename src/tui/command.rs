@@ -237,7 +237,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                 coil_combination_sigma: None,
         bipolar_correction: ps.bipolar_correction,
         // Only when changed from the default, so a default form still yields a bare command.
-        b0_estimation: (ps.b0_estimation != 0).then_some(B0EstimationArg::LinearFit),
+        b0_estimation: match ps.b0_estimation {
+            1 => Some(B0EstimationArg::LinearFit),
+            2 => Some(B0EstimationArg::RobustFit),
+            _ => None,
+        },
         b0_weight_type: [B0WeightTypeArg::PhaseSNR, B0WeightTypeArg::PhaseVar, B0WeightTypeArg::Average,
                          B0WeightTypeArg::TEs, B0WeightTypeArg::Mag, B0WeightTypeArg::AssumedDecay]
             .get(ps.b0_weight_type).copied().filter(|&w| w != B0WeightTypeArg::PhaseSNR),
@@ -551,8 +555,13 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         },
         homogeneity_sigma_mm: None,
         homogeneity_nbox: None,
-        linear_fit_reliability_threshold: None,
+        linear_fit_reliability_threshold: parse_optional_f64(&ps.linear_fit_reliability_threshold),
         linear_fit_estimate_offset: Some(ps.linear_fit_estimate_offset),
+        robust_fit_loss: (ps.b0_estimation == 2 && ps.robust_fit_loss == 1).then_some(crate::cli::RobustLossArg::Huber),
+        robust_fit_tuning: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_tuning) } else { None },
+        robust_fit_iterations: if ps.b0_estimation == 2 { parse_optional_usize(&ps.robust_fit_iterations) } else { None },
+        robust_fit_downweight_level: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_downweight_level) } else { None },
+        robust_fit_flag_ratio: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_flag_ratio) } else { None },
         no_qsm: !ps.do_qsm,
         do_swi: form.do_swi,
         do_smwi: form.do_smwi,
@@ -805,8 +814,19 @@ pub fn config_from_app(app: &App) -> PipelineConfig {
     config.field_mapping.romeo.template = ps.romeo_template.trim().parse::<usize>().unwrap_or(1).saturating_sub(1);
     config.field_mapping.b0_estimation = match ps.b0_estimation {
         0 => B0Estimation::WeightedAvg,
+        2 => B0Estimation::RobustFit,
         _ => B0Estimation::LinearFit,
     };
+    config.field_mapping.linear_fit.estimate_offset = ps.linear_fit_estimate_offset;
+    if let Some(v) = parse_optional_f64(&ps.linear_fit_reliability_threshold) {
+        config.field_mapping.linear_fit.reliability_threshold_percentile = v;
+    }
+    let rf = &mut config.field_mapping.robust_fit;
+    rf.loss = if ps.robust_fit_loss == 1 { qsmxt_config::RobustLoss::Huber } else { qsmxt_config::RobustLoss::Tukey };
+    rf.tuning = parse_optional_f64(&ps.robust_fit_tuning);
+    if let Some(v) = parse_optional_usize(&ps.robust_fit_iterations) { rf.iterations = v; }
+    if let Some(v) = parse_optional_f64(&ps.robust_fit_downweight_level) { rf.downweight_level = v; }
+    if let Some(v) = parse_optional_f64(&ps.robust_fit_flag_ratio) { rf.flag_ratio = v; }
     config.field_mapping.b0_weight_type = match ps.b0_weight_type {
         0 => B0WeightType::PhaseSNR,
         1 => B0WeightType::PhaseVar,
@@ -1183,6 +1203,50 @@ mod tests {
         app.pipeline_state.laplacian_fft_pad = "12".into();
         assert_eq!(config_from_app(&app).field_mapping.laplacian_fft_pad, [12; 3]);
         assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, Some(vec![12]));
+    }
+
+    /// The robust fit, its parameters and the shared fit settings are in the TUI and reach both
+    /// the config and the CLI args.
+    #[test]
+    fn robust_fit_settings_reach_config_and_args() {
+        let mut app = default_app();
+        app.pipeline_state.collapsed_sections.clear();
+        let fields = |app: &App| app.pipeline_state.visible_rows().iter().filter_map(|r| match r {
+            crate::tui::app::PipelineRow::AlgoSelect { field, .. }
+            | crate::tui::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
+            _ => None,
+        }).collect::<Vec<_>>();
+        assert!(!fields(&app).contains(&"robust_fit_loss".to_string()));
+        app.pipeline_state.b0_estimation = 2;
+        let f = fields(&app);
+        for name in ["robust_fit_loss", "robust_fit_tuning", "robust_fit_iterations",
+                     "robust_fit_downweight_level", "robust_fit_flag_ratio", "linear_fit_reliability_threshold"] {
+            assert!(f.contains(&name.to_string()), "{name} missing: {f:?}");
+        }
+        assert_eq!(config_from_app(&app).field_mapping.robust_fit, qsmxt_config::RobustFitConfig::default());
+        let ps = &mut app.pipeline_state;
+        ps.robust_fit_loss = 1;
+        ps.robust_fit_tuning = "2".into();
+        ps.robust_fit_iterations = "0".into();
+        ps.robust_fit_downweight_level = "0.5".into();
+        ps.robust_fit_flag_ratio = "4".into();
+        ps.linear_fit_reliability_threshold = "80".into();
+        ps.toggle("linear_fit_estimate_offset");
+        let c = config_from_app(&app);
+        assert_eq!(c.field_mapping.b0_estimation, qsmxt_config::B0Estimation::RobustFit);
+        assert_eq!(c.field_mapping.robust_fit, qsmxt_config::RobustFitConfig {
+            loss: qsmxt_config::RobustLoss::Huber, tuning: Some(2.0), iterations: 0,
+            downweight_level: 0.5, flag_ratio: 4.0,
+        });
+        assert!(!c.field_mapping.linear_fit.estimate_offset);
+        assert_eq!(c.field_mapping.linear_fit.reliability_threshold_percentile, 80.0);
+        let a = pipeline_args_from_app(&app);
+        assert_eq!(a.b0_estimation, Some(B0EstimationArg::RobustFit));
+        assert_eq!(a.robust_fit_loss, Some(crate::cli::RobustLossArg::Huber));
+        assert_eq!(a.robust_fit_tuning, Some(2.0));
+        assert_eq!(a.robust_fit_iterations, Some(0));
+        assert_eq!(a.linear_fit_reliability_threshold, Some(80.0));
+        assert_eq!(a.linear_fit_estimate_offset, Some(false));
     }
 
     /// The inner-inversion choice belongs to QSMART and to nothing else. It used to be gated on a

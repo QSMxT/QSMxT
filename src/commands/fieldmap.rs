@@ -93,6 +93,25 @@ fn apply_common_config(
             }
             qsm_core::pipeline::config::B0EstimationMethod::LinearFit(p)
         }
+        B0EstimationArg::RobustFit => {
+            // QSMxT's defaults, then the flags (shared with `qsmxt run`).
+            let mut cfg = qsmxt_config::PipelineConfig::default();
+            let fm = &mut cfg.field_mapping;
+            fm.b0_estimation = qsmxt_config::B0Estimation::RobustFit;
+            if let Some(v) = common.linear_fit_reliability_threshold { fm.linear_fit.reliability_threshold_percentile = v; }
+            if let Some(v) = common.linear_fit_estimate_offset { fm.linear_fit.estimate_offset = v; }
+            if let Some(l) = common.robust_fit_loss {
+                fm.robust_fit.loss = match l {
+                    crate::cli::RobustLossArg::Tukey => qsmxt_config::RobustLoss::Tukey,
+                    crate::cli::RobustLossArg::Huber => qsmxt_config::RobustLoss::Huber,
+                };
+            }
+            if let Some(v) = common.robust_fit_tuning { fm.robust_fit.tuning = Some(v); }
+            if let Some(v) = common.robust_fit_iterations { fm.robust_fit.iterations = v; }
+            if let Some(v) = common.robust_fit_downweight_level { fm.robust_fit.downweight_level = v; }
+            if let Some(v) = common.robust_fit_flag_ratio { fm.robust_fit.flag_ratio = v; }
+            qsmxt_config::to_pipeline_stages(&cfg).0.b0_estimation
+        }
     };
 }
 
@@ -230,15 +249,18 @@ fn run_field_mapping(
         algorithm, nx, ny, nz, n_echoes, params.field_strength
     );
 
-    let mut field_ppm = crate::pipeline::fieldmap::run_field_mapping(
+    let field = crate::pipeline::fieldmap::run_field_mapping(
         &phase_slices,
         mag_option,
         &mask,
         &scan_meta,
         &config,
     )
-    .map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?
-    .b0_field_ppm;
+    .map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
+    if let Some(report) = &field.robust_fit {
+        crate::pipeline::fieldmap::log_robust_fit_report(report);
+    }
+    let mut field_ppm = field.b0_field_ppm;
 
     // run_field_mapping already restricts to the mask, but multiply defensively so
     // out-of-brain voxels are exactly zero (matching the qsm-ci masked-ppm output).
@@ -341,6 +363,8 @@ mod tests {
             b0_weight_assumed_t2star: 40.0,
             linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
+            robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
+            robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
         };
         let args = FieldmapRomeoArgs {
             common,
@@ -386,6 +410,8 @@ mod tests {
             b0_weight_assumed_t2star: 40.0,
             linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
+            robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
+            robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
         };
         let p = resolve_scan_params(&common).unwrap();
         assert_eq!(p.echo_times, vec![0.004, 0.008, 0.012]);
@@ -419,6 +445,8 @@ mod tests {
             b0_weight_assumed_t2star: 40.0,
             linear_fit_reliability_threshold: None,
             linear_fit_estimate_offset: None,
+            robust_fit_loss: None, robust_fit_tuning: None, robust_fit_iterations: None,
+            robust_fit_downweight_level: None, robust_fit_flag_ratio: None,
         };
         let args = FieldmapRomeoArgs {
             common,

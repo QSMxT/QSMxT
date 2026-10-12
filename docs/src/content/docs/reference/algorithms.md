@@ -328,6 +328,30 @@ per-echo Laplacian unwrapping and a TE·exp(−TE/T2\*)-weighted mean of the unw
 When magnitude images are available, `phase-snr`, which uses the measured magnitude in each
 voxel, is generally preferable.
 
+### Motion-robust echo combination
+
+`--b0-estimation robust-fit` (off by default) is the linear fit made robust to a bad
+echo: iteratively reweighted least squares that, voxel by voxel, down-weights echoes
+whose phase departs from a straight line in TE, as motion between echoes or local
+signal loss leaves. Nothing is dropped; an echo is down-weighted only where it departs.
+
+| Flag | Default | Meaning |
+| --- | --- | --- |
+| `--robust-fit-loss` | `tukey` | `tukey` rejects an echo past the tuning radius (weight 0); `huber` caps its influence but never rejects |
+| `--robust-fit-tuning` | conventional | tuning radius in robust-scale units (Tukey 4.685, Huber 1.345); smaller is more aggressive |
+| `--robust-fit-iterations` | 3 | IRLS passes; `0` reports only (the field map is the linear fit's) |
+| `--robust-fit-downweight-level` | 0.75 | reporting only: a weight below this counts as down-weighted |
+| `--robust-fit-flag-ratio` | 3 | reporting only: flag an echo whose outlier score exceeds this × the best echo's |
+| `--linear-fit-estimate-offset` | true | fit a phase-offset intercept (shared with `linear-fit`) |
+| `--linear-fit-reliability-threshold` | 90 | percentile of the fit's reliability mask (shared; does not change the field map) |
+
+It needs at least 4 echoes with the offset term, 3 without; fewer is an error rather than
+a silent plain fit. Each run writes a per-echo report (down-weighted and rejected
+fractions, median weight, median residual, outlier score, flagged echoes) to
+`<field map>_robustfit.json` in the unwrap step's workflow folder, and the log names any
+flagged echo. In the TUI it is the third "B0 Estimation" option, with each parameter
+below it.
+
 ## Background field removal
 
 Set with `--bf-algorithm`.

@@ -1660,6 +1660,14 @@ pub struct PipelineFormState {
     pub romeo_correct_regions: bool,
     pub romeo_wrap_addition: String,
     pub linear_fit_estimate_offset: bool,
+    pub linear_fit_reliability_threshold: String,
+    /// Motion-robust echo fit: index into [`ROBUST_FIT_LOSS_OPTIONS`], and its parameters
+    /// (`robust_fit_tuning` blank = the loss's conventional value).
+    pub robust_fit_loss: usize,
+    pub robust_fit_tuning: String,
+    pub robust_fit_iterations: String,
+    pub robust_fit_downweight_level: String,
+    pub robust_fit_flag_ratio: String,
 
     // Phase offset sigma
     pub phase_offset_sigma: String,
@@ -1894,6 +1902,12 @@ impl Default for PipelineFormState {
             romeo_correct_regions: qsm_core::unwrap::RomeoParams::default().correct_regions,
             romeo_wrap_addition: format!("{}", qsm_core::unwrap::RomeoParams::default().wrap_addition),
             linear_fit_estimate_offset: true,
+            linear_fit_reliability_threshold: fmt_default(qsmxt_config::LinearFitConfig::default().reliability_threshold_percentile),
+            robust_fit_loss: 0,
+            robust_fit_tuning: String::new(),
+            robust_fit_iterations: qsmxt_config::RobustFitConfig::default().iterations.to_string(),
+            robust_fit_downweight_level: fmt_default(qsmxt_config::RobustFitConfig::default().downweight_level),
+            robust_fit_flag_ratio: fmt_default(qsmxt_config::RobustFitConfig::default().flag_ratio),
             phase_offset_sigma: {
                 let s = qsm_core::utils::PhaseOffsetParams::default().sigma;
                 format!("{} {} {}", s[0], s[1], s[2])
@@ -2053,7 +2067,12 @@ const QSMART_INV_HELP: &[&str] = &[
 ];
 pub const UNWRAP_OPTIONS: &[&str] = &["romeo", "laplacian"];
 pub const BF_OPTIONS: &[&str] = &["vsharp", "pdf", "lbv", "ismv", "sharp", "resharp", "harperella", "iharperella", "bfrnet", "iqfm"];
-pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit"];
+pub const B0_ESTIMATION_OPTIONS: &[&str] = &["weighted-avg", "linear-fit", "robust-fit"];
+pub const ROBUST_FIT_LOSS_OPTIONS: &[&str] = &["tukey", "huber"];
+const ROBUST_FIT_LOSS_HELP: &[&str] = &[
+    "Tukey biweight: rejects an echo at a voxel past the tuning radius (default)",
+    "Huber: caps an outlying echo's influence but never rejects it",
+];
 pub const LAPLACIAN_SOLVER_OPTIONS: &[&str] = &["dct", "fft"];
 const LAPLACIAN_SOLVER_HELP: &[&str] = &[
     "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
@@ -2063,6 +2082,7 @@ pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average
 const B0_ESTIMATION_HELP: &[&str] = &[
     "Weighted average of phase/TE across echoes (default)",
     "Magnitude-weighted linear fit of phase vs TE",
+    "Motion-robust linear fit (IRLS): down-weights echoes departing from a straight line, per voxel. Needs 4 echoes (3 without offset)",
 ];
 const B0_WEIGHT_TYPE_HELP: &[&str] = &[
     "mag × TE — optimal for phase SNR (default)",
@@ -2366,11 +2386,29 @@ impl PipelineFormState {
                     rows.push(PipelineRow::Param { label: "    Assumed T2* (ms)", field: "b0_weight_assumed_t2star_ms",
                         help: "T2* assumed to compute the fixed echo weights; no T2* map is used (UK Biobank: 40 ms)" });
                 }
-            } else { // linear_fit
+            } else { // linear-fit / robust-fit
                 rows.push(PipelineRow::Toggle {
                     label: "  Estimate Offset", field: "linear_fit_estimate_offset",
-                    help: "Fit a phase-offset term in the linear echo-time fit",
+                    help: "Fit a phase-offset term in the echo-time fit (robust fit: needs 4 echoes with it, 3 without)",
                 });
+                rows.push(PipelineRow::Param {
+                    label: "  Reliability Pctl", field: "linear_fit_reliability_threshold",
+                    help: "Percentile for the fit's reliability mask (0 disables); does not change the field map",
+                });
+                if self.b0_estimation == 2 { // robust-fit
+                    rows.push(PipelineRow::AlgoSelect {
+                        label: "  Loss", field: "robust_fit_loss",
+                        options: ROBUST_FIT_LOSS_OPTIONS, help: ROBUST_FIT_LOSS_HELP,
+                    });
+                    rows.push(PipelineRow::Param { label: "  Tuning", field: "robust_fit_tuning",
+                        help: "Tuning radius in robust-scale units; blank = conventional (Tukey 4.685, Huber 1.345)" });
+                    rows.push(PipelineRow::Param { label: "  Iterations", field: "robust_fit_iterations",
+                        help: "IRLS passes (0 = report only: the field map is the linear fit's)" });
+                    rows.push(PipelineRow::Param { label: "  Downweight Level", field: "robust_fit_downweight_level",
+                        help: "Reporting only: a weight below this counts as down-weighted (0, 1]" });
+                    rows.push(PipelineRow::Param { label: "  Flag Ratio", field: "robust_fit_flag_ratio",
+                        help: "Reporting only: flag an echo whose outlier score exceeds this x the best echo's (>= 1)" });
+                }
             }
 
             rows.push(PipelineRow::Separator);
@@ -2773,6 +2811,8 @@ impl PipelineFormState {
         "bet_fractional_intensity", "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
         "r2primenet_patch",
         "laplacian_fft_pad",
+        "linear_fit_reliability_threshold", "robust_fit_tuning", "robust_fit_iterations",
+        "robust_fit_downweight_level", "robust_fit_flag_ratio",
     ];
 
     /// Get a string parameter value by field name.
@@ -2802,6 +2842,11 @@ impl PipelineFormState {
             "heidi_laplacian_threshold" => &self.heidi_laplacian_threshold,
             "b0_weight_assumed_t2star_ms" => &self.b0_weight_assumed_t2star_ms,
             "laplacian_fft_pad" => &self.laplacian_fft_pad,
+            "linear_fit_reliability_threshold" => &self.linear_fit_reliability_threshold,
+            "robust_fit_tuning" => &self.robust_fit_tuning,
+            "robust_fit_iterations" => &self.robust_fit_iterations,
+            "robust_fit_downweight_level" => &self.robust_fit_downweight_level,
+            "robust_fit_flag_ratio" => &self.robust_fit_flag_ratio,
             "heidi_gradient_mask_floor" => &self.heidi_gradient_mask_floor,
             "heidi_continuation_steps" => &self.heidi_continuation_steps,
             "heidi_inner_iterations" => &self.heidi_inner_iterations,
@@ -2993,6 +3038,11 @@ impl PipelineFormState {
             "heidi_laplacian_threshold" => Some(&mut self.heidi_laplacian_threshold),
             "b0_weight_assumed_t2star_ms" => Some(&mut self.b0_weight_assumed_t2star_ms),
             "laplacian_fft_pad" => Some(&mut self.laplacian_fft_pad),
+            "linear_fit_reliability_threshold" => Some(&mut self.linear_fit_reliability_threshold),
+            "robust_fit_tuning" => Some(&mut self.robust_fit_tuning),
+            "robust_fit_iterations" => Some(&mut self.robust_fit_iterations),
+            "robust_fit_downweight_level" => Some(&mut self.robust_fit_downweight_level),
+            "robust_fit_flag_ratio" => Some(&mut self.robust_fit_flag_ratio),
             "heidi_gradient_mask_floor" => Some(&mut self.heidi_gradient_mask_floor),
             "heidi_continuation_steps" => Some(&mut self.heidi_continuation_steps),
             "heidi_inner_iterations" => Some(&mut self.heidi_inner_iterations),
@@ -3169,6 +3219,7 @@ impl PipelineFormState {
             "b0_estimation" => self.b0_estimation,
             "b0_weight_type" => self.b0_weight_type,
             "laplacian_solver" => self.laplacian_solver,
+            "robust_fit_loss" => self.robust_fit_loss,
             "mask_preset" => self.mask_preset,
             "separation_algorithm" => self.separation_algorithm,
             _ => 0,
@@ -3187,6 +3238,7 @@ impl PipelineFormState {
             "b0_estimation" => self.b0_estimation = val,
             "b0_weight_type" => self.b0_weight_type = val,
             "laplacian_solver" => self.laplacian_solver = val,
+            "robust_fit_loss" => self.robust_fit_loss = val,
             "mask_preset" => {
                 self.mask_preset = val;
                 self.apply_mask_preset(val);
@@ -7250,7 +7302,7 @@ mod tests {
     #[test]
     fn test_all_param_fields_are_valid() {
         // Opt-in fields that intentionally default to empty (blank = feature off).
-        const OPT_IN_EMPTY: &[&str] = &["dl_tile_size", "dl_tile_halo"];
+        const OPT_IN_EMPTY: &[&str] = &["dl_tile_size", "dl_tile_halo", "robust_fit_tuning"];
         let state = PipelineFormState::default();
         for &field_name in PipelineFormState::ALL_PARAM_FIELDS {
             let val = state.get_param(field_name);
@@ -7283,6 +7335,8 @@ mod tests {
             ("qsmart-inner", QSMART_INV_OPTIONS.len(), QSMART_INV_HELP.len()),
             ("unwrap", UNWRAP_OPTIONS.len(), UNWRAP_HELP.len()),
             ("laplacian-solver", LAPLACIAN_SOLVER_OPTIONS.len(), LAPLACIAN_SOLVER_HELP.len()),
+            ("b0-estimation", B0_ESTIMATION_OPTIONS.len(), B0_ESTIMATION_HELP.len()),
+            ("robust-fit-loss", ROBUST_FIT_LOSS_OPTIONS.len(), ROBUST_FIT_LOSS_HELP.len()),
             ("bg-removal", BF_OPTIONS.len(), BF_HELP.len()),
             ("qsm-reference", qsm_ref_options().len(), qsm_ref_help().len()),
             ("mask-preset", MASK_PRESET_OPTIONS.len(), MASK_PRESET_HELP.len()),
