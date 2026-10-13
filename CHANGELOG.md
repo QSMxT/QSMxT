@@ -108,6 +108,17 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
 
 ### Changed
 
+- **Cached steps are keyed on the whole configuration they read** (#272). Each step's cache key
+  was a hand-picked list of parameters, and the lists were incomplete: changing RTS `rho`, TV
+  `tol`, most of MEDI, any TFI setting, MSMV, `--crop-to-mask`/`--fft-padding`/`--crop-margin-mm`,
+  `--phase-offset-sigma`, most ROMEO settings or any χ-separation setting reused a stale result.
+  Each step's key now includes the whole config section it reads (inversion, background removal,
+  field mapping, separation, masking, SWI, SMWI, segmentation, referencing, motion correction),
+  so a new config field is keyed automatically. Replacing an input file in place (size or
+  modification time) recomputes the run. Invalidation gained the missing edges (`scale_phase`
+  → magnitude/R2*/χ-separation, everything → the two-pass single-pass reference →
+  statistics). Caches from earlier builds are recomputed once.
+
 - **`--clean-intermediates` no longer deletes published outputs or the cache** (#271). It
   deleted every recorded output of a step not on a hard-coded list — including the
   `rec-mcpc3ds` combined echoes in `anat/` — removed each run's local field before the

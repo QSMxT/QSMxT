@@ -266,7 +266,7 @@ pub const RELIABLE_SUFFIX: &str = "-reliable";
 pub fn downstream_of(step_name: &str) -> Vec<String> {
     // A reliable-pass step invalidates what its main-pass twin invalidates, on its own side.
     if let Some(base) = step_name.strip_suffix(RELIABLE_SUFFIX) {
-        let mut out: Vec<String> = downstream_steps(base)
+        let mut out: Vec<String> = downstream_steps(base).unwrap_or(&[])
             .iter()
             .filter(|ds| PASS_STEPS.contains(ds))
             .map(|ds| format!("{ds}{RELIABLE_SUFFIX}"))
@@ -279,14 +279,14 @@ pub fn downstream_of(step_name: &str) -> Vec<String> {
         return CHI_CONSUMERS.iter().map(|s| s.to_string()).collect();
     }
 
-    let direct = downstream_steps(step_name);
+    let direct = downstream_steps(step_name).unwrap_or(&[]);
     let mut out: Vec<String> = direct.iter().map(|s| s.to_string()).collect();
     // SMWI weights the magnitude by the *referenced* susceptibility map, chi-separation starts
     // from it and the statistics summarise it, so all three are stale whenever referencing is.
     // Derived rather than listed in each of the seven sets that reach `reference`: a missing entry
     // there would show a new reconstruction with weighting from the old one, and nothing would
     // say so.
-    for &derived in CHI_CONSUMERS.iter().skip(1) {
+    for &derived in CHI_CONSUMERS.iter().skip(1).chain(["reference-singlepass"].iter()) {
         if out.iter().any(|d| d == "reference") && !out.iter().any(|d| d == derived) {
             out.push(derived.to_string());
         }
@@ -311,8 +311,10 @@ const CHI_CONSUMERS: [&str; 4] = ["reference", "smwi", "chi_separation", "analys
 /// combined map.
 const PASS_STEPS: [&str; 5] = ["mask", "bgremove", "invert", "tgv", "qsmart"];
 
-fn downstream_steps(step_name: &str) -> &'static [&'static str] {
-    match step_name {
+/// The steps that read `step_name`'s output directly; `None` for a name the table does not know,
+/// which a test keeps from happening for any step the runner records.
+fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
+    Some(match step_name {
         "load" => &[
             "resample",
             "motion",
@@ -344,7 +346,12 @@ fn downstream_steps(step_name: &str) -> &'static [&'static str] {
             "qsmart",
             "reference",
         ],
+        // The per-echo phase and magnitude every later stage reads (the combined magnitude, R2*,
+        // the separation's echoes), as well as the field.
         "scale_phase" => &[
+            "magnitude",
+            "t2star_r2star",
+            "chi_separation",
             "mask",
             "motion",
             "swi",
@@ -413,9 +420,12 @@ fn downstream_steps(step_name: &str) -> &'static [&'static str] {
         "reference" => &["smwi", "chi_separation", "analysis"],
         "smwi" => &[],
         "segmentation" => &["analysis"],
-        "analysis" => &[],
-        _ => &[],
-    }
+        // The single-pass map of a two-pass run is summarised by the statistics too.
+        "reference-singlepass" => &["analysis"],
+        "twopass" => &["reference"],
+        "analysis" | "output_space" => &[],
+        _ => return None,
+    })
 }
 
 /// The path to the pipeline state file for a given run (in workflow dir).
@@ -502,6 +512,25 @@ mod tests {
         for parent in ["mask", "scale_phase", "load", "resample"] {
             assert!(downstream_of(parent).contains(&"motion".to_string()), "{parent} should invalidate motion");
         }
+    }
+
+    /// Every step the runner records has an entry in the invalidation table (#272: `motion` and
+    /// `reference-singlepass` had none, so nothing they fed was ever invalidated through them).
+    #[test]
+    fn every_recorded_step_has_an_invalidation_entry() {
+        for step in crate::bids::bidsprov::STEPS {
+            let base = step.strip_suffix(RELIABLE_SUFFIX).unwrap_or(step);
+            assert!(downstream_steps(base).is_some() || *step == "twopass",
+                    "{step} is recorded but not in the invalidation table");
+        }
+        // The edges the issue found missing.
+        let sp = downstream_of("scale_phase");
+        for step in ["magnitude", "motion", "t2star_r2star", "segmentation", "reference-singlepass"] {
+            assert!(sp.contains(&step.to_string()) || downstream_of("magnitude").contains(&step.to_string()),
+                    "scale_phase should (transitively) invalidate {step}: {sp:?}");
+        }
+        assert!(downstream_of("invert").contains(&"reference-singlepass".to_string()));
+        assert!(downstream_of("reference-singlepass").contains(&"analysis".to_string()));
     }
 
     /// A reliable-pass step invalidates its own side and the combination, and leaves the main
@@ -837,7 +866,7 @@ mod tests {
 
     #[test]
     fn test_downstream_steps_load() {
-        let ds = downstream_steps("load");
+        let ds = downstream_steps("load").unwrap();
         assert!(ds.contains(&"mask"));
         assert!(ds.contains(&"unwrap"));
         assert!(ds.contains(&"reference"));
@@ -845,18 +874,17 @@ mod tests {
 
     #[test]
     fn test_downstream_steps_unknown() {
-        let ds = downstream_steps("nonexistent");
-        assert!(ds.is_empty());
+        assert!(downstream_steps("nonexistent").is_none());
     }
 
     #[test]
     fn test_downstream_steps_leaf() {
-        assert!(downstream_steps("swi").is_empty());
-        assert!(downstream_steps("smwi").is_empty());
+        assert!(downstream_steps("swi").unwrap().is_empty());
+        assert!(downstream_steps("smwi").unwrap().is_empty());
         // `reference` is not a leaf: SMWI, chi-separation and the per-structure stats all read
         // the referenced map.
-        assert_eq!(downstream_steps("reference"), &["smwi", "chi_separation", "analysis"]);
-        assert!(downstream_steps("analysis").is_empty());
+        assert_eq!(downstream_steps("reference").unwrap(), &["smwi", "chi_separation", "analysis"]);
+        assert!(downstream_steps("analysis").unwrap().is_empty());
     }
 
     #[test]
