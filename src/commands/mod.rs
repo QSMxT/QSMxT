@@ -1930,6 +1930,7 @@ mod integration_tests {
             time: "01:00:00".to_string(),
             mem: Some(16), cpus_per_task: 2, submit: false,
             include: None, exclude: None, num_echoes: None, force: false, clean_intermediates: false,
+            debug: false, source_dicom: None, dicom_outputs: None,
             pipeline: Default::default(),
         }).unwrap();
 
@@ -1954,6 +1955,7 @@ mod integration_tests {
             time: "01:00:00".to_string(),
             mem: Some(16), cpus_per_task: 2, submit: false,
             include: None, exclude: None, num_echoes: None, force: false, clean_intermediates: false,
+            debug: false, source_dicom: None, dicom_outputs: None,
             pipeline: PipelineArgs {
                 qsm_algorithm: Some(QsmAlgorithmArg::Tkd),
                 unwrapping_algorithm: Some(UnwrapAlgorithmArg::Laplacian),
@@ -2097,6 +2099,7 @@ mod integration_tests {
             account: "acct".into(), partition: None, config: None, time: "01:00:00".into(),
             mem: None, cpus_per_task: 1, submit: false,
             include, exclude: None, num_echoes: Some(1), force: false, clean_intermediates: false,
+            debug: false, source_dicom: None, dicom_outputs: None,
             pipeline: pipeline(),
         }).unwrap();
         let slurm_dir = dist.join("derivatives/qsmxt/slurm");

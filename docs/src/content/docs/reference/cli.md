@@ -429,6 +429,9 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--num-echoes <NUM_ECHOES>` | Limit number of echoes to process. |
 | `--force` | Force re-run, ignoring cached pipeline state (passed to every job) |
 | `--clean-intermediates` | Once every run and the dataset-level steps are done, delete the intermediate images under workflow/ (done by the aggregation job) |
+| `--debug` | Enable debug logging (in every job) |
+| `--source-dicom <SOURCE_DICOM>` | Optional source DICOM directory; inherit patient/study identity from the original DICOMs when exporting (used with --export-dicom; each run's job exports its maps) |
+| `--dicom-outputs <DICOM_OUTPUTS>` | Restrict DICOM export to these maps (default: all produced); values as for `qsmxt run` (used with --export-dicom) |
 | `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or `re:` and a regex with one capture group. Orientations are co-registered if they need it. |
 | `--no-orientation-registration` | Do not co-register the orientations in a group — use this when they were already registered externally and a second interpolation is not wanted. A group that still needs registration is then refused instead of reconstructed. |

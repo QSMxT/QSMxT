@@ -1405,9 +1405,41 @@ pub fn qsm_reference_spec(index: usize) -> String {
     QSM_REF_OPTIONS_V.get(index).copied().unwrap_or("mean").to_string()
 }
 
-/// Whether a picker index selects a parcellation region (rather than `mean`/`none`).
-pub fn qsm_reference_is_region(index: usize) -> bool {
-    index >= QSM_REF_METHODS.len() && index < QSM_REF_OPTIONS_V.len()
+
+/// Facts from outside the pipeline form that decide which of its rows apply: the other tabs'
+/// settings (an output that forces QSM, the orientation grouping, the echo limit) and the maps
+/// whose inputs the Separation tab carries. Set by [`App::sync_pipeline_mode`] before every key
+/// and every frame, from [`App::row_context`]; the default is a fresh form's.
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct RowContext {
+    /// QSM is reconstructed although Compute QSM is off — SMWI needs a χ map, or the statistics
+    /// have nothing else to summarise — and why.
+    pub qsm_forced_by: Option<&'static str>,
+    /// A multi-orientation grouping is set on the Input tab.
+    pub orientation_group: bool,
+    /// The grouping reconstructs COSMOS (rather than STI).
+    pub orientation_cosmos: bool,
+    /// The echo count when the run is limited to one (`--num-echoes`); `None` = unknown.
+    pub num_echoes: Option<usize>,
+    /// The maps whose bring-your-own inputs and settings apply: see [`InputRelevance`].
+    pub inputs: InputRelevance,
+}
+
+/// Which of the Separation tab's bring-your-own inputs (and the R2' source) the run can use.
+///
+/// Mirrors `qsmxt_config::enforce_separation_dependencies` and `requirements::implied_by`, but
+/// from the form's *requests* rather than the resolved config: a supplied map switches its own
+/// computation off, and the row that supplies it must not vanish because it was filled in.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct InputRelevance {
+    /// A χ map is read: χ-separation, the statistics or SMWI.
+    pub qsm: bool,
+    /// An R2 map is read: asked for, or the measured route to a computed R2'.
+    pub r2: bool,
+    /// An R2' map is read: asked for, or the selected χ-separation method needs it.
+    pub r2prime: bool,
+    /// R2' is computed (wanted and not supplied), so its source and R2PRIMEnet settings apply.
+    pub r2prime_source: bool,
 }
 
 /// All pipeline form values (algorithms + parameters).
@@ -1415,6 +1447,8 @@ pub fn qsm_reference_is_region(index: usize) -> bool {
 pub struct PipelineFormState {
     /// Which tab's rows to render (QSM vs Separation) — set by the App before routing input.
     pub mode: PipelineTabMode,
+    /// What the rest of the form decides about these rows — set by the App with `mode`.
+    pub ctx: RowContext,
     // Algorithm selections (as indices)
     pub qsm_algorithm: usize,
     pub unwrapping_algorithm: usize,
@@ -1830,6 +1864,7 @@ impl Default for PipelineFormState {
         let hdqsm = qsm_core::inversion::HdQsmParams::default();
         Self {
             mode: PipelineTabMode::Qsm,
+            ctx: RowContext::default(),
             qsm_algorithm: super::command::default_qsm_algorithm_index(), // ilsqr
             unwrapping_algorithm: 0, // romeo
             bf_algorithm: 0, // vsharp
@@ -2205,9 +2240,7 @@ impl PipelineFormState {
             label: "Compute χ-separation", field: "do_chi_separation",
             help: "Split QSM into paramagnetic (χ+, iron) and diamagnetic (χ−, myelin) maps",
         });
-        if !self.do_chi_separation {
-            return rows;
-        }
+        if self.do_chi_separation {
         rows.push(PipelineRow::Separator);
         rows.push(PipelineRow::AlgoSelect {
             label: "Method", field: "separation_algorithm",
@@ -2264,13 +2297,26 @@ impl PipelineFormState {
             // into the arm above and show HC-χsep's, which did nothing.
             _ => {}
         }
-        rows.push(PipelineRow::Separator);
-        rows.push(PipelineRow::Note { text: "Bring-your-own inputs (derivatives tool name; blank = compute, * = any tool):" });
-        rows.push(PipelineRow::Param { label: "  Custom QSM tool", field: "custom_qsm_tool", help: "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM" });
-        rows.push(PipelineRow::Param { label: "  Custom R2 tool", field: "custom_r2_tool", help: "Use an R2 map from derivatives instead of computing from MESE" });
-        rows.push(PipelineRow::Param { label: "  Custom R2' tool", field: "custom_r2prime_tool", help: "Use an R2' map from derivatives instead of computing" });
-        // Only consulted when no custom R2' map is supplied — that always wins.
-        if self.custom_r2prime_tool.trim().is_empty() {
+        } // end if do_chi_separation
+
+        // Bring-your-own inputs and the R2' source: wherever a map they feed is made — the
+        // relaxometry maps and statistics on the Supplementary tab as much as χ-separation.
+        let inputs = self.ctx.inputs;
+        if inputs.qsm || inputs.r2 || inputs.r2prime {
+            rows.push(PipelineRow::Separator);
+            rows.push(PipelineRow::Note { text: "Bring-your-own inputs (derivatives tool name; blank = compute, * = any tool):" });
+        }
+        if inputs.qsm {
+            rows.push(PipelineRow::Param { label: "  Custom QSM tool", field: "custom_qsm_tool", help: "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI)" });
+        }
+        if inputs.r2 {
+            rows.push(PipelineRow::Param { label: "  Custom R2 tool", field: "custom_r2_tool", help: "Use an R2 map from derivatives instead of computing from MESE" });
+        }
+        if inputs.r2prime {
+            rows.push(PipelineRow::Param { label: "  Custom R2' tool", field: "custom_r2prime_tool", help: "Use an R2' map from derivatives instead of computing" });
+        }
+        // Only consulted when R2' is computed — a supplied map always wins.
+        if inputs.r2prime_source {
             rows.push(PipelineRow::AlgoSelect {
                 label: "  R2' Source", field: "r2prime_strategy",
                 options: R2PRIME_STRATEGY_OPTIONS, help: R2PRIME_STRATEGY_HELP,
@@ -2336,25 +2382,32 @@ impl PipelineFormState {
         // algorithm is inserted rather than appended, and a stale one silently shows the wrong
         // rows (or hides background removal for the wrong algorithm).
         let alg = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
-        let is_tgv = alg == "tgv";
-        let is_qsmart = alg == "qsmart";
         // Whether a background-removal stage runs at all is QSM.rs's call (#265): the
         // total-field (TFI, MEDI+SMV, TGV, QSMART, AutoQSM, NeXtQSM) and wrapped-phase (iQSM)
         // methods have none, so the section is hidden for them.
         let needs_bfr = self.inversion_needs_bg_removal();
-        // iQSM / iQSM+ reconstruct end-to-end from raw phase: no field mapping or BG removal.
-        let is_iqsm = alg == "iqsm" || alg == "iqsm-plus";
+        // Field mapping likewise (the runner's rule): not for the wrapped-phase methods, nor with
+        // iQFM making the local field from phase. TGV maps only a multi-echo field.
+        let (field_mapping_some, field_mapping_all) = self.field_mapping_runs();
+        // Reconstruction-only settings follow whether QSM runs; the preprocessing ones (geometry,
+        // motion correction, coil combination, masking) serve SWI, T2*/R2*, R2' and the
+        // segmentation too, so they stay whatever the QSM toggle says.
+        let qsm = self.qsm_runs();
 
         // QSM toggle
         rows.push(PipelineRow::Toggle {
             label: "Compute QSM", field: "do_qsm",
             help: "Enable QSM reconstruction (disable to only run supplementary outputs)",
         });
+        if !self.do_qsm {
+            if let Some(why) = &self.ctx.qsm_forced_by {
+                rows.push(PipelineRow::Note { text: why });
+            }
+        }
 
         rows.push(PipelineRow::Separator);
 
-        // General settings (QSM-only)
-        if self.do_qsm {
+        // General settings: the acquisition's geometry and the preprocessing every output reads.
         rows.push(self.section_header("general", "General",
             format!("inhomogeneity correction {}", if self.inhomogeneity_correction { "on" } else { "off" })));
         rows.push(PipelineRow::Param {
@@ -2375,18 +2428,21 @@ impl PipelineFormState {
             label: "Ignore Slice Gap", field: "ignore_slice_gap",
             help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
         });
-        rows.push(PipelineRow::Toggle {
-            label: "Crop to Mask", field: "crop_to_mask",
-            help: "Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid). Off by default",
-        });
-        if self.crop_to_mask {
-            rows.push(PipelineRow::Param { label: "  Crop Margin (mm)", field: "crop_margin_mm",
-                help: "Margin around the mask; below ~32 mm results start to differ, and it must clear the largest SMV kernel" });
+        // Cropping and padding resize the grid of the FFT-bound reconstruction stages only.
+        if qsm {
+            rows.push(PipelineRow::Toggle {
+                label: "Crop to Mask", field: "crop_to_mask",
+                help: "Run the FFT-bound stages on a box around the mask (faster; outputs stay on the full grid). Off by default",
+            });
+            if self.crop_to_mask {
+                rows.push(PipelineRow::Param { label: "  Crop Margin (mm)", field: "crop_margin_mm",
+                    help: "Margin around the mask; below ~32 mm results start to differ, and it must clear the largest SMV kernel" });
+            }
+            rows.push(PipelineRow::Toggle {
+                label: "FFT Padding", field: "fft_padding",
+                help: "Pad the grid to an FFT-friendly size before the FFT-bound stages (faster on awkward grids; shifts results slightly). Off by default",
+            });
         }
-        rows.push(PipelineRow::Toggle {
-            label: "FFT Padding", field: "fft_padding",
-            help: "Pad the grid to an FFT-friendly size before the FFT-bound stages (faster on awkward grids; shifts results slightly). Off by default",
-        });
         rows.push(PipelineRow::AlgoSelect {
             label: "Output Space", field: "output_space",
             options: OUTPUT_SPACE_OPTIONS, help: OUTPUT_SPACE_HELP,
@@ -2395,23 +2451,56 @@ impl PipelineFormState {
             label: "Use custom dseg", field: "custom_dseg_tool",
             help: "BYO segmentation (when segmenting: stats, region reference) from BIDS derivatives: empty=off, * =any tool, or a tool name; falls back to SynthSeg",
         });
+        // Coil combination and motion correction prepare the echoes every later stage reads —
+        // SWI and the relaxometry maps as much as the field map — so they apply whatever the
+        // inversion, and with QSM off.
+        rows.push(PipelineRow::Param { label: "Coil Comb. Sigma", field: "coil_combination_sigma",
+            help: "MCPC-3D-S smoothing of per-coil phase offsets, voxels (x y z); only for uncombined multi-coil data" });
         rows.push(PipelineRow::Toggle {
-            label: "Orientation Co-registration", field: "orientation_registration",
-            help: "Multi-orientation groups (Input tab): co-register orientations that need it, with the registration settings below. Off = refuse such groups",
+            label: "Motion Correction", field: "motion_correction",
+            help: "Rigidly co-register every echo onto a reference echo before any other stage (multi-echo, needs magnitude). Off by default",
         });
-        rows.push(PipelineRow::Toggle {
-            label: "Force Multi-orientation", field: "multi_orientation_force",
-            help: "Multi-orientation groups: reconstruct even when the B0 directions look degenerate (wrong metadata gives a plausible wrong map)",
-        });
-        rows.push(PipelineRow::Toggle {
-            label: "COSMOS Magnitude Weighting", field: "cosmos_magnitude_weighting",
-            help: "COSMOS groups: weight each orientation by its combined magnitude (conjugate-gradient solve). Off = closed-form least squares",
-        });
-        if self.cosmos_magnitude_weighting {
-            rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "cosmos_tol", help: "Conjugate-gradient tolerance of weighted COSMOS" });
-            rows.push(PipelineRow::Param { label: "  CG Max Iterations", field: "cosmos_max_iter", help: "Conjugate-gradient iteration cap of weighted COSMOS" });
+        if self.motion_correction {
+            rows.push(PipelineRow::AlgoSelect {
+                label: "  Reference", field: "motion_reference",
+                options: MOTION_REFERENCE_OPTIONS, help: MOTION_REFERENCE_HELP,
+            });
+            if self.motion_reference == 2 {
+                rows.push(PipelineRow::Param { label: "    Reference Echo", field: "motion_reference_echo",
+                    help: "1-based echo number the others are aligned onto" });
+            }
+            rows.push(PipelineRow::Toggle { label: "  Chain", field: "motion_chain",
+                help: "Seed each echo's registration from its neighbour's solution" });
+            if self.motion_chain {
+                rows.push(PipelineRow::Param { label: "    Chain Levels", field: "motion_chain_levels",
+                    help: "Pyramid levels for a seeded registration (default 3)" });
+            }
+            rows.push(PipelineRow::Param { label: "  Min NCC", field: "motion_min_ncc",
+                help: "NCC below which a registration is reported as suspect (0.3 for echoes; ~0.9 for repeats)" });
         }
-        if self.motion_correction || self.orientation_registration {
+        // Multi-orientation settings mean nothing until the Input tab groups orientations.
+        if self.ctx.orientation_group {
+            rows.push(PipelineRow::Toggle {
+                label: "Orientation Co-registration", field: "orientation_registration",
+                help: "Multi-orientation groups (Input tab): co-register orientations that need it, with the registration settings below. Off = refuse such groups",
+            });
+            rows.push(PipelineRow::Toggle {
+                label: "Force Multi-orientation", field: "multi_orientation_force",
+                help: "Multi-orientation groups: reconstruct even when the B0 directions look degenerate (wrong metadata gives a plausible wrong map)",
+            });
+            if self.ctx.orientation_cosmos {
+                rows.push(PipelineRow::Toggle {
+                    label: "COSMOS Magnitude Weighting", field: "cosmos_magnitude_weighting",
+                    help: "COSMOS groups: weight each orientation by its combined magnitude (conjugate-gradient solve). Off = closed-form least squares",
+                });
+                if self.cosmos_magnitude_weighting {
+                    rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "cosmos_tol", help: "Conjugate-gradient tolerance of weighted COSMOS" });
+                    rows.push(PipelineRow::Param { label: "  CG Max Iterations", field: "cosmos_max_iter", help: "Conjugate-gradient iteration cap of weighted COSMOS" });
+                }
+            }
+        }
+        // Rigid registration runs for motion correction, and for co-registering orientations.
+        if self.registration_runs() {
             rows.push(PipelineRow::Note { text: "Rigid registration (motion correction, orientation co-registration):" });
             rows.push(PipelineRow::Param { label: "  Levels", field: "reg_levels", help: "Pyramid levels: the capture range; do not lower (default 5)" });
             rows.push(PipelineRow::Param { label: "  Max Samples", field: "reg_max_samples", help: "Voxels sampled per metric evaluation, per level" });
@@ -2424,59 +2513,15 @@ impl PipelineFormState {
         }
 
         rows.push(PipelineRow::Separator);
-        } // end if do_qsm (general settings)
 
-        if self.do_qsm {
-        // Field Mapping (hidden if TGV or QSMART)
-        if !is_tgv && !is_qsmart && !is_iqsm {
+        // Field mapping: whenever it runs in front of the inversion.
+        if qsm && field_mapping_some {
             let is_laplacian = self.unwrapping_algorithm == 1;
             rows.push(self.section_header("fieldmap", "Field mapping",
                 format!("{} unwrapping", UNWRAP_OPTIONS.get(self.unwrapping_algorithm).copied().unwrap_or(""))));
-
-            // Motion correction runs first: everything below reads the corrected echoes.
-            rows.push(PipelineRow::Toggle {
-                label: "Motion Correction", field: "motion_correction",
-                help: "Rigidly co-register every echo onto a reference echo before field mapping (needs magnitude). Off by default",
-            });
-            if self.motion_correction {
-                rows.push(PipelineRow::AlgoSelect {
-                    label: "  Reference", field: "motion_reference",
-                    options: MOTION_REFERENCE_OPTIONS, help: MOTION_REFERENCE_HELP,
-                });
-                if self.motion_reference == 2 {
-                    rows.push(PipelineRow::Param { label: "    Reference Echo", field: "motion_reference_echo",
-                        help: "1-based echo number the others are aligned onto" });
-                }
-                rows.push(PipelineRow::Toggle { label: "  Chain", field: "motion_chain",
-                    help: "Seed each echo's registration from its neighbour's solution" });
-                if self.motion_chain {
-                    rows.push(PipelineRow::Param { label: "    Chain Levels", field: "motion_chain_levels",
-                        help: "Pyramid levels for a seeded registration (default 3)" });
-                }
-                rows.push(PipelineRow::Param { label: "  Min NCC", field: "motion_min_ncc",
-                    help: "NCC below which a registration is reported as suspect (0.3 for echoes; ~0.9 for repeats)" });
+            if !field_mapping_all {
+                rows.push(PipelineRow::Note { text: "Applies to multi-echo data only: TGV reconstructs a single echo from its wrapped phase" });
             }
-
-            // Phase offset removal (disabled for Laplacian)
-            if !is_laplacian {
-                rows.push(PipelineRow::Toggle {
-                    label: "Phase Offset Removal", field: "phase_offset_removal",
-                    help: "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018)",
-                });
-                if self.phase_offset_removal {
-                    rows.push(PipelineRow::Param { label: "  Sigma", field: "phase_offset_sigma",
-                        help: "Gaussian smoothing sigma in voxels (x y z)" });
-                }
-
-                // Bipolar correction (disabled for Laplacian)
-                rows.push(PipelineRow::Toggle {
-                    label: "Bipolar Correction", field: "bipolar_correction",
-                    help: "Remove linear phase artefact from bipolar readout gradients (requires 3+ echoes)",
-                });
-            }
-
-            rows.push(PipelineRow::Param { label: "Coil Comb. Sigma", field: "coil_combination_sigma",
-                help: "MCPC-3D-S smoothing of per-coil phase offsets, voxels (x y z); only for uncombined multi-coil data" });
 
             // Unwrapping
             rows.push(PipelineRow::AlgoSelect {
@@ -2494,8 +2539,21 @@ impl PipelineFormState {
                 }
             }
 
-            // ROMEO multi-echo params (only for ROMEO)
+            // ROMEO's own settings, phase offset removal (HIP — ROMEO only) among them.
             if !is_laplacian {
+                rows.push(PipelineRow::Toggle {
+                    label: "  Phase Offset Removal", field: "phase_offset_removal",
+                    help: "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only",
+                });
+                if self.phase_offset_removal {
+                    rows.push(PipelineRow::Param { label: "    Sigma", field: "phase_offset_sigma",
+                        help: "Gaussian smoothing sigma in voxels (x y z)" });
+                    // Part of the offset-removal path: without it the correction never runs.
+                    rows.push(PipelineRow::Toggle {
+                        label: "    Bipolar Correction", field: "bipolar_correction",
+                        help: "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)",
+                    });
+                }
                 rows.push(PipelineRow::Toggle {
                     label: "  Individual Mode", field: "romeo_individual",
                     help: "Unwrap each echo independently (recommended). Off = template-based temporal unwrapping.",
@@ -2647,7 +2705,7 @@ impl PipelineFormState {
         rows.push(PipelineRow::Separator);
 
         // BG Removal (hidden for the inversions that take the total field or wrapped phase)
-        if needs_bfr {
+        if qsm && needs_bfr {
             rows.push(self.section_header("bgremoval", "Background removal",
                 BF_OPTIONS.get(self.bf_algorithm).copied().unwrap_or("").to_string()));
             rows.push(PipelineRow::AlgoSelect {
@@ -2708,6 +2766,7 @@ impl PipelineFormState {
             rows.push(PipelineRow::Separator);
         }
 
+        if qsm {
         // QSM Inversion
         rows.push(self.section_header("inversion", "Dipole inversion",
             QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("").to_string()));
@@ -2978,7 +3037,7 @@ impl PipelineFormState {
             label: "QSM Reference", field: "qsm_reference",
             options: qsm_ref_options(), help: qsm_ref_help(),
         });
-        } // end if do_qsm (unwrapping/inversion/reference)
+        } // end if qsm (inversion/reference)
 
         Self::apply_section_collapse(rows)
     }
@@ -3718,13 +3777,46 @@ impl PipelineFormState {
     /// Whether the selected inversion reads a background-removed local field (QSM.rs
     /// `InversionInput::LocalField`), and so whether background removal is part of the run.
     pub fn inversion_needs_bg_removal(&self) -> bool {
-        let name = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
-        let Ok(algorithm) = serde_json::from_value::<crate::pipeline::config::QsmAlgorithm>(
-            serde_json::json!(name)) else { return true };
+        self.stage_config().is_none_or(|c| !crate::pipeline::runner::skips_bgremove(&c))
+    }
+
+    /// The settings that decide which reconstruction stages run — the inversion (and MEDI's SMV
+    /// mode) and the background removal — on an otherwise default config, or `None` for an
+    /// index no algorithm answers to.
+    fn stage_config(&self) -> Option<crate::pipeline::config::PipelineConfig> {
+        let name = |list: &[&str], i: usize| serde_json::json!(list.get(i).copied().unwrap_or(""));
         let mut config = crate::pipeline::config::PipelineConfig::default();
-        config.inversion.algorithm = algorithm;
+        config.inversion.algorithm = serde_json::from_value(name(QSM_ALGO_OPTIONS, self.qsm_algorithm)).ok()?;
         config.inversion.medi.smv = self.medi_smv;
-        !crate::pipeline::runner::skips_bgremove(&config)
+        config.bg_removal.algorithm = serde_json::from_value(name(BF_OPTIONS, self.bf_algorithm)).ok()?;
+        Some(config)
+    }
+
+    /// Whether field mapping runs in front of the inversion: `(for some runs, for every run)`.
+    ///
+    /// The runner's own rule ([`crate::pipeline::runner::field_mapping_runs`]), asked for the
+    /// echo count the run is limited to, or for one and for several echoes when that is unknown —
+    /// TGV maps the field of multi-echo data but reconstructs a single echo from its wrapped phase.
+    pub fn field_mapping_runs(&self) -> (bool, bool) {
+        let Some(config) = self.stage_config() else { return (true, true) };
+        let counts = match self.ctx.num_echoes {
+            Some(n) => vec![n],
+            None => vec![1, 2],
+        };
+        let runs: Vec<bool> = counts.iter()
+            .map(|&n| crate::pipeline::runner::field_mapping_runs(&config, n)).collect();
+        (runs.iter().any(|&r| r), runs.iter().all(|&r| r))
+    }
+
+    /// Whether rigid registration runs: for motion correction, or to co-register the
+    /// orientations of a multi-orientation group.
+    pub fn registration_runs(&self) -> bool {
+        self.motion_correction || (self.ctx.orientation_group && self.orientation_registration)
+    }
+
+    /// Whether QSM is reconstructed: Compute QSM is on, or another output forces it.
+    pub fn qsm_runs(&self) -> bool {
+        self.do_qsm || self.ctx.qsm_forced_by.is_some()
     }
 
     /// Whether any step of the masking recipe (sections, combined refinements, two-pass) is BET.
@@ -4671,12 +4763,30 @@ impl App {
         // SLURM mode requires account
         if self.form.execution_mode == 1 && self.form.slurm_account.trim().is_empty() {
             self.error_message = Some("SLURM Account is required".to_string());
-            self.active_tab = 3;
+            self.active_tab = TAB_EXECUTION;
             self.active_field = 4;
             return;
         }
 
         self.should_run = true;
+    }
+
+    /// Main-tab switching, the same in every tab's key handler: the digits `1`..=`N` (one per
+    /// entry of [`TAB_NAMES`]), Tab and Shift-Tab. Returns whether `key` switched tabs.
+    pub fn switch_tab(&mut self, key: KeyEvent) -> bool {
+        let n = TAB_NAMES.len();
+        let target = match key.code {
+            KeyCode::Char(c) => match c.to_digit(10) {
+                Some(d) if (1..=n as u32).contains(&d) => d as usize - 1,
+                _ => return false,
+            },
+            KeyCode::Tab => (self.active_tab + 1) % n,
+            KeyCode::BackTab => (self.active_tab + n - 1) % n,
+            _ => return false,
+        };
+        self.active_tab = target;
+        self.active_field = 0;
+        true
     }
 
     pub fn handle_key(&mut self, key: KeyEvent) {
@@ -4714,18 +4824,8 @@ impl App {
         if self.active_tab == TAB_METHODS {
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-                KeyCode::Char(c @ '1'..='6') => {
-                    self.active_tab = (c as usize) - ('1' as usize);
-                    self.active_field = 0;
-                }
-                KeyCode::Tab => {
-                    self.active_tab = (self.active_tab + 1) % TAB_NAMES.len();
-                    self.active_field = 0;
-                }
-                KeyCode::BackTab => {
-                    self.active_tab = (self.active_tab + TAB_NAMES.len() - 1) % TAB_NAMES.len();
-                    self.active_field = 0;
-                }
+                // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
+                _ if self.switch_tab(key) => {}
                 KeyCode::Up | KeyCode::Char('k') => {
                     self.methods_scroll_offset = self.methods_scroll_offset.saturating_sub(1);
                 }
@@ -4747,18 +4847,8 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
 
             // Tab switching
-            KeyCode::Char(c @ '1'..='6') => {
-                self.active_tab = (c as usize) - ('1' as usize);
-                self.active_field = 0;
-            }
-            KeyCode::Tab => {
-                self.active_tab = (self.active_tab + 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
-            KeyCode::BackTab => {
-                self.active_tab = (self.active_tab + TAB_NAMES.len() - 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
+            // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
+            _ if self.switch_tab(key) => {}
 
             // Field navigation (skip hidden fields)
             KeyCode::Up | KeyCode::Char('k')
@@ -4846,18 +4936,8 @@ impl App {
             }
             match key.code {
                 KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-                KeyCode::Char(c @ '1'..='6') => {
-                    self.active_tab = (c as usize) - ('1' as usize);
-                    self.active_field = 0;
-                }
-                KeyCode::Tab => {
-                    self.active_tab = (self.active_tab + 1) % TAB_NAMES.len();
-                    self.active_field = 0;
-                }
-                KeyCode::BackTab => {
-                    self.active_tab = (self.active_tab + TAB_NAMES.len() - 1) % TAB_NAMES.len();
-                    self.active_field = 0;
-                }
+                // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
+                _ if self.switch_tab(key) => {}
                 KeyCode::Up | KeyCode::Char('k') if self.active_field > 0 => {
                     self.active_field -= 1;
                 }
@@ -4915,18 +4995,8 @@ impl App {
         let button = ExampleState::button_index();
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-            KeyCode::Char(c @ '1'..='6') => {
-                self.active_tab = (c as usize) - ('1' as usize);
-                self.active_field = 0;
-            }
-            KeyCode::Tab => {
-                self.active_tab = (self.active_tab + 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
-            KeyCode::BackTab => {
-                self.active_tab = (self.active_tab + TAB_NAMES.len() - 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
+            // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
+            _ if self.switch_tab(key) => {}
             KeyCode::Up | KeyCode::Char('k') => {
                 if self.example_state.cursor == 0 {
                     // Back up into the IO fields above the picker.
@@ -5202,18 +5272,8 @@ impl App {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
 
             // Tab switching (same as other tabs)
-            KeyCode::Char(c @ '1'..='6') => {
-                self.active_tab = (c as usize) - ('1' as usize);
-                self.active_field = 0;
-            }
-            KeyCode::Tab => {
-                self.active_tab = (self.active_tab + 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
-            KeyCode::BackTab => {
-                self.active_tab = (self.active_tab + TAB_NAMES.len() - 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
+            // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
+            _ if self.switch_tab(key) => {}
 
             // Navigation within filter tree
             KeyCode::Up | KeyCode::Char('k') => self.filter_state.focus_prev(),
@@ -5396,18 +5456,8 @@ impl App {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
 
-            KeyCode::Char(c @ '1'..='6') => {
-                self.active_tab = (c as usize) - ('1' as usize);
-                self.active_field = 0;
-            }
-            KeyCode::Tab => {
-                self.active_tab = (self.active_tab + 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
-            KeyCode::BackTab => {
-                self.active_tab = (self.active_tab + TAB_NAMES.len() - 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
+            // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
+            _ if self.switch_tab(key) => {}
 
             // Navigation
             KeyCode::Up | KeyCode::Char('k') => {
@@ -5633,18 +5683,8 @@ impl App {
         match key.code {
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
 
-            KeyCode::Char(c @ '1'..='6') => {
-                self.active_tab = (c as usize) - ('1' as usize);
-                self.active_field = 0;
-            }
-            KeyCode::Tab => {
-                self.active_tab = (self.active_tab + 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
-            KeyCode::BackTab => {
-                self.active_tab = (self.active_tab + TAB_NAMES.len() - 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
+            // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
+            _ if self.switch_tab(key) => {}
 
             // Navigation
             KeyCode::Up | KeyCode::Char('k')
@@ -5926,6 +5966,49 @@ impl App {
             self.pipeline_state.mode = new_mode;
             self.pipeline_state.focus = 0;
         }
+        self.pipeline_state.ctx = self.row_context();
+    }
+
+    /// What the rest of the form decides about the pipeline tabs' rows (see [`RowContext`]).
+    pub fn row_context(&self) -> RowContext {
+        let ps = &self.pipeline_state;
+        let (group, algorithm, _) = self.filter_state.orientation_args();
+        // Whether QSM runs is the resolved config's answer — the same enforcement the run applies.
+        let qsm_forced = !ps.do_qsm
+            && super::command::config_from_app(self).is_ok_and(|c| c.pipeline.do_qsm);
+        RowContext {
+            qsm_forced_by: qsm_forced.then_some(
+                if self.form.do_smwi && ps.custom_qsm_tool.trim().is_empty() {
+                    "SMWI weights the magnitude by the χ map (Supplementary tab)"
+                } else {
+                    "the per-structure statistics need a map to summarise (Supplementary tab)"
+                }),
+            orientation_group: group.is_some(),
+            orientation_cosmos: algorithm == 0,
+            num_echoes: self.filter_state.num_echoes.trim().parse().ok(),
+            inputs: self.input_relevance(),
+        }
+    }
+
+    /// Which bring-your-own inputs the run can use, from what the form asks for (see
+    /// [`InputRelevance`]). Decides both whether their rows show and whether they are passed on.
+    pub fn input_relevance(&self) -> InputRelevance {
+        let ps = &self.pipeline_state;
+        let f = &self.form;
+        let sep = SEP_ALGO_OPTIONS.get(ps.separation_algorithm).copied().unwrap_or("");
+        // The R2'-based methods (qsmxt_config::enforce_separation_dependencies).
+        let sep_needs_r2prime = ps.do_chi_separation
+            && !matches!(sep, "r2star-qsm" | "decompose");
+        let r2prime = f.do_r2primemap || sep_needs_r2prime;
+        let r2prime_source = r2prime && ps.custom_r2prime_tool.trim().is_empty();
+        // R2' is measured as R2* − R2 unless it is always predicted (R2PRIMEnet, index 2).
+        let r2 = f.do_r2map || (r2prime_source && ps.r2prime_strategy != 2);
+        InputRelevance {
+            qsm: ps.do_chi_separation || f.do_analysis || f.do_smwi,
+            r2,
+            r2prime,
+            r2prime_source,
+        }
     }
 
     fn handle_pipeline_key(&mut self, key: KeyEvent) {
@@ -6032,18 +6115,8 @@ impl App {
 
             KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
 
-            KeyCode::Char(c @ '1'..='6') => {
-                self.active_tab = (c as usize) - ('1' as usize);
-                self.active_field = 0;
-            }
-            KeyCode::Tab => {
-                self.active_tab = (self.active_tab + 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
-            KeyCode::BackTab => {
-                self.active_tab = (self.active_tab + TAB_NAMES.len() - 1) % TAB_NAMES.len();
-                self.active_field = 0;
-            }
+            // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
+            _ if self.switch_tab(key) => {}
 
             // Reorder mask ops with Ctrl+Up/Down (must be before regular Up/Down)
             KeyCode::Up if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
@@ -6533,7 +6606,7 @@ impl App {
         match (self.active_tab, self.active_field) {
             (TAB_SUPPLEMENTARY, 0) => self.form.do_swi,
             (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap,
-            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap,
+            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap || self.r2star_map_forced(),
             (TAB_SUPPLEMENTARY, 9) => self.form.do_r2map || self.r2_map_forced(),
             (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
@@ -6552,64 +6625,60 @@ impl App {
         }
     }
 
-    /// Whether the selected chi-separation method needs R2' (the R2'-based methods:
-    /// chi-sep-ilsqr/medi, wavesep, hc-chisep — indices ≥ 2 in SEP_ALGO_OPTIONS).
-    fn separation_needs_r2prime(&self) -> bool {
-        self.pipeline_state.do_chi_separation && self.pipeline_state.separation_algorithm >= 2
+    /// The option that turns an output on although its own checkbox is off, if one does.
+    ///
+    /// The run's own rule (`requirements::implied_by` on the resolved config), so the ticked
+    /// checkbox, the refusal to untick it and what the run does cannot disagree: a supplied map
+    /// (custom dseg, R2 or R2') satisfies the need and forces nothing.
+    fn forced_by(&self, out: crate::pipeline::requirements::Output) -> Option<String> {
+        let config = super::command::config_from_app(self).ok()?;
+        crate::pipeline::requirements::implied_by(&config, out)
     }
-    /// R2' is forced when the method needs it and no custom R2' map is supplied.
-    fn r2prime_map_forced(&self) -> bool {
-        self.separation_needs_r2prime() && self.pipeline_state.custom_r2prime_tool.trim().is_empty()
-    }
-    /// Segmentation is forced by the per-structure statistics: they have no structures to average
-    /// over without it. Mirrors how chi-separation forces the relaxometry maps it consumes.
     fn segmentation_forced(&self) -> bool {
-        self.form.do_analysis || self.reference_region_selected()
+        self.forced_by(crate::pipeline::requirements::Output::Segmentation).is_some()
+    }
+    fn r2_map_forced(&self) -> bool {
+        self.forced_by(crate::pipeline::requirements::Output::R2).is_some()
+    }
+    fn r2prime_map_forced(&self) -> bool {
+        self.forced_by(crate::pipeline::requirements::Output::R2prime).is_some()
+    }
+    fn r2star_map_forced(&self) -> bool {
+        self.forced_by(crate::pipeline::requirements::Output::R2star).is_some()
     }
 
-    /// Whether the QSM reference is a parcellation region, which only SynthSeg can measure.
-    fn reference_region_selected(&self) -> bool {
+    /// Whether QSM is reconstructed: its toggle, or an output that forces it.
+    fn qsm_effective(&self) -> bool {
         self.pipeline_state.do_qsm
-            && qsm_reference_is_region(self.pipeline_state.get_select("qsm_reference"))
+            || super::command::config_from_app(self).is_ok_and(|c| c.pipeline.do_qsm)
     }
-    /// R2 is forced only when needed to compute a forced R2' (and no custom R2 map).
-    fn r2_map_forced(&self) -> bool {
-        self.r2prime_map_forced() && self.pipeline_state.custom_r2_tool.trim().is_empty()
+
+    /// Refuse to untick a forced output: say what forces it.
+    fn refuse_forced(&mut self, what: &str, out: crate::pipeline::requirements::Output) -> bool {
+        match self.forced_by(out) {
+            Some(why) => {
+                self.error_message = Some(format!(
+                    "{what} is required by {why} — change or turn that off first (or supply the map)."));
+                true
+            }
+            None => false,
+        }
     }
 
     fn toggle_checkbox(&mut self) {
         match (self.active_tab, self.active_field) {
             (TAB_SUPPLEMENTARY, 0) => self.form.do_swi = !self.form.do_swi,
             (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap = !self.form.do_t2starmap,
-            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap = !self.form.do_r2starmap,
-            (TAB_SUPPLEMENTARY, 9) => {
-                if self.r2_map_forced() {
-                    self.error_message = Some("R2 map is required by the selected chi-separation method — change method, disable chi-separation, or set a custom R2 tool first.".to_string());
-                } else {
-                    self.form.do_r2map = !self.form.do_r2map;
-                }
-            }
-            (TAB_SUPPLEMENTARY, 10) => {
-                if self.r2prime_map_forced() {
-                    self.error_message = Some("R2' map is required by the selected chi-separation method — change method, disable chi-separation, or set a custom R2' tool first.".to_string());
-                } else {
-                    self.form.do_r2primemap = !self.form.do_r2primemap;
-                }
-            }
+            // Refused (with the reason) while another output forces it on.
+            (TAB_SUPPLEMENTARY, 8) if !self.refuse_forced("The R2* map", crate::pipeline::requirements::Output::R2star) => self.form.do_r2starmap = !self.form.do_r2starmap,
+            // Refused (with the reason) while another output forces it on.
+            (TAB_SUPPLEMENTARY, 9) if !self.refuse_forced("The R2 map", crate::pipeline::requirements::Output::R2) => self.form.do_r2map = !self.form.do_r2map,
+            // Refused (with the reason) while another output forces it on.
+            (TAB_SUPPLEMENTARY, 10) if !self.refuse_forced("The R2' map", crate::pipeline::requirements::Output::R2prime) => self.form.do_r2primemap = !self.form.do_r2primemap,
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom = !self.form.export_dicom,
             (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi = !self.form.do_smwi,
-            (TAB_SUPPLEMENTARY, 16) => {
-                if self.segmentation_forced() {
-                    self.error_message = Some(if self.reference_region_selected() {
-                        format!("Segmentation is required by the QSM reference ({}) — set QSM Reference to mean or none first.",
-                                qsm_reference_spec(self.pipeline_state.get_select("qsm_reference")))
-                    } else {
-                        "Segmentation is required by the per-structure statistics — turn those off first.".to_string()
-                    });
-                } else {
-                    self.form.do_segmentation = !self.form.do_segmentation;
-                }
-            }
+            // Refused (with the reason) while another output forces it on.
+            (TAB_SUPPLEMENTARY, 16) if !self.refuse_forced("Segmentation", crate::pipeline::requirements::Output::Segmentation) => self.form.do_segmentation = !self.form.do_segmentation,
             (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging = !self.form.synthseg_flip_averaging,
             (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup = !self.form.synthseg_topology_cleanup,
             (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis = !self.form.do_analysis,
@@ -6631,14 +6700,18 @@ impl App {
             (TAB_SUPPLEMENTARY, 1..=6) => self.form.do_swi,
             // SMWI settings (13-15) likewise under Compute SMWI (12)
             (TAB_SUPPLEMENTARY, 13..=15) => self.form.do_smwi,
-            // The reference row (23) is always reachable: picking a region is how a user turns
-            // segmentation *on* from here, so gating it behind segmentation would deadlock.
-            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) => true,
-            // SynthSeg settings (17-22), the per-structure statistics among them, under
-            // Segment (16). Whatever forces segmentation — the statistics, or a region
-            // reference — reveals these too: the checkbox above then reads as checked, and hiding
-            // the settings that shape the segmentation it promises would be a lie.
-            (TAB_SUPPLEMENTARY, 17..=22) => self.form.do_segmentation || self.segmentation_forced(),
+            // The reference row (23) needs no segmentation to be reachable — picking a region is
+            // how a user turns segmentation *on* from here, so gating it behind segmentation would
+            // deadlock — but it references χ, so it only applies when QSM is reconstructed.
+            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) => self.qsm_effective(),
+            // The statistics (22) are reachable on their own: a supplied segmentation satisfies
+            // them without SynthSeg, and hiding them then would leave them impossible to untick.
+            (TAB_SUPPLEMENTARY, 22) => true,
+            // SynthSeg settings (17-21) under Segment (16). Whatever forces segmentation — the
+            // statistics, or a region reference, without a supplied dseg — reveals these too: the
+            // checkbox above then reads as checked, and hiding the settings that shape the
+            // segmentation it promises would be a lie.
+            (TAB_SUPPLEMENTARY, 17..=21) => self.form.do_segmentation || self.segmentation_forced(),
             // SLURM fields (4-9) only visible in SLURM mode
             (TAB_EXECUTION, 4..=9) => self.form.execution_mode == 1,
             // Dry Run and Num Processes only in Local mode
@@ -6690,7 +6763,7 @@ impl App {
         match (tab, field) {
             (TAB_SUPPLEMENTARY, 0) => self.form.do_swi,
             (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap,
-            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap,
+            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap || self.r2star_map_forced(),
             (TAB_SUPPLEMENTARY, 9) => self.form.do_r2map || self.r2_map_forced(),
             (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
             (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
@@ -7302,7 +7375,7 @@ mod tests {
         app.handle_key(key(KeyCode::F(5)));
         assert!(!app.should_run);
         assert!(app.error_message.as_deref() == Some("SLURM Account is required"));
-        assert_eq!(app.active_tab, 3); // navigated to Execution tab
+        assert_eq!(app.active_tab, TAB_EXECUTION); // navigated to Execution tab
     }
 
     // --- Pipeline state selects ---
@@ -9311,7 +9384,7 @@ mod tests {
         app.try_run();
         assert!(!app.should_run);
         assert!(app.error_message.as_deref().unwrap().contains("SLURM Account"));
-        assert_eq!(app.active_tab, 3);
+        assert_eq!(app.active_tab, TAB_EXECUTION);
         assert_eq!(app.active_field, 4);
     }
 
@@ -9698,16 +9771,17 @@ mod tests {
 
         // Off by default: unchecked, and its settings hidden.
         assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16));
-        for f in 17..=22 {
+        for f in 17..=21 {
             assert!(!app.is_field_visible(TAB_SUPPLEMENTARY, f), "field {f} should be hidden");
         }
+        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 22), "the statistics are reachable on their own");
 
         // A config or CLI run can arrive with the statistics already on; segmentation is then in
         // force, so the block must be visible rather than hiding a setting that is taking effect.
         app.form.do_analysis = true;
         assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16),
                 "segmentation is forced, so it must read as checked");
-        for f in 17..=22 {
+        for f in 17..=21 {
             assert!(app.is_field_visible(TAB_SUPPLEMENTARY, f),
                     "field {f} shapes the forced segmentation and must be reachable");
         }
@@ -9718,7 +9792,7 @@ mod tests {
         assert!(!app.form.do_segmentation, "the underlying flag is untouched");
         assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "still forced, so still checked");
         let msg = app.error_message.clone().expect("a refusal should explain itself");
-        assert!(msg.contains("per-structure statistics"), "unhelpful message: {msg}");
+        assert!(msg.contains("--do-analysis"), "unhelpful message: {msg}");
 
         // With the statistics off again it is an ordinary toggle.
         app.form.do_analysis = false;
@@ -9787,17 +9861,184 @@ mod tests {
             assert!(has_section(&ps, "fieldmap"), "{alg} still needs a field map");
         }
         // End-to-end from wrapped phase: neither.
-        for alg in ["iqsm", "iqsm-plus", "tgv"] {
+        for alg in ["iqsm", "iqsm-plus"] {
             ps.qsm_algorithm = idx(alg);
             assert!(!has_section(&ps, "bgremoval"), "{alg} takes wrapped phase");
             assert!(!has_section(&ps, "fieldmap"), "{alg} takes wrapped phase");
         }
+        // Total-field methods with their own background removal still map the field: QSMART,
+        // TFI, and TGV on multi-echo data (QSM.rs `InversionConfig::input`).
+        for alg in ["qsmart", "tfi", "tgv"] {
+            ps.qsm_algorithm = idx(alg);
+            assert!(!has_section(&ps, "bgremoval"), "{alg} removes the background itself");
+            assert!(has_section(&ps, "fieldmap"), "{alg} reads the total field");
+        }
+        // TGV on a single echo reconstructs from its wrapped phase.
+        ps.qsm_algorithm = idx("tgv");
+        ps.ctx.num_echoes = Some(1);
+        assert!(!has_section(&ps, "fieldmap"), "single-echo TGV takes wrapped phase");
+        ps.ctx.num_echoes = Some(4);
+        assert!(has_section(&ps, "fieldmap"), "multi-echo TGV maps the field");
+        ps.ctx.num_echoes = None;
+        // iQFM makes the local field from phase: no field mapping in front of it.
+        ps.qsm_algorithm = idx("rts");
+        ps.bf_algorithm = BF_OPTIONS.iter().position(|o| *o == "iqfm").unwrap();
+        assert!(!has_section(&ps, "fieldmap"), "iQFM unwraps and removes the background itself");
+        ps.bf_algorithm = 0;
         // LSQR and HEIDI are ordinary local-field inversions.
         for alg in ["lsqr", "heidi"] {
             ps.qsm_algorithm = idx(alg);
             assert!(has_section(&ps, "bgremoval"), "{alg} inverts the local field");
             assert!(has_section(&ps, "fieldmap"), "{alg} needs a field map");
         }
+    }
+
+    /// Compute QSM off hides only the reconstruction: the geometry, motion correction, coil
+    /// combination, masking and supplied segmentation serve SWI, T2*/R2*, R2' and the
+    /// segmentation as much as QSM. An output that forces QSM keeps the reconstruction on show.
+    #[test]
+    fn qsm_off_keeps_the_preprocessing_rows() {
+        let fields = |app: &mut App| -> Vec<String> {
+            app.sync_pipeline_mode();
+            app.pipeline_state.visible_rows().iter().filter_map(|r| match r {
+                PipelineRow::AlgoSelect { field, .. } | PipelineRow::Param { field, .. }
+                | PipelineRow::Toggle { field, .. } => Some(field.to_string()),
+                PipelineRow::SectionHeader { id, .. } => Some(format!("#{id}")),
+                _ => None,
+            }).collect()
+        };
+        let mut app = App::new();
+        app.active_tab = TAB_QSM;
+        app.pipeline_state.collapsed_sections.clear();
+        app.pipeline_state.do_qsm = false;
+        let f = fields(&mut app);
+        for kept in ["obliquity_threshold", "inhomogeneity_correction", "ignore_slice_gap", "output_space",
+                     "custom_dseg_tool", "motion_correction", "coil_combination_sigma", "#masking",
+                     "mask_preset", "custom_mask_tool", "two_pass"] {
+            assert!(f.contains(&kept.to_string()), "{kept} hidden with QSM off: {f:?}");
+        }
+        for gone in ["#fieldmap", "#bgremoval", "#inversion", "#reference", "crop_to_mask", "fft_padding"] {
+            assert!(!f.contains(&gone.to_string()), "{gone} shown with QSM off: {f:?}");
+        }
+        // Motion correction's own settings follow it, not QSM.
+        app.pipeline_state.toggle("motion_correction");
+        let f = fields(&mut app);
+        assert!(f.contains(&"motion_reference".to_string()) && f.contains(&"reg_levels".to_string()), "{f:?}");
+
+        // SMWI needs a χ map: QSM runs regardless, and its settings are on show, with the reason.
+        app.form.do_smwi = true;
+        let f = fields(&mut app);
+        assert!(f.contains(&"#inversion".to_string()) && f.contains(&"#fieldmap".to_string()), "{f:?}");
+        assert!(app.pipeline_state.visible_rows().iter().any(|r|
+            matches!(r, PipelineRow::Note { text } if text.contains("SMWI"))), "the forced QSM says why");
+    }
+
+    /// Bipolar correction is part of HIP phase offset removal, which only ROMEO runs.
+    #[test]
+    fn bipolar_correction_needs_romeo_and_offset_removal() {
+        let mut app = App::new();
+        app.pipeline_state.collapsed_sections.clear();
+        let shows = |app: &App| app.pipeline_state.visible_rows().iter().any(|r|
+            matches!(r, PipelineRow::Toggle { field: "bipolar_correction", .. }));
+        app.pipeline_state.bipolar_correction = true;
+        let passed = |app: &App| super::super::command::pipeline_args_from_app(app).bipolar_correction;
+        assert!(app.pipeline_state.phase_offset_removal && app.pipeline_state.unwrapping_algorithm == 0);
+        assert!(shows(&app) && passed(&app));
+        app.pipeline_state.phase_offset_removal = false;
+        assert!(!shows(&app) && !passed(&app), "no offset removal, no bipolar correction");
+        app.pipeline_state.phase_offset_removal = true;
+        app.pipeline_state.unwrapping_algorithm = 1;
+        assert!(!shows(&app) && !passed(&app), "Laplacian unwrapping runs no offset removal");
+    }
+
+    /// The bring-your-own inputs and the R2' source are reachable wherever a map they feed is
+    /// made, not only with χ-separation on.
+    #[test]
+    fn supplied_inputs_follow_the_maps_that_read_them() {
+        let fields = |app: &mut App| -> Vec<String> {
+            app.active_tab = TAB_SEPARATION;
+            app.sync_pipeline_mode();
+            app.pipeline_state.visible_rows().iter().filter_map(|r| match r {
+                PipelineRow::AlgoSelect { field, .. } | PipelineRow::Param { field, .. }
+                | PipelineRow::Toggle { field, .. } => Some(field.to_string()),
+                _ => None,
+            }).collect()
+        };
+        let has = |f: &[String], x: &str| f.iter().any(|y| y == x);
+        let mut app = App::new();
+        let f = fields(&mut app);
+        assert_eq!(f, vec!["do_chi_separation".to_string()], "nothing reads a supplied map");
+
+        app.form.do_r2primemap = true;
+        let f = fields(&mut app);
+        assert!(has(&f, "custom_r2prime_tool") && has(&f, "custom_r2_tool") && has(&f, "r2prime_strategy"), "{f:?}");
+        assert!(!has(&f, "custom_qsm_tool"), "{f:?}");
+        // R2PRIMEnet predicts R2' from R2*: no R2 is read.
+        app.pipeline_state.r2prime_strategy = 2;
+        assert!(!has(&fields(&mut app), "custom_r2_tool"));
+        // A supplied R2' replaces the computation: its source no longer applies, its row stays.
+        app.pipeline_state.r2prime_strategy = 0;
+        app.pipeline_state.custom_r2prime_tool = "*".into();
+        let f = fields(&mut app);
+        assert!(has(&f, "custom_r2prime_tool") && !has(&f, "r2prime_strategy") && !has(&f, "custom_r2_tool"), "{f:?}");
+
+        let mut app = App::new();
+        app.form.do_analysis = true;
+        assert!(has(&fields(&mut app), "custom_qsm_tool"), "the statistics can read a supplied χ map");
+        let mut app = App::new();
+        app.form.do_r2map = true;
+        let f = fields(&mut app);
+        assert!(has(&f, "custom_r2_tool") && !has(&f, "custom_r2prime_tool"), "{f:?}");
+    }
+
+    /// A supplied segmentation satisfies the statistics and a region reference: SynthSeg is not
+    /// forced, so its checkbox reads as the user left it and can be toggled.
+    #[test]
+    fn a_custom_dseg_forces_no_synthseg() {
+        let mut app = App::new();
+        app.active_tab = TAB_SUPPLEMENTARY;
+        app.form.do_analysis = true;
+        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "forced without a supplied dseg");
+        app.pipeline_state.custom_dseg_tool = "freesurfer".into();
+        assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "a supplied dseg forces nothing");
+        assert!(!app.is_field_visible(TAB_SUPPLEMENTARY, 17), "no SynthSeg settings to show");
+        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 22), "the statistics stay reachable");
+        app.active_field = 16;
+        app.toggle_checkbox();
+        assert!(app.form.do_segmentation && app.error_message.is_none());
+        // The same for a region reference.
+        let mut app = App::new();
+        app.pipeline_state.set_select("qsm_reference", qsm_ref_options().iter().position(|o| *o == "thalamus").unwrap());
+        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16));
+        app.pipeline_state.custom_dseg_tool = "*".into();
+        assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16));
+    }
+
+    /// R2* is forced by what reads it (R2*-QSM, a computed R2'), and reads as checked.
+    #[test]
+    fn r2star_reads_as_forced_when_needed() {
+        let mut app = App::new();
+        assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 8));
+        app.form.do_r2primemap = true;
+        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 8), "R2' = R2* - R2");
+        app.active_tab = TAB_SUPPLEMENTARY;
+        app.active_field = 8;
+        app.toggle_checkbox();
+        assert!(!app.form.do_r2starmap && app.error_message.as_deref().is_some_and(|m| m.contains("--do-r2primemap")));
+    }
+
+    /// The help bar's tab hint and the digit keys both follow TAB_NAMES.
+    #[test]
+    fn every_tab_has_a_digit_and_nothing_else_does() {
+        let mut app = App::new();
+        for (i, _) in TAB_NAMES.iter().enumerate() {
+            app.active_tab = 0;
+            assert!(app.switch_tab(key(KeyCode::Char(char::from_digit(i as u32 + 1, 10).unwrap()))));
+            assert_eq!(app.active_tab, i);
+        }
+        let past = char::from_digit(TAB_NAMES.len() as u32 + 1, 10).unwrap();
+        assert!(!app.switch_tab(key(KeyCode::Char(past))));
+        assert!(!app.switch_tab(key(KeyCode::Char('0'))));
     }
 
     /// The reliable-mask editor only exists once two-pass is on, and it is the ordinary mask

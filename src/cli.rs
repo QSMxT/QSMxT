@@ -1692,6 +1692,20 @@ pub struct SlurmArgs {
     #[arg(long)]
     pub clean_intermediates: bool,
 
+    /// Enable debug logging (in every job)
+    #[arg(long)]
+    pub debug: bool,
+
+    /// Optional source DICOM directory; inherit patient/study identity from the original DICOMs
+    /// when exporting (used with --export-dicom; each run's job exports its maps)
+    #[arg(long)]
+    pub source_dicom: Option<PathBuf>,
+
+    /// Restrict DICOM export to these maps (default: all produced); values as for `qsmxt run`
+    /// (used with --export-dicom)
+    #[arg(long, num_args = 1.., value_delimiter = ',')]
+    pub dicom_outputs: Option<Vec<String>>,
+
     #[command(flatten)]
     pub pipeline: PipelineArgs,
 }

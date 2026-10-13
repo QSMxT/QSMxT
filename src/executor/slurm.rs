@@ -24,6 +24,12 @@ pub struct SlurmOptions<'a> {
     pub num_echoes: Option<usize>,
     pub force: bool,
     pub clean_intermediates: bool,
+    /// Debug logging, in every job.
+    pub debug: bool,
+    /// DICOM export (`--export-dicom`, in the config) runs in each run's job, where its maps are
+    /// produced: the source DICOM directory and the maps to export travel with those jobs.
+    pub source_dicom: Option<&'a Path>,
+    pub dicom_outputs: Option<&'a [String]>,
     /// The `qsmxt slurm …` invocation, recorded as the provenance command.
     pub command_line: String,
 }
@@ -112,6 +118,17 @@ pub fn generate_all_slurm(
     if opts.force {
         shared_flags.push_str(" \\\n  --force");
     }
+    if opts.debug {
+        shared_flags.push_str(" \\\n  --debug");
+    }
+    // DICOM export happens per run, after its pipeline (as in a local run): the run jobs only.
+    let mut run_flags = shared_flags.clone();
+    if let Some(dir) = opts.source_dicom {
+        run_flags.push_str(&format!(" \\\n  --source-dicom {}", q(dir)));
+    }
+    if let Some(outputs) = opts.dicom_outputs.filter(|o| !o.is_empty()) {
+        run_flags.push_str(&format!(" \\\n  --dicom-outputs {}", shell_quote(&outputs.join(","))));
+    }
 
     let mut run_scripts = Vec::new();
     for run in runs {
@@ -131,7 +148,7 @@ pub fn generate_all_slurm(
             None => mem_gb_for(estimate),
         };
         let script = format!(
-            "{header}exec {bin} run {common} \\\n  --include {include} \\\n  --no-dataset-steps \\\n  --n-procs {cpus}{shared_flags}\n",
+            "{header}exec {bin} run {common} \\\n  --include {include} \\\n  --no-dataset-steps \\\n  --n-procs {cpus}{run_flags}\n",
             header = sbatch_header(&job_name, &slurm_dir, opts, mem_gb),
             bin = q(&qsmxt_bin),
             include = shell_quote(&run.key.to_string()),
@@ -291,6 +308,9 @@ mod tests {
             num_echoes: None,
             force: false,
             clean_intermediates: false,
+            debug: false,
+            source_dicom: None,
+            dicom_outputs: None,
             command_line: "qsmxt slurm /bids --account acct".to_string(),
         }
     }
@@ -338,6 +358,59 @@ mod tests {
 
         let content = std::fs::read_to_string(&jobs.run_scripts[0]).unwrap();
         assert!(content.contains("--include 'sub-01_ses-pre_MEGRE'"), "Should contain --include with run key");
+    }
+
+    /// `--debug` reaches every job; the DICOM export settings reach the run jobs, where the
+    /// export happens, and not the aggregation job, which has no such flags.
+    #[test]
+    fn debug_and_dicom_export_settings_reach_the_jobs() {
+        let dir = tempfile::tempdir().unwrap();
+        let runs = vec![dummy_run_with_key("01", None)];
+        let mut config = PipelineConfig::default();
+        config.pipeline.export_dicom = true;
+        let outputs = vec!["Chimap".to_string(), "swi".to_string()];
+        let o = SlurmOptions {
+            debug: true,
+            source_dicom: Some(Path::new("/dicom dir")),
+            dicom_outputs: Some(&outputs),
+            ..opts("acct", None, Some(8))
+        };
+        let jobs = generate_all_slurm(&runs, Path::new("/bids"), dir.path(), &config, &o).unwrap();
+        let run = std::fs::read_to_string(&jobs.run_scripts[0]).unwrap();
+        assert!(run.contains("--debug"), "{run}");
+        assert!(run.contains("--source-dicom '/dicom dir'"), "{run}");
+        assert!(run.contains("--dicom-outputs 'Chimap,swi'"), "{run}");
+        let agg = std::fs::read_to_string(&jobs.aggregate_script).unwrap();
+        assert!(agg.contains("--debug"), "{agg}");
+        assert!(!agg.contains("--source-dicom") && !agg.contains("--dicom-outputs"), "{agg}");
+
+        // The run job's command line is one `qsmxt run` invocation clap accepts.
+        let cmd: String = run.lines().skip_while(|l| !l.starts_with("exec "))
+            .map(|l| l.trim_end_matches('\\').trim()).collect::<Vec<_>>().join(" ");
+        let argv = shell_words(&cmd["exec ".len()..]);
+        let mut argv: Vec<&str> = argv.iter().map(String::as_str).collect();
+        argv[0] = "qsmxt";
+        let parsed = <crate::cli::Cli as clap::Parser>::try_parse_from(&argv).unwrap_or_else(|e| panic!("{cmd}: {e}"));
+        let crate::cli::Command::Run(r) = parsed.command else { panic!("not run: {cmd}") };
+        assert!(r.debug);
+        assert_eq!(r.source_dicom.as_deref(), Some(Path::new("/dicom dir")));
+        assert_eq!(r.dicom_outputs, Some(outputs.clone()));
+    }
+
+    /// Split a command line the way the job's bash does, for the single-quoted words it uses.
+    fn shell_words(s: &str) -> Vec<String> {
+        let (mut out, mut cur, mut quoted, mut any) = (Vec::new(), String::new(), false, false);
+        for c in s.chars() {
+            match c {
+                '\'' => { quoted = !quoted; any = true; }
+                c if c.is_whitespace() && !quoted => {
+                    if any { out.push(std::mem::take(&mut cur)); any = false; }
+                }
+                c => { cur.push(c); any = true; }
+            }
+        }
+        if any { out.push(cur); }
+        out
     }
 
     #[test]

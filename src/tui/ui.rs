@@ -2051,7 +2051,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         ]
     } else {
         vec![
-            Span::styled(" 1-4", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(format!(" 1-{}", TAB_NAMES.len()), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(":Tabs  ", Style::default().fg(Color::DarkGray)),
             Span::styled("\u{2191}\u{2193}", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(":Navigate  ", Style::default().fg(Color::DarkGray)),
@@ -2318,11 +2318,29 @@ mod tests {
 
     #[test]
     fn test_draw_all_tabs() {
+        // Every tab, with its sections open and with the settings that reveal the most rows:
+        // QSM off and forced back on by SMWI, a grouping, motion correction, every output.
         let mut app = App::new();
-        for tab in 0..4 {
-            app.active_tab = tab;
-            app.active_field = 0;
-            let _ = render_app(&mut app);
+        app.pipeline_state.collapsed_sections.clear();
+        for setup in [|_: &mut App| {}, |a: &mut App| {
+            a.pipeline_state.do_qsm = false;
+            a.form.do_smwi = true;
+            a.form.do_swi = true;
+            a.form.do_analysis = true;
+            a.form.do_r2primemap = true;
+            a.form.export_dicom = true;
+            a.filter_state.orientation_group = "acq".into();
+            a.pipeline_state.motion_correction = true;
+            a.pipeline_state.do_chi_separation = true;
+        }] {
+            setup(&mut app);
+            for (tab, name) in TAB_NAMES.iter().enumerate() {
+                app.active_tab = tab;
+                app.active_field = 0;
+                let text = screen_text(&render_app(&mut app));
+                assert!(text.contains(&format!("{}:{name}", tab + 1)), "tab bar on tab {tab}");
+                assert!(text.contains(&format!("1-{}", TAB_NAMES.len())), "help bar names every tab digit");
+            }
         }
     }
 

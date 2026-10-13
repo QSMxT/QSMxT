@@ -486,9 +486,7 @@ pub fn run_pipeline_cached(
         // (which produces the local field directly from phase).
         // Which field the inversion takes is QSM.rs's call (`InversionConfig::input`, #265);
         // iQFM in front of a local-field inversion makes that field from phase itself.
-        let input = qsmxt_config::bridge::inversion_input(config, meta.n_echoes);
-        let need_field = input.needs_field_mapping()
-            && !(input.needs_bg_removal() && config.bg_removal.algorithm == BfAlgorithm::Iqfm);
+        let need_field = field_mapping_runs(config, meta.n_echoes);
 
         // The field map is computed once, on the brain mask, and shared by both passes. The
         // reliable mask is a subset of it, so its pass needs no field values the shared map does
@@ -3510,6 +3508,18 @@ fn reconstruct(
         QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => stage_iqsm(ctx, pass, progress),
         _ => stage_standard_qsm(ctx, pass, field_path, progress),
     }
+}
+
+/// Whether field mapping (unwrapping and B0 estimation) runs for a run with `n_echoes` echoes.
+///
+/// QSM.rs's `InversionConfig::input` decides (#265): the wrapped-phase methods (iQSM, iQSM+,
+/// single-echo TGV) skip it, the total-field ones (TFI, multi-echo TGV, QSMART, ...) need it. iQFM
+/// in front of a local-field inversion makes that field from phase itself. The TUI shows the
+/// field-mapping settings by the same rule.
+pub(crate) fn field_mapping_runs(config: &PipelineConfig, n_echoes: usize) -> bool {
+    let input = qsmxt_config::bridge::inversion_input(config, n_echoes);
+    input.needs_field_mapping()
+        && !(input.needs_bg_removal() && config.bg_removal.algorithm == BfAlgorithm::Iqfm)
 }
 
 /// Whether the configured inversion runs without a separate background-removal stage, and so

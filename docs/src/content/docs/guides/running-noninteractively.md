@@ -350,7 +350,8 @@ resource requests, and run selection).
 
 `qsmxt slurm` accepts the same pipeline options as `qsmxt run` (algorithms,
 masking, per-algorithm parameters, `--config`, `--num-echoes`, `--force`,
-`--clean-intermediates`, …), so any `qsmxt run` command becomes a SLURM one by
+`--clean-intermediates`, `--debug`, and DICOM export's `--source-dicom` and
+`--dicom-outputs`, …), so any `qsmxt run` command becomes a SLURM one by
 swapping the subcommand and adding the scheduler flags:
 
 ```sh
