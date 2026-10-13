@@ -494,11 +494,71 @@ impl NiftiState {
 // order can be changed in ONE place — reorder `TAB_NAMES` and update these — without hunting
 // down hardcoded `(tab, field)` literals across the file.
 pub const TAB_INPUT: usize = 0;
-pub const TAB_QSM: usize = 1;
-pub const TAB_SEPARATION: usize = 2;
-pub const TAB_SUPPLEMENTARY: usize = 3;
-pub const TAB_EXECUTION: usize = 4;
-pub const TAB_METHODS: usize = 5;
+pub const TAB_PREPROCESSING: usize = 1;
+pub const TAB_QSM: usize = 2;
+pub const TAB_SEPARATION: usize = 3;
+pub const TAB_OUTPUTS: usize = 4;
+pub const TAB_EXECUTION: usize = 5;
+pub const TAB_METHODS: usize = 6;
+
+/// A sub-tab of a row-based tab: the second tab row, switched with `[` and `]`. A tab with a
+/// single page (Separation, Execution) shows no second row.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Page {
+    Geometry,
+    Masking,
+    Motion,
+    /// The QSM tab while QSM is not reconstructed: only the switch that turns it on.
+    QsmOff,
+    FieldMap,
+    Background,
+    Inversion,
+    MultiOrientation,
+    Reference,
+    Separation,
+    SwiSmwi,
+    Relaxometry,
+    Segmentation,
+    Export,
+    Execution,
+}
+
+impl Page {
+    /// The sub-tab's title.
+    pub fn label(self) -> &'static str {
+        match self {
+            Page::Geometry => "Geometry",
+            Page::Masking => "Masking",
+            Page::Motion => "Motion",
+            Page::QsmOff => "QSM",
+            Page::FieldMap => "Field map",
+            Page::Background => "Background",
+            Page::Inversion => "Inversion",
+            Page::MultiOrientation => "Multi-orientation",
+            Page::Reference => "Reference",
+            Page::Separation => "Separation",
+            Page::SwiSmwi => "SWI/SMWI",
+            Page::Relaxometry => "Relaxometry",
+            Page::Segmentation => "Segmentation",
+            Page::Export => "Export",
+            Page::Execution => "Execution",
+        }
+    }
+
+    /// Whether the page's rows are the pipeline form's ([`PipelineFormState::visible_rows`])
+    /// rather than built by the App from both forms.
+    pub fn is_pipeline(self) -> bool {
+        !matches!(self, Page::SwiSmwi | Page::Relaxometry | Page::Segmentation | Page::Export | Page::Execution)
+    }
+
+    /// Every page, in tab order.
+    #[cfg(test)]
+    pub const ALL: [Page; 15] = [
+        Page::Geometry, Page::Masking, Page::Motion, Page::QsmOff, Page::FieldMap, Page::Background,
+        Page::Inversion, Page::MultiOrientation, Page::Reference, Page::Separation, Page::SwiSmwi,
+        Page::Relaxometry, Page::Segmentation, Page::Export, Page::Execution,
+    ];
+}
 
 // ─── Example dataset state ───
 
@@ -715,11 +775,12 @@ fn expand_tilde(path: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(path)
 }
 
-pub const TAB_NAMES: [&str; 6] = [
+pub const TAB_NAMES: [&str; 7] = [
     "Input",
+    "Preprocessing",
     "QSM",
     "Separation",
-    "Supplementary",
+    "Other outputs",
     "Execution",
     "Methods",
 ];
@@ -733,10 +794,6 @@ pub enum FilterFocus {
     Exclude,
     /// The orientation-group pattern: which runs are the same object at a different angle.
     OrientationGroup,
-    /// COSMOS or STI — only reachable when a pattern is set.
-    OrientationAlgorithm,
-    /// Regularization for whichever of the two is selected.
-    OrientationLambda,
     TreeNode(usize), // index into the flattened visible node list
     NumEchoes,
 }
@@ -780,7 +837,6 @@ enum FilterTextField {
     Include,
     Exclude,
     OrientationGroup,
-    OrientationLambda,
 }
 
 /// A single visible row in the flattened tree (for navigation/rendering).
@@ -813,8 +869,6 @@ pub struct FilterTreeState {
     /// Index into [`ORIENTATION_ALGORITHMS`].
     pub orientation_algorithm: usize,
     pub orientation_lambda: String,
-    pub orientation_lambda_editing: bool,
-    pub orientation_lambda_cursor: usize,
     pub scanned_bids_dir: Option<String>,
     pub scroll_offset: usize,
     /// Set when the user manually toggles tree checkboxes (pattern may not match)
@@ -843,8 +897,6 @@ impl Default for FilterTreeState {
             orientation_cursor: 0,
             orientation_algorithm: 0,
             orientation_lambda: String::new(),
-            orientation_lambda_editing: false,
-            orientation_lambda_cursor: 0,
             scanned_bids_dir: None,
             scroll_offset: 0,
             manual_override: false,
@@ -890,15 +942,7 @@ impl FilterTreeState {
             FilterFocus::Exclude => {
                 self.focus = FilterFocus::OrientationGroup;
             }
-            FilterFocus::OrientationGroup => {
-                self.focus = if self.multi_orientation_on() {
-                    FilterFocus::OrientationAlgorithm
-                } else {
-                    self.first_tree_focus()
-                };
-            }
-            FilterFocus::OrientationAlgorithm => self.focus = FilterFocus::OrientationLambda,
-            FilterFocus::OrientationLambda => self.focus = self.first_tree_focus(),
+            FilterFocus::OrientationGroup => self.focus = self.first_tree_focus(),
             FilterFocus::TreeNode(i) => {
                 let rows = self.visible_rows().len();
                 if i + 1 < rows {
@@ -917,16 +961,14 @@ impl FilterTreeState {
             FilterFocus::Include => {} // already at top
             FilterFocus::Exclude => self.focus = FilterFocus::Include,
             FilterFocus::OrientationGroup => self.focus = FilterFocus::Exclude,
-            FilterFocus::OrientationAlgorithm => self.focus = FilterFocus::OrientationGroup,
-            FilterFocus::OrientationLambda => self.focus = FilterFocus::OrientationAlgorithm,
-            FilterFocus::TreeNode(0) => self.focus = self.last_orientation_focus(),
+            FilterFocus::TreeNode(0) => self.focus = FilterFocus::OrientationGroup,
             FilterFocus::TreeNode(i) => self.focus = FilterFocus::TreeNode(i - 1),
             FilterFocus::NumEchoes => {
                 let rows = self.visible_rows().len();
                 if rows > 0 {
                     self.focus = FilterFocus::TreeNode(rows - 1);
                 } else {
-                    self.focus = self.last_orientation_focus();
+                    self.focus = FilterFocus::OrientationGroup;
                 }
             }
         }
@@ -943,14 +985,6 @@ impl FilterTreeState {
             FilterFocus::NumEchoes
         } else {
             FilterFocus::TreeNode(0)
-        }
-    }
-
-    fn last_orientation_focus(&self) -> FilterFocus {
-        if self.multi_orientation_on() {
-            FilterFocus::OrientationLambda
-        } else {
-            FilterFocus::OrientationGroup
         }
     }
 
@@ -1170,15 +1204,6 @@ impl FilterTreeState {
 
 // ─── Pipeline tab state ───
 
-/// Which row set `PipelineFormState` renders — the QSM tab or the Separation tab. Both tabs share
-/// the same state + navigation/edit machinery; only `visible_rows()` differs.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum PipelineTabMode {
-    #[default]
-    Qsm,
-    Separation,
-}
-
 /// A visible row in the pipeline tab.
 #[derive(Debug, Clone)]
 pub enum PipelineRow {
@@ -1204,12 +1229,7 @@ pub enum PipelineRow {
     /// Section separator (blank line, not focusable)
     Separator,
     /// Informational hint line (styled, not focusable)
-    Note { text: &'static str },
-    /// Collapsible stage header on the QSM pipeline page (General, Field mapping, Masking,
-    /// Background removal, Dipole inversion, Referencing). Focusable; Enter/Space or ←/→ toggles
-    /// it. `summary` shows the stage's current choice when collapsed; `id` is a stable key for the
-    /// collapse state and `label` the display name.
-    SectionHeader { id: &'static str, label: &'static str, summary: String, collapsed: bool },
+    Note { text: std::borrow::Cow<'static, str> },
     /// Section header "── Mask N ──" (not focusable)
     MaskSectionHeader { section: usize },
     /// Header for the steps that run on the combined mask (not focusable)
@@ -1394,7 +1414,7 @@ pub fn qsm_reference_spec(index: usize) -> String {
 
 /// Facts from outside the pipeline form that decide which of its rows apply: the other tabs'
 /// settings (an output that forces QSM, the orientation grouping, the echo limit) and the maps
-/// whose inputs the Separation tab carries. Set by [`App::sync_pipeline_mode`] before every key
+/// whose supplied inputs apply. Set by [`App::sync_pipeline_mode`] before every key
 /// and every frame, from [`App::row_context`]; the default is a fresh form's.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct RowContext {
@@ -1409,9 +1429,15 @@ pub struct RowContext {
     pub num_echoes: Option<usize>,
     /// The maps whose bring-your-own inputs and settings apply: see [`InputRelevance`].
     pub inputs: InputRelevance,
+    /// The selected methods that only work on axial data, so oblique data is resampled to axial
+    /// whatever the obliquity threshold says (`bridge::axial_only_algorithms`), named.
+    pub axial_forced_by: Option<String>,
+    /// Whether coil combination can run: some selected run is uncombined multi-coil data, or
+    /// the dataset is not known (no scan yet).
+    pub multi_coil: bool,
 }
 
-/// Which of the Separation tab's bring-your-own inputs (and the R2' source) the run can use.
+/// Which bring-your-own inputs (and the R2' source) the run can use.
 ///
 /// Mirrors `qsmxt_config::enforce_separation_dependencies` and `requirements::implied_by`, but
 /// from the form's *requests* rather than the resolved config: a supplied map switches its own
@@ -1431,9 +1457,10 @@ pub struct InputRelevance {
 /// All pipeline form values (algorithms + parameters).
 #[derive(Debug, Clone)]
 pub struct PipelineFormState {
-    /// Which tab's rows to render (QSM vs Separation) — set by the App before routing input.
-    pub mode: PipelineTabMode,
-    /// What the rest of the form decides about these rows — set by the App with `mode`.
+    /// Which page's rows to render — set by the App (from the active tab and sub-tab) before
+    /// routing input or drawing.
+    pub page: Page,
+    /// What the rest of the form decides about these rows — set by the App with `page`.
     pub ctx: RowContext,
     // Algorithm selections (as indices)
     pub qsm_algorithm: usize,
@@ -1482,7 +1509,7 @@ pub struct PipelineFormState {
     pub inhomogeneity_correction: bool,
     /// Reconstruct a 2D acquisition whose sidecar says its slices leave a gap.
     pub ignore_slice_gap: bool,
-    // Performance and output grid (General).
+    // Performance and output grid (Preprocessing → Geometry).
     pub crop_to_mask: bool,
     pub crop_margin_mm: String,
     pub fft_padding: bool,
@@ -1813,9 +1840,6 @@ pub struct PipelineFormState {
     pub editing: bool,
     pub cursor: usize,
     pub scroll_offset: usize,
-    /// Collapsed QSM-pipeline stage ids (see [`PipelineFormState::SECTION_IDS`]). Collapsed stages
-    /// show only their header + a one-line summary; expanded stages show their full controls.
-    pub collapsed_sections: std::collections::HashSet<&'static str>,
 
     // Mask ops editor state
     pub mask_ops_adding: bool,      // true when "Add step..." selector is active
@@ -1849,7 +1873,7 @@ impl Default for PipelineFormState {
         let whqsm = qsm_core::inversion::WhQsmParams::default();
         let hdqsm = qsm_core::inversion::HdQsmParams::default();
         Self {
-            mode: PipelineTabMode::Qsm,
+            page: Page::Geometry,
             ctx: RowContext::default(),
             qsm_algorithm: super::command::default_qsm_algorithm_index(), // ilsqr
             unwrapping_algorithm: 0, // romeo
@@ -2138,8 +2162,6 @@ impl Default for PipelineFormState {
             focus: 0,
             editing: false,
             cursor: 0,
-            // Start with every stage collapsed → the page opens as a compact pipeline overview.
-            collapsed_sections: Self::SECTION_IDS.iter().copied().collect(),
             scroll_offset: 0,
             mask_ops_adding: false,
             mask_ops_add_idx: 0,
@@ -2217,11 +2239,8 @@ pub fn qsm_ref_options() -> &'static [&'static str] { &QSM_REF_OPTIONS_V }
 pub fn qsm_ref_help() -> &'static [&'static str] { &QSM_REF_HELP_V }
 
 impl PipelineFormState {
-    /// Build the visible rows based on current algorithm selections.
-    /// Rows for the Separation tab: enable toggle, method selector, the selected method's
-    /// parameters, and bring-your-own input tool fields.
-    fn separation_visible_rows(&self) -> Vec<PipelineRow> {
-        let mut rows = Vec::new();
+    /// The χ-separation tab: the method and its parameters, and the χ map it may read instead.
+    fn separation_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::Toggle {
             label: "Compute χ-separation", field: "do_chi_separation",
             help: "Split QSM into paramagnetic (χ+, iron) and diamagnetic (χ−, myelin) maps",
@@ -2285,121 +2304,55 @@ impl PipelineFormState {
         }
         } // end if do_chi_separation
 
-        // Bring-your-own inputs and the R2' source: wherever a map they feed is made — the
-        // relaxometry maps and statistics on the Supplementary tab as much as χ-separation.
-        let inputs = self.ctx.inputs;
-        if inputs.qsm || inputs.r2 || inputs.r2prime {
+        if self.do_chi_separation && self.ctx.inputs.qsm {
             rows.push(PipelineRow::Separator);
-            rows.push(PipelineRow::Note { text: "Bring-your-own inputs (derivatives tool name; blank = compute, * = any tool):" });
-        }
-        if inputs.qsm {
-            rows.push(PipelineRow::Param { label: "  Custom QSM tool", field: "custom_qsm_tool", help: "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI)" });
-        }
-        if inputs.r2 {
-            rows.push(PipelineRow::Param { label: "  Custom R2 tool", field: "custom_r2_tool", help: "Use an R2 map from derivatives instead of computing from MESE" });
-        }
-        if inputs.r2prime {
-            rows.push(PipelineRow::Param { label: "  Custom R2' tool", field: "custom_r2prime_tool", help: "Use an R2' map from derivatives instead of computing" });
-        }
-        // Only consulted when R2' is computed — a supplied map always wins.
-        if inputs.r2prime_source {
-            rows.push(PipelineRow::AlgoSelect {
-                label: "  R2' Source", field: "r2prime_strategy",
-                options: R2PRIME_STRATEGY_OPTIONS, help: R2PRIME_STRATEGY_HELP,
-            });
-            // R2PRIMEnet's own settings, unless R2' is only ever measured (index 1 = mese).
-            if self.r2prime_strategy != 1 {
-                rows.push(PipelineRow::Toggle {
-                    label: "  R2PRIMEnet off 3 T", field: "r2primenet_ignore_field_mismatch",
-                    help: "Run R2PRIMEnet on non-3 T data (trained at 3 T only; the R2' is uncalibrated). Off: auto skips R2', r2primenet errors",
-                });
-                rows.push(PipelineRow::Param {
-                    label: "  R2PRIMEnet Patch", field: "r2primenet_patch",
-                    help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)",
-                });
-            }
-        }
-        rows
-    }
-
-    /// Stable ids of the collapsible QSM-pipeline stages, top to bottom.
-    pub const SECTION_IDS: &[&'static str] =
-        &["general", "fieldmap", "masking", "bgremoval", "inversion", "reference"];
-
-    /// Build a stage header row, reading the current collapse state for `id`.
-    fn section_header(&self, id: &'static str, label: &'static str, summary: String) -> PipelineRow {
-        PipelineRow::SectionHeader {
-            id,
-            label,
-            summary,
-            collapsed: self.collapsed_sections.contains(id),
+            rows.push(Self::custom_qsm_row());
         }
     }
 
-    /// Toggle a stage's collapsed state.
-    pub fn toggle_section(&mut self, id: &'static str) {
-        if !self.collapsed_sections.remove(id) {
-            self.collapsed_sections.insert(id);
-        }
+    /// The bring-your-own χ map, under each output that reads one (χ-separation, the statistics,
+    /// SMWI): the same setting wherever it shows.
+    pub fn custom_qsm_row() -> PipelineRow {
+        PipelineRow::Param { label: "  Custom QSM tool", field: "custom_qsm_tool", help: "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool" }
     }
 
-    /// Drop the body rows of collapsed sections: keep every `SectionHeader`, and skip the rows
-    /// after a collapsed header until the next header. Rows before the first header are always kept.
-    fn apply_section_collapse(rows: Vec<PipelineRow>) -> Vec<PipelineRow> {
-        let mut out = Vec::with_capacity(rows.len());
-        let mut skipping = false;
-        for r in rows {
-            if let PipelineRow::SectionHeader { collapsed, .. } = &r {
-                skipping = *collapsed;
-                out.push(r);
-            } else if !skipping {
-                out.push(r);
-            }
-        }
-        out
+    /// The rigid registration's settings: one block, under each of the two things that register
+    /// (motion correction and orientation co-registration), editing the same values.
+    fn push_registration_rows(rows: &mut Vec<PipelineRow>) {
+        rows.push(PipelineRow::Note { text: "  Rigid registration (advanced):".into() });
+        rows.push(PipelineRow::Param { label: "    Levels", field: "reg_levels", help: "Pyramid levels: the capture range; do not lower (default 5)" });
+        rows.push(PipelineRow::Param { label: "    Max Samples", field: "reg_max_samples", help: "Voxels sampled per metric evaluation, per level" });
+        rows.push(PipelineRow::Param { label: "    Max Iterations", field: "reg_max_iterations", help: "Powell cycles per level" });
+        rows.push(PipelineRow::Param { label: "    Max Evaluations", field: "reg_max_evaluations", help: "Metric evaluations across all levels (hard stop)" });
+        rows.push(PipelineRow::Param { label: "    Tolerance", field: "reg_tolerance", help: "Relative cost improvement per cycle that counts as converged" });
+        rows.push(PipelineRow::Param { label: "    Rotation Step (deg)", field: "reg_rotation_step_deg", help: "Initial rotation step at the finest level" });
+        rows.push(PipelineRow::Param { label: "    Translation Step (mm)", field: "reg_translation_step_mm", help: "Initial translation step at the finest level" });
+        rows.push(PipelineRow::Param { label: "    Min Overlap", field: "reg_min_overlap", help: "Smallest fraction of sampled voxels that must overlap" });
     }
 
-    pub fn visible_rows(&self) -> Vec<PipelineRow> {
-        if self.mode == PipelineTabMode::Separation {
-            return self.separation_visible_rows();
-        }
-        let mut rows = Vec::new();
-        // Compared by name, not by index: the indices into QSM_ALGO_OPTIONS shift whenever an
-        // algorithm is inserted rather than appended, and a stale one silently shows the wrong
-        // rows (or hides background removal for the wrong algorithm).
-        let alg = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
-        // Whether a background-removal stage runs at all is QSM.rs's call (#265): the
-        // total-field (TFI, MEDI+SMV, TGV, QSMART, AutoQSM, NeXtQSM) and wrapped-phase (iQSM)
-        // methods have none, so the section is hidden for them.
-        let needs_bfr = self.inversion_needs_bg_removal();
-        // Field mapping likewise (the runner's rule): not for the wrapped-phase methods, nor with
-        // iQFM making the local field from phase. TGV maps only a multi-echo field.
-        let (field_mapping_some, field_mapping_all) = self.field_mapping_runs();
-        // Reconstruction-only settings follow whether QSM runs; the preprocessing ones (geometry,
-        // motion correction, coil combination, masking) serve SWI, T2*/R2*, R2' and the
-        // segmentation too, so they stay whatever the QSM toggle says.
+    /// Whether the run resamples oblique data to axial on request (a non-negative threshold).
+    pub fn axial_resampling_on(&self) -> bool {
+        self.obliquity_threshold.trim().parse::<f64>().is_ok_and(|t| t >= 0.0)
+    }
+
+    /// Preprocessing → Geometry: the grid the data is reconstructed on.
+    fn geometry_rows(&self, rows: &mut Vec<PipelineRow>) {
         let qsm = self.qsm_runs();
-
-        // QSM toggle
-        rows.push(PipelineRow::Toggle {
-            label: "Compute QSM", field: "do_qsm",
-            help: "Enable QSM reconstruction (disable to only run supplementary outputs)",
-        });
-        if !self.do_qsm {
-            if let Some(why) = &self.ctx.qsm_forced_by {
-                rows.push(PipelineRow::Note { text: why });
-            }
-        }
-
-        rows.push(PipelineRow::Separator);
-
-        // General settings: the acquisition's geometry and the preprocessing every output reads.
-        rows.push(self.section_header("general", "General",
-            format!("inhomogeneity correction {}", if self.inhomogeneity_correction { "on" } else { "off" })));
         rows.push(PipelineRow::Param {
             label: "Obliquity", field: "obliquity_threshold",
             help: "Resample oblique acquisitions to axial if obliquity exceeds this (degrees, -1 = disabled)",
         });
+        // Where the outputs land only matters when something resamples: on request, or because
+        // a selected method only works on axial data (and resamples whatever this says).
+        if self.axial_resampling_on() || self.ctx.axial_forced_by.is_some() {
+            if let Some(why) = &self.ctx.axial_forced_by {
+                rows.push(PipelineRow::Note { text: format!("  Oblique data is resampled to axial for {why}").into() });
+            }
+            rows.push(PipelineRow::AlgoSelect {
+                label: "  Output Space", field: "output_space",
+                options: OUTPUT_SPACE_OPTIONS, help: OUTPUT_SPACE_HELP,
+            });
+        }
         rows.push(PipelineRow::Toggle {
             label: "Inhomog. Correction", field: "inhomogeneity_correction",
             help: "Apply B1 field correction to magnitude (improves masking, ROMEO weights, MEDI edges, SWI)",
@@ -2414,7 +2367,6 @@ impl PipelineFormState {
             label: "Ignore Slice Gap", field: "ignore_slice_gap",
             help: "Reconstruct even if the sidecar's SliceThickness is thinner than the slice pitch (gapped 2D data gives a wrong map)",
         });
-        // Cropping and padding resize the grid of the FFT-bound reconstruction stages only.
         if qsm {
             rows.push(PipelineRow::Toggle {
                 label: "Crop to Mask", field: "crop_to_mask",
@@ -2429,226 +2381,16 @@ impl PipelineFormState {
                 help: "Pad the grid to an FFT-friendly size before the FFT-bound stages (faster on awkward grids; shifts results slightly). Off by default",
             });
         }
-        rows.push(PipelineRow::AlgoSelect {
-            label: "Output Space", field: "output_space",
-            options: OUTPUT_SPACE_OPTIONS, help: OUTPUT_SPACE_HELP,
-        });
-        rows.push(PipelineRow::Param {
-            label: "Use custom dseg", field: "custom_dseg_tool",
-            help: "BYO segmentation (when segmenting: stats, region reference) from BIDS derivatives: empty=off, * =any tool, or a tool name; falls back to SynthSeg",
-        });
-        // Coil combination and motion correction prepare the echoes every later stage reads —
-        // SWI and the relaxometry maps as much as the field map — so they apply whatever the
-        // inversion, and with QSM off.
-        rows.push(PipelineRow::Param { label: "Coil Comb. Sigma", field: "coil_combination_sigma",
-            help: "MCPC-3D-S smoothing of per-coil phase offsets, voxels (x y z); only for uncombined multi-coil data" });
-        rows.push(PipelineRow::Toggle {
-            label: "Motion Correction", field: "motion_correction",
-            help: "Rigidly co-register every echo onto a reference echo before any other stage (multi-echo, needs magnitude). Off by default",
-        });
-        if self.motion_correction {
-            rows.push(PipelineRow::AlgoSelect {
-                label: "  Reference", field: "motion_reference",
-                options: MOTION_REFERENCE_OPTIONS, help: MOTION_REFERENCE_HELP,
-            });
-            if self.motion_reference == 2 {
-                rows.push(PipelineRow::Param { label: "    Reference Echo", field: "motion_reference_echo",
-                    help: "1-based echo number the others are aligned onto" });
-            }
-            rows.push(PipelineRow::Toggle { label: "  Chain", field: "motion_chain",
-                help: "Seed each echo's registration from its neighbour's solution" });
-            if self.motion_chain {
-                rows.push(PipelineRow::Param { label: "    Chain Levels", field: "motion_chain_levels",
-                    help: "Pyramid levels for a seeded registration (default 3)" });
-            }
-            rows.push(PipelineRow::Param { label: "  Min NCC", field: "motion_min_ncc",
-                help: "NCC below which a registration is reported as suspect (0.3 for echoes; ~0.9 for repeats)" });
+        // Coil combination prepares the echoes every later stage reads, whatever the inversion;
+        // it only runs for uncombined multi-coil data.
+        if self.ctx.multi_coil {
+            rows.push(PipelineRow::Param { label: "Coil Comb. Sigma", field: "coil_combination_sigma",
+                help: "MCPC-3D-S smoothing of per-coil phase offsets, voxels (x y z); only for uncombined multi-coil data" });
         }
-        // Multi-orientation settings mean nothing until the Input tab groups orientations.
-        if self.ctx.orientation_group {
-            rows.push(PipelineRow::Toggle {
-                label: "Orientation Co-registration", field: "orientation_registration",
-                help: "Multi-orientation groups (Input tab): co-register orientations that need it, with the registration settings below. Off = refuse such groups",
-            });
-            rows.push(PipelineRow::Toggle {
-                label: "Force Multi-orientation", field: "multi_orientation_force",
-                help: "Multi-orientation groups: reconstruct even when the B0 directions look degenerate (wrong metadata gives a plausible wrong map)",
-            });
-            if self.ctx.orientation_cosmos {
-                rows.push(PipelineRow::Toggle {
-                    label: "COSMOS Magnitude Weighting", field: "cosmos_magnitude_weighting",
-                    help: "COSMOS groups: weight each orientation by its combined magnitude (conjugate-gradient solve). Off = closed-form least squares",
-                });
-                if self.cosmos_magnitude_weighting {
-                    rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "cosmos_tol", help: "Conjugate-gradient tolerance of weighted COSMOS" });
-                    rows.push(PipelineRow::Param { label: "  CG Max Iterations", field: "cosmos_max_iter", help: "Conjugate-gradient iteration cap of weighted COSMOS" });
-                }
-            }
-        }
-        // Rigid registration runs for motion correction, and for co-registering orientations.
-        if self.registration_runs() {
-            rows.push(PipelineRow::Note { text: "Rigid registration (motion correction, orientation co-registration):" });
-            rows.push(PipelineRow::Param { label: "  Levels", field: "reg_levels", help: "Pyramid levels: the capture range; do not lower (default 5)" });
-            rows.push(PipelineRow::Param { label: "  Max Samples", field: "reg_max_samples", help: "Voxels sampled per metric evaluation, per level" });
-            rows.push(PipelineRow::Param { label: "  Max Iterations", field: "reg_max_iterations", help: "Powell cycles per level" });
-            rows.push(PipelineRow::Param { label: "  Max Evaluations", field: "reg_max_evaluations", help: "Metric evaluations across all levels (hard stop)" });
-            rows.push(PipelineRow::Param { label: "  Tolerance", field: "reg_tolerance", help: "Relative cost improvement per cycle that counts as converged" });
-            rows.push(PipelineRow::Param { label: "  Rotation Step (deg)", field: "reg_rotation_step_deg", help: "Initial rotation step at the finest level" });
-            rows.push(PipelineRow::Param { label: "  Translation Step (mm)", field: "reg_translation_step_mm", help: "Initial translation step at the finest level" });
-            rows.push(PipelineRow::Param { label: "  Min Overlap", field: "reg_min_overlap", help: "Smallest fraction of sampled voxels that must overlap" });
-        }
+    }
 
-        rows.push(PipelineRow::Separator);
-
-        // Field mapping: whenever it runs in front of the inversion.
-        if qsm && field_mapping_some {
-            let is_laplacian = self.unwrapping_algorithm == 1;
-            rows.push(self.section_header("fieldmap", "Field mapping",
-                format!("{} unwrapping", UNWRAP_OPTIONS.get(self.unwrapping_algorithm).copied().unwrap_or(""))));
-            if !field_mapping_all {
-                rows.push(PipelineRow::Note { text: "Applies to multi-echo data only: TGV reconstructs a single echo from its wrapped phase" });
-            }
-
-            // Unwrapping
-            rows.push(PipelineRow::AlgoSelect {
-                label: "Unwrapping", field: "unwrapping_algorithm",
-                options: UNWRAP_OPTIONS, help: UNWRAP_HELP,
-            });
-            if is_laplacian {
-                rows.push(PipelineRow::AlgoSelect {
-                    label: "  Solver", field: "laplacian_solver",
-                    options: LAPLACIAN_SOLVER_OPTIONS, help: LAPLACIAN_SOLVER_HELP,
-                });
-                if self.laplacian_solver == 1 {
-                    rows.push(PipelineRow::Param { label: "    FFT Pad (voxels)", field: "laplacian_fft_pad",
-                        help: "Zero-padding per side: one value for every axis or three (x y z). UK Biobank: 64; STI Suite default: 12" });
-                }
-            }
-
-            // ROMEO's own settings, phase offset removal (HIP — ROMEO only) among them.
-            if !is_laplacian {
-                rows.push(PipelineRow::Toggle {
-                    label: "  Phase Offset Removal", field: "phase_offset_removal",
-                    help: "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only",
-                });
-                if self.phase_offset_removal {
-                    rows.push(PipelineRow::Param { label: "    Sigma", field: "phase_offset_sigma",
-                        help: "Gaussian smoothing sigma in voxels (x y z)" });
-                    // Part of the offset-removal path: without it the correction never runs.
-                    rows.push(PipelineRow::Toggle {
-                        label: "    Bipolar Correction", field: "bipolar_correction",
-                        help: "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)",
-                    });
-                }
-                rows.push(PipelineRow::Toggle {
-                    label: "  Individual Mode", field: "romeo_individual",
-                    help: "Unwrap each echo independently (recommended). Off = template-based temporal unwrapping.",
-                });
-                if !self.romeo_individual {
-                    rows.push(PipelineRow::Param {
-                        label: "  Template Echo", field: "romeo_template",
-                        help: "Echo index for spatial unwrapping (1-indexed)",
-                    });
-                }
-                rows.push(PipelineRow::Toggle {
-                    label: "  Correct Global", field: "romeo_correct_global",
-                    help: "Correct inter-echo 2π offsets after unwrapping",
-                });
-                rows.push(PipelineRow::Toggle {
-                    label: "  Phase Coherence", field: "romeo_phase_coherence",
-                    help: "Weight edges by neighbour phase coherence",
-                });
-                rows.push(PipelineRow::Toggle {
-                    label: "  Phase Gradient Coherence", field: "romeo_phase_gradient_coherence",
-                    help: "Weight edges by inter-echo phase-gradient consistency (multi-echo)",
-                });
-                rows.push(PipelineRow::Toggle {
-                    label: "  Phase Linearity", field: "romeo_phase_linearity",
-                    help: "Weight edges by second-derivative smoothness",
-                });
-                rows.push(PipelineRow::Toggle {
-                    label: "  Mag Coherence", field: "romeo_mag_coherence",
-                    help: "Weight edges by neighbor magnitude coherence",
-                });
-                rows.push(PipelineRow::Toggle {
-                    label: "  Mag Weight", field: "romeo_mag_weight",
-                    help: "Penalise low-signal voxels (off by default)",
-                });
-                rows.push(PipelineRow::Toggle {
-                    label: "  Mag Weight 2", field: "romeo_mag_weight2",
-                    help: "Penalise abnormally high signal / flow artefacts (off by default)",
-                });
-                rows.push(PipelineRow::Toggle {
-                    label: "  Best-path Weights", field: "romeo_bestpath",
-                    help: "Use Abdul-Rahman best-path weights instead of ROMEO weights",
-                });
-                rows.push(PipelineRow::Param {
-                    label: "  Temporal Uncertain", field: "romeo_temporal_uncertain_unwrapping",
-                    help: "Quality threshold [0,1] for re-unwrapping uncertain voxels (0 disables)",
-                });
-                rows.push(PipelineRow::Param {
-                    label: "  Max Seeds", field: "romeo_max_seeds",
-                    help: "Maximum number of seed regions (default 1)",
-                });
-                rows.push(PipelineRow::Toggle {
-                    label: "  Merge Regions", field: "romeo_merge_regions",
-                    help: "Merge neighboring regions after unwrapping",
-                });
-                rows.push(PipelineRow::Toggle {
-                    label: "  Correct Regions", field: "romeo_correct_regions",
-                    help: "Shift each region's median to nearest 0 by n·2π",
-                });
-                rows.push(PipelineRow::Param {
-                    label: "  Wrap Addition", field: "romeo_wrap_addition",
-                    help: "Extra phase tolerance beyond π for neighbor differences [0,π]",
-                });
-            }
-
-            // B0 estimation
-            rows.push(PipelineRow::AlgoSelect {
-                label: "B0 Estimation", field: "b0_estimation",
-                options: B0_ESTIMATION_OPTIONS, help: B0_ESTIMATION_HELP,
-            });
-            if self.b0_estimation == 0 { // weighted_avg
-                rows.push(PipelineRow::AlgoSelect {
-                    label: "  Weight Type", field: "b0_weight_type",
-                    options: B0_WEIGHT_TYPE_OPTIONS, help: B0_WEIGHT_TYPE_HELP,
-                });
-                if self.b0_weight_type == 5 { // assumed-decay
-                    rows.push(PipelineRow::Param { label: "    Assumed T2* (ms)", field: "b0_weight_assumed_t2star_ms",
-                        help: "T2* assumed to compute the fixed echo weights; no T2* map is used (UK Biobank: 40 ms)" });
-                }
-            } else { // linear-fit / robust-fit
-                rows.push(PipelineRow::Toggle {
-                    label: "  Estimate Offset", field: "linear_fit_estimate_offset",
-                    help: "Fit a phase-offset term in the echo-time fit (robust fit: needs 4 echoes with it, 3 without)",
-                });
-                rows.push(PipelineRow::Param {
-                    label: "  Reliability Pctl", field: "linear_fit_reliability_threshold",
-                    help: "Percentile for the fit's reliability mask (0 disables); does not change the field map",
-                });
-                if self.b0_estimation == 2 { // robust-fit
-                    rows.push(PipelineRow::AlgoSelect {
-                        label: "  Loss", field: "robust_fit_loss",
-                        options: ROBUST_FIT_LOSS_OPTIONS, help: ROBUST_FIT_LOSS_HELP,
-                    });
-                    rows.push(PipelineRow::Param { label: "  Tuning", field: "robust_fit_tuning",
-                        help: "Tuning radius in robust-scale units; blank = conventional (Tukey 4.685, Huber 1.345)" });
-                    rows.push(PipelineRow::Param { label: "  Iterations", field: "robust_fit_iterations",
-                        help: "IRLS passes (0 = report only: the field map is the linear fit's)" });
-                    rows.push(PipelineRow::Param { label: "  Downweight Level", field: "robust_fit_downweight_level",
-                        help: "Reporting only: a weight below this counts as down-weighted (0, 1]" });
-                    rows.push(PipelineRow::Param { label: "  Flag Ratio", field: "robust_fit_flag_ratio",
-                        help: "Reporting only: flag an echo whose outlier score exceeds this x the best echo's (>= 1)" });
-                }
-            }
-
-            rows.push(PipelineRow::Separator);
-        }
-
-        // Mask preset selector (always visible — needed for SWI/T2*/R2* too)
-        rows.push(self.section_header("masking", "Masking",
-            MASK_PRESET_OPTIONS.get(self.get_select("mask_preset")).copied().unwrap_or("").to_string()));
+    /// Preprocessing → Masking: the mask recipe, its custom masks, and the two-pass reliable mask.
+    fn masking_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::AlgoSelect {
             label: "Mask Preset", field: "mask_preset",
             options: MASK_PRESET_OPTIONS, help: MASK_PRESET_HELP,
@@ -2660,12 +2402,12 @@ impl PipelineFormState {
 
         // Mask sections
         let multi_section = self.mask_sections.len() > 1;
-        self.push_mask_section_rows(&mut rows, false);
+        self.push_mask_section_rows(rows, false);
         rows.push(PipelineRow::MaskOpAddSection { two_pass: false });
         // Steps that run on the combined mask — only meaningful with more than one section.
         if multi_section {
             rows.push(PipelineRow::MaskCombinedHeader);
-            self.push_refinement_rows(&mut rows, MASK_COMBINED_SECTION);
+            self.push_refinement_rows(rows, MASK_COMBINED_SECTION);
             rows.push(PipelineRow::MaskOpAddStep { section: MASK_COMBINED_SECTION });
         }
         // BET's surface settings are one value per run, shared by every BET step.
@@ -2684,78 +2426,259 @@ impl PipelineFormState {
         });
         if self.two_pass {
             rows.push(PipelineRow::MaskTwoPassHeader);
-            self.push_mask_section_rows(&mut rows, true);
+            self.push_mask_section_rows(rows, true);
             rows.push(PipelineRow::MaskOpAddSection { two_pass: true });
         }
 
-        rows.push(PipelineRow::Separator);
+    }
 
-        // BG Removal (hidden for the inversions that take the total field or wrapped phase)
-        if qsm && needs_bfr {
-            rows.push(self.section_header("bgremoval", "Background removal",
-                BF_OPTIONS.get(self.bf_algorithm).copied().unwrap_or("").to_string()));
+    /// Preprocessing → Motion: echo co-registration, and the registration it runs.
+    fn motion_rows(&self, rows: &mut Vec<PipelineRow>) {
+        rows.push(PipelineRow::Toggle {
+            label: "Motion Correction", field: "motion_correction",
+            help: "Rigidly co-register every echo onto a reference echo before any other stage (multi-echo, needs magnitude). Off by default",
+        });
+        if self.motion_correction {
             rows.push(PipelineRow::AlgoSelect {
-                label: "BG Removal", field: "bf_algorithm",
-                options: BF_OPTIONS, help: BF_HELP,
+                label: "  Reference", field: "motion_reference",
+                options: MOTION_REFERENCE_OPTIONS, help: MOTION_REFERENCE_HELP,
             });
-            match self.bf_algorithm {
-                0 => { // V-SHARP
-                    rows.push(PipelineRow::Toggle { label: "  Deconvolve", field: "vsharp_deconvolve",
-                        help: "Undo the SMV high-pass (TSVD). Off = STI Suite / UK Biobank V-SHARP (QSMxT default); on = QSMxT <= v9.22" });
-                    if self.vsharp_deconvolve {
-                        rows.push(PipelineRow::Param { label: "  Threshold", field: "vsharp_threshold", help: "Deconvolution (TSVD) threshold" });
-                    }
-                    rows.push(PipelineRow::Param { label: "  Max Radius", field: "vsharp_max_radius", help: "Largest SMV kernel radius (mm)" });
-                    rows.push(PipelineRow::Param { label: "  Min Radius", field: "vsharp_min_radius", help: "Smallest SMV kernel radius (mm)" });
-                }
-                1 => { // PDF
-                    rows.push(PipelineRow::Param { label: "  Tolerance", field: "pdf_tol", help: "Convergence tolerance" });
-                }
-                2 => { // LBV
-                    rows.push(PipelineRow::Param { label: "  Tolerance", field: "lbv_tol", help: "Convergence tolerance" });
-                }
-                3 => { // iSMV
-                    rows.push(PipelineRow::Param { label: "  Tolerance", field: "ismv_tol", help: "Convergence tolerance" });
-                    rows.push(PipelineRow::Param { label: "  Max Iter", field: "ismv_max_iter", help: "Maximum iterations" });
-                    rows.push(PipelineRow::Param { label: "  Radius", field: "ismv_radius", help: "SMV kernel radius (mm)" });
-                }
-                4 => { // SHARP
-                    rows.push(PipelineRow::Param { label: "  Threshold", field: "sharp_threshold", help: "Deconvolution threshold" });
-                    rows.push(PipelineRow::Param { label: "  Radius", field: "sharp_radius", help: "SMV kernel radius (mm)" });
-                }
-                5 => { // RESHARP
-                    rows.push(PipelineRow::Param { label: "  Radius", field: "resharp_radius", help: "SMV kernel radius in mm" });
-                    rows.push(PipelineRow::Param { label: "  Tik Reg", field: "resharp_tik_reg", help: "Tikhonov regularization parameter" });
-                    rows.push(PipelineRow::Param { label: "  Tolerance", field: "resharp_tol", help: "CG convergence tolerance" });
-                    rows.push(PipelineRow::Param { label: "  Max Iter", field: "resharp_max_iter", help: "Maximum CG iterations" });
-                }
-                6 => { // HARPERELLA
-                    rows.push(PipelineRow::Param { label: "  Radius", field: "harperella_radius", help: "SMV kernel radius in mm" });
-                    rows.push(PipelineRow::Param { label: "  Max Iter", field: "harperella_max_iter", help: "Maximum iterations" });
-                    rows.push(PipelineRow::Param { label: "  Tolerance", field: "harperella_tol", help: "Convergence tolerance" });
-                }
-                7 => { // iHARPERELLA
-                    rows.push(PipelineRow::Param { label: "  Max Iter", field: "iharperella_max_iter", help: "Maximum iterations" });
-                    rows.push(PipelineRow::Param { label: "  Tolerance", field: "iharperella_tol", help: "Convergence tolerance" });
-                }
-                _ => {}
+            if self.motion_reference == 2 {
+            rows.push(PipelineRow::Param { label: "    Reference Echo", field: "motion_reference_echo",
+                    help: "1-based echo number the others are aligned onto" });
             }
-            // mSMV boundary-shadow refinement, layered on top of the primary BFR (Roberts 2024).
-            rows.push(PipelineRow::Toggle {
-                label: "mSMV refinement", field: "msmv_refine",
-                help: "Remove residual boundary-field shadows with mSMV after the primary BFR (Roberts 2024)",
-            });
-            if self.msmv_refine {
-                rows.push(PipelineRow::Param { label: "  mSMV Radius", field: "msmv_radius", help: "SMV prefilter kernel radius in mm" });
-                rows.push(PipelineRow::Param { label: "  mSMV Max Iter", field: "msmv_maxk", help: "Maximum boundary-correction iterations" });
+            rows.push(PipelineRow::Toggle { label: "  Chain", field: "motion_chain",
+                help: "Seed each echo's registration from its neighbour's solution" });
+            if self.motion_chain {
+            rows.push(PipelineRow::Param { label: "    Chain Levels", field: "motion_chain_levels",
+                    help: "Pyramid levels for a seeded registration (default 3)" });
             }
-            rows.push(PipelineRow::Separator);
+            rows.push(PipelineRow::Param { label: "  Min NCC", field: "motion_min_ncc",
+                help: "NCC below which a registration is reported as suspect (0.3 for echoes; ~0.9 for repeats)" });
+            Self::push_registration_rows(rows);
+        }
+    }
+
+    /// The QSM tab's master switch, on top of each of its sub-tabs — with why QSM runs anyway.
+    fn push_qsm_toggle(&self, rows: &mut Vec<PipelineRow>) {
+        rows.push(PipelineRow::Toggle {
+            label: "Compute QSM", field: "do_qsm",
+            help: "Enable QSM reconstruction (disable to only run the other outputs)",
+        });
+        if !self.do_qsm {
+            if let Some(why) = self.ctx.qsm_forced_by {
+                rows.push(PipelineRow::Note { text: format!("  Reconstructed anyway: {why}").into() });
+            }
+        }
+        rows.push(PipelineRow::Separator);
+    }
+
+    /// QSM → Field map: unwrapping and the echo combination into one field map.
+    fn field_map_rows(&self, rows: &mut Vec<PipelineRow>) {
+        let (_, field_mapping_all) = self.field_mapping_runs();
+        let is_laplacian = self.unwrapping_algorithm == 1;
+        if !field_mapping_all {
+            rows.push(PipelineRow::Note { text: "Applies to multi-echo data only: TGV reconstructs a single echo from its wrapped phase".into() });
         }
 
-        if qsm {
-        // QSM Inversion
-        rows.push(self.section_header("inversion", "Dipole inversion",
-            QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("").to_string()));
+        // Unwrapping
+        rows.push(PipelineRow::AlgoSelect {
+            label: "Unwrapping", field: "unwrapping_algorithm",
+            options: UNWRAP_OPTIONS, help: UNWRAP_HELP,
+        });
+        if is_laplacian {
+            rows.push(PipelineRow::AlgoSelect {
+                label: "  Solver", field: "laplacian_solver",
+                options: LAPLACIAN_SOLVER_OPTIONS, help: LAPLACIAN_SOLVER_HELP,
+            });
+            if self.laplacian_solver == 1 {
+            rows.push(PipelineRow::Param { label: "    FFT Pad (voxels)", field: "laplacian_fft_pad",
+                    help: "Zero-padding per side: one value for every axis or three (x y z). UK Biobank: 64; STI Suite default: 12" });
+            }
+        }
+
+        // ROMEO's own settings, phase offset removal (HIP — ROMEO only) among them.
+        if !is_laplacian {
+            rows.push(PipelineRow::Toggle {
+                label: "  Phase Offset Removal", field: "phase_offset_removal",
+                help: "Remove spatially-varying phase offset using HIP (Eckstein et al., 2018); multi-echo only",
+            });
+            if self.phase_offset_removal {
+            rows.push(PipelineRow::Param { label: "    Sigma", field: "phase_offset_sigma",
+                    help: "Gaussian smoothing sigma in voxels (x y z)" });
+                // Part of the offset-removal path: without it the correction never runs.
+                rows.push(PipelineRow::Toggle {
+                    label: "    Bipolar Correction", field: "bipolar_correction",
+                    help: "Remove the linear phase artefact of bipolar readout gradients (needs at least 3 echoes; fewer: skipped)",
+                });
+            }
+            rows.push(PipelineRow::Toggle {
+                label: "  Individual Mode", field: "romeo_individual",
+                help: "Unwrap each echo independently (recommended). Off = template-based temporal unwrapping.",
+            });
+            if !self.romeo_individual {
+                rows.push(PipelineRow::Param {
+                    label: "  Template Echo", field: "romeo_template",
+                    help: "Echo index for spatial unwrapping (1-indexed)",
+                });
+            }
+            rows.push(PipelineRow::Toggle {
+                label: "  Correct Global", field: "romeo_correct_global",
+                help: "Correct inter-echo 2π offsets after unwrapping",
+            });
+            rows.push(PipelineRow::Toggle {
+                label: "  Phase Coherence", field: "romeo_phase_coherence",
+                help: "Weight edges by neighbour phase coherence",
+            });
+            rows.push(PipelineRow::Toggle {
+                label: "  Phase Gradient Coherence", field: "romeo_phase_gradient_coherence",
+                help: "Weight edges by inter-echo phase-gradient consistency (multi-echo)",
+            });
+            rows.push(PipelineRow::Toggle {
+                label: "  Phase Linearity", field: "romeo_phase_linearity",
+                help: "Weight edges by second-derivative smoothness",
+            });
+            rows.push(PipelineRow::Toggle {
+                label: "  Mag Coherence", field: "romeo_mag_coherence",
+                help: "Weight edges by neighbor magnitude coherence",
+            });
+            rows.push(PipelineRow::Toggle {
+                label: "  Mag Weight", field: "romeo_mag_weight",
+                help: "Penalise low-signal voxels (off by default)",
+            });
+            rows.push(PipelineRow::Toggle {
+                label: "  Mag Weight 2", field: "romeo_mag_weight2",
+                help: "Penalise abnormally high signal / flow artefacts (off by default)",
+            });
+            rows.push(PipelineRow::Toggle {
+                label: "  Best-path Weights", field: "romeo_bestpath",
+                help: "Use Abdul-Rahman best-path weights instead of ROMEO weights",
+            });
+            rows.push(PipelineRow::Param {
+                label: "  Temporal Uncertain", field: "romeo_temporal_uncertain_unwrapping",
+                help: "Quality threshold [0,1] for re-unwrapping uncertain voxels (0 disables)",
+            });
+            rows.push(PipelineRow::Param {
+                label: "  Max Seeds", field: "romeo_max_seeds",
+                help: "Maximum number of seed regions (default 1)",
+            });
+            rows.push(PipelineRow::Toggle {
+                label: "  Merge Regions", field: "romeo_merge_regions",
+                help: "Merge neighboring regions after unwrapping",
+            });
+            rows.push(PipelineRow::Toggle {
+                label: "  Correct Regions", field: "romeo_correct_regions",
+                help: "Shift each region's median to nearest 0 by n·2π",
+            });
+            rows.push(PipelineRow::Param {
+                label: "  Wrap Addition", field: "romeo_wrap_addition",
+                help: "Extra phase tolerance beyond π for neighbor differences [0,π]",
+            });
+        }
+
+        // B0 estimation
+        rows.push(PipelineRow::AlgoSelect {
+            label: "B0 Estimation", field: "b0_estimation",
+            options: B0_ESTIMATION_OPTIONS, help: B0_ESTIMATION_HELP,
+        });
+        if self.b0_estimation == 0 { // weighted_avg
+            rows.push(PipelineRow::AlgoSelect {
+                label: "  Weight Type", field: "b0_weight_type",
+                options: B0_WEIGHT_TYPE_OPTIONS, help: B0_WEIGHT_TYPE_HELP,
+            });
+            if self.b0_weight_type == 5 { // assumed-decay
+            rows.push(PipelineRow::Param { label: "    Assumed T2* (ms)", field: "b0_weight_assumed_t2star_ms",
+                    help: "T2* assumed to compute the fixed echo weights; no T2* map is used (UK Biobank: 40 ms)" });
+            }
+        } else { // linear-fit / robust-fit
+            rows.push(PipelineRow::Toggle {
+                label: "  Estimate Offset", field: "linear_fit_estimate_offset",
+                help: "Fit a phase-offset term in the echo-time fit (robust fit: needs 4 echoes with it, 3 without)",
+            });
+            rows.push(PipelineRow::Param {
+                label: "  Reliability Pctl", field: "linear_fit_reliability_threshold",
+                help: "Percentile for the fit's reliability mask (0 disables); does not change the field map",
+            });
+            if self.b0_estimation == 2 { // robust-fit
+                rows.push(PipelineRow::AlgoSelect {
+                    label: "  Loss", field: "robust_fit_loss",
+                    options: ROBUST_FIT_LOSS_OPTIONS, help: ROBUST_FIT_LOSS_HELP,
+                });
+                rows.push(PipelineRow::Param { label: "  Tuning", field: "robust_fit_tuning",
+                    help: "Tuning radius in robust-scale units; blank = conventional (Tukey 4.685, Huber 1.345)" });
+                rows.push(PipelineRow::Param { label: "  Iterations", field: "robust_fit_iterations",
+                    help: "IRLS passes (0 = report only: the field map is the linear fit's)" });
+                rows.push(PipelineRow::Param { label: "  Downweight Level", field: "robust_fit_downweight_level",
+                    help: "Reporting only: a weight below this counts as down-weighted (0, 1]" });
+                rows.push(PipelineRow::Param { label: "  Flag Ratio", field: "robust_fit_flag_ratio",
+                    help: "Reporting only: flag an echo whose outlier score exceeds this x the best echo's (>= 1)" });
+            }
+        }
+
+    }
+
+    /// QSM → Background: background-field removal (only for inversions that take a local field).
+    fn background_rows(&self, rows: &mut Vec<PipelineRow>) {
+        rows.push(PipelineRow::AlgoSelect {
+            label: "BG Removal", field: "bf_algorithm",
+            options: BF_OPTIONS, help: BF_HELP,
+        });
+        match self.bf_algorithm {
+            0 => { // V-SHARP
+                rows.push(PipelineRow::Toggle { label: "  Deconvolve", field: "vsharp_deconvolve",
+                    help: "Undo the SMV high-pass (TSVD). Off = STI Suite / UK Biobank V-SHARP (QSMxT default); on = QSMxT <= v9.22" });
+                if self.vsharp_deconvolve {
+                    rows.push(PipelineRow::Param { label: "  Threshold", field: "vsharp_threshold", help: "Deconvolution (TSVD) threshold" });
+                }
+                rows.push(PipelineRow::Param { label: "  Max Radius", field: "vsharp_max_radius", help: "Largest SMV kernel radius (mm)" });
+                rows.push(PipelineRow::Param { label: "  Min Radius", field: "vsharp_min_radius", help: "Smallest SMV kernel radius (mm)" });
+            }
+            1 => { // PDF
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "pdf_tol", help: "Convergence tolerance" });
+            }
+            2 => { // LBV
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "lbv_tol", help: "Convergence tolerance" });
+            }
+            3 => { // iSMV
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "ismv_tol", help: "Convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "ismv_max_iter", help: "Maximum iterations" });
+                rows.push(PipelineRow::Param { label: "  Radius", field: "ismv_radius", help: "SMV kernel radius (mm)" });
+            }
+            4 => { // SHARP
+                rows.push(PipelineRow::Param { label: "  Threshold", field: "sharp_threshold", help: "Deconvolution threshold" });
+                rows.push(PipelineRow::Param { label: "  Radius", field: "sharp_radius", help: "SMV kernel radius (mm)" });
+            }
+            5 => { // RESHARP
+                rows.push(PipelineRow::Param { label: "  Radius", field: "resharp_radius", help: "SMV kernel radius in mm" });
+                rows.push(PipelineRow::Param { label: "  Tik Reg", field: "resharp_tik_reg", help: "Tikhonov regularization parameter" });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "resharp_tol", help: "CG convergence tolerance" });
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "resharp_max_iter", help: "Maximum CG iterations" });
+            }
+            6 => { // HARPERELLA
+                rows.push(PipelineRow::Param { label: "  Radius", field: "harperella_radius", help: "SMV kernel radius in mm" });
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "harperella_max_iter", help: "Maximum iterations" });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "harperella_tol", help: "Convergence tolerance" });
+            }
+            7 => { // iHARPERELLA
+                rows.push(PipelineRow::Param { label: "  Max Iter", field: "iharperella_max_iter", help: "Maximum iterations" });
+                rows.push(PipelineRow::Param { label: "  Tolerance", field: "iharperella_tol", help: "Convergence tolerance" });
+            }
+            _ => {}
+        }
+        // mSMV boundary-shadow refinement, layered on top of the primary BFR (Roberts 2024).
+        rows.push(PipelineRow::Toggle {
+            label: "mSMV refinement", field: "msmv_refine",
+            help: "Remove residual boundary-field shadows with mSMV after the primary BFR (Roberts 2024)",
+        });
+        if self.msmv_refine {
+            rows.push(PipelineRow::Param { label: "  mSMV Radius", field: "msmv_radius", help: "SMV prefilter kernel radius in mm" });
+            rows.push(PipelineRow::Param { label: "  mSMV Max Iter", field: "msmv_maxk", help: "Maximum boundary-correction iterations" });
+        }
+    }
+
+    /// QSM → Inversion: the dipole inversion and its parameters.
+    fn inversion_rows(&self, rows: &mut Vec<PipelineRow>) {
+        let alg = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
         rows.push(PipelineRow::AlgoSelect {
             label: "QSM Inversion", field: "qsm_algorithm",
             options: QSM_ALGO_OPTIONS, help: QSM_ALGO_HELP,
@@ -2845,7 +2768,7 @@ impl PipelineFormState {
                     rows.push(PipelineRow::Toggle { label: "  Laplacian Correction", field: "heidi_apply_laplacian_correction",
                         help: "Open the homogeneity masks where the field's Laplacian is large" });
                     if self.heidi_apply_laplacian_correction {
-                        rows.push(PipelineRow::Param { label: "    Laplacian Threshold", field: "heidi_laplacian_threshold",
+                    rows.push(PipelineRow::Param { label: "    Laplacian Threshold", field: "heidi_laplacian_threshold",
                             help: "Field-Laplacian threshold (ppm per voxel²)" });
                     }
                     rows.push(PipelineRow::Param { label: "  Gradient Mask Floor", field: "heidi_gradient_mask_floor",
@@ -2860,15 +2783,15 @@ impl PipelineFormState {
                     rows.push(PipelineRow::Toggle { label: "  Denoise Field", field: "heidi_denoise",
                         help: "Anisotropic-diffusion smoothing of the field before its gradients are taken" });
                     if self.heidi_denoise {
-                        rows.push(PipelineRow::Param { label: "    Denoise Iter", field: "heidi_denoise_iterations", help: "Anisotropic-diffusion iterations" });
-                        rows.push(PipelineRow::Param { label: "    Time Step", field: "heidi_denoise_time_step", help: "Anisotropic-diffusion time step" });
-                        rows.push(PipelineRow::Param { label: "    Conductance", field: "heidi_denoise_conductance", help: "Anisotropic-diffusion conductance" });
+                    rows.push(PipelineRow::Param { label: "    Denoise Iter", field: "heidi_denoise_iterations", help: "Anisotropic-diffusion iterations" });
+                    rows.push(PipelineRow::Param { label: "    Time Step", field: "heidi_denoise_time_step", help: "Anisotropic-diffusion time step" });
+                    rows.push(PipelineRow::Param { label: "    Conductance", field: "heidi_denoise_conductance", help: "Anisotropic-diffusion conductance" });
                     }
                 }
             }
             "qsmart" => { // QSMART
                 rows.push(PipelineRow::Note {
-                    text: "⚠ QSMART needs a tight BET brain mask — loose masks cause streaking (set mask below)",
+                    text: "⚠ QSMART needs a tight BET brain mask — loose masks cause streaking (Preprocessing → Masking)".into(),
                 });
                 rows.push(PipelineRow::AlgoSelect {
                     label: "  Inner Inversion", field: "qsmart_inversion",
@@ -3014,18 +2937,84 @@ impl PipelineFormState {
             rows.push(PipelineRow::Param { label: "  Tile halo", field: "dl_tile_halo", help: "Overlap-tiling context margin in voxels (default 8 when tile size is set)." });
         }
 
-        rows.push(PipelineRow::Separator);
+    }
 
-        // QSM Reference
-        rows.push(self.section_header("reference", "Referencing",
-            qsm_ref_options().get(self.get_select("qsm_reference")).copied().unwrap_or("").to_string()));
+    /// QSM → Multi-orientation: how an orientation group (Input tab) is reconstructed.
+    fn multi_orientation_rows(&self, rows: &mut Vec<PipelineRow>) {
+        rows.push(PipelineRow::AlgoSelect {
+            label: "Combine as", field: "orientation_algorithm",
+            options: &ORIENTATION_ALGORITHMS, help: &ORIENTATION_ALGORITHM_HELP,
+        });
+        rows.push(PipelineRow::Param { label: "Lambda", field: "orientation_lambda",
+            help: "Regularization (blank = 0, plain least squares). Raise for 2 orientations or single-axis rotations" });
+        if self.ctx.orientation_cosmos {
+            rows.push(PipelineRow::Toggle {
+                label: "COSMOS Magnitude Weighting", field: "cosmos_magnitude_weighting",
+                help: "COSMOS groups: weight each orientation by its combined magnitude (conjugate-gradient solve). Off = closed-form least squares",
+            });
+            if self.cosmos_magnitude_weighting {
+                rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "cosmos_tol", help: "Conjugate-gradient tolerance of weighted COSMOS" });
+                rows.push(PipelineRow::Param { label: "  CG Max Iterations", field: "cosmos_max_iter", help: "Conjugate-gradient iteration cap of weighted COSMOS" });
+            }
+        }
+        rows.push(PipelineRow::Toggle {
+            label: "Co-register", field: "orientation_registration",
+            help: "Co-register orientations that need it, with the registration settings below. Off = refuse such groups",
+        });
+        if self.orientation_registration {
+            Self::push_registration_rows(rows);
+        }
+        rows.push(PipelineRow::Toggle {
+            label: "Force", field: "multi_orientation_force",
+            help: "Reconstruct even when the B0 directions look degenerate (wrong metadata gives a plausible wrong map)",
+        });
+    }
+
+    /// QSM → Reference: what χ's zero is pinned to.
+    fn reference_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::AlgoSelect {
             label: "QSM Reference", field: "qsm_reference",
             options: qsm_ref_options(), help: qsm_ref_help(),
         });
-        } // end if qsm (inversion/reference)
+    }
 
-        Self::apply_section_collapse(rows)
+    /// Every pipeline row that shows now, page after page (the QSM switch once): for tests that
+    /// ask whether a setting is reachable, not where.
+    #[cfg(test)]
+    pub fn all_rows(&self) -> Vec<PipelineRow> {
+        let mut rows = Vec::new();
+        self.geometry_rows(&mut rows);
+        self.masking_rows(&mut rows);
+        self.motion_rows(&mut rows);
+        self.push_qsm_toggle(&mut rows);
+        if self.qsm_runs() {
+            if self.field_mapping_runs().0 { self.field_map_rows(&mut rows); }
+            if self.inversion_needs_bg_removal() { self.background_rows(&mut rows); }
+            self.inversion_rows(&mut rows);
+            if self.ctx.orientation_group { self.multi_orientation_rows(&mut rows); }
+            self.reference_rows(&mut rows);
+        }
+        self.separation_rows(&mut rows);
+        rows
+    }
+
+    /// The rows of the pipeline form's page [`Self::page`]; empty for the App's own pages.
+    pub fn visible_rows(&self) -> Vec<PipelineRow> {
+        let mut rows = Vec::new();
+        match self.page {
+            Page::Geometry => self.geometry_rows(&mut rows),
+            Page::Masking => self.masking_rows(&mut rows),
+            Page::Motion => self.motion_rows(&mut rows),
+            Page::QsmOff => self.push_qsm_toggle(&mut rows),
+            Page::FieldMap => { self.push_qsm_toggle(&mut rows); self.field_map_rows(&mut rows) }
+            Page::Background => { self.push_qsm_toggle(&mut rows); self.background_rows(&mut rows) }
+            Page::Inversion => { self.push_qsm_toggle(&mut rows); self.inversion_rows(&mut rows) }
+            Page::MultiOrientation => { self.push_qsm_toggle(&mut rows); self.multi_orientation_rows(&mut rows) }
+            Page::Reference => { self.push_qsm_toggle(&mut rows); self.reference_rows(&mut rows) }
+            Page::Separation => self.separation_rows(&mut rows),
+            _ => {}
+        }
+        rows
     }
 
     /// All valid parameter field names, for testing that string dispatch is complete.
@@ -3756,11 +3745,6 @@ impl PipelineFormState {
         (runs.iter().any(|&r| r), runs.iter().all(|&r| r))
     }
 
-    /// Whether rigid registration runs: for motion correction, or to co-register the
-    /// orientations of a multi-orientation group.
-    pub fn registration_runs(&self) -> bool {
-        self.motion_correction || (self.ctx.orientation_group && self.orientation_registration)
-    }
 
     /// Whether QSM is reconstructed: Compute QSM is on, or another output forces it.
     pub fn qsm_runs(&self) -> bool {
@@ -3850,7 +3834,7 @@ impl PipelineFormState {
                         text: match self.mask_combine_recipe().0 {
                             crate::pipeline::config::MaskCombine::Or => "── combined with OR ──",
                             crate::pipeline::config::MaskCombine::And => "── combined with AND ──",
-                        },
+                        }.into(),
                     });
                 } else {
                     rows.push(PipelineRow::MaskCombineOp);
@@ -4214,26 +4198,17 @@ const SYNTHSEG_VERSION_OPTIONS: &[&str] = &["v1", "v2"];
 const SYNTHSEG_VERSION_HELP: &[&str] = &["v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF); its weights are not published yet, so a run with v2 is refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR"; 2];
 const EXECUTION_MODE_OPTIONS: &[&str] = &["Local", "SLURM"];
 const EXECUTION_MODE_HELP: &[&str] = &["Local execution or generate SLURM job scripts"; 2];
-static SUPP_QSM_REF_HELP: LazyLock<Vec<&'static str>> = LazyLock::new(|| vec![
-    "What χ's zero is pinned to: the mean over the voxels χ is defined on, nothing, or the mean of a parcellation region. Same setting as QSM Reference on the QSM tab";
-    qsm_ref_options().len()]);
-
-/// The fields of the Supplementary and Execution tabs, every one of them: what `R` resets.
-pub const SUPPLEMENTARY_FIELDS: &[&str] = &[
-    "do_swi", "swi_scaling", "swi_strength", "swi_hp_sigma_x", "swi_hp_sigma_y", "swi_hp_sigma_z",
-    "swi_mip_window", "do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap", "export_dicom",
-    "do_smwi", "smwi_threshold", "smwi_power", "smwi_mip_window", "do_segmentation",
-    "synthseg_version", "synthseg_crop", "synthseg_flip_averaging", "synthseg_topology_cleanup",
-    "synthseg_sigma", "do_analysis", "source_dicom", "dicom_outputs",
-];
-pub const EXECUTION_FIELDS: &[&str] = &[
-    "execution_mode", "dry_run", "debug", "n_procs", "slurm_account", "slurm_partition",
-    "slurm_time", "slurm_mem", "slurm_cpus", "slurm_submit", "mem_limit_gb", "no_mem_limit",
-    "force", "clean_intermediates",
+/// Where the segmentation comes from (a TUI-only choice: SynthSeg, or `--use-custom-dseg`).
+const SEGMENTATION_SOURCE_OPTIONS: &[&str] = &["synthseg", "custom dseg"];
+const SEGMENTATION_SOURCE_HELP: &[&str] = &[
+    "SynthSeg: whole-brain parcellation straight off the GRE magnitude — no T1w, no registration. Needs a deep-learning build",
+    "A dseg from BIDS derivatives (e.g. FreeSurfer's, made elsewhere); SynthSeg runs where none is found",
 ];
 
 pub struct App {
     pub active_tab: usize,
+    /// The sub-tab last chosen on each tab (see [`App::page`]).
+    pub sub_page: [Option<Page>; TAB_NAMES.len()],
     pub active_field: usize,
     pub editing: bool,
     pub cursor_pos: usize,
@@ -4365,20 +4340,19 @@ pub enum AlgoModalTarget {
     InputMode,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct RunForm {
     // Tab 0: Input/Output
     pub bids_dir: String,
     pub output_dir: String,
     pub config_file: String,
 
-    // Tab 3: Supplementary
+    // Other outputs
     pub do_swi: bool,
     pub swi_scaling: usize,  // index into qsmxt_config::SwiScaling::ALL (= command::SWI_SCALING_ARGS)
     pub swi_strength: String,
-    pub swi_hp_sigma_x: String,
-    pub swi_hp_sigma_y: String,
-    pub swi_hp_sigma_z: String,
+    /// High-pass sigma per axis, "x y z" in voxels.
+    pub swi_hp_sigma: String,
     pub swi_mip_window: String,
     pub do_t2starmap: bool,
     pub do_r2starmap: bool,
@@ -4407,7 +4381,6 @@ pub struct RunForm {
     pub n_procs: String,
     // Local runs: memory-aware scheduling, cache, and clean-up.
     pub mem_limit_gb: String,
-    pub no_mem_limit: bool,
     pub force: bool,
     pub clean_intermediates: bool,
     // SLURM fields
@@ -4431,10 +4404,10 @@ macro_rules! named_fields {
     };
 }
 
-/// The Supplementary and Execution tabs' fields, by the names their rows carry.
+/// The run form's fields, by the names their rows carry.
 impl RunForm {
     named_fields!(text, text_mut, String, [
-        swi_strength, swi_hp_sigma_x, swi_hp_sigma_y, swi_hp_sigma_z, swi_mip_window,
+        swi_strength, swi_hp_sigma, swi_mip_window,
         source_dicom, dicom_outputs, synthseg_crop, synthseg_sigma, smwi_threshold, smwi_power,
         smwi_mip_window, n_procs, mem_limit_gb, slurm_account, slurm_partition, slurm_time,
         slurm_mem, slurm_cpus,
@@ -4442,9 +4415,23 @@ impl RunForm {
     named_fields!(flag, flag_mut, bool, [
         do_swi, do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom, do_smwi,
         do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup,
-        dry_run, debug, no_mem_limit, force, clean_intermediates, slurm_submit,
+        dry_run, debug, force, clean_intermediates, slurm_submit,
     ]);
     named_fields!(choice, choice_mut, usize, [swi_scaling, synthseg_version, execution_mode]);
+
+    /// The memory limit row, read: `(limit in GB, no limit)` — empty or `auto` detects it.
+    pub fn mem_limit(&self) -> (Option<f64>, bool) {
+        let v = self.mem_limit_gb.trim();
+        if v.eq_ignore_ascii_case("none") { return (None, true); }
+        (v.parse().ok().filter(|g: &f64| *g > 0.0), false)
+    }
+
+    /// The SWI high-pass sigma row, read: three numbers (spaces or commas), else none.
+    pub fn swi_hp_sigma_values(&self) -> Option<Vec<f64>> {
+        let v: Vec<f64> = self.swi_hp_sigma.split(|c: char| c == ',' || c.is_whitespace())
+            .filter(|t| !t.is_empty()).map(|t| t.parse().ok()).collect::<Option<_>>()?;
+        (v.len() == 3).then_some(v)
+    }
 }
 
 impl Default for RunForm {
@@ -4459,9 +4446,7 @@ impl Default for RunForm {
             do_swi: false,
             swi_scaling: 0,
             swi_strength: format!("{}", swi.strength),
-            swi_hp_sigma_x: format!("{}", swi.hp_sigma[0]),
-            swi_hp_sigma_y: format!("{}", swi.hp_sigma[1]),
-            swi_hp_sigma_z: format!("{}", swi.hp_sigma[2]),
+            swi_hp_sigma: format!("{} {} {}", swi.hp_sigma[0], swi.hp_sigma[1], swi.hp_sigma[2]),
             swi_mip_window: format!("{}", swi.mip_window),
             do_t2starmap: false,
             do_r2starmap: false,
@@ -4486,7 +4471,6 @@ impl Default for RunForm {
             debug: false,
             n_procs: String::new(),
             mem_limit_gb: String::new(),
-            no_mem_limit: false,
             force: false,
             clean_intermediates: false,
             slurm_account: String::new(),
@@ -4503,6 +4487,7 @@ impl App {
     pub fn new() -> Self {
         App {
             active_tab: 0,
+            sub_page: [None; TAB_NAMES.len()],
             active_field: 0,
             editing: false,
             cursor_pos: 0,
@@ -4568,8 +4553,7 @@ impl App {
         // SLURM mode requires account
         if self.form.execution_mode == 1 && self.form.slurm_account.trim().is_empty() {
             self.error_message = Some("SLURM Account is required".to_string());
-            self.active_tab = TAB_EXECUTION;
-            self.focus_field("slurm_account");
+            self.goto_field("slurm_account");
             return;
         }
 
@@ -4590,7 +4574,8 @@ impl App {
             _ => return false,
         };
         self.active_tab = target;
-        self.active_field = 0;
+        self.reset_view();
+        self.sync_pipeline_mode();
         true
     }
 
@@ -4617,8 +4602,7 @@ impl App {
             self.handle_input_tab_key(key);
             return;
         }
-        // The row-based tabs share one handler (the QSM/Separation row set is selected by
-        // `pipeline_state.mode`, synced first).
+        // The row-based tabs share one handler (the page is synced first).
         if Self::is_rows_tab(self.active_tab) {
             self.sync_pipeline_mode();
             self.handle_rows_key(key);
@@ -4897,9 +4881,7 @@ impl App {
                 self.nifti_state = NiftiState::default();
                 self.example_state = ExampleState::default();
             }
-            TAB_QSM | TAB_SEPARATION => self.pipeline_state = PipelineFormState::default(),
-            TAB_SUPPLEMENTARY => SUPPLEMENTARY_FIELDS.iter().for_each(|f| self.reset_field(f)),
-            TAB_EXECUTION => EXECUTION_FIELDS.iter().for_each(|f| self.reset_field(f)),
+            tab if Self::is_rows_tab(tab) => self.reset_current_page(),
             _ => {}
         }
     }
@@ -4916,10 +4898,6 @@ impl App {
         }
         if self.filter_state.orientation_editing {
             self.handle_filter_text_key(key, FilterTextField::OrientationGroup);
-            return;
-        }
-        if self.filter_state.orientation_lambda_editing {
-            self.handle_filter_text_key(key, FilterTextField::OrientationLambda);
             return;
         }
         if self.filter_state.num_echoes_editing {
@@ -4939,24 +4917,8 @@ impl App {
             KeyCode::Up | KeyCode::Char('k') => self.filter_state.focus_prev(),
             KeyCode::Down | KeyCode::Char('j') => self.filter_state.focus_next(),
 
-            // Collapse/expand — or cycle the algorithm when that row has focus.
-            KeyCode::Left => {
-                if self.filter_state.focus == FilterFocus::OrientationAlgorithm {
-                    let n = ORIENTATION_ALGORITHMS.len();
-                    self.filter_state.orientation_algorithm =
-                        (self.filter_state.orientation_algorithm + n - 1) % n;
-                } else {
-                    self.filter_state.toggle_collapse();
-                }
-            }
-            KeyCode::Right => {
-                if self.filter_state.focus == FilterFocus::OrientationAlgorithm {
-                    self.filter_state.orientation_algorithm =
-                        (self.filter_state.orientation_algorithm + 1) % ORIENTATION_ALGORITHMS.len();
-                } else {
-                    self.filter_state.toggle_collapse();
-                }
-            }
+            // Collapse/expand
+            KeyCode::Left | KeyCode::Right => self.filter_state.toggle_collapse(),
 
             // Toggle / interact
             KeyCode::Char(' ') => {
@@ -4980,15 +4942,6 @@ impl App {
                     FilterFocus::OrientationGroup => {
                         self.filter_state.orientation_editing = true;
                         self.filter_state.orientation_cursor = self.filter_state.orientation_group.len();
-                    }
-                    FilterFocus::OrientationAlgorithm => {
-                        self.filter_state.orientation_algorithm =
-                            (self.filter_state.orientation_algorithm + 1) % ORIENTATION_ALGORITHMS.len();
-                    }
-                    FilterFocus::OrientationLambda => {
-                        self.filter_state.orientation_lambda_editing = true;
-                        self.filter_state.orientation_lambda_cursor =
-                            self.filter_state.orientation_lambda.len();
                     }
                     FilterFocus::NumEchoes => {
                         self.filter_state.num_echoes_editing = true;
@@ -5033,11 +4986,6 @@ impl App {
                 &mut self.filter_state.orientation_group,
                 &mut self.filter_state.orientation_cursor,
                 &mut self.filter_state.orientation_editing,
-            ),
-            FilterTextField::OrientationLambda => (
-                &mut self.filter_state.orientation_lambda,
-                &mut self.filter_state.orientation_lambda_cursor,
-                &mut self.filter_state.orientation_lambda_editing,
             ),
         };
         match key.code {
@@ -5607,21 +5555,17 @@ impl App {
         }
     }
 
-    /// Select the pipeline row set (QSM vs Separation) from the active tab. When the mode
-    /// actually changes — i.e. the user switched between the QSM and Separation tabs — reset
-    /// focus to the first selectable row so we never land on an out-of-range (invisible) row.
-    /// Called from both key handling and rendering so the display is always consistent.
+    /// Point the pipeline form at the active page, with its context fresh. When the page
+    /// changes under it (a tab or sub-tab switch, or a sub-tab that stopped applying), focus goes
+    /// back to the top. Called from both key handling and rendering so the display is consistent.
     pub fn sync_pipeline_mode(&mut self) {
-        let new_mode = if self.active_tab == TAB_SEPARATION {
-            PipelineTabMode::Separation
-        } else {
-            PipelineTabMode::Qsm
-        };
-        if new_mode != self.pipeline_state.mode {
-            self.pipeline_state.mode = new_mode;
-            self.pipeline_state.focus = 0;
-        }
         self.pipeline_state.ctx = self.row_context();
+        if let Some(page) = self.page() {
+            if page != self.pipeline_state.page {
+                self.pipeline_state.page = page;
+                self.reset_view();
+            }
+        }
     }
 
     /// What the rest of the form decides about the pipeline tabs' rows (see [`RowContext`]).
@@ -5629,19 +5573,29 @@ impl App {
         let ps = &self.pipeline_state;
         let (group, algorithm, _) = self.filter_state.orientation_args();
         // Whether QSM runs is the resolved config's answer — the same enforcement the run applies.
-        let qsm_forced = !ps.do_qsm
-            && super::command::config_from_app(self).is_ok_and(|c| c.pipeline.do_qsm);
+        let config = super::command::config_from_app(self).ok();
+        let qsm_forced = !ps.do_qsm && config.as_ref().is_some_and(|c| c.pipeline.do_qsm);
         RowContext {
             qsm_forced_by: qsm_forced.then_some(
                 if self.form.do_smwi && ps.custom_qsm_tool.trim().is_empty() {
-                    "SMWI weights the magnitude by the χ map (Supplementary tab)"
+                    "SMWI weights the magnitude by the χ map (Other outputs → SWI/SMWI)"
                 } else {
-                    "the per-structure statistics need a map to summarise (Supplementary tab)"
+                    "the per-structure statistics need a map to summarise (Other outputs → Segmentation)"
                 }),
             orientation_group: group.is_some(),
             orientation_cosmos: algorithm == 0,
             num_echoes: self.filter_state.num_echoes.trim().parse().ok(),
             inputs: self.input_relevance(),
+            axial_forced_by: config.as_ref().and_then(|c| {
+                let names = qsmxt_config::bridge::axial_only_algorithms(
+                    c, qsmxt_config::bridge::RunOrientationFacts { has_measured_r2: false });
+                (!names.is_empty()).then(|| names.join(", "))
+            }),
+            multi_coil: self.filter_state.tree.as_ref().is_none_or(|t| {
+                let mut any = false;
+                t.for_each_run(|leaf| any |= leaf.selected && leaf.multi_coil);
+                any
+            }),
         }
     }
 
@@ -5666,7 +5620,7 @@ impl App {
         }
     }
 
-    /// Keys on a row-based tab (QSM, Separation, Supplementary, Execution): every row is a named
+    /// Keys on a row-based tab (all but Input and Methods): every row is a named
     /// field ([`PipelineRow`]) read and written through the `field_*` accessors, so one handler
     /// serves them all, whichever form a field lives in.
     fn handle_rows_key(&mut self, key: KeyEvent) {
@@ -5773,6 +5727,9 @@ impl App {
 
             // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
             _ if self.switch_tab(key) => {}
+            // `[` and `]`: the sub-tabs.
+            KeyCode::Char('[') => self.cycle_page(-1),
+            KeyCode::Char(']') => self.cycle_page(1),
 
             // Reorder mask ops with Ctrl+Up/Down (must be before regular Up/Down)
             KeyCode::Up if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
@@ -5814,11 +5771,6 @@ impl App {
             // Interact
             KeyCode::Enter | KeyCode::Char(' ') => {
                 let row = self.focused_row();
-                // A collapsible stage header toggles open/closed instead of opening a selector.
-                if let Some(PipelineRow::SectionHeader { id, .. }) = row {
-                    self.pipeline_state.toggle_section(id);
-                    return;
-                }
                 // Single-choice selectors open a modal listing every option (rather than cycling).
                 let modal = {
                     let ps = &self.pipeline_state;
@@ -6001,14 +5953,6 @@ impl App {
                     Some(PipelineRow::MaskOpHdBetStep { section }) => ps.adjust_hd_bet_tile_step(section, delta),
                     Some(PipelineRow::MaskOpBetVoxelScale { section }) => ps.adjust_bet_voxel_scale(section, delta),
                     Some(PipelineRow::MaskOpInput { section }) => ps.adjust_mask_input(section, delta),
-                    // Stage headers: ← collapses, → expands (in addition to Enter/Space toggle).
-                    Some(PipelineRow::SectionHeader { id, .. }) => {
-                        if delta < 0 {
-                            ps.collapsed_sections.insert(id);
-                        } else {
-                            ps.collapsed_sections.remove(id);
-                        }
-                    }
                     _ => {}
                 }
             }
@@ -6119,32 +6063,108 @@ impl App {
         let config = super::command::config_from_app(self).ok()?;
         crate::pipeline::requirements::implied_by(&config, out)
     }
-    /// Whether QSM is reconstructed: its toggle, or an output that forces it.
-    fn qsm_effective(&self) -> bool {
-        self.pipeline_state.do_qsm
-            || super::command::config_from_app(self).is_ok_and(|c| c.pipeline.do_qsm)
-    }
 
-    // ─── Row-based tabs: rows, focus and named field access ───
+    // ─── Row-based tabs: pages, rows, focus and named field access ───
 
     /// Whether a tab is drawn and driven as named rows ([`PipelineRow`]).
     pub fn is_rows_tab(tab: usize) -> bool {
-        matches!(tab, TAB_QSM | TAB_SEPARATION | TAB_SUPPLEMENTARY | TAB_EXECUTION)
+        matches!(tab, TAB_PREPROCESSING | TAB_QSM | TAB_SEPARATION | TAB_OUTPUTS | TAB_EXECUTION)
     }
 
-    /// Whether the active tab's rows are the pipeline form's (QSM, Separation), which keep their
-    /// own focus, scroll position and collapsed stages.
-    fn on_pipeline_tab(&self) -> bool {
-        matches!(self.active_tab, TAB_QSM | TAB_SEPARATION)
+    /// The pipeline form as it decides its rows now: its context fresh from the rest of the form.
+    fn synced_pipeline(&self, page: Page, ctx: &RowContext) -> PipelineFormState {
+        let mut ps = self.pipeline_state.clone();
+        ps.page = page;
+        ps.ctx = ctx.clone();
+        ps
     }
 
-    /// The active tab's rows: the pipeline form's for QSM/Separation (call
-    /// [`App::sync_pipeline_mode`] first), the run form's for Supplementary/Execution.
+    /// A tab's sub-tabs, as they apply now: the QSM tab shows a stage only when it runs.
+    pub fn pages(&self, tab: usize) -> Vec<Page> {
+        if tab == TAB_QSM { self.pages_in(tab, &self.row_context()) } else { self.pages_in(tab, &RowContext::default()) }
+    }
+
+    fn pages_in(&self, tab: usize, ctx: &RowContext) -> Vec<Page> {
+        match tab {
+            TAB_PREPROCESSING => vec![Page::Geometry, Page::Masking, Page::Motion],
+            TAB_QSM => {
+                let ps = self.synced_pipeline(Page::Inversion, ctx);
+                if !ps.qsm_runs() {
+                    return vec![Page::QsmOff];
+                }
+                let mut pages = Vec::new();
+                if ps.field_mapping_runs().0 { pages.push(Page::FieldMap); }
+                if ps.inversion_needs_bg_removal() { pages.push(Page::Background); }
+                pages.push(Page::Inversion);
+                if ps.ctx.orientation_group { pages.push(Page::MultiOrientation); }
+                pages.push(Page::Reference);
+                pages
+            }
+            TAB_SEPARATION => vec![Page::Separation],
+            TAB_OUTPUTS => vec![Page::SwiSmwi, Page::Relaxometry, Page::Segmentation, Page::Export],
+            TAB_EXECUTION => vec![Page::Execution],
+            _ => Vec::new(),
+        }
+    }
+
+    /// The active sub-tab: the one last chosen on this tab while it still applies, else the first.
+    pub fn page(&self) -> Option<Page> {
+        let pages = self.pages(self.active_tab);
+        let chosen = self.sub_page.get(self.active_tab).copied().flatten();
+        chosen.filter(|p| pages.contains(p)).or_else(|| pages.first().copied())
+    }
+
+    /// Move to the next (`delta` 1) or previous (-1) sub-tab of the active tab, wrapping.
+    pub fn cycle_page(&mut self, delta: isize) {
+        let pages = self.pages(self.active_tab);
+        if pages.len() < 2 { return; }
+        let cur = self.page().and_then(|p| pages.iter().position(|&q| q == p)).unwrap_or(0);
+        let next = pages[(cur as isize + delta).rem_euclid(pages.len() as isize) as usize];
+        self.sub_page[self.active_tab] = Some(next);
+        self.reset_view();
+        self.sync_pipeline_mode();
+    }
+
+    /// Put focus and scrolling back at the top: on every change of tab or sub-tab.
+    pub fn reset_view(&mut self) {
+        self.active_field = 0;
+        self.form_scroll_offset = 0;
+        self.editing = false;
+        let ps = &mut self.pipeline_state;
+        ps.focus = 0;
+        ps.scroll_offset = 0;
+        ps.editing = false;
+        ps.mask_ops_adding = false;
+        ps.mask_threshold_editing = false;
+    }
+
+    /// The active page's rows.
     pub fn rows(&self) -> Vec<PipelineRow> {
-        match self.active_tab {
-            TAB_QSM | TAB_SEPARATION => self.pipeline_state.visible_rows(),
-            TAB_SUPPLEMENTARY => self.supplementary_rows(),
-            TAB_EXECUTION => self.execution_rows(),
+        self.page().map(|p| self.page_rows(p)).unwrap_or_default()
+    }
+
+    /// Any page's rows, as they would show now.
+    pub fn page_rows(&self, page: Page) -> Vec<PipelineRow> {
+        self.page_rows_in(page, &self.row_context())
+    }
+
+    /// Every sub-tab of every tab with its rows, as they apply now (the context worked out once).
+    pub fn all_pages(&self) -> Vec<(usize, Page, Vec<PipelineRow>)> {
+        let ctx = self.row_context();
+        (0..TAB_NAMES.len())
+            .flat_map(|t| self.pages_in(t, &ctx).into_iter().map(move |p| (t, p)))
+            .map(|(t, p)| (t, p, self.page_rows_in(p, &ctx)))
+            .collect()
+    }
+
+    fn page_rows_in(&self, page: Page, ctx: &RowContext) -> Vec<PipelineRow> {
+        match page {
+            p if p.is_pipeline() => self.synced_pipeline(p, ctx).visible_rows(),
+            Page::SwiSmwi => self.swi_smwi_rows(),
+            Page::Relaxometry => self.relaxometry_rows(),
+            Page::Segmentation => self.segmentation_rows(),
+            Page::Export => self.export_rows(),
+            Page::Execution => self.execution_rows(),
             _ => Vec::new(),
         }
     }
@@ -6156,11 +6176,11 @@ impl App {
 
     /// The focused row's position among [`App::focusable_rows`].
     pub fn focus(&self) -> usize {
-        if self.on_pipeline_tab() { self.pipeline_state.focus } else { self.active_field }
+        self.pipeline_state.focus
     }
 
     fn set_focus(&mut self, focus: usize) {
-        if self.on_pipeline_tab() { self.pipeline_state.focus = focus } else { self.active_field = focus }
+        self.pipeline_state.focus = focus;
     }
 
     /// The focused row of the active tab.
@@ -6188,7 +6208,7 @@ impl App {
         }
     }
 
-    /// Focus the row editing `field` on the active tab; false if no visible row does.
+    /// Focus the row editing `field` on the active page; false if no visible row does.
     pub fn focus_field(&mut self, field: &str) -> bool {
         let rows = self.rows();
         match focusable_indices(&rows).iter().position(|&i| row_field(&rows[i]) == Some(field)) {
@@ -6200,23 +6220,32 @@ impl App {
         }
     }
 
-    /// Whether a row editing `field` is on the active tab now.
-    #[cfg(test)]
-    pub fn field_visible(&self, field: &str) -> bool {
-        self.rows().iter().any(|r| row_field(r) == Some(field))
+    /// Open the tab and sub-tab that show `field` now, and focus it; false if none does.
+    pub fn goto_field(&mut self, field: &str) -> bool {
+        let found = self.all_pages().into_iter()
+            .find(|(_, _, rows)| rows.iter().any(|r| row_field(r) == Some(field)));
+        let Some((tab, page, _)) = found else { return false };
+        self.active_tab = tab;
+        self.sub_page[tab] = Some(page);
+        self.reset_view();
+        self.sync_pipeline_mode();
+        self.focus_field(field)
     }
 
-    /// A text field's value, by name: the run form's, else the pipeline form's.
+    /// A text field's value, by name: the run form's, the Input tab's, else the pipeline form's.
     pub fn field_text(&self, field: &str) -> &str {
-        match self.form.text(field) {
-            Some(s) => s,
-            None => self.pipeline_state.get_param(field),
+        match (self.form.text(field), field) {
+            (Some(s), _) => s,
+            (None, "orientation_lambda") => &self.filter_state.orientation_lambda,
+            (None, _) => self.pipeline_state.get_param(field),
         }
     }
 
     pub fn field_text_mut(&mut self, field: &str) -> Option<&mut String> {
         if self.form.text(field).is_some() {
             self.form.text_mut(field)
+        } else if field == "orientation_lambda" {
+            Some(&mut self.filter_state.orientation_lambda)
         } else {
             self.pipeline_state.get_param_mut(field)
         }
@@ -6224,18 +6253,55 @@ impl App {
 
     /// A select's option index, by name.
     pub fn field_select(&self, field: &str) -> usize {
-        self.form.choice(field).copied().unwrap_or_else(|| self.pipeline_state.get_select(field))
+        if let Some(&c) = self.form.choice(field) {
+            return c;
+        }
+        match field {
+            "orientation_algorithm" => self.filter_state.orientation_algorithm,
+            // A segmentation from derivatives, or SynthSeg's.
+            "segmentation_source" => usize::from(!self.pipeline_state.custom_dseg_tool.trim().is_empty()),
+            _ => self.pipeline_state.get_select(field),
+        }
     }
 
     pub fn set_field_select(&mut self, field: &str, val: usize) {
-        match self.form.choice_mut(field) {
-            Some(c) => *c = val,
-            None => self.pipeline_state.set_select(field, val),
+        if let Some(c) = self.form.choice_mut(field) {
+            *c = val;
+            return;
         }
+        match field {
+            "orientation_algorithm" => self.filter_state.orientation_algorithm = val.min(ORIENTATION_ALGORITHMS.len() - 1),
+            // One representation per choice: a supplied segmentation (any tool, until named) is
+            // not also a SynthSeg request, and SynthSeg reads no derivatives.
+            "segmentation_source" => {
+                let ps = &mut self.pipeline_state;
+                if val == 1 {
+                    if ps.custom_dseg_tool.trim().is_empty() { ps.custom_dseg_tool = "*".into(); }
+                    self.form.do_segmentation = false;
+                } else {
+                    ps.custom_dseg_tool.clear();
+                    self.form.do_segmentation = true;
+                }
+            }
+            _ => self.pipeline_state.set_select(field, val),
+        }
+    }
+
+    /// Whether a segmentation is made or read: asked for, supplied, or forced by what needs one.
+    fn segmentation_on(&self) -> bool {
+        self.form.do_segmentation
+            || !self.pipeline_state.custom_dseg_tool.trim().is_empty()
+            || self.forced_by(crate::pipeline::requirements::Output::Segmentation).is_some()
     }
 
     /// A checkbox as it reads: an output another option forces on reads as checked.
     pub fn field_toggle(&self, field: &str) -> bool {
+        if field == "do_segmentation" {
+            return self.segmentation_on();
+        }
+        if field == "do_qsm" && !self.pipeline_state.do_qsm {
+            return self.row_context().qsm_forced_by.is_some();
+        }
         if let Some(out) = forced_output(field) {
             if self.forced_by(out).is_some() {
                 return true;
@@ -6249,6 +6315,34 @@ impl App {
 
     /// Flip a checkbox — refused, with the reason, while another option forces it on.
     pub fn toggle_field(&mut self, field: &str) {
+        if field == "do_qsm" {
+            // QSM another output needs runs whatever this says: refuse, as for the other maps.
+            let was = std::mem::replace(&mut self.pipeline_state.do_qsm, false);
+            let why = self.row_context().qsm_forced_by;
+            self.pipeline_state.do_qsm = was;
+            if let Some(why) = why {
+                self.error_message = Some(format!("QSM is required: {why} — change or turn that off first."));
+                return;
+            }
+        }
+        if field == "do_segmentation" {
+            if !self.segmentation_on() {
+                self.form.do_segmentation = true;
+                return;
+            }
+            // What needs a segmentation whichever its source: asked with no dseg supplied.
+            let dseg = std::mem::take(&mut self.pipeline_state.custom_dseg_tool);
+            let why = self.forced_by(crate::pipeline::requirements::Output::Segmentation);
+            self.pipeline_state.custom_dseg_tool = dseg;
+            if let Some(why) = why {
+                self.error_message = Some(format!(
+                    "Segmentation is required by {why} — change or turn that off first."));
+                return;
+            }
+            self.form.do_segmentation = false;
+            self.pipeline_state.custom_dseg_tool.clear();
+            return;
+        }
         if let Some(out) = forced_output(field) {
             if let Some(why) = self.forced_by(out) {
                 self.error_message = Some(format!(
@@ -6267,6 +6361,8 @@ impl App {
     pub fn field_placeholder(&self, field: &str) -> &'static str {
         match field {
             "slurm_account" => "(required)",
+            "mem_limit_gb" | "n_procs" => "auto",
+            "orientation_lambda" => "0 (none)",
             _ if self.form.text(field).is_some() => "(empty)",
             _ => "(default)",
         }
@@ -6282,6 +6378,16 @@ impl App {
     /// Reset one named field to its default, whichever form it lives in.
     fn reset_field(&mut self, field: &str) {
         let (form, ps) = (RunForm::default(), PipelineFormState::default());
+        match field {
+            "orientation_lambda" => return self.filter_state.orientation_lambda.clear(),
+            "orientation_algorithm" => return self.filter_state.orientation_algorithm = 0,
+            "segmentation_source" | "do_segmentation" => {
+                self.pipeline_state.custom_dseg_tool.clear();
+                self.form.do_segmentation = form.do_segmentation;
+                return;
+            }
+            _ => {}
+        }
         if let (Some(d), Some(v)) = (form.text(field), self.form.text_mut(field)) {
             *v = d.clone();
         } else if let (Some(d), Some(v)) = (form.flag(field), self.form.flag_mut(field)) {
@@ -6297,69 +6403,131 @@ impl App {
         }
     }
 
-    /// The Supplementary tab: SWI, relaxometry, DICOM export, SMWI and segmentation.
-    fn supplementary_rows(&self) -> Vec<PipelineRow> {
+    /// Reset every setting of the active sub-tab: each field it shows, again for the rows a
+    /// reset reveals, until none are new (and the mask recipe, on the Masking page).
+    fn reset_current_page(&mut self) {
+        let Some(page) = self.page() else { return };
+        if page == Page::Masking {
+            let d = PipelineFormState::default();
+            let ps = &mut self.pipeline_state;
+            ps.mask_sections = d.mask_sections;
+            ps.mask_combine = d.mask_combine;
+            ps.mask_combined_refinements = d.mask_combined_refinements;
+            ps.two_pass_sections = d.two_pass_sections;
+            ps.mask_preset = d.mask_preset;
+        }
+        let mut done = std::collections::HashSet::new();
+        loop {
+            let fields: Vec<&'static str> = self.page_rows(page).iter().filter_map(row_field)
+                .filter(|f| done.insert(*f)).collect();
+            if fields.is_empty() { break; }
+            fields.iter().for_each(|f| self.reset_field(f));
+        }
+        self.reset_view();
+    }
+
+    /// Other outputs → SWI/SMWI.
+    fn swi_smwi_rows(&self) -> Vec<PipelineRow> {
         use PipelineRow::{AlgoSelect, Param, Toggle};
         let f = &self.form;
         let mut rows = vec![Toggle { label: "Compute SWI", field: "do_swi", help: "Also compute susceptibility-weighted images" }];
         if f.do_swi {
-            rows.push(AlgoSelect { label: "  SWI Scaling", field: "swi_scaling", options: &SWI_SCALING_OPTIONS, help: &SWI_SCALING_HELP });
-            rows.push(Param { label: "  SWI Strength", field: "swi_strength", help: "Phase scaling strength (higher = stronger phase contrast)" });
-            rows.push(Param { label: "  SWI HP Sigma X", field: "swi_hp_sigma_x", help: "High-pass filter sigma in X (voxels). Controls background phase removal." });
-            rows.push(Param { label: "  SWI HP Sigma Y", field: "swi_hp_sigma_y", help: "High-pass filter sigma in Y (voxels)." });
-            rows.push(Param { label: "  SWI HP Sigma Z", field: "swi_hp_sigma_z", help: "High-pass filter sigma in Z (voxels). Set to 0 for thin axial slices." });
-            rows.push(Param { label: "  SWI MIP Window", field: "swi_mip_window", help: "Minimum intensity projection window size in slices" });
+            rows.push(AlgoSelect { label: "  Scaling", field: "swi_scaling", options: &SWI_SCALING_OPTIONS, help: &SWI_SCALING_HELP });
+            rows.push(Param { label: "  Strength", field: "swi_strength", help: "Phase scaling strength (higher = stronger phase contrast)" });
+            rows.push(Param { label: "  HP Sigma (x y z)", field: "swi_hp_sigma", help: "High-pass filter sigma per axis, in voxels (x y z): background phase removal. Set z to 0 for thin axial slices" });
+            rows.push(Param { label: "  mIP Window", field: "swi_mip_window", help: "Minimum intensity projection window size in slices" });
         }
-        rows.push(Toggle { label: "Compute T2* Map", field: "do_t2starmap", help: "Compute T2* relaxation map (requires 3+ echoes with magnitude)" });
-        rows.push(Toggle { label: "Compute R2* Map", field: "do_r2starmap", help: "Compute R2* decay rate map (requires 3+ echoes with magnitude)" });
-        rows.push(Toggle { label: "Compute R2 Map", field: "do_r2map", help: "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when chi-separation is enabled." });
-        rows.push(Toggle { label: "Compute R2' Map", field: "do_r2primemap", help: "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition. Forced on when chi-separation is enabled." });
-        rows.push(Toggle { label: "Export DICOM", field: "export_dicom", help: "Also write final maps as DICOM series into each subject's extra_files/ folder" });
+        rows.push(PipelineRow::Separator);
         rows.push(Toggle { label: "Compute SMWI", field: "do_smwi", help: "Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ, not from filtered phase. Needs QSM" });
         if f.do_smwi {
-            rows.push(Param { label: "  SMWI Threshold", field: "smwi_threshold", help: "|χ| in ppm at which the weighting mask reaches zero. The 1 ppm default targets strong sources; brain tissue wants far less" });
-            rows.push(Param { label: "  SMWI Power", field: "smwi_power", help: "Power the mask is raised to (contrast strength)" });
-            rows.push(Param { label: "  SMWI mIP Window", field: "smwi_mip_window", help: "Minimum-intensity-projection window in slices" });
+            rows.push(Param { label: "  Threshold", field: "smwi_threshold", help: "|χ| in ppm at which the weighting mask reaches zero. The 1 ppm default targets strong sources; brain tissue wants far less" });
+            rows.push(Param { label: "  Power", field: "smwi_power", help: "Power the mask is raised to (contrast strength)" });
+            rows.push(Param { label: "  mIP Window", field: "smwi_mip_window", help: "Minimum-intensity-projection window in slices" });
+            if self.input_relevance().qsm {
+                rows.push(PipelineFormState::custom_qsm_row());
+            }
         }
-        rows.push(Toggle { label: "Segment (SynthSeg)", field: "do_segmentation", help: "Whole-brain parcellation straight off the GRE magnitude — no T1w, no registration. Needs a deep-learning build" });
-        // Whatever forces segmentation — the statistics, or a region reference, without a
-        // supplied dseg — reveals SynthSeg's settings too: the checkbox above then reads as
+        rows
+    }
+
+    /// Other outputs → Relaxometry: the maps, the R2' source, and the maps that may be supplied.
+    fn relaxometry_rows(&self) -> Vec<PipelineRow> {
+        use PipelineRow::{AlgoSelect, Param, Toggle};
+        let inputs = self.input_relevance();
+        let mut rows = vec![
+            Toggle { label: "Compute T2* Map", field: "do_t2starmap", help: "Compute T2* relaxation map (requires 3+ echoes with magnitude)" },
+            Toggle { label: "Compute R2* Map", field: "do_r2starmap", help: "Compute R2* decay rate map (requires 3+ echoes with magnitude)" },
+            Toggle { label: "Compute R2 Map", field: "do_r2map", help: "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when chi-separation needs it" },
+        ];
+        if inputs.r2 {
+            rows.push(Param { label: "  Custom R2 tool", field: "custom_r2_tool", help: "Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE (blank = compute, * = any tool)" });
+        }
+        rows.push(Toggle { label: "Compute R2' Map", field: "do_r2primemap", help: "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition, or R2PRIMEnet. Forced on when chi-separation needs it" });
+        if inputs.r2prime {
+            rows.push(Param { label: "  Custom R2' tool", field: "custom_r2prime_tool", help: "Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it (blank = compute, * = any tool)" });
+        }
+        // Only consulted when R2' is computed — a supplied map always wins.
+        if inputs.r2prime_source {
+            rows.push(AlgoSelect { label: "  R2' Source", field: "r2prime_strategy", options: R2PRIME_STRATEGY_OPTIONS, help: R2PRIME_STRATEGY_HELP });
+            // R2PRIMEnet's own settings, unless R2' is only ever measured (index 1 = mese).
+            if self.pipeline_state.r2prime_strategy != 1 {
+                rows.push(Toggle { label: "    R2PRIMEnet off 3 T", field: "r2primenet_ignore_field_mismatch",
+                    help: "Run R2PRIMEnet on non-3 T data (trained at 3 T only; the R2' is uncalibrated). Off: auto skips R2', r2primenet errors" });
+                rows.push(Param { label: "    R2PRIMEnet Patch", field: "r2primenet_patch",
+                    help: "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)" });
+            }
+        }
+        rows
+    }
+
+    /// Other outputs → Segmentation: where the segmentation comes from, and the statistics on it.
+    fn segmentation_rows(&self) -> Vec<PipelineRow> {
+        use PipelineRow::{AlgoSelect, Param, Toggle};
+        let f = &self.form;
+        let mut rows = vec![Toggle { label: "Segmentation", field: "do_segmentation", help: "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Forced on by the statistics and a region reference" }];
+        // Whatever forces segmentation reveals its settings too: the checkbox then reads as
         // checked, and hiding the settings that shape the segmentation it promises would be a lie.
         if self.field_toggle("do_segmentation") {
-            rows.push(AlgoSelect { label: "  SynthSeg Version", field: "synthseg_version", options: SYNTHSEG_VERSION_OPTIONS, help: SYNTHSEG_VERSION_HELP });
-            rows.push(Param { label: "  SynthSeg Crop", field: "synthseg_crop", help: "Cubic centre-crop in voxels at 1 mm before inference; empty processes the whole volume" });
-            rows.push(Toggle { label: "  Flip Averaging", field: "synthseg_flip_averaging", help: "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time" });
-            rows.push(Toggle { label: "  Topology Cleanup", field: "synthseg_topology_cleanup", help: "Reset each topological class to its largest connected component" });
-            rows.push(Param { label: "  Posterior Smoothing", field: "synthseg_sigma", help: "Gaussian blur on the posteriors, in voxels (0 disables it)" });
+            rows.push(AlgoSelect { label: "  Source", field: "segmentation_source", options: SEGMENTATION_SOURCE_OPTIONS, help: SEGMENTATION_SOURCE_HELP });
+            if self.field_select("segmentation_source") == 1 {
+                rows.push(Param { label: "    Derivatives tool", field: "custom_dseg_tool", help: "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found" });
+            } else {
+                rows.push(AlgoSelect { label: "    SynthSeg Version", field: "synthseg_version", options: SYNTHSEG_VERSION_OPTIONS, help: SYNTHSEG_VERSION_HELP });
+                rows.push(Param { label: "    Crop", field: "synthseg_crop", help: "Cubic centre-crop in voxels at 1 mm before inference; empty processes the whole volume" });
+                rows.push(Toggle { label: "    Flip Averaging", field: "synthseg_flip_averaging", help: "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time" });
+                rows.push(Toggle { label: "    Topology Cleanup", field: "synthseg_topology_cleanup", help: "Reset each topological class to its largest connected component" });
+                rows.push(Param { label: "    Posterior Smoothing", field: "synthseg_sigma", help: "Gaussian blur on the posteriors, in voxels (0 disables it)" });
+            }
         }
-        // Reachable on its own: a supplied segmentation satisfies the statistics without SynthSeg,
-        // and hiding them then would leave them impossible to untick.
-        rows.push(Toggle { label: "  Per-structure Stats", field: "do_analysis", help: "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Implies segmentation; implies QSM only if no other map is enabled" });
-        // The same control as the QSM tab's "QSM Reference" row, editing the same value — a
-        // region reference is a SynthSeg setting as much as a referencing one. It needs no
-        // segmentation to be reachable (picking a region is how a user turns segmentation on from
-        // here), but it references χ, so it only applies when QSM is reconstructed.
-        if self.qsm_effective() {
-            rows.push(AlgoSelect { label: "  QSM Reference", field: "qsm_reference", options: qsm_ref_options(), help: &SUPP_QSM_REF_HELP });
+        rows.push(PipelineRow::Separator);
+        rows.push(Toggle { label: "Per-structure statistics", field: "do_analysis", help: "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Implies segmentation; implies QSM only if no other map is enabled" });
+        if f.do_analysis && self.input_relevance().qsm {
+            rows.push(PipelineFormState::custom_qsm_row());
         }
-        if f.export_dicom {
+        rows
+    }
+
+    /// Other outputs → Export.
+    fn export_rows(&self) -> Vec<PipelineRow> {
+        use PipelineRow::{Param, Toggle};
+        let mut rows = vec![Toggle { label: "Export DICOM", field: "export_dicom", help: "Also write final maps as DICOM series into each subject's extra_files/ folder" }];
+        if self.form.export_dicom {
             rows.push(Param { label: "  Source DICOM Dir", field: "source_dicom", help: "Original DICOM directory: the exported series inherit its patient/study identity (empty = none)" });
             rows.push(Param { label: "  DICOM Outputs", field: "dicom_outputs", help: "Comma-separated maps to export, e.g. Chimap,desc-total_chimap (empty = all)" });
         }
         rows
     }
 
-    /// The Execution tab: local or SLURM, and each mode's settings.
+    /// The Execution tab: local or SLURM, each mode's own settings, then what applies to both.
     fn execution_rows(&self) -> Vec<PipelineRow> {
         use PipelineRow::{AlgoSelect, Param, Toggle};
         let local = self.form.execution_mode == 0;
         let mut rows = vec![AlgoSelect { label: "Execution Mode", field: "execution_mode", options: EXECUTION_MODE_OPTIONS, help: EXECUTION_MODE_HELP }];
         if local {
-            rows.push(Toggle { label: "Dry Run", field: "dry_run", help: "Print processing plan without executing" });
-        }
-        rows.push(Toggle { label: "Debug Logging", field: "debug", help: "Enable verbose debug log output" });
-        if local {
-            rows.push(Param { label: "Num Processes", field: "n_procs", help: "Number of parallel threads (empty = auto)" });
+            rows.push(Toggle { label: "  Dry Run", field: "dry_run", help: "Print processing plan without executing" });
+            rows.push(Param { label: "  Num Processes", field: "n_procs", help: "Number of parallel threads (empty = auto)" });
+            // The memory limit schedules concurrent local runs.
+            rows.push(Param { label: "  Memory Limit (GB)", field: "mem_limit_gb", help: "Memory budget for scheduling concurrent runs: auto (empty) detects it, a number of GB, or none for no limit" });
         } else {
             rows.push(Param { label: "  SLURM Account", field: "slurm_account", help: "SLURM account name (required for SLURM mode)" });
             rows.push(Param { label: "  SLURM Partition", field: "slurm_partition", help: "SLURM partition (optional)" });
@@ -6368,18 +6536,13 @@ impl App {
             rows.push(Param { label: "  SLURM CPUs/Task", field: "slurm_cpus", help: "CPUs per SLURM task" });
             rows.push(Toggle { label: "  Auto-Submit", field: "slurm_submit", help: "Automatically submit generated scripts via sbatch" });
         }
-        // The memory limit schedules concurrent local runs; force and clean-up apply to both.
-        if local {
-            rows.push(Param { label: "Memory Limit (GB)", field: "mem_limit_gb", help: "Memory budget for scheduling concurrent runs (empty = auto-detect)" });
-            rows.push(Toggle { label: "No Memory Limit", field: "no_mem_limit", help: "Disable memory-aware concurrency limiting" });
-        }
+        rows.push(PipelineRow::Separator);
+        rows.push(Toggle { label: "Debug Logging", field: "debug", help: "Enable verbose debug log output" });
         rows.push(Toggle { label: "Force Re-run", field: "force", help: "Ignore cached pipeline state and recompute everything" });
         rows.push(Toggle { label: "Clean Intermediates", field: "clean_intermediates", help: "Remove intermediate files after the run, keeping only final outputs" });
         rows
     }
-
 }
-
 
 #[cfg(test)]
 mod tests {
@@ -6394,14 +6557,37 @@ mod tests {
     fn shows(app: &mut App, tab: usize, field: &str) -> bool {
         app.active_tab = tab;
         app.sync_pipeline_mode();
-        app.field_visible(field)
+        app.pages(tab).into_iter().any(|p| app.page_rows(p).iter().any(|r| row_field(r) == Some(field)))
     }
 
-    /// Switch to `tab` and focus the row editing `field`.
+    /// Switch to `tab`, on the sub-tab that shows `field`, and focus its row.
     fn focus_on(app: &mut App, tab: usize, field: &str) {
         app.active_tab = tab;
-        app.sync_pipeline_mode();
+        let page = app.pages(tab).into_iter()
+            .find(|&p| app.page_rows(p).iter().any(|r| row_field(r) == Some(field)));
+        let page = page.unwrap_or_else(|| panic!("{field} has no row on tab {tab}"));
+        goto_page(app, page);
         assert!(app.focus_field(field), "{field} has no row on tab {tab}");
+    }
+
+    /// Every field with a row anywhere now, with a `#Page` marker for each sub-tab shown.
+    fn all_fields(app: &mut App) -> Vec<String> {
+        app.sync_pipeline_mode();
+        let mut out = Vec::new();
+        for (_, page, rows) in app.all_pages() {
+            out.push(format!("#{page:?}"));
+            out.extend(rows.iter().filter_map(row_field).map(str::to_string));
+        }
+        out
+    }
+
+    /// Open `page` (on whichever tab has it now).
+    fn goto_page(app: &mut App, page: Page) {
+        let tab = (0..TAB_NAMES.len()).find(|&t| app.pages(t).contains(&page))
+            .unwrap_or_else(|| panic!("{page:?} is not shown now"));
+        app.active_tab = tab;
+        app.sub_page[tab] = Some(page);
+        app.sync_pipeline_mode();
     }
 
     fn key(code: KeyCode) -> KeyEvent {
@@ -6673,8 +6859,6 @@ mod tests {
     fn test_algo_modal_opens_on_enter_over_algoselect() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
-        app.pipeline_state.mode = PipelineTabMode::Qsm;
         // The QSM tab's first focusable row is the "Compute QSM" toggle; move to the inversion
         // AlgoSelect and open it.
         let opened = (0..40).any(|_| {
@@ -6724,12 +6908,11 @@ mod tests {
     #[test]
     fn test_mask_input_modal_opens_and_sets() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         app.sync_pipeline_mode();
         // Focus the mask Input row.
-        let rows = app.pipeline_state.visible_rows();
-        let target = app.pipeline_state.focusable_rows().iter().position(|&ri| {
+        let rows = app.rows();
+        let target = app.focusable_rows().iter().position(|&ri| {
             matches!(rows.get(ri), Some(PipelineRow::MaskOpInput { .. }))
         }).expect("MaskOpInput row not focusable");
         app.pipeline_state.focus = target;
@@ -7012,7 +7195,6 @@ mod tests {
     fn test_filter_tab_routes_to_filter_handler() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         // Should not crash — filter handler takes over
         app.handle_key(key(KeyCode::Down));
         app.handle_key(key(KeyCode::Up));
@@ -7031,36 +7213,33 @@ mod tests {
     #[test]
     fn test_text_value_unknown_returns_empty() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY; // Algorithms tab - no text fields
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_swi");
+        app.active_tab = TAB_OUTPUTS; // Algorithms tab - no text fields
+        focus_on(&mut app, TAB_OUTPUTS, "do_swi");
         assert_eq!(app.text_value(), "");
     }
 
     // --- get_ accessors (used by UI rendering) ---
 
-    /// Every Supplementary/Execution row names a field the accessors resolve — in the form
-    /// they live in, with the kind the row edits — and that `R` resets.
+    /// Every row on every page names a field the accessors resolve, with the kind it edits.
     #[test]
-    fn form_rows_name_real_fields() {
+    fn rows_name_real_fields() {
         let mut app = App::new();
         app.form.do_swi = true;
         app.form.do_smwi = true;
         app.form.do_segmentation = true;
         app.form.export_dicom = true;
-        for (tab, list) in [(TAB_SUPPLEMENTARY, SUPPLEMENTARY_FIELDS), (TAB_EXECUTION, EXECUTION_FIELDS)] {
-            for mode in [0, 1] {
-                app.form.execution_mode = mode;
-                app.active_tab = tab;
-                for r in app.rows() {
-                    let f = row_field(&r).expect("every form row edits a field");
-                    // The duplicate reference row edits the pipeline form's value.
-                    if f == "qsm_reference" { continue; }
-                    assert!(list.contains(&f), "{f} missing from its tab's reset list");
+        app.form.do_analysis = true;
+        app.form.do_r2primemap = true;
+        app.pipeline_state.motion_correction = true;
+        app.filter_state.orientation_group = "acq".into();
+        for mode in [0, 1] {
+            app.form.execution_mode = mode;
+            for page in Page::ALL {
+                for r in app.page_rows(page) {
                     match r {
-                        PipelineRow::Param { .. } => assert!(app.form.text(f).is_some(), "{f}"),
-                        PipelineRow::Toggle { .. } => assert!(app.form.flag(f).is_some(), "{f}"),
-                        PipelineRow::AlgoSelect { .. } => assert!(app.form.choice(f).is_some(), "{f}"),
-                        _ => unreachable!(),
+                        PipelineRow::Param { field, .. } => assert!(app.field_text_mut(field).is_some(), "{field}"),
+                        PipelineRow::AlgoSelect { field, options, .. } => assert!(app.field_select(field) < options.len(), "{field}"),
+                        _ => {}
                     }
                 }
             }
@@ -7128,58 +7307,60 @@ mod tests {
 
     #[test]
     fn test_pipeline_visible_rows_change_with_algorithm() {
-        let mut ps = super::PipelineFormState::default();
-        ps.collapsed_sections.clear(); // expand so algorithm-specific rows are visible
-        ps.qsm_algorithm = 0; // RTS
-        let rows_rts = ps.visible_rows().len();
+        let mut ps = super::PipelineFormState { qsm_algorithm: 0, ..Default::default() }; // RTS
+        let rows_rts = ps.all_rows().len();
         ps.qsm_algorithm = 2; // TKD (fewer params)
-        let rows_tkd = ps.visible_rows().len();
+        let rows_tkd = ps.all_rows().len();
         assert!(rows_tkd < rows_rts, "TKD should have fewer rows than RTS");
 
         ps.qsm_algorithm = 3; // TGV (hides unwrapping + bgremove)
-        let rows_tgv = ps.visible_rows().len();
+        let rows_tgv = ps.all_rows().len();
         assert!(rows_tgv < rows_rts, "TGV should hide unwrapping/bgremove");
     }
 
+    /// `[` and `]` walk the sub-tabs of the active tab, wrapping, and put focus back on top.
     #[test]
-    fn test_pipeline_section_collapse() {
-        let mut ps = super::PipelineFormState::default();
-        let has_param = |ps: &super::PipelineFormState, field: &str| {
-            ps.visible_rows().iter().any(|r| matches!(r, PipelineRow::Param { field: f, .. } if *f == field))
-        };
-        let has_header = |ps: &super::PipelineFormState, id: &str| {
-            ps.visible_rows().iter().any(|r| matches!(r, PipelineRow::SectionHeader { id: hid, .. } if *hid == id))
-        };
-        // Default is all-collapsed: headers present, bodies hidden.
-        assert!(has_header(&ps, "inversion"));
-        assert!(!has_param(&ps, "ilsqr_tol"), "collapsed inversion should hide its params");
-        // Expanding shows the body; the header stays; collapsing hides it again.
-        ps.toggle_section("inversion");
-        assert!(has_param(&ps, "ilsqr_tol"), "expanded inversion should show its params");
-        assert!(has_header(&ps, "inversion"), "header stays when expanded");
-        ps.toggle_section("inversion");
-        assert!(!has_param(&ps, "ilsqr_tol"));
+    fn brackets_switch_sub_tabs_and_reset_focus() {
+        let mut app = App::new();
+        app.active_tab = TAB_PREPROCESSING;
+        app.sync_pipeline_mode();
+        assert_eq!(app.page(), Some(Page::Geometry));
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.focus(), 1);
+        app.handle_key(key(KeyCode::Char(']')));
+        assert_eq!(app.page(), Some(Page::Masking));
+        assert_eq!(app.focus(), 0, "a sub-tab switch starts at the top");
+        app.handle_key(key(KeyCode::Char(']')));
+        assert_eq!(app.page(), Some(Page::Motion));
+        app.handle_key(key(KeyCode::Char(']')));
+        assert_eq!(app.page(), Some(Page::Geometry), "wraps");
+        app.handle_key(key(KeyCode::Char('[')));
+        assert_eq!(app.page(), Some(Page::Motion));
+        // The sub-tab is remembered per tab; a main-tab switch resets focus too.
+        app.handle_key(key(KeyCode::Down));
+        app.handle_key(key(KeyCode::Char('3')));
+        assert_eq!(app.active_tab, TAB_QSM);
+        assert_eq!(app.focus(), 0);
+        app.handle_key(key(KeyCode::Char('2')));
+        assert_eq!(app.page(), Some(Page::Motion));
     }
 
+    /// The QSM tab shows a sub-tab for each stage that runs, and only the switch when none do.
     #[test]
-    fn test_pipeline_section_arrow_and_enter_toggle() {
+    fn qsm_sub_tabs_follow_the_stages_that_run() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM; // (intentionally not clearing collapsed_sections: test the default)
-        // Focus the collapsed "inversion" header.
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
-        let hi = focusable.iter()
-            .position(|&ri| matches!(&rows[ri], PipelineRow::SectionHeader { id: "inversion", .. }))
-            .expect("inversion header present");
-        app.pipeline_state.focus = hi;
-        assert!(app.pipeline_state.collapsed_sections.contains("inversion"));
-        // → expands, ← collapses, Enter toggles.
-        app.handle_key(key(KeyCode::Right));
-        assert!(!app.pipeline_state.collapsed_sections.contains("inversion"), "→ should expand");
-        app.handle_key(key(KeyCode::Left));
-        assert!(app.pipeline_state.collapsed_sections.contains("inversion"), "← should collapse");
-        app.handle_key(key(KeyCode::Enter));
-        assert!(!app.pipeline_state.collapsed_sections.contains("inversion"), "Enter should toggle open");
+        let idx = |name: &str| QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap();
+        assert_eq!(app.pages(TAB_QSM), vec![Page::FieldMap, Page::Background, Page::Inversion, Page::Reference]);
+        app.pipeline_state.qsm_algorithm = idx("iqsm");
+        assert_eq!(app.pages(TAB_QSM), vec![Page::Inversion, Page::Reference]);
+        app.filter_state.orientation_group = "acq".into();
+        assert!(app.pages(TAB_QSM).contains(&Page::MultiOrientation));
+        app.pipeline_state.do_qsm = false;
+        app.filter_state.orientation_group.clear();
+        assert_eq!(app.pages(TAB_QSM), vec![Page::QsmOff]);
+        // A forced QSM keeps the stages.
+        app.form.do_smwi = true;
+        assert!(app.pages(TAB_QSM).contains(&Page::Inversion));
     }
 
     // --- Filter tree tests ---
@@ -7272,31 +7453,22 @@ mod tests {
         assert!(!tree.subjects[0].runs[0].selected);
     }
 
-    /// With a pattern set, the algorithm and lambda rows appear in the tab order; without
-    /// one they are skipped, so the feature costs nothing to navigate past.
+    /// The Input tab keeps only the pattern: its settings are on QSM → Multi-orientation, so
+    /// focus goes from the pattern straight to the tree, set or not.
     #[test]
-    fn orientation_rows_appear_only_when_a_pattern_is_set() {
+    fn the_input_tab_has_only_the_orientation_pattern() {
         let dir = tempfile::tempdir().unwrap();
         crate::testutils::create_single_echo_bids(dir.path());
         let mut fs = super::FilterTreeState::default();
         fs.maybe_rescan(dir.path().to_str().unwrap());
-
-        fs.orientation_group = "*acq-dir*".into();
-        fs.focus = super::FilterFocus::OrientationGroup;
-        fs.focus_next();
-        assert_eq!(fs.focus, super::FilterFocus::OrientationAlgorithm);
-        fs.focus_next();
-        assert_eq!(fs.focus, super::FilterFocus::OrientationLambda);
-        fs.focus_next();
-        assert!(matches!(fs.focus, super::FilterFocus::TreeNode(0)));
-        // ...and back up through the same rows.
-        fs.focus_prev();
-        assert_eq!(fs.focus, super::FilterFocus::OrientationLambda);
-
-        fs.orientation_group.clear();
-        fs.focus = super::FilterFocus::OrientationGroup;
-        fs.focus_next();
-        assert!(matches!(fs.focus, super::FilterFocus::TreeNode(0)));
+        for pattern in ["*acq-dir*", ""] {
+            fs.orientation_group = pattern.into();
+            fs.focus = super::FilterFocus::OrientationGroup;
+            fs.focus_next();
+            assert!(matches!(fs.focus, super::FilterFocus::TreeNode(0)));
+            fs.focus_prev();
+            assert_eq!(fs.focus, super::FilterFocus::OrientationGroup);
+        }
     }
 
     /// The preview is the safety feature: it has to report a bad pattern rather than
@@ -7471,8 +7643,8 @@ mod tests {
     #[test]
     fn test_field_visibility_other_tabs() {
         let mut app = App::new();
-        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "do_swi"));
-        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "do_r2starmap"));
+        assert!(shows(&mut app, TAB_OUTPUTS, "do_swi"));
+        assert!(shows(&mut app, TAB_OUTPUTS, "do_r2starmap"));
     }
 
     // --- SLURM form fields ---
@@ -7560,8 +7732,8 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
         app.form.execution_mode = 1; // SLURM — hides Dry Run and Num Processes
-        focus_on(&mut app, TAB_EXECUTION, "debug");
-        // Down from Debug skips the hidden Num Processes and lands on SLURM Account
+        focus_on(&mut app, TAB_EXECUTION, "execution_mode");
+        // Down from the mode skips the hidden Dry Run and lands on SLURM Account
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.focused_field_name().as_deref(), Some("slurm_account"));
     }
@@ -7765,7 +7937,6 @@ mod tests {
     fn test_pipeline_tab_navigate_down_up() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         assert_eq!(app.pipeline_state.focus, 0);
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.pipeline_state.focus, 1);
@@ -7784,8 +7955,8 @@ mod tests {
     fn test_pipeline_tab_navigate_clamp_bottom() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
-        let max = app.pipeline_state.focusable_rows().len().saturating_sub(1);
+        app.sync_pipeline_mode();
+        let max = app.focusable_rows().len().saturating_sub(1);
         app.pipeline_state.focus = max;
         app.handle_key(key(KeyCode::Down));
         assert_eq!(app.pipeline_state.focus, max);
@@ -7795,20 +7966,17 @@ mod tests {
     fn test_pipeline_tab_switch_from_pipeline() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         app.handle_key(key(KeyCode::Tab));
-        assert_eq!(app.active_tab, 2);
+        assert_eq!(app.active_tab, TAB_SEPARATION);
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         app.handle_key(KeyEvent::new(KeyCode::BackTab, KeyModifiers::SHIFT));
-        assert_eq!(app.active_tab, 0);
+        assert_eq!(app.active_tab, TAB_PREPROCESSING);
     }
 
     #[test]
     fn test_pipeline_tab_number_switch() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         app.handle_key(key(KeyCode::Char('3')));
         assert_eq!(app.active_tab, 2);
     }
@@ -7818,14 +7986,13 @@ mod tests {
         let mut app = App::new();
         // Sit deep in the QSM tab, past the number of rows Separation will have.
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         app.sync_pipeline_mode();
         let qsm_max = app.pipeline_state.focusable_rows().len().saturating_sub(1);
         app.pipeline_state.focus = qsm_max;
         // Switch to Separation; mode changes, so focus must reset to the first selectable row.
         app.active_tab = TAB_SEPARATION;
         app.sync_pipeline_mode();
-        assert_eq!(app.pipeline_state.mode, PipelineTabMode::Separation);
+        assert_eq!(app.pipeline_state.page, Page::Separation);
         assert_eq!(app.pipeline_state.focus, 0);
         // And it must be in range for the Separation row set.
         let sep_len = app.pipeline_state.focusable_rows().len();
@@ -7835,12 +8002,11 @@ mod tests {
     #[test]
     fn test_pipeline_left_right_algo_select() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        assert!(app.goto_field("qsm_algorithm"));
         // Focus 0 is "Compute QSM" toggle, focus 1 is "Phase Combination" select
         // Find the focus index for the QSM Inversion AlgoSelect
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut qsm_inv_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::AlgoSelect { field: "qsm_algorithm", .. } = &rows[ri] {
@@ -7861,11 +8027,10 @@ mod tests {
     #[test]
     fn test_pipeline_enter_opens_algo_modal_and_left_right_cycles() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        assert!(app.goto_field("unwrapping_algorithm"));
         // Navigate to unwrapping_algorithm AlgoSelect
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut uw_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::AlgoSelect { field: "unwrapping_algorithm", .. } = &rows[ri] {
@@ -7899,11 +8064,10 @@ mod tests {
     #[test]
     fn test_pipeline_edit_text_param() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        assert!(app.goto_field("obliquity_threshold"));
         // Find the obliquity_threshold Param row
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut obl_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::Param { field: "obliquity_threshold", .. } = &rows[ri] {
@@ -7934,7 +8098,6 @@ mod tests {
     fn test_pipeline_toggle_do_qsm() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         // Focus 0 should be the do_qsm toggle
         app.pipeline_state.focus = 0;
         assert!(app.pipeline_state.do_qsm);
@@ -7948,11 +8111,10 @@ mod tests {
     #[test]
     fn test_pipeline_toggle_inhomogeneity_correction() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        assert!(app.goto_field("inhomogeneity_correction"));
         // Find inhomogeneity_correction toggle
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut ic_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::Toggle { field: "inhomogeneity_correction", .. } = &rows[ri] {
@@ -7971,7 +8133,6 @@ mod tests {
     fn test_pipeline_quit_from_pipeline_tab() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         app.handle_key(key(KeyCode::Char('q')));
         assert!(app.should_quit);
     }
@@ -7980,7 +8141,6 @@ mod tests {
     fn test_pipeline_esc_from_pipeline_tab() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         app.handle_key(key(KeyCode::Esc));
         assert!(app.should_quit);
     }
@@ -7989,7 +8149,6 @@ mod tests {
     fn test_pipeline_f5_from_pipeline_tab() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         app.form.bids_dir = "/tmp/bids".to_string();
         app.handle_key(key(KeyCode::F(5)));
         assert!(app.should_run);
@@ -7998,12 +8157,11 @@ mod tests {
     #[test]
     fn test_pipeline_reset_field() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        assert!(app.goto_field("qsm_algorithm"));
         app.pipeline_state.qsm_algorithm = 5;
         // Find qsm_algorithm focus
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut fi_found = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::AlgoSelect { field: "qsm_algorithm", .. } = &rows[ri] {
@@ -8020,32 +8178,33 @@ mod tests {
     #[test]
     fn test_pipeline_reset_tab() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         app.pipeline_state.qsm_algorithm = 5;
         app.pipeline_state.bf_algorithm = 3;
+        app.pipeline_state.tikhonov_lambda = "9".into();
+        assert!(app.goto_field("qsm_algorithm"));
         app.handle_key(key(KeyCode::Char('R')));
+        // The page's settings, the ones a reset reveals among them, and nothing on other pages.
         assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.qsm_algorithm], "ilsqr");
-        assert_eq!(app.pipeline_state.bf_algorithm, 0);
+        assert_eq!(app.pipeline_state.tikhonov_lambda, PipelineFormState::default().tikhonov_lambda);
+        assert_eq!(app.pipeline_state.bf_algorithm, 3, "Background is another page");
     }
 
     #[test]
     fn test_pipeline_visible_rows_change_on_toggle() {
         let mut app = App::new();
-        let rows_with_qsm = app.pipeline_state.visible_rows().len();
+        let rows_with_qsm = app.pipeline_state.all_rows().len();
         app.pipeline_state.do_qsm = false;
-        let rows_without_qsm = app.pipeline_state.visible_rows().len();
+        let rows_without_qsm = app.pipeline_state.all_rows().len();
         assert!(rows_without_qsm < rows_with_qsm);
     }
 
     #[test]
     fn test_pipeline_editing_left_right_cursor() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        assert!(app.goto_field("obliquity_threshold"));
         // Find obliquity_threshold param and edit it
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut fi = 0;
         for (f, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::Param { field: "obliquity_threshold", .. } = &rows[ri] {
@@ -8068,13 +8227,13 @@ mod tests {
         assert!(!app.pipeline_state.editing);
     }
 
-    // ========== Supplementary tab handler tests ==========
+    // ========== Other outputs tab handler tests ==========
 
     #[test]
     fn test_supplementary_toggle_swi() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_swi");
+        app.active_tab = TAB_OUTPUTS;
+        focus_on(&mut app, TAB_OUTPUTS, "do_swi");
         assert!(!app.form.do_swi);
         app.handle_key(key(KeyCode::Enter));
         assert!(app.form.do_swi);
@@ -8085,8 +8244,8 @@ mod tests {
     #[test]
     fn test_supplementary_toggle_t2star() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_t2starmap");
+        app.active_tab = TAB_OUTPUTS;
+        focus_on(&mut app, TAB_OUTPUTS, "do_t2starmap");
         assert!(!app.form.do_t2starmap);
         app.handle_key(key(KeyCode::Enter));
         assert!(app.form.do_t2starmap);
@@ -8095,8 +8254,8 @@ mod tests {
     #[test]
     fn test_supplementary_toggle_r2star() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_r2starmap");
+        app.active_tab = TAB_OUTPUTS;
+        focus_on(&mut app, TAB_OUTPUTS, "do_r2starmap");
         assert!(!app.form.do_r2starmap);
         app.handle_key(key(KeyCode::Char(' ')));
         assert!(app.form.do_r2starmap);
@@ -8105,9 +8264,9 @@ mod tests {
     #[test]
     fn test_supplementary_swi_scaling_select() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
+        app.active_tab = TAB_OUTPUTS;
         app.form.do_swi = true; // make SWI fields visible
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_scaling");
+        focus_on(&mut app, TAB_OUTPUTS, "swi_scaling");
         assert_eq!(app.form.swi_scaling, 0); // tanh
         app.handle_key(key(KeyCode::Right));
         assert_eq!(app.form.swi_scaling, 1); // negative-tanh
@@ -8118,9 +8277,9 @@ mod tests {
     #[test]
     fn test_supplementary_edit_swi_strength() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
+        app.active_tab = TAB_OUTPUTS;
         app.form.do_swi = true;
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_strength");
+        focus_on(&mut app, TAB_OUTPUTS, "swi_strength");
         app.handle_key(key(KeyCode::Enter));
         assert!(app.pipeline_state.editing);
         // Type something
@@ -8133,37 +8292,35 @@ mod tests {
     #[test]
     fn test_supplementary_navigate_fields() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_swi");
-        // SWI fields are hidden when do_swi is false, so Down from Compute SWI skips to T2*
+        app.active_tab = TAB_OUTPUTS;
+        focus_on(&mut app, TAB_OUTPUTS, "do_swi");
+        // SWI fields are hidden when do_swi is false, so Down from Compute SWI skips to SMWI
         app.handle_key(key(KeyCode::Down));
-        assert_eq!(app.focused_field_name().as_deref(), Some("do_t2starmap"));
-        app.handle_key(key(KeyCode::Down));
-        assert_eq!(app.focused_field_name().as_deref(), Some("do_r2starmap"));
+        assert_eq!(app.focused_field_name().as_deref(), Some("do_smwi"));
         app.handle_key(key(KeyCode::Up));
-        assert_eq!(app.focused_field_name().as_deref(), Some("do_t2starmap"));
+        assert_eq!(app.focused_field_name().as_deref(), Some("do_swi"));
     }
 
     #[test]
     fn test_supplementary_swi_visible_when_enabled() {
         let mut app = App::new();
         app.form.do_swi = true;
-        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "swi_scaling")); // SWI Scaling
-        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "swi_strength")); // SWI Strength
-        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "swi_mip_window")); // SWI MIP Window
+        assert!(shows(&mut app, TAB_OUTPUTS, "swi_scaling")); // SWI Scaling
+        assert!(shows(&mut app, TAB_OUTPUTS, "swi_strength")); // SWI Strength
+        assert!(shows(&mut app, TAB_OUTPUTS, "swi_mip_window")); // SWI MIP Window
     }
 
     #[test]
     fn test_supplementary_swi_hidden_when_disabled() {
         let mut app = App::new();
-        assert!(!shows(&mut app, TAB_SUPPLEMENTARY, "swi_scaling"));
-        assert!(!shows(&mut app, TAB_SUPPLEMENTARY, "swi_mip_window"));
+        assert!(!shows(&mut app, TAB_OUTPUTS, "swi_scaling"));
+        assert!(!shows(&mut app, TAB_OUTPUTS, "swi_mip_window"));
     }
 
     #[test]
     fn test_supplementary_tab_switch() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
+        app.active_tab = TAB_OUTPUTS;
         app.handle_key(key(KeyCode::Tab));
         assert_eq!(app.active_tab, TAB_EXECUTION);
     }
@@ -8171,8 +8328,8 @@ mod tests {
     #[test]
     fn test_supplementary_reset_field() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_swi");
+        app.active_tab = TAB_OUTPUTS;
+        focus_on(&mut app, TAB_OUTPUTS, "do_swi");
         app.form.do_swi = true;
         app.handle_key(key(KeyCode::Char('r')));
         assert!(!app.form.do_swi); // reset to default
@@ -8181,16 +8338,18 @@ mod tests {
     #[test]
     fn test_supplementary_reset_tab() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
+        app.active_tab = TAB_OUTPUTS;
         app.form.do_swi = true;
         app.form.do_t2starmap = true;
         app.form.do_r2starmap = true;
         app.form.swi_scaling = 3;
         app.handle_key(key(KeyCode::Char('R')));
         assert!(!app.form.do_swi);
-        assert!(!app.form.do_t2starmap);
-        assert!(!app.form.do_r2starmap);
         assert_eq!(app.form.swi_scaling, 0);
+        assert!(app.form.do_t2starmap && app.form.do_r2starmap, "Relaxometry is another page");
+        focus_on(&mut app, TAB_OUTPUTS, "do_t2starmap");
+        app.handle_key(key(KeyCode::Char('R')));
+        assert!(!app.form.do_t2starmap && !app.form.do_r2starmap);
     }
 
     // ========== Execution tab handler tests ==========
@@ -9121,9 +9280,9 @@ mod tests {
     #[test]
     fn test_reset_supplementary_fields() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
+        app.active_tab = TAB_OUTPUTS;
         app.form.do_swi = true;
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_strength");
+        focus_on(&mut app, TAB_OUTPUTS, "swi_strength");
         app.form.swi_strength = "999".to_string();
         app.handle_key(key(KeyCode::Char('r')));
         let defaults = RunForm::default();
@@ -9146,11 +9305,10 @@ mod tests {
     #[test]
     fn test_pipeline_mask_preset_switch() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         // Find mask_preset focus
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut mp_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::AlgoSelect { field: "mask_preset", .. } = &rows[ri] {
@@ -9189,16 +9347,15 @@ mod tests {
     fn test_mask_threshold_method_modal_opens_and_sets() {
         use crate::pipeline::config::{MaskOp, MaskThresholdMethod};
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         app.sync_pipeline_mode();
         // Default preset is a threshold generator, so the param row is the method select.
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             MaskOp::Threshold { method: MaskThresholdMethod::Otsu, .. }
         ));
-        let rows = app.pipeline_state.visible_rows();
-        let target = app.pipeline_state.focusable_rows().iter().position(|&ri| {
+        let rows = app.rows();
+        let target = app.focusable_rows().iter().position(|&ri| {
             matches!(rows.get(ri), Some(PipelineRow::MaskOpGeneratorParam { .. }))
         }).expect("MaskOpGeneratorParam row not focusable");
         app.pipeline_state.focus = target;
@@ -9221,13 +9378,12 @@ mod tests {
     fn test_mask_bet_frac_intensity_opens_no_modal() {
         use crate::pipeline::config::MaskOp;
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         app.sync_pipeline_mode();
         // Switch the generator to BET so the param row is a numeric frac-intensity slider.
         app.pipeline_state.mask_sections[0].generator = MaskOp::bet(0.5);
-        let rows = app.pipeline_state.visible_rows();
-        let target = app.pipeline_state.focusable_rows().iter().position(|&ri| {
+        let rows = app.rows();
+        let target = app.focusable_rows().iter().position(|&ri| {
             matches!(rows.get(ri), Some(PipelineRow::MaskOpGeneratorParam { .. }))
         }).expect("MaskOpGeneratorParam row not focusable");
         app.pipeline_state.focus = target;
@@ -9257,13 +9413,12 @@ mod tests {
     fn test_pipeline_signal_erode_params_are_editable() {
         use crate::pipeline::config::MaskOp;
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         app.pipeline_state.apply_mask_preset(2); // hd-bet + signal-erode
 
         let focus_param = |app: &mut App, param: usize| {
-            let rows = app.pipeline_state.visible_rows();
-            app.pipeline_state.focus = app.pipeline_state.focusable_rows().iter()
+            let rows = app.rows();
+            app.pipeline_state.focus = app.focusable_rows().iter()
                 .position(|&ri| matches!(rows[ri], PipelineRow::MaskOpSignalErodeParam { param: p, .. } if p == param))
                 .unwrap_or_else(|| panic!("param {param} row not focusable"));
         };
@@ -9272,8 +9427,8 @@ mod tests {
             else { panic!("preset should end in signal-erode") };
 
         // The step row itself is the threshold; the four params each have their own row.
-        let rows = app.pipeline_state.visible_rows();
-        app.pipeline_state.focus = app.pipeline_state.focusable_rows().iter()
+        let rows = app.rows();
+        app.pipeline_state.focus = app.focusable_rows().iter()
             .position(|&ri| matches!(rows[ri], PipelineRow::MaskOpEntry { .. })).expect("step row");
         app.handle_key(key(KeyCode::Right));
         assert!(matches!(op(&app), MaskOp::SignalErode { threshold: t, .. } if t > threshold));
@@ -9311,41 +9466,26 @@ mod tests {
         assert!(cmd.contains("--mask magnitude,hd-bet,signal-erode:0.85:0"), "cmd: {cmd}");
     }
 
-    /// The reference is offered in two places — the QSM tab where referencing is configured, and
-    /// the Supplementary tab beside the SynthSeg settings it depends on. They must be one control:
-    /// two rows that drifted apart would silently disagree about what the run references to.
+    /// The reference has one row (QSM → Reference); a region there turns segmentation on where
+    /// segmentation is set up.
     #[test]
-    fn both_reference_rows_edit_one_value() {
+    fn the_reference_has_one_row_on_the_qsm_tab() {
         let mut app = App::new();
         let thalamus = qsm_ref_options().iter().position(|o| *o == "thalamus")
             .expect("thalamus should be offered");
-
-        // Set it from the Supplementary tab; the QSM tab's row sees it.
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "qsm_reference");
+        assert!(shows(&mut app, TAB_QSM, "qsm_reference"));
+        assert!(!shows(&mut app, TAB_OUTPUTS, "qsm_reference"), "one copy only");
+        focus_on(&mut app, TAB_QSM, "qsm_reference");
         app.set_field_select("qsm_reference", thalamus);
-        assert_eq!(app.pipeline_state.get_select("qsm_reference"), thalamus);
-        // A region forces segmentation, whose settings now show above the row.
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "qsm_reference");
-        app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.focused_field_name().as_deref(), Some("qsm_reference"), "focus stays on the row it edits");
-        assert_eq!(app.pipeline_state.get_select("qsm_reference"), thalamus + 1, "the row edits the one value");
-
-        // And the other way around.
-        app.pipeline_state.set_select("qsm_reference", 1); // none
-        assert_eq!(app.field_select("qsm_reference"), 1);
-
-        // The row is reachable whether or not segmentation is on — picking a region is how a user
-        // turns segmentation on from here, so gating it behind segmentation would be a deadlock.
-        assert!(!app.form.do_segmentation);
-        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "qsm_reference"));
+        // A region forces segmentation, which reads as on where it is set up.
+        assert!(app.field_toggle("do_segmentation"));
+        assert!(shows(&mut app, TAB_OUTPUTS, "synthseg_version"));
     }
 
-    /// A region reference is measured on the parcellation, so choosing one forces segmentation the
-    /// same way the statistics do — visibly, and without letting it be switched back off.
     #[test]
     fn a_region_reference_forces_segmentation_visibly() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
+        app.active_tab = TAB_OUTPUTS;
         assert!(!app.field_toggle("do_segmentation"), "off by default");
 
         let region = qsm_ref_options().iter().position(|o| *o == "ventricles").unwrap();
@@ -9353,11 +9493,11 @@ mod tests {
         assert!(app.field_toggle("do_segmentation"),
                 "a region reference needs SynthSeg, so it must read as checked");
         for f in SYNTHSEG_ROWS {
-            assert!(shows(&mut app, TAB_SUPPLEMENTARY, f),
+            assert!(shows(&mut app, TAB_OUTPUTS, f),
                     "{f} shapes the parcellation the reference is measured on");
         }
 
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_segmentation");
+        focus_on(&mut app, TAB_OUTPUTS, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.form.do_segmentation, "the underlying flag is untouched");
         let msg = app.error_message.clone().expect("a refusal should explain itself");
@@ -9390,14 +9530,14 @@ mod tests {
     #[test]
     fn statistics_force_segmentation_visibly() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
+        app.active_tab = TAB_OUTPUTS;
 
         // Off by default: unchecked, and its settings hidden.
         assert!(!app.field_toggle("do_segmentation"));
         for f in SYNTHSEG_ROWS {
-            assert!(!shows(&mut app, TAB_SUPPLEMENTARY, f), "{f} should be hidden");
+            assert!(!shows(&mut app, TAB_OUTPUTS, f), "{f} should be hidden");
         }
-        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "do_analysis"), "the statistics are reachable on their own");
+        assert!(shows(&mut app, TAB_OUTPUTS, "do_analysis"), "the statistics are reachable on their own");
 
         // A config or CLI run can arrive with the statistics already on; segmentation is then in
         // force, so the block must be visible rather than hiding a setting that is taking effect.
@@ -9405,12 +9545,12 @@ mod tests {
         assert!(app.field_toggle("do_segmentation"),
                 "segmentation is forced, so it must read as checked");
         for f in SYNTHSEG_ROWS {
-            assert!(shows(&mut app, TAB_SUPPLEMENTARY, f),
+            assert!(shows(&mut app, TAB_OUTPUTS, f),
                     "{f} shapes the forced segmentation and must be reachable");
         }
 
         // And it cannot be turned off from under them; the refusal says why.
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_segmentation");
+        focus_on(&mut app, TAB_OUTPUTS, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.form.do_segmentation, "the underlying flag is untouched");
         assert!(app.field_toggle("do_segmentation"), "still forced, so still checked");
@@ -9431,15 +9571,13 @@ mod tests {
         let idx = |name: &str| QSM_ALGO_OPTIONS.iter().position(|o| *o == name)
             .unwrap_or_else(|| panic!("{name} missing from QSM_ALGO_OPTIONS"));
         let fields = |ps: &PipelineFormState| -> Vec<String> {
-            ps.visible_rows().iter().filter_map(|r| match r {
+            ps.all_rows().iter().filter_map(|r| match r {
                 PipelineRow::Param { field, .. } | PipelineRow::Toggle { field, .. } => Some(field.to_string()),
                 _ => None,
             }).collect()
         };
 
-        let mut ps = PipelineFormState::default();
-        ps.collapsed_sections.clear();
-        ps.qsm_algorithm = idx("lsqr");
+        let mut ps = PipelineFormState { qsm_algorithm: idx("lsqr"), ..Default::default() };
         let f = fields(&ps);
         assert!(f.contains(&"lsqr_tol".to_string()), "{f:?}");
         assert!(f.contains(&"lsqr_fit_global_offset".to_string()), "{f:?}");
@@ -9467,13 +9605,12 @@ mod tests {
     #[test]
     fn stage_visibility_follows_the_algorithm_not_its_index() {
         let idx = |name: &str| QSM_ALGO_OPTIONS.iter().position(|o| *o == name).expect(name);
-        let has_section = |ps: &PipelineFormState, id: &str| ps.visible_rows().iter()
-            .any(|r| matches!(r, PipelineRow::SectionHeader { id: hid, .. } if *hid == id));
+        let has_section = |ps: &PipelineFormState, id: &str| {
+            let field = match id { "bgremoval" => "bf_algorithm", "fieldmap" => "unwrapping_algorithm", _ => id };
+            ps.all_rows().iter().any(|r| row_field(r) == Some(field))
+        };
 
-        let mut ps = PipelineFormState::default();
-        ps.collapsed_sections.clear();
-
-        ps.qsm_algorithm = idx("rts");
+        let mut ps = PipelineFormState { qsm_algorithm: idx("rts"), ..Default::default() };
         assert!(has_section(&ps, "bgremoval"), "RTS needs background removal");
         assert!(has_section(&ps, "fieldmap"), "RTS needs a field map");
 
@@ -9521,26 +9658,17 @@ mod tests {
     /// segmentation as much as QSM. An output that forces QSM keeps the reconstruction on show.
     #[test]
     fn qsm_off_keeps_the_preprocessing_rows() {
-        let fields = |app: &mut App| -> Vec<String> {
-            app.sync_pipeline_mode();
-            app.pipeline_state.visible_rows().iter().filter_map(|r| match r {
-                PipelineRow::AlgoSelect { field, .. } | PipelineRow::Param { field, .. }
-                | PipelineRow::Toggle { field, .. } => Some(field.to_string()),
-                PipelineRow::SectionHeader { id, .. } => Some(format!("#{id}")),
-                _ => None,
-            }).collect()
-        };
+        let fields = all_fields;
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         app.pipeline_state.do_qsm = false;
         let f = fields(&mut app);
-        for kept in ["obliquity_threshold", "inhomogeneity_correction", "ignore_slice_gap", "output_space",
-                     "custom_dseg_tool", "motion_correction", "coil_combination_sigma", "#masking",
+        for kept in ["obliquity_threshold", "inhomogeneity_correction", "ignore_slice_gap",
+                     "motion_correction", "coil_combination_sigma",
                      "mask_preset", "custom_mask_tool", "two_pass"] {
             assert!(f.contains(&kept.to_string()), "{kept} hidden with QSM off: {f:?}");
         }
-        for gone in ["#fieldmap", "#bgremoval", "#inversion", "#reference", "crop_to_mask", "fft_padding"] {
+        for gone in ["#FieldMap", "#Background", "#Inversion", "#Reference", "crop_to_mask", "fft_padding"] {
             assert!(!f.contains(&gone.to_string()), "{gone} shown with QSM off: {f:?}");
         }
         // Motion correction's own settings follow it, not QSM.
@@ -9551,8 +9679,8 @@ mod tests {
         // SMWI needs a χ map: QSM runs regardless, and its settings are on show, with the reason.
         app.form.do_smwi = true;
         let f = fields(&mut app);
-        assert!(f.contains(&"#inversion".to_string()) && f.contains(&"#fieldmap".to_string()), "{f:?}");
-        assert!(app.pipeline_state.visible_rows().iter().any(|r|
+        assert!(f.contains(&"#Inversion".to_string()) && f.contains(&"#FieldMap".to_string()), "{f:?}");
+        assert!(app.pipeline_state.all_rows().iter().any(|r|
             matches!(r, PipelineRow::Note { text } if text.contains("SMWI"))), "the forced QSM says why");
     }
 
@@ -9560,8 +9688,7 @@ mod tests {
     #[test]
     fn bipolar_correction_needs_romeo_and_offset_removal() {
         let mut app = App::new();
-        app.pipeline_state.collapsed_sections.clear();
-        let shows = |app: &App| app.pipeline_state.visible_rows().iter().any(|r|
+        let shows = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
             matches!(r, PipelineRow::Toggle { field: "bipolar_correction", .. }));
         app.pipeline_state.bipolar_correction = true;
         let passed = |app: &App| super::super::command::pipeline_args_from_app(app).bipolar_correction;
@@ -9578,19 +9705,13 @@ mod tests {
     /// made, not only with χ-separation on.
     #[test]
     fn supplied_inputs_follow_the_maps_that_read_them() {
-        let fields = |app: &mut App| -> Vec<String> {
-            app.active_tab = TAB_SEPARATION;
-            app.sync_pipeline_mode();
-            app.pipeline_state.visible_rows().iter().filter_map(|r| match r {
-                PipelineRow::AlgoSelect { field, .. } | PipelineRow::Param { field, .. }
-                | PipelineRow::Toggle { field, .. } => Some(field.to_string()),
-                _ => None,
-            }).collect()
-        };
+        let fields = all_fields;
         let has = |f: &[String], x: &str| f.iter().any(|y| y == x);
         let mut app = App::new();
         let f = fields(&mut app);
-        assert_eq!(f, vec!["do_chi_separation".to_string()], "nothing reads a supplied map");
+        for x in ["custom_qsm_tool", "custom_r2_tool", "custom_r2prime_tool", "r2prime_strategy"] {
+            assert!(!has(&f, x), "nothing reads a supplied map: {x}");
+        }
 
         app.form.do_r2primemap = true;
         let f = fields(&mut app);
@@ -9617,24 +9738,31 @@ mod tests {
     /// A supplied segmentation satisfies the statistics and a region reference: SynthSeg is not
     /// forced, so its checkbox reads as the user left it and can be toggled.
     #[test]
-    fn a_custom_dseg_forces_no_synthseg() {
+    fn a_custom_dseg_is_the_segmentation_source() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
         app.form.do_analysis = true;
         assert!(app.field_toggle("do_segmentation"), "forced without a supplied dseg");
+        assert_eq!(app.field_select("segmentation_source"), 0, "SynthSeg");
         app.pipeline_state.custom_dseg_tool = "freesurfer".into();
-        assert!(!app.field_toggle("do_segmentation"), "a supplied dseg forces nothing");
-        assert!(!shows(&mut app, TAB_SUPPLEMENTARY, "synthseg_version"), "no SynthSeg settings to show");
-        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "do_analysis"), "the statistics stay reachable");
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_segmentation");
+        assert!(app.field_toggle("do_segmentation"), "a supplied segmentation is a segmentation");
+        assert_eq!(app.field_select("segmentation_source"), 1);
+        assert!(!shows(&mut app, TAB_OUTPUTS, "synthseg_version"), "no SynthSeg settings to show");
+        assert!(shows(&mut app, TAB_OUTPUTS, "custom_dseg_tool"));
+        assert!(shows(&mut app, TAB_OUTPUTS, "do_analysis"), "the statistics stay reachable");
+        // The statistics need one, whichever the source: turning it off is refused.
+        focus_on(&mut app, TAB_OUTPUTS, "do_segmentation");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.form.do_segmentation && app.error_message.is_none());
-        // The same for a region reference.
-        let mut app = App::new();
-        app.pipeline_state.set_select("qsm_reference", qsm_ref_options().iter().position(|o| *o == "thalamus").unwrap());
-        assert!(app.field_toggle("do_segmentation"));
-        app.pipeline_state.custom_dseg_tool = "*".into();
-        assert!(!app.field_toggle("do_segmentation"));
+        assert!(app.error_message.is_some() && app.pipeline_state.custom_dseg_tool == "freesurfer");
+        // Back to SynthSeg: the supplied one is dropped, SynthSeg asked for.
+        app.set_field_select("segmentation_source", 0);
+        assert!(app.pipeline_state.custom_dseg_tool.is_empty() && app.form.do_segmentation);
+        app.set_field_select("segmentation_source", 1);
+        assert_eq!(app.pipeline_state.custom_dseg_tool, "*");
+        assert!(!app.form.do_segmentation, "one representation per choice");
+        // Unforced: off clears whichever source.
+        app.form.do_analysis = false;
+        app.toggle_field("do_segmentation");
+        assert!(!app.field_toggle("do_segmentation") && app.pipeline_state.custom_dseg_tool.is_empty());
     }
 
     /// R2* is forced by what reads it (R2*-QSM, a computed R2'), and reads as checked.
@@ -9644,8 +9772,8 @@ mod tests {
         assert!(!app.field_toggle("do_r2starmap"));
         app.form.do_r2primemap = true;
         assert!(app.field_toggle("do_r2starmap"), "R2' = R2* - R2");
-        app.active_tab = TAB_SUPPLEMENTARY;
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_r2starmap");
+        app.active_tab = TAB_OUTPUTS;
+        focus_on(&mut app, TAB_OUTPUTS, "do_r2starmap");
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.form.do_r2starmap && app.error_message.as_deref().is_some_and(|m| m.contains("--do-r2primemap")));
     }
@@ -9670,10 +9798,9 @@ mod tests {
     fn two_pass_toggle_reveals_the_reliable_mask_editor() {
         use crate::pipeline::config::{MaskOp, MaskThresholdMethod, MaskingInput};
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
 
-        let reliable_rows = |app: &App| app.pipeline_state.visible_rows().into_iter()
+        let reliable_rows = |app: &App| app.rows().into_iter()
             .filter(|r| match r {
                 PipelineRow::MaskOpInput { section } | PipelineRow::MaskOpGenerator { section }
                 | PipelineRow::MaskOpAddStep { section } => is_two_pass_section(*section),
@@ -9684,8 +9811,8 @@ mod tests {
         assert_eq!(reliable_rows(&app), 0, "no reliable mask while two-pass is off");
 
         let focus_on = |app: &App, pred: fn(&PipelineRow) -> bool| {
-            let rows = app.pipeline_state.visible_rows();
-            app.pipeline_state.focusable_rows().iter().position(|&ri| pred(&rows[ri]))
+            let rows = app.rows();
+            app.focusable_rows().iter().position(|&ri| pred(&rows[ri]))
         };
         app.pipeline_state.focus =
             focus_on(&app, |r| matches!(r, PipelineRow::Toggle { field: "two_pass", .. }))
@@ -9714,13 +9841,12 @@ mod tests {
     fn editing_the_reliable_mask_leaves_the_main_preset_alone() {
         use crate::pipeline::config::MaskingInput;
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         app.pipeline_state.two_pass = true;
         let main_before = app.pipeline_state.mask_sections.clone();
 
-        let rows = app.pipeline_state.visible_rows();
-        let focus = app.pipeline_state.focusable_rows().iter()
+        let rows = app.rows();
+        let focus = app.focusable_rows().iter()
             .position(|&ri| matches!(&rows[ri], PipelineRow::MaskOpInput { section } if is_two_pass_section(*section)))
             .expect("reliable input row not focusable");
         app.pipeline_state.focus = focus;
@@ -9762,17 +9888,16 @@ mod tests {
     fn test_pipeline_mask_combine_row_toggles() {
         use crate::pipeline::config::MaskCombine;
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
 
-        let has_combine_row = |app: &App| app.pipeline_state.visible_rows().iter()
+        let has_combine_row = |app: &App| app.rows().iter()
             .any(|r| matches!(r, PipelineRow::MaskCombineOp));
         assert!(!has_combine_row(&app), "a single section has nothing to combine with");
 
         // Add a second section via the "+ Add mask..." row.
         let focus_on = |app: &App, pred: fn(&PipelineRow) -> bool| {
-            let rows = app.pipeline_state.visible_rows();
-            app.pipeline_state.focusable_rows().iter().position(|&ri| pred(&rows[ri]))
+            let rows = app.rows();
+            app.focusable_rows().iter().position(|&ri| pred(&rows[ri]))
         };
         app.pipeline_state.focus = focus_on(&app, |r| matches!(r, PipelineRow::MaskOpAddSection { .. }))
             .expect("MaskOpAddSection not found");
@@ -9793,15 +9918,14 @@ mod tests {
     #[test]
     fn test_pipeline_mask_combined_refinement_steps() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         app.pipeline_state.apply_mask_preset(3); // bet-and-phase: two sections
         let recipe = crate::pipeline::config::bet_and_phase_mask_recipe();
         assert_eq!(app.pipeline_state.mask_combined_refinements, recipe.refinements);
 
         let section_refinements: usize = app.pipeline_state.mask_sections.iter().map(|s| s.refinements.len()).sum();
-        let rows = app.pipeline_state.visible_rows();
-        let fi = app.pipeline_state.focusable_rows().iter().position(|&ri| {
+        let rows = app.rows();
+        let fi = app.focusable_rows().iter().position(|&ri| {
             matches!(rows[ri], PipelineRow::MaskOpAddStep { section: MASK_COMBINED_SECTION })
         }).expect("combined-mask add-step row not found");
         app.pipeline_state.focus = fi;
@@ -9812,8 +9936,8 @@ mod tests {
                    section_refinements, "the step did not land in a section");
 
         // ...and `d` deletes from the same list.
-        let rows = app.pipeline_state.visible_rows();
-        let fi = app.pipeline_state.focusable_rows().iter().position(|&ri| {
+        let rows = app.rows();
+        let fi = app.focusable_rows().iter().position(|&ri| {
             matches!(rows[ri], PipelineRow::MaskOpEntry { section: MASK_COMBINED_SECTION, index: 0 })
         }).expect("combined-mask step row not found");
         app.pipeline_state.focus = fi;
@@ -9824,12 +9948,11 @@ mod tests {
     #[test]
     fn test_pipeline_mask_add_section() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         let initial_sections = app.pipeline_state.mask_sections.len();
         // Find MaskOpAddSection focus
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut add_sec_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if matches!(&rows[ri], PipelineRow::MaskOpAddSection { .. }) {
@@ -9846,12 +9969,11 @@ mod tests {
     #[test]
     fn test_pipeline_mask_add_step() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         let initial_refs = app.pipeline_state.mask_sections[0].refinements.len();
         // Find MaskOpAddStep for section 0
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut add_step_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::MaskOpAddStep { section: 0 } = &rows[ri] {
@@ -9873,10 +9995,9 @@ mod tests {
     #[test]
     fn test_pipeline_mask_add_step_cycle_ops() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        goto_page(&mut app, Page::Masking);
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut add_step_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::MaskOpAddStep { section: 0 } = &rows[ri] {
@@ -9901,13 +10022,12 @@ mod tests {
     #[test]
     fn test_pipeline_mask_delete_refinement() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         let initial_refs = app.pipeline_state.mask_sections[0].refinements.len();
         assert!(initial_refs > 0);
         // Find first MaskOpEntry focus
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut entry_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::MaskOpEntry { section: 0, .. } = &rows[ri] {
@@ -9924,11 +10044,10 @@ mod tests {
     #[test]
     fn test_pipeline_mask_adjust_op_left_right() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         // Find MaskOpEntry focus and adjust with Left/Right
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut entry_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::MaskOpEntry { section: 0, .. } = &rows[ri] {
@@ -9946,11 +10065,10 @@ mod tests {
     #[test]
     fn test_pipeline_mask_generator_adjust() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         // Find MaskOpGenerator focus
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut gen_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::MaskOpGenerator { section: 0 } = &rows[ri] {
@@ -9992,11 +10110,10 @@ mod tests {
     #[test]
     fn test_pipeline_mask_generator_param_adjust() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         // Find MaskOpGeneratorParam focus
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut gp_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::MaskOpGeneratorParam { section: 0 } = &rows[ri] {
@@ -10017,11 +10134,10 @@ mod tests {
     #[test]
     fn test_pipeline_mask_input_adjust() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         // Find MaskOpInput focus
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut inp_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::MaskOpInput { section: 0 } = &rows[ri] {
@@ -10071,11 +10187,10 @@ mod tests {
     #[test]
     fn test_reset_pipeline_param_field() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        assert!(app.goto_field("obliquity_threshold"));
         // Find obliquity_threshold param
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut fi = 0;
         for (f, &ri) in focusable.iter().enumerate() {
             if let PipelineRow::Param { field: "obliquity_threshold", .. } = &rows[ri] {
@@ -10101,7 +10216,6 @@ mod tests {
     fn test_reset_pipeline_toggle_field() {
         let mut app = App::new();
         app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         // Focus 0 is do_qsm toggle
         app.pipeline_state.focus = 0;
         app.pipeline_state.do_qsm = false;
@@ -10109,39 +10223,24 @@ mod tests {
         assert!(app.pipeline_state.do_qsm); // default is true
     }
 
-    // ========== Supplementary: edit SWI fields ==========
+    // ========== Other outputs: edit SWI fields ==========
 
     #[test]
-    fn test_supplementary_edit_swi_hp_sigmas() {
+    fn test_supplementary_edit_swi_hp_sigma() {
         let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
         app.form.do_swi = true;
-        // Edit SWI HP Sigma X (field 3)
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_hp_sigma_x");
+        // One row for the three axes.
+        focus_on(&mut app, TAB_OUTPUTS, "swi_hp_sigma");
+        assert_eq!(app.form.swi_hp_sigma_values().map(|v| v.len()), Some(3), "the default parses");
         app.handle_key(key(KeyCode::Enter));
         assert!(app.pipeline_state.editing);
-        app.handle_key(key(KeyCode::End));
-        app.handle_key(key(KeyCode::Char('0')));
+        for _ in 0..20 { app.handle_key(key(KeyCode::Backspace)); }
+        for c in "4, 4 0".chars() { app.handle_key(key(KeyCode::Char(c))); }
         app.handle_key(key(KeyCode::Enter));
         assert!(!app.pipeline_state.editing);
-
-        // Edit SWI HP Sigma Y (field 4)
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_hp_sigma_y");
-        app.handle_key(key(KeyCode::Enter));
-        app.handle_key(key(KeyCode::Char('1')));
-        app.handle_key(key(KeyCode::Esc));
-
-        // Edit SWI HP Sigma Z (field 5)
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_hp_sigma_z");
-        app.handle_key(key(KeyCode::Enter));
-        app.handle_key(key(KeyCode::Char('2')));
-        app.handle_key(key(KeyCode::Esc));
-
-        // Edit SWI MIP Window (field 6)
-        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_mip_window");
-        app.handle_key(key(KeyCode::Enter));
-        app.handle_key(key(KeyCode::Char('3')));
-        app.handle_key(key(KeyCode::Esc));
+        assert_eq!(app.form.swi_hp_sigma_values(), Some(vec![4.0, 4.0, 0.0]));
+        app.form.swi_hp_sigma = "4 4".into();
+        assert_eq!(app.form.swi_hp_sigma_values(), None, "three values or none");
     }
 
     // ========== Pipeline: switch algorithms and verify row changes ==========
@@ -10152,7 +10251,7 @@ mod tests {
         // Switch through every BG removal algorithm (incl. BFRnet/iQFM) and verify rows change.
         for algo in 0..BF_OPTIONS.len() {
             ps.bf_algorithm = algo;
-            let rows = ps.visible_rows();
+            let rows = ps.all_rows();
             assert!(!rows.is_empty());
         }
     }
@@ -10164,7 +10263,7 @@ mod tests {
         // NeXtQSM/AutoQSM hide BG removal; end-to-end iQSM/iQSM+ hide field mapping too).
         for algo in 0..QSM_ALGO_OPTIONS.len() {
             ps.qsm_algorithm = algo;
-            let rows = ps.visible_rows();
+            let rows = ps.all_rows();
             assert!(!rows.is_empty());
             let focusable = ps.focusable_rows();
             assert!(!focusable.is_empty());
@@ -10177,7 +10276,7 @@ mod tests {
         // Every separation method incl. SUSEP-Net / χ-sepnet.
         for algo in 0..SEP_ALGO_OPTIONS.len() {
             ps.separation_algorithm = algo;
-            assert!(!ps.visible_rows().is_empty());
+            assert!(!ps.all_rows().is_empty());
         }
     }
 
@@ -10188,7 +10287,7 @@ mod tests {
             medi_smv: true,
             ..Default::default()
         };
-        let rows = ps.visible_rows();
+        let rows = ps.all_rows();
         // BG Removal should not be in rows
         let has_bg = rows.iter().any(|r| matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. }));
         assert!(!has_bg, "MEDI+SMV should hide BG removal");
@@ -10219,8 +10318,7 @@ mod tests {
     #[test]
     fn test_pipeline_threshold_value_editing() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         // Set generator to Fixed threshold to make MaskOpThresholdValue visible
         app.pipeline_state.mask_sections[0].generator = crate::pipeline::config::MaskOp::Threshold {
             method: crate::pipeline::config::MaskThresholdMethod::Fixed,
@@ -10229,8 +10327,8 @@ mod tests {
         app.pipeline_state.mark_mask_custom(0);
 
         // Find MaskOpThresholdValue focus
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut tv_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if matches!(&rows[ri], PipelineRow::MaskOpThresholdValue { .. }) {
@@ -10266,14 +10364,13 @@ mod tests {
     fn test_pipeline_bet_voxel_scale_row() {
         use crate::pipeline::config::MaskOp;
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         app.pipeline_state.mask_sections[0].generator = MaskOp::bet(0.5);
         app.pipeline_state.mark_mask_custom(0);
 
         let find_scale_row = |app: &App| {
-            let rows = app.pipeline_state.visible_rows();
-            let focusable = app.pipeline_state.focusable_rows();
+            let rows = app.rows();
+            let focusable = app.focusable_rows();
             focusable.iter().position(|&ri| matches!(&rows[ri], PipelineRow::MaskOpBetVoxelScale { .. }))
         };
         let fi = find_scale_row(&app).expect("BET voxel-scale row should be shown and focusable");
@@ -10304,14 +10401,13 @@ mod tests {
     fn test_pipeline_hd_bet_step_row() {
         use crate::pipeline::config::MaskOp;
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         app.pipeline_state.mask_sections[0].generator = MaskOp::hd_bet_default();
         app.pipeline_state.mark_mask_custom(0);
 
         let find_step_row = |app: &App| {
-            let rows = app.pipeline_state.visible_rows();
-            let focusable = app.pipeline_state.focusable_rows();
+            let rows = app.rows();
+            let focusable = app.focusable_rows();
             focusable.iter().position(|&ri| matches!(&rows[ri], PipelineRow::MaskOpHdBetStep { .. }))
         };
         let fi = find_step_row(&app).expect("HD-BET step row should be shown and focusable");
@@ -10338,15 +10434,14 @@ mod tests {
     #[test]
     fn test_pipeline_threshold_value_esc_cancels() {
         let mut app = App::new();
-        app.active_tab = TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
+        goto_page(&mut app, Page::Masking);
         app.pipeline_state.mask_sections[0].generator = crate::pipeline::config::MaskOp::Threshold {
             method: crate::pipeline::config::MaskThresholdMethod::Fixed,
             value: Some(0.5),
         };
         app.pipeline_state.mark_mask_custom(0);
-        let rows = app.pipeline_state.visible_rows();
-        let focusable = app.pipeline_state.focusable_rows();
+        let rows = app.rows();
+        let focusable = app.focusable_rows();
         let mut tv_focus = None;
         for (fi, &ri) in focusable.iter().enumerate() {
             if matches!(&rows[ri], PipelineRow::MaskOpThresholdValue { .. }) {

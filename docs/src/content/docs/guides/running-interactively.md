@@ -31,13 +31,35 @@ qsmxt tui
   but every run (from the TUI or the CLI) records its resolved settings in
   `derivatives/qsmxt/pipeline_config.toml`, which `--config` (or the TUI's
   *Config file* field) loads back.
-- **Export results as DICOM** — tick *Export DICOM* on the Supplementary tab to
+- **Export results as DICOM** — tick *Export DICOM* under Other outputs → Export to
   write every final map as a DICOM series alongside the NIfTIs, ready for a PACS
   or a clinical viewer. (See
   [Exporting results as DICOM](/QSMxT/guides/running-noninteractively/#exporting-results-as-dicom).)
 - **Run the pipeline** and watch progress without leaving the terminal.
 - **Submit to a cluster** — generate and launch SLURM jobs for large cohorts
   directly from the TUI; scaling out doesn't require the command line.
+
+## Layout
+
+The top row holds the tabs; press a digit (`1`–`7`) or `Tab`/`Shift-Tab` to switch. A tab
+with more than one page shows a second row of sub-tabs, switched with `[` and `]`. Switching
+either puts focus back on the first setting.
+
+| Tab | Sub-tabs | What is there |
+|---|---|---|
+| 1 Input | — | Input mode, dataset/output/config paths, include/exclude patterns and the run tree, number of echoes, and the orientation-group pattern with a live preview of the groups it forms |
+| 2 Preprocessing | Geometry · Masking · Motion | Axial resampling and output space, inhomogeneity correction, slice-gap check, crop to mask, FFT padding, coil combination (multi-coil data); the mask recipe, custom masks and the two-pass reliable mask; motion correction and its rigid registration |
+| 3 QSM | Field map · Background · Inversion · Multi-orientation · Reference | *Compute QSM*, then one page per stage, shown only when that stage runs: unwrapping and B0 estimation; background-field removal (inversions of a local field only); the dipole inversion; how an orientation group is reconstructed (with an orientation group only); the χ reference |
+| 4 Separation | — | χ-separation method and its parameters |
+| 5 Other outputs | SWI/SMWI · Relaxometry · Segmentation · Export | SWI and SMWI; T2\*, R2\*, R2 and R2′ maps, the R2′ source and supplied maps; segmentation (SynthSeg or a dseg from derivatives) and per-structure statistics; DICOM export |
+| 6 Execution | — | Local or SLURM, each with its own settings; debug logging, force re-run, clean-up |
+| 7 Methods | — | The methods text for the current settings |
+
+Settings appear only where and when they apply: a sub-setting sits indented under the
+checkbox or choice it belongs to, and a map another output needs reads as ticked (and says why
+when you try to untick it). `↑`/`↓` move, `←`/`→` or `Space` change a choice or checkbox,
+`Enter` opens a list or edits a value, `r` resets the focused setting, `R` the whole sub-tab, and
+`F5` runs.
 
 The TUI builds the same configuration the CLI consumes, so anything you set up
 interactively can be reproduced [noninteractively](/QSMxT/guides/running-noninteractively/)

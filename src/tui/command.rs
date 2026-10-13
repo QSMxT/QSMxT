@@ -89,10 +89,11 @@ pub fn build_command_string(app: &App) -> String {
         if !form.n_procs.trim().is_empty() {
             parts.push(format!("--n-procs {}", form.n_procs.trim()));
         }
-        if !form.mem_limit_gb.trim().is_empty() {
-            parts.push(format!("--mem-limit-gb {}", form.mem_limit_gb.trim()));
+        match form.mem_limit() {
+            (Some(gb), _) => parts.push(format!("--mem-limit-gb {gb}")),
+            (None, true) => parts.push("--no-mem-limit".to_string()),
+            (None, false) => {}
         }
-        if form.no_mem_limit { parts.push("--no-mem-limit".to_string()); }
         if form.force { parts.push("--force".to_string()); }
         if form.clean_intermediates { parts.push("--clean-intermediates".to_string()); }
         push_dicom_export(&mut parts, form);
@@ -139,8 +140,8 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
         dicom_outputs: if form.export_dicom { parse_dicom_outputs(&form.dicom_outputs) } else { None },
         dry: form.dry_run,
         debug: form.debug,
-        mem_limit_gb: parse_optional_f64(&form.mem_limit_gb),
-        no_mem_limit: form.no_mem_limit,
+        mem_limit_gb: form.mem_limit().0,
+        no_mem_limit: form.mem_limit().1,
         force: form.force,
         clean_intermediates: form.clean_intermediates,
         // The worker mode is what `qsmxt slurm` generates; the TUI's local run is a whole run.
@@ -608,15 +609,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             romeo_wrap_addition: parse_optional_f64(&ps.romeo_wrap_addition),
         },
         swi_params: crate::cli::SwiParamArgs {
-            swi_hp_sigma: {
-                let x: Option<f64> = form.swi_hp_sigma_x.trim().parse().ok();
-                let y: Option<f64> = form.swi_hp_sigma_y.trim().parse().ok();
-                let z: Option<f64> = form.swi_hp_sigma_z.trim().parse().ok();
-                match (x, y, z) {
-                    (Some(a), Some(b), Some(c)) => Some(vec![a, b, c]),
-                    _ => None,
-                }
-            },
+            swi_hp_sigma: form.swi_hp_sigma_values(),
             swi_scaling: Some(SWI_SCALING_ARGS[form.swi_scaling]),
             swi_strength: parse_optional_f64(&form.swi_strength),
             swi_mip_window: parse_optional_usize(&form.swi_mip_window),
@@ -930,9 +923,8 @@ mod tests {
     #[test]
     fn vsharp_deconvolve_toggle() {
         let mut app = default_app();
-        let shows_threshold = |app: &App| app.pipeline_state.visible_rows().iter().any(|r|
+        let shows_threshold = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
             matches!(r, crate::tui::app::PipelineRow::Param { field: "vsharp_threshold", .. }));
-        app.pipeline_state.collapsed_sections.clear();
         assert!(!config_from_app(&app).unwrap().bg_removal.vsharp.deconvolve);
         assert!(!shows_threshold(&app));
         app.pipeline_state.toggle("vsharp_deconvolve");
@@ -946,8 +938,7 @@ mod tests {
     #[test]
     fn laplacian_solver_and_pad() {
         let mut app = default_app();
-        app.pipeline_state.collapsed_sections.clear();
-        let fields = |app: &App| app.pipeline_state.visible_rows().iter().filter_map(|r| match r {
+        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::AlgoSelect { field, .. }
             | crate::tui::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
             _ => None,
@@ -978,8 +969,7 @@ mod tests {
     #[test]
     fn robust_fit_settings_reach_config_and_args() {
         let mut app = default_app();
-        app.pipeline_state.collapsed_sections.clear();
-        let fields = |app: &App| app.pipeline_state.visible_rows().iter().filter_map(|r| match r {
+        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::AlgoSelect { field, .. }
             | crate::tui::app::PipelineRow::Param { field, .. } => Some(field.to_string()),
             _ => None,
@@ -1035,8 +1025,7 @@ mod tests {
     #[test]
     fn motion_correction_settings_reach_config_and_args() {
         let mut app = default_app();
-        app.pipeline_state.collapsed_sections.clear();
-        let fields = |app: &App| app.pipeline_state.visible_rows().iter().filter_map(|r| match r {
+        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
             crate::tui::app::PipelineRow::AlgoSelect { field, .. }
             | crate::tui::app::PipelineRow::Param { field, .. }
             | crate::tui::app::PipelineRow::Toggle { field, .. } => Some(field.to_string()),
@@ -1085,8 +1074,7 @@ mod tests {
             assert!(serde_json::from_value::<crate::pipeline::config::QsmAlgorithm>(serde_json::json!(name)).is_ok(), "{name}");
         }
         let mut app = default_app();
-        app.pipeline_state.collapsed_sections.clear();
-        let shows_bfr = |app: &App| app.pipeline_state.visible_rows().iter().any(|r|
+        let shows_bfr = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
             matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. }));
         assert!(shows_bfr(&app));
         assert!(pipeline_args_from_app(&app).bf_algorithm.is_some());
@@ -1100,7 +1088,6 @@ mod tests {
     #[test]
     fn orientation_registration_and_force_reach_config_and_args() {
         let mut app = default_app();
-        app.pipeline_state.collapsed_sections.clear();
         // Without a grouping they act on nothing: not passed on.
         app.pipeline_state.toggle("orientation_registration");
         app.pipeline_state.toggle("multi_orientation_force");
@@ -1108,7 +1095,6 @@ mod tests {
         assert!(!a.no_orientation_registration && !a.multi_orientation_force);
 
         let mut app = default_app();
-        app.pipeline_state.collapsed_sections.clear();
         app.filter_state.orientation_group = "acq".into();
         app.sync_pipeline_mode();
         let c = config_from_app(&app).unwrap();
@@ -1119,7 +1105,7 @@ mod tests {
         assert!(!c.multi_orientation.register && c.multi_orientation.force);
         let a = pipeline_args_from_app(&app);
         assert!(a.no_orientation_registration && a.multi_orientation_force);
-        let shows_reg = |app: &App| app.pipeline_state.visible_rows().iter().any(|r|
+        let shows_reg = |app: &App| app.pipeline_state.all_rows().iter().any(|r|
             matches!(r, crate::tui::app::PipelineRow::Param { field: "reg_levels", .. }));
         assert!(!shows_reg(&app), "neither registration can run");
         app.pipeline_state.toggle("motion_correction");
@@ -1713,7 +1699,7 @@ mod tests {
 #[cfg(test)]
 mod parity {
     use super::*;
-    use crate::tui::app::{App, PipelineRow, TAB_EXECUTION, TAB_QSM, TAB_SEPARATION, TAB_SUPPLEMENTARY};
+    use crate::tui::app::{App, PipelineRow};
     use clap::CommandFactory;
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -1760,15 +1746,10 @@ mod parity {
         run.get_arguments().filter_map(|a| a.get_long()).map(|l| format!("--{l}")).collect()
     }
 
-    /// The rows the active tab shows, with the context the App syncs before every frame.
+    /// Every row the TUI shows in this state: each sub-tab of each tab, as it applies now.
     fn rows(app: &App) -> Vec<PipelineRow> {
-        let mut a = clone_app(app);
-        a.sync_pipeline_mode();
-        a.rows()
+        app.all_pages().into_iter().flat_map(|(_, _, rows)| rows).collect()
     }
-
-    /// The row tabs: every setting of the pipeline, outputs and execution is a row on one of them.
-    const ROW_TABS: [usize; 4] = [TAB_QSM, TAB_SEPARATION, TAB_SUPPLEMENTARY, TAB_EXECUTION];
 
     fn row_key(r: &PipelineRow) -> Option<(&'static str, char)> {
         match r {
@@ -1798,12 +1779,12 @@ mod parity {
     fn explore() -> Vec<App> {
         // A row counts as seen per inversion algorithm: the same row (an inner inversion's
         // parameters under QSMART, say) can mean a different flag under another one.
-        let mut seen: BTreeSet<(usize, &'static str, char, usize)> = BTreeSet::new();
+        let mut seen: BTreeSet<(&'static str, char, usize)> = BTreeSet::new();
         let mut states = Vec::new();
         let mut frontier = Vec::new();
-        // Each tab mode from the defaults, plus the starts whose rows only another tab reveals:
-        // the multi-orientation settings (a grouping on the Input tab, COSMOS or STI) and the
-        // inputs of the relaxometry maps and statistics (Supplementary tab).
+        // The defaults, plus the starts whose rows only a non-row control reveals: the
+        // multi-orientation settings (a grouping pattern on the Input tab, COSMOS or STI) and the
+        // inputs of the relaxometry maps and statistics.
         type Start = fn(&mut App);
         let starts: &[Start] = &[
             |_| {},
@@ -1811,17 +1792,13 @@ mod parity {
             |a| { a.filter_state.orientation_group = "acq".into(); a.filter_state.orientation_algorithm = 1; },
             |a| { a.form.do_r2primemap = true; a.form.do_r2map = true; a.form.do_analysis = true; },
         ];
-        for tab in ROW_TABS {
-            for start in starts {
-                let mut app = App::new();
-                app.pipeline_state.collapsed_sections.clear();
-                // What a run needs before it can be built in either mode.
-                app.form.bids_dir = "/bids".into();
-                app.form.slurm_account = "acct".into();
-                app.active_tab = tab;
-                start(&mut app);
-                frontier.push(app);
-            }
+        for start in starts {
+            let mut app = App::new();
+            // What a run needs before it can be built in either mode.
+            app.form.bids_dir = "/bids".into();
+            app.form.slurm_account = "acct".into();
+            start(&mut app);
+            frontier.push(app);
         }
         while let Some(app) = frontier.pop() {
             let rows = rows(&app);
@@ -1830,12 +1807,12 @@ mod parity {
             // (and so can be checked) is new even when its rows are not.
             let fresh = rows.iter().filter_map(row_key)
                 .map(|(field, kind)| (field, if kind == 't' && app.field_toggle(field) { 'T' } else { kind }))
-                .fold(false, |f, (field, kind)| seen.insert((app.active_tab, field, kind, alg)) | f);
+                .fold(false, |f, (field, kind)| seen.insert((field, kind, alg)) | f);
             if !fresh { continue; }
             for r in &rows {
                 match r {
                     PipelineRow::AlgoSelect { field, options, .. } => {
-                        for i in 0..options.len() {
+                        for i in (0..options.len()).filter(|&i| i != app.field_select(field)) {
                             let mut a = clone_app(&app);
                             a.set_field_select(field, i);
                             frontier.push(a);
@@ -1844,7 +1821,7 @@ mod parity {
                     PipelineRow::Toggle { field, .. } => {
                         let mut a = clone_app(&app);
                         a.toggle_field(field);
-                        frontier.push(a);
+                        if a.error_message.is_none() { frontier.push(a); }
                     }
                     _ => {}
                 }
@@ -1888,6 +1865,7 @@ mod parity {
         let mut checked: std::collections::HashSet<(&'static str, char, [usize; 4], [bool; 2])> = Default::default();
         let mut cli = <crate::cli::Cli as clap::CommandFactory>::command();
         cli.build();
+        let mut round_trips: std::collections::HashMap<String, String> = Default::default();
         let mut check = |what: String, base: &App, app: &App, problems: &mut BTreeMap<String, String>| {
             let (before, after) = (config_from_app(base).unwrap(), config_from_app(app).unwrap());
             let (shown_before, shown) = (build_command_string(base), build_command_string(app));
@@ -1898,7 +1876,15 @@ mod parity {
                 problems.entry(format!("not in the command: {d:?}")).or_insert(what.clone());
             }
             let cmd = qsmxt_config::generate_command(&after);
-            let back = qsmxt_config::generate_command(&round_trip(&mut cli, &after));
+            // Parsing is most of a check's cost, and many changes produce a command already seen.
+            let back = match round_trips.get(&cmd) {
+                Some(b) => b.clone(),
+                None => {
+                    let b = qsmxt_config::generate_command(&round_trip(&mut cli, &after));
+                    round_trips.insert(cmd.clone(), b.clone());
+                    b
+                }
+            };
             if back != cmd {
                 let (a, b) = (flags_of(&cmd), flags_of(&back));
                 problems.entry(format!("command does not reproduce itself: {:?}", a.symmetric_difference(&b).collect::<Vec<_>>()))
@@ -1927,7 +1913,14 @@ mod parity {
                     a.toggle_field(field);
                     if a.error_message.is_some() { continue; }
                 }
-                if !checked.insert((field, kind, context.0, context.1)) { continue; }
+                // The run form's settings (outputs, execution) do not feed the reconstruction:
+                // they are checked per separation method and mode, not per inversion.
+                let ctx = if app.form.text(field).is_some() || app.form.flag(field).is_some() || app.form.choice(field).is_some() {
+                    ([0, 0, context.0[2], context.0[3]], [false, context.1[1]])
+                } else {
+                    context
+                };
+                if !checked.insert((field, kind, ctx.0, ctx.1)) { continue; }
                 match r {
                     PipelineRow::AlgoSelect { field, options, .. } => {
                         let current = app.field_select(field);
@@ -1998,6 +1991,8 @@ mod parity {
             ("include", |_| {}, |a| a.filter_state.include_pattern = "sub-1*".into()),
             ("exclude", |_| {}, |a| a.filter_state.exclude_pattern = "*pre*".into()),
             ("num_echoes", |_| {}, |a| a.filter_state.num_echoes = "2".into()),
+            // The memory-limit row's third state (auto, a number, none).
+            ("no_mem_limit", |_| {}, |a| a.form.mem_limit_gb = "none".into()),
         ];
         for (what, setup, change) in surfaces {
             let mut base = App::new();
