@@ -8,6 +8,16 @@ upgrade.
 
 ### Output changes with default settings
 
+- **Segmentations keep valid label ids on the acquired grid** (#267). Returning a resampled run
+  to its acquired grid (`--output-space acquired`, the default) interpolated `_dseg.nii`
+  trilinearly, because only files named `*mask*` were treated specially, which put invalid,
+  non-integer labels on every boundary. Each published derivative now declares what it is
+  (continuous map, mask, label image, wrapped phase, projection) and travels accordingly: labels
+  by majority vote (QSM.rs `geometry::resample_labels_onto`), masks nearest-neighbour. The SMWI
+  minIPs are rebuilt on the acquired grid from the resampled SMWI, as the SWI minIP already was
+  (they stayed on the working grid). Outputs returned by an earlier release are redone once.
+  Only resampled (oblique) runs change.
+
 - **TFI inverts the total field** (#265). TFI is a total-field method, but QSMxT ran background
   removal first and gave it the V-SHARP local field. Which field an inversion takes now comes from
   QSM.rs (`InversionConfig::input`: local field, total field or wrapped phase), replacing two
