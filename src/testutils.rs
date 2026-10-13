@@ -214,6 +214,58 @@ pub fn create_multi_coil_bids(root: &Path, n_coils: u32) -> PathBuf {
     root.to_path_buf()
 }
 
+/// Echo times of the [`create_real_imag_bids`] / [`create_mag_phase_twin_bids`] fixtures.
+const COMPLEX_ECHO_TIMES: [f64; 3] = [0.004, 0.008, 0.012];
+
+/// Echo `e` (0-based) of the complex fixtures: decaying magnitude and phase in radians.
+fn complex_echo(e: usize) -> (Vec<f64>, Vec<f64>) {
+    const R2STAR_HZ: f64 = 30.0;
+    let mag: Vec<f64> = magnitude_data().iter().map(|v| v * (-R2STAR_HZ * COMPLEX_ECHO_TIMES[e]).exp()).collect();
+    // The ramp of `phase_data`, as radians spanning exactly [-π, π] so `scale_phase_to_pi` leaves
+    // the magnitude/phase twin as it is.
+    let raw = phase_data();
+    let max = raw.iter().cloned().fold(0.0, f64::max);
+    let phase: Vec<f64> = raw.iter().map(|v| v / max * 2.0 * std::f64::consts::PI - std::f64::consts::PI).collect();
+    (mag, phase)
+}
+
+/// Multi-echo BIDS dataset exported as real/imaginary (`part-real` / `part-imag`, no
+/// `part-mag`), as GE writes it. With `chop_z`, every odd slice is negated, the
+/// alternate-slice π chopping some GE reconstructions leave in.
+pub fn create_real_imag_bids(root: &Path, chop_z: bool) -> PathBuf {
+    let anat = root.join("sub-1/anat");
+    std::fs::create_dir_all(&anat).unwrap();
+    for (e, &te) in COMPLEX_ECHO_TIMES.iter().enumerate() {
+        let (mag, phase) = complex_echo(e);
+        let sign = |i: usize| if chop_z && (i / (NX * NY)) % 2 == 1 { -1.0 } else { 1.0 };
+        let real: Vec<f64> = (0..N).map(|i| sign(i) * mag[i] * phase[i].cos()).collect();
+        let imag: Vec<f64> = (0..N).map(|i| sign(i) * mag[i] * phase[i].sin()).collect();
+        for (part, data) in [("real", &real), ("imag", &imag)] {
+            let base = format!("sub-1_echo-{}_part-{}_MEGRE", e + 1, part);
+            qsm_core::io::save_nifti_to_file(&anat.join(format!("{}.nii", base)), data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
+                .expect("write real/imag");
+            write_sidecar(&anat.join(format!("{}.json", base)), te, 3.0);
+        }
+    }
+    root.to_path_buf()
+}
+
+/// The [`create_real_imag_bids`] echoes as magnitude and phase (`part-mag` / `part-phase`).
+pub fn create_mag_phase_twin_bids(root: &Path) -> PathBuf {
+    let anat = root.join("sub-1/anat");
+    std::fs::create_dir_all(&anat).unwrap();
+    for (e, &te) in COMPLEX_ECHO_TIMES.iter().enumerate() {
+        let (mag, phase) = complex_echo(e);
+        for (part, data) in [("mag", &mag), ("phase", &phase)] {
+            let base = format!("sub-1_echo-{}_part-{}_MEGRE", e + 1, part);
+            qsm_core::io::save_nifti_to_file(&anat.join(format!("{}.nii", base)), data, (NX, NY, NZ), VOXEL_SIZE, &IDENTITY_AFFINE)
+                .expect("write mag/phase");
+            write_sidecar(&anat.join(format!("{}.json", base)), te, 3.0);
+        }
+    }
+    root.to_path_buf()
+}
+
 /// Multi-session BIDS dataset.
 pub fn create_multi_session_bids(root: &Path) -> PathBuf {
     let ses1 = root.join("sub-1/ses-pre/anat");

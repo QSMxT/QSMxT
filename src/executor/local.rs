@@ -183,6 +183,7 @@ mod tests {
                     phase_json: PathBuf::from("fake.json"),
                     magnitude_nifti: Some(PathBuf::from("fake_mag.nii")),
                     magnitude_json: Some(PathBuf::from("fake_mag.json")),
+                    imaginary_nifti: None,
                 })
                 .collect(),
             coils: None,

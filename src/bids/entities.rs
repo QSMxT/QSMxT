@@ -5,6 +5,10 @@ use std::path::Path;
 pub enum Part {
     Phase,
     Magnitude,
+    /// `part-real`: the real half of a complex image exported as real/imaginary.
+    Real,
+    /// `part-imag`: the imaginary half.
+    Imaginary,
 }
 
 /// BIDS entities extracted from a filename.
@@ -124,6 +128,8 @@ pub fn parse_entities(filename: &str) -> Option<BidsEntities> {
     let part = extract_entity(entity_part, "part").and_then(|p| match p.as_str() {
         "phase" => Some(Part::Phase),
         "mag" => Some(Part::Magnitude),
+        "real" => Some(Part::Real),
+        "imag" => Some(Part::Imaginary),
         _ => None,
     });
 
@@ -159,6 +165,18 @@ pub fn phase_to_magnitude_path(phase_path: &Path) -> std::path::PathBuf {
     let s = phase_path.to_string_lossy();
     let replaced = s.replace("_part-phase_", "_part-mag_");
     std::path::PathBuf::from(replaced)
+}
+
+/// Replace the `part-real` entity with `part-imag` in a filename.
+pub fn real_to_imaginary_path(real_path: &Path) -> std::path::PathBuf {
+    let s = real_path.to_string_lossy();
+    std::path::PathBuf::from(s.replace("_part-real_", "_part-imag_"))
+}
+
+/// Replace the `part-real` entity with `part-mag` in a filename.
+pub fn real_to_magnitude_path(real_path: &Path) -> std::path::PathBuf {
+    let s = real_path.to_string_lossy();
+    std::path::PathBuf::from(s.replace("_part-real_", "_part-mag_"))
 }
 
 #[cfg(test)]
@@ -233,6 +251,24 @@ mod tests {
             p,
             std::path::PathBuf::from("/data/sub-1_echo-1_part-mag_MEGRE.nii.gz")
         );
+    }
+
+    #[test]
+    fn test_parse_real_imag() {
+        assert_eq!(parse_entities("sub-1_echo-1_part-real_MEGRE.nii.gz").unwrap().part, Some(Part::Real));
+        assert_eq!(parse_entities("sub-1_echo-1_part-imag_MEGRE.nii.gz").unwrap().part, Some(Part::Imaginary));
+        // Real and imaginary halves of one echo belong to the same acquisition.
+        assert_eq!(
+            parse_entities("sub-1_acq-gre_echo-2_part-real_MEGRE.nii").unwrap().acquisition_key(),
+            parse_entities("sub-1_acq-gre_echo-2_part-imag_MEGRE.nii").unwrap().acquisition_key(),
+        );
+    }
+
+    #[test]
+    fn test_real_to_imaginary_and_magnitude() {
+        let real = Path::new("/data/sub-1_echo-1_part-real_MEGRE.nii.gz");
+        assert_eq!(real_to_imaginary_path(real), std::path::PathBuf::from("/data/sub-1_echo-1_part-imag_MEGRE.nii.gz"));
+        assert_eq!(real_to_magnitude_path(real), std::path::PathBuf::from("/data/sub-1_echo-1_part-mag_MEGRE.nii.gz"));
     }
 
     #[test]

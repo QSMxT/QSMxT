@@ -23,13 +23,15 @@ default = ["dl"]
 dl = ["qsm-core/onnx", "qsm-core/download"]
 
 [dependencies]
-# TEMP: pinned by rev to QSM.rs main at #166 (motion-robust echo fit as a B0 estimation method),
+# TEMP: pinned by rev to the QSM.rs feat/complex-to-mag-phase branch (astewartau/QSM.rs#179,
+# real/imaginary input), which is main at #177 plus that PR. Move this to main once it merges.
+# Before that: pinned by rev to QSM.rs main at #166 (motion-robust echo fit as a B0 estimation method),
 # past v0.38.0 and not yet in a release. It takes in #160-#163 and #165 (V-SHARP deconvolve
 # option, Laplacian FFT solver, assumed-decay B0 weighting, STI Suite 3.0 iLSQR) and #137-#139
 # (motion correction, R2PRIMEnet field gate, slice-gap check). A `rev` pin is what CI can resolve
 # (a `path` pin cannot), but it must become a `tag` pin before the next QSMxT release, or qsmbly
 # (which pins qsmxt-config) has no release to match. qsmxt-config must move in lockstep.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "ad39808194b19956ec6820ed9b06a2c8302e053a", features = ["parallel"] }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "a7a92a4d35e48cd0dd120c5837f21373ef18c88c", features = ["parallel"] }
 qsmxt-config = { path = "crates/qsmxt-config" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"

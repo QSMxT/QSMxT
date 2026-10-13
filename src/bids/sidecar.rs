@@ -25,6 +25,9 @@ pub struct QsmSidecar {
     /// `SliceEncodingDirection`: "i", "j" or "k", optionally with "-".
     #[serde(rename = "SliceEncodingDirection")]
     pub slice_encoding_direction: Option<String>,
+    /// `Manufacturer`, which decides the phase sign convention of real/imaginary input.
+    #[serde(rename = "Manufacturer")]
+    pub manufacturer: Option<String>,
 }
 
 /// Read a BIDS JSON sidecar, extracting QSM-relevant fields.
@@ -70,6 +73,7 @@ pub fn read_sidecar(path: &Path) -> crate::Result<QsmSidecar> {
         slice_thickness: value.get("SliceThickness").and_then(|v| v.as_f64()),
         mr_acquisition_type: string("MRAcquisitionType"),
         slice_encoding_direction: string("SliceEncodingDirection"),
+        manufacturer: string("Manufacturer"),
     })
 }
 

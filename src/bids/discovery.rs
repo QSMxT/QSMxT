@@ -13,10 +13,15 @@ use crate::error::QsmxtError;
 #[allow(dead_code)]
 pub struct EchoFiles {
     pub echo_number: u32,
+    /// The echo's phase, or its `part-real` file when the echo was exported as real/imaginary
+    /// (see `imaginary_nifti`). Either way this file's header and sidecar describe the echo.
     pub phase_nifti: PathBuf,
     pub phase_json: PathBuf,
     pub magnitude_nifti: Option<PathBuf>,
     pub magnitude_json: Option<PathBuf>,
+    /// `part-imag` file of a real/imaginary echo, whose real half is then `phase_nifti`. The
+    /// pipeline converts the pair to magnitude and phase in its first stage.
+    pub imaginary_nifti: Option<PathBuf>,
 }
 
 /// Per-echo files of one receive-coil channel in an uncombined (per-coil) acquisition.
@@ -44,7 +49,7 @@ pub struct QsmRun {
     pub b0_dir: Option<(f64, f64, f64)>,
     /// Volume dimensions (nx, ny, nz) from the first phase NIfTI header.
     pub dims: (usize, usize, usize),
-    /// Whether magnitude files are available for this run.
+    /// Whether magnitude is available for this run: magnitude files, or real/imaginary input.
     pub has_magnitude: bool,
     /// Matching multi-echo spin-echo (`MESE`) acquisition, if present in the dataset
     /// (same subject/session). Used to compute R2 (EPG) → R2' for chi-separation.
@@ -124,20 +129,36 @@ pub fn passes_include_exclude(key: &str, include: &Option<Vec<String>>, exclude:
     true
 }
 
+/// Glob patterns for the files that carry an acquisition's phase: `part-phase`, or `part-real`
+/// for an acquisition exported as real/imaginary (the `part-imag` half is found from it).
+fn signal_patterns(bids_dir: &Path) -> [String; 4] {
+    [
+        format!("{}/sub-*/anat/*_part-phase_*.nii*", bids_dir.display()),
+        format!("{}/sub-*/ses-*/anat/*_part-phase_*.nii*", bids_dir.display()),
+        format!("{}/sub-*/anat/*_part-real_*.nii*", bids_dir.display()),
+        format!("{}/sub-*/ses-*/anat/*_part-real_*.nii*", bids_dir.display()),
+    ]
+}
+
+/// Keep one representation of an acquisition: its phase files when it has any, otherwise its
+/// real-part files. Real/imaginary is only used when there is no phase to use instead.
+fn prefer_phase(key: &AcquisitionKey, mut files: Vec<(PathBuf, BidsEntities)>) -> Vec<(PathBuf, BidsEntities)> {
+    if files.iter().any(|(_, e)| e.part == Some(Part::Phase)) {
+        let before = files.len();
+        files.retain(|(_, e)| e.part == Some(Part::Phase));
+        if files.len() < before {
+            debug!("{}: has both part-phase and part-real files; using part-phase", key);
+        }
+    }
+    files
+}
+
 /// Discover all QSM runs in a BIDS directory.
 pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result<Vec<QsmRun>> {
-    let patterns = [
-        format!("{}/sub-*/anat/*_part-phase_*.nii*", bids_dir.display()),
-        format!(
-            "{}/sub-*/ses-*/anat/*_part-phase_*.nii*",
-            bids_dir.display()
-        ),
-    ];
-
-    // Collect all phase files
+    // Collect all phase (and real-part) files
     let mut phase_files: Vec<(PathBuf, BidsEntities)> = Vec::new();
 
-    for pattern in &patterns {
+    for pattern in &signal_patterns(bids_dir) {
         for entry in glob(pattern).map_err(|e| QsmxtError::BidsDiscovery(e.to_string()))? {
             let path = entry.map_err(|e| QsmxtError::BidsDiscovery(e.to_string()))?;
             let filename = path
@@ -146,7 +167,7 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
                 .ok_or_else(|| QsmxtError::BidsDiscovery("Invalid filename".to_string()))?;
 
             if let Some(ent) = entities::parse_entities(filename) {
-                if ent.part != Some(Part::Phase) {
+                if !matches!(ent.part, Some(Part::Phase | Part::Real)) {
                     continue;
                 }
 
@@ -161,6 +182,9 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
     for (path, ent) in phase_files {
         let key = ent.acquisition_key();
         groups.entry(key).or_default().push((path, ent));
+    }
+    for (key, files) in groups.iter_mut() {
+        *files = prefer_phase(key, std::mem::take(files));
     }
 
     // Apply include/exclude filters on grouped run keys
@@ -196,6 +220,13 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
                 let (e, t, b, d) = build_echoes(cfiles, filter.num_echoes)?;
                 if e.is_empty() {
                     continue;
+                }
+                if e.iter().any(|x| x.imaginary_nifti.is_some()) {
+                    return Err(QsmxtError::BidsDiscovery(format!(
+                        "{}: per-coil real/imaginary input is not supported — export the coils as \
+                         magnitude and phase",
+                        key
+                    )));
                 }
                 if e.iter().any(|x| x.magnitude_nifti.is_none()) {
                     return Err(QsmxtError::BidsDiscovery(format!(
@@ -241,7 +272,7 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
         // Read volume dimensions from the first phase NIfTI header (fast, header-only)
         let dims = qsm_core::io::read_nifti_dims(&echoes[0].phase_nifti)
             .map_err(QsmxtError::NiftiIo)?;
-        let has_magnitude = echoes[0].magnitude_nifti.is_some();
+        let has_magnitude = echoes[0].magnitude_nifti.is_some() || echoes[0].imaginary_nifti.is_some();
 
         runs.push(QsmRun {
             key,
@@ -321,7 +352,19 @@ fn build_echoes(mut files: Vec<(PathBuf, BidsEntities)>, num_echoes: Option<usiz
                 phase_path.display()
             ))
         })?;
-        let mag_path = entities::phase_to_magnitude_path(phase_path);
+        let is_complex = ent.part == Some(Part::Real);
+        let (mag_path, imaginary_nifti) = if is_complex {
+            let imag = entities::real_to_imaginary_path(phase_path);
+            if !imag.exists() {
+                return Err(QsmxtError::BidsDiscovery(format!(
+                    "{} has no matching part-imag file ({})",
+                    phase_path.display(), imag.display()
+                )));
+            }
+            (entities::real_to_magnitude_path(phase_path), Some(imag))
+        } else {
+            (entities::phase_to_magnitude_path(phase_path), None)
+        };
 
         // Read sidecar
         if !json_path.exists() {
@@ -347,6 +390,9 @@ fn build_echoes(mut files: Vec<(PathBuf, BidsEntities)>, num_echoes: Option<usiz
 
         let mag_nifti = if mag_path.exists() {
             Some(mag_path.clone())
+        } else if is_complex {
+            // Real/imaginary input carries its own magnitude.
+            None
         } else {
             warn!(
                 "Magnitude file not found (will proceed without): {}",
@@ -363,6 +409,7 @@ fn build_echoes(mut files: Vec<(PathBuf, BidsEntities)>, num_echoes: Option<usiz
             phase_json: json_path,
             magnitude_nifti: mag_nifti,
             magnitude_json: mag_json,
+            imaginary_nifti,
         });
     }
 
@@ -391,7 +438,7 @@ fn attach_mese(runs: &mut [QsmRun], bids_dir: &Path) {
             let Some(filename) = entry.file_name().and_then(|f| f.to_str()) else { continue };
             let Some(ent) = entities::parse_entities(filename) else { continue };
             // MESE magnitude images carry no phase part.
-            if ent.part == Some(Part::Phase) {
+            if matches!(ent.part, Some(Part::Phase | Part::Real | Part::Imaginary)) {
                 continue;
             }
             groups.entry(ent.acquisition_key()).or_default().push((entry.clone(), ent));
@@ -570,10 +617,7 @@ impl BidsSessionNode {
 /// This is lightweight: only globs filenames and parses entities.
 /// No JSON sidecars or NIfTI headers are read.
 pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
-    let patterns = [
-        format!("{}/sub-*/anat/*_part-phase_*.nii*", bids_dir.display()),
-        format!("{}/sub-*/ses-*/anat/*_part-phase_*.nii*", bids_dir.display()),
-    ];
+    let patterns = signal_patterns(bids_dir);
 
     // Subjects/sessions that also have a matching MESE acquisition (for the "(+MESE)" annotation).
     let mese_present = mese_subject_sessions(bids_dir);
@@ -592,7 +636,7 @@ pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
             };
 
             if let Some(ent) = entities::parse_entities(filename) {
-                if ent.part != Some(Part::Phase) {
+                if !matches!(ent.part, Some(Part::Phase | Part::Real)) {
                     continue;
                 }
 
@@ -665,7 +709,7 @@ fn mese_subject_sessions(bids_dir: &Path) -> std::collections::HashSet<(String, 
         for entry in entries.flatten() {
             let Some(filename) = entry.file_name().and_then(|f| f.to_str()) else { continue };
             let Some(ent) = entities::parse_entities(filename) else { continue };
-            if ent.part == Some(Part::Phase) {
+            if matches!(ent.part, Some(Part::Phase | Part::Real | Part::Imaginary)) {
                 continue;
             }
             set.insert((ent.subject.clone(), ent.session.clone()));
@@ -708,6 +752,49 @@ mod tests {
         assert_eq!(runs[0].echoes.len(), 1);
         assert!(runs[0].has_magnitude);
         assert!((runs[0].echo_times[0] - 0.02).abs() < 1e-6);
+    }
+
+    #[test]
+    fn test_discover_real_imag() {
+        let dir = tempfile::tempdir().unwrap();
+        testutils::create_real_imag_bids(dir.path(), false);
+        let runs = discover_runs(dir.path(), &DiscoveryFilter::default()).unwrap();
+        assert_eq!(runs.len(), 1);
+        let run = &runs[0];
+        assert_eq!(run.key.to_string(), "sub-1_MEGRE");
+        assert_eq!(run.echoes.len(), 3);
+        // The magnitude comes from the real/imaginary pair, so the run has one without part-mag.
+        assert!(run.has_magnitude);
+        for (i, e) in run.echoes.iter().enumerate() {
+            assert_eq!(e.echo_number, i as u32 + 1);
+            assert!(e.phase_nifti.to_string_lossy().ends_with(&format!("echo-{}_part-real_MEGRE.nii", i + 1)));
+            assert!(e.imaginary_nifti.as_ref().unwrap().to_string_lossy().ends_with(&format!("echo-{}_part-imag_MEGRE.nii", i + 1)));
+            assert!(e.magnitude_nifti.is_none());
+        }
+        assert_eq!(run.echo_times, vec![0.004, 0.008, 0.012]);
+        assert_eq!(scan_bids_tree(dir.path()).unwrap().total_runs(), 1);
+    }
+
+    #[test]
+    fn test_discover_prefers_phase_over_real_imag() {
+        let dir = tempfile::tempdir().unwrap();
+        testutils::create_real_imag_bids(dir.path(), false);
+        testutils::create_mag_phase_twin_bids(dir.path());
+        let runs = discover_runs(dir.path(), &DiscoveryFilter::default()).unwrap();
+        assert_eq!(runs.len(), 1);
+        assert!(runs[0].echoes.iter().all(|e| e.imaginary_nifti.is_none()
+            && e.phase_nifti.to_string_lossy().contains("_part-phase_")
+            && e.magnitude_nifti.is_some()));
+        assert_eq!(scan_bids_tree(dir.path()).unwrap().total_runs(), 1);
+    }
+
+    #[test]
+    fn test_discover_real_without_imag_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        testutils::create_real_imag_bids(dir.path(), false);
+        std::fs::remove_file(dir.path().join("sub-1/anat/sub-1_echo-2_part-imag_MEGRE.nii")).unwrap();
+        let err = discover_runs(dir.path(), &DiscoveryFilter::default()).unwrap_err().to_string();
+        assert!(err.contains("sub-1_echo-2_part-real_MEGRE.nii has no matching part-imag file"), "{err}");
     }
 
     #[test]

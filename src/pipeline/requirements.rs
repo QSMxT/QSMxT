@@ -413,6 +413,7 @@ mod tests {
                 echo_number: n as u32,
                 phase_json: PathBuf::from("p.json"),
                 phase_nifti: PathBuf::from("/nonexistent/sub-01/anat/p.nii"),
+                imaginary_nifti: None,
                 magnitude_json: None,
                 magnitude_nifti: None,
             }).collect(),
