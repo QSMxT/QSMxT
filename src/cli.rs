@@ -1401,7 +1401,17 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub no_inhomogeneity_correction: bool,
 
-    /// Resample oblique acquisitions to axial if obliquity exceeds threshold (degrees, -1 to disable)
+    /// Resample oblique acquisitions onto an axial grid when their obliquity exceeds
+    /// --obliquity-threshold. Off by default (methods that only work on axial data resample
+    /// regardless)
+    #[arg(long)]
+    pub axial_resampling: bool,
+
+    /// Do not resample oblique acquisitions to axial (overrides a config's axial_resampling)
+    #[arg(long, conflicts_with = "axial_resampling")]
+    pub no_axial_resampling: bool,
+
+    /// Obliquity in degrees above which --axial-resampling resamples (default: 10)
     #[arg(long, allow_negative_numbers = true)]
     pub obliquity_threshold: Option<f64>,
 
@@ -3599,11 +3609,19 @@ mod tests {
         assert_eq!(a.b0_direction, vec![0.05, 0.09, -0.99]);
     }
 
-    /// `--obliquity-threshold -1` is the documented way to disable resampling.
+    /// A negative threshold parses (so the run can say what to use instead) and is refused when
+    /// applied; `--axial-resampling` is what turns resampling on.
     #[test]
-    fn run_accepts_negative_obliquity_threshold() {
+    fn a_negative_obliquity_threshold_points_to_axial_resampling() {
         let cli = parse(&["run", "bids", "--obliquity-threshold", "-1"]);
         let Command::Run(run) = cli.command else { panic!("expected run") };
-        assert_eq!(run.pipeline.obliquity_threshold, Some(-1.0));
+        let mut c = crate::pipeline::config::PipelineConfig::default();
+        let err = crate::pipeline::config::apply_run_overrides(&mut c, &run.pipeline).unwrap_err().to_string();
+        assert!(err.contains("--axial-resampling"), "{err}");
+        let cli = parse(&["run", "bids", "--axial-resampling", "--obliquity-threshold", "5"]);
+        let Command::Run(run) = cli.command else { panic!("expected run") };
+        crate::pipeline::config::apply_run_overrides(&mut c, &run.pipeline).unwrap();
+        assert!(c.pipeline.axial_resampling);
+        assert_eq!(c.pipeline.obliquity_threshold, 5.0);
     }
 }

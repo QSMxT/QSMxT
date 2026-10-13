@@ -11,7 +11,12 @@ pub use qsmxt_config::*;
 /// Load config from a TOML file.
 pub fn load_config(path: &Path) -> crate::Result<PipelineConfig> {
     let text = std::fs::read_to_string(path)?;
-    PipelineConfig::from_toml(&text).map_err(|e| QsmxtError::Config(format!("TOML parse error: {}", e)))
+    let (config, warnings) = PipelineConfig::from_toml_migrating(&text)
+        .map_err(|e| QsmxtError::Config(format!("TOML parse error: {}", e)))?;
+    for w in warnings {
+        log::warn!("{}: {w}", path.display());
+    }
+    Ok(config)
 }
 
 /// The recipe behind a `--mask-preset` value — shared by `run` and `qsmxt mask preset`.
@@ -637,7 +642,16 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if args.no_inhomogeneity_correction { config.masking.inhomogeneity_correction = false; }
         else if args.inhomogeneity_correction { config.masking.inhomogeneity_correction = true; }
         if let Some(tool) = &args.use_custom_masks { config.masking.custom_mask_tool = Some(tool.clone()); }
-        if let Some(v) = args.obliquity_threshold { config.pipeline.obliquity_threshold = v; }
+        if args.axial_resampling { config.pipeline.axial_resampling = true; }
+        if args.no_axial_resampling { config.pipeline.axial_resampling = false; }
+        if let Some(v) = args.obliquity_threshold {
+            if v < 0.0 {
+                return Err(QsmxtError::Config(format!(
+                    "--obliquity-threshold {v}: the threshold is in degrees and cannot be negative. Resampling \
+                     is off unless --axial-resampling is given (a negative threshold turned it off in QSMxT <= 9.22)")));
+            }
+            config.pipeline.obliquity_threshold = v;
+        }
         if args.crop_to_mask { config.pipeline.crop_to_mask = true; }
         if args.ignore_slice_gap { config.pipeline.ignore_slice_gap = true; }
         if args.fft_padding { config.pipeline.fft_padding = true; }

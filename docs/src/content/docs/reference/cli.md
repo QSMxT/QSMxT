@@ -341,7 +341,9 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--export-dicom` | Also export final maps as DICOM series into each subject's extra_files/ folder. |
 | `--inhomogeneity-correction` | Apply inhomogeneity correction to magnitude before masking. |
 | `--no-inhomogeneity-correction` | Disable inhomogeneity correction. |
-| `--obliquity-threshold <OBLIQUITY_THRESHOLD>` | Resample oblique acquisitions to axial if obliquity exceeds threshold (degrees, -1 to disable) |
+| `--axial-resampling` | Resample oblique acquisitions onto an axial grid when their obliquity exceeds --obliquity-threshold. Off by default (methods that only work on axial data resample regardless) |
+| `--no-axial-resampling` | Do not resample oblique acquisitions to axial (overrides a config's axial_resampling) |
+| `--obliquity-threshold <OBLIQUITY_THRESHOLD>` | Obliquity in degrees above which --axial-resampling resamples (default: 10) |
 | `--crop-to-mask` | Reconstruct inside a box around the mask instead of the whole field of view. Cuts the FFT-bound stages roughly in proportion to the voxels removed, but those stages are a small share of a full run, so the end-to-end gain is usually modest. Off by default. Outputs are written on the full grid either way; this only changes where the arithmetic happens. Padding to an FFT-friendly size happens regardless. |
 | `--ignore-slice-gap` | Reconstruct even when a 2D acquisition's sidecar `SliceThickness` is thinner than the slice pitch. Without it, QSM refuses such a run: the gap between slices is unsampled tissue, and the FFT kernels assume a contiguous grid, so the map would be wrong. |
 | `--fft-padding` | Pad the grid outward to an FFT-friendly size before the FFT-bound stages. Much faster on an awkward grid, and discards nothing, but it changes where k-space is sampled and so shifts the reconstruction slightly. Off by default. |
@@ -717,7 +719,9 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--export-dicom` | Also export final maps as DICOM series into each subject's extra_files/ folder. |
 | `--inhomogeneity-correction` | Apply inhomogeneity correction to magnitude before masking. |
 | `--no-inhomogeneity-correction` | Disable inhomogeneity correction. |
-| `--obliquity-threshold <OBLIQUITY_THRESHOLD>` | Resample oblique acquisitions to axial if obliquity exceeds threshold (degrees, -1 to disable) |
+| `--axial-resampling` | Resample oblique acquisitions onto an axial grid when their obliquity exceeds --obliquity-threshold. Off by default (methods that only work on axial data resample regardless) |
+| `--no-axial-resampling` | Do not resample oblique acquisitions to axial (overrides a config's axial_resampling) |
+| `--obliquity-threshold <OBLIQUITY_THRESHOLD>` | Obliquity in degrees above which --axial-resampling resamples (default: 10) |
 | `--crop-to-mask` | Reconstruct inside a box around the mask instead of the whole field of view. Cuts the FFT-bound stages roughly in proportion to the voxels removed, but those stages are a small share of a full run, so the end-to-end gain is usually modest. Off by default. Outputs are written on the full grid either way; this only changes where the arithmetic happens. Padding to an FFT-friendly size happens regardless. |
 | `--ignore-slice-gap` | Reconstruct even when a 2D acquisition's sidecar `SliceThickness` is thinner than the slice pitch. Without it, QSM refuses such a run: the gap between slices is unsampled tissue, and the FFT kernels assume a contiguous grid, so the map would be wrong. |
 | `--fft-padding` | Pad the grid outward to an FFT-friendly size before the FFT-bound stages. Much faster on an awkward grid, and discards nothing, but it changes where k-space is sampled and so shifts the reconstruction slightly. Off by default. |
@@ -1032,7 +1036,9 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--export-dicom` | Also export final maps as DICOM series into each subject's extra_files/ folder. |
 | `--inhomogeneity-correction` | Apply inhomogeneity correction to magnitude before masking. |
 | `--no-inhomogeneity-correction` | Disable inhomogeneity correction. |
-| `--obliquity-threshold <OBLIQUITY_THRESHOLD>` | Resample oblique acquisitions to axial if obliquity exceeds threshold (degrees, -1 to disable) |
+| `--axial-resampling` | Resample oblique acquisitions onto an axial grid when their obliquity exceeds --obliquity-threshold. Off by default (methods that only work on axial data resample regardless) |
+| `--no-axial-resampling` | Do not resample oblique acquisitions to axial (overrides a config's axial_resampling) |
+| `--obliquity-threshold <OBLIQUITY_THRESHOLD>` | Obliquity in degrees above which --axial-resampling resamples (default: 10) |
 | `--crop-to-mask` | Reconstruct inside a box around the mask instead of the whole field of view. Cuts the FFT-bound stages roughly in proportion to the voxels removed, but those stages are a small share of a full run, so the end-to-end gain is usually modest. Off by default. Outputs are written on the full grid either way; this only changes where the arithmetic happens. Padding to an FFT-friendly size happens regardless. |
 | `--ignore-slice-gap` | Reconstruct even when a 2D acquisition's sidecar `SliceThickness` is thinner than the slice pitch. Without it, QSM refuses such a run: the gap between slices is unsampled tissue, and the FFT kernels assume a contiguous grid, so the map would be wrong. |
 | `--fft-padding` | Pad the grid outward to an FFT-friendly size before the FFT-bound stages. Much faster on an awkward grid, and discards nothing, but it changes where k-space is sampled and so shifts the reconstruction slightly. Off by default. |

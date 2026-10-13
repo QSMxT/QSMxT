@@ -111,8 +111,12 @@ of these that fits:
    argument, so nothing else can help them.
 2. **A `B0_dir` in the JSON sidecar wins.** It describes the acquisition better
    than the affine can.
-3. **`--obliquity-threshold <degrees>` resamples to axial** when the obliquity
-   exceeds it, as QSMxT 8.x did. Off by default (`-1`).
+3. **`--axial-resampling` resamples to axial** when the obliquity exceeds
+   `--obliquity-threshold` (degrees, default 10), as QSMxT 8.x did. Off by
+   default. (Up to v9.22.0 a negative `--obliquity-threshold` turned it off;
+   a negative threshold is now refused, and an old config's
+   `obliquity_threshold` is read with a deprecation warning: negative as off,
+   otherwise on at that threshold.)
 4. **Otherwise the kernel is rotated** — B0 is taken from the affine and used
    as-is. This is the default, and normally the one you want.
 

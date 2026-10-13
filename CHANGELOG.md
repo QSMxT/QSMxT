@@ -237,6 +237,21 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
 
 ### Changed
 
+- **Breaking: `--axial-resampling` turns obliquity resampling on; the threshold is only a
+  threshold.** `--obliquity-threshold <degrees>` (default 10) now only sets where
+  `--axial-resampling` starts resampling, and a negative value is refused with a message pointing
+  to `--axial-resampling` (it used to be the way to turn resampling off, `-1` the default).
+  `--no-axial-resampling` overrides a config. Methods that only work on axial data still resample
+  whatever these say. Configs gain `pipeline.axial_resampling`; a v9.22.0 config (an
+  `obliquity_threshold` and no `axial_resampling`) keeps its meaning with a deprecation warning:
+  negative reads as off, anything else as on at that threshold. The methods text says when data
+  was resampled.
+- **TUI: no more magic "off" values.** Settings that were turned off by typing 0 or leaving a
+  value blank have a checkbox, with the value indented under it: axial resampling (Preprocessing →
+  Geometry), ROMEO's temporal-uncertain re-unwrapping, the linear/robust fit's reliability mask,
+  tiled deep-learning inference and SynthSeg's posterior smoothing. MEDI's and TFI's data
+  weighting is a choice (uniform / magnitude SNR) rather than a 0/1 text field, and signal-erode's
+  depth cap reads "off (no cap)" at 0.
 - **TUI: new layout with sub-tabs.** The tabs are now 1 Input, 2 Preprocessing, 3 QSM,
   4 Separation, 5 Other outputs, 6 Execution, 7 Methods, and the collapsible sections are gone:
   a second tab row (switched with `[` and `]`) splits a tab into sub-tabs. Preprocessing has
