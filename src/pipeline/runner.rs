@@ -5788,8 +5788,17 @@ mod oblique_run_tests {
         run
     }
 
-    fn resampling_config() -> PipelineConfig {
+    /// The default pipeline with RTS for the inversion. These tests are about grids, caching and
+    /// outputs, not the inversion; with the default (iLSQR) they took the suite from ~2 min to
+    /// ~50 min under coverage.
+    fn fast_config() -> PipelineConfig {
         let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Rts;
+        config
+    }
+
+    fn resampling_config() -> PipelineConfig {
+        let mut config = fast_config();
         config.pipeline.obliquity_threshold = 5.0;
         config
     }
@@ -5952,7 +5961,7 @@ mod oblique_run_tests {
         run.key = key("motion");
         run.dims = dims;
         let output = DerivativeOutputs::new(&dir.path().join("out"));
-        let mut config = PipelineConfig::default();
+        let mut config = fast_config();
         config.motion_correction.enabled = true;
         config.masking.two_pass = true;
         run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
@@ -5993,7 +6002,7 @@ mod oblique_run_tests {
         let dir = tempfile::tempdir().unwrap();
         let run = oblique_run(dir.path(), "a", 2);
         let output = DerivativeOutputs::new(&dir.path().join("out"));
-        let config = PipelineConfig::default();
+        let config = fast_config();
         run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
         let mtime = |p: PathBuf| std::fs::metadata(p).unwrap().modified().unwrap();
         let first = mtime(output.qsm_path(&run.key));
@@ -6041,7 +6050,7 @@ mod oblique_run_tests {
         let dir = tempfile::tempdir().unwrap();
         let run = oblique_run(dir.path(), "a", 3);
         let output = DerivativeOutputs::new(&dir.path().join("out"));
-        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &fast_config(), &output, false, &|_| {}).unwrap();
 
         let chi = load_volume(&output.qsm_path(&run.key)).unwrap();
         let brain = load_mask(&output.mask_path(&run.key)).unwrap();
@@ -6071,11 +6080,11 @@ mod oblique_run_tests {
                 &std::fs::read_to_string(output.state_path(&run.key)).unwrap()).unwrap();
             state.run_metadata.unwrap().source_geometry.is_some()
         };
-        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &fast_config(), &output, false, &|_| {}).unwrap();
         assert!(!resampled(&output));
         run_pipeline_cached(&run, &resampling_config(), &output, false, &|_| {}).unwrap();
         assert!(resampled(&output));
-        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &fast_config(), &output, false, &|_| {}).unwrap();
         assert!(!resampled(&output));
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
     }

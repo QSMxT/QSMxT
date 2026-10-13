@@ -193,6 +193,19 @@ pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 31] = [
         QsmAlgorithmArg::IqsmPlus,
 ];
 
+/// The inversion row's starting index: qsmxt-config's default inversion, so the TUI and
+/// `qsmxt run` without `--qsm-algorithm` mean the same algorithm.
+pub fn default_qsm_algorithm_index() -> usize {
+    let default = crate::pipeline::config::InversionConfig::default().algorithm;
+    QSM_ALGO_ARGS.iter()
+        .position(|a| crate::pipeline::config::qsm_algorithm_arg_to_config(*a) == default)
+        .expect("the default inversion has a row in QSM_ALGO_ARGS")
+}
+
+fn default_qsm_algorithm_arg() -> QsmAlgorithmArg {
+    QSM_ALGO_ARGS[default_qsm_algorithm_index()]
+}
+
 /// The algorithm the inversion row is currently showing.
 ///
 /// Reads it out of [`QSM_ALGO_ARGS`] rather than a second list of its own: the row's index means
@@ -200,7 +213,7 @@ pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 31] = [
 /// an algorithm is inserted. Out-of-range indices fall back to the first entry instead of
 /// panicking, so a stale index from a saved form can never take the TUI down.
 pub fn selected_qsm_algorithm(ps: &super::app::PipelineFormState) -> QsmAlgorithm {
-    let arg = QSM_ALGO_ARGS.get(ps.qsm_algorithm).copied().unwrap_or(QsmAlgorithmArg::Rts);
+    let arg = QSM_ALGO_ARGS.get(ps.qsm_algorithm).copied().unwrap_or_else(default_qsm_algorithm_arg);
     crate::pipeline::config::qsm_algorithm_arg_to_config(arg)
 }
 
@@ -239,7 +252,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
 
     PipelineArgs {
         // Bounds-checked rather than indexed: the option list shrinks with the build (see #227).
-        qsm_algorithm: Some(qsm_options.get(ps.qsm_algorithm).copied().unwrap_or(QsmAlgorithmArg::Rts)),
+        qsm_algorithm: Some(qsm_options.get(ps.qsm_algorithm).copied().unwrap_or_else(default_qsm_algorithm_arg)),
         multi_orientation_algorithm: orientation_group.as_ref().map(|_| {
             if orientation_algorithm == 1 {
                 crate::cli::MultiOrientAlgorithmArg::Sti
@@ -1092,8 +1105,8 @@ mod tests {
     fn an_out_of_range_inversion_index_falls_back_instead_of_panicking() {
         let mut app = default_app();
         app.pipeline_state.qsm_algorithm = 999;
-        assert_eq!(format!("{}", config_from_app(&app).unwrap().inversion.algorithm), "rts");
-        assert_eq!(pipeline_args_from_app(&app).qsm_algorithm, Some(QsmAlgorithmArg::Rts));
+        assert_eq!(format!("{}", config_from_app(&app).unwrap().inversion.algorithm), "ilsqr");
+        assert_eq!(pipeline_args_from_app(&app).qsm_algorithm, Some(QsmAlgorithmArg::Ilsqr));
     }
 
     fn default_app() -> App {
@@ -1155,10 +1168,10 @@ mod tests {
     #[test]
     fn test_command_string_parameters() {
         let mut app = default_app();
-        app.pipeline_state.rts_delta = "0.2".to_string();
+        app.pipeline_state.ilsqr_tol = "0.01".to_string();
         app.pipeline_state.obliquity_threshold = "5".to_string();
         let cmd = build_command_string(&app);
-        assert!(cmd.contains("--rts-delta 0.2"));
+        assert!(cmd.contains("--ilsqr-tol 0.01"));
         assert!(cmd.contains("--obliquity-threshold 5"));
     }
 
@@ -1220,7 +1233,7 @@ mod tests {
         let args = build_run_args(&app).unwrap();
         assert_eq!(args.bids_dir, PathBuf::from("/bids"));
         assert_eq!(args.output_dir, Some(PathBuf::from("/out")));
-        assert_eq!(args.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Rts));
+        assert_eq!(args.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Ilsqr));
     }
 
     #[test]

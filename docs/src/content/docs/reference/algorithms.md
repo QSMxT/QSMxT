@@ -481,7 +481,7 @@ reconstructions and deep-learning networks.
 
 | Value | Method |
 | --- | --- |
-| `rts` | RTS — Rapid Two-Step (default) |
+| `rts` | RTS — Rapid Two-Step |
 | `tv` | Total Variation (TV-ADMM) |
 | `tkd` | TKD — Thresholded K-space Division |
 | `tsvd` | TSVD — Truncated Singular Value Decomposition |
@@ -490,7 +490,7 @@ reconstructions and deep-learning networks.
 | `nltv` | NLTV — Nonlinear Total Variation |
 | `medi` | MEDI — Morphology-Enabled Dipole Inversion |
 | `tfi` | TFI — Total Field Inversion |
-| `ilsqr` | iLSQR |
+| `ilsqr` | iLSQR — STI Suite's algorithm, with STI Suite-matched parameters (default) |
 | `lsqr` | Minimally regularised LSQR — HEIDI's seed |
 | `heidi` | HEIDI — Homogeneity Enabled Incremental Dipole Inversion |
 | `qsmart` | QSMART two-stage reconstruction |
@@ -533,8 +533,9 @@ they replace unwrapping, echo combination, background removal and inversion.
 and inversion.
 
 :::tip
-Not sure which to pick? The defaults (`threshold` → `romeo` → `vsharp` → `rts`)
-are a robust, fast starting point for human brain GRE data. Use the
+Not sure which to pick? The defaults (`threshold` → `romeo` → `vsharp` → `ilsqr`)
+are a robust starting point for human brain GRE data (`rts` is ~15x faster if
+speed matters more than sensitivity to change). Use the
 [TUI](/QSMxT/guides/running-interactively/) to experiment interactively.
 :::
 

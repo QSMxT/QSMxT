@@ -271,6 +271,19 @@ mod tests {
         }
     }
 
+    /// The dipole-inversion table marks the config's default inversion, and only it, as the default.
+    #[test]
+    fn the_default_inversion_is_the_one_the_docs_mark() {
+        let algorithms = doc("reference/algorithms.md");
+        let default = qsmxt_config::InversionConfig::default().algorithm;
+        for alg in qsmxt_config::QsmAlgorithm::ALL {
+            let row = algorithms.lines().find(|l| l.starts_with(&format!("| `{alg}` |")))
+                .unwrap_or_else(|| panic!("reference/algorithms.md has no row for `{alg}`"));
+            assert_eq!(row.contains("(default"), alg == default,
+                "reference/algorithms.md: `{alg}` row marks the default wrongly: {row}");
+        }
+    }
+
     /// The algorithms page spells every `--mask-preset` out as the flags it stands for, and those
     /// are exactly the recipe the preset runs.
     #[test]

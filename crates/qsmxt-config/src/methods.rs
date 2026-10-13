@@ -1382,7 +1382,7 @@ mod tests {
         assert!(out.contains("Phase offset removal"));
         assert!(out.contains("ROMEO"));
         assert!(out.contains("V-SHARP"));
-        assert!(out.contains("RTS"));
+        assert!(out.contains("iLSQR"));
         assert!(out.contains("mean-referenced"));
         assert!(out.contains("# Methods"));
         assert!(out.contains("## References"));

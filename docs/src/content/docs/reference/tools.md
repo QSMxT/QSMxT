@@ -123,7 +123,7 @@ take the local field, and `tfi`, `autoqsm` and `nextqsm` the **total** field:
 
 | Subcommand | Method |
 | --- | --- |
-| `rts` | Regularized Total Strength |
+| `rts` | Rapid Two-Step |
 | `tv` | Total Variation (ADMM) |
 | `tkd` | Truncated K-space Division |
 | `tsvd` | Truncated SVD |

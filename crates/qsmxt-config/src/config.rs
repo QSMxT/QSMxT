@@ -1098,10 +1098,12 @@ pub struct InversionConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tile_halo: Option<usize>,
 }
+/// iLSQR with QSM.rs's STI Suite-matched parameters is the default inversion: on the UK Biobank
+/// pilot it tracks age and longitudinal change better than RTS, matching UKB's own pipeline.
 impl Default for InversionConfig {
     fn default() -> Self {
         Self {
-            algorithm: QsmAlgorithm::Rts,
+            algorithm: QsmAlgorithm::Ilsqr,
             rts: RtsConfig::default(), tv: TvConfig::default(),
             tkd: TkdConfig::default(), tsvd: TkdConfig::default(),
             tikhonov: TikhonovConfig::default(), nltv: NltvConfig::default(),
