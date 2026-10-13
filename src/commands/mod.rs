@@ -2000,6 +2000,50 @@ mod integration_tests {
         assert!((0.7..1.3).contains(&single), "single-echo TGV slope {single:.3} vs truth");
         assert!((multi / single - 1.0).abs() < 0.1, "multi-echo {multi:.3} vs single-echo {single:.3} TGV slope");
     }
+
+    /// A requested output the data cannot produce stops the command before any run starts,
+    /// naming the run and what is missing; the dry run says so too (#273).
+    #[test]
+    fn swi_on_a_phase_only_dataset_fails_before_processing() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_echo_bids(&bids);
+        for e in std::fs::read_dir(bids.join("sub-1/anat")).unwrap().flatten() {
+            if e.file_name().to_string_lossy().contains("part-mag") {
+                std::fs::remove_file(e.path()).unwrap();
+            }
+        }
+        let mut args = default_run_args(bids, out.clone());
+        args.pipeline.do_swi = true;
+        let err = super::run::execute(args).unwrap_err().to_string();
+        assert!(err.contains("sub-1") && err.contains("--do-swi") && err.contains("magnitude"), "{err}");
+        assert!(!out.join("derivatives/qsmxt/sub-1").exists(), "a run was processed anyway");
+    }
+
+    /// MCPC-3D-S needs two echoes. A single-echo uncombined-coil run used to reach an assertion in
+    /// qsm-core; now `qsmxt run` refuses it, and the stage itself returns an error to any direct
+    /// caller (#273).
+    #[test]
+    fn a_single_echo_uncombined_coil_run_is_an_error_not_a_panic() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_coil_bids(&bids, 2);
+        let mut args = default_run_args(bids.clone(), out.clone());
+        args.num_echoes = Some(1);
+        let err = super::run::execute(args).unwrap_err().to_string();
+        assert!(err.contains("MCPC-3D-S") && err.contains("2 echoes"), "{err}");
+
+        let filter = crate::bids::discovery::DiscoveryFilter { num_echoes: Some(1), ..Default::default() };
+        let runs = crate::bids::discovery::discover_runs(&bids, &filter).unwrap();
+        let coil_run = runs.iter().find(|r| r.coils.is_some()).expect("an uncombined-coil run");
+        let output = crate::bids::derivatives::DerivativeOutputs::new(&out.join("direct"));
+        let err = crate::pipeline::runner::run_pipeline_cached(
+            coil_run, &crate::pipeline::config::PipelineConfig::default(), &output, true, &|_| {},
+        ).unwrap_err().to_string();
+        assert!(err.contains("MCPC-3D-S"), "{err}");
+    }
 }
 /// End-to-end tests for the multi-orientation reconstructions.
 ///

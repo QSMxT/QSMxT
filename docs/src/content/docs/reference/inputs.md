@@ -103,21 +103,37 @@ This table lists what each output needs in addition to it.
 | Output | Also requires |
 | --- | --- |
 | QSM | nothing, though magnitude is recommended and some masking options need it |
-| SWI (`--do-swi`) | magnitude |
-| R2\*/T2\* (`--do-r2starmap`, `--do-t2starmap`) | magnitude, at least 3 echoes |
-| R2 (`--do-r2map`) | a MESE acquisition, at least 3 echoes |
-| R2' (`--do-r2primemap`) | magnitude and a MESE acquisition, for R2\* and R2. Reported only where the MESE reached; without one, predicted from R2\* by R2PRIMEnet, which is 3 T only |
+| SWI (`--do-swi`), SMWI (`--do-smwi`) | magnitude |
+| Segmentation (`--do-segmentation`), and so `--do-analysis` and a region `--qsm-reference` | magnitude, or a dseg via `--use-custom-dseg` |
+| R2\*/T2\* (`--do-r2starmap`, `--do-t2starmap`) | magnitude, at least 3 echoes, equally spaced (within 0.1 ms) |
+| R2 (`--do-r2map`) | a MESE acquisition with at least 3 equally spaced echoes, the first at the echo spacing (TE₁ = ESP) |
+| R2' (`--do-r2primemap`) | R2\* and R2 (above). Reported only where the MESE reached; without one, predicted from R2\* by R2PRIMEnet, which is 3 T only |
+
+ARLO, which fits R2\*, integrates the decay with a single echo spacing, and the EPG
+fit behind R2 simulates a spin-echo train with echoes at multiples of the spacing.
+Bipolar or flyback readouts with uneven spacing, or an extra long echo, would give
+wrong maps rather than noisy ones, so they are refused.
 
 [Source separation](/QSMxT/reference/algorithms/#susceptibility-source-separation)
 (`--do-chisep`) splits into two groups. The `r2star-qsm` and `decompose` methods
-work from multi-echo GRE magnitude alone. The other six are based on R2', so they
-need a MESE acquisition as well.
+work from multi-echo GRE magnitude alone (`r2star-qsm` needs what R2\* needs). The
+other six are based on R2', so they need a MESE acquisition as well, or R2PRIMEnet
+at 3 T.
+
+An uncombined-coil run needs at least two echoes for MCPC-3D-S, whatever is asked for.
 
 :::caution
-If a requested output cannot be computed from your data, QSMxT logs a warning and
-skips it rather than stopping, so the run still exits cleanly with that output
-missing. `qsmxt validate` tells you in advance; if an output is unexpectedly
-absent afterwards, check the log for `Skipping`.
+Before any run is processed, QSMxT checks every run against what was asked for:
+
+- An output **you asked for** that a run's data cannot produce stops the command
+  with an error that lists every such run and what it is missing. Nothing is
+  processed. Narrow the runs with `--include`/`--exclude`, or drop the option.
+- An output that **another option turned on** (R2\* for `--chisep r2star-qsm`,
+  R2 and R2\* for R2', segmentation for `--do-analysis`) is skipped with a warning
+  that names the option that implied it.
+
+A named `--use-custom-*` derivative that is missing for a run counts as asked for.
+`qsmxt validate` shows the same checks per run without processing anything.
 :::
 
 ## Bringing your own inputs
