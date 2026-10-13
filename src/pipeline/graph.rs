@@ -39,6 +39,11 @@ pub struct StepRecord {
     /// Hash of the step's algorithm + parameters for cache invalidation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub params_hash: Option<String>,
+    /// `--clean-intermediates` deleted this step's workflow outputs after the run. The step still
+    /// counts as done while the configuration is the one it ran with (see
+    /// [`PipelineState::config_unchanged`]); otherwise it is recomputed when it is reached.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub outputs_removed: bool,
 }
 
 /// Persistent pipeline state, serialised to JSON.
@@ -53,6 +58,11 @@ pub struct PipelineState {
     pub completed_steps: HashMap<String, StepRecord>,
     #[serde(default)]
     pub run_metadata: Option<RunMetadata>,
+    /// The configuration is the one the last completed run used, and every output it recorded
+    /// (other than those `--clean-intermediates` removed) is still on disk: nothing will be
+    /// recomputed, so steps whose intermediates were cleaned can be trusted as they are.
+    #[serde(skip)]
+    pub config_unchanged: bool,
 }
 
 impl PipelineState {
@@ -66,6 +76,7 @@ impl PipelineState {
             current_step: None,
             completed_steps: HashMap::new(),
             run_metadata: None,
+            config_unchanged: false,
         }
     }
 
@@ -81,8 +92,11 @@ impl PipelineState {
         }
 
         if let Ok(text) = std::fs::read_to_string(state_path) {
-            if let Ok(state) = serde_json::from_str::<PipelineState>(&text) {
+            if let Ok(mut state) = serde_json::from_str::<PipelineState>(&text) {
                 log::info!("Resuming from cached pipeline state");
+                state.config_unchanged = state.config_hash == config_hash(config)
+                    && state.completed_steps.values()
+                        .all(|r| r.outputs_removed || r.outputs.iter().all(|p| p.exists()));
                 return state;
             } else {
                 log::warn!("Could not parse pipeline state file. Starting fresh.");
@@ -110,8 +124,15 @@ impl PipelineState {
     /// are invalidated so they will be re-executed.
     pub fn is_step_cached_with_hash(&mut self, step_name: &str, expected_params_hash: Option<&str>) -> bool {
         if let Some(record) = self.completed_steps.get(step_name) {
-            // Verify all output files still exist
-            if !record.outputs.iter().all(|p| p.exists()) {
+            // Cleaned intermediates are trusted only while nothing can need them again; once the
+            // configuration has changed the step is recomputed — with the same parameters, which
+            // leaves what is downstream of it cached (see the runner's `complete_step`).
+            if record.outputs_removed {
+                if !self.config_unchanged {
+                    return false;
+                }
+            } else if !record.outputs.iter().all(|p| p.exists()) {
+                // Verify all output files still exist
                 return false;
             }
             // If caller provides an expected hash, the stored hash must exist and match
@@ -156,6 +177,7 @@ impl PipelineState {
                 outputs,
                 metadata: None,
                 params_hash,
+                outputs_removed: false,
             },
         );
         self.current_step = None;
@@ -171,15 +193,16 @@ impl PipelineState {
     ) {
         self.completed_steps.insert(
             step_name.to_string(),
-            StepRecord { outputs, metadata, params_hash },
+            StepRecord { outputs, metadata, params_hash, outputs_removed: false },
         );
         self.current_step = None;
     }
 
-    /// Mark the entire run as complete.
-    pub fn mark_run_complete(&mut self) {
+    /// Mark the entire run as complete, under the configuration it ran with.
+    pub fn mark_run_complete(&mut self, config: &PipelineConfig) {
         self.status = "complete".to_string();
         self.current_step = None;
+        self.config_hash = config_hash(config);
     }
 
     /// Get output paths for a completed step.
@@ -420,34 +443,35 @@ pub fn state_file_path(output_dir: &Path, key: &AcquisitionKey) -> PathBuf {
     dir.join(".pipeline_state.json")
 }
 
-/// Remove intermediate files (workflow dir), keeping only final outputs.
-pub fn clean_intermediates(state: &PipelineState, output_dir: &Path, key: &AcquisitionKey) {
-    // Steps whose outputs are final derivatives rather than workflow intermediates. The
-    // reliable-phase mask and the single-pass map are both written into `anat/`, so cleaning them
-    // would delete outputs the run is meant to produce.
-    let final_steps: HashSet<&str> = [
-        "mask", "magnitude", "reference", "swi", "smwi", "t2star_r2star",
-        "r2_r2prime", "chi_separation", "segmentation", "analysis",
-        "mask-reliable", "reference-singlepass", "output_space",
-    ].iter().copied().collect();
-
-    // Only ever inside `workflow/`: a step may publish into `anat/` too (motion correction's
-    // coverage mask), and a published output is never an intermediate.
+/// Remove a completed run's intermediate files, keeping every published output and the state.
+///
+/// Only files under `workflow/` are ever deleted, whichever step wrote them: a step may publish
+/// into `anat/` (coil combination's `rec-mcpc3ds` echoes, motion correction's coverage mask),
+/// and a published output is never an intermediate. Each step's `provenance.json` stays, so a
+/// later run can still assemble BIDS-Prov from steps it does not recompute, and so does the
+/// state file, with the cleaned steps marked: an immediate re-run with the same configuration
+/// recomputes nothing, and one with a changed configuration recomputes the intermediates it needs.
+///
+/// Run after everything that reads intermediates across runs (the multi-orientation fan-in reads
+/// each member's local field), not at the end of each run.
+pub fn clean_intermediates(output_dir: &Path, key: &AcquisitionKey) -> crate::Result<()> {
+    let state_path = state_file_path(output_dir, key);
+    let text = std::fs::read_to_string(&state_path)?;
+    let mut state: PipelineState = serde_json::from_str(&text)
+        .map_err(|e| QsmxtError::Config(format!("{}: {e}", state_path.display())))?;
     let workflow = output_dir.join("workflow");
-    for (step_name, record) in &state.completed_steps {
-        if !final_steps.contains(step_name.as_str()) {
-            for path in &record.outputs {
-                if path.exists() && path.starts_with(&workflow) {
-                    log::info!("Cleaning intermediate: {}", path.display());
-                    let _ = std::fs::remove_file(path);
-                }
+    for record in state.completed_steps.values_mut() {
+        let mut removed = false;
+        for path in record.outputs.iter().filter(|p| p.starts_with(&workflow)) {
+            if path.exists() {
+                log::info!("Cleaning intermediate: {}", path.display());
+                std::fs::remove_file(path)?;
             }
+            removed = true;
         }
+        record.outputs_removed |= removed;
     }
-
-    // Remove state file itself
-    let sf = state_file_path(output_dir, key);
-    let _ = std::fs::remove_file(sf);
+    state.save(&state_path)
 }
 
 #[cfg(test)]
@@ -791,7 +815,7 @@ mod tests {
             suffix: "MEGRE".to_string(),
         };
         let mut state = PipelineState::new(&config, &key);
-        state.mark_run_complete();
+        state.mark_run_complete(&config);
         assert_eq!(state.status, "complete");
         assert!(state.current_step.is_none());
     }
@@ -864,13 +888,27 @@ mod tests {
         let final_output = dir.path().join("qsm.nii");
         std::fs::write(&final_output, "fake").unwrap();
         state.mark_completed("reference", vec![final_output.clone()], None);
+        state.mark_run_complete(&config);
+        let state_path = state_file_path(dir.path(), &key);
+        state.save(&state_path).unwrap();
 
-        clean_intermediates(&state, dir.path(), &key);
+        clean_intermediates(dir.path(), &key).unwrap();
 
         // Intermediate should be removed, final kept
         assert!(!intermediate.exists());
         assert!(final_output.exists());
         assert!(published.exists(), "a published output outside workflow/ was cleaned");
+        // The state survives, with the cleaned step marked: trusted while the configuration is
+        // unchanged, recomputed once it changes.
+        let mut back = PipelineState::load_or_create(&state_path, &config, &key, false);
+        assert!(back.completed_steps["unwrap"].outputs_removed);
+        assert!(!back.completed_steps["reference"].outputs_removed);
+        assert!(back.is_step_cached("unwrap"));
+        let mut other = config.clone();
+        other.inversion.algorithm = crate::pipeline::config::QsmAlgorithm::Tkd;
+        let mut back = PipelineState::load_or_create(&state_path, &other, &key, false);
+        assert!(!back.is_step_cached("unwrap"));
+        assert!(back.is_step_cached("reference"), "a final step's own cache is not touched");
     }
 
     #[test]

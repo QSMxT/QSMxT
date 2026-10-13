@@ -1404,6 +1404,81 @@ mod integration_tests {
                 "every row should carry sub-1 and no other entities");
     }
 
+    /// Every NIfTI under `dir`, recursively, with its modification time.
+    fn niftis_with_mtime(dir: &std::path::Path) -> Vec<(PathBuf, std::time::SystemTime)> {
+        let mut out = Vec::new();
+        let mut stack = vec![dir.to_path_buf()];
+        while let Some(d) = stack.pop() {
+            for e in std::fs::read_dir(&d).into_iter().flatten().flatten() {
+                let p = e.path();
+                if p.is_dir() {
+                    stack.push(p);
+                } else if p.extension().is_some_and(|x| x == "nii") {
+                    out.push((p.clone(), e.metadata().unwrap().modified().unwrap()));
+                }
+            }
+        }
+        out.sort();
+        out
+    }
+
+    /// `--clean-intermediates` deleted published outputs recorded under a non-final step (the
+    /// combined `rec-mcpc3ds` echoes, under `scale_phase`) and the state file, so the next run
+    /// recomputed everything (#271). Now it removes only `workflow/` images, keeps the state, and
+    /// an immediate re-run with the same configuration recomputes nothing.
+    #[test]
+    fn cleaning_intermediates_keeps_published_outputs_and_the_cache() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_coil_bids(&bids, 2);
+        let mut args = default_run_args(bids, out.clone());
+        args.dry = false;
+        args.no_mem_limit = true;
+        args.clean_intermediates = true;
+        let rerun = default_run_args(args.bids_dir.clone(), out.clone());
+        super::run::execute(args).unwrap();
+
+        let deriv = out.join("derivatives/qsmxt");
+        let anat = deriv.join("sub-1/ses-1/anat");
+        let combined: Vec<_> = std::fs::read_dir(&anat).unwrap().flatten()
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains("rec-mcpc3ds") && n.ends_with(".nii"))
+            .collect();
+        assert!(!combined.is_empty(), "the combined echoes were cleaned out of anat/");
+        assert!(niftis_with_mtime(&deriv.join("workflow")).is_empty(), "workflow/ still holds images");
+        let state = std::fs::read_dir(deriv.join("workflow")).is_ok();
+        assert!(state, "the workflow directory (and its state file) is gone");
+
+        let before = niftis_with_mtime(&deriv);
+        let mut rerun = rerun;
+        rerun.dry = false;
+        rerun.no_mem_limit = true;
+        rerun.clean_intermediates = true;
+        super::run::execute(rerun).unwrap();
+        assert_eq!(niftis_with_mtime(&deriv), before, "an immediate re-run recomputed something");
+    }
+
+    /// The multi-orientation fan-in reads each member's local field, an intermediate: cleaning
+    /// has to wait until it has run (#271).
+    #[test]
+    fn cleaning_intermediates_waits_for_the_multi_orientation_fan_in() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_orientation_bids(&bids);
+        let mut args = default_run_args(bids, out.clone());
+        args.dry = false;
+        args.no_mem_limit = true;
+        args.clean_intermediates = true;
+        args.include = Some(vec!["*acq-dir*".to_string()]);
+        args.pipeline.orientation_group = Some("acq".to_string());
+        super::run::execute(args).unwrap();
+        let deriv = out.join("derivatives/qsmxt");
+        assert!(deriv.join("sub-1/ses-1/anat/sub-1_ses-1_desc-cosmos_Chimap.nii").exists());
+        assert!(niftis_with_mtime(&deriv.join("workflow")).is_empty(), "workflow/ still holds images");
+    }
+
     /// The table summarises what the run made, so a run that makes no susceptibility map at all
     /// still produces one. `--no-qsm --do-r2starmap --do-analysis` has to stay a no-QSM run:
     /// reconstruction must not be switched back on behind the request.

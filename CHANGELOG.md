@@ -108,6 +108,18 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
 
 ### Changed
 
+- **`--clean-intermediates` no longer deletes published outputs or the cache** (#271). It
+  deleted every recorded output of a step not on a hard-coded list — including the
+  `rec-mcpc3ds` combined echoes in `anat/` — removed each run's local field before the
+  multi-orientation fan-in could read it (COSMOS/STI failed), and deleted the state file, so the
+  next run recomputed everything. It now runs once, after every run and the multi-orientation
+  step, deletes only images under `workflow/` (and the working-grid copies), and keeps the
+  per-step provenance and the state file with the cleaned steps marked. An immediate re-run
+  with the same configuration recomputes nothing; one with a changed configuration recomputes
+  the cleaned intermediates it needs, and leaves a published step cached when its own
+  parameters did not change. A re-run with an unchanged configuration also no longer
+  re-resamples outputs already returned to the acquired grid.
+
 - **Flags that were accepted and then ignored now act or are refused** (#279):
   - `--bet-fractional-intensity` reaches BET: it sets every BET step's fractional intensity in
     the masking recipe (as `--bet-voxel-scale` does), overriding a `bet:<f>` in `--mask`; a

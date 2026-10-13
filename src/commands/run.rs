@@ -112,6 +112,21 @@ pub(crate) const REFERENCE_SUMMARY_COLUMNS: [&str; 10] = [
     "map", "reference", "offset_ppm", "n_voxels",
 ];
 
+/// `--clean-intermediates` for one completed run: its workflow images, and the working-grid copies
+/// of outputs returned to the acquired grid. Best-effort: a run whose outputs are all written must
+/// not fail because a temporary file could not be removed.
+pub(crate) fn clean_run(output: &DerivativeOutputs, run: &discovery::QsmRun) {
+    if let Err(e) = crate::pipeline::graph::clean_intermediates(&output.output_dir, &run.key) {
+        warn!("{}: could not clean the intermediates: {}", run.key, e);
+    }
+    let stash = output.working_grid_dir(&run.key);
+    if stash.exists() {
+        if let Err(e) = std::fs::remove_dir_all(&stash) {
+            warn!("{}: could not remove {}: {}", run.key, stash.display(), e);
+        }
+    }
+}
+
 /// Draw the cohort figures from the dataset-level table.
 ///
 /// Each bar is the mean of the runs' means and its whisker is the spread *across* runs — a
@@ -312,7 +327,6 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         n_procs,
         mem_limit_bytes,
         force: args.force,
-        clean_intermediates: args.clean_intermediates,
         source_dicom: args.source_dicom.clone(),
         dicom_outputs: args.dicom_outputs.clone(),
     };
@@ -393,6 +407,16 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         &derivatives_dir, &runs, &prov_groups, &output, &command_line,
     ) {
         warn!("Failed to write BIDS-Prov provenance records: {}", e);
+    }
+
+    // Last of all, once nothing else will read them (the multi-orientation fan-in reads each
+    // member's local field): the intermediates of every run that completed.
+    if args.clean_intermediates {
+        for (run, result) in runs.iter().zip(&results) {
+            if result.is_ok() {
+                clean_run(&output, run);
+            }
+        }
     }
 
     let failures: Vec<_> = results.iter().filter(|r| r.is_err()).collect();
