@@ -13,6 +13,7 @@ use crate::pipeline::config::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
 use crate::pipeline::memory;
 use crate::pipeline::phase;
+use crate::pipeline::requirements;
 use crate::pipeline::stats;
 use crate::nifti::write::write_volume;
 use crate::error::QsmxtError;
@@ -382,9 +383,14 @@ pub fn run_pipeline_cached(
     let meta = stage_load(qsm_run, config, &mut state, &state_path, progress)?;
     restore_working_grid(qsm_run, output, &mut state, &state_path)?;
 
+    // What this run can produce of what was enabled. `qsmxt run` has already refused a requested
+    // output the data cannot give and warned about an implied one (`requirements::check_runs`);
+    // here the same rules decide which stages run, so the two cannot disagree.
+    let facts = requirements::RunFacts::of(qsm_run, config);
+    let wanted = |o: requirements::Output| requirements::wanted(&facts, config, o);
+    let do_relaxometry = wanted(requirements::Output::T2star) || wanted(requirements::Output::R2star);
     let needs_mask = config.pipeline.do_qsm || config.pipeline.do_swi || config.pipeline.do_smwi
-        || (config.pipeline.do_t2starmap && meta.n_echoes >= 3 && meta.has_magnitude)
-        || (config.pipeline.do_r2starmap && meta.n_echoes >= 3 && meta.has_magnitude)
+        || do_relaxometry
         || config.pipeline.do_r2map || config.pipeline.do_r2primemap
         || config.pipeline.do_chi_separation;
     let needs_phase = needs_mask || config.pipeline.do_qsm
@@ -415,7 +421,7 @@ pub fn run_pipeline_cached(
     // still covers; the published brain mask stays the one masking made.
     let mask_path = if needs_mask { stage_motion(&mut ctx, &brain_mask_path, progress)? } else { brain_mask_path };
 
-    if config.pipeline.do_swi && meta.has_magnitude {
+    if wanted(requirements::Output::Swi) {
         stage_swi(&mut ctx, &mask_path, progress)?;
     }
 
@@ -424,11 +430,11 @@ pub fn run_pipeline_cached(
     // `stage_magnitude` has already written. Running it early also means a missing-weights
     // failure lands before a reconstruction has been paid for rather than after.
     let dseg_path = output.dseg_path(&qsm_run.key);
-    if config.pipeline.do_segmentation && meta.has_magnitude {
+    if wanted(requirements::Output::Segmentation) {
         stage_segmentation(&mut ctx, &dseg_path, progress)?;
     }
 
-    if (config.pipeline.do_t2starmap || config.pipeline.do_r2starmap) && meta.n_echoes >= 3 && meta.has_magnitude {
+    if do_relaxometry {
         stage_t2star_r2star(&mut ctx, &mask_path, progress)?;
     }
 
@@ -490,7 +496,7 @@ pub fn run_pipeline_cached(
 
     // After referencing: SMWI weights by the final, referenced susceptibility map, over the voxels
     // that map is defined on — outside them χ is 0 by construction, not by measurement.
-    if config.pipeline.do_smwi && meta.has_magnitude {
+    if wanted(requirements::Output::Smwi) {
         let support = output.qsm_support_path(&qsm_run.key);
         let smwi_mask = if support.exists() { support } else { mask_path.clone() };
         stage_smwi(&mut ctx, &smwi_mask, progress)?;
@@ -1298,6 +1304,15 @@ fn stage_combine_coils(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate
     let coils = ctx.run.coils.as_ref().expect("stage_combine_coils needs coils");
     let n_coils = coils.len();
     let n_echoes = ctx.meta.n_echoes;
+    // MCPC-3D-S estimates each coil's phase offset from the difference of two echoes; qsm-core
+    // asserts on one. `qsmxt run` refuses such a run up front; this keeps a direct caller from
+    // reaching the panic.
+    if n_echoes < 2 {
+        return Err(QsmxtError::Config(format!(
+            "{}: MCPC-3D-S coil combination needs at least 2 echoes, and this run has {} echo \
+             with {} uncombined coils. Combine the coils first (on the scanner, or with another \
+             tool).", ctx.run.key, n_echoes, n_coils)));
+    }
     let sigma = ctx.config.field_mapping.coil_combination_sigma;
     let unwrap = format!("{}", ctx.config.field_mapping.unwrapping_algorithm);
     let params = serde_json::json!({
@@ -1492,7 +1507,7 @@ fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Re
 /// first matching file (alphabetical) wins. Any candidate whose name contains one of `exclude` is
 /// passed over — `desc-` for a `Chimap` query, so it never returns a chi-separation output.
 /// Returns None if nothing matches.
-fn find_custom_derivative(
+pub(crate) fn find_custom_derivative(
     run: &QsmRun, tool: &str, suffix_glob: &str, exclude: &[&str],
 ) -> Option<PathBuf> {
     // BIDS root = strip <sub-X>[/ses-Y]/anat/<file> off the first echo's phase path.
@@ -2065,6 +2080,18 @@ const R2PRIMENET_B0_TOLERANCE_T: f64 = 0.3;
 /// R2* scales with field strength and the network has no way to be told what it is looking at,
 /// so a 7 T R2* produces an R2' map that is the right shape, the right units and the wrong
 /// numbers. Nothing downstream can detect that, which is the reason to say it here.
+/// What is wrong with running R2PRIMEnet at this field strength under this strategy, when the
+/// policy would skip or refuse it; `None` when it may run.
+pub(crate) fn r2primenet_off_field(
+    field_strength: f64, strategy: R2PrimeStrategy, ignore_field_mismatch: bool,
+) -> Option<String> {
+    match r2primenet_field_policy(field_strength, strategy, ignore_field_mismatch) {
+        R2primenetFieldPolicy::Skip | R2primenetFieldPolicy::Refuse =>
+            Some(r2primenet_field_message(field_strength)),
+        R2primenetFieldPolicy::Run | R2primenetFieldPolicy::RunUncalibrated => None,
+    }
+}
+
 fn r2primenet_field_message(field_strength: f64) -> String {
     format!(
         "R2PRIMEnet's weights are trained at {} T and this acquisition is {} T. R2* scales with \
@@ -2595,7 +2622,12 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
             None => { log::warn!("no custom R2 map under derivatives (tool: {}) — skipping R2", tool); None }
         }
     } else if let Some(mese) = ctx.run.mese.clone() {
-        if mese.echo_times.len() >= 3 {
+        let facts = requirements::RunFacts::of(ctx.run, ctx.config);
+        if let Some(why) = requirements::mese_problem(&facts) {
+            // Refused up front when R2 was asked for; here only when something else implied it.
+            log::warn!("Not measuring R2 from the MESE ({why})");
+            None
+        } else {
             progress("Computing R2 (EPG) from MESE");
             match load_mese_voxel_major(&mese, ctx.meta.dims, &ctx.meta.affine)? {
                 Some((se, coverage)) => {
@@ -2618,8 +2650,6 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
                 }
                 None => None,
             }
-        } else {
-            None
         }
     } else {
         log::info!("No MESE acquisition and no custom R2 map — R2/R2' unavailable for this run");
@@ -2784,16 +2814,16 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
     let qsm_path = match ctx.config.separation.custom_qsm_tool.clone() {
         Some(tool) => match find_custom_derivative(ctx.run, &tool, "*_Chimap.nii*", &["desc-"]) {
             Some(p) => { log::info!("Using custom QSM from {}", p.display()); p }
-            None => {
-                log::warn!("Skipping chi-separation ({}): no custom QSM under derivatives (tool: {})", alg_name, tool);
-                return Ok(());
-            }
+            None => return Err(QsmxtError::Config(format!(
+                "{}: --do-chisep ({}) needs a QSM, and --use-custom-qsm {} names no Chimap for \
+                 this run under derivatives/{}", ctx.run.key, alg_name, tool, tool))),
         },
         None => {
             let p = ctx.output.qsm_path(&ctx.run.key);
             if !p.exists() {
-                log::warn!("Skipping chi-separation ({}): no QSM (Chimap) at {}", alg_name, p.display());
-                return Ok(());
+                return Err(QsmxtError::Config(format!(
+                    "{}: --do-chisep ({}) needs a QSM, and none was written at {}",
+                    ctx.run.key, alg_name, p.display())));
             }
             p
         }
@@ -2867,10 +2897,15 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
         if p.exists() { load_volume(&p)? } else { Vec::new() }
     };
 
-    // Gate on the inputs the chosen method requires.
-    let need = |cond: bool, what: &str| -> bool {
+    // Gate on the inputs the chosen method requires. Chi-separation is only ever asked for, never
+    // implied, so a missing input fails the run: `qsmxt run` has already refused the cases the
+    // data decides (`requirements::chisep_problem`), and what is left — the local field the
+    // reconstruction route did not write, an R2' that did not materialise — must not be a
+    // successful run with the maps missing.
+    let missing = std::cell::RefCell::new(Vec::<&str>::new());
+    let need = |cond: bool, what: &'static str| -> bool {
         if !cond {
-            log::warn!("Skipping chi-separation ({}): missing {}", alg_name, what);
+            missing.borrow_mut().push(what);
         }
         cond
     };
@@ -2890,7 +2925,9 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
             need(!local_field.is_empty(), "local field") & need(r2prime.is_some(), "R2'"),
     };
     if !ready {
-        return Ok(());
+        return Err(QsmxtError::Config(format!(
+            "{}: --do-chisep ({}) cannot run: missing {}",
+            ctx.run.key, alg_name, missing.borrow().join(", "))));
     }
 
     // Fit, and write, only where χ is defined. The pipeline's χ is 0 on the rim background-field
@@ -3242,7 +3279,7 @@ fn reconstruct(
 
 /// Whether the configured inversion runs without a separate background-removal stage, and so
 /// leaves its map defined over the brain mask rather than an eroded one.
-fn skips_bgremove(config: &PipelineConfig) -> bool {
+pub(crate) fn skips_bgremove(config: &PipelineConfig) -> bool {
     matches!(config.inversion.algorithm,
              QsmAlgorithm::Autoqsm | QsmAlgorithm::Nextqsm | QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus)
         || (config.inversion.algorithm == QsmAlgorithm::Medi && config.inversion.medi.smv)

@@ -8,5 +8,6 @@ pub mod methods;
 pub mod phase;
 pub mod multiorient;
 pub mod referencing;
+pub mod requirements;
 pub mod runner;
 pub mod stats;

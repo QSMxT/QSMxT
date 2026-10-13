@@ -29,6 +29,9 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
         return Ok(());
     }
 
+    // Refuse before writing or submitting a job that would fail on its node.
+    crate::pipeline::requirements::check_runs(&runs, &config)?;
+
     let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
 
     let scripts = crate::executor::slurm::generate_all_slurm(

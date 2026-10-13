@@ -108,6 +108,20 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
 
 ### Changed
 
+- **A requested output the data cannot produce is an error, before anything runs** (#193,
+  #273). SWI, SMWI, segmentation, R2*/T2*, R2, R2′ and χ-separation used to be dropped silently
+  (or with a `Skipping` line mid-run) when a run lacked what they need, and the run exited 0.
+  `qsmxt run` and `qsmxt slurm` now check every run first: an output you asked for that a run
+  cannot produce stops the command with one error listing every such run and what is missing;
+  an output another option turned on (R2* for `--chisep r2star-qsm`, R2/R2* for R2′,
+  segmentation for `--do-analysis` or a region `--qsm-reference`) is skipped with a warning
+  naming that option. A named `--use-custom-qsm/-r2/-r2prime/-dseg` derivative missing for a run
+  counts as asked for. R2*/T2* (ARLO) now require equally spaced echo times and EPG R2 requires
+  an equally spaced MESE whose first echo is at the echo spacing (each within 0.1 ms); unequal
+  spacing used to give wrong R2*/T2* silently and make EPG panic. A single-echo uncombined-coil
+  run is refused instead of panicking in MCPC-3D-S. `qsmxt validate` reports the same checks.
+  Default output does not change; runs that used to finish with outputs missing now stop.
+
 - **Cached steps are keyed on the whole configuration they read** (#272). Each step's cache key
   was a hand-picked list of parameters, and the lists were incomplete: changing RTS `rho`, TV
   `tol`, most of MEDI, any TFI setting, MSMV, `--crop-to-mask`/`--fft-padding`/`--crop-margin-mm`,

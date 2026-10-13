@@ -204,6 +204,9 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         return Ok(());
     }
 
+    // Every requested output every run can produce, before any run starts (#193, #273).
+    crate::pipeline::requirements::check_runs(&runs, &config)?;
+
     // Count unique subjects
     let mut subjects: Vec<&str> = runs.iter().map(|r| r.key.subject.as_str()).collect();
     subjects.sort();

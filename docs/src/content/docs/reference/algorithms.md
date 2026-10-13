@@ -189,7 +189,7 @@ from 3 T (more than 0.3 T off):
 
 | `--r2prime-strategy` | without `--r2primenet-ignore-field-mismatch` | with it |
 | --- | --- | --- |
-| `auto` (no R2 to subtract) | R2′ is skipped with a warning | R2PRIMEnet runs, with a warning |
+| `auto` (no R2 to subtract) | no R2′: an error if R2′ or an R2′-based separation was asked for | R2PRIMEnet runs, with a warning |
 | `r2primenet` | the run stops with an error | R2PRIMEnet runs, with a warning |
 
 Treat any χ-separation built on a non-3 T R2PRIMEnet prediction as

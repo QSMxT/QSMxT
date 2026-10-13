@@ -133,24 +133,31 @@ pub fn execute(args: ValidateArgs) -> crate::Result<()> {
         let custom_r2 = deriv_tools_with(&args.bids_dir, run, "*_R2map.nii*", false);
         let custom_r2prime = deriv_tools_with(&args.bids_dir, run, "*_R2primemap.nii*", false);
 
-        // Capability derivations.
-        let r2star_ok = n_echoes >= 3 && has_mag;
+        // Capability derivations: the same rules `qsmxt run` refuses requested outputs by.
+        let config = crate::pipeline::config::PipelineConfig::default();
+        let facts = crate::pipeline::requirements::RunFacts::of(run, &config);
+        let arlo = crate::pipeline::requirements::arlo_problem(&facts);
+        let r2star_ok = arlo.is_none();
 
         println!("    Capabilities:");
         println!("      QSM reconstruction:  yes");
-        println!("      R2*/T2* mapping:     {}", yes_no(r2star_ok, "needs ≥3 echoes + magnitude"));
+        println!("      R2*/T2* mapping:     {}", yes_no(r2star_ok, arlo.as_deref().unwrap_or("")));
+        if let (Some(_), Some(why)) = (mese, crate::pipeline::requirements::mese_problem(&facts)) {
+            println!("      R2 from the MESE:    no  — {why}");
+        }
         println!("      SWI:                 {}", yes_no(has_mag, "needs magnitude"));
         println!("      Susceptibility source separation:");
-        println!("        r2star-qsm (GRE):  {}", yes_no(r2star_ok, "needs ≥3 echoes + magnitude (for R2*)"));
+        println!("        r2star-qsm (GRE):  {}", yes_no(r2star_ok, &format!("R2* {}", arlo.as_deref().unwrap_or(""))));
         println!("        decompose  (GRE):  {}", yes_no(has_mag, "needs multi-echo magnitude"));
         let r2prime_reason = if r2star_ok {
-            "no MESE acquisition and no custom R2'/R2 map"
+            "no usable MESE acquisition and no custom R2'/R2 map"
         } else {
             "needs R2' (≥3-echo magnitude for R2*, plus MESE or a custom R2'/R2 map)"
         };
         let r2prime_how = if !custom_r2prime.is_empty() {
             format!("yes (custom R2' map: {})", fmt_list(&custom_r2prime))
-        } else if mese.is_some() {
+        } else if mese.is_some() && r2star_ok
+            && crate::pipeline::requirements::mese_problem(&facts).is_none() {
             "yes (R2' computed from MESE)".to_string()
         } else if r2star_ok && !custom_r2.is_empty() {
             format!("yes (R2* + custom R2 map: {})", fmt_list(&custom_r2))
