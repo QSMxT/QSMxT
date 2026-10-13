@@ -406,8 +406,12 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
             _ => {
                 describe_field_mapping(config, &mut sentences, &mut citations);
 
-                // Background removal
-                {
+                // Background removal — only in front of a local-field inversion (QSM.rs
+                // `InversionInput`); the total-field methods remove or model it themselves.
+                if !crate::bridge::inversion_input(config, 2).needs_bg_removal() {
+                    sentences.push("No separate background field removal was performed: the \
+                        inversion below was given the total field and the brain mask.".to_string());
+                } else {
                     let alg = &config.bg_removal.algorithm;
                     let (name, cite) = match alg {
                         BfAlgorithm::Vsharp => ("V-SHARP", &CITE_VSHARP),

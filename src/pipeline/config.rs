@@ -755,6 +755,37 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         Ok(())
 }
 
+/// Refuse a background-removal choice the inversion would never use (#276).
+///
+/// Background removal, iQFM included, produces a local field, and only a local-field inversion
+/// reads one (QSM.rs `InversionInput`). With a total-field or wrapped-phase inversion iQFM has
+/// no effect, and used to leave field mapping off while the inversion read a total field that
+/// was never written (or a stale one from an earlier run). Asked-for iQFM there is an error;
+/// another non-default method is a warning, since nothing else depends on it.
+pub fn validate_inversion_input(config: &PipelineConfig) -> crate::Result<()> {
+    if !config.pipeline.do_qsm || !crate::pipeline::runner::skips_bgremove(config) {
+        return Ok(());
+    }
+    let alg = config.inversion.algorithm;
+    let medi_smv = alg == QsmAlgorithm::Medi && config.inversion.medi.smv;
+    let what = format!("--qsm-algorithm {alg}{}", if medi_smv { " with SMV" } else { "" });
+    let takes = if qsmxt_config::bridge::inversion_input(config, 2).needs_field_mapping() {
+        "the total field and removes the background itself"
+    } else {
+        "the wrapped phase"
+    };
+    match config.bg_removal.algorithm {
+        BfAlgorithm::Iqfm => Err(QsmxtError::Config(format!(
+            "--bf-algorithm iqfm produces a local field, and {what} takes {takes}, so iQFM would \
+             have no effect. Choose another inversion, or drop --bf-algorithm iqfm."))),
+        b if b != qsmxt_config::BgRemovalConfig::default().algorithm => {
+            log::warn!("--bf-algorithm {b} has no effect: {what} takes {takes}");
+            Ok(())
+        }
+        _ => Ok(()),
+    }
+}
+
 /// Refuse a multi-orientation configuration whose members cannot contribute (#270).
 ///
 /// COSMOS and STI combine each orientation's *local* field, which only background-field removal

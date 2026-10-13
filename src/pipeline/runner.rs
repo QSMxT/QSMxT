@@ -451,10 +451,11 @@ pub fn run_pipeline_cached(
         // The total (unwrapped) field is not needed when reconstruction starts from raw
         // wrapped phase: TGV single-echo, the end-to-end iQSM/iQSM+, or iQFM field-prep
         // (which produces the local field directly from phase).
-        let starts_from_phase = matches!(config.inversion.algorithm, QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus)
-            || config.bg_removal.algorithm == BfAlgorithm::Iqfm;
-        let need_field = !matches!(config.inversion.algorithm, QsmAlgorithm::Tgv if meta.n_echoes == 1)
-            && !starts_from_phase;
+        // Which field the inversion takes is QSM.rs's call (`InversionConfig::input`, #265);
+        // iQFM in front of a local-field inversion makes that field from phase itself.
+        let input = qsmxt_config::bridge::inversion_input(config, meta.n_echoes);
+        let need_field = input.needs_field_mapping()
+            && !(input.needs_bg_removal() && config.bg_removal.algorithm == BfAlgorithm::Iqfm);
 
         // The field map is computed once, on the brain mask, and shared by both passes. The
         // reliable mask is a subset of it, so its pass needs no field values the shared map does
@@ -3283,11 +3284,12 @@ fn reconstruct(
 
 /// Whether the configured inversion runs without a separate background-removal stage, and so
 /// leaves its map defined over the brain mask rather than an eroded one.
+///
+/// Read off QSM.rs's `InversionConfig::input` (#265): the total-field and wrapped-phase methods
+/// skip it. That does not depend on the echo count (multi-echo TGV takes the total field, a
+/// single echo its wrapped phase), so any count gives the same answer.
 pub(crate) fn skips_bgremove(config: &PipelineConfig) -> bool {
-    matches!(config.inversion.algorithm,
-             QsmAlgorithm::Autoqsm | QsmAlgorithm::Nextqsm | QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus)
-        || (config.inversion.algorithm == QsmAlgorithm::Medi && config.inversion.medi.smv)
-        || matches!(config.inversion.algorithm, QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart)
+    !qsmxt_config::bridge::inversion_input(config, 1).needs_bg_removal()
 }
 
 /// One reconstruction pass: the mask it runs on, where its outputs go, and how its steps are
@@ -3559,10 +3561,10 @@ fn stage_standard_qsm(
     let mask_path = pass.mask.as_path();
     let (bgremove_step, invert_step) = (pass.step("bgremove"), pass.step("invert"));
     // --- Background removal ---
-    // MEDI+SMV, AutoQSM and NeXtQSM do their own background removal from the total field, so
-    // the standalone BFR stage is skipped and the (unwrapped) total field is fed straight in.
-    let skip_bgremove = (ctx.config.inversion.algorithm == QsmAlgorithm::Medi && ctx.config.inversion.medi.smv)
-        || matches!(ctx.config.inversion.algorithm, QsmAlgorithm::Autoqsm | QsmAlgorithm::Nextqsm);
+    // The total-field methods that reach this stage (TFI, MEDI+SMV, AutoQSM, NeXtQSM) remove or
+    // model the background themselves, so the standalone BFR stage is skipped and the
+    // (unwrapped) total field is fed straight in, with the brain mask.
+    let skip_bgremove = skips_bgremove(ctx.config);
     // iQFM replaces unwrap+BFR: it produces the local field directly from wrapped phase.
     let is_iqfm = ctx.config.bg_removal.algorithm == BfAlgorithm::Iqfm;
     let local_field_path = pass.local_field.clone();
@@ -4225,7 +4227,7 @@ mod tests {
             assert!(!super::skips_bgremove(&config), "{alg} runs its own background removal stage");
         }
         for alg in [QsmAlgorithm::Nextqsm, QsmAlgorithm::Autoqsm, QsmAlgorithm::Iqsm,
-                    QsmAlgorithm::IqsmPlus, QsmAlgorithm::Tgv, QsmAlgorithm::Qsmart] {
+                    QsmAlgorithm::IqsmPlus, QsmAlgorithm::Tgv, QsmAlgorithm::Qsmart, QsmAlgorithm::Tfi] {
             config.inversion.algorithm = alg;
             assert!(super::skips_bgremove(&config), "{alg} has no separate background removal");
         }

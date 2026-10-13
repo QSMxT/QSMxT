@@ -8,6 +8,18 @@ upgrade.
 
 ### Output changes with default settings
 
+- **TFI inverts the total field** (#265). TFI is a total-field method, but QSMxT ran background
+  removal first and gave it the V-SHARP local field. Which field an inversion takes now comes from
+  QSM.rs (`InversionConfig::input`: local field, total field or wrapped phase), replacing two
+  hand-kept lists that disagreed; TFI, MEDI+SMV, TGV, QSMART, AutoQSM and NeXtQSM get the total
+  field and the brain mask with no background-removal stage, and the methods text says so.
+  `--qsm-algorithm tfi` χ changes; other defaults do not.
+- **iQFM with an inversion that does not take a local field is refused** (#276): it had no
+  effect, and left field mapping off while the inversion read a total field that was never
+  written (or a stale one from an earlier run). Any other non-default `--bf-algorithm` with such
+  an inversion is a warning. The TUI hides background removal for those inversions and sends no
+  `--bf-algorithm`.
+
 - **V-SHARP no longer deconvolves by default** (`--vsharp-deconvolve false`, QSM.rs#160). The
   default background removal is now V-SHARP's SMV high-pass with the largest kernel that fits
   at each voxel (12 mm down to 1 mm), as STI Suite and the UK Biobank pipeline run it, instead
