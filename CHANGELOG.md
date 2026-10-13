@@ -91,6 +91,18 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
 
 ### Added
 
+- **Real/imaginary input** (BIDS `part-real` / `part-imag`). An acquisition with no
+  `part-phase` files but real and imaginary ones (as GE exports them) is now discovered and
+  processed: the first pipeline stage converts each echo to magnitude and phase with QSM.rs's
+  `complex_to_mag_phase`, which also detects and undoes alternate-slice π chopping, one decision
+  for all echoes. Real/imaginary data whose sidecar `Manufacturer` is GE has its phase negated,
+  since GE's phase runs opposite to the Siemens/Philips convention. The neighbour coherence per axis and the corrected axes are logged and recorded
+  in the `scale_phase` provenance. Before this, real/imaginary data was silently ignored.
+  Per-coil real/imaginary input is refused. `qsmxt dicom-convert` no longer relabels the
+  sidecar `ImageType` of GE real/imaginary series to `MAGNITUDE` / `PHASE` (they are written as
+  `part-real` / `part-imag` with their ImageType intact), and no longer logs a GE "phase
+  inversion" that nothing applied.
+
 - **The R2′ sidecar records where the map came from** (#236): `R2primeSource` = `measured`
   (R2* − R2, with `R2primeMethod` naming where R2 came from), `predicted` (R2PRIMEnet, with
   `R2primenetTrainedFieldStrength` and `R2primenetCalibrated`, false off 3 T) or `supplied`

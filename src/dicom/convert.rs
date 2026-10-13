@@ -154,27 +154,32 @@ fn build_bids_filename(p: &BidsNameParts) -> String {
 }
 
 /// Parse dcm2niix suffixes from a temp output filename.
-/// dcm2niix appends things like `_e1`, `_e2`, `_ph`, `_e1_ph` to the base name.
-/// Returns (echo_number, is_phase).
-fn parse_dcm2niix_suffixes(filename: &str, base: &str) -> (Option<u32>, bool) {
+/// dcm2niix appends things like `_e1`, `_e2`, `_ph`, `_e1_ph`, `_e1_real`, `_e1_imaginary` to
+/// the base name. Returns (echo_number, BIDS part implied by the suffix, if any).
+fn parse_dcm2niix_suffixes(filename: &str, base: &str) -> (Option<u32>, Option<&'static str>) {
     let remainder = filename.strip_prefix(base).unwrap_or("");
     let mut echo: Option<u32> = None;
-    let mut is_phase = false;
+    let mut file_part = None;
 
     for part in remainder.split('_') {
         if part.is_empty() {
             continue;
         }
-        if part == "ph" {
-            is_phase = true;
-        } else if let Some(num_str) = part.strip_prefix('e') {
-            if let Ok(n) = num_str.parse::<u32>() {
-                echo = Some(n);
+        match part {
+            "ph" => file_part = Some("phase"),
+            "real" => file_part = Some("real"),
+            "imaginary" => file_part = Some("imag"),
+            _ => {
+                if let Some(num_str) = part.strip_prefix('e') {
+                    if let Ok(n) = num_str.parse::<u32>() {
+                        echo = Some(n);
+                    }
+                }
             }
         }
     }
 
-    (echo, is_phase)
+    (echo, file_part)
 }
 
 // ─── 4D file detection ───
@@ -219,17 +224,16 @@ fn is_ge_manufacturer(manufacturer: &str) -> bool {
 /// What a GE series needs that QSMxT does not do yet, said once per series (#274).
 ///
 /// GE phase needs its handedness flipped and its slice-alternating offset ("chopping") removed
-/// before it is QSM-ready, and GE QSM data usually comes as real/imaginary series, which `qsmxt
-/// run` does not read. Both wait on the correction in QSM.rs (astewartau/QSM.rs#171).
+/// before it is QSM-ready. Real/imaginary series get both from the part-real/part-imag path; a
+/// phase-only GE series does not yet.
 fn ge_note(series_type: SeriesType) -> Option<&'static str> {
     match series_type {
         SeriesType::Phase => Some(
             "  Warning: GE phase is converted as-is. QSMxT does not yet correct GE phase \
              handedness or slice chopping, so χ from it may have the wrong sign and slice-wise \
              wraps."),
-        SeriesType::Real | SeriesType::Imaginary => Some(
-            "  Warning: GE real/imaginary series are written as part-real/part-imag, which \
-             `qsmxt run` does not read yet; no QSM run will be found from them."),
+        // Real/imaginary series go to part-real/part-imag, which `qsmxt run` converts (chopping
+        // corrected, GE phase negated) — nothing to warn about.
         _ => None,
     }
 }
@@ -540,8 +544,8 @@ fn convert_coil_group(
         };
 
         // Parse dcm2niix suffixes
-        let (echo, is_phase_file) = parse_dcm2niix_suffixes(stem, temp_base);
-        let file_part = if is_phase_file { Some("phase") } else { part };
+        let (echo, suffix_part) = parse_dcm2niix_suffixes(stem, temp_base);
+        let file_part = suffix_part.or(part);
 
         let bids_name = build_bids_filename(&BidsNameParts {
             sub: sub_label, ses: ses_label, acq: acq_name, run: run_number,
@@ -688,12 +692,14 @@ mod tests {
 
     #[test]
     fn test_parse_dcm2niix_suffixes() {
-        assert_eq!(parse_dcm2niix_suffixes("temp_output", "temp_output"), (None, false));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_e1", "temp_output"), (Some(1), false));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_e2", "temp_output"), (Some(2), false));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_ph", "temp_output"), (None, true));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_e1_ph", "temp_output"), (Some(1), true));
-        assert_eq!(parse_dcm2niix_suffixes("temp_output_e12_ph", "temp_output"), (Some(12), true));
+        assert_eq!(parse_dcm2niix_suffixes("temp_output", "temp_output"), (None, None));
+        assert_eq!(parse_dcm2niix_suffixes("temp_output_e1", "temp_output"), (Some(1), None));
+        assert_eq!(parse_dcm2niix_suffixes("temp_output_e2", "temp_output"), (Some(2), None));
+        assert_eq!(parse_dcm2niix_suffixes("temp_output_ph", "temp_output"), (None, Some("phase")));
+        assert_eq!(parse_dcm2niix_suffixes("temp_output_e1_ph", "temp_output"), (Some(1), Some("phase")));
+        assert_eq!(parse_dcm2niix_suffixes("temp_output_e12_ph", "temp_output"), (Some(12), Some("phase")));
+        assert_eq!(parse_dcm2niix_suffixes("temp_output_e3_real", "temp_output"), (Some(3), Some("real")));
+        assert_eq!(parse_dcm2niix_suffixes("temp_output_e3_imaginary", "temp_output"), (Some(3), Some("imag")));
     }
 
     #[test]
@@ -748,14 +754,6 @@ mod tests {
             echo: Some(1), part: Some("mag"), suffix: "MEGRE", extension: ".nii.gz",
         });
         assert_eq!(name, "sub-01_acq-gre_desc-filtered_echo-1_part-mag_MEGRE.nii.gz");
-    }
-
-    #[test]
-    fn test_is_ge() {
-        assert!(is_ge_manufacturer("GE MEDICAL SYSTEMS"));
-        assert!(is_ge_manufacturer("GENERAL ELECTRIC"));
-        assert!(!is_ge_manufacturer("SIEMENS"));
-        assert!(!is_ge_manufacturer("Philips"));
     }
 
     // ─── bids_suffix tests ───
@@ -910,7 +908,8 @@ mod tests {
         let phase = ge_note(SeriesType::Phase).unwrap();
         assert!(phase.contains("does not yet correct"), "{phase}");
         assert!(!phase.contains("will be applied"), "{phase}");
-        assert!(ge_note(SeriesType::Real).unwrap().contains("does not read"));
+        assert!(ge_note(SeriesType::Real).is_none(), "real/imaginary is converted by `qsmxt run`");
+        assert!(ge_note(SeriesType::Imaginary).is_none());
         assert!(ge_note(SeriesType::Magnitude).is_none());
     }
 

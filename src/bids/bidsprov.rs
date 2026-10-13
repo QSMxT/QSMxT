@@ -659,6 +659,7 @@ mod tests {
                 phase_json: raw_phase.with_extension("json"),
                 magnitude_nifti: None,
                 magnitude_json: None,
+                imaginary_nifti: None,
             }],
             magnetic_field_strength: 3.0,
             echo_times: vec![0.02],

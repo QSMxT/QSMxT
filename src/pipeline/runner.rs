@@ -171,8 +171,29 @@ impl StageContext<'_> {
         output_paths: Vec<PathBuf>,
         start: Instant,
     ) -> crate::Result<()> {
+        self.complete_step_with_outcome(step, algorithm, parameters, None, inputs, output_paths, start)
+    }
+
+    /// [`Self::complete_step`], with what the step found in the data (`outcome`) recorded in its
+    /// provenance next to its parameters. Only `parameters` key the cache: the outcome follows
+    /// from them and the inputs, so it is not known when the cache is checked.
+    #[allow(clippy::too_many_arguments)]
+    fn complete_step_with_outcome(
+        &mut self,
+        step: &str,
+        algorithm: Option<&str>,
+        parameters: serde_json::Value,
+        outcome: Option<(&str, serde_json::Value)>,
+        inputs: &[&Path],
+        output_paths: Vec<PathBuf>,
+        start: Instant,
+    ) -> crate::Result<()> {
         let prov_path = self.output.provenance_path(&self.run.key, step);
-        write_step_provenance(&prov_path, step, algorithm, &parameters, inputs, &output_paths, start)?;
+        let mut recorded = parameters.clone();
+        if let Some((name, value)) = outcome {
+            recorded[name] = value;
+        }
+        write_step_provenance(&prov_path, step, algorithm, &recorded, inputs, &output_paths, start)?;
 
         // Whatever read this step's previous output is stale now that it has been recomputed with
         // other parameters, or for the first time (a step newly switched on, say), which the
@@ -1238,19 +1259,106 @@ fn log_motion_summary(r: &qsm_core::pipeline::MotionCorrectionResult, mask_in: &
     }
 }
 
+/// Whether real/imaginary input from this manufacturer has its phase negated on conversion.
+///
+/// GE's real/imaginary pair gives phase of the opposite sign to the Siemens/Philips convention
+/// the pipeline assumes: on one subject scanned on all three, high-pass field maps from GE
+/// anti-correlate with the other two, which correlate with each other. Matched as dcm2niix and
+/// the DICOM tag spell it ("GE", "GE MEDICAL SYSTEMS", "General Electric").
+fn negates_real_imaginary_phase(manufacturer: Option<&str>) -> bool {
+    let Some(m) = manufacturer else { return false };
+    let m = m.trim().to_uppercase();
+    m == "GE" || m.starts_with("GE ") || m.contains("GENERAL ELECTRIC")
+}
+
+/// Real/imaginary echoes of a run as magnitude and phase on its acquired grid, via
+/// `qsm_core::complex::complex_to_mag_phase` (which also detects and undoes slice chopping, and
+/// negates the phase when `negate_phase`).
+fn convert_real_imaginary(ctx: &StageContext, negate_phase: bool) -> crate::Result<qsm_core::complex::MagPhaseEchoes> {
+    let (dims, voxel) = match ctx.meta.source_geometry {
+        Some((d, a)) => (d, qsm_core::geometry::voxel_sizes_from_affine(&a)),
+        None => (ctx.meta.dims, ctx.meta.voxel_size),
+    };
+    let n = dims.0 * dims.1 * dims.2;
+    let mut real = Vec::with_capacity(ctx.run.echoes.len());
+    let mut imag = Vec::with_capacity(ctx.run.echoes.len());
+    for echo in &ctx.run.echoes {
+        let imag_path = echo.imaginary_nifti.as_ref().ok_or_else(|| QsmxtError::Config(format!(
+            "echo {}: real/imaginary run without a part-imag file", echo.echo_number)))?;
+        for (path, out) in [(&echo.phase_nifti, &mut real), (imag_path, &mut imag)] {
+            let v = load_volume(path)?;
+            if v.len() != n {
+                return Err(QsmxtError::DimensionMismatch(format!(
+                    "{} has {} voxels, expected {}", path.display(), v.len(), n)));
+            }
+            out.push(v);
+        }
+    }
+    let grid = qsm_core::Grid::new(dims.0, dims.1, dims.2, voxel.0, voxel.1, voxel.2);
+    let real_refs: Vec<&[f64]> = real.iter().map(|v| v.as_slice()).collect();
+    let imag_refs: Vec<&[f64]> = imag.iter().map(|v| v.as_slice()).collect();
+    let params = qsm_core::complex::ComplexToMagPhaseParams {
+        chop: qsm_core::complex::ChopCorrection::Auto,
+        negate_phase,
+    };
+    let out = qsm_core::complex::complex_to_mag_phase(&real_refs, &imag_refs, &grid, &params);
+    if negate_phase {
+        log::info!("Real/imaginary input: GE phase sign convention, phase negated");
+    }
+
+    let c = &out.chopping;
+    let axes: Vec<&str> = ["x", "y", "z"].into_iter().zip(c.corrected).filter(|(_, on)| *on).map(|(a, _)| a).collect();
+    log::info!("Real/imaginary input: neighbour phase coherence x {:+.3}, y {:+.3}, z {:+.3}; {}",
+        c.coherence[0], c.coherence[1], c.coherence[2],
+        if axes.is_empty() { "no slice chopping".to_string() } else { format!("slice chopping corrected along {}", axes.join(", ")) });
+    let ambiguous = c.ambiguous_axes();
+    if !ambiguous.is_empty() {
+        let names: Vec<&str> = ambiguous.iter().map(|&a| ["x", "y", "z"][a]).collect();
+        log::warn!("Real/imaginary input: slice-chopping detection is uncertain along {} \
+                    (coherence near zero); check the phase for a π jump between neighbouring slices",
+            names.join(", "));
+    }
+    Ok(out)
+}
+
+/// Provenance record of a real/imaginary conversion.
+fn slice_chopping_json(c: &qsm_core::complex::SliceChopping) -> serde_json::Value {
+    serde_json::json!({
+        "method": "complex_to_mag_phase",
+        "detected": c.detected,
+        "coherence": { "x": c.coherence[0], "y": c.coherence[1], "z": c.coherence[2] },
+        "corrected": { "x": c.corrected[0], "y": c.corrected[1], "z": c.corrected[2] },
+    })
+}
+
 fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
     if ctx.run.coils.is_some() {
         return stage_combine_coils(ctx, progress);
     }
-    let params = serde_json::json!({
+    let complex = ctx.run.echoes[0].imaginary_nifti.is_some();
+    let mut params = serde_json::json!({
         "resampled_to_axial": ctx.meta.source_geometry.is_some(),
         "dims": [ctx.meta.dims.0, ctx.meta.dims.1, ctx.meta.dims.2],
     });
+    // The sign convention follows from the sidecar, so it is a parameter (and keys the cache).
+    let negate_phase = complex && negates_real_imaginary_phase(
+        crate::bids::sidecar::read_sidecar(&ctx.run.echoes[0].phase_json)?.manufacturer.as_deref());
+    if complex {
+        params["input"] = serde_json::json!("real_imaginary");
+        params["negate_phase"] = serde_json::json!(negate_phase);
+    }
     if ctx.is_cached_with_params("scale_phase", None, &params) {
         log::info!("Skipping scale_phase (cached)");
         return Ok(());
     }
     let t = Instant::now();
+    // Real/imaginary input becomes magnitude and phase before anything else sees it.
+    let converted = if complex {
+        progress("Converting real/imaginary to magnitude/phase");
+        Some(convert_real_imaginary(ctx, negate_phase)?)
+    } else {
+        None
+    };
     if ctx.meta.source_geometry.is_some() {
         progress("Resampling to axial + rescaling phase");
     } else {
@@ -1266,18 +1374,24 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
         let (nx, ny, nz) = src_dims;
         let params = qsm_core::geometry::AxialResampleParams::default();
         for (i, echo) in ctx.run.echoes.iter().enumerate() {
-            let mut phase_nifti = io::read_nifti_file(&echo.phase_nifti)
-                .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?;
-            qsm_core::pipeline::scale_phase_to_pi(&mut phase_nifti.data);
-            let mag = match echo.magnitude_nifti.as_ref() {
-                Some(p) => io::read_nifti_file(p)
-                    .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", p.display(), e)))?
-                    .data,
-                // No magnitude: weight every voxel equally so the phase still resamples correctly.
-                None => vec![1.0; phase_nifti.data.len()],
+            let (mag, phase) = match &converted {
+                Some(c) => (c.magnitudes[i].clone(), c.phases[i].clone()),
+                None => {
+                    let mut phase_nifti = io::read_nifti_file(&echo.phase_nifti)
+                        .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?;
+                    qsm_core::pipeline::scale_phase_to_pi(&mut phase_nifti.data);
+                    let mag = match echo.magnitude_nifti.as_ref() {
+                        Some(p) => io::read_nifti_file(p)
+                            .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", p.display(), e)))?
+                            .data,
+                        // No magnitude: weight every voxel equally so the phase still resamples correctly.
+                        None => vec![1.0; phase_nifti.data.len()],
+                    };
+                    (mag, phase_nifti.data)
+                }
             };
             let out = qsm_core::geometry::resample_complex_to_axial(
-                &mag, &phase_nifti.data, nx, ny, nz, &src_affine, &params,
+                &mag, &phase, nx, ny, nz, &src_affine, &params,
             );
             let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
             save_volume(&p_path, &out.phase, ctx.meta)?;
@@ -1287,6 +1401,15 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
                 save_volume(&m_path, &out.magnitude, ctx.meta)?;
                 mag_paths.push(m_path);
             }
+        }
+    } else if let Some(c) = &converted {
+        for i in 0..ctx.run.echoes.len() {
+            let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
+            save_volume(&p_path, &c.phases[i], ctx.meta)?;
+            phase_paths.push(p_path);
+            let m_path = ctx.output.mag_path(&ctx.run.key, i + 1);
+            save_volume(&m_path, &c.magnitudes[i], ctx.meta)?;
+            mag_paths.push(m_path);
         }
     } else {
         for (i, echo) in ctx.run.echoes.iter().enumerate() {
@@ -1316,9 +1439,12 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
 
     let mut all_paths = phase_paths;
     all_paths.extend(mag_paths.clone());
-    let input_paths: Vec<PathBuf> = ctx.run.echoes.iter().map(|e| e.phase_nifti.clone()).collect();
+    let input_paths: Vec<PathBuf> = ctx.run.echoes.iter()
+        .flat_map(|e| std::iter::once(e.phase_nifti.clone()).chain(e.imaginary_nifti.clone()))
+        .collect();
     let input_refs: Vec<&Path> = input_paths.iter().map(|p| p.as_path()).collect();
-    ctx.complete_step("scale_phase", None, params, &input_refs, all_paths, t)?;
+    let outcome = converted.as_ref().map(|c| ("real_imaginary_conversion", slice_chopping_json(&c.chopping)));
+    ctx.complete_step_with_outcome("scale_phase", None, params, outcome, &input_refs, all_paths, t)?;
     log_step_done(if ctx.meta.source_geometry.is_some() { "Resample + rescale phase" } else { "Rescale phase" }, t);
     Ok(())
 }
@@ -4457,7 +4583,7 @@ mod tests {
             coils: None,
             echoes: vec![EchoFiles {
                 echo_number: 1, phase_nifti: phase.clone(), phase_json: phase.clone(),
-                magnitude_nifti: None, magnitude_json: None,
+                magnitude_nifti: None, magnitude_json: None, imaginary_nifti: None,
             }],
             magnetic_field_strength: 3.0, echo_times: vec![0.004], b0_dir: None,
             dims: (2, 2, 2), has_magnitude: false,
@@ -4520,7 +4646,7 @@ mod tests {
             coils: None,
             echoes: echoes.into_iter().enumerate().map(|(i, (phase, mag))| EchoFiles {
                 echo_number: i as u32 + 1, phase_json: phase.clone(), phase_nifti: phase,
-                magnitude_json: None, magnitude_nifti: mag,
+                magnitude_json: None, magnitude_nifti: mag, imaginary_nifti: None,
             }).collect(),
             magnetic_field_strength: 3.0,
             echo_times: (0..n).map(|i| 0.004 + i as f64 * 0.004).collect(),
@@ -4625,7 +4751,7 @@ mod tests {
         crate::bids::sidecar::QsmSidecar {
             echo_time: 0.004, magnetic_field_strength: 3.0, b0_dir: None,
             slice_thickness: thickness, mr_acquisition_type: acq.map(str::to_string),
-            slice_encoding_direction: dir.map(str::to_string),
+            slice_encoding_direction: dir.map(str::to_string), manufacturer: None,
         }
     }
 
@@ -5256,6 +5382,7 @@ mod swi_export_tests {
                 phase_json: PathBuf::from("p.json"),
                 phase_nifti: PathBuf::from("p.nii"),
                 magnitude_json: None,
+                imaginary_nifti: None,
                 magnitude_nifti: None,
             }],
             magnetic_field_strength: 3.0,
@@ -5968,6 +6095,107 @@ mod oblique_run_tests {
 /// Background removal erodes the mask, and the raw map is 0 on that rim. Referencing over the
 /// brain mask averaged those zeros into the offset and then wrote the rim out as a constant
 /// `-offset` — a shell of about 10% of the brain at 1 mm with V-SHARP.
+#[cfg(test)]
+mod real_imag_input_tests {
+    use super::*;
+    use crate::bids::discovery::{discover_runs, DiscoveryFilter};
+    use crate::testutils;
+
+    fn run_on(bids: &Path, out: &Path) -> (QsmRun, DerivativeOutputs) {
+        let run = discover_runs(bids, &DiscoveryFilter::default()).unwrap().remove(0);
+        let output = DerivativeOutputs::new(out);
+        run_pipeline_cached(&run, &PipelineConfig::default(), &output, true, &|_| {}).unwrap();
+        (run, output)
+    }
+
+    /// Real/imaginary input, chopped along z as GE leaves it, reconstructs exactly what the same
+    /// echoes given as magnitude/phase do: the chop is found and undone before anything else
+    /// runs, and the provenance says so.
+    #[test]
+    fn chopped_real_imag_matches_mag_phase() {
+        let dir = tempfile::tempdir().unwrap();
+        let complex = testutils::create_real_imag_bids(&dir.path().join("ri"), true);
+        let twin = testutils::create_mag_phase_twin_bids(&dir.path().join("mp"));
+        let (ri_run, ri) = run_on(&complex, &dir.path().join("ri-out"));
+        let (mp_run, mp) = run_on(&twin, &dir.path().join("mp-out"));
+
+        for e in 1..=3 {
+            let a = load_volume(&ri.phase_scaled_path(&ri_run.key, e)).unwrap();
+            let b = load_volume(&mp.phase_scaled_path(&mp_run.key, e)).unwrap();
+            let worst = a.iter().zip(&b)
+                .map(|(x, y)| { let d = (x - y).rem_euclid(2.0 * std::f64::consts::PI); d.min(2.0 * std::f64::consts::PI - d) })
+                .fold(0.0, f64::max);
+            assert!(worst < 1e-6, "echo {e} phase differs by up to {worst} rad");
+            let a = load_volume(&ri.mag_path(&ri_run.key, e)).unwrap();
+            let b = load_volume(&mp.mag_path(&mp_run.key, e)).unwrap();
+            assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-3 * y.abs().max(1.0)), "echo {e} magnitude differs");
+        }
+        let chi_ri = load_volume(&ri.qsm_path(&ri_run.key)).unwrap();
+        let chi_mp = load_volume(&mp.qsm_path(&mp_run.key)).unwrap();
+        let worst = chi_ri.iter().zip(&chi_mp).map(|(x, y)| (x - y).abs()).fold(0.0, f64::max);
+        assert!(worst < 1e-4, "χ differs by up to {worst} ppm");
+
+        let prov: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(ri.provenance_path(&ri_run.key, "scale_phase")).unwrap()).unwrap();
+        let params = &prov["parameters"];
+        assert_eq!(params["input"], "real_imaginary");
+        let conv = &params["real_imaginary_conversion"];
+        assert_eq!(conv["method"], "complex_to_mag_phase");
+        assert_eq!(conv["corrected"], serde_json::json!({ "x": false, "y": false, "z": true }));
+        assert!(conv["coherence"]["z"].as_f64().unwrap() < -0.5, "{conv}");
+        assert!(prov["inputs"].as_array().unwrap().iter().any(|p| p.as_str().unwrap().contains("_part-imag_")));
+    }
+
+    #[test]
+    fn ge_real_imag_phase_is_negated() {
+        assert!(negates_real_imaginary_phase(Some("GE")));
+        assert!(negates_real_imaginary_phase(Some("GE MEDICAL SYSTEMS")));
+        assert!(negates_real_imaginary_phase(Some("General Electric")));
+        assert!(!negates_real_imaginary_phase(Some("Siemens")));
+        assert!(!negates_real_imaginary_phase(Some("Philips")));
+        assert!(!negates_real_imaginary_phase(Some("GEMINI")));
+        assert!(!negates_real_imaginary_phase(None));
+
+        // End to end: a GE sidecar gives the negated phase of the same echoes from elsewhere.
+        let dir = tempfile::tempdir().unwrap();
+        let ge = testutils::create_real_imag_bids(&dir.path().join("ge"), true);
+        for p in glob::glob(&format!("{}/sub-1/anat/*.json", ge.display())).unwrap().flatten() {
+            let mut j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+            j["Manufacturer"] = serde_json::json!("GE");
+            std::fs::write(&p, j.to_string()).unwrap();
+        }
+        let other = testutils::create_real_imag_bids(&dir.path().join("other"), true);
+        let (ge_run, ge_out) = run_on(&ge, &dir.path().join("ge-out"));
+        let (other_run, other_out) = run_on(&other, &dir.path().join("other-out"));
+        let a = load_volume(&ge_out.phase_scaled_path(&ge_run.key, 1)).unwrap();
+        let b = load_volume(&other_out.phase_scaled_path(&other_run.key, 1)).unwrap();
+        let worst = a.iter().zip(&b)
+            .map(|(x, y)| { let d = (x + y).rem_euclid(2.0 * std::f64::consts::PI); d.min(2.0 * std::f64::consts::PI - d) })
+            .fold(0.0, f64::max);
+        assert!(worst < 1e-6, "GE phase is not the negation: up to {worst} rad off");
+        let prov: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(ge_out.provenance_path(&ge_run.key, "scale_phase")).unwrap()).unwrap();
+        assert_eq!(prov["parameters"]["negate_phase"], true);
+    }
+
+    /// An unchopped export converts with no correction, and a re-run is served from the cache
+    /// even though the provenance carries the detection outcome next to the parameters.
+    #[test]
+    fn unchopped_real_imag_is_not_corrected_and_caches() {
+        let dir = tempfile::tempdir().unwrap();
+        let complex = testutils::create_real_imag_bids(&dir.path().join("ri"), false);
+        let (run, output) = run_on(&complex, &dir.path().join("out"));
+        let prov_path = output.provenance_path(&run.key, "scale_phase");
+        let prov: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&prov_path).unwrap()).unwrap();
+        assert_eq!(prov["parameters"]["real_imaginary_conversion"]["corrected"],
+            serde_json::json!({ "x": false, "y": false, "z": false }));
+
+        let before = std::fs::metadata(&prov_path).unwrap().modified().unwrap();
+        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, &|_| {}).unwrap();
+        assert_eq!(std::fs::metadata(&prov_path).unwrap().modified().unwrap(), before, "scale_phase re-ran");
+    }
+}
+
 #[cfg(test)]
 mod reference_support_tests {
     use super::*;

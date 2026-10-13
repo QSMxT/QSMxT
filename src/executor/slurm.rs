@@ -131,6 +131,7 @@ mod tests {
                 phase_json: PathBuf::from("fake.json"),
                 magnitude_nifti: None,
                 magnitude_json: None,
+                imaginary_nifti: None,
             }],
             coils: None,
             magnetic_field_strength: 3.0,
