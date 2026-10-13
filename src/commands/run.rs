@@ -143,7 +143,7 @@ fn write_reference_summary(
     for k in keys {
         // One row per referenced map — the two-pass single-pass map has its own offset — each
         // read from that map's own sidecar.
-        for spec in crate::pipeline::stats::candidate_maps(output, k) {
+        for spec in crate::pipeline::stats::candidate_maps(&output.published(k), k) {
             if !crate::pipeline::stats::is_susceptibility(spec.name) {
                 continue;
             }

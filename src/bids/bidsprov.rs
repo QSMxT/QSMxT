@@ -196,10 +196,15 @@ const MASK: OutputMeta = OutputMeta { forward: Forward::Nothing, skull_stripped:
 ///   are skull-stripped; SMWI is the magnitude weighted by a χ-derived mask, so it is confined
 ///   the way the Chimap is;
 /// - the RSS magnitude (T2starw) and SWI/minIP retain full field-of-view signal.
-fn run_outputs(output: &DerivativeOutputs, key: &AcquisitionKey) -> Vec<(PathBuf, OutputMeta)> {
+fn run_outputs(output: &DerivativeOutputs, key: &AcquisitionKey, n_echoes: usize) -> Vec<(PathBuf, OutputMeta)> {
     let image = |forward, ss| OutputMeta { forward, skull_stripped: Some(ss) };
     use Forward::*;
-    vec![
+    // The MCPC-3D-S combined echoes of a per-coil run: one echo each, full field of view.
+    let combined = (1..=n_echoes).flat_map(|e| [
+        (output.combined_phase_path(key, e), image(FieldStrength, false)),
+        (output.combined_mag_path(key, e), image(FieldStrength, false)),
+    ]);
+    combined.chain([
         (output.qsm_path(key), image(FieldAndEcho, true)),
         (output.singlepass_qsm_path(key), image(FieldAndEcho, true)),
         (output.mask_path(key), MASK),
@@ -223,7 +228,11 @@ fn run_outputs(output: &DerivativeOutputs, key: &AcquisitionKey) -> Vec<(PathBuf
         (output.chi_para_path(key), image(FieldAndEcho, true)),
         (output.chi_dia_path(key), image(FieldAndEcho, true)),
         (output.chi_sep_total_path(key), image(FieldAndEcho, true)),
-    ]
+        // The field map is computed inside the brain mask and is 0 outside it; its magnitude is
+        // the first echo as acquired.
+        (output.total_field_path(key), image(FieldStrength, true)),
+        (output.total_field_magnitude_path(key), image(FieldStrength, false)),
+    ]).collect()
 }
 
 /// A multi-orientation group's outputs: COSMOS / STI maps, all fitted across orientations.
@@ -330,7 +339,8 @@ pub fn write_provenance(
     }
     /// Who a published file belongs to, and how its sidecar describes it.
     struct Owner<'a> {
-        anat: PathBuf,
+        /// The directories its published files are in (`anat/`, `fmap/`).
+        dirs: Vec<PathBuf>,
         known: Vec<(PathBuf, OutputMeta)>,
         default_meta: OutputMeta,
         field_strength: f64,
@@ -341,8 +351,8 @@ pub fn write_provenance(
     let mut owners: Vec<(AcquisitionKey, Owner, &'static [&'static str])> = Vec::new();
     for run in runs {
         owners.push((run.key.clone(), Owner {
-            anat: output.anat_dir(&run.key),
-            known: run_outputs(output, &run.key),
+            dirs: output.published_dirs(&run.key).to_vec(),
+            known: run_outputs(&output.published(&run.key), &run.key, run.echo_times.len()),
             default_meta: MASK,
             field_strength: run.magnetic_field_strength,
             echo_times: &run.echo_times,
@@ -350,7 +360,7 @@ pub fn write_provenance(
     }
     for group in groups {
         owners.push((group.key.clone(), Owner {
-            anat: output.anat_dir(&group.key),
+            dirs: vec![output.anat_dir(&group.key)],
             known: Vec::new(),
             default_meta: group_meta(),
             field_strength: group.magnetic_field_strength,
@@ -486,7 +496,7 @@ pub fn write_provenance(
         let owner = &owners[owner_idx].1;
         let activity = &produced_by[file];
         let path = PathBuf::from(file);
-        if path.parent() != Some(owner.anat.as_path()) || !is_nifti(&path) || !path.exists() {
+        if !path.parent().is_some_and(|p| owner.dirs.iter().any(|d| d == p)) || !is_nifti(&path) || !path.exists() {
             continue;
         }
         let meta = owner.known.iter().find(|(p, _)| *p == path).map(|(_, m)| *m)

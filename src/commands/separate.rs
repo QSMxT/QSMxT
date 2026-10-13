@@ -3,7 +3,8 @@
 //! One subcommand per method (mirroring `qsmxt invert <algo>`): each exposes only the inputs and
 //! parameters that method uses. Parameter defaults come from qsm-core's `Default` impls (the single
 //! source of truth) via `unwrap_or`. Multi-echo magnitude accepts either several 3D files or one 4D
-//! file. Outputs are written as `{prefix}_paramagnetic/diamagnetic/total.nii`.
+//! file. Outputs are written as `{prefix}_desc-{paramagnetic,diamagnetic,total}_Chimap.nii`, the
+//! pipeline's names (`bids::naming`).
 
 use log::info;
 use std::path::Path;
@@ -17,19 +18,19 @@ use crate::error::QsmxtError;
 
 /// Write the three chi-separation maps under the output prefix.
 fn save_result(output: &Path, result: &SeparationResult, reference: &NiftiData) -> crate::Result<()> {
-    let prefix = output.to_string_lossy();
-    let para = format!("{}_paramagnetic.nii", prefix);
-    let dia = format!("{}_diamagnetic.nii", prefix);
-    let total = format!("{}_total.nii", prefix);
+    use crate::bids::naming;
+    let para = naming::nifti_beside(output, &naming::chi_paramagnetic());
+    let dia = naming::nifti_beside(output, &naming::chi_diamagnetic());
+    let total = naming::nifti_beside(output, &naming::chi_total());
     // χ− is signed-negative in qsm-core (so χ_total = χ+ + χ−); the diamagnetic map is written as
     // its magnitude |χ−| so both source maps are positive. χ_total stays the signed net.
     let chi_dia: Vec<f64> = result.chi_neg.iter().map(|&v| v.abs()).collect();
-    save_nifti(Path::new(&para), &result.chi_pos, reference)?;
-    save_nifti(Path::new(&dia), &chi_dia, reference)?;
-    save_nifti(Path::new(&total), &result.chi_total, reference)?;
-    info!("Saved paramagnetic → {}", para);
-    info!("Saved diamagnetic  → {}", dia);
-    info!("Saved total        → {}", total);
+    save_nifti(&para, &result.chi_pos, reference)?;
+    save_nifti(&dia, &chi_dia, reference)?;
+    save_nifti(&total, &result.chi_total, reference)?;
+    info!("Saved paramagnetic → {}", para.display());
+    info!("Saved diamagnetic  → {}", dia.display());
+    info!("Saved total        → {}", total.display());
     Ok(())
 }
 

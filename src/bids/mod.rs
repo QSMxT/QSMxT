@@ -3,5 +3,6 @@ pub mod dataset_description;
 pub mod derivatives;
 pub mod discovery;
 pub mod entities;
+pub mod naming;
 pub mod orientation;
 pub mod sidecar;

@@ -404,6 +404,18 @@ pub fn run_pipeline_cached(
     let meta = stage_load(qsm_run, config, &mut state, &state_path, progress)?;
     restore_working_grid(qsm_run, output, &mut state, &state_path)?;
 
+    // A run left on the axial grid it was resampled to names its outputs in that space (#275).
+    let space = published_space(config, &meta);
+    if state.space.as_deref() != space {
+        // Every output of the last run is under the other names: nothing cached can be found,
+        // and nothing under those names may stay beside the new ones.
+        state.remove_recorded_outputs(&state_path);
+        state.completed_steps.retain(|step, _| step == "load");
+        state.space = space.map(str::to_string);
+        state.save(&state_path)?;
+    }
+    let output = &output.in_space(space);
+
     // What this run can produce of what was enabled. `qsmxt run` has already refused a requested
     // output the data cannot give and warned about an implied one (`requirements::check_runs`);
     // here the same rules decide which stages run, so the two cannot disagree.
@@ -589,6 +601,17 @@ fn validate_run_dims(run: &QsmRun, reference: &NiftiData) -> crate::Result<()> {
     Ok(())
 }
 
+/// The `space-` label of a run's published outputs: [`naming::WORKING_SPACE`] when the run was
+/// resampled to an axial grid and `--output-space working` leaves its outputs there, `None` when
+/// they are on the grid it was acquired on (never resampled, or returned to it).
+///
+/// [`naming::WORKING_SPACE`]: crate::bids::naming::WORKING_SPACE
+pub fn published_space(config: &PipelineConfig, meta: &RunMetadata) -> Option<&'static str> {
+    (meta.source_geometry.is_some()
+        && config.pipeline.output_space == crate::pipeline::config::OutputSpace::Working)
+        .then_some(crate::bids::naming::WORKING_SPACE)
+}
+
 /// Undo a previous run's return to the acquired grid before any step reads `anat/` again.
 ///
 /// Cached steps hand their outputs to the steps after them on the working grid, but
@@ -615,10 +638,11 @@ fn restore_working_grid(
         );
         state.completed_steps.retain(|step, _| step == "load");
     } else {
-        let anat = output.anat_dir(&run.key);
         for f in &saved {
             if let Some(name) = f.file_name() {
-                std::fs::copy(f, anat.join(name))?;
+                let dir = output.published_dir_for(&run.key, &name.to_string_lossy());
+                std::fs::create_dir_all(&dir)?;
+                std::fs::copy(f, dir.join(name))?;
             }
         }
         state.completed_steps.remove("output_space");
@@ -642,7 +666,7 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
     let Some((dst_dims, dst_affine)) = ctx.meta.source_geometry else { return Ok(()) };
     if ctx.config.pipeline.output_space != crate::pipeline::config::OutputSpace::Acquired {
         log::info!("Leaving outputs on the resampled grid (--output-space working)");
-        return Ok(());
+        return record_working_space(ctx);
     }
     // `resampling` versions how each kind travels, so outputs returned by an older release (a
     // trilinearly interpolated dseg, SMWI minIPs left on the working grid; #267) are redone.
@@ -663,14 +687,10 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
     let src_affine = ctx.meta.affine;
     // Only this run's files: every run of the session shares `anat/`, and another run's outputs
     // may be on its own working grid, or still being read by a reconstruction in progress.
-    let anat = ctx.output.anat_dir(&ctx.run.key);
-    let mut files: Vec<PathBuf> = std::fs::read_dir(&anat)
-        .map(|rd| rd.filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.extension().map(|e| e == "nii").unwrap_or(false))
-            .filter(|p| ctx.output.is_run_output(&ctx.run.key, p))
-            .collect())
-        .unwrap_or_default();
-    files.sort();
+    let files: Vec<PathBuf> = ctx.output.run_published_niftis(&ctx.run.key).into_iter()
+        // Not a file some other configuration left in another space.
+        .filter(|p| p.file_name().and_then(|n| crate::bids::naming::entity_of(&n.to_string_lossy(), "space")).is_none())
+        .collect();
 
     // Keep the working-grid originals: later steps read these back (the mask, the combined
     // magnitude, ...), so a re-run has to start from them rather than from what lands in `anat/`.
@@ -782,6 +802,26 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
     let original_refs: Vec<&Path> = originals.iter().map(|p| p.as_path()).collect();
     ctx.complete_step("output_space", None, params, &original_refs, files, t)?;
     log_step_done("Output space", t);
+    Ok(())
+}
+
+/// Give each of the run's outputs left on the working grid a `SpatialReference`: the BIDS
+/// sidecar field a `space-` label that is not a standard template needs, pointing at the run's
+/// combined magnitude in that space.
+fn record_working_space(ctx: &StageContext) -> crate::Result<()> {
+    let Some(space) = ctx.output.space.as_deref() else { return Ok(()) };
+    let reference = crate::pipeline::multiorient::spatial_reference(ctx.output, &ctx.run.key, space);
+    let files: Vec<PathBuf> = ctx.output.run_published_niftis(&ctx.run.key).into_iter()
+        .filter(|p| p.file_name().and_then(|n| crate::bids::naming::entity_of(&n.to_string_lossy(), "space"))
+            .as_deref() == Some(space))
+        .collect();
+    for f in files {
+        let Some(sidecar) = crate::bids::entities::sidecar_path(&f) else { continue };
+        let mut obj = read_json_object(&sidecar);
+        obj.insert("SpatialReference".into(), serde_json::Value::String(reference.clone()));
+        std::fs::write(&sidecar, serde_json::to_string_pretty(&serde_json::Value::Object(obj))
+            .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
+    }
     Ok(())
 }
 
@@ -3261,7 +3301,36 @@ fn stage_unwrap(
     ).map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
 
     save_volume(field_path, &field.b0_field_ppm, ctx.meta)?;
-    let mut outputs = vec![field_path.to_path_buf()];
+    // Published as a BIDS `fieldmap`, which takes Hz (or rad/s, or T) but not ppm.
+    let total_field = ctx.output.total_field_path(&ctx.run.key);
+    let hz_per_ppm = hz_per_ppm(ctx.meta.field_strength);
+    let field_hz: Vec<f64> = field.b0_field_ppm.iter().map(|v| v * hz_per_ppm).collect();
+    save_volume(&total_field, &field_hz, ctx.meta)?;
+    if let Some(sidecar) = crate::bids::entities::sidecar_path(&total_field) {
+        let mut obj = read_json_object(&sidecar);
+        obj.insert("Units".into(), "Hz".into());
+        obj.insert("Description".into(),
+            "Total (unwrapped, echo-combined) field: the B0 field offset from the scanner frequency, \
+             before background-field removal".into());
+        std::fs::write(&sidecar, serde_json::to_string_pretty(&serde_json::Value::Object(obj))
+            .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
+    }
+    let mut outputs = vec![field_path.to_path_buf(), total_field];
+    // BIDS pairs a `fieldmap` with a magnitude image for anatomical reference: the first echo's,
+    // the one with the most signal.
+    if let Some(first) = magnitudes.first() {
+        let mag_path = ctx.output.total_field_magnitude_path(&ctx.run.key);
+        save_volume(&mag_path, first, ctx.meta)?;
+        if let Some(sidecar) = crate::bids::entities::sidecar_path(&mag_path) {
+            let mut obj = read_json_object(&sidecar);
+            obj.insert("Description".into(),
+                "Magnitude of the first echo, the anatomical reference for desc-total_fieldmap".into());
+            obj.insert("EchoTime".into(), serde_json::json!(ctx.meta.echo_times[0]));
+            std::fs::write(&sidecar, serde_json::to_string_pretty(&serde_json::Value::Object(obj))
+                .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
+        }
+        outputs.push(mag_path);
+    }
     if let Some(report) = &field.robust_fit {
         crate::pipeline::fieldmap::log_robust_fit_report(report);
         let json_path = robust_fit_report_path(field_path);
@@ -3275,6 +3344,12 @@ fn stage_unwrap(
     ctx.complete_step("unwrap", Some(unwrap_alg), unwrap_params, &input_refs, outputs, t)?;
     log_step_done("Phase unwrapping", t);
     Ok(())
+}
+
+/// Hz per ppm of field at `field_strength` T: γ̄·B0·10⁻⁶, with the γ̄ QSM.rs converts by
+/// (42.576 MHz/T), so the published Hz map is exactly the ppm one the inversions read.
+pub fn hz_per_ppm(field_strength: f64) -> f64 {
+    42.576e6 * field_strength * 1e-6
 }
 
 /// Per-echo phase + magnitude volumes and the phase input paths (for cache provenance).
@@ -5756,7 +5831,9 @@ mod oblique_run_tests {
         // Asking for the working grid on a re-run brings the working-grid outputs back.
         config.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
         run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
-        assert_ne!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
+        // ...under their working-space names (#275).
+        assert_ne!(voxels(&output.published(&run.key).qsm_path(&run.key)), ACQUIRED);
+        assert!(!output.qsm_path(&run.key).exists(), "the acquired-grid map was left behind");
     }
 
     /// Runs of one session share `anat/`, so returning one run to the acquired grid must leave the
@@ -5769,7 +5846,8 @@ mod oblique_run_tests {
         let mut working = resampling_config();
         working.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
         run_pipeline_cached(&a, &working, &output, false, &|_| {}).unwrap();
-        let a_working = voxels(&output.mask_path(&a.key));
+        let a_mask = output.published(&a.key).mask_path(&a.key);
+        let a_working = voxels(&a_mask);
         assert_ne!(a_working, ACQUIRED);
 
         // `acq-a_run-2` starts with `acq-a`'s basename, so it is the harder neighbour to tell apart.
@@ -5777,7 +5855,7 @@ mod oblique_run_tests {
         b.key.run = Some("2".into());
         run_pipeline_cached(&b, &resampling_config(), &output, false, &|_| {}).unwrap();
         assert_eq!(voxels(&output.mask_path(&b.key)), ACQUIRED);
-        assert_eq!(voxels(&output.mask_path(&a.key)), a_working, "run a's mask was resampled by run b");
+        assert_eq!(voxels(&a_mask), a_working, "run a's mask was resampled by run b");
     }
 
     /// Every published image carries a sidecar whose `GeneratedBy` names an activity that is in
@@ -6011,26 +6089,60 @@ mod oblique_run_tests {
         let output = DerivativeOutputs::new(&dir.path().join("out"));
         let mut config = resampling_config();
         config.pipeline.do_smwi = true;
-        config.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
         run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
-
-        // A parcellation on the working grid, where the pipeline would have written one.
-        let work = io::read_nifti_file(&output.mask_path(&run.key)).unwrap();
-        let ids = [0.0, 10.0, 11.0, 49.0, 50.0];
-        let dseg: Vec<f64> = (0..work.data.len()).map(|v| ids[(v / 7) % ids.len()]).collect();
-        save_nifti_like(&output.dseg_path(&run.key), &dseg, &work);
-
-        config.pipeline.output_space = crate::pipeline::config::OutputSpace::Acquired;
-        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
-        let back = io::read_nifti_file(&output.dseg_path(&run.key)).unwrap();
-        assert_eq!(back.data.len(), ACQUIRED);
-        assert!(back.data.iter().all(|v| ids.contains(v)), "a label was interpolated");
-
         for contrast in ["paramagnetic", "diamagnetic"] {
             let mip = io::read_nifti_file(&output.smwi_mip_path(&run.key, contrast)).unwrap();
             assert_eq!((mip.dims.0, mip.dims.1), (DIMS.0, DIMS.1),
                        "the {contrast} minIP is still on the working grid");
         }
+
+        // A parcellation on the working grid, where the pipeline would have written one, and the
+        // return to the acquired grid made to run again.
+        let work = io::read_nifti_file(&output.working_grid_dir(&run.key)
+            .join(output.mask_path(&run.key).file_name().unwrap())).unwrap();
+        let ids = [0.0, 10.0, 11.0, 49.0, 50.0];
+        let dseg: Vec<f64> = (0..work.data.len()).map(|v| ids[(v / 7) % ids.len()]).collect();
+        save_nifti_like(&output.dseg_path(&run.key), &dseg, &work);
+        let state_path = output.state_path(&run.key);
+        let mut state: PipelineState = serde_json::from_str(&std::fs::read_to_string(&state_path).unwrap()).unwrap();
+        state.completed_steps.remove("output_space");
+        state.save(&state_path).unwrap();
+
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        let back = io::read_nifti_file(&output.dseg_path(&run.key)).unwrap();
+        assert_eq!(back.data.len(), ACQUIRED);
+        assert!(back.data.iter().all(|v| ids.contains(v)), "a label was interpolated");
+    }
+
+    /// `--output-space working` on a resampled run names its outputs `space-axial` with a
+    /// `SpatialReference`; switching back to the acquired grid leaves no `space-axial` file behind
+    /// (#275).
+    #[test]
+    fn working_grid_outputs_are_named_in_their_space() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 2);
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let mut config = resampling_config();
+        config.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        let axial = output.in_space(Some("axial"));
+        assert!(axial.qsm_path(&run.key).exists());
+        assert!(!output.qsm_path(&run.key).exists(), "an unlabelled map on the working grid");
+        assert_eq!(output.published(&run.key).qsm_path(&run.key), axial.qsm_path(&run.key));
+        let sidecar: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+            crate::bids::entities::sidecar_path(&axial.qsm_path(&run.key)).unwrap()).unwrap()).unwrap();
+        let reference = sidecar["SpatialReference"].as_str().unwrap();
+        assert!(output.output_dir.join(reference).exists(), "{reference}");
+        assert!(reference.ends_with("_part-mag_space-axial_T2starw.nii"), "{reference}");
+
+        config.pipeline.output_space = crate::pipeline::config::OutputSpace::Acquired;
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
+        let left: Vec<String> = std::fs::read_dir(output.anat_dir(&run.key)).unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .filter(|n| n.contains("space-axial"))
+            .collect();
+        assert!(left.is_empty(), "{left:?}");
     }
 
     fn save_nifti_like(path: &Path, data: &[f64], like: &qsm_core::io::NiftiData) {

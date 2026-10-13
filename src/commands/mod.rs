@@ -539,9 +539,9 @@ mod integration_tests {
         }))
         .unwrap();
 
-        let para = dir.path().join("sep_paramagnetic.nii");
-        let dia = dir.path().join("sep_diamagnetic.nii");
-        let total = dir.path().join("sep_total.nii");
+        let para = dir.path().join("sep_desc-paramagnetic_Chimap.nii");
+        let dia = dir.path().join("sep_desc-diamagnetic_Chimap.nii");
+        let total = dir.path().join("sep_desc-total_Chimap.nii");
         for p in [&para, &dia, &total] {
             assert!(p.exists(), "{} was not written", p.display());
         }
@@ -592,8 +592,8 @@ mod integration_tests {
             tol: None,
         }))
         .unwrap();
-        assert!(dir.path().join("wv_paramagnetic.nii").exists());
-        assert!(dir.path().join("wv_diamagnetic.nii").exists());
+        assert!(dir.path().join("wv_desc-paramagnetic_Chimap.nii").exists());
+        assert!(dir.path().join("wv_desc-diamagnetic_Chimap.nii").exists());
     }
 
     /// DECOMPOSE fits the multi-echo magnitude signal directly, so it exercises the multi-echo
@@ -618,8 +618,8 @@ mod integration_tests {
             max_lm_iter: Some(1),
         }))
         .unwrap();
-        assert!(dir.path().join("dc_paramagnetic.nii").exists());
-        assert!(dir.path().join("dc_total.nii").exists());
+        assert!(dir.path().join("dc_desc-paramagnetic_Chimap.nii").exists());
+        assert!(dir.path().join("dc_desc-total_Chimap.nii").exists());
     }
 
     /// χ-sep iLSQR takes the local field and R2' together — the four-input path.
@@ -650,8 +650,8 @@ mod integration_tests {
             r2p_max: None,
         }))
         .unwrap();
-        assert!(dir.path().join("il_paramagnetic.nii").exists());
-        assert!(dir.path().join("il_diamagnetic.nii").exists());
+        assert!(dir.path().join("il_desc-paramagnetic_Chimap.nii").exists());
+        assert!(dir.path().join("il_desc-diamagnetic_Chimap.nii").exists());
     }
 
     /// `qsmxt segment` rejects a version it does not know rather than silently choosing one — the
@@ -2353,6 +2353,145 @@ mod integration_tests {
         ).unwrap_err().to_string();
         assert!(err.contains("MCPC-3D-S"), "{err}");
     }
+
+    /// #275: derivatives carrying every name QSMxT publishes, for the BIDS validator. Not a test
+    /// on its own (`--ignored`): CI's `bids-validator` job runs it with `QSMXT_BIDS_FIXTURE_OUT`
+    /// set and validates each `<case>/derivatives/qsmxt` it leaves there, with only the
+    /// documented `.bidsignore` entries.
+    #[test]
+    #[ignore]
+    fn bids_validator_fixture() {
+        let root = PathBuf::from(std::env::var("QSMXT_BIDS_FIXTURE_OUT")
+            .expect("set QSMXT_BIDS_FIXTURE_OUT to the directory to write the derivatives to"));
+        let scratch = tempfile::tempdir().unwrap();
+        let run = |case: &str, bids: &Path, set: &dyn Fn(&mut RunArgs)| {
+            let mut args = default_run_args(bids.to_path_buf(), root.join(case));
+            args.dry = false;
+            args.no_mem_limit = true;
+            args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
+            args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+            set(&mut args);
+            super::run::execute(args).unwrap();
+        };
+
+        // Every output a multi-echo run can make: two-pass χ, the total field, SWI/SMWI, T2*/R2*,
+        // R2/R2' from a MESE, chi-separation, motion correction, a (supplied) segmentation and its
+        // statistics, and DICOM export — plus a GRE twin differing only by suffix.
+        let bids = scratch.path().join("full");
+        testutils::create_multi_echo_bids(&bids);
+        let anat = bids.join("sub-1/anat");
+        for (e, te) in [0.004f64, 0.008, 0.012].into_iter().enumerate() {
+            for part in ["phase", "mag"] {
+                let stem = format!("sub-1_echo-{}_part-{part}_GRE", e + 1);
+                if part == "phase" { testutils::write_phase(&anat.join(format!("{stem}.nii"))); }
+                else { testutils::write_magnitude_decayed(&anat.join(format!("{stem}.nii")), (-30.0 * te).exp()); }
+                testutils::write_sidecar(&anat.join(format!("{stem}.json")), te, 3.0);
+            }
+        }
+        for echo in 1..=4 {
+            let te = 0.012 * echo as f64;
+            let data = vec![1000.0 * (-15.0 * te).exp(); 512];
+            qsm_core::io::save_nifti_to_file(&anat.join(format!("sub-1_echo-{echo}_MESE.nii")),
+                &data, (8, 8, 8), (1.0, 1.0, 1.0), &crate::testutils::multiorient::MO_AFFINE).unwrap();
+            testutils::write_sidecar(&anat.join(format!("sub-1_echo-{echo}_MESE.json")), te, 3.0);
+        }
+        testutils::write_dseg(&bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii"));
+        run("full", &bids, &|a| {
+            let p = &mut a.pipeline;
+            p.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
+            p.two_pass = true;
+            p.do_swi = true;
+            p.do_smwi = true;
+            p.do_t2starmap = true;
+            p.do_r2starmap = true;
+            p.do_r2map = true;
+            p.do_r2primemap = true;
+            p.r2prime_strategy = Some(R2PrimeStrategyArg::Mese);
+            p.do_chi_separation = true;
+            p.chi_separation_algorithm = Some(SeparationAlgorithmArg::R2starQsm);
+            p.do_analysis = true;
+            p.segmentation_params.use_custom_dseg = Some("mydseg".to_string());
+            p.motion_params.motion_correction = true;
+            p.export_dicom = true;
+        });
+
+        // Per-coil data: the MCPC-3D-S combined echoes.
+        let bids = scratch.path().join("coils");
+        testutils::create_multi_coil_bids(&bids, 2);
+        run("coils", &bids, &|_| {});
+
+        // COSMOS over three orientations.
+        let bids = scratch.path().join("cosmos");
+        testutils::create_multi_orientation_bids(&bids);
+        run("cosmos", &bids, &|a| {
+            a.include = Some(vec!["*acq-dir*".to_string()]);
+            a.pipeline.orientation_group = Some("acq".to_string());
+        });
+
+        // STI over six: the 4D tensor and eigenvector.
+        let bids = scratch.path().join("sti");
+        let anat = bids.join("sub-1/anat");
+        std::fs::create_dir_all(&anat).unwrap();
+        for (i, b0) in [(0.0, 0.0, 1.0), (0.0, 0.5, 0.866_025_4), (0.5, 0.0, 0.866_025_4),
+                        (0.4, 0.4, 0.824_620_9), (-0.4, 0.3, 0.866_025_4), (0.3, -0.45, 0.84)]
+            .into_iter().enumerate()
+        {
+            let stem = format!("sub-1_acq-dir{}_echo-1", i + 1);
+            testutils::write_phase(&anat.join(format!("{stem}_part-phase_MEGRE.nii")));
+            testutils::write_magnitude(&anat.join(format!("{stem}_part-mag_MEGRE.nii")));
+            for part in ["phase", "mag"] {
+                testutils::write_sidecar_with_b0(
+                    &anat.join(format!("{stem}_part-{part}_MEGRE.json")), 0.012, 3.0, Some(b0));
+            }
+        }
+        run("sti", &bids, &|a| {
+            a.pipeline.orientation_group = Some("acq".to_string());
+            a.pipeline.multi_orientation_algorithm = Some(MultiOrientAlgorithmArg::Sti);
+            a.pipeline.multi_orientation_force = true;
+        });
+
+        // An oblique run left on its axial working grid: `space-axial` and `SpatialReference`.
+        let bids = scratch.path().join("oblique");
+        let anat = bids.join("sub-1/anat");
+        std::fs::create_dir_all(&anat).unwrap();
+        let (c, s) = (30f64.to_radians().cos(), 30f64.to_radians().sin());
+        let affine = [1.0, 0.0, 0.0, -10.0, 0.0, c, -s, -11.0, 0.0, s, c, -9.0, 0.0, 0.0, 0.0, 1.0];
+        let dims = (20, 22, 18);
+        for (e, te) in [0.004f64, 0.008].into_iter().enumerate() {
+            let n = dims.0 * dims.1 * dims.2;
+            let (mut mag, mut phase) = (vec![1.0; n], vec![0.0; n]);
+            for v in 0..n {
+                let (i, j, k) = (v % dims.0, (v / dims.0) % dims.1, v / (dims.0 * dims.1));
+                let (x, y, z) = (i as f64 - 10.0, j as f64 - 11.0, k as f64 - 9.0);
+                if (x * x + y * y + z * z).sqrt() < 7.0 { mag[v] = 100.0 * (-30.0 * te).exp() + x; }
+                phase[v] = (0.05 * (e + 1) as f64 * (x + 0.5 * y)).sin() * 3.0;
+            }
+            for (part, data) in [("phase", &phase), ("mag", &mag)] {
+                let stem = format!("sub-1_echo-{}_part-{part}_MEGRE", e + 1);
+                qsm_core::io::save_nifti_to_file(&anat.join(format!("{stem}.nii")), data, dims,
+                    (1.0, 1.0, 1.0), &affine).unwrap();
+                testutils::write_sidecar(&anat.join(format!("{stem}.json")), te, 3.0);
+            }
+        }
+        run("oblique", &bids, &|a| {
+            a.pipeline.obliquity_threshold = Some(5.0);
+            a.pipeline.output_space = Some(OutputSpaceArg::Working);
+            a.pipeline.do_swi = true;
+        });
+
+        for case in ["full", "coils", "cosmos", "sti", "oblique"] {
+            assert!(root.join(case).join("derivatives/qsmxt/dataset_description.json").exists(), "{case}");
+        }
+        let full = root.join("full/derivatives/qsmxt/sub-1/anat");
+        for name in ["sub-1_acq-GRE_Chimap.nii", "sub-1_acq-MEGRE_desc-paramagneticsmwi_minIP.nii"] {
+            assert!(full.join(name).exists(), "{name}");
+        }
+        for name in ["sub-1_acq-MEGRE_desc-total_fieldmap.nii", "sub-1_acq-MEGRE_desc-total_magnitude.nii"] {
+            assert!(full.with_file_name("fmap").join(name).exists(), "{name}");
+        }
+        assert!(root.join("sti/derivatives/qsmxt/sub-1/anat/sub-1_desc-sti_Chimap.nii").exists());
+        assert!(root.join("oblique/derivatives/qsmxt/sub-1/anat/sub-1_space-axial_Chimap.nii").exists());
+    }
 }
 /// End-to-end tests for the multi-orientation reconstructions.
 ///
@@ -2619,17 +2758,116 @@ mod multiorient_tests {
         }))
         .unwrap();
 
-        for name in ["tensor-11", "tensor-12", "tensor-13", "tensor-22", "tensor-23",
-                     "tensor-33", "mms", "msa", "pev-x", "pev-y", "pev-z"] {
+        for name in ["desc-sti_Chimap", "desc-mms_Chimap", "desc-msa_Chimap", "desc-sti_evec"] {
             let p = dir.path().join(format!("sti_{name}.nii"));
             assert!(p.exists(), "missing {}", p.display());
         }
+        // One 4D tensor (6 components, their order in the sidecar) and one 4D eigenvector.
+        let bytes = std::fs::read(dir.path().join("sti_desc-sti_Chimap.nii")).unwrap();
+        assert_eq!(qsm_core::io::load_nifti_4d(&bytes).unwrap().1 .3, 6);
+        let sidecar: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("sti_desc-sti_Chimap.json")).unwrap()).unwrap();
+        assert_eq!(sidecar["TensorComponents"], serde_json::json!(["X11", "X12", "X13", "X22", "X23", "X33"]));
+        let bytes = std::fs::read(dir.path().join("sti_desc-sti_evec.nii")).unwrap();
+        assert_eq!(qsm_core::io::load_nifti_4d(&bytes).unwrap().1 .3, 3);
 
         // The phantom is isotropic, so STI's mean magnetic susceptibility should reproduce
         // the scalar map it was built from — the sense in which STI contains scalar QSM.
-        let mms = qsm_core::io::read_nifti_file(&dir.path().join("sti_mms.nii")).unwrap();
+        let mms = qsm_core::io::read_nifti_file(&dir.path().join("sti_desc-mms_Chimap.nii")).unwrap();
         let err = mo::nrmse(&mms.data, &chi, &mo::mask());
         assert!(err < 0.35, "STI MMS NRMSE {err:.3} should track the isotropic phantom");
+    }
+
+    /// #275: each standalone command, given a run's BIDS basename as its prefix, writes exactly
+    /// the files the pipeline would publish for that run — the same entities and suffixes.
+    #[test]
+    fn standalone_commands_name_their_outputs_as_the_pipeline_does() {
+        use crate::bids::derivatives::DerivativeOutputs;
+        use crate::bids::entities::AcquisitionKey;
+        let dir = tempfile::tempdir().unwrap();
+        let d = dir.path();
+        let key = AcquisitionKey {
+            subject: "01".into(), session: Some("pre".into()), acquisition: None,
+            reconstruction: None, inversion: None, run: Some("2".into()), suffix: "MEGRE".into(),
+        };
+        let pipeline = DerivativeOutputs::new(d);
+        let name = |p: PathBuf| p.file_name().unwrap().to_string_lossy().into_owned();
+        let prefix = d.join(key.basename());
+        let exists = |n: String| assert!(d.join(&n).exists(), "standalone did not write {n}");
+
+        // invert sti
+        let chi = mo::chi_phantom();
+        let fields = write_fields(d, &chi, &SIX_DIRS);
+        let mask_path = d.join("mask.nii");
+        mo::write_mask(&mask_path);
+        super::invert::execute(InvertCommand::Sti(InvertStiArgs {
+            common: common(fields, mask_path.clone(), flat_dirs(&SIX_DIRS)),
+            output: prefix.clone(),
+            lambda: Some(1e-3),
+        })).unwrap();
+        for p in [pipeline.sti_tensor_path(&key), pipeline.sti_mms_path(&key),
+                  pipeline.sti_msa_path(&key), pipeline.sti_eigenvector_path(&key)] {
+            exists(name(p));
+        }
+        exists(name(pipeline.multiorient_sidecar_path(&key, "sti")));
+
+        // separate
+        let qsm = d.join("qsm.nii");
+        let r2star = d.join("r2star.nii");
+        mo::write(&qsm, &chi);
+        mo::write(&r2star, &vec![20.0; chi.len()]);
+        super::separate::execute(SeparateCommand::R2starQsm(SeparateR2starQsmArgs {
+            common: SeparateCommonArgs {
+                qsm, mask: mask_path.clone(), output: prefix.clone(), field_strength: 3.0,
+                b0_direction: vec![0.0, 0.0, 1.0],
+            },
+            r2star: Some(r2star), magnitude: vec![], echo_times: vec![], r_const_3t: None,
+        })).unwrap();
+        for p in [pipeline.chi_para_path(&key), pipeline.chi_dia_path(&key), pipeline.chi_sep_total_path(&key)] {
+            exists(name(p));
+        }
+
+        // swi --mip, with the projection left to its default name
+        let swi = pipeline.swi_path(&key);
+        let (phase, mag) = (d.join("phase.nii"), d.join("mag.nii"));
+        crate::testutils::write_phase(&phase);
+        crate::testutils::write_magnitude(&mag);
+        let small_mask = d.join("small_mask.nii");
+        crate::testutils::write_mask(&small_mask);
+        super::swi::execute(SwiArgs {
+            phase: phase.clone(), magnitude: mag.clone(), mask: small_mask.clone(),
+            output: d.join(name(swi.clone())),
+            mip: true, mip_output: None, swi_params: Default::default(),
+        }).unwrap();
+        exists(name(swi));
+        exists(name(pipeline.swi_mip_path(&key)));
+
+        // combine mcpc3ds, on a per-coil run (`rec-uncombined`) like the pipeline's
+        let unc = AcquisitionKey { reconstruction: Some("uncombined".into()), ..key.clone() };
+        let coil_dir = d.join("coils");
+        std::fs::create_dir_all(&coil_dir).unwrap();
+        let (mut phases, mut mags) = (vec![], vec![]);
+        for c in 1..=2 {
+            for e in 1..=2 {
+                let stem = format!("{}_coil-0{c}_echo-{e}", unc.basename());
+                let p = coil_dir.join(format!("{stem}_part-phase_MEGRE.nii"));
+                let m = coil_dir.join(format!("{stem}_part-mag_MEGRE.nii"));
+                crate::testutils::write_phase(&p);
+                crate::testutils::write_magnitude(&m);
+                phases.push(p);
+                mags.push(m);
+            }
+        }
+        super::combine::execute(CombineCommand::Mcpc3ds(CombineMcpc3dsArgs {
+            phase: phases, magnitude: mags, output: d.join(unc.basename()),
+            tes: Some(vec![0.005, 0.010]), num_echoes: None, sigma: None,
+            hip_unwrapping: UnwrapAlgorithmArg::Laplacian,
+        })).unwrap();
+        for e in 1..=2 {
+            exists(name(pipeline.combined_phase_path(&unc, e)));
+            exists(name(pipeline.combined_mag_path(&unc, e)));
+        }
+        exists(name(pipeline.combine_mask_path(&unc)));
     }
 
     #[test]

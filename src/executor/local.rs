@@ -57,6 +57,7 @@ pub fn execute_local(
                 Ok(()) => {
                     info!("{}: Done ({:.1}s)", run.key, elapsed.as_secs_f64());
                     // Log final output paths
+                    let output = &output.published(&run.key);
                     let final_paths: Vec<_> = [
                         output.qsm_path(&run.key),
                         output.mask_path(&run.key),
