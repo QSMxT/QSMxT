@@ -53,6 +53,12 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
 
 ### Added
 
+- **The R2′ sidecar records where the map came from** (#236): `R2primeSource` = `measured`
+  (R2* − R2, with `R2primeMethod` naming where R2 came from), `predicted` (R2PRIMEnet, with
+  `R2primenetTrainedFieldStrength` and `R2primenetCalibrated`, false off 3 T) or `supplied`
+  (`--use-custom-r2prime`). A predicted R2′ looks like a measured one; only this tells them
+  apart. Default image output does not change.
+
 - **Motion-robust echo combination** (QSM.rs#141/#166), off by default: `--b0-estimation
   robust-fit`, with `--robust-fit-loss`, `--robust-fit-tuning`, `--robust-fit-iterations`,
   `--robust-fit-downweight-level`, `--robust-fit-flag-ratio` and the shared

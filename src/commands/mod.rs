@@ -1305,6 +1305,13 @@ mod integration_tests {
         // On the GRE's grid, not the MESE's: everything downstream indexes it that way.
         let r2 = qsm_core::io::read_nifti_file(&deriv.join("sub-1/anat/sub-1_R2map.nii")).unwrap();
         assert_eq!(r2.dims, (8, 8, 8), "R2 belongs on the reconstruction grid");
+
+        // The R2' sidecar says it was measured, not predicted (#236), next to its provenance.
+        let side: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+            deriv.join("sub-1/anat/sub-1_R2primemap.json")).unwrap()).unwrap();
+        assert_eq!(side["R2primeSource"], "measured", "{side}");
+        assert!(side["R2primeMethod"].as_str().unwrap().contains("EPG"), "{side}");
+        assert!(side["GeneratedBy"].is_string(), "BIDS-Prov kept the source fields: {side}");
     }
 
     #[test]
