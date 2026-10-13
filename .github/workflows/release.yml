@@ -197,6 +197,39 @@ jobs:
             qsmxt-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
             qsmxt-${{ github.ref_name }}-${{ matrix.target }}.zip
 
+  # Publish SHA256SUMS covering every archive attached to the release. `qsmxt update`,
+  # install.sh and install.ps1 refuse to install an archive that has no entry here or
+  # whose digest doesn't match. Runs after every build job has finished, including when
+  # some target failed (fail-fast is off), so the archives that were published are
+  # covered. If a single build job is re-run later, re-run this job too so the manifest
+  # matches the replaced archive.
+  checksums:
+    name: Publish SHA256SUMS
+    needs: build
+    if: ${{ !cancelled() && needs.build.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download release archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir dist
+          gh release download "$GITHUB_REF_NAME" -R "$GITHUB_REPOSITORY" -D dist \
+            -p "qsmxt-${GITHUB_REF_NAME}-*.tar.gz" -p "qsmxt-${GITHUB_REF_NAME}-*.zip"
+
+      - name: Compute and verify SHA256SUMS
+        run: |
+          sh .github/scripts/sha256sums.sh dist > SHA256SUMS
+          cat SHA256SUMS
+          (cd dist && sha256sum -c ../SHA256SUMS)
+
+      - name: Upload SHA256SUMS
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "$GITHUB_REF_NAME" SHA256SUMS -R "$GITHUB_REPOSITORY" --clobber
+
   # Tell qsmbly (astewartau/qsmbly) a new qsmxt-config tag exists so it can
   # open a PR bumping its pin. Requires a QSMBLY_DISPATCH_TOKEN secret: a
   # fine-grained PAT scoped to astewartau/qsmbly with Contents: write

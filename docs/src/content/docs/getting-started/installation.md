@@ -22,7 +22,12 @@ irm https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.ps1 | iex
 
 The installer places the `qsmxt` binary on your `PATH` and installs a pinned copy
 of [`dcm2niix`](https://github.com/rordenlab/dcm2niix) (used for DICOM → BIDS
-conversion) into `~/.qsmxt/bin`.
+conversion) into `~/.qsmxt/bin`. Before extracting anything it checks the
+archive against the release's `SHA256SUMS` file and stops if the file is
+missing, has no entry for the archive, or gives a different checksum.
+
+To install a specific release rather than the latest, set `QSMXT_VERSION`
+(for example `QSMXT_VERSION=v9.23.0`) before running the installer.
 
 :::note
 Prebuilt `dcm2niix` is bundled for **x86_64 Linux, macOS, and x86_64 Windows**.
@@ -46,7 +51,14 @@ qsmxt update
 ```
 
 This checks the [latest release](https://github.com/QSMxT/QSMxT/releases),
-installs it if newer, and keeps the bundled `dcm2niix` in sync.
+installs it if newer, and keeps the bundled `dcm2niix` in sync. The download is
+checked against the release's `SHA256SUMS` before anything is extracted; a
+missing or mismatching checksum aborts the update and leaves the installed
+binary untouched.
+
+A build from source reports version `0.0.0` and has no release to compare
+against, so `qsmxt update` refuses to replace it. Use `qsmxt update --force` to
+install the latest release over it anyway.
 
 `qsmxt tui` also checks for new releases in the background and offers the update
 in a pop-up when one is available. The check runs on its own thread and its
@@ -61,7 +73,10 @@ also skipped automatically when `CI` is set and in local development builds.
 
 Grab the archive for your platform from the
 [Releases](https://github.com/QSMxT/QSMxT/releases) page and extract `qsmxt`
-somewhere on your `PATH`. Builds are provided for:
+somewhere on your `PATH`. Each release also carries a `SHA256SUMS` file; check
+your download with `sha256sum -c SHA256SUMS --ignore-missing` (Linux),
+`shasum -a 256 -c SHA256SUMS --ignore-missing` (macOS) or
+`Get-FileHash -Algorithm SHA256` (Windows). Builds are provided for:
 
 - `x86_64` / `aarch64` Linux (gnu + musl)
 - `x86_64` / `aarch64` macOS

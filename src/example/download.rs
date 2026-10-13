@@ -59,7 +59,7 @@ pub fn cache_path(example: &Example) -> PathBuf {
 }
 
 /// Lowercase hex SHA-256 of a file, read incrementally.
-fn sha256_file(path: &Path) -> std::io::Result<String> {
+pub(crate) fn sha256_file(path: &Path) -> std::io::Result<String> {
     let mut f = fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buf = vec![0u8; CHUNK];

@@ -127,6 +127,11 @@ pub struct UpdateArgs {
     /// Update without prompting for confirmation
     #[arg(short, long)]
     pub yes: bool,
+
+    /// Replace a development build (version 0.0.0) with the latest release. Without
+    /// it, `qsmxt update` refuses on a dev build, since every release would look newer
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Parser, Debug)]

@@ -214,6 +214,117 @@ fn detect_target() -> crate::Result<&'static str> {
     )))
 }
 
+/// Name of the checksum manifest the release workflow attaches to every release.
+/// One `<sha256>  <asset>` line per archive, in `sha256sum` format.
+pub const CHECKSUMS_ASSET: &str = "SHA256SUMS";
+
+/// Where a release's assets are downloaded from.
+fn release_download_base(tag: &str) -> String {
+    format!("https://github.com/{}/releases/download/{}", REPO, tag)
+}
+
+/// The archive name the release workflow publishes for `tag` on `target`.
+fn archive_name(tag: &str, target: &str, ext: &str) -> String {
+    format!("qsmxt-{}-{}.{}", tag, target, ext)
+}
+
+/// Looks up `asset` in a `SHA256SUMS` manifest and returns its lowercase hex digest.
+///
+/// Accepts the `sha256sum` text (`<hex>  <name>`) and binary (`<hex> *<name>`) forms and
+/// ignores blank lines. A malformed line is an error rather than something to skip: a
+/// manifest we cannot read is not one we can trust. So is an asset listed twice with
+/// different digests.
+pub fn expected_sha256(manifest: &str, asset: &str) -> crate::Result<String> {
+    let mut found: Option<String> = None;
+    for (i, line) in manifest.lines().enumerate() {
+        let line = line.trim_end_matches('\r');
+        if line.trim().is_empty() {
+            continue;
+        }
+        let malformed = || {
+            QsmxtError::Update(format!(
+                "{} line {} is malformed (expected '<sha256>  <file>'): {:?}",
+                CHECKSUMS_ASSET,
+                i + 1,
+                line
+            ))
+        };
+        let (hex, rest) = line.split_once(' ').ok_or_else(malformed)?;
+        let name = rest.strip_prefix(' ').or_else(|| rest.strip_prefix('*')).ok_or_else(malformed)?;
+        if hex.len() != 64 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) || name.is_empty() {
+            return Err(malformed());
+        }
+        if name == asset {
+            let hex = hex.to_ascii_lowercase();
+            if let Some(prev) = &found {
+                if *prev != hex {
+                    return Err(QsmxtError::Update(format!(
+                        "{} lists {} twice with different checksums; refusing to install",
+                        CHECKSUMS_ASSET, asset
+                    )));
+                }
+            }
+            found = Some(hex);
+        }
+    }
+    found.ok_or_else(|| {
+        QsmxtError::Update(format!(
+            "{} for this release has no entry for {}; refusing to install an unverified binary",
+            CHECKSUMS_ASSET, asset
+        ))
+    })
+}
+
+/// Fetches the release's `SHA256SUMS` manifest as text.
+fn fetch_checksums(url: &str) -> crate::Result<String> {
+    let response = ureq::get(url).set("User-Agent", USER_AGENT).call().map_err(|e| {
+        QsmxtError::Update(format!(
+            "Could not download {} ({}): {}. Refusing to install an unverified binary",
+            CHECKSUMS_ASSET, url, e
+        ))
+    })?;
+    // The manifest is a few hundred bytes; cap the read so a hostile server can't make
+    // us buffer an unbounded body.
+    let mut text = String::new();
+    response
+        .into_reader()
+        .take(1024 * 1024)
+        .read_to_string(&mut text)
+        .map_err(|e| QsmxtError::Update(format!("Failed to read {}: {}", CHECKSUMS_ASSET, e)))?;
+    Ok(text)
+}
+
+/// Downloads `asset` from `base` into `dest` and verifies it against the release's
+/// `SHA256SUMS` before returning.
+///
+/// The manifest is fetched first, so a release without one (or without an entry for this
+/// archive) is refused before the archive is downloaded at all. On a checksum mismatch the
+/// archive is deleted and an error returned; nothing has been extracted at that point.
+fn download_verified(
+    base: &str,
+    asset: &str,
+    dest: &std::path::Path,
+    on_progress: &mut dyn FnMut(u64, u64),
+) -> crate::Result<()> {
+    let manifest = fetch_checksums(&format!("{}/{}", base, CHECKSUMS_ASSET))?;
+    let expected = expected_sha256(&manifest, asset)?;
+
+    download_to(&format!("{}/{}", base, asset), dest, on_progress)?;
+
+    let actual = crate::example::download::sha256_file(dest).map_err(|e| {
+        QsmxtError::Update(format!("Failed to checksum {}: {}", dest.display(), e))
+    })?;
+    if actual != expected {
+        let _ = std::fs::remove_file(dest);
+        return Err(QsmxtError::Update(format!(
+            "Checksum mismatch for {}: {} says {}, the download is {}. \
+             The archive was discarded and nothing was installed",
+            asset, CHECKSUMS_ASSET, expected, actual
+        )));
+    }
+    Ok(())
+}
+
 /// Downloads and installs the release for the given tag.
 fn install_release(tag: &str) -> crate::Result<()> {
     let target = detect_target()?;
@@ -224,10 +335,7 @@ fn install_release(tag: &str) -> crate::Result<()> {
     #[cfg(not(target_os = "windows"))]
     let archive_ext = "tar.gz";
 
-    let url = format!(
-        "https://github.com/{}/releases/download/{}/qsmxt-{}-{}.{}",
-        REPO, tag, tag, target, archive_ext
-    );
+    let asset = archive_name(tag, target, archive_ext);
 
     // Create temp dir
     let tmp = tempfile::tempdir().map_err(|e| {
@@ -249,15 +357,17 @@ fn install_release(tag: &str) -> crate::Result<()> {
     bar.set_message(format!("qsmxt {}", tag));
 
     println!("Downloading qsmxt {}...", tag);
-    download_to(&url, &archive_path, &mut |done, total| {
+    let downloaded = download_verified(&release_download_base(tag), &asset, &archive_path, &mut |done, total| {
         // A server that sends no Content-Length leaves the length at 0, which
         // indicatif renders as a spinner-style bar rather than a misleading 100%.
         if total > 0 && bar.length() != Some(total) {
             bar.set_length(total);
         }
         bar.set_position(done);
-    })?;
+    });
     bar.finish_and_clear();
+    downloaded?;
+    println!("Verified {} against the release's {}.", asset, CHECKSUMS_ASSET);
 
     // Extract
     #[cfg(not(target_os = "windows"))]
@@ -474,16 +584,41 @@ fn install_bundled_dcm2niix(extract_dir: &std::path::Path) {
 }
 
 pub fn execute(args: UpdateArgs) -> crate::Result<()> {
-    let current_version = env!("CARGO_PKG_VERSION");
+    execute_with(args, current_version(), fetch_latest_release, install_release)
+}
+
+/// [`execute`] with the version, the release lookup and the installer injected, so the
+/// decision logic can be tested without the network.
+fn execute_with(
+    args: UpdateArgs,
+    current_version: &str,
+    fetch: impl FnOnce() -> crate::Result<Release>,
+    install: impl FnOnce(&str) -> crate::Result<()>,
+) -> crate::Result<()> {
+    let dev = strip_v(current_version) == DEV_VERSION;
 
     println!("Current version: {}", current_version);
+
+    // A dev build carries the 0.0.0 placeholder, so every release looks newer. Replacing
+    // a locally built binary with a release is rarely what was meant; refuse before
+    // touching the network unless the user asked for it.
+    if dev && !args.force {
+        return Err(QsmxtError::Update(format!(
+            "This is a development build (version {}), not a release, so there is nothing \
+             to compare against. Refusing to replace it; run `qsmxt update --force` to \
+             install the latest release over it.",
+            DEV_VERSION
+        )));
+    }
+
     println!("Checking for updates...");
 
-    let Release { tag: latest_tag, notes, html_url } = fetch_latest_release()?;
+    let Release { tag: latest_tag, notes, html_url } = fetch()?;
 
-    // Compare numerically, not textually: a dev build or a version newer than the
-    // latest release must not be offered a "downgrade" dressed up as an update.
-    if !is_newer(&latest_tag, current_version) {
+    // Compare numerically, not textually: a version newer than the latest release must
+    // not be offered a "downgrade" dressed up as an update. A forced dev build skips the
+    // comparison: the user asked for the latest release whatever it is.
+    if !dev && !is_newer(&latest_tag, current_version) {
         println!("You are already running the latest version ({}).", current_version);
         return Ok(());
     }
@@ -512,7 +647,7 @@ pub fn execute(args: UpdateArgs) -> crate::Result<()> {
     };
 
     if should_update {
-        install_release(&latest_tag)?;
+        install(&latest_tag)?;
     } else {
         println!("Update cancelled.");
     }
@@ -923,6 +1058,53 @@ mod tests {
         }
     }
 
+    impl Server {
+        /// Serves `bodies` in order, one per request (the last repeats). Lets one base
+        /// URL answer the manifest request and then the archive request.
+        fn serve_seq(bodies: Vec<Vec<u8>>) -> Self {
+            use std::io::{BufRead, BufReader};
+            use std::net::TcpListener;
+            use std::sync::atomic::Ordering;
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            listener.set_nonblocking(true).unwrap();
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let shutdown = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let stop = std::sync::Arc::clone(&shutdown);
+            let handle = std::thread::spawn(move || {
+                let mut next = 0usize;
+                while !stop.load(Ordering::Relaxed) {
+                    match listener.accept() {
+                        Ok((mut sock, _)) => {
+                            sock.set_nonblocking(false).ok();
+                            let mut reader = BufReader::new(sock.try_clone().unwrap());
+                            let mut line = String::new();
+                            while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                                if line == "\r\n" || line == "\n" {
+                                    break;
+                                }
+                                line.clear();
+                            }
+                            let body = &bodies[next.min(bodies.len() - 1)];
+                            next += 1;
+                            let head = format!(
+                                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                                body.len()
+                            );
+                            let _ = sock.write_all(head.as_bytes());
+                            let _ = sock.write_all(body);
+                            let _ = sock.flush();
+                        }
+                        Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
+                        Err(_) => break,
+                    }
+                }
+            });
+            Self { base, shutdown, handle: Some(handle) }
+        }
+    }
+
     impl Drop for Server {
         fn drop(&mut self) {
             self.shutdown.store(true, std::sync::atomic::Ordering::Relaxed);
@@ -977,5 +1159,150 @@ mod tests {
         let err = download_to("http://127.0.0.1:1/nope", &dest, &mut |_, _| {}).unwrap_err();
         assert!(err.to_string().contains("Failed to download"), "{err}");
         assert!(!dest.exists(), "a failed download must not leave a file behind");
+    }
+
+    fn sha256_hex(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    const ASSET: &str = "qsmxt-v9.23.0-x86_64-unknown-linux-musl.tar.gz";
+
+    #[test]
+    fn checksum_manifest_lookup_accepts_text_and_binary_forms() {
+        let a = "a".repeat(64);
+        let b = "B".repeat(64);
+        let manifest = format!(
+            "{a}  qsmxt-v9.23.0-aarch64-apple-darwin.tar.gz\r\n\n{b} *{ASSET}\n"
+        );
+        assert_eq!(expected_sha256(&manifest, ASSET).unwrap(), "b".repeat(64));
+        assert_eq!(
+            expected_sha256(&manifest, "qsmxt-v9.23.0-aarch64-apple-darwin.tar.gz").unwrap(),
+            a
+        );
+    }
+
+    #[test]
+    fn checksum_manifest_without_the_asset_is_refused() {
+        let manifest = format!("{}  qsmxt-v9.23.0-x86_64-apple-darwin.tar.gz\n", "a".repeat(64));
+        let err = expected_sha256(&manifest, ASSET).unwrap_err().to_string();
+        assert!(err.contains("no entry for") && err.contains(ASSET), "{err}");
+        // A prefix of the name is not the name.
+        let manifest = format!("{}  {}.sig\n", "a".repeat(64), ASSET);
+        assert!(expected_sha256(&manifest, ASSET).is_err());
+        assert!(expected_sha256("", ASSET).is_err(), "an empty manifest verifies nothing");
+    }
+
+    #[test]
+    fn a_malformed_or_contradictory_checksum_manifest_is_refused() {
+        for bad in [
+            format!("{} {}\n", "a".repeat(64), ASSET),          // single space, no mode char
+            format!("{}  {}\n", "a".repeat(63), ASSET),         // short digest
+            format!("{}  {}\n", "g".repeat(64), ASSET),         // not hex
+            "<html>404 Not Found</html>\n".to_string(),         // an error page
+        ] {
+            let err = expected_sha256(&bad, ASSET).unwrap_err().to_string();
+            assert!(err.contains("malformed"), "{bad:?}: {err}");
+        }
+        let twice = format!("{}  {ASSET}\n{}  {ASSET}\n", "a".repeat(64), "b".repeat(64));
+        let err = expected_sha256(&twice, ASSET).unwrap_err().to_string();
+        assert!(err.contains("twice"), "{err}");
+    }
+
+    /// The acceptance test for #281: an archive whose bytes don't match the release's
+    /// SHA256SUMS is refused, deleted, and never extracted.
+    #[test]
+    fn a_tampered_archive_is_refused_before_anything_is_extracted() {
+        let genuine = b"the genuine release archive".to_vec();
+        let tampered = b"the tampered release archive".to_vec();
+        let manifest = format!("{}  {}\n", sha256_hex(&genuine), ASSET).into_bytes();
+
+        let archive = Server::serve(tampered.clone(), tampered.len());
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("qsmxt.tar.gz");
+
+        // A server that returns the archive bytes for every request: what it serves as
+        // the manifest is garbage, so that is refused before the archive is fetched...
+        let err = download_verified(&archive.base, ASSET, &dest, &mut |_, _| {}).unwrap_err();
+        assert!(err.to_string().contains("malformed"), "{err}");
+        assert!(!dest.exists(), "the archive must not even be downloaded");
+
+        // ...and with a valid manifest naming the genuine digest, the tampered archive is
+        // downloaded, found not to match, and discarded.
+        let both = Server::serve_seq(vec![manifest, tampered]);
+        let err = download_verified(&both.base, ASSET, &dest, &mut |_, _| {}).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("Checksum mismatch") && msg.contains(ASSET), "{msg}");
+        assert!(msg.contains(&sha256_hex(&genuine)), "the message names the expected digest: {msg}");
+        assert!(!dest.exists(), "a mismatching archive must be deleted, not left to extract");
+        assert_eq!(
+            std::fs::read_dir(dir.path()).unwrap().count(),
+            0,
+            "nothing may be extracted or staged after a mismatch"
+        );
+    }
+
+    #[test]
+    fn a_genuine_archive_passes_verification() {
+        let genuine = vec![42u8; 100 * 1024];
+        let manifest = format!("{}  {}\n", sha256_hex(&genuine), ASSET).into_bytes();
+        let server = Server::serve_seq(vec![manifest, genuine.clone()]);
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("qsmxt.tar.gz");
+        download_verified(&server.base, ASSET, &dest, &mut |_, _| {}).unwrap();
+        assert_eq!(std::fs::read(&dest).unwrap(), genuine);
+    }
+
+    #[test]
+    fn a_release_without_a_checksum_manifest_is_refused() {
+        // Nothing is listening: the manifest can't be fetched, so nothing is downloaded.
+        let dir = tempfile::tempdir().unwrap();
+        let dest = dir.path().join("qsmxt.tar.gz");
+        let err = download_verified("http://127.0.0.1:1", ASSET, &dest, &mut |_, _| {}).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains(CHECKSUMS_ASSET) && msg.contains("unverified"), "{msg}");
+        assert!(!dest.exists());
+    }
+
+    /// The acceptance test for #281's second half: a 0.0.0 build refuses and exits
+    /// without asking GitHub anything.
+    #[test]
+    fn a_dev_build_refuses_to_update_without_touching_the_network() {
+        let err = execute_with(
+            crate::cli::UpdateArgs { yes: true, force: false },
+            "0.0.0",
+            || panic!("a dev build must not look up the latest release"),
+            |_| panic!("a dev build must not install anything"),
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("development build") && err.contains("--force"), "{err}");
+    }
+
+    #[test]
+    fn a_forced_dev_build_installs_the_latest_release() {
+        let mut installed = None;
+        execute_with(
+            crate::cli::UpdateArgs { yes: true, force: true },
+            "0.0.0",
+            || Ok(Release { tag: "v9.23.0".into(), notes: String::new(), html_url: String::new() }),
+            |tag| {
+                installed = Some(tag.to_string());
+                Ok(())
+            },
+        )
+        .unwrap();
+        assert_eq!(installed.as_deref(), Some("v9.23.0"));
+    }
+
+    #[test]
+    fn a_release_build_is_not_offered_an_older_or_equal_release() {
+        execute_with(
+            crate::cli::UpdateArgs { yes: true, force: false },
+            "9.23.0",
+            || Ok(Release { tag: "v9.23.0".into(), notes: String::new(), html_url: String::new() }),
+            |_| panic!("already up to date"),
+        )
+        .unwrap();
     }
 }

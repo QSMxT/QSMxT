@@ -1,11 +1,21 @@
 #!/bin/sh
 # QSMxT installer — downloads the latest release binary for your platform.
 # Usage: curl -fsSL https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.sh | sh
+#
+# The archive is verified against the release's SHA256SUMS before anything is
+# extracted; a missing manifest, a missing entry or a mismatch aborts the install.
+#
+# Environment:
+#   INSTALL_DIR          where to put qsmxt (default /usr/local/bin)
+#   QSMXT_VERSION        install this release tag (e.g. v9.23.0) instead of the latest
+#   QSMXT_DOWNLOAD_URL   base URL holding <tag>/<archive> and <tag>/SHA256SUMS
+#                        (default: the GitHub release downloads; for mirrors and tests)
 
 set -e
 
 REPO="QSMxT/QSMxT"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
+DOWNLOAD_URL="${QSMXT_DOWNLOAD_URL:-https://github.com/${REPO}/releases/download}"
 
 # Detect OS and architecture
 OS="$(uname -s)"
@@ -32,13 +42,28 @@ case "$OS" in
         ;;
 esac
 
-# Get latest release tag
-echo "Fetching latest release..."
-CURL_OPTS="-fsSL"
-if [ -n "$GITHUB_TOKEN" ]; then
-    CURL_OPTS="$CURL_OPTS -H \"Authorization: token $GITHUB_TOKEN\""
+# Pick a SHA-256 tool up front: refusing after the download is a worse experience.
+if command -v sha256sum >/dev/null 2>&1; then
+    sha256() { sha256sum "$1" | cut -d' ' -f1; }
+elif command -v shasum >/dev/null 2>&1; then
+    sha256() { shasum -a 256 "$1" | cut -d' ' -f1; }
+elif command -v openssl >/dev/null 2>&1; then
+    sha256() { openssl dgst -sha256 -r "$1" | cut -d' ' -f1; }
+else
+    echo "Error: need sha256sum, shasum or openssl to verify the download"
+    exit 1
 fi
-TAG=$(eval curl $CURL_OPTS "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+
+# Get latest release tag
+TAG="${QSMXT_VERSION:-}"
+if [ -z "$TAG" ]; then
+    echo "Fetching latest release..."
+    CURL_OPTS="-fsSL"
+    if [ -n "$GITHUB_TOKEN" ]; then
+        CURL_OPTS="$CURL_OPTS -H \"Authorization: token $GITHUB_TOKEN\""
+    fi
+    TAG=$(eval curl $CURL_OPTS "https://api.github.com/repos/${REPO}/releases/latest" | grep '"tag_name"' | head -1 | cut -d'"' -f4)
+fi
 
 if [ -z "$TAG" ]; then
     echo "Error: could not determine latest release"
@@ -47,10 +72,22 @@ fi
 
 echo "Installing qsmxt ${TAG} for ${TARGET}..."
 
-# Download and extract
-URL="https://github.com/${REPO}/releases/download/${TAG}/qsmxt-${TAG}-${TARGET}.tar.gz"
+# Download, verify, extract
+ASSET="qsmxt-${TAG}-${TARGET}.tar.gz"
+URL="${DOWNLOAD_URL}/${TAG}/${ASSET}"
 TMPDIR=$(mktemp -d)
 trap 'rm -rf "$TMPDIR"' EXIT
+
+if ! curl -fsSL "${DOWNLOAD_URL}/${TAG}/SHA256SUMS" -o "${TMPDIR}/SHA256SUMS"; then
+    echo "Error: could not download SHA256SUMS for ${TAG}; refusing to install an unverified binary"
+    exit 1
+fi
+# Exact file-name match on the second field (`sha256sum` writes "<hex>  <file>" or "<hex> *<file>").
+EXPECTED=$(awk -v f="$ASSET" '$2 == f || $2 == "*" f { print tolower($1); exit }' "${TMPDIR}/SHA256SUMS")
+if [ -z "$EXPECTED" ]; then
+    echo "Error: SHA256SUMS for ${TAG} has no entry for ${ASSET}; refusing to install an unverified binary"
+    exit 1
+fi
 
 # Show a progress bar when attached to a terminal; stay quiet in CI/logs.
 if [ -t 2 ]; then
@@ -58,6 +95,15 @@ if [ -t 2 ]; then
 else
     curl -fsSL "$URL" -o "${TMPDIR}/qsmxt.tar.gz"
 fi
+ACTUAL=$(sha256 "${TMPDIR}/qsmxt.tar.gz" | tr 'A-F' 'a-f')
+if [ "$ACTUAL" != "$EXPECTED" ]; then
+    echo "Error: checksum mismatch for ${ASSET}"
+    echo "  expected (SHA256SUMS): ${EXPECTED}"
+    echo "  downloaded:            ${ACTUAL}"
+    echo "Nothing was installed."
+    exit 1
+fi
+echo "Verified ${ASSET} against SHA256SUMS."
 tar xzf "${TMPDIR}/qsmxt.tar.gz" -C "$TMPDIR"
 
 # Install
