@@ -6,8 +6,8 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{AlgoModal, App, FieldKind, PipelineRow, UpdateModal, TAB_NAMES,
-    TAB_INPUT, TAB_QSM, TAB_SEPARATION, TAB_SUPPLEMENTARY, TAB_EXECUTION, TAB_METHODS};
+use super::app::{AlgoModal, App, PipelineRow, UpdateModal, TAB_NAMES,
+    TAB_INPUT, TAB_QSM, TAB_SEPARATION, TAB_METHODS};
 use super::command;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -287,144 +287,13 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         draw_input_tab(f, app, area);
         return;
     }
-    if app.active_tab == TAB_QSM || app.active_tab == TAB_SEPARATION {
+    if App::is_rows_tab(app.active_tab) {
         app.sync_pipeline_mode();
-        draw_pipeline_tab(f, app, area);
+        draw_rows_tab(f, app, area);
         return;
     }
     if app.active_tab == TAB_METHODS {
         draw_methods_tab(f, app, area);
-        return;
-    }
-
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!(" {} ", TAB_NAMES[app.active_tab]));
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    // Split into scrollable form area + help text area
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Min(4), Constraint::Length(2)])
-        .split(inner);
-    let form_area = chunks[0];
-    let help_area = chunks[1];
-
-    let fields = &app.tab_fields[app.active_tab];
-
-    let mut lines: Vec<Line> = Vec::new();
-    let mut field_to_line: Vec<usize> = Vec::new(); // maps field index -> line index
-    for (i, field) in fields.iter().enumerate() {
-        if !app.is_field_visible(app.active_tab, i) {
-            field_to_line.push(0); // placeholder, won't be used
-            continue;
-        }
-        field_to_line.push(lines.len());
-        let focused = i == app.active_field;
-        let editing = focused && app.editing;
-
-        // Indent sub-fields under a parent checkbox
-        let indent = match (app.active_tab, i) {
-            (TAB_SUPPLEMENTARY, 1..=6) => true,   // SWI settings under "Compute SWI"
-            (TAB_SUPPLEMENTARY, 13..=15) => true, // SMWI settings under "Compute SMWI"
-            (TAB_SUPPLEMENTARY, 17..=23) => true, // SynthSeg settings, under "Segment (SynthSeg)" —
-                                                  // the statistics drawn from the segmentation and
-                                                  // the reference measured on it among them
-            (TAB_EXECUTION, 4..=9) => true,     // SLURM settings under "Execution Mode"
-            (TAB_SUPPLEMENTARY, 24..=25) => true, // DICOM export settings under "Export DICOM"
-            _ => false,
-        };
-        let prefix = if indent { "    " } else { "  " };
-        let label_width: usize = if indent { 20 } else { 22 };
-
-        let line = match &field.kind {
-            FieldKind::Text => {
-                let value = app.get_text_value(app.active_tab, i).to_string();
-                let label_style = if focused {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                let val_style = if focused { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::Gray) };
-                let is_required = app.active_tab == TAB_EXECUTION && i == 4 && app.form.execution_mode == 1;
-                let display_val = if value.is_empty() && !editing && is_required {
-                    Span::styled("(required)", Style::default().fg(Color::DarkGray).add_modifier(Modifier::ITALIC))
-                } else if value.is_empty() && !editing {
-                    Span::styled("(empty)", Style::default().fg(Color::DarkGray))
-                } else {
-                    Span::styled(value, val_style)
-                };
-                Line::from(vec![
-                    Span::styled(format!("{}{:w$}", prefix, format!("{}:", field.label), w = label_width), label_style),
-                    display_val,
-                ])
-            }
-            FieldKind::Select { options } => {
-                let selected = app.get_select_value(app.active_tab, i);
-                let val = options.get(selected).unwrap_or(&"?");
-                let label_style = if focused {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                let label = format!("{}{:w$}", prefix, format!("{}:", field.label), w = label_width);
-                if focused {
-                    Line::from(vec![
-                        Span::styled(label, label_style),
-                        Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
-                        Span::styled(*val, Style::default().fg(Color::Cyan)),
-                        Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
-                    ])
-                } else {
-                    Line::from(vec![
-                        Span::styled(label, label_style),
-                        Span::styled(*val, Style::default().fg(Color::Gray)),
-                    ])
-                }
-            }
-            FieldKind::Checkbox => {
-                let checked = app.get_checkbox_value(app.active_tab, i);
-                let label_style = if focused {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::White)
-                };
-                let (marker, color) = if checked { ("[x]", Color::Green) } else { ("[ ]", Color::Gray) };
-                Line::from(vec![
-                    Span::styled(format!("{}{:w$}", prefix, format!("{}:", field.label), w = label_width), label_style),
-                    Span::styled(marker, Style::default().fg(color)),
-                ])
-            }
-        };
-        lines.push(line);
-    }
-
-    let focused_line = field_to_line.get(app.active_field).copied();
-    render_scrollable(f, form_area, lines, &mut app.form_scroll_offset, focused_line);
-
-    // Help text for focused field
-    if app.active_field < fields.len() {
-        let help = fields[app.active_field].help;
-        if !help.is_empty() {
-            let help_para = Paragraph::new(Line::from(Span::styled(
-                format!("  {}", help),
-                Style::default().fg(Color::DarkGray),
-            )));
-            f.render_widget(help_para, help_area);
-        }
-    }
-
-    // Set cursor if editing
-    if app.editing {
-        if let Some(line_idx) = focused_line {
-            let scroll = app.form_scroll_offset;
-            if line_idx >= scroll && line_idx < scroll + form_area.height as usize {
-                let y = form_area.y + (line_idx - scroll) as u16;
-                let x = form_area.x + 24 + app.cursor_pos as u16;
-                f.set_cursor_position((x, y));
-            }
-        }
     }
 }
 
@@ -1406,10 +1275,12 @@ fn draw_dicom_series_section(
     }
 }
 
-fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+/// A row-based tab (QSM, Separation, Supplementary, Execution): one named row per setting.
+fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
+    let pipeline = app.active_tab == TAB_QSM || app.active_tab == TAB_SEPARATION;
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(" Pipeline ");
+        .title(if pipeline { " Pipeline ".to_string() } else { format!(" {} ", TAB_NAMES[app.active_tab]) });
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -1422,9 +1293,9 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
     let help_area = chunks[1];
 
     // Build lines and collect state from pipeline_state before mutable borrow
-    let rows = app.pipeline_state.visible_rows();
-    let focusable = app.pipeline_state.focusable_rows();
-    let ps_focus = app.pipeline_state.focus;
+    let rows = app.rows();
+    let focusable = super::app::focusable_indices(&rows);
+    let ps_focus = app.focus();
     let ps_editing = app.pipeline_state.editing;
     let ps_cursor = app.pipeline_state.cursor;
 
@@ -1441,7 +1312,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
 
         let line = match row {
             PipelineRow::AlgoSelect { label, field, options, help } => {
-                let selected = app.pipeline_state.get_select(field);
+                let selected = app.field_select(field);
                 let val = options.get(selected).unwrap_or(&"?");
                 if focused {
                     focused_help = help.get(selected).map(|s| s.to_string());
@@ -1466,7 +1337,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 }
             }
             PipelineRow::Param { label, field, help } => {
-                let val = app.pipeline_state.get_param(field).to_string();
+                let val = app.field_text(field).to_string();
                 if focused {
                     focused_help = Some(help.to_string());
                 }
@@ -1481,7 +1352,9 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                     Style::default().fg(Color::Gray)
                 };
                 let display_val = if val.is_empty() && !(focused && ps_editing) {
-                    Span::styled("(default)", Style::default().fg(Color::DarkGray))
+                    let placeholder = app.field_placeholder(field);
+                    let style = Style::default().fg(Color::DarkGray);
+                    Span::styled(placeholder, if placeholder == "(required)" { style.add_modifier(Modifier::ITALIC) } else { style })
                 } else {
                     Span::styled(val, val_style)
                 };
@@ -1491,7 +1364,7 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
                 ])
             }
             PipelineRow::Toggle { label, field, help } => {
-                let checked = app.pipeline_state.get_toggle(field);
+                let checked = app.field_toggle(field);
                 if focused {
                     focused_help = Some(help.to_string());
                 }
@@ -1888,8 +1761,9 @@ fn draw_pipeline_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) 
     // Determine which line is focused for auto-scroll
     let focused_line = focusable.get(ps_focus).copied();
 
-    render_scrollable(f, form_area, lines, &mut app.pipeline_state.scroll_offset, focused_line);
-    let scroll = app.pipeline_state.scroll_offset;
+    let scroll_offset = if pipeline { &mut app.pipeline_state.scroll_offset } else { &mut app.form_scroll_offset };
+    render_scrollable(f, form_area, lines, scroll_offset, focused_line);
+    let scroll = *scroll_offset;
 
     // Render help text
     if let Some(help) = focused_help {
@@ -2042,7 +1916,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         return;
     }
 
-    let help = if app.editing {
+    let help = if app.editing || app.pipeline_state.editing {
         vec![
             Span::styled(" Esc", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(":Cancel  ", Style::default().fg(Color::DarkGray)),
@@ -2076,6 +1950,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tui::app::TAB_SUPPLEMENTARY;
     use ratatui::{backend::TestBackend, Terminal};
 
     /// Render at a given size, for tabs that are taller than the default 30-row terminal.
@@ -2260,7 +2135,7 @@ mod tests {
         use crate::tui::app::{AlgoModalTarget, UpdateModal};
         let mut app = App::new();
         app.algo_modal = Some(AlgoModal {
-            target: AlgoModalTarget::PipelineSelect("qsm_algorithm".into()),
+            target: AlgoModalTarget::Select("qsm_algorithm".into()),
             title: "QSM Inversion".into(),
             options: (0..20).map(|i| format!("algo-{i}")).collect(),
             help: (0..20).map(|i| format!("help {i}")).collect(),
@@ -2297,7 +2172,7 @@ mod tests {
         options.extend(["xqsm", "qsmnet", "autoqsm", "nextqsm"].iter().map(|s| s.to_string()));
         let help: Vec<String> = options.iter().map(|o| format!("help for {o}")).collect();
         app.algo_modal = Some(AlgoModal {
-            target: AlgoModalTarget::PipelineSelect("qsm_algorithm".into()),
+            target: AlgoModalTarget::Select("qsm_algorithm".into()),
             title: "QSM Inversion".into(),
             options,
             help,

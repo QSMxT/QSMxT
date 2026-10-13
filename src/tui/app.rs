@@ -1168,20 +1168,6 @@ impl FilterTreeState {
     }
 }
 
-#[derive(Clone)]
-pub enum FieldKind {
-    Text,
-    Select { options: Vec<&'static str> },
-    Checkbox,
-}
-
-#[derive(Clone)]
-pub struct FieldDef {
-    pub label: &'static str,
-    pub kind: FieldKind,
-    pub help: &'static str,
-}
-
 // ─── Pipeline tab state ───
 
 /// Which row set `PipelineFormState` renders — the QSM tab or the Separation tab. Both tabs share
@@ -3658,44 +3644,6 @@ impl PipelineFormState {
         }
     }
 
-    /// Get the field name of the currently focused row.
-    pub fn focused_field_name(&self) -> Option<String> {
-        let rows = self.visible_rows();
-        let focusable = self.focusable_rows();
-        let focus_idx = focusable.get(self.focus).copied()?;
-        match rows.get(focus_idx) {
-            Some(PipelineRow::AlgoSelect { field, .. }) => Some(field.to_string()),
-            Some(PipelineRow::Param { field, .. }) => Some(field.to_string()),
-            Some(PipelineRow::Toggle { field, .. }) => Some(field.to_string()),
-            _ => None,
-        }
-    }
-
-    /// After rows change, restore focus to the row with the given field name.
-    pub fn restore_focus(&mut self, field_name: &Option<String>) {
-        let Some(name) = field_name else { return };
-        let rows = self.visible_rows();
-        let focusable = self.focusable_rows();
-        for (fi, &ri) in focusable.iter().enumerate() {
-            let matches = match rows.get(ri) {
-                Some(PipelineRow::AlgoSelect { field, .. }) => *field == name.as_str(),
-                Some(PipelineRow::Param { field, .. }) => *field == name.as_str(),
-                Some(PipelineRow::Toggle { field, .. }) => *field == name.as_str(),
-                _ => false,
-            };
-            if matches {
-                self.focus = fi;
-                return;
-            }
-        }
-        // Field not found in new layout — clamp focus
-        let max = focusable.len().saturating_sub(1);
-        if self.focus > max {
-            self.focus = max;
-        }
-    }
-
-    /// Get the display label and value for a mask op.
     pub fn mask_op_label_value(op: &crate::pipeline::config::MaskOp) -> (&'static str, String) {
         use crate::pipeline::config::MaskOp;
         match op {
@@ -4202,16 +4150,87 @@ impl PipelineFormState {
 
     /// Get focusable row count (excludes separators and headers).
     pub fn focusable_rows(&self) -> Vec<usize> {
-        self.visible_rows()
-            .iter()
-            .enumerate()
-            .filter(|(_, r)| !matches!(r, PipelineRow::Separator | PipelineRow::Note { .. }
-                | PipelineRow::MaskSectionHeader { .. } | PipelineRow::MaskCombinedHeader
-                | PipelineRow::MaskTwoPassHeader))
-            .map(|(i, _)| i)
-            .collect()
+        focusable_indices(&self.visible_rows())
+    }
+
+    /// The focused row of the pipeline tabs.
+    pub fn focused_row(&self) -> Option<PipelineRow> {
+        let rows = self.visible_rows();
+        let i = *focusable_indices(&rows).get(self.focus)?;
+        rows.get(i).cloned()
     }
 }
+
+/// Indices of the rows focus can land on: every row but separators, notes and mask headers.
+pub fn focusable_indices(rows: &[PipelineRow]) -> Vec<usize> {
+    rows.iter()
+        .enumerate()
+        .filter(|(_, r)| !matches!(r, PipelineRow::Separator | PipelineRow::Note { .. }
+            | PipelineRow::MaskSectionHeader { .. } | PipelineRow::MaskCombinedHeader
+            | PipelineRow::MaskTwoPassHeader))
+        .map(|(i, _)| i)
+        .collect()
+}
+
+/// The named field a row edits, if it edits one.
+pub fn row_field(row: &PipelineRow) -> Option<&'static str> {
+    match row {
+        PipelineRow::AlgoSelect { field, .. }
+        | PipelineRow::Param { field, .. }
+        | PipelineRow::Toggle { field, .. } => Some(field),
+        _ => None,
+    }
+}
+
+/// The output a checkbox asks for, when another option can force that output on.
+fn forced_output(field: &str) -> Option<crate::pipeline::requirements::Output> {
+    use crate::pipeline::requirements::Output;
+    match field {
+        "do_r2starmap" => Some(Output::R2star),
+        "do_r2map" => Some(Output::R2),
+        "do_r2primemap" => Some(Output::R2prime),
+        "do_segmentation" => Some(Output::Segmentation),
+        _ => None,
+    }
+}
+
+fn forced_output_name(out: crate::pipeline::requirements::Output) -> &'static str {
+    use crate::pipeline::requirements::Output;
+    match out {
+        Output::R2star => "The R2* map",
+        Output::R2 => "The R2 map",
+        Output::R2prime => "The R2' map",
+        Output::Segmentation => "Segmentation",
+        _ => "This output",
+    }
+}
+
+/// The SWI scaling select: qsmxt_config's scalings, in [`super::command::SWI_SCALING_ARGS`]'s order.
+static SWI_SCALING_OPTIONS: LazyLock<Vec<&'static str>> =
+    LazyLock::new(|| qsmxt_config::SwiScaling::ALL.iter().map(|s| s.as_str()).collect());
+static SWI_SCALING_HELP: LazyLock<Vec<&'static str>> =
+    LazyLock::new(|| vec!["Phase scaling type for SWI"; SWI_SCALING_OPTIONS.len()]);
+const SYNTHSEG_VERSION_OPTIONS: &[&str] = &["v1", "v2"];
+const SYNTHSEG_VERSION_HELP: &[&str] = &["v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF); its weights are not published yet, so a run with v2 is refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR"; 2];
+const EXECUTION_MODE_OPTIONS: &[&str] = &["Local", "SLURM"];
+const EXECUTION_MODE_HELP: &[&str] = &["Local execution or generate SLURM job scripts"; 2];
+static SUPP_QSM_REF_HELP: LazyLock<Vec<&'static str>> = LazyLock::new(|| vec![
+    "What χ's zero is pinned to: the mean over the voxels χ is defined on, nothing, or the mean of a parcellation region. Same setting as QSM Reference on the QSM tab";
+    qsm_ref_options().len()]);
+
+/// The fields of the Supplementary and Execution tabs, every one of them: what `R` resets.
+pub const SUPPLEMENTARY_FIELDS: &[&str] = &[
+    "do_swi", "swi_scaling", "swi_strength", "swi_hp_sigma_x", "swi_hp_sigma_y", "swi_hp_sigma_z",
+    "swi_mip_window", "do_t2starmap", "do_r2starmap", "do_r2map", "do_r2primemap", "export_dicom",
+    "do_smwi", "smwi_threshold", "smwi_power", "smwi_mip_window", "do_segmentation",
+    "synthseg_version", "synthseg_crop", "synthseg_flip_averaging", "synthseg_topology_cleanup",
+    "synthseg_sigma", "do_analysis", "source_dicom", "dicom_outputs",
+];
+pub const EXECUTION_FIELDS: &[&str] = &[
+    "execution_mode", "dry_run", "debug", "n_procs", "slurm_account", "slurm_partition",
+    "slurm_time", "slurm_mem", "slurm_cpus", "slurm_submit", "mem_limit_gb", "no_mem_limit",
+    "force", "clean_intermediates",
+];
 
 pub struct App {
     pub active_tab: usize,
@@ -4226,7 +4245,6 @@ pub struct App {
     /// Set when the user accepts the update prompt: the main loop tears the TUI down
     /// and hands over to `qsmxt update`.
     pub should_update: bool,
-    pub tab_fields: Vec<Vec<FieldDef>>,
     pub form_scroll_offset: usize,
     pub methods_scroll_offset: usize,
     pub error_message: Option<String>,
@@ -4335,8 +4353,8 @@ pub struct AlgoModal {
 /// single-choice selector in the TUI regardless of how that selector stores its value.
 #[derive(Debug, Clone)]
 pub enum AlgoModalTarget {
-    /// A keyed `PipelineFormState` select (an `AlgoSelect` row, e.g. "qsm_algorithm").
-    PipelineSelect(String),
+    /// A named select (an `AlgoSelect` row of any row-based tab, e.g. "qsm_algorithm").
+    Select(String),
     /// The masking input source of a mask section.
     MaskInput(usize),
     /// The generator algorithm (threshold vs BET) of a mask section.
@@ -4345,8 +4363,6 @@ pub enum AlgoModalTarget {
     MaskThresholdMethod(usize),
     /// The Input-tab mode selector (BIDS / NIfTI / DICOM).
     InputMode,
-    /// A generic `tab_fields` Select at the given (tab, field) — e.g. Execution Mode, SWI Scaling.
-    TabSelect { tab: usize, field: usize },
 }
 
 #[derive(Clone)]
@@ -4403,6 +4419,34 @@ pub struct RunForm {
     pub slurm_submit: bool,
 }
 
+/// Named access to a group of same-typed fields: `$get`/`$get_mut` by the field's own name.
+macro_rules! named_fields {
+    ($get:ident, $get_mut:ident, $t:ty, [$($name:ident),* $(,)?]) => {
+        pub fn $get(&self, field: &str) -> Option<&$t> {
+            match field { $(stringify!($name) => Some(&self.$name),)* _ => None }
+        }
+        pub fn $get_mut(&mut self, field: &str) -> Option<&mut $t> {
+            match field { $(stringify!($name) => Some(&mut self.$name),)* _ => None }
+        }
+    };
+}
+
+/// The Supplementary and Execution tabs' fields, by the names their rows carry.
+impl RunForm {
+    named_fields!(text, text_mut, String, [
+        swi_strength, swi_hp_sigma_x, swi_hp_sigma_y, swi_hp_sigma_z, swi_mip_window,
+        source_dicom, dicom_outputs, synthseg_crop, synthseg_sigma, smwi_threshold, smwi_power,
+        smwi_mip_window, n_procs, mem_limit_gb, slurm_account, slurm_partition, slurm_time,
+        slurm_mem, slurm_cpus,
+    ]);
+    named_fields!(flag, flag_mut, bool, [
+        do_swi, do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom, do_smwi,
+        do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup,
+        dry_run, debug, no_mem_limit, force, clean_intermediates, slurm_submit,
+    ]);
+    named_fields!(choice, choice_mut, usize, [swi_scaling, synthseg_version, execution_mode]);
+}
+
 impl Default for RunForm {
     fn default() -> Self {
         let swi = qsm_core::swi::SwiParams::default();
@@ -4457,233 +4501,6 @@ impl Default for RunForm {
 
 impl App {
     pub fn new() -> Self {
-        let tab_fields = vec![
-            // Tab 0: Input (custom rendering — IO fields + filter tree)
-            vec![],
-            // Tab 1: QSM (custom rendering — see PipelineFormState)
-            vec![],
-            // Tab 2: Separation (custom rendering — see PipelineFormState::separation_visible_rows)
-            vec![],
-            // Tab 3: Supplementary
-            vec![
-                FieldDef {
-                    label: "Compute SWI",
-                    kind: FieldKind::Checkbox,
-                    help: "Also compute susceptibility-weighted images",
-                },
-                FieldDef {
-                    label: "SWI Scaling",
-                    kind: FieldKind::Select {
-                        options: qsmxt_config::SwiScaling::ALL.iter().map(|s| s.as_str()).collect(),
-                    },
-                    help: "Phase scaling type for SWI",
-                },
-                FieldDef {
-                    label: "SWI Strength",
-                    kind: FieldKind::Text,
-                    help: "Phase scaling strength (higher = stronger phase contrast)",
-                },
-                FieldDef {
-                    label: "SWI HP Sigma X",
-                    kind: FieldKind::Text,
-                    help: "High-pass filter sigma in X (voxels). Controls background phase removal.",
-                },
-                FieldDef {
-                    label: "SWI HP Sigma Y",
-                    kind: FieldKind::Text,
-                    help: "High-pass filter sigma in Y (voxels).",
-                },
-                FieldDef {
-                    label: "SWI HP Sigma Z",
-                    kind: FieldKind::Text,
-                    help: "High-pass filter sigma in Z (voxels). Set to 0 for thin axial slices.",
-                },
-                FieldDef {
-                    label: "SWI MIP Window",
-                    kind: FieldKind::Text,
-                    help: "Minimum intensity projection window size in slices",
-                },
-                FieldDef {
-                    label: "Compute T2* Map",
-                    kind: FieldKind::Checkbox,
-                    help: "Compute T2* relaxation map (requires 3+ echoes with magnitude)",
-                },
-                FieldDef {
-                    label: "Compute R2* Map",
-                    kind: FieldKind::Checkbox,
-                    help: "Compute R2* decay rate map (requires 3+ echoes with magnitude)",
-                },
-                FieldDef {
-                    label: "Compute R2 Map",
-                    kind: FieldKind::Checkbox,
-                    help: "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when chi-separation is enabled.",
-                },
-                FieldDef {
-                    label: "Compute R2' Map",
-                    kind: FieldKind::Checkbox,
-                    help: "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition. Forced on when chi-separation is enabled.",
-                },
-                FieldDef {
-                    label: "Export DICOM",
-                    kind: FieldKind::Checkbox,
-                    help: "Also write final maps as DICOM series into each subject's extra_files/ folder",
-                },
-                // Appended rather than placed next to SWI: this tab is addressed by positional
-                // index in dozens of places, and inserting mid-list silently repoints all of them.
-                FieldDef {
-                    label: "Compute SMWI",
-                    kind: FieldKind::Checkbox,
-                    help: "Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ, not from filtered phase. Needs QSM",
-                },
-                FieldDef {
-                    label: "SMWI Threshold",
-                    kind: FieldKind::Text,
-                    help: "|χ| in ppm at which the weighting mask reaches zero. The 1 ppm default targets strong sources; brain tissue wants far less",
-                },
-                FieldDef {
-                    label: "SMWI Power",
-                    kind: FieldKind::Text,
-                    help: "Power the mask is raised to (contrast strength)",
-                },
-                FieldDef {
-                    label: "SMWI mIP Window",
-                    kind: FieldKind::Text,
-                    help: "Minimum-intensity-projection window in slices",
-                },
-                FieldDef {
-                    label: "Segment (SynthSeg)",
-                    kind: FieldKind::Checkbox,
-                    help: "Whole-brain parcellation straight off the GRE magnitude — no T1w, no registration. Needs a deep-learning build",
-                },
-                FieldDef {
-                    label: "SynthSeg Version",
-                    kind: FieldKind::Select { options: vec!["v1", "v2"] },
-                    help: "v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF); its weights are not published yet, so a run with v2 is refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR",
-                },
-                FieldDef {
-                    label: "SynthSeg Crop",
-                    kind: FieldKind::Text,
-                    help: "Cubic centre-crop in voxels at 1 mm before inference; empty processes the whole volume",
-                },
-                FieldDef {
-                    label: "Flip Averaging",
-                    kind: FieldKind::Checkbox,
-                    help: "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time",
-                },
-                FieldDef {
-                    label: "Topology Cleanup",
-                    kind: FieldKind::Checkbox,
-                    help: "Reset each topological class to its largest connected component",
-                },
-                FieldDef {
-                    label: "Posterior Smoothing",
-                    kind: FieldKind::Text,
-                    help: "Gaussian blur on the posteriors, in voxels (0 disables it)",
-                },
-                FieldDef {
-                    label: "Per-structure Stats",
-                    kind: FieldKind::Checkbox,
-                    help: "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Implies segmentation; implies QSM only if no other map is enabled",
-                },
-                // The same control as the QSM tab's "QSM Reference" row, editing the same value —
-                // a region reference is a SynthSeg setting as much as a referencing one, and it
-                // should be where the user is already looking. See `select_value`.
-                FieldDef {
-                    label: "QSM Reference",
-                    kind: FieldKind::Select { options: qsm_ref_options().to_vec() },
-                    help: "What χ's zero is pinned to: the mean over the voxels χ is defined on, nothing, or the mean of a parcellation region. Same setting as QSM Reference on the QSM tab",
-                },
-                // Appended (see above): DICOM export's settings, under Export DICOM (11).
-                FieldDef {
-                    label: "Source DICOM Dir",
-                    kind: FieldKind::Text,
-                    help: "Original DICOM directory: the exported series inherit its patient/study identity (empty = none)",
-                },
-                FieldDef {
-                    label: "DICOM Outputs",
-                    kind: FieldKind::Text,
-                    help: "Comma-separated maps to export, e.g. Chimap,desc-total_chimap (empty = all)",
-                },
-            ],
-            // Tab 4: Execution
-            vec![
-                FieldDef {
-                    label: "Execution Mode",
-                    kind: FieldKind::Select { options: vec!["Local", "SLURM"] },
-                    help: "Local execution or generate SLURM job scripts",
-                },
-                FieldDef {
-                    label: "Dry Run",
-                    kind: FieldKind::Checkbox,
-                    help: "Print processing plan without executing",
-                },
-                FieldDef {
-                    label: "Debug Logging",
-                    kind: FieldKind::Checkbox,
-                    help: "Enable verbose debug log output",
-                },
-                FieldDef {
-                    label: "Num Processes",
-                    kind: FieldKind::Text,
-                    help: "Number of parallel threads (empty = auto)",
-                },
-                // SLURM-specific fields
-                FieldDef {
-                    label: "SLURM Account",
-                    kind: FieldKind::Text,
-                    help: "SLURM account name (required for SLURM mode)",
-                },
-                FieldDef {
-                    label: "SLURM Partition",
-                    kind: FieldKind::Text,
-                    help: "SLURM partition (optional)",
-                },
-                FieldDef {
-                    label: "SLURM Time Limit",
-                    kind: FieldKind::Text,
-                    help: "Wall time limit per job (e.g. 02:00:00)",
-                },
-                FieldDef {
-                    label: "SLURM Memory (GB)",
-                    kind: FieldKind::Text,
-                    help: "Memory per job in GB (empty = estimated per run)",
-                },
-                FieldDef {
-                    label: "SLURM CPUs/Task",
-                    kind: FieldKind::Text,
-                    help: "CPUs per SLURM task",
-                },
-                FieldDef {
-                    label: "Auto-Submit",
-                    kind: FieldKind::Checkbox,
-                    help: "Automatically submit generated scripts via sbatch",
-                },
-                // Local-run settings (appended: this tab is addressed by index).
-                FieldDef {
-                    label: "Memory Limit (GB)",
-                    kind: FieldKind::Text,
-                    help: "Memory budget for scheduling concurrent runs (empty = auto-detect)",
-                },
-                FieldDef {
-                    label: "No Memory Limit",
-                    kind: FieldKind::Checkbox,
-                    help: "Disable memory-aware concurrency limiting",
-                },
-                FieldDef {
-                    label: "Force Re-run",
-                    kind: FieldKind::Checkbox,
-                    help: "Ignore cached pipeline state and recompute everything",
-                },
-                FieldDef {
-                    label: "Clean Intermediates",
-                    kind: FieldKind::Checkbox,
-                    help: "Remove intermediate files after the run, keeping only final outputs",
-                },
-            ],
-            // Tab 4: Methods (read-only, custom rendering)
-            vec![],
-        ];
-
         App {
             active_tab: 0,
             active_field: 0,
@@ -4695,7 +4512,6 @@ impl App {
             should_quit: false,
             should_run: false,
             should_update: false,
-            tab_fields,
             form_scroll_offset: 0,
             methods_scroll_offset: 0,
             error_message: None,
@@ -4708,17 +4524,6 @@ impl App {
             nifti_state: NiftiState::default(),
         }
     }
-
-    pub fn field_count(&self) -> usize {
-        self.tab_fields[self.active_tab].len()
-    }
-
-    pub fn current_field(&self) -> &FieldDef {
-        &self.tab_fields[self.active_tab][self.active_field]
-    }
-
-    /// Index of the Supplementary tab's duplicate "QSM Reference" row.
-    pub const SUPP_QSM_REFERENCE: usize = 23;
 
     /// Validate required fields and either set should_run or show error.
     pub fn try_run(&mut self) {
@@ -4764,7 +4569,7 @@ impl App {
         if self.form.execution_mode == 1 && self.form.slurm_account.trim().is_empty() {
             self.error_message = Some("SLURM Account is required".to_string());
             self.active_tab = TAB_EXECUTION;
-            self.active_field = 4;
+            self.focus_field("slurm_account");
             return;
         }
 
@@ -4812,11 +4617,11 @@ impl App {
             self.handle_input_tab_key(key);
             return;
         }
-        // Route the QSM and Separation tabs to the shared pipeline-row handler (the row set
-        // is selected by `pipeline_state.mode`).
-        if self.active_tab == TAB_QSM || self.active_tab == TAB_SEPARATION {
+        // The row-based tabs share one handler (the QSM/Separation row set is selected by
+        // `pipeline_state.mode`, synced first).
+        if Self::is_rows_tab(self.active_tab) {
             self.sync_pipeline_mode();
-            self.handle_pipeline_key(key);
+            self.handle_rows_key(key);
             return;
         }
 
@@ -4835,57 +4640,6 @@ impl App {
                 KeyCode::F(5) | KeyCode::Enter => self.try_run(),
                 _ => {}
             }
-            return;
-        }
-
-        if self.editing {
-            self.handle_editing_key(key);
-            return;
-        }
-
-        match key.code {
-            KeyCode::Char('q') | KeyCode::Esc => self.should_quit = true,
-
-            // Tab switching
-            // 1..=N, Tab, Shift-Tab: one rule for every tab (see `switch_tab`).
-            _ if self.switch_tab(key) => {}
-
-            // Field navigation (skip hidden fields)
-            KeyCode::Up | KeyCode::Char('k')
-                if self.active_field > 0 => {
-                    let mut f = self.active_field - 1;
-                    while f > 0 && !self.is_field_visible(self.active_tab, f) {
-                        f -= 1;
-                    }
-                    if self.is_field_visible(self.active_tab, f) {
-                        self.active_field = f;
-                    }
-                }
-            KeyCode::Down | KeyCode::Char('j') => {
-                let max = self.field_count().saturating_sub(1);
-                let mut f = self.active_field + 1;
-                while f <= max && !self.is_field_visible(self.active_tab, f) {
-                    f += 1;
-                }
-                if f <= max && self.is_field_visible(self.active_tab, f) {
-                    self.active_field = f;
-                }
-            }
-
-            // Field interaction
-            KeyCode::Enter | KeyCode::Char(' ') => self.interact_field(),
-            KeyCode::Left => self.adjust_select(-1),
-            KeyCode::Right => self.adjust_select(1),
-
-            // Reset focused field to default
-            KeyCode::Char('r') => self.reset_current_field(),
-            // Reset all fields on current tab to defaults
-            KeyCode::Char('R') => self.reset_current_tab(),
-
-            // Run
-            KeyCode::F(5) => self.try_run(),
-
-            _ => {}
         }
     }
 
@@ -5126,49 +4880,6 @@ impl App {
                 InputMode::Example => self.form.output_dir = defaults.output_dir.clone(),
             },
             (0, 3) => self.form.config_file = defaults.config_file.clone(),
-            // Tab 2 (Supplementary)
-            (TAB_SUPPLEMENTARY, 0) => self.form.do_swi = defaults.do_swi,
-            (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling = defaults.swi_scaling,
-            (TAB_SUPPLEMENTARY, 2) => self.form.swi_strength = defaults.swi_strength.clone(),
-            (TAB_SUPPLEMENTARY, 3) => self.form.swi_hp_sigma_x = defaults.swi_hp_sigma_x.clone(),
-            (TAB_SUPPLEMENTARY, 4) => self.form.swi_hp_sigma_y = defaults.swi_hp_sigma_y.clone(),
-            (TAB_SUPPLEMENTARY, 5) => self.form.swi_hp_sigma_z = defaults.swi_hp_sigma_z.clone(),
-            (TAB_SUPPLEMENTARY, 6) => self.form.swi_mip_window = defaults.swi_mip_window.clone(),
-            (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap = defaults.do_t2starmap,
-            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap = defaults.do_r2starmap,
-            (TAB_SUPPLEMENTARY, 9) => self.form.do_r2map = defaults.do_r2map,
-            (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap = defaults.do_r2primemap,
-            (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom = defaults.export_dicom,
-            (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi = defaults.do_smwi,
-            (TAB_SUPPLEMENTARY, 13) => self.form.smwi_threshold = defaults.smwi_threshold.clone(),
-            (TAB_SUPPLEMENTARY, 14) => self.form.smwi_power = defaults.smwi_power.clone(),
-            (TAB_SUPPLEMENTARY, 15) => self.form.smwi_mip_window = defaults.smwi_mip_window.clone(),
-            (TAB_SUPPLEMENTARY, 16) => self.form.do_segmentation = defaults.do_segmentation,
-            (TAB_SUPPLEMENTARY, 17) => self.form.synthseg_version = defaults.synthseg_version,
-            (TAB_SUPPLEMENTARY, 18) => self.form.synthseg_crop = defaults.synthseg_crop.clone(),
-            (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging = defaults.synthseg_flip_averaging,
-            (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup = defaults.synthseg_topology_cleanup,
-            (TAB_SUPPLEMENTARY, 21) => self.form.synthseg_sigma = defaults.synthseg_sigma.clone(),
-            (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis = defaults.do_analysis,
-            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) =>
-                self.pipeline_state.set_select("qsm_reference", 0),
-            // Tab 3 (Execution)
-            (TAB_EXECUTION, 0) => self.form.execution_mode = defaults.execution_mode,
-            (TAB_EXECUTION, 1) => self.form.dry_run = defaults.dry_run,
-            (TAB_EXECUTION, 2) => self.form.debug = defaults.debug,
-            (TAB_EXECUTION, 3) => self.form.n_procs = defaults.n_procs.clone(),
-            (TAB_EXECUTION, 4) => self.form.slurm_account = defaults.slurm_account.clone(),
-            (TAB_EXECUTION, 5) => self.form.slurm_partition = defaults.slurm_partition.clone(),
-            (TAB_EXECUTION, 6) => self.form.slurm_time = defaults.slurm_time.clone(),
-            (TAB_EXECUTION, 7) => self.form.slurm_mem = defaults.slurm_mem.clone(),
-            (TAB_EXECUTION, 8) => self.form.slurm_cpus = defaults.slurm_cpus.clone(),
-            (TAB_EXECUTION, 9) => self.form.slurm_submit = defaults.slurm_submit,
-            (TAB_EXECUTION, 10) => self.form.mem_limit_gb = defaults.mem_limit_gb.clone(),
-            (TAB_EXECUTION, 11) => self.form.no_mem_limit = defaults.no_mem_limit,
-            (TAB_EXECUTION, 12) => self.form.force = defaults.force,
-            (TAB_EXECUTION, 13) => self.form.clean_intermediates = defaults.clean_intermediates,
-            (TAB_SUPPLEMENTARY, 24) => self.form.source_dicom = defaults.source_dicom.clone(),
-            (TAB_SUPPLEMENTARY, 25) => self.form.dicom_outputs = defaults.dicom_outputs.clone(),
             _ => {}
         }
     }
@@ -5186,60 +4897,9 @@ impl App {
                 self.nifti_state = NiftiState::default();
                 self.example_state = ExampleState::default();
             }
-            TAB_SUPPLEMENTARY => {
-                self.form.do_swi = defaults.do_swi;
-                self.form.swi_scaling = defaults.swi_scaling;
-                self.form.swi_strength = defaults.swi_strength.clone();
-                self.form.swi_hp_sigma_x = defaults.swi_hp_sigma_x.clone();
-                self.form.swi_hp_sigma_y = defaults.swi_hp_sigma_y.clone();
-                self.form.swi_hp_sigma_z = defaults.swi_hp_sigma_z.clone();
-                self.form.swi_mip_window = defaults.swi_mip_window.clone();
-                self.form.do_t2starmap = defaults.do_t2starmap;
-                self.form.do_r2starmap = defaults.do_r2starmap;
-                self.form.do_r2map = defaults.do_r2map;
-                self.form.do_r2primemap = defaults.do_r2primemap;
-                self.form.export_dicom = defaults.export_dicom;
-            }
-            TAB_EXECUTION => {
-                self.form.execution_mode = defaults.execution_mode;
-                self.form.dry_run = defaults.dry_run;
-                self.form.debug = defaults.debug;
-                self.form.n_procs = defaults.n_procs.clone();
-                self.form.slurm_account = defaults.slurm_account.clone();
-                self.form.slurm_partition = defaults.slurm_partition.clone();
-                self.form.slurm_time = defaults.slurm_time.clone();
-                self.form.slurm_mem = defaults.slurm_mem.clone();
-                self.form.slurm_cpus = defaults.slurm_cpus.clone();
-                self.form.slurm_submit = defaults.slurm_submit;
-            }
-            _ => {}
-        }
-    }
-
-    /// Reset the focused pipeline field to its default.
-    fn reset_pipeline_field(&mut self) {
-        let ps = &mut self.pipeline_state;
-        let defaults = PipelineFormState::default();
-        let rows = ps.visible_rows();
-        let focusable = ps.focusable_rows();
-        let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
-
-        match rows.get(focus_idx) {
-            Some(PipelineRow::AlgoSelect { field, .. }) => {
-                ps.set_select(field, defaults.get_select(field));
-            }
-            Some(PipelineRow::Param { field, .. }) => {
-                let default_val = defaults.get_param(field).to_string();
-                if let Some(s) = ps.get_param_mut(field) {
-                    *s = default_val;
-                }
-            }
-            Some(PipelineRow::Toggle { field, .. }) => {
-                let default_val = defaults.get_toggle(field);
-                if ps.get_toggle(field) != default_val {
-                    ps.toggle(field);
-                }
-            }
+            TAB_QSM | TAB_SEPARATION => self.pipeline_state = PipelineFormState::default(),
+            TAB_SUPPLEMENTARY => SUPPLEMENTARY_FIELDS.iter().for_each(|f| self.reset_field(f)),
+            TAB_EXECUTION => EXECUTION_FIELDS.iter().for_each(|f| self.reset_field(f)),
             _ => {}
         }
     }
@@ -5919,10 +5579,10 @@ impl App {
     /// Apply a confirmed [`AlgoModal`] selection to whatever it targets.
     fn apply_algo_modal(&mut self, m: AlgoModal) {
         match m.target {
-            AlgoModalTarget::PipelineSelect(field) => {
-                self.pipeline_state.set_select(&field, m.cursor);
+            AlgoModalTarget::Select(field) => {
+                self.set_field_select(&field, m.cursor);
                 // Keep focus on the selector row (its value changed; rows below may differ).
-                self.pipeline_state.restore_focus(&Some(field));
+                self.restore_focus(&Some(field));
             }
             AlgoModalTarget::MaskInput(section) => {
                 self.pipeline_state.set_mask_input(section, m.cursor);
@@ -5934,11 +5594,6 @@ impl App {
                 self.pipeline_state.set_mask_threshold_method(section, m.cursor);
             }
             AlgoModalTarget::InputMode => self.set_input_mode(m.cursor),
-            AlgoModalTarget::TabSelect { tab, field } => {
-                self.active_tab = tab;
-                self.active_field = field;
-                self.set_select_value(m.cursor);
-            }
         }
     }
 
@@ -6011,54 +5666,58 @@ impl App {
         }
     }
 
-    fn handle_pipeline_key(&mut self, key: KeyEvent) {
-        let ps = &mut self.pipeline_state;
-
-        if ps.editing {
+    /// Keys on a row-based tab (QSM, Separation, Supplementary, Execution): every row is a named
+    /// field ([`PipelineRow`]) read and written through the `field_*` accessors, so one handler
+    /// serves them all, whichever form a field lives in.
+    fn handle_rows_key(&mut self, key: KeyEvent) {
+        if self.pipeline_state.editing {
             // Text editing mode for a parameter
-            let rows = ps.visible_rows();
-            let focusable = ps.focusable_rows();
-            let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
-            if let Some(PipelineRow::Param { field, .. }) = rows.get(focus_idx) {
-                let field = field.to_string();
-                let mut cursor = ps.cursor;
-                match key.code {
-                    KeyCode::Esc | KeyCode::Enter => { ps.editing = false; return; }
-                    KeyCode::Char(c) => {
-                        if let Some(s) = ps.get_param_mut(&field) {
-                            s.insert(cursor, c);
-                            cursor += 1;
-                        }
-                    }
-                    KeyCode::Backspace if key.modifiers.intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) && cursor > 0 => {
-                        if let Some(s) = ps.get_param_mut(&field) {
-                            let new_pos = word_boundary_left(s, cursor);
-                            s.drain(new_pos..cursor);
-                            cursor = new_pos;
-                        }
-                    }
-                    KeyCode::Backspace if cursor > 0 => {
-                        cursor -= 1;
-                        if let Some(s) = ps.get_param_mut(&field) {
-                            s.remove(cursor);
-                        }
-                    }
-                    KeyCode::Left => cursor = cursor.saturating_sub(1),
-                    KeyCode::Right => {
-                        let len = ps.get_param(&field).len();
-                        if cursor < len { cursor += 1; }
-                    }
-                    KeyCode::Home => cursor = 0,
-                    KeyCode::End => cursor = ps.get_param(&field).len(),
-                    _ => {}
+            let field = match self.focused_row() {
+                Some(PipelineRow::Param { field, .. }) => field,
+                _ => {
+                    self.pipeline_state.editing = false;
+                    return;
                 }
-                ps.cursor = cursor;
-            } else {
-                ps.editing = false;
+            };
+            let mut cursor = self.pipeline_state.cursor;
+            let len = self.field_text(field).len();
+            match key.code {
+                KeyCode::Esc | KeyCode::Enter => { self.pipeline_state.editing = false; return; }
+                KeyCode::Char(c) => {
+                    if let Some(s) = self.field_text_mut(field) {
+                        s.insert(cursor, c);
+                        cursor += 1;
+                    }
+                }
+                KeyCode::Backspace if key.modifiers.intersects(KeyModifiers::ALT | KeyModifiers::CONTROL) && cursor > 0 => {
+                    if let Some(s) = self.field_text_mut(field) {
+                        let new_pos = word_boundary_left(s, cursor);
+                        s.drain(new_pos..cursor);
+                        cursor = new_pos;
+                    }
+                }
+                KeyCode::Backspace if cursor > 0 => {
+                    cursor -= 1;
+                    if let Some(s) = self.field_text_mut(field) {
+                        s.remove(cursor);
+                    }
+                }
+                KeyCode::Delete if cursor < len => {
+                    if let Some(s) = self.field_text_mut(field) {
+                        s.remove(cursor);
+                    }
+                }
+                KeyCode::Left => cursor = cursor.saturating_sub(1),
+                KeyCode::Right if cursor < len => cursor += 1,
+                KeyCode::Home => cursor = 0,
+                KeyCode::End => cursor = len,
+                _ => {}
             }
+            self.pipeline_state.cursor = cursor;
             return;
         }
 
+        let ps = &mut self.pipeline_state;
         // Threshold value editing mode
         if ps.mask_threshold_editing {
             let mut cursor = ps.cursor;
@@ -6070,14 +5729,11 @@ impl App {
                 KeyCode::Enter => {
                     // Save the value back to the generator
                     let val: Option<f64> = ps.mask_threshold_value_buf.trim().parse().ok();
-                    let rows = ps.visible_rows();
-                    let focusable = ps.focusable_rows();
-                    let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
                     let mut edited_section = 0;
-                    if let Some(PipelineRow::MaskOpThresholdValue { section }) = rows.get(focus_idx) {
-                        edited_section = *section;
+                    if let Some(PipelineRow::MaskOpThresholdValue { section }) = ps.focused_row() {
+                        edited_section = section;
                         if let Some(crate::pipeline::config::MaskOp::Threshold { value, .. }) =
-                            ps.mask_section_mut(*section).map(|s| &mut s.generator)
+                            ps.mask_section_mut(section).map(|s| &mut s.generator)
                         {
                             *value = val;
                         }
@@ -6121,11 +5777,7 @@ impl App {
             // Reorder mask ops with Ctrl+Up/Down (must be before regular Up/Down)
             KeyCode::Up if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 let ps = &mut self.pipeline_state;
-                let rows = ps.visible_rows();
-                let focusable = ps.focusable_rows();
-                let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
-                if let Some(PipelineRow::MaskOpEntry { section, index }) = rows.get(focus_idx) {
-                    let (si, oi) = (*section, *index);
+                if let Some(PipelineRow::MaskOpEntry { section: si, index: oi }) = ps.focused_row() {
                     let n = ps.mask_refinements(si).map_or(0, |r| r.len());
                     if oi > 0 && oi < n {
                         if let Some(refs) = ps.mask_refinements_mut(si) { refs.swap(oi, oi - 1); }
@@ -6136,11 +5788,7 @@ impl App {
             }
             KeyCode::Down if key.modifiers.contains(crossterm::event::KeyModifiers::CONTROL) => {
                 let ps = &mut self.pipeline_state;
-                let rows = ps.visible_rows();
-                let focusable = ps.focusable_rows();
-                let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
-                if let Some(PipelineRow::MaskOpEntry { section, index }) = rows.get(focus_idx) {
-                    let (si, oi) = (*section, *index);
+                if let Some(PipelineRow::MaskOpEntry { section: si, index: oi }) = ps.focused_row() {
                     if oi + 1 < ps.mask_refinements(si).map_or(0, |r| r.len()) {
                         if let Some(refs) = ps.mask_refinements_mut(si) { refs.swap(oi, oi + 1); }
                         ps.mark_mask_custom(si);
@@ -6151,44 +5799,36 @@ impl App {
             }
 
             // Navigation
-            KeyCode::Up | KeyCode::Char('k')
-                if self.pipeline_state.focus > 0 => {
-                    self.pipeline_state.focus -= 1;
-                }
+            KeyCode::Up | KeyCode::Char('k') => {
+                let f = self.focus();
+                self.set_focus(f.saturating_sub(1));
+            }
             KeyCode::Down | KeyCode::Char('j') => {
-                let max = self.pipeline_state.focusable_rows().len().saturating_sub(1);
-                if self.pipeline_state.focus < max {
-                    self.pipeline_state.focus += 1;
+                let max = self.focusable_rows().len().saturating_sub(1);
+                let f = self.focus();
+                if f < max {
+                    self.set_focus(f + 1);
                 }
             }
 
             // Interact
             KeyCode::Enter | KeyCode::Char(' ') => {
+                let row = self.focused_row();
                 // A collapsible stage header toggles open/closed instead of opening a selector.
-                let section_id = {
-                    let ps = &self.pipeline_state;
-                    let focus_idx = ps.focusable_rows().get(ps.focus).copied().unwrap_or(0);
-                    match ps.visible_rows().get(focus_idx) {
-                        Some(PipelineRow::SectionHeader { id, .. }) => Some(*id),
-                        _ => None,
-                    }
-                };
-                if let Some(id) = section_id {
+                if let Some(PipelineRow::SectionHeader { id, .. }) = row {
                     self.pipeline_state.toggle_section(id);
                     return;
                 }
                 // Single-choice selectors open a modal listing every option (rather than cycling).
                 let modal = {
                     let ps = &self.pipeline_state;
-                    let rows = ps.visible_rows();
-                    let focus_idx = ps.focusable_rows().get(ps.focus).copied().unwrap_or(0);
-                    match rows.get(focus_idx) {
+                    match &row {
                         Some(PipelineRow::AlgoSelect { label, field, options, help }) => Some(AlgoModal {
-                            target: AlgoModalTarget::PipelineSelect(field.to_string()),
-                            title: label.to_string(),
+                            target: AlgoModalTarget::Select(field.to_string()),
+                            title: label.trim().to_string(),
                             options: options.iter().map(|s| s.to_string()).collect(),
                             help: help.iter().map(|s| s.to_string()).collect(),
-                            cursor: ps.get_select(field),
+                            cursor: self.field_select(field),
                         }),
                         Some(PipelineRow::MaskOpInput { section }) => Some(AlgoModal {
                             target: AlgoModalTarget::MaskInput(*section),
@@ -6242,28 +5882,18 @@ impl App {
                     self.algo_modal = Some(m);
                     return;
                 }
-                let ps = &mut self.pipeline_state;
-                let focused_field = ps.focused_field_name();
-                let rows = ps.visible_rows();
-                let focusable = ps.focusable_rows();
-                let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
-                match rows.get(focus_idx).cloned() {
-                    Some(PipelineRow::AlgoSelect { field, options, .. }) => {
-                        // (Unreached — handled by the modal above; kept for exhaustiveness.)
-                        let cur = ps.get_select(field);
-                        ps.set_select(field, (cur + 1) % options.len());
-                        ps.restore_focus(&focused_field);
-                    }
+                match row {
                     Some(PipelineRow::Param { field, .. }) => {
-                        ps.editing = true;
-                        ps.cursor = ps.get_param(field).len();
+                        self.pipeline_state.editing = true;
+                        self.pipeline_state.cursor = self.field_text(field).len();
                     }
                     Some(PipelineRow::Toggle { field, .. }) => {
-                        let focused_field = ps.focused_field_name();
-                        ps.toggle(field);
-                        ps.restore_focus(&focused_field);
+                        let focused_field = self.focused_field_name();
+                        self.toggle_field(field);
+                        self.restore_focus(&focused_field);
                     }
                     Some(PipelineRow::MaskOpAddStep { section }) => {
+                        let ps = &mut self.pipeline_state;
                         if ps.mask_ops_adding {
                             let available = ps.available_op_types(section);
                             if let Some(&type_name) = available.get(ps.mask_ops_add_idx) {
@@ -6281,6 +5911,7 @@ impl App {
                     }
                     Some(PipelineRow::MaskOpAddSection { two_pass }) => {
                         use crate::pipeline::config::*;
+                        let ps = &mut self.pipeline_state;
                         let section = MaskSection {
                             input: MaskingInput::Magnitude,
                             generator: MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None },
@@ -6292,6 +5923,7 @@ impl App {
                     }
                     Some(PipelineRow::MaskOpThresholdValue { section }) => {
                         // Start editing threshold value
+                        let ps = &mut self.pipeline_state;
                         let current = if let crate::pipeline::config::MaskOp::Threshold { value, .. } = &ps.mask_sections[section].generator {
                             value.map(|v| format!("{}", v)).unwrap_or_default()
                         } else { String::new() };
@@ -6300,13 +5932,9 @@ impl App {
                         ps.cursor = current.len();
                     }
                     Some(PipelineRow::MaskCombineOp) => {
-                        ps.toggle_mask_combine();
+                        self.pipeline_state.toggle_mask_combine();
                     }
-                    Some(PipelineRow::MaskOpSignalErodeParam { .. })
-                    | Some(PipelineRow::MaskOpEntry { .. }) | Some(PipelineRow::MaskOpInput { .. })
-                    | Some(PipelineRow::MaskOpGenerator { .. }) | Some(PipelineRow::MaskOpGeneratorParam { .. }) => {
-                        // Handled by Left/Right
-                    }
+                    // The other mask rows are adjusted with Left/Right.
                     _ => {}
                 }
             }
@@ -6314,22 +5942,16 @@ impl App {
             // Delete refinement step or entire section
             KeyCode::Char('d') | KeyCode::Delete => {
                 let ps = &mut self.pipeline_state;
-                let rows = ps.visible_rows();
-                let focusable = ps.focusable_rows();
-                let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
-                match rows.get(focus_idx) {
-                    Some(PipelineRow::MaskOpEntry { section, index }) => {
-                        let (si, oi) = (*section, *index);
-                        if oi < ps.mask_refinements(si).map_or(0, |r| r.len()) {
-                            if let Some(refs) = ps.mask_refinements_mut(si) { refs.remove(oi); }
-                            ps.mark_mask_custom(si);
-                            let max = ps.focusable_rows().len().saturating_sub(1);
-                            if ps.focus > max { ps.focus = max; }
-                        }
+                match ps.focused_row() {
+                    Some(PipelineRow::MaskOpEntry { section: si, index: oi })
+                        if oi < ps.mask_refinements(si).map_or(0, |r| r.len()) => {
+                        if let Some(refs) = ps.mask_refinements_mut(si) { refs.remove(oi); }
+                        ps.mark_mask_custom(si);
+                        let max = ps.focusable_rows().len().saturating_sub(1);
+                        if ps.focus > max { ps.focus = max; }
                     }
                     // Delete entire section (only if >1 sections) when focused on section header-adjacent rows
-                    Some(PipelineRow::MaskOpGenerator { section }) | Some(PipelineRow::MaskOpInput { section }) => {
-                        let si = *section;
+                    Some(PipelineRow::MaskOpGenerator { section: si }) | Some(PipelineRow::MaskOpInput { section: si }) => {
                         let (two_pass, i) = PipelineFormState::mask_section_slot(si);
                         if ps.mask_section_count(two_pass) > 1 && i < ps.mask_section_count(two_pass) {
                             if two_pass { ps.two_pass_sections.remove(i); } else { ps.mask_sections.remove(i); }
@@ -6345,73 +5967,56 @@ impl App {
             // Left/Right for selects and mask ops
             KeyCode::Left | KeyCode::Right => {
                 let delta = if key.code == KeyCode::Left { -1isize } else { 1 };
-                let ps = &mut self.pipeline_state;
 
                 // Check if we're in mask ops add mode
-                if ps.mask_ops_adding {
+                if self.pipeline_state.mask_ops_adding {
+                    let ps = &mut self.pipeline_state;
                     let available = ps.available_op_types(ps.mask_ops_add_section);
                     let n = available.len() as isize;
                     if n > 0 {
                         ps.mask_ops_add_idx = (ps.mask_ops_add_idx as isize + delta).rem_euclid(n) as usize;
                     }
-                } else {
-                    let focused_field = ps.focused_field_name();
-                    let rows = ps.visible_rows();
-                    let focusable = ps.focusable_rows();
-                    let focus_idx = focusable.get(ps.focus).copied().unwrap_or(0);
-                    match rows.get(focus_idx) {
-                        Some(PipelineRow::AlgoSelect { field, options, .. }) => {
-                            // Mask preset: cycle the real presets only; "custom" is auto-set on edits
-                            let n = if *field == "mask_preset" { MASK_PRESET_CUSTOM } else { options.len() } as isize;
-                            let cur = ps.get_select(field).min((n - 1) as usize) as isize;
-                            let new_val = (cur + delta).rem_euclid(n) as usize;
-                            ps.set_select(field, new_val);
-                            ps.restore_focus(&focused_field);
-                        }
-                        Some(PipelineRow::MaskCombineOp) => {
-                            ps.toggle_mask_combine();
-                        }
-                        Some(PipelineRow::MaskOpEntry { section, index }) => {
-                            ps.adjust_mask_op(*section, *index, delta);
-                        }
-                        Some(PipelineRow::MaskOpSignalErodeParam { section, index, param }) => {
-                            ps.adjust_signal_erode_param(*section, *index, *param, delta);
-                        }
-                        Some(PipelineRow::MaskOpGenerator { section }) => {
-                            ps.adjust_mask_generator(*section, delta);
-                        }
-                        Some(PipelineRow::MaskOpGeneratorParam { section }) => {
-                            ps.adjust_mask_generator_param(*section, delta);
-                        }
-                        Some(PipelineRow::MaskOpHdBetStep { section }) => {
-                            ps.adjust_hd_bet_tile_step(*section, delta);
-                        }
-                        Some(PipelineRow::MaskOpBetVoxelScale { section }) => {
-                            ps.adjust_bet_voxel_scale(*section, delta);
-                        }
-                        Some(PipelineRow::MaskOpInput { section }) => {
-                            ps.adjust_mask_input(*section, delta);
-                        }
-                        // Stage headers: ← collapses, → expands (in addition to Enter/Space toggle).
-                        Some(PipelineRow::SectionHeader { id, .. }) => {
-                            let id = *id;
-                            if delta < 0 {
-                                ps.collapsed_sections.insert(id);
-                            } else {
-                                ps.collapsed_sections.remove(id);
-                            }
-                        }
-                        _ => {}
+                    return;
+                }
+                let row = self.focused_row();
+                if let Some(PipelineRow::AlgoSelect { field, options, .. }) = row {
+                    let focused_field = self.focused_field_name();
+                    // Mask preset: cycle the real presets only; "custom" is auto-set on edits
+                    let n = if field == "mask_preset" { MASK_PRESET_CUSTOM } else { options.len() } as isize;
+                    let cur = self.field_select(field).min((n - 1) as usize) as isize;
+                    let new_val = (cur + delta).rem_euclid(n) as usize;
+                    self.set_field_select(field, new_val);
+                    self.restore_focus(&focused_field);
+                    return;
+                }
+                let ps = &mut self.pipeline_state;
+                match row {
+                    Some(PipelineRow::MaskCombineOp) => ps.toggle_mask_combine(),
+                    Some(PipelineRow::MaskOpEntry { section, index }) => ps.adjust_mask_op(section, index, delta),
+                    Some(PipelineRow::MaskOpSignalErodeParam { section, index, param }) => {
+                        ps.adjust_signal_erode_param(section, index, param, delta);
                     }
+                    Some(PipelineRow::MaskOpGenerator { section }) => ps.adjust_mask_generator(section, delta),
+                    Some(PipelineRow::MaskOpGeneratorParam { section }) => ps.adjust_mask_generator_param(section, delta),
+                    Some(PipelineRow::MaskOpHdBetStep { section }) => ps.adjust_hd_bet_tile_step(section, delta),
+                    Some(PipelineRow::MaskOpBetVoxelScale { section }) => ps.adjust_bet_voxel_scale(section, delta),
+                    Some(PipelineRow::MaskOpInput { section }) => ps.adjust_mask_input(section, delta),
+                    // Stage headers: ← collapses, → expands (in addition to Enter/Space toggle).
+                    Some(PipelineRow::SectionHeader { id, .. }) => {
+                        if delta < 0 {
+                            ps.collapsed_sections.insert(id);
+                        } else {
+                            ps.collapsed_sections.remove(id);
+                        }
+                    }
+                    _ => {}
                 }
             }
 
             // Reset focused field to default
-            KeyCode::Char('r') => self.reset_pipeline_field(),
-            // Reset all pipeline settings to defaults
-            KeyCode::Char('R') => {
-                self.pipeline_state = PipelineFormState::default();
-            }
+            KeyCode::Char('r') => self.reset_row_field(),
+            // Reset every setting of the tab to its default
+            KeyCode::Char('R') => self.reset_current_tab(),
 
             KeyCode::F(5) => self.try_run(),
 
@@ -6465,38 +6070,6 @@ impl App {
         self.cursor_pos = cursor;
     }
 
-    fn interact_field(&mut self) {
-        match self.current_field().kind.clone() {
-            FieldKind::Text => {
-                self.editing = true;
-                self.cursor_pos = self.text_value().len();
-            }
-            FieldKind::Checkbox => self.toggle_checkbox(),
-            FieldKind::Select { options } => {
-                // Open a modal listing all options rather than cycling by one.
-                let field = self.current_field();
-                let (title, help) = (field.label.to_string(), field.help.to_string());
-                let opts: Vec<String> = options.iter().map(|s| s.to_string()).collect();
-                self.algo_modal = Some(AlgoModal {
-                    target: AlgoModalTarget::TabSelect { tab: self.active_tab, field: self.active_field },
-                    title,
-                    help: vec![help; opts.len()],
-                    options: opts,
-                    cursor: self.select_value(),
-                });
-            }
-        }
-    }
-
-    fn adjust_select(&mut self, delta: isize) {
-        if let FieldKind::Select { options } = &self.current_field().kind {
-            let n = options.len() as isize;
-            let val = self.select_value() as isize;
-            let new_val = (val + delta).rem_euclid(n) as usize;
-            self.set_select_value(new_val);
-        }
-    }
-
     // --- Field value accessors ---
 
     pub fn text_value(&self) -> &str {
@@ -6514,25 +6087,6 @@ impl App {
                 InputMode::Example => &self.form.output_dir,
             },
             (0, 3) => &self.form.config_file,
-            (TAB_SUPPLEMENTARY, 2) => &self.form.swi_strength,
-            (TAB_SUPPLEMENTARY, 13) => &self.form.smwi_threshold,
-            (TAB_SUPPLEMENTARY, 14) => &self.form.smwi_power,
-            (TAB_SUPPLEMENTARY, 15) => &self.form.smwi_mip_window,
-            (TAB_SUPPLEMENTARY, 18) => &self.form.synthseg_crop,
-            (TAB_SUPPLEMENTARY, 21) => &self.form.synthseg_sigma,
-            (TAB_SUPPLEMENTARY, 3) => &self.form.swi_hp_sigma_x,
-            (TAB_SUPPLEMENTARY, 4) => &self.form.swi_hp_sigma_y,
-            (TAB_SUPPLEMENTARY, 5) => &self.form.swi_hp_sigma_z,
-            (TAB_SUPPLEMENTARY, 6) => &self.form.swi_mip_window,
-            (TAB_EXECUTION, 3) => &self.form.n_procs,
-            (TAB_EXECUTION, 4) => &self.form.slurm_account,
-            (TAB_EXECUTION, 5) => &self.form.slurm_partition,
-            (TAB_EXECUTION, 6) => &self.form.slurm_time,
-            (TAB_EXECUTION, 7) => &self.form.slurm_mem,
-            (TAB_EXECUTION, 8) => &self.form.slurm_cpus,
-            (TAB_EXECUTION, 10) => &self.form.mem_limit_gb,
-            (TAB_SUPPLEMENTARY, 24) => &self.form.source_dicom,
-            (TAB_SUPPLEMENTARY, 25) => &self.form.dicom_outputs,
             _ => "",
         }
     }
@@ -6552,76 +6106,7 @@ impl App {
                 InputMode::Example => &mut self.form.output_dir,
             },
             (0, 3) => &mut self.form.config_file,
-            (TAB_SUPPLEMENTARY, 2) => &mut self.form.swi_strength,
-            (TAB_SUPPLEMENTARY, 13) => &mut self.form.smwi_threshold,
-            (TAB_SUPPLEMENTARY, 14) => &mut self.form.smwi_power,
-            (TAB_SUPPLEMENTARY, 15) => &mut self.form.smwi_mip_window,
-            (TAB_SUPPLEMENTARY, 18) => &mut self.form.synthseg_crop,
-            (TAB_SUPPLEMENTARY, 21) => &mut self.form.synthseg_sigma,
-            (TAB_SUPPLEMENTARY, 3) => &mut self.form.swi_hp_sigma_x,
-            (TAB_SUPPLEMENTARY, 4) => &mut self.form.swi_hp_sigma_y,
-            (TAB_SUPPLEMENTARY, 5) => &mut self.form.swi_hp_sigma_z,
-            (TAB_SUPPLEMENTARY, 6) => &mut self.form.swi_mip_window,
-            (TAB_EXECUTION, 3) => &mut self.form.n_procs,
-            (TAB_EXECUTION, 4) => &mut self.form.slurm_account,
-            (TAB_EXECUTION, 5) => &mut self.form.slurm_partition,
-            (TAB_EXECUTION, 6) => &mut self.form.slurm_time,
-            (TAB_EXECUTION, 7) => &mut self.form.slurm_mem,
-            (TAB_EXECUTION, 8) => &mut self.form.slurm_cpus,
-            (TAB_EXECUTION, 10) => &mut self.form.mem_limit_gb,
-            (TAB_SUPPLEMENTARY, 24) => &mut self.form.source_dicom,
-            (TAB_SUPPLEMENTARY, 25) => &mut self.form.dicom_outputs,
             _ => unreachable!("text_value_mut called on non-text field"),
-        }
-    }
-
-    pub fn select_value(&self) -> usize {
-        match (self.active_tab, self.active_field) {
-            (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling,
-            (TAB_SUPPLEMENTARY, 17) => self.form.synthseg_version,
-            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) => self.pipeline_state.get_select("qsm_reference"),
-            (TAB_EXECUTION, 0) => self.form.execution_mode,
-            _ => 0,
-        }
-    }
-
-    fn set_select_value(&mut self, val: usize) {
-        match (self.active_tab, self.active_field) {
-            (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling = val,
-            (TAB_SUPPLEMENTARY, 17) => self.form.synthseg_version = val,
-            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) => self.pipeline_state.set_select("qsm_reference", val),
-            (TAB_EXECUTION, 0) => {
-                self.form.execution_mode = val;
-                // Clamp active_field if it landed on a now-hidden field
-                if !self.is_field_visible(self.active_tab, self.active_field) {
-                    self.active_field = 0;
-                }
-            }
-            _ => {}
-        }
-    }
-
-    #[allow(dead_code)]
-    fn checkbox_value(&self) -> bool {
-        match (self.active_tab, self.active_field) {
-            (TAB_SUPPLEMENTARY, 0) => self.form.do_swi,
-            (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap,
-            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap || self.r2star_map_forced(),
-            (TAB_SUPPLEMENTARY, 9) => self.form.do_r2map || self.r2_map_forced(),
-            (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
-            (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
-            (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi,
-            (TAB_SUPPLEMENTARY, 16) => self.form.do_segmentation || self.segmentation_forced(),
-            (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging,
-            (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup,
-            (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis,
-            (TAB_EXECUTION, 1) => self.form.dry_run,
-            (TAB_EXECUTION, 2) => self.form.debug,
-            (TAB_EXECUTION, 9) => self.form.slurm_submit,
-            (TAB_EXECUTION, 11) => self.form.no_mem_limit,
-            (TAB_EXECUTION, 12) => self.form.force,
-            (TAB_EXECUTION, 13) => self.form.clean_intermediates,
-            _ => false,
         }
     }
 
@@ -6634,153 +6119,265 @@ impl App {
         let config = super::command::config_from_app(self).ok()?;
         crate::pipeline::requirements::implied_by(&config, out)
     }
-    fn segmentation_forced(&self) -> bool {
-        self.forced_by(crate::pipeline::requirements::Output::Segmentation).is_some()
-    }
-    fn r2_map_forced(&self) -> bool {
-        self.forced_by(crate::pipeline::requirements::Output::R2).is_some()
-    }
-    fn r2prime_map_forced(&self) -> bool {
-        self.forced_by(crate::pipeline::requirements::Output::R2prime).is_some()
-    }
-    fn r2star_map_forced(&self) -> bool {
-        self.forced_by(crate::pipeline::requirements::Output::R2star).is_some()
-    }
-
     /// Whether QSM is reconstructed: its toggle, or an output that forces it.
     fn qsm_effective(&self) -> bool {
         self.pipeline_state.do_qsm
             || super::command::config_from_app(self).is_ok_and(|c| c.pipeline.do_qsm)
     }
 
-    /// Refuse to untick a forced output: say what forces it.
-    fn refuse_forced(&mut self, what: &str, out: crate::pipeline::requirements::Output) -> bool {
-        match self.forced_by(out) {
-            Some(why) => {
-                self.error_message = Some(format!(
-                    "{what} is required by {why} — change or turn that off first (or supply the map)."));
+    // ─── Row-based tabs: rows, focus and named field access ───
+
+    /// Whether a tab is drawn and driven as named rows ([`PipelineRow`]).
+    pub fn is_rows_tab(tab: usize) -> bool {
+        matches!(tab, TAB_QSM | TAB_SEPARATION | TAB_SUPPLEMENTARY | TAB_EXECUTION)
+    }
+
+    /// Whether the active tab's rows are the pipeline form's (QSM, Separation), which keep their
+    /// own focus, scroll position and collapsed stages.
+    fn on_pipeline_tab(&self) -> bool {
+        matches!(self.active_tab, TAB_QSM | TAB_SEPARATION)
+    }
+
+    /// The active tab's rows: the pipeline form's for QSM/Separation (call
+    /// [`App::sync_pipeline_mode`] first), the run form's for Supplementary/Execution.
+    pub fn rows(&self) -> Vec<PipelineRow> {
+        match self.active_tab {
+            TAB_QSM | TAB_SEPARATION => self.pipeline_state.visible_rows(),
+            TAB_SUPPLEMENTARY => self.supplementary_rows(),
+            TAB_EXECUTION => self.execution_rows(),
+            _ => Vec::new(),
+        }
+    }
+
+    /// Indices into [`App::rows`] of the rows focus can land on.
+    pub fn focusable_rows(&self) -> Vec<usize> {
+        focusable_indices(&self.rows())
+    }
+
+    /// The focused row's position among [`App::focusable_rows`].
+    pub fn focus(&self) -> usize {
+        if self.on_pipeline_tab() { self.pipeline_state.focus } else { self.active_field }
+    }
+
+    fn set_focus(&mut self, focus: usize) {
+        if self.on_pipeline_tab() { self.pipeline_state.focus = focus } else { self.active_field = focus }
+    }
+
+    /// The focused row of the active tab.
+    pub fn focused_row(&self) -> Option<PipelineRow> {
+        let rows = self.rows();
+        let i = *focusable_indices(&rows).get(self.focus())?;
+        rows.get(i).cloned()
+    }
+
+    /// The field the focused row edits, if it edits one.
+    pub fn focused_field_name(&self) -> Option<String> {
+        self.focused_row().as_ref().and_then(row_field).map(str::to_string)
+    }
+
+    /// After the rows changed, put focus back on the row editing `field` (or keep it in range).
+    pub fn restore_focus(&mut self, field: &Option<String>) {
+        if let Some(name) = field {
+            if self.focus_field(name) {
+                return;
+            }
+        }
+        let max = self.focusable_rows().len().saturating_sub(1);
+        if self.focus() > max {
+            self.set_focus(max);
+        }
+    }
+
+    /// Focus the row editing `field` on the active tab; false if no visible row does.
+    pub fn focus_field(&mut self, field: &str) -> bool {
+        let rows = self.rows();
+        match focusable_indices(&rows).iter().position(|&i| row_field(&rows[i]) == Some(field)) {
+            Some(fi) => {
+                self.set_focus(fi);
                 true
             }
             None => false,
         }
     }
 
-    fn toggle_checkbox(&mut self) {
-        match (self.active_tab, self.active_field) {
-            (TAB_SUPPLEMENTARY, 0) => self.form.do_swi = !self.form.do_swi,
-            (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap = !self.form.do_t2starmap,
-            // Refused (with the reason) while another output forces it on.
-            (TAB_SUPPLEMENTARY, 8) if !self.refuse_forced("The R2* map", crate::pipeline::requirements::Output::R2star) => self.form.do_r2starmap = !self.form.do_r2starmap,
-            // Refused (with the reason) while another output forces it on.
-            (TAB_SUPPLEMENTARY, 9) if !self.refuse_forced("The R2 map", crate::pipeline::requirements::Output::R2) => self.form.do_r2map = !self.form.do_r2map,
-            // Refused (with the reason) while another output forces it on.
-            (TAB_SUPPLEMENTARY, 10) if !self.refuse_forced("The R2' map", crate::pipeline::requirements::Output::R2prime) => self.form.do_r2primemap = !self.form.do_r2primemap,
-            (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom = !self.form.export_dicom,
-            (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi = !self.form.do_smwi,
-            // Refused (with the reason) while another output forces it on.
-            (TAB_SUPPLEMENTARY, 16) if !self.refuse_forced("Segmentation", crate::pipeline::requirements::Output::Segmentation) => self.form.do_segmentation = !self.form.do_segmentation,
-            (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging = !self.form.synthseg_flip_averaging,
-            (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup = !self.form.synthseg_topology_cleanup,
-            (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis = !self.form.do_analysis,
-            (TAB_EXECUTION, 1) => self.form.dry_run = !self.form.dry_run,
-            (TAB_EXECUTION, 2) => self.form.debug = !self.form.debug,
-            (TAB_EXECUTION, 9) => self.form.slurm_submit = !self.form.slurm_submit,
-            (TAB_EXECUTION, 11) => self.form.no_mem_limit = !self.form.no_mem_limit,
-            (TAB_EXECUTION, 12) => self.form.force = !self.form.force,
-            (TAB_EXECUTION, 13) => self.form.clean_intermediates = !self.form.clean_intermediates,
-            _ => {}
+    /// Whether a row editing `field` is on the active tab now.
+    #[cfg(test)]
+    pub fn field_visible(&self, field: &str) -> bool {
+        self.rows().iter().any(|r| row_field(r) == Some(field))
+    }
+
+    /// A text field's value, by name: the run form's, else the pipeline form's.
+    pub fn field_text(&self, field: &str) -> &str {
+        match self.form.text(field) {
+            Some(s) => s,
+            None => self.pipeline_state.get_param(field),
         }
     }
 
-    // Generalized accessors for rendering arbitrary (tab, field) pairs
-    /// Whether a field is visible (used to hide SLURM fields in Local mode and vice versa).
-    pub fn is_field_visible(&self, tab: usize, field: usize) -> bool {
-        match (tab, field) {
-            // SWI settings (1-6) only visible when Compute SWI is checked
-            (TAB_SUPPLEMENTARY, 1..=6) => self.form.do_swi,
-            // SMWI settings (13-15) likewise under Compute SMWI (12)
-            (TAB_SUPPLEMENTARY, 13..=15) => self.form.do_smwi,
-            // The reference row (23) needs no segmentation to be reachable — picking a region is
-            // how a user turns segmentation *on* from here, so gating it behind segmentation would
-            // deadlock — but it references χ, so it only applies when QSM is reconstructed.
-            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) => self.qsm_effective(),
-            // The statistics (22) are reachable on their own: a supplied segmentation satisfies
-            // them without SynthSeg, and hiding them then would leave them impossible to untick.
-            (TAB_SUPPLEMENTARY, 22) => true,
-            // SynthSeg settings (17-21) under Segment (16). Whatever forces segmentation — the
-            // statistics, or a region reference, without a supplied dseg — reveals these too: the
-            // checkbox above then reads as checked, and hiding the settings that shape the
-            // segmentation it promises would be a lie.
-            (TAB_SUPPLEMENTARY, 17..=21) => self.form.do_segmentation || self.segmentation_forced(),
-            // SLURM fields (4-9) only visible in SLURM mode
-            (TAB_EXECUTION, 4..=9) => self.form.execution_mode == 1,
-            // Dry Run and Num Processes only in Local mode
-            (TAB_EXECUTION, 1) | (TAB_EXECUTION, 3) => self.form.execution_mode == 0,
-            // The memory limit schedules concurrent local runs; force and clean-up apply to both.
-            (TAB_EXECUTION, 10..=11) => self.form.execution_mode == 0,
-            // DICOM export settings under Export DICOM (11).
-            (TAB_SUPPLEMENTARY, 24..=25) => self.form.export_dicom,
-            _ => true,
+    pub fn field_text_mut(&mut self, field: &str) -> Option<&mut String> {
+        if self.form.text(field).is_some() {
+            self.form.text_mut(field)
+        } else {
+            self.pipeline_state.get_param_mut(field)
         }
     }
 
-    pub fn get_text_value(&self, tab: usize, field: usize) -> &str {
-        match (tab, field) {
-            (TAB_SUPPLEMENTARY, 2) => &self.form.swi_strength,
-            (TAB_SUPPLEMENTARY, 13) => &self.form.smwi_threshold,
-            (TAB_SUPPLEMENTARY, 14) => &self.form.smwi_power,
-            (TAB_SUPPLEMENTARY, 15) => &self.form.smwi_mip_window,
-            (TAB_SUPPLEMENTARY, 18) => &self.form.synthseg_crop,
-            (TAB_SUPPLEMENTARY, 21) => &self.form.synthseg_sigma,
-            (TAB_SUPPLEMENTARY, 3) => &self.form.swi_hp_sigma_x,
-            (TAB_SUPPLEMENTARY, 4) => &self.form.swi_hp_sigma_y,
-            (TAB_SUPPLEMENTARY, 5) => &self.form.swi_hp_sigma_z,
-            (TAB_SUPPLEMENTARY, 6) => &self.form.swi_mip_window,
-            (TAB_EXECUTION, 3) => &self.form.n_procs,
-            (TAB_EXECUTION, 4) => &self.form.slurm_account,
-            (TAB_EXECUTION, 5) => &self.form.slurm_partition,
-            (TAB_EXECUTION, 6) => &self.form.slurm_time,
-            (TAB_EXECUTION, 7) => &self.form.slurm_mem,
-            (TAB_EXECUTION, 8) => &self.form.slurm_cpus,
-            (TAB_EXECUTION, 10) => &self.form.mem_limit_gb,
-            (TAB_SUPPLEMENTARY, 24) => &self.form.source_dicom,
-            (TAB_SUPPLEMENTARY, 25) => &self.form.dicom_outputs,
-            _ => "",
+    /// A select's option index, by name.
+    pub fn field_select(&self, field: &str) -> usize {
+        self.form.choice(field).copied().unwrap_or_else(|| self.pipeline_state.get_select(field))
+    }
+
+    pub fn set_field_select(&mut self, field: &str, val: usize) {
+        match self.form.choice_mut(field) {
+            Some(c) => *c = val,
+            None => self.pipeline_state.set_select(field, val),
         }
     }
 
-    pub fn get_select_value(&self, tab: usize, field: usize) -> usize {
-        match (tab, field) {
-            (TAB_SUPPLEMENTARY, 1) => self.form.swi_scaling,
-            (TAB_SUPPLEMENTARY, 17) => self.form.synthseg_version,
-            (TAB_SUPPLEMENTARY, Self::SUPP_QSM_REFERENCE) => self.pipeline_state.get_select("qsm_reference"),
-            (TAB_EXECUTION, 0) => self.form.execution_mode,
-            _ => 0,
+    /// A checkbox as it reads: an output another option forces on reads as checked.
+    pub fn field_toggle(&self, field: &str) -> bool {
+        if let Some(out) = forced_output(field) {
+            if self.forced_by(out).is_some() {
+                return true;
+            }
+        }
+        match self.form.flag(field) {
+            Some(&b) => b,
+            None => self.pipeline_state.get_toggle(field),
         }
     }
 
-    pub fn get_checkbox_value(&self, tab: usize, field: usize) -> bool {
-        match (tab, field) {
-            (TAB_SUPPLEMENTARY, 0) => self.form.do_swi,
-            (TAB_SUPPLEMENTARY, 7) => self.form.do_t2starmap,
-            (TAB_SUPPLEMENTARY, 8) => self.form.do_r2starmap || self.r2star_map_forced(),
-            (TAB_SUPPLEMENTARY, 9) => self.form.do_r2map || self.r2_map_forced(),
-            (TAB_SUPPLEMENTARY, 10) => self.form.do_r2primemap || self.r2prime_map_forced(),
-            (TAB_SUPPLEMENTARY, 11) => self.form.export_dicom,
-            (TAB_SUPPLEMENTARY, 12) => self.form.do_smwi,
-            (TAB_SUPPLEMENTARY, 16) => self.form.do_segmentation || self.segmentation_forced(),
-            (TAB_SUPPLEMENTARY, 19) => self.form.synthseg_flip_averaging,
-            (TAB_SUPPLEMENTARY, 20) => self.form.synthseg_topology_cleanup,
-            (TAB_SUPPLEMENTARY, 22) => self.form.do_analysis,
-            (TAB_EXECUTION, 1) => self.form.dry_run,
-            (TAB_EXECUTION, 2) => self.form.debug,
-            (TAB_EXECUTION, 9) => self.form.slurm_submit,
-            (TAB_EXECUTION, 11) => self.form.no_mem_limit,
-            (TAB_EXECUTION, 12) => self.form.force,
-            (TAB_EXECUTION, 13) => self.form.clean_intermediates,
-            _ => false,
+    /// Flip a checkbox — refused, with the reason, while another option forces it on.
+    pub fn toggle_field(&mut self, field: &str) {
+        if let Some(out) = forced_output(field) {
+            if let Some(why) = self.forced_by(out) {
+                self.error_message = Some(format!(
+                    "{} is required by {why} — change or turn that off first (or supply the map).",
+                    forced_output_name(out)));
+                return;
+            }
+        }
+        match self.form.flag_mut(field) {
+            Some(b) => *b = !*b,
+            None => self.pipeline_state.toggle(field),
         }
     }
+
+    /// What an empty text field reads as.
+    pub fn field_placeholder(&self, field: &str) -> &'static str {
+        match field {
+            "slurm_account" => "(required)",
+            _ if self.form.text(field).is_some() => "(empty)",
+            _ => "(default)",
+        }
+    }
+
+    /// Reset the focused row's field to its default.
+    fn reset_row_field(&mut self) {
+        if let Some(field) = self.focused_field_name() {
+            self.reset_field(&field);
+        }
+    }
+
+    /// Reset one named field to its default, whichever form it lives in.
+    fn reset_field(&mut self, field: &str) {
+        let (form, ps) = (RunForm::default(), PipelineFormState::default());
+        if let (Some(d), Some(v)) = (form.text(field), self.form.text_mut(field)) {
+            *v = d.clone();
+        } else if let (Some(d), Some(v)) = (form.flag(field), self.form.flag_mut(field)) {
+            *v = *d;
+        } else if let (Some(d), Some(v)) = (form.choice(field), self.form.choice_mut(field)) {
+            *v = *d;
+        } else if let Some(v) = self.pipeline_state.get_param_mut(field) {
+            *v = ps.get_param(field).to_string();
+        } else if ps.get_toggle(field) != self.pipeline_state.get_toggle(field) {
+            self.pipeline_state.toggle(field);
+        } else {
+            self.pipeline_state.set_select(field, ps.get_select(field));
+        }
+    }
+
+    /// The Supplementary tab: SWI, relaxometry, DICOM export, SMWI and segmentation.
+    fn supplementary_rows(&self) -> Vec<PipelineRow> {
+        use PipelineRow::{AlgoSelect, Param, Toggle};
+        let f = &self.form;
+        let mut rows = vec![Toggle { label: "Compute SWI", field: "do_swi", help: "Also compute susceptibility-weighted images" }];
+        if f.do_swi {
+            rows.push(AlgoSelect { label: "  SWI Scaling", field: "swi_scaling", options: &SWI_SCALING_OPTIONS, help: &SWI_SCALING_HELP });
+            rows.push(Param { label: "  SWI Strength", field: "swi_strength", help: "Phase scaling strength (higher = stronger phase contrast)" });
+            rows.push(Param { label: "  SWI HP Sigma X", field: "swi_hp_sigma_x", help: "High-pass filter sigma in X (voxels). Controls background phase removal." });
+            rows.push(Param { label: "  SWI HP Sigma Y", field: "swi_hp_sigma_y", help: "High-pass filter sigma in Y (voxels)." });
+            rows.push(Param { label: "  SWI HP Sigma Z", field: "swi_hp_sigma_z", help: "High-pass filter sigma in Z (voxels). Set to 0 for thin axial slices." });
+            rows.push(Param { label: "  SWI MIP Window", field: "swi_mip_window", help: "Minimum intensity projection window size in slices" });
+        }
+        rows.push(Toggle { label: "Compute T2* Map", field: "do_t2starmap", help: "Compute T2* relaxation map (requires 3+ echoes with magnitude)" });
+        rows.push(Toggle { label: "Compute R2* Map", field: "do_r2starmap", help: "Compute R2* decay rate map (requires 3+ echoes with magnitude)" });
+        rows.push(Toggle { label: "Compute R2 Map", field: "do_r2map", help: "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when chi-separation is enabled." });
+        rows.push(Toggle { label: "Compute R2' Map", field: "do_r2primemap", help: "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition. Forced on when chi-separation is enabled." });
+        rows.push(Toggle { label: "Export DICOM", field: "export_dicom", help: "Also write final maps as DICOM series into each subject's extra_files/ folder" });
+        rows.push(Toggle { label: "Compute SMWI", field: "do_smwi", help: "Susceptibility map-weighted imaging — weights the magnitude by a mask built from χ, not from filtered phase. Needs QSM" });
+        if f.do_smwi {
+            rows.push(Param { label: "  SMWI Threshold", field: "smwi_threshold", help: "|χ| in ppm at which the weighting mask reaches zero. The 1 ppm default targets strong sources; brain tissue wants far less" });
+            rows.push(Param { label: "  SMWI Power", field: "smwi_power", help: "Power the mask is raised to (contrast strength)" });
+            rows.push(Param { label: "  SMWI mIP Window", field: "smwi_mip_window", help: "Minimum-intensity-projection window in slices" });
+        }
+        rows.push(Toggle { label: "Segment (SynthSeg)", field: "do_segmentation", help: "Whole-brain parcellation straight off the GRE magnitude — no T1w, no registration. Needs a deep-learning build" });
+        // Whatever forces segmentation — the statistics, or a region reference, without a
+        // supplied dseg — reveals SynthSeg's settings too: the checkbox above then reads as
+        // checked, and hiding the settings that shape the segmentation it promises would be a lie.
+        if self.field_toggle("do_segmentation") {
+            rows.push(AlgoSelect { label: "  SynthSeg Version", field: "synthseg_version", options: SYNTHSEG_VERSION_OPTIONS, help: SYNTHSEG_VERSION_HELP });
+            rows.push(Param { label: "  SynthSeg Crop", field: "synthseg_crop", help: "Cubic centre-crop in voxels at 1 mm before inference; empty processes the whole volume" });
+            rows.push(Toggle { label: "  Flip Averaging", field: "synthseg_flip_averaging", help: "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time" });
+            rows.push(Toggle { label: "  Topology Cleanup", field: "synthseg_topology_cleanup", help: "Reset each topological class to its largest connected component" });
+            rows.push(Param { label: "  Posterior Smoothing", field: "synthseg_sigma", help: "Gaussian blur on the posteriors, in voxels (0 disables it)" });
+        }
+        // Reachable on its own: a supplied segmentation satisfies the statistics without SynthSeg,
+        // and hiding them then would leave them impossible to untick.
+        rows.push(Toggle { label: "  Per-structure Stats", field: "do_analysis", help: "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Implies segmentation; implies QSM only if no other map is enabled" });
+        // The same control as the QSM tab's "QSM Reference" row, editing the same value — a
+        // region reference is a SynthSeg setting as much as a referencing one. It needs no
+        // segmentation to be reachable (picking a region is how a user turns segmentation on from
+        // here), but it references χ, so it only applies when QSM is reconstructed.
+        if self.qsm_effective() {
+            rows.push(AlgoSelect { label: "  QSM Reference", field: "qsm_reference", options: qsm_ref_options(), help: &SUPP_QSM_REF_HELP });
+        }
+        if f.export_dicom {
+            rows.push(Param { label: "  Source DICOM Dir", field: "source_dicom", help: "Original DICOM directory: the exported series inherit its patient/study identity (empty = none)" });
+            rows.push(Param { label: "  DICOM Outputs", field: "dicom_outputs", help: "Comma-separated maps to export, e.g. Chimap,desc-total_chimap (empty = all)" });
+        }
+        rows
+    }
+
+    /// The Execution tab: local or SLURM, and each mode's settings.
+    fn execution_rows(&self) -> Vec<PipelineRow> {
+        use PipelineRow::{AlgoSelect, Param, Toggle};
+        let local = self.form.execution_mode == 0;
+        let mut rows = vec![AlgoSelect { label: "Execution Mode", field: "execution_mode", options: EXECUTION_MODE_OPTIONS, help: EXECUTION_MODE_HELP }];
+        if local {
+            rows.push(Toggle { label: "Dry Run", field: "dry_run", help: "Print processing plan without executing" });
+        }
+        rows.push(Toggle { label: "Debug Logging", field: "debug", help: "Enable verbose debug log output" });
+        if local {
+            rows.push(Param { label: "Num Processes", field: "n_procs", help: "Number of parallel threads (empty = auto)" });
+        } else {
+            rows.push(Param { label: "  SLURM Account", field: "slurm_account", help: "SLURM account name (required for SLURM mode)" });
+            rows.push(Param { label: "  SLURM Partition", field: "slurm_partition", help: "SLURM partition (optional)" });
+            rows.push(Param { label: "  SLURM Time Limit", field: "slurm_time", help: "Wall time limit per job (e.g. 02:00:00)" });
+            rows.push(Param { label: "  SLURM Memory (GB)", field: "slurm_mem", help: "Memory per job in GB (empty = estimated per run)" });
+            rows.push(Param { label: "  SLURM CPUs/Task", field: "slurm_cpus", help: "CPUs per SLURM task" });
+            rows.push(Toggle { label: "  Auto-Submit", field: "slurm_submit", help: "Automatically submit generated scripts via sbatch" });
+        }
+        // The memory limit schedules concurrent local runs; force and clean-up apply to both.
+        if local {
+            rows.push(Param { label: "Memory Limit (GB)", field: "mem_limit_gb", help: "Memory budget for scheduling concurrent runs (empty = auto-detect)" });
+            rows.push(Toggle { label: "No Memory Limit", field: "no_mem_limit", help: "Disable memory-aware concurrency limiting" });
+        }
+        rows.push(Toggle { label: "Force Re-run", field: "force", help: "Ignore cached pipeline state and recompute everything" });
+        rows.push(Toggle { label: "Clean Intermediates", field: "clean_intermediates", help: "Remove intermediate files after the run, keeping only final outputs" });
+        rows
+    }
+
 }
 
 
@@ -6788,6 +6385,24 @@ impl App {
 mod tests {
     use super::*;
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    /// Whether `field` has a row on `tab` now (switches to it, syncing the pipeline rows).
+    /// SynthSeg's own settings, under the segmentation checkbox.
+    const SYNTHSEG_ROWS: [&str; 5] = ["synthseg_version", "synthseg_crop", "synthseg_flip_averaging",
+                                      "synthseg_topology_cleanup", "synthseg_sigma"];
+
+    fn shows(app: &mut App, tab: usize, field: &str) -> bool {
+        app.active_tab = tab;
+        app.sync_pipeline_mode();
+        app.field_visible(field)
+    }
+
+    /// Switch to `tab` and focus the row editing `field`.
+    fn focus_on(app: &mut App, tab: usize, field: &str) {
+        app.active_tab = tab;
+        app.sync_pipeline_mode();
+        assert!(app.focus_field(field), "{field} has no row on tab {tab}");
+    }
 
     fn key(code: KeyCode) -> KeyEvent {
         KeyEvent::new(code, KeyModifiers::NONE)
@@ -7076,7 +6691,7 @@ mod tests {
     fn test_algo_modal_selects_option() {
         let mut app = App::new();
         app.algo_modal = Some(AlgoModal {
-            target: AlgoModalTarget::PipelineSelect("qsm_algorithm".to_string()),
+            target: AlgoModalTarget::Select("qsm_algorithm".to_string()),
             title: "QSM Inversion".to_string(),
             options: QSM_ALGO_OPTIONS.iter().map(|s| s.to_string()).collect(),
             help: vec![String::new(); QSM_ALGO_OPTIONS.len()],
@@ -7095,7 +6710,7 @@ mod tests {
         let mut app = App::new();
         let before = app.pipeline_state.get_select("qsm_algorithm");
         app.algo_modal = Some(AlgoModal {
-            target: AlgoModalTarget::PipelineSelect("qsm_algorithm".to_string()),
+            target: AlgoModalTarget::Select("qsm_algorithm".to_string()),
             title: "QSM Inversion".to_string(),
             options: vec!["a".to_string(), "b".to_string()],
             help: vec![String::new(), String::new()],
@@ -7153,10 +6768,10 @@ mod tests {
     fn test_execution_mode_modal_opens_and_sets() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
-        app.active_field = 0; // Execution Mode select
+        focus_on(&mut app, TAB_EXECUTION, "execution_mode");
         app.handle_key(key(KeyCode::Enter));
         let modal = app.algo_modal.as_ref().expect("modal should open over Execution Mode");
-        assert!(matches!(modal.target, AlgoModalTarget::TabSelect { .. }));
+        assert!(matches!(&modal.target, AlgoModalTarget::Select(f) if f == "execution_mode"));
         app.handle_key(key(KeyCode::Down)); // SLURM
         app.handle_key(key(KeyCode::Enter));
         assert!(app.algo_modal.is_none());
@@ -7417,37 +7032,41 @@ mod tests {
     fn test_text_value_unknown_returns_empty() {
         let mut app = App::new();
         app.active_tab = TAB_SUPPLEMENTARY; // Algorithms tab - no text fields
-        app.active_field = 0;
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_swi");
         assert_eq!(app.text_value(), "");
     }
 
     // --- get_ accessors (used by UI rendering) ---
 
+    /// Every Supplementary/Execution row names a field the accessors resolve — in the form
+    /// they live in, with the kind the row edits — and that `R` resets.
     #[test]
-    fn test_get_text_value_all_fields() {
-        let app = App::new();
-        // Should not panic for any valid (tab, field) combo
-        for tab in 0..5 {
-            for field in 0..12 {
-                let _ = app.get_text_value(tab, field);
+    fn form_rows_name_real_fields() {
+        let mut app = App::new();
+        app.form.do_swi = true;
+        app.form.do_smwi = true;
+        app.form.do_segmentation = true;
+        app.form.export_dicom = true;
+        for (tab, list) in [(TAB_SUPPLEMENTARY, SUPPLEMENTARY_FIELDS), (TAB_EXECUTION, EXECUTION_FIELDS)] {
+            for mode in [0, 1] {
+                app.form.execution_mode = mode;
+                app.active_tab = tab;
+                for r in app.rows() {
+                    let f = row_field(&r).expect("every form row edits a field");
+                    // The duplicate reference row edits the pipeline form's value.
+                    if f == "qsm_reference" { continue; }
+                    assert!(list.contains(&f), "{f} missing from its tab's reset list");
+                    match r {
+                        PipelineRow::Param { .. } => assert!(app.form.text(f).is_some(), "{f}"),
+                        PipelineRow::Toggle { .. } => assert!(app.form.flag(f).is_some(), "{f}"),
+                        PipelineRow::AlgoSelect { .. } => assert!(app.form.choice(f).is_some(), "{f}"),
+                        _ => unreachable!(),
+                    }
+                }
             }
         }
-    }
-
-    #[test]
-    fn test_get_select_value_defaults() {
-        let app = App::new();
-        assert_eq!(app.get_select_value(99, 99), 0); // unknown returns 0
-        // Algorithm selects are now in pipeline_state, not tab-indexed
-        assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.get_select("qsm_algorithm")], "ilsqr");
-    }
-
-    #[test]
-    fn test_get_checkbox_value_defaults() {
-        let app = App::new();
-        assert!(!app.get_checkbox_value(4, 0)); // do_swi
-        assert!(!app.get_checkbox_value(4, 4)); // dry_run
-        assert!(!app.get_checkbox_value(99, 99)); // unknown returns false
+        // Unknown names resolve to nothing in the run form.
+        assert!(app.form.text("nope").is_none() && app.form.flag("nope").is_none() && app.form.choice("nope").is_none());
     }
 
     // --- checkbox_value (private, exercised for coverage) ---
@@ -7816,17 +7435,17 @@ mod tests {
         let mut app = App::new();
         app.form.execution_mode = 0; // Local
         // Local-only fields visible
-        assert!(app.is_field_visible(TAB_EXECUTION, 0)); // Execution Mode
-        assert!(app.is_field_visible(TAB_EXECUTION, 1)); // Dry Run
-        assert!(app.is_field_visible(TAB_EXECUTION, 2)); // Debug
-        assert!(app.is_field_visible(TAB_EXECUTION, 3)); // Num Processes
+        assert!(shows(&mut app, TAB_EXECUTION, "execution_mode")); // Execution Mode
+        assert!(shows(&mut app, TAB_EXECUTION, "dry_run")); // Dry Run
+        assert!(shows(&mut app, TAB_EXECUTION, "debug")); // Debug
+        assert!(shows(&mut app, TAB_EXECUTION, "n_procs")); // Num Processes
         // SLURM fields hidden
-        assert!(!app.is_field_visible(TAB_EXECUTION, 4)); // SLURM Account
-        assert!(!app.is_field_visible(TAB_EXECUTION, 5)); // SLURM Partition
-        assert!(!app.is_field_visible(TAB_EXECUTION, 6)); // SLURM Time
-        assert!(!app.is_field_visible(TAB_EXECUTION, 7)); // SLURM Mem
-        assert!(!app.is_field_visible(TAB_EXECUTION, 8)); // SLURM CPUs
-        assert!(!app.is_field_visible(TAB_EXECUTION, 9)); // Auto-Submit
+        assert!(!shows(&mut app, TAB_EXECUTION, "slurm_account")); // SLURM Account
+        assert!(!shows(&mut app, TAB_EXECUTION, "slurm_partition")); // SLURM Partition
+        assert!(!shows(&mut app, TAB_EXECUTION, "slurm_time")); // SLURM Time
+        assert!(!shows(&mut app, TAB_EXECUTION, "slurm_mem")); // SLURM Mem
+        assert!(!shows(&mut app, TAB_EXECUTION, "slurm_cpus")); // SLURM CPUs
+        assert!(!shows(&mut app, TAB_EXECUTION, "slurm_submit")); // Auto-Submit
     }
 
     #[test]
@@ -7834,28 +7453,26 @@ mod tests {
         let mut app = App::new();
         app.form.execution_mode = 1; // SLURM
         // Execution Mode always visible
-        assert!(app.is_field_visible(TAB_EXECUTION, 0));
+        assert!(shows(&mut app, TAB_EXECUTION, "execution_mode"));
         // Dry Run and Num Processes hidden in SLURM mode
-        assert!(!app.is_field_visible(TAB_EXECUTION, 1)); // Dry Run
-        assert!(!app.is_field_visible(TAB_EXECUTION, 3)); // Num Processes
+        assert!(!shows(&mut app, TAB_EXECUTION, "dry_run")); // Dry Run
+        assert!(!shows(&mut app, TAB_EXECUTION, "n_procs")); // Num Processes
         // Debug visible in both modes
-        assert!(app.is_field_visible(TAB_EXECUTION, 2));
+        assert!(shows(&mut app, TAB_EXECUTION, "debug"));
         // SLURM fields visible
-        assert!(app.is_field_visible(TAB_EXECUTION, 4));
-        assert!(app.is_field_visible(TAB_EXECUTION, 5));
-        assert!(app.is_field_visible(TAB_EXECUTION, 6));
-        assert!(app.is_field_visible(TAB_EXECUTION, 7));
-        assert!(app.is_field_visible(TAB_EXECUTION, 8));
-        assert!(app.is_field_visible(TAB_EXECUTION, 9));
+        assert!(shows(&mut app, TAB_EXECUTION, "slurm_account"));
+        assert!(shows(&mut app, TAB_EXECUTION, "slurm_partition"));
+        assert!(shows(&mut app, TAB_EXECUTION, "slurm_time"));
+        assert!(shows(&mut app, TAB_EXECUTION, "slurm_mem"));
+        assert!(shows(&mut app, TAB_EXECUTION, "slurm_cpus"));
+        assert!(shows(&mut app, TAB_EXECUTION, "slurm_submit"));
     }
 
     #[test]
     fn test_field_visibility_other_tabs() {
-        let app = App::new();
-        // All fields on other tabs are always visible
-        assert!(app.is_field_visible(0, 0));
-        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 0));
-        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 8));
+        let mut app = App::new();
+        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "do_swi"));
+        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "do_r2starmap"));
     }
 
     // --- SLURM form fields ---
@@ -7878,10 +7495,9 @@ mod tests {
     fn test_execution_mode_select() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
-        app.active_field = 0;
-        assert_eq!(app.select_value(), 0); // Local
+        assert_eq!(app.field_select("execution_mode"), 0); // Local
         app.form.execution_mode = 1;
-        assert_eq!(app.select_value(), 1); // SLURM
+        assert_eq!(app.field_select("execution_mode"), 1); // SLURM
     }
 
     // --- SLURM field accessors ---
@@ -7895,19 +7511,19 @@ mod tests {
         app.form.slurm_time = "04:00:00".to_string();
         app.form.slurm_mem = "64".to_string();
         app.form.slurm_cpus = "8".to_string();
-        assert_eq!(app.get_text_value(TAB_EXECUTION, 4), "myacct");
-        assert_eq!(app.get_text_value(TAB_EXECUTION, 5), "gpu");
-        assert_eq!(app.get_text_value(TAB_EXECUTION, 6), "04:00:00");
-        assert_eq!(app.get_text_value(TAB_EXECUTION, 7), "64");
-        assert_eq!(app.get_text_value(TAB_EXECUTION, 8), "8");
+        assert_eq!(app.field_text("slurm_account"), "myacct");
+        assert_eq!(app.field_text("slurm_partition"), "gpu");
+        assert_eq!(app.field_text("slurm_time"), "04:00:00");
+        assert_eq!(app.field_text("slurm_mem"), "64");
+        assert_eq!(app.field_text("slurm_cpus"), "8");
     }
 
     #[test]
     fn test_slurm_checkbox_value() {
         let mut app = App::new();
-        assert!(!app.get_checkbox_value(TAB_EXECUTION, 9)); // slurm_submit default
+        assert!(!app.field_toggle("slurm_submit")); // slurm_submit default
         app.form.slurm_submit = true;
-        assert!(app.get_checkbox_value(TAB_EXECUTION, 9));
+        assert!(app.field_toggle("slurm_submit"));
     }
 
     // --- Reset SLURM fields ---
@@ -7930,9 +7546,10 @@ mod tests {
     fn test_reset_single_slurm_field() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
-        app.active_field = 4; // slurm_account
+        app.form.execution_mode = 1;
+        focus_on(&mut app, TAB_EXECUTION, "slurm_account");
         app.form.slurm_account = "changed".to_string();
-        app.reset_current_field();
+        app.handle_key(key(KeyCode::Char('r')));
         assert!(app.form.slurm_account.is_empty());
     }
 
@@ -7942,11 +7559,11 @@ mod tests {
     fn test_navigation_skips_hidden_slurm_fields() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
-        app.active_field = 2; // Debug (last visible in Local mode before Num Processes at 3)
-        app.form.execution_mode = 1; // SLURM — hides fields 1 (Dry Run) and 3 (Num Processes)
-        // Navigate down from Debug (2) — should skip 3 (hidden) and go to 4 (SLURM Account)
+        app.form.execution_mode = 1; // SLURM — hides Dry Run and Num Processes
+        focus_on(&mut app, TAB_EXECUTION, "debug");
+        // Down from Debug skips the hidden Num Processes and lands on SLURM Account
         app.handle_key(key(KeyCode::Down));
-        assert_eq!(app.active_field, 4);
+        assert_eq!(app.focused_field_name().as_deref(), Some("slurm_account"));
     }
 
     // --- Cursor doesn't go below Config File when no BIDS tree ---
@@ -8264,7 +7881,7 @@ mod tests {
         app.handle_key(key(KeyCode::Enter));
         assert!(matches!(
             app.algo_modal.as_ref().unwrap().target,
-            AlgoModalTarget::PipelineSelect(ref f) if f == "unwrapping_algorithm"
+            AlgoModalTarget::Select(ref f) if f == "unwrapping_algorithm"
         ));
         assert_eq!(app.pipeline_state.unwrapping_algorithm, 0); // still unchanged
         // Pick the next option (laplacian) and confirm.
@@ -8457,7 +8074,7 @@ mod tests {
     fn test_supplementary_toggle_swi() {
         let mut app = App::new();
         app.active_tab = TAB_SUPPLEMENTARY;
-        app.active_field = 0; // Compute SWI checkbox
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_swi");
         assert!(!app.form.do_swi);
         app.handle_key(key(KeyCode::Enter));
         assert!(app.form.do_swi);
@@ -8469,7 +8086,7 @@ mod tests {
     fn test_supplementary_toggle_t2star() {
         let mut app = App::new();
         app.active_tab = TAB_SUPPLEMENTARY;
-        app.active_field = 7; // Compute T2* Map
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_t2starmap");
         assert!(!app.form.do_t2starmap);
         app.handle_key(key(KeyCode::Enter));
         assert!(app.form.do_t2starmap);
@@ -8479,7 +8096,7 @@ mod tests {
     fn test_supplementary_toggle_r2star() {
         let mut app = App::new();
         app.active_tab = TAB_SUPPLEMENTARY;
-        app.active_field = 8; // Compute R2* Map
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_r2starmap");
         assert!(!app.form.do_r2starmap);
         app.handle_key(key(KeyCode::Char(' ')));
         assert!(app.form.do_r2starmap);
@@ -8490,7 +8107,7 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_SUPPLEMENTARY;
         app.form.do_swi = true; // make SWI fields visible
-        app.active_field = 1; // SWI Scaling select
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_scaling");
         assert_eq!(app.form.swi_scaling, 0); // tanh
         app.handle_key(key(KeyCode::Right));
         assert_eq!(app.form.swi_scaling, 1); // negative-tanh
@@ -8503,44 +8120,44 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_SUPPLEMENTARY;
         app.form.do_swi = true;
-        app.active_field = 2; // SWI Strength text field
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_strength");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.editing);
+        assert!(app.pipeline_state.editing);
         // Type something
         app.handle_key(key(KeyCode::End));
         app.handle_key(key(KeyCode::Char('0')));
         app.handle_key(key(KeyCode::Esc));
-        assert!(!app.editing);
+        assert!(!app.pipeline_state.editing);
     }
 
     #[test]
     fn test_supplementary_navigate_fields() {
         let mut app = App::new();
         app.active_tab = TAB_SUPPLEMENTARY;
-        app.active_field = 0;
-        // SWI fields are hidden when do_swi is false, so Down from 0 skips to 7
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_swi");
+        // SWI fields are hidden when do_swi is false, so Down from Compute SWI skips to T2*
         app.handle_key(key(KeyCode::Down));
-        assert_eq!(app.active_field, 7);
+        assert_eq!(app.focused_field_name().as_deref(), Some("do_t2starmap"));
         app.handle_key(key(KeyCode::Down));
-        assert_eq!(app.active_field, 8);
+        assert_eq!(app.focused_field_name().as_deref(), Some("do_r2starmap"));
         app.handle_key(key(KeyCode::Up));
-        assert_eq!(app.active_field, 7);
+        assert_eq!(app.focused_field_name().as_deref(), Some("do_t2starmap"));
     }
 
     #[test]
     fn test_supplementary_swi_visible_when_enabled() {
         let mut app = App::new();
         app.form.do_swi = true;
-        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 1)); // SWI Scaling
-        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 2)); // SWI Strength
-        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 6)); // SWI MIP Window
+        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "swi_scaling")); // SWI Scaling
+        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "swi_strength")); // SWI Strength
+        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "swi_mip_window")); // SWI MIP Window
     }
 
     #[test]
     fn test_supplementary_swi_hidden_when_disabled() {
-        let app = App::new();
-        assert!(!app.is_field_visible(TAB_SUPPLEMENTARY, 1));
-        assert!(!app.is_field_visible(TAB_SUPPLEMENTARY, 6));
+        let mut app = App::new();
+        assert!(!shows(&mut app, TAB_SUPPLEMENTARY, "swi_scaling"));
+        assert!(!shows(&mut app, TAB_SUPPLEMENTARY, "swi_mip_window"));
     }
 
     #[test]
@@ -8555,7 +8172,7 @@ mod tests {
     fn test_supplementary_reset_field() {
         let mut app = App::new();
         app.active_tab = TAB_SUPPLEMENTARY;
-        app.active_field = 0;
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_swi");
         app.form.do_swi = true;
         app.handle_key(key(KeyCode::Char('r')));
         assert!(!app.form.do_swi); // reset to default
@@ -8582,7 +8199,7 @@ mod tests {
     fn test_execution_mode_switch_with_left_right() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
-        app.active_field = 0; // Execution Mode select
+        focus_on(&mut app, TAB_EXECUTION, "execution_mode");
         assert_eq!(app.form.execution_mode, 0); // Local
         app.handle_key(key(KeyCode::Right));
         assert_eq!(app.form.execution_mode, 1); // SLURM
@@ -8594,7 +8211,7 @@ mod tests {
     fn test_execution_mode_enter_opens_modal() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
-        app.active_field = 0;
+        focus_on(&mut app, TAB_EXECUTION, "execution_mode");
         // Enter opens the modal (rather than cycling); selecting SLURM applies it.
         app.handle_key(key(KeyCode::Enter));
         assert!(app.algo_modal.is_some());
@@ -8611,7 +8228,7 @@ mod tests {
     fn test_execution_toggle_dry_run() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
-        app.active_field = 1; // Dry Run checkbox
+        focus_on(&mut app, TAB_EXECUTION, "dry_run");
         assert!(!app.form.dry_run);
         app.handle_key(key(KeyCode::Enter));
         assert!(app.form.dry_run);
@@ -8621,7 +8238,7 @@ mod tests {
     fn test_execution_toggle_debug() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
-        app.active_field = 2; // Debug checkbox
+        focus_on(&mut app, TAB_EXECUTION, "debug");
         assert!(!app.form.debug);
         app.handle_key(key(KeyCode::Enter));
         assert!(app.form.debug);
@@ -8631,13 +8248,13 @@ mod tests {
     fn test_execution_edit_n_procs() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
-        app.active_field = 3; // Num Processes
+        focus_on(&mut app, TAB_EXECUTION, "n_procs");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.editing);
+        assert!(app.pipeline_state.editing);
         app.handle_key(key(KeyCode::Char('4')));
         assert_eq!(app.form.n_procs, "4");
         app.handle_key(key(KeyCode::Esc));
-        assert!(!app.editing);
+        assert!(!app.pipeline_state.editing);
     }
 
     #[test]
@@ -8645,15 +8262,15 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
         app.form.execution_mode = 1; // SLURM mode
-        app.active_field = 4; // SLURM Account
+        focus_on(&mut app, TAB_EXECUTION, "slurm_account");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.editing);
+        assert!(app.pipeline_state.editing);
         app.handle_key(key(KeyCode::Char('a')));
         app.handle_key(key(KeyCode::Char('c')));
         app.handle_key(key(KeyCode::Char('t')));
         assert_eq!(app.form.slurm_account, "act");
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.editing);
+        assert!(!app.pipeline_state.editing);
     }
 
     #[test]
@@ -8661,7 +8278,7 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
         app.form.execution_mode = 1;
-        app.active_field = 5;
+        focus_on(&mut app, TAB_EXECUTION, "slurm_partition");
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Char('g')));
         app.handle_key(key(KeyCode::Char('p')));
@@ -8674,7 +8291,7 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
         app.form.execution_mode = 1;
-        app.active_field = 6;
+        focus_on(&mut app, TAB_EXECUTION, "slurm_time");
         app.handle_key(key(KeyCode::Enter));
         // Clear existing "02:00:00"
         for _ in 0..8 {
@@ -8689,7 +8306,7 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
         app.form.execution_mode = 1;
-        app.active_field = 9; // Auto-Submit checkbox
+        focus_on(&mut app, TAB_EXECUTION, "slurm_submit");
         assert!(!app.form.slurm_submit);
         app.handle_key(key(KeyCode::Enter));
         assert!(app.form.slurm_submit);
@@ -8699,7 +8316,8 @@ mod tests {
     fn test_execution_reset_field() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
-        app.active_field = 6; // SLURM Time
+        app.form.execution_mode = 1;
+        focus_on(&mut app, TAB_EXECUTION, "slurm_time");
         app.form.slurm_time = "99:99:99".to_string();
         app.handle_key(key(KeyCode::Char('r')));
         assert_eq!(app.form.slurm_time, "02:00:00");
@@ -9385,7 +9003,7 @@ mod tests {
         assert!(!app.should_run);
         assert!(app.error_message.as_deref().unwrap().contains("SLURM Account"));
         assert_eq!(app.active_tab, TAB_EXECUTION);
-        assert_eq!(app.active_field, 4);
+        assert_eq!(app.focused_field_name().as_deref(), Some("slurm_account"));
     }
 
     #[test]
@@ -9504,7 +9122,8 @@ mod tests {
     fn test_reset_supplementary_fields() {
         let mut app = App::new();
         app.active_tab = TAB_SUPPLEMENTARY;
-        app.active_field = 2;
+        app.form.do_swi = true;
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_strength");
         app.form.swi_strength = "999".to_string();
         app.handle_key(key(KeyCode::Char('r')));
         let defaults = RunForm::default();
@@ -9515,7 +9134,8 @@ mod tests {
     fn test_reset_execution_fields() {
         let mut app = App::new();
         app.active_tab = TAB_EXECUTION;
-        app.active_field = 7;
+        app.form.execution_mode = 1;
+        focus_on(&mut app, TAB_EXECUTION, "slurm_mem");
         app.form.slurm_mem = "999".to_string();
         app.handle_key(key(KeyCode::Char('r')));
         assert_eq!(app.form.slurm_mem, "");
@@ -9701,20 +9321,23 @@ mod tests {
             .expect("thalamus should be offered");
 
         // Set it from the Supplementary tab; the QSM tab's row sees it.
-        app.active_tab = TAB_SUPPLEMENTARY;
-        app.active_field = App::SUPP_QSM_REFERENCE;
-        app.set_select_value(thalamus);
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "qsm_reference");
+        app.set_field_select("qsm_reference", thalamus);
         assert_eq!(app.pipeline_state.get_select("qsm_reference"), thalamus);
-        assert_eq!(app.select_value(), thalamus, "the duplicate row must read it back");
+        // A region forces segmentation, whose settings now show above the row.
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "qsm_reference");
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.focused_field_name().as_deref(), Some("qsm_reference"), "focus stays on the row it edits");
+        assert_eq!(app.pipeline_state.get_select("qsm_reference"), thalamus + 1, "the row edits the one value");
 
         // And the other way around.
         app.pipeline_state.set_select("qsm_reference", 1); // none
-        assert_eq!(app.select_value(), 1);
+        assert_eq!(app.field_select("qsm_reference"), 1);
 
         // The row is reachable whether or not segmentation is on — picking a region is how a user
         // turns segmentation on from here, so gating it behind segmentation would be a deadlock.
         assert!(!app.form.do_segmentation);
-        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, App::SUPP_QSM_REFERENCE));
+        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "qsm_reference"));
     }
 
     /// A region reference is measured on the parcellation, so choosing one forces segmentation the
@@ -9723,19 +9346,19 @@ mod tests {
     fn a_region_reference_forces_segmentation_visibly() {
         let mut app = App::new();
         app.active_tab = TAB_SUPPLEMENTARY;
-        assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "off by default");
+        assert!(!app.field_toggle("do_segmentation"), "off by default");
 
         let region = qsm_ref_options().iter().position(|o| *o == "ventricles").unwrap();
         app.pipeline_state.set_select("qsm_reference", region);
-        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16),
+        assert!(app.field_toggle("do_segmentation"),
                 "a region reference needs SynthSeg, so it must read as checked");
-        for f in 17..=22 {
-            assert!(app.is_field_visible(TAB_SUPPLEMENTARY, f),
-                    "field {f} shapes the parcellation the reference is measured on");
+        for f in SYNTHSEG_ROWS {
+            assert!(shows(&mut app, TAB_SUPPLEMENTARY, f),
+                    "{f} shapes the parcellation the reference is measured on");
         }
 
-        app.active_field = 16;
-        app.toggle_checkbox();
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_segmentation");
+        app.handle_key(key(KeyCode::Enter));
         assert!(!app.form.do_segmentation, "the underlying flag is untouched");
         let msg = app.error_message.clone().expect("a refusal should explain itself");
         assert!(msg.contains("ventricles"), "the refusal should name the reference: {msg}");
@@ -9743,7 +9366,7 @@ mod tests {
         // `mean` and `none` force nothing.
         for idx in [0, 1] {
             app.pipeline_state.set_select("qsm_reference", idx);
-            assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "option {idx} forces nothing");
+            assert!(!app.field_toggle("do_segmentation"), "option {idx} forces nothing");
         }
     }
 
@@ -9770,35 +9393,35 @@ mod tests {
         app.active_tab = TAB_SUPPLEMENTARY;
 
         // Off by default: unchecked, and its settings hidden.
-        assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16));
-        for f in 17..=21 {
-            assert!(!app.is_field_visible(TAB_SUPPLEMENTARY, f), "field {f} should be hidden");
+        assert!(!app.field_toggle("do_segmentation"));
+        for f in SYNTHSEG_ROWS {
+            assert!(!shows(&mut app, TAB_SUPPLEMENTARY, f), "{f} should be hidden");
         }
-        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 22), "the statistics are reachable on their own");
+        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "do_analysis"), "the statistics are reachable on their own");
 
         // A config or CLI run can arrive with the statistics already on; segmentation is then in
         // force, so the block must be visible rather than hiding a setting that is taking effect.
         app.form.do_analysis = true;
-        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16),
+        assert!(app.field_toggle("do_segmentation"),
                 "segmentation is forced, so it must read as checked");
-        for f in 17..=21 {
-            assert!(app.is_field_visible(TAB_SUPPLEMENTARY, f),
-                    "field {f} shapes the forced segmentation and must be reachable");
+        for f in SYNTHSEG_ROWS {
+            assert!(shows(&mut app, TAB_SUPPLEMENTARY, f),
+                    "{f} shapes the forced segmentation and must be reachable");
         }
 
         // And it cannot be turned off from under them; the refusal says why.
-        app.active_field = 16;
-        app.toggle_checkbox();
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_segmentation");
+        app.handle_key(key(KeyCode::Enter));
         assert!(!app.form.do_segmentation, "the underlying flag is untouched");
-        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "still forced, so still checked");
+        assert!(app.field_toggle("do_segmentation"), "still forced, so still checked");
         let msg = app.error_message.clone().expect("a refusal should explain itself");
         assert!(msg.contains("--do-analysis"), "unhelpful message: {msg}");
 
         // With the statistics off again it is an ordinary toggle.
         app.form.do_analysis = false;
         app.error_message = None;
-        app.toggle_checkbox();
-        assert!(app.form.do_segmentation);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.form.do_segmentation, "{:?}", app.error_message);
     }
 
     /// Selecting HEIDI shows both parameter groups (its seed is an LSQR solve); selecting plain
@@ -9998,32 +9621,32 @@ mod tests {
         let mut app = App::new();
         app.active_tab = TAB_SUPPLEMENTARY;
         app.form.do_analysis = true;
-        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "forced without a supplied dseg");
+        assert!(app.field_toggle("do_segmentation"), "forced without a supplied dseg");
         app.pipeline_state.custom_dseg_tool = "freesurfer".into();
-        assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16), "a supplied dseg forces nothing");
-        assert!(!app.is_field_visible(TAB_SUPPLEMENTARY, 17), "no SynthSeg settings to show");
-        assert!(app.is_field_visible(TAB_SUPPLEMENTARY, 22), "the statistics stay reachable");
-        app.active_field = 16;
-        app.toggle_checkbox();
+        assert!(!app.field_toggle("do_segmentation"), "a supplied dseg forces nothing");
+        assert!(!shows(&mut app, TAB_SUPPLEMENTARY, "synthseg_version"), "no SynthSeg settings to show");
+        assert!(shows(&mut app, TAB_SUPPLEMENTARY, "do_analysis"), "the statistics stay reachable");
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_segmentation");
+        app.handle_key(key(KeyCode::Enter));
         assert!(app.form.do_segmentation && app.error_message.is_none());
         // The same for a region reference.
         let mut app = App::new();
         app.pipeline_state.set_select("qsm_reference", qsm_ref_options().iter().position(|o| *o == "thalamus").unwrap());
-        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 16));
+        assert!(app.field_toggle("do_segmentation"));
         app.pipeline_state.custom_dseg_tool = "*".into();
-        assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 16));
+        assert!(!app.field_toggle("do_segmentation"));
     }
 
     /// R2* is forced by what reads it (R2*-QSM, a computed R2'), and reads as checked.
     #[test]
     fn r2star_reads_as_forced_when_needed() {
         let mut app = App::new();
-        assert!(!app.get_checkbox_value(TAB_SUPPLEMENTARY, 8));
+        assert!(!app.field_toggle("do_r2starmap"));
         app.form.do_r2primemap = true;
-        assert!(app.get_checkbox_value(TAB_SUPPLEMENTARY, 8), "R2' = R2* - R2");
+        assert!(app.field_toggle("do_r2starmap"), "R2' = R2* - R2");
         app.active_tab = TAB_SUPPLEMENTARY;
-        app.active_field = 8;
-        app.toggle_checkbox();
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "do_r2starmap");
+        app.handle_key(key(KeyCode::Enter));
         assert!(!app.form.do_r2starmap && app.error_message.as_deref().is_some_and(|m| m.contains("--do-r2primemap")));
     }
 
@@ -10494,28 +10117,28 @@ mod tests {
         app.active_tab = TAB_SUPPLEMENTARY;
         app.form.do_swi = true;
         // Edit SWI HP Sigma X (field 3)
-        app.active_field = 3;
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_hp_sigma_x");
         app.handle_key(key(KeyCode::Enter));
-        assert!(app.editing);
+        assert!(app.pipeline_state.editing);
         app.handle_key(key(KeyCode::End));
         app.handle_key(key(KeyCode::Char('0')));
         app.handle_key(key(KeyCode::Enter));
-        assert!(!app.editing);
+        assert!(!app.pipeline_state.editing);
 
         // Edit SWI HP Sigma Y (field 4)
-        app.active_field = 4;
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_hp_sigma_y");
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Char('1')));
         app.handle_key(key(KeyCode::Esc));
 
         // Edit SWI HP Sigma Z (field 5)
-        app.active_field = 5;
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_hp_sigma_z");
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Char('2')));
         app.handle_key(key(KeyCode::Esc));
 
         // Edit SWI MIP Window (field 6)
-        app.active_field = 6;
+        focus_on(&mut app, TAB_SUPPLEMENTARY, "swi_mip_window");
         app.handle_key(key(KeyCode::Enter));
         app.handle_key(key(KeyCode::Char('3')));
         app.handle_key(key(KeyCode::Esc));
