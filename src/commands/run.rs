@@ -10,10 +10,47 @@ use crate::executor;
 use crate::pipeline::config::PipelineConfig;
 use crate::pipeline::memory;
 
-/// Route `log` records to stderr (through the progress-bar multiplexer) and, for a real run, to
-/// `derivatives/qsmxt/qsmxt.log`.
-fn init_logging(log_file: Option<std::fs::File>, debug: bool) {
-    let log_file = log_file.map(Mutex::new);
+/// Where log records go besides stderr.
+pub(crate) enum LogSink {
+    /// stderr only (a dry run: it must not create files in the dataset).
+    Discard,
+    /// Held until the log file is known: a `--no-dataset-steps` worker names its log after the
+    /// runs it discovers, and `qsmxt aggregate` puts the workers' logs first.
+    Buffer(Vec<String>),
+    File(std::fs::File),
+}
+
+/// One sink for the process, swapped by each command that runs the pipeline. A global rather
+/// than state captured by the logger, because `env_logger` can be installed only once.
+static LOG_SINK: Mutex<LogSink> = Mutex::new(LogSink::Discard);
+
+fn log_line(line: &str) {
+    let mut sink = LOG_SINK.lock().unwrap_or_else(|e| e.into_inner());
+    match &mut *sink {
+        LogSink::Discard => {}
+        LogSink::Buffer(lines) => lines.push(line.to_string()),
+        LogSink::File(f) => {
+            let _ = writeln!(f, "{line}");
+        }
+    }
+}
+
+/// Send the log to `file` from here on, writing whatever was buffered first.
+pub(crate) fn attach_log_file(mut file: std::fs::File) -> std::io::Result<()> {
+    let mut sink = LOG_SINK.lock().unwrap_or_else(|e| e.into_inner());
+    if let LogSink::Buffer(lines) = &*sink {
+        for line in lines {
+            writeln!(file, "{line}")?;
+        }
+    }
+    *sink = LogSink::File(file);
+    Ok(())
+}
+
+/// Route `log` records to stderr (through the progress-bar multiplexer) and to `sink`
+/// (`derivatives/qsmxt/qsmxt.log` for a real run).
+pub(crate) fn init_logging(sink: LogSink, debug: bool) {
+    *LOG_SINK.lock().unwrap_or_else(|e| e.into_inner()) = sink;
     let log_level = if debug { log::LevelFilter::Debug } else { log::LevelFilter::Info };
     env_logger::Builder::new()
         .filter_level(log_level)
@@ -41,16 +78,56 @@ fn init_logging(log_file: Option<std::fs::File>, debug: bool) {
             } else {
                 let _ = crate::pipeline::runner::MULTI_PROGRESS.println(line);
             }
-            // Plain text to log file
-            if let Some(ref f) = log_file {
-                if let Ok(mut f) = f.lock() {
-                    let _ = writeln!(f, "[{level:5} {}] {}", record.target(), record.args());
-                }
-            }
+            // Plain text to the log file
+            log_line(&format!("[{level:5} {}] {}", record.target(), record.args()));
             Ok(())
         })
         .try_init()
         .ok();
+}
+
+/// The configuration a pipeline command runs with: the file, then the command-line overrides,
+/// then every check that can be made before a run starts. Shared by `qsmxt run`, `qsmxt slurm`
+/// and `qsmxt aggregate`, so the three cannot disagree about what a set of flags means.
+pub(crate) fn build_config(
+    config_file: Option<&std::path::Path>, pipeline: &crate::cli::PipelineArgs,
+) -> crate::Result<PipelineConfig> {
+    let mut config = match config_file {
+        Some(path) => crate::pipeline::config::load_config(path)?,
+        None => PipelineConfig::default(),
+    };
+    crate::pipeline::config::apply_run_overrides(&mut config, pipeline)?;
+    crate::pipeline::config::validate_reference_region(&config)?;
+    crate::pipeline::config::validate_segmentation(&config)?;
+    crate::pipeline::config::validate_multi_orientation(&config)?;
+    crate::pipeline::config::validate_inversion_input(&config)?;
+    Ok(config)
+}
+
+/// The log of a `--no-dataset-steps` worker: `logs/<run>.log`, named after the run it processed
+/// (`<first run>_and_<n>_more.log` when it was given several). `qsmxt aggregate` gathers these
+/// into `qsmxt.log`.
+pub(crate) fn worker_log_path(derivatives_dir: &std::path::Path, runs: &[discovery::QsmRun]) -> std::path::PathBuf {
+    let name = match runs {
+        [] => "qsmxt".to_string(),
+        [one] => one.key.to_string(),
+        [first, rest @ ..] => format!("{}_and_{}_more", first.key, rest.len()),
+    };
+    derivatives_dir.join("logs").join(format!("{name}.log"))
+}
+
+/// The dataset-level files written whatever happens to the runs: the BIDS derivative
+/// description (required for a valid derivative dataset), `.bidsignore` and README, the resolved
+/// configuration, and the methods text.
+pub(crate) fn write_dataset_files(
+    derivatives_dir: &std::path::Path, bids_dir: &std::path::Path, config: &PipelineConfig,
+) -> crate::Result<()> {
+    crate::bids::dataset_description::write(derivatives_dir, bids_dir)?;
+    crate::bids::dataset_description::write_bidsignore(derivatives_dir)?;
+    crate::bids::dataset_description::write_readme(derivatives_dir)?;
+    std::fs::write(derivatives_dir.join("pipeline_config.toml"), config.to_toml().unwrap_or_default())?;
+    std::fs::write(derivatives_dir.join("methods.md"), crate::pipeline::methods::generate_methods(config))?;
+    Ok(())
 }
 
 /// One row per referenced susceptibility map of each run: what it was referenced to, and what
@@ -167,28 +244,29 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     // validates the CLI: every "ignoring invalid ..." warning apply_run_overrides emits was
     // being written to a logger that did not exist yet, and silently dropped. A dry run gets
     // stderr only — it must not create directories in the dataset, and its whole purpose is to
-    // show what a real run would do, warnings included.
+    // show what a real run would do, warnings included. A worker (`--no-dataset-steps`) holds its
+    // lines until it knows which runs it has, which name its log.
     if args.dry {
-        init_logging(None, args.debug);
+        init_logging(LogSink::Discard, args.debug);
+    } else if args.no_dataset_steps {
+        std::fs::create_dir_all(&derivatives_dir)?;
+        init_logging(LogSink::Buffer(Vec::new()), args.debug);
     } else {
         std::fs::create_dir_all(&derivatives_dir)?;
         let log_file = std::fs::File::create(derivatives_dir.join("qsmxt.log"))?;
-        init_logging(Some(log_file), args.debug);
+        init_logging(LogSink::File(log_file), args.debug);
     }
 
-    // Build config: file -> CLI overrides
-    let mut config = if let Some(ref path) = args.config {
-        crate::pipeline::config::load_config(path)?
-    } else {
-        PipelineConfig::default()
-    };
+    if args.no_dataset_steps && args.clean_intermediates {
+        return Err(crate::error::QsmxtError::Config(
+            "--clean-intermediates runs after the dataset-level steps, which --no-dataset-steps \
+             skips (a multi-orientation group still needs its members' intermediates); pass it to \
+             `qsmxt aggregate` instead".to_string(),
+        ));
+    }
 
-    crate::pipeline::config::apply_run_overrides(&mut config, &args.pipeline)?;
-    crate::pipeline::config::validate_reference_region(&config)?;
-    crate::pipeline::config::validate_segmentation(&config)?;
-    crate::pipeline::config::validate_multi_orientation(&config)?;
-    crate::pipeline::config::validate_inversion_input(&config)?;
-
+    // Build config: file -> CLI overrides -> checks
+    let config = build_config(args.config.as_deref(), &args.pipeline)?;
 
     // Discover BIDS runs
     let filter = DiscoveryFilter {
@@ -300,6 +378,14 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
         return Ok(());
     }
 
+    if args.no_dataset_steps {
+        let path = worker_log_path(&derivatives_dir, &runs);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        attach_log_file(std::fs::File::create(&path)?)?;
+    }
+
     // Log version info
     info!("qsmxt {}", env!("CARGO_PKG_VERSION"));
     info!("QSM.rs {}", env!("QSM_CORE_DESCRIBE"));
@@ -311,19 +397,9 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
 
     let output = DerivativeOutputs::new(&derivatives_dir);
 
-    // Write the BIDS derivative dataset_description.json (required for a valid
-    // derivative dataset) and a .bidsignore for non-BIDS pipeline artefacts.
-    crate::bids::dataset_description::write(&derivatives_dir, &args.bids_dir)?;
-    crate::bids::dataset_description::write_bidsignore(&derivatives_dir)?;
-    crate::bids::dataset_description::write_readme(&derivatives_dir)?;
-
-    // Save config to derivatives dir
-    let config_path = derivatives_dir.join("pipeline_config.toml");
-    std::fs::write(&config_path, config.to_toml().unwrap_or_default())?;
-
-    // Save methods description
-    let methods_path = derivatives_dir.join("methods.md");
-    std::fs::write(&methods_path, crate::pipeline::methods::generate_methods(&config))?;
+    if !args.no_dataset_steps {
+        write_dataset_files(&derivatives_dir, &args.bids_dir, &config)?;
+    }
 
     // Execute
     let exec_config = executor::local::ExecutionConfig {
@@ -335,6 +411,51 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     };
 
     let results = executor::local::execute_local(&runs, &config, &output, &exec_config);
+    let run_failures: Vec<String> = results.iter()
+        .filter_map(|r| r.as_ref().err().map(|e| e.to_string())).collect();
+
+    if args.no_dataset_steps {
+        info!("Dataset-level steps skipped (--no-dataset-steps): run `qsmxt aggregate` once every run is done");
+        return finish(&run_failures, &[], &derivatives_dir);
+    }
+
+    let completed: Vec<bool> = results.iter().map(|r| r.is_ok()).collect();
+    let group_failures = run_dataset_steps(&DatasetSteps {
+        derivatives_dir: &derivatives_dir,
+        runs: &runs,
+        completed: &completed,
+        config: &config,
+        force: args.force,
+        clean_intermediates: args.clean_intermediates,
+        command_line: &std::env::args().collect::<Vec<_>>().join(" "),
+    });
+    finish(&run_failures, &group_failures, &derivatives_dir)
+}
+
+/// What the dataset-level steps work from.
+pub(crate) struct DatasetSteps<'a> {
+    pub derivatives_dir: &'a std::path::Path,
+    /// Every run of the dataset (as discovered), in discovery order.
+    pub runs: &'a [discovery::QsmRun],
+    /// Whether each of `runs` completed its per-run pipeline.
+    pub completed: &'a [bool],
+    pub config: &'a PipelineConfig,
+    /// Recompute the multi-orientation groups rather than reuse them.
+    pub force: bool,
+    pub clean_intermediates: bool,
+    /// The command recorded in the provenance.
+    pub command_line: &'a str,
+}
+
+/// Everything after the per-run pipelines: the multi-orientation fan-in, the reference summary,
+/// the dataset-level statistics table and cohort figures, BIDS-Prov, and `--clean-intermediates`.
+///
+/// `qsmxt run` calls this once its runs are done, and `qsmxt aggregate` (the final SLURM job)
+/// calls it over runs processed by `qsmxt run --no-dataset-steps`, so a distributed run and a
+/// local one cannot drift apart. Returns the orientation groups that failed.
+pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
+    let DatasetSteps { derivatives_dir, runs, completed, config, force, clean_intermediates, command_line } = *steps;
+    let output = DerivativeOutputs::new(derivatives_dir);
 
     // Multi-orientation fan-in. Members have just produced their own local fields (and their
     // own single-orientation maps, which are what you check registration against), so the
@@ -349,7 +470,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
             Err(e) => group_failures.push(e),
             Ok(None) => {}
             Ok(Some(pattern)) => {
-                let groups = crate::bids::orientation::group_runs(&runs, &pattern);
+                let groups = crate::bids::orientation::group_runs(runs, &pattern);
                 if groups.is_empty() {
                     warn!(
                         "--orientation-group '{}' matched no set of 2+ runs in a session; \
@@ -362,7 +483,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                         group.members.iter().map(|&i| &runs[i]).collect();
                     let progress = |msg: &str| info!("{msg}");
                     match crate::pipeline::multiorient::reconstruct_group(
-                        group, &members, &config, &output, args.force, &progress,
+                        group, &members, config, &output, force, &progress,
                     ) {
                         Ok(paths) => {
                             for p in paths {
@@ -391,7 +512,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     // What each run's map was referenced to — written whether or not the statistics were asked
     // for, since it describes the susceptibility maps themselves.
     if config.pipeline.do_qsm {
-        write_reference_summary(&derivatives_dir, &output, &all_keys);
+        write_reference_summary(derivatives_dir, &output, &all_keys);
     }
 
     // Gather every run's per-structure table into one dataset-level TSV. Best-effort, and after
@@ -399,10 +520,10 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     // failure here must not fail an otherwise-successful run.
     if config.pipeline.do_analysis {
         let keys: Vec<_> = all_keys.iter().collect();
-        match crate::pipeline::stats::write_group_table(&derivatives_dir, &output, &keys) {
+        match crate::pipeline::stats::write_group_table(derivatives_dir, &output, &keys) {
             Ok(Some(path)) => {
                 info!("Per-structure statistics for all runs -> {}", path.display());
-                write_group_figures(&derivatives_dir, &path);
+                write_group_figures(derivatives_dir, &path);
             }
             Ok(None) => {}
             Err(e) => warn!("Failed to write the dataset-level statistics table: {}", e),
@@ -412,51 +533,54 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     // Write BEP028 (BIDS-Prov) records and per-output GeneratedBy sidecars — last, so the
     // multi-orientation outputs are covered too. Best-effort: provenance output must never fail
     // an otherwise-successful run.
-    let command_line = std::env::args().collect::<Vec<_>>().join(" ");
     if let Err(e) = crate::bids::bidsprov::write_provenance(
-        &derivatives_dir, &runs, &prov_groups, &output, &command_line,
+        derivatives_dir, runs, &prov_groups, &output, command_line,
     ) {
         warn!("Failed to write BIDS-Prov provenance records: {}", e);
     }
 
     // Last of all, once nothing else will read them (the multi-orientation fan-in reads each
     // member's local field): the intermediates of every run that completed.
-    if args.clean_intermediates {
-        for (run, result) in runs.iter().zip(&results) {
-            if result.is_ok() {
+    if clean_intermediates {
+        for (run, &done) in runs.iter().zip(completed) {
+            if done {
                 clean_run(&output, run);
             }
         }
     }
+    group_failures
+}
 
-    let failures: Vec<_> = results.iter().filter(|r| r.is_err()).collect();
-    if !failures.is_empty() {
-        error!("{} run(s) failed:", failures.len());
-        for f in &failures {
-            if let Err(e) = f {
-                error!("  {}", e);
-            }
+/// Report what failed, as the command's result.
+pub(crate) fn finish(
+    run_failures: &[String], group_failures: &[String], derivatives_dir: &std::path::Path,
+) -> crate::Result<()> {
+    if !run_failures.is_empty() {
+        error!("{} run(s) failed:", run_failures.len());
+        for f in run_failures {
+            error!("  {}", f);
         }
         return Err(crate::error::QsmxtError::Algorithm {
             stage: "pipeline".to_string(),
-            message: format!("{} run(s) failed", failures.len()),
+            message: format!("{} run(s) failed: {}", run_failures.len(), run_failures.join("; ")),
         });
     }
 
     if !group_failures.is_empty() {
         error!("{} orientation group(s) failed:", group_failures.len());
-        for f in &group_failures {
+        for f in group_failures {
             error!("  {}", f);
         }
         return Err(crate::error::QsmxtError::Algorithm {
             stage: "multi-orientation".to_string(),
-            message: format!("{} orientation group(s) failed", group_failures.len()),
+            message: format!("{} orientation group(s) failed: {}", group_failures.len(), group_failures.join("; ")),
         });
     }
 
     info!("All runs completed successfully — results in {}", derivatives_dir.display());
     Ok(())
 }
+
 
 /// Print the orientation groups a `--dry` run would reconstruct, with the direction table and
 /// the go/no-go verdict for each.

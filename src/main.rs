@@ -20,9 +20,9 @@ use cli::{Cli, Command};
 fn main() {
     let cli = Cli::parse();
 
-    // Run and TUI init their own loggers (to write to log files).
+    // Run, aggregate and TUI init their own loggers (to write to log files).
     // All other commands use a simple stderr logger.
-    if !matches!(cli.command, Command::Run(_) | Command::Tui) {
+    if !matches!(cli.command, Command::Run(_) | Command::Aggregate(_) | Command::Tui) {
         env_logger::Builder::new()
             .filter_level(log::LevelFilter::Info)
             .format_timestamp(None)
@@ -35,6 +35,7 @@ fn main() {
         Command::Validate(args) => commands::validate::execute(args),
         Command::DicomConvert(args) => commands::dicom::execute(args),
         Command::Slurm(args) => commands::slurm::execute(args),
+        Command::Aggregate(args) => commands::aggregate::execute(args),
         Command::Mask { command } => commands::mask::execute(command),
         Command::Combine { command } => commands::combine::execute(command),
         Command::Unwrap { command } => commands::unwrap::execute(command),

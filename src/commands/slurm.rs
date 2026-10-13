@@ -1,22 +1,12 @@
 use crate::bids::discovery::{self, DiscoveryFilter};
 use crate::cli::SlurmArgs;
-use crate::pipeline::config::PipelineConfig;
 
 pub fn execute(args: SlurmArgs) -> crate::Result<()> {
-    // Build config the same way `qsmxt run` does: file -> CLI/TUI overrides.
-    // Without the overrides the generated jobs silently fall back to the
-    // pipeline defaults instead of the requested settings.
-    let mut config = if let Some(ref path) = args.config {
-        crate::pipeline::config::load_config(path)?
-    } else {
-        PipelineConfig::default()
-    };
-
-    crate::pipeline::config::apply_run_overrides(&mut config, &args.pipeline)?;
-    crate::pipeline::config::validate_reference_region(&config)?;
-    crate::pipeline::config::validate_segmentation(&config)?;
-    crate::pipeline::config::validate_multi_orientation(&config)?;
-    crate::pipeline::config::validate_inversion_input(&config)?;
+    // Build config the same way `qsmxt run` does: file -> CLI/TUI overrides -> every check that
+    // can be made before a run starts. Without the overrides the generated jobs silently fall
+    // back to the pipeline defaults; without the checks a bad setting is found once per job,
+    // after submission.
+    let config = super::run::build_config(args.config.as_deref(), &args.pipeline)?;
 
     let filter = DiscoveryFilter {
         include: args.include.clone(),
@@ -35,25 +25,37 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
 
     let base_dir = args.output_dir.as_deref().unwrap_or(&args.bids_dir);
 
-    let scripts = crate::executor::slurm::generate_all_slurm(
+    let jobs = crate::executor::slurm::generate_all_slurm(
         &runs,
         &args.bids_dir,
         base_dir,
         &config,
-        &args.account,
-        args.partition.as_deref(),
-        &args.time,
-        args.mem,
-        args.cpus_per_task,
+        &crate::executor::slurm::SlurmOptions {
+            account: &args.account,
+            partition: args.partition.as_deref(),
+            time: &args.time,
+            mem_gb: args.mem,
+            cpus: args.cpus_per_task,
+            num_echoes: args.num_echoes,
+            force: args.force,
+            clean_intermediates: args.clean_intermediates,
+            command_line: std::env::args().collect::<Vec<_>>().join(" "),
+        },
     )?;
 
-    println!("Generated {} SLURM scripts:", scripts.len());
-    for s in &scripts {
+    println!("Generated {} per-run SLURM script(s):", jobs.run_scripts.len());
+    for s in &jobs.run_scripts {
         println!("  {}", s.display());
     }
+    println!("and the aggregation job (dataset-level steps, after every run job succeeds):");
+    println!("  {}", jobs.aggregate_script.display());
 
     if args.submit {
-        crate::executor::slurm::submit_scripts(&scripts)?;
+        let (ids, agg) = crate::executor::slurm::submit_jobs(&jobs)?;
+        println!("Submitted {} run job(s): {}", ids.len(), ids.join(" "));
+        println!("Submitted aggregation job {agg} (afterok:{})", ids.join(":"));
+    } else {
+        println!("Submit them all with:\n  bash {}", jobs.submit_script.display());
     }
 
     Ok(())

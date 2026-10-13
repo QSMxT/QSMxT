@@ -37,8 +37,11 @@ pub enum Command {
     /// Convert a DICOM directory to BIDS using automatic series classification
     #[command(name = "dicom-convert")]
     DicomConvert(DicomConvertArgs),
-    /// Generate SLURM job scripts for HPC execution
+    /// Generate SLURM job scripts for HPC execution: one job per run, then an aggregation job
     Slurm(SlurmArgs),
+    /// Run the dataset-level steps over runs already processed with `qsmxt run
+    /// --no-dataset-steps` (multi-orientation, summary tables, provenance, clean-up)
+    Aggregate(AggregateArgs),
     /// Masking operations
     Mask {
         #[command(subcommand)]
@@ -1556,6 +1559,59 @@ pub struct RunArgs {
     /// configuration recomputes the intermediates it needs
     #[arg(long)]
     pub clean_intermediates: bool,
+
+    /// Process each run and stop: skip the dataset-level steps (multi-orientation
+    /// reconstruction, summary tables, cohort figures, provenance, dataset_description.json,
+    /// pipeline_config.toml, methods.md) and log to logs/<run>.log instead of qsmxt.log.
+    /// `qsmxt aggregate` does those steps once every run is done; `qsmxt slurm` uses the pair
+    #[arg(long, conflicts_with = "dry")]
+    pub no_dataset_steps: bool,
+}
+
+#[derive(Parser, Debug)]
+pub struct AggregateArgs {
+    /// Input BIDS directory
+    pub bids_dir: PathBuf,
+
+    /// Output directory (defaults to bids_dir; outputs go into <dir>/derivatives/qsmxt/)
+    pub output_dir: Option<PathBuf>,
+
+    /// Pipeline configuration file (TOML): the one the runs were processed with
+    #[arg(long)]
+    pub config: Option<PathBuf>,
+
+    /// Include only runs matching these glob patterns (e.g. "sub-1*" "*ses-pre*")
+    #[arg(long, num_args = 1..)]
+    pub include: Option<Vec<String>>,
+
+    /// Exclude runs matching these glob patterns (e.g. "*mygrea*")
+    #[arg(long, num_args = 1..)]
+    pub exclude: Option<Vec<String>>,
+
+    /// Limit number of echoes to process
+    #[arg(long)]
+    pub num_echoes: Option<usize>,
+
+    #[command(flatten)]
+    pub pipeline: PipelineArgs,
+
+    /// Enable debug logging
+    #[arg(long)]
+    pub debug: bool,
+
+    /// Recompute the multi-orientation reconstructions, ignoring their cached state
+    #[arg(long)]
+    pub force: bool,
+
+    /// Once the dataset-level steps are done, delete the intermediate images under workflow/
+    /// (as `qsmxt run --clean-intermediates`)
+    #[arg(long)]
+    pub clean_intermediates: bool,
+
+    /// The command recorded as the provenance Activity's `Command` (default: this command).
+    /// `qsmxt slurm` sets it to the `qsmxt slurm ...` invocation that produced the outputs
+    #[arg(long, hide = true)]
+    pub command_line: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -1603,9 +1659,9 @@ pub struct SlurmArgs {
     #[arg(long, default_value = "02:00:00")]
     pub time: String,
 
-    /// Memory per job in GB
-    #[arg(long, default_value_t = 32)]
-    pub mem: usize,
+    /// Memory per job in GB [default: estimated per run from its size and the pipeline]
+    #[arg(long)]
+    pub mem: Option<usize>,
 
     /// CPUs per task
     #[arg(long, default_value_t = 4)]
@@ -1626,6 +1682,15 @@ pub struct SlurmArgs {
     /// Limit number of echoes to process
     #[arg(long)]
     pub num_echoes: Option<usize>,
+
+    /// Force re-run, ignoring cached pipeline state (passed to every job)
+    #[arg(long)]
+    pub force: bool,
+
+    /// Once every run and the dataset-level steps are done, delete the intermediate images
+    /// under workflow/ (done by the aggregation job)
+    #[arg(long)]
+    pub clean_intermediates: bool,
 
     #[command(flatten)]
     pub pipeline: PipelineArgs,

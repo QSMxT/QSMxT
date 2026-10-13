@@ -428,6 +428,27 @@ fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
     })
 }
 
+/// Has `key`'s per-run pipeline completed under `config`? `qsmxt aggregate` asks this of every run
+/// before the dataset-level steps, in place of the per-run results a local run has in hand. The
+/// error says why not, for the message naming the run.
+pub fn run_completed_under(output_dir: &Path, key: &AcquisitionKey, config: &PipelineConfig) -> Result<(), String> {
+    let path = state_file_path(output_dir, key);
+    let text = std::fs::read_to_string(&path)
+        .map_err(|_| format!("has not been processed (no {})", path.display()))?;
+    let state: PipelineState = serde_json::from_str(&text)
+        .map_err(|e| format!("has an unreadable pipeline state {}: {e}", path.display()))?;
+    if state.status != "complete" {
+        return Err(match state.current_step {
+            Some(step) => format!("did not complete (stopped in step '{step}')"),
+            None => format!("did not complete (status '{}')", state.status),
+        });
+    }
+    if state.config_hash != config_hash(config) {
+        return Err("was processed with a different configuration".to_string());
+    }
+    Ok(())
+}
+
 /// The path to the pipeline state file for a given run (in workflow dir).
 pub fn state_file_path(output_dir: &Path, key: &AcquisitionKey) -> PathBuf {
     let mut dir = output_dir.join("workflow").join(format!("sub-{}", key.subject));

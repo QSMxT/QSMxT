@@ -4356,7 +4356,7 @@ impl Default for RunForm {
             slurm_account: String::new(),
             slurm_partition: String::new(),
             slurm_time: "02:00:00".to_string(),
-            slurm_mem: "32".to_string(),
+            slurm_mem: String::new(),
             slurm_cpus: "4".to_string(),
             slurm_submit: false,
         }
@@ -4554,7 +4554,7 @@ impl App {
                 FieldDef {
                     label: "SLURM Memory (GB)",
                     kind: FieldKind::Text,
-                    help: "Memory per job in GB",
+                    help: "Memory per job in GB (empty = estimated per run)",
                 },
                 FieldDef {
                     label: "SLURM CPUs/Task",
@@ -6643,8 +6643,8 @@ impl App {
             (TAB_EXECUTION, 4..=9) => self.form.execution_mode == 1,
             // Dry Run and Num Processes only in Local mode
             (TAB_EXECUTION, 1) | (TAB_EXECUTION, 3) => self.form.execution_mode == 0,
-            // Memory limit, force and clean-up are local-run settings too.
-            (TAB_EXECUTION, 10..=13) => self.form.execution_mode == 0,
+            // The memory limit schedules concurrent local runs; force and clean-up apply to both.
+            (TAB_EXECUTION, 10..=11) => self.form.execution_mode == 0,
             // DICOM export settings under Export DICOM (11).
             (TAB_SUPPLEMENTARY, 24..=25) => self.form.export_dicom,
             _ => true,
@@ -7793,7 +7793,7 @@ mod tests {
         assert!(form.slurm_account.is_empty());
         assert!(form.slurm_partition.is_empty());
         assert_eq!(form.slurm_time, "02:00:00");
-        assert_eq!(form.slurm_mem, "32");
+        assert_eq!(form.slurm_mem, "", "empty: sized per run from the memory estimate");
         assert_eq!(form.slurm_cpus, "4");
         assert!(!form.slurm_submit);
     }
@@ -9443,7 +9443,7 @@ mod tests {
         app.active_field = 7;
         app.form.slurm_mem = "999".to_string();
         app.handle_key(key(KeyCode::Char('r')));
-        assert_eq!(app.form.slurm_mem, "32");
+        assert_eq!(app.form.slurm_mem, "");
     }
 
     // ========== Pipeline mask operations ==========
