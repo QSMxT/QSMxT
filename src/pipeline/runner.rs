@@ -2663,9 +2663,17 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
 
     // ── R2' map (Hz) = R2* − R2 ──
     if want_r2p {
+        // Where this R2' came from, for its sidecar (#236): a predicted R2' looks exactly like a
+        // measured one, and only the sidecar can tell a downstream reader which it is.
+        let mut source = serde_json::Map::new();
         let r2p: Option<Vec<f64>> = if let Some(tool) = ctx.config.separation.custom_r2prime_tool.clone() {
             match find_custom_derivative(ctx.run, &tool, "*_R2primemap.nii*", &[]) {
-                Some(p) => { log::info!("Using custom R2' map from {}", p.display()); Some(load_volume(&p)?) }
+                Some(p) => {
+                    log::info!("Using custom R2' map from {}", p.display());
+                    source.insert("R2primeSource".into(), serde_json::json!("supplied"));
+                    source.insert("R2primeSuppliedFrom".into(), serde_json::json!(p.display().to_string()));
+                    Some(load_volume(&p)?)
+                }
                 None => { log::warn!("no custom R2' map under derivatives (tool: {}) — skipping R2'", tool); None }
             }
         } else {
@@ -2697,6 +2705,11 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
                                 100.0 * measured as f64 / in_mask as f64, in_mask - measured,
                             );
                         }
+                        source.insert("R2primeSource".into(), serde_json::json!("measured"));
+                        source.insert("R2primeMethod".into(), serde_json::json!(match &ctx.config.separation.custom_r2_tool {
+                            Some(tool) => format!("R2* - R2 (R2 supplied by {tool})"),
+                            None => "R2* - R2 (R2 by EPG fit of the MESE)".to_string(),
+                        }));
                         Some(r2p)
                     }
                     _ => { log::warn!("R2' needs both R2* and R2 - one is missing; skipping R2'"); None }
@@ -2747,6 +2760,12 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
                         let r2s = load_volume(&r2star_path)?;
                         let predicted = run_r2primenet(ctx, &r2s, &mask, &grid)?;
                         log::info!("R2' estimated by R2PRIMEnet (an estimate, not a measurement)");
+                        source.insert("R2primeSource".into(), serde_json::json!("predicted"));
+                        source.insert("R2primeMethod".into(), serde_json::json!("R2PRIMEnet (from R2*)"));
+                        source.insert("R2primenetTrainedFieldStrength".into(),
+                                      serde_json::json!(R2PRIMENET_TRAINED_B0_T));
+                        source.insert("R2primenetCalibrated".into(),
+                                      serde_json::json!(policy == R2primenetFieldPolicy::Run));
                         Some(predicted)
                     }
                 }
@@ -2755,6 +2774,7 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
         if let Some(ref r2pv) = r2p {
             let out = ctx.output.r2prime_path(&ctx.run.key);
             save_volume(&out, r2pv, ctx.meta)?;
+            write_r2prime_sidecar(&out, source)?;
             outputs.push(out);
         }
     }
@@ -3888,6 +3908,20 @@ fn write_reference_sidecar(
     if let Some(parent) = sidecar.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    std::fs::write(&sidecar, serde_json::to_string_pretty(&obj)
+        .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
+    Ok(())
+}
+
+/// Record where an R2' map came from in its sidecar, replacing what an earlier run recorded.
+/// Merged into the rest of the file, which BIDS-Prov also writes to.
+fn write_r2prime_sidecar(
+    r2prime_path: &Path, source: serde_json::Map<String, serde_json::Value>,
+) -> crate::Result<()> {
+    let Some(sidecar) = crate::bids::entities::sidecar_path(r2prime_path) else { return Ok(()) };
+    let mut obj = read_json_object(&sidecar);
+    obj.retain(|k, _| !k.starts_with("R2prime"));
+    obj.extend(source);
     std::fs::write(&sidecar, serde_json::to_string_pretty(&obj)
         .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
     Ok(())

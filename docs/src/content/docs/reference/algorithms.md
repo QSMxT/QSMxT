@@ -192,6 +192,11 @@ from 3 T (more than 0.3 T off):
 | `auto` (no R2 to subtract) | no R2′: an error if R2′ or an R2′-based separation was asked for | R2PRIMEnet runs, with a warning |
 | `r2primenet` | the run stops with an error | R2PRIMEnet runs, with a warning |
 
+The R2′ map's JSON sidecar says where it came from: `R2primeSource` is
+`measured` (R2* − R2), `predicted` (R2PRIMEnet, with `R2primenetCalibrated` false
+away from 3 T) or `supplied` (`--use-custom-r2prime`), with `R2primeMethod`
+naming how.
+
 Treat any χ-separation built on a non-3 T R2PRIMEnet prediction as
 uncalibrated; better, acquire a MESE or supply an R2′ with
 `--use-custom-r2prime`. `--r2primenet-patch D H W` sets the sliding-window patch
