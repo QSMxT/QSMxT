@@ -2017,7 +2017,7 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
         return Ok(());
     }
     let t = Instant::now();
-    log::info!("Computing SWI (Laplacian unwrap + CLEAR-SWI + MIP)");
+    log::info!("Computing SWI (echo 1: Laplacian unwrap, high-pass phase mask, minIP)");
     progress("Computing SWI");
     let phase_data = load_volume(&ctx.echo_phase_path(1))?;
     let mag_data = load_volume(&ctx.output.magnitude_path(&ctx.run.key))?;

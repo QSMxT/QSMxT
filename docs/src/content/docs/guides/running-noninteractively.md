@@ -36,14 +36,20 @@ first? See [Converting DICOMs to BIDS](#converting-dicoms-to-bids) below.
 Each run flows through the pipeline below. The method at every stage is
 configurable — see [Algorithms](/QSMxT/reference/algorithms/).
 
-1. **Masking** — generate a brain/region mask (`threshold` or `bet`).
+1. **Masking** — generate a brain/region mask (`--mask-preset`, or custom
+   `--mask` sections).
 2. **Phase offset removal** — remove receiver phase offsets on multi-echo data.
 3. **Phase unwrapping** — `romeo` or `laplacian`.
 4. **Echo combination / B0 mapping** — combine echoes into a field map
    (`--b0-estimation`, `--b0-weight-type`).
 5. **Background field removal** — `vsharp`, `pdf`, `lbv`, and more.
-6. **Dipole inversion** — `rts`, `tv`, `tgv`, `medi`, … (10 algorithms).
+6. **Dipole inversion** — `rts`, `tv`, `tgv`, `medi`, … (31 algorithms).
 7. **Referencing** — reference the susceptibility values (e.g. to the mean).
+
+Not every inversion runs every stage: total-field methods (TFI, QSMART, AutoQSM,
+NeXtQSM, MEDI with `--medi-smv`, multi-echo TGV) skip background field removal,
+and the wrapped-phase methods (iQSM, iQSM+, single-echo TGV) skip unwrapping and
+echo combination too. See [Algorithms](/QSMxT/reference/algorithms/#dipole-inversion).
 
 ### Choosing algorithms
 
@@ -57,16 +63,19 @@ qsmxt run study/bids \
 
 | Option | Choices |
 | --- | --- |
-| `--qsm-algorithm` | `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `ilsqr`, `qsmart` |
+| `--qsm-algorithm` | 20 classical (`rts`, `tv`, `tkd`, `tgv`, `medi`, `ilsqr`, …) and 11 deep-learning (`xqsm`, `qsmnet`, `iqsm`, …) |
 | `--unwrapping-algorithm` | `romeo`, `laplacian` |
-| `--bf-algorithm` | `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella` |
-| `--mask-preset` | `robust-threshold`, `bet`, `hd-bet` |
+| `--bf-algorithm` | `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm` |
+| `--mask-preset` | `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mouse-bet` |
 | `--masking-input` | `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality` |
+
+Every value of every option is listed in the [CLI reference](/QSMxT/reference/cli/)
+and described in [Algorithms](/QSMxT/reference/algorithms/).
 
 `--masking-input` overrides the image the mask is computed from and combines
 with `--mask-preset` — e.g. `--mask-preset bet --masking-input magnitude-first`
 runs BET on the first-echo magnitude. For fully custom masking, see `--mask`
-in the [command reference](/QSMxT/reference/commands/).
+in [Algorithms](/QSMxT/reference/algorithms/#masking).
 
 ### Selecting runs
 
@@ -119,19 +128,52 @@ the whole pipeline.
 ```
 study/bids/derivatives/qsmxt/
 └── sub-01/
-    └── anat/
-        ├── sub-01_…_Chimap.nii.gz
-        ├── sub-01_…_mask.nii.gz
-        └── sub-01_…_desc-qsm_mask.nii.gz
+    ├── anat/
+    │   ├── sub-01_…_Chimap.nii
+    │   ├── sub-01_…_Chimap.json
+    │   ├── sub-01_…_mask.nii
+    │   ├── sub-01_…_desc-qsm_mask.nii
+    │   └── sub-01_…_part-mag_T2starw.nii
+    └── fmap/
+        ├── sub-01_…_desc-total_fieldmap.nii
+        └── sub-01_…_desc-total_magnitude.nii
 ```
+
+Outputs are uncompressed NIfTI (`.nii`), each with a JSON sidecar recording how it
+was made (`GeneratedBy`, units, and for susceptibility maps the reference). The
+total field is published in Hz under `fmap/`. Every file and its name is listed
+in [Output files](/QSMxT/reference/outputs/).
 
 `mask` is the brain mask; `desc-qsm_mask` is the part of it the susceptibility map
 is defined on — the brain mask less the rim that background-field removal eroded.
 The `Chimap` is referenced over, and is 0 outside, `desc-qsm_mask`; the χ-separation
 maps (`--do-chisep`) are fitted over it and are 0 outside it too.
 
-A `references.txt` accompanies the outputs, citing the exact methods used for
-your data and parameters.
+At the top of `derivatives/qsmxt/`, `methods.md` describes the processing in
+prose ready for a methods section, with citations for the exact methods used for
+your data and parameters; `pipeline_config.toml` holds the resolved settings
+(reusable with `--config`), and `qsmxt.log` the log.
+
+#### The reference summary
+
+Every susceptibility map is referenced (see
+[Referencing](/QSMxT/reference/algorithms/#referencing)), and each map's sidecar
+records what with `QsmReference` (`mean`, `none`, or the region), `QsmReferenceOffsetPpm`
+(the value subtracted), `QsmReferenceVoxels` (how many voxels it was measured over)
+and, for a region, `QsmReferenceLabels` (its label ids). The same facts for every
+map of every run are collected in `desc-reference_summary.tsv` at the top of the
+derivatives:
+
+| Column | Meaning |
+| --- | --- |
+| `subject`, `session`, `acquisition`, `reconstruction`, `inversion`, `run` | The run's BIDS entities |
+| `map` | The map, by its BIDS suffix with any `desc-` (`Chimap`, `desc-singlepass_Chimap`, `desc-cosmos_Chimap`, …) |
+| `reference` | What zero was pinned to (`QsmReference`) |
+| `offset_ppm` | The value subtracted, in ppm (`QsmReferenceOffsetPpm`) |
+| `n_voxels` | Voxels the reference was measured over (`QsmReferenceVoxels`) |
+
+It is the file to scan for a subject whose reference region came out small or
+empty.
 
 ### Exporting results as DICOM
 
@@ -150,7 +192,7 @@ slice:
 study/bids/derivatives/qsmxt/
 └── sub-01/
     ├── anat/
-    │   └── sub-01_…_Chimap.nii.gz
+    │   └── sub-01_…_Chimap.nii
     └── extra_files/
         └── sub-01_Chimap_dicoms/
             ├── sub-01_Chimap_0001.dcm
@@ -300,8 +342,9 @@ everything on one machine.
 qsmxt slurm study/bids --account myaccount
 ```
 
-This writes SLURM batch scripts for your dataset to
-`<OUTPUT_DIR>/derivatives/qsmxt/slurm/`, and with `--submit` submits them. Run
+`--account` (the SLURM account to charge) is required. This writes SLURM batch
+scripts for your dataset to `<OUTPUT_DIR>/derivatives/qsmxt/slurm/`, and with
+`--submit` submits them. Run
 `qsmxt slurm --help` for the available options (partition, time limits,
 resource requests, and run selection).
 

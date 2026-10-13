@@ -22,7 +22,8 @@ Generate or refine binary masks.
 | `percentile` | Percentile thresholding |
 | `bet` | Brain extraction (BET) |
 | `hd-bet` | Deep-learning brain extraction (HD-BET); `--low-memory`, `--patch XxYxZ`, `--tta`. Weights are downloaded on first use |
-| `preset` | Run a [`--mask-preset`](/QSMxT/reference/algorithms/#masking) recipe on an image: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase` |
+| `rs2-net` | Deep-learning **rodent** brain extraction (RS2-Net); `--tta`, `--tile-step`. Weights are downloaded on first use |
+| `preset` | Run a [`--mask-preset`](/QSMxT/reference/algorithms/#masking) recipe on an image: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mouse-bet` |
 | `robust` | Alias for `preset robust-threshold` |
 | `erode` / `dilate` | Morphological erosion / dilation |
 | `close` | Morphological closing |
@@ -73,18 +74,39 @@ sidecars.
 qsmxt combine mcpc3ds \
   --phase sub-1/anat/*rec-uncombined*part-phase_MEGRE.nii.gz \
   --magnitude sub-1/anat/*rec-uncombined*part-mag_MEGRE.nii.gz \
-  -o combined/sub-1_rec-mcpc3ds
-# writes combined/sub-1_rec-mcpc3ds_echo-N_part-{phase,mag}.nii and _desc-mcpc3ds_mask.nii
+  -o combined/sub-1_rec-uncombined
+# writes combined/sub-1_rec-mcpc3ds_echo-N_part-{phase,mag}_MEGRE.nii and
+#        combined/sub-1_rec-uncombined_desc-mcpc3ds_mask.nii — the pipeline's names
 ```
 
 ## Phase unwrapping — `qsmxt unwrap`
 
 Unwrap a wrapped phase image (`romeo` or `laplacian`).
 
+## Field mapping — `qsmxt fieldmap`
+
+Turn multi-echo wrapped phase into one B0 field map in ppm, as the pipeline's
+field-mapping stage does: `romeo` (phase-offset removal, ROMEO unwrapping and the
+B0 fit) or `laplacian` (per-echo Laplacian unwrapping, then echo combination).
+
 ## Background field removal — `qsmxt bgremove`
 
-Remove background fields from an unwrapped field map (`vsharp`, `pdf`, `lbv`,
-`ismv`, `sharp`, `resharp`, `harperella`, `iharperella`).
+Remove background fields from an unwrapped total field map in ppm:
+
+| Subcommand | Method |
+| --- | --- |
+| `vsharp` | Variable-radius SHARP |
+| `pdf` | Projection onto Dipole Fields |
+| `lbv` | Laplacian Boundary Value |
+| `ismv` | Iterative Spherical Mean Value |
+| `sharp` | SHARP |
+| `resharp` | Regularised SHARP |
+| `harperella` | HARPERELLA, joint unwrapping and background removal |
+| `iharperella` | Improved HARPERELLA |
+| `msmv` | Maximum Spherical Mean Value boundary-shadow removal, on a local field another method produced (the pipeline's `--msmv-refine`) |
+| `bfrnet` | BFRnet deep-learning background removal (weights downloaded on first use) |
+
+iQFM, the pipeline's `--bf-algorithm iqfm`, has no standalone command.
 
 `qsmxt bgremove harperella` and `iharperella` read one wrapped echo in rad when
 given `--te` and `--field-strength` (the published method), or an unwrapped total
@@ -96,7 +118,8 @@ field in ppm without them, and write the local field in ppm.
 
 ## Dipole inversion — `qsmxt invert`
 
-Invert a local field map into a susceptibility map. One subcommand per method:
+Invert a field map into a susceptibility map. One subcommand per method; most
+take the local field, and `tfi`, `autoqsm` and `nextqsm` the **total** field:
 
 | Subcommand | Method |
 | --- | --- |
@@ -108,11 +131,24 @@ Invert a local field map into a susceptibility map. One subcommand per method:
 | `tikhonov` | Tikhonov regularization |
 | `nltv` | Nonlocal Total Variation |
 | `medi` | Morphology-Enabled Dipole Inversion |
+| `tfi` | Total Field Inversion (total field in) |
 | `ilsqr` | Iterative Least-Squares QR |
 | `lsqr` | Minimally regularised LSQR |
 | `heidi` | HEIDI — Homogeneity Enabled Incremental Dipole Inversion |
+| `ndi` | Nonlinear Dipole Inversion |
+| `fansi` / `fansi-tgv` | FANSI nonlinear TV / TGV |
+| `l1qsm` | L1 data-fidelity QSM |
+| `whqsm` | Weak-harmonic QSM |
+| `hdqsm` | Hybrid data-fidelity QSM |
+| `amp-pe` | Approximate Message Passing with Parameter Estimation |
+| `xqsm`, `qsmnet`, `qsmnet-plus`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm` | Deep-learning dipole inversions (weights downloaded on first use) |
+| `autoqsm`, `nextqsm` | Deep-learning single-step reconstructions from the total field |
 | `cosmos` | COSMOS — multi-orientation least squares (2+ orientations) |
 | `sti` | Susceptibility tensor imaging (6+ orientations) |
+
+QSMART is its own command, `qsmxt qsmart`, since it takes the total field and
+runs its own two-stage reconstruction. iQSM and iQSM+, which reconstruct from
+wrapped phase, are pipeline-only (`run --qsm-algorithm iqsm`).
 
 ```sh
 # e.g. inspect the parameters of a method
@@ -123,14 +159,33 @@ qsmxt invert tgv --help
 orientation, and expect them already co-registered onto a common grid. See
 [multi-orientation](/QSMxT/reference/algorithms/#multi-orientation-cosmos-and-sti).
 
+## Source separation — `qsmxt separate`
+
+Split a susceptibility map into paramagnetic and diamagnetic sources, writing
+`<prefix>_desc-paramagnetic_Chimap.nii`, `_desc-diamagnetic_Chimap.nii` and
+`_desc-total_Chimap.nii` (the pipeline's names):
+
+| Subcommand | Method and inputs |
+| --- | --- |
+| `r2star-qsm` | R2\*-QSM closed form — QSM + R2\* |
+| `decompose` | DECOMPOSE-QSM — QSM + multi-echo magnitude |
+| `chi-sep-ilsqr` | χ-separation, iLSQR — local field + R2′ + magnitude + QSM |
+| `chi-sep-medi` | χ-separation, MEDI — local field + R2′ + magnitude + QSM |
+| `wavesep` | WaveSep — QSM + R2′ |
+| `hc-chisep` | Hollow-cylinder χ-separation — QSM + R2′ + multi-echo magnitude |
+| `susep-net` | SUSEP-Net (deep learning) — QSM + R2′ + local field |
+| `chi-sepnet` | χ-sepnet (deep learning) — QSM + R2′ + local field |
+
 ## Supplementary maps
 
 | Command | Output |
 | --- | --- |
-| `swi` | Susceptibility-weighted image (and minimum-intensity projection) |
+| `swi` | Susceptibility-weighted image, and with `--mip` its minimum-intensity projection (named like the pipeline's: `sub-01_swi.nii` → `sub-01_minIP.nii`, unless `--mip-output` is given) |
 | `r2star` | R2\* map from multi-echo magnitude |
 | `t2star` | T2\* map from multi-echo magnitude |
+| `r2` | R2 map from multi-echo spin-echo (MESE) magnitude (EPG fit) |
 | `r2prime` | R2' map from an R2\* and an R2 map, over the region R2 covers |
+| `segment` | SynthSeg whole-brain segmentation of a magnitude image (`_dseg.nii` and its `.tsv` lookup) |
 | `quality-map` | ROMEO phase-quality map |
 
 `r2prime` computes `R2' = R2* - R2` only where R2 was actually measured, because

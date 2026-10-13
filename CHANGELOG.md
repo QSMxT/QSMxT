@@ -229,6 +229,21 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
 
 ### Changed
 
+- **Docs and methods text match the code** (#282). The generated `methods.md` now describes the
+  stages each inversion actually runs, routed by QSM.rs's `InversionConfig::input`: iQSM/iQSM+
+  no longer claim field mapping or background removal, TGV is no longer "single-step" on
+  multi-echo data (it is fed the field map, which is described), and SWI is described as what
+  runs (echo-1 Laplacian unwrap, high-pass phase mask, Haacke et al. 2004) rather than as
+  CLEAR-SWI. `--b0-weight-type`'s TE weighting is spelled `tes` in `--help` (it was `t-es`, with
+  `tes` accepted as an alias). The docs gain a generated CLI reference (every command, option,
+  value and default), an output-files page with the #275 names, `rs2-net`/`mouse-bet`/`bfrnet`/
+  `iqfm`, every inversion and separation command, the R2′ strategy, the reference-summary
+  columns, `.nii` (not `.nii.gz`) outputs, `methods.md` (not `references.txt`), and drop the claim
+  that the TUI saves a config file. Tests fail if the CLI reference is stale, if a documented
+  flag does not exist, if a command, algorithm value, mask preset expansion, inversion count or
+  published file name is missing or wrong in the docs, or if the methods text describes
+  background removal or unwrapping for an inversion route that does not run it.
+
 - **`--b0-direction` accepts negative components** (and `--obliquity-threshold` accepts its
   documented `-1`). Clap read a value such as `-0.054523` as an unknown flag, so
   `qsmxt bgremove`, `invert` (including `cosmos`/`sti`), `separate` and `qsmart` failed with a

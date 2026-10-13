@@ -26,8 +26,11 @@ qsmxt tui
   dipole inversion from menus — no need to memorise flag names or valid values.
 - **Adjust parameters** for each stage, with sensible defaults pre-filled.
 - **Copy the equivalent command** — as you configure, the TUI shows the matching
-  `qsmxt run` command and updates it live, and saves your settings to a config
-  file. It's the easiest way to build a run command without memorising flags.
+  `qsmxt run` command and updates it live. It's the easiest way to build a run
+  command without memorising flags. The TUI does not write a config file itself,
+  but every run (from the TUI or the CLI) records its resolved settings in
+  `derivatives/qsmxt/pipeline_config.toml`, which `--config` (or the TUI's
+  *Config file* field) loads back.
 - **Export results as DICOM** — tick *Export DICOM* on the Supplementary tab to
   write every final map as a DICOM series alongside the NIfTIs, ready for a PACS
   or a clinical viewer. (See
@@ -36,8 +39,8 @@ qsmxt tui
 - **Submit to a cluster** — generate and launch SLURM jobs for large cohorts
   directly from the TUI; scaling out doesn't require the command line.
 
-The TUI writes the same configuration the CLI consumes, so anything you set up
-interactively can be saved and reproduced [noninteractively](/QSMxT/guides/running-noninteractively/)
+The TUI builds the same configuration the CLI consumes, so anything you set up
+interactively can be reproduced [noninteractively](/QSMxT/guides/running-noninteractively/)
 with `qsmxt run --config` — or by copying the generated command.
 
 :::note

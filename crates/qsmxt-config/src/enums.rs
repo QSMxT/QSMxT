@@ -19,6 +19,17 @@ pub enum QsmAlgorithm {
     Iqsm,
     #[serde(rename = "iqsm-plus")] IqsmPlus,
 }
+impl QsmAlgorithm {
+    /// Every inversion, in the order the CLI lists them (`qsmxt`'s CLI reference test holds this
+    /// to `--qsm-algorithm`'s values, so a new variant cannot be left out).
+    pub const ALL: [QsmAlgorithm; 31] = [
+        Self::Rts, Self::Tv, Self::Tkd, Self::Tsvd, Self::Tgv, Self::Tikhonov, Self::Nltv,
+        Self::Medi, Self::Tfi, Self::Ilsqr, Self::Lsqr, Self::Heidi, Self::Qsmart, Self::Ndi,
+        Self::Fansi, Self::FansiTgv, Self::L1qsm, Self::Whqsm, Self::Hdqsm, Self::AmpPe,
+        Self::Xqsm, Self::Qsmnet, Self::QsmnetPlus, Self::Autoqsm, Self::Qsmgan, Self::Ir2qsm,
+        Self::Lpcnn, Self::ModlQsm, Self::Nextqsm, Self::Iqsm, Self::IqsmPlus,
+    ];
+}
 impl fmt::Display for QsmAlgorithm {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", match self {
