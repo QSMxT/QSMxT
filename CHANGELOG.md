@@ -129,6 +129,15 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
     ignored).
   - qsmxt-config: the unused `Mcpc3dsConfig` is deleted (`FieldMappingConfig::phase_offset_sigma`
     is the MCPC-3D-S phase-offset smoothing).
+- **Motion correction: reconstruction stays inside the voxels every echo covers** (#277;
+  **changes output with `--motion-correction`**). Field mapping used the coverage mask (the brain
+  mask less what some co-registered echo no longer covers), but background removal, the
+  inversion and the published `desc-qsm_mask` used the whole brain mask, where the field was
+  never computed — biasing the background fit and putting χ ≈ 0 into the edge of the support.
+  Both passes of a two-pass run now use it. It is published as `desc-motioncoverage_mask` (the
+  brain mask stays `_mask`). Switching motion correction on or off now re-runs every stage that
+  reads its output, and in general a recomputed step invalidates the cached steps downstream of
+  it. `--clean-intermediates` only deletes files under `workflow/`.
 
 - **`--swi-scaling negative-tanh` runs negative-tanh** (#266). `qsmxt run` matched the scaling as
   a string and only knew `negative_tanh`, so the spelling the help, the TUI and the generated

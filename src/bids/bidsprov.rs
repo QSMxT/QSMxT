@@ -219,6 +219,7 @@ fn run_outputs(output: &DerivativeOutputs, key: &AcquisitionKey) -> Vec<(PathBuf
         (output.r2_path(key), image(FieldStrength, true)),
         (output.r2prime_path(key), image(FieldStrength, true)),
         (output.r2prime_coverage_path(key), MASK),
+        (output.motion_coverage_path(key), MASK),
         (output.chi_para_path(key), image(FieldAndEcho, true)),
         (output.chi_dia_path(key), image(FieldAndEcho, true)),
         (output.chi_sep_total_path(key), image(FieldAndEcho, true)),
