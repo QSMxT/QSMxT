@@ -1,5 +1,13 @@
 # QSMxT installer for Windows
 # Usage: irm https://raw.githubusercontent.com/QSMxT/QSMxT/main/install.ps1 | iex
+#
+# The archive is verified against the release's SHA256SUMS before anything is
+# extracted; a missing manifest, a missing entry or a mismatch aborts the install.
+#
+# Environment:
+#   QSMXT_VERSION        install this release tag (e.g. v9.23.0) instead of the latest
+#   QSMXT_DOWNLOAD_URL   base URL holding <tag>/<archive> and <tag>/SHA256SUMS
+#                        (default: the GitHub release downloads; for mirrors and tests)
 
 $ErrorActionPreference = "Stop"
 
@@ -72,14 +80,19 @@ $target = "x86_64-pc-windows-msvc"
 # Default install directory
 $installDir = "$env:USERPROFILE\.qsmxt\bin"
 
+$downloadBase = if ($env:QSMXT_DOWNLOAD_URL) { $env:QSMXT_DOWNLOAD_URL } else { "https://github.com/$repo/releases/download" }
+
 # Get latest release tag
-Write-Host "Fetching latest release..."
-$headers = @{}
-if ($env:GITHUB_TOKEN) {
-    $headers["Authorization"] = "token $env:GITHUB_TOKEN"
+$tag = $env:QSMXT_VERSION
+if (-not $tag) {
+    Write-Host "Fetching latest release..."
+    $headers = @{}
+    if ($env:GITHUB_TOKEN) {
+        $headers["Authorization"] = "token $env:GITHUB_TOKEN"
+    }
+    $release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers $headers
+    $tag = $release.tag_name
 }
-$release = Invoke-RestMethod -Uri "https://api.github.com/repos/$repo/releases/latest" -Headers $headers
-$tag = $release.tag_name
 
 if (-not $tag) {
     Write-Error "Could not determine latest release"
@@ -88,12 +101,42 @@ if (-not $tag) {
 
 Write-Host "Installing qsmxt $tag for Windows..."
 
-# Download
-$url = "https://github.com/$repo/releases/download/$tag/qsmxt-$tag-$target.zip"
+# Download and verify
+$asset = "qsmxt-$tag-$target.zip"
+$url = "$downloadBase/$tag/$asset"
 $tmpZip = Join-Path $env:TEMP "qsmxt.zip"
 $tmpDir = Join-Path $env:TEMP "qsmxt-extract"
 
+try {
+    $sums = (Invoke-WebRequest -UseBasicParsing -Uri "$downloadBase/$tag/SHA256SUMS").Content
+    if ($sums -is [byte[]]) { $sums = [System.Text.Encoding]::UTF8.GetString($sums) }
+} catch {
+    Write-Error "Could not download SHA256SUMS for $tag; refusing to install an unverified binary ($_)"
+    exit 1
+}
+# Exact file-name match on the second field ("<hex>  <file>" or "<hex> *<file>").
+$expected = $null
+foreach ($line in ($sums -split "`r?`n")) {
+    $fields = $line.Trim() -split '\s+', 2
+    if ($fields.Count -eq 2 -and ($fields[1] -eq $asset -or $fields[1] -eq "*$asset")) {
+        $expected = $fields[0].ToLowerInvariant()
+        break
+    }
+}
+if (-not $expected) {
+    Write-Error "SHA256SUMS for $tag has no entry for $asset; refusing to install an unverified binary"
+    exit 1
+}
+
 Save-FileWithProgress -Uri $url -OutFile $tmpZip -Activity "Downloading qsmxt $tag"
+
+$actual = (Get-FileHash -Algorithm SHA256 -Path $tmpZip).Hash.ToLowerInvariant()
+if ($actual -ne $expected) {
+    Remove-Item -Force $tmpZip
+    Write-Error "Checksum mismatch for ${asset}: SHA256SUMS says $expected, the download is $actual. Nothing was installed."
+    exit 1
+}
+Write-Host "Verified $asset against SHA256SUMS."
 
 # Extract
 if (Test-Path $tmpDir) { Remove-Item -Recurse -Force $tmpDir }

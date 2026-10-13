@@ -91,6 +91,15 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
 
 ### Added
 
+- **Release archives are checksum-verified before they are installed** (#281). Each release now
+  carries a `SHA256SUMS` file covering every archive. `qsmxt update`, `install.sh` and
+  `install.ps1` download it, check the archive against it before extracting anything, and refuse
+  to install when the manifest is missing, has no entry for the archive, or the digest differs.
+  The installers accept `QSMXT_VERSION` to install a specific release.
+- **`qsmxt update` refuses on a development build** (#281). A `0.0.0` build (from source) was
+  offered every release as an update. It now says it is a dev build and exits without
+  downloading; `qsmxt update --force` installs the latest release over it.
+
 - **Real/imaginary input** (BIDS `part-real` / `part-imag`). An acquisition with no
   `part-phase` files but real and imaginary ones (as GE exports them) is now discovered and
   processed: the first pipeline stage converts each echo to magnitude and phase with QSM.rs's

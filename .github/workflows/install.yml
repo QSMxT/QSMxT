@@ -6,12 +6,20 @@ on:
     paths:
       - 'install.sh'
       - 'install.ps1'
+      - '.github/scripts/sha256sums.sh'
       - '.github/workflows/install.yml'
   pull_request:
     paths:
       - 'install.sh'
       - 'install.ps1'
+      - '.github/scripts/sha256sums.sh'
       - '.github/workflows/install.yml'
+
+# Each job builds a local mirror of the latest release (its archive plus a SHA256SUMS
+# made by the same script the release workflow uses), serves it over HTTP, and checks
+# that the installer installs the genuine archive and refuses a tampered one, a
+# manifest without its entry, and a release without a manifest. When the latest
+# release already publishes SHA256SUMS, it also installs straight from GitHub.
 
 jobs:
   test-install-sh:
@@ -19,36 +27,106 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-musl
+          - os: macos-latest
+            target: aarch64-apple-darwin
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run install.sh
+      - name: Build local release mirrors
+        shell: bash
+        run: |
+          TAG=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          ASSET="qsmxt-${TAG}-${{ matrix.target }}.tar.gz"
+          mkdir -p mirror/good/$TAG mirror/tampered/$TAG mirror/noentry/$TAG mirror/nosums/$TAG
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$ASSET" -D mirror/good/$TAG
+          sh .github/scripts/sha256sums.sh mirror/good/$TAG > mirror/good/$TAG/SHA256SUMS
+          # tampered: same manifest, one byte appended to the archive
+          cp mirror/good/$TAG/* mirror/tampered/$TAG/
+          printf 'x' >> mirror/tampered/$TAG/$ASSET
+          # noentry: manifest lists a different archive only
+          cp mirror/good/$TAG/$ASSET mirror/noentry/$TAG/
+          sed "s/${{ matrix.target }}/some-other-target/" mirror/good/$TAG/SHA256SUMS > mirror/noentry/$TAG/SHA256SUMS
+          # nosums: archive only
+          cp mirror/good/$TAG/$ASSET mirror/nosums/$TAG/
+
+      - name: Refuses a tampered archive, a missing entry and a missing manifest; installs a verified one
+        shell: bash
+        run: |
+          (cd mirror && exec python3 -m http.server 8765 >/dev/null 2>&1) &
+          SERVER=$!
+          trap 'kill $SERVER' EXIT
+          sleep 2
+          for m in tampered noentry nosums; do
+            if INSTALL_DIR="$RUNNER_TEMP/bin-$m" QSMXT_VERSION="$TAG" \
+                 QSMXT_DOWNLOAD_URL="http://127.0.0.1:8765/$m" sh install.sh; then
+              echo "::error::install.sh accepted the '$m' mirror"; exit 1
+            fi
+            if [ -e "$RUNNER_TEMP/bin-$m/qsmxt" ]; then
+              echo "::error::install.sh installed a binary from the '$m' mirror"; exit 1
+            fi
+          done
+          INSTALL_DIR="$HOME/.local/bin" QSMXT_VERSION="$TAG" \
+            QSMXT_DOWNLOAD_URL="http://127.0.0.1:8765/good" sh install.sh
+          "$HOME/.local/bin/qsmxt" --version
+
+      - name: Installs the latest release from GitHub (once it publishes SHA256SUMS)
+        shell: bash
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          INSTALL_DIR="$HOME/.local/bin" sh install.sh
-
-      - name: Verify installation
-        run: |
-          export PATH="$HOME/.local/bin:$PATH"
-          qsmxt --version
+          if gh release view "$TAG" -R "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -qx SHA256SUMS; then
+            INSTALL_DIR="$HOME/.local/bin-gh" sh install.sh
+            "$HOME/.local/bin-gh/qsmxt" --version
+          else
+            echo "::notice::$TAG publishes no SHA256SUMS (it predates checksum publishing); skipping the direct install"
+          fi
 
   test-install-ps1:
     name: install.ps1 (Windows)
     runs-on: windows-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run install.ps1
-        shell: pwsh
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build local release mirrors
+        shell: bash
         run: |
-          .\install.ps1
+          TAG=$(gh release view -R "$GITHUB_REPOSITORY" --json tagName --jq .tagName)
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          ASSET="qsmxt-${TAG}-x86_64-pc-windows-msvc.zip"
+          mkdir -p mirror/good/$TAG mirror/tampered/$TAG mirror/noentry/$TAG mirror/nosums/$TAG
+          gh release download "$TAG" -R "$GITHUB_REPOSITORY" -p "$ASSET" -D mirror/good/$TAG
+          sh .github/scripts/sha256sums.sh mirror/good/$TAG > mirror/good/$TAG/SHA256SUMS
+          cp mirror/good/$TAG/* mirror/tampered/$TAG/
+          printf 'x' >> mirror/tampered/$TAG/$ASSET
+          cp mirror/good/$TAG/$ASSET mirror/noentry/$TAG/
+          sed "s/x86_64-pc-windows-msvc/some-other-target/" mirror/good/$TAG/SHA256SUMS > mirror/noentry/$TAG/SHA256SUMS
+          cp mirror/good/$TAG/$ASSET mirror/nosums/$TAG/
 
-      - name: Verify installation
+      - name: Refuses bad mirrors, installs the verified archive
         shell: pwsh
         run: |
-          $env:Path = "$env:USERPROFILE\.qsmxt\bin;$env:Path"
-          qsmxt --version
+          $server = Start-Process python -ArgumentList '-m','http.server','8765' -WorkingDirectory mirror -PassThru -WindowStyle Hidden
+          Start-Sleep -Seconds 3
+          $env:QSMXT_VERSION = $env:TAG
+          $exe = "$env:USERPROFILE\.qsmxt\bin\qsmxt.exe"
+          foreach ($m in 'tampered','noentry','nosums') {
+            if (Test-Path $exe) { Remove-Item -Force $exe }
+            $env:QSMXT_DOWNLOAD_URL = "http://127.0.0.1:8765/$m"
+            pwsh -NoProfile -File .\install.ps1
+            if ($LASTEXITCODE -eq 0) { Write-Error "install.ps1 accepted the '$m' mirror"; exit 1 }
+            if (Test-Path $exe) { Write-Error "install.ps1 installed a binary from the '$m' mirror"; exit 1 }
+          }
+          $env:QSMXT_DOWNLOAD_URL = "http://127.0.0.1:8765/good"
+          pwsh -NoProfile -File .\install.ps1
+          if ($LASTEXITCODE -ne 0) { Write-Error "install.ps1 failed on the genuine mirror"; exit 1 }
+          & $exe --version
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          Stop-Process -Id $server.Id

@@ -97,7 +97,7 @@ pub fn run_tui() -> crate::Result<()> {
                 .try_init()
                 .ok();
             println!();
-            let result = crate::commands::update::execute(crate::cli::UpdateArgs { yes: true });
+            let result = crate::commands::update::execute(crate::cli::UpdateArgs { yes: true, force: false });
             if result.is_ok() {
                 println!("\nRestart qsmxt to use the new version.");
             }
