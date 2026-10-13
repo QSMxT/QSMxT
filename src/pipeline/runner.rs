@@ -112,6 +112,12 @@ impl StageContext<'_> {
         let prov_path = self.output.provenance_path(&self.run.key, step);
         write_step_provenance(&prov_path, step, algorithm, &parameters, inputs, &output_paths, start)?;
 
+        // Whatever read this step's previous output is stale now that it has been recomputed —
+        // even when its own parameters did not change (a step newly switched on, say), which the
+        // per-step parameter hashes alone would not notice.
+        for ds in crate::pipeline::graph::downstream_of(step) {
+            self.state.completed_steps.remove(&ds);
+        }
         // Mark step done with params hash
         let hash = crate::pipeline::graph::step_params_hash(algorithm, &parameters);
         self.state.mark_completed(step, output_paths, Some(hash));
@@ -385,7 +391,7 @@ pub fn run_pipeline_cached(
             stage_unwrap(&mut ctx, &mask_path, &field_path, progress)?;
         }
 
-        let main = Pass::main(output, &qsm_run.key);
+        let main = Pass::main(output, &qsm_run.key, &mask_path);
         let skip_bgremove = skips_bgremove(config);
         reconstruct(&mut ctx, &main, &field_path, progress)?;
 
@@ -976,6 +982,7 @@ fn stage_load(
 fn stage_motion(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<PathBuf> {
     let m = &ctx.config.motion_correction;
     if !m.enabled {
+        forget_motion(ctx)?;
         return Ok(mask_path.to_path_buf());
     }
     if !ctx.meta.has_magnitude {
@@ -985,9 +992,10 @@ fn stage_motion(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str
     }
     if ctx.meta.n_echoes < 2 {
         log::warn!("Motion correction needs at least two echoes; this run has one, so it is skipped");
+        forget_motion(ctx)?;
         return Ok(mask_path.to_path_buf());
     }
-    let out_mask = ctx.output.motion_mask_path(&ctx.run.key);
+    let out_mask = ctx.output.motion_coverage_path(&ctx.run.key);
     let params = serde_json::json!({
         "motion_correction": m, "registration": ctx.config.registration, "n_echoes": ctx.meta.n_echoes,
     });
@@ -1048,6 +1056,22 @@ fn stage_motion(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str
     ctx.complete_step("motion", None, params, &input_refs, outputs, t)?;
     log_step_done("Motion correction", t);
     Ok(out_mask)
+}
+
+/// Motion correction did not run this time. If an earlier run of this configuration did, what
+/// it left is stale: its coverage mask must not be published as this run's, and every stage that
+/// read the corrected echoes or that mask has to run again on the uncorrected ones.
+fn forget_motion(ctx: &mut StageContext) -> crate::Result<()> {
+    let coverage = ctx.output.motion_coverage_path(&ctx.run.key);
+    if coverage.exists() {
+        std::fs::remove_file(&coverage)?;
+    }
+    if ctx.state.completed_steps.contains_key("motion") {
+        log::info!("Motion correction is off now: re-running the stages that read its output");
+        ctx.state.invalidate("motion");
+        ctx.state.save(ctx.state_path)?;
+    }
+    Ok(())
 }
 
 /// The motion report: per echo (1-based) rotation, translation, largest tissue displacement,
@@ -3154,10 +3178,14 @@ struct Pass {
 
 impl Pass {
     /// The ordinary, single-pass reconstruction — also the "filled mask" pass of a two-pass run.
-    fn main(output: &DerivativeOutputs, key: &AcquisitionKey) -> Self {
+    ///
+    /// `mask` is the mask the run's field map was computed on: the brain mask, or with motion
+    /// correction the part of it every echo still covers. Background removal and inversion have to
+    /// stay inside it — outside, the field was never computed.
+    fn main(output: &DerivativeOutputs, key: &AcquisitionKey, mask: &Path) -> Self {
         Self {
             suffix: "",
-            mask: output.mask_path(key),
+            mask: mask.to_path_buf(),
             local_field: output.local_field_path(key),
             bg_mask: output.bg_mask_path(key),
             chi_raw: output.chi_raw_path(key),
@@ -3780,7 +3808,7 @@ mod tests {
             subject: "1".into(), session: None, acquisition: None,
             reconstruction: None, inversion: None, run: None, suffix: "MEGRE".into(),
         };
-        let (main, reliable) = (super::Pass::main(&output, &key), super::Pass::reliable(&output, &key));
+        let (main, reliable) = (super::Pass::main(&output, &key, &output.mask_path(&key)), super::Pass::reliable(&output, &key));
 
         for (a, b) in [
             (&main.mask, &reliable.mask),
@@ -5013,7 +5041,7 @@ mod swi_export_tests {
         config.motion_correction.enabled = true;
         let mut ctx = StageContext { run: &run, config: &config, output: &output, meta: &meta, state: &mut state, state_path: &state_path };
         let shrunk = stage_motion(&mut ctx, &mask_path, &|_| {}).unwrap();
-        assert_eq!(shrunk, output.motion_mask_path(&k));
+        assert_eq!(shrunk, output.motion_coverage_path(&k));
         assert_eq!(ctx.echo_mag_path(2), output.motion_mag_path(&k, 2));
         assert_eq!(ctx.echo_phase_path(1), output.motion_phase_path(&k, 1));
         let report: serde_json::Value = serde_json::from_str(
@@ -5400,6 +5428,73 @@ mod oblique_run_tests {
             && a["CodeURL"].as_str().is_some_and(|u| u.ends_with(commit))), "{soft}");
     }
 
+    /// A run where the head moved between echoes, reaching the edge of the field of view: after
+    /// motion correction some brain voxels are not covered by every echo. Background removal, the
+    /// inversion, both passes of a two-pass run and the published support all stay inside that
+    /// coverage, which is published (#277) — they used the full brain mask, where the field was
+    /// never computed. Switching motion correction off again re-runs what read it.
+    #[test]
+    fn reconstruction_stays_inside_the_motion_coverage() {
+        let dims = (24usize, 20usize, 16usize);
+        let (nx, ny, nz) = dims;
+        let affine = [1.0, 0.0, 0.0, -12.0, 0.0, 1.0, 0.0, -10.0, 0.0, 0.0, 1.0, -8.0, 0.0, 0.0, 0.0, 1.0];
+        let dir = tempfile::tempdir().unwrap();
+        let mut echoes = Vec::new();
+        for e in 0..3 {
+            // The head slides 3 mm along x over the echoes, and fills x from edge to edge.
+            let shift = 1.5 * e as f64;
+            let (mut mag, mut phase) = (vec![0.0; nx * ny * nz], vec![0.0; nx * ny * nz]);
+            for k in 0..nz { for j in 0..ny { for i in 0..nx {
+                let v = i + j * nx + k * nx * ny;
+                let (x, y, z) = (i as f64 - 11.5 - shift, j as f64 - 9.5, k as f64 - 7.5);
+                let inside = (y * y / 64.0 + z * z / 36.0) < 1.0;
+                mag[v] = if inside { 100.0 + 20.0 * (0.5 * x).sin() + 15.0 * (0.6 * y).cos() + 5.0 * z } else { 1.0 };
+                phase[v] = (0.04 * (e + 1) as f64 * (x + 0.5 * y)).sin() * 2.0;
+            }}}
+            let p = dir.path().join(format!("echo{}_phase.nii", e + 1));
+            let m = dir.path().join(format!("echo{}_mag.nii", e + 1));
+            io::save_nifti_to_file(&p, &phase, dims, (1.0, 1.0, 1.0), &affine).unwrap();
+            io::save_nifti_to_file(&m, &mag, dims, (1.0, 1.0, 1.0), &affine).unwrap();
+            echoes.push((p, Some(m)));
+        }
+        let mut run = super::tests::run_with_echoes(echoes);
+        run.key = key("motion");
+        run.dims = dims;
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let mut config = PipelineConfig::default();
+        config.motion_correction.enabled = true;
+        config.masking.two_pass = true;
+        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+
+        let k = &run.key;
+        let count = |m: &[u8]| m.iter().filter(|&&v| v != 0).count();
+        let brain = load_mask(&output.mask_path(k)).unwrap();
+        let coverage_path = output.motion_coverage_path(k);
+        assert!(coverage_path.exists(), "the coverage mask is published");
+        let coverage = load_mask(&coverage_path).unwrap();
+        assert!(count(&coverage) < count(&brain),
+                "the fixture has to lose coverage: {} of {}", count(&coverage), count(&brain));
+        let inside = |name: &str, m: &[u8]| {
+            let outside = m.iter().zip(&coverage).filter(|(&v, &c)| v != 0 && c == 0).count();
+            assert_eq!(outside, 0, "{name} has {outside} voxels outside the motion coverage");
+        };
+        inside("background-removal mask", &load_mask(&output.bg_mask_path(k)).unwrap());
+        inside("reliable-pass mask", &load_mask(&output.two_pass_mask_path(k)).unwrap());
+        inside("reliable-pass background-removal mask", &load_mask(&output.reliable_bg_mask_path(k)).unwrap());
+        inside("published support", &load_mask(&output.qsm_support_path(k)).unwrap());
+        let chi: Vec<u8> = load_volume(&output.chi_raw_path(k)).unwrap().iter().map(|&c| u8::from(c != 0.0)).collect();
+        inside("raw χ", &chi);
+
+        // Motion correction off: the coverage mask is withdrawn and reconstruction runs on the
+        // brain mask again, rather than reusing what was cached against the coverage.
+        config.motion_correction.enabled = false;
+        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+        assert!(!coverage_path.exists(), "a stale coverage mask stays published");
+        let bg = load_mask(&output.bg_mask_path(k)).unwrap();
+        assert!(bg.iter().zip(&coverage).any(|(&v, &c)| v != 0 && c == 0),
+                "background removal still ran on the coverage mask after motion correction was switched off");
+    }
+
     /// `--clean-intermediates` treated the output-space step's files, which are the final
     /// outputs, as intermediates and deleted them.
     #[test]
@@ -5543,7 +5638,7 @@ mod reference_support_tests {
             run: &f.run, config, output: &f.output, meta: &m,
             state: &mut state, state_path: &state_path,
         };
-        let pass = Pass::main(&f.output, &f.run.key);
+        let pass = Pass::main(&f.output, &f.run.key, &f.output.mask_path(&f.run.key));
         stage_reference(
             &mut ctx, &[pass.support(false)], &pass.chi_raw, f.output.qsm_path(&f.run.key),
             Some(f.output.qsm_support_path(&f.run.key)), "reference", &|_| {},
@@ -5632,7 +5727,7 @@ mod reference_support_tests {
             run: &f.run, config: &config, output: &f.output, meta: &m,
             state: &mut state, state_path: &state_path,
         };
-        let pass = Pass::main(&f.output, &f.run.key);
+        let pass = Pass::main(&f.output, &f.run.key, &f.output.mask_path(&f.run.key));
         stage_reference(
             &mut ctx, &[pass.support(false)], &raw2_path, f.output.singlepass_qsm_path(&f.run.key),
             None, "reference-singlepass", &|_| {},
@@ -5729,7 +5824,7 @@ mod chisep_support_tests {
             run: &f.run, config, output: &f.output, meta: &m,
             state: &mut state, state_path: &state_path,
         };
-        let pass = Pass::main(&f.output, k);
+        let pass = Pass::main(&f.output, k, &f.output.mask_path(k));
         stage_reference(
             &mut ctx, &[pass.support(false)], &pass.chi_raw, f.output.qsm_path(k),
             Some(f.output.qsm_support_path(k)), "reference", &|_| {},

@@ -264,7 +264,12 @@ impl DerivativeOutputs {
     pub fn motion_mag_path(&self, key: &AcquisitionKey, echo: usize) -> PathBuf {
         self.workflow_step_dir(key, "motion").join(format!("{}_echo-{}_mag.nii", key.basename(), echo))
     }
-    pub fn motion_mask_path(&self, key: &AcquisitionKey) -> PathBuf { self.workflow_nifti_path(key, "motion", "mask") }
+    /// The brain mask less the voxels some echo no longer covers once motion correction has moved
+    /// it — what every stage after motion correction is confined to. Published, so the shrink in
+    /// the susceptibility map's support can be traced to it.
+    pub fn motion_coverage_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_desc-motioncoverage_mask.nii", key.basename()))
+    }
     pub fn motion_report_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.workflow_step_dir(key, "motion").join(format!("{}_motion.json", key.basename()))
     }

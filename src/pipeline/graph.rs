@@ -292,6 +292,7 @@ fn downstream_steps(step_name: &str) -> &'static [&'static str] {
     match step_name {
         "load" => &[
             "resample",
+            "motion",
             "scale_phase",
             "inhomog",
             "magnitude",
@@ -306,6 +307,7 @@ fn downstream_steps(step_name: &str) -> &'static [&'static str] {
             "reference",
         ],
         "resample" => &[
+            "motion",
             "scale_phase",
             "inhomog",
             "magnitude",
@@ -321,6 +323,7 @@ fn downstream_steps(step_name: &str) -> &'static [&'static str] {
         ],
         "scale_phase" => &[
             "mask",
+            "motion",
             "swi",
             "unwrap",
             "bgremove",
@@ -350,6 +353,7 @@ fn downstream_steps(step_name: &str) -> &'static [&'static str] {
             "segmentation",
         ],
         "mask" => &[
+            "motion",
             "swi",
             "t2star_r2star",
             "unwrap",
@@ -358,6 +362,20 @@ fn downstream_steps(step_name: &str) -> &'static [&'static str] {
             "tgv",
             "qsmart",
             "reference",
+        ],
+        // Motion correction replaces the echoes and shrinks the mask every later stage works in.
+        "motion" => &[
+            "swi",
+            "t2star_r2star",
+            "r2_r2prime",
+            "unwrap",
+            "mask-reliable",
+            "bgremove",
+            "invert",
+            "tgv",
+            "qsmart",
+            "reference",
+            "chi_separation",
         ],
         "swi" => &[],
         // R2* feeds both the R2' it is differenced into and the per-structure table it appears in.
@@ -413,10 +431,13 @@ pub fn clean_intermediates(state: &PipelineState, output_dir: &Path, key: &Acqui
         "mask-reliable", "reference-singlepass", "output_space",
     ].iter().copied().collect();
 
+    // Only ever inside `workflow/`: a step may publish into `anat/` too (motion correction's
+    // coverage mask), and a published output is never an intermediate.
+    let workflow = output_dir.join("workflow");
     for (step_name, record) in &state.completed_steps {
         if !final_steps.contains(step_name.as_str()) {
             for path in &record.outputs {
-                if path.exists() {
+                if path.exists() && path.starts_with(&workflow) {
                     log::info!("Cleaning intermediate: {}", path.display());
                     let _ = std::fs::remove_file(path);
                 }
@@ -442,6 +463,20 @@ mod tests {
                      "bgremove-reliable", "invert-reliable", "tgv-reliable", "qsmart-reliable",
                      "twopass", "reference"] {
             assert!(ds.contains(&step.to_string()), "mask should invalidate {step}: {ds:?}");
+        }
+    }
+
+    /// Motion correction replaces the echoes and the mask every later stage works in, so it is
+    /// a parent of all of them (#277), and the mask and phase it reads are parents of it.
+    #[test]
+    fn motion_invalidates_everything_that_reads_its_output() {
+        let ds = downstream_of("motion");
+        for step in ["swi", "t2star_r2star", "unwrap", "mask-reliable", "bgremove", "invert", "tgv", "qsmart",
+                     "bgremove-reliable", "invert-reliable", "twopass", "reference", "chi_separation", "analysis"] {
+            assert!(ds.contains(&step.to_string()), "motion should invalidate {step}: {ds:?}");
+        }
+        for parent in ["mask", "scale_phase", "load", "resample"] {
+            assert!(downstream_of(parent).contains(&"motion".to_string()), "{parent} should invalidate motion");
         }
     }
 
@@ -816,9 +851,14 @@ mod tests {
         let mut state = PipelineState::new(&config, &key);
 
         // Create a fake intermediate file
-        let intermediate = dir.path().join("unwrapped.nii");
+        std::fs::create_dir_all(dir.path().join("workflow")).unwrap();
+        let intermediate = dir.path().join("workflow/unwrapped.nii");
         std::fs::write(&intermediate, "fake").unwrap();
+        // ...and a published output of a step that is otherwise intermediate.
+        let published = dir.path().join("desc-motioncoverage_mask.nii");
+        std::fs::write(&published, "fake").unwrap();
         state.mark_completed("unwrap", vec![intermediate.clone()], None);
+        state.mark_completed("motion", vec![published.clone()], None);
 
         // Create a fake final output
         let final_output = dir.path().join("qsm.nii");
@@ -830,6 +870,7 @@ mod tests {
         // Intermediate should be removed, final kept
         assert!(!intermediate.exists());
         assert!(final_output.exists());
+        assert!(published.exists(), "a published output outside workflow/ was cleaned");
     }
 
     #[test]
