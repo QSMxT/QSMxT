@@ -139,6 +139,8 @@ mod integration_tests {
                 export_dicom: false,
                 inhomogeneity_correction: false,
                 no_inhomogeneity_correction: false,
+                axial_resampling: false,
+                no_axial_resampling: false,
                 obliquity_threshold: None,
                 crop_to_mask: false,
                 ignore_slice_gap: false,
@@ -2479,6 +2481,7 @@ mod integration_tests {
             }
         }
         run("oblique", &bids, &|a| {
+            a.pipeline.axial_resampling = true;
             a.pipeline.obliquity_threshold = Some(5.0);
             a.pipeline.output_space = Some(OutputSpaceArg::Working);
             a.pipeline.do_swi = true;

@@ -602,7 +602,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             no_romeo_individual: !ps.romeo_individual,
             romeo_correct_global: ps.romeo_correct_global,
             no_romeo_correct_global: !ps.romeo_correct_global,
-            romeo_temporal_uncertain_unwrapping: parse_optional_f64(&ps.romeo_temporal_uncertain_unwrapping),
+            romeo_temporal_uncertain_unwrapping: if ps.romeo_temporal_uncertain { parse_optional_f64(&ps.romeo_temporal_uncertain_unwrapping) } else { Some(0.0) },
             romeo_max_seeds: ps.romeo_max_seeds.trim().parse::<u8>().ok(),
             romeo_merge_regions: ps.romeo_merge_regions,
             romeo_correct_regions: ps.romeo_correct_regions,
@@ -615,12 +615,12 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             swi_mip_window: parse_optional_usize(&form.swi_mip_window),
         },
         tiling_params: crate::cli::TilingParamArgs {
-            tile_size: parse_optional_usize(&ps.dl_tile_size),
-            tile_halo: parse_optional_usize(&ps.dl_tile_halo),
+            tile_size: if ps.dl_tiling { parse_optional_usize(&ps.dl_tile_size) } else { None },
+            tile_halo: if ps.dl_tiling { parse_optional_usize(&ps.dl_tile_halo) } else { None },
         },
         homogeneity_sigma_mm: if ps.inhomogeneity_correction { parse_optional_f64(&ps.homogeneity_sigma_mm) } else { None },
         homogeneity_nbox: if ps.inhomogeneity_correction { parse_optional_usize(&ps.homogeneity_nbox) } else { None },
-        linear_fit_reliability_threshold: parse_optional_f64(&ps.linear_fit_reliability_threshold),
+        linear_fit_reliability_threshold: if ps.linear_fit_reliability { parse_optional_f64(&ps.linear_fit_reliability_threshold) } else { Some(0.0) },
         linear_fit_estimate_offset: Some(ps.linear_fit_estimate_offset),
         robust_fit_loss: (ps.b0_estimation == 2 && ps.robust_fit_loss == 1).then_some(crate::cli::RobustLossArg::Huber),
         robust_fit_tuning: if ps.b0_estimation == 2 { parse_optional_f64(&ps.robust_fit_tuning) } else { None },
@@ -637,7 +637,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             synthseg_crop: parse_optional_usize(&form.synthseg_crop),
             no_synthseg_flip_averaging: !form.synthseg_flip_averaging,
             no_synthseg_topology_cleanup: !form.synthseg_topology_cleanup,
-            synthseg_sigma: parse_optional_f64(&form.synthseg_sigma),
+            synthseg_sigma: if form.synthseg_smoothing { parse_optional_f64(&form.synthseg_sigma) } else { Some(0.0) },
             use_custom_dseg: Some(ps.custom_dseg_tool.trim()).filter(|t| !t.is_empty()).map(str::to_string),
         },
         smwi_params: crate::cli::SmwiParamArgs {
@@ -664,7 +664,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         export_dicom: form.export_dicom,
         inhomogeneity_correction: ps.inhomogeneity_correction,
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
-        obliquity_threshold: parse_optional_f64(&ps.obliquity_threshold),
+        axial_resampling: ps.axial_resampling,
+        no_axial_resampling: false,
+        obliquity_threshold: if ps.axial_resampling { parse_optional_f64(&ps.obliquity_threshold) } else { None },
         crop_to_mask: ps.crop_to_mask,
         ignore_slice_gap: ps.ignore_slice_gap,
         fft_padding: ps.fft_padding,
@@ -1147,6 +1149,44 @@ mod tests {
         App::new()
     }
 
+    /// The "off" of a setting is a checkbox now, not a magic value typed into it: each one
+    /// emits what the CLI means by off, and nothing until it is changed.
+    #[test]
+    fn checkboxes_replace_the_magic_off_values() {
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".into();
+        let base = build_command_string(&app);
+        for f in ["--axial-resampling", "--obliquity-threshold", "--romeo-temporal-uncertain-unwrapping",
+                  "--linear-fit-reliability-threshold", "--tile-size", "--synthseg-sigma"] {
+            assert!(!base.contains(f), "{f} in a default command: {base}");
+        }
+        app.pipeline_state.axial_resampling = true;
+        assert!(build_command_string(&app).contains("--axial-resampling"));
+        app.pipeline_state.obliquity_threshold = "20".into();
+        assert!(build_command_string(&app).contains("--obliquity-threshold 20"));
+        app.pipeline_state.axial_resampling = false;
+        assert!(!build_command_string(&app).contains("--obliquity-threshold"), "no threshold without resampling");
+
+        app.pipeline_state.romeo_temporal_uncertain = false;
+        app.pipeline_state.linear_fit_reliability = false;
+        app.pipeline_state.b0_estimation = 1; // linear fit: the one with a reliability mask
+        app.form.synthseg_smoothing = false;
+        app.form.do_segmentation = true;
+        let cmd = build_command_string(&app);
+        for f in ["--romeo-temporal-uncertain-unwrapping 0", "--linear-fit-reliability-threshold 0", "--synthseg-sigma 0"] {
+            assert!(cmd.contains(f), "{f} missing: {cmd}");
+        }
+        app.pipeline_state.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "xqsm").unwrap();
+        assert!(!build_command_string(&app).contains("--tile-size"));
+        app.pipeline_state.dl_tiling = true;
+        assert!(build_command_string(&app).contains("--tile-size 128"));
+
+        app.pipeline_state.qsm_algorithm = crate::tui::app::QSM_ALGO_OPTIONS.iter().position(|a| *a == "medi").unwrap();
+        assert_eq!(app.pipeline_state.get_select("medi_data_weighting"), 1, "magnitude SNR by default");
+        app.pipeline_state.set_select("medi_data_weighting", 0);
+        assert!(build_command_string(&app).contains("--medi-data-weighting 0"));
+    }
+
     // --- build_command_string ---
 
     #[test]
@@ -1203,6 +1243,7 @@ mod tests {
     fn test_command_string_parameters() {
         let mut app = default_app();
         app.pipeline_state.ilsqr_tol = "0.01".to_string();
+        app.pipeline_state.axial_resampling = true;
         app.pipeline_state.obliquity_threshold = "5".to_string();
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--ilsqr-tol 0.01"));
@@ -1348,6 +1389,7 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
+        app.pipeline_state.axial_resampling = true;
         app.pipeline_state.obliquity_threshold = "5.0".to_string();
         let args = build_run_args(&app).unwrap();
         assert_eq!(args.pipeline.obliquity_threshold, Some(5.0));
@@ -1618,6 +1660,7 @@ mod tests {
         app.pipeline_state.qsm_algorithm = 2; // tkd
         app.pipeline_state.unwrapping_algorithm = 1; // laplacian
         app.pipeline_state.bf_algorithm = 1; // pdf
+        app.pipeline_state.axial_resampling = true;
         app.pipeline_state.obliquity_threshold = "5".to_string();
         app.form.do_swi = true;
 
@@ -2025,6 +2068,7 @@ mod parity {
             // The direction that restates QSMxT's default, so the command never needs it.
             ("--inhomogeneity-correction", "restates the default"),
             ("--romeo-individual", "restates the default"),
+            ("--no-axial-resampling", "restates the default"),
             ("--romeo-correct-global", "restates the default"),
             ("--medi-smv", "restates the default"),
             ("--no-romeo-mag-weight", "restates the default (kept for compatibility)"),

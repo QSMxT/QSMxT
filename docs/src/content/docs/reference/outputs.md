@@ -66,7 +66,7 @@ varied is dropped), in `anat/`:
 ## Working-grid outputs
 
 A run resampled to an axial grid (an oblique acquisition with
-`--obliquity-threshold`, or a deep-learning method) is returned to the acquired
+`--axial-resampling`, or a deep-learning method) is returned to the acquired
 grid by default, under the names above. With `--output-space working` its
 outputs stay on the axial grid and say so: every name carries `space-axial`
 (`<run>_space-axial_Chimap.nii`, `<run>_part-mag_space-axial_T2starw.nii`) and

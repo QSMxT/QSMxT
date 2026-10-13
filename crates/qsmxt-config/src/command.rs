@@ -105,7 +105,10 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         }
     }
     if config.pipeline.export_dicom { parts.push("--export-dicom".into()); }
-    emit_f64(&mut parts, "--obliquity-threshold", config.pipeline.obliquity_threshold, d.pipeline.obliquity_threshold);
+    if config.pipeline.axial_resampling {
+        parts.push("--axial-resampling".into());
+        emit_f64(&mut parts, "--obliquity-threshold", config.pipeline.obliquity_threshold, d.pipeline.obliquity_threshold);
+    }
     if config.pipeline.crop_to_mask != d.pipeline.crop_to_mask {
         parts.push("--crop-to-mask".to_string());
     }

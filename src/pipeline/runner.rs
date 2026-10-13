@@ -977,7 +977,7 @@ fn resolve_geometry(
         }
     }
 
-    let resample = forced_axial || (threshold >= 0.0 && obliquity > threshold);
+    let resample = forced_axial || (config.pipeline.axial_resampling && obliquity > threshold);
     if resample {
         // A matched MESE used to veto this, on both branches: the GRE would move to a cardinal
         // grid and the MESE, read straight from BIDS, would be left behind. It no longer does,
@@ -1012,7 +1012,7 @@ fn resolve_geometry(
     meta.b0_direction = qsm_core::geometry::b0_direction_from_affine(&affine);
     if tilt > 0.5 {
         log::info!(
-            "B0 direction ({:.3}, {:.3}, {:.3}) from the affine; pass --obliquity-threshold to \
+            "B0 direction ({:.3}, {:.3}, {:.3}) from the affine; pass --axial-resampling to \
              resample to axial instead",
             meta.b0_direction.0, meta.b0_direction.1, meta.b0_direction.2
         );
@@ -1110,6 +1110,7 @@ fn stage_load(
     // The grid every other step works on is decided here, so a setting that changes it leaves
     // nothing cached valid. A cache from before this was recorded is taken as it stands.
     let geometry = serde_json::json!({
+        "axial_resampling": config.pipeline.axial_resampling,
         "obliquity_threshold": config.pipeline.obliquity_threshold,
         "ignore_slice_gap": config.pipeline.ignore_slice_gap,
         // Everything after masking reads the motion-corrected echoes, and no later step's cache
@@ -2588,7 +2589,7 @@ fn warn_if_r2primenet_grid_is_oblique(ctx: &StageContext) {
             "R2PRIMEnet assumes B0 lies along +z, but this run is reconstructing on its acquired \
              grid with B0 {tilt:.1}° from the slice normal, so its R2' is off-distribution. The \
              run was not resampled because a measured R2 was expected and did not materialise. \
-             Pass --obliquity-threshold to resample, or --r2prime-strategy mese to not estimate \
+             Pass --axial-resampling to resample, or --r2prime-strategy mese to not estimate \
              R2' at all."
         );
     }
@@ -4885,6 +4886,7 @@ mod tests {
     #[test]
     fn geometry_axial_run_is_untouched() {
         let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.axial_resampling = true;
         cfg.pipeline.obliquity_threshold = 10.0;
         let affine = [
             0.8, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0,
@@ -4910,6 +4912,7 @@ mod tests {
     #[test]
     fn geometry_oblique_over_threshold_resamples_and_b0_becomes_z() {
         let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.axial_resampling = true;
         cfg.pipeline.obliquity_threshold = 10.0; // obliquity here is ~32.5 degrees
         let meta = super::resolve_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
         let (src_dims, _) = meta.source_geometry.expect("should resample");
@@ -4923,6 +4926,7 @@ mod tests {
     #[test]
     fn geometry_threshold_above_obliquity_does_not_resample() {
         let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.axial_resampling = true;
         cfg.pipeline.obliquity_threshold = 45.0; // above this run's ~32.5 degrees
         let meta = super::resolve_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
         assert!(meta.source_geometry.is_none());
@@ -4932,6 +4936,7 @@ mod tests {
     #[test]
     fn geometry_sidecar_b0_wins_over_resampling() {
         let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.axial_resampling = true;
         cfg.pipeline.obliquity_threshold = 10.0;
         let run = run_for_geometry(Some((0.0, 0.5, 0.866)));
         let meta = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
@@ -5224,6 +5229,7 @@ mod tests {
     #[test]
     fn geometry_mese_run_is_resampled_like_any_other() {
         let mut cfg = crate::pipeline::config::PipelineConfig::default();
+        cfg.pipeline.axial_resampling = true;
         cfg.pipeline.obliquity_threshold = 10.0;
         let mut run = run_for_geometry(None);
         run.mese = Some(mese_on((16, 16, 8), oblique_affine()));
@@ -5809,6 +5815,7 @@ mod oblique_run_tests {
 
     fn resampling_config() -> PipelineConfig {
         let mut config = fast_config();
+        config.pipeline.axial_resampling = true;
         config.pipeline.obliquity_threshold = 5.0;
         config
     }

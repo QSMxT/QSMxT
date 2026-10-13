@@ -1534,9 +1534,13 @@ pub struct PipelineFormState {
     pub amp_pe_cvg_thd: String,
     /// Bring-your-own segmentation from derivatives (empty = off, * = any tool).
     pub custom_dseg_tool: String,
+    /// Resample oblique data to axial above `obliquity_threshold` (`--axial-resampling`).
+    pub axial_resampling: bool,
     pub obliquity_threshold: String,
 
     // Deep-learning overlap-tiling (empty = off / whole-volume). Shown for tileable DL inversions.
+    /// Run the deep-learning inversion tiled (`--tile-size`); off = whole volume.
+    pub dl_tiling: bool,
     pub dl_tile_size: String,
     pub dl_tile_halo: String,
 
@@ -1745,12 +1749,16 @@ pub struct PipelineFormState {
     pub romeo_phase_linearity: bool,
     pub romeo_mag_weight2: bool,
     pub romeo_bestpath: bool,
+    /// Re-unwrap temporally uncertain voxels (off = a threshold of 0).
+    pub romeo_temporal_uncertain: bool,
     pub romeo_temporal_uncertain_unwrapping: String,
     pub romeo_max_seeds: String,
     pub romeo_merge_regions: bool,
     pub romeo_correct_regions: bool,
     pub romeo_wrap_addition: String,
     pub linear_fit_estimate_offset: bool,
+    /// Report the fit's reliability mask (off = a percentile of 0).
+    pub linear_fit_reliability: bool,
     pub linear_fit_reliability_threshold: String,
     /// Motion-robust echo fit: index into [`ROBUST_FIT_LOSS_OPTIONS`], and its parameters
     /// (`robust_fit_tuning` blank = the loss's conventional value).
@@ -1933,8 +1941,10 @@ impl Default for PipelineFormState {
             amp_pe_max_pe_est_ite: qsm_core::inversion::AmpPeParams::default().max_pe_est_ite.to_string(),
             amp_pe_cvg_thd: fmt_default(qsm_core::inversion::AmpPeParams::default().cvg_thd),
             custom_dseg_tool: String::new(),
-            obliquity_threshold: "-1".to_string(),
-            dl_tile_size: String::new(),
+            axial_resampling: false,
+            obliquity_threshold: format!("{}", qsmxt_config::DEFAULT_OBLIQUITY_THRESHOLD),
+            dl_tiling: false,
+            dl_tile_size: "128".to_string(),
             dl_tile_halo: String::new(),
             rts_delta: format!("{}", rts.delta),
             rts_mu: format!("{}", rts.mu),
@@ -2031,12 +2041,14 @@ impl Default for PipelineFormState {
             romeo_phase_linearity: qsm_core::unwrap::RomeoParams::default().phase_linearity,
             romeo_mag_weight2: qsm_core::unwrap::RomeoParams::default().mag_weight2,
             romeo_bestpath: qsm_core::unwrap::RomeoParams::default().bestpath,
+            romeo_temporal_uncertain: qsm_core::unwrap::RomeoParams::default().temporal_uncertain_unwrapping > 0.0,
             romeo_temporal_uncertain_unwrapping: format!("{}", qsm_core::unwrap::RomeoParams::default().temporal_uncertain_unwrapping),
             romeo_max_seeds: format!("{}", qsm_core::unwrap::RomeoParams::default().max_seeds),
             romeo_merge_regions: qsm_core::unwrap::RomeoParams::default().merge_regions,
             romeo_correct_regions: qsm_core::unwrap::RomeoParams::default().correct_regions,
             romeo_wrap_addition: format!("{}", qsm_core::unwrap::RomeoParams::default().wrap_addition),
             linear_fit_estimate_offset: true,
+            linear_fit_reliability: qsmxt_config::LinearFitConfig::default().reliability_threshold_percentile > 0.0,
             linear_fit_reliability_threshold: fmt_default(qsmxt_config::LinearFitConfig::default().reliability_threshold_percentile),
             robust_fit_loss: 0,
             robust_fit_tuning: String::new(),
@@ -2173,6 +2185,12 @@ impl Default for PipelineFormState {
 }
 
 pub const QSM_ALGO_OPTIONS: &[&str] = &["rts", "tv", "tkd", "tsvd", "tgv", "tikhonov", "nltv", "medi", "tfi", "ilsqr", "lsqr", "heidi", "qsmart", "ndi", "fansi", "fansi-tgv", "l1qsm", "whqsm", "hdqsm", "amp-pe", "xqsm", "qsmnet", "qsmnet-plus", "autoqsm", "qsmgan", "ir2qsm", "lpcnn", "modl-qsm", "nextqsm", "iqsm", "iqsm-plus"];
+/// MEDI/TFI data weighting, in the CLI's order (0, 1).
+pub const DATA_WEIGHTING_OPTIONS: &[&str] = &["uniform", "magnitude SNR"];
+const DATA_WEIGHTING_HELP: &[&str] = &[
+    "Every voxel of the field weighs the same in the data term",
+    "Weight the data term by the magnitude SNR, so noisy voxels count for less",
+];
 pub const OUTPUT_SPACE_OPTIONS: &[&str] = &["acquired", "working"];
 const OUTPUT_SPACE_HELP: &[&str] = &[
     "Write derivatives back on the acquired grid when the run was resampled to axial (default)",
@@ -2330,21 +2348,21 @@ impl PipelineFormState {
         rows.push(PipelineRow::Param { label: "    Min Overlap", field: "reg_min_overlap", help: "Smallest fraction of sampled voxels that must overlap" });
     }
 
-    /// Whether the run resamples oblique data to axial on request (a non-negative threshold).
-    pub fn axial_resampling_on(&self) -> bool {
-        self.obliquity_threshold.trim().parse::<f64>().is_ok_and(|t| t >= 0.0)
-    }
 
     /// Preprocessing → Geometry: the grid the data is reconstructed on.
     fn geometry_rows(&self, rows: &mut Vec<PipelineRow>) {
         let qsm = self.qsm_runs();
-        rows.push(PipelineRow::Param {
-            label: "Obliquity", field: "obliquity_threshold",
-            help: "Resample oblique acquisitions to axial if obliquity exceeds this (degrees, -1 = disabled)",
+        rows.push(PipelineRow::Toggle {
+            label: "Axial Resampling", field: "axial_resampling",
+            help: "Resample oblique acquisitions onto an axial grid when they are tilted more than the threshold. Off: reconstruct on the acquired grid with the true B0 direction",
         });
+        if self.axial_resampling {
+            rows.push(PipelineRow::Param { label: "  Obliquity Threshold (°)", field: "obliquity_threshold",
+                help: "Resample only data more oblique than this, in degrees" });
+        }
         // Where the outputs land only matters when something resamples: on request, or because
         // a selected method only works on axial data (and resamples whatever this says).
-        if self.axial_resampling_on() || self.ctx.axial_forced_by.is_some() {
+        if self.axial_resampling || self.ctx.axial_forced_by.is_some() {
             if let Some(why) = &self.ctx.axial_forced_by {
                 rows.push(PipelineRow::Note { text: format!("  Oblique data is resampled to axial for {why}").into() });
             }
@@ -2554,10 +2572,16 @@ impl PipelineFormState {
                 label: "  Best-path Weights", field: "romeo_bestpath",
                 help: "Use Abdul-Rahman best-path weights instead of ROMEO weights",
             });
-            rows.push(PipelineRow::Param {
-                label: "  Temporal Uncertain", field: "romeo_temporal_uncertain_unwrapping",
-                help: "Quality threshold [0,1] for re-unwrapping uncertain voxels (0 disables)",
+            rows.push(PipelineRow::Toggle {
+                label: "  Temporal Uncertain", field: "romeo_temporal_uncertain",
+                help: "Re-unwrap voxels whose temporal unwrapping is uncertain",
             });
+            if self.romeo_temporal_uncertain {
+                rows.push(PipelineRow::Param {
+                    label: "    Quality Threshold", field: "romeo_temporal_uncertain_unwrapping",
+                    help: "Quality threshold (0, 1] below which a voxel is re-unwrapped",
+                });
+            }
             rows.push(PipelineRow::Param {
                 label: "  Max Seeds", field: "romeo_max_seeds",
                 help: "Maximum number of seed regions (default 1)",
@@ -2595,10 +2619,16 @@ impl PipelineFormState {
                 label: "  Estimate Offset", field: "linear_fit_estimate_offset",
                 help: "Fit a phase-offset term in the echo-time fit (robust fit: needs 4 echoes with it, 3 without)",
             });
-            rows.push(PipelineRow::Param {
-                label: "  Reliability Pctl", field: "linear_fit_reliability_threshold",
-                help: "Percentile for the fit's reliability mask (0 disables); does not change the field map",
+            rows.push(PipelineRow::Toggle {
+                label: "  Reliability Mask", field: "linear_fit_reliability",
+                help: "Report the fit's reliability mask; does not change the field map",
             });
+            if self.linear_fit_reliability {
+                rows.push(PipelineRow::Param {
+                    label: "    Percentile", field: "linear_fit_reliability_threshold",
+                    help: "Percentile of the fit residual above which a voxel counts as unreliable",
+                });
+            }
             if self.b0_estimation == 2 { // robust-fit
                 rows.push(PipelineRow::AlgoSelect {
                     label: "  Loss", field: "robust_fit_loss",
@@ -2735,7 +2765,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "medi_tol", help: "Outer convergence tolerance" });
                 rows.push(PipelineRow::Toggle { label: "  MERIT", field: "medi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
-                rows.push(PipelineRow::Param { label: "  Data Weighting", field: "medi_data_weighting", help: "0 = uniform, 1 = magnitude SNR" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Data Weighting", field: "medi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
             }
             "tfi" => { // TFI
                 rows.push(PipelineRow::Param { label: "  Lambda", field: "tfi_lambda", help: "Regularization weight" });
@@ -2746,7 +2776,7 @@ impl PipelineFormState {
                 rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "tfi_cg_tol", help: "CG convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "tfi_tol", help: "Outer convergence tolerance" });
                 rows.push(PipelineRow::Toggle { label: "  MERIT", field: "tfi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
-                rows.push(PipelineRow::Param { label: "  Data Weighting", field: "tfi_data_weighting", help: "0 = uniform, 1 = magnitude SNR" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Data Weighting", field: "tfi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
             }
             "ilsqr" => { // iLSQR
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "ilsqr_tol", help: "Convergence tolerance" });
@@ -2845,7 +2875,7 @@ impl PipelineFormState {
                         rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "medi_cg_tol", help: "CG convergence tolerance" });
                         rows.push(PipelineRow::Param { label: "  Tolerance", field: "medi_tol", help: "Outer convergence tolerance" });
                         rows.push(PipelineRow::Toggle { label: "  MERIT", field: "medi_merit", help: "Iteratively down-weight voxels whose residual stays large" });
-                        rows.push(PipelineRow::Param { label: "  Data Weighting", field: "medi_data_weighting", help: "0 = uniform, 1 = magnitude SNR" });
+                        rows.push(PipelineRow::AlgoSelect { label: "  Data Weighting", field: "medi_data_weighting", options: DATA_WEIGHTING_OPTIONS, help: DATA_WEIGHTING_HELP });
                     }
                     _ => {}
                 }
@@ -2933,8 +2963,12 @@ impl PipelineFormState {
             QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or(""),
             "xqsm" | "qsmnet" | "qsmnet-plus" | "ir2qsm" | "lpcnn" | "modl-qsm" | "nextqsm"
         ) {
-            rows.push(PipelineRow::Param { label: "  Tile size", field: "dl_tile_size", help: "Overlap-tiling core size in voxels; set to run tiled (bounded memory, approximate). Blank = whole-volume." });
-            rows.push(PipelineRow::Param { label: "  Tile halo", field: "dl_tile_halo", help: "Overlap-tiling context margin in voxels (default 8 when tile size is set)." });
+            rows.push(PipelineRow::Toggle { label: "  Tiled Inference", field: "dl_tiling",
+                help: "Run the network on overlapping tiles: bounded memory, approximate. Off = whole volume" });
+            if self.dl_tiling {
+                rows.push(PipelineRow::Param { label: "    Tile Size", field: "dl_tile_size", help: "Overlap-tiling core size in voxels" });
+                rows.push(PipelineRow::Param { label: "    Tile Halo", field: "dl_tile_halo", help: "Overlap-tiling context margin in voxels (blank = 8)" });
+            }
         }
 
     }
@@ -3053,7 +3087,7 @@ impl PipelineFormState {
         "r2primenet_patch",
         "laplacian_fft_pad",
         "crop_margin_mm", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
-        "tgv_step_size", "tgv_tol", "medi_data_weighting", "tfi_data_weighting",
+        "tgv_step_size", "tgv_tol",
         "amp_pe_damp_rate_sig", "amp_pe_damp_rate_par", "amp_pe_max_pe_spar_ite", "amp_pe_max_pe_est_ite", "amp_pe_cvg_thd",
         "linear_fit_reliability_threshold", "robust_fit_tuning", "robust_fit_iterations",
         "robust_fit_downweight_level", "robust_fit_flag_ratio",
@@ -3521,6 +3555,9 @@ impl PipelineFormState {
             "output_space" => self.output_space,
             "mask_preset" => self.mask_preset,
             "separation_algorithm" => self.separation_algorithm,
+            // Stored as the CLI value (0 uniform, 1 magnitude SNR).
+            "medi_data_weighting" => usize::from(self.medi_data_weighting.trim() == "1"),
+            "tfi_data_weighting" => usize::from(self.tfi_data_weighting.trim() == "1"),
             _ => 0,
         }
     }
@@ -3545,6 +3582,8 @@ impl PipelineFormState {
                 self.apply_mask_preset(val);
             }
             "separation_algorithm" => self.separation_algorithm = val,
+            "medi_data_weighting" => self.medi_data_weighting = val.min(1).to_string(),
+            "tfi_data_weighting" => self.tfi_data_weighting = val.min(1).to_string(),
             _ => {}
         }
     }
@@ -3565,6 +3604,9 @@ impl PipelineFormState {
             "romeo_mag_weight2" => self.romeo_mag_weight2,
             "romeo_bestpath" => self.romeo_bestpath,
             "romeo_merge_regions" => self.romeo_merge_regions,
+            "romeo_temporal_uncertain" => self.romeo_temporal_uncertain,
+            "linear_fit_reliability" => self.linear_fit_reliability,
+            "dl_tiling" => self.dl_tiling,
             "romeo_correct_regions" => self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset,
             "medi_smv" => self.medi_smv,
@@ -3575,6 +3617,7 @@ impl PipelineFormState {
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise,
             "ignore_slice_gap" => self.ignore_slice_gap,
+            "axial_resampling" => self.axial_resampling,
             "crop_to_mask" => self.crop_to_mask,
             "fft_padding" => self.fft_padding,
             "romeo_phase_coherence" => self.romeo_phase_coherence,
@@ -3608,6 +3651,9 @@ impl PipelineFormState {
             "romeo_mag_weight2" => self.romeo_mag_weight2 = !self.romeo_mag_weight2,
             "romeo_bestpath" => self.romeo_bestpath = !self.romeo_bestpath,
             "romeo_merge_regions" => self.romeo_merge_regions = !self.romeo_merge_regions,
+            "romeo_temporal_uncertain" => self.romeo_temporal_uncertain = !self.romeo_temporal_uncertain,
+            "linear_fit_reliability" => self.linear_fit_reliability = !self.linear_fit_reliability,
+            "dl_tiling" => self.dl_tiling = !self.dl_tiling,
             "romeo_correct_regions" => self.romeo_correct_regions = !self.romeo_correct_regions,
             "linear_fit_estimate_offset" => self.linear_fit_estimate_offset = !self.linear_fit_estimate_offset,
             "medi_smv" => self.medi_smv = !self.medi_smv,
@@ -3617,6 +3663,7 @@ impl PipelineFormState {
             "heidi_apply_laplacian_correction" => self.heidi_apply_laplacian_correction = !self.heidi_apply_laplacian_correction,
             "heidi_denoise" => self.heidi_denoise = !self.heidi_denoise,
             "ignore_slice_gap" => self.ignore_slice_gap = !self.ignore_slice_gap,
+            "axial_resampling" => self.axial_resampling = !self.axial_resampling,
             "crop_to_mask" => self.crop_to_mask = !self.crop_to_mask,
             "fft_padding" => self.fft_padding = !self.fft_padding,
             "romeo_phase_coherence" => self.romeo_phase_coherence = !self.romeo_phase_coherence,
@@ -4099,7 +4146,7 @@ impl PipelineFormState {
             self.mask_refinements(section)?.get(index)? else { return None };
         let (label, _) = *SIGNAL_ERODE_PARAMS.get(param)?;
         let value = match param {
-            0 => if *depth_cap == 0 { "0 (no cap)".to_string() } else { format!("{depth_cap}") },
+            0 => if *depth_cap == 0 { "off (no cap)".to_string() } else { format!("{depth_cap}") },
             1 => format!("{global_erosions}"),
             2 => format!("{bias_sigma:.1}"),
             _ => format!("{min_component}"),
@@ -4369,6 +4416,8 @@ pub struct RunForm {
     pub synthseg_crop: String,
     pub synthseg_flip_averaging: bool,
     pub synthseg_topology_cleanup: bool,
+    /// Smooth SynthSeg's posteriors (off = a sigma of 0).
+    pub synthseg_smoothing: bool,
     pub synthseg_sigma: String,
     pub smwi_threshold: String,
     pub smwi_power: String,
@@ -4414,7 +4463,7 @@ impl RunForm {
     ]);
     named_fields!(flag, flag_mut, bool, [
         do_swi, do_t2starmap, do_r2starmap, do_r2map, do_r2primemap, export_dicom, do_smwi,
-        do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup,
+        do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup, synthseg_smoothing,
         dry_run, debug, force, clean_intermediates, slurm_submit,
     ]);
     named_fields!(choice, choice_mut, usize, [swi_scaling, synthseg_version, execution_mode]);
@@ -4462,6 +4511,7 @@ impl Default for RunForm {
             synthseg_crop: seg.crop.map(|c| format!("{c}")).unwrap_or_default(),
             synthseg_flip_averaging: seg.flip_averaging,
             synthseg_topology_cleanup: seg.topology_cleanup,
+            synthseg_smoothing: seg.sigma_smoothing > 0.0,
             synthseg_sigma: format!("{}", seg.sigma_smoothing),
             smwi_threshold: format!("{}", smwi.threshold_ppm),
             smwi_power: format!("{}", smwi.power),
@@ -6496,7 +6546,10 @@ impl App {
                 rows.push(Param { label: "    Crop", field: "synthseg_crop", help: "Cubic centre-crop in voxels at 1 mm before inference; empty processes the whole volume" });
                 rows.push(Toggle { label: "    Flip Averaging", field: "synthseg_flip_averaging", help: "Average with a left-right flipped second pass (SynthSeg's default). Doubles inference time" });
                 rows.push(Toggle { label: "    Topology Cleanup", field: "synthseg_topology_cleanup", help: "Reset each topological class to its largest connected component" });
-                rows.push(Param { label: "    Posterior Smoothing", field: "synthseg_sigma", help: "Gaussian blur on the posteriors, in voxels (0 disables it)" });
+                rows.push(Toggle { label: "    Posterior Smoothing", field: "synthseg_smoothing", help: "Gaussian blur on the posteriors before the labels are taken" });
+                if f.synthseg_smoothing {
+                    rows.push(Param { label: "      Sigma (voxels)", field: "synthseg_sigma", help: "Gaussian sigma of the posterior blur, in voxels" });
+                }
             }
         }
         rows.push(PipelineRow::Separator);
@@ -8064,6 +8117,7 @@ mod tests {
     #[test]
     fn test_pipeline_edit_text_param() {
         let mut app = App::new();
+        app.pipeline_state.axial_resampling = true;
         assert!(app.goto_field("obliquity_threshold"));
         // Find the obliquity_threshold Param row
         let rows = app.rows();
@@ -8201,6 +8255,7 @@ mod tests {
     #[test]
     fn test_pipeline_editing_left_right_cursor() {
         let mut app = App::new();
+        app.pipeline_state.axial_resampling = true;
         assert!(app.goto_field("obliquity_threshold"));
         // Find obliquity_threshold param and edit it
         let rows = app.rows();
@@ -9663,7 +9718,7 @@ mod tests {
         goto_page(&mut app, Page::Masking);
         app.pipeline_state.do_qsm = false;
         let f = fields(&mut app);
-        for kept in ["obliquity_threshold", "inhomogeneity_correction", "ignore_slice_gap",
+        for kept in ["axial_resampling", "inhomogeneity_correction", "ignore_slice_gap",
                      "motion_correction", "coil_combination_sigma",
                      "mask_preset", "custom_mask_tool", "two_pass"] {
             assert!(f.contains(&kept.to_string()), "{kept} hidden with QSM off: {f:?}");
@@ -10187,6 +10242,7 @@ mod tests {
     #[test]
     fn test_reset_pipeline_param_field() {
         let mut app = App::new();
+        app.pipeline_state.axial_resampling = true;
         assert!(app.goto_field("obliquity_threshold"));
         // Find obliquity_threshold param
         let rows = app.rows();

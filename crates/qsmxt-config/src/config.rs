@@ -810,6 +810,11 @@ pub struct PipelineToggles {
     pub do_r2primemap: bool,
     pub do_chi_separation: bool,
     pub export_dicom: bool,
+    /// Resample oblique acquisitions onto an axial grid when their obliquity exceeds
+    /// `obliquity_threshold`. Off by default: the classical methods take the B0 direction and are
+    /// correct on the acquired grid. Methods that only work on axial data resample regardless.
+    pub axial_resampling: bool,
+    /// Degrees of obliquity above which `axial_resampling` resamples (non-negative).
     pub obliquity_threshold: f64,
     /// Reconstruct inside a box around the mask rather than the whole field of view. Pure speed
     /// on paper, but it moves the FFT's periodic boundary closer to the object, so it is opt-in.
@@ -846,7 +851,7 @@ pub struct PipelineToggles {
 impl Default for PipelineToggles {
     fn default() -> Self {
         Self { do_qsm: true, do_swi: false, do_smwi: false,
-            do_segmentation: false, do_analysis: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, obliquity_threshold: -1.0,
+            do_segmentation: false, do_analysis: false, do_t2starmap: false, do_r2starmap: false, do_r2map: false, do_r2primemap: false, do_chi_separation: false, export_dicom: false, axial_resampling: false, obliquity_threshold: DEFAULT_OBLIQUITY_THRESHOLD,
             crop_to_mask: false, fft_padding: false, crop_margin_mm: default_crop_margin_mm(),
             output_space: OutputSpace::Acquired, ignore_slice_gap: false }
     }
@@ -1146,9 +1151,52 @@ impl QsmConfig {
 }
 
 
+/// The obliquity (degrees) above which `axial_resampling` resamples, unless set.
+pub const DEFAULT_OBLIQUITY_THRESHOLD: f64 = 10.0;
+
 impl PipelineConfig {
     pub fn from_toml(s: &str) -> crate::Result<Self> {
-        toml::from_str(s).map_err(|e| crate::error::ConfigError::Parse(format!("{}", e)))
+        Self::from_toml_migrating(s).map(|(c, _)| c)
+    }
+
+    /// Parse a TOML config, mapping settings older QSMxT versions wrote onto today's, with a
+    /// warning for each mapping the caller should show.
+    ///
+    /// QSMxT up to v9.22.0 had no `axial_resampling`: a negative `obliquity_threshold` meant
+    /// "never resample", any other value "resample above it". Such a config (a threshold and no
+    /// `axial_resampling`) keeps its meaning. A config that has `axial_resampling` must give a
+    /// non-negative threshold.
+    pub fn from_toml_migrating(s: &str) -> crate::Result<(Self, Vec<String>)> {
+        let parse_err = |e: toml::de::Error| crate::error::ConfigError::Parse(format!("{}", e));
+        let mut value: toml::Table = toml::from_str(s).map_err(parse_err)?;
+        let mut warnings = Vec::new();
+        if let Some(toml::Value::Table(p)) = value.get_mut("pipeline") {
+            let threshold = p.get("obliquity_threshold").and_then(|v| v.as_float().or(v.as_integer().map(|i| i as f64)));
+            match (threshold, p.contains_key("axial_resampling")) {
+                (Some(t), false) => {
+                    let on = t >= 0.0;
+                    p.insert("axial_resampling".into(), toml::Value::Boolean(on));
+                    if !on {
+                        p.insert("obliquity_threshold".into(), toml::Value::Float(DEFAULT_OBLIQUITY_THRESHOLD));
+                    }
+                    warnings.push(if on {
+                        format!("pipeline.obliquity_threshold = {t} without axial_resampling is deprecated (QSMxT <= 9.22 configs): \
+                                 read as axial_resampling = true, obliquity_threshold = {t}")
+                    } else {
+                        format!("pipeline.obliquity_threshold = {t} is deprecated (QSMxT <= 9.22 configs): a negative threshold \
+                                 meant no resampling, read as axial_resampling = false")
+                    });
+                }
+                (Some(t), true) if t < 0.0 => {
+                    return Err(crate::error::ConfigError::Parse(format!(
+                        "pipeline.obliquity_threshold = {t}: the threshold is in degrees and cannot be negative; \
+                         set axial_resampling = false to turn resampling off")));
+                }
+                _ => {}
+            }
+        }
+        let config = toml::Value::Table(value).try_into().map_err(parse_err)?;
+        Ok((config, warnings))
     }
 
     pub fn to_toml(&self) -> crate::Result<String> {
@@ -1518,5 +1566,34 @@ mod option_field_tests {
         let back2 = crate::config::PipelineConfig::from_toml(
             &c2.to_toml().expect("serialise")).expect("round-trip");
         assert_eq!(back2.inversion.lsqr.residual_weighting, Some(0.25));
+    }
+}
+
+#[cfg(test)]
+mod axial_resampling_tests {
+    use super::*;
+
+    /// v9.22.0 configs carry `obliquity_threshold` alone, a negative value meaning "off": they keep
+    /// their meaning under `axial_resampling`, with a warning; a new config cannot go negative.
+    #[test]
+    fn legacy_obliquity_thresholds_map_onto_axial_resampling() {
+        let (c, w) = PipelineConfig::from_toml_migrating("[pipeline]\nobliquity_threshold = -1.0\n").unwrap();
+        assert!(!c.pipeline.axial_resampling && w.len() == 1, "{w:?}");
+        assert_eq!(c.pipeline.obliquity_threshold, DEFAULT_OBLIQUITY_THRESHOLD);
+        let (c, w) = PipelineConfig::from_toml_migrating("[pipeline]\nobliquity_threshold = 5\n").unwrap();
+        assert!(c.pipeline.axial_resampling && w.len() == 1, "{w:?}");
+        assert_eq!(c.pipeline.obliquity_threshold, 5.0);
+        // Today's configs: both keys, no warning, round trip.
+        let mut d = PipelineConfig::default();
+        d.pipeline.axial_resampling = true;
+        let (back, w) = PipelineConfig::from_toml_migrating(&d.to_toml().unwrap()).unwrap();
+        assert!(w.is_empty() && back.pipeline.axial_resampling);
+        let (back, w) = PipelineConfig::from_toml_migrating(&PipelineConfig::default().to_toml().unwrap()).unwrap();
+        assert!(w.is_empty() && !back.pipeline.axial_resampling);
+        assert!(PipelineConfig::from_toml("[pipeline]\naxial_resampling = true\nobliquity_threshold = -1.0\n").is_err());
+        // Nothing said about either: off, at the default threshold.
+        let c = PipelineConfig::from_toml("").unwrap();
+        assert!(!c.pipeline.axial_resampling);
+        assert_eq!(c.pipeline.obliquity_threshold, 10.0);
     }
 }

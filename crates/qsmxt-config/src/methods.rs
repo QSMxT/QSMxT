@@ -744,6 +744,11 @@ fn describe_pad(p: [usize; 3]) -> String {
 /// unwrapping, and B0 estimation. Shared by the standard pipeline and QSMART
 /// (which consumes a pre-computed total field, so these steps still run).
 fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, citations: &mut Vec<&Citation>) {
+    if config.pipeline.axial_resampling {
+        sentences.push(format!(
+            "Acquisitions more than {}° oblique were resampled onto an axial grid, with B0 along the slice normal, before reconstruction.",
+            config.pipeline.obliquity_threshold));
+    }
     let m = &config.motion_correction;
     if m.enabled {
         let reference = match m.reference {
