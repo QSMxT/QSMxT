@@ -215,7 +215,11 @@ different grid gives a wrong registration rather than an error.
 - `--output-space acquired` (default) writes derivatives on the acquired grid.
   Costs a second interpolation, so the result is slightly smoother than a
   reconstruction that was never resampled.
-- `--output-space working` leaves them on the resampled grid.
+- `--output-space working` leaves them on the resampled grid. Their names then
+  carry `space-axial` (`sub-01_space-axial_Chimap.nii`) and each sidecar a
+  `SpatialReference` (the run's `part-mag_space-axial_T2starw`), so they cannot
+  be mistaken for acquired-grid outputs. A run that was never resampled keeps
+  its plain names under either setting.
 
 Masks travel by nearest neighbour and phase travels with its magnitude through
 the complex domain, for the same reason phase went out that way.
@@ -746,8 +750,8 @@ result drops the entity that varied:
 | `…_desc-cosmos_Chimap.nii` | COSMOS susceptibility map (ppm) |
 | `…_desc-mms_Chimap.nii` | STI mean magnetic susceptibility |
 | `…_desc-msa_Chimap.nii` | STI magnetic susceptibility anisotropy |
-| `…_desc-sti11_Chitensor.nii` … `sti33` | The six independent tensor components |
-| `…_desc-pevx_Chitensor.nii` … `pevz` | Principal eigenvector, in voxel coordinates |
+| `…_desc-sti_Chimap.nii` | The STI tensor (ppm), 4D: the six independent components X11 X12 X13 X22 X23 X33 along the fourth axis, listed in its sidecar as `TensorComponents` |
+| `…_desc-sti_evec.nii` | Principal eigenvector, 4D (i, j, k in voxel coordinates); `evec` is not a BIDS suffix and is listed in `.bidsignore` |
 
 A `…_desc-cosmos_Chimap.json` sidecar records the source runs, the direction table
 and where each direction came from — the half of the input that does not live in

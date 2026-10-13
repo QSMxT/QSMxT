@@ -76,7 +76,8 @@ impl BidsEntities {
 }
 
 impl AcquisitionKey {
-    /// Build the BIDS basename (without suffix like _Chimap or extension).
+    /// Build the BIDS basename (without suffix like _Chimap or extension), its entities in the
+    /// order BIDS lists them (`run` before `inv`).
     pub fn basename(&self) -> String {
         let mut name = format!("sub-{}", self.subject);
         if let Some(ses) = &self.session {
@@ -88,11 +89,11 @@ impl AcquisitionKey {
         if let Some(rec) = &self.reconstruction {
             name.push_str(&format!("_rec-{}", rec));
         }
-        if let Some(inv) = &self.inversion {
-            name.push_str(&format!("_inv-{}", inv));
-        }
         if let Some(run) = &self.run {
             name.push_str(&format!("_run-{}", run));
+        }
+        if let Some(inv) = &self.inversion {
+            name.push_str(&format!("_inv-{}", inv));
         }
         name
     }

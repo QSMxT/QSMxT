@@ -19,6 +19,46 @@ upgrade.
   Each job's `--mem` is estimated from its run unless `--mem` is given. Job logs are written
   beside the scripts. `--submit` chains the jobs, and so does the generated `slurm/submit.sh`.
   The TUI's SLURM mode passes force and clean-up too.
+- **Output names are valid BIDS, and the standalone commands use the pipeline's** (#275).
+  Breaking renames (old → new):
+  - STI: `desc-sti11_Chitensor` … `desc-sti33_Chitensor` (six files) → one 4D
+    `desc-sti_Chimap` (components X11 X12 X13 X22 X23 X33 along the fourth axis, listed in its
+    sidecar as `TensorComponents`); `desc-pev{x,y,z}_Chitensor` → one 4D `desc-sti_evec`
+    (`.bidsignore`d: an eigenvector is not χ, and BIDS has no suffix for it).
+    `desc-mms_Chimap` and `desc-msa_Chimap` are unchanged.
+  - SMWI minIP: `desc-paramagnetic_minIP` / `desc-diamagnetic_minIP` →
+    `desc-paramagneticsmwi_minIP` / `desc-diamagneticsmwi_minIP` (the `desc-` names what was
+    projected, so it is not mistaken for the SWI's). `_swi`, `_minIP` and `desc-*_smwi` keep
+    BEP004's proposed suffixes, and `_R2primemap` stays (no BIDS suffix for R2′); all are listed in
+    `.bidsignore`.
+  - `--output-space working` on a resampled (oblique) run: `<name>` → `space-axial` in the name
+    (`sub-01_Chimap` → `sub-01_space-axial_Chimap`, `part-mag_T2starw` →
+    `part-mag_space-axial_T2starw`), with a `SpatialReference` in each sidecar. Runs never
+    resampled, and the default acquired grid, keep their names.
+  - Runs with both `inv-` and `run-`: `…_inv-1_run-2_…` → `…_run-2_inv-1_…` (BIDS entity order).
+  - Two runs that differ only by suffix (a `MEGRE` and a `GRE` in one session) wrote the same
+    files; each now folds its suffix into `acq-` (`acq-MEGRE`, `acq-GRE`; with an existing `acq-fast`, `acq-fastGRE`). Runs without such
+    a twin are unchanged.
+  - `workflow/` intermediates: `_field-ppm` → `_desc-totalppm_fieldmap`, `_Chimap-raw` →
+    `_desc-unreferenced_Chimap`, `_echo-N_phase-scaled` → `_echo-N_part-phase_desc-scaled_<suffix>`,
+    `_echo-N_mag` → `_echo-N_part-mag_<suffix>`.
+  - `qsmxt invert sti`: `<prefix>_tensor-11` … `_tensor-33`, `_mms`, `_msa`, `_pev-x/y/z` →
+    `<prefix>_desc-sti_Chimap` (4D), `_desc-mms_Chimap`, `_desc-msa_Chimap`, `_desc-sti_evec` (4D).
+    `qsmxt separate`: `<prefix>_paramagnetic/_diamagnetic/_total` →
+    `<prefix>_desc-{paramagnetic,diamagnetic,total}_Chimap`. `qsmxt combine mcpc3ds`:
+    `<prefix>_echo-N_part-{phase,mag}` → `<prefix>_rec-mcpc3ds_echo-N_part-{phase,mag}_<suffix>`
+    (the inputs' suffix, `MEGRE` without one). `qsmxt swi --mip` without `--mip-output`:
+    `out.mip.nii` → `out_minIP.nii` (`sub-01_swi.nii` → `sub-01_minIP.nii`).
+
+  New: the total field is published as `fmap/<run>_desc-total_fieldmap.nii` in Hz
+  (`Units: "Hz"`) whenever the run computes one, with the first echo's magnitude beside it as
+  `fmap/<run>_desc-total_magnitude.nii` (BIDS defines `fieldmap` only under `fmap/`, and
+  requires a magnitude with it). A field map takes no `rec-` or `inv-`, so a run that has them
+  folds them into `acq-` there (`acq-swi_rec-uncombined` → `acq-swirecuncombined`). The MCPC-3D-S
+  combined echoes' sidecars now carry `SkullStripped`. `.bidsignore` adds `extra_files`, `slurm` and the kept non-BIDS suffixes. The
+  combined echoes of a per-coil run are now returned to the acquired grid with the other outputs.
+  Outputs from an earlier release are removed and recomputed once (their state records names the
+  pipeline no longer writes). Switching `--output-space` on a resampled run recomputes it.
 
 - **Segmentations keep valid label ids on the acquired grid** (#267). Returning a resampled run
   to its acquired grid (`--output-space acquired`, the default) interpolated `_dseg.nii`

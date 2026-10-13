@@ -25,6 +25,48 @@ pub fn write_volume(
         .map_err(QsmxtError::NiftiIo)
 }
 
+/// Write several volumes on one grid as a single 4D NIfTI, the volumes along the fourth axis in
+/// the order given.
+///
+/// For outputs that are one quantity with several components (the STI tensor, its eigenvector):
+/// QSM.rs writes only 3D volumes, so the header is QSM.rs's for the first volume with the fourth
+/// dimension added, and the remaining volumes follow it — the layout NIfTI defines for 4D data.
+pub fn write_volumes_4d(
+    path: &Path,
+    volumes: &[&[f64]],
+    dims: (usize, usize, usize),
+    voxel_size: (f64, f64, f64),
+    affine: &[f64; 16],
+) -> crate::Result<()> {
+    let Some(first) = volumes.first() else {
+        return Err(QsmxtError::NiftiIo(format!("{}: no volumes to write", path.display())));
+    };
+    let mut bytes = qsm_core::io::save_nifti(first, dims, voxel_size, affine)
+        .map_err(|e| QsmxtError::NiftiIo(format!("{}: {e}", path.display())))?;
+    let n = dims.0 * dims.1 * dims.2;
+    if let Some(v) = volumes.iter().find(|v| v.len() != n) {
+        return Err(QsmxtError::NiftiIo(format!(
+            "{}: cannot write a {}x{}x{} volume from {} values", path.display(), dims.0, dims.1, dims.2, v.len())));
+    }
+    let nt = i16::try_from(volumes.len())
+        .map_err(|_| QsmxtError::NiftiIo(format!("{}: too many volumes", path.display())))?;
+    // dim[0] = 4 dimensions, dim[4] = the volume count (pixdim[4] stays 1).
+    bytes[40..42].copy_from_slice(&4i16.to_le_bytes());
+    bytes[48..50].copy_from_slice(&nt.to_le_bytes());
+    bytes.reserve(n * 4 * (volumes.len() - 1));
+    for v in &volumes[1..] {
+        for &x in v.iter() {
+            bytes.extend_from_slice(&(x as f32).to_le_bytes());
+        }
+    }
+    match path.parent() {
+        Some(parent) if !parent.as_os_str().is_empty() => std::fs::create_dir_all(parent)?,
+        _ => {}
+    }
+    std::fs::write(path, bytes)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -35,6 +77,21 @@ mod tests {
         0.0, 0.0, 1.0, 0.0,
         0.0, 0.0, 0.0, 1.0,
     ];
+
+    #[test]
+    fn writes_a_4d_volume_that_reads_back_in_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("t.nii");
+        let (a, b, c) = (vec![1.0; 24], vec![2.0; 24], vec![3.0; 24]);
+        write_volumes_4d(&path, &[&a, &b, &c], (2, 3, 4), (1.0, 1.0, 1.0), &AFFINE).unwrap();
+        let bytes = std::fs::read(&path).unwrap();
+        let (data, dims, _, _) = qsm_core::io::load_nifti_4d(&bytes).unwrap();
+        assert_eq!(dims, (2, 3, 4, 3));
+        assert_eq!(data[0], 1.0);
+        assert_eq!(data[24], 2.0);
+        assert_eq!(data[71], 3.0);
+        assert!(write_volumes_4d(&path, &[&a, &[1.0; 5]], (2, 3, 4), (1.0, 1.0, 1.0), &AFFINE).is_err());
+    }
 
     #[test]
     fn writes_a_matching_volume_into_a_new_directory() {

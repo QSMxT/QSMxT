@@ -63,7 +63,19 @@ pub struct PipelineState {
     /// recomputed, so steps whose intermediates were cleaned can be trusted as they are.
     #[serde(skip)]
     pub config_unchanged: bool,
+    /// The `space-` label the published outputs carry (`None`: the acquired grid). Read back by
+    /// [`DerivativeOutputs::published`](crate::bids::derivatives::DerivativeOutputs::published).
+    #[serde(default)]
+    pub space: Option<String>,
+    /// The output naming scheme the recorded outputs were written under ([`NAMING_VERSION`]).
+    #[serde(default)]
+    pub naming: u32,
 }
+
+/// The version of the output names (`bids::naming`). A state recorded under another one names
+/// files the pipeline no longer writes or reads, so it is discarded and the run recomputed once.
+/// 0: before #275; 1: #275's BIDS names.
+pub const NAMING_VERSION: u32 = 1;
 
 impl PipelineState {
     /// Create a fresh state for a new run.
@@ -77,6 +89,8 @@ impl PipelineState {
             completed_steps: HashMap::new(),
             run_metadata: None,
             config_unchanged: false,
+            space: None,
+            naming: NAMING_VERSION,
         }
     }
 
@@ -93,6 +107,14 @@ impl PipelineState {
 
         if let Ok(text) = std::fs::read_to_string(state_path) {
             if let Ok(mut state) = serde_json::from_str::<PipelineState>(&text) {
+                if state.naming != NAMING_VERSION {
+                    log::info!(
+                        "{run_key}: outputs were written under an earlier naming scheme; removing \
+                         them and recomputing the run once"
+                    );
+                    state.remove_recorded_outputs(state_path);
+                    return Self::new(config, run_key);
+                }
                 log::info!("Resuming from cached pipeline state");
                 state.config_unchanged = state.config_hash == config_hash(config)
                     && state.completed_steps.values()
@@ -104,6 +126,35 @@ impl PipelineState {
         }
 
         Self::new(config, run_key)
+    }
+
+    /// Delete every file this state recorded writing, and the run's working-grid copies, so files
+    /// under names the pipeline no longer writes do not linger next to the renamed ones.
+    ///
+    /// Only files under the derivatives directory that holds this state (`<deriv>/workflow/...`)
+    /// are touched: a recorded output is never an input, but this keeps it that way.
+    pub fn remove_recorded_outputs(&self, state_path: &Path) {
+        let Some(deriv) = state_path.ancestors().find(|a| a.file_name().is_some_and(|n| n == "workflow"))
+            .and_then(|w| w.parent()) else { return };
+        for rec in self.completed_steps.values() {
+            for p in &rec.outputs {
+                if p.starts_with(deriv) && p.is_file() {
+                    if let Err(e) = std::fs::remove_file(p) {
+                        log::warn!("could not remove {}: {e}", p.display());
+                    }
+                    // ...and the sidecar provenance gave it.
+                    if let Some(js) = crate::bids::entities::sidecar_path(p).filter(|j| j.is_file()) {
+                        let _ = std::fs::remove_file(js);
+                    }
+                }
+            }
+        }
+        if let Some(run_dir) = state_path.parent() {
+            let stash = run_dir.join("working-grid");
+            if stash.is_dir() {
+                let _ = std::fs::remove_dir_all(stash);
+            }
+        }
     }
 
     /// Save state to disk.

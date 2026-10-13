@@ -807,24 +807,24 @@ fn run_sti(args: crate::cli::InvertStiArgs) -> crate::Result<()> {
     );
     let maps = qsm_core::inversion::tensor_maps(&tensor, &inputs.mask);
 
-    // One 3D file per component: qsm-core has no 4D writer, and separate files keep each
-    // volume individually openable and individually named.
-    let suffix = |s: &str| {
-        let mut p = prefix.clone().into_os_string();
-        p.push(format!("_{s}.nii"));
-        std::path::PathBuf::from(p)
+    // The pipeline's names and layout (`bids::naming`): one 4D tensor with its component order in
+    // the sidecar, the scalar MMS and MSA maps, and one 4D eigenvector.
+    use crate::bids::naming;
+    let r = &inputs.reference;
+    let write_4d = |tail: &naming::Tail, volumes: &[Vec<f64>], sidecar: serde_json::Value| -> crate::Result<()> {
+        let path = naming::nifti_beside(&prefix, tail);
+        let vols: Vec<&[f64]> = volumes.iter().map(|v| v.as_slice()).collect();
+        crate::nifti::write::write_volumes_4d(&path, &vols, r.dims, r.voxel_size, &r.affine)?;
+        if let Some(js) = crate::bids::entities::sidecar_path(&path) {
+            std::fs::write(js, serde_json::to_string_pretty(&sidecar).unwrap_or_default())?;
+        }
+        Ok(())
     };
-    // qsm-core stores the symmetric tensor as [X11, X12, X13, X22, X23, X33] but exports no
-    // labels for them; these names match that documented order.
-    const COMPONENTS: [&str; qsm_core::inversion::N_TENSOR] = ["11", "12", "13", "22", "23", "33"];
-    for (name, data) in COMPONENTS.iter().zip(tensor.components.iter()) {
-        save_nifti(&suffix(&format!("tensor-{name}")), data, &inputs.reference)?;
-    }
-    save_nifti(&suffix("mms"), &maps.mms, &inputs.reference)?;
-    save_nifti(&suffix("msa"), &maps.msa, &inputs.reference)?;
-    for (axis, data) in ["x", "y", "z"].iter().zip(maps.pev.iter()) {
-        save_nifti(&suffix(&format!("pev-{axis}")), data, &inputs.reference)?;
-    }
+    write_4d(&naming::sti_tensor(), &tensor.components,
+             serde_json::Value::Object(crate::pipeline::multiorient::tensor_sidecar_fields()))?;
+    save_nifti(&naming::nifti_beside(&prefix, &naming::sti_mms()), &maps.mms, r)?;
+    save_nifti(&naming::nifti_beside(&prefix, &naming::sti_msa()), &maps.msa, r)?;
+    write_4d(&naming::sti_eigenvector(), &maps.pev, crate::pipeline::multiorient::eigenvector_sidecar())?;
     info!(
         "Tensor, MMS, MSA and principal eigenvector saved with prefix {}",
         prefix.display()

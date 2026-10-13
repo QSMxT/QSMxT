@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use log::info;
 
 use super::common::{load_nifti, save_mask, save_nifti};
-use crate::bids::entities;
+use crate::bids::{entities, naming};
 use crate::cli::{CombineCommand, CombineMcpc3dsArgs, UnwrapAlgorithmArg};
 use crate::error::QsmxtError;
 use crate::pipeline::phase;
@@ -63,9 +63,13 @@ fn echo_times_from_sidecars(phase_files: &[PathBuf]) -> crate::Result<Vec<f64>> 
     Ok(tes)
 }
 
-fn output_path(prefix: &Path, tail: &str) -> PathBuf {
-    let base = prefix.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    prefix.with_file_name(format!("{}_{}.nii", base, tail))
+/// The BIDS suffix the combined echoes carry: the inputs' own (`MEGRE`, `T2starw`, ...), as the
+/// pipeline names them after the run's, or `MEGRE` for files without one.
+fn input_suffix(phase: &Path) -> String {
+    phase.file_name().and_then(|n| entities::parse_entities(&n.to_string_lossy()))
+        .map(|e| e.suffix)
+        .filter(|s| !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric()))
+        .unwrap_or_else(|| "MEGRE".to_string())
 }
 
 pub fn execute(cmd: CombineCommand) -> crate::Result<()> {
@@ -140,14 +144,15 @@ fn mcpc3ds(args: CombineMcpc3dsArgs) -> crate::Result<()> {
             std::fs::create_dir_all(parent)?;
         }
     }
+    let suffix = input_suffix(&phase_files[0][0]);
     for e in 0..n_echoes {
-        let p = output_path(&args.output, &format!("echo-{}_part-phase", e + 1));
+        let p = naming::nifti_beside(&args.output, &naming::combined_echo(e + 1, "phase", &suffix));
         save_nifti(&p, &combined.phases[e], &reference)?;
-        let m = output_path(&args.output, &format!("echo-{}_part-mag", e + 1));
+        let m = naming::nifti_beside(&args.output, &naming::combined_echo(e + 1, "mag", &suffix));
         save_nifti(&m, &combined.magnitudes[e], &reference)?;
         info!("Wrote {} and {}", p.display(), m.display());
     }
-    let mask_path = output_path(&args.output, "desc-mcpc3ds_mask");
+    let mask_path = naming::nifti_beside(&args.output, &naming::mcpc3ds_mask());
     save_mask(&mask_path, &combined.mask, &reference)?;
     info!("Wrote {}", mask_path.display());
     Ok(())

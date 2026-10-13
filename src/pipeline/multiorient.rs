@@ -264,7 +264,46 @@ struct MemberPaths {
     magnitude: PathBuf,
 }
 
+/// Whether the run was resampled to an axial working grid (its state records the grid it came
+/// from).
+fn was_resampled(output: &DerivativeOutputs, key: &AcquisitionKey) -> bool {
+    std::fs::read_to_string(output.state_path(key)).ok()
+        .and_then(|t| serde_json::from_str::<crate::pipeline::graph::PipelineState>(&t).ok())
+        .and_then(|st| st.run_metadata)
+        .is_some_and(|m| m.source_geometry.is_some())
+}
+
+/// What the 4D STI tensor's sidecar says about its fourth axis.
+pub fn tensor_sidecar_fields() -> serde_json::Map<String, serde_json::Value> {
+    let mut m = serde_json::Map::new();
+    m.insert("Units".into(), "ppm".into());
+    m.insert("TensorComponents".into(), serde_json::json!(
+        crate::bids::naming::STI_COMPONENTS.iter().map(|c| format!("X{c}")).collect::<Vec<_>>()));
+    m.insert("TensorComponentsDescription".into(), serde_json::json!(
+        "The six independent components of the symmetric susceptibility tensor along the fourth \
+         axis, indexed by the image's voxel axes (1 = i, 2 = j, 3 = k)."));
+    m
+}
+
+/// The sidecar of the 4D principal eigenvector.
+pub fn eigenvector_sidecar() -> serde_json::Value {
+    serde_json::json!({
+        "Description": "Principal eigenvector of the STI susceptibility tensor: a unit vector per voxel",
+        "VectorComponents": ["i", "j", "k"],
+        "VectorComponentsDescription": "Components along the fourth axis, in the image's voxel axes",
+    })
+}
+
+/// `SpatialReference` for outputs left on a run's working grid: the run's combined magnitude in
+/// that space, which every run publishes, relative to the derivatives dataset.
+pub fn spatial_reference(output: &DerivativeOutputs, key: &AcquisitionKey, space: &str) -> String {
+    let reference = output.in_space(Some(space)).magnitude_path(key);
+    reference.strip_prefix(&output.output_dir).unwrap_or(&reference).display().to_string()
+}
+
 fn member_paths(output: &DerivativeOutputs, run: &QsmRun) -> MemberPaths {
+    // The member's published names: in its working space when it left its outputs there.
+    let output = &output.published(&run.key);
     // The background-removal mask is the one the local field is actually defined on; the
     // brain mask is larger wherever the BFR eroded.
     let bg = output.bg_mask_path(&run.key);
@@ -519,8 +558,9 @@ pub fn reconstruct_group(
 
     // ── Cache ──
     let paths: Vec<MemberPaths> = members.iter().map(|run| member_paths(output, run)).collect();
-    let reference_dseg = on_working_grid(output, &members[0].key, output.dseg_path(&members[0].key));
-    let final_dseg = output.dseg_path(&members[0].key);
+    let reference_outputs = output.published(&members[0].key);
+    let reference_dseg = on_working_grid(output, &members[0].key, reference_outputs.dseg_path(&members[0].key));
+    let final_dseg = reference_outputs.dseg_path(&members[0].key);
     let settings = serde_json::json!({
         "kind": desc,
         "multi_orientation": config.multi_orientation,
@@ -667,6 +707,11 @@ pub fn reconstruct_group(
     let write = |path: &PathBuf, data: &[f64]| -> crate::Result<()> {
         crate::nifti::write::write_volume(path, data, dims, voxel_size, &affine)
     };
+    // Maps left on the reference member's working grid, when that is not the grid it was
+    // acquired on, are named in that space (`space-axial`), like the member's own outputs would be.
+    let space = (acquired.is_none() && was_resampled(output, &members[0].key))
+        .then_some(crate::bids::naming::WORKING_SPACE);
+    let output = &output.in_space(space);
 
     let mut reference_fields = serde_json::Map::new();
     let mut extra_inputs: Vec<PathBuf> = Vec::new();
@@ -734,25 +779,25 @@ pub fn reconstruct_group(
                     group.label
                 );
             }
-            // qsm-core stores the symmetric tensor as [X11, X12, X13, X22, X23, X33].
-            for (name, data) in ["11", "12", "13", "22", "23", "33"]
-                .iter()
-                .zip(tensor.components.iter())
-            {
-                let path = output.sti_path(&key, &format!("sti{name}"), "Chitensor");
+            // One 4D tensor, components in QSM.rs's order [X11, X12, X13, X22, X23, X33]
+            // (`naming::STI_COMPONENTS`, recorded in the sidecar), and one 4D eigenvector.
+            let components: Vec<&[f64]> = tensor.components.iter().map(|c| c.as_slice()).collect();
+            let path = output.sti_tensor_path(&key);
+            crate::nifti::write::write_volumes_4d(&path, &components, dims, voxel_size, &affine)?;
+            written.push(path);
+            for (path, data) in [(output.sti_mms_path(&key), &maps.mms), (output.sti_msa_path(&key), &maps.msa)] {
                 write(&path, data)?;
                 written.push(path);
             }
-            for (desc, data) in [("mms", &maps.mms), ("msa", &maps.msa)] {
-                let path = output.sti_path(&key, desc, "Chimap");
-                write(&path, data)?;
-                written.push(path);
+            let pev: Vec<&[f64]> = maps.pev.iter().map(|c| c.as_slice()).collect();
+            let path = output.sti_eigenvector_path(&key);
+            crate::nifti::write::write_volumes_4d(&path, &pev, dims, voxel_size, &affine)?;
+            if let Some(sidecar) = crate::bids::entities::sidecar_path(&path) {
+                std::fs::write(&sidecar, serde_json::to_string_pretty(&eigenvector_sidecar())
+                    .map_err(|e| QsmxtError::Config(format!("STI eigenvector sidecar: {e}")))?)?;
+                written.push(sidecar);
             }
-            for (axis, data) in ["x", "y", "z"].iter().zip(maps.pev.iter()) {
-                let path = output.sti_path(&key, &format!("pev{axis}"), "Chitensor");
-                write(&path, data)?;
-                written.push(path);
-            }
+            written.push(path);
         }
     }
 
@@ -789,6 +834,13 @@ pub fn reconstruct_group(
     });
     if let Some(obj) = sidecar.as_object_mut() {
         obj.extend(reference_fields);
+        if kind == MultiOrientKind::Sti {
+            obj.extend(tensor_sidecar_fields());
+        }
+        if let Some(space) = space {
+            obj.insert("SpatialReference".into(), serde_json::json!(
+                spatial_reference(output, &members[0].key, space)));
+        }
     }
 
     let sidecar_path = output.multiorient_sidecar_path(&key, desc);
@@ -847,6 +899,7 @@ pub fn reconstruct_group(
     )?;
     written.push(sidecar_path);
 
+    state.space = space.map(str::to_string);
     state.mark_completed_with_metadata(
         desc, written.clone(), Some(hash),
         Some(serde_json::json!({ "settings": settings_hash })));

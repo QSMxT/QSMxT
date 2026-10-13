@@ -46,7 +46,7 @@ pub fn execute(args: SwiArgs) -> crate::Result<()> {
         // the geometry it reports rather than the input's (issue #211).
         let mip = qsm_core::swi::create_mip(&swi, &grid, &phase_nifti.affine, mip_window)
             .map_err(crate::error::QsmxtError::Config)?;
-        let mip_path = args.mip_output.unwrap_or_else(|| args.output.with_extension("mip.nii"));
+        let mip_path = args.mip_output.unwrap_or_else(|| crate::bids::naming::minip_beside_swi(&args.output));
         write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
         info!("MIP saved to {}", mip_path.display());
     }

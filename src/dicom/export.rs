@@ -104,6 +104,8 @@ pub fn export_run_dicoms(
     opts: &DicomExportOptions,
 ) -> crate::Result<()> {
     let key = &run.key;
+    // The names the run published under (its working space, when it stayed there).
+    let output = &output.published(key);
     let mut maps: Vec<MapExport> = vec![MapExport {
         suffix: "Chimap",
         path: output.qsm_path(key),

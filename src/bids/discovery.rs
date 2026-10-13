@@ -318,10 +318,39 @@ pub fn discover_runs(bids_dir: &Path, filter: &DiscoveryFilter) -> crate::Result
     // Attach matching MESE (multi-echo spin-echo) acquisitions for R2/R2' computation.
     attach_mese(&mut runs, bids_dir);
 
+    disambiguate_suffixes(&mut runs);
+
     // Sort by key for deterministic ordering
     runs.sort_by_key(|a| a.key.to_string());
 
     Ok(runs)
+}
+
+/// Give runs that differ only by their suffix (a `MEGRE` and a `GRE` in one session) distinct
+/// output names (#275).
+///
+/// The derivatives are named by the run's entities without its suffix (`sub-01_Chimap`), so two
+/// such runs would write the same files. Each is told apart by its suffix folded into its `acq-`
+/// label (`acq-MEGRE`, `acq-greGRE`): BIDS defines `acq` as the label that distinguishes different
+/// sets of acquisition parameters for the same modality, which is exactly what the two runs are,
+/// and it is a raw-data entity, so the names stay valid BIDS. Runs without such a twin keep their
+/// names unchanged.
+fn disambiguate_suffixes(runs: &mut [QsmRun]) {
+    let identity = |k: &AcquisitionKey| AcquisitionKey { suffix: String::new(), ..k.clone() };
+    let mut suffixes: HashMap<AcquisitionKey, Vec<String>> = HashMap::new();
+    for r in runs.iter() {
+        suffixes.entry(identity(&r.key)).or_default().push(r.key.suffix.clone());
+    }
+    for r in runs.iter_mut() {
+        if suffixes.get(&identity(&r.key)).is_some_and(|s| s.len() > 1) {
+            let acq = format!("{}{}", r.key.acquisition.as_deref().unwrap_or(""), r.key.suffix);
+            log::info!(
+                "{}: another run differs from it only by its suffix; its outputs are named with \
+                 acq-{acq} to keep them apart", r.key
+            );
+            r.key.acquisition = Some(acq);
+        }
+    }
 }
 
 /// Echo files, echo times, field strength and B0 direction for one set of phase files

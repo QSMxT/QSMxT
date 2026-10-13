@@ -1887,8 +1887,9 @@ pub struct CombineMcpc3dsArgs {
     /// Per-coil, per-echo magnitude NIfTI files, same layout as --phase
     #[arg(long, num_args = 1.., required = true)]
     pub magnitude: Vec<PathBuf>,
-    /// Output prefix: writes <prefix>_echo-N_part-phase.nii, <prefix>_echo-N_part-mag.nii and
-    /// <prefix>_desc-mcpc3ds_mask.nii
+    /// Output prefix: writes <prefix>_rec-mcpc3ds_echo-N_part-phase_<suffix>.nii,
+    /// <prefix>_rec-mcpc3ds_echo-N_part-mag_<suffix>.nii and <prefix>_desc-mcpc3ds_mask.nii — the
+    /// pipeline's names. <suffix> is the inputs' BIDS suffix (MEGRE when they carry none)
     #[arg(short, long)]
     pub output: PathBuf,
     /// Echo times in seconds, one per echo (read from the phase JSON sidecars when omitted)
@@ -2344,8 +2345,9 @@ pub struct InvertCosmosArgs {
 pub struct InvertStiArgs {
     #[command(flatten)]
     pub common: MultiOrientCommonArgs,
-    /// Output prefix; writes {prefix}_tensor-11.nii .. _tensor-33.nii (6 components),
-    /// {prefix}_mms.nii, {prefix}_msa.nii and {prefix}_pev-x/y/z.nii
+    /// Output prefix; writes {prefix}_desc-sti_Chimap.nii (the 4D tensor, components 11 12 13 22
+    /// 23 33), {prefix}_desc-mms_Chimap.nii, {prefix}_desc-msa_Chimap.nii and
+    /// {prefix}_desc-sti_evec.nii (the 4D principal eigenvector) — the pipeline's names
     #[arg(short, long)]
     pub output: PathBuf,
     /// Ridge term on the 6x6 normal equations at each k-point. Raise when orientations are
@@ -2923,7 +2925,8 @@ pub struct SeparateCommonArgs {
     /// Binary mask NIfTI file
     #[arg(short, long)]
     pub mask: PathBuf,
-    /// Output prefix; writes {prefix}_paramagnetic.nii, {prefix}_diamagnetic.nii, {prefix}_total.nii
+    /// Output prefix; writes {prefix}_desc-paramagnetic_Chimap.nii, {prefix}_desc-diamagnetic_Chimap.nii
+    /// and {prefix}_desc-total_Chimap.nii — the pipeline's names
     #[arg(short, long)]
     pub output: PathBuf,
     /// B0 field strength in Tesla
@@ -3212,7 +3215,9 @@ pub struct SwiArgs {
     /// Also compute minimum intensity projection
     #[arg(long)]
     pub mip: bool,
-    /// Output path for MIP
+    /// Output path for MIP (default: the --output name with its `swi` suffix replaced by
+    /// `minIP`, or `_minIP` appended — `sub-01_swi.nii` → `sub-01_minIP.nii`, as the pipeline
+    /// names them)
     #[arg(long)]
     pub mip_output: Option<PathBuf>,
     #[command(flatten)]
