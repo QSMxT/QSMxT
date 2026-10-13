@@ -56,7 +56,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--include <INCLUDE>` | Include only runs matching these glob patterns (e.g. "sub-1\*" "\*ses-pre\*") |
 | `--exclude <EXCLUDE>` | Exclude runs matching these glob patterns (e.g. "\*mygrea\*") |
 | `--num-echoes <NUM_ECHOES>` | Limit number of echoes to process. |
-| `--qsm-algorithm <QSM_ALGORITHM>` | QSM algorithm. Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or `re:` and a regex with one capture group. Orientations are co-registered if they need it. |
 | `--no-orientation-registration` | Do not co-register the orientations in a group — use this when they were already registered externally and a second interpolation is not wanted. A group that still needs registration is then refused instead of reconstructed. |
 | `--multi-orientation-algorithm <MULTI_ORIENTATION_ALGORITHM>` | Which reconstruction to run over each orientation group. Values: `cosmos`, `sti`. |
@@ -128,8 +128,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
-| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance. |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations. |
+| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: STI Suite's) |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: STI Suite's) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
@@ -429,7 +429,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--num-echoes <NUM_ECHOES>` | Limit number of echoes to process. |
 | `--force` | Force re-run, ignoring cached pipeline state (passed to every job) |
 | `--clean-intermediates` | Once every run and the dataset-level steps are done, delete the intermediate images under workflow/ (done by the aggregation job) |
-| `--qsm-algorithm <QSM_ALGORITHM>` | QSM algorithm. Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or `re:` and a regex with one capture group. Orientations are co-registered if they need it. |
 | `--no-orientation-registration` | Do not co-register the orientations in a group — use this when they were already registered externally and a second interpolation is not wanted. A group that still needs registration is then refused instead of reconstructed. |
 | `--multi-orientation-algorithm <MULTI_ORIENTATION_ALGORITHM>` | Which reconstruction to run over each orientation group. Values: `cosmos`, `sti`. |
@@ -501,8 +501,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
-| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance. |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations. |
+| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: STI Suite's) |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: STI Suite's) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
@@ -744,7 +744,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--include <INCLUDE>` | Include only runs matching these glob patterns (e.g. "sub-1\*" "\*ses-pre\*") |
 | `--exclude <EXCLUDE>` | Exclude runs matching these glob patterns (e.g. "\*mygrea\*") |
 | `--num-echoes <NUM_ECHOES>` | Limit number of echoes to process. |
-| `--qsm-algorithm <QSM_ALGORITHM>` | QSM algorithm. Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
+| `--qsm-algorithm <QSM_ALGORITHM>` | QSM dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
 | `--orientation-group <PATTERN>` | Group runs into multi-orientation sets and reconstruct each with COSMOS or STI. Takes an entity name (acq, run, rec, inv), a glob over the run key (`*acq-dir*`), or `re:` and a regex with one capture group. Orientations are co-registered if they need it. |
 | `--no-orientation-registration` | Do not co-register the orientations in a group — use this when they were already registered externally and a second interpolation is not wanted. A group that still needs registration is then refused instead of reconstructed. |
 | `--multi-orientation-algorithm <MULTI_ORIENTATION_ALGORITHM>` | Which reconstruction to run over each orientation group. Values: `cosmos`, `sti`. |
@@ -816,8 +816,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
-| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance. |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations. |
+| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: STI Suite's) |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: STI Suite's) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
@@ -1677,7 +1677,7 @@ Dipole inversion
 
 | Subcommand | Description |
 | --- | --- |
-| [`rts`](#qsmxt-invert-rts) | Regularized Total Strength (RTS) |
+| [`rts`](#qsmxt-invert-rts) | Rapid Two-Step (RTS) |
 | [`tv`](#qsmxt-invert-tv) | Total Variation (ADMM) |
 | [`tkd`](#qsmxt-invert-tkd) | Truncated K-space Division |
 | [`tsvd`](#qsmxt-invert-tsvd) | Truncated Singular Value Decomposition |
@@ -1710,7 +1710,7 @@ Dipole inversion
 
 ### `qsmxt invert rts`
 
-Regularized Total Strength (RTS)
+Rapid Two-Step (RTS)
 
 ```sh
 qsmxt invert rts [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>

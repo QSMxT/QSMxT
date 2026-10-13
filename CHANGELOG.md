@@ -8,6 +8,14 @@ upgrade.
 
 ### Output changes with default settings
 
+- **iLSQR is the default dipole inversion, replacing RTS.** `qsmxt run` without
+  `--qsm-algorithm`, the TUI, `qsmxt slurm` and `InversionConfig::default()` (so also TOML/JSON
+  configs, including qsmbly's, that leave the algorithm unset) now use iLSQR, STI Suite's algorithm, with
+  QSM.rs's STI Suite-matched parameters (`--ilsqr-tol`, `--ilsqr-max-iter`). On a 150-subject UK Biobank
+  pilot iLSQR tracked age and longitudinal change better than RTS and matched UKB's own pipeline;
+  RTS kept marginally higher iron test-retest ICC. RTS stays available as `--qsm-algorithm rts`
+  and is ~15x faster. Every default run's χ changes.
+
 - **`qsmxt slurm` now gives the same results as a local run** (#269). Each job used to run
   `qsmxt run --include <one run>`. So COSMOS/STI groups never formed (each job saw one member),
   and every job rewrote `qsmxt.log`, `desc-reference_summary.tsv`, the statistics table, cohort

@@ -419,7 +419,7 @@ mod tests {
 
     #[test]
     fn test_typical_brain_estimate() {
-        // 256x256x176, 4 echoes, default GRE (RTS + PDF + ROMEO)
+        // 256x256x176, 4 echoes, default GRE (ROMEO + V-SHARP + iLSQR)
         let config = default_config();
         let est = estimate_peak_memory_bytes(256, 256, 176, 4, 1, true, &config);
         let gb = est as f64 / (1024.0 * 1024.0 * 1024.0);

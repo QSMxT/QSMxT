@@ -782,6 +782,7 @@ mod tests {
     #[test]
     fn test_changed_rts_param() {
         let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Rts;
         config.inversion.rts.delta = 0.2;
         let cmd = generate_command(&config);
         assert!(cmd.contains("--rts-delta 0.2"));
@@ -829,7 +830,7 @@ mod tests {
         let config = PipelineConfig::default();
         let toml = config.to_toml().unwrap();
         let parsed = PipelineConfig::from_toml(&toml).unwrap();
-        assert_eq!(parsed.inversion.algorithm, QsmAlgorithm::Rts);
+        assert_eq!(parsed.inversion.algorithm, QsmAlgorithm::Ilsqr);
         assert_eq!(parsed.field_mapping.unwrapping_algorithm, UnwrappingAlgorithm::Romeo);
         assert!(parsed.field_mapping.phase_offset_removal);
         assert!(parsed.field_mapping.romeo.individual);
@@ -842,7 +843,7 @@ mod tests {
             (QsmAlgorithm::Tsvd, "tsvd"), (QsmAlgorithm::Tgv, "tgv"),
             (QsmAlgorithm::Tikhonov, "tikhonov"), (QsmAlgorithm::Nltv, "nltv"),
             (QsmAlgorithm::Medi, "medi"), (QsmAlgorithm::Tfi, "tfi"),
-            (QsmAlgorithm::Ilsqr, "ilsqr"),
+            (QsmAlgorithm::Rts, "rts"),
             (QsmAlgorithm::Qsmart, "qsmart"),
             (QsmAlgorithm::Ndi, "ndi"), (QsmAlgorithm::Fansi, "fansi"),
             (QsmAlgorithm::FansiTgv, "fansi-tgv"), (QsmAlgorithm::L1qsm, "l1qsm"),
@@ -1321,7 +1322,7 @@ frangi_c = 400.0
         let config = PipelineConfig::default();
         let json = config.to_json().unwrap();
         let parsed: PipelineConfig = serde_json::from_str(&json).unwrap();
-        assert_eq!(parsed.inversion.algorithm, QsmAlgorithm::Rts);
+        assert_eq!(parsed.inversion.algorithm, QsmAlgorithm::Ilsqr);
     }
 
     #[test]
@@ -1342,7 +1343,7 @@ algorithm = "tv"
     #[test]
     fn test_empty_toml() {
         let config = PipelineConfig::from_toml("").unwrap();
-        assert_eq!(config.inversion.algorithm, QsmAlgorithm::Rts);
+        assert_eq!(config.inversion.algorithm, QsmAlgorithm::Ilsqr);
         assert!(config.pipeline.do_qsm);
     }
 

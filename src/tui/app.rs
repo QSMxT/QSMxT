@@ -1329,7 +1329,7 @@ const QSM_ALGO_HELP: &[&str] = &[
     "NLTV (Nonlinear Total Variation) — nonlinear data fidelity with a TV prior. https://doi.org/10.1002/mrm.27073",
     "MEDI (Morphology Enabled Dipole Inversion) — magnitude-guided edge weighting. https://doi.org/10.1002/mrm.22816",
     "TFI (Total Field Inversion) — inverts the total field directly (its own background removal). https://doi.org/10.1002/mrm.26331",
-    "iLSQR — iterative LSQR with streaking-artifact correction. https://doi.org/10.1016/j.neuroimage.2014.12.043",
+    "iLSQR (default) — iterative LSQR with streaking-artifact correction; STI Suite-matched defaults. https://doi.org/10.1016/j.neuroimage.2014.12.043",
     "LSQR (minimally regularised) — one least-squares solve for χ plus a residual field; the residual weight is the only regularisation. https://doi.org/10.1118/1.3481505",
     "HEIDI (Homogeneity Enabled Incremental Dipole Inversion) — keeps the well-conditioned k-space of an LSQR solve and re-derives the dipole cone under a homogeneity prior. https://doi.org/10.1016/j.neuroimage.2012.05.067",
     "QSMART — two-stage spatially-dependent filtering plus inversion. https://doi.org/10.1016/j.neuroimage.2020.117701",
@@ -1830,7 +1830,7 @@ impl Default for PipelineFormState {
         let hdqsm = qsm_core::inversion::HdQsmParams::default();
         Self {
             mode: PipelineTabMode::Qsm,
-            qsm_algorithm: 0, // rts
+            qsm_algorithm: super::command::default_qsm_algorithm_index(), // ilsqr
             unwrapping_algorithm: 0, // romeo
             bf_algorithm: 0, // vsharp
             qsm_reference: 0, // mean
@@ -7311,7 +7311,7 @@ mod tests {
     fn test_pipeline_algorithm_selects() {
         let mut app = App::new();
         let ps = &mut app.pipeline_state;
-        assert_eq!(ps.qsm_algorithm, 0); // rts
+        assert_eq!(QSM_ALGO_OPTIONS[ps.qsm_algorithm], "ilsqr"); // the default inversion
         ps.set_select("qsm_algorithm", 1);
         assert_eq!(ps.qsm_algorithm, 1); // tv
         ps.set_select("qsm_algorithm", 3);
@@ -7366,7 +7366,7 @@ mod tests {
         let app = App::new();
         assert_eq!(app.get_select_value(99, 99), 0); // unknown returns 0
         // Algorithm selects are now in pipeline_state, not tab-indexed
-        assert_eq!(app.pipeline_state.get_select("qsm_algorithm"), 0);
+        assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.get_select("qsm_algorithm")], "ilsqr");
     }
 
     #[test]
@@ -7438,6 +7438,7 @@ mod tests {
     fn test_pipeline_visible_rows_change_with_algorithm() {
         let mut ps = super::PipelineFormState::default();
         ps.collapsed_sections.clear(); // expand so algorithm-specific rows are visible
+        ps.qsm_algorithm = 0; // RTS
         let rows_rts = ps.visible_rows().len();
         ps.qsm_algorithm = 2; // TKD (fewer params)
         let rows_tkd = ps.visible_rows().len();
@@ -7459,13 +7460,13 @@ mod tests {
         };
         // Default is all-collapsed: headers present, bodies hidden.
         assert!(has_header(&ps, "inversion"));
-        assert!(!has_param(&ps, "rts_delta"), "collapsed inversion should hide its params");
+        assert!(!has_param(&ps, "ilsqr_tol"), "collapsed inversion should hide its params");
         // Expanding shows the body; the header stays; collapsing hides it again.
         ps.toggle_section("inversion");
-        assert!(has_param(&ps, "rts_delta"), "expanded inversion should show its params");
+        assert!(has_param(&ps, "ilsqr_tol"), "expanded inversion should show its params");
         assert!(has_header(&ps, "inversion"), "header stays when expanded");
         ps.toggle_section("inversion");
-        assert!(!has_param(&ps, "rts_delta"));
+        assert!(!has_param(&ps, "ilsqr_tol"));
     }
 
     #[test]
@@ -8159,11 +8160,12 @@ mod tests {
         }
         let fi = qsm_inv_focus.expect("qsm_algorithm row not found");
         app.pipeline_state.focus = fi;
-        assert_eq!(app.pipeline_state.qsm_algorithm, 0); // rts
+        let ilsqr = QSM_ALGO_OPTIONS.iter().position(|o| *o == "ilsqr").unwrap();
+        assert_eq!(app.pipeline_state.qsm_algorithm, ilsqr); // the default inversion
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.pipeline_state.qsm_algorithm, 1); // tv
+        assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.qsm_algorithm], "lsqr");
         app.handle_key(key(KeyCode::Left));
-        assert_eq!(app.pipeline_state.qsm_algorithm, 0); // rts
+        assert_eq!(app.pipeline_state.qsm_algorithm, ilsqr);
     }
 
     #[test]
@@ -8322,7 +8324,7 @@ mod tests {
         let fi = fi_found.expect("qsm_algorithm not found");
         app.pipeline_state.focus = fi;
         app.handle_key(key(KeyCode::Char('r')));
-        assert_eq!(app.pipeline_state.qsm_algorithm, 0); // default
+        assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.qsm_algorithm], "ilsqr"); // default
     }
 
     #[test]
@@ -8333,7 +8335,7 @@ mod tests {
         app.pipeline_state.qsm_algorithm = 5;
         app.pipeline_state.bf_algorithm = 3;
         app.handle_key(key(KeyCode::Char('R')));
-        assert_eq!(app.pipeline_state.qsm_algorithm, 0);
+        assert_eq!(QSM_ALGO_OPTIONS[app.pipeline_state.qsm_algorithm], "ilsqr");
         assert_eq!(app.pipeline_state.bf_algorithm, 0);
     }
 

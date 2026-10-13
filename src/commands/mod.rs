@@ -2072,6 +2072,8 @@ mod integration_tests {
         testutils::create_multi_orientation_bids(&bids);
         testutils::write_dseg(&bids.join("derivatives/mydseg/sub-1/ses-1/anat/sub-1_ses-1_dseg.nii"));
         let pipeline = || PipelineArgs {
+            // What is under test is SLURM/local parity, not the inversion: RTS keeps it fast.
+            qsm_algorithm: Some(crate::cli::QsmAlgorithmArg::Rts),
             orientation_group: Some("acq".to_string()),
             masking_input: Some(MaskInputArg::Magnitude),
             do_analysis: true,

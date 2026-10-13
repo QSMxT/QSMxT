@@ -94,7 +94,7 @@ qsmxt run study/bids
 QSMxT discovers every phase/magnitude run in the dataset and reconstructs a QSM
 map for each, writing results to `study/bids/derivatives/qsmxt/`. With no
 configuration it uses sensible defaults: ROMEO unwrapping, V-SHARP background
-removal, and RTS dipole inversion. Pick algorithms inline or process a subset:
+removal, and iLSQR dipole inversion. Pick algorithms inline or process a subset:
 
 ```sh
 qsmxt run study/bids --qsm-algorithm rts --include "sub-01*"

@@ -43,7 +43,7 @@ configurable — see [Algorithms](/QSMxT/reference/algorithms/).
 4. **Echo combination / B0 mapping** — combine echoes into a field map
    (`--b0-estimation`, `--b0-weight-type`).
 5. **Background field removal** — `vsharp`, `pdf`, `lbv`, and more.
-6. **Dipole inversion** — `rts`, `tv`, `tgv`, `medi`, … (31 algorithms).
+6. **Dipole inversion** — `ilsqr` (default), `rts`, `tv`, `tgv`, `medi`, … (31 algorithms).
 7. **Referencing** — reference the susceptibility values (e.g. to the mean).
 
 Not every inversion runs every stage: total-field methods (TFI, QSMART, AutoQSM,
@@ -58,7 +58,7 @@ qsmxt run study/bids \
   --mask-preset robust-threshold \
   --unwrapping-algorithm romeo \
   --bf-algorithm vsharp \
-  --qsm-algorithm rts
+  --qsm-algorithm ilsqr
 ```
 
 | Option | Choices |

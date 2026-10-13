@@ -613,10 +613,10 @@ pub struct TfiParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct IlsqrParamArgs {
-    /// iLSQR tolerance
+    /// iLSQR tolerance of the streaking-artefact solve (default: STI Suite's)
     #[arg(long)]
     pub ilsqr_tol: Option<f64>,
-    /// iLSQR max iterations
+    /// iLSQR max iterations of each LSQR solve (default: STI Suite's)
     #[arg(long)]
     pub ilsqr_max_iter: Option<usize>,
 }
@@ -1062,7 +1062,7 @@ pub struct SwiParamArgs {
 /// on the command line) means the same thing whether it runs locally or on SLURM.
 #[derive(Args, Debug, Default)]
 pub struct PipelineArgs {
-    /// QSM algorithm
+    /// QSM dipole inversion algorithm (default: ilsqr)
     #[arg(long, value_enum)]
     pub qsm_algorithm: Option<QsmAlgorithmArg>,
 
@@ -2358,7 +2358,7 @@ pub struct InvertStiArgs {
 
 #[derive(Subcommand, Debug)]
 pub enum InvertCommand {
-    /// Regularized Total Strength (RTS)
+    /// Rapid Two-Step (RTS)
     Rts(InvertRtsArgs),
     /// Total Variation (ADMM)
     Tv(InvertTvArgs),
