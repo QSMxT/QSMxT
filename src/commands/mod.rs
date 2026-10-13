@@ -2377,6 +2377,9 @@ mod integration_tests {
             args.no_mem_limit = true;
             args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
             args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+            // Output names and sidecars do not depend on the inversion, and the default (iLSQR,
+            // with STI's 64 mm padding) takes minutes per run in a debug build.
+            args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
             set(&mut args);
             super::run::execute(args).unwrap();
         };
@@ -2405,7 +2408,6 @@ mod integration_tests {
         testutils::write_dseg(&bids.join("derivatives/mydseg/sub-1/anat/sub-1_dseg.nii"));
         run("full", &bids, &|a| {
             let p = &mut a.pipeline;
-            p.qsm_algorithm = Some(QsmAlgorithmArg::Tkd);
             p.two_pass = true;
             p.do_swi = true;
             p.do_smwi = true;
