@@ -164,6 +164,12 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
 
 ### Changed
 
+- **`--b0-direction` accepts negative components** (and `--obliquity-threshold` accepts its
+  documented `-1`). Clap read a value such as `-0.054523` as an unknown flag, so
+  `qsmxt bgremove`, `invert` (including `cosmos`/`sti`), `separate` and `qsmart` failed with a
+  usage error for any oblique acquisition whose B0 direction has a negative component, and
+  `qsmxt run --obliquity-threshold -1` could not disable resampling. Default output does not
+  change; commands that used to be refused now run.
 - **The multi-orientation (COSMOS) map is a first-class output** (#270). It used to read
   members' magnitudes from `anat/` after they had been returned to the acquired grid while their
   local fields stayed on the working grid, so an oblique group failed under the default
