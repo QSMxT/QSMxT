@@ -128,6 +128,8 @@ pub fn parse_tsv(text: &str) -> Vec<Row> {
 
 /// The conventional susceptibility map, named as it is in the table.
 pub const CHIMAP: &str = "Chimap";
+/// A multi-orientation group's COSMOS map.
+pub const COSMOS_CHIMAP: &str = "desc-cosmos_Chimap";
 
 /// A quantitative map to summarise: how it is named in the table, and its physical unit.
 pub struct MapSpec {
@@ -147,6 +149,7 @@ pub fn candidate_maps(output: &DerivativeOutputs, key: &AcquisitionKey) -> Vec<M
     vec![
         spec(CHIMAP, "ppm", output.qsm_path(key)),
         spec("desc-singlepass_Chimap", "ppm", output.singlepass_qsm_path(key)),
+        spec(COSMOS_CHIMAP, "ppm", output.cosmos_path(key)),
         spec("desc-total_Chimap", "ppm", output.chi_sep_total_path(key)),
         spec("desc-paramagnetic_Chimap", "ppm", output.chi_para_path(key)),
         spec("desc-diamagnetic_Chimap", "ppm", output.chi_dia_path(key)),

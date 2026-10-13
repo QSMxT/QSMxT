@@ -381,6 +381,10 @@ param_config!(ResharpConfig from qsm_core::bgremove::ResharpParams {
 param_config!(HarperellaConfig from qsm_core::bgremove::HarperellaParams {
     radius: f64, max_iter: usize, tol: f64
 });
+// iHARPERELLA has no SMV kernel, so no radius (QSM.rs#169).
+param_config!(IharperellaConfig from qsm_core::bgremove::IharperellaParams {
+    max_iter: usize, tol: f64
+});
 // mSMV boundary-shadow refinement. Only radius/maxk are user knobs here; b0/te are
 // runtime scan parameters (overridden from ScanMetadata by qsm-core), and prefilter is
 // forced off by the dispatcher in refinement mode.
@@ -703,6 +707,14 @@ pub struct MultiOrientationConfig {
     /// register at all.
     #[serde(default = "default_true")]
     pub register: bool,
+    /// COSMOS only: weight each orientation's field by its combined magnitude and solve by
+    /// conjugate gradient (`qsm_core::inversion::cosmos_weighted`), so low-signal voxels count
+    /// for less. Off is the closed-form, unweighted least squares.
+    pub magnitude_weighting: bool,
+    /// Conjugate-gradient tolerance of magnitude-weighted COSMOS; unused without weighting.
+    pub cosmos_tol: f64,
+    /// Conjugate-gradient iteration cap of magnitude-weighted COSMOS; unused without weighting.
+    pub cosmos_max_iter: usize,
 }
 
 fn default_true() -> bool {
@@ -717,6 +729,9 @@ impl Default for MultiOrientationConfig {
             lambda: 0.0,
             force: false,
             register: true,
+            magnitude_weighting: false,
+            cosmos_tol: qsm_core::inversion::CosmosParams::default().tol,
+            cosmos_max_iter: qsm_core::inversion::CosmosParams::default().max_iter,
         }
     }
 }
@@ -726,6 +741,28 @@ impl MultiOrientationConfig {
     pub fn enabled(&self) -> bool {
         let g = self.group_by.trim();
         !g.is_empty() && !g.eq_ignore_ascii_case("none")
+    }
+
+    /// Why the COSMOS solver settings cannot be used as given, if they cannot: the CG settings
+    /// only drive magnitude-weighted COSMOS, and STI has no magnitude weighting.
+    pub fn validate(&self) -> Result<(), String> {
+        let d = Self::default();
+        if self.magnitude_weighting && self.algorithm == MultiOrientAlgorithm::Sti {
+            return Err("magnitude weighting (--cosmos-magnitude-weighting) is a COSMOS option; \
+                        STI has none".into());
+        }
+        if !self.magnitude_weighting
+            && (self.cosmos_tol != d.cosmos_tol || self.cosmos_max_iter != d.cosmos_max_iter)
+        {
+            return Err("--cosmos-tol and --cosmos-max-iter set the conjugate gradient of \
+                        magnitude-weighted COSMOS; without --cosmos-magnitude-weighting COSMOS \
+                        is solved in closed form and they would be ignored".into());
+        }
+        if self.cosmos_tol <= 0.0 || !self.cosmos_tol.is_finite() || self.cosmos_max_iter == 0 {
+            return Err(format!("COSMOS tolerance {} and iteration cap {} must be positive",
+                               self.cosmos_tol, self.cosmos_max_iter));
+        }
+        Ok(())
     }
 }
 
@@ -1007,7 +1044,7 @@ pub struct BgRemovalConfig {
     pub sharp: SharpConfig,
     pub resharp: ResharpConfig,
     pub harperella: HarperellaConfig,
-    pub iharperella: HarperellaConfig,
+    pub iharperella: IharperellaConfig,
     pub msmv: MsmvConfig,
     /// Apply mSMV boundary-shadow refinement (Roberts 2024) as a post-step on top of the
     /// selected primary background-field removal. mSMV is a refinement, not a standalone
@@ -1021,7 +1058,7 @@ impl Default for BgRemovalConfig {
             vsharp: VsharpConfig::default(), pdf: PdfConfig::default(),
             lbv: LbvConfig::default(), ismv: IsmvConfig::default(),
             sharp: SharpConfig::default(), resharp: ResharpConfig::default(),
-            harperella: HarperellaConfig::default(), iharperella: HarperellaConfig::default(),
+            harperella: HarperellaConfig::default(), iharperella: IharperellaConfig::default(),
             msmv: MsmvConfig::default(), msmv_refine: false,
         }
     }

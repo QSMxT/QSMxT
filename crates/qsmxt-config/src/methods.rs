@@ -406,8 +406,12 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
             _ => {
                 describe_field_mapping(config, &mut sentences, &mut citations);
 
-                // Background removal
-                {
+                // Background removal — only in front of a local-field inversion (QSM.rs
+                // `InversionInput`); the total-field methods remove or model it themselves.
+                if !crate::bridge::inversion_input(config, 2).needs_bg_removal() {
+                    sentences.push("No separate background field removal was performed: the \
+                        inversion below was given the total field and the brain mask.".to_string());
+                } else {
                     let alg = &config.bg_removal.algorithm;
                     let (name, cite) = match alg {
                         BfAlgorithm::Vsharp => ("V-SHARP", &CITE_VSHARP),
@@ -662,6 +666,20 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 config.multi_orientation.lambda
             ));
         }
+        let m = &config.multi_orientation;
+        if m.algorithm == MultiOrientAlgorithm::Cosmos {
+            if m.magnitude_weighting {
+                sentences.push(format!(
+                    "Each orientation's field was weighted by its magnitude, and the weighted \
+                     least-squares problem solved by conjugate gradient (tolerance {}, at most {} \
+                     iterations).", m.cosmos_tol, m.cosmos_max_iter));
+            }
+            sentences.push(
+                "The COSMOS map was referenced in the same way as the single-orientation maps, \
+                 over the voxels covered by every orientation's background-field-removal mask."
+                    .to_string(),
+            );
+        }
     }
 
     // DICOM export
@@ -850,7 +868,15 @@ fn describe_generator(
             } else {
                 String::new()
             };
-            format!("BET brain extraction (Smith, 2002; f={:.2}{}) of {}", fractional_intensity, scaled, input_desc)
+            // The surface settings are said when they differ from BET's defaults.
+            let (b, d) = (&config.bet, crate::config::BetConfig::default());
+            let mut surface = Vec::new();
+            if b.smoothness != d.smoothness { surface.push(format!("smoothness {}", b.smoothness)); }
+            if b.gradient_threshold != d.gradient_threshold { surface.push(format!("gradient threshold {}", b.gradient_threshold)); }
+            if b.iterations != d.iterations { surface.push(format!("{} iterations", b.iterations)); }
+            if b.subdivisions != d.subdivisions { surface.push(format!("icosphere subdivision level {}", b.subdivisions)); }
+            let surface = if surface.is_empty() { String::new() } else { format!("; {}", surface.join(", ")) };
+            format!("BET brain extraction (Smith, 2002; f={:.2}{}{}) of {}", fractional_intensity, surface, scaled, input_desc)
         }
         MaskOp::Rs2Net { tta, tile_step } => {
             add_citation(citations, &CITE_RS2NET);

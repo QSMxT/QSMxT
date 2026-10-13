@@ -131,7 +131,7 @@ fn mcpc3ds(args: CombineMcpc3dsArgs) -> crate::Result<()> {
         UnwrapAlgorithmArg::Laplacian => qsm_core::unwrap::UnwrapMethod::Laplacian,
         _ => qsm_core::unwrap::UnwrapMethod::Romeo,
     };
-    let combined = qsm_core::utils::mcpc3ds_combine(&phases, &mags, &tes, sigma, [0, 1], unwrap, &grid);
+    let combined = qsm_core::utils::mcpc3ds_combine(&phases, &mags, &tes, sigma, [0, 1], unwrap, &grid)?;
     drop(phases);
     drop(mags);
 

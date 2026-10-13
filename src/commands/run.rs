@@ -60,11 +60,10 @@ fn init_logging(log_file: Option<std::fs::File>, debug: bool) {
 /// whose reference region came out empty is not a thing anyone does. This is the file you scan.
 fn write_reference_summary(
     derivatives_dir: &std::path::Path, output: &DerivativeOutputs,
-    runs: &[discovery::QsmRun],
+    keys: &[crate::bids::entities::AcquisitionKey],
 ) {
     let mut body = String::new();
-    for run in runs {
-        let k = &run.key;
+    for k in keys {
         // One row per referenced map — the two-pass single-pass map has its own offset — each
         // read from that map's own sidecar.
         for spec in crate::pipeline::stats::candidate_maps(output, k) {
@@ -187,7 +186,8 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     crate::pipeline::config::apply_run_overrides(&mut config, &args.pipeline)?;
     crate::pipeline::config::validate_reference_region(&config)?;
     crate::pipeline::config::validate_segmentation(&config)?;
-    crate::pipeline::config::validate_bet(&config)?;
+    crate::pipeline::config::validate_multi_orientation(&config)?;
+    crate::pipeline::config::validate_inversion_input(&config)?;
 
 
     // Discover BIDS runs
@@ -336,33 +336,14 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
 
     let results = executor::local::execute_local(&runs, &config, &output, &exec_config);
 
-    // What each run's map was referenced to — written whether or not the statistics were asked
-    // for, since it describes the susceptibility maps themselves.
-    if config.pipeline.do_qsm {
-        write_reference_summary(&derivatives_dir, &output, &runs);
-    }
-
-    // Gather every run's per-structure table into one dataset-level TSV. Best-effort, and after
-    // the runs rather than inside them: it is a convenience view of files already written, so a
-    // failure here must not fail an otherwise-successful run.
-    if config.pipeline.do_analysis {
-        let keys: Vec<_> = runs.iter().map(|r| &r.key).collect();
-        match crate::pipeline::stats::write_group_table(&derivatives_dir, &output, &keys) {
-            Ok(Some(path)) => {
-                info!("Per-structure statistics for all runs -> {}", path.display());
-                write_group_figures(&derivatives_dir, &path);
-            }
-            Ok(None) => {}
-            Err(e) => warn!("Failed to write the dataset-level statistics table: {}", e),
-        }
-    }
-
     // Multi-orientation fan-in. Members have just produced their own local fields (and their
     // own single-orientation maps, which are what you check registration against), so the
-    // groups can now be combined. A group that fails is reported and the rest continue: one
-    // bad direction table should not throw away a dataset's worth of work.
+    // groups can now be combined — before the tables below, which include the group maps. A
+    // group that fails is reported and the rest continue: one bad direction table should not
+    // throw away a dataset's worth of work.
     let mut group_failures = Vec::new();
     let mut prov_groups = Vec::new();
+    let mut group_keys: Vec<crate::bids::entities::AcquisitionKey> = Vec::new();
     if config.multi_orientation.enabled() {
         match crate::bids::orientation::parse_pattern(&config.multi_orientation.group_by) {
             Err(e) => group_failures.push(e),
@@ -381,12 +362,13 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                         group.members.iter().map(|&i| &runs[i]).collect();
                     let progress = |msg: &str| info!("{msg}");
                     match crate::pipeline::multiorient::reconstruct_group(
-                        group, &members, &config, &output, &progress,
+                        group, &members, &config, &output, args.force, &progress,
                     ) {
                         Ok(paths) => {
                             for p in paths {
                                 info!("  wrote {}", p.display());
                             }
+                            group_keys.push(crate::pipeline::multiorient::group_key(&members));
                             prov_groups.push(crate::bids::bidsprov::ProvGroup {
                                 key: crate::pipeline::multiorient::group_key(&members),
                                 magnetic_field_strength: members[0].magnetic_field_strength,
@@ -399,6 +381,31 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                     }
                 }
             }
+        }
+    }
+
+    // Every key with outputs: the runs, then the orientation groups.
+    let all_keys: Vec<crate::bids::entities::AcquisitionKey> = runs.iter().map(|r| r.key.clone())
+        .chain(group_keys.iter().cloned()).collect();
+
+    // What each run's map was referenced to — written whether or not the statistics were asked
+    // for, since it describes the susceptibility maps themselves.
+    if config.pipeline.do_qsm {
+        write_reference_summary(&derivatives_dir, &output, &all_keys);
+    }
+
+    // Gather every run's per-structure table into one dataset-level TSV. Best-effort, and after
+    // the runs rather than inside them: it is a convenience view of files already written, so a
+    // failure here must not fail an otherwise-successful run.
+    if config.pipeline.do_analysis {
+        let keys: Vec<_> = all_keys.iter().collect();
+        match crate::pipeline::stats::write_group_table(&derivatives_dir, &output, &keys) {
+            Ok(Some(path)) => {
+                info!("Per-structure statistics for all runs -> {}", path.display());
+                write_group_figures(&derivatives_dir, &path);
+            }
+            Ok(None) => {}
+            Err(e) => warn!("Failed to write the dataset-level statistics table: {}", e),
         }
     }
 

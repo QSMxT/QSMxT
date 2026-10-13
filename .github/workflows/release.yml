@@ -45,25 +45,25 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
 
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@cargo-tarpaulin
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
+      # Same measurement as ci.yml's coverage step, so the release gate and the PR gate agree.
       - name: Run coverage
-        # --engine llvm (source-based coverage) instead of the default ptrace engine:
-        # ptrace crashes ("tarpaulin being signaled") on the subprocess-spawning
-        # integration/self-update tests; llvm handles them and --exclude-files only
-        # affects the report, not execution.
-        # --timeout: as in ci.yml — tarpaulin's 60s default is shorter than the instrumented
-        # single-echo TGV run, and a release must not fail on a budget rather than a defect.
-        run: cargo tarpaulin --timeout 300 --engine llvm --workspace --out json --output-dir target/tarpaulin --exclude-files src/main.rs --exclude-files src/tui/mod.rs --exclude-files src/tui/ui.rs --exclude-files src/commands/update.rs -- --test-threads=1
+        run: >
+          cargo llvm-cov --workspace --lcov --output-path target/lcov.info
+          --ignore-filename-regex '(^|/)src/(main|tui/mod|tui/ui|commands/update)\.rs$'
 
       - name: Enforce 70% coverage
         run: |
-          COVERAGE=$(python3 -c "import json; data=json.load(open('target/tarpaulin/tarpaulin-report.json')); print(f\"{data['coverage']:.2f}\")")
-          echo "Coverage: ${COVERAGE}%"
+          SUMMARY=$(python3 .github/scripts/coverage_summary.py target/lcov.info)
+          read -r COVERAGE COVERED COVERABLE <<< "$SUMMARY"
+          echo "Coverage: ${COVERAGE}% (${COVERED}/${COVERABLE} lines)"
           if python3 -c "import sys; sys.exit(0 if float('${COVERAGE}') >= 70.0 else 1)"; then
             echo "Coverage ${COVERAGE}% meets 70% threshold"
           else

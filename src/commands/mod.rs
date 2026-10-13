@@ -54,6 +54,9 @@ mod integration_tests {
                 multi_orientation_lambda: None,
                 multi_orientation_force: false,
                 no_orientation_registration: false,
+                cosmos_magnitude_weighting: false,
+                cosmos_tol: None,
+                cosmos_max_iter: None,
                 unwrapping_algorithm: None,
                 bf_algorithm: None,
                 masking_input: None,
@@ -68,6 +71,10 @@ mod integration_tests {
                 laplacian_fft_pad: None,
                 bet_fractional_intensity: None,
                 bet_voxel_scale: None,
+                bet_smoothness: None,
+                bet_gradient_threshold: None,
+                bet_iterations: None,
+                bet_subdivisions: None,
                 qsm_reference: None,
                 rts_params: Default::default(),
                 tv_params: Default::default(),
@@ -1302,6 +1309,56 @@ mod integration_tests {
         // On the GRE's grid, not the MESE's: everything downstream indexes it that way.
         let r2 = qsm_core::io::read_nifti_file(&deriv.join("sub-1/anat/sub-1_R2map.nii")).unwrap();
         assert_eq!(r2.dims, (8, 8, 8), "R2 belongs on the reconstruction grid");
+
+        // The R2' sidecar says it was measured, not predicted (#236), next to its provenance.
+        let side: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+            deriv.join("sub-1/anat/sub-1_R2primemap.json")).unwrap()).unwrap();
+        assert_eq!(side["R2primeSource"], "measured", "{side}");
+        assert!(side["R2primeMethod"].as_str().unwrap().contains("EPG"), "{side}");
+        assert!(side["GeneratedBy"].is_string(), "BIDS-Prov kept the source fields: {side}");
+    }
+
+    /// TFI is a total-field method (#265): it gets the field map and the brain mask, and no
+    /// background-removal stage runs in front of it.
+    #[test]
+    fn tfi_inverts_the_total_field_with_no_background_removal() {
+        let dir = tempfile::tempdir().unwrap();
+        let bids = dir.path().join("bids");
+        let out = dir.path().join("out");
+        testutils::create_multi_echo_bids(&bids);
+        let mut args = default_run_args(bids, out.clone());
+        args.pipeline.qsm_algorithm = Some(QsmAlgorithmArg::Tfi);
+        args.pipeline.unwrapping_algorithm = Some(UnwrapAlgorithmArg::Laplacian);
+        args.pipeline.masking_input = Some(MaskInputArg::Magnitude);
+        args.dry = false;
+        args.no_mem_limit = true;
+        super::run::execute(args).unwrap();
+        let deriv = out.join("derivatives/qsmxt");
+        assert!(deriv.join("sub-1/anat/sub-1_Chimap.nii").exists());
+        assert!(!deriv.join("workflow/sub-1/bgremove").exists(), "background removal ran in front of TFI");
+        let prov: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+            deriv.join("workflow/sub-1/invert/provenance.json")).unwrap()).unwrap();
+        let inputs = prov["inputs"].to_string();
+        assert!(inputs.contains("field-ppm") || inputs.contains("unwrap"), "TFI read {inputs}");
+    }
+
+    /// iQFM makes a local field; with an inversion that takes the total field or wrapped phase
+    /// it would do nothing, and used to leave the field map unwritten (#276).
+    #[test]
+    fn iqfm_with_a_total_field_inversion_is_refused_before_processing() {
+        for (alg, smv) in [(QsmAlgorithmArg::Medi, true), (QsmAlgorithmArg::Tgv, false),
+                           (QsmAlgorithmArg::Qsmart, false), (QsmAlgorithmArg::Autoqsm, false),
+                           (QsmAlgorithmArg::Nextqsm, false), (QsmAlgorithmArg::Tfi, false)] {
+            let dir = tempfile::tempdir().unwrap();
+            let bids = dir.path().join("bids");
+            testutils::create_multi_echo_bids(&bids);
+            let mut args = default_run_args(bids, dir.path().join("out"));
+            args.pipeline.qsm_algorithm = Some(alg);
+            args.pipeline.bf_algorithm = Some(BfAlgorithmArg::Iqfm);
+            if smv { args.pipeline.medi_params.medi_smv = true; }
+            let err = super::run::execute(args).unwrap_err().to_string();
+            assert!(err.contains("iqfm") && err.contains("no effect"), "{alg:?}: {err}");
+        }
     }
 
     #[test]

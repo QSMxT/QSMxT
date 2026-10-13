@@ -56,6 +56,28 @@ does not have to be on the same grid as the GRE — a 2D stack with thicker slic
 or a smaller matrix is resampled onto whatever grid the run reconstructs on,
 using its affine. R2 is reported only where the MESE's field of view reaches.
 
+### Real and imaginary images
+
+Some scanners (GE in particular) export the complex image as real and imaginary
+parts instead of magnitude and phase. These are recognised by the BIDS
+`part-real` / `part-imag` entities, which `qsmxt dicom-convert` writes:
+
+```
+sub-*/[ses-*/]anat/*_echo-1_part-real_MEGRE.nii.gz
+sub-*/[ses-*/]anat/*_echo-1_part-imag_MEGRE.nii.gz
+...
+```
+
+They are used only when the acquisition has no `part-phase` images. Before
+anything else the pipeline converts each echo to magnitude and phase. Some
+reconstructions flip the sign of every other slice, which shows up as a π phase
+jump between neighbouring slices. The conversion detects this along each axis
+and undoes it. It makes one decision for all echoes, and the log records which
+axes it corrected. When the sidecar's `Manufacturer` is GE the phase is also
+negated, because GE's phase sign is the opposite of the Siemens and Philips
+convention the pipeline assumes. A `part-mag` image is not needed, because the magnitude comes
+from the real and imaginary parts. Per-coil real/imaginary data is not supported.
+
 ### Uncombined receive coils
 
 Data exported per coil element (Siemens "save uncombined", as in UK Biobank SWI)

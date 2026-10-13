@@ -92,7 +92,7 @@ pub(crate) fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json
             }
             json!({ "masking": m, "bet": config.bet })
         }
-        "mask" => json!({ "masking": config.masking, "bet": config.bet }),
+        "mask" => json!({ "masking": config.masking, "bet": config.bet, "homogeneity": config.homogeneity }),
         "motion" => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
         "swi" => json!({ "swi": config.swi }),
         "unwrap" => json!({ "field_mapping": config.field_mapping }),
@@ -171,8 +171,29 @@ impl StageContext<'_> {
         output_paths: Vec<PathBuf>,
         start: Instant,
     ) -> crate::Result<()> {
+        self.complete_step_with_outcome(step, algorithm, parameters, None, inputs, output_paths, start)
+    }
+
+    /// [`Self::complete_step`], with what the step found in the data (`outcome`) recorded in its
+    /// provenance next to its parameters. Only `parameters` key the cache: the outcome follows
+    /// from them and the inputs, so it is not known when the cache is checked.
+    #[allow(clippy::too_many_arguments)]
+    fn complete_step_with_outcome(
+        &mut self,
+        step: &str,
+        algorithm: Option<&str>,
+        parameters: serde_json::Value,
+        outcome: Option<(&str, serde_json::Value)>,
+        inputs: &[&Path],
+        output_paths: Vec<PathBuf>,
+        start: Instant,
+    ) -> crate::Result<()> {
         let prov_path = self.output.provenance_path(&self.run.key, step);
-        write_step_provenance(&prov_path, step, algorithm, &parameters, inputs, &output_paths, start)?;
+        let mut recorded = parameters.clone();
+        if let Some((name, value)) = outcome {
+            recorded[name] = value;
+        }
+        write_step_provenance(&prov_path, step, algorithm, &recorded, inputs, &output_paths, start)?;
 
         // Whatever read this step's previous output is stale now that it has been recomputed with
         // other parameters, or for the first time (a step newly switched on, say), which the
@@ -451,10 +472,11 @@ pub fn run_pipeline_cached(
         // The total (unwrapped) field is not needed when reconstruction starts from raw
         // wrapped phase: TGV single-echo, the end-to-end iQSM/iQSM+, or iQFM field-prep
         // (which produces the local field directly from phase).
-        let starts_from_phase = matches!(config.inversion.algorithm, QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus)
-            || config.bg_removal.algorithm == BfAlgorithm::Iqfm;
-        let need_field = !matches!(config.inversion.algorithm, QsmAlgorithm::Tgv if meta.n_echoes == 1)
-            && !starts_from_phase;
+        // Which field the inversion takes is QSM.rs's call (`InversionConfig::input`, #265);
+        // iQFM in front of a local-field inversion makes that field from phase itself.
+        let input = qsmxt_config::bridge::inversion_input(config, meta.n_echoes);
+        let need_field = input.needs_field_mapping()
+            && !(input.needs_bg_removal() && config.bg_removal.algorithm == BfAlgorithm::Iqfm);
 
         // The field map is computed once, on the brain mask, and shared by both passes. The
         // reliable mask is a subset of it, so its pass needs no field values the shared map does
@@ -622,7 +644,11 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
         log::info!("Leaving outputs on the resampled grid (--output-space working)");
         return Ok(());
     }
-    let params = serde_json::json!({ "space": "acquired", "dims": [dst_dims.0, dst_dims.1, dst_dims.2] });
+    // `resampling` versions how each kind travels, so outputs returned by an older release (a
+    // trilinearly interpolated dseg, SMWI minIPs left on the working grid; #267) are redone.
+    let params = serde_json::json!({
+        "space": "acquired", "dims": [dst_dims.0, dst_dims.1, dst_dims.2], "resampling": "by-kind",
+    });
     if ctx.is_cached_with_params("output_space", None, &params) {
         return Ok(());
     }
@@ -659,16 +685,25 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
         }
     }
 
+    // How each file travels is decided by what it is (#267), not by its name.
+    use crate::bids::derivatives::OutputKind;
+    let kind = |p: &Path| ctx.output.output_kind(&ctx.run.key, p);
+
     // Phase is only meaningful alongside its magnitude, so handle those pairs first and skip
     // them in the scalar pass.
     let mut done: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    // The minIP is on its own, shorter grid, so it cannot travel with the volumes that share the
-    // working grid; it is recomputed from the resampled SWI below.
-    let mip_path = ctx.output.swi_mip_path(&ctx.run.key);
-    done.insert(mip_path.clone());
-    for phase_path in files.iter().filter(|p| p.to_string_lossy().contains("part-phase")) {
+    // Projections are on their own, shorter grids, so they cannot travel with the volumes that
+    // share the working grid; each is rebuilt from its resampled source below.
+    for f in files.iter().filter(|p| kind(p) == OutputKind::Projection) {
+        done.insert(f.clone());
+    }
+    for phase_path in files.iter().filter(|p| kind(p) == OutputKind::Phase) {
         let mag_path = PathBuf::from(phase_path.to_string_lossy().replace("part-phase", "part-mag"));
         if !mag_path.exists() {
+            log::warn!(
+                "Leaving {} on the working grid: wrapped phase can only be resampled with its \
+                 magnitude, and there is none beside it", phase_path.display());
+            done.insert(phase_path.clone());
             continue;
         }
         let (phase, mag) = (load_volume(phase_path)?, load_volume(&mag_path)?);
@@ -695,31 +730,47 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
             );
             continue;
         }
-        let is_mask = f.file_name().map(|n| n.to_string_lossy().contains("mask")).unwrap_or(false);
-        if is_mask {
-            let m: Vec<u8> = data.iter().map(|v| if *v > 0.5 { 1u8 } else { 0u8 }).collect();
-            if let Some(out) = qsm_core::geometry::resample_mask_onto(&m, src_dims, &src_affine, dst_dims, &dst_affine) {
-                let as_f64: Vec<f64> = out.iter().map(|v| *v as f64).collect();
-                write_on_grid(f, &as_f64, dst_dims, &dst_affine)?;
+        match kind(f) {
+            OutputKind::Mask => {
+                let m: Vec<u8> = data.iter().map(|v| if *v > 0.5 { 1u8 } else { 0u8 }).collect();
+                if let Some(out) = qsm_core::geometry::resample_mask_onto(&m, src_dims, &src_affine, dst_dims, &dst_affine) {
+                    let as_f64: Vec<f64> = out.iter().map(|v| *v as f64).collect();
+                    write_on_grid(f, &as_f64, dst_dims, &dst_affine)?;
+                }
             }
-        } else if let Some(out) =
-            qsm_core::geometry::resample_onto(&data, src_dims, &src_affine, dst_dims, &dst_affine)
-        {
-            write_on_grid(f, &out, dst_dims, &dst_affine)?;
+            // A label id is a name, not a quantity: interpolating between two ids invents a third.
+            OutputKind::Labels => {
+                let out = qsm_core::geometry::resample_labels_onto(&data, src_dims, &src_affine, dst_dims, &dst_affine)?;
+                write_on_grid(f, &out, dst_dims, &dst_affine)?;
+            }
+            OutputKind::Continuous | OutputKind::Phase | OutputKind::Projection => {
+                if let Some(out) = qsm_core::geometry::resample_onto(&data, src_dims, &src_affine, dst_dims, &dst_affine) {
+                    write_on_grid(f, &out, dst_dims, &dst_affine)?;
+                }
+            }
         }
     }
 
     // A projection cannot be interpolated onto the acquired grid as if it were a volume — its
-    // slices are slabs, not samples — so it is rebuilt from the SWI that just landed there.
-    let swi_path = ctx.output.swi_path(&ctx.run.key);
-    if mip_path.exists() && swi_path.exists() {
-        let dst_voxel_size = qsm_core::geometry::voxel_sizes_from_affine(&dst_affine);
-        let grid = qsm_core::Grid::new(
-            dst_dims.0, dst_dims.1, dst_dims.2,
-            dst_voxel_size.0, dst_voxel_size.1, dst_voxel_size.2,
-        );
-        let swi = load_volume(&swi_path)?;
-        let mip = qsm_core::swi::create_mip(&swi, &grid, &dst_affine, ctx.config.swi.mip_window)
+    // slices are slabs, not samples — so each is rebuilt from the volume that just landed there:
+    // the SWI minIP from the SWI, each SMWI minIP from its SMWI.
+    let dst_voxel_size = qsm_core::geometry::voxel_sizes_from_affine(&dst_affine);
+    let dst_grid = qsm_core::Grid::new(
+        dst_dims.0, dst_dims.1, dst_dims.2,
+        dst_voxel_size.0, dst_voxel_size.1, dst_voxel_size.2,
+    );
+    let mut projections = vec![(ctx.output.swi_mip_path(&ctx.run.key), ctx.output.swi_path(&ctx.run.key),
+                                ctx.config.swi.mip_window)];
+    for contrast in ["paramagnetic", "diamagnetic"] {
+        projections.push((ctx.output.smwi_mip_path(&ctx.run.key, contrast),
+                          ctx.output.smwi_path(&ctx.run.key, contrast), ctx.config.smwi.mip_window));
+    }
+    for (mip_path, source, window) in projections {
+        if !(files.contains(&mip_path) && source.exists()) {
+            continue;
+        }
+        let volume = load_volume(&source)?;
+        let mip = qsm_core::swi::create_mip(&volume, &dst_grid, &dst_affine, window)
             .map_err(QsmxtError::Config)?;
         write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
     }
@@ -1208,19 +1259,106 @@ fn log_motion_summary(r: &qsm_core::pipeline::MotionCorrectionResult, mask_in: &
     }
 }
 
+/// Whether real/imaginary input from this manufacturer has its phase negated on conversion.
+///
+/// GE's real/imaginary pair gives phase of the opposite sign to the Siemens/Philips convention
+/// the pipeline assumes: on one subject scanned on all three, high-pass field maps from GE
+/// anti-correlate with the other two, which correlate with each other. Matched as dcm2niix and
+/// the DICOM tag spell it ("GE", "GE MEDICAL SYSTEMS", "General Electric").
+fn negates_real_imaginary_phase(manufacturer: Option<&str>) -> bool {
+    let Some(m) = manufacturer else { return false };
+    let m = m.trim().to_uppercase();
+    m == "GE" || m.starts_with("GE ") || m.contains("GENERAL ELECTRIC")
+}
+
+/// Real/imaginary echoes of a run as magnitude and phase on its acquired grid, via
+/// `qsm_core::complex::complex_to_mag_phase` (which also detects and undoes slice chopping, and
+/// negates the phase when `negate_phase`).
+fn convert_real_imaginary(ctx: &StageContext, negate_phase: bool) -> crate::Result<qsm_core::complex::MagPhaseEchoes> {
+    let (dims, voxel) = match ctx.meta.source_geometry {
+        Some((d, a)) => (d, qsm_core::geometry::voxel_sizes_from_affine(&a)),
+        None => (ctx.meta.dims, ctx.meta.voxel_size),
+    };
+    let n = dims.0 * dims.1 * dims.2;
+    let mut real = Vec::with_capacity(ctx.run.echoes.len());
+    let mut imag = Vec::with_capacity(ctx.run.echoes.len());
+    for echo in &ctx.run.echoes {
+        let imag_path = echo.imaginary_nifti.as_ref().ok_or_else(|| QsmxtError::Config(format!(
+            "echo {}: real/imaginary run without a part-imag file", echo.echo_number)))?;
+        for (path, out) in [(&echo.phase_nifti, &mut real), (imag_path, &mut imag)] {
+            let v = load_volume(path)?;
+            if v.len() != n {
+                return Err(QsmxtError::DimensionMismatch(format!(
+                    "{} has {} voxels, expected {}", path.display(), v.len(), n)));
+            }
+            out.push(v);
+        }
+    }
+    let grid = qsm_core::Grid::new(dims.0, dims.1, dims.2, voxel.0, voxel.1, voxel.2);
+    let real_refs: Vec<&[f64]> = real.iter().map(|v| v.as_slice()).collect();
+    let imag_refs: Vec<&[f64]> = imag.iter().map(|v| v.as_slice()).collect();
+    let params = qsm_core::complex::ComplexToMagPhaseParams {
+        chop: qsm_core::complex::ChopCorrection::Auto,
+        negate_phase,
+    };
+    let out = qsm_core::complex::complex_to_mag_phase(&real_refs, &imag_refs, &grid, &params);
+    if negate_phase {
+        log::info!("Real/imaginary input: GE phase sign convention, phase negated");
+    }
+
+    let c = &out.chopping;
+    let axes: Vec<&str> = ["x", "y", "z"].into_iter().zip(c.corrected).filter(|(_, on)| *on).map(|(a, _)| a).collect();
+    log::info!("Real/imaginary input: neighbour phase coherence x {:+.3}, y {:+.3}, z {:+.3}; {}",
+        c.coherence[0], c.coherence[1], c.coherence[2],
+        if axes.is_empty() { "no slice chopping".to_string() } else { format!("slice chopping corrected along {}", axes.join(", ")) });
+    let ambiguous = c.ambiguous_axes();
+    if !ambiguous.is_empty() {
+        let names: Vec<&str> = ambiguous.iter().map(|&a| ["x", "y", "z"][a]).collect();
+        log::warn!("Real/imaginary input: slice-chopping detection is uncertain along {} \
+                    (coherence near zero); check the phase for a π jump between neighbouring slices",
+            names.join(", "));
+    }
+    Ok(out)
+}
+
+/// Provenance record of a real/imaginary conversion.
+fn slice_chopping_json(c: &qsm_core::complex::SliceChopping) -> serde_json::Value {
+    serde_json::json!({
+        "method": "complex_to_mag_phase",
+        "detected": c.detected,
+        "coherence": { "x": c.coherence[0], "y": c.coherence[1], "z": c.coherence[2] },
+        "corrected": { "x": c.corrected[0], "y": c.corrected[1], "z": c.corrected[2] },
+    })
+}
+
 fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
     if ctx.run.coils.is_some() {
         return stage_combine_coils(ctx, progress);
     }
-    let params = serde_json::json!({
+    let complex = ctx.run.echoes[0].imaginary_nifti.is_some();
+    let mut params = serde_json::json!({
         "resampled_to_axial": ctx.meta.source_geometry.is_some(),
         "dims": [ctx.meta.dims.0, ctx.meta.dims.1, ctx.meta.dims.2],
     });
+    // The sign convention follows from the sidecar, so it is a parameter (and keys the cache).
+    let negate_phase = complex && negates_real_imaginary_phase(
+        crate::bids::sidecar::read_sidecar(&ctx.run.echoes[0].phase_json)?.manufacturer.as_deref());
+    if complex {
+        params["input"] = serde_json::json!("real_imaginary");
+        params["negate_phase"] = serde_json::json!(negate_phase);
+    }
     if ctx.is_cached_with_params("scale_phase", None, &params) {
         log::info!("Skipping scale_phase (cached)");
         return Ok(());
     }
     let t = Instant::now();
+    // Real/imaginary input becomes magnitude and phase before anything else sees it.
+    let converted = if complex {
+        progress("Converting real/imaginary to magnitude/phase");
+        Some(convert_real_imaginary(ctx, negate_phase)?)
+    } else {
+        None
+    };
     if ctx.meta.source_geometry.is_some() {
         progress("Resampling to axial + rescaling phase");
     } else {
@@ -1236,18 +1374,24 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
         let (nx, ny, nz) = src_dims;
         let params = qsm_core::geometry::AxialResampleParams::default();
         for (i, echo) in ctx.run.echoes.iter().enumerate() {
-            let mut phase_nifti = io::read_nifti_file(&echo.phase_nifti)
-                .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?;
-            qsm_core::pipeline::scale_phase_to_pi(&mut phase_nifti.data);
-            let mag = match echo.magnitude_nifti.as_ref() {
-                Some(p) => io::read_nifti_file(p)
-                    .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", p.display(), e)))?
-                    .data,
-                // No magnitude: weight every voxel equally so the phase still resamples correctly.
-                None => vec![1.0; phase_nifti.data.len()],
+            let (mag, phase) = match &converted {
+                Some(c) => (c.magnitudes[i].clone(), c.phases[i].clone()),
+                None => {
+                    let mut phase_nifti = io::read_nifti_file(&echo.phase_nifti)
+                        .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?;
+                    qsm_core::pipeline::scale_phase_to_pi(&mut phase_nifti.data);
+                    let mag = match echo.magnitude_nifti.as_ref() {
+                        Some(p) => io::read_nifti_file(p)
+                            .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", p.display(), e)))?
+                            .data,
+                        // No magnitude: weight every voxel equally so the phase still resamples correctly.
+                        None => vec![1.0; phase_nifti.data.len()],
+                    };
+                    (mag, phase_nifti.data)
+                }
             };
             let out = qsm_core::geometry::resample_complex_to_axial(
-                &mag, &phase_nifti.data, nx, ny, nz, &src_affine, &params,
+                &mag, &phase, nx, ny, nz, &src_affine, &params,
             );
             let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
             save_volume(&p_path, &out.phase, ctx.meta)?;
@@ -1257,6 +1401,15 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
                 save_volume(&m_path, &out.magnitude, ctx.meta)?;
                 mag_paths.push(m_path);
             }
+        }
+    } else if let Some(c) = &converted {
+        for i in 0..ctx.run.echoes.len() {
+            let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
+            save_volume(&p_path, &c.phases[i], ctx.meta)?;
+            phase_paths.push(p_path);
+            let m_path = ctx.output.mag_path(&ctx.run.key, i + 1);
+            save_volume(&m_path, &c.magnitudes[i], ctx.meta)?;
+            mag_paths.push(m_path);
         }
     } else {
         for (i, echo) in ctx.run.echoes.iter().enumerate() {
@@ -1286,9 +1439,12 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
 
     let mut all_paths = phase_paths;
     all_paths.extend(mag_paths.clone());
-    let input_paths: Vec<PathBuf> = ctx.run.echoes.iter().map(|e| e.phase_nifti.clone()).collect();
+    let input_paths: Vec<PathBuf> = ctx.run.echoes.iter()
+        .flat_map(|e| std::iter::once(e.phase_nifti.clone()).chain(e.imaginary_nifti.clone()))
+        .collect();
     let input_refs: Vec<&Path> = input_paths.iter().map(|p| p.as_path()).collect();
-    ctx.complete_step("scale_phase", None, params, &input_refs, all_paths, t)?;
+    let outcome = converted.as_ref().map(|c| ("real_imaginary_conversion", slice_chopping_json(&c.chopping)));
+    ctx.complete_step_with_outcome("scale_phase", None, params, outcome, &input_refs, all_paths, t)?;
     log_step_done(if ctx.meta.source_geometry.is_some() { "Resample + rescale phase" } else { "Rescale phase" }, t);
     Ok(())
 }
@@ -1378,7 +1534,7 @@ fn stage_combine_coils(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate
     };
     let combined = qsm_core::utils::mcpc3ds_combine(
         &phases, &mags, &ctx.meta.echo_times, sigma, [0, 1], unwrap_method, &grid,
-    );
+    )?;
     drop(phases);
     drop(mags);
 
@@ -1481,7 +1637,7 @@ fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Re
 
     if !mag_slices.is_empty() {
         let refs: Vec<&[f64]> = mag_slices.iter().map(|v| v.as_slice()).collect();
-        let mut combined = phase::rss_combine(&refs);
+        let mut combined = phase::rss_combine(&refs)?;
 
         // Apply homogeneity correction to the combined result
         if ctx.config.masking.inhomogeneity_correction {
@@ -1621,8 +1777,10 @@ fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
 
     let working_mask = build_mask_from_sections(ctx, &ctx.config.masking.sections.clone())?;
     save_mask(mask_path, &working_mask, ctx.meta)?;
-    let mag_path = ctx.output.magnitude_path(&ctx.run.key);
-    ctx.complete_step("mask", None, mask_params, &[mag_path.as_path()], vec![mask_path.to_path_buf()], t)?;
+    let mag_paths: Vec<PathBuf> = (1..=ctx.meta.n_echoes).map(|e| ctx.output.mag_path(&ctx.run.key, e))
+        .filter(|p| p.exists()).collect();
+    let mag_refs: Vec<&Path> = mag_paths.iter().map(|p| p.as_path()).collect();
+    ctx.complete_step("mask", None, mask_params, &mag_refs, vec![mask_path.to_path_buf()], t)?;
     log_step_done("Mask creation", t);
     Ok(())
 }
@@ -1642,12 +1800,13 @@ fn build_mask_from_sections(
         }
     }
 
-    // Resolve magnitude data
-    let magnitude = resolve_mask_magnitude(ctx)?;
-    let mag_data: Option<Vec<f64>> = magnitude.first().map(|m| m.data.clone());
+    // Every echo's magnitude: each section builds the magnitude it asks for (echo 1, the RSS, the
+    // last echo) from these in qsm-core, so all sections see the same, consistently corrected,
+    // echoes (QSM.rs#173).
+    let magnitudes = mask_echo_magnitudes(ctx)?;
 
     // Convert config masking sections to qsm-core types
-    let core_sections = crate::pipeline::config::to_mask_sections(sections);
+    let core_sections = crate::pipeline::config::to_mask_sections(sections, &ctx.config.bet);
     let scan_meta = scan_metadata(ctx.meta, ctx.meta.dims);
     let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
 
@@ -1657,10 +1816,11 @@ fn build_mask_from_sections(
         prefetch_weights(id, &ctx.run.key.to_string())?;
     }
 
-    let core_refinements = qsmxt_config::to_mask_ops(&ctx.config.masking.refinements);
+    let core_refinements = qsmxt_config::to_mask_ops(&ctx.config.masking.refinements, &ctx.config.bet);
+    let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
     combine_mask_sections(
         &core_sections, ctx.config.masking.combine, &core_refinements,
-        &phase_refs, mag_data.as_deref(), &scan_meta,
+        &phase_refs, &mag_refs, &scan_meta,
     ).map_err(|e| QsmxtError::Config(format!("masking: {}", e)))
 }
 
@@ -1745,15 +1905,14 @@ fn combine_mask_sections(
     combine: MaskCombine,
     refinements: &[qsm_core::pipeline::config::MaskOp],
     phases: &[&[f64]],
-    magnitude: Option<&[f64]>,
+    magnitudes: &[&[f64]],
     meta: &qsm_core::pipeline::config::ScanMetadata,
 ) -> std::result::Result<Vec<u8>, qsm_core::pipeline::PipelineError> {
     use qsm_core::pipeline::PipelineError;
 
     let mut combined: Option<Vec<u8>> = None;
     for section in sections {
-        let input = qsm_core::pipeline::masking::resolve_masking_input(section.input, phases, magnitude, meta);
-        let mask = qsm_core::pipeline::build_mask_section(section, &input, magnitude, meta)?;
+        let mask = qsm_core::pipeline::build_mask_section(section, phases, magnitudes, meta)?;
         combined = Some(match combined {
             None => mask,
             Some(mut acc) => { combine.accumulate(&mut acc, &mask); acc }
@@ -1764,55 +1923,36 @@ fn combine_mask_sections(
     if refinements.is_empty() {
         return Ok(combined);
     }
-    qsm_core::pipeline::apply_mask_ops(combined, refinements, magnitude.unwrap_or(&[]), magnitude, meta)
+    // The refinements run on the combined mask, so they see the RSS magnitude (what
+    // `signal-erode` gates on); they are not generators, so the input image does not matter.
+    let magnitude = qsm_core::pipeline::section_magnitude(
+        qsm_core::pipeline::config::MaskingInput::Magnitude, magnitudes, meta)?;
+    qsm_core::pipeline::apply_mask_ops(
+        combined, refinements, magnitude.as_deref().unwrap_or(&[]), magnitude.as_deref(), meta)
 }
 
-/// Load magnitude data for masking: returns a single-element Vec containing
-/// the appropriate magnitude volume based on what the mask sections require.
-fn resolve_mask_magnitude(ctx: &StageContext) -> crate::Result<Vec<NiftiData>> {
-    use crate::pipeline::config::MaskingInput;
-
-    // Determine which masking inputs are needed
-    let inputs: Vec<MaskingInput> = ctx.config.masking.sections.iter()
-        .map(|s| s.input)
-        .collect();
-
-    // For MagnitudeFirst or MagnitudeLast, load the specific echo from source
-    // and apply homogeneity correction if enabled. For Magnitude (RSS) and
-    // PhaseQuality, use the pre-computed combined magnitude.
-    let needs_first = inputs.iter().any(|i| matches!(i, MaskingInput::MagnitudeFirst));
-    let needs_last = inputs.iter().any(|i| matches!(i, MaskingInput::MagnitudeLast));
-
-    if needs_first || needs_last {
-        let echo_idx = if needs_first { 0 } else { ctx.run.echoes.len() - 1 };
-        // Prefer the scale_phase intermediate: it is the same echo, already on the working grid,
-        // so this keeps working when the run was resampled to axial (and when the coils were
-        // combined, where no single source file corresponds to it).
-        let intermediate = ctx.output.mag_path(&ctx.run.key, echo_idx + 1);
-        let source = if intermediate.exists() { Some(intermediate) } else { ctx.run.echoes[echo_idx].magnitude_nifti.clone() };
-        if let Some(ref src) = source {
-            let nifti = io::read_nifti_file(src)
-                .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", src.display(), e)))?;
-            let data = if ctx.config.masking.inhomogeneity_correction {
-                homogeneity_correct(
-                    &nifti.data, ctx.meta, &ctx.config.homogeneity, &src.display().to_string(),
-                )?
-            } else {
-                nifti.data
-            };
-            return Ok(vec![NiftiData { data, ..nifti }]);
+/// Every echo's magnitude on the working grid, for masking, homogeneity-corrected when
+/// `--inhomogeneity-correction` is on. Empty for a phase-only run.
+///
+/// Each echo is corrected on its own, so a section on echo 1, on the RSS or on the last echo
+/// sees the same correction; the masks used to mix a corrected RSS with an uncorrected echo
+/// depending on the section.
+fn mask_echo_magnitudes(ctx: &StageContext) -> crate::Result<Vec<Vec<f64>>> {
+    let mut out = Vec::with_capacity(ctx.meta.n_echoes);
+    for e in 1..=ctx.meta.n_echoes {
+        let p = ctx.output.mag_path(&ctx.run.key, e);
+        if !p.exists() {
+            return Ok(Vec::new());
         }
+        let data = load_volume(&p)?;
+        out.push(if ctx.config.masking.inhomogeneity_correction {
+            homogeneity_correct(&data, ctx.meta, &ctx.config.homogeneity,
+                                &format!("echo {e}'s magnitude"))?
+        } else {
+            data
+        });
     }
-
-    // Default: load the pre-computed RSS-combined magnitude
-    let combined_path = ctx.output.magnitude_path(&ctx.run.key);
-    if combined_path.exists() {
-        let m = io::read_nifti_file(&combined_path)
-            .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", combined_path.display(), e)))?;
-        Ok(vec![m])
-    } else {
-        Ok(Vec::new())
-    }
+    Ok(out)
 }
 
 fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
@@ -2205,7 +2345,7 @@ fn stage_segmentation(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn F
     Ok(())
 }
 
-fn to_core_synthseg_version(v: crate::pipeline::config::SynthSegVersion) -> qsm_core::segment::SynthSegVersion {
+pub(crate) fn to_core_synthseg_version(v: crate::pipeline::config::SynthSegVersion) -> qsm_core::segment::SynthSegVersion {
     match v {
         crate::pipeline::config::SynthSegVersion::V1 => qsm_core::segment::SynthSegVersion::V1,
         crate::pipeline::config::SynthSegVersion::V2 => qsm_core::segment::SynthSegVersion::V2,
@@ -2381,7 +2521,7 @@ fn stage_t2star_r2star(ctx: &mut StageContext, mask_path: &Path, progress: &dyn 
     let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
     let (r2star_map, _s0) = qsm_core::utils::r2star_arlo(
         &interleaved, &mask, &ctx.meta.echo_times, &grid,
-    );
+    )?;
     drop(interleaved);
 
     // Always compute and save both maps — T2* is trivially derived from R2*
@@ -2455,9 +2595,9 @@ fn count_set(mask: &[u8]) -> usize {
 /// means T2 = infinity and no tissue has that.
 fn measured_r2prime(
     r2star: &[f64], r2: &[f64], brain: &[u8], r2_mask: Option<&[u8]>,
-) -> (Vec<f64>, Vec<u8>) {
-    let out = qsm_core::relaxometry::r2prime(r2star, r2, brain, r2_mask);
-    (out.r2prime, out.coverage)
+) -> crate::Result<(Vec<f64>, Vec<u8>)> {
+    let out = qsm_core::relaxometry::r2prime(r2star, r2, brain, r2_mask)?;
+    Ok((out.r2prime, out.coverage))
 }
 
 /// Whether two grids are the same one, to within the precision a NIfTI header stores.
@@ -2644,7 +2784,7 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
                         );
                     }
                     let p = qsm_core::relaxometry::R2EpgParams::default();
-                    let (r2_map, _b1) = qsm_core::relaxometry::r2_epg(&se, &fit_mask, &mese.echo_times, &grid, &p, None);
+                    let (r2_map, _b1) = qsm_core::relaxometry::r2_epg(&se, &fit_mask, &mese.echo_times, &grid, &p, None)?;
                     r2_mask = Some(fit_mask);
                     Some(r2_map)
                 }
@@ -2663,9 +2803,17 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
 
     // ── R2' map (Hz) = R2* − R2 ──
     if want_r2p {
+        // Where this R2' came from, for its sidecar (#236): a predicted R2' looks exactly like a
+        // measured one, and only the sidecar can tell a downstream reader which it is.
+        let mut source = serde_json::Map::new();
         let r2p: Option<Vec<f64>> = if let Some(tool) = ctx.config.separation.custom_r2prime_tool.clone() {
             match find_custom_derivative(ctx.run, &tool, "*_R2primemap.nii*", &[]) {
-                Some(p) => { log::info!("Using custom R2' map from {}", p.display()); Some(load_volume(&p)?) }
+                Some(p) => {
+                    log::info!("Using custom R2' map from {}", p.display());
+                    source.insert("R2primeSource".into(), serde_json::json!("supplied"));
+                    source.insert("R2primeSuppliedFrom".into(), serde_json::json!(p.display().to_string()));
+                    Some(load_volume(&p)?)
+                }
                 None => { log::warn!("no custom R2' map under derivatives (tool: {}) — skipping R2'", tool); None }
             }
         } else {
@@ -2683,7 +2831,7 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
                         // because nothing was acquired there, and R2' = R2* - 0 would report the
                         // whole of R2* as reversible.
                         let (r2p, coverage) =
-                            measured_r2prime(&r2s, r2map, &mask, r2_mask.as_deref());
+                            measured_r2prime(&r2s, r2map, &mask, r2_mask.as_deref())?;
                         // Published, so a 0 in the R2' map can be told apart from R2* = R2.
                         let cov_path = ctx.output.r2prime_coverage_path(&ctx.run.key);
                         save_mask(&cov_path, &coverage, ctx.meta)?;
@@ -2697,6 +2845,11 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
                                 100.0 * measured as f64 / in_mask as f64, in_mask - measured,
                             );
                         }
+                        source.insert("R2primeSource".into(), serde_json::json!("measured"));
+                        source.insert("R2primeMethod".into(), serde_json::json!(match &ctx.config.separation.custom_r2_tool {
+                            Some(tool) => format!("R2* - R2 (R2 supplied by {tool})"),
+                            None => "R2* - R2 (R2 by EPG fit of the MESE)".to_string(),
+                        }));
                         Some(r2p)
                     }
                     _ => { log::warn!("R2' needs both R2* and R2 - one is missing; skipping R2'"); None }
@@ -2747,6 +2900,12 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
                         let r2s = load_volume(&r2star_path)?;
                         let predicted = run_r2primenet(ctx, &r2s, &mask, &grid)?;
                         log::info!("R2' estimated by R2PRIMEnet (an estimate, not a measurement)");
+                        source.insert("R2primeSource".into(), serde_json::json!("predicted"));
+                        source.insert("R2primeMethod".into(), serde_json::json!("R2PRIMEnet (from R2*)"));
+                        source.insert("R2primenetTrainedFieldStrength".into(),
+                                      serde_json::json!(R2PRIMENET_TRAINED_B0_T));
+                        source.insert("R2primenetCalibrated".into(),
+                                      serde_json::json!(policy == R2primenetFieldPolicy::Run));
                         Some(predicted)
                     }
                 }
@@ -2755,6 +2914,7 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
         if let Some(ref r2pv) = r2p {
             let out = ctx.output.r2prime_path(&ctx.run.key);
             save_volume(&out, r2pv, ctx.meta)?;
+            write_r2prime_sidecar(&out, source)?;
             outputs.push(out);
         }
     }
@@ -3279,11 +3439,12 @@ fn reconstruct(
 
 /// Whether the configured inversion runs without a separate background-removal stage, and so
 /// leaves its map defined over the brain mask rather than an eroded one.
+///
+/// Read off QSM.rs's `InversionConfig::input` (#265): the total-field and wrapped-phase methods
+/// skip it. That does not depend on the echo count (multi-echo TGV takes the total field, a
+/// single echo its wrapped phase), so any count gives the same answer.
 pub(crate) fn skips_bgremove(config: &PipelineConfig) -> bool {
-    matches!(config.inversion.algorithm,
-             QsmAlgorithm::Autoqsm | QsmAlgorithm::Nextqsm | QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus)
-        || (config.inversion.algorithm == QsmAlgorithm::Medi && config.inversion.medi.smv)
-        || matches!(config.inversion.algorithm, QsmAlgorithm::Tgv | QsmAlgorithm::Qsmart)
+    !qsmxt_config::bridge::inversion_input(config, 1).needs_bg_removal()
 }
 
 /// One reconstruction pass: the mask it runs on, where its outputs go, and how its steps are
@@ -3451,7 +3612,7 @@ fn stage_tgv(
     let (vsx, vsy, vsz) = ctx.meta.voxel_size;
     let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
     let params = tgv_params_from_config(&ctx.config.inversion.tgv);
-    let chi = qsm_core::inversion::tgv_qsm(input, &mask, &grid, &params, bdir, |_, _| {});
+    let chi = qsm_core::inversion::tgv_qsm(input, &mask, &grid, &params, bdir, |_, _| {})?;
 
     save_volume(&chi_raw_path, &chi, ctx.meta)?;
     ctx.complete_step(&tgv_step, Some("tgv"), tgv_params, &[mask_path, field_path], vec![chi_raw_path], t)?;
@@ -3555,10 +3716,10 @@ fn stage_standard_qsm(
     let mask_path = pass.mask.as_path();
     let (bgremove_step, invert_step) = (pass.step("bgremove"), pass.step("invert"));
     // --- Background removal ---
-    // MEDI+SMV, AutoQSM and NeXtQSM do their own background removal from the total field, so
-    // the standalone BFR stage is skipped and the (unwrapped) total field is fed straight in.
-    let skip_bgremove = (ctx.config.inversion.algorithm == QsmAlgorithm::Medi && ctx.config.inversion.medi.smv)
-        || matches!(ctx.config.inversion.algorithm, QsmAlgorithm::Autoqsm | QsmAlgorithm::Nextqsm);
+    // The total-field methods that reach this stage (TFI, MEDI+SMV, AutoQSM, NeXtQSM) remove or
+    // model the background themselves, so the standalone BFR stage is skipped and the
+    // (unwrapped) total field is fed straight in, with the brain mask.
+    let skip_bgremove = skips_bgremove(ctx.config);
     // iQFM replaces unwrap+BFR: it produces the local field directly from wrapped phase.
     let is_iqfm = ctx.config.bg_removal.algorithm == BfAlgorithm::Iqfm;
     let local_field_path = pass.local_field.clone();
@@ -3594,7 +3755,6 @@ fn stage_standard_qsm(
             "tol": ctx.config.bg_removal.harperella.tol,
         }),
         BfAlgorithm::Iharperella => serde_json::json!({
-            "radius": ctx.config.bg_removal.iharperella.radius,
             "max_iter": ctx.config.bg_removal.iharperella.max_iter,
             "tol": ctx.config.bg_removal.iharperella.tol,
         }),
@@ -3762,21 +3922,12 @@ fn stage_reference(
     progress("Referencing QSM");
     let chi = load_volume(chi_raw_path)?;
     let declared = support_masks.iter().map(|p| load_mask(p)).collect::<crate::Result<Vec<_>>>()?;
-    if let Some(m) = declared.iter().find(|m| m.len() != chi.len()) {
-        return Err(QsmxtError::DimensionMismatch(format!(
-            "support mask has {} voxels but the susceptibility map has {}", m.len(), chi.len())));
-    }
     let declared_refs: Vec<&[u8]> = declared.iter().map(|m| m.as_slice()).collect();
-    let mask = crate::pipeline::referencing::defined_support(&declared_refs, &chi);
-    log::info!(
-        "Referencing over the map's support: {} voxels",
-        mask.iter().filter(|&&m| m != 0).count(),
-    );
 
     let mut inputs: Vec<PathBuf> = vec![chi_raw_path.to_path_buf()];
     inputs.extend(support_masks.iter().map(|p| p.to_path_buf()));
-    let (chi_final, offset) = match region {
-        Some((spec, ids)) => {
+    let dseg = match region {
+        Some((spec, _)) => {
             let dseg_path = resolve_input(
                 ctx, &ctx.output.dseg_path(&ctx.run.key),
                 ctx.config.segmentation.custom_dseg_tool.as_deref(), "*_dseg.nii*", &[],
@@ -3785,26 +3936,13 @@ fn stage_reference(
                 "--qsm-reference {spec}: no segmentation to measure the region on. Enable \
                  --do-segmentation, or supply one with --use-custom-dseg")))?;
             let dseg = load_volume(&dseg_path)?;
-            if dseg.len() != chi.len() {
-                return Err(QsmxtError::DimensionMismatch(format!(
-                    "segmentation has {} voxels but the susceptibility map has {}",
-                    dseg.len(), chi.len())));
-            }
-            let roi = crate::pipeline::referencing::region_mask(&dseg, &ids);
             inputs.push(dseg_path);
-            let (out, off) = crate::pipeline::referencing::reference_to_region(&chi, &mask, &roi, &spec)?;
-            (out, Some(off))
+            Some(dseg)
         }
-        None => {
-            let (_, _, _, ref_method_core) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-            // What the mean reference removed is worth recording for the same reason a region's
-            // offset is; `apply_reference` applies it without saying.
-            let off = (ctx.config.qsm.reference == QsmReference::Mean)
-                .then(|| crate::pipeline::referencing::mask_mean(&chi, &mask))
-                .flatten();
-            (qsm_core::pipeline::apply_reference(&chi, &mask, ref_method_core), off)
-        }
+        None => None,
     };
+    let Referenced { chi: chi_final, support: mask, offset } =
+        reference_chi(ctx.config, &chi, &declared_refs, dseg.as_deref())?;
 
     save_volume(&qsm_path, &chi_final, ctx.meta)?;
     let mut outputs = vec![qsm_path.clone()];
@@ -3824,6 +3962,75 @@ fn stage_reference(
     Ok(())
 }
 
+/// A susceptibility map after referencing: the map, the support it was referenced over, and what
+/// the reference removed (when that is a single number worth recording).
+pub(crate) struct Referenced {
+    pub chi: Vec<f64>,
+    pub support: Vec<u8>,
+    pub offset: Option<crate::pipeline::referencing::Offset>,
+}
+
+/// Reference `chi` with `--qsm-reference`, over the voxels it is defined on within `declared`.
+///
+/// Shared by the per-run maps and the multi-orientation (COSMOS) map, so every susceptibility
+/// map QSMxT publishes is referenced the same way. `dseg` must be on `chi`'s grid; it is needed
+/// only for a region reference.
+pub(crate) fn reference_chi(
+    config: &PipelineConfig, chi: &[f64], declared: &[&[u8]], dseg: Option<&[f64]>,
+) -> crate::Result<Referenced> {
+    if let Some(m) = declared.iter().find(|m| m.len() != chi.len()) {
+        return Err(QsmxtError::DimensionMismatch(format!(
+            "support mask has {} voxels but the susceptibility map has {}", m.len(), chi.len())));
+    }
+    let support = crate::pipeline::referencing::defined_support(declared, chi);
+    log::info!(
+        "Referencing over the map's support: {} voxels",
+        support.iter().filter(|&&m| m != 0).count(),
+    );
+    if config.qsm.reference == QsmReference::Region {
+        let spec = config.qsm.reference_region.clone().unwrap_or_default();
+        let ids = qsmxt_config::regions::resolve(&spec, config.segmentation.version)
+            .map_err(|e| QsmxtError::Config(format!("--qsm-reference: {e}")))?;
+        let dseg = dseg.ok_or_else(|| QsmxtError::Config(format!(
+            "--qsm-reference {spec}: no segmentation to measure the region on")))?;
+        if dseg.len() != chi.len() {
+            return Err(QsmxtError::DimensionMismatch(format!(
+                "segmentation has {} voxels but the susceptibility map has {}",
+                dseg.len(), chi.len())));
+        }
+        let roi = crate::pipeline::referencing::region_mask(dseg, &ids);
+        let (out, off) = crate::pipeline::referencing::reference_to_region(chi, &support, &roi, &spec)?;
+        return Ok(Referenced { chi: out, support, offset: Some(off) });
+    }
+    let (_, _, _, ref_method_core) = crate::pipeline::config::to_pipeline_stages(config);
+    // What the mean reference removed is worth recording for the same reason a region's offset
+    // is; `apply_reference` applies it without saying.
+    let offset = (config.qsm.reference == QsmReference::Mean)
+        .then(|| crate::pipeline::referencing::mask_mean(chi, &support))
+        .flatten();
+    let out = qsm_core::pipeline::apply_reference(chi, &support, ref_method_core);
+    Ok(Referenced { chi: out, support, offset })
+}
+
+/// The `QsmReference*` sidecar fields for a map referenced under `config`.
+pub(crate) fn reference_sidecar_fields(
+    config: &PipelineConfig, offset: Option<&crate::pipeline::referencing::Offset>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut obj = serde_json::Map::new();
+    obj.insert("QsmReference".into(), serde_json::json!(config.qsm.reference_spec()));
+    if let Some(off) = offset {
+        obj.insert("QsmReferenceOffsetPpm".into(), serde_json::json!(off.ppm));
+        obj.insert("QsmReferenceVoxels".into(), serde_json::json!(off.voxels));
+    }
+    if config.qsm.reference == QsmReference::Region {
+        let spec = config.qsm.reference_region.clone().unwrap_or_default();
+        if let Ok(ids) = qsmxt_config::regions::resolve(&spec, config.segmentation.version) {
+            obj.insert("QsmReferenceLabels".into(), serde_json::json!(ids));
+        }
+    }
+    obj
+}
+
 /// Record the reference in the susceptibility map's JSON sidecar.
 ///
 /// The offset is a measurement in its own right — the susceptibility of the reference tissue — and
@@ -3837,20 +4044,24 @@ fn write_reference_sidecar(
 ) -> crate::Result<()> {
     let Some(sidecar) = crate::bids::entities::sidecar_path(qsm_path) else { return Ok(()) };
     let mut obj = read_json_object(&sidecar);
-    obj.insert("QsmReference".into(), serde_json::json!(ctx.config.qsm.reference_spec()));
-    if let Some(off) = offset {
-        obj.insert("QsmReferenceOffsetPpm".into(), serde_json::json!(off.ppm));
-        obj.insert("QsmReferenceVoxels".into(), serde_json::json!(off.voxels));
-    }
-    if ctx.config.qsm.reference == QsmReference::Region {
-        let spec = ctx.config.qsm.reference_region.clone().unwrap_or_default();
-        if let Ok(ids) = qsmxt_config::regions::resolve(&spec, ctx.config.segmentation.version) {
-            obj.insert("QsmReferenceLabels".into(), serde_json::json!(ids));
-        }
-    }
+    obj.extend(reference_sidecar_fields(ctx.config, offset.as_ref()));
     if let Some(parent) = sidecar.parent() {
         std::fs::create_dir_all(parent)?;
     }
+    std::fs::write(&sidecar, serde_json::to_string_pretty(&obj)
+        .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
+    Ok(())
+}
+
+/// Record where an R2' map came from in its sidecar, replacing what an earlier run recorded.
+/// Merged into the rest of the file, which BIDS-Prov also writes to.
+fn write_r2prime_sidecar(
+    r2prime_path: &Path, source: serde_json::Map<String, serde_json::Value>,
+) -> crate::Result<()> {
+    let Some(sidecar) = crate::bids::entities::sidecar_path(r2prime_path) else { return Ok(()) };
+    let mut obj = read_json_object(&sidecar);
+    obj.retain(|k, _| !k.starts_with("R2prime"));
+    obj.extend(source);
     std::fs::write(&sidecar, serde_json::to_string_pretty(&obj)
         .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
     Ok(())
@@ -4116,9 +4327,9 @@ mod tests {
             input: MaskingInput::Magnitude,
             generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(0.5) },
             refinements,
-        }]);
+        }], &Default::default());
         let build = |refinements: Vec<MaskOp>| {
-            combine_mask_sections(&recipe(refinements), MaskCombine::Or, &[], &[], Some(&quality), &meta).unwrap()
+            combine_mask_sections(&recipe(refinements), MaskCombine::Or, &[], &[], &[&quality], &meta).unwrap()
         };
         let count = |m: &[u8]| m.iter().filter(|&&v| v != 0).count();
 
@@ -4171,7 +4382,7 @@ mod tests {
             assert!(!super::skips_bgremove(&config), "{alg} runs its own background removal stage");
         }
         for alg in [QsmAlgorithm::Nextqsm, QsmAlgorithm::Autoqsm, QsmAlgorithm::Iqsm,
-                    QsmAlgorithm::IqsmPlus, QsmAlgorithm::Tgv, QsmAlgorithm::Qsmart] {
+                    QsmAlgorithm::IqsmPlus, QsmAlgorithm::Tgv, QsmAlgorithm::Qsmart, QsmAlgorithm::Tfi] {
             config.inversion.algorithm = alg;
             assert!(super::skips_bgremove(&config), "{alg} has no separate background removal");
         }
@@ -4285,7 +4496,7 @@ mod tests {
     #[test]
     fn test_hd_bet_mask_needs_dl_feature() {
         // The mask stage prefetches every DL op's weights; HD-BET must hit the same clear error.
-        let sections = crate::pipeline::config::to_mask_sections(&crate::pipeline::config::hd_bet_mask_sections());
+        let sections = crate::pipeline::config::to_mask_sections(&crate::pipeline::config::hd_bet_mask_sections(), &Default::default());
         let ids: Vec<&str> = sections.iter().flat_map(|s| s.all_ops()).filter_map(|op| op.dl_model_id()).collect();
         assert_eq!(ids, ["hd-bet"]);
         let err = super::prefetch_weights(ids[0], "test").unwrap_err();
@@ -4297,7 +4508,7 @@ mod tests {
     fn test_rs2_net_mask_needs_dl_feature() {
         // RS2-Net is a DL generator like HD-BET, so it must reach the same prefetch error
         // rather than failing later with something about ONNX.
-        let sections = crate::pipeline::config::to_mask_sections(&crate::pipeline::config::rs2_net_mask_sections());
+        let sections = crate::pipeline::config::to_mask_sections(&crate::pipeline::config::rs2_net_mask_sections(), &Default::default());
         let ids: Vec<&str> = sections.iter().flat_map(|s| s.all_ops()).filter_map(|op| op.dl_model_id()).collect();
         assert_eq!(ids, ["rs2-net"]);
         let err = super::prefetch_weights(ids[0], "test").unwrap_err();
@@ -4324,29 +4535,29 @@ mod tests {
             refinements: vec![],
         };
         // > 10 keeps 53 voxels, > 30 keeps 33; the second is a strict subset of the first.
-        let sections = crate::pipeline::config::to_mask_sections(&[section(10.0), section(30.0)]);
+        let sections = crate::pipeline::config::to_mask_sections(&[section(10.0), section(30.0)], &Default::default());
         let count = |m: &[u8]| m.iter().filter(|&&v| v == 1).count();
 
-        let or = combine_mask_sections(&sections, MaskCombine::Or, &[], &[], Some(&mag), &meta).unwrap();
+        let or = combine_mask_sections(&sections, MaskCombine::Or, &[], &[], &[&mag], &meta).unwrap();
         assert_eq!(count(&or), n - 11, "union is the looser threshold");
 
-        let and = combine_mask_sections(&sections, MaskCombine::And, &[], &[], Some(&mag), &meta).unwrap();
+        let and = combine_mask_sections(&sections, MaskCombine::And, &[], &[], &[&mag], &meta).unwrap();
         assert_eq!(count(&and), n - 31, "intersection is the tighter threshold");
         assert!(or.iter().zip(&and).all(|(o, a)| o >= a), "AND ⊆ OR");
 
         // One section: the combine mode makes no difference.
-        let one = crate::pipeline::config::to_mask_sections(&[section(10.0)]);
+        let one = crate::pipeline::config::to_mask_sections(&[section(10.0)], &Default::default());
         for mode in [MaskCombine::Or, MaskCombine::And] {
-            assert_eq!(combine_mask_sections(&one, mode, &[], &[], Some(&mag), &meta).unwrap(), or);
+            assert_eq!(combine_mask_sections(&one, mode, &[], &[], &[&mag], &meta).unwrap(), or);
         }
 
         // Post-combine refinements run on the combined mask.
-        let refinements = crate::pipeline::config::to_mask_ops(&[MaskOp::Erode { iterations: 1 }]);
-        let eroded = combine_mask_sections(&sections, MaskCombine::And, &refinements, &[], Some(&mag), &meta).unwrap();
+        let refinements = crate::pipeline::config::to_mask_ops(&[MaskOp::Erode { iterations: 1 }], &Default::default());
+        let eroded = combine_mask_sections(&sections, MaskCombine::And, &refinements, &[], &[&mag], &meta).unwrap();
         assert!(count(&eroded) < count(&and), "erosion shrank the combined mask");
 
         // No sections is a configuration error, not an empty mask.
-        assert!(combine_mask_sections(&[], MaskCombine::Or, &[], &[], Some(&mag), &meta).is_err());
+        assert!(combine_mask_sections(&[], MaskCombine::Or, &[], &[], &[&mag], &meta).is_err());
     }
 
     #[test]
@@ -4372,7 +4583,7 @@ mod tests {
             coils: None,
             echoes: vec![EchoFiles {
                 echo_number: 1, phase_nifti: phase.clone(), phase_json: phase.clone(),
-                magnitude_nifti: None, magnitude_json: None,
+                magnitude_nifti: None, magnitude_json: None, imaginary_nifti: None,
             }],
             magnetic_field_strength: 3.0, echo_times: vec![0.004], b0_dir: None,
             dims: (2, 2, 2), has_magnitude: false,
@@ -4435,7 +4646,7 @@ mod tests {
             coils: None,
             echoes: echoes.into_iter().enumerate().map(|(i, (phase, mag))| EchoFiles {
                 echo_number: i as u32 + 1, phase_json: phase.clone(), phase_nifti: phase,
-                magnitude_json: None, magnitude_nifti: mag,
+                magnitude_json: None, magnitude_nifti: mag, imaginary_nifti: None,
             }).collect(),
             magnetic_field_strength: 3.0,
             echo_times: (0..n).map(|i| 0.004 + i as f64 * 0.004).collect(),
@@ -4540,7 +4751,7 @@ mod tests {
         crate::bids::sidecar::QsmSidecar {
             echo_time: 0.004, magnetic_field_strength: 3.0, b0_dir: None,
             slice_thickness: thickness, mr_acquisition_type: acq.map(str::to_string),
-            slice_encoding_direction: dir.map(str::to_string),
+            slice_encoding_direction: dir.map(str::to_string), manufacturer: None,
         }
     }
 
@@ -4790,7 +5001,7 @@ mod tests {
         let r2star = [30.0, 30.0, 30.0, 30.0];
         // R2 was fitted only inside the FOV; outside it the echoes were zero, so it is zero.
         let r2 = [10.0, 10.0, 0.0, 0.0];
-        let (r2p, cov) = super::measured_r2prime(&r2star, &r2, &brain, Some(&measured));
+        let (r2p, cov) = super::measured_r2prime(&r2star, &r2, &brain, Some(&measured)).unwrap();
         assert_eq!(&r2p[..2], &[20.0, 20.0], "measured where the MESE reached");
         assert_eq!(&r2p[2..], &[0.0, 0.0],
                    "R2* - 0 = 30 here would be an estimate dressed as a measurement");
@@ -4810,7 +5021,7 @@ mod tests {
         let r2star = [30.0, 30.0, 30.0, 30.0];
         // Interpolation bleed: small, positive, and entirely plausible as tissue R2.
         let r2 = [10.0, 10.0, 0.6, 0.2];
-        let (r2p, cov) = super::measured_r2prime(&r2star, &r2, &brain, Some(&measured));
+        let (r2p, cov) = super::measured_r2prime(&r2star, &r2, &brain, Some(&measured)).unwrap();
         assert_eq!(&r2p[2..], &[0.0, 0.0],
                    "29.4 and 29.8 here would be nearly the whole of R2* called reversible");
         assert_eq!(cov, vec![1, 1, 0, 0]);
@@ -4824,7 +5035,7 @@ mod tests {
         let brain = [1u8, 1, 0, 1];
         let (r2p, cov) = super::measured_r2prime(
             &[30.0, 30.0, 30.0, 30.0], &[10.0, 10.0, 10.0, 0.0], &brain, None,
-        );
+        ).unwrap();
         assert_eq!(r2p, vec![20.0, 20.0, 0.0, 0.0]);
         assert_eq!(cov, vec![1, 1, 0, 0],
                    "a zero R2 inside the brain mask is an absent measurement, not R2' = R2*");
@@ -5171,6 +5382,7 @@ mod swi_export_tests {
                 phase_json: PathBuf::from("p.json"),
                 phase_nifti: PathBuf::from("p.nii"),
                 magnitude_json: None,
+                imaginary_nifti: None,
                 magnitude_nifti: None,
             }],
             magnetic_field_strength: 3.0,
@@ -5789,6 +6001,93 @@ mod oblique_run_tests {
         assert!(!resampled(&output));
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
     }
+
+    /// Returning a resampled run to the acquired grid moves a segmentation by majority vote, so
+    /// every value is still a label id, and rebuilds the SMWI minIPs on the acquired grid (#267).
+    #[test]
+    fn output_space_keeps_labels_valid_and_rebuilds_the_smwi_projections() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 2);
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let mut config = resampling_config();
+        config.pipeline.do_smwi = true;
+        config.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+
+        // A parcellation on the working grid, where the pipeline would have written one.
+        let work = io::read_nifti_file(&output.mask_path(&run.key)).unwrap();
+        let ids = [0.0, 10.0, 11.0, 49.0, 50.0];
+        let dseg: Vec<f64> = (0..work.data.len()).map(|v| ids[(v / 7) % ids.len()]).collect();
+        save_nifti_like(&output.dseg_path(&run.key), &dseg, &work);
+
+        config.pipeline.output_space = crate::pipeline::config::OutputSpace::Acquired;
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        let back = io::read_nifti_file(&output.dseg_path(&run.key)).unwrap();
+        assert_eq!(back.data.len(), ACQUIRED);
+        assert!(back.data.iter().all(|v| ids.contains(v)), "a label was interpolated");
+
+        for contrast in ["paramagnetic", "diamagnetic"] {
+            let mip = io::read_nifti_file(&output.smwi_mip_path(&run.key, contrast)).unwrap();
+            assert_eq!((mip.dims.0, mip.dims.1), (DIMS.0, DIMS.1),
+                       "the {contrast} minIP is still on the working grid");
+        }
+    }
+
+    fn save_nifti_like(path: &Path, data: &[f64], like: &qsm_core::io::NiftiData) {
+        write_volume(path, data, like.dims, like.voxel_size, &like.affine).unwrap();
+    }
+
+    /// An oblique three-orientation group under the default `--output-space acquired` (#270).
+    ///
+    /// The members' magnitudes are back on the acquired grid by the time the group is combined,
+    /// while their local fields are on the working grid; the group used to read the two from
+    /// different grids and fail. Now it reads both from the working grid, writes a referenced
+    /// COSMOS map on the reference member's acquired grid, caches it, and recomputes it when a
+    /// member's background removal changes.
+    #[test]
+    fn an_oblique_cosmos_group_lands_on_the_acquired_grid_referenced_and_cached() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        // No sidecar `B0_dir` (one would stop the resample to axial), so the three share one
+        // affine and their directions cannot be told apart: `force` reconstructs anyway, which is
+        // all this test needs — it is about grids and caching, not the directions.
+        let runs: Vec<QsmRun> = ["d1", "d2", "d3"].iter()
+            .map(|acq| oblique_run(dir.path(), acq, 2)).collect();
+        let mut config = resampling_config();
+        config.multi_orientation.group_by = "acq".into();
+        config.multi_orientation.force = true;
+        config.multi_orientation.lambda = 1e-2;
+        for r in &runs {
+            run_pipeline_cached(r, &config, &output, false, &|_| {}).unwrap();
+        }
+        let members: Vec<&QsmRun> = runs.iter().collect();
+        let group = crate::bids::orientation::OrientationGroup { label: "sub-1".into(), members: vec![0, 1, 2] };
+        let combine = |config: &PipelineConfig| crate::pipeline::multiorient::reconstruct_group(
+            &group, &members, config, &output, false, &|_| {}).unwrap();
+
+        combine(&config);
+        let key = crate::pipeline::multiorient::group_key(&members);
+        let cosmos = output.cosmos_path(&key);
+        assert_eq!(voxels(&cosmos), ACQUIRED, "the COSMOS map is on the acquired grid");
+        let sidecar: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+            output.multiorient_sidecar_path(&key, "cosmos")).unwrap()).unwrap();
+        assert_eq!(sidecar["QsmReference"], "mean", "{sidecar}");
+        assert!(sidecar["QsmReferenceOffsetPpm"].is_number(), "{sidecar}");
+        assert_eq!(sidecar["Space"], "acquired");
+
+        let mtime = || std::fs::metadata(&cosmos).unwrap().modified().unwrap();
+        let first = mtime();
+        combine(&config);
+        assert_eq!(mtime(), first, "an unchanged group was recomputed");
+
+        // A member's background removal changes: its local field is rewritten, and the group
+        // is recomputed from it.
+        let mut other = config.clone();
+        other.bg_removal.algorithm = BfAlgorithm::Pdf;
+        run_pipeline_cached(&runs[1], &other, &output, false, &|_| {}).unwrap();
+        combine(&config);
+        assert_ne!(mtime(), first, "a member's new local field did not recompute the group");
+    }
 }
 
 /// Referencing over the map's support rather than the brain mask.
@@ -5796,6 +6095,107 @@ mod oblique_run_tests {
 /// Background removal erodes the mask, and the raw map is 0 on that rim. Referencing over the
 /// brain mask averaged those zeros into the offset and then wrote the rim out as a constant
 /// `-offset` — a shell of about 10% of the brain at 1 mm with V-SHARP.
+#[cfg(test)]
+mod real_imag_input_tests {
+    use super::*;
+    use crate::bids::discovery::{discover_runs, DiscoveryFilter};
+    use crate::testutils;
+
+    fn run_on(bids: &Path, out: &Path) -> (QsmRun, DerivativeOutputs) {
+        let run = discover_runs(bids, &DiscoveryFilter::default()).unwrap().remove(0);
+        let output = DerivativeOutputs::new(out);
+        run_pipeline_cached(&run, &PipelineConfig::default(), &output, true, &|_| {}).unwrap();
+        (run, output)
+    }
+
+    /// Real/imaginary input, chopped along z as GE leaves it, reconstructs exactly what the same
+    /// echoes given as magnitude/phase do: the chop is found and undone before anything else
+    /// runs, and the provenance says so.
+    #[test]
+    fn chopped_real_imag_matches_mag_phase() {
+        let dir = tempfile::tempdir().unwrap();
+        let complex = testutils::create_real_imag_bids(&dir.path().join("ri"), true);
+        let twin = testutils::create_mag_phase_twin_bids(&dir.path().join("mp"));
+        let (ri_run, ri) = run_on(&complex, &dir.path().join("ri-out"));
+        let (mp_run, mp) = run_on(&twin, &dir.path().join("mp-out"));
+
+        for e in 1..=3 {
+            let a = load_volume(&ri.phase_scaled_path(&ri_run.key, e)).unwrap();
+            let b = load_volume(&mp.phase_scaled_path(&mp_run.key, e)).unwrap();
+            let worst = a.iter().zip(&b)
+                .map(|(x, y)| { let d = (x - y).rem_euclid(2.0 * std::f64::consts::PI); d.min(2.0 * std::f64::consts::PI - d) })
+                .fold(0.0, f64::max);
+            assert!(worst < 1e-6, "echo {e} phase differs by up to {worst} rad");
+            let a = load_volume(&ri.mag_path(&ri_run.key, e)).unwrap();
+            let b = load_volume(&mp.mag_path(&mp_run.key, e)).unwrap();
+            assert!(a.iter().zip(&b).all(|(x, y)| (x - y).abs() < 1e-3 * y.abs().max(1.0)), "echo {e} magnitude differs");
+        }
+        let chi_ri = load_volume(&ri.qsm_path(&ri_run.key)).unwrap();
+        let chi_mp = load_volume(&mp.qsm_path(&mp_run.key)).unwrap();
+        let worst = chi_ri.iter().zip(&chi_mp).map(|(x, y)| (x - y).abs()).fold(0.0, f64::max);
+        assert!(worst < 1e-4, "χ differs by up to {worst} ppm");
+
+        let prov: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(ri.provenance_path(&ri_run.key, "scale_phase")).unwrap()).unwrap();
+        let params = &prov["parameters"];
+        assert_eq!(params["input"], "real_imaginary");
+        let conv = &params["real_imaginary_conversion"];
+        assert_eq!(conv["method"], "complex_to_mag_phase");
+        assert_eq!(conv["corrected"], serde_json::json!({ "x": false, "y": false, "z": true }));
+        assert!(conv["coherence"]["z"].as_f64().unwrap() < -0.5, "{conv}");
+        assert!(prov["inputs"].as_array().unwrap().iter().any(|p| p.as_str().unwrap().contains("_part-imag_")));
+    }
+
+    #[test]
+    fn ge_real_imag_phase_is_negated() {
+        assert!(negates_real_imaginary_phase(Some("GE")));
+        assert!(negates_real_imaginary_phase(Some("GE MEDICAL SYSTEMS")));
+        assert!(negates_real_imaginary_phase(Some("General Electric")));
+        assert!(!negates_real_imaginary_phase(Some("Siemens")));
+        assert!(!negates_real_imaginary_phase(Some("Philips")));
+        assert!(!negates_real_imaginary_phase(Some("GEMINI")));
+        assert!(!negates_real_imaginary_phase(None));
+
+        // End to end: a GE sidecar gives the negated phase of the same echoes from elsewhere.
+        let dir = tempfile::tempdir().unwrap();
+        let ge = testutils::create_real_imag_bids(&dir.path().join("ge"), true);
+        for p in glob::glob(&format!("{}/sub-1/anat/*.json", ge.display())).unwrap().flatten() {
+            let mut j: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap();
+            j["Manufacturer"] = serde_json::json!("GE");
+            std::fs::write(&p, j.to_string()).unwrap();
+        }
+        let other = testutils::create_real_imag_bids(&dir.path().join("other"), true);
+        let (ge_run, ge_out) = run_on(&ge, &dir.path().join("ge-out"));
+        let (other_run, other_out) = run_on(&other, &dir.path().join("other-out"));
+        let a = load_volume(&ge_out.phase_scaled_path(&ge_run.key, 1)).unwrap();
+        let b = load_volume(&other_out.phase_scaled_path(&other_run.key, 1)).unwrap();
+        let worst = a.iter().zip(&b)
+            .map(|(x, y)| { let d = (x + y).rem_euclid(2.0 * std::f64::consts::PI); d.min(2.0 * std::f64::consts::PI - d) })
+            .fold(0.0, f64::max);
+        assert!(worst < 1e-6, "GE phase is not the negation: up to {worst} rad off");
+        let prov: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(ge_out.provenance_path(&ge_run.key, "scale_phase")).unwrap()).unwrap();
+        assert_eq!(prov["parameters"]["negate_phase"], true);
+    }
+
+    /// An unchopped export converts with no correction, and a re-run is served from the cache
+    /// even though the provenance carries the detection outcome next to the parameters.
+    #[test]
+    fn unchopped_real_imag_is_not_corrected_and_caches() {
+        let dir = tempfile::tempdir().unwrap();
+        let complex = testutils::create_real_imag_bids(&dir.path().join("ri"), false);
+        let (run, output) = run_on(&complex, &dir.path().join("out"));
+        let prov_path = output.provenance_path(&run.key, "scale_phase");
+        let prov: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&prov_path).unwrap()).unwrap();
+        assert_eq!(prov["parameters"]["real_imaginary_conversion"]["corrected"],
+            serde_json::json!({ "x": false, "y": false, "z": false }));
+
+        let before = std::fs::metadata(&prov_path).unwrap().modified().unwrap();
+        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, &|_| {}).unwrap();
+        assert_eq!(std::fs::metadata(&prov_path).unwrap().modified().unwrap(), before, "scale_phase re-ran");
+    }
+}
+
 #[cfg(test)]
 mod reference_support_tests {
     use super::*;

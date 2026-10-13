@@ -47,6 +47,17 @@ pub enum QsmxtError {
 
     #[error("Example dataset error: {0}")]
     Example(String),
+
+    /// QSM.rs refused its input (too few echoes, echo times it cannot use, mismatched buffers).
+    /// The message names what was wrong and with what values.
+    #[error("Invalid input: {0}")]
+    InvalidInput(String),
+}
+
+impl From<qsm_core::error::InputError> for QsmxtError {
+    fn from(e: qsm_core::error::InputError) -> Self {
+        QsmxtError::InvalidInput(e.0)
+    }
 }
 
 pub type Result<T> = std::result::Result<T, QsmxtError>;

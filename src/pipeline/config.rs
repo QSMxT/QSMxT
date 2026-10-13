@@ -284,6 +284,12 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if args.no_orientation_registration {
             config.multi_orientation.register = false;
         }
+        if args.cosmos_magnitude_weighting {
+            config.multi_orientation.magnitude_weighting = true;
+        }
+        if let Some(v) = args.cosmos_tol { config.multi_orientation.cosmos_tol = v; }
+        if let Some(v) = args.cosmos_max_iter { config.multi_orientation.cosmos_max_iter = v; }
+        config.multi_orientation.validate().map_err(QsmxtError::Config)?;
 
         // ── Unwrapping ──
         if let Some(a) = args.unwrapping_algorithm {
@@ -363,6 +369,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
 
         // ── BET ──
         if let Some(v) = args.bet_fractional_intensity { config.bet.fractional_intensity = v; }
+        if let Some(v) = args.bet_smoothness { config.bet.smoothness = v; }
+        if let Some(v) = args.bet_gradient_threshold { config.bet.gradient_threshold = v; }
+        if let Some(v) = args.bet_iterations { config.bet.iterations = v; }
+        if let Some(v) = args.bet_subdivisions { config.bet.subdivisions = v; }
         if let Some(v) = args.bet_voxel_scale { config.bet.voxel_scale = v; }
 
         // ── Inversion params ──
@@ -504,7 +514,6 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.harperella_params.harperella_radius { config.bg_removal.harperella.radius = v; }
         if let Some(v) = args.harperella_params.harperella_max_iter { config.bg_removal.harperella.max_iter = v; }
         if let Some(v) = args.harperella_params.harperella_tol { config.bg_removal.harperella.tol = v; }
-        if let Some(v) = args.iharperella_params.iharperella_radius { config.bg_removal.iharperella.radius = v; }
         if let Some(v) = args.iharperella_params.iharperella_max_iter { config.bg_removal.iharperella.max_iter = v; }
         if let Some(v) = args.iharperella_params.iharperella_tol { config.bg_removal.iharperella.tol = v; }
         if args.msmv_params.msmv_refine { config.bg_removal.msmv_refine = true; }
@@ -746,25 +755,66 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         Ok(())
 }
 
-/// Refuse BET settings that cannot reach BET. qsm-core's `MaskOp::Bet` carries only the
-/// fractional intensity and the voxel scale, so `[bet] smoothness`, `gradient_threshold`,
-/// `iterations` and `subdivisions` in a config file would be accepted and ignored (#279).
-pub fn validate_bet(config: &PipelineConfig) -> crate::Result<()> {
-    let (b, d) = (&config.bet, qsmxt_config::BetConfig::default());
-    let unsupported: Vec<&str> = [
-        ("smoothness", b.smoothness != d.smoothness),
-        ("gradient_threshold", b.gradient_threshold != d.gradient_threshold),
-        ("iterations", b.iterations != d.iterations),
-        ("subdivisions", b.subdivisions != d.subdivisions),
-    ].iter().filter(|(_, set)| *set).map(|(name, _)| *name).collect();
-    if unsupported.is_empty() {
+/// Refuse a background-removal choice the inversion would never use (#276).
+///
+/// Background removal, iQFM included, produces a local field, and only a local-field inversion
+/// reads one (QSM.rs `InversionInput`). With a total-field or wrapped-phase inversion iQFM has
+/// no effect, and used to leave field mapping off while the inversion read a total field that
+/// was never written (or a stale one from an earlier run). Asked-for iQFM there is an error;
+/// another non-default method is a warning, since nothing else depends on it.
+pub fn validate_inversion_input(config: &PipelineConfig) -> crate::Result<()> {
+    if !config.pipeline.do_qsm || !crate::pipeline::runner::skips_bgremove(config) {
         return Ok(());
     }
-    Err(QsmxtError::Config(format!(
-        "[bet] {} cannot be applied: a BET mask step carries only the fractional intensity and \
-         the voxel scale (QSM.rs MaskOp::Bet). Remove {} from the config file",
-        unsupported.join(", "), if unsupported.len() == 1 { "it" } else { "them" })))
+    let alg = config.inversion.algorithm;
+    let medi_smv = alg == QsmAlgorithm::Medi && config.inversion.medi.smv;
+    let what = format!("--qsm-algorithm {alg}{}", if medi_smv { " with SMV" } else { "" });
+    let takes = if qsmxt_config::bridge::inversion_input(config, 2).needs_field_mapping() {
+        "the total field and removes the background itself"
+    } else {
+        "the wrapped phase"
+    };
+    match config.bg_removal.algorithm {
+        BfAlgorithm::Iqfm => Err(QsmxtError::Config(format!(
+            "--bf-algorithm iqfm produces a local field, and {what} takes {takes}, so iQFM would \
+             have no effect. Choose another inversion, or drop --bf-algorithm iqfm."))),
+        b if b != qsmxt_config::BgRemovalConfig::default().algorithm => {
+            log::warn!("--bf-algorithm {b} has no effect: {what} takes {takes}");
+            Ok(())
+        }
+        _ => Ok(()),
+    }
 }
+
+/// Refuse a multi-orientation configuration whose members cannot contribute (#270).
+///
+/// COSMOS and STI combine each orientation's *local* field, which only background-field removal
+/// writes. An inversion that skips that step (MEDI with SMV, TGV, QSMART, the end-to-end
+/// networks), or a run with reconstruction off, leaves every member without one, so the group
+/// would fail after every member had been processed. Said before any processing instead.
+pub fn validate_multi_orientation(config: &PipelineConfig) -> crate::Result<()> {
+    if !config.multi_orientation.enabled() {
+        return Ok(());
+    }
+    if !config.pipeline.do_qsm {
+        return Err(QsmxtError::Config(
+            "--orientation-group combines each orientation's local field, which only the QSM \
+             reconstruction produces; it cannot be used with --no-qsm".into()));
+    }
+    if crate::pipeline::runner::skips_bgremove(config) {
+        let medi_smv = config.inversion.algorithm == QsmAlgorithm::Medi && config.inversion.medi.smv;
+        return Err(QsmxtError::Config(format!(
+            "--orientation-group combines each orientation's local field, and --qsm-algorithm \
+             {}{} has no background-field removal step, so no orientation would have one. Use an \
+             inversion that takes a local field (e.g. rts, tv, tkd, nltv, ilsqr{}).",
+            config.inversion.algorithm,
+            if medi_smv { " with SMV" } else { "" },
+            if medi_smv { ", or medi with --no-medi-smv" } else { "" },
+        )));
+    }
+    Ok(())
+}
+
 
 /// Run `f(fractional_intensity, voxel_scale)` on every BET step in a masking recipe — the
 /// sections, the refinements that run on the combined mask, and the two-pass sections, wherever
@@ -1078,14 +1128,14 @@ mod tests {
         let cli::Command::Run(r) = cli.command else { panic!() };
         apply_run_overrides(&mut file, &r.pipeline).unwrap();
         assert_eq!(fi(&file), vec![0.35]);
-        // The flags BET cannot take on a mask step are gone, and a config file's are refused.
-        for flag in ["--bet-smoothness", "--bet-gradient-threshold", "--bet-iterations", "--bet-subdivisions"] {
-            assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", flag, "1"]).is_err(), "{flag}");
-        }
-        assert!(validate_bet(&PipelineConfig::default()).is_ok());
+        // BET's surface settings reach the run's config (and from there every BET step;
+        // QSM.rs#180), from the command line and from a config file alike.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--bet-smoothness", "2", "--bet-gradient-threshold",
+                                  "-0.2", "--bet-iterations", "500", "--bet-subdivisions", "3"]);
+        assert_eq!((c.bet.smoothness, c.bet.gradient_threshold, c.bet.iterations, c.bet.subdivisions),
+                   (2.0, -0.2, 500, 3));
         let c = PipelineConfig::from_toml("[bet]\nsmoothness = 2.0\niterations = 500\n").unwrap();
-        let e = format!("{}", validate_bet(&c).unwrap_err());
-        assert!(e.contains("smoothness") && e.contains("iterations"), "{e}");
+        assert_eq!((c.bet.smoothness, c.bet.iterations), (2.0, 500));
     }
 
     /// The flag is the whole recipe's answer: it also wins over a `scale=` spelled out in

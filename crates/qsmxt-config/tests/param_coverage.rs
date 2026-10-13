@@ -98,6 +98,7 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     cover!(q::bgremove::SharpParams => c::SharpConfig);
     cover!(q::bgremove::ResharpParams => c::ResharpConfig);
     cover!(q::bgremove::HarperellaParams => c::HarperellaConfig);
+    cover!(q::bgremove::IharperellaParams => c::IharperellaConfig);
     // mSMV: b0/te are runtime scan parameters; prefilter is a mode flag (forced off in
     // refinement mode by the dispatcher), not a user knob in the pipeline.
     cover!(q::bgremove::MsmvParams => c::MsmvConfig, ignore: ["b0", "te", "prefilter"]);

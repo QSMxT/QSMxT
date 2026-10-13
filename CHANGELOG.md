@@ -8,6 +8,28 @@ upgrade.
 
 ### Output changes with default settings
 
+- **Segmentations keep valid label ids on the acquired grid** (#267). Returning a resampled run
+  to its acquired grid (`--output-space acquired`, the default) interpolated `_dseg.nii`
+  trilinearly, because only files named `*mask*` were treated specially, which put invalid,
+  non-integer labels on every boundary. Each published derivative now declares what it is
+  (continuous map, mask, label image, wrapped phase, projection) and travels accordingly: labels
+  by majority vote (QSM.rs `geometry::resample_labels_onto`), masks nearest-neighbour. The SMWI
+  minIPs are rebuilt on the acquired grid from the resampled SMWI, as the SWI minIP already was
+  (they stayed on the working grid). Outputs returned by an earlier release are redone once.
+  Only resampled (oblique) runs change.
+
+- **TFI inverts the total field** (#265). TFI is a total-field method, but QSMxT ran background
+  removal first and gave it the V-SHARP local field. Which field an inversion takes now comes from
+  QSM.rs (`InversionConfig::input`: local field, total field or wrapped phase), replacing two
+  hand-kept lists that disagreed; TFI, MEDI+SMV, TGV, QSMART, AutoQSM and NeXtQSM get the total
+  field and the brain mask with no background-removal stage, and the methods text says so.
+  `--qsm-algorithm tfi` χ changes; other defaults do not.
+- **iQFM with an inversion that does not take a local field is refused** (#276): it had no
+  effect, and left field mapping off while the inversion read a total field that was never
+  written (or a stale one from an earlier run). Any other non-default `--bf-algorithm` with such
+  an inversion is a warning. The TUI hides background removal for those inversions and sends no
+  `--bf-algorithm`.
+
 - **V-SHARP no longer deconvolves by default** (`--vsharp-deconvolve false`, QSM.rs#160). The
   default background removal is now V-SHARP's SMV high-pass with the largest kernel that fits
   at each voxel (12 mm down to 1 mm), as STI Suite and the UK Biobank pipeline run it, instead
@@ -34,7 +56,23 @@ upgrade.
   units. `qsmxt invert tgv` takes a field in ppm like the other `invert` algorithms and no longer
   has `--echo-time` / `--field-strength`.
 
-These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
+These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
+
+- **Mask sections build their own magnitude from every echo** (QSM.rs#173, #178). QSMxT used to
+  hand each section one magnitude: the inhomogeneity-corrected RSS, or a corrected first/last
+  echo. Every echo is now passed, corrected one by one when `--inhomogeneity-correction` is on
+  (the default), and each section takes echo 1, the RSS or the last echo from them; phase
+  quality is weighted by the RSS. **The default mask changes slightly**: the RSS of corrected
+  echoes instead of the corrected RSS. The mask cache key now includes `[homogeneity]`.
+- **Algorithms refuse bad input instead of panicking** (QSM.rs#178): ARLO, EPG R2, R2′, RSS,
+  MCPC-3D-S and TGV return an error naming what was wrong, reported as `Invalid input: …`.
+  QSMxT's own checks (#273) still refuse these runs before processing.
+- **iHARPERELLA has no radius** (QSM.rs#169): `--iharperella-radius` (and the TUI row) is gone;
+  it never reached the algorithm, which has no SMV kernel. HARPERELLA in the pipeline is
+  unchanged (it takes the total field in ppm). `qsmxt bgremove harperella|iharperella` now read
+  a wrapped echo in rad when given `--te` and `--field-strength` (both or neither), and an
+  unwrapped total field in ppm otherwise; the local field is written in ppm either way (it was
+  in rad without `--te`/`--field-strength`).
 
 - **iLSQR is now STI Suite 3.0's algorithm** (QSM.rs#163, #165). The streaking-stage tolerance
   defaults to 1e-3 (was 0.01), `max_iter` caps both LSQR solves (default 100), the pipeline pads
@@ -52,6 +90,24 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
   `axial_grid_for`/`ras_axes`), which can change results under `--obliquity-threshold` resampling.
 
 ### Added
+
+- **Real/imaginary input** (BIDS `part-real` / `part-imag`). An acquisition with no
+  `part-phase` files but real and imaginary ones (as GE exports them) is now discovered and
+  processed: the first pipeline stage converts each echo to magnitude and phase with QSM.rs's
+  `complex_to_mag_phase`, which also detects and undoes alternate-slice π chopping, one decision
+  for all echoes. Real/imaginary data whose sidecar `Manufacturer` is GE has its phase negated,
+  since GE's phase runs opposite to the Siemens/Philips convention. The neighbour coherence per axis and the corrected axes are logged and recorded
+  in the `scale_phase` provenance. Before this, real/imaginary data was silently ignored.
+  Per-coil real/imaginary input is refused. `qsmxt dicom-convert` no longer relabels the
+  sidecar `ImageType` of GE real/imaginary series to `MAGNITUDE` / `PHASE` (they are written as
+  `part-real` / `part-imag` with their ImageType intact), and no longer logs a GE "phase
+  inversion" that nothing applied.
+
+- **The R2′ sidecar records where the map came from** (#236): `R2primeSource` = `measured`
+  (R2* − R2, with `R2primeMethod` naming where R2 came from), `predicted` (R2PRIMEnet, with
+  `R2primenetTrainedFieldStrength` and `R2primenetCalibrated`, false off 3 T) or `supplied`
+  (`--use-custom-r2prime`). A predicted R2′ looks like a measured one; only this tells them
+  apart. Default image output does not change.
 
 - **Motion-robust echo combination** (QSM.rs#141/#166), off by default: `--b0-estimation
   robust-fit`, with `--robust-fit-loss`, `--robust-fit-tuning`, `--robust-fit-iterations`,
@@ -114,6 +170,21 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
   usage error for any oblique acquisition whose B0 direction has a negative component, and
   `qsmxt run --obliquity-threshold -1` could not disable resampling. Default output does not
   change; commands that used to be refused now run.
+- **The multi-orientation (COSMOS) map is a first-class output** (#270). It used to read
+  members' magnitudes from `anat/` after they had been returned to the acquired grid while their
+  local fields stayed on the working grid, so an oblique group failed under the default
+  `--output-space acquired`; it now reads every member input from the working grid. The COSMOS
+  map is referenced with `--qsm-reference` over the voxels every orientation covers (it was
+  written raw), written on the reference orientation's acquired grid, cached (keyed on the
+  members' local fields, directions and settings), computed before the reference summary and
+  statistics so it appears in both, and with `--do-analysis` gets a per-structure table on the
+  reference orientation's segmentation. A grouping whose inversion skips background removal (MEDI
+  with SMV, TGV, QSMART, AutoQSM, NeXtQSM, iQSM/iQSM+) or with `--no-qsm` is refused before
+  processing. New `--cosmos-magnitude-weighting`, `--cosmos-tol`, `--cosmos-max-iter` (TUI:
+  pipeline tab, General; config `[multi_orientation]`). STI outputs stay unreferenced on the
+  working grid, with a warning when the reference orientation was returned to its acquired grid.
+  Default output changes for COSMOS: the map is now mean-referenced, and on the acquired grid for
+  an oblique reference orientation.
 
 - **A requested output the data cannot produce is an error, before anything runs** (#193,
   #273). SWI, SMWI, segmentation, R2*/T2*, R2, R2′ and χ-separation used to be dropped silently
@@ -166,8 +237,8 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
     the masking recipe (as `--bet-voxel-scale` does), overriding a `bet:<f>` in `--mask`; a
     config file's `[bet] fractional_intensity` / `voxel_scale` reach the steps the same way.
     `--bet-smoothness`, `--bet-gradient-threshold`, `--bet-iterations` and `--bet-subdivisions`
-    are removed, and setting them in a config file's `[bet]` is an error: a BET mask step
-    (QSM.rs `MaskOp::Bet`) carries only the fractional intensity and the voxel scale.
+    now reach BET too, since QSM.rs#180 lets a BET mask step carry all of BET's settings: each
+    applies to every BET step of the recipe (CLI, `[bet]`, TUI masking section, methods text).
   - `qsmxt fieldmap romeo` starts from QSMxT's defaults, as `qsmxt run` does (ROMEO individual
     unwrapping and global correction on; it used qsm-core's, with both off), so the two give the
     same field map for the same inputs and flags. **The standalone tool's default output

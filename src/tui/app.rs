@@ -1441,6 +1441,9 @@ pub struct PipelineFormState {
     /// they need it, and reconstruct past the direction-degeneracy check.
     pub orientation_registration: bool,
     pub multi_orientation_force: bool,
+    pub cosmos_magnitude_weighting: bool,
+    pub cosmos_tol: String,
+    pub cosmos_max_iter: String,
     pub motion_reference: usize,
     pub motion_reference_echo: String,
     pub motion_chain: bool,
@@ -1611,7 +1614,6 @@ pub struct PipelineFormState {
     pub harperella_tol: String,
 
     // iHARPERELLA
-    pub iharperella_radius: String,
     pub iharperella_max_iter: String,
     pub iharperella_tol: String,
 
@@ -1716,6 +1718,11 @@ pub struct PipelineFormState {
 
     // Mask sections (combined with `mask_combine` at runtime)
     pub mask_sections: Vec<crate::pipeline::config::MaskSection>,
+    /// BET's surface settings, for every BET step of the recipe (`--bet-*`).
+    pub bet_smoothness: String,
+    pub bet_gradient_threshold: String,
+    pub bet_iterations: String,
+    pub bet_subdivisions: String,
     /// How the sections fold together (OR = union, AND = intersection).
     pub mask_combine: crate::pipeline::config::MaskCombine,
     /// Refinements applied to the combined mask, after `mask_combine`.
@@ -1840,6 +1847,9 @@ impl Default for PipelineFormState {
             motion_correction: false,
             orientation_registration: true,
             multi_orientation_force: false,
+            cosmos_magnitude_weighting: false,
+            cosmos_tol: format!("{}", qsmxt_config::MultiOrientationConfig::default().cosmos_tol),
+            cosmos_max_iter: format!("{}", qsmxt_config::MultiOrientationConfig::default().cosmos_max_iter),
             motion_reference: 0,
             motion_reference_echo: "1".to_string(),
             motion_chain: qsmxt_config::MotionCorrectionConfig::default().chain,
@@ -1964,9 +1974,8 @@ impl Default for PipelineFormState {
             harperella_radius: format!("{}", qsm_core::bgremove::HarperellaParams::default().radius),
             harperella_max_iter: format!("{}", qsm_core::bgremove::HarperellaParams::default().max_iter),
             harperella_tol: format!("{}", qsm_core::bgremove::HarperellaParams::default().tol),
-            iharperella_radius: format!("{}", qsm_core::bgremove::HarperellaParams::default().radius),
-            iharperella_max_iter: format!("{}", qsm_core::bgremove::HarperellaParams::default().max_iter),
-            iharperella_tol: format!("{}", qsm_core::bgremove::HarperellaParams::default().tol),
+            iharperella_max_iter: format!("{}", qsm_core::bgremove::IharperellaParams::default().max_iter),
+            iharperella_tol: format!("{}", qsm_core::bgremove::IharperellaParams::default().tol),
             msmv_refine: false,
             msmv_radius: format!("{}", qsm_core::bgremove::MsmvParams::default().radius),
             msmv_maxk: format!("{}", qsm_core::bgremove::MsmvParams::default().maxk),
@@ -2051,6 +2060,10 @@ impl Default for PipelineFormState {
             hdqsm_max_iter_l2: format!("{}", hdqsm.max_iter_l2),
             hdqsm_tol_update: format!("{}", hdqsm.tol_update),
             mask_sections: crate::pipeline::config::default_mask_sections(),
+            bet_smoothness: format!("{}", qsm_core::bet::BetParams::default().smoothness),
+            bet_gradient_threshold: format!("{}", qsm_core::bet::BetParams::default().gradient_threshold),
+            bet_iterations: format!("{}", qsm_core::bet::BetParams::default().iterations),
+            bet_subdivisions: format!("{}", qsm_core::bet::BetParams::default().subdivisions),
             mask_combine: crate::pipeline::config::MaskCombine::Or,
             mask_combined_refinements: vec![],
             two_pass: false,
@@ -2325,12 +2338,10 @@ impl PipelineFormState {
         let alg = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
         let is_tgv = alg == "tgv";
         let is_qsmart = alg == "qsmart";
-        let is_medi_smv = alg == "medi" && self.medi_smv;
-        // AutoQSM / NeXtQSM are single-step (own background removal from the total field), so
-        // the BG-removal section is hidden — but field mapping/unwrapping still runs.
-        let is_autoqsm = alg == "autoqsm";
-        let is_nextqsm = alg == "nextqsm";
-        let is_single_step = is_autoqsm || is_nextqsm;
+        // Whether a background-removal stage runs at all is QSM.rs's call (#265): the
+        // total-field (TFI, MEDI+SMV, TGV, QSMART, AutoQSM, NeXtQSM) and wrapped-phase (iQSM)
+        // methods have none, so the section is hidden for them.
+        let needs_bfr = self.inversion_needs_bg_removal();
         // iQSM / iQSM+ reconstruct end-to-end from raw phase: no field mapping or BG removal.
         let is_iqsm = alg == "iqsm" || alg == "iqsm-plus";
 
@@ -2392,6 +2403,14 @@ impl PipelineFormState {
             label: "Force Multi-orientation", field: "multi_orientation_force",
             help: "Multi-orientation groups: reconstruct even when the B0 directions look degenerate (wrong metadata gives a plausible wrong map)",
         });
+        rows.push(PipelineRow::Toggle {
+            label: "COSMOS Magnitude Weighting", field: "cosmos_magnitude_weighting",
+            help: "COSMOS groups: weight each orientation by its combined magnitude (conjugate-gradient solve). Off = closed-form least squares",
+        });
+        if self.cosmos_magnitude_weighting {
+            rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "cosmos_tol", help: "Conjugate-gradient tolerance of weighted COSMOS" });
+            rows.push(PipelineRow::Param { label: "  CG Max Iterations", field: "cosmos_max_iter", help: "Conjugate-gradient iteration cap of weighted COSMOS" });
+        }
         if self.motion_correction || self.orientation_registration {
             rows.push(PipelineRow::Note { text: "Rigid registration (motion correction, orientation co-registration):" });
             rows.push(PipelineRow::Param { label: "  Levels", field: "reg_levels", help: "Pyramid levels: the capture range; do not lower (default 5)" });
@@ -2605,6 +2624,13 @@ impl PipelineFormState {
             self.push_refinement_rows(&mut rows, MASK_COMBINED_SECTION);
             rows.push(PipelineRow::MaskOpAddStep { section: MASK_COMBINED_SECTION });
         }
+        // BET's surface settings are one value per run, shared by every BET step.
+        if self.uses_bet() {
+            rows.push(PipelineRow::Param { label: "BET Smoothness", field: "bet_smoothness", help: "BET surface smoothness factor (every BET step)" });
+            rows.push(PipelineRow::Param { label: "BET Gradient Threshold", field: "bet_gradient_threshold", help: "BET gradient threshold, -1 to 1 (every BET step)" });
+            rows.push(PipelineRow::Param { label: "BET Iterations", field: "bet_iterations", help: "BET surface evolution iterations (every BET step)" });
+            rows.push(PipelineRow::Param { label: "BET Subdivisions", field: "bet_subdivisions", help: "BET icosphere subdivision level (every BET step)" });
+        }
 
         // Two-pass artefact reduction. Configured here because what it needs is a second mask;
         // what it does is repeat background removal and dipole inversion against it.
@@ -2620,8 +2646,8 @@ impl PipelineFormState {
 
         rows.push(PipelineRow::Separator);
 
-        // BG Removal (hidden for TGV, QSMART, MEDI+SMV, single-step DL, and end-to-end iQSM)
-        if !is_tgv && !is_qsmart && !is_medi_smv && !is_single_step && !is_iqsm {
+        // BG Removal (hidden for the inversions that take the total field or wrapped phase)
+        if needs_bfr {
             rows.push(self.section_header("bgremoval", "Background removal",
                 BF_OPTIONS.get(self.bf_algorithm).copied().unwrap_or("").to_string()));
             rows.push(PipelineRow::AlgoSelect {
@@ -2665,7 +2691,6 @@ impl PipelineFormState {
                     rows.push(PipelineRow::Param { label: "  Tolerance", field: "harperella_tol", help: "Convergence tolerance" });
                 }
                 7 => { // iHARPERELLA
-                    rows.push(PipelineRow::Param { label: "  Radius", field: "iharperella_radius", help: "SMV kernel radius in mm" });
                     rows.push(PipelineRow::Param { label: "  Max Iter", field: "iharperella_max_iter", help: "Maximum iterations" });
                     rows.push(PipelineRow::Param { label: "  Tolerance", field: "iharperella_tol", help: "Convergence tolerance" });
                 }
@@ -2979,7 +3004,8 @@ impl PipelineFormState {
         "ismv_tol", "ismv_max_iter", "ismv_radius", "sharp_threshold", "sharp_radius",
         "resharp_radius", "resharp_tik_reg", "resharp_tol", "resharp_max_iter",
         "harperella_radius", "harperella_max_iter", "harperella_tol",
-        "iharperella_radius", "iharperella_max_iter", "iharperella_tol",
+        "iharperella_max_iter", "iharperella_tol",
+        "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
         "msmv_radius", "msmv_maxk",
         "qsmart_ilsqr_max_iter", "qsmart_ilsqr_pad_mm", "qsmart_vasc_sphere_radius", "qsmart_sdf_spatial_radius",
         "qsmart_sdf_sigma1_stage1", "qsmart_sdf_sigma2_stage1", "qsmart_sdf_sigma1_stage2", "qsmart_sdf_sigma2_stage2",
@@ -2999,6 +3025,7 @@ impl PipelineFormState {
         "robust_fit_downweight_level", "robust_fit_flag_ratio",
         "motion_reference_echo", "motion_chain_levels", "motion_min_ncc",
         "reg_levels", "reg_max_samples", "reg_max_iterations", "reg_max_evaluations", "reg_tolerance", "reg_rotation_step_deg", "reg_translation_step_mm", "reg_min_overlap",
+        "cosmos_tol", "cosmos_max_iter",
     ];
 
     /// Get a string parameter value by field name.
@@ -3058,6 +3085,8 @@ impl PipelineFormState {
             "reg_rotation_step_deg" => &self.reg_rotation_step_deg,
             "reg_translation_step_mm" => &self.reg_translation_step_mm,
             "reg_min_overlap" => &self.reg_min_overlap,
+            "cosmos_tol" => &self.cosmos_tol,
+            "cosmos_max_iter" => &self.cosmos_max_iter,
             "heidi_gradient_mask_floor" => &self.heidi_gradient_mask_floor,
             "heidi_continuation_steps" => &self.heidi_continuation_steps,
             "heidi_inner_iterations" => &self.heidi_inner_iterations,
@@ -3120,7 +3149,10 @@ impl PipelineFormState {
             "harperella_radius" => &self.harperella_radius,
             "harperella_max_iter" => &self.harperella_max_iter,
             "harperella_tol" => &self.harperella_tol,
-            "iharperella_radius" => &self.iharperella_radius,
+            "bet_smoothness" => &self.bet_smoothness,
+            "bet_gradient_threshold" => &self.bet_gradient_threshold,
+            "bet_iterations" => &self.bet_iterations,
+            "bet_subdivisions" => &self.bet_subdivisions,
             "iharperella_max_iter" => &self.iharperella_max_iter,
             "iharperella_tol" => &self.iharperella_tol,
             "msmv_radius" => &self.msmv_radius,
@@ -3274,6 +3306,8 @@ impl PipelineFormState {
             "reg_rotation_step_deg" => Some(&mut self.reg_rotation_step_deg),
             "reg_translation_step_mm" => Some(&mut self.reg_translation_step_mm),
             "reg_min_overlap" => Some(&mut self.reg_min_overlap),
+            "cosmos_tol" => Some(&mut self.cosmos_tol),
+            "cosmos_max_iter" => Some(&mut self.cosmos_max_iter),
             "heidi_gradient_mask_floor" => Some(&mut self.heidi_gradient_mask_floor),
             "heidi_continuation_steps" => Some(&mut self.heidi_continuation_steps),
             "heidi_inner_iterations" => Some(&mut self.heidi_inner_iterations),
@@ -3336,7 +3370,10 @@ impl PipelineFormState {
             "harperella_radius" => Some(&mut self.harperella_radius),
             "harperella_max_iter" => Some(&mut self.harperella_max_iter),
             "harperella_tol" => Some(&mut self.harperella_tol),
-            "iharperella_radius" => Some(&mut self.iharperella_radius),
+            "bet_smoothness" => Some(&mut self.bet_smoothness),
+            "bet_gradient_threshold" => Some(&mut self.bet_gradient_threshold),
+            "bet_iterations" => Some(&mut self.bet_iterations),
+            "bet_subdivisions" => Some(&mut self.bet_subdivisions),
             "iharperella_max_iter" => Some(&mut self.iharperella_max_iter),
             "iharperella_tol" => Some(&mut self.iharperella_tol),
             "msmv_radius" => Some(&mut self.msmv_radius),
@@ -3512,6 +3549,7 @@ impl PipelineFormState {
             "motion_correction" => self.motion_correction,
             "orientation_registration" => self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force,
+            "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting,
             "motion_chain" => self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve,
@@ -3553,6 +3591,7 @@ impl PipelineFormState {
             "motion_correction" => self.motion_correction = !self.motion_correction,
             "orientation_registration" => self.orientation_registration = !self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,
+            "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting = !self.cosmos_magnitude_weighting,
             "motion_chain" => self.motion_chain = !self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve = !self.vsharp_deconvolve,
@@ -3676,6 +3715,29 @@ impl PipelineFormState {
 
     /// Apply a mask preset, overwriting the whole recipe (sections, combine mode and the
     /// refinements that run on the combined mask).
+    /// Whether the selected inversion reads a background-removed local field (QSM.rs
+    /// `InversionInput::LocalField`), and so whether background removal is part of the run.
+    pub fn inversion_needs_bg_removal(&self) -> bool {
+        let name = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
+        let Ok(algorithm) = serde_json::from_value::<crate::pipeline::config::QsmAlgorithm>(
+            serde_json::json!(name)) else { return true };
+        let mut config = crate::pipeline::config::PipelineConfig::default();
+        config.inversion.algorithm = algorithm;
+        config.inversion.medi.smv = self.medi_smv;
+        !crate::pipeline::runner::skips_bgremove(&config)
+    }
+
+    /// Whether any step of the masking recipe (sections, combined refinements, two-pass) is BET.
+    pub fn uses_bet(&self) -> bool {
+        use crate::pipeline::config::MaskOp;
+        let in_section = |s: &crate::pipeline::config::MaskSection| {
+            s.all_ops().iter().any(|op| matches!(op, MaskOp::Bet { .. }))
+        };
+        self.mask_sections.iter().any(in_section)
+            || self.mask_combined_refinements.iter().any(|op| matches!(op, MaskOp::Bet { .. }))
+            || (self.two_pass && self.two_pass_sections.iter().any(in_section))
+    }
+
     pub fn apply_mask_preset(&mut self, preset: usize) {
         use crate::pipeline::config::*;
         // MASK_PRESET_OPTIONS is mask_presets() plus the trailing "custom" entry, which leaves

@@ -14,6 +14,10 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
+  # One job, and the tests run once. Coverage used to be a separate job that re-ran the whole
+  # suite under cargo-tarpaulin with `--test-threads=1` (~8 min) next to the plain `cargo test`
+  # (~2 min). cargo-llvm-cov runs the suite in parallel, instrumented, and exits non-zero on a
+  # failing test, so the one run is both the test gate and the coverage measurement.
   check:
     name: Check, Clippy & Test
     runs-on: ubuntu-latest
@@ -22,9 +26,12 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
         with:
-          components: clippy
+          components: clippy, llvm-tools-preview
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Cargo check
         run: cargo check --workspace --all-targets
@@ -32,44 +39,33 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
-      - name: Run tests
-        run: cargo test --workspace
+      # `cargo test --workspace` under coverage instrumentation (doctests excluded; there are
+      # none). The ignore regex keeps the same files out of the report that tarpaulin's
+      # --exclude-files did: entry point, TUI rendering, self-update. It only affects the
+      # report; those files' tests still run.
+      - name: Run tests with coverage
+        run: >
+          cargo llvm-cov --workspace --lcov --output-path target/lcov.info
+          --ignore-filename-regex '(^|/)src/(main|tui/mod|tui/ui|commands/update)\.rs$'
 
       # Fails if a qsm-core *Params field isn't represented in its qsmxt-config
       # *Config wrapper (drift guard). See crates/qsmxt-config/tests/param_coverage.rs.
       - name: Param coverage (qsmxt-config vs qsm-core)
         run: cargo test -p qsmxt-config --features introspection --test param_coverage
 
-  coverage:
-    name: Code Coverage
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Install cargo-tarpaulin
-        uses: taiki-e/install-action@cargo-tarpaulin
-
-      - name: Run coverage
-        # --engine llvm (source-based): ptrace engine crashes on subprocess-spawning tests.
-        # --timeout: tarpaulin waits 60s by default for a test to respond, and the instrumented
-        # single-echo TGV run sits right on that line — it passed on qsm-core v0.35.0 and times out
-        # on v0.36.0. The test is slow, not hung (the uninstrumented suite finishes in under two
-        # minutes), so the budget is the thing that was wrong. 600 since the phantom TGV-scale
-        # test (two full runs) put the instrumented binary near 300 s.
-        run: cargo tarpaulin --timeout 600 --engine llvm --workspace --out json --output-dir target/tarpaulin --exclude-files src/main.rs --exclude-files src/tui/mod.rs --exclude-files src/tui/ui.rs --exclude-files src/commands/update.rs -- --test-threads=1
-
       # Two thresholds, deliberately. 70% is the gate `release.yml` enforces, so failing here is
       # what stops a PR discovering at release time that it cannot ship. 90% is the target, and
       # stays advisory. Before this, both branches of the check ended in `echo`, so the step always
       # exited 0 — a green tick said nothing at all about coverage.
+      #
+      # The figure is LLVM line coverage of non-test code: every `#[cfg(test)]` item is dropped
+      # from the denominator (.github/scripts/coverage_summary.py), as tarpaulin did. The two
+      # tools count "coverable line" differently, so it is close to the old figure, not equal.
       - name: Check coverage threshold
         run: |
-          COVERAGE=$(python3 -c "import json; data=json.load(open('target/tarpaulin/tarpaulin-report.json')); print(f\"{data['coverage']:.2f}\")")
-          echo "Coverage: ${COVERAGE}%"
+          SUMMARY=$(python3 .github/scripts/coverage_summary.py target/lcov.info)
+          read -r COVERAGE COVERED COVERABLE <<< "$SUMMARY"
+          echo "Coverage: ${COVERAGE}% (${COVERED}/${COVERABLE} lines)"
           if ! python3 -c "import sys; sys.exit(0 if float('${COVERAGE}') >= 70.0 else 1)"; then
             echo "::error::Coverage ${COVERAGE}% is below the 70% gate enforced by the release workflow"
             exit 1

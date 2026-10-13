@@ -245,8 +245,13 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         orientation_group,
         multi_orientation_force: ps.multi_orientation_force,
         no_orientation_registration: !ps.orientation_registration,
+        cosmos_magnitude_weighting: ps.cosmos_magnitude_weighting,
+        cosmos_tol: if ps.cosmos_magnitude_weighting { parse_optional_f64(&ps.cosmos_tol) } else { None },
+        cosmos_max_iter: if ps.cosmos_magnitude_weighting { parse_optional_usize(&ps.cosmos_max_iter) } else { None },
         unwrapping_algorithm: Some(unwrap_options[ps.unwrapping_algorithm]),
-        bf_algorithm: Some(bf_options[ps.bf_algorithm]),
+        // Only when the inversion has a background-removal stage: otherwise the choice has no
+        // effect, and iQFM there is refused (#276).
+        bf_algorithm: ps.inversion_needs_bg_removal().then(|| bf_options[ps.bf_algorithm]),
         masking_input: None,
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma: parse_optional_f64_vec3(&ps.phase_offset_sigma),
@@ -275,6 +280,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         // The TUI's voxel scale lives on the mask recipe's BET step, so it travels in
         // `mask_sections_cli` below rather than as a recipe-wide flag.
         bet_voxel_scale: None,
+        bet_smoothness: if ps.uses_bet() { parse_optional_f64(&ps.bet_smoothness) } else { None },
+        bet_gradient_threshold: if ps.uses_bet() { parse_optional_f64(&ps.bet_gradient_threshold) } else { None },
+        bet_iterations: if ps.uses_bet() { parse_optional_usize(&ps.bet_iterations) } else { None },
+        bet_subdivisions: if ps.uses_bet() { parse_optional_usize(&ps.bet_subdivisions) } else { None },
         qsm_reference: Some(crate::tui::app::qsm_reference_spec(ps.qsm_reference)),
         rts_params: crate::cli::RtsParamArgs {
             rts_delta: parse_optional_f64(&ps.rts_delta),
@@ -536,7 +545,6 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             harperella_tol: parse_optional_f64(&ps.harperella_tol),
         },
         iharperella_params: crate::cli::IharperellaParamArgs {
-            iharperella_radius: parse_optional_f64(&ps.iharperella_radius),
             iharperella_max_iter: parse_optional_usize(&ps.iharperella_max_iter),
             iharperella_tol: parse_optional_f64(&ps.iharperella_tol),
         },
@@ -1013,6 +1021,29 @@ mod tests {
 
     /// Multi-orientation co-registration and force are in the TUI; the registration settings
     /// show while either registration can run.
+    /// The TUI cannot produce iQFM (or any BFR) with an inversion that has no background-removal
+    /// stage: the section is hidden and no `--bf-algorithm` is generated (#276). Which those are
+    /// comes from QSM.rs (#265), so TFI is among them.
+    #[test]
+    fn background_removal_is_hidden_and_not_sent_for_total_field_inversions() {
+        use crate::tui::app::{PipelineRow, QSM_ALGO_OPTIONS};
+        // Every option parses as a config algorithm, or the check would silently say "needs BFR".
+        for name in QSM_ALGO_OPTIONS {
+            assert!(serde_json::from_value::<crate::pipeline::config::QsmAlgorithm>(serde_json::json!(name)).is_ok(), "{name}");
+        }
+        let mut app = default_app();
+        app.pipeline_state.collapsed_sections.clear();
+        let shows_bfr = |app: &App| app.pipeline_state.visible_rows().iter().any(|r|
+            matches!(r, PipelineRow::AlgoSelect { field: "bf_algorithm", .. }));
+        assert!(shows_bfr(&app));
+        assert!(pipeline_args_from_app(&app).bf_algorithm.is_some());
+        for name in ["tfi", "tgv", "qsmart", "autoqsm", "nextqsm", "iqsm"] {
+            app.pipeline_state.qsm_algorithm = QSM_ALGO_OPTIONS.iter().position(|o| *o == name).unwrap();
+            assert!(!shows_bfr(&app), "{name}");
+            assert!(pipeline_args_from_app(&app).bf_algorithm.is_none(), "{name}");
+        }
+    }
+
     #[test]
     fn orientation_registration_and_force_reach_config_and_args() {
         let mut app = default_app();
@@ -1487,14 +1518,15 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/bids".to_string();
         app.form.slurm_account = "acct".to_string();
-        app.pipeline_state.qsm_algorithm = 4; // tgv
+        // TKD rather than TGV: TGV has no background-removal stage, so the TUI sends none (#276).
+        app.pipeline_state.qsm_algorithm = 2; // tkd
         app.pipeline_state.unwrapping_algorithm = 1; // laplacian
         app.pipeline_state.bf_algorithm = 1; // pdf
         app.pipeline_state.obliquity_threshold = "5".to_string();
         app.form.do_swi = true;
 
         let slurm = build_slurm_args(&app).unwrap();
-        assert_eq!(slurm.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tgv));
+        assert_eq!(slurm.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tkd));
         assert_eq!(slurm.pipeline.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::Laplacian));
         assert_eq!(slurm.pipeline.bf_algorithm, Some(crate::cli::BfAlgorithmArg::Pdf));
         assert_eq!(slurm.pipeline.obliquity_threshold, Some(5.0));
@@ -1788,6 +1820,13 @@ mod parity {
             ("orientation_group", |_| {}, |a| a.filter_state.orientation_group = "acq".into()),
             ("orientation_algorithm", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_algorithm = 1),
             ("orientation_lambda", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_lambda = "0.5".into()),
+            ("bet_smoothness", |a| a.pipeline_state.apply_mask_preset(1), |a| a.pipeline_state.bet_smoothness = "2".into()),
+            ("bet_gradient_threshold", |a| a.pipeline_state.apply_mask_preset(1), |a| a.pipeline_state.bet_gradient_threshold = "0.3".into()),
+            ("bet_iterations", |a| a.pipeline_state.apply_mask_preset(1), |a| a.pipeline_state.bet_iterations = "500".into()),
+            ("bet_subdivisions", |a| a.pipeline_state.apply_mask_preset(1), |a| a.pipeline_state.bet_subdivisions = "3".into()),
+            ("cosmos_magnitude_weighting", |a| a.filter_state.orientation_group = "acq".into(), |a| a.pipeline_state.cosmos_magnitude_weighting = true),
+            ("cosmos_tol", |a| { a.filter_state.orientation_group = "acq".into(); a.pipeline_state.cosmos_magnitude_weighting = true; }, |a| a.pipeline_state.cosmos_tol = "1e-4".into()),
+            ("cosmos_max_iter", |a| { a.filter_state.orientation_group = "acq".into(); a.pipeline_state.cosmos_magnitude_weighting = true; }, |a| a.pipeline_state.cosmos_max_iter = "250".into()),
             ("mask sections", |_| {}, |a| {
                 let mut extra = a.pipeline_state.mask_sections[0].clone();
                 extra.input = crate::pipeline::config::MaskingInput::Magnitude;

@@ -187,7 +187,7 @@ pub fn compute_r2star(
     let grid = nifti_grid(&reference);
     let (r2star_map, _s0_map) = qsm_core::utils::r2star_arlo(
         &interleaved, &mask, echo_times, &grid,
-    );
+    )?;
     Ok((r2star_map, reference))
 }
 

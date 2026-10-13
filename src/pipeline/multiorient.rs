@@ -230,9 +230,54 @@ struct MemberData {
     geometry: Geometry,
 }
 
+/// Where one of a member's published volumes is on its *working* grid.
+///
+/// `stage_output_space` returns a resampled run's published outputs to the acquired grid and keeps
+/// the working-grid originals in the run's `working-grid` stash. The local field and the
+/// background-removal mask never leave the working grid, so everything combined with them has to
+/// be read from the stash when the run was returned — not from `anat/`, which by then is on
+/// another grid (#270). The run's state file says whether that happened this time.
+fn on_working_grid(output: &DerivativeOutputs, key: &AcquisitionKey, published: PathBuf) -> PathBuf {
+    if !returned_to_acquired(output, key) {
+        return published;
+    }
+    match published.file_name() {
+        Some(name) => {
+            let stashed = output.working_grid_dir(key).join(name);
+            if stashed.exists() { stashed } else { published }
+        }
+        None => published,
+    }
+}
+
+/// Whether the run's outputs were returned to its acquired grid by its last run.
+fn returned_to_acquired(output: &DerivativeOutputs, key: &AcquisitionKey) -> bool {
+    std::fs::read_to_string(output.state_path(key)).ok()
+        .and_then(|t| serde_json::from_str::<crate::pipeline::graph::PipelineState>(&t).ok())
+        .is_some_and(|st| st.completed_steps.contains_key("output_space"))
+}
+
+/// The paths one member contributes, on its working grid.
+struct MemberPaths {
+    field: PathBuf,
+    mask: PathBuf,
+    magnitude: PathBuf,
+}
+
+fn member_paths(output: &DerivativeOutputs, run: &QsmRun) -> MemberPaths {
+    // The background-removal mask is the one the local field is actually defined on; the
+    // brain mask is larger wherever the BFR eroded.
+    let bg = output.bg_mask_path(&run.key);
+    MemberPaths {
+        field: output.local_field_path(&run.key),
+        mask: if bg.exists() { bg } else { on_working_grid(output, &run.key, output.mask_path(&run.key)) },
+        magnitude: on_working_grid(output, &run.key, output.magnitude_path(&run.key)),
+    }
+}
+
 /// Load one member's local field and background-removal mask.
-fn load_member(output: &DerivativeOutputs, run: &QsmRun) -> crate::Result<MemberData> {
-    let field_path = output.local_field_path(&run.key);
+fn load_member(paths: &MemberPaths, run: &QsmRun) -> crate::Result<MemberData> {
+    let field_path = &paths.field;
     if !field_path.exists() {
         return Err(QsmxtError::Config(format!(
             "no local field for {} at {} — the orientation's own pipeline must run before the \
@@ -241,25 +286,25 @@ fn load_member(output: &DerivativeOutputs, run: &QsmRun) -> crate::Result<Member
             field_path.display()
         )));
     }
-    let field = qsm_core::io::read_nifti_file(&field_path)
+    let field = qsm_core::io::read_nifti_file(field_path)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", field_path.display(), e)))?;
 
-    // The background-removal mask is the one the local field is actually defined on; the
-    // brain mask is larger wherever the BFR eroded.
-    let mask_path = {
-        let bg = output.bg_mask_path(&run.key);
-        if bg.exists() { bg } else { output.mask_path(&run.key) }
-    };
-    let mask_nifti = qsm_core::io::read_nifti_file(&mask_path)
+    let mask_path = &paths.mask;
+    let mask_nifti = qsm_core::io::read_nifti_file(mask_path)
         .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", mask_path.display(), e)))?;
+    if mask_nifti.dims != field.dims {
+        return Err(QsmxtError::DimensionMismatch(format!(
+            "{}: mask {} is {:?} but its local field is {:?}",
+            run.key, mask_path.display(), mask_nifti.dims, field.dims)));
+    }
     let mask: Vec<u8> = mask_nifti.data.iter().map(|&v| (v > 0.5) as u8).collect();
 
-    // The combined magnitude, which is what registration correlates. Written by the same stage
-    // on the same working grid as the local field, so a size mismatch means something upstream
-    // wrote to the wrong geometry rather than that this member is unregisterable.
-    let mag_path = output.magnitude_path(&run.key);
+    // The combined magnitude, which is what registration correlates, read from the working grid
+    // the local field is on (see `on_working_grid`). A size mismatch then means something
+    // upstream wrote to the wrong geometry rather than that this member is unregisterable.
+    let mag_path = &paths.magnitude;
     let magnitude = if mag_path.exists() {
-        let m = qsm_core::io::read_nifti_file(&mag_path)
+        let m = qsm_core::io::read_nifti_file(mag_path)
             .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", mag_path.display(), e)))?;
         if m.dims != field.dims {
             return Err(QsmxtError::DimensionMismatch(format!(
@@ -283,11 +328,26 @@ fn load_member(output: &DerivativeOutputs, run: &QsmRun) -> crate::Result<Member
     })
 }
 
+/// A file's identity for the cache key: path, size and modification time. A member that
+/// recomputes its background removal rewrites its local field, which changes this.
+fn file_identity(p: &std::path::Path) -> serde_json::Value {
+    let meta = std::fs::metadata(p).ok();
+    serde_json::json!({
+        "path": p.display().to_string(),
+        "size": meta.as_ref().map(|m| m.len()),
+        "mtime": meta.and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos().to_string()),
+    })
+}
+
 /// One member's registration against the reference, for the log and the sidecar.
 struct Registered {
     transform: RigidTransform,
     field: Vec<f64>,
     mask: Vec<u8>,
+    /// The member's magnitude on the reference grid, for magnitude-weighted COSMOS.
+    magnitude: Option<Vec<f64>>,
 }
 
 /// NCC below which a registration is treated as failed rather than merely imperfect. Two
@@ -335,6 +395,7 @@ fn register_group(
                 transform: RigidTransform::identity(ref_dims, &ref_affine, dims, &affine),
                 field: member.field.clone(),
                 mask: member.mask.clone(),
+                magnitude: member.magnitude.clone(),
             });
             continue;
         }
@@ -395,7 +456,8 @@ fn register_group(
         let mask = transform.resample_mask(&member.mask).ok_or_else(|| {
             QsmxtError::Config(format!("could not resample {}'s mask", members[t].key))
         })?;
-        out.push(Registered { transform, field, mask });
+        let magnitude = transform.resample(mag);
+        out.push(Registered { transform, field, mask, magnitude });
     }
     Ok(out)
 }
@@ -431,22 +493,78 @@ fn registration_table(members: &[&QsmRun], registered: &[Registered]) -> Vec<Str
 
 /// Reconstruct one orientation group.
 ///
-/// Returns the paths written. Errors are the caller's to report per group — one bad group
-/// should not abandon the rest of the dataset.
+/// The group's map is a first-class output (#270): its members are read on their working grids,
+/// COSMOS χ is referenced with `--qsm-reference` over the voxels every orientation covers, the
+/// result goes back to the reference member's acquired grid under `--output-space acquired`,
+/// the step is cached (keyed on every member input, the directions and the settings), and, with
+/// `--do-analysis`, it gets a per-structure table on the reference member's segmentation.
+///
+/// Returns the paths written (or, from the cache, the ones written before). Errors are the
+/// caller's to report per group — one bad group should not abandon the rest of the dataset.
 pub fn reconstruct_group(
     group: &OrientationGroup,
     members: &[&QsmRun],
     config: &PipelineConfig,
     output: &DerivativeOutputs,
+    force: bool,
     progress: &dyn Fn(&str),
 ) -> crate::Result<Vec<PathBuf>> {
     let kind = kind_of(config);
-    info!("{kind} for {} ({} orientations)", group.label, members.len());
+    let desc = match kind {
+        MultiOrientKind::Cosmos => "cosmos",
+        MultiOrientKind::Sti => "sti",
+    };
+    let key = group_key(members);
     let started = std::time::Instant::now();
 
+    // ── Cache ──
+    let paths: Vec<MemberPaths> = members.iter().map(|run| member_paths(output, run)).collect();
+    let reference_dseg = on_working_grid(output, &members[0].key, output.dseg_path(&members[0].key));
+    let final_dseg = output.dseg_path(&members[0].key);
+    let settings = serde_json::json!({
+        "kind": desc,
+        "multi_orientation": config.multi_orientation,
+        "registration": config.registration,
+        "reference": config.qsm.reference_spec(),
+        "segmentation_version": format!("{}", config.segmentation.version),
+        "output_space": format!("{:?}", config.pipeline.output_space),
+        "analysis": config.pipeline.do_analysis,
+        "b0_dirs": members.iter().map(|m| m.b0_dir).collect::<Vec<_>>(),
+        "members": members.iter().map(|m| m.key.to_string()).collect::<Vec<_>>(),
+    });
+    let mut inputs_id: Vec<serde_json::Value> = Vec::new();
+    for p in &paths {
+        inputs_id.extend([file_identity(&p.field), file_identity(&p.mask), file_identity(&p.magnitude)]);
+    }
+    inputs_id.extend([file_identity(&reference_dseg), file_identity(&final_dseg)]);
+    let settings_hash = crate::pipeline::graph::step_params_hash(Some(desc), &settings);
+    let hash = crate::pipeline::graph::step_params_hash(
+        Some(desc), &serde_json::json!({ "settings": settings, "inputs": inputs_id }));
+    let state_path = output.state_path(&key);
+    let mut state = crate::pipeline::graph::PipelineState::load_or_create(&state_path, config, &key, force);
+    if state.is_step_cached_with_hash(desc, Some(&hash)) {
+        info!("{kind} for {}: cached", group.label);
+        return Ok(state.step_outputs(desc).map(|o| o.to_vec()).unwrap_or_default());
+    }
+    // `--clean-intermediates` removed the members' local fields after the run that made this map.
+    // Nothing can be recomputed from them, and nothing about the group changed, so the map stands.
+    let cleaned = paths.iter().all(|p| !p.field.exists());
+    if cleaned {
+        if let Some(rec) = state.completed_steps.get(desc) {
+            let same = rec.metadata.as_ref().and_then(|m| m.get("settings")).and_then(|v| v.as_str())
+                == Some(settings_hash.as_str());
+            if same && rec.outputs.iter().all(|o| o.exists()) {
+                info!("{kind} for {}: cached (the members' intermediates were cleaned)", group.label);
+                return Ok(rec.outputs.clone());
+            }
+        }
+    }
+
+    info!("{kind} for {} ({} orientations)", group.label, members.len());
     let loaded: Vec<MemberData> = members
         .iter()
-        .map(|run| load_member(output, run))
+        .zip(&paths)
+        .map(|(run, p)| load_member(p, run))
         .collect::<crate::Result<Vec<_>>>()?;
     // The first member's grid is the common one. Picking a reference rather than inventing a
     // grid means one orientation is never interpolated at all, which is the one to look at when
@@ -461,12 +579,13 @@ pub fn reconstruct_group(
 
     let reason = registration_reason(grids_agree, &header_orientations, &header_check);
 
-    let (fields, masks, orientations, registered) = match (reason, config.multi_orientation.register) {
+    let (fields, masks, magnitudes, orientations, registered) = match (reason, config.multi_orientation.register) {
         (None, _) => {
             info!("  orientations already share a grid and carry usable directions — no registration");
             let fields: Vec<Vec<f64>> = loaded.iter().map(|m| m.field.clone()).collect();
             let masks: Vec<Vec<u8>> = loaded.iter().map(|m| m.mask.clone()).collect();
-            (fields, masks, header_orientations, None)
+            let mags: Vec<Option<Vec<f64>>> = loaded.iter().map(|m| m.magnitude.clone()).collect();
+            (fields, masks, mags, header_orientations, None)
         }
         (Some(why), true) => {
             info!("  co-registering: {why}");
@@ -486,7 +605,8 @@ pub fn reconstruct_group(
             );
             let fields: Vec<Vec<f64>> = registered.iter().map(|r| r.field.clone()).collect();
             let masks: Vec<Vec<u8>> = registered.iter().map(|r| r.mask.clone()).collect();
-            (fields, masks, orientations, Some(registered))
+            let mags: Vec<Option<Vec<f64>>> = registered.iter().map(|r| r.magnitude.clone()).collect();
+            (fields, masks, mags, orientations, Some(registered))
         }
         (Some(why), false) => {
             return Err(QsmxtError::DimensionMismatch(format!(
@@ -531,23 +651,74 @@ pub fn reconstruct_group(
 
     let bdirs: Vec<_> = orientations.iter().map(|o| o.b0).collect();
     let grid = qsm_core::Grid::new(dims.0, dims.1, dims.2, voxel_size.0, voxel_size.1, voxel_size.2);
-    let key = group_key(members);
     let mut written = Vec::new();
 
+    // Where the outputs go: back onto the reference member's acquired grid when its own outputs
+    // went there, so the group map lies on the same grid as the reference member's maps and
+    // segmentation. `None` = they stay on the working grid.
+    let acquired: Option<((usize, usize, usize), [f64; 16])> = (config.pipeline.output_space
+        == crate::pipeline::config::OutputSpace::Acquired
+        && returned_to_acquired(output, &members[0].key))
+        .then(|| members[0].echoes.first()
+            .and_then(|e| qsm_core::io::read_nifti_file(&e.phase_nifti).ok())
+            .map(|n| (n.dims, n.affine)))
+        .flatten()
+        .filter(|(d, a)| !(*d == dims && affine_drift(a, &affine) <= AFFINE_TOLERANCE));
     let write = |path: &PathBuf, data: &[f64]| -> crate::Result<()> {
         crate::nifti::write::write_volume(path, data, dims, voxel_size, &affine)
     };
 
+    let mut reference_fields = serde_json::Map::new();
+    let mut extra_inputs: Vec<PathBuf> = Vec::new();
+    let mut magnitudes_used = false;
     match kind {
         MultiOrientKind::Cosmos => {
             progress(&format!("COSMOS ({} orientations)", members.len()));
+            let m = &config.multi_orientation;
             let params = qsm_core::inversion::CosmosParams {
-                lambda: config.multi_orientation.lambda,
-                ..Default::default()
+                lambda: m.lambda,
+                tol: m.cosmos_tol,
+                max_iter: m.cosmos_max_iter,
             };
-            let chi = qsm_core::inversion::cosmos(&fields, &bdirs, &mask, &grid, &params);
+            let raw = if m.magnitude_weighting {
+                let weights: Vec<Vec<f64>> = magnitudes.into_iter().zip(members)
+                    .map(|(w, run)| w.ok_or_else(|| QsmxtError::Config(format!(
+                        "--cosmos-magnitude-weighting: {} has no combined magnitude to weight by",
+                        run.key))))
+                    .collect::<crate::Result<_>>()?;
+                magnitudes_used = true;
+                info!("  magnitude-weighted COSMOS (conjugate gradient, up to {} iterations)", params.max_iter);
+                qsm_core::inversion::cosmos_weighted(&fields, &weights, &bdirs, &mask, &grid, &params)
+            } else {
+                qsm_core::inversion::cosmos(&fields, &bdirs, &mask, &grid, &params)
+            };
+
+            // Referenced like a single-orientation map, over the voxels every orientation covers.
+            let dseg = if config.qsm.reference == crate::pipeline::config::QsmReference::Region {
+                let d = qsm_core::io::read_nifti_file(&reference_dseg).map_err(|e| QsmxtError::Config(format!(
+                    "--qsm-reference: the group is referenced on {}'s segmentation, which could not \
+                     be read at {}: {e}", members[0].key, reference_dseg.display())))?;
+                extra_inputs.push(reference_dseg.clone());
+                Some(d.data)
+            } else {
+                None
+            };
+            let referenced = crate::pipeline::runner::reference_chi(config, &raw, &[&mask], dseg.as_deref())?;
+            reference_fields = crate::pipeline::runner::reference_sidecar_fields(config, referenced.offset.as_ref());
+
             let path = output.cosmos_path(&key);
-            write(&path, &chi)?;
+            match acquired {
+                Some((adims, aaff)) => {
+                    let out = qsm_core::geometry::resample_onto(&referenced.chi, dims, &affine, adims, &aaff)
+                        .ok_or_else(|| QsmxtError::Config(format!(
+                            "{}: cannot return the COSMOS map to {}'s acquired grid",
+                            group.label, members[0].key)))?;
+                    let avs = qsm_core::geometry::voxel_sizes_from_affine(&aaff);
+                    crate::nifti::write::write_volume(&path, &out, adims, avs, &aaff)?;
+                    info!("  returned to {}'s acquired grid", members[0].key);
+                }
+                None => write(&path, &referenced.chi)?,
+            }
             written.push(path);
         }
         MultiOrientKind::Sti => {
@@ -555,6 +726,14 @@ pub fn reconstruct_group(
             let params = qsm_core::inversion::StiParams { lambda: config.multi_orientation.lambda };
             let tensor = qsm_core::inversion::sti(&fields, &bdirs, &mask, &grid, &params);
             let maps = qsm_core::inversion::tensor_maps(&tensor, &mask);
+            if acquired.is_some() {
+                warn!(
+                    "{}: the STI outputs stay on the working grid. Returning a tensor to the \
+                     acquired grid needs it rotated as well as resampled, which QSM.rs does not \
+                     provide; the reference member's other outputs are on its acquired grid.",
+                    group.label
+                );
+            }
             // qsm-core stores the symmetric tensor as [X11, X12, X13, X22, X23, X33].
             for (name, data) in ["11", "12", "13", "22", "23", "33"]
                 .iter()
@@ -579,20 +758,18 @@ pub fn reconstruct_group(
 
     // The direction table is the half of the input that does not live in the NIfTI files, so
     // without it the reconstruction cannot be reproduced or audited.
-    let desc = match kind {
-        MultiOrientKind::Cosmos => "cosmos",
-        MultiOrientKind::Sti => "sti",
-    };
-    let sidecar = serde_json::json!({
+    let mut sidecar = serde_json::json!({
         "Description": format!("{kind} reconstruction over {} orientations", members.len()),
         "Sources": members.iter().map(|m| m.key.to_string()).collect::<Vec<_>>(),
         "B0_dirs": orientations.iter().map(|o| vec![o.b0.0, o.b0.1, o.b0.2]).collect::<Vec<_>>(),
         "B0_dir_sources": orientations.iter().map(|o| o.source.to_string()).collect::<Vec<_>>(),
         "Lambda": config.multi_orientation.lambda,
+        "MagnitudeWeighting": magnitudes_used,
         "MaxPairwiseAngleDeg": check.max_pairwise_deg,
         "MinPairwiseAngleDeg": check.min_pairwise_deg,
         "DirectionRank": check.rank,
         "MaskVoxels": kept,
+        "Space": if acquired.is_some() { "acquired" } else { "working" },
         // The transforms are the other half of the input that does not live in the NIfTI files.
         // Without them a registered reconstruction cannot be re-derived or audited, and the
         // rotation is also the provenance of the B0 direction beside it.
@@ -610,32 +787,9 @@ pub fn reconstruct_group(
         }),
         "ReferenceOrientation": members[0].key.to_string(),
     });
-    // Provenance, keyed by the group (see `bidsprov::GROUP_STEPS`): what was combined, how.
-    let mut inputs: Vec<PathBuf> = Vec::new();
-    for run in members {
-        inputs.push(output.local_field_path(&run.key));
-        let bg = output.bg_mask_path(&run.key);
-        inputs.push(if bg.exists() { bg } else { output.mask_path(&run.key) });
-        if registered.is_some() {
-            inputs.push(output.magnitude_path(&run.key));
-        }
+    if let Some(obj) = sidecar.as_object_mut() {
+        obj.extend(reference_fields);
     }
-    let input_refs: Vec<&std::path::Path> = inputs.iter().map(|p| p.as_path()).collect();
-    crate::pipeline::runner::write_step_provenance(
-        &output.provenance_path(&key, desc),
-        desc,
-        Some(desc),
-        &serde_json::json!({
-            "lambda": config.multi_orientation.lambda,
-            "orientations": members.len(),
-            "registered": registered.is_some(),
-            "force": config.multi_orientation.force,
-            "group_by": config.multi_orientation.group_by,
-        }),
-        &input_refs,
-        &written,
-        started,
-    )?;
 
     let sidecar_path = output.multiorient_sidecar_path(&key, desc);
     if let Some(parent) = sidecar_path.parent() {
@@ -644,9 +798,91 @@ pub fn reconstruct_group(
     let text = serde_json::to_string_pretty(&sidecar)
         .map_err(|e| QsmxtError::Config(format!("multi-orientation sidecar: {e}")))?;
     std::fs::write(&sidecar_path, text)?;
+
+    // Per-structure statistics on the reference member's segmentation, which is on the grid the
+    // COSMOS map was just written to.
+    if config.pipeline.do_analysis && kind == MultiOrientKind::Cosmos {
+        match group_statistics(output, &key, &final_dseg, config) {
+            Ok(Some(p)) => {
+                extra_inputs.push(final_dseg.clone());
+                written.push(p);
+            }
+            Ok(None) => warn!(
+                "{}: no segmentation for the reference orientation {} at {}, so the COSMOS map \
+                 is not in the statistics", group.label, members[0].key, final_dseg.display()),
+            Err(e) => warn!("{}: per-structure statistics of the COSMOS map failed: {e}", group.label),
+        }
+    }
+
+    // Provenance, keyed by the group (see `bidsprov::GROUP_STEPS`): what was combined, how.
+    let mut inputs: Vec<PathBuf> = Vec::new();
+    for p in &paths {
+        inputs.push(p.field.clone());
+        inputs.push(p.mask.clone());
+        if registered.is_some() || magnitudes_used {
+            inputs.push(p.magnitude.clone());
+        }
+    }
+    inputs.extend(extra_inputs);
+    let input_refs: Vec<&std::path::Path> = inputs.iter().map(|p| p.as_path()).collect();
+    crate::pipeline::runner::write_step_provenance(
+        &output.provenance_path(&key, desc),
+        desc,
+        Some(desc),
+        &serde_json::json!({
+            "lambda": config.multi_orientation.lambda,
+            "magnitude_weighting": magnitudes_used,
+            "cosmos_tol": config.multi_orientation.cosmos_tol,
+            "cosmos_max_iter": config.multi_orientation.cosmos_max_iter,
+            "orientations": members.len(),
+            "registered": registered.is_some(),
+            "force": config.multi_orientation.force,
+            "group_by": config.multi_orientation.group_by,
+            "reference": config.qsm.reference_spec(),
+            "space": if acquired.is_some() { "acquired" } else { "working" },
+        }),
+        &input_refs,
+        &written,
+        started,
+    )?;
     written.push(sidecar_path);
 
+    state.mark_completed_with_metadata(
+        desc, written.clone(), Some(hash),
+        Some(serde_json::json!({ "settings": settings_hash })));
+    state.save(&state_path)?;
     Ok(written)
+}
+
+/// The COSMOS map's per-structure table, on the reference member's segmentation. `None` when
+/// there is no segmentation to summarise over.
+fn group_statistics(
+    output: &DerivativeOutputs, key: &AcquisitionKey, dseg_path: &std::path::Path,
+    config: &PipelineConfig,
+) -> crate::Result<Option<PathBuf>> {
+    use crate::pipeline::stats;
+    if !dseg_path.exists() {
+        return Ok(None);
+    }
+    let seg = qsm_core::io::read_nifti_file(dseg_path)
+        .map_err(|e| QsmxtError::NiftiIo(format!("{}: {e}", dseg_path.display())))?.data;
+    let spec = stats::MapSpec { name: stats::COSMOS_CHIMAP, unit: "ppm", path: output.cosmos_path(key) };
+    let map = qsm_core::io::read_nifti_file(&spec.path)
+        .map_err(|e| QsmxtError::NiftiIo(format!("{}: {e}", spec.path.display())))?.data;
+    if map.len() != seg.len() {
+        return Err(QsmxtError::DimensionMismatch(format!(
+            "segmentation has {} voxels but the COSMOS map has {}", seg.len(), map.len())));
+    }
+    let labels = crate::pipeline::runner::to_core_synthseg_version(config.segmentation.version).labels();
+    let reference = crate::bids::entities::sidecar_path(&spec.path)
+        .as_deref()
+        .and_then(stats::ReferenceInfo::from_sidecar);
+    let mut table = String::from(stats::HEADER);
+    table.push_str(&stats::map_rows(&spec, &map, &seg, labels, None, reference.as_ref()));
+    let out = output.segmentation_stats_path(key);
+    std::fs::write(&out, table)?;
+    info!("  per-structure statistics -> {}", out.display());
+    Ok(Some(out))
 }
 
 #[cfg(test)]
@@ -822,7 +1058,7 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.multi_orientation.group_by = "acq".into();
 
-        let written = reconstruct_group(&group, &members, &config, &output, &|_| {})
+        let written = reconstruct_group(&group, &members, &config, &output, true, &|_| {})
             .expect("the group should reconstruct now that it can be registered");
         assert!(
             written.iter().any(|p| p.to_string_lossy().contains("desc-cosmos")),
@@ -927,7 +1163,7 @@ mod tests {
         config.multi_orientation.group_by = "acq".into();
         config.multi_orientation.register = false;
 
-        let err = reconstruct_group(&group, &members, &config, &output, &|_| {})
+        let err = reconstruct_group(&group, &members, &config, &output, true, &|_| {})
             .expect_err("registration is off, so a group that needs it must be refused");
         let msg = err.to_string();
         assert!(msg.contains("--no-orientation-registration"), "{msg}");
@@ -935,7 +1171,7 @@ mod tests {
 
         // And with it back on, the same group goes through.
         config.multi_orientation.register = true;
-        reconstruct_group(&group, &members, &config, &output, &|_| {})
+        reconstruct_group(&group, &members, &config, &output, true, &|_| {})
             .expect("the same group should reconstruct once registration is allowed");
     }
 
@@ -972,7 +1208,7 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.multi_orientation.group_by = "acq".into();
 
-        let err = reconstruct_group(&group, &members, &config, &output, &|_| {})
+        let err = reconstruct_group(&group, &members, &config, &output, true, &|_| {})
             .expect_err("two translated copies of one orientation are not a multi-orientation set");
         assert!(err.to_string().contains("not a multi-orientation set"), "{err}");
     }
@@ -1008,7 +1244,7 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.multi_orientation.group_by = "acq".into();
 
-        let written = reconstruct_group(&group, &members, &config, &output, &|_| {}).unwrap();
+        let written = reconstruct_group(&group, &members, &config, &output, true, &|_| {}).unwrap();
         let sidecar = written
             .iter()
             .find(|p| p.extension().is_some_and(|e| e == "json"))
@@ -1018,6 +1254,118 @@ mod tests {
         assert!(json["Registration"].is_null(), "should not have registered: {:?}", json["Registration"]);
         let sources = json["B0_dir_sources"].as_array().unwrap();
         assert!(sources.iter().all(|s| s == "sidecar"), "{sources:?}");
+    }
+
+    /// A group already on one grid with declared directions, as the tests below need it.
+    fn declared_group(output: &DerivativeOutputs) -> Vec<QsmRun> {
+        let dims = (24, 24, 24);
+        let affine = [
+            1.0, 0.0, 0.0, 0.0, //
+            0.0, 1.0, 0.0, 0.0, //
+            0.0, 0.0, 1.0, 0.0, //
+            0.0, 0.0, 0.0, 1.0,
+        ];
+        let mag = phantom(dims);
+        let mask = vec![1u8; mag.len()];
+        let mut runs: Vec<QsmRun> = (1..=3)
+            .map(|i| run_with(Some(&format!("dir{i}")), None, None))
+            .collect();
+        runs[0].b0_dir = Some((0.0, 0.0, 1.0));
+        runs[1].b0_dir = Some((0.0, 0.5, 0.866));
+        runs[2].b0_dir = Some((0.5, 0.0, 0.866));
+        for run in &runs {
+            let field: Vec<f64> = mag.iter().map(|v| 0.01 * v + 0.05).collect();
+            write_member(output, &run.key, dims, (1.0, 1.0, 1.0), &affine, &mag, &field, &mask);
+        }
+        runs
+    }
+
+    /// With `--do-analysis` the COSMOS map gets a per-structure table on the reference member's
+    /// segmentation, beside its referenced sidecar, so the dataset-level tables can include it.
+    #[test]
+    fn the_cosmos_map_is_referenced_and_summarised_per_structure() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = DerivativeOutputs::new(dir.path());
+        let runs = declared_group(&output);
+        let dims = (24, 24, 24);
+        let dseg: Vec<f64> = (0..dims.0 * dims.1 * dims.2)
+            .map(|v| if v % dims.0 < dims.0 / 2 { 10.0 } else { 49.0 }).collect();
+        crate::nifti::write::write_volume(
+            &output.dseg_path(&runs[0].key), &dseg, dims, (1.0, 1.0, 1.0),
+            &[1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
+        ).unwrap();
+        let members: Vec<&QsmRun> = runs.iter().collect();
+        let group = OrientationGroup { label: "sub-01_ses-01".into(), members: vec![0, 1, 2] };
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        config.pipeline.do_analysis = true;
+
+        let written = reconstruct_group(&group, &members, &config, &output, true, &|_| {}).unwrap();
+        let key = group_key(&members);
+        let table = output.segmentation_stats_path(&key);
+        assert!(written.contains(&table), "{written:?}");
+        let rows = crate::pipeline::stats::parse_tsv(&std::fs::read_to_string(&table).unwrap());
+        assert!(!rows.is_empty() && rows.iter().all(|r| r.map == "desc-cosmos_Chimap"));
+
+        // Referenced over the intersection: the mean of the map over its support is ~0.
+        let chi = qsm_core::io::read_nifti_file(&output.cosmos_path(&key)).unwrap().data;
+        let mean = chi.iter().sum::<f64>() / chi.len() as f64;
+        assert!(mean.abs() < 1e-9, "mean-referenced χ has mean {mean}");
+
+        // The reference summary and statistics tables see the group key like any run's.
+        let specs = crate::pipeline::stats::candidate_maps(&output, &key);
+        assert!(specs.iter().any(|s| s.name == "desc-cosmos_Chimap" && s.path.exists()));
+    }
+
+    /// Magnitude-weighted COSMOS runs through the pipeline, and says so in its sidecar.
+    #[test]
+    fn magnitude_weighted_cosmos_runs_in_the_pipeline() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = DerivativeOutputs::new(dir.path());
+        let runs = declared_group(&output);
+        let members: Vec<&QsmRun> = runs.iter().collect();
+        let group = OrientationGroup { label: "sub-01_ses-01".into(), members: vec![0, 1, 2] };
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        config.multi_orientation.magnitude_weighting = true;
+        config.multi_orientation.cosmos_max_iter = 20;
+        reconstruct_group(&group, &members, &config, &output, true, &|_| {}).unwrap();
+        let json: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+            output.multiorient_sidecar_path(&group_key(&members), "cosmos")).unwrap()).unwrap();
+        assert_eq!(json["MagnitudeWeighting"], true);
+    }
+
+    /// The CG settings without weighting would be ignored, so they are refused; STI has no
+    /// weighting at all.
+    #[test]
+    fn cosmos_solver_settings_are_refused_where_they_would_be_ignored() {
+        let mut m = qsmxt_config::MultiOrientationConfig::default();
+        assert!(m.validate().is_ok());
+        m.cosmos_max_iter = 10;
+        assert!(m.validate().unwrap_err().contains("--cosmos-magnitude-weighting"));
+        m.magnitude_weighting = true;
+        assert!(m.validate().is_ok());
+        m.algorithm = crate::pipeline::config::MultiOrientAlgorithm::Sti;
+        assert!(m.validate().unwrap_err().contains("STI"));
+    }
+
+    /// Members whose inversion skips background removal have no local field to combine; that is
+    /// refused before processing rather than after every member has run (#270).
+    #[test]
+    fn an_inversion_without_background_removal_is_refused_for_a_group() {
+        use crate::pipeline::config::{validate_multi_orientation, QsmAlgorithm};
+        let mut config = PipelineConfig::default();
+        config.multi_orientation.group_by = "acq".into();
+        assert!(validate_multi_orientation(&config).is_ok());
+        config.inversion.algorithm = QsmAlgorithm::Medi;
+        config.inversion.medi.smv = true;
+        let err = validate_multi_orientation(&config).unwrap_err().to_string();
+        assert!(err.contains("medi with SMV") && err.contains("--no-medi-smv"), "{err}");
+        config.inversion.algorithm = QsmAlgorithm::Tgv;
+        assert!(validate_multi_orientation(&config).unwrap_err().to_string().contains("tgv"));
+        config.inversion.algorithm = QsmAlgorithm::Rts;
+        config.pipeline.do_qsm = false;
+        assert!(validate_multi_orientation(&config).unwrap_err().to_string().contains("--no-qsm"));
     }
 
     /// Row-major 4×4 product, for building the test warps.
