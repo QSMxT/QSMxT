@@ -168,6 +168,10 @@ jobs:
           curl -fsSL "https://raw.githubusercontent.com/rordenlab/dcm2niix/${DCM2NIIX_VERSION}/license.txt" -o dcm2niix.LICENSE || true
           cd ../../..
 
+      # Every released `qsmxt update` (v9.0.0+) downloads exactly
+      # qsmxt-<tag>-<target>.tar.gz|.zip and expects qsmxt / qsmxt.exe at the archive root.
+      # Keep these names, formats and layout (guarded by tests/release_asset_contract.rs),
+      # or older installs can no longer update.
       - name: Package binary (Unix)
         if: runner.os != 'Windows'
         shell: bash
