@@ -297,6 +297,10 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             }
             emit_f64(&mut parts, "--vsharp-max-radius", config.bg_removal.vsharp.max_radius, d.bg_removal.vsharp.max_radius);
             emit_f64(&mut parts, "--vsharp-min-radius", config.bg_removal.vsharp.min_radius, d.bg_removal.vsharp.min_radius);
+            emit_enum(&mut parts, "--vsharp-grid", &config.bg_removal.vsharp.grid, &d.bg_removal.vsharp.grid);
+            if config.bg_removal.vsharp.grid == VsharpGrid::Isotropic {
+                emit_f64(&mut parts, "--vsharp-grid-spacing", config.bg_removal.vsharp.grid_spacing, d.bg_removal.vsharp.grid_spacing);
+            }
         }
         BfAlgorithm::Pdf => { emit_f64(&mut parts, "--pdf-tol", config.bg_removal.pdf.tol, d.bg_removal.pdf.tol); }
         BfAlgorithm::Lbv => { emit_f64(&mut parts, "--lbv-tol", config.bg_removal.lbv.tol, d.bg_removal.lbv.tol); }
@@ -1029,6 +1033,21 @@ frangi_c = 400.0
         // Meaningless when R2' is only ever measured.
         c.separation.r2prime_strategy = R2PrimeStrategy::Mese;
         assert!(!generate_command(&c).contains("--r2primenet"));
+    }
+
+    #[test]
+    fn test_vsharp_grid_flags() {
+        let mut c = PipelineConfig::default();
+        let cmd = generate_command(&c);
+        assert!(!cmd.contains("--vsharp-grid"), "native is the default: {cmd}");
+        c.bg_removal.vsharp.grid_spacing = 0.8;
+        assert!(!generate_command(&c).contains("--vsharp-grid-spacing"), "unused unless isotropic");
+        c.bg_removal.vsharp.grid = VsharpGrid::Isotropic;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--vsharp-grid isotropic") && cmd.contains("--vsharp-grid-spacing 0.8"), "{cmd}");
+        c.bg_removal.vsharp.grid = VsharpGrid::Finest;
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--vsharp-grid finest") && !cmd.contains("--vsharp-grid-spacing"), "{cmd}");
     }
 
     #[test]

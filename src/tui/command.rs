@@ -552,6 +552,12 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             vsharp_threshold: parse_optional_f64(&ps.vsharp_threshold),
             vsharp_max_radius: parse_optional_f64(&ps.vsharp_max_radius),
             vsharp_min_radius: parse_optional_f64(&ps.vsharp_min_radius),
+            vsharp_grid: match ps.vsharp_grid {
+                1 => Some(crate::cli::VsharpGridArg::Finest),
+                2 => Some(crate::cli::VsharpGridArg::Isotropic),
+                _ => None,
+            },
+            vsharp_grid_spacing: if ps.vsharp_grid == 2 { parse_optional_f64(&ps.vsharp_grid_spacing) } else { None },
         },
         pdf_params: crate::cli::PdfParamArgs {
             pdf_tol: parse_optional_f64(&ps.pdf_tol),
@@ -918,6 +924,31 @@ mod tests {
         let a = pipeline_args_from_app(&app);
         assert!(a.r2primenet_ignore_field_mismatch);
         assert_eq!(a.r2primenet_patch, Some(vec![128, 128, 64]));
+    }
+
+    /// V-SHARP's working grid: native by default (off the command), spacing row only for isotropic.
+    #[test]
+    fn vsharp_working_grid() {
+        let mut app = default_app();
+        let fields = |app: &App| app.pipeline_state.all_rows().iter().filter_map(|r| match r {
+            crate::tui::app::PipelineRow::Param { field, .. } | crate::tui::app::PipelineRow::AlgoSelect { field, .. } => Some(field.to_string()),
+            _ => None,
+        }).collect::<Vec<_>>();
+        assert!(fields(&app).contains(&"vsharp_grid".to_string()));
+        assert!(!fields(&app).contains(&"vsharp_grid_spacing".to_string()));
+        assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_config::VsharpGrid::Native);
+        assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_grid, None);
+        app.pipeline_state.set_select("vsharp_grid", 1);
+        assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_config::VsharpGrid::Finest);
+        assert!(!fields(&app).contains(&"vsharp_grid_spacing".to_string()));
+        app.pipeline_state.set_select("vsharp_grid", 2);
+        assert!(fields(&app).contains(&"vsharp_grid_spacing".to_string()));
+        app.pipeline_state.vsharp_grid_spacing = "0.8".into();
+        let c = config_from_app(&app).unwrap();
+        assert_eq!((c.bg_removal.vsharp.grid, c.bg_removal.vsharp.grid_spacing), (qsmxt_config::VsharpGrid::Isotropic, 0.8));
+        let a = pipeline_args_from_app(&app);
+        assert_eq!(a.vsharp_params.vsharp_grid, Some(crate::cli::VsharpGridArg::Isotropic));
+        assert_eq!(a.vsharp_params.vsharp_grid_spacing, Some(0.8));
     }
 
     /// V-SHARP's deconvolution is off by default, its threshold row only shows when it is on,

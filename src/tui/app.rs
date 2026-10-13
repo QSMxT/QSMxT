@@ -1637,6 +1637,9 @@ pub struct PipelineFormState {
     pub vsharp_threshold: String,
     pub vsharp_max_radius: String,
     pub vsharp_min_radius: String,
+    /// Index into [`VSHARP_GRID_OPTIONS`] (0 = native, 1 = finest, 2 = isotropic).
+    pub vsharp_grid: usize,
+    pub vsharp_grid_spacing: String,
 
     // PDF
     pub pdf_tol: String,
@@ -2015,6 +2018,8 @@ impl Default for PipelineFormState {
             vsharp_threshold: format!("{}", qsm_core::bgremove::VsharpParams::default().threshold),
             vsharp_max_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().max_radius),
             vsharp_min_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().min_radius),
+            vsharp_grid: 0, // native
+            vsharp_grid_spacing: format!("{}", qsmxt_config::VsharpConfig::default().grid_spacing),
             pdf_tol: format!("{}", qsm_core::bgremove::PdfParams::default().tol),
             lbv_tol: format!("{}", qsm_core::bgremove::LbvParams::default().tol),
             ismv_tol: format!("{}", qsm_core::bgremove::IsmvParams::default().tol),
@@ -2228,6 +2233,12 @@ const ROBUST_FIT_LOSS_HELP: &[&str] = &[
     "Huber: caps an outlying echo's influence but never rejects it",
 ];
 pub const LAPLACIAN_SOLVER_OPTIONS: &[&str] = &["dct", "fft"];
+pub const VSHARP_GRID_OPTIONS: &[&str] = &["native", "finest", "isotropic"];
+const VSHARP_GRID_HELP: &[&str] = &[
+    "The acquired voxel grid (default)",
+    "An isotropic grid at the smallest voxel dimension, so no axis is coarsened; isotropic data stays on the acquired grid",
+    "An isotropic grid of Grid Spacing mm; the background is interpolated back, the local field keeps native resolution",
+];
 pub const MOTION_REFERENCE_OPTIONS: &[&str] = &["first", "last", "echo"];
 const MOTION_REFERENCE_HELP: &[&str] = &[
     "Align every echo onto the first (best SNR; the published procedure) (default)",
@@ -2662,6 +2673,12 @@ impl PipelineFormState {
                 }
                 rows.push(PipelineRow::Param { label: "  Max Radius", field: "vsharp_max_radius", help: "Largest SMV kernel radius (mm)" });
                 rows.push(PipelineRow::Param { label: "  Min Radius", field: "vsharp_min_radius", help: "Smallest SMV kernel radius (mm)" });
+                rows.push(PipelineRow::AlgoSelect { label: "  Working Grid", field: "vsharp_grid",
+                    options: VSHARP_GRID_OPTIONS, help: VSHARP_GRID_HELP });
+                if self.vsharp_grid == 2 {
+                    rows.push(PipelineRow::Param { label: "    Grid Spacing", field: "vsharp_grid_spacing",
+                        help: "Isotropic working-grid spacing (mm)" });
+                }
             }
             1 => { // PDF
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "pdf_tol", help: "Convergence tolerance" });
@@ -3068,7 +3085,7 @@ impl PipelineFormState {
         "amp_pe_wave_order", "amp_pe_nlevel", "amp_pe_wave_pec", "amp_pe_simulated_te", "amp_pe_max_linearization_ite", "amp_pe_tikhonov_beta",
         "phase_offset_sigma", "romeo_template",
         "romeo_temporal_uncertain_unwrapping", "romeo_max_seeds", "romeo_wrap_addition",
-        "vsharp_threshold", "vsharp_max_radius", "vsharp_min_radius", "pdf_tol", "lbv_tol",
+        "vsharp_threshold", "vsharp_max_radius", "vsharp_min_radius", "vsharp_grid_spacing", "pdf_tol", "lbv_tol",
         "ismv_tol", "ismv_max_iter", "ismv_radius", "sharp_threshold", "sharp_radius",
         "resharp_radius", "resharp_tik_reg", "resharp_tol", "resharp_max_iter",
         "harperella_radius", "harperella_max_iter", "harperella_tol",
@@ -3203,6 +3220,7 @@ impl PipelineFormState {
             "vsharp_threshold" => &self.vsharp_threshold,
             "vsharp_max_radius" => &self.vsharp_max_radius,
             "vsharp_min_radius" => &self.vsharp_min_radius,
+            "vsharp_grid_spacing" => &self.vsharp_grid_spacing,
             "pdf_tol" => &self.pdf_tol,
             "lbv_tol" => &self.lbv_tol,
             "ismv_tol" => &self.ismv_tol,
@@ -3424,6 +3442,7 @@ impl PipelineFormState {
             "vsharp_threshold" => Some(&mut self.vsharp_threshold),
             "vsharp_max_radius" => Some(&mut self.vsharp_max_radius),
             "vsharp_min_radius" => Some(&mut self.vsharp_min_radius),
+            "vsharp_grid_spacing" => Some(&mut self.vsharp_grid_spacing),
             "pdf_tol" => Some(&mut self.pdf_tol),
             "lbv_tol" => Some(&mut self.lbv_tol),
             "ismv_tol" => Some(&mut self.ismv_tol),
@@ -3550,6 +3569,7 @@ impl PipelineFormState {
             "b0_estimation" => self.b0_estimation,
             "b0_weight_type" => self.b0_weight_type,
             "laplacian_solver" => self.laplacian_solver,
+            "vsharp_grid" => self.vsharp_grid,
             "robust_fit_loss" => self.robust_fit_loss,
             "motion_reference" => self.motion_reference,
             "output_space" => self.output_space,
@@ -3574,6 +3594,7 @@ impl PipelineFormState {
             "b0_estimation" => self.b0_estimation = val,
             "b0_weight_type" => self.b0_weight_type = val,
             "laplacian_solver" => self.laplacian_solver = val,
+            "vsharp_grid" => self.vsharp_grid = val,
             "robust_fit_loss" => self.robust_fit_loss = val,
             "motion_reference" => self.motion_reference = val,
             "output_space" => self.output_space = val,
@@ -7642,6 +7663,7 @@ mod tests {
             ("qsmart-inner", QSMART_INV_OPTIONS.len(), QSMART_INV_HELP.len()),
             ("unwrap", UNWRAP_OPTIONS.len(), UNWRAP_HELP.len()),
             ("laplacian-solver", LAPLACIAN_SOLVER_OPTIONS.len(), LAPLACIAN_SOLVER_HELP.len()),
+            ("vsharp-grid", VSHARP_GRID_OPTIONS.len(), VSHARP_GRID_HELP.len()),
             ("b0-estimation", B0_ESTIMATION_OPTIONS.len(), B0_ESTIMATION_HELP.len()),
             ("robust-fit-loss", ROBUST_FIT_LOSS_OPTIONS.len(), ROBUST_FIT_LOSS_HELP.len()),
             ("motion-reference", MOTION_REFERENCE_OPTIONS.len(), MOTION_REFERENCE_HELP.len()),

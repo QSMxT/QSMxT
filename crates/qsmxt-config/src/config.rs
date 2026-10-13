@@ -362,11 +362,29 @@ pub struct VsharpConfig {
     pub threshold: f64,
     pub max_radius: f64,
     pub min_radius: f64,
+    /// Grid the background is estimated on: `native` (default), `finest` (isotropic at the
+    /// smallest voxel dimension), or `isotropic` at [`grid_spacing`](Self::grid_spacing).
+    pub grid: VsharpGrid,
+    /// Isotropic working-grid spacing in mm (default 1); used only with `grid = "isotropic"`.
+    pub grid_spacing: f64,
 }
 impl Default for VsharpConfig {
     fn default() -> Self {
         let p = qsm_core::bgremove::VsharpParams::default();
-        Self { deconvolve: false, threshold: p.threshold, max_radius: p.max_radius, min_radius: p.min_radius }
+        Self {
+            deconvolve: false, threshold: p.threshold, max_radius: p.max_radius, min_radius: p.min_radius,
+            grid: VsharpGrid::Native, grid_spacing: 1.0,
+        }
+    }
+}
+impl VsharpConfig {
+    /// The qsm-core working grid.
+    pub fn core_grid(&self) -> qsm_core::bgremove::VsharpGrid {
+        match self.grid {
+            VsharpGrid::Native => qsm_core::bgremove::VsharpGrid::Native,
+            VsharpGrid::Finest => qsm_core::bgremove::VsharpGrid::IsotropicFinest,
+            VsharpGrid::Isotropic => qsm_core::bgremove::VsharpGrid::Isotropic { spacing_mm: self.grid_spacing },
+        }
     }
 }
 param_config!(PdfConfig from qsm_core::bgremove::PdfParams { tol: f64 });

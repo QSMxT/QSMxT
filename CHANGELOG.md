@@ -8,6 +8,16 @@ upgrade.
 
 ### Output changes with default settings
 
+- **V-SHARP can estimate the background on an isotropic working grid** (QSM.rs#185).
+  `--vsharp-grid finest` uses the smallest acquired voxel dimension (0.8 mm for UK Biobank's
+  0.8 × 0.8 × 3 mm), so no axis is coarsened; `--vsharp-grid isotropic
+  --vsharp-grid-spacing <mm>` uses a fixed spacing (default 1 mm). Field and mask are cropped to
+  the mask's bounding box and resampled, and the background is interpolated back, so the local
+  field keeps native resolution. The default stays `native` (unchanged output). On UK Biobank
+  the 1 mm grid raised thalamus test-retest ICC from 0.69 to 0.73, with iron ICC and SRM equal or
+  better. Also in the TUI ("Working Grid" under V-SHARP), the config (`bg_removal.vsharp.grid`,
+  `grid_spacing`), `qsmxt bgremove vsharp --grid/--grid-spacing` and the methods text.
+
 - **iLSQR is the default dipole inversion, replacing RTS.** `qsmxt run` without
   `--qsm-algorithm`, the TUI, `qsmxt slurm` and `InversionConfig::default()` (so also TOML/JSON
   configs, including qsmbly's, that leave the algorithm unset) now use iLSQR, STI Suite's algorithm, with

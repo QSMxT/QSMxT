@@ -39,12 +39,24 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
 
             // QSMxT's defaults (deconvolution off), the same as `qsmxt run`'s.
             let d = qsmxt_config::VsharpConfig::default();
+            let grid_cfg = qsmxt_config::VsharpConfig {
+                grid: args.grid.map(Into::into).unwrap_or(d.grid),
+                grid_spacing: args.grid_spacing.unwrap_or(d.grid_spacing),
+                ..d.clone()
+            };
             let params = qsm_core::bgremove::VsharpParams {
                 threshold: args.threshold.unwrap_or(d.threshold),
                 max_radius: args.max_radius.unwrap_or(d.max_radius),
                 min_radius: args.min_radius.unwrap_or(d.min_radius),
                 deconvolve: args.deconvolve.unwrap_or(d.deconvolve),
+                grid: grid_cfg.core_grid(),
             };
+            if let qsm_core::bgremove::VsharpGrid::Isotropic { spacing_mm } = params.working_grid(&grid) {
+                if !(spacing_mm.is_finite() && spacing_mm > 0.0) {
+                    return Err(crate::error::QsmxtError::Config(format!("--grid-spacing must be > 0 mm, got {spacing_mm}")));
+                }
+            }
+            info!("V-SHARP working grid: {:?}", params.working_grid(&grid));
             let (lf, em) = qsm_core::bgremove::vsharp(
                 &field_nifti.data, &mask, &grid, &params, |_, _| {},
             );

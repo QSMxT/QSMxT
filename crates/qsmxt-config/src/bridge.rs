@@ -160,6 +160,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             max_radius: cfg.bg_removal.vsharp.max_radius,
             min_radius: cfg.bg_removal.vsharp.min_radius,
             deconvolve: cfg.bg_removal.vsharp.deconvolve,
+            grid: cfg.bg_removal.vsharp.core_grid(),
         },
         pdf: qsm_core::bgremove::PdfParams { tol: cfg.bg_removal.pdf.tol, max_iter: None },
         lbv: qsm_core::bgremove::LbvParams { tol: cfg.bg_removal.lbv.tol, max_iter: None },
@@ -747,8 +748,20 @@ mod tests {
         let (_, bg, _, _) = to_pipeline_stages(&cfg);
         // On, it is exactly qsm-core's default V-SHARP (what QSMxT <= v9.22.0 ran).
         let d = qsm_core::bgremove::VsharpParams::default();
-        assert_eq!((bg.vsharp.deconvolve, bg.vsharp.threshold, bg.vsharp.max_radius, bg.vsharp.min_radius),
-                   (d.deconvolve, d.threshold, d.max_radius, d.min_radius));
+        assert_eq!((bg.vsharp.deconvolve, bg.vsharp.threshold, bg.vsharp.max_radius, bg.vsharp.min_radius, bg.vsharp.grid),
+                   (d.deconvolve, d.threshold, d.max_radius, d.min_radius, d.grid));
+    }
+
+    #[test]
+    fn vsharp_grid_reaches_core() {
+        use qsm_core::bgremove::VsharpGrid as Core;
+        let mut cfg = PipelineConfig::default();
+        assert_eq!(to_pipeline_stages(&cfg).1.vsharp.grid, Core::Native);
+        cfg.bg_removal.vsharp.grid = crate::VsharpGrid::Finest;
+        assert_eq!(to_pipeline_stages(&cfg).1.vsharp.grid, Core::IsotropicFinest);
+        cfg.bg_removal.vsharp.grid = crate::VsharpGrid::Isotropic;
+        cfg.bg_removal.vsharp.grid_spacing = 0.8;
+        assert_eq!(to_pipeline_stages(&cfg).1.vsharp.grid, Core::Isotropic { spacing_mm: 0.8 });
     }
 
     #[test]
