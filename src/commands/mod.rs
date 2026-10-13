@@ -761,7 +761,7 @@ mod integration_tests {
         c.output_mask = Some(output_mask.clone());
         super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
             common: c,
-            deconvolve: None, threshold: None, max_radius: None, min_radius: None,
+            deconvolve: None, threshold: None, max_radius: None, min_radius: None, grid: None, grid_spacing: None,
         })).unwrap();
         assert!(output.exists());
         assert!(output_mask.exists());
@@ -782,7 +782,7 @@ mod integration_tests {
         c.output_mask = None;
         super::bgremove::execute(BgremoveCommand::Vsharp(BgremoveVsharpArgs {
             common: c,
-            deconvolve: Some(true), threshold: None, max_radius: None, min_radius: None,
+            deconvolve: Some(true), threshold: None, max_radius: None, min_radius: None, grid: None, grid_spacing: None,
         })).unwrap();
         let on = read(&output);
         let as_f32 = |v: Vec<f64>| v.into_iter().map(|x| x as f32).collect::<Vec<_>>();

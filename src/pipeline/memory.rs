@@ -137,7 +137,14 @@ fn estimate_standard_pipeline(n: usize, n_echoes: usize, config: &PipelineConfig
     let bg_carry = 9 * n;
     let bg_temp = match config.bg_removal.algorithm {
         // V-SHARP: persistent field_fft (16N) + per-radius buffers (kernel/mask/filtered FFTs)
-        BfAlgorithm::Vsharp => 80 * n,
+        // A 1 mm isotropic working grid about doubles it: the resampled copies plus V-SHARP on the
+        // cropped working grid (UKB 0.8x0.8x3 mm: 0.37 -> 0.78 GB). The finest-voxel grid grows
+        // with the anisotropy ratio (3.75x the voxels for UKB); budget for ratios up to ~4.
+        BfAlgorithm::Vsharp => match config.bg_removal.vsharp.grid {
+            qsmxt_config::VsharpGrid::Native => 80 * n,
+            qsmxt_config::VsharpGrid::Isotropic => 160 * n,
+            qsmxt_config::VsharpGrid::Finest => 400 * n,
+        },
         // PDF: dipole kernel + masks + LSMR state + FFT workspace
         BfAlgorithm::Pdf => 112 * n,
         // LBV: minimal — no FFT, Gauss-Seidel in-place. interior/boundary bools + copies

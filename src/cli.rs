@@ -797,6 +797,14 @@ pub struct VsharpParamArgs {
     /// V-SHARP min kernel radius in mm
     #[arg(long)]
     pub vsharp_min_radius: Option<f64>,
+    /// Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the
+    /// smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or
+    /// `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution
+    #[arg(long, value_enum)]
+    pub vsharp_grid: Option<VsharpGridArg>,
+    /// V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic
+    #[arg(long, value_name = "MM")]
+    pub vsharp_grid_spacing: Option<f64>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -2131,6 +2139,14 @@ pub struct BgremoveVsharpArgs {
     /// Smallest SMV kernel radius, in mm (default: 1)
     #[arg(long)]
     pub min_radius: Option<f64>,
+    /// Grid the background is estimated on: `native` (default), `finest` (isotropic at the
+    /// smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or
+    /// `isotropic` (spacing from --grid-spacing). The local field keeps native resolution
+    #[arg(long, value_enum)]
+    pub grid: Option<VsharpGridArg>,
+    /// Isotropic working-grid spacing in mm (default 1); used with --grid isotropic
+    #[arg(long, value_name = "MM")]
+    pub grid_spacing: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
@@ -3484,6 +3500,21 @@ pub enum BfAlgorithmArg {
     Bfrnet,
     /// iQFM deep-learning joint unwrapping + background removal from phase (weights downloaded on first use)
     Iqfm,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum VsharpGridArg {
+    Native, Finest, Isotropic,
+}
+
+impl From<VsharpGridArg> for qsmxt_config::VsharpGrid {
+    fn from(a: VsharpGridArg) -> Self {
+        match a {
+            VsharpGridArg::Native => Self::Native,
+            VsharpGridArg::Finest => Self::Finest,
+            VsharpGridArg::Isotropic => Self::Isotropic,
+        }
+    }
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

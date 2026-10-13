@@ -100,6 +100,27 @@ impl fmt::Display for UnwrappingAlgorithm {
     }
 }
 
+/// Grid V-SHARP estimates the background field on (qsm-core `VsharpGrid`).
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Default)]
+#[serde(rename_all = "lowercase")]
+pub enum VsharpGrid {
+    /// The acquired voxel grid (default).
+    #[default]
+    Native,
+    /// An isotropic grid at the smallest acquired voxel dimension (e.g. 0.8 mm for
+    /// 0.8 × 0.8 × 3 mm), so no axis is coarsened; isotropic data stays on the acquired grid.
+    Finest,
+    /// An isotropic grid of `bg_removal.vsharp.grid_spacing` mm, anchored at the mask's
+    /// bounding box; the background is interpolated back and the local field keeps native
+    /// resolution.
+    Isotropic,
+}
+impl fmt::Display for VsharpGrid {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", match self { Self::Native => "native", Self::Finest => "finest", Self::Isotropic => "isotropic" })
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "lowercase")]
 pub enum BfAlgorithm {

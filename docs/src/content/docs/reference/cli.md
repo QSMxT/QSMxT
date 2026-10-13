@@ -260,6 +260,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-threshold <VSHARP_THRESHOLD>` | V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true. |
 | `--vsharp-max-radius <VSHARP_MAX_RADIUS>` | V-SHARP max kernel radius in mm. |
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
+| `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
+| `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance. |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
@@ -638,6 +640,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-threshold <VSHARP_THRESHOLD>` | V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true. |
 | `--vsharp-max-radius <VSHARP_MAX_RADIUS>` | V-SHARP max kernel radius in mm. |
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
+| `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
+| `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance. |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
@@ -955,6 +959,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--vsharp-threshold <VSHARP_THRESHOLD>` | V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true. |
 | `--vsharp-max-radius <VSHARP_MAX_RADIUS>` | V-SHARP max kernel radius in mm. |
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
+| `--vsharp-grid <VSHARP_GRID>` | Grid V-SHARP estimates the background on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --vsharp-grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
+| `--vsharp-grid-spacing <MM>` | V-SHARP isotropic working-grid spacing in mm (default 1); used with --vsharp-grid isotropic. |
 | `--pdf-tol <PDF_TOL>` | PDF tolerance. |
 | `--lbv-tol <LBV_TOL>` | LBV tolerance. |
 | `--ismv-tol <ISMV_TOL>` | iSMV tolerance. |
@@ -1512,6 +1518,8 @@ qsmxt bgremove vsharp [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--threshold <THRESHOLD>` | Deconvolution (TSVD) threshold; only used with --deconvolve true. |
 | `--max-radius <MAX_RADIUS>` | Largest SMV kernel radius, in mm (default: 12) |
 | `--min-radius <MIN_RADIUS>` | Smallest SMV kernel radius, in mm (default: 1) |
+| `--grid <GRID>` | Grid the background is estimated on: `native` (default), `finest` (isotropic at the smallest voxel dimension, e.g. 0.8 mm for 0.8x0.8x3 mm; no axis is coarsened), or `isotropic` (spacing from --grid-spacing). The local field keeps native resolution. Values: `native`, `finest`, `isotropic`. |
+| `--grid-spacing <MM>` | Isotropic working-grid spacing in mm (default 1); used with --grid isotropic. |
 
 ### `qsmxt bgremove pdf`
 

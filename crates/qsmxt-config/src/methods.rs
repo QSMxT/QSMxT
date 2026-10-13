@@ -454,6 +454,14 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                             format!("Background field removal was performed using {} ({}) without the final deconvolution step: an SMV high-pass with {}, the largest kernel that fits at each voxel (as in STI Suite).",
                                 name, cite_inline(cite), radii)
                         });
+                        let resample = "the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution";
+                        match v.grid {
+                            VsharpGrid::Finest => sentences.push(format!(
+                                "For anisotropic voxels the V-SHARP background was estimated on an isotropic grid at the smallest acquired voxel dimension: {resample}. Isotropic acquisitions were processed on their acquired grid.")),
+                            VsharpGrid::Isotropic => sentences.push(format!(
+                                "The V-SHARP background was estimated on a {} mm isotropic grid: {resample}.", v.grid_spacing)),
+                            VsharpGrid::Native => {}
+                        }
                     } else {
                         sentences.push(format!("Background field removal was performed using {} ({}).", name, cite_inline(cite)));
                     }
@@ -1377,6 +1385,24 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("truncated-SVD deconvolution (threshold 0.2)"), "{out}");
         assert!(!out.contains("without the final deconvolution"), "{out}");
+    }
+
+    #[test]
+    fn vsharp_methods_describe_the_working_grid() {
+        let mut config = PipelineConfig::default();
+        let out = generate_methods(&config);
+        assert!(!out.contains("isotropic grid"), "native is the default: {out}");
+        config.bg_removal.vsharp.grid = VsharpGrid::Finest;
+        let out = generate_methods(&config);
+        assert!(out.contains("estimated on an isotropic grid at the smallest acquired voxel dimension"), "{out}");
+        config.bg_removal.vsharp.grid = VsharpGrid::Isotropic;
+        config.bg_removal.vsharp.grid_spacing = 0.8;
+        let out = generate_methods(&config);
+        assert!(out.contains("estimated on a 0.8 mm isotropic grid"), "{out}");
+        assert!(!out.contains("For anisotropic voxels"), "{out}");
+        config.bg_removal.vsharp.grid = VsharpGrid::Native;
+        let out = generate_methods(&config);
+        assert!(!out.contains("isotropic grid"), "{out}");
     }
 
     #[test]

@@ -113,8 +113,9 @@ given `--te` and `--field-strength` (the published method), or an unwrapped tota
 field in ppm without them, and write the local field in ppm.
 
 `qsmxt bgremove vsharp` takes `--deconvolve <true|false>` (default `false`, as
-`qsmxt run`), `--threshold` (used only with deconvolution) and
-`--max-radius`/`--min-radius` in mm.
+`qsmxt run`), `--threshold` (used only with deconvolution),
+`--max-radius`/`--min-radius` in mm, and `--grid <native|finest|isotropic>` with
+`--grid-spacing` in mm (the working grid, as `qsmxt run`'s `--vsharp-grid`).
 
 ## Dipole inversion — `qsmxt invert`
 

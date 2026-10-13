@@ -476,6 +476,31 @@ with it. In the TUI it is the "Deconvolve" toggle under V-SHARP; the threshold
 row only appears when it is on. The generated methods text says which variant
 ran.
 
+### V-SHARP working grid
+
+The SMV kernels are balls on the voxel grid. On strongly anisotropic voxels (UK
+Biobank's 0.8 × 0.8 × 3 mm) they are crude along the thick axis: a 1–2 mm ball
+is a single-slice disk. `--vsharp-grid` chooses the grid the background is
+estimated on:
+
+- `native` (default): the acquired grid, as in QSMxT up to v9.22.0.
+- `finest`: an isotropic grid at the smallest acquired voxel dimension (0.8 mm
+  for 0.8 × 0.8 × 3 mm), so no axis is coarsened. The working grid is larger by
+  the anisotropy ratio, so it costs memory and time on very fine or very
+  anisotropic data. Isotropic data stays on the acquired grid.
+- `isotropic`: an isotropic grid of `--vsharp-grid-spacing` mm (default 1), the
+  same whatever the acquisition resolution. Axes finer than the spacing are
+  coarsened, including the mask edge the background is estimated from, so it
+  suits thick-slice data rather than sub-millimetre acquisitions.
+
+On an isotropic grid the field and mask are cropped to the mask's bounding box
+and resampled trilinearly; the background estimated there is interpolated back,
+so the local field keeps the acquired resolution. On UK Biobank the 1 mm grid
+raised thalamus test–retest ICC (0.69 → 0.73) and longitudinal sensitivity, with
+iron ICC unchanged; `--vsharp-grid isotropic` reproduces that configuration.
+In the TUI it is "Working Grid" under V-SHARP, with "Grid
+Spacing" shown for `isotropic`.
+
 ## Dipole inversion
 
 Set with `--qsm-algorithm`. Two families are available: classical/iterative

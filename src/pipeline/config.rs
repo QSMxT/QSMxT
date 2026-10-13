@@ -505,6 +505,8 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.vsharp_params.vsharp_threshold { config.bg_removal.vsharp.threshold = v; }
         if let Some(v) = args.vsharp_params.vsharp_max_radius { config.bg_removal.vsharp.max_radius = v; }
         if let Some(v) = args.vsharp_params.vsharp_min_radius { config.bg_removal.vsharp.min_radius = v; }
+        if let Some(v) = args.vsharp_params.vsharp_grid { config.bg_removal.vsharp.grid = v.into(); }
+        if let Some(v) = args.vsharp_params.vsharp_grid_spacing { config.bg_removal.vsharp.grid_spacing = v; }
         if let Some(v) = args.pdf_params.pdf_tol { config.bg_removal.pdf.tol = v; }
         if let Some(v) = args.lbv_params.lbv_tol { config.bg_removal.lbv.tol = v; }
         if let Some(v) = args.ismv_params.ismv_tol { config.bg_removal.ismv.tol = v; }

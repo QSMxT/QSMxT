@@ -3817,6 +3817,8 @@ fn stage_standard_qsm(
             "max_radius": ctx.config.bg_removal.vsharp.max_radius,
             "min_radius": ctx.config.bg_removal.vsharp.min_radius,
             "threshold": ctx.config.bg_removal.vsharp.threshold,
+            "grid": ctx.config.bg_removal.vsharp.grid.to_string(),
+            "grid_spacing": ctx.config.bg_removal.vsharp.grid_spacing,
         }),
         BfAlgorithm::Pdf => serde_json::json!({ "tol": ctx.config.bg_removal.pdf.tol }),
         BfAlgorithm::Lbv => serde_json::json!({ "tol": ctx.config.bg_removal.lbv.tol }),
