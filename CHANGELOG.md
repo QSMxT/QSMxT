@@ -34,7 +34,23 @@ upgrade.
   units. `qsmxt invert tgv` takes a field in ppm like the other `invert` algorithms and no longer
   has `--echo-time` / `--field-strength`.
 
-These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
+These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
+
+- **Mask sections build their own magnitude from every echo** (QSM.rs#173, #178). QSMxT used to
+  hand each section one magnitude: the inhomogeneity-corrected RSS, or a corrected first/last
+  echo. Every echo is now passed, corrected one by one when `--inhomogeneity-correction` is on
+  (the default), and each section takes echo 1, the RSS or the last echo from them; phase
+  quality is weighted by the RSS. **The default mask changes slightly**: the RSS of corrected
+  echoes instead of the corrected RSS. The mask cache key now includes `[homogeneity]`.
+- **Algorithms refuse bad input instead of panicking** (QSM.rs#178): ARLO, EPG R2, R2′, RSS,
+  MCPC-3D-S and TGV return an error naming what was wrong, reported as `Invalid input: …`.
+  QSMxT's own checks (#273) still refuse these runs before processing.
+- **iHARPERELLA has no radius** (QSM.rs#169): `--iharperella-radius` (and the TUI row) is gone;
+  it never reached the algorithm, which has no SMV kernel. HARPERELLA in the pipeline is
+  unchanged (it takes the total field in ppm). `qsmxt bgremove harperella|iharperella` now read
+  a wrapped echo in rad when given `--te` and `--field-strength` (both or neither), and an
+  unwrapped total field in ppm otherwise; the local field is written in ppm either way (it was
+  in rad without `--te`/`--field-strength`).
 
 - **iLSQR is now STI Suite 3.0's algorithm** (QSM.rs#163, #165). The streaking-stage tolerance
   defaults to 1e-3 (was 0.01), `max_iter` caps both LSQR solves (default 100), the pipeline pads
@@ -181,8 +197,8 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
     the masking recipe (as `--bet-voxel-scale` does), overriding a `bet:<f>` in `--mask`; a
     config file's `[bet] fractional_intensity` / `voxel_scale` reach the steps the same way.
     `--bet-smoothness`, `--bet-gradient-threshold`, `--bet-iterations` and `--bet-subdivisions`
-    are removed, and setting them in a config file's `[bet]` is an error: a BET mask step
-    (QSM.rs `MaskOp::Bet`) carries only the fractional intensity and the voxel scale.
+    now reach BET too, since QSM.rs#180 lets a BET mask step carry all of BET's settings: each
+    applies to every BET step of the recipe (CLI, `[bet]`, TUI masking section, methods text).
   - `qsmxt fieldmap romeo` starts from QSMxT's defaults, as `qsmxt run` does (ROMEO individual
     unwrapping and global correction on; it used qsm-core's, with both off), so the two give the
     same field map for the same inputs and flags. **The standalone tool's default output

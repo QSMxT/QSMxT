@@ -34,7 +34,7 @@ pub fn execute(args: R2primeArgs) -> crate::Result<()> {
     // region R2 covers, so a slab MESE does not turn into R2' = R2* - 0 outside the slab.
     let out = qsm_core::relaxometry::r2prime(
         &r2star.data, &r2.data, &mask, coverage_in.as_deref(),
-    );
+    )?;
 
     let in_mask = mask.iter().filter(|&&m| m > 0).count();
     let covered = out.coverage.iter().filter(|&&c| c > 0).count();

@@ -15,7 +15,6 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
     crate::pipeline::config::apply_run_overrides(&mut config, &args.pipeline)?;
     crate::pipeline::config::validate_reference_region(&config)?;
     crate::pipeline::config::validate_segmentation(&config)?;
-    crate::pipeline::config::validate_bet(&config)?;
     crate::pipeline::config::validate_multi_orientation(&config)?;
 
     let filter = DiscoveryFilter {

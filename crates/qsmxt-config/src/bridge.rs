@@ -177,6 +177,10 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
             max_iter: cfg.bg_removal.harperella.max_iter,
             tol: cfg.bg_removal.harperella.tol,
         },
+        iharperella: qsm_core::bgremove::IharperellaParams {
+            max_iter: cfg.bg_removal.iharperella.max_iter,
+            tol: cfg.bg_removal.iharperella.tol,
+        },
         sdf: qsm_core::bgremove::SdfParams::default(),
         // mSMV boundary-shadow refinement (Roberts 2024), applied on top of the primary BFR
         // when enabled. b0/te are overridden from scan metadata and prefilter is forced off
@@ -438,7 +442,10 @@ pub fn to_scan_metadata(
 }
 
 /// Convert qsmxt-config MaskSection to qsm-core MaskSection.
-pub fn to_mask_sections(sections: &[crate::masking::MaskSection]) -> Vec<PMaskSection> {
+///
+/// `bet` supplies the BET settings a mask spec does not carry (smoothness, gradient threshold,
+/// iterations, subdivisions): one value per run, from `[bet]` / `--bet-*`.
+pub fn to_mask_sections(sections: &[crate::masking::MaskSection], bet: &crate::config::BetConfig) -> Vec<PMaskSection> {
     sections.iter().map(|s| PMaskSection {
         input: match s.input {
             crate::masking::MaskingInput::MagnitudeFirst => PMaskingInput::MagnitudeFirst,
@@ -446,17 +453,17 @@ pub fn to_mask_sections(sections: &[crate::masking::MaskSection]) -> Vec<PMaskSe
             crate::masking::MaskingInput::MagnitudeLast => PMaskingInput::MagnitudeLast,
             crate::masking::MaskingInput::PhaseQuality => PMaskingInput::PhaseQuality,
         },
-        generator: convert_mask_op(&s.generator),
-        refinements: to_mask_ops(&s.refinements),
+        generator: convert_mask_op(&s.generator, bet),
+        refinements: to_mask_ops(&s.refinements, bet),
     }).collect()
 }
 
 /// Convert a bare list of mask ops (e.g. the refinements applied to the combined mask).
-pub fn to_mask_ops(ops: &[crate::masking::MaskOp]) -> Vec<PMaskOp> {
-    ops.iter().map(convert_mask_op).collect()
+pub fn to_mask_ops(ops: &[crate::masking::MaskOp], bet: &crate::config::BetConfig) -> Vec<PMaskOp> {
+    ops.iter().map(|op| convert_mask_op(op, bet)).collect()
 }
 
-fn convert_mask_op(op: &crate::masking::MaskOp) -> PMaskOp {
+fn convert_mask_op(op: &crate::masking::MaskOp, bet: &crate::config::BetConfig) -> PMaskOp {
     match op {
         crate::masking::MaskOp::Threshold { method, value } => PMaskOp::Threshold {
             method: match method {
@@ -467,7 +474,14 @@ fn convert_mask_op(op: &crate::masking::MaskOp) -> PMaskOp {
             value: *value,
         },
         crate::masking::MaskOp::Bet { fractional_intensity, voxel_scale } =>
-            PMaskOp::Bet { fractional_intensity: *fractional_intensity, voxel_scale: *voxel_scale },
+            PMaskOp::Bet(qsm_core::bet::BetParams {
+                fractional_intensity: *fractional_intensity,
+                voxel_scale: *voxel_scale,
+                smoothness: bet.smoothness,
+                gradient_threshold: bet.gradient_threshold,
+                iterations: bet.iterations,
+                subdivisions: bet.subdivisions,
+            }),
         crate::masking::MaskOp::Erode { iterations } => PMaskOp::Erode { iterations: *iterations },
         crate::masking::MaskOp::Dilate { iterations } => PMaskOp::Dilate { iterations: *iterations },
         crate::masking::MaskOp::Close { radius } => PMaskOp::Close { radius: *radius },
@@ -584,16 +598,35 @@ pub fn axial_only_algorithms(cfg: &PipelineConfig, facts: RunOrientationFacts) -
 #[cfg(test)]
 mod tests {
 
+    fn convert_mask_op_d(op: &crate::masking::MaskOp) -> PMaskOp {
+        convert_mask_op(op, &crate::config::BetConfig::default())
+    }
+
+    /// `[bet]`'s surface settings reach every BET step (QSM.rs#180 lets MaskOp::Bet carry them).
+    #[test]
+    fn bet_surface_settings_reach_the_mask_op() {
+        let bet = crate::config::BetConfig {
+            smoothness: 2.0, gradient_threshold: 0.3, iterations: 500, subdivisions: 3,
+            ..Default::default()
+        };
+        match convert_mask_op(&crate::masking::MaskOp::bet(0.4), &bet) {
+            PMaskOp::Bet(p) => assert_eq!(
+                (p.fractional_intensity, p.smoothness, p.gradient_threshold, p.iterations, p.subdivisions),
+                (0.4, 2.0, 0.3, 500, 3)),
+            other => panic!("wrong op {other:?}"),
+        }
+    }
+
     #[test]
     fn test_convert_new_mask_ops() {
         use crate::masking::{parse_mask_op, MaskOp};
-        match convert_mask_op(&parse_mask_op("signal-erode:0.7:3:0:10:200").unwrap()) {
+        match convert_mask_op_d(&parse_mask_op("signal-erode:0.7:3:0:10:200").unwrap()) {
             PMaskOp::SignalErode(p) => assert_eq!(p, qsm_core::utils::SignalErosionParams {
                 threshold: 0.7, depth_cap: 3, global_erosions: 0, bias_sigma: 10.0, min_component: 200,
             }),
             other => panic!("wrong op {other:?}"),
         }
-        match convert_mask_op(&MaskOp::HdBet { patch: [128, 128, 64], tta: true, tile_step: 0.75 }) {
+        match convert_mask_op_d(&MaskOp::HdBet { patch: [128, 128, 64], tta: true, tile_step: 0.75 }) {
             PMaskOp::HdBet(p) => {
                 assert_eq!(p.patch, (128, 128, 64));
                 assert!(p.mirror_tta);
@@ -603,25 +636,25 @@ mod tests {
             other => panic!("wrong op {other:?}"),
         }
         // BET's preclinical voxel scaling reaches qsm-core, where the mask is actually built.
-        match convert_mask_op(&parse_mask_op("bet:0.35:scale=10").unwrap()) {
-            PMaskOp::Bet { fractional_intensity, voxel_scale } => {
-                assert_eq!(fractional_intensity, 0.35);
-                assert_eq!(voxel_scale, 10.0);
+        match convert_mask_op_d(&parse_mask_op("bet:0.35:scale=10").unwrap()) {
+            PMaskOp::Bet(p) => {
+                assert_eq!(p.fractional_intensity, 0.35);
+                assert_eq!(p.voxel_scale, 10.0);
             }
             other => panic!("wrong op {other:?}"),
         }
-        match convert_mask_op(&MaskOp::bet(0.5)) {
-            PMaskOp::Bet { voxel_scale, .. } => assert_eq!(voxel_scale, 1.0),
+        match convert_mask_op_d(&MaskOp::bet(0.5)) {
+            PMaskOp::Bet(p) => assert_eq!(p.voxel_scale, 1.0),
             other => panic!("wrong op {other:?}"),
         }
         // A parsed op carries its step through to qsm-core too.
-        match convert_mask_op(&parse_mask_op("hd-bet:low-memory:step=0.75").unwrap()) {
+        match convert_mask_op_d(&parse_mask_op("hd-bet:low-memory:step=0.75").unwrap()) {
             PMaskOp::HdBet(p) => assert_eq!(p.tile_step, 0.75),
             other => panic!("wrong op {other:?}"),
         }
         // Defaults on both sides agree.
-        assert_eq!(convert_mask_op(&MaskOp::hd_bet_default()), PMaskOp::HdBet(Default::default()));
-        assert_eq!(convert_mask_op(&MaskOp::signal_erode_default()), PMaskOp::SignalErode(Default::default()));
+        assert_eq!(convert_mask_op_d(&MaskOp::hd_bet_default()), PMaskOp::HdBet(Default::default()));
+        assert_eq!(convert_mask_op_d(&MaskOp::signal_erode_default()), PMaskOp::SignalErode(Default::default()));
     }
 
     use super::*;

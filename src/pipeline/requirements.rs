@@ -15,11 +15,11 @@ use crate::bids::discovery::QsmRun;
 use crate::pipeline::config::*;
 
 /// How far echo spacings may deviate, in seconds, before ARLO's single-spacing Simpson integral
-/// or the EPG dictionary's `TEₙ = n·ESP` train no longer describe the acquisition: 0.1 ms. It
-/// covers the rounding of echo times in DICOM headers and BIDS sidecars, not genuinely unequal
-/// spacing. The same tolerance QSM.rs applies (`ARLO_TE_SPACING_TOLERANCE_S`,
-/// `EPG_TE_TOLERANCE_S`).
-pub const TE_SPACING_TOLERANCE_S: f64 = 1e-4;
+/// or the EPG dictionary's `TEₙ = n·ESP` train no longer describe the acquisition: QSM.rs's own
+/// tolerances (0.1 ms, the rounding of echo times in DICOM headers and BIDS sidecars), so a run
+/// refused here is exactly one QSM.rs would refuse with an `InputError` mid-run.
+const ARLO_TOLERANCE_S: f64 = qsm_core::utils::ARLO_TE_SPACING_TOLERANCE_S;
+const EPG_TOLERANCE_S: f64 = qsm_core::utils::EPG_TE_TOLERANCE_S;
 
 /// An output the pipeline can be asked for, or that another can turn on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -189,7 +189,7 @@ pub fn arlo_problem(f: &RunFacts) -> Option<String> {
     if f.n_echoes < 3 {
         return Some(format!("needs at least 3 echoes, and this run has {}", f.n_echoes));
     }
-    if !qsm_core::utils::use_arlo(f.echo_times, TE_SPACING_TOLERANCE_S) {
+    if !qsm_core::utils::use_arlo(f.echo_times, ARLO_TOLERANCE_S) {
         let (_, dev) = spacing_deviation(f.echo_times, false);
         return Some(format!(
             "needs equally spaced echo times (ARLO integrates with one spacing), and this run's \
@@ -209,13 +209,13 @@ pub fn mese_problem(f: &RunFacts) -> Option<String> {
             "needs at least 3 spin echoes for the EPG fit, and the MESE has {}", tes.len()));
     }
     let (esp, dev) = spacing_deviation(tes, true);
-    if dev > TE_SPACING_TOLERANCE_S {
+    if dev > EPG_TOLERANCE_S {
         return Some(format!(
             "the EPG fit needs equally spaced spin echoes, and the MESE's echo times {} are not",
             ms(tes)));
     }
     let first = tes.iter().copied().fold(f64::INFINITY, f64::min);
-    if (first - esp).abs() > TE_SPACING_TOLERANCE_S {
+    if (first - esp).abs() > EPG_TOLERANCE_S {
         return Some(format!(
             "the EPG fit models echoes at TEₙ = n·ESP, and the MESE's first echo ({:.2} ms) is not \
              at its echo spacing ({:.2} ms)", first * 1e3, esp * 1e3));

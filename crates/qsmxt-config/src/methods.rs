@@ -864,7 +864,15 @@ fn describe_generator(
             } else {
                 String::new()
             };
-            format!("BET brain extraction (Smith, 2002; f={:.2}{}) of {}", fractional_intensity, scaled, input_desc)
+            // The surface settings are said when they differ from BET's defaults.
+            let (b, d) = (&config.bet, crate::config::BetConfig::default());
+            let mut surface = Vec::new();
+            if b.smoothness != d.smoothness { surface.push(format!("smoothness {}", b.smoothness)); }
+            if b.gradient_threshold != d.gradient_threshold { surface.push(format!("gradient threshold {}", b.gradient_threshold)); }
+            if b.iterations != d.iterations { surface.push(format!("{} iterations", b.iterations)); }
+            if b.subdivisions != d.subdivisions { surface.push(format!("icosphere subdivision level {}", b.subdivisions)); }
+            let surface = if surface.is_empty() { String::new() } else { format!("; {}", surface.join(", ")) };
+            format!("BET brain extraction (Smith, 2002; f={:.2}{}{}) of {}", fractional_intensity, surface, scaled, input_desc)
         }
         MaskOp::Rs2Net { tta, tile_step } => {
             add_citation(citations, &CITE_RS2NET);
