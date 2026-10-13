@@ -187,6 +187,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     crate::pipeline::config::validate_reference_region(&config)?;
     crate::pipeline::config::validate_segmentation(&config)?;
     crate::pipeline::config::validate_multi_orientation(&config)?;
+    crate::pipeline::config::validate_inversion_input(&config)?;
 
 
     // Discover BIDS runs

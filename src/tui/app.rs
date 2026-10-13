@@ -2338,12 +2338,10 @@ impl PipelineFormState {
         let alg = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
         let is_tgv = alg == "tgv";
         let is_qsmart = alg == "qsmart";
-        let is_medi_smv = alg == "medi" && self.medi_smv;
-        // AutoQSM / NeXtQSM are single-step (own background removal from the total field), so
-        // the BG-removal section is hidden — but field mapping/unwrapping still runs.
-        let is_autoqsm = alg == "autoqsm";
-        let is_nextqsm = alg == "nextqsm";
-        let is_single_step = is_autoqsm || is_nextqsm;
+        // Whether a background-removal stage runs at all is QSM.rs's call (#265): the
+        // total-field (TFI, MEDI+SMV, TGV, QSMART, AutoQSM, NeXtQSM) and wrapped-phase (iQSM)
+        // methods have none, so the section is hidden for them.
+        let needs_bfr = self.inversion_needs_bg_removal();
         // iQSM / iQSM+ reconstruct end-to-end from raw phase: no field mapping or BG removal.
         let is_iqsm = alg == "iqsm" || alg == "iqsm-plus";
 
@@ -2648,8 +2646,8 @@ impl PipelineFormState {
 
         rows.push(PipelineRow::Separator);
 
-        // BG Removal (hidden for TGV, QSMART, MEDI+SMV, single-step DL, and end-to-end iQSM)
-        if !is_tgv && !is_qsmart && !is_medi_smv && !is_single_step && !is_iqsm {
+        // BG Removal (hidden for the inversions that take the total field or wrapped phase)
+        if needs_bfr {
             rows.push(self.section_header("bgremoval", "Background removal",
                 BF_OPTIONS.get(self.bf_algorithm).copied().unwrap_or("").to_string()));
             rows.push(PipelineRow::AlgoSelect {
@@ -3717,6 +3715,18 @@ impl PipelineFormState {
 
     /// Apply a mask preset, overwriting the whole recipe (sections, combine mode and the
     /// refinements that run on the combined mask).
+    /// Whether the selected inversion reads a background-removed local field (QSM.rs
+    /// `InversionInput::LocalField`), and so whether background removal is part of the run.
+    pub fn inversion_needs_bg_removal(&self) -> bool {
+        let name = QSM_ALGO_OPTIONS.get(self.qsm_algorithm).copied().unwrap_or("");
+        let Ok(algorithm) = serde_json::from_value::<crate::pipeline::config::QsmAlgorithm>(
+            serde_json::json!(name)) else { return true };
+        let mut config = crate::pipeline::config::PipelineConfig::default();
+        config.inversion.algorithm = algorithm;
+        config.inversion.medi.smv = self.medi_smv;
+        !crate::pipeline::runner::skips_bgremove(&config)
+    }
+
     /// Whether any step of the masking recipe (sections, combined refinements, two-pass) is BET.
     pub fn uses_bet(&self) -> bool {
         use crate::pipeline::config::MaskOp;

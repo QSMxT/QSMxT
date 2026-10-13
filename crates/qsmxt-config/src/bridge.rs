@@ -100,6 +100,12 @@ fn map_b0_weight_type(fm: &crate::config::FieldMappingConfig) -> qsm_core::utils
 }
 
 /// Convert a PipelineConfig to qsm-core pipeline stage configs.
+/// What the configured inversion reconstructs from (QSM.rs `InversionConfig::input`), the one
+/// place that decides whether field mapping and background removal run in front of it (#265).
+pub fn inversion_input(cfg: &PipelineConfig, n_echoes: usize) -> qsm_core::pipeline::InversionInput {
+    to_pipeline_stages(cfg).2.input(n_echoes)
+}
+
 pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     PFieldMapping,
     PBgRemoval,
