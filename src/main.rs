@@ -1,5 +1,7 @@
 mod bids;
 mod cli;
+#[cfg(test)]
+mod cli_reference;
 mod commands;
 mod dicom;
 mod error;

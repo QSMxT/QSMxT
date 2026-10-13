@@ -23,20 +23,31 @@ for the complete, authoritative options of any command.
 ## Standalone NIfTI tools
 
 These operate directly on NIfTI files (in/out), independent of the BIDS
-pipeline. See [Standalone tools](/QSMxT/reference/tools/).
+pipeline, and run the same code as the corresponding pipeline stage. See
+[Standalone tools](/QSMxT/reference/tools/).
 
 | Command | Description |
 | --- | --- |
-| `mask` | Masking operations (Otsu, value, percentile, BET, morphology) |
-| `unwrap` | Phase unwrapping |
-| `bgremove` | Background field removal |
-| `invert` | Dipole inversion |
-| `swi` | Susceptibility-weighted imaging |
+| `mask` | Masking: thresholds, BET, HD-BET, RS2-Net, the `--mask-preset` recipes, morphology, and/or |
+| `combine` | Multi-coil phase combination (MCPC-3D-S) |
+| `unwrap` | Phase unwrapping (ROMEO, Laplacian) |
+| `fieldmap` | Multi-echo B0 field mapping from phase, in ppm |
+| `bgremove` | Background field removal (V-SHARP, PDF, LBV, …, mSMV, BFRnet) |
+| `invert` | Dipole inversion: every classical and deep-learning method, plus COSMOS and STI |
+| `separate` | Susceptibility source separation (paramagnetic / diamagnetic) |
+| `qsmart` | QSMART vessel-aware reconstruction from the total field |
+| `swi` | Susceptibility-weighted imaging (and minimum-intensity projection) |
+| `segment` | SynthSeg whole-brain segmentation of a magnitude image |
 | `r2star` | R2\* mapping from multi-echo magnitude |
 | `t2star` | T2\* mapping from multi-echo magnitude |
+| `r2` | R2 mapping from multi-echo spin-echo (MESE) magnitude |
+| `r2prime` | R2′ = R2\* − R2, over the region R2 covers |
 | `homogeneity` | Inhomogeneity correction on magnitude data |
 | `resample` | Resample an oblique volume to axial orientation |
 | `quality-map` | Compute a ROMEO phase-quality map |
+
+Every command, subcommand and option, with accepted values and defaults, is
+listed in the generated [CLI reference](/QSMxT/reference/cli/).
 
 ## Global
 
@@ -56,7 +67,7 @@ qsmxt <cmd> --help # full help for a command
 | `--qsm-algorithm <A>` | Dipole inversion method |
 | `--unwrapping-algorithm <A>` | Phase unwrapping method |
 | `--bf-algorithm <A>` | Background field removal method |
-| `--mask-preset <P>` | Masking recipe (`robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`) |
+| `--mask-preset <P>` | Masking recipe (`robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mouse-bet`) |
 | `--mask <SECTION>` | Custom mask section, repeatable (e.g. `magnitude,bet:0.5,erode:2`) |
 | `--mask-combine <or\|and>` | How multiple `--mask` sections combine (default `or`) |
 | `--mask-refine <OP>` | Refinement applied to the combined mask, repeatable (e.g. `fill-holes:0`) |
@@ -71,5 +82,6 @@ qsmxt <cmd> --help # full help for a command
 | `--source-dicom <DIR>` | Inherit patient/study identity from the original DICOMs when exporting |
 | `--dicom-outputs <TOKEN>…` | Restrict the DICOM export to these maps (default: all produced) |
 
-See [Algorithms](/QSMxT/reference/algorithms/) for the valid values of each
-algorithm option.
+See [Algorithms](/QSMxT/reference/algorithms/) for what each algorithm option's
+values do, and the [CLI reference](/QSMxT/reference/cli/) for every option of
+every command.

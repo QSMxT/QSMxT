@@ -54,8 +54,9 @@ for what the pattern matches and what will be refused.
 :::tip
 Rather than writing flags or TOML by hand, configure interactively in the
 [TUI](/QSMxT/guides/running-interactively/) — it shows the equivalent `qsmxt run`
-command live and saves the configuration to a TOML file. Set things up once, then
-reuse the command and config from the CLI and on the cluster.
+command live. Set things up once, then reuse the command on the CLI and on the
+cluster; the `pipeline_config.toml` every run writes to `derivatives/qsmxt/` is a
+config file you can pass back with `--config`.
 :::
 
 ## Validate before you run

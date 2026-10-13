@@ -106,8 +106,8 @@ See [Running noninteractively](/QSMxT/guides/running-noninteractively/).
 
 Outputs land under `derivatives/qsmxt/` as BIDS-compliant NIfTIs — one QSM map
 per run, plus any [supplementary outputs](/QSMxT/reference/tools/) you enabled
-(SWI, T2\*, R2\*, RSS-combined magnitude). A `references.txt` lists citations for
-the exact methods your data and settings used.
+(SWI, T2\*, R2\*, RSS-combined magnitude). A `methods.md` describes what ran and
+lists citations for the exact methods your data and settings used.
 
 ## Next steps
 

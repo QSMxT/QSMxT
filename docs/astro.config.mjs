@@ -102,6 +102,8 @@ export default defineConfig({
 						{ label: 'Algorithms', slug: 'reference/algorithms' },
 						{ label: 'Configuration', slug: 'reference/configuration' },
 						{ label: 'Standalone tools', slug: 'reference/tools' },
+						{ label: 'Output files', slug: 'reference/outputs' },
+						{ label: 'CLI reference', slug: 'reference/cli' },
 					],
 				},
 			],

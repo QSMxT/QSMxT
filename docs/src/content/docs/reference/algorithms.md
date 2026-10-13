@@ -15,9 +15,24 @@ operates on with `--masking-input`.
 | Value | Method |
 | --- | --- |
 | `robust-threshold` | Otsu thresholding of the phase-quality map, refined with dilation, hole-filling and erosion (default) |
-| `bet` | Brain Extraction Tool on the magnitude image |
+| `bet` | Brain Extraction Tool on the magnitude image, then two erosions |
 | `hd-bet` | HD-BET deep-learning brain extraction on the magnitude image, followed by signal-gated erosion (the QSM-CI harmonization masking). Needs a deep-learning build; the weights (~120 MB, CC-BY-NC-4.0) are downloaded on first use |
-| `bet-and-phase` | BET on the first-echo magnitude intersected with an Otsu-thresholded phase-quality map, then hole-filled and eroded (the masking recommended by the [ISMRM EMTP study group consensus](https://doi.org/10.1002/mrm.30006)) |
+| `bet-and-phase` | BET on the first-echo magnitude intersected with the `robust-threshold` mask of the phase-quality map, then hole-filled and eroded (the masking recommended by the [ISMRM EMTP study group consensus](https://doi.org/10.1002/mrm.30006)) |
+| `rs2-net` | RS2-Net deep-learning **rodent** brain extraction (Lin et al., 2024) on the magnitude image, with no refinements: it follows the inner skull directly. Needs a deep-learning build; the weights are downloaded on first use |
+| `mouse-bet` | BET on the magnitude with the voxel size scaled ×10, so a rodent brain looks human-sized to BET, then one erosion. The fallback when RS2-Net's weights cannot be fetched; it leaks into the skull base on thick-slice data |
+
+Each preset is exactly the custom mask sections below (see the next
+paragraphs for the grammar), so a preset can be used as the starting point for
+your own recipe:
+
+| Preset | Equivalent flags |
+| --- | --- |
+| `robust-threshold` | `--mask phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1` |
+| `bet` | `--mask magnitude,bet:0.50,erode:2` |
+| `hd-bet` | `--mask magnitude,hd-bet,signal-erode` |
+| `bet-and-phase` | `--mask magnitude-first,bet:0.50 --mask phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1 --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1` |
+| `rs2-net` | `--mask magnitude,rs2-net` |
+| `mouse-bet` | `--mask magnitude,bet:0.50:scale=10,erode:1` |
 
 **Masking input** (`--masking-input`): `magnitude-first`, `magnitude`,
 `magnitude-last`, `phase-quality`. For example,
@@ -28,8 +43,8 @@ For full control, compose custom mask sections with `--mask` (repeatable),
 e.g. `--mask magnitude,bet:0.5,erode:2`. Each section names its input
 followed by a generator and refinement operations.
 
-- **Generators:** `threshold[:otsu|fixed:<v>|percentile:<p>]`, `bet[:<f>]`, and
-  `hd-bet[:<X>x<Y>x<Z>|low-memory][:tta]`. HD-BET runs 192×192×96 sliding-window
+- **Generators:** `threshold[:otsu|fixed:<v>|percentile:<p>]`, `bet[:<f>][:scale=<s>]`,
+  `hd-bet[:<X>x<Y>x<Z>|low-memory][:tta][:step=<s>]` and `rs2-net[:tta][:step=<s>]`. HD-BET runs 192×192×96 sliding-window
   patches by default (about 4.5 GB peak). `low-memory` uses 128×128×64 patches
   (about 1.9 GB peak), and `tta` adds mirroring test-time augmentation, which is
   roughly 8× slower.
@@ -71,7 +86,7 @@ The `bet-and-phase` preset is exactly this:
 ```bash
 qsmxt run bids/ \
   --mask magnitude-first,bet:0.50 \
-  --mask phase-quality,threshold:otsu \
+  --mask phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1 \
   --mask-combine and \
   --mask-refine fill-holes:0 \
   --mask-refine erode:1
@@ -115,7 +130,7 @@ see [Output space](#output-space).
 
 | | behaviour on oblique data |
 |---|---|
-| all 18 classical dipole inversions, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
+| all 20 classical dipole inversions, PDF, χ-sep iLSQR and MEDI | correct as acquired — B0 is an explicit parameter |
 | SHARP, V-SHARP, RESHARP, iSMV, LBV, HARPERELLA, iHARPERELLA, BFRnet | unaffected — never uses B0 |
 | all 11 deep-learning inversions, SUSEP-Net, χ-sepnet, R2PRIMEnet, iQFM | **resampled first** — assumes B0 is +z |
 
@@ -148,7 +163,7 @@ R2PRIMEnet is in the third row because it is a χ-sepnet-family network, trained
 on the same axial data and taking no B0 direction. It only runs when R2′ is
 being estimated rather than measured, so whether a run is resampled on its
 account depends on whether that run has an R2 to subtract: a MESE (or
-`--custom-r2-tool`) with `--r2prime-strategy auto` measures R2′ instead, and
+`--use-custom-r2`) with `--r2prime-strategy auto` measures R2′ instead, and
 nothing is resampled. iQFM is there because it is the local-field head of the
 same network as iQSM.
 
@@ -160,6 +175,22 @@ refused. The MESE is also no longer required to share the GRE's grid at all: a
 affine, where it used to be dropped and R2′ silently never computed. Where the
 MESE's field of view does not cover all of the brain, R2 and a measured R2′ are
 reported only inside it, and the log says how much of the mask that was.
+
+## Where R2′ comes from
+
+R2′ (`--do-r2primemap`, and every R2′-based [source separation](#susceptibility-source-separation))
+comes from one of three places, chosen by `--r2prime-strategy`:
+
+| `--r2prime-strategy` | R2′ is |
+| --- | --- |
+| `auto` (default) | **measured** as R2\* − R2 when the run has an R2 (a matched MESE, or `--use-custom-r2`), otherwise **predicted** from R2\* by R2PRIMEnet |
+| `mese` | only ever measured; a run without an R2 gets no R2′, and asking for R2′ or an R2′-based separation on it is an error |
+| `r2primenet` | always predicted by R2PRIMEnet, even when a MESE is present |
+
+`--use-custom-r2prime <TOOL>` bypasses all three and reads an R2′ map from
+`derivatives/<TOOL>/`. So with the default `auto`, an R2′-based separation does not
+need a MESE: without one it runs on R2PRIMEnet's prediction, which is trained at
+3 T only (see below), and the R2′ sidecar's `R2primeSource` says which it was.
 
 ## R2′ coverage and field strength
 
@@ -349,7 +380,8 @@ mapping section, with every setting below it once switched on.
 Multi-echo field maps combine the unwrapped echoes with `--b0-estimation`:
 `weighted-avg` (default) averages phase/TE across echoes with the weights chosen by
 `--b0-weight-type`; `linear-fit` fits phase against TE (with an intercept unless
-`--linear-fit-estimate-offset false`).
+`--linear-fit-estimate-offset false`); `robust-fit` is the motion-robust variant
+described below.
 
 | `--b0-weight-type` | Weight on phase/TE |
 | --- | --- |
@@ -408,6 +440,17 @@ Set with `--bf-algorithm`.
 | `resharp` | Regularization-enabled SHARP |
 | `harperella` | HARPERELLA |
 | `iharperella` | Iterative HARPERELLA |
+| `bfrnet` | BFRnet — deep-learning background removal from the total field. Needs a deep-learning build; weights downloaded on first use |
+| `iqfm` | iQFM — deep-learning joint unwrapping and background removal straight from the wrapped phase (the local-field head of iQSM). Replaces field mapping as well; refused with inversions that do not take a local field. Weights downloaded on first use |
+
+Background removal only runs in front of an inversion that takes the local field.
+The total-field inversions (`tfi`, `qsmart`, `autoqsm`, `nextqsm`, `medi` with
+`--medi-smv`, and `tgv` on multi-echo data) and the wrapped-phase ones (`iqsm`,
+`iqsm-plus`, single-echo `tgv`) remove or model the background themselves, so
+`--bf-algorithm` has no effect with them and the TUI hides it.
+
+`--msmv-refine` adds maximum spherical mean value (mSMV) filtering after the
+chosen method, to remove residual boundary-field shadows (Roberts et al., 2024).
 
 ### V-SHARP and its deconvolution
 
@@ -459,9 +502,10 @@ reconstructions and deep-learning networks.
 | `hdqsm` | HD-QSM — Hybrid data fidelity |
 | `amp-pe` | AMP-PE — Approximate Message Passing with Parameter Estimation |
 
-TGV replaces unwrapping, background removal and inversion. With one echo it takes that echo's
-wrapped phase and converts it to ppm with the echo time and field strength. With several echoes
-it takes the combined B0 field map, in ppm. Its weights `--tgv-alpha0` / `--tgv-alpha1` are in
+TGV replaces background removal and inversion. With one echo it also replaces unwrapping: it
+takes that echo's wrapped phase and converts it to ppm with the echo time and field strength.
+With several echoes the field-mapping stage runs as usual and TGV takes the combined B0 field
+map, in ppm. Its weights `--tgv-alpha0` / `--tgv-alpha1` are in
 ppm, so the same values suit any echo time and field strength.
 
 ### Deep learning
@@ -482,9 +526,11 @@ ppm, so the same values suit any echo time and field strength.
 
 Model weights are downloaded automatically on first use (and cached) from the
 QSMxT weight registry on [Hugging Face](https://huggingface.co/qsmxt/qsm-onnx-weights).
-Deep-learning support requires a build with the default `dl` feature; `iqsm`
-and `iqsm-plus` reconstruct susceptibility directly from phase, so they replace
-the background-removal + inversion stages rather than running after them.
+Deep-learning support requires a build with the default `dl` feature. `iqsm`
+and `iqsm-plus` reconstruct susceptibility directly from the wrapped phase, so
+they replace unwrapping, echo combination, background removal and inversion.
+`autoqsm` and `nextqsm` take the total field, so they replace background removal
+and inversion.
 
 :::tip
 Not sure which to pick? The defaults (`threshold` → `romeo` → `vsharp` → `rts`)
@@ -682,6 +728,9 @@ all.
 
 ### Running it
 
+`--multi-orientation-algorithm` picks the reconstruction: `cosmos` (the default)
+or `sti`.
+
 ```bash
 qsmxt run bids/ out/ --orientation-group '*acq-dir*'
 qsmxt run bids/ out/ --orientation-group acq --multi-orientation-algorithm sti
@@ -734,9 +783,9 @@ and `--cosmos-max-iter` (default 1e-6 and 100) set that solve, and are refused
 without the weighting, where COSMOS is solved in closed form and would ignore them.
 
 Each orientation contributes its *local* field, which only background-field
-removal writes. A grouping with an inversion that has no such step (MEDI with SMV,
-TGV, QSMART, AutoQSM, NeXtQSM, iQSM, iQSM+) or with `--no-qsm` is refused before
-processing.
+removal writes. A grouping with an inversion that has no such step (TFI, MEDI with
+SMV, TGV, QSMART, AutoQSM, NeXtQSM, iQSM, iQSM+) or with `--no-qsm` is refused
+before processing.
 
 ### Outputs
 
@@ -805,8 +854,10 @@ diamagnetic components, and choose the method with `--chisep`.
 | `chi-sepnet` | χ-sepnet (deep learning) |
 
 Only `r2star-qsm` and `decompose` run on a GRE acquisition alone. The rest are
-based on R2', so they also need a multi-echo spin-echo acquisition or a
-bring-your-own R2' map. See [Input data](/QSMxT/reference/inputs/).
+based on R2′, which comes from a multi-echo spin-echo acquisition, a
+bring-your-own R2′ map or, with the default `--r2prime-strategy auto` and neither
+of those, R2PRIMEnet's prediction from R2\* (3 T only); see
+[Where R2′ comes from](#where-r2-comes-from) and [Input data](/QSMxT/reference/inputs/).
 
 The four non-network methods share a relaxometric constant D_r of 137 Hz/ppm,
 from the original χ-separation paper (Shin et al. 2021), which was measured by

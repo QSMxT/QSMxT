@@ -252,9 +252,9 @@ const CITE_MSMV: Citation = Citation {
     text: "Roberts, A.G., et al. (2024). \"Maximum spherical mean value (mSMV) filtering for whole-brain quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 91(4):1586-1597. https://doi.org/10.1002/mrm.29963",
 };
 
-const CITE_CLEARSWI: Citation = Citation {
-    key: "eckstein2024",
-    text: "Eckstein, K., et al. (2024). \"CLEAR-SWI: Computational Efficient T2* Weighted Imaging.\" *Proc. ISMRM*.",
+const CITE_SWI: Citation = Citation {
+    key: "haacke2004",
+    text: "Haacke, E.M., Xu, Y., Cheng, Y.-C.N., Reichenbach, J.R. (2004). \"Susceptibility weighted imaging (SWI).\" *Magnetic Resonance in Medicine*, 52(3):612-618. https://doi.org/10.1002/mrm.20198",
 };
 
 const CITE_ARLO: Citation = Citation {
@@ -377,16 +377,35 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     if config.pipeline.do_qsm {
         match config.inversion.algorithm {
             QsmAlgorithm::Tgv => {
-                sentences.push("QSM was computed using the Total Generalized Variation (TGV) algorithm (Langkammer et al., 2015), which performs phase unwrapping, background field removal, and dipole inversion in a single step.".to_string());
+                // Routed by QSM.rs's `InversionInput`: one echo goes in as wrapped phase (TGV
+                // unwraps it itself), several are field-mapped first and go in as the total field.
+                // Neither route runs a separate background-removal stage.
                 let tgv = &config.inversion.tgv;
                 sentences.push(format!(
-                    "For single-echo data TGV was applied to the wrapped phase of the echo, converted to ppm using \
-                     its echo time and the field strength; for multi-echo data it was applied to the combined B0 \
-                     field map in ppm. Regularization weights were given in ppm (α0 = {}, α1 = {}; {} iterations, \
-                     {} mask erosions).",
+                    "QSM was computed using the Total Generalized Variation (TGV) algorithm \
+                     (Langkammer et al., 2015), which removes the background field and inverts the \
+                     dipole jointly, with no separate background field removal. For single-echo data \
+                     TGV was applied to the wrapped phase of the echo, converted to ppm using its echo \
+                     time and the field strength, and so also performed the phase unwrapping; for \
+                     multi-echo data the echoes were first combined into a B0 field map as described \
+                     below, and TGV was applied to that total field in ppm. Regularization weights \
+                     were given in ppm (α0 = {}, α1 = {}; {} iterations, {} mask erosions).",
                     tgv.alpha0, tgv.alpha1, tgv.iterations, tgv.erosions,
                 ));
                 add_citation(&mut citations, &CITE_TGV);
+                describe_field_mapping(config, &mut sentences, &mut citations);
+            }
+            QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {
+                // `InversionInput::WrappedPhase`: no field mapping and no background removal ran.
+                let (name, cite) = inversion_name_cite(config.inversion.algorithm);
+                sentences.push(format!(
+                    "QSM was reconstructed end to end with {} ({}) directly from the wrapped phase of \
+                     each echo, which the network unwraps, background-corrects and inverts itself: no \
+                     separate phase unwrapping, echo combination or background field removal was \
+                     performed.",
+                    name, cite_inline(cite),
+                ));
+                add_citation(&mut citations, cite);
             }
             QsmAlgorithm::Qsmart => {
                 // QSMART consumes a pre-computed total field, so the field-mapping
@@ -538,8 +557,20 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 
     // SWI
     if config.pipeline.do_swi {
-        sentences.push("Susceptibility-weighted images were computed using CLEAR-SWI (Eckstein et al., 2024).".to_string());
-        add_citation(&mut citations, &CITE_CLEARSWI);
+        // What the runner does: echo 1 only, Laplacian-unwrapped, then QSM.rs's single-echo
+        // phase-mask SWI on the combined magnitude. Not CLEAR-SWI, which combines the echoes.
+        let swi = &config.swi;
+        sentences.push(format!(
+            "Susceptibility-weighted images (Haacke et al., 2004) were computed from the first echo: \
+             its phase was unwrapped with the Laplacian method (Schofield & Zhu, 2003), high-pass \
+             filtered with a Gaussian (σ = {} voxels), scaled into a phase mask ({} scaling, power {}) \
+             and multiplied into the combined magnitude. Minimum-intensity projections were taken over \
+             {}-slice slabs.",
+            swi.hp_sigma.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" × "),
+            swi.scaling, swi.strength, swi.mip_window,
+        ));
+        add_citation(&mut citations, &CITE_SWI);
+        add_citation(&mut citations, &CITE_LAPLACIAN_UNWRAP);
     }
 
     // T2*/R2*
@@ -1365,8 +1396,11 @@ mod tests {
         assert!(out.contains("Total Generalized Variation (TGV)"));
         assert!(out.contains("Regularization weights were given in ppm"));
         assert!(out.contains(&format!("α0 = {}", config.inversion.tgv.alpha0)));
-        assert!(!out.contains("Phase unwrapping was performed"));
-        assert!(!out.contains("Background field removal"));
+        // Multi-echo TGV is fed the field map, so field mapping is described (#282); background
+        // removal never runs in front of it.
+        assert!(out.contains("for multi-echo data the echoes were first combined"), "{out}");
+        assert!(out.contains("Phase unwrapping was performed"), "{out}");
+        assert!(!out.contains("Background field removal was performed"), "{out}");
     }
 
     #[test]
@@ -1577,12 +1611,49 @@ mod tests {
         assert!(out.contains("Roberts et al., 2024"));
     }
 
+    /// #282: for every inversion, the methods text describes background field removal exactly
+    /// when the runner runs it, and phase unwrapping / echo combination exactly when it runs field
+    /// mapping — both decided by QSM.rs's `InversionConfig::input`, as the runner decides them.
+    #[test]
+    fn methods_describe_exactly_the_stages_each_inversion_route_runs() {
+        use crate::bridge::inversion_input;
+        for alg in &QsmAlgorithm::ALL {
+            for medi_smv in [false, true] {
+                let mut config = PipelineConfig::default();
+                config.inversion.algorithm = *alg;
+                config.inversion.medi.smv = medi_smv;
+                let out = generate_methods(&config);
+                // The methods text does not know the echo count; multi-echo is the default case.
+                let input = inversion_input(&config, 2);
+                let bfr = out.contains("Background field removal was performed");
+                assert_eq!(bfr, input.needs_bg_removal() && *alg != QsmAlgorithm::Qsmart,
+                    "{alg} (medi.smv={medi_smv}): BFR described = {bfr}:\n{out}");
+                if !input.needs_bg_removal() && *alg != QsmAlgorithm::Qsmart {
+                    assert!(out.to_lowercase().contains("no separate")
+                        && out.to_lowercase().contains("background field removal"),
+                        "{alg}: should say no BFR ran:\n{out}");
+                }
+                let unwrap = out.contains("Phase unwrapping was performed");
+                assert_eq!(unwrap, input.needs_field_mapping(),
+                    "{alg} (medi.smv={medi_smv}): unwrapping described = {unwrap}:\n{out}");
+                // Single-echo TGV is the one wrapped-phase route of a multi-echo-capable method.
+                if *alg == QsmAlgorithm::Tgv {
+                    assert!(!inversion_input(&config, 1).needs_field_mapping());
+                    assert!(out.contains("For single-echo data TGV was applied to the wrapped phase"), "{out}");
+                }
+            }
+        }
+    }
+
     #[test]
     fn test_swi_methods() {
         let mut config = PipelineConfig::default();
         config.pipeline.do_swi = true;
         let out = generate_methods(&config);
-        assert!(out.contains("CLEAR-SWI"));
+        assert!(out.contains("Haacke et al., 2004"), "{out}");
+        assert!(out.contains("first echo"), "{out}");
+        // What runs is a single-echo phase-mask SWI, not the multi-echo CLEAR-SWI.
+        assert!(!out.contains("CLEAR-SWI"), "{out}");
     }
 
     #[test]
@@ -1995,7 +2066,13 @@ mod tests {
             let mut c = PipelineConfig::default();
             c.inversion.algorithm = alg;
             let out = generate_methods(&c);
-            assert!(out.contains("Dipole inversion was performed using"), "missing dipole sentence for {:?}", alg);
+            // iQSM/iQSM+ reconstruct end to end from the wrapped phase: no separate inversion.
+            let sentence = if matches!(alg, QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus) {
+                "QSM was reconstructed end to end with"
+            } else {
+                "Dipole inversion was performed using"
+            };
+            assert!(out.contains(sentence), "missing dipole sentence for {:?}", alg);
             assert!(out.contains(expected), "missing '{}' for {:?}", expected, alg);
         }
     }
@@ -2010,7 +2087,7 @@ mod tests {
         config.pipeline.do_r2starmap = true;
         let out = generate_methods(&config);
         assert!(out.contains("QSM processing"));
-        assert!(out.contains("CLEAR-SWI"));
+        assert!(out.contains("Susceptibility-weighted images"));
         assert!(out.contains("T2* and R2* maps"));
         assert!(out.contains("## References"));
     }

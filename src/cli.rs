@@ -3485,7 +3485,7 @@ pub enum RobustLossArg {
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum B0WeightTypeArg {
     PhaseSNR, PhaseVar, Average,
-    #[value(alias = "tes")]
+    #[value(name = "tes")]
     TEs,
     Mag, AssumedDecay,
 }

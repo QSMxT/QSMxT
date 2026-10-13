@@ -31,8 +31,9 @@ configuration, and running.
 Some parts of the 8.x line are not included in v9:
 
 - template and group-space building
-- NextQSM
 - the web UI
+
+(NeXtQSM is in v9, as `--qsm-algorithm nextqsm`.)
 
 Anatomical segmentation is back, by a different route: v9 parcellates the GRE
 magnitude directly with SynthSeg rather than registering a T1w atlas, and
