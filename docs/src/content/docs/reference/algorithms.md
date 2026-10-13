@@ -777,7 +777,7 @@ least squares and is right whenever three or more orientations cover k-space; 1e
 to 1e-2 helps with two orientations, or when the rotations share a single axis and
 streaking survives.
 
-`--cosmos-magnitude-weighting` (TUI: General section of the pipeline tab, COSMOS
+`--cosmos-magnitude-weighting` (TUI: QSM → Multi-orientation → COSMOS
 Magnitude Weighting) weights each orientation's field by its combined magnitude, so
 low-signal voxels count for less, and solves by conjugate gradient; `--cosmos-tol`
 and `--cosmos-max-iter` (default 1e-6 and 100) set that solve, and are refused
@@ -941,10 +941,9 @@ subject's run **fails** rather than falling back to `mean` — a map that was
 quietly referenced to something else looks fine and cannot be compared with the
 rest of the cohort.
 
-In the TUI the same setting appears in two places, editing one value: **QSM →
-Referencing → QSM Reference**, and **Supplementary → QSM Reference**, beside the
-SynthSeg settings it depends on. Picking a region there ticks *Segment
-(SynthSeg)* and reveals its settings.
+In the TUI the setting is **QSM → Reference → QSM Reference**. Picking a region
+there turns segmentation on: **Other outputs → Segmentation** then reads as ticked,
+with its source (SynthSeg or a dseg from derivatives) and settings.
 
 ## Segmentation and per-structure statistics
 

@@ -61,15 +61,25 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         emit_usize(&mut parts, "--smwi-mip-window", config.smwi.mip_window, d.smwi.mip_window);
     }
     if config.pipeline.do_t2starmap { parts.push("--do-t2starmap".into()); }
-    // R2*, R2 and R2' are chained: chi-separation implies R2' implies (R2 + R2*). Only surface each
-    // flag when it is set on its own, so `--do-chisep` doesn't drag redundant relaxometry flags in.
-    if config.pipeline.do_r2primemap && !config.pipeline.do_chi_separation {
+    // R2*, R2 and R2' are chained: chi-separation may imply R2', and computing R2' implies R2*
+    // (and R2, where it can be measured). Each flag is surfaced unless the rest of the config
+    // implies it — asked of the same enforcement a run applies, so a flag the chosen method does
+    // not imply (R2 under r2star-qsm, say) is never dropped.
+    let implied = |clear: fn(&mut PipelineConfig), get: fn(&PipelineConfig) -> bool| {
+        let mut c = config.clone();
+        clear(&mut c);
+        crate::config::enforce_separation_dependencies(&mut c);
+        get(&c)
+    };
+    if config.pipeline.do_r2primemap
+        && !implied(|c| c.pipeline.do_r2primemap = false, |c| c.pipeline.do_r2primemap) {
         parts.push("--do-r2primemap".into());
     }
-    if config.pipeline.do_r2map && !config.pipeline.do_chi_separation && !config.pipeline.do_r2primemap {
+    if config.pipeline.do_r2map && !implied(|c| c.pipeline.do_r2map = false, |c| c.pipeline.do_r2map) {
         parts.push("--do-r2map".into());
     }
-    if config.pipeline.do_r2starmap && !config.pipeline.do_chi_separation && !config.pipeline.do_r2primemap {
+    if config.pipeline.do_r2starmap
+        && !implied(|c| c.pipeline.do_r2starmap = false, |c| c.pipeline.do_r2starmap) {
         parts.push("--do-r2starmap".into());
     }
     if config.pipeline.do_chi_separation { parts.push("--do-chisep".into()); }
@@ -643,6 +653,28 @@ fn emit_f64_arr3(parts: &mut Vec<String>, flag: &str, val: &[f64; 3], default: &
 
 #[cfg(test)]
 mod tests {
+    /// A relaxometry map the selected χ-separation method does not need is still asked for on
+    /// the command line: it used to be dropped whenever χ-separation was on.
+    #[test]
+    fn relaxometry_flags_are_dropped_only_when_implied() {
+        use crate::enums::SeparationAlgorithm;
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = SeparationAlgorithm::R2starQsm;
+        c.pipeline.do_r2map = true;
+        enforce_separation_dependencies(&mut c);
+        let cmd = generate_command(&c);
+        assert!(cmd.contains("--do-r2map"), "R2 is not implied by r2star-qsm: {cmd}");
+        assert!(!cmd.contains("--do-r2starmap"), "R2* is: {cmd}");
+        // R2'-based separation implies R2' and with it R2* and R2: none spelled out.
+        c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
+        enforce_separation_dependencies(&mut c);
+        let cmd = generate_command(&c);
+        for f in ["--do-r2primemap", "--do-r2map", "--do-r2starmap"] {
+            assert!(!cmd.contains(f), "{f} is implied: {cmd}");
+        }
+    }
+
     use super::*;
 
     #[test]

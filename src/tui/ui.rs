@@ -6,8 +6,7 @@ use ratatui::{
     Frame,
 };
 
-use super::app::{AlgoModal, App, PipelineRow, UpdateModal, TAB_NAMES,
-    TAB_INPUT, TAB_QSM, TAB_SEPARATION, TAB_METHODS};
+use super::app::{AlgoModal, App, PipelineRow, UpdateModal, TAB_NAMES, TAB_INPUT, TAB_METHODS};
 use super::command;
 
 pub fn draw(f: &mut Frame, app: &mut App) {
@@ -575,8 +574,6 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             super::app::FilterFocus::Include => Some(offset),
             super::app::FilterFocus::Exclude => Some(offset + 1),
             super::app::FilterFocus::OrientationGroup => Some(offset + 2),
-            super::app::FilterFocus::OrientationAlgorithm => Some(offset + 3),
-            super::app::FilterFocus::OrientationLambda => Some(offset + 4),
             super::app::FilterFocus::TreeNode(i) => Some(offset + ori + i + 3),
             super::app::FilterFocus::NumEchoes => {
                 let vis_len = app.filter_state.visible_rows().len();
@@ -689,13 +686,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             super::app::FilterFocus::Include => "Glob patterns to include (space-separated, e.g. sub-1* *ses-pre*)",
             super::app::FilterFocus::Exclude => "Glob patterns to exclude (space-separated, e.g. *mygrea*)",
             super::app::FilterFocus::OrientationGroup => {
-                "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), or re:<regex>. Empty = off"
-            }
-            super::app::FilterFocus::OrientationAlgorithm => {
-                super::app::ORIENTATION_ALGORITHM_HELP[app.filter_state.orientation_algorithm.min(1)]
-            }
-            super::app::FilterFocus::OrientationLambda => {
-                "Regularization (blank = 0, plain least squares). Raise for 2 orientations or single-axis rotations"
+                "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), or re:<regex>. Empty = off. How they combine: QSM → Multi-orientation"
             }
             super::app::FilterFocus::TreeNode(_) => "Space: toggle, Enter: expand/collapse",
             super::app::FilterFocus::NumEchoes => "Limit number of echoes to process",
@@ -1275,22 +1266,36 @@ fn draw_dicom_series_section(
     }
 }
 
-/// A row-based tab (QSM, Separation, Supplementary, Execution): one named row per setting.
+/// A row-based tab (all but Input and Methods): its sub-tabs, then one named row per setting.
 fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
-    let pipeline = app.active_tab == TAB_QSM || app.active_tab == TAB_SEPARATION;
     let block = Block::default()
         .borders(Borders::ALL)
-        .title(if pipeline { " Pipeline ".to_string() } else { format!(" {} ", TAB_NAMES[app.active_tab]) });
+        .title(format!(" {} ", TAB_NAMES[app.active_tab]));
     let inner = block.inner(area);
     f.render_widget(block, area);
 
-    // Split into form area + help text area
+    // The sub-tabs (second tab row), when the tab has more than one; then the form and its help.
+    let pages = app.pages(app.active_tab);
+    let bar = if pages.len() > 1 { 2 } else { 0 };
     let chunks = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([Constraint::Min(4), Constraint::Length(2)])
+        .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(2)])
         .split(inner);
-    let form_area = chunks[0];
-    let help_area = chunks[1];
+    if bar > 0 {
+        let current = app.page();
+        let titles: Vec<Line> = pages.iter().map(|p| Line::from(format!(" {} ", p.label()))).collect();
+        let sub = Tabs::new(titles)
+            .select(pages.iter().position(|&p| Some(p) == current).unwrap_or(0))
+            .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED))
+            .divider("|");
+        let hint = Paragraph::new(Line::from(Span::styled(" [ ] switch sub-tabs", Style::default().fg(Color::DarkGray))));
+        let bar_rows = Layout::default().direction(Direction::Vertical)
+            .constraints([Constraint::Length(1), Constraint::Length(1)]).split(chunks[0]);
+        f.render_widget(sub, bar_rows[0]);
+        f.render_widget(hint, bar_rows[1]);
+    }
+    let form_area = chunks[1];
+    let help_area = chunks[2];
 
     // Build lines and collect state from pipeline_state before mutable borrow
     let rows = app.rows();
@@ -1298,6 +1303,13 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let ps_focus = app.focus();
     let ps_editing = app.pipeline_state.editing;
     let ps_cursor = app.pipeline_state.cursor;
+
+    // One label column per page, wide enough for its longest label (within reason).
+    let lw = rows.iter().filter_map(|r| match r {
+        PipelineRow::AlgoSelect { label, .. } | PipelineRow::Param { label, .. }
+        | PipelineRow::Toggle { label, .. } => Some(label.chars().count() + 2),
+        _ => None,
+    }).max().unwrap_or(22).clamp(22, 34);
 
     let mut lines: Vec<Line> = Vec::new();
     let mut focused_help: Option<String> = None;
@@ -1324,14 +1336,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 };
                 if focused {
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", format!("{}:", label)), label_style),
+                        Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style),
                         Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
                         Span::styled(*val, Style::default().fg(Color::Cyan)),
                         Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
                     ])
                 } else {
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", format!("{}:", label)), label_style),
+                        Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style),
                         Span::styled(*val, Style::default().fg(Color::Gray)),
                     ])
                 }
@@ -1359,7 +1371,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     Span::styled(val, val_style)
                 };
                 Line::from(vec![
-                    Span::styled(format!("  {:22}", format!("{}:", label)), label_style),
+                    Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style),
                     display_val,
                 ])
             }
@@ -1379,7 +1391,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     ("[ ]", Color::Gray)
                 };
                 Line::from(vec![
-                    Span::styled(format!("  {:22}", format!("{}:", label)), label_style),
+                    Span::styled(format!("  {:lw$}", format!("{}:", label)), label_style),
                     Span::styled(marker, Style::default().fg(color)),
                 ])
             }
@@ -1388,27 +1400,6 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 format!("  {}", text),
                 Style::default().fg(Color::Yellow),
             )),
-            PipelineRow::SectionHeader { id: _, label, summary, collapsed } => {
-                if focused {
-                    focused_help = Some(if *collapsed {
-                        "Enter/Space/→ to expand this section".to_string()
-                    } else {
-                        "Enter/Space/← to collapse this section".to_string()
-                    });
-                }
-                let arrow = if *collapsed { "▸" } else { "▾" };
-                let header_style = if focused {
-                    Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)
-                } else {
-                    Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD)
-                };
-                // Headers sit at column 0 (params are indented) so they read as section dividers.
-                let mut spans = vec![Span::styled(format!("{} {}", arrow, label), header_style)];
-                if *collapsed && !summary.is_empty() {
-                    spans.push(Span::styled(format!("  ·  {}", summary), Style::default().fg(Color::DarkGray)));
-                }
-                Line::from(spans)
-            }
             PipelineRow::MaskSectionHeader { section } => {
                 let (two_pass, i) = crate::tui::app::PipelineFormState::mask_section_slot(*section);
                 Line::from(Span::styled(
@@ -1459,14 +1450,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                         focused_help = Some("Masking input source (←/→ to change)".to_string());
                     }
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", "Input:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Input:"), label_style),
                         Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
                         Span::styled(format!("{}", input), Style::default().fg(Color::Cyan)),
                         Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
                     ])
                 } else {
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", "Input:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Input:"), label_style),
                         Span::styled(format!("{}", input), Style::default().fg(Color::Gray)),
                     ])
                 }
@@ -1490,14 +1481,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                         focused_help = Some("Mask algorithm (←/→ to switch between threshold, BET and HD-BET)".to_string());
                     }
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", "Algorithm:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Algorithm:"), label_style),
                         Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
                         Span::styled(algo_name, Style::default().fg(Color::Cyan)),
                         Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
                     ])
                 } else {
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", "Algorithm:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Algorithm:"), label_style),
                         Span::styled(algo_name, Style::default().fg(Color::Gray)),
                     ])
                 }
@@ -1538,14 +1529,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                         focused_help = Some(help.to_string());
                     }
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", label), label_style),
+                        Span::styled(format!("  {:lw$}", label), label_style),
                         Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
                         Span::styled(val, Style::default().fg(Color::Cyan)),
                         Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
                     ])
                 } else {
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", label), label_style),
+                        Span::styled(format!("  {:lw$}", label), label_style),
                         Span::styled(val, Style::default().fg(Color::Gray)),
                     ])
                 }
@@ -1575,7 +1566,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     }
                 let val_style = if focused { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::Gray) };
                 Line::from(vec![
-                    Span::styled(format!("  {:22}", label), label_style),
+                    Span::styled(format!("  {:lw$}", label), label_style),
                     Span::styled(display_val, val_style),
                 ])
             }
@@ -1602,14 +1593,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 }
                 if focused {
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", "Patch Step:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Patch Step:"), label_style),
                         Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
                         Span::styled(val, Style::default().fg(Color::Cyan)),
                         Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
                     ])
                 } else {
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", "Patch Step:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Patch Step:"), label_style),
                         Span::styled(val, Style::default().fg(Color::Gray)),
                     ])
                 }
@@ -1635,14 +1626,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 }
                 if focused {
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", "Voxel Scale:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Voxel Scale:"), label_style),
                         Span::styled("◀ ", Style::default().fg(Color::DarkGray)),
                         Span::styled(val, Style::default().fg(Color::Cyan)),
                         Span::styled(" ▶", Style::default().fg(Color::DarkGray)),
                     ])
                 } else {
                     Line::from(vec![
-                        Span::styled(format!("  {:22}", "Voxel Scale:"), label_style),
+                        Span::styled(format!("  {:lw$}", "Voxel Scale:"), label_style),
                         Span::styled(val, Style::default().fg(Color::Gray)),
                     ])
                 }
@@ -1761,7 +1752,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     // Determine which line is focused for auto-scroll
     let focused_line = focusable.get(ps_focus).copied();
 
-    let scroll_offset = if pipeline { &mut app.pipeline_state.scroll_offset } else { &mut app.form_scroll_offset };
+    let scroll_offset = &mut app.pipeline_state.scroll_offset;
     render_scrollable(f, form_area, lines, scroll_offset, focused_line);
     let scroll = *scroll_offset;
 
@@ -1780,12 +1771,12 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             if row_idx >= scroll && row_idx < scroll + form_area.height as usize {
                 let y = form_area.y + (row_idx - scroll) as u16;
                 // The value starts after the 2-char row indent + the label field, which the render
-                // left-pads to a *minimum* of 22 columns (`format!("  {:22}", "label:")`) but lets
+                // left-pads to a *minimum* of 22 columns (`format!("  {:lw$}", "label:")`) but lets
                 // grow for longer labels — so a wide label (e.g. the relaxometry constants) pushes
                 // the value right. Match that here instead of assuming a fixed 24.
                 let label_cols = match rows.get(row_idx) {
-                    Some(PipelineRow::Param { label, .. }) => (label.chars().count() + 1).max(22),
-                    _ => 22,
+                    Some(PipelineRow::Param { label, .. }) => (label.chars().count() + 1).max(lw),
+                    _ => lw,
                 };
                 let x = form_area.x + 2 + label_cols as u16 + ps_cursor as u16;
                 f.set_cursor_position((x, y));
@@ -1927,6 +1918,8 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         vec![
             Span::styled(format!(" 1-{}", TAB_NAMES.len()), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(":Tabs  ", Style::default().fg(Color::DarkGray)),
+            Span::styled("[ ]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
+            Span::styled(":Sub-tabs  ", Style::default().fg(Color::DarkGray)),
             Span::styled("\u{2191}\u{2193}", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(":Navigate  ", Style::default().fg(Color::DarkGray)),
             Span::styled("\u{2190}\u{2192}/Space", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
@@ -1936,7 +1929,7 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
             Span::styled("r", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(":Reset  ", Style::default().fg(Color::DarkGray)),
             Span::styled("R", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Reset All  ", Style::default().fg(Color::DarkGray)),
+            Span::styled(":Reset Page  ", Style::default().fg(Color::DarkGray)),
             Span::styled("F5", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
             Span::styled(":Run  ", Style::default().fg(Color::DarkGray)),
             Span::styled("q", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
@@ -1950,7 +1943,6 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tui::app::TAB_SUPPLEMENTARY;
     use ratatui::{backend::TestBackend, Terminal};
 
     /// Render at a given size, for tabs that are taller than the default 30-row terminal.
@@ -1968,45 +1960,35 @@ mod tests {
         terminal
     }
 
-    /// SMWI's and SynthSeg's settings are sub-fields of their checkbox and have to read as such.
-    /// Without the indent they sit flush against it and look like independent outputs.
+    /// Settings are sub-fields of their checkbox and have to read as such: without the indent
+    /// they sit flush against it and look like independent outputs.
     #[test]
-    fn smwi_and_synthseg_settings_are_indented_under_their_checkbox() {
-        let mut app = App::new();
-        app.active_tab = TAB_SUPPLEMENTARY;
-        app.form.do_swi = true; // so the SWI block it should match is on screen too
-        app.form.do_smwi = true;
-        app.form.do_segmentation = true;
-        // Tall enough that the whole tab is on screen at once; it now runs past 30 rows.
-        let text = screen_text(&render_app_sized(&mut app, 120, 60));
-
-        // Measured as the label's column on the rendered row — the panel border means the row does
-        // not start at the text.
-        let indent_of = |label: &str| -> usize {
+    fn settings_are_indented_under_their_checkbox() {
+        let indent_of = |text: &str, label: &str| -> usize {
             let line = text.lines().find(|l| l.contains(label))
                 .unwrap_or_else(|| panic!("{label} not on screen:\n{text}"));
             line.find(label).expect("just matched")
         };
-
-        // The parents sit at the shallower level; every child is deeper than both of them.
-        let parents = [indent_of("Compute SMWI"), indent_of("Segment (SynthSeg)")];
-        for child in ["SMWI Threshold", "SMWI Power", "SMWI mIP Window",
-                      "SynthSeg Version", "SynthSeg Crop", "Flip Averaging",
-                      "Topology Cleanup", "Posterior Smoothing"] {
-            let c = indent_of(child);
-            for p in parents {
-                assert!(c > p, "{child} is indented {c}, its parent {p} — it should be deeper");
-            }
+        let mut app = App::new();
+        app.form.do_swi = true;
+        app.form.do_smwi = true;
+        app.form.do_segmentation = true;
+        assert!(app.goto_field("do_smwi"));
+        let text = screen_text(&render_app_sized(&mut app, 120, 60));
+        let smwi = indent_of(&text, "Compute SMWI");
+        for child in ["Threshold", "Power", "Strength", "HP Sigma (x y z)"] {
+            assert!(indent_of(&text, child) > smwi, "{child} should be indented:\n{text}");
         }
-        // The statistics are drawn from the segmentation, so they read as one of its settings.
-        assert!(indent_of("Per-structure Stats") > parents[1],
-                "the statistics are a SynthSeg sub-setting and should be indented under it");
-        // The reference region is measured on the parcellation, so it reads as one too — and it
-        // has to actually be on screen, since its row index is mapped by hand.
-        assert!(indent_of("QSM Reference") > parents[1],
-                "the reference region belongs under Segment (SynthSeg)");
-        // And it matches how the SWI block already reads.
-        assert_eq!(indent_of("SWI Strength"), indent_of("SMWI Power"));
+        assert!(app.goto_field("synthseg_version"));
+        let text = screen_text(&render_app_sized(&mut app, 120, 60));
+        let seg = indent_of(&text, "Segmentation:");
+        let source = indent_of(&text, "Source");
+        assert!(source > seg, "{text}");
+        for child in ["SynthSeg Version", "Crop", "Flip Averaging", "Topology Cleanup", "Posterior Smoothing"] {
+            assert!(indent_of(&text, child) > source, "{child} belongs under the source:\n{text}");
+        }
+        // The sub-tab row is drawn, the active one among them.
+        assert!(text.contains("SWI/SMWI") && text.contains("Relaxometry") && text.contains("Export"), "{text}");
     }
 
     #[test]
@@ -2196,7 +2178,6 @@ mod tests {
         // Every tab, with its sections open and with the settings that reveal the most rows:
         // QSM off and forced back on by SMWI, a grouping, motion correction, every output.
         let mut app = App::new();
-        app.pipeline_state.collapsed_sections.clear();
         for setup in [|_: &mut App| {}, |a: &mut App| {
             a.pipeline_state.do_qsm = false;
             a.form.do_smwi = true;
@@ -2252,11 +2233,10 @@ mod tests {
     fn test_draw_signal_erode_param_rows() {
         use crate::tui::app::{PipelineRow, SIGNAL_ERODE_PARAMS};
         let mut app = App::new();
-        app.active_tab = crate::tui::app::TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         app.pipeline_state.apply_mask_preset(2); // hd-bet + signal-erode
+        assert!(app.goto_field("mask_preset"));
 
-        let rows = app.pipeline_state.visible_rows();
+        let rows = app.rows();
         let params: Vec<usize> = rows.iter().filter_map(|r| match r {
             PipelineRow::MaskOpSignalErodeParam { param, .. } => Some(*param),
             _ => None,
@@ -2264,7 +2244,7 @@ mod tests {
         assert_eq!(params, (0..SIGNAL_ERODE_PARAMS.len()).collect::<Vec<_>>());
 
         // Focus the last one, so every param row is scrolled into view together.
-        app.pipeline_state.focus = app.pipeline_state.focusable_rows().iter()
+        app.pipeline_state.focus = app.focusable_rows().iter()
             .position(|&ri| matches!(rows[ri], PipelineRow::MaskOpSignalErodeParam { param: 3, .. }))
             .expect("min component row not focusable");
         let terminal = render_app(&mut app);
@@ -2280,15 +2260,14 @@ mod tests {
     fn test_draw_mask_combine_rows() {
         use crate::tui::app::{PipelineRow, MASK_COMBINED_SECTION};
         let mut app = App::new();
-        app.active_tab = crate::tui::app::TAB_QSM;
-        app.pipeline_state.collapsed_sections.clear();
         app.pipeline_state.apply_mask_preset(3); // bet-and-phase: two sections, AND
+        assert!(app.goto_field("mask_preset"));
 
         // Focus the combine row so the focused branch renders too.
-        let rows = app.pipeline_state.visible_rows();
+        let rows = app.rows();
         assert!(rows.iter().any(|r| matches!(r, PipelineRow::MaskCombinedHeader)));
         assert!(rows.iter().any(|r| matches!(r, PipelineRow::MaskOpEntry { section: MASK_COMBINED_SECTION, .. })));
-        app.pipeline_state.focus = app.pipeline_state.focusable_rows().iter()
+        app.pipeline_state.focus = app.focusable_rows().iter()
             .position(|&ri| matches!(rows[ri], PipelineRow::MaskCombineOp))
             .expect("MaskCombineOp not focusable");
 
@@ -2386,19 +2365,11 @@ fn orientation_block(app: &App, in_io: bool) -> Vec<Line<'static>> {
     }
 
     let algo = ORIENTATION_ALGORITHMS[fs.orientation_algorithm.min(ORIENTATION_ALGORITHMS.len() - 1)];
-    lines.push(Line::from(vec![
-        Span::styled("    Combine as: ", label_style(FilterFocus::OrientationAlgorithm)),
-        Span::styled(format!("◀ {algo} ▶"), Style::default().fg(Color::Cyan)),
-    ]));
-    let lambda = if fs.orientation_lambda.is_empty() && !fs.orientation_lambda_editing {
-        Span::styled("0 (none)", Style::default().fg(Color::DarkGray))
-    } else {
-        Span::styled(fs.orientation_lambda.clone(), Style::default().fg(Color::Cyan))
-    };
-    lines.push(Line::from(vec![
-        Span::styled("    Lambda:     ", label_style(FilterFocus::OrientationLambda)),
-        lambda,
-    ]));
+    // Its settings live with the reconstruction they shape (QSM → Multi-orientation).
+    lines.push(Line::from(Span::styled(
+        format!("    combined as {algo} (QSM → Multi-orientation)"),
+        Style::default().fg(Color::DarkGray),
+    )));
 
     let preview = fs.orientation_preview();
     if let Some(err) = preview.error {
@@ -2461,7 +2432,7 @@ mod orientation_block_tests {
     // `super::tests::*` re-exports the render helpers this module needs; `super::*` on top of it
     // brings in nothing further.
     use super::tests::*;
-    use crate::tui::app::{App, FilterFocus, TAB_INPUT};
+    use crate::tui::app::{App, TAB_INPUT};
 
     /// Build an app sitting on the Input tab with a scanned three-orientation dataset.
     fn app_with_orientations() -> (App, tempfile::TempDir) {
@@ -2492,8 +2463,7 @@ mod orientation_block_tests {
         let (mut app, _d) = app_with_orientations();
         app.filter_state.orientation_group = "*acq-dir*".into();
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
-        assert!(text.contains("Combine as:"), "{text}");
-        assert!(text.contains("cosmos"), "{text}");
+        assert!(text.contains("combined as cosmos"), "{text}");
         assert!(text.contains("3 orientations"), "{text}");
         // The unrelated acquisition is reported as left out, not silently swallowed.
         assert!(text.contains("matched no group"), "{text}");
@@ -2527,22 +2497,19 @@ mod orientation_block_tests {
         assert!(text.contains("does not tell"), "{text}");
     }
 
-    /// The help line has to follow focus onto the new rows.
+    /// The grouping's settings are rows of QSM → Multi-orientation, with the algorithms' help.
     #[test]
-    fn focus_reaches_the_orientation_rows() {
+    fn orientation_settings_are_on_the_qsm_tab() {
         let (mut app, _d) = app_with_orientations();
         app.filter_state.orientation_group = "*acq-dir*".into();
-        // Focus has to be past the input/output fields for the filter area to own it.
-        app.active_field = App::INPUT_IO_FIELDS;
-        app.filter_state.focus = FilterFocus::OrientationAlgorithm;
+        app.active_tab = crate::tui::app::TAB_QSM;
+        assert!(app.goto_field("orientation_algorithm"));
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
-        assert!(
-            text.contains("COSMOS — scalar susceptibility"),
-            "the help line should describe the selected algorithm:\n{text}"
-        );
-
-        app.filter_state.orientation_algorithm = 1;
+        assert!(text.contains("Multi-orientation") && text.contains("Combine as"), "{text}");
+        assert!(text.contains("COSMOS — scalar susceptibility"), "help follows the choice:\n{text}");
+        app.set_field_select("orientation_algorithm", 1);
         let text = screen_text(&render_app_sized(&mut app, 140, 60));
-        assert!(text.contains("STI — rank-2"), "the help line should follow the choice:\n{text}");
+        assert!(text.contains("STI — rank-2"), "{text}");
     }
 }
+

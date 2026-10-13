@@ -237,6 +237,26 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
 
 ### Changed
 
+- **TUI: new layout with sub-tabs.** The tabs are now 1 Input, 2 Preprocessing, 3 QSM,
+  4 Separation, 5 Other outputs, 6 Execution, 7 Methods, and the collapsible sections are gone:
+  a second tab row (switched with `[` and `]`) splits a tab into sub-tabs. Preprocessing has
+  Geometry, Masking and Motion; QSM has Field map, Background, Inversion, Multi-orientation and
+  Reference, each shown only when that stage runs (Background only for inversions of a local
+  field, Multi-orientation only with an orientation grouping); Other outputs has SWI/SMWI,
+  Relaxometry, Segmentation and Export. Switching a tab or sub-tab puts focus back at the top, and
+  `R` resets the current sub-tab. The Input tab keeps only the orientation-group pattern (and its
+  preview); "Combine as" and Lambda are on QSM → Multi-orientation, beside COSMOS weighting,
+  co-registration (with the rigid-registration settings it uses, the same rows as under motion
+  correction) and Force. Output space shows only when something resamples to axial, with a note
+  naming the method that forces it; the coil-combination sigma only when the dataset has
+  uncombined multi-coil runs (or none is scanned yet). The SWI high-pass sigma is one "x y z" row,
+  the memory limit one row (auto, a number of GB, or `none`). Segmentation picks its source —
+  SynthSeg (with its settings) or a dseg from derivatives — and the statistics sit beside it with
+  the custom QSM they may read; QSM Reference has one row (QSM → Reference). Unticking Compute QSM
+  while SMWI or the statistics need it is refused with the reason, as for the forced maps.
+- **The generated command keeps `--do-r2map` / `--do-r2starmap` / `--do-r2primemap` unless the
+  rest of the command implies them.** It dropped them whenever χ-separation was on, so a TUI run
+  (or a config turned into a command) with, say, R2\*-QSM separation and an R2 map lost the R2 map.
 - **TUI shows each setting where and when it applies.** Turning Compute QSM off no longer hides
   the settings that serve SWI, T2\*/R2\*, R2′ and the segmentation: the geometry rows, motion
   correction, coil combination, masking and the custom dseg stay (crop to mask and FFT padding,

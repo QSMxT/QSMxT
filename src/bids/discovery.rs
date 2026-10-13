@@ -539,6 +539,8 @@ pub struct BidsRunLeaf {
     pub key: AcquisitionKey,
     /// Whether this run is selected for processing
     pub selected: bool,
+    /// Whether the run is uncombined multi-coil data (`coil-` files), which coil combination reads.
+    pub multi_coil: bool,
 }
 
 /// A session node containing runs.
@@ -655,6 +657,7 @@ pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
     // subject -> (session -> [AcquisitionKey])
     let mut tree_map: BTreeMap<String, BTreeMap<Option<String>, Vec<AcquisitionKey>>> = BTreeMap::new();
     let mut seen_keys = std::collections::HashSet::new();
+    let mut coil_keys = std::collections::HashSet::new();
 
     for pattern in &patterns {
         for entry in glob(pattern).map_err(|e| QsmxtError::BidsDiscovery(e.to_string()))? {
@@ -671,6 +674,9 @@ pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
 
                 let key = ent.acquisition_key();
                 let key_str = key.to_string();
+                if ent.coil.is_some() {
+                    coil_keys.insert(key_str.clone());
+                }
                 if seen_keys.contains(&key_str) {
                     continue;
                 }
@@ -702,7 +708,8 @@ pub fn scan_bids_tree(bids_dir: &Path) -> crate::Result<BidsTree> {
                 if has_mese {
                     display.push_str(" (+MESE)");
                 }
-                BidsRunLeaf { display, key_string, key, selected: true }
+                let multi_coil = coil_keys.contains(&key_string);
+                BidsRunLeaf { display, key_string, key, selected: true, multi_coil }
             }).collect();
 
             match session {
