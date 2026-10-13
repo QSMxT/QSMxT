@@ -974,7 +974,8 @@ impl RomeoParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct SegmentationParamArgs {
-    /// SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF)
+    /// SynthSeg weights generation: v1 (32 labels, ships with SynthSeg) or v2 (33 labels, adds CSF;
+    /// weights not published yet, so refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR)
     #[arg(long, value_name = "VERSION")]
     pub synthseg_version: Option<String>,
     /// Cubic centre-crop in voxels at 1 mm before inference (rounded up to a multiple of 32).

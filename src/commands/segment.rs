@@ -29,6 +29,8 @@ pub fn execute(args: SegmentArgs) -> crate::Result<()> {
         cfg.sigma_smoothing = v;
     }
 
+    crate::pipeline::config::synthseg_weights_available(cfg.version)?;
+
     let nifti = load_nifti(&args.magnitude)?;
     let grid = nifti_grid(&nifti);
     info!(
@@ -68,7 +70,7 @@ fn core_version(v: SynthSegVersion) -> qsm_core::segment::SynthSegVersion {
 fn run(
     magnitude: &[f64], grid: &qsm_core::Grid, affine: &[f64; 16], cfg: &SegmentationConfig,
 ) -> crate::Result<(Vec<i32>, Vec<f64>)> {
-    crate::pipeline::runner::prefetch_weights("synthseg", "segment")?;
+    crate::pipeline::runner::prefetch_weights(cfg.version.weights_id(), "segment")?;
     let params = qsm_core::segment::SynthSegParams {
         version: core_version(cfg.version),
         crop: cfg.crop,
@@ -76,7 +78,7 @@ fn run(
         topology_cleanup: cfg.topology_cleanup,
         sigma_smoothing: cfg.sigma_smoothing,
     };
-    let weights = qsm_core::models::primary_weight("synthseg")
+    let weights = qsm_core::models::primary_weight(cfg.version.weights_id())
         .map_err(|e| QsmxtError::Config(format!("synthseg weights: {e}")))?;
     let out = qsm_core::segment::synthseg(magnitude, grid, affine, &weights, &params, |_, _| {})
         .map_err(|e| QsmxtError::Config(format!("synthseg: {e}")))?;

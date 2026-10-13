@@ -212,6 +212,33 @@ pub fn parse_reference_spec(spec: &str) -> (QsmReference, Option<String>) {
 ///
 /// Called once the config is complete, before any data is touched: a mistyped region is otherwise
 /// a run that finishes hours later having referenced every map to something nobody asked for.
+/// Whether SynthSeg `version`'s weights can be had: published in QSM.rs's model registry, or
+/// supplied locally (`$QSM_MODEL_DIR`, or already in the model cache).
+pub fn synthseg_weights_available(version: SynthSegVersion) -> crate::Result<()> {
+    let id = version.weights_id();
+    let spec = qsm_core::models::find_model(id).ok_or_else(|| QsmxtError::Config(format!(
+        "SynthSeg {version}: QSM.rs has no model '{id}'")))?;
+    if spec.is_available() || spec.files.iter().all(|f| qsm_core::models::resolve_local(f).is_some()) {
+        return Ok(());
+    }
+    Err(QsmxtError::Config(format!(
+        "SynthSeg {version} is not available yet: its weights ({}) are not published in QSM.rs's \
+         model registry. Use --synthseg-version v1, or put the exported file in $QSM_MODEL_DIR",
+        spec.files.iter().map(|f| f.name).collect::<Vec<_>>().join(", "))))
+}
+
+/// Refuse a configuration that would run SynthSeg with weights that do not exist (#264): the run
+/// would otherwise fail per subject, or — as it did — run v1's weights through v2's label table.
+/// A supplied segmentation (`--use-custom-dseg`) needs no weights, only the version's label table.
+pub fn validate_segmentation(config: &PipelineConfig) -> crate::Result<()> {
+    let runs_synthseg = config.pipeline.do_segmentation && config.segmentation.custom_dseg_tool.is_none();
+    if runs_synthseg {
+        synthseg_weights_available(config.segmentation.version)
+            .map_err(|e| QsmxtError::Config(format!("--synthseg-version {}: {e}", config.segmentation.version)))?;
+    }
+    Ok(())
+}
+
 pub fn validate_reference_region(config: &PipelineConfig) -> crate::Result<()> {
     if config.qsm.reference != QsmReference::Region {
         return Ok(());
@@ -858,6 +885,37 @@ mod tests {
             assert!(msg.contains(extra[extra.len() - 2]) || msg.contains(extra[extra.len() - 1]),
                     "{extra:?}: the error should name the flag or value: {msg}");
         }
+    }
+
+    /// SynthSeg 2.0's weights are not published, so asking to run it is refused up front rather
+    /// than reading v1's network output through v2's label table (#264). The weight file follows
+    /// the version, and a supplied segmentation needs no weights at all.
+    #[test]
+    fn synthseg_v2_is_refused_until_its_weights_exist() {
+        assert_eq!(SynthSegVersion::V1.weights_id(), "synthseg");
+        assert_eq!(SynthSegVersion::V2.weights_id(), "synthseg-2.0");
+        let v2 = qsm_core::models::find_model("synthseg-2.0").expect("QSM.rs lists SynthSeg 2.0");
+        let v2_present = v2.is_available()
+            || v2.files.iter().all(|f| qsm_core::models::resolve_local(f).is_some());
+
+        let v1 = config_from_cli(&["qsmxt", "run", "<bids>", "--do-segmentation"]);
+        assert!(validate_segmentation(&v1).is_ok());
+
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--do-segmentation", "--synthseg-version", "v2"]);
+        if v2_present {
+            assert!(validate_segmentation(&c).is_ok());
+        } else {
+            let e = format!("{}", validate_segmentation(&c).unwrap_err());
+            assert!(e.contains("synthseg-2.0.onnx") && e.contains("v1") && e.contains("QSM_MODEL_DIR"), "{e}");
+        }
+        // A region reference turns segmentation on, so it is refused the same way.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--qsm-reference", "csf", "--synthseg-version", "v2"]);
+        assert!(c.pipeline.do_segmentation);
+        assert_eq!(validate_segmentation(&c).is_ok(), v2_present);
+        // A supplied v2 segmentation is read through v2's label table and needs no weights.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--do-segmentation", "--synthseg-version", "v2",
+                                  "--use-custom-dseg", "*"]);
+        assert!(validate_segmentation(&c).is_ok());
     }
 
     #[test]

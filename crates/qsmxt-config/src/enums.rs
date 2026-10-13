@@ -191,6 +191,13 @@ impl fmt::Display for SynthSegVersion {
         write!(f, "{}", match self { Self::V1 => "v1", Self::V2 => "v2" })
     }
 }
+impl SynthSegVersion {
+    /// The QSM.rs model-registry id of this version's weights: the version picks the weight file
+    /// as well as the label table it is read through.
+    pub fn weights_id(self) -> &'static str {
+        match self { Self::V1 => "synthseg", Self::V2 => "synthseg-2.0" }
+    }
+}
 pub fn parse_synthseg_version(s: &str) -> Option<SynthSegVersion> {
     match s.trim() {
         "v1" => Some(SynthSegVersion::V1),

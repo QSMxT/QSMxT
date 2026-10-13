@@ -2037,7 +2037,8 @@ fn stage_segmentation(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn F
         return Ok(());
     }
 
-    prefetch_weights("synthseg", &ctx.run.key.to_string())?;
+    crate::pipeline::config::synthseg_weights_available(cfg.version)?;
+    prefetch_weights(cfg.version.weights_id(), &ctx.run.key.to_string())?;
     progress("Segmenting (SynthSeg)");
     log::info!("Segmentation (SynthSeg {}, {} labels{}{})",
                cfg.version, labels_table.ids.len(),
@@ -2088,7 +2089,7 @@ fn run_synthseg(
         topology_cleanup: ctx.config.segmentation.topology_cleanup,
         sigma_smoothing: ctx.config.segmentation.sigma_smoothing,
     };
-    let weights = qsm_core::models::primary_weight("synthseg")
+    let weights = qsm_core::models::primary_weight(ctx.config.segmentation.version.weights_id())
         .map_err(|e| QsmxtError::Config(format!("synthseg weights: {}", e)))?;
     let (prog, _) = iter_progress_bar(&ctx.run.key.to_string(), "synthseg");
     let out = qsm_core::segment::synthseg(&mag, &grid, &ctx.meta.affine, &weights, &params, prog)
