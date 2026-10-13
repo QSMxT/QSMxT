@@ -1713,7 +1713,7 @@ mod tests {
 #[cfg(test)]
 mod parity {
     use super::*;
-    use crate::tui::app::{App, PipelineRow, PipelineTabMode};
+    use crate::tui::app::{App, PipelineRow, TAB_EXECUTION, TAB_QSM, TAB_SEPARATION, TAB_SUPPLEMENTARY};
     use clap::CommandFactory;
     use std::collections::{BTreeMap, BTreeSet};
 
@@ -1760,12 +1760,15 @@ mod parity {
         run.get_arguments().filter_map(|a| a.get_long()).map(|l| format!("--{l}")).collect()
     }
 
-    /// The rows the tab shows, with the context the App syncs before every frame.
+    /// The rows the active tab shows, with the context the App syncs before every frame.
     fn rows(app: &App) -> Vec<PipelineRow> {
-        let mut ps = app.pipeline_state.clone();
-        ps.ctx = app.row_context();
-        ps.visible_rows()
+        let mut a = clone_app(app);
+        a.sync_pipeline_mode();
+        a.rows()
     }
+
+    /// The row tabs: every setting of the pipeline, outputs and execution is a row on one of them.
+    const ROW_TABS: [usize; 4] = [TAB_QSM, TAB_SEPARATION, TAB_SUPPLEMENTARY, TAB_EXECUTION];
 
     fn row_key(r: &PipelineRow) -> Option<(&'static str, char)> {
         match r {
@@ -1795,7 +1798,7 @@ mod parity {
     fn explore() -> Vec<App> {
         // A row counts as seen per inversion algorithm: the same row (an inner inversion's
         // parameters under QSMART, say) can mean a different flag under another one.
-        let mut seen: BTreeSet<(&'static str, char, usize)> = BTreeSet::new();
+        let mut seen: BTreeSet<(usize, &'static str, char, usize)> = BTreeSet::new();
         let mut states = Vec::new();
         let mut frontier = Vec::new();
         // Each tab mode from the defaults, plus the starts whose rows only another tab reveals:
@@ -1808,11 +1811,14 @@ mod parity {
             |a| { a.filter_state.orientation_group = "acq".into(); a.filter_state.orientation_algorithm = 1; },
             |a| { a.form.do_r2primemap = true; a.form.do_r2map = true; a.form.do_analysis = true; },
         ];
-        for mode in [PipelineTabMode::Qsm, PipelineTabMode::Separation] {
+        for tab in ROW_TABS {
             for start in starts {
                 let mut app = App::new();
                 app.pipeline_state.collapsed_sections.clear();
-                app.pipeline_state.mode = mode;
+                // What a run needs before it can be built in either mode.
+                app.form.bids_dir = "/bids".into();
+                app.form.slurm_account = "acct".into();
+                app.active_tab = tab;
                 start(&mut app);
                 frontier.push(app);
             }
@@ -1820,21 +1826,24 @@ mod parity {
         while let Some(app) = frontier.pop() {
             let rows = rows(&app);
             let alg = app.pipeline_state.qsm_algorithm;
+            // A checkbox counts as seen per value too: a state where a forced output is free
+            // (and so can be checked) is new even when its rows are not.
             let fresh = rows.iter().filter_map(row_key)
-                .fold(false, |f, (field, kind)| seen.insert((field, kind, alg)) | f);
+                .map(|(field, kind)| (field, if kind == 't' && app.field_toggle(field) { 'T' } else { kind }))
+                .fold(false, |f, (field, kind)| seen.insert((app.active_tab, field, kind, alg)) | f);
             if !fresh { continue; }
             for r in &rows {
                 match r {
                     PipelineRow::AlgoSelect { field, options, .. } => {
                         for i in 0..options.len() {
                             let mut a = clone_app(&app);
-                            a.pipeline_state.set_select(field, i);
+                            a.set_field_select(field, i);
                             frontier.push(a);
                         }
                     }
                     PipelineRow::Toggle { field, .. } => {
                         let mut a = clone_app(&app);
-                        a.pipeline_state.toggle(field);
+                        a.toggle_field(field);
                         frontier.push(a);
                     }
                     _ => {}
@@ -1850,7 +1859,24 @@ mod parity {
         a.pipeline_state = app.pipeline_state.clone();
         a.form = app.form.clone();
         a.filter_state = app.filter_state.clone();
+        a.active_tab = app.active_tab;
         a
+    }
+
+    /// What the run would do: the pipeline's resolved config (compared as data, so a value that
+    /// changes nothing reads as no effect) and the run-level arguments of the active mode.
+    fn run_of(app: &App) -> (serde_json::Value, String) {
+        let config = serde_json::to_value(config_from_app(app).unwrap()).unwrap();
+        let run_level = if app.form.execution_mode == 1 {
+            let mut a = build_slurm_args(app).unwrap();
+            a.pipeline = Default::default();
+            format!("{a:?}")
+        } else {
+            let mut a = build_run_args(app).unwrap();
+            a.pipeline = Default::default();
+            format!("{a:?}")
+        };
+        (config, run_level)
     }
 
     #[test]
@@ -1859,27 +1885,29 @@ mod parity {
         // Problem -> the first change that showed it.
         let mut problems: BTreeMap<String, String> = BTreeMap::new();
         // A row is checked once per combination of the selections that change what it feeds.
-        let mut checked: std::collections::HashSet<(&'static str, char, [usize; 3], [bool; 2])> = Default::default();
+        let mut checked: std::collections::HashSet<(&'static str, char, [usize; 4], [bool; 2])> = Default::default();
         let mut cli = <crate::cli::Cli as clap::CommandFactory>::command();
         cli.build();
         let mut check = |what: String, base: &App, app: &App, problems: &mut BTreeMap<String, String>| {
             let (before, after) = (config_from_app(base).unwrap(), config_from_app(app).unwrap());
-            let (cmd_before, cmd) = (qsmxt_config::generate_command(&before), qsmxt_config::generate_command(&after));
-            if cmd_before == cmd {
+            let (shown_before, shown) = (build_command_string(base), build_command_string(app));
+            if run_of(base) == run_of(app) {
+                problems.entry(format!("no effect on the run: {}", what.split('=').next().unwrap())).or_insert(what.clone());
+            } else if shown_before == shown {
                 let d = diff(&before, &after);
-                if d.is_empty() {
-                    problems.entry(format!("no effect on the run: {}", what.split('=').next().unwrap())).or_insert(what.clone());
-                } else {
-                    problems.entry(format!("not in the command: {d:?}")).or_insert(what.clone());
-                }
+                problems.entry(format!("not in the command: {d:?}")).or_insert(what.clone());
             }
+            let cmd = qsmxt_config::generate_command(&after);
             let back = qsmxt_config::generate_command(&round_trip(&mut cli, &after));
             if back != cmd {
                 let (a, b) = (flags_of(&cmd), flags_of(&back));
                 problems.entry(format!("command does not reproduce itself: {:?}", a.symmetric_difference(&b).collect::<Vec<_>>()))
                     .or_insert(what.clone());
             }
-            covered.extend(flags_of(&cmd));
+            // Both ends are reachable states: a toggle explored from its checked side turns the
+            // flag off, and the flag is still one the TUI emits.
+            covered.extend(flags_of(&shown_before));
+            covered.extend(flags_of(&shown));
         };
         for app in explore() {
             let rows = rows(&app);
@@ -1887,32 +1915,43 @@ mod parity {
             let qsmart = crate::tui::app::QSM_ALGO_OPTIONS[ps.qsm_algorithm] == "qsmart";
             let context = (
                 [ps.qsm_algorithm, if qsmart { ps.qsmart_inversion } else { 0 },
-                 if ps.do_chi_separation { ps.separation_algorithm } else { 0 }],
+                 if ps.do_chi_separation { ps.separation_algorithm } else { 0 }, app.form.execution_mode],
                 [ps.motion_correction, ps.do_chi_separation],
             );
             for r in &rows {
                 let Some((field, kind)) = row_key(r) else { continue };
+                // A checkbox another option forces on refuses to change (and says why): it is
+                // checked where it is free instead.
+                if let PipelineRow::Toggle { field, .. } = r {
+                    let mut a = clone_app(&app);
+                    a.toggle_field(field);
+                    if a.error_message.is_some() { continue; }
+                }
                 if !checked.insert((field, kind, context.0, context.1)) { continue; }
                 match r {
                     PipelineRow::AlgoSelect { field, options, .. } => {
-                        let current = app.pipeline_state.get_select(field);
+                        let current = app.field_select(field);
                         // "custom" names a hand-edited mask; choosing it changes nothing by itself.
                         let custom = |i: usize| *field == "mask_preset" && i == crate::tui::app::MASK_PRESET_CUSTOM;
                         for i in (0..options.len()).filter(|&i| i != current && !custom(i)) {
                             let mut a = clone_app(&app);
-                            a.pipeline_state.set_select(field, i);
+                            a.set_field_select(field, i);
                             check(format!("{field}={i}"), &app, &a, &mut problems);
                         }
                     }
                     PipelineRow::Toggle { field, .. } => {
                         let mut a = clone_app(&app);
-                        a.pipeline_state.toggle(field);
+                        a.toggle_field(field);
                         check(format!("toggle {field}"), &app, &a, &mut problems);
                     }
                     PipelineRow::Param { field, .. } => {
                         let mut a = clone_app(&app);
-                        let v = bumped(a.pipeline_state.get_param(field));
-                        *a.pipeline_state.get_param_mut(field).unwrap_or_else(|| panic!("{field} not editable")) = v.clone();
+                        // Paths and names rather than numbers: any non-empty value is a change.
+                        let v = match (*field, a.field_text(field)) {
+                            ("source_dicom" | "dicom_outputs" | "slurm_account" | "slurm_partition", _) => "x1".to_string(),
+                            (_, v) => bumped(v),
+                        };
+                        *a.field_text_mut(field).unwrap_or_else(|| panic!("{field} not editable")) = v.clone();
                         check(format!("{field}={v}"), &app, &a, &mut problems);
                     }
                     _ => {}
@@ -1920,32 +1959,11 @@ mod parity {
             }
         }
 
-        // The other tabs' controls: the Supplementary and Execution forms, the Input tab's
-        // filters and grouping, and the mask editor. Each is (what, setup, change): the change is
+        // The controls that are not rows: the Input tab's filters and grouping, and the mask
+        // editor. Each is (what, setup, change): the change is
         // checked against the state after `setup` alone.
         type Edit = fn(&mut App);
         let surfaces: &[(&str, Edit, Edit)] = &[
-            ("do_swi", |_| {}, |a| a.form.do_swi = true),
-            ("swi_scaling", |a| a.form.do_swi = true, |a| a.form.swi_scaling = 1),
-            ("swi_strength", |a| a.form.do_swi = true, |a| a.form.swi_strength = bumped(&a.form.swi_strength)),
-            ("swi_hp_sigma", |a| a.form.do_swi = true, |a| a.form.swi_hp_sigma_z = bumped(&a.form.swi_hp_sigma_z)),
-            ("swi_mip_window", |a| a.form.do_swi = true, |a| a.form.swi_mip_window = bumped(&a.form.swi_mip_window)),
-            ("do_t2starmap", |_| {}, |a| a.form.do_t2starmap = true),
-            ("do_r2starmap", |_| {}, |a| a.form.do_r2starmap = true),
-            ("do_r2map", |_| {}, |a| a.form.do_r2map = true),
-            ("do_r2primemap", |_| {}, |a| a.form.do_r2primemap = true),
-            ("export_dicom", |_| {}, |a| a.form.export_dicom = true),
-            ("do_smwi", |_| {}, |a| a.form.do_smwi = true),
-            ("smwi_threshold", |a| a.form.do_smwi = true, |a| a.form.smwi_threshold = bumped(&a.form.smwi_threshold)),
-            ("smwi_power", |a| a.form.do_smwi = true, |a| a.form.smwi_power = bumped(&a.form.smwi_power)),
-            ("smwi_mip_window", |a| a.form.do_smwi = true, |a| a.form.smwi_mip_window = bumped(&a.form.smwi_mip_window)),
-            ("do_segmentation", |_| {}, |a| a.form.do_segmentation = true),
-            ("do_analysis", |_| {}, |a| a.form.do_analysis = true),
-            ("synthseg_version", |a| a.form.do_segmentation = true, |a| a.form.synthseg_version = 1),
-            ("synthseg_crop", |a| a.form.do_segmentation = true, |a| a.form.synthseg_crop = "160".into()),
-            ("synthseg_flip_averaging", |a| a.form.do_segmentation = true, |a| a.form.synthseg_flip_averaging ^= true),
-            ("synthseg_topology_cleanup", |a| a.form.do_segmentation = true, |a| a.form.synthseg_topology_cleanup ^= true),
-            ("synthseg_sigma", |a| a.form.do_segmentation = true, |a| a.form.synthseg_sigma = bumped(&a.form.synthseg_sigma)),
             ("orientation_group", |_| {}, |a| a.filter_state.orientation_group = "acq".into()),
             ("orientation_algorithm", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_algorithm = 1),
             ("orientation_lambda", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_lambda = "0.5".into()),
@@ -1980,15 +1998,6 @@ mod parity {
             ("include", |_| {}, |a| a.filter_state.include_pattern = "sub-1*".into()),
             ("exclude", |_| {}, |a| a.filter_state.exclude_pattern = "*pre*".into()),
             ("num_echoes", |_| {}, |a| a.filter_state.num_echoes = "2".into()),
-            ("dry", |_| {}, |a| a.form.dry_run = true),
-            ("debug", |_| {}, |a| a.form.debug = true),
-            ("n_procs", |_| {}, |a| a.form.n_procs = "4".into()),
-            ("mem_limit_gb", |_| {}, |a| a.form.mem_limit_gb = "16".into()),
-            ("no_mem_limit", |_| {}, |a| a.form.no_mem_limit = true),
-            ("force", |_| {}, |a| a.form.force = true),
-            ("clean_intermediates", |_| {}, |a| a.form.clean_intermediates = true),
-            ("source_dicom", |a| a.form.export_dicom = true, |a| a.form.source_dicom = "/dicom".into()),
-            ("dicom_outputs", |a| a.form.export_dicom = true, |a| a.form.dicom_outputs = "Chimap".into()),
         ];
         for (what, setup, change) in surfaces {
             let mut base = App::new();
