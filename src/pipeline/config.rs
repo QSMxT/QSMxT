@@ -349,31 +349,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         }
 
         // ── ROMEO weights and unwrapping options ──
-        {
-            let r = &args.romeo_params;
-            let fmr = &mut config.field_mapping.romeo;
-            // Weight component flags (default-true → disabled via --no-*)
-            if r.no_romeo_phase_coherence { fmr.phase_coherence = false; }
-            if r.no_romeo_phase_gradient_coherence { fmr.phase_gradient_coherence = false; }
-            if r.no_romeo_phase_linearity { fmr.phase_linearity = false; }
-            if r.no_romeo_mag_coherence { fmr.mag_coherence = false; }
-            // Weight component flags (default-false → enabled via positive flag)
-            if r.romeo_mag_weight { fmr.mag_weight = true; }
-            if r.no_romeo_mag_weight { fmr.mag_weight = false; }
-            if r.romeo_mag_weight2 { fmr.mag_weight2 = true; }
-            if r.romeo_bestpath { fmr.bestpath = true; }
-            // Multi-echo options
-            if let Some(t) = r.romeo_template { fmr.template = if t > 0 { t - 1 } else { 0 }; }
-            if r.romeo_individual { fmr.individual = true; }
-            if r.no_romeo_individual { fmr.individual = false; }
-            if r.romeo_correct_global { fmr.correct_global = true; }
-            if r.no_romeo_correct_global { fmr.correct_global = false; }
-            if let Some(v) = r.romeo_temporal_uncertain_unwrapping { fmr.temporal_uncertain_unwrapping = v; }
-            if let Some(v) = r.romeo_max_seeds { fmr.max_seeds = v; }
-            if r.romeo_merge_regions { fmr.merge_regions = true; }
-            if r.romeo_correct_regions { fmr.correct_regions = true; }
-            if let Some(v) = r.romeo_wrap_addition { fmr.wrap_addition = v; }
-        }
+        args.romeo_params.apply_to(&mut config.field_mapping.romeo);
 
         // ── QSM reference ──
         // Anything that is not `mean` or `none` is a region spec; whether it names real labels
@@ -387,10 +363,6 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
 
         // ── BET ──
         if let Some(v) = args.bet_fractional_intensity { config.bet.fractional_intensity = v; }
-        if let Some(v) = args.bet_smoothness { config.bet.smoothness = v; }
-        if let Some(v) = args.bet_gradient_threshold { config.bet.gradient_threshold = v; }
-        if let Some(v) = args.bet_iterations { config.bet.iterations = v; }
-        if let Some(v) = args.bet_subdivisions { config.bet.subdivisions = v; }
         if let Some(v) = args.bet_voxel_scale { config.bet.voxel_scale = v; }
 
         // ── Inversion params ──
@@ -756,33 +728,60 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             }
         }
 
-        // ── BET voxel scaling ──
-        // `config.bet` is the one-value-per-parameter view of BET, but the value BET actually
-        // runs with lives on each `MaskOp::Bet` in the recipe. Push it out last, so it reaches
+        // ── BET ──
+        // `config.bet` is the one-value-per-parameter view of BET, but the values BET actually
+        // runs with live on each `MaskOp::Bet` in the recipe. Push them out last, so they reach
         // the sections a preset, `--mask` or the QSMART default has just installed — and so
-        // `--bet-voxel-scale` is the whole recipe's answer either way, whether or not the
-        // `--mask` spec also spelled out a `scale=`.
-        if let Some(scale) = args.bet_voxel_scale {
-            apply_bet_voxel_scale(&mut config.masking, scale);
+        // `--bet-fractional-intensity` / `--bet-voxel-scale` (or a `[bet]` value in a config
+        // file) are the whole recipe's answer, whether or not a `--mask` spec also spelled one out.
+        let d = qsmxt_config::BetConfig::default();
+        if args.bet_fractional_intensity.is_some() || config.bet.fractional_intensity != d.fractional_intensity {
+            let fi = config.bet.fractional_intensity;
+            for_each_bet_op(&mut config.masking, |f, _| *f = fi);
+        }
+        if args.bet_voxel_scale.is_some() || config.bet.voxel_scale != d.voxel_scale {
+            let scale = config.bet.voxel_scale;
+            for_each_bet_op(&mut config.masking, |_, s| *s = scale);
         }
         Ok(())
 }
 
-/// Set `voxel_scale` on every BET step in a masking recipe — the sections, the refinements that
-/// run on the combined mask, and the two-pass sections, wherever BET appears as a generator or a
-/// refinement. One flag for the whole recipe: a run where one BET step saw mouse-scale voxels and
-/// another saw the acquisition's would be a configuration mistake, not a feature.
-fn apply_bet_voxel_scale(masking: &mut MaskingConfig, scale: f64) {
-    fn set(op: &mut MaskOp, scale: f64) {
-        if let MaskOp::Bet { voxel_scale, .. } = op { *voxel_scale = scale; }
+/// Refuse BET settings that cannot reach BET. qsm-core's `MaskOp::Bet` carries only the
+/// fractional intensity and the voxel scale, so `[bet] smoothness`, `gradient_threshold`,
+/// `iterations` and `subdivisions` in a config file would be accepted and ignored (#279).
+pub fn validate_bet(config: &PipelineConfig) -> crate::Result<()> {
+    let (b, d) = (&config.bet, qsmxt_config::BetConfig::default());
+    let unsupported: Vec<&str> = [
+        ("smoothness", b.smoothness != d.smoothness),
+        ("gradient_threshold", b.gradient_threshold != d.gradient_threshold),
+        ("iterations", b.iterations != d.iterations),
+        ("subdivisions", b.subdivisions != d.subdivisions),
+    ].iter().filter(|(_, set)| *set).map(|(name, _)| *name).collect();
+    if unsupported.is_empty() {
+        return Ok(());
     }
+    Err(QsmxtError::Config(format!(
+        "[bet] {} cannot be applied: a BET mask step carries only the fractional intensity and \
+         the voxel scale (QSM.rs MaskOp::Bet). Remove {} from the config file",
+        unsupported.join(", "), if unsupported.len() == 1 { "it" } else { "them" })))
+}
+
+/// Run `f(fractional_intensity, voxel_scale)` on every BET step in a masking recipe — the
+/// sections, the refinements that run on the combined mask, and the two-pass sections, wherever
+/// BET appears as a generator or a refinement. One value for the whole recipe: a run where one
+/// BET step saw mouse-scale voxels and another saw the acquisition's would be a configuration
+/// mistake, not a feature.
+fn for_each_bet_op(masking: &mut MaskingConfig, f: impl Fn(&mut f64, &mut f64)) {
+    let set = |op: &mut MaskOp| {
+        if let MaskOp::Bet { fractional_intensity, voxel_scale } = op { f(fractional_intensity, voxel_scale); }
+    };
     let sections = masking.two_pass_sections.iter_mut().flatten()
         .chain(masking.sections.iter_mut());
     for section in sections {
-        set(&mut section.generator, scale);
-        for op in &mut section.refinements { set(op, scale); }
+        set(&mut section.generator);
+        for op in &mut section.refinements { set(op); }
     }
-    for op in &mut masking.refinements { set(op, scale); }
+    for op in &mut masking.refinements { set(op); }
 }
 
 #[cfg(test)]
@@ -1053,6 +1052,40 @@ mod tests {
         assert_eq!(c.masking.sections, qsmart_default_mask_sections().into_iter()
                    .map(|mut s| { s.generator = MaskOp::Bet { fractional_intensity: 0.5, voxel_scale: 10.0 }; s })
                    .collect::<Vec<_>>());
+    }
+
+    /// `--bet-fractional-intensity` used to be stored in `config.bet` and never reach a BET step
+    /// (#279). It is now every BET step's fractional intensity, like `--bet-voxel-scale`, and a
+    /// config file's `[bet]` values reach the steps the same way. BET's other parameters cannot
+    /// travel on a mask step, so they are refused rather than ignored.
+    #[test]
+    fn bet_fractional_intensity_reaches_every_bet_step() {
+        let fi = |c: &PipelineConfig| -> Vec<f64> {
+            c.masking.sections.iter().map(|s| &s.generator).chain(c.masking.refinements.iter())
+                .filter_map(|op| match op { MaskOp::Bet { fractional_intensity, .. } => Some(*fractional_intensity), _ => None })
+                .collect()
+        };
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--mask", "magnitude,bet:0.4,erode:2",
+                                  "--mask", "magnitude,bet", "--bet-fractional-intensity", "0.3"]);
+        assert_eq!(fi(&c), vec![0.3, 0.3]);
+        // Without the flag, each step keeps its own.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--mask", "magnitude,bet:0.4"]);
+        assert_eq!(fi(&c), vec![0.4]);
+        // From a config file.
+        let mut file = PipelineConfig::from_toml("[bet]\nfractional_intensity = 0.35\n").unwrap();
+        file.masking.sections = vec![MaskSection { input: MaskingInput::MagnitudeFirst, generator: MaskOp::bet(0.5), refinements: vec![] }];
+        let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>"]).unwrap();
+        let cli::Command::Run(r) = cli.command else { panic!() };
+        apply_run_overrides(&mut file, &r.pipeline).unwrap();
+        assert_eq!(fi(&file), vec![0.35]);
+        // The flags BET cannot take on a mask step are gone, and a config file's are refused.
+        for flag in ["--bet-smoothness", "--bet-gradient-threshold", "--bet-iterations", "--bet-subdivisions"] {
+            assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", flag, "1"]).is_err(), "{flag}");
+        }
+        assert!(validate_bet(&PipelineConfig::default()).is_ok());
+        let c = PipelineConfig::from_toml("[bet]\nsmoothness = 2.0\niterations = 500\n").unwrap();
+        let e = format!("{}", validate_bet(&c).unwrap_err());
+        assert!(e.contains("smoothness") && e.contains("iterations"), "{e}");
     }
 
     /// The flag is the whole recipe's answer: it also wins over a `scale=` spelled out in

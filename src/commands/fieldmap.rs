@@ -9,7 +9,7 @@ use log::info;
 
 use super::common::{load_mask, load_nifti_4d, save_nifti, MultiEcho};
 use crate::cli::{
-    B0EstimationArg, B0WeightTypeArg, FieldmapCommand, FieldmapCommonArgs,
+    B0EstimationArg, B0WeightTypeArg, FieldmapCommand, FieldmapCommonArgs, FieldmapRomeoArgs,
 };
 use crate::error::QsmxtError;
 use crate::cli::LaplacianSolverArg;
@@ -132,24 +132,11 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
     // Dispatch per algorithm; the algorithm-specific config is applied via a closure so the shared
     // run_field_mapping does the loading/validation once.
     match cmd {
-        FieldmapCommand::Romeo(args) => {
-            let phase_offset_removal = args.phase_offset_removal;
-            let phase_offset_sigma = args.phase_offset_sigma.clone();
-            let bipolar_correction = args.bipolar_correction;
-            let romeo_params = args.romeo_params.to_romeo_params();
-            run_field_mapping(
-                &args.common,
-                qsm_core::pipeline::config::UnwrappingAlgorithm::Romeo,
-                &|c| {
-                    if let Some(v) = phase_offset_removal { c.phase_offset_removal = v; }
-                    if let Some(ref s) = phase_offset_sigma {
-                        if s.len() == 3 { c.phase_offset_sigma = [s[0], s[1], s[2]]; }
-                    }
-                    c.bipolar_correction = bipolar_correction;
-                    c.romeo_params = romeo_params.clone();
-                },
-            )
-        }
+        FieldmapCommand::Romeo(args) => run_field_mapping(
+            &args.common,
+            qsm_core::pipeline::config::UnwrappingAlgorithm::Romeo,
+            &|c| apply_romeo(&args, c),
+        ),
         FieldmapCommand::Laplacian(args) => {
             let pad = qsmxt_config::pad3_from(&args.laplacian_fft_pad).ok_or_else(|| QsmxtError::Config(
                 format!("--laplacian-fft-pad {:?}: give one value or three", args.laplacian_fft_pad)))?;
@@ -164,6 +151,32 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
             )
         }
     }
+}
+
+/// `fieldmap romeo`'s own flags.
+fn apply_romeo(args: &FieldmapRomeoArgs, c: &mut qsm_core::pipeline::config::FieldMappingConfig) {
+    if let Some(v) = args.phase_offset_removal { c.phase_offset_removal = v; }
+    if let Some(ref s) = args.phase_offset_sigma {
+        if s.len() == 3 { c.phase_offset_sigma = [s[0], s[1], s[2]]; }
+    }
+    c.bipolar_correction = args.bipolar_correction;
+    c.romeo_params = args.romeo_params.to_romeo_params();
+}
+
+/// The qsm-core field-mapping configuration for these flags. Starts from QSMxT's defaults — the
+/// ones `qsmxt run` starts from — not qsm-core's: they differ (ROMEO's individual unwrapping and
+/// global correction, for one), and the standalone tool has to give the field map the pipeline
+/// gives for the same inputs and flags (#279).
+fn field_mapping_config(
+    common: &FieldmapCommonArgs,
+    algorithm: qsm_core::pipeline::config::UnwrappingAlgorithm,
+    apply_algo: &dyn Fn(&mut qsm_core::pipeline::config::FieldMappingConfig),
+) -> qsm_core::pipeline::config::FieldMappingConfig {
+    let mut config = qsmxt_config::to_pipeline_stages(&qsmxt_config::PipelineConfig::default()).0;
+    config.unwrapping_algorithm = algorithm;
+    apply_common_config(&mut config, common);
+    apply_algo(&mut config);
+    config
 }
 
 fn run_field_mapping(
@@ -236,13 +249,7 @@ fn run_field_mapping(
         slice_geometry: None,
     };
 
-    // ── Field-mapping config ──
-    let mut config = qsm_core::pipeline::config::FieldMappingConfig {
-        unwrapping_algorithm: algorithm,
-        ..Default::default()
-    };
-    apply_common_config(&mut config, common);
-    apply_algo(&mut config);
+    let config = field_mapping_config(common, algorithm, apply_algo);
 
     info!(
         "Field mapping ({:?}, {}x{}x{}, {} echoes, B0={:.2}T)",
@@ -286,6 +293,39 @@ mod tests {
     const NX: usize = 8;
     const NY: usize = 8;
     const NZ: usize = 8;
+
+    /// `qsmxt fieldmap romeo` and `qsmxt run` build the same field-mapping configuration from
+    /// the same flags (#279: the standalone tool started from qsm-core's ROMEO defaults, with
+    /// individual unwrapping and global correction off, where `run` has both on).
+    #[test]
+    fn fieldmap_romeo_matches_run_for_the_same_flags() {
+        use clap::Parser;
+        let flag_sets: &[&[&str]] = &[
+            &[],
+            &["--no-romeo-phase-linearity", "--romeo-max-seeds", "3", "--no-romeo-correct-global"],
+            &["--phase-offset-sigma", "2", "2", "1", "--romeo-mag-weight", "--no-romeo-individual",
+              "--romeo-template", "2"],
+        ];
+        for flags in flag_sets {
+            let mut fm = vec!["qsmxt", "fieldmap", "romeo", "p.nii", "--mask", "m.nii", "--output", "o.nii",
+                              "--tes", "0.005", "0.01", "--b0", "3"];
+            fm.extend_from_slice(flags);
+            let cli = crate::cli::Cli::try_parse_from(&fm).unwrap();
+            let crate::cli::Command::Fieldmap { command: FieldmapCommand::Romeo(args) } = cli.command else { panic!() };
+            let standalone = super::field_mapping_config(
+                &args.common, qsm_core::pipeline::config::UnwrappingAlgorithm::Romeo,
+                &|c| super::apply_romeo(&args, c));
+
+            let mut run = vec!["qsmxt", "run", "bids", "--unwrapping-algorithm", "romeo"];
+            run.extend_from_slice(flags);
+            let cli = crate::cli::Cli::try_parse_from(&run).unwrap();
+            let crate::cli::Command::Run(r) = cli.command else { panic!() };
+            let mut config = qsmxt_config::PipelineConfig::default();
+            crate::pipeline::config::apply_run_overrides(&mut config, &r.pipeline).unwrap();
+            let pipeline = qsmxt_config::to_pipeline_stages(&config).0;
+            assert_eq!(format!("{standalone:?}"), format!("{pipeline:?}"), "flags {flags:?}");
+        }
+    }
 
     /// Write a minimal 4D float32 NIfTI (dim[0]=4) with per-echo volumes.
     fn write_nifti_4d(path: &std::path::Path, echoes: &[Vec<f64>]) {

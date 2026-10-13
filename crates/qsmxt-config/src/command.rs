@@ -258,10 +258,6 @@ pub fn generate_command(config: &PipelineConfig) -> String {
 
     // ── BET ──
     emit_f64(&mut parts, "--bet-fractional-intensity", config.bet.fractional_intensity, d.bet.fractional_intensity);
-    emit_f64(&mut parts, "--bet-smoothness", config.bet.smoothness, d.bet.smoothness);
-    emit_f64(&mut parts, "--bet-gradient-threshold", config.bet.gradient_threshold, d.bet.gradient_threshold);
-    emit_usize(&mut parts, "--bet-iterations", config.bet.iterations, d.bet.iterations);
-    emit_usize(&mut parts, "--bet-subdivisions", config.bet.subdivisions, d.bet.subdivisions);
     emit_f64(&mut parts, "--bet-voxel-scale", config.bet.voxel_scale, d.bet.voxel_scale);
 
     // ── Background removal ──

@@ -27,13 +27,12 @@ pub fn execute(cmd: UnwrapCommand) -> crate::Result<()> {
             phase::scale_phase_to_pi(&mut phase_data);
             info!("Unwrapping phase (ROMEO, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
-            if args.no_phase_gradient_coherence || args.no_mag_coherence || args.no_mag_weight {
-                debug!(
-                    "ROMEO params: phase_gradient_coherence={}, mag_coherence={}, mag_weight={}",
-                    !args.no_phase_gradient_coherence,
-                    !args.no_mag_coherence,
-                    !args.no_mag_weight,
-                );
+            let multi = args.romeo_params.multi_echo_flags();
+            if !multi.is_empty() {
+                return Err(crate::error::QsmxtError::Config(format!(
+                    "{}: only meaningful when several echoes are unwrapped together — use \
+                     `qsmxt fieldmap romeo` or `qsmxt run`; `unwrap romeo` unwraps one 3D phase",
+                    multi.join(", "))));
             }
 
             let mag = if let Some(ref mag_path) = args.magnitude {
@@ -42,7 +41,8 @@ pub fn execute(cmd: UnwrapCommand) -> crate::Result<()> {
                 vec![1.0f64; phase_data.len()]
             };
 
-            let params = qsm_core::unwrap::RomeoParams::default();
+            let params = args.romeo_params.to_romeo_params();
+            debug!("ROMEO params: {:?}", params);
             let unwrapped = qsm_core::unwrap::unwrap_romeo(
                 &phase_data, &mag, None, 0.0, 0.0, &mask, &params, &grid,
             );

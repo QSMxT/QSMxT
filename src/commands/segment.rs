@@ -10,6 +10,13 @@ use crate::pipeline::config::{parse_synthseg_version, SegmentationConfig, SynthS
 /// The pipeline stage is the usual way in; this exists to try the network on a single volume, or to
 /// segment data that never went through a QSM run.
 pub fn execute(args: SegmentArgs) -> crate::Result<()> {
+    // `--use-custom-dseg` comes with the shared segmentation flags, but it names a segmentation
+    // for `qsmxt run` to use instead of computing one; here the point is to compute one.
+    if let Some(ref tool) = args.params.use_custom_dseg {
+        return Err(QsmxtError::Config(format!(
+            "--use-custom-dseg {tool}: `qsmxt segment` computes a segmentation; a supplied one is \
+             only read by `qsmxt run`")));
+    }
     let mut cfg = SegmentationConfig::default();
     if let Some(ref v) = args.params.synthseg_version {
         cfg.version = parse_synthseg_version(v).ok_or_else(|| {

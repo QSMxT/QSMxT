@@ -942,33 +942,54 @@ pub struct RomeoParamArgs {
 }
 
 impl RomeoParamArgs {
-    /// Build `qsm_core::unwrap::RomeoParams` from these CLI flags, starting from the
-    /// library defaults and applying overrides. `--romeo-template` is 1-indexed on the
-    /// CLI and converted to the 0-indexed value the library expects.
-    pub fn to_romeo_params(&self) -> qsm_core::unwrap::RomeoParams {
-        let mut p = qsm_core::unwrap::RomeoParams::default();
+    /// Apply these flags onto a ROMEO configuration. The one place they are read, so `qsmxt run`
+    /// and `qsmxt fieldmap romeo` / `unwrap romeo` cannot disagree about what a flag means.
+    /// `--romeo-template` is 1-indexed on the CLI and 0-indexed in the library.
+    pub fn apply_to(&self, r: &mut qsmxt_config::RomeoConfig) {
         // Weight component flags (default-true → disabled via --no-*)
-        if self.no_romeo_phase_coherence { p.phase_coherence = false; }
-        if self.no_romeo_phase_gradient_coherence { p.phase_gradient_coherence = false; }
-        if self.no_romeo_phase_linearity { p.phase_linearity = false; }
-        if self.no_romeo_mag_coherence { p.mag_coherence = false; }
+        if self.no_romeo_phase_coherence { r.phase_coherence = false; }
+        if self.no_romeo_phase_gradient_coherence { r.phase_gradient_coherence = false; }
+        if self.no_romeo_phase_linearity { r.phase_linearity = false; }
+        if self.no_romeo_mag_coherence { r.mag_coherence = false; }
         // Weight component flags (default-false → enabled via positive flag)
-        if self.romeo_mag_weight { p.mag_weight = true; }
-        if self.no_romeo_mag_weight { p.mag_weight = false; }
-        if self.romeo_mag_weight2 { p.mag_weight2 = true; }
-        if self.romeo_bestpath { p.bestpath = true; }
+        if self.romeo_mag_weight { r.mag_weight = true; }
+        if self.no_romeo_mag_weight { r.mag_weight = false; }
+        if self.romeo_mag_weight2 { r.mag_weight2 = true; }
+        if self.romeo_bestpath { r.bestpath = true; }
         // Multi-echo options
-        if let Some(t) = self.romeo_template { p.template = t.saturating_sub(1); }
-        if self.romeo_individual { p.individual = true; }
-        if self.no_romeo_individual { p.individual = false; }
-        if self.romeo_correct_global { p.correct_global = true; }
-        if self.no_romeo_correct_global { p.correct_global = false; }
-        if let Some(v) = self.romeo_temporal_uncertain_unwrapping { p.temporal_uncertain_unwrapping = v; }
-        if let Some(v) = self.romeo_max_seeds { p.max_seeds = v; }
-        if self.romeo_merge_regions { p.merge_regions = true; }
-        if self.romeo_correct_regions { p.correct_regions = true; }
-        if let Some(v) = self.romeo_wrap_addition { p.wrap_addition = v; }
-        p
+        if let Some(t) = self.romeo_template { r.template = t.saturating_sub(1); }
+        if self.romeo_individual { r.individual = true; }
+        if self.no_romeo_individual { r.individual = false; }
+        if self.romeo_correct_global { r.correct_global = true; }
+        if self.no_romeo_correct_global { r.correct_global = false; }
+        if let Some(v) = self.romeo_temporal_uncertain_unwrapping { r.temporal_uncertain_unwrapping = v; }
+        if let Some(v) = self.romeo_max_seeds { r.max_seeds = v; }
+        if self.romeo_merge_regions { r.merge_regions = true; }
+        if self.romeo_correct_regions { r.correct_regions = true; }
+        if let Some(v) = self.romeo_wrap_addition { r.wrap_addition = v; }
+    }
+
+    /// `qsm_core::unwrap::RomeoParams` for these flags, starting from QSMxT's ROMEO defaults —
+    /// the ones `qsmxt run` uses (individual unwrapping and global correction on), not the
+    /// library's.
+    pub fn to_romeo_params(&self) -> qsm_core::unwrap::RomeoParams {
+        let mut r = qsmxt_config::RomeoConfig::default();
+        self.apply_to(&mut r);
+        (&r).into()
+    }
+
+    /// The flags that only mean something when several echoes are unwrapped together.
+    pub fn multi_echo_flags(&self) -> Vec<&'static str> {
+        [
+            ("--romeo-template", self.romeo_template.is_some()),
+            ("--romeo-individual", self.romeo_individual),
+            ("--no-romeo-individual", self.no_romeo_individual),
+            ("--romeo-correct-global", self.romeo_correct_global),
+            ("--no-romeo-correct-global", self.no_romeo_correct_global),
+            ("--romeo-temporal-uncertain-unwrapping", self.romeo_temporal_uncertain_unwrapping.is_some()),
+            // Phase gradient coherence compares two echoes; with one it is never computed.
+            ("--no-romeo-phase-gradient-coherence", self.no_romeo_phase_gradient_coherence),
+        ].iter().filter(|(_, set)| *set).map(|(f, _)| *f).collect()
     }
 }
 
@@ -1125,25 +1146,10 @@ pub struct PipelineArgs {
     #[arg(long, value_name = "VOXELS", num_args = 1..=3)]
     pub laplacian_fft_pad: Option<Vec<usize>>,
 
-    /// BET fractional intensity (0.0-1.0)
+    /// BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in
+    /// the masking recipe, overriding a `bet:<f>` in a --mask spec
     #[arg(long)]
     pub bet_fractional_intensity: Option<f64>,
-
-    /// BET surface smoothness factor
-    #[arg(long)]
-    pub bet_smoothness: Option<f64>,
-
-    /// BET gradient threshold (-1 to 1)
-    #[arg(long)]
-    pub bet_gradient_threshold: Option<f64>,
-
-    /// BET surface evolution iterations
-    #[arg(long)]
-    pub bet_iterations: Option<usize>,
-
-    /// BET icosphere subdivision level
-    #[arg(long)]
-    pub bet_subdivisions: Option<usize>,
 
     /// Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a
     /// human brain in millimetres, so preclinical data has to be presented at human scale:
@@ -1816,15 +1822,10 @@ pub struct UnwrapRomeoArgs {
     /// Magnitude image (improves quality)
     #[arg(long)]
     pub magnitude: Option<PathBuf>,
-    /// Disable phase gradient coherence weights
-    #[arg(long)]
-    pub no_phase_gradient_coherence: bool,
-    /// Disable magnitude coherence weights
-    #[arg(long)]
-    pub no_mag_coherence: bool,
-    /// Disable magnitude weighting
-    #[arg(long)]
-    pub no_mag_weight: bool,
+    /// The ROMEO settings `qsmxt run` takes. The multi-echo ones are refused here: this unwraps
+    /// a single 3D phase.
+    #[command(flatten)]
+    pub romeo_params: RomeoParamArgs,
 }
 
 #[derive(Parser, Debug)]
@@ -3267,22 +3268,23 @@ pub struct ResampleArgs {
     /// through the complex domain and survive the wraps.
     pub input: Option<PathBuf>,
     /// Output resampled NIfTI file (for the positional input)
-    #[arg(short, long)]
+    #[arg(short, long, conflicts_with = "phase")]
     pub output: Option<PathBuf>,
     /// Wrapped phase to resample together with --magnitude (complex-domain interpolation)
-    #[arg(long, requires = "magnitude")]
+    #[arg(long, requires = "magnitude", conflicts_with = "input")]
     pub phase: Option<PathBuf>,
     /// Magnitude paired with --phase
     #[arg(long, requires = "phase")]
     pub magnitude: Option<PathBuf>,
     /// Where to write the resampled phase (default: <phase stem>_axial.nii)
-    #[arg(long)]
+    #[arg(long, requires = "phase")]
     pub phase_out: Option<PathBuf>,
     /// Where to write the resampled magnitude (default: <magnitude stem>_axial.nii)
-    #[arg(long)]
+    #[arg(long, requires = "phase")]
     pub magnitude_out: Option<PathBuf>,
-    /// Do not fill the empty corners of the new grid with seeded noise
-    #[arg(long)]
+    /// Do not fill the empty corners of the new grid with seeded noise. Only the --phase /
+    /// --magnitude pair is noise-filled (it seeds ROMEO); a plain volume's corners are zero
+    #[arg(long, requires = "phase")]
     pub no_noise_fill: bool,
 }
 

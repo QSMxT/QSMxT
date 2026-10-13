@@ -270,11 +270,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
                 .filter(|&p| p != qsmxt_config::default_laplacian_fft_pad())
                 .map(|p| if p[0] == p[1] && p[1] == p[2] { vec![p[0]] } else { p.to_vec() })
         } else { None },
-        bet_fractional_intensity: parse_optional_f64(&ps.bet_fractional_intensity),
-        bet_smoothness: parse_optional_f64(&ps.bet_smoothness),
-        bet_gradient_threshold: parse_optional_f64(&ps.bet_gradient_threshold),
-        bet_iterations: parse_optional_usize(&ps.bet_iterations),
-        bet_subdivisions: parse_optional_usize(&ps.bet_subdivisions),
+        // BET is edited per mask step in the TUI, so its settings travel inside the sections.
+        bet_fractional_intensity: None,
         // The TUI's voxel scale lives on the mask recipe's BET step, so it travels in
         // `mask_sections_cli` below rather than as a recipe-wide flag.
         bet_voxel_scale: None,
@@ -1119,11 +1116,9 @@ mod tests {
     #[test]
     fn test_command_string_parameters() {
         let mut app = default_app();
-        app.pipeline_state.bet_fractional_intensity = "0.3".to_string();
         app.pipeline_state.rts_delta = "0.2".to_string();
         app.pipeline_state.obliquity_threshold = "5".to_string();
         let cmd = build_command_string(&app);
-        assert!(cmd.contains("--bet-fractional-intensity 0.3"));
         assert!(cmd.contains("--rts-delta 0.2"));
         assert!(cmd.contains("--obliquity-threshold 5"));
     }
@@ -1204,7 +1199,6 @@ mod tests {
         let mut app = default_app();
         app.form.bids_dir = "/b".to_string();
         app.form.output_dir = "/o".to_string();
-        app.pipeline_state.bet_fractional_intensity = "0.3".to_string();
         app.pipeline_state.rts_delta = "0.2".to_string();
         app.pipeline_state.rts_mu = "1e5".to_string();
         app.pipeline_state.rts_tol = "1e-4".to_string();
@@ -1214,7 +1208,6 @@ mod tests {
         app.pipeline_state.tkd_threshold = "0.15".to_string();
         app.form.n_procs = "8".to_string();
         let args = build_run_args(&app).unwrap();
-        assert_eq!(args.pipeline.bet_fractional_intensity, Some(0.3));
         assert_eq!(args.pipeline.rts_params.rts_delta, Some(0.2));
         assert_eq!(args.pipeline.tgv_params.tgv_iterations, Some(500));
         assert_eq!(args.n_procs, Some(8));
@@ -1470,7 +1463,7 @@ mod tests {
         app.form.execution_mode = 1;
         app.form.slurm_account = "acct".to_string();
         app.pipeline_state.qsm_algorithm = 4; // tgv
-        app.pipeline_state.bet_fractional_intensity = "0.3".to_string();
+        app.pipeline_state.rts_delta = "0.2".to_string();
 
         let cmd = build_command_string(&app);
         let argv: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
@@ -1479,7 +1472,6 @@ mod tests {
         match cli.command {
             crate::cli::Command::Slurm(args) => {
                 assert_eq!(args.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tgv));
-                assert_eq!(args.pipeline.bet_fractional_intensity, Some(0.3));
                 assert_eq!(args.account, "acct");
             }
             _ => panic!("expected the slurm subcommand"),
@@ -1498,14 +1490,14 @@ mod tests {
         app.pipeline_state.qsm_algorithm = 4; // tgv
         app.pipeline_state.unwrapping_algorithm = 1; // laplacian
         app.pipeline_state.bf_algorithm = 1; // pdf
-        app.pipeline_state.bet_fractional_intensity = "0.3".to_string();
+        app.pipeline_state.obliquity_threshold = "5".to_string();
         app.form.do_swi = true;
 
         let slurm = build_slurm_args(&app).unwrap();
         assert_eq!(slurm.pipeline.qsm_algorithm, Some(crate::cli::QsmAlgorithmArg::Tgv));
         assert_eq!(slurm.pipeline.unwrapping_algorithm, Some(crate::cli::UnwrapAlgorithmArg::Laplacian));
         assert_eq!(slurm.pipeline.bf_algorithm, Some(crate::cli::BfAlgorithmArg::Pdf));
-        assert_eq!(slurm.pipeline.bet_fractional_intensity, Some(0.3));
+        assert_eq!(slurm.pipeline.obliquity_threshold, Some(5.0));
         assert!(slurm.pipeline.do_swi);
     }
 
@@ -1857,10 +1849,6 @@ mod parity {
         let not_emitted: &[(&str, &str)] = &[
             // The TUI edits BET per mask step, so its settings travel inside `--mask` specs.
             ("--bet-fractional-intensity", "per BET step, in --mask"),
-            ("--bet-smoothness", "per BET step, in --mask"),
-            ("--bet-gradient-threshold", "per BET step, in --mask"),
-            ("--bet-iterations", "per BET step, in --mask"),
-            ("--bet-subdivisions", "per BET step, in --mask"),
             ("--bet-voxel-scale", "per BET step, in --mask"),
             // The direction that restates QSMxT's default, so the command never needs it.
             ("--inhomogeneity-correction", "restates the default"),
