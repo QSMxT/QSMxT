@@ -2,6 +2,21 @@ use std::path::{Path, PathBuf};
 
 use crate::bids::entities::AcquisitionKey;
 
+/// What a published volume is, for resampling it (see [`DerivativeOutputs::output_kind`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputKind {
+    /// A continuous quantity (χ, R2*, a magnitude, ...): trilinear.
+    Continuous,
+    /// A binary mask: nearest neighbour.
+    Mask,
+    /// Integer label ids (a segmentation): a majority vote, never interpolated values.
+    Labels,
+    /// Wrapped phase: only through the complex domain, with its magnitude.
+    Phase,
+    /// A slab projection on its own shorter grid: rebuilt from its source volume.
+    Projection,
+}
+
 /// Manages BIDS derivative output paths.
 ///
 /// Final outputs (QSM, mask, magnitude, SWI, T2*, R2*) go to `output_dir/sub-XX/anat/`.
@@ -275,6 +290,40 @@ impl DerivativeOutputs {
     }
 
     // Pipeline state (per-run, in workflow directory)
+    /// What one of this run's published volumes is, which decides how it may be resampled
+    /// (#267): a continuous map trilinearly, a mask or a label image by their own rules, a wrapped
+    /// phase only with its magnitude, and a projection not at all (it is rebuilt from its source).
+    ///
+    /// Each derivative this type builds declares its kind here, by the path builder that made it;
+    /// anything else falls back to its BIDS suffix (`mask`, `dseg`, `minIP`), and then to a
+    /// continuous map.
+    pub fn output_kind(&self, key: &AcquisitionKey, path: &Path) -> OutputKind {
+        let registered: Vec<(PathBuf, OutputKind)> = [
+            (self.dseg_path(key), OutputKind::Labels),
+            (self.mask_path(key), OutputKind::Mask),
+            (self.qsm_support_path(key), OutputKind::Mask),
+            (self.two_pass_mask_path(key), OutputKind::Mask),
+            (self.r2prime_coverage_path(key), OutputKind::Mask),
+            (self.motion_coverage_path(key), OutputKind::Mask),
+            (self.swi_mip_path(key), OutputKind::Projection),
+            (self.smwi_mip_path(key, "paramagnetic"), OutputKind::Projection),
+            (self.smwi_mip_path(key, "diamagnetic"), OutputKind::Projection),
+        ].into_iter().collect();
+        if let Some((_, k)) = registered.iter().find(|(p, _)| p == path) {
+            return *k;
+        }
+        let name = path.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+        let stem = name.strip_suffix(".nii.gz").or_else(|| name.strip_suffix(".nii")).unwrap_or(&name);
+        let suffix = stem.rsplit('_').next().unwrap_or("");
+        match suffix {
+            "mask" => OutputKind::Mask,
+            "dseg" => OutputKind::Labels,
+            "minIP" => OutputKind::Projection,
+            _ if stem.split('_').any(|e| e == "part-phase") => OutputKind::Phase,
+            _ => OutputKind::Continuous,
+        }
+    }
+
     pub fn state_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.workflow_run_dir(key).join(".pipeline_state.json")
     }

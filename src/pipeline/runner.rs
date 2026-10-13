@@ -623,7 +623,11 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
         log::info!("Leaving outputs on the resampled grid (--output-space working)");
         return Ok(());
     }
-    let params = serde_json::json!({ "space": "acquired", "dims": [dst_dims.0, dst_dims.1, dst_dims.2] });
+    // `resampling` versions how each kind travels, so outputs returned by an older release (a
+    // trilinearly interpolated dseg, SMWI minIPs left on the working grid; #267) are redone.
+    let params = serde_json::json!({
+        "space": "acquired", "dims": [dst_dims.0, dst_dims.1, dst_dims.2], "resampling": "by-kind",
+    });
     if ctx.is_cached_with_params("output_space", None, &params) {
         return Ok(());
     }
@@ -660,16 +664,25 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
         }
     }
 
+    // How each file travels is decided by what it is (#267), not by its name.
+    use crate::bids::derivatives::OutputKind;
+    let kind = |p: &Path| ctx.output.output_kind(&ctx.run.key, p);
+
     // Phase is only meaningful alongside its magnitude, so handle those pairs first and skip
     // them in the scalar pass.
     let mut done: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    // The minIP is on its own, shorter grid, so it cannot travel with the volumes that share the
-    // working grid; it is recomputed from the resampled SWI below.
-    let mip_path = ctx.output.swi_mip_path(&ctx.run.key);
-    done.insert(mip_path.clone());
-    for phase_path in files.iter().filter(|p| p.to_string_lossy().contains("part-phase")) {
+    // Projections are on their own, shorter grids, so they cannot travel with the volumes that
+    // share the working grid; each is rebuilt from its resampled source below.
+    for f in files.iter().filter(|p| kind(p) == OutputKind::Projection) {
+        done.insert(f.clone());
+    }
+    for phase_path in files.iter().filter(|p| kind(p) == OutputKind::Phase) {
         let mag_path = PathBuf::from(phase_path.to_string_lossy().replace("part-phase", "part-mag"));
         if !mag_path.exists() {
+            log::warn!(
+                "Leaving {} on the working grid: wrapped phase can only be resampled with its \
+                 magnitude, and there is none beside it", phase_path.display());
+            done.insert(phase_path.clone());
             continue;
         }
         let (phase, mag) = (load_volume(phase_path)?, load_volume(&mag_path)?);
@@ -696,31 +709,47 @@ fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate:
             );
             continue;
         }
-        let is_mask = f.file_name().map(|n| n.to_string_lossy().contains("mask")).unwrap_or(false);
-        if is_mask {
-            let m: Vec<u8> = data.iter().map(|v| if *v > 0.5 { 1u8 } else { 0u8 }).collect();
-            if let Some(out) = qsm_core::geometry::resample_mask_onto(&m, src_dims, &src_affine, dst_dims, &dst_affine) {
-                let as_f64: Vec<f64> = out.iter().map(|v| *v as f64).collect();
-                write_on_grid(f, &as_f64, dst_dims, &dst_affine)?;
+        match kind(f) {
+            OutputKind::Mask => {
+                let m: Vec<u8> = data.iter().map(|v| if *v > 0.5 { 1u8 } else { 0u8 }).collect();
+                if let Some(out) = qsm_core::geometry::resample_mask_onto(&m, src_dims, &src_affine, dst_dims, &dst_affine) {
+                    let as_f64: Vec<f64> = out.iter().map(|v| *v as f64).collect();
+                    write_on_grid(f, &as_f64, dst_dims, &dst_affine)?;
+                }
             }
-        } else if let Some(out) =
-            qsm_core::geometry::resample_onto(&data, src_dims, &src_affine, dst_dims, &dst_affine)
-        {
-            write_on_grid(f, &out, dst_dims, &dst_affine)?;
+            // A label id is a name, not a quantity: interpolating between two ids invents a third.
+            OutputKind::Labels => {
+                let out = qsm_core::geometry::resample_labels_onto(&data, src_dims, &src_affine, dst_dims, &dst_affine)?;
+                write_on_grid(f, &out, dst_dims, &dst_affine)?;
+            }
+            OutputKind::Continuous | OutputKind::Phase | OutputKind::Projection => {
+                if let Some(out) = qsm_core::geometry::resample_onto(&data, src_dims, &src_affine, dst_dims, &dst_affine) {
+                    write_on_grid(f, &out, dst_dims, &dst_affine)?;
+                }
+            }
         }
     }
 
     // A projection cannot be interpolated onto the acquired grid as if it were a volume — its
-    // slices are slabs, not samples — so it is rebuilt from the SWI that just landed there.
-    let swi_path = ctx.output.swi_path(&ctx.run.key);
-    if mip_path.exists() && swi_path.exists() {
-        let dst_voxel_size = qsm_core::geometry::voxel_sizes_from_affine(&dst_affine);
-        let grid = qsm_core::Grid::new(
-            dst_dims.0, dst_dims.1, dst_dims.2,
-            dst_voxel_size.0, dst_voxel_size.1, dst_voxel_size.2,
-        );
-        let swi = load_volume(&swi_path)?;
-        let mip = qsm_core::swi::create_mip(&swi, &grid, &dst_affine, ctx.config.swi.mip_window)
+    // slices are slabs, not samples — so each is rebuilt from the volume that just landed there:
+    // the SWI minIP from the SWI, each SMWI minIP from its SMWI.
+    let dst_voxel_size = qsm_core::geometry::voxel_sizes_from_affine(&dst_affine);
+    let dst_grid = qsm_core::Grid::new(
+        dst_dims.0, dst_dims.1, dst_dims.2,
+        dst_voxel_size.0, dst_voxel_size.1, dst_voxel_size.2,
+    );
+    let mut projections = vec![(ctx.output.swi_mip_path(&ctx.run.key), ctx.output.swi_path(&ctx.run.key),
+                                ctx.config.swi.mip_window)];
+    for contrast in ["paramagnetic", "diamagnetic"] {
+        projections.push((ctx.output.smwi_mip_path(&ctx.run.key, contrast),
+                          ctx.output.smwi_path(&ctx.run.key, contrast), ctx.config.smwi.mip_window));
+    }
+    for (mip_path, source, window) in projections {
+        if !(files.contains(&mip_path) && source.exists()) {
+            continue;
+        }
+        let volume = load_volume(&source)?;
+        let mip = qsm_core::swi::create_mip(&volume, &dst_grid, &dst_affine, window)
             .map_err(QsmxtError::Config)?;
         write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
     }
@@ -5844,6 +5873,41 @@ mod oblique_run_tests {
         run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, &|_| {}).unwrap();
         assert!(!resampled(&output));
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
+    }
+
+    /// Returning a resampled run to the acquired grid moves a segmentation by majority vote, so
+    /// every value is still a label id, and rebuilds the SMWI minIPs on the acquired grid (#267).
+    #[test]
+    fn output_space_keeps_labels_valid_and_rebuilds_the_smwi_projections() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 2);
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let mut config = resampling_config();
+        config.pipeline.do_smwi = true;
+        config.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+
+        // A parcellation on the working grid, where the pipeline would have written one.
+        let work = io::read_nifti_file(&output.mask_path(&run.key)).unwrap();
+        let ids = [0.0, 10.0, 11.0, 49.0, 50.0];
+        let dseg: Vec<f64> = (0..work.data.len()).map(|v| ids[(v / 7) % ids.len()]).collect();
+        save_nifti_like(&output.dseg_path(&run.key), &dseg, &work);
+
+        config.pipeline.output_space = crate::pipeline::config::OutputSpace::Acquired;
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        let back = io::read_nifti_file(&output.dseg_path(&run.key)).unwrap();
+        assert_eq!(back.data.len(), ACQUIRED);
+        assert!(back.data.iter().all(|v| ids.contains(v)), "a label was interpolated");
+
+        for contrast in ["paramagnetic", "diamagnetic"] {
+            let mip = io::read_nifti_file(&output.smwi_mip_path(&run.key, contrast)).unwrap();
+            assert_eq!((mip.dims.0, mip.dims.1), (DIMS.0, DIMS.1),
+                       "the {contrast} minIP is still on the working grid");
+        }
+    }
+
+    fn save_nifti_like(path: &Path, data: &[f64], like: &qsm_core::io::NiftiData) {
+        write_volume(path, data, like.dims, like.voxel_size, &like.affine).unwrap();
     }
 
     /// An oblique three-orientation group under the default `--output-space acquired` (#270).
