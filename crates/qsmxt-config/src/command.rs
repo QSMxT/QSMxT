@@ -17,6 +17,14 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         parts.push(format!("--multi-orientation-algorithm {}", m.algorithm));
         emit_f64(&mut parts, "--multi-orientation-lambda", m.lambda, d.multi_orientation.lambda);
     }
+    if config.multi_orientation.magnitude_weighting {
+        let (m, dm) = (&config.multi_orientation, &d.multi_orientation);
+        parts.push("--cosmos-magnitude-weighting".into());
+        emit_f64(&mut parts, "--cosmos-tol", m.cosmos_tol, dm.cosmos_tol);
+        if m.cosmos_max_iter != dm.cosmos_max_iter {
+            parts.push(format!("--cosmos-max-iter {}", m.cosmos_max_iter));
+        }
+    }
     // Settings that only matter with a grouping, but are said whenever they were changed, so the
     // command reproduces the configuration (the TUI shows them without a grouping too).
     if config.multi_orientation.force { parts.push("--multi-orientation-force".into()); }

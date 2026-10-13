@@ -662,6 +662,20 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 config.multi_orientation.lambda
             ));
         }
+        let m = &config.multi_orientation;
+        if m.algorithm == MultiOrientAlgorithm::Cosmos {
+            if m.magnitude_weighting {
+                sentences.push(format!(
+                    "Each orientation's field was weighted by its magnitude, and the weighted \
+                     least-squares problem solved by conjugate gradient (tolerance {}, at most {} \
+                     iterations).", m.cosmos_tol, m.cosmos_max_iter));
+            }
+            sentences.push(
+                "The COSMOS map was referenced in the same way as the single-orientation maps, \
+                 over the voxels covered by every orientation's background-field-removal mask."
+                    .to_string(),
+            );
+        }
     }
 
     // DICOM export

@@ -718,6 +718,17 @@ least squares and is right whenever three or more orientations cover k-space; 1e
 to 1e-2 helps with two orientations, or when the rotations share a single axis and
 streaking survives.
 
+`--cosmos-magnitude-weighting` (TUI: General section of the pipeline tab, COSMOS
+Magnitude Weighting) weights each orientation's field by its combined magnitude, so
+low-signal voxels count for less, and solves by conjugate gradient; `--cosmos-tol`
+and `--cosmos-max-iter` (default 1e-6 and 100) set that solve, and are refused
+without the weighting, where COSMOS is solved in closed form and would ignore them.
+
+Each orientation contributes its *local* field, which only background-field
+removal writes. A grouping with an inversion that has no such step (MEDI with SMV,
+TGV, QSMART, AutoQSM, NeXtQSM, iQSM, iQSM+) or with `--no-qsm` is refused before
+processing.
+
 ### Outputs
 
 Each member run still produces its own single-orientation `Chimap` — the first
@@ -736,6 +747,23 @@ result drops the entity that varied:
 A `…_desc-cosmos_Chimap.json` sidecar records the source runs, the direction table
 and where each direction came from — the half of the input that does not live in
 the NIfTI files, and without which the result cannot be reproduced.
+
+The COSMOS map is treated like any other susceptibility map:
+
+- it is referenced with `--qsm-reference` over the voxels every orientation's
+  background-removal mask covers (a region reference uses the reference
+  orientation's segmentation), and the sidecar records the reference and offset;
+- under `--output-space acquired` it is written on the reference orientation's
+  acquired grid, the grid that orientation's own outputs are on;
+- it is cached: a re-run reuses it until a member's local field, the directions or
+  a setting changes;
+- it is in BIDS-Prov, in `desc-reference_summary.tsv`, and, with `--do-analysis`,
+  gets a per-structure table on the reference orientation's segmentation that the
+  dataset-level `desc-segmentation_stats.tsv` includes.
+
+The STI outputs are not referenced (a tensor has no single offset), and stay on the
+working grid: returning a tensor to an oblique acquired grid needs it rotated as well
+as resampled, which is not implemented, so a warning says so.
 
 ### Standalone
 

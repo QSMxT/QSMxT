@@ -1441,6 +1441,9 @@ pub struct PipelineFormState {
     /// they need it, and reconstruct past the direction-degeneracy check.
     pub orientation_registration: bool,
     pub multi_orientation_force: bool,
+    pub cosmos_magnitude_weighting: bool,
+    pub cosmos_tol: String,
+    pub cosmos_max_iter: String,
     pub motion_reference: usize,
     pub motion_reference_echo: String,
     pub motion_chain: bool,
@@ -1840,6 +1843,9 @@ impl Default for PipelineFormState {
             motion_correction: false,
             orientation_registration: true,
             multi_orientation_force: false,
+            cosmos_magnitude_weighting: false,
+            cosmos_tol: format!("{}", qsmxt_config::MultiOrientationConfig::default().cosmos_tol),
+            cosmos_max_iter: format!("{}", qsmxt_config::MultiOrientationConfig::default().cosmos_max_iter),
             motion_reference: 0,
             motion_reference_echo: "1".to_string(),
             motion_chain: qsmxt_config::MotionCorrectionConfig::default().chain,
@@ -2392,6 +2398,14 @@ impl PipelineFormState {
             label: "Force Multi-orientation", field: "multi_orientation_force",
             help: "Multi-orientation groups: reconstruct even when the B0 directions look degenerate (wrong metadata gives a plausible wrong map)",
         });
+        rows.push(PipelineRow::Toggle {
+            label: "COSMOS Magnitude Weighting", field: "cosmos_magnitude_weighting",
+            help: "COSMOS groups: weight each orientation by its combined magnitude (conjugate-gradient solve). Off = closed-form least squares",
+        });
+        if self.cosmos_magnitude_weighting {
+            rows.push(PipelineRow::Param { label: "  CG Tolerance", field: "cosmos_tol", help: "Conjugate-gradient tolerance of weighted COSMOS" });
+            rows.push(PipelineRow::Param { label: "  CG Max Iterations", field: "cosmos_max_iter", help: "Conjugate-gradient iteration cap of weighted COSMOS" });
+        }
         if self.motion_correction || self.orientation_registration {
             rows.push(PipelineRow::Note { text: "Rigid registration (motion correction, orientation co-registration):" });
             rows.push(PipelineRow::Param { label: "  Levels", field: "reg_levels", help: "Pyramid levels: the capture range; do not lower (default 5)" });
@@ -2999,6 +3013,7 @@ impl PipelineFormState {
         "robust_fit_downweight_level", "robust_fit_flag_ratio",
         "motion_reference_echo", "motion_chain_levels", "motion_min_ncc",
         "reg_levels", "reg_max_samples", "reg_max_iterations", "reg_max_evaluations", "reg_tolerance", "reg_rotation_step_deg", "reg_translation_step_mm", "reg_min_overlap",
+        "cosmos_tol", "cosmos_max_iter",
     ];
 
     /// Get a string parameter value by field name.
@@ -3058,6 +3073,8 @@ impl PipelineFormState {
             "reg_rotation_step_deg" => &self.reg_rotation_step_deg,
             "reg_translation_step_mm" => &self.reg_translation_step_mm,
             "reg_min_overlap" => &self.reg_min_overlap,
+            "cosmos_tol" => &self.cosmos_tol,
+            "cosmos_max_iter" => &self.cosmos_max_iter,
             "heidi_gradient_mask_floor" => &self.heidi_gradient_mask_floor,
             "heidi_continuation_steps" => &self.heidi_continuation_steps,
             "heidi_inner_iterations" => &self.heidi_inner_iterations,
@@ -3274,6 +3291,8 @@ impl PipelineFormState {
             "reg_rotation_step_deg" => Some(&mut self.reg_rotation_step_deg),
             "reg_translation_step_mm" => Some(&mut self.reg_translation_step_mm),
             "reg_min_overlap" => Some(&mut self.reg_min_overlap),
+            "cosmos_tol" => Some(&mut self.cosmos_tol),
+            "cosmos_max_iter" => Some(&mut self.cosmos_max_iter),
             "heidi_gradient_mask_floor" => Some(&mut self.heidi_gradient_mask_floor),
             "heidi_continuation_steps" => Some(&mut self.heidi_continuation_steps),
             "heidi_inner_iterations" => Some(&mut self.heidi_inner_iterations),
@@ -3512,6 +3531,7 @@ impl PipelineFormState {
             "motion_correction" => self.motion_correction,
             "orientation_registration" => self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force,
+            "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting,
             "motion_chain" => self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve,
@@ -3553,6 +3573,7 @@ impl PipelineFormState {
             "motion_correction" => self.motion_correction = !self.motion_correction,
             "orientation_registration" => self.orientation_registration = !self.orientation_registration,
             "multi_orientation_force" => self.multi_orientation_force = !self.multi_orientation_force,
+            "cosmos_magnitude_weighting" => self.cosmos_magnitude_weighting = !self.cosmos_magnitude_weighting,
             "motion_chain" => self.motion_chain = !self.motion_chain,
             "r2primenet_ignore_field_mismatch" => self.r2primenet_ignore_field_mismatch = !self.r2primenet_ignore_field_mismatch,
             "vsharp_deconvolve" => self.vsharp_deconvolve = !self.vsharp_deconvolve,

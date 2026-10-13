@@ -284,6 +284,12 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if args.no_orientation_registration {
             config.multi_orientation.register = false;
         }
+        if args.cosmos_magnitude_weighting {
+            config.multi_orientation.magnitude_weighting = true;
+        }
+        if let Some(v) = args.cosmos_tol { config.multi_orientation.cosmos_tol = v; }
+        if let Some(v) = args.cosmos_max_iter { config.multi_orientation.cosmos_max_iter = v; }
+        config.multi_orientation.validate().map_err(QsmxtError::Config)?;
 
         // ── Unwrapping ──
         if let Some(a) = args.unwrapping_algorithm {
@@ -744,6 +750,35 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             for_each_bet_op(&mut config.masking, |_, s| *s = scale);
         }
         Ok(())
+}
+
+/// Refuse a multi-orientation configuration whose members cannot contribute (#270).
+///
+/// COSMOS and STI combine each orientation's *local* field, which only background-field removal
+/// writes. An inversion that skips that step (MEDI with SMV, TGV, QSMART, the end-to-end
+/// networks), or a run with reconstruction off, leaves every member without one, so the group
+/// would fail after every member had been processed. Said before any processing instead.
+pub fn validate_multi_orientation(config: &PipelineConfig) -> crate::Result<()> {
+    if !config.multi_orientation.enabled() {
+        return Ok(());
+    }
+    if !config.pipeline.do_qsm {
+        return Err(QsmxtError::Config(
+            "--orientation-group combines each orientation's local field, which only the QSM \
+             reconstruction produces; it cannot be used with --no-qsm".into()));
+    }
+    if crate::pipeline::runner::skips_bgremove(config) {
+        let medi_smv = config.inversion.algorithm == QsmAlgorithm::Medi && config.inversion.medi.smv;
+        return Err(QsmxtError::Config(format!(
+            "--orientation-group combines each orientation's local field, and --qsm-algorithm \
+             {}{} has no background-field removal step, so no orientation would have one. Use an \
+             inversion that takes a local field (e.g. rts, tv, tkd, nltv, ilsqr{}).",
+            config.inversion.algorithm,
+            if medi_smv { " with SMV" } else { "" },
+            if medi_smv { ", or medi with --no-medi-smv" } else { "" },
+        )));
+    }
+    Ok(())
 }
 
 /// Refuse BET settings that cannot reach BET. qsm-core's `MaskOp::Bet` carries only the

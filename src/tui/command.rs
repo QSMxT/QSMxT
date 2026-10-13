@@ -245,6 +245,9 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         orientation_group,
         multi_orientation_force: ps.multi_orientation_force,
         no_orientation_registration: !ps.orientation_registration,
+        cosmos_magnitude_weighting: ps.cosmos_magnitude_weighting,
+        cosmos_tol: if ps.cosmos_magnitude_weighting { parse_optional_f64(&ps.cosmos_tol) } else { None },
+        cosmos_max_iter: if ps.cosmos_magnitude_weighting { parse_optional_usize(&ps.cosmos_max_iter) } else { None },
         unwrapping_algorithm: Some(unwrap_options[ps.unwrapping_algorithm]),
         bf_algorithm: Some(bf_options[ps.bf_algorithm]),
         masking_input: None,
@@ -1788,6 +1791,9 @@ mod parity {
             ("orientation_group", |_| {}, |a| a.filter_state.orientation_group = "acq".into()),
             ("orientation_algorithm", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_algorithm = 1),
             ("orientation_lambda", |a| a.filter_state.orientation_group = "acq".into(), |a| a.filter_state.orientation_lambda = "0.5".into()),
+            ("cosmos_magnitude_weighting", |a| a.filter_state.orientation_group = "acq".into(), |a| a.pipeline_state.cosmos_magnitude_weighting = true),
+            ("cosmos_tol", |a| { a.filter_state.orientation_group = "acq".into(); a.pipeline_state.cosmos_magnitude_weighting = true; }, |a| a.pipeline_state.cosmos_tol = "1e-4".into()),
+            ("cosmos_max_iter", |a| { a.filter_state.orientation_group = "acq".into(); a.pipeline_state.cosmos_magnitude_weighting = true; }, |a| a.pipeline_state.cosmos_max_iter = "250".into()),
             ("mask sections", |_| {}, |a| {
                 let mut extra = a.pipeline_state.mask_sections[0].clone();
                 extra.input = crate::pipeline::config::MaskingInput::Magnitude;
