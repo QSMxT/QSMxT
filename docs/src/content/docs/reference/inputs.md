@@ -79,6 +79,14 @@ per-coil run is used and the scanner-combined one is skipped (a log line says so
 the scanner's phase combination is generally not suitable for QSM. Pass
 `--exclude "*rec-uncombined*"` to process the scanner-combined data instead.
 
+## GE data
+
+GE phase is not yet corrected for handedness or slice chopping, and GE
+real/imaginary series (`part-real`/`part-imag`) are converted but not read by
+`qsmxt run`. `qsmxt dicom-convert` warns on each GE phase, real or imaginary series. Until the
+correction lands (QSM.rs#171), check the sign of χ from GE data against a known
+structure, such as iron-rich deep grey matter, which should be paramagnetic.
+
 ## Slice gaps in 2D acquisitions
 
 A 2D multi-slice acquisition can leave a gap between slices: the excited slice
