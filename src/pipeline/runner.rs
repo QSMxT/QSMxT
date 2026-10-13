@@ -61,6 +61,67 @@ pub(crate) fn write_step_provenance(
     Ok(())
 }
 
+/// The configuration a step reads, serialised whole, so that every field of it is part of the step's
+/// cache key — a new config field is keyed without anyone remembering to (#272). The step's own
+/// `parameters` (what provenance records) stay as they are; this is added beside them.
+///
+/// Sections are as narrow as the step actually reads: an upstream step keyed on a section it does
+/// not read would be recomputed, and invalidate everything after it, whenever that section
+/// changed. Two-pass steps read what their main-pass twin reads.
+pub(crate) fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value {
+    use serde_json::json;
+    let base = step.strip_suffix(crate::pipeline::graph::RELIABLE_SUFFIX).unwrap_or(step);
+    let crop = json!({
+        "crop_to_mask": config.pipeline.crop_to_mask,
+        "fft_padding": config.pipeline.fft_padding,
+        "crop_margin_mm": config.pipeline.crop_margin_mm,
+    });
+    match base {
+        "scale_phase" => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
+        "magnitude" => json!({
+            "inhomogeneity_correction": config.masking.inhomogeneity_correction,
+            "homogeneity": config.homogeneity,
+        }),
+        // The main mask is not the two-pass one, so its settings stay out of the main mask's key.
+        "mask" if step == base => {
+            let mut m = serde_json::to_value(&config.masking).unwrap_or_default();
+            if let Some(o) = m.as_object_mut() {
+                o.remove("two_pass");
+                o.remove("two_pass_sections");
+            }
+            json!({ "masking": m, "bet": config.bet })
+        }
+        "mask" => json!({ "masking": config.masking, "bet": config.bet }),
+        "motion" => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
+        "swi" => json!({ "swi": config.swi }),
+        "unwrap" => json!({ "field_mapping": config.field_mapping }),
+        "bgremove" => json!({ "bg_removal": config.bg_removal, "crop": crop }),
+        "invert" | "tgv" | "qsmart" => json!({ "inversion": config.inversion, "crop": crop }),
+        "twopass" => json!({ "masking": config.masking }),
+        "reference" | "reference-singlepass" => json!({ "qsm": config.qsm }),
+        "segmentation" => json!({ "segmentation": config.segmentation }),
+        "smwi" => json!({ "smwi": config.smwi }),
+        "chi_separation" => json!({ "separation": config.separation }),
+        "output_space" => json!({ "output_space": config.pipeline.output_space }),
+        // Keyed by their own parameters alone: R2*/T2* (ARLO has no settings), R2/R2′ (its
+        // separation settings are in its parameters; keying the whole section would recompute the
+        // MESE fit whenever the χ-separation method changed) and the statistics.
+        _ => serde_json::Value::Null,
+    }
+}
+
+/// A step's cache key: its algorithm and recorded parameters, plus the configuration it reads.
+pub(crate) fn step_cache_key(
+    step: &str, algorithm: Option<&str>, params: &serde_json::Value, config: &PipelineConfig,
+) -> String {
+    let consumed = consumed_config(step, config);
+    if consumed.is_null() {
+        return crate::pipeline::graph::step_params_hash(algorithm, params);
+    }
+    crate::pipeline::graph::step_params_hash(
+        algorithm, &serde_json::json!({ "params": params, "config": consumed }))
+}
+
 /// Bundles references needed by every pipeline stage.
 struct StageContext<'a> {
     run: &'a QsmRun,
@@ -73,7 +134,7 @@ struct StageContext<'a> {
 
 impl StageContext<'_> {
     fn is_cached_with_params(&mut self, step: &str, algorithm: Option<&str>, params: &serde_json::Value) -> bool {
-        let hash = crate::pipeline::graph::step_params_hash(algorithm, params);
+        let hash = step_cache_key(step, algorithm, params, self.config);
         self.state.is_step_cached_with_hash(step, Some(&hash))
     }
 
@@ -117,7 +178,7 @@ impl StageContext<'_> {
         // downstream steps' own parameter hashes would not notice. Recomputed with the same
         // parameters — its files were missing, or cleaned — it made the same output, and what
         // read it stays cached.
-        let hash = crate::pipeline::graph::step_params_hash(algorithm, &parameters);
+        let hash = step_cache_key(step, algorithm, &parameters, self.config);
         let same_as_before = self.state.completed_steps.get(step)
             .is_some_and(|r| r.params_hash.as_deref() == Some(hash.as_str()));
         if !same_as_before {
@@ -143,7 +204,7 @@ impl StageContext<'_> {
         start: Instant,
     ) -> crate::Result<()> {
         self.complete_step(step, algorithm, parameters.clone(), inputs, output_paths.clone(), start)?;
-        let hash = crate::pipeline::graph::step_params_hash(algorithm, &parameters);
+        let hash = step_cache_key(step, algorithm, &parameters, self.config);
         self.state.mark_completed_with_metadata(step, output_paths, Some(hash), metadata);
         self.state.save(self.state_path)
     }
@@ -922,6 +983,28 @@ fn check_slice_gap(
     Ok(if meta.source_geometry.is_none() { Some((thickness, axis)) } else { None })
 }
 
+/// Every input file of a run — echoes, sidecars, uncombined coils, the MESE — by path, size and
+/// modification time.
+fn input_identity(run: &QsmRun) -> Vec<serde_json::Value> {
+    let mut files: Vec<&Path> = Vec::new();
+    let echoes = run.echoes.iter().chain(run.coils.iter().flatten().flat_map(|c| c.echoes.iter()));
+    for e in echoes {
+        files.extend([e.phase_nifti.as_path(), e.phase_json.as_path()]);
+        files.extend(e.magnitude_nifti.as_deref());
+        files.extend(e.magnitude_json.as_deref());
+    }
+    if let Some(mese) = &run.mese {
+        files.extend(mese.magnitude_niftis.iter().map(|p| p.as_path()));
+    }
+    files.iter().map(|p| {
+        let meta = std::fs::metadata(p).ok();
+        let modified = meta.as_ref().and_then(|m| m.modified().ok())
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_nanos().to_string());
+        serde_json::json!([p.display().to_string(), meta.map(|m| m.len()), modified])
+    }).collect()
+}
+
 fn stage_load(
     qsm_run: &QsmRun,
     config: &PipelineConfig,
@@ -940,11 +1023,15 @@ fn stage_load(
         "registration": if config.motion_correction.enabled { Some(&config.registration) } else { None },
         "axial_only": qsmxt_config::bridge::axial_only_algorithms(
             config, run_orientation_facts(qsm_run, config)),
+        // Replacing an input in place (a re-export, a corrected sidecar) changes everything
+        // computed from it; nothing else would notice.
+        "inputs": input_identity(qsm_run),
     });
     let geometry_hash = crate::pipeline::graph::step_params_hash(None, &geometry);
     if let Some(Some(stored)) = state.completed_steps.get("load").map(|r| r.params_hash.as_ref()) {
         if *stored != geometry_hash {
-            log::info!("Geometry settings changed (obliquity threshold or algorithm) — recomputing everything");
+            log::info!("Input files or geometry settings changed (obliquity threshold, algorithm, \
+                        motion correction) — recomputing everything");
             state.completed_steps.clear();
         }
     }
@@ -3793,6 +3880,81 @@ fn stage_two_pass_combine(
 }
 
 
+/// Cache keys cover the whole configuration each step reads (#272).
+#[cfg(test)]
+mod cache_key_tests {
+    use super::*;
+
+    /// Every leaf of `value`, as a JSON pointer.
+    fn leaves(value: &serde_json::Value, path: String, out: &mut Vec<String>) {
+        match value {
+            serde_json::Value::Object(m) => for (k, v) in m { leaves(v, format!("{path}/{k}"), out) },
+            serde_json::Value::Array(a) if !a.is_empty() && !a[0].is_object() => out.push(format!("{path}/0")),
+            serde_json::Value::Array(a) => for (i, v) in a.iter().enumerate() { leaves(v, format!("{path}/{i}"), out) },
+            _ => out.push(path),
+        }
+    }
+
+    /// A different value of the same type, or `None` where there is no generic one (strings —
+    /// enum names — and absent options).
+    fn changed(v: &serde_json::Value) -> Option<serde_json::Value> {
+        use serde_json::Value as V;
+        Some(match v {
+            V::Bool(b) => V::Bool(!b),
+            V::Number(n) if n.is_u64() => serde_json::json!(n.as_u64().unwrap() + 1),
+            V::Number(n) if n.is_i64() => serde_json::json!(n.as_i64().unwrap() + 1),
+            V::Number(n) => serde_json::json!(n.as_f64().unwrap() * 1.5 + 0.125),
+            _ => return None,
+        })
+    }
+
+    /// Change each leaf of a config section, one at a time, and the step that reads the section
+    /// must no longer be cached. Generated from the serialised config like `param_coverage`, so a
+    /// field added later is covered without anyone listing it.
+    #[test]
+    fn every_leaf_of_a_consumed_section_is_in_the_cache_key() {
+        let base = PipelineConfig::default();
+        let base_json = serde_json::to_value(&base).unwrap();
+        let params = serde_json::json!({});
+        for (section, step) in [("inversion", "invert"), ("bg_removal", "bgremove"),
+                                ("field_mapping", "unwrap"), ("separation", "chi_separation"),
+                                ("masking", "mask-reliable"), ("swi", "swi"), ("smwi", "smwi")] {
+            let mut paths = Vec::new();
+            leaves(&base_json[section], format!("/{section}"), &mut paths);
+            let mut tested = 0;
+            for p in &paths {
+                let Some(new) = changed(base_json.pointer(p).unwrap()) else { continue };
+                let mut j = base_json.clone();
+                *j.pointer_mut(p).unwrap() = new;
+                let Ok(cfg) = serde_json::from_value::<PipelineConfig>(j) else { continue };
+                tested += 1;
+                assert_ne!(step_cache_key(step, None, &params, &cfg), step_cache_key(step, None, &params, &base),
+                           "changing {p} leaves {step} cached");
+            }
+            assert!(tested * 2 >= paths.len().min(4), "{section}: only {tested} of {} leaves exercised", paths.len());
+        }
+    }
+
+    /// Cropping changes what background removal and the inversion compute, so it is in their keys
+    /// — and not in the field map's, which it does not touch.
+    #[test]
+    fn cropping_is_in_the_reconstruction_keys() {
+        let base = PipelineConfig::default();
+        let mut c = base.clone();
+        c.pipeline.crop_to_mask = !c.pipeline.crop_to_mask;
+        let p = serde_json::json!({});
+        for step in ["bgremove", "invert", "tgv", "qsmart", "invert-reliable"] {
+            assert_ne!(step_cache_key(step, None, &p, &c), step_cache_key(step, None, &p, &base), "{step}");
+        }
+        assert_eq!(step_cache_key("unwrap", None, &p, &c), step_cache_key("unwrap", None, &p, &base));
+        // The two-pass settings are the reliable pass's business, not the main mask's.
+        let mut t = base.clone();
+        t.masking.two_pass = true;
+        assert_eq!(step_cache_key("mask", None, &p, &t), step_cache_key("mask", None, &p, &base));
+        assert_ne!(step_cache_key("mask-reliable", None, &p, &t), step_cache_key("mask-reliable", None, &p, &base));
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use qsm_core::pipeline::config::QsmReference as CoreRef;
@@ -5495,6 +5657,27 @@ mod oblique_run_tests {
         let bg = load_mask(&output.bg_mask_path(k)).unwrap();
         assert!(bg.iter().zip(&coverage).any(|(&v, &c)| v != 0 && c == 0),
                 "background removal still ran on the coverage mask after motion correction was switched off");
+    }
+
+    /// Replacing an input file in place recomputes the run from `load` (#272); re-running without
+    /// touching anything recomputes nothing.
+    #[test]
+    fn touching_an_input_recomputes_the_run() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 2);
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let config = PipelineConfig::default();
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        let mtime = |p: PathBuf| std::fs::metadata(p).unwrap().modified().unwrap();
+        let first = mtime(output.qsm_path(&run.key));
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        assert_eq!(mtime(output.qsm_path(&run.key)), first, "an untouched re-run recomputed χ");
+
+        let phase = &run.echoes[1].phase_nifti;
+        std::thread::sleep(std::time::Duration::from_millis(20));
+        std::fs::write(phase, std::fs::read(phase).unwrap()).unwrap();
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        assert_ne!(mtime(output.qsm_path(&run.key)), first, "a replaced input did not recompute χ");
     }
 
     /// `--clean-intermediates` treated the output-space step's files, which are the final
