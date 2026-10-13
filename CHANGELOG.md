@@ -8,6 +8,18 @@ upgrade.
 
 ### Output changes with default settings
 
+- **`qsmxt slurm` now gives the same results as a local run** (#269). Each job used to run
+  `qsmxt run --include <one run>`. So COSMOS/STI groups never formed (each job saw one member),
+  and every job rewrote `qsmxt.log`, `desc-reference_summary.tsv`, the statistics table, cohort
+  figures, `prov/`, `dataset_description.json` and `methods.md` from its own run alone (the last
+  job to finish won). Each run job now runs only its run's pipeline (`qsmxt run --no-dataset-steps`,
+  logging to `logs/<run>.log`). A final aggregation job (`qsmxt aggregate`, submitted with
+  `--dependency=afterok:` on every run job) then does the dataset-level steps through the same
+  code as `qsmxt run`. `--num-echoes`, `--force` and `--clean-intermediates` now reach the jobs.
+  Each job's `--mem` is estimated from its run unless `--mem` is given. Job logs are written
+  beside the scripts. `--submit` chains the jobs, and so does the generated `slurm/submit.sh`.
+  The TUI's SLURM mode passes force and clean-up too.
+
 - **Segmentations keep valid label ids on the acquired grid** (#267). Returning a resampled run
   to its acquired grid (`--output-space acquired`, the default) interpolated `_dseg.nii`
   trilinearly, because only files named `*mask*` were treated specially, which put invalid,
@@ -99,6 +111,10 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
 - **`qsmxt update` refuses on a development build** (#281). A `0.0.0` build (from source) was
   offered every release as an update. It now says it is a dev build and exits without
   downloading; `qsmxt update --force` installs the latest release over it.
+- **`qsmxt aggregate` and `qsmxt run --no-dataset-steps`** (#269), the two halves of a
+  distributed run. They are what `qsmxt slurm` generates, and can be used by hand to split a
+  dataset across machines. `aggregate` checks that every run completed under the same
+  configuration and names any that did not.
 
 - **Real/imaginary input** (BIDS `part-real` / `part-imag`). An acquisition with no
   `part-phase` files but real and imaginary ones (as GE exports them) is now discovered and

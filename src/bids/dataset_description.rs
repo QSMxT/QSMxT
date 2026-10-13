@@ -100,6 +100,8 @@ const BIDSIGNORE: &str = "\
 methods.md
 pipeline_config.toml
 workflow
+logs
+slurm
 # Per-structure statistics tables and their figures — `stats` is not a BIDS suffix
 *_desc-segmentation_stats.tsv
 desc-segmentation_stats.tsv
@@ -139,6 +141,8 @@ It contains Quantitative Susceptibility Mapping (QSM) outputs and related maps
   stage, with Entity/Agent/Environment records. Each output NIfTI also carries a
   `GeneratedBy` reference in its JSON sidecar.
 - `workflow/` — intermediate files and per-step provenance (not BIDS data).
+- `logs/`, `slurm/` — per-run logs and job scripts of a `qsmxt slurm` run; its
+  `qsmxt.log` gathers the per-run logs.
 ";
 
 /// Write a minimal `README` (recommended for every BIDS dataset).

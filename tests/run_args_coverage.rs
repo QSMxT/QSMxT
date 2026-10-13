@@ -60,11 +60,31 @@ fn slurm_flattens_and_applies_pipeline_args() {
         "SlurmArgs must flatten PipelineArgs so `qsmxt slurm` takes the same pipeline flags as `qsmxt run`"
     );
 
+    // Both build their configuration through run::build_config, which applies the overrides.
     let slurm_cmd = include_str!("../src/commands/slurm.rs");
     assert!(
-        slurm_cmd.contains("apply_run_overrides(&mut config, &args.pipeline)"),
-        "slurm::execute() must apply the pipeline overrides before generating job scripts"
+        slurm_cmd.contains("build_config(args.config.as_deref(), &args.pipeline)"),
+        "slurm::execute() must build its config as `qsmxt run` does before generating job scripts"
     );
+    let run_src = include_str!("../src/commands/run.rs");
+    let build = &run_src[run_src.find("fn build_config(").expect("run::build_config not found")..];
+    assert!(
+        build[..build.find("\n}").unwrap()].contains("apply_run_overrides(&mut config, pipeline)"),
+        "run::build_config() must apply the pipeline overrides"
+    );
+}
+
+/// `qsmxt aggregate` repeats the run's discovery and configuration; every flag it takes must be
+/// used, or the aggregation could see other runs or another configuration than the workers did.
+#[test]
+fn every_aggregate_arg_is_consumed() {
+    let cli_src = include_str!("../src/cli.rs");
+    let consumer = include_str!("../src/commands/aggregate.rs");
+    let missing: Vec<_> = struct_fields(cli_src, "AggregateArgs")
+        .into_iter()
+        .filter(|name| !consumer.contains(&format!("args.{}", name)))
+        .collect();
+    assert!(missing.is_empty(), "AggregateArgs field(s) {missing:?} are parsed but never used");
 }
 
 /// The logger must be up before the config is built, because building it is what validates the
@@ -78,9 +98,10 @@ fn logging_is_initialised_before_the_config_is_validated() {
     let body = &src[src.find("pub fn execute(").expect("execute() not found")..];
 
     let init = body.find("init_logging(").expect("run::execute must initialise logging");
+    // The overrides are applied (and validated) inside build_config.
     let overrides = body
-        .find("apply_run_overrides(")
-        .expect("run::execute must apply CLI overrides");
+        .find("build_config(")
+        .expect("run::execute must build its config, applying the CLI overrides");
 
     assert!(
         init < overrides,
@@ -96,7 +117,7 @@ fn a_dry_run_does_not_create_the_derivatives_directory() {
     let body = &src[src.find("pub fn execute(").expect("execute() not found")..];
     let guard = body.find("if args.dry {").expect("dry-run logging branch not found");
     let create = body.find("create_dir_all(&derivatives_dir)").expect("derivatives dir creation not found");
-    let else_arm = body[guard..].find("} else {").expect("dry-run else arm not found") + guard;
+    let else_arm = body[guard..].find("} else").expect("dry-run else arm not found") + guard;
     assert!(
         create > else_arm,
         "creating derivatives/ must sit in the non-dry branch, so `--dry` writes nothing"
