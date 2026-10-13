@@ -859,9 +859,6 @@ pub struct HarperellaParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct IharperellaParamArgs {
-    /// iHARPERELLA SMV kernel radius in mm
-    #[arg(long)]
-    pub iharperella_radius: Option<f64>,
     /// iHARPERELLA maximum iterations
     #[arg(long)]
     pub iharperella_max_iter: Option<usize>,
@@ -1162,6 +1159,22 @@ pub struct PipelineArgs {
     /// the masking recipe, overriding a `bet:<f>` in a --mask spec
     #[arg(long)]
     pub bet_fractional_intensity: Option<f64>,
+
+    /// BET surface smoothness factor. Applies to every BET step in the masking recipe
+    #[arg(long)]
+    pub bet_smoothness: Option<f64>,
+
+    /// BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe
+    #[arg(long, allow_hyphen_values = true)]
+    pub bet_gradient_threshold: Option<f64>,
+
+    /// BET surface evolution iterations. Applies to every BET step in the masking recipe
+    #[arg(long)]
+    pub bet_iterations: Option<usize>,
+
+    /// BET icosphere subdivision level. Applies to every BET step in the masking recipe
+    #[arg(long)]
+    pub bet_subdivisions: Option<usize>,
 
     /// Factor applied to the voxel sizes before BET runs. BET's surface model is tuned to a
     /// human brain in millimetres, so preclinical data has to be presented at human scale:
@@ -2112,7 +2125,7 @@ pub struct BgremoveMsmvArgs {
 
 #[derive(Parser, Debug)]
 pub struct BgremoveHarperellaArgs {
-    /// Input wrapped phase NIfTI file
+    /// Input NIfTI: a wrapped echo in rad (with --te and --field-strength) or a total field in ppm
     pub input: std::path::PathBuf,
     /// Binary mask NIfTI file
     #[arg(short, long)]
@@ -2132,18 +2145,19 @@ pub struct BgremoveHarperellaArgs {
     /// Convergence tolerance
     #[arg(long)]
     pub tol: Option<f64>,
-    /// Echo time (s). With --field-strength, converts the radian tissue-phase output to a
-    /// ppm field (`phase / (2·π·γ·B0·TE)`); without both, the output stays in radians.
-    #[arg(long)]
+    /// Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped
+    /// echo in rad (the published method); without both, it is an unwrapped total field in ppm.
+    /// The local field is written in ppm either way
+    #[arg(long, requires = "field_strength")]
     pub te: Option<f64>,
-    /// B0 field strength (T) — see --te.
-    #[arg(long)]
+    /// B0 field strength (T) of a wrapped-phase input — see --te
+    #[arg(long, requires = "te")]
     pub field_strength: Option<f64>,
 }
 
 #[derive(Parser, Debug)]
 pub struct BgremoveIharperellaArgs {
-    /// Input wrapped phase NIfTI file
+    /// Input NIfTI: a wrapped echo in rad (with --te and --field-strength) or a total field in ppm
     pub input: std::path::PathBuf,
     /// Binary mask NIfTI file
     #[arg(short, long)]
@@ -2154,21 +2168,19 @@ pub struct BgremoveIharperellaArgs {
     /// Output eroded mask (for algorithms that erode)
     #[arg(long)]
     pub output_mask: Option<std::path::PathBuf>,
-    /// SMV kernel radius in mm
-    #[arg(long)]
-    pub radius: Option<f64>,
     /// Maximum iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
     /// Convergence tolerance
     #[arg(long)]
     pub tol: Option<f64>,
-    /// Echo time (s). With --field-strength, converts the radian tissue-phase output to a
-    /// ppm field (`phase / (2·π·γ·B0·TE)`); without both, the output stays in radians.
-    #[arg(long)]
+    /// Echo time (s) of a wrapped-phase input. With --field-strength, the input is one wrapped
+    /// echo in rad (the published method); without both, it is an unwrapped total field in ppm.
+    /// The local field is written in ppm either way
+    #[arg(long, requires = "field_strength")]
     pub te: Option<f64>,
-    /// B0 field strength (T) — see --te.
-    #[arg(long)]
+    /// B0 field strength (T) of a wrapped-phase input — see --te
+    #[arg(long, requires = "te")]
     pub field_strength: Option<f64>,
 }
 

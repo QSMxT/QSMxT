@@ -971,7 +971,7 @@ mod tests {
     #[test]
     fn two_pass_default_matches_qsm_core() {
         assert_eq!(
-            crate::to_mask_sections(&default_two_pass_sections()),
+            crate::to_mask_sections(&default_two_pass_sections(), &Default::default()),
             qsm_core::pipeline::default_reliable_sections(),
         );
     }

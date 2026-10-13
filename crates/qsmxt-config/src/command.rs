@@ -266,6 +266,10 @@ pub fn generate_command(config: &PipelineConfig) -> String {
 
     // ── BET ──
     emit_f64(&mut parts, "--bet-fractional-intensity", config.bet.fractional_intensity, d.bet.fractional_intensity);
+    emit_f64(&mut parts, "--bet-smoothness", config.bet.smoothness, d.bet.smoothness);
+    emit_f64(&mut parts, "--bet-gradient-threshold", config.bet.gradient_threshold, d.bet.gradient_threshold);
+    emit_usize(&mut parts, "--bet-iterations", config.bet.iterations, d.bet.iterations);
+    emit_usize(&mut parts, "--bet-subdivisions", config.bet.subdivisions, d.bet.subdivisions);
     emit_f64(&mut parts, "--bet-voxel-scale", config.bet.voxel_scale, d.bet.voxel_scale);
 
     // ── Background removal ──
@@ -304,7 +308,6 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             emit_f64(&mut parts, "--harperella-tol", config.bg_removal.harperella.tol, d.bg_removal.harperella.tol);
         }
         BfAlgorithm::Iharperella => {
-            emit_f64(&mut parts, "--iharperella-radius", config.bg_removal.iharperella.radius, d.bg_removal.iharperella.radius);
             emit_usize(&mut parts, "--iharperella-max-iter", config.bg_removal.iharperella.max_iter, d.bg_removal.iharperella.max_iter);
             emit_f64(&mut parts, "--iharperella-tol", config.bg_removal.iharperella.tol, d.bg_removal.iharperella.tol);
         }

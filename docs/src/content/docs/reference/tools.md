@@ -86,6 +86,10 @@ Unwrap a wrapped phase image (`romeo` or `laplacian`).
 Remove background fields from an unwrapped field map (`vsharp`, `pdf`, `lbv`,
 `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`).
 
+`qsmxt bgremove harperella` and `iharperella` read one wrapped echo in rad when
+given `--te` and `--field-strength` (the published method), or an unwrapped total
+field in ppm without them, and write the local field in ppm.
+
 `qsmxt bgremove vsharp` takes `--deconvolve <true|false>` (default `false`, as
 `qsmxt run`), `--threshold` (used only with deconvolution) and
 `--max-radius`/`--min-radius` in mm.

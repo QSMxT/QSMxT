@@ -559,7 +559,7 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             // The input is a field in ppm, like every other `invert` algorithm's.
             let chi = qsm_core::inversion::tgv_qsm(
                 qsm_core::inversion::TgvInput::FieldPpm(&field_nifti.data), &mask, &grid, &params, bdir, |_, _| {},
-            );
+            )?;
             (c, (chi, field_nifti))
         }
         InvertCommand::Xqsm(args) =>

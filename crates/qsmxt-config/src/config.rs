@@ -381,6 +381,10 @@ param_config!(ResharpConfig from qsm_core::bgremove::ResharpParams {
 param_config!(HarperellaConfig from qsm_core::bgremove::HarperellaParams {
     radius: f64, max_iter: usize, tol: f64
 });
+// iHARPERELLA has no SMV kernel, so no radius (QSM.rs#169).
+param_config!(IharperellaConfig from qsm_core::bgremove::IharperellaParams {
+    max_iter: usize, tol: f64
+});
 // mSMV boundary-shadow refinement. Only radius/maxk are user knobs here; b0/te are
 // runtime scan parameters (overridden from ScanMetadata by qsm-core), and prefilter is
 // forced off by the dispatcher in refinement mode.
@@ -1040,7 +1044,7 @@ pub struct BgRemovalConfig {
     pub sharp: SharpConfig,
     pub resharp: ResharpConfig,
     pub harperella: HarperellaConfig,
-    pub iharperella: HarperellaConfig,
+    pub iharperella: IharperellaConfig,
     pub msmv: MsmvConfig,
     /// Apply mSMV boundary-shadow refinement (Roberts 2024) as a post-step on top of the
     /// selected primary background-field removal. mSMV is a refinement, not a standalone
@@ -1054,7 +1058,7 @@ impl Default for BgRemovalConfig {
             vsharp: VsharpConfig::default(), pdf: PdfConfig::default(),
             lbv: LbvConfig::default(), ismv: IsmvConfig::default(),
             sharp: SharpConfig::default(), resharp: ResharpConfig::default(),
-            harperella: HarperellaConfig::default(), iharperella: HarperellaConfig::default(),
+            harperella: HarperellaConfig::default(), iharperella: IharperellaConfig::default(),
             msmv: MsmvConfig::default(), msmv_refine: false,
         }
     }

@@ -369,6 +369,10 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
 
         // ── BET ──
         if let Some(v) = args.bet_fractional_intensity { config.bet.fractional_intensity = v; }
+        if let Some(v) = args.bet_smoothness { config.bet.smoothness = v; }
+        if let Some(v) = args.bet_gradient_threshold { config.bet.gradient_threshold = v; }
+        if let Some(v) = args.bet_iterations { config.bet.iterations = v; }
+        if let Some(v) = args.bet_subdivisions { config.bet.subdivisions = v; }
         if let Some(v) = args.bet_voxel_scale { config.bet.voxel_scale = v; }
 
         // ── Inversion params ──
@@ -510,7 +514,6 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.harperella_params.harperella_radius { config.bg_removal.harperella.radius = v; }
         if let Some(v) = args.harperella_params.harperella_max_iter { config.bg_removal.harperella.max_iter = v; }
         if let Some(v) = args.harperella_params.harperella_tol { config.bg_removal.harperella.tol = v; }
-        if let Some(v) = args.iharperella_params.iharperella_radius { config.bg_removal.iharperella.radius = v; }
         if let Some(v) = args.iharperella_params.iharperella_max_iter { config.bg_removal.iharperella.max_iter = v; }
         if let Some(v) = args.iharperella_params.iharperella_tol { config.bg_removal.iharperella.tol = v; }
         if args.msmv_params.msmv_refine { config.bg_removal.msmv_refine = true; }
@@ -781,25 +784,6 @@ pub fn validate_multi_orientation(config: &PipelineConfig) -> crate::Result<()> 
     Ok(())
 }
 
-/// Refuse BET settings that cannot reach BET. qsm-core's `MaskOp::Bet` carries only the
-/// fractional intensity and the voxel scale, so `[bet] smoothness`, `gradient_threshold`,
-/// `iterations` and `subdivisions` in a config file would be accepted and ignored (#279).
-pub fn validate_bet(config: &PipelineConfig) -> crate::Result<()> {
-    let (b, d) = (&config.bet, qsmxt_config::BetConfig::default());
-    let unsupported: Vec<&str> = [
-        ("smoothness", b.smoothness != d.smoothness),
-        ("gradient_threshold", b.gradient_threshold != d.gradient_threshold),
-        ("iterations", b.iterations != d.iterations),
-        ("subdivisions", b.subdivisions != d.subdivisions),
-    ].iter().filter(|(_, set)| *set).map(|(name, _)| *name).collect();
-    if unsupported.is_empty() {
-        return Ok(());
-    }
-    Err(QsmxtError::Config(format!(
-        "[bet] {} cannot be applied: a BET mask step carries only the fractional intensity and \
-         the voxel scale (QSM.rs MaskOp::Bet). Remove {} from the config file",
-        unsupported.join(", "), if unsupported.len() == 1 { "it" } else { "them" })))
-}
 
 /// Run `f(fractional_intensity, voxel_scale)` on every BET step in a masking recipe — the
 /// sections, the refinements that run on the combined mask, and the two-pass sections, wherever
@@ -1113,14 +1097,14 @@ mod tests {
         let cli::Command::Run(r) = cli.command else { panic!() };
         apply_run_overrides(&mut file, &r.pipeline).unwrap();
         assert_eq!(fi(&file), vec![0.35]);
-        // The flags BET cannot take on a mask step are gone, and a config file's are refused.
-        for flag in ["--bet-smoothness", "--bet-gradient-threshold", "--bet-iterations", "--bet-subdivisions"] {
-            assert!(cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", flag, "1"]).is_err(), "{flag}");
-        }
-        assert!(validate_bet(&PipelineConfig::default()).is_ok());
+        // BET's surface settings reach the run's config (and from there every BET step;
+        // QSM.rs#180), from the command line and from a config file alike.
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--bet-smoothness", "2", "--bet-gradient-threshold",
+                                  "-0.2", "--bet-iterations", "500", "--bet-subdivisions", "3"]);
+        assert_eq!((c.bet.smoothness, c.bet.gradient_threshold, c.bet.iterations, c.bet.subdivisions),
+                   (2.0, -0.2, 500, 3));
         let c = PipelineConfig::from_toml("[bet]\nsmoothness = 2.0\niterations = 500\n").unwrap();
-        let e = format!("{}", validate_bet(&c).unwrap_err());
-        assert!(e.contains("smoothness") && e.contains("iterations"), "{e}");
+        assert_eq!((c.bet.smoothness, c.bet.iterations), (2.0, 500));
     }
 
     /// The flag is the whole recipe's answer: it also wins over a `scale=` spelled out in

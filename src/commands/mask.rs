@@ -28,7 +28,7 @@ fn dims_str(nifti: &NiftiData) -> String {
 /// Fetch the weights of any deep-learning op (HD-BET) before running, with a progress bar — or
 /// fail clearly on a build without the `dl` feature.
 fn prefetch_dl_weights(ops: &[MaskOp]) -> crate::Result<()> {
-    for id in to_mask_ops(ops).iter().filter_map(|op| op.dl_model_id()) {
+    for id in to_mask_ops(ops, &Default::default()).iter().filter_map(|op| op.dl_model_id()) {
         crate::pipeline::runner::prefetch_weights(id, id)?;
     }
     Ok(())
@@ -54,7 +54,7 @@ fn refine(mask: Vec<u8>, ops: &[MaskOp], reference: &NiftiData, magnitude: Optio
     }
     prefetch_dl_weights(ops)?;
     // Only generators read `input_data`, and they were rejected above.
-    qsm_core::pipeline::apply_mask_ops(mask, &to_mask_ops(ops), magnitude.unwrap_or(&[]), magnitude, &scan_meta(reference))
+    qsm_core::pipeline::apply_mask_ops(mask, &to_mask_ops(ops, &Default::default()), magnitude.unwrap_or(&[]), magnitude, &scan_meta(reference))
         .map_err(|e| QsmxtError::Config(format!("{e}")))
 }
 
@@ -74,8 +74,8 @@ fn generate(common: &MaskCommonArgs, generator: MaskOp) -> crate::Result<()> {
     info!("{} ({})", generator, dims_str(&nifti));
     prefetch_dl_weights(std::slice::from_ref(&generator))?;
     let section = MaskSection { input: MaskingInput::Magnitude, generator, refinements: vec![] };
-    let core = to_mask_sections(&[section]);
-    let mask = qsm_core::pipeline::build_mask_section(&core[0], &nifti.data, Some(&nifti.data), &scan_meta(&nifti))
+    let core = to_mask_sections(&[section], &Default::default());
+    let mask = qsm_core::pipeline::build_mask_section(&core[0], &[], &[&nifti.data], &scan_meta(&nifti))
         .map_err(|e| QsmxtError::Config(format!("{e}")))?;
     let mask = refine_with(mask, &common.ops, &nifti, Some(&nifti.data))?;
     save_and_log(common, &mask, &nifti)
@@ -125,7 +125,7 @@ fn preset(args: &MaskPresetArgs, recipe: MaskRecipe) -> crate::Result<()> {
     }
 
     let meta = scan_meta(&magnitude);
-    let core = to_mask_sections(&recipe.sections);
+    let core = to_mask_sections(&recipe.sections, &Default::default());
     let mut combined: Option<Vec<u8>> = None;
     for (section, core_section) in recipe.sections.iter().zip(&core) {
         let (image, what): (&[f64], &str) = match (section.input, &quality) {
@@ -135,7 +135,12 @@ fn preset(args: &MaskPresetArgs, recipe: MaskRecipe) -> crate::Result<()> {
         };
         info!("{} of {}", section.generator, what);
         prefetch_dl_weights(&section.all_ops())?;
-        let mask = qsm_core::pipeline::build_mask_section(core_section, image, Some(&magnitude.data), &meta)
+        // The image is given rather than built from echoes (a `--quality` map stands in for the
+        // phase-quality input), so the section's ops run on it directly — which is what
+        // `build_mask_section` does with the image it builds.
+        let n = magnitude.data.len();
+        let mask = qsm_core::pipeline::apply_mask_ops(
+            vec![1u8; n], &core_section.all_ops(), image, Some(&magnitude.data), &meta)
             .map_err(|e| QsmxtError::Config(format!("{e}")))?;
         combined = Some(match combined {
             None => mask,

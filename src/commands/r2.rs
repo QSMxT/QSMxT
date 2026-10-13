@@ -21,7 +21,7 @@ pub fn execute(args: R2Args) -> crate::Result<()> {
     let (r2_map, _b1_fit) = qsm_core::relaxometry::r2_epg(
         &multi, &mask, &args.echo_times, &grid, &params,
         b1.as_ref().map(|n| n.data.as_slice()),
-    );
+    )?;
     save_nifti(&args.output, &r2_map, &reference)?;
     info!("R2 map saved to {}", args.output.display());
     Ok(())
