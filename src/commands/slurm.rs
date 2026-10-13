@@ -39,6 +39,9 @@ pub fn execute(args: SlurmArgs) -> crate::Result<()> {
             num_echoes: args.num_echoes,
             force: args.force,
             clean_intermediates: args.clean_intermediates,
+            debug: args.debug,
+            source_dicom: args.source_dicom.as_deref(),
+            dicom_outputs: args.dicom_outputs.as_deref(),
             command_line: std::env::args().collect::<Vec<_>>().join(" "),
         },
     )?;

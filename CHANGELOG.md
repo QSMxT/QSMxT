@@ -237,6 +237,29 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
 
 ### Changed
 
+- **TUI shows each setting where and when it applies.** Turning Compute QSM off no longer hides
+  the settings that serve SWI, T2\*/R2\*, R2′ and the segmentation: the geometry rows, motion
+  correction, coil combination, masking and the custom dseg stay (crop to mask and FFT padding,
+  which only resize the reconstruction, go with QSM); an output that forces QSM (SMWI, statistics)
+  keeps its settings on show and says so. Field mapping is shown whenever it runs — multi-echo
+  TGV, QSMART and TFI included, not for iQSM/iQSM+, single-echo TGV or iQFM — decided by the
+  runner's own rule from QSM.rs's `InversionConfig::input`. Motion correction and the coil
+  combination sigma moved to General, since they apply whatever the inversion. Phase offset removal
+  is now one of ROMEO's settings (Laplacian unwrapping never ran it) and bipolar correction one of
+  its sub-settings (it is part of that path; needs ≥3 echoes). The rigid-registration settings and
+  the multi-orientation ones appear, and are passed on, only with motion correction or an
+  orientation grouping (COSMOS weighting only for COSMOS). The custom QSM/R2/R2′ tools and the
+  R2′ source/R2PRIMEnet settings appear wherever a map they feed is made (the R2/R2′ maps, the
+  statistics, SMWI), not only with χ-separation on, and are passed on only then. Which outputs are
+  forced on now comes from the run's own rule: a supplied dseg no longer forces SynthSeg, R2 is no
+  longer forced when R2′ is predicted by R2PRIMEnet, and R2\* reads as forced when R2′ or R2\*-QSM
+  needs it. The Supplementary tab's QSM Reference row shows only when QSM runs, and the statistics
+  checkbox no longer hides under the segmentation checkbox. The help bar names every tab digit,
+  and a missing SLURM account opens the Execution tab (it opened Supplementary).
+- **`qsmxt slurm` takes `--debug`, `--source-dicom` and `--dicom-outputs`**, and the TUI's SLURM
+  mode passes them: debug logging reaches every job, and the DICOM export settings reach each
+  run's job, where its maps are exported. They used to be local-only, silently dropped.
+
 - **Docs and methods text match the code** (#282). The generated `methods.md` now describes the
   stages each inversion actually runs, routed by QSM.rs's `InversionConfig::input`: iQSM/iQSM+
   no longer claim field mapping or background removal, TGV is no longer "single-step" on

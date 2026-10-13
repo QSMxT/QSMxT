@@ -77,6 +77,8 @@ pub fn build_command_string(app: &App) -> String {
         }
         if form.force { parts.push("--force".to_string()); }
         if form.clean_intermediates { parts.push("--clean-intermediates".to_string()); }
+        if form.debug { parts.push("--debug".to_string()); }
+        push_dicom_export(&mut parts, form);
     } else {
         if form.dry_run {
             parts.push("--dry".to_string());
@@ -93,17 +95,22 @@ pub fn build_command_string(app: &App) -> String {
         if form.no_mem_limit { parts.push("--no-mem-limit".to_string()); }
         if form.force { parts.push("--force".to_string()); }
         if form.clean_intermediates { parts.push("--clean-intermediates".to_string()); }
-        if form.export_dicom {
-            if let Some(p) = parse_optional_path(&form.source_dicom) {
-                parts.push(format!("--source-dicom {}", p.display()));
-            }
-            if let Some(o) = parse_dicom_outputs(&form.dicom_outputs) {
-                parts.push(format!("--dicom-outputs {}", o.join(",")));
-            }
-        }
+        push_dicom_export(&mut parts, form);
     }
 
     parts.join(" ")
+}
+
+/// DICOM export's run settings — the same in both modes (under SLURM each run's job exports).
+fn push_dicom_export(parts: &mut Vec<String>, form: &super::app::RunForm) {
+    if form.export_dicom {
+        if let Some(p) = parse_optional_path(&form.source_dicom) {
+            parts.push(format!("--source-dicom {}", p.display()));
+        }
+        if let Some(o) = parse_dicom_outputs(&form.dicom_outputs) {
+            parts.push(format!("--dicom-outputs {}", o.join(",")));
+        }
+    }
 }
 
 fn push_if_changed(parts: &mut Vec<String>, flag: &str, current: &str, default: &str) {
@@ -249,6 +256,13 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
     // Multi-orientation settings live on the Input tab, next to the grouping they depend on.
     let (orientation_group, orientation_algorithm, orientation_lambda) =
         app.filter_state.orientation_args();
+    // Settings that only apply in some configurations are passed only then, matching the rows
+    // the TUI shows: a hidden value must not change the run.
+    let grouped = orientation_group.is_some();
+    let weighted_cosmos = grouped && orientation_algorithm == 0 && ps.cosmos_magnitude_weighting;
+    // Rigid registration serves motion correction and the co-registration of orientations.
+    let registration = ps.motion_correction || (grouped && ps.orientation_registration);
+    let inputs = app.input_relevance();
 
     PipelineArgs {
         // Bounds-checked rather than indexed: the option list shrinks with the build (see #227).
@@ -262,11 +276,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         }),
         multi_orientation_lambda: orientation_lambda,
         orientation_group,
-        multi_orientation_force: ps.multi_orientation_force,
-        no_orientation_registration: !ps.orientation_registration,
-        cosmos_magnitude_weighting: ps.cosmos_magnitude_weighting,
-        cosmos_tol: if ps.cosmos_magnitude_weighting { parse_optional_f64(&ps.cosmos_tol) } else { None },
-        cosmos_max_iter: if ps.cosmos_magnitude_weighting { parse_optional_usize(&ps.cosmos_max_iter) } else { None },
+        multi_orientation_force: grouped && ps.multi_orientation_force,
+        no_orientation_registration: grouped && !ps.orientation_registration,
+        cosmos_magnitude_weighting: weighted_cosmos,
+        cosmos_tol: if weighted_cosmos { parse_optional_f64(&ps.cosmos_tol) } else { None },
+        cosmos_max_iter: if weighted_cosmos { parse_optional_usize(&ps.cosmos_max_iter) } else { None },
         unwrapping_algorithm: Some(unwrap_options[ps.unwrapping_algorithm]),
         // Only when the inversion has a background-removal stage: otherwise the choice has no
         // effect, and iQFM there is refused (#276).
@@ -275,7 +289,8 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         phase_offset_removal: Some(ps.phase_offset_removal),
         phase_offset_sigma: parse_optional_f64_vec3(&ps.phase_offset_sigma),
         coil_combination_sigma: parse_optional_f64_vec3(&ps.coil_combination_sigma),
-        bipolar_correction: ps.bipolar_correction,
+        // Part of HIP phase offset removal, which only ROMEO unwrapping runs.
+        bipolar_correction: ps.unwrapping_algorithm == 0 && ps.phase_offset_removal && ps.bipolar_correction,
         // Only when changed from the default, so a default form still yields a bare command.
         b0_estimation: match ps.b0_estimation {
             1 => Some(B0EstimationArg::LinearFit),
@@ -487,14 +502,14 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             no_motion_chain: ps.motion_correction && !ps.motion_chain,
             motion_chain_levels: if ps.motion_correction { parse_optional_usize(&ps.motion_chain_levels) } else { None },
             motion_min_ncc: if ps.motion_correction { parse_optional_f64(&ps.motion_min_ncc) } else { None },
-            registration_levels: if ps.motion_correction || ps.orientation_registration { parse_optional_usize(&ps.reg_levels) } else { None },
-            registration_max_samples: if ps.motion_correction || ps.orientation_registration { parse_optional_usize(&ps.reg_max_samples) } else { None },
-            registration_max_iterations: if ps.motion_correction || ps.orientation_registration { parse_optional_usize(&ps.reg_max_iterations) } else { None },
-            registration_max_evaluations: if ps.motion_correction || ps.orientation_registration { parse_optional_usize(&ps.reg_max_evaluations) } else { None },
-            registration_tolerance: if ps.motion_correction || ps.orientation_registration { parse_optional_f64(&ps.reg_tolerance) } else { None },
-            registration_rotation_step_deg: if ps.motion_correction || ps.orientation_registration { parse_optional_f64(&ps.reg_rotation_step_deg) } else { None },
-            registration_translation_step_mm: if ps.motion_correction || ps.orientation_registration { parse_optional_f64(&ps.reg_translation_step_mm) } else { None },
-            registration_min_overlap: if ps.motion_correction || ps.orientation_registration { parse_optional_f64(&ps.reg_min_overlap) } else { None },
+            registration_levels: if registration { parse_optional_usize(&ps.reg_levels) } else { None },
+            registration_max_samples: if registration { parse_optional_usize(&ps.reg_max_samples) } else { None },
+            registration_max_iterations: if registration { parse_optional_usize(&ps.reg_max_iterations) } else { None },
+            registration_max_evaluations: if registration { parse_optional_usize(&ps.reg_max_evaluations) } else { None },
+            registration_tolerance: if registration { parse_optional_f64(&ps.reg_tolerance) } else { None },
+            registration_rotation_step_deg: if registration { parse_optional_f64(&ps.reg_rotation_step_deg) } else { None },
+            registration_translation_step_mm: if registration { parse_optional_f64(&ps.reg_translation_step_mm) } else { None },
+            registration_min_overlap: if registration { parse_optional_f64(&ps.reg_min_overlap) } else { None },
         },
         separation_params: crate::cli::SeparationParamArgs {
             r2star_qsm_r_const_3t: parse_optional_f64(&ps.sep_r2starqsm_r_const_3t),
@@ -643,16 +658,16 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         do_r2primemap: form.do_r2primemap,
         do_chi_separation: ps.do_chi_separation,
         chi_separation_algorithm: Some(sep_options[ps.separation_algorithm]),
-        use_custom_qsm: if ps.custom_qsm_tool.trim().is_empty() { None } else { Some(ps.custom_qsm_tool.trim().to_string()) },
-        use_custom_r2: if ps.custom_r2_tool.trim().is_empty() { None } else { Some(ps.custom_r2_tool.trim().to_string()) },
-        use_custom_r2prime: if ps.custom_r2prime_tool.trim().is_empty() { None } else { Some(ps.custom_r2prime_tool.trim().to_string()) },
-        r2prime_strategy: Some(match ps.r2prime_strategy {
+        use_custom_qsm: tool(inputs.qsm, &ps.custom_qsm_tool),
+        use_custom_r2: tool(inputs.r2, &ps.custom_r2_tool),
+        use_custom_r2prime: tool(inputs.r2prime, &ps.custom_r2prime_tool),
+        r2prime_strategy: inputs.r2prime_source.then_some(match ps.r2prime_strategy {
             1 => crate::cli::R2PrimeStrategyArg::Mese,
             2 => crate::cli::R2PrimeStrategyArg::R2primenet,
             _ => crate::cli::R2PrimeStrategyArg::Auto,
         }),
-        r2primenet_ignore_field_mismatch: ps.r2primenet_ignore_field_mismatch,
-        r2primenet_patch: parse_usize_triple(&ps.r2primenet_patch).map(|p| p.to_vec()),
+        r2primenet_ignore_field_mismatch: inputs.r2prime_source && ps.r2primenet_ignore_field_mismatch,
+        r2primenet_patch: if inputs.r2prime_source { parse_usize_triple(&ps.r2primenet_patch).map(|p| p.to_vec()) } else { None },
         export_dicom: form.export_dicom,
         inhomogeneity_correction: ps.inhomogeneity_correction,
         no_inhomogeneity_correction: !ps.inhomogeneity_correction,
@@ -695,6 +710,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             }).collect()
         }),
     }
+}
+
+/// A bring-your-own derivatives tool, when the run can use one and the field names it.
+fn tool(relevant: bool, name: &str) -> Option<String> {
+    Some(name.trim()).filter(|t| relevant && !t.is_empty()).map(str::to_string)
 }
 
 pub(super) fn expand_tilde(s: &str) -> PathBuf {
@@ -801,6 +821,9 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
         num_echoes: parse_optional_usize(&app.filter_state.num_echoes),
         force: form.force,
         clean_intermediates: form.clean_intermediates,
+        debug: form.debug,
+        source_dicom: if form.export_dicom { parse_optional_path(&form.source_dicom) } else { None },
+        dicom_outputs: if form.export_dicom { parse_dicom_outputs(&form.dicom_outputs) } else { None },
         pipeline: pipeline_args_from_app(app),
     })
 }
@@ -878,10 +901,18 @@ mod tests {
         }
     }
 
-    /// R2PRIMEnet's field-strength override and patch reach both the config and the CLI args.
+    /// R2PRIMEnet's field-strength override and patch reach both the config and the CLI args —
+    /// when R2' is computed; otherwise they have nothing to act on and are not passed.
     #[test]
     fn r2primenet_settings_reach_config_and_args() {
         let mut app = default_app();
+        app.pipeline_state.toggle("r2primenet_ignore_field_mismatch");
+        app.pipeline_state.r2primenet_patch = "128 128 64".into();
+        let a = pipeline_args_from_app(&app);
+        assert!(!a.r2primenet_ignore_field_mismatch && a.r2primenet_patch.is_none(), "no R2', nothing passed");
+
+        let mut app = default_app();
+        app.form.do_r2primemap = true;
         let d = qsmxt_config::R2primenetConfig::default();
         assert_eq!(config_from_app(&app).unwrap().separation.r2primenet, d);
         app.pipeline_state.toggle("r2primenet_ignore_field_mismatch");
@@ -1012,7 +1043,8 @@ mod tests {
             _ => None,
         }).collect::<Vec<_>>();
         assert!(fields(&app).contains(&"motion_correction".to_string()));
-        assert!(fields(&app).contains(&"reg_levels".to_string()), "shared with orientation co-registration, on by default");
+        assert!(!fields(&app).contains(&"reg_levels".to_string()),
+                "registration serves motion correction and orientation groups, and neither is on");
         assert_eq!(config_from_app(&app).unwrap().motion_correction, qsmxt_config::MotionCorrectionConfig::default());
         let ps = &mut app.pipeline_state;
         ps.toggle("motion_correction");
@@ -1069,6 +1101,16 @@ mod tests {
     fn orientation_registration_and_force_reach_config_and_args() {
         let mut app = default_app();
         app.pipeline_state.collapsed_sections.clear();
+        // Without a grouping they act on nothing: not passed on.
+        app.pipeline_state.toggle("orientation_registration");
+        app.pipeline_state.toggle("multi_orientation_force");
+        let a = pipeline_args_from_app(&app);
+        assert!(!a.no_orientation_registration && !a.multi_orientation_force);
+
+        let mut app = default_app();
+        app.pipeline_state.collapsed_sections.clear();
+        app.filter_state.orientation_group = "acq".into();
+        app.sync_pipeline_mode();
         let c = config_from_app(&app).unwrap();
         assert!(c.multi_orientation.register && !c.multi_orientation.force);
         app.pipeline_state.toggle("orientation_registration");
@@ -1082,6 +1124,12 @@ mod tests {
         assert!(!shows_reg(&app), "neither registration can run");
         app.pipeline_state.toggle("motion_correction");
         assert!(shows_reg(&app));
+        // Co-registering a group's orientations runs it too.
+        app.pipeline_state.toggle("motion_correction");
+        app.pipeline_state.toggle("orientation_registration");
+        assert!(shows_reg(&app));
+        app.pipeline_state.ctx.orientation_group = false;
+        assert!(!shows_reg(&app), "no group, nothing to co-register");
     }
 
     /// The inner-inversion choice belongs to QSMART and to nothing else. It used to be gated on a
@@ -1537,6 +1585,40 @@ mod tests {
         }
     }
 
+    /// Every execution setting that applies to a SLURM run reaches it: debug logging and DICOM
+    /// export's source directory and map list used to be local-only, dropped from the generated
+    /// jobs without a word. Checked on the arguments the TUI runs with and on the command it shows.
+    #[test]
+    fn slurm_mode_carries_debug_and_dicom_export() {
+        use clap::Parser;
+        let mut app = default_app();
+        app.form.bids_dir = "/bids".to_string();
+        app.form.execution_mode = 1;
+        app.form.slurm_account = "acct".to_string();
+        app.form.debug = true;
+        app.form.export_dicom = true;
+        app.form.source_dicom = "/dicom".to_string();
+        app.form.dicom_outputs = "Chimap, swi".to_string();
+
+        let args = build_slurm_args(&app).unwrap();
+        assert!(args.debug);
+        assert_eq!(args.source_dicom, Some(PathBuf::from("/dicom")));
+        assert_eq!(args.dicom_outputs, Some(vec!["Chimap".to_string(), "swi".to_string()]));
+        assert!(args.pipeline.export_dicom);
+
+        let cmd = build_command_string(&app);
+        let cli = crate::cli::Cli::try_parse_from(cmd.split_whitespace())
+            .unwrap_or_else(|e| panic!("{e}\ncmd: {cmd}"));
+        let crate::cli::Command::Slurm(shown) = cli.command else { panic!("not slurm: {cmd}") };
+        assert_eq!((shown.debug, shown.source_dicom, shown.dicom_outputs),
+                   (args.debug, args.source_dicom, args.dicom_outputs), "{cmd}");
+
+        // Without DICOM export its settings are not passed on.
+        app.form.export_dicom = false;
+        let args = build_slurm_args(&app).unwrap();
+        assert_eq!((args.source_dicom, args.dicom_outputs), (None, None));
+    }
+
     /// Regression: SLURM mode used to drop every pipeline setting, so the
     /// generated jobs ran the defaults (romeo/threshold/sharp/rts) instead of
     /// the configured pipeline. The SLURM args must carry the same pipeline
@@ -1678,7 +1760,12 @@ mod parity {
         run.get_arguments().filter_map(|a| a.get_long()).map(|l| format!("--{l}")).collect()
     }
 
-    fn rows(app: &App) -> Vec<PipelineRow> { app.pipeline_state.visible_rows() }
+    /// The rows the tab shows, with the context the App syncs before every frame.
+    fn rows(app: &App) -> Vec<PipelineRow> {
+        let mut ps = app.pipeline_state.clone();
+        ps.ctx = app.row_context();
+        ps.visible_rows()
+    }
 
     fn row_key(r: &PipelineRow) -> Option<(&'static str, char)> {
         match r {
@@ -1711,11 +1798,24 @@ mod parity {
         let mut seen: BTreeSet<(&'static str, char, usize)> = BTreeSet::new();
         let mut states = Vec::new();
         let mut frontier = Vec::new();
+        // Each tab mode from the defaults, plus the starts whose rows only another tab reveals:
+        // the multi-orientation settings (a grouping on the Input tab, COSMOS or STI) and the
+        // inputs of the relaxometry maps and statistics (Supplementary tab).
+        type Start = fn(&mut App);
+        let starts: &[Start] = &[
+            |_| {},
+            |a| a.filter_state.orientation_group = "acq".into(),
+            |a| { a.filter_state.orientation_group = "acq".into(); a.filter_state.orientation_algorithm = 1; },
+            |a| { a.form.do_r2primemap = true; a.form.do_r2map = true; a.form.do_analysis = true; },
+        ];
         for mode in [PipelineTabMode::Qsm, PipelineTabMode::Separation] {
-            let mut app = App::new();
-            app.pipeline_state.collapsed_sections.clear();
-            app.pipeline_state.mode = mode;
-            frontier.push(app);
+            for start in starts {
+                let mut app = App::new();
+                app.pipeline_state.collapsed_sections.clear();
+                app.pipeline_state.mode = mode;
+                start(&mut app);
+                frontier.push(app);
+            }
         }
         while let Some(app) = frontier.pop() {
             let rows = rows(&app);
@@ -1749,6 +1849,7 @@ mod parity {
         let mut a = App::new();
         a.pipeline_state = app.pipeline_state.clone();
         a.form = app.form.clone();
+        a.filter_state = app.filter_state.clone();
         a
     }
 
