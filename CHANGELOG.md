@@ -121,6 +121,7 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
   spacing used to give wrong R2*/T2* silently and make EPG panic. A single-echo uncombined-coil
   run is refused instead of panicking in MCPC-3D-S. `qsmxt validate` reports the same checks.
   Default output does not change; runs that used to finish with outputs missing now stop.
+
 - **GE conversion no longer claims a correction it does not make** (#274). `dicom-convert`
   logged "GE data detected — phase inversion will be applied", and nothing inverted it; it also
   rewrote the sidecar `ImageType` of GE real/imaginary series to `MAGNITUDE`/`PHASE` while the
