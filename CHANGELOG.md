@@ -108,6 +108,22 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
 
 ### Changed
 
+- **The multi-orientation (COSMOS) map is a first-class output** (#270). It used to read
+  members' magnitudes from `anat/` after they had been returned to the acquired grid while their
+  local fields stayed on the working grid, so an oblique group failed under the default
+  `--output-space acquired`; it now reads every member input from the working grid. The COSMOS
+  map is referenced with `--qsm-reference` over the voxels every orientation covers (it was
+  written raw), written on the reference orientation's acquired grid, cached (keyed on the
+  members' local fields, directions and settings), computed before the reference summary and
+  statistics so it appears in both, and with `--do-analysis` gets a per-structure table on the
+  reference orientation's segmentation. A grouping whose inversion skips background removal (MEDI
+  with SMV, TGV, QSMART, AutoQSM, NeXtQSM, iQSM/iQSM+) or with `--no-qsm` is refused before
+  processing. New `--cosmos-magnitude-weighting`, `--cosmos-tol`, `--cosmos-max-iter` (TUI:
+  pipeline tab, General; config `[multi_orientation]`). STI outputs stay unreferenced on the
+  working grid, with a warning when the reference orientation was returned to its acquired grid.
+  Default output changes for COSMOS: the map is now mean-referenced, and on the acquired grid for
+  an oblique reference orientation.
+
 - **A requested output the data cannot produce is an error, before anything runs** (#193,
   #273). SWI, SMWI, segmentation, R2*/T2*, R2, R2′ and χ-separation used to be dropped silently
   (or with a `Skipping` line mid-run) when a run lacked what they need, and the run exited 0.

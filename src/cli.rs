@@ -1085,6 +1085,18 @@ pub struct PipelineArgs {
     #[arg(long)]
     pub multi_orientation_force: bool,
 
+    /// COSMOS: weight each orientation by its combined magnitude (conjugate-gradient solve)
+    #[arg(long)]
+    pub cosmos_magnitude_weighting: bool,
+
+    /// Magnitude-weighted COSMOS: conjugate-gradient tolerance (needs --cosmos-magnitude-weighting)
+    #[arg(long)]
+    pub cosmos_tol: Option<f64>,
+
+    /// Magnitude-weighted COSMOS: conjugate-gradient iteration cap (needs --cosmos-magnitude-weighting)
+    #[arg(long)]
+    pub cosmos_max_iter: Option<usize>,
+
     /// Unwrapping algorithm
     #[arg(long, value_enum)]
     pub unwrapping_algorithm: Option<UnwrapAlgorithmArg>,

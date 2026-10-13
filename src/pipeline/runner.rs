@@ -2205,7 +2205,7 @@ fn stage_segmentation(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn F
     Ok(())
 }
 
-fn to_core_synthseg_version(v: crate::pipeline::config::SynthSegVersion) -> qsm_core::segment::SynthSegVersion {
+pub(crate) fn to_core_synthseg_version(v: crate::pipeline::config::SynthSegVersion) -> qsm_core::segment::SynthSegVersion {
     match v {
         crate::pipeline::config::SynthSegVersion::V1 => qsm_core::segment::SynthSegVersion::V1,
         crate::pipeline::config::SynthSegVersion::V2 => qsm_core::segment::SynthSegVersion::V2,
@@ -3762,21 +3762,12 @@ fn stage_reference(
     progress("Referencing QSM");
     let chi = load_volume(chi_raw_path)?;
     let declared = support_masks.iter().map(|p| load_mask(p)).collect::<crate::Result<Vec<_>>>()?;
-    if let Some(m) = declared.iter().find(|m| m.len() != chi.len()) {
-        return Err(QsmxtError::DimensionMismatch(format!(
-            "support mask has {} voxels but the susceptibility map has {}", m.len(), chi.len())));
-    }
     let declared_refs: Vec<&[u8]> = declared.iter().map(|m| m.as_slice()).collect();
-    let mask = crate::pipeline::referencing::defined_support(&declared_refs, &chi);
-    log::info!(
-        "Referencing over the map's support: {} voxels",
-        mask.iter().filter(|&&m| m != 0).count(),
-    );
 
     let mut inputs: Vec<PathBuf> = vec![chi_raw_path.to_path_buf()];
     inputs.extend(support_masks.iter().map(|p| p.to_path_buf()));
-    let (chi_final, offset) = match region {
-        Some((spec, ids)) => {
+    let dseg = match region {
+        Some((spec, _)) => {
             let dseg_path = resolve_input(
                 ctx, &ctx.output.dseg_path(&ctx.run.key),
                 ctx.config.segmentation.custom_dseg_tool.as_deref(), "*_dseg.nii*", &[],
@@ -3785,26 +3776,13 @@ fn stage_reference(
                 "--qsm-reference {spec}: no segmentation to measure the region on. Enable \
                  --do-segmentation, or supply one with --use-custom-dseg")))?;
             let dseg = load_volume(&dseg_path)?;
-            if dseg.len() != chi.len() {
-                return Err(QsmxtError::DimensionMismatch(format!(
-                    "segmentation has {} voxels but the susceptibility map has {}",
-                    dseg.len(), chi.len())));
-            }
-            let roi = crate::pipeline::referencing::region_mask(&dseg, &ids);
             inputs.push(dseg_path);
-            let (out, off) = crate::pipeline::referencing::reference_to_region(&chi, &mask, &roi, &spec)?;
-            (out, Some(off))
+            Some(dseg)
         }
-        None => {
-            let (_, _, _, ref_method_core) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-            // What the mean reference removed is worth recording for the same reason a region's
-            // offset is; `apply_reference` applies it without saying.
-            let off = (ctx.config.qsm.reference == QsmReference::Mean)
-                .then(|| crate::pipeline::referencing::mask_mean(&chi, &mask))
-                .flatten();
-            (qsm_core::pipeline::apply_reference(&chi, &mask, ref_method_core), off)
-        }
+        None => None,
     };
+    let Referenced { chi: chi_final, support: mask, offset } =
+        reference_chi(ctx.config, &chi, &declared_refs, dseg.as_deref())?;
 
     save_volume(&qsm_path, &chi_final, ctx.meta)?;
     let mut outputs = vec![qsm_path.clone()];
@@ -3824,6 +3802,75 @@ fn stage_reference(
     Ok(())
 }
 
+/// A susceptibility map after referencing: the map, the support it was referenced over, and what
+/// the reference removed (when that is a single number worth recording).
+pub(crate) struct Referenced {
+    pub chi: Vec<f64>,
+    pub support: Vec<u8>,
+    pub offset: Option<crate::pipeline::referencing::Offset>,
+}
+
+/// Reference `chi` with `--qsm-reference`, over the voxels it is defined on within `declared`.
+///
+/// Shared by the per-run maps and the multi-orientation (COSMOS) map, so every susceptibility
+/// map QSMxT publishes is referenced the same way. `dseg` must be on `chi`'s grid; it is needed
+/// only for a region reference.
+pub(crate) fn reference_chi(
+    config: &PipelineConfig, chi: &[f64], declared: &[&[u8]], dseg: Option<&[f64]>,
+) -> crate::Result<Referenced> {
+    if let Some(m) = declared.iter().find(|m| m.len() != chi.len()) {
+        return Err(QsmxtError::DimensionMismatch(format!(
+            "support mask has {} voxels but the susceptibility map has {}", m.len(), chi.len())));
+    }
+    let support = crate::pipeline::referencing::defined_support(declared, chi);
+    log::info!(
+        "Referencing over the map's support: {} voxels",
+        support.iter().filter(|&&m| m != 0).count(),
+    );
+    if config.qsm.reference == QsmReference::Region {
+        let spec = config.qsm.reference_region.clone().unwrap_or_default();
+        let ids = qsmxt_config::regions::resolve(&spec, config.segmentation.version)
+            .map_err(|e| QsmxtError::Config(format!("--qsm-reference: {e}")))?;
+        let dseg = dseg.ok_or_else(|| QsmxtError::Config(format!(
+            "--qsm-reference {spec}: no segmentation to measure the region on")))?;
+        if dseg.len() != chi.len() {
+            return Err(QsmxtError::DimensionMismatch(format!(
+                "segmentation has {} voxels but the susceptibility map has {}",
+                dseg.len(), chi.len())));
+        }
+        let roi = crate::pipeline::referencing::region_mask(dseg, &ids);
+        let (out, off) = crate::pipeline::referencing::reference_to_region(chi, &support, &roi, &spec)?;
+        return Ok(Referenced { chi: out, support, offset: Some(off) });
+    }
+    let (_, _, _, ref_method_core) = crate::pipeline::config::to_pipeline_stages(config);
+    // What the mean reference removed is worth recording for the same reason a region's offset
+    // is; `apply_reference` applies it without saying.
+    let offset = (config.qsm.reference == QsmReference::Mean)
+        .then(|| crate::pipeline::referencing::mask_mean(chi, &support))
+        .flatten();
+    let out = qsm_core::pipeline::apply_reference(chi, &support, ref_method_core);
+    Ok(Referenced { chi: out, support, offset })
+}
+
+/// The `QsmReference*` sidecar fields for a map referenced under `config`.
+pub(crate) fn reference_sidecar_fields(
+    config: &PipelineConfig, offset: Option<&crate::pipeline::referencing::Offset>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut obj = serde_json::Map::new();
+    obj.insert("QsmReference".into(), serde_json::json!(config.qsm.reference_spec()));
+    if let Some(off) = offset {
+        obj.insert("QsmReferenceOffsetPpm".into(), serde_json::json!(off.ppm));
+        obj.insert("QsmReferenceVoxels".into(), serde_json::json!(off.voxels));
+    }
+    if config.qsm.reference == QsmReference::Region {
+        let spec = config.qsm.reference_region.clone().unwrap_or_default();
+        if let Ok(ids) = qsmxt_config::regions::resolve(&spec, config.segmentation.version) {
+            obj.insert("QsmReferenceLabels".into(), serde_json::json!(ids));
+        }
+    }
+    obj
+}
+
 /// Record the reference in the susceptibility map's JSON sidecar.
 ///
 /// The offset is a measurement in its own right — the susceptibility of the reference tissue — and
@@ -3837,17 +3884,7 @@ fn write_reference_sidecar(
 ) -> crate::Result<()> {
     let Some(sidecar) = crate::bids::entities::sidecar_path(qsm_path) else { return Ok(()) };
     let mut obj = read_json_object(&sidecar);
-    obj.insert("QsmReference".into(), serde_json::json!(ctx.config.qsm.reference_spec()));
-    if let Some(off) = offset {
-        obj.insert("QsmReferenceOffsetPpm".into(), serde_json::json!(off.ppm));
-        obj.insert("QsmReferenceVoxels".into(), serde_json::json!(off.voxels));
-    }
-    if ctx.config.qsm.reference == QsmReference::Region {
-        let spec = ctx.config.qsm.reference_region.clone().unwrap_or_default();
-        if let Ok(ids) = qsmxt_config::regions::resolve(&spec, ctx.config.segmentation.version) {
-            obj.insert("QsmReferenceLabels".into(), serde_json::json!(ids));
-        }
-    }
+    obj.extend(reference_sidecar_fields(ctx.config, offset.as_ref()));
     if let Some(parent) = sidecar.parent() {
         std::fs::create_dir_all(parent)?;
     }
@@ -5788,6 +5825,58 @@ mod oblique_run_tests {
         run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, &|_| {}).unwrap();
         assert!(!resampled(&output));
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
+    }
+
+    /// An oblique three-orientation group under the default `--output-space acquired` (#270).
+    ///
+    /// The members' magnitudes are back on the acquired grid by the time the group is combined,
+    /// while their local fields are on the working grid; the group used to read the two from
+    /// different grids and fail. Now it reads both from the working grid, writes a referenced
+    /// COSMOS map on the reference member's acquired grid, caches it, and recomputes it when a
+    /// member's background removal changes.
+    #[test]
+    fn an_oblique_cosmos_group_lands_on_the_acquired_grid_referenced_and_cached() {
+        let dir = tempfile::tempdir().unwrap();
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        // No sidecar `B0_dir` (one would stop the resample to axial), so the three share one
+        // affine and their directions cannot be told apart: `force` reconstructs anyway, which is
+        // all this test needs — it is about grids and caching, not the directions.
+        let runs: Vec<QsmRun> = ["d1", "d2", "d3"].iter()
+            .map(|acq| oblique_run(dir.path(), acq, 2)).collect();
+        let mut config = resampling_config();
+        config.multi_orientation.group_by = "acq".into();
+        config.multi_orientation.force = true;
+        config.multi_orientation.lambda = 1e-2;
+        for r in &runs {
+            run_pipeline_cached(r, &config, &output, false, &|_| {}).unwrap();
+        }
+        let members: Vec<&QsmRun> = runs.iter().collect();
+        let group = crate::bids::orientation::OrientationGroup { label: "sub-1".into(), members: vec![0, 1, 2] };
+        let combine = |config: &PipelineConfig| crate::pipeline::multiorient::reconstruct_group(
+            &group, &members, config, &output, false, &|_| {}).unwrap();
+
+        combine(&config);
+        let key = crate::pipeline::multiorient::group_key(&members);
+        let cosmos = output.cosmos_path(&key);
+        assert_eq!(voxels(&cosmos), ACQUIRED, "the COSMOS map is on the acquired grid");
+        let sidecar: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(
+            output.multiorient_sidecar_path(&key, "cosmos")).unwrap()).unwrap();
+        assert_eq!(sidecar["QsmReference"], "mean", "{sidecar}");
+        assert!(sidecar["QsmReferenceOffsetPpm"].is_number(), "{sidecar}");
+        assert_eq!(sidecar["Space"], "acquired");
+
+        let mtime = || std::fs::metadata(&cosmos).unwrap().modified().unwrap();
+        let first = mtime();
+        combine(&config);
+        assert_eq!(mtime(), first, "an unchanged group was recomputed");
+
+        // A member's background removal changes: its local field is rewritten, and the group
+        // is recomputed from it.
+        let mut other = config.clone();
+        other.bg_removal.algorithm = BfAlgorithm::Pdf;
+        run_pipeline_cached(&runs[1], &other, &output, false, &|_| {}).unwrap();
+        combine(&config);
+        assert_ne!(mtime(), first, "a member's new local field did not recompute the group");
     }
 }
 
