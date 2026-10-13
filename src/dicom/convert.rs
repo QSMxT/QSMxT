@@ -205,10 +205,33 @@ pub fn nii_to_json_path(nii_path: &Path) -> PathBuf {
 
 // ─── GE detection ───
 
-/// Check if a series is from a GE scanner.
+/// Whether a series' `Manufacturer` (0008,0070) names GE.
+///
+/// GE writes `GE MEDICAL SYSTEMS` (older systems) or `GE HEALTHCARE`; `GENERAL ELECTRIC` and a
+/// bare `GE` turn up in anonymised or re-exported data. Matched as a whole word at the start of
+/// the string, so a manufacturer that merely contains the letters (`...IMAGE...`,
+/// `...MANAGEMENT...`) is not GE.
 fn is_ge_manufacturer(manufacturer: &str) -> bool {
-    let m = manufacturer.to_uppercase();
-    m.contains("GE") || m.contains("GENERAL ELECTRIC")
+    let m = manufacturer.trim().to_uppercase();
+    m == "GE" || m.starts_with("GE ") || m.starts_with("GE_") || m.starts_with("GENERAL ELECTRIC")
+}
+
+/// What a GE series needs that QSMxT does not do yet, said once per series (#274).
+///
+/// GE phase needs its handedness flipped and its slice-alternating offset ("chopping") removed
+/// before it is QSM-ready, and GE QSM data usually comes as real/imaginary series, which `qsmxt
+/// run` does not read. Both wait on the correction in QSM.rs (astewartau/QSM.rs#171).
+fn ge_note(series_type: SeriesType) -> Option<&'static str> {
+    match series_type {
+        SeriesType::Phase => Some(
+            "  Warning: GE phase is converted as-is. QSMxT does not yet correct GE phase \
+             handedness or slice chopping, so χ from it may have the wrong sign and slice-wise \
+             wraps."),
+        SeriesType::Real | SeriesType::Imaginary => Some(
+            "  Warning: GE real/imaginary series are written as part-real/part-imag, which \
+             `qsmxt run` does not read yet; no QSM run will be found from them."),
+        _ => None,
+    }
 }
 
 // ─── Main conversion ───
@@ -403,8 +426,8 @@ fn convert_coil_group(
         series.description, coil_label, files.len(),
     ));
 
-    if is_ge {
-        log_lines.push("  Note: GE data detected — phase inversion will be applied".to_string());
+    if let Some(note) = is_ge.then(|| ge_note(series.series_type)).flatten() {
+        log_lines.push(note.to_string());
     }
 
     // Run dcm2niix with a temp filename — we'll rename outputs ourselves
@@ -549,18 +572,6 @@ fn convert_coil_group(
                 }
             }
 
-            // For GE data, update ImageType in JSON if we have Real/Imag → Mag/Phase
-            if is_ge && matches!(series.series_type, SeriesType::Real | SeriesType::Imaginary) {
-                let new_type = if series.series_type == SeriesType::Real {
-                    "MAGNITUDE"
-                } else {
-                    "PHASE"
-                };
-                json["ImageType"] = serde_json::json!([new_type]);
-                if let Ok(output) = serde_json::to_string_pretty(&json) {
-                    let _ = fs::write(&dest, output);
-                }
-            }
         }
 
         log_lines.push(format!("  -> {}", bids_name));
@@ -872,7 +883,35 @@ mod tests {
     fn test_is_ge_manufacturer_other_vendors() {
         assert!(!is_ge_manufacturer("SIEMENS HEALTHINEERS"));
         assert!(!is_ge_manufacturer("Philips Medical"));
+        assert!(!is_ge_manufacturer("Philips"));
         assert!(!is_ge_manufacturer("Canon"));
+        assert!(!is_ge_manufacturer("Canon Medical Systems"));
+    }
+
+    /// The old substring test took any manufacturer containing the letters "GE" for GE.
+    #[test]
+    fn test_is_ge_manufacturer_rejects_strings_merely_containing_ge() {
+        assert!(!is_ge_manufacturer("ACME IMAGE MANAGEMENT"));
+        assert!(!is_ge_manufacturer("GEMINI SCANNERS"));
+        assert!(!is_ge_manufacturer("HITACHI MEDICAL SYSTEMS GERMANY"));
+    }
+
+    #[test]
+    fn test_is_ge_manufacturer_ge_forms() {
+        assert!(is_ge_manufacturer("GE HEALTHCARE"));
+        assert!(is_ge_manufacturer(" GE MEDICAL SYSTEMS "));
+        assert!(is_ge_manufacturer("GE"));
+    }
+
+    /// No log line for something that does not happen: GE phase is not inverted, so nothing
+    /// says it is; what is said is what QSMxT does not do (#274).
+    #[test]
+    fn ge_notes_say_what_is_not_done() {
+        let phase = ge_note(SeriesType::Phase).unwrap();
+        assert!(phase.contains("does not yet correct"), "{phase}");
+        assert!(!phase.contains("will be applied"), "{phase}");
+        assert!(ge_note(SeriesType::Real).unwrap().contains("does not read"));
+        assert!(ge_note(SeriesType::Magnitude).is_none());
     }
 
     // ─── build_bids_filename with T1w suffix and no part ───
