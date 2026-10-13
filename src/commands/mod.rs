@@ -67,10 +67,6 @@ mod integration_tests {
                 laplacian_solver: None,
                 laplacian_fft_pad: None,
                 bet_fractional_intensity: None,
-                bet_smoothness: None,
-                bet_gradient_threshold: None,
-                bet_iterations: None,
-                bet_subdivisions: None,
                 bet_voxel_scale: None,
                 qsm_reference: None,
                 rts_params: Default::default(),
@@ -724,12 +720,18 @@ mod integration_tests {
 
         super::unwrap::execute(UnwrapCommand::Romeo(UnwrapRomeoArgs {
             common: common_unwrap(phase, mask, output.clone()),
-            magnitude: Some(mag),
-            no_phase_gradient_coherence: false,
-            no_mag_coherence: false,
-            no_mag_weight: false,
+            magnitude: Some(mag.clone()),
+            romeo_params: Default::default(),
         })).unwrap();
         assert!(output.exists());
+
+        // A multi-echo setting cannot apply to one 3D phase, so it is refused rather than ignored.
+        let err = super::unwrap::execute(UnwrapCommand::Romeo(UnwrapRomeoArgs {
+            common: common_unwrap(dir.path().join("phase.nii"), dir.path().join("mask.nii"), output.clone()),
+            magnitude: Some(mag),
+            romeo_params: crate::cli::RomeoParamArgs { romeo_template: Some(2), ..Default::default() },
+        })).unwrap_err();
+        assert!(format!("{err}").contains("--romeo-template"), "{err}");
     }
 
     // --- Background Removal ---
@@ -886,6 +888,32 @@ mod integration_tests {
             no_noise_fill: true,
         }).unwrap();
         assert!(phase_out.exists() && magnitude_out.exists());
+    }
+
+    /// `--no-noise-fill` only applies to the phase/magnitude pair, and the pair's outputs only
+    /// to the pair: given with a plain volume they are refused rather than ignored (#279).
+    #[test]
+    fn resample_refuses_flags_that_do_not_apply() {
+        use clap::Parser;
+        let parse = |a: &[&str]| crate::cli::Cli::try_parse_from(
+            [&["qsmxt", "resample"][..], a].concat());
+        assert!(parse(&["vol.nii", "--no-noise-fill"]).is_err());
+        assert!(parse(&["vol.nii", "--phase-out", "p.nii"]).is_err());
+        assert!(parse(&["vol.nii", "--phase", "p.nii", "--magnitude", "m.nii"]).is_err());
+        assert!(parse(&["--phase", "p.nii", "--magnitude", "m.nii", "--output", "o.nii"]).is_err());
+        assert!(parse(&["--phase", "p.nii", "--magnitude", "m.nii", "--no-noise-fill"]).is_ok());
+        assert!(parse(&["vol.nii", "--output", "o.nii"]).is_ok());
+    }
+
+    /// `qsmxt segment` computes a segmentation, so the run's "use a supplied one" flag is refused.
+    #[test]
+    fn segment_refuses_use_custom_dseg() {
+        use clap::Parser;
+        let cli = crate::cli::Cli::try_parse_from(
+            ["qsmxt", "segment", "mag.nii", "--output", "seg.nii", "--use-custom-dseg", "*"]).unwrap();
+        let crate::cli::Command::Segment(args) = cli.command else { panic!("expected segment") };
+        let err = format!("{}", super::segment::execute(args).unwrap_err());
+        assert!(err.contains("--use-custom-dseg"), "{err}");
     }
 
     #[test]

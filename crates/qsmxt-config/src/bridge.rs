@@ -144,23 +144,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
                 pad: cfg.field_mapping.laplacian_fft_pad,
             },
         },
-        romeo_params: qsm_core::unwrap::RomeoParams {
-            individual: cfg.field_mapping.romeo.individual,
-            correct_global: cfg.field_mapping.romeo.correct_global,
-            template: cfg.field_mapping.romeo.template,
-            phase_coherence: cfg.field_mapping.romeo.phase_coherence,
-            phase_gradient_coherence: cfg.field_mapping.romeo.phase_gradient_coherence,
-            phase_linearity: cfg.field_mapping.romeo.phase_linearity,
-            mag_coherence: cfg.field_mapping.romeo.mag_coherence,
-            mag_weight: cfg.field_mapping.romeo.mag_weight,
-            mag_weight2: cfg.field_mapping.romeo.mag_weight2,
-            bestpath: cfg.field_mapping.romeo.bestpath,
-            temporal_uncertain_unwrapping: cfg.field_mapping.romeo.temporal_uncertain_unwrapping,
-            max_seeds: cfg.field_mapping.romeo.max_seeds,
-            merge_regions: cfg.field_mapping.romeo.merge_regions,
-            correct_regions: cfg.field_mapping.romeo.correct_regions,
-            wrap_addition: cfg.field_mapping.romeo.wrap_addition,
-        },
+        romeo_params: (&cfg.field_mapping.romeo).into(),
     };
 
     let bg_removal = PBgRemoval {

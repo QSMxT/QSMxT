@@ -108,6 +108,28 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
 
 ### Changed
 
+- **Flags that were accepted and then ignored now act or are refused** (#279):
+  - `--bet-fractional-intensity` reaches BET: it sets every BET step's fractional intensity in
+    the masking recipe (as `--bet-voxel-scale` does), overriding a `bet:<f>` in `--mask`; a
+    config file's `[bet] fractional_intensity` / `voxel_scale` reach the steps the same way.
+    `--bet-smoothness`, `--bet-gradient-threshold`, `--bet-iterations` and `--bet-subdivisions`
+    are removed, and setting them in a config file's `[bet]` is an error: a BET mask step
+    (QSM.rs `MaskOp::Bet`) carries only the fractional intensity and the voxel scale.
+  - `qsmxt fieldmap romeo` starts from QSMxT's defaults, as `qsmxt run` does (ROMEO individual
+    unwrapping and global correction on; it used qsm-core's, with both off), so the two give the
+    same field map for the same inputs and flags. **The standalone tool's default output
+    changes.** All ROMEO flags are read in one place (`RomeoParamArgs::apply_to`).
+  - `qsmxt unwrap romeo` takes the same `--no-romeo-*` / `--romeo-*` flags as `run` (they reach
+    ROMEO now); its own `--no-phase-gradient-coherence`, `--no-mag-coherence` and
+    `--no-mag-weight` (which only reached a debug line) are gone, and the multi-echo flags are
+    refused, since it unwraps one 3D phase.
+  - `qsmxt segment --use-custom-dseg` is refused (`segment` computes a segmentation).
+  - `qsmxt resample`: `--no-noise-fill`, `--phase-out` and `--magnitude-out` need `--phase`, and
+    `--phase` cannot be combined with a positional volume or `--output` (one of each was
+    ignored).
+  - qsmxt-config: the unused `Mcpc3dsConfig` is deleted (`FieldMappingConfig::phase_offset_sigma`
+    is the MCPC-3D-S phase-offset smoothing).
+
 - **`--swi-scaling negative-tanh` runs negative-tanh** (#266). `qsmxt run` matched the scaling as
   a string and only knew `negative_tanh`, so the spelling the help, the TUI and the generated
   command all use fell through to plain `tanh` without a word. The scaling is now one typed enum

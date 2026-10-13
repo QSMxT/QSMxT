@@ -424,18 +424,6 @@ impl Default for TikhonovConfig {
     }
 }
 
-// MCPC-3D-S phase-offset smoothing sigma (voxels)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-#[serde(default)]
-pub struct Mcpc3dsConfig {
-    pub sigma: [f64; 3],
-}
-impl Default for Mcpc3dsConfig {
-    fn default() -> Self {
-        Self { sigma: qsm_core::utils::PhaseOffsetParams::default().sigma }
-    }
-}
-
 // TGV needs special handling (f32→f64 conversion)
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
@@ -550,6 +538,28 @@ impl Default for RomeoConfig {
             merge_regions: p.merge_regions,
             correct_regions: p.correct_regions,
             wrap_addition: p.wrap_addition,
+        }
+    }
+}
+
+impl From<&RomeoConfig> for qsm_core::unwrap::RomeoParams {
+    fn from(r: &RomeoConfig) -> Self {
+        Self {
+            individual: r.individual,
+            correct_global: r.correct_global,
+            template: r.template,
+            phase_coherence: r.phase_coherence,
+            phase_gradient_coherence: r.phase_gradient_coherence,
+            phase_linearity: r.phase_linearity,
+            mag_coherence: r.mag_coherence,
+            mag_weight: r.mag_weight,
+            mag_weight2: r.mag_weight2,
+            bestpath: r.bestpath,
+            temporal_uncertain_unwrapping: r.temporal_uncertain_unwrapping,
+            max_seeds: r.max_seeds,
+            merge_regions: r.merge_regions,
+            correct_regions: r.correct_regions,
+            wrap_addition: r.wrap_addition,
         }
     }
 }

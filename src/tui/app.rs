@@ -1685,11 +1685,6 @@ pub struct PipelineFormState {
     pub hdqsm_tol_update: String,
 
     // BET
-    pub bet_fractional_intensity: String,
-    pub bet_smoothness: String,
-    pub bet_gradient_threshold: String,
-    pub bet_iterations: String,
-    pub bet_subdivisions: String,
 
     // QSM toggle
     pub do_qsm: bool,
@@ -1826,7 +1821,6 @@ impl Default for PipelineFormState {
         let l1qsm = qsm_core::inversion::L1QsmParams::default();
         let whqsm = qsm_core::inversion::WhQsmParams::default();
         let hdqsm = qsm_core::inversion::HdQsmParams::default();
-        let bet = qsm_core::bet::BetParams::default();
         Self {
             mode: PipelineTabMode::Qsm,
             qsm_algorithm: 0, // rts
@@ -2056,12 +2050,6 @@ impl Default for PipelineFormState {
             hdqsm_max_iter_l1: format!("{}", hdqsm.max_iter_l1),
             hdqsm_max_iter_l2: format!("{}", hdqsm.max_iter_l2),
             hdqsm_tol_update: format!("{}", hdqsm.tol_update),
-
-            bet_fractional_intensity: format!("{}", bet.fractional_intensity),
-            bet_smoothness: format!("{}", bet.smoothness),
-            bet_gradient_threshold: format!("{}", bet.gradient_threshold),
-            bet_iterations: format!("{}", bet.iterations),
-            bet_subdivisions: format!("{}", bet.subdivisions),
             mask_sections: crate::pipeline::config::default_mask_sections(),
             mask_combine: crate::pipeline::config::MaskCombine::Or,
             mask_combined_refinements: vec![],
@@ -3002,7 +2990,6 @@ impl PipelineFormState {
         "l1qsm_alpha1", "l1qsm_mu1", "l1qsm_mu2", "l1qsm_mu3", "l1qsm_lambda", "l1qsm_max_iter", "l1qsm_tol_update", "l1qsm_tol_delta", "l1qsm_phase_scale",
         "whqsm_alpha1", "whqsm_mu1", "whqsm_mu2", "whqsm_beta", "whqsm_muh", "whqsm_max_iter", "whqsm_tol_update", "whqsm_tol_delta", "whqsm_phase_scale",
         "hdqsm_alpha_l2", "hdqsm_mu1_l2", "hdqsm_mu2", "hdqsm_max_iter_l1", "hdqsm_max_iter_l2", "hdqsm_tol_update",
-        "bet_fractional_intensity", "bet_smoothness", "bet_gradient_threshold", "bet_iterations", "bet_subdivisions",
         "r2primenet_patch",
         "laplacian_fft_pad",
         "crop_margin_mm", "homogeneity_sigma_mm", "homogeneity_nbox", "coil_combination_sigma",
@@ -3189,11 +3176,6 @@ impl PipelineFormState {
             "hdqsm_max_iter_l1" => &self.hdqsm_max_iter_l1,
             "hdqsm_max_iter_l2" => &self.hdqsm_max_iter_l2,
             "hdqsm_tol_update" => &self.hdqsm_tol_update,
-            "bet_fractional_intensity" => &self.bet_fractional_intensity,
-            "bet_smoothness" => &self.bet_smoothness,
-            "bet_gradient_threshold" => &self.bet_gradient_threshold,
-            "bet_iterations" => &self.bet_iterations,
-            "bet_subdivisions" => &self.bet_subdivisions,
             "custom_qsm_tool" => &self.custom_qsm_tool,
             "custom_r2_tool" => &self.custom_r2_tool,
             "custom_r2prime_tool" => &self.custom_r2prime_tool,
@@ -3410,11 +3392,6 @@ impl PipelineFormState {
             "hdqsm_max_iter_l1" => Some(&mut self.hdqsm_max_iter_l1),
             "hdqsm_max_iter_l2" => Some(&mut self.hdqsm_max_iter_l2),
             "hdqsm_tol_update" => Some(&mut self.hdqsm_tol_update),
-            "bet_fractional_intensity" => Some(&mut self.bet_fractional_intensity),
-            "bet_smoothness" => Some(&mut self.bet_smoothness),
-            "bet_gradient_threshold" => Some(&mut self.bet_gradient_threshold),
-            "bet_iterations" => Some(&mut self.bet_iterations),
-            "bet_subdivisions" => Some(&mut self.bet_subdivisions),
             "custom_qsm_tool" => Some(&mut self.custom_qsm_tool),
             "custom_r2_tool" => Some(&mut self.custom_r2_tool),
             "custom_r2prime_tool" => Some(&mut self.custom_r2prime_tool),
