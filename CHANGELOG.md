@@ -108,6 +108,13 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `c78dfc9`):
 
 ### Changed
 
+- **`--b0-direction` accepts negative components** (and `--obliquity-threshold` accepts its
+  documented `-1`). Clap read a value such as `-0.054523` as an unknown flag, so
+  `qsmxt bgremove`, `invert` (including `cosmos`/`sti`), `separate` and `qsmart` failed with a
+  usage error for any oblique acquisition whose B0 direction has a negative component, and
+  `qsmxt run --obliquity-threshold -1` could not disable resampling. Default output does not
+  change; commands that used to be refused now run.
+
 - **A requested output the data cannot produce is an error, before anything runs** (#193,
   #273). SWI, SMWI, segmentation, R2*/T2*, R2, R2′ and χ-separation used to be dropped silently
   (or with a `Skipping` line mid-run) when a run lacked what they need, and the run exited 0.

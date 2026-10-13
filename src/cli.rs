@@ -1369,7 +1369,7 @@ pub struct PipelineArgs {
     pub no_inhomogeneity_correction: bool,
 
     /// Resample oblique acquisitions to axial if obliquity exceeds threshold (degrees, -1 to disable)
-    #[arg(long)]
+    #[arg(long, allow_negative_numbers = true)]
     pub obliquity_threshold: Option<f64>,
 
     /// Reconstruct inside a box around the mask instead of the whole field of view. Cuts the
@@ -1957,7 +1957,7 @@ pub struct BgremoveCommonArgs {
     #[arg(short, long)]
     pub output: PathBuf,
     /// B0 direction (3 values)
-    #[arg(long, num_args = 3, default_values_t = [0.0, 0.0, 1.0])]
+    #[arg(long, num_args = 3, allow_negative_numbers = true, default_values_t = [0.0, 0.0, 1.0])]
     pub b0_direction: Vec<f64>,
     /// Output eroded mask (for algorithms that erode)
     #[arg(long)]
@@ -2173,7 +2173,7 @@ pub struct InvertCommonArgs {
     #[arg(short, long)]
     pub output: PathBuf,
     /// B0 direction (3 values)
-    #[arg(long, num_args = 3, default_values_t = [0.0, 0.0, 1.0])]
+    #[arg(long, num_args = 3, allow_negative_numbers = true, default_values_t = [0.0, 0.0, 1.0])]
     pub b0_direction: Vec<f64>,
     /// Deep-learning overlap-tiling (opt-in; ignored by classical algorithms).
     #[command(flatten)]
@@ -2209,7 +2209,7 @@ pub struct MultiOrientCommonArgs {
     /// B0 direction for one orientation in the common grid's voxel frame (3 values) — repeat
     /// once per --input, in the same order. Omitted, each volume's own affine is used instead,
     /// which is only valid when the orientations were separately prescribed.
-    #[arg(long, num_args = 3, action = clap::ArgAction::Append)]
+    #[arg(long, num_args = 3, allow_negative_numbers = true, action = clap::ArgAction::Append)]
     pub b0_direction: Vec<f64>,
     /// Text file of B0 directions, one "x y z" per line, in --input order
     #[arg(long, conflicts_with = "b0_direction")]
@@ -2836,7 +2836,7 @@ pub struct SeparateCommonArgs {
     #[arg(long, default_value_t = 3.0)]
     pub field_strength: f64,
     /// B0 direction (3 values)
-    #[arg(long, num_args = 3, default_values_t = [0.0, 0.0, 1.0])]
+    #[arg(long, num_args = 3, allow_negative_numbers = true, default_values_t = [0.0, 0.0, 1.0])]
     pub b0_direction: Vec<f64>,
 }
 
@@ -3073,7 +3073,7 @@ pub struct QsmartArgs {
     #[arg(short, long)]
     pub output: PathBuf,
     /// B0 direction (3 values)
-    #[arg(long, num_args = 3, default_values_t = [0.0, 0.0, 1.0])]
+    #[arg(long, num_args = 3, allow_negative_numbers = true, default_values_t = [0.0, 0.0, 1.0])]
     pub b0_direction: Vec<f64>,
     /// B0 field strength in Tesla
     #[arg(long)]
@@ -3408,4 +3408,89 @@ pub enum MaskCombineArg {
     Or,
     /// Intersection — keep only voxels every section keeps.
     And,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::Parser;
+
+    fn parse(args: &[&str]) -> Cli {
+        Cli::try_parse_from([&["qsmxt"][..], args].concat())
+            .unwrap_or_else(|e| panic!("{args:?} did not parse:\n{e}"))
+    }
+
+    /// Oblique slabs give B0 directions with negative components, written as `-0.05`. Clap
+    /// reads a leading `-` as a flag unless the argument allows negative numbers, so every
+    /// `--b0-direction` must, in every position of the triple.
+    const DIRECTIONS: [[&str; 3]; 3] = [
+        ["-0.05", "0.09", "0.99"],
+        ["0.05", "-0.09", "0.99"],
+        ["0.05", "0.09", "-0.99"],
+    ];
+
+    fn expected(d: &[&str; 3]) -> Vec<f64> {
+        d.iter().map(|v| v.parse().unwrap()).collect()
+    }
+
+    #[test]
+    fn bgremove_vsharp_accepts_negative_b0_direction() {
+        for d in DIRECTIONS {
+            let cli = parse(&[&["bgremove", "vsharp", "f.nii", "-m", "m.nii", "-o", "o.nii",
+                "--b0-direction"][..], &d].concat());
+            let Command::Bgremove { command: BgremoveCommand::Vsharp(a) } = cli.command
+                else { panic!("expected bgremove vsharp") };
+            assert_eq!(a.common.b0_direction, expected(&d));
+        }
+    }
+
+    #[test]
+    fn invert_accepts_negative_b0_direction() {
+        for d in DIRECTIONS {
+            let cli = parse(&[&["invert", "tkd", "f.nii", "-m", "m.nii", "-o", "o.nii",
+                "--b0-direction"][..], &d].concat());
+            let Command::Invert { command: InvertCommand::Tkd(a) } = cli.command
+                else { panic!("expected invert tkd") };
+            assert_eq!(a.common.b0_direction, expected(&d));
+        }
+        // A negative B0 component followed by another flag still ends the triple there.
+        let cli = parse(&["invert", "rts", "f.nii", "-m", "m.nii", "-o", "o.nii",
+            "--b0-direction", "-0.05", "-0.09", "0.99", "--tol", "1e-3"]);
+        let Command::Invert { command: InvertCommand::Rts(a) } = cli.command
+            else { panic!("expected invert rts") };
+        assert_eq!(a.common.b0_direction, vec![-0.05, -0.09, 0.99]);
+        assert_eq!(a.tol, Some(1e-3));
+    }
+
+    #[test]
+    fn cosmos_accepts_repeated_negative_b0_directions() {
+        let cli = parse(&["invert", "cosmos", "-i", "a.nii", "-i", "b.nii", "-m", "m.nii",
+            "-o", "o.nii", "--b0-direction", "-0.05", "0.09", "0.99",
+            "--b0-direction", "0.05", "-0.09", "-0.99"]);
+        let Command::Invert { command: InvertCommand::Cosmos(a) } = cli.command
+            else { panic!("expected invert cosmos") };
+        assert_eq!(a.common.b0_direction, vec![-0.05, 0.09, 0.99, 0.05, -0.09, -0.99]);
+    }
+
+    #[test]
+    fn separate_and_qsmart_accept_negative_b0_direction() {
+        let cli = parse(&["separate", "r2star-qsm", "--qsm", "q.nii", "-m", "m.nii", "-o", "out",
+            "--r2star", "r.nii", "--b0-direction", "0.05", "-0.09", "0.99"]);
+        let Command::Separate { command: SeparateCommand::R2starQsm(a) } = cli.command
+            else { panic!("expected separate r2star-qsm") };
+        assert_eq!(a.common.b0_direction, vec![0.05, -0.09, 0.99]);
+
+        let cli = parse(&["qsmart", "f.nii", "-m", "m.nii", "-o", "o.nii", "--field-strength", "3",
+            "--echo-time", "0.02", "--b0-direction", "0.05", "0.09", "-0.99"]);
+        let Command::Qsmart(a) = cli.command else { panic!("expected qsmart") };
+        assert_eq!(a.b0_direction, vec![0.05, 0.09, -0.99]);
+    }
+
+    /// `--obliquity-threshold -1` is the documented way to disable resampling.
+    #[test]
+    fn run_accepts_negative_obliquity_threshold() {
+        let cli = parse(&["run", "bids", "--obliquity-threshold", "-1"]);
+        let Command::Run(run) = cli.command else { panic!("expected run") };
+        assert_eq!(run.pipeline.obliquity_threshold, Some(-1.0));
+    }
 }
