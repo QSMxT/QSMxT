@@ -1520,7 +1520,10 @@ pub struct RunArgs {
     #[arg(long)]
     pub force: bool,
 
-    /// Remove intermediate files after pipeline completes (keep only final outputs)
+    /// Once every run (and any multi-orientation combination) is done, delete the intermediate
+    /// images under workflow/. Published outputs, per-step provenance and the cache state are
+    /// kept: a re-run with the same configuration recomputes nothing, one with a changed
+    /// configuration recomputes the intermediates it needs
     #[arg(long)]
     pub clean_intermediates: bool,
 }

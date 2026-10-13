@@ -236,8 +236,7 @@ fn load_member(output: &DerivativeOutputs, run: &QsmRun) -> crate::Result<Member
     if !field_path.exists() {
         return Err(QsmxtError::Config(format!(
             "no local field for {} at {} — the orientation's own pipeline must run before the \
-             group is combined (and --clean-intermediates removes exactly this file, so leave \
-             it off for multi-orientation runs)",
+             group is combined",
             run.key,
             field_path.display()
         )));

@@ -112,14 +112,20 @@ impl StageContext<'_> {
         let prov_path = self.output.provenance_path(&self.run.key, step);
         write_step_provenance(&prov_path, step, algorithm, &parameters, inputs, &output_paths, start)?;
 
-        // Whatever read this step's previous output is stale now that it has been recomputed —
-        // even when its own parameters did not change (a step newly switched on, say), which the
-        // per-step parameter hashes alone would not notice.
-        for ds in crate::pipeline::graph::downstream_of(step) {
-            self.state.completed_steps.remove(&ds);
+        // Whatever read this step's previous output is stale now that it has been recomputed with
+        // other parameters, or for the first time (a step newly switched on, say), which the
+        // downstream steps' own parameter hashes would not notice. Recomputed with the same
+        // parameters — its files were missing, or cleaned — it made the same output, and what
+        // read it stays cached.
+        let hash = crate::pipeline::graph::step_params_hash(algorithm, &parameters);
+        let same_as_before = self.state.completed_steps.get(step)
+            .is_some_and(|r| r.params_hash.as_deref() == Some(hash.as_str()));
+        if !same_as_before {
+            for ds in crate::pipeline::graph::downstream_of(step) {
+                self.state.completed_steps.remove(&ds);
+            }
         }
         // Mark step done with params hash
-        let hash = crate::pipeline::graph::step_params_hash(algorithm, &parameters);
         self.state.mark_completed(step, output_paths, Some(hash));
         self.state.save(self.state_path)
     }
@@ -307,7 +313,6 @@ pub fn run_pipeline_cached(
     config: &PipelineConfig,
     output: &DerivativeOutputs,
     force: bool,
-    clean_intermediates: bool,
     progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
     let state_path = output.state_path(&qsm_run.key);
@@ -328,7 +333,7 @@ pub fn run_pipeline_cached(
 
     if !needs_phase {
         log::info!("No outputs enabled — nothing to process");
-        state.mark_run_complete();
+        state.mark_run_complete(config);
         state.save(&state_path)?;
         return Ok(());
     }
@@ -442,13 +447,8 @@ pub fn run_pipeline_cached(
 
     stage_output_space(&mut ctx, progress)?;
 
-    ctx.state.mark_run_complete();
+    ctx.state.mark_run_complete(config);
     ctx.state.save(&state_path)?;
-
-    if clean_intermediates {
-        crate::pipeline::graph::clean_intermediates(ctx.state, &output.output_dir, &qsm_run.key);
-        let _ = std::fs::remove_dir_all(output.working_grid_dir(&qsm_run.key));
-    }
 
     Ok(())
 }
@@ -509,7 +509,9 @@ fn validate_run_dims(run: &QsmRun, reference: &NiftiData) -> crate::Result<()> {
 fn restore_working_grid(
     run: &QsmRun, output: &DerivativeOutputs, state: &mut PipelineState, state_path: &Path,
 ) -> crate::Result<()> {
-    if !state.completed_steps.contains_key("output_space") {
+    // Same configuration, every output in place: nothing will be recomputed, so nothing will read
+    // `anat/` on the working grid, and the outputs can stay where the last run left them.
+    if !state.completed_steps.contains_key("output_space") || state.config_unchanged {
         return Ok(());
     }
     let stash = output.working_grid_dir(&run.key);
@@ -5321,7 +5323,7 @@ mod oblique_run_tests {
         config.pipeline.do_t2starmap = true;
         config.pipeline.do_r2starmap = true;
         let output = DerivativeOutputs::new(&dir.path().join("out"));
-        run_pipeline_cached(&run, &config, &output, true, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &config, &output, true, &|_| {}).unwrap();
         assert_eq!(voxels(&output.r2star_path(&run.key)), ACQUIRED);
     }
 
@@ -5333,16 +5335,16 @@ mod oblique_run_tests {
         let run = oblique_run(dir.path(), "a", 3);
         let output = DerivativeOutputs::new(&dir.path().join("out"));
         let mut config = resampling_config();
-        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
 
         config.inversion.algorithm = QsmAlgorithm::Tkd;
-        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
         assert_eq!(voxels(&output.mask_path(&run.key)), ACQUIRED);
 
         // Asking for the working grid on a re-run brings the working-grid outputs back.
         config.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
-        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
         assert_ne!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
     }
 
@@ -5355,14 +5357,14 @@ mod oblique_run_tests {
         let a = oblique_run(dir.path(), "a", 1);
         let mut working = resampling_config();
         working.pipeline.output_space = crate::pipeline::config::OutputSpace::Working;
-        run_pipeline_cached(&a, &working, &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&a, &working, &output, false, &|_| {}).unwrap();
         let a_working = voxels(&output.mask_path(&a.key));
         assert_ne!(a_working, ACQUIRED);
 
         // `acq-a_run-2` starts with `acq-a`'s basename, so it is the harder neighbour to tell apart.
         let mut b = oblique_run(dir.path(), "a", 1);
         b.key.run = Some("2".into());
-        run_pipeline_cached(&b, &resampling_config(), &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&b, &resampling_config(), &output, false, &|_| {}).unwrap();
         assert_eq!(voxels(&output.mask_path(&b.key)), ACQUIRED);
         assert_eq!(voxels(&output.mask_path(&a.key)), a_working, "run a's mask was resampled by run b");
     }
@@ -5383,7 +5385,7 @@ mod oblique_run_tests {
         config.masking.two_pass = true;
         let deriv = dir.path().join("out");
         let output = DerivativeOutputs::new(&deriv);
-        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
         crate::bids::bidsprov::write_provenance(&deriv, std::slice::from_ref(&run), &[], &output, "qsmxt run")
             .unwrap();
 
@@ -5464,7 +5466,7 @@ mod oblique_run_tests {
         let mut config = PipelineConfig::default();
         config.motion_correction.enabled = true;
         config.masking.two_pass = true;
-        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
 
         let k = &run.key;
         let count = |m: &[u8]| m.iter().filter(|&&v| v != 0).count();
@@ -5488,7 +5490,7 @@ mod oblique_run_tests {
         // Motion correction off: the coverage mask is withdrawn and reconstruction runs on the
         // brain mask again, rather than reusing what was cached against the coverage.
         config.motion_correction.enabled = false;
-        run_pipeline_cached(&run, &config, &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
         assert!(!coverage_path.exists(), "a stale coverage mask stays published");
         let bg = load_mask(&output.bg_mask_path(k)).unwrap();
         assert!(bg.iter().zip(&coverage).any(|(&v, &c)| v != 0 && c == 0),
@@ -5502,9 +5504,23 @@ mod oblique_run_tests {
         let dir = tempfile::tempdir().unwrap();
         let run = oblique_run(dir.path(), "a", 1);
         let output = DerivativeOutputs::new(&dir.path().join("out"));
-        run_pipeline_cached(&run, &resampling_config(), &output, false, true, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &resampling_config(), &output, false, &|_| {}).unwrap();
+        crate::commands::run::clean_run(&output, &run);
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
         assert!(!output.working_grid_dir(&run.key).exists());
+        // Re-run with the same configuration: nothing is recomputed, and nothing is lost for want
+        // of the working-grid copies that cleaning removed.
+        let mtime = |p: PathBuf| std::fs::metadata(p).unwrap().modified().unwrap();
+        let before = mtime(output.qsm_path(&run.key));
+        run_pipeline_cached(&run, &resampling_config(), &output, false, &|_| {}).unwrap();
+        assert_eq!(mtime(output.qsm_path(&run.key)), before, "the re-run recomputed χ");
+        assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
+        // A changed configuration recomputes what it needs, and lands on the acquired grid again.
+        let mut tkd = resampling_config();
+        tkd.inversion.algorithm = QsmAlgorithm::Tkd;
+        run_pipeline_cached(&run, &tkd, &output, false, &|_| {}).unwrap();
+        assert_ne!(mtime(output.qsm_path(&run.key)), before);
+        assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
     }
 
     /// End to end with V-SHARP: the published χ is 0 on the rim background removal eroded, its
@@ -5515,7 +5531,7 @@ mod oblique_run_tests {
         let dir = tempfile::tempdir().unwrap();
         let run = oblique_run(dir.path(), "a", 3);
         let output = DerivativeOutputs::new(&dir.path().join("out"));
-        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, &|_| {}).unwrap();
 
         let chi = load_volume(&output.qsm_path(&run.key)).unwrap();
         let brain = load_mask(&output.mask_path(&run.key)).unwrap();
@@ -5545,11 +5561,11 @@ mod oblique_run_tests {
                 &std::fs::read_to_string(output.state_path(&run.key)).unwrap()).unwrap();
             state.run_metadata.unwrap().source_geometry.is_some()
         };
-        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, &|_| {}).unwrap();
         assert!(!resampled(&output));
-        run_pipeline_cached(&run, &resampling_config(), &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &resampling_config(), &output, false, &|_| {}).unwrap();
         assert!(resampled(&output));
-        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, false, &|_| {}).unwrap();
+        run_pipeline_cached(&run, &PipelineConfig::default(), &output, false, &|_| {}).unwrap();
         assert!(!resampled(&output));
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
     }

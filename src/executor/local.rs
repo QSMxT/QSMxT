@@ -14,8 +14,6 @@ pub struct ExecutionConfig {
     pub mem_limit_bytes: Option<usize>,
     /// Force re-run, ignoring cached state
     pub force: bool,
-    /// Remove intermediate files after completion
-    pub clean_intermediates: bool,
     /// Optional source DICOM directory for `--export-dicom` (metadata inheritance).
     pub source_dicom: Option<std::path::PathBuf>,
     /// Optional subset of maps to export as DICOM (`--dicom-outputs`).
@@ -51,7 +49,6 @@ pub fn execute_local(
                 config,
                 output,
                 exec_config.force,
-                exec_config.clean_intermediates,
                 &|msg| { info!("{}: {}", run.key, msg); },
             );
 
@@ -206,7 +203,6 @@ mod tests {
             n_procs: 8,
             mem_limit_bytes: None,
             force: false,
-            clean_intermediates: false,
             source_dicom: None,
             dicom_outputs: None,
         };
@@ -220,7 +216,6 @@ mod tests {
             n_procs: 8,
             mem_limit_bytes: Some(1024 * 1024 * 1024),
             force: false,
-            clean_intermediates: false,
             source_dicom: None,
             dicom_outputs: None,
         };
@@ -238,7 +233,6 @@ mod tests {
             n_procs: 16,
             mem_limit_bytes: Some(per_run * 2),
             force: false,
-            clean_intermediates: false,
             source_dicom: None,
             dicom_outputs: None,
         };
@@ -255,7 +249,6 @@ mod tests {
             n_procs: 16,
             mem_limit_bytes: Some(per_run),
             force: false,
-            clean_intermediates: false,
             source_dicom: None,
             dicom_outputs: None,
         };
