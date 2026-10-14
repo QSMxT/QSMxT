@@ -180,6 +180,18 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
 
 ### Added
 
+- **TUI: copy the methods text.** On the Methods tab, `Enter` (or `c`/`y`) copies the generated
+  methods text (Markdown) to the clipboard and says so in the footer. It goes through the
+  terminal (OSC 52), so it works when QSMxT runs on a remote server over SSH, in terminals that
+  support it (and in tmux with `set-clipboard on`).
+- **TUI: a Run button on the Execution tab.** The last row does what `F5` does, with the same
+  checks, and is labelled with what will happen: Run, Dry run, Write SLURM scripts or Submit
+  SLURM jobs.
+- **TUI: sub-tabs with the arrow keys.** A tab with sub-tabs opens with focus on its sub-tab
+  strip (the current one yellow): `←`/`→` choose a sub-tab, `↓` or `Enter` go into its settings,
+  and `↑` from the first setting goes back to the strip. `[`/`]` work as before; tabs without
+  sub-tabs open on their first setting as before. The footer lists the keys for where focus is.
+
 - **Release archives are checksum-verified before they are installed** (#281). Each release now
   carries a `SHA256SUMS` file covering every archive. `qsmxt update`, `install.sh` and
   `install.ps1` download it, check the archive against it before extracting anything, and refuse
@@ -265,6 +277,9 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
   command, or if the generated command does not reproduce the configuration.
 
 ### Changed
+
+- **TUI: the Separation tab is now "χ-separation".**
+- **TUI: `Enter` on the Methods tab copies the methods text** instead of running; `F5` runs.
 
 - **Methods text, help and docs say what is done, plainly.** The generated methods paragraph
   states settings as settings (V-SHARP "with deconvolution disabled"), drops explanations of
