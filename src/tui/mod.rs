@@ -1,5 +1,6 @@
 mod app;
 mod command;
+mod tabs;
 mod ui;
 
 use std::io;

@@ -2,7 +2,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Tabs, Wrap},
+    widgets::{Block, Borders, Clear, List, ListItem, ListState, Paragraph, Scrollbar, ScrollbarOrientation, ScrollbarState, Wrap},
     Frame,
 };
 
@@ -22,14 +22,14 @@ pub fn draw(f: &mut Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),             // tab bar
+            Constraint::Length(super::tabs::header_height()), // tab bar
             Constraint::Min(8),               // form
             Constraint::Length(preview_height), // command preview (dynamic)
             Constraint::Length(1),             // help bar
         ])
         .split(f.area());
 
-    draw_tabs(f, app, chunks[0]);
+    super::tabs::draw_header(f, app, chunks[0]);
     draw_form(f, app, chunks[1]);
     draw_command_preview_with(f, &cmd, chunks[2]);
     draw_help_bar(f, app, chunks[3]);
@@ -258,29 +258,6 @@ fn render_scrollable(
     f.render_stateful_widget(scrollbar, area, &mut scrollbar_state);
 }
 
-fn draw_tabs(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
-    let titles: Vec<Line> = TAB_NAMES
-        .iter()
-        .enumerate()
-        .map(|(i, t)| Line::from(format!(" {}:{} ", i + 1, t)))
-        .collect();
-
-    let tabs = Tabs::new(titles)
-        .block(Block::default().borders(Borders::ALL).title(format!(
-            " QSMxT ({}) / QSM.rs ({}) ",
-            env!("CARGO_PKG_VERSION"), env!("QSM_CORE_DESCRIBE")
-        )))
-        .select(app.active_tab)
-        .highlight_style(
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        )
-        .divider("|");
-
-    f.render_widget(tabs, area);
-}
-
 fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     if app.active_tab == TAB_INPUT {
         draw_input_tab(f, app, area);
@@ -297,9 +274,7 @@ fn draw_form(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 }
 
 fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Input ");
+    let block = super::tabs::panel(app);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -1268,31 +1243,18 @@ fn draw_dicom_series_section(
 
 /// A row-based tab (all but Input and Methods): its sub-tabs, then one named row per setting.
 fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(format!(" {} ", TAB_NAMES[app.active_tab]));
+    let block = super::tabs::panel(app);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
     // The sub-tabs (second tab row), when the tab has more than one; then the form and its help.
-    let pages = app.pages(app.active_tab);
-    let bar = if pages.len() > 1 { 2 } else { 0 };
+    let bar = super::tabs::subtab_rows(app);
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Length(bar), Constraint::Min(4), Constraint::Length(2)])
         .split(inner);
     if bar > 0 {
-        let current = app.page();
-        let titles: Vec<Line> = pages.iter().map(|p| Line::from(format!(" {} ", p.label()))).collect();
-        let sub = Tabs::new(titles)
-            .select(pages.iter().position(|&p| Some(p) == current).unwrap_or(0))
-            .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD | Modifier::UNDERLINED))
-            .divider("|");
-        let hint = Paragraph::new(Line::from(Span::styled(" [ ] switch sub-tabs", Style::default().fg(Color::DarkGray))));
-        let bar_rows = Layout::default().direction(Direction::Vertical)
-            .constraints([Constraint::Length(1), Constraint::Length(1)]).split(chunks[0]);
-        f.render_widget(sub, bar_rows[0]);
-        f.render_widget(hint, bar_rows[1]);
+        super::tabs::draw_subtabs(f, app, chunks[0]);
     }
     let form_area = chunks[1];
     let help_area = chunks[2];
@@ -1791,9 +1753,7 @@ fn draw_methods_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
         Err(e) => format!("# Invalid setting\n\n{e}\n\nThe run would refuse this configuration."),
     };
 
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .title(" Methods ");
+    let block = super::tabs::panel(app);
     let inner = block.inner(area);
     f.render_widget(block, area);
 
@@ -2194,7 +2154,7 @@ mod tests {
                 app.active_tab = tab;
                 app.active_field = 0;
                 let text = screen_text(&render_app(&mut app));
-                assert!(text.contains(&format!("{}:{name}", tab + 1)), "tab bar on tab {tab}");
+                assert!(text.contains(&format!("{} {name}", tab + 1)), "tab bar on tab {tab}:\n{text}");
                 assert!(text.contains(&format!("1-{}", TAB_NAMES.len())), "help bar names every tab digit");
             }
         }
