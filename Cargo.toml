@@ -31,7 +31,7 @@ dl = ["qsm-core/onnx", "qsm-core/download"]
 # (motion correction, R2PRIMEnet field gate, slice-gap check). A `rev` pin is what CI can resolve
 # (a `path` pin cannot), but it must become a `tag` pin before the next QSMxT release, or qsmbly
 # (which pins qsmxt-config) has no release to match. qsmxt-config must move in lockstep.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "42ab620190ad315c9dcf7aa8ec4a036402002b7e", features = ["parallel"] }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", tag = "v0.39.0", features = ["parallel"] }
 qsmxt-config = { path = "crates/qsmxt-config" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
