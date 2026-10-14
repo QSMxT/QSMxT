@@ -224,7 +224,7 @@ mod tests {
                      "b0-estimation", "b0-weight-type", "laplacian-solver", "output-space"] {
             let arg = run.get_arguments().find(|a| a.get_long() == Some(flag))
                 .unwrap_or_else(|| panic!("`qsmxt run` has no --{flag}"));
-            for v in arg.get_possible_values() {
+            for v in arg.get_possible_values().iter().filter(|v| !v.is_hide_set()) {
                 assert!(algorithms.contains(&format!("`{}`", v.get_name()))
                         || algorithms.contains(&format!("`--{flag} {}`", v.get_name())),
                     "reference/algorithms.md does not describe --{flag} `{}`", v.get_name());

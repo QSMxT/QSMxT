@@ -1759,7 +1759,7 @@ pub enum MaskCommand {
     /// Deep-learning rodent brain extraction (RS2-Net; downloads weights on first use)
     Rs2Net(MaskRs2NetArgs),
     /// Run a `--mask-preset` recipe on an image (robust-threshold, bet, hd-bet, bet-and-phase,
-    /// rs2-net, mouse-bet)
+    /// rs2-net)
     Preset(MaskPresetArgs),
     /// Alias for `preset robust-threshold`
     Robust(MaskRobustArgs),
@@ -3549,7 +3549,11 @@ pub enum MaskInputArg {
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum MaskPresetArg {
-    RobustThreshold, Bet, HdBet, BetAndPhase, Rs2Net, MouseBet,
+    RobustThreshold, Bet, HdBet, BetAndPhase, Rs2Net,
+    /// Removed. Still parsed, and hidden, so a script that asks for it gets an error that says
+    /// what to use instead rather than clap's bare "invalid value".
+    #[value(hide = true)]
+    MouseBet,
 }
 
 /// How multiple `--mask` sections fold into the final mask.

@@ -20,18 +20,21 @@ pub fn load_config(path: &Path) -> crate::Result<PipelineConfig> {
 }
 
 /// The recipe behind a `--mask-preset` value — shared by `run` and `qsmxt mask preset`.
-pub fn mask_preset_recipe(preset: cli::MaskPresetArg) -> MaskRecipe {
+pub fn mask_preset_recipe(preset: cli::MaskPresetArg) -> crate::Result<MaskRecipe> {
     let name = match preset {
         cli::MaskPresetArg::RobustThreshold => "robust-threshold",
         cli::MaskPresetArg::Bet => "bet",
         cli::MaskPresetArg::HdBet => "hd-bet",
         cli::MaskPresetArg::BetAndPhase => "bet-and-phase",
         cli::MaskPresetArg::Rs2Net => "rs2-net",
-        cli::MaskPresetArg::MouseBet => "mouse-bet",
+        cli::MaskPresetArg::MouseBet => return Err(QsmxtError::Config(
+            "the `mouse-bet` mask preset has been removed. For rodent data use `--mask-preset \
+             rs2-net`; BET on scaled voxel sizes is still available as a mask step, e.g. \
+             `--mask magnitude,bet:0.5:scale=10,erode:1`".to_string())),
     };
-    mask_presets().into_iter().find(|(n, _)| *n == name)
+    Ok(mask_presets().into_iter().find(|(n, _)| *n == name)
         .map(|(_, r)| r)
-        .expect("every MaskPresetArg is in mask_presets()")
+        .expect("every MaskPresetArg is in mask_presets()"))
 }
 
 /// Parse `<input>,<op>,<op>,...` mask-section specs — the `--mask` and `--two-pass-mask` grammar.
@@ -669,7 +672,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(preset) = args.mask_preset {
             // A preset is a whole recipe — it replaces the combine mode and the post-combine
             // refinements too, not just the sections.
-            let recipe = mask_preset_recipe(preset);
+            let recipe = mask_preset_recipe(preset)?;
             config.masking.sections = recipe.sections;
             config.masking.combine = recipe.combine;
             config.masking.refinements = recipe.refinements;
@@ -1065,6 +1068,16 @@ mod tests {
             "--mask", "phase-quality,threshold:otsu",
         ]);
         assert_ne!(c.masking.sections, qsmart_default_mask_sections());
+    }
+
+    #[test]
+    fn the_removed_mouse_bet_preset_says_what_to_use_instead() {
+        let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", "--mask-preset", "mouse-bet"])
+            .expect("still parsed, so it can be explained");
+        let cli::Command::Run(run_args) = cli.command else { panic!("expected Run") };
+        let err = apply_run_overrides(&mut PipelineConfig::default(), &run_args.pipeline)
+            .expect_err("mouse-bet was removed").to_string();
+        assert!(err.contains("removed") && err.contains("rs2-net") && err.contains("scale="), "{err}");
     }
 
     #[test]

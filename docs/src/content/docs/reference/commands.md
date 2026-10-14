@@ -67,7 +67,7 @@ qsmxt <cmd> --help # full help for a command
 | `--qsm-algorithm <A>` | Dipole inversion method |
 | `--unwrapping-algorithm <A>` | Phase unwrapping method |
 | `--bf-algorithm <A>` | Background field removal method |
-| `--mask-preset <P>` | Masking recipe (`robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mouse-bet`) |
+| `--mask-preset <P>` | Masking recipe (`robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`) |
 | `--mask <SECTION>` | Custom mask section, repeatable (e.g. `magnitude,bet:0.5,erode:2`) |
 | `--mask-combine <or\|and>` | How multiple `--mask` sections combine (default `or`) |
 | `--mask-refine <OP>` | Refinement applied to the combined mask, repeatable (e.g. `fill-holes:0`) |

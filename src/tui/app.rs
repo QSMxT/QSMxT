@@ -1278,14 +1278,13 @@ pub const R2PRIME_STRATEGY_HELP: &[&str] = &[
     "Always predict R2' from R2* with R2PRIMEnet, even when a MESE acquisition is available (an estimate, not a measurement)",
 ];
 
-pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "bet-and-phase", "rs2-net", "mouse-bet", "custom"];
+pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "bet-and-phase", "rs2-net", "custom"];
 pub const MASK_PRESET_HELP: &[&str] = &[
     "Otsu threshold + dilate + fill holes + erode (recommended for brain)",
     "BET brain extraction + erode",
     "HD-BET deep-learning brain extraction + signal-gated erosion (QSM-CI harmonization masking)",
     "BET on the magnitude AND thresholded phase quality, then fill holes + erode (ISMRM EMTP consensus)",
     "RS2-Net deep-learning rodent brain extraction (mouse, rat)",
-    "BET on voxel sizes scaled x10 for rodent data — the fallback when RS2-Net's weights are unavailable",
     "Fully custom mask pipeline (edit steps below)",
 ];
 /// Index of the "custom" preset — set automatically when the steps are edited by hand, and
@@ -9435,9 +9434,6 @@ mod tests {
         assert_eq!(app.pipeline_state.mask_combine, crate::pipeline::config::MaskCombine::Or);
         assert!(app.pipeline_state.mask_combined_refinements.is_empty());
         app.handle_key(key(KeyCode::Right));
-        assert_eq!(app.pipeline_state.mask_preset, 5); // voxel-scaled BET (rodent fallback)
-        assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::mouse_bet_mask_sections());
-        app.handle_key(key(KeyCode::Right));
         assert_eq!(app.pipeline_state.mask_preset, 0, "cycling skips 'custom'");
     }
 
@@ -9501,7 +9497,8 @@ mod tests {
         assert_eq!(MASK_PRESET_OPTIONS.len(), MASK_PRESET_HELP.len());
 
         let cli_names: Vec<String> = crate::cli::MaskPresetArg::value_variants().iter()
-            .map(|v| v.to_possible_value().unwrap().get_name().to_string()).collect();
+            .filter_map(|v| v.to_possible_value()).filter(|v| !v.is_hide_set())
+            .map(|v| v.get_name().to_string()).collect();
         assert_eq!(cli_names, names, "--mask-preset values drifted from mask_presets()");
     }
 

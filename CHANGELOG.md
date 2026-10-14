@@ -520,3 +520,11 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
 - The Laplacian solver and its FFT pad are in the TUI (Field mapping → Unwrapping = laplacian →
   Solver / FFT Pad). `--laplacian-fft-pad` (and `field_mapping.laplacian_fft_pad`) takes one
   value or three (x y z). Default unchanged (64 on every axis).
+
+### Removed
+
+- **The `mouse-bet` mask preset.** `--mask-preset mouse-bet` and `qsmxt mask preset mouse-bet`
+  now stop with an error pointing to `--mask-preset rs2-net`; BET on scaled voxel sizes is still
+  available as a mask step (`bet:<f>:scale=<x>`, `--bet-voxel-scale`). Gone from the TUI's preset
+  list and the docs too.
+
