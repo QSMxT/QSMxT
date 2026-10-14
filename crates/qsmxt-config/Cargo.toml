@@ -7,7 +7,7 @@ license = "GPL-3.0-only"
 
 [dependencies]
 # TEMP: see the note in the root Cargo.toml. Must match the root pin exactly.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "fdc7ad9f24e6c53b97a8e98891ac1f3ef9df7690" }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "42ab620190ad315c9dcf7aa8ec4a036402002b7e" }
 serde = { version = "1", features = ["derive"] }
 # preserve_order: the methods text lists changed settings in struct order.
 serde_json = { version = "1", features = ["preserve_order"] }

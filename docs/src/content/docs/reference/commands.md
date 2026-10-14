@@ -36,7 +36,7 @@ pipeline, and run the same code as the corresponding pipeline stage. See
 | `invert` | Dipole inversion: every classical and deep-learning method, plus COSMOS and STI |
 | `separate` | Susceptibility source separation (paramagnetic / diamagnetic) |
 | `qsmart` | QSMART vessel-aware reconstruction from the total field |
-| `swi` | Susceptibility-weighted imaging (and minimum-intensity projection) |
+| `swi` | Susceptibility-weighted imaging with CLEAR-SWI (and minimum-intensity projection) |
 | `segment` | SynthSeg whole-brain segmentation of a magnitude image |
 | `r2star` | R2\* mapping from multi-echo magnitude |
 | `t2star` | T2\* mapping from multi-echo magnitude |

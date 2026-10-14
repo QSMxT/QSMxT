@@ -118,7 +118,9 @@ fn qsmxt_config_covers_all_qsm_core_params() {
     // estimate_offset / reliability_threshold_percentile are LinearFitConfig's, shared.
     cover!(q::fieldmap::RobustFitParams => c::RobustFitConfig,
         ignore: ["estimate_offset", "reliability_threshold_percentile"]);
-    cover!(q::swi::SwiParams => c::SwiConfig);
+    // CLEAR-SWI's magnitude processing and echo weighting stay at CLEARSWI.jl's defaults.
+    cover!(q::swi::SwiParams => c::SwiConfig,
+        ignore: ["mag_combine", "sensitivity", "softplus", "echo_weighting"]);
     // PhaseOffsetParams' one field is FieldMappingConfig.phase_offset_sigma (the MCPC-3D-S
     // phase-offset smoothing; the uncombined-coil sigma is coil_combination_sigma, QSMxT's own).
     assert_eq!(field_names::<q::utils::PhaseOffsetParams>(), vec!["sigma".to_string()],

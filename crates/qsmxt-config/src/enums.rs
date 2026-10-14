@@ -297,6 +297,55 @@ impl From<qsm_core::swi::PhaseScaling> for SwiScaling {
     }
 }
 
+/// How CLEAR-SWI unwraps the phase before combining the echoes.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub enum SwiUnwrap {
+    /// Each echo with the Laplacian method, high-pass filtered, then combined.
+    #[default]
+    Laplacian,
+    /// As `Laplacian`, slice by slice (2D multi-slice acquisitions).
+    LaplacianSlice,
+    /// All echoes together with ROMEO, combined, then high-pass filtered.
+    Romeo,
+}
+impl SwiUnwrap {
+    /// Every variant, in the order the CLI help and the TUI list them.
+    pub const ALL: [SwiUnwrap; 3] = [Self::Laplacian, Self::LaplacianSlice, Self::Romeo];
+
+    /// The name the CLI, the config file and the TUI use.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Laplacian => "laplacian", Self::LaplacianSlice => "laplacian-slice", Self::Romeo => "romeo",
+        }
+    }
+}
+impl fmt::Display for SwiUnwrap {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+impl From<SwiUnwrap> for qsm_core::swi::SwiUnwrap {
+    fn from(s: SwiUnwrap) -> Self {
+        use qsm_core::swi::SwiUnwrap as U;
+        match s {
+            SwiUnwrap::Laplacian => U::Laplacian,
+            SwiUnwrap::LaplacianSlice => U::LaplacianSlice,
+            SwiUnwrap::Romeo => U::Romeo,
+        }
+    }
+}
+impl From<qsm_core::swi::SwiUnwrap> for SwiUnwrap {
+    fn from(u: qsm_core::swi::SwiUnwrap) -> Self {
+        use qsm_core::swi::SwiUnwrap as U;
+        match u {
+            U::Laplacian => Self::Laplacian,
+            U::LaplacianSlice => Self::LaplacianSlice,
+            U::Romeo => Self::Romeo,
+        }
+    }
+}
+
 /// How R2′ is obtained when no custom map is supplied.
 ///
 /// R2′ = R2* − R2 is a *measurement*, and it needs a spin-echo acquisition to measure R2 from.

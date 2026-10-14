@@ -957,21 +957,37 @@ mod integration_tests {
     #[test]
     fn test_swi() {
         let dir = tempfile::tempdir().unwrap();
-        let phase = dir.path().join("phase.nii");
-        let mag = dir.path().join("mag.nii");
-        let mask = dir.path().join("mask.nii");
         let output = dir.path().join("swi.nii");
-        testutils::write_phase(&phase);
-        testutils::write_magnitude(&mag);
-        testutils::write_mask(&mask);
+        let (mut phase, mut magnitude) = (vec![], vec![]);
+        for e in 1..=2 {
+            let (p, m) = (dir.path().join(format!("phase{e}.nii")), dir.path().join(format!("mag{e}.nii")));
+            testutils::write_phase(&p);
+            testutils::write_magnitude(&m);
+            phase.push(p);
+            magnitude.push(m);
+        }
 
+        // Two echoes, CLEAR-SWI's own mask.
         super::swi::execute(SwiArgs {
-            phase, magnitude: mag, mask,
+            phase: phase.clone(), magnitude: magnitude.clone(), tes: Some(vec![0.004, 0.008]), mask: None,
             output: output.clone(),
             mip: false, mip_output: None,
             swi_params: Default::default(),
         }).unwrap();
         assert!(output.exists());
+
+        // Several echoes need their echo times: none given, no sidecars.
+        let err = super::swi::execute(SwiArgs {
+            phase: phase.clone(), magnitude: magnitude.clone(), tes: None, mask: None,
+            output: output.clone(), mip: false, mip_output: None, swi_params: Default::default(),
+        }).unwrap_err().to_string();
+        assert!(err.contains("echo times"), "{err}");
+        // One magnitude per phase.
+        let err = super::swi::execute(SwiArgs {
+            phase, magnitude: magnitude[..1].to_vec(), tes: Some(vec![0.004, 0.008]), mask: None,
+            output, mip: false, mip_output: None, swi_params: Default::default(),
+        }).unwrap_err().to_string();
+        assert!(err.contains("magnitude"), "{err}");
     }
 
     // --- R2* ---
@@ -1834,7 +1850,7 @@ mod integration_tests {
         testutils::write_mask(&mask);
 
         super::swi::execute(SwiArgs {
-            phase, magnitude: mag, mask,
+            phase: vec![phase], magnitude: vec![mag], tes: None, mask: Some(mask),
             output: output.clone(),
             mip: true, mip_output: Some(mip.clone()),
             swi_params: Default::default(),
@@ -2845,7 +2861,7 @@ mod multiorient_tests {
         let small_mask = d.join("small_mask.nii");
         crate::testutils::write_mask(&small_mask);
         super::swi::execute(SwiArgs {
-            phase: phase.clone(), magnitude: mag.clone(), mask: small_mask.clone(),
+            phase: vec![phase.clone()], magnitude: vec![mag.clone()], tes: None, mask: Some(small_mask.clone()),
             output: d.join(name(swi.clone())),
             mip: true, mip_output: None, swi_params: Default::default(),
         }).unwrap();

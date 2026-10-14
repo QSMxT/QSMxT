@@ -92,6 +92,15 @@ fn hole_closing_warnings(sections: &[MaskSection]) -> Vec<String> {
         .collect()
 }
 
+/// Map a CLI SWI unwrapping argument to the config enum (shared by `run` and `qsmxt swi`).
+pub fn swi_unwrap_arg_to_config(a: cli::SwiUnwrapArg) -> qsmxt_config::SwiUnwrap {
+    match a {
+        cli::SwiUnwrapArg::Laplacian => qsmxt_config::SwiUnwrap::Laplacian,
+        cli::SwiUnwrapArg::LaplacianSlice => qsmxt_config::SwiUnwrap::LaplacianSlice,
+        cli::SwiUnwrapArg::Romeo => qsmxt_config::SwiUnwrap::Romeo,
+    }
+}
+
 /// Map a CLI SWI scaling argument to the config enum — the one place `run` and `qsmxt swi` both
 /// go through, so the two cannot disagree about what a value means.
 pub fn swi_scaling_arg_to_config(a: cli::SwiScalingArg) -> qsmxt_config::SwiScaling {
@@ -540,6 +549,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(ref s) = args.swi_params.swi_hp_sigma {
             if s.len() == 3 { config.swi.hp_sigma = [s[0], s[1], s[2]]; }
         }
+        if let Some(v) = args.swi_params.swi_unwrapping { config.swi.unwrap = swi_unwrap_arg_to_config(v); }
         if let Some(v) = args.swi_params.swi_scaling { config.swi.scaling = swi_scaling_arg_to_config(v); }
         if let Some(v) = args.swi_params.swi_strength { config.swi.strength = v; }
         if let Some(v) = args.swi_params.swi_mip_window { config.swi.mip_window = v; }

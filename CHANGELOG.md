@@ -8,6 +8,19 @@ upgrade.
 
 ### Output changes with default settings
 
+- **SWI is CLEAR-SWI over every echo** (QSM.rs#188). `--do-swi` used to compute the SWI from
+  the first echo's phase only, on the combined magnitude, within the brain mask. It now runs
+  CLEAR-SWI (Eckstein et al., 2021) with CLEARSWI.jl's defaults, as QSMxT v8 did: RSS-combined,
+  sensitivity-corrected, softplus-scaled magnitude; each echo Laplacian-unwrapped and high-pass
+  filtered, then combined weighted by magnitude × TE; tanh phase mask; 7-slice minIP. The phase is
+  filtered within CLEAR-SWI's own head mask rather than the brain mask, so the SWI covers the head
+  (outside that mask the phase weight is constant, not zero). Every multi-echo run's `_swi` and
+  `_minIP` change; cached SWIs are recomputed. New `--swi-unwrapping laplacian|laplacian-slice|romeo`
+  (config `swi.unwrap`, "Unwrapping" under SWI in the TUI). `qsmxt swi` takes one or more echoes:
+  `--phase <files…> --magnitude <files…> [--tes <s…>]`, `--mask` now optional (it was two
+  positional files and a required mask). The methods text names CLEAR-SWI and only the non-default
+  SWI settings.
+
 - **iLSQR pads by 16 mm instead of 64 mm, and the padding is an option** (QSM.rs#186).
   `--ilsqr-pad-mm <MM>` (mm per side; also `qsmxt invert ilsqr --pad-mm`, the config's
   `inversion.ilsqr.pad_mm`, "Pad (mm)" under iLSQR in the TUI, the cache key and the methods

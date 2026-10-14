@@ -252,9 +252,9 @@ const CITE_MSMV: Citation = Citation {
     text: "Roberts, A.G., et al. (2024). \"Maximum spherical mean value (mSMV) filtering for whole-brain quantitative susceptibility mapping.\" *Magnetic Resonance in Medicine*, 91(4):1586-1597. https://doi.org/10.1002/mrm.29963",
 };
 
-const CITE_SWI: Citation = Citation {
-    key: "haacke2004",
-    text: "Haacke, E.M., Xu, Y., Cheng, Y.-C.N., Reichenbach, J.R. (2004). \"Susceptibility weighted imaging (SWI).\" *Magnetic Resonance in Medicine*, 52(3):612-618. https://doi.org/10.1002/mrm.20198",
+const CITE_CLEARSWI: Citation = Citation {
+    key: "eckstein2021",
+    text: "Eckstein, K., Bachrata, B., Hangel, G., Widhalm, G., Enzinger, C., Barth, M., Trattnig, S., Robinson, S.D. (2021). \"Improved susceptibility weighted imaging at ultra-high field using bipolar multi-echo acquisition and optimized image processing: CLEAR-SWI.\" *NeuroImage*, 237:118175. https://doi.org/10.1016/j.neuroimage.2021.118175",
 };
 
 const CITE_ARLO: Citation = Citation {
@@ -865,32 +865,39 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 
     // SWI
     if config.pipeline.do_swi {
-        // What the runner does: echo 1 only, Laplacian-unwrapped, then QSM.rs's single-echo
-        // phase-mask SWI on the combined magnitude. Not CLEAR-SWI, which combines the echoes.
         let (swi, d) = (&config.swi, SwiConfig::default());
-        let filter = if swi.hp_sigma.iter().zip(d.hp_sigma).any(|(a, b)| differs(*a, b)) {
-            format!(" with a Gaussian (σ = {} voxels)",
-                swi.hp_sigma.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" × "))
-        } else {
-            String::new()
-        };
-        let mut mask = Changed::default();
-        mask.add(swi.scaling != d.scaling, || format!("{} scaling", swi.scaling));
-        mask.add(differs(swi.strength, d.strength), || format!("power {}", swi.strength));
+        let mut changed: Vec<String> = Vec::new();
+        match swi.unwrap {
+            _ if swi.unwrap == d.unwrap => {}
+            SwiUnwrap::Romeo => {
+                changed.push("ROMEO phase unwrapping (Dymerska et al., 2021)".into());
+                add_citation(&mut citations, &CITE_ROMEO);
+            }
+            SwiUnwrap::LaplacianSlice => changed.push("slice-wise Laplacian phase unwrapping".into()),
+            SwiUnwrap::Laplacian => changed.push("Laplacian phase unwrapping".into()),
+        }
+        if swi.hp_sigma.iter().zip(d.hp_sigma).any(|(a, b)| differs(*a, b)) {
+            changed.push(format!(
+                "a high-pass filter σ of {} voxels",
+                swi.hp_sigma.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" × "),
+            ));
+        }
+        if swi.scaling != d.scaling {
+            changed.push(format!("{} phase-mask scaling", swi.scaling));
+        }
+        if differs(swi.strength, d.strength) {
+            changed.push(format!("phase-mask strength {}", swi.strength));
+        }
         let mip = if swi.mip_window != d.mip_window {
             format!("Minimum-intensity projections were taken over {}-slice slabs.", swi.mip_window)
         } else {
             "Minimum-intensity projections of these images were also computed.".to_string()
         };
+        let using = if changed.is_empty() { String::new() } else { format!(" using {}", join_list(&changed)) };
         sentences.push(format!(
-            "Susceptibility-weighted images (Haacke et al., 2004) were computed from the first echo: \
-             its phase was unwrapped with the Laplacian method (Schofield & Zhu, 2003), high-pass \
-             filtered{filter}, scaled into a phase mask{} and multiplied into the combined \
-             magnitude. {mip}",
-            mask.paren(),
+            "Susceptibility-weighted images were computed with CLEAR-SWI (Eckstein et al., 2021){using}. {mip}"
         ));
-        add_citation(&mut citations, &CITE_SWI);
-        add_citation(&mut citations, &CITE_LAPLACIAN_UNWRAP);
+        add_citation(&mut citations, &CITE_CLEARSWI);
     }
 
     // T2*/R2*
@@ -2118,10 +2125,20 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.pipeline.do_swi = true;
         let out = generate_methods(&config);
-        assert!(out.contains("Haacke et al., 2004"), "{out}");
-        assert!(out.contains("first echo"), "{out}");
-        // What runs is a single-echo phase-mask SWI, not the multi-echo CLEAR-SWI.
-        assert!(!out.contains("CLEAR-SWI"), "{out}");
+        // Defaults: the method and its citation, no parameter values.
+        assert!(out.contains("Susceptibility-weighted images were computed with CLEAR-SWI (Eckstein et al., 2021)."), "{out}");
+        assert!(out.contains("CLEAR-SWI.\" *NeuroImage*"), "{out}");
+        let sentence = out.split("Susceptibility-weighted images").nth(1).unwrap().split('.').next().unwrap();
+        assert!(!sentence.contains("using"), "{sentence}");
+
+        config.swi.unwrap = SwiUnwrap::Romeo;
+        config.swi.strength = 6.0;
+        config.swi.mip_window = 5;
+        let out = generate_methods(&config);
+        assert!(out.contains("CLEAR-SWI (Eckstein et al., 2021) using ROMEO phase unwrapping (Dymerska et al., 2021) \
+                              and phase-mask strength 6. Minimum-intensity projections were taken over \
+                              5-slice slabs."), "{out}");
+        assert!(out.contains("Dymerska, B., et al. (2021)"), "{out}");
     }
 
     #[test]
@@ -2824,11 +2841,11 @@ mod defaults_only_tests {
             (|c| { c.homogeneity.sigma_mm = 5.0; }, "(Eckstein et al., 2019; σ = 5 mm)"),
             (|c| c.masking.sections[0].refinements[0] = MaskOp::Dilate { iterations: 2 }, "followed by dilation (2 iterations), hole-filling, and erosion."),
             (|c| { c.pipeline.do_swi = true; c.swi.hp_sigma = [2.0, 2.0, 0.0]; },
-                "high-pass filtered with a Gaussian (σ = 2 × 2 × 0 voxels), scaled into a phase mask and"),
+                "CLEAR-SWI (Eckstein et al., 2021) using a high-pass filter σ of 2 × 2 × 0 voxels."),
             (|c| { c.pipeline.do_swi = true; c.swi.strength = 2.0; },
-                "high-pass filtered, scaled into a phase mask (power 2) and"),
+                "CLEAR-SWI (Eckstein et al., 2021) using phase-mask strength 2."),
             (|c| { c.pipeline.do_swi = true; c.swi.scaling = SwiScaling::Positive; },
-                "scaled into a phase mask (positive scaling) and"),
+                "CLEAR-SWI (Eckstein et al., 2021) using positive phase-mask scaling."),
             (|c| { c.pipeline.do_swi = true; c.swi.mip_window = 5; }, "taken over 5-slice slabs."),
             (|c| { c.pipeline.do_smwi = true; c.smwi.power = 2.5; },
                 "derived from the susceptibility map (mask raised to the power 2.5), separately"),

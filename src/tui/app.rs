@@ -4291,6 +4291,14 @@ fn forced_output_name(out: crate::pipeline::requirements::Output) -> &'static st
     }
 }
 
+/// The SWI unwrapping select: qsmxt_config's unwrappers, in [`super::command::SWI_UNWRAP_ARGS`]'s order.
+static SWI_UNWRAP_OPTIONS: LazyLock<Vec<&'static str>> =
+    LazyLock::new(|| qsmxt_config::SwiUnwrap::ALL.iter().map(|s| s.as_str()).collect());
+static SWI_UNWRAP_HELP: LazyLock<Vec<&'static str>> = LazyLock::new(|| vec![
+    "Each echo unwrapped with the Laplacian method and high-pass filtered, then combined",
+    "Laplacian unwrapping slice by slice, for 2D multi-slice acquisitions",
+    "All echoes unwrapped together with ROMEO, combined, then high-pass filtered",
+]);
 /// The SWI scaling select: qsmxt_config's scalings, in [`super::command::SWI_SCALING_ARGS`]'s order.
 static SWI_SCALING_OPTIONS: LazyLock<Vec<&'static str>> =
     LazyLock::new(|| qsmxt_config::SwiScaling::ALL.iter().map(|s| s.as_str()).collect());
@@ -4458,6 +4466,7 @@ pub struct RunForm {
 
     // Other outputs
     pub do_swi: bool,
+    pub swi_unwrap: usize,  // index into qsmxt_config::SwiUnwrap::ALL (= command::SWI_UNWRAP_ARGS)
     pub swi_scaling: usize,  // index into qsmxt_config::SwiScaling::ALL (= command::SWI_SCALING_ARGS)
     pub swi_strength: String,
     /// High-pass sigma per axis, "x y z" in voxels.
@@ -4528,7 +4537,7 @@ impl RunForm {
         do_segmentation, do_analysis, synthseg_flip_averaging, synthseg_topology_cleanup, synthseg_smoothing,
         dry_run, debug, force, clean_intermediates, slurm_submit,
     ]);
-    named_fields!(choice, choice_mut, usize, [swi_scaling, synthseg_version, execution_mode]);
+    named_fields!(choice, choice_mut, usize, [swi_unwrap, swi_scaling, synthseg_version, execution_mode]);
 
     /// The memory limit row, read: `(limit in GB, no limit)` — empty or `auto` detects it.
     pub fn mem_limit(&self) -> (Option<f64>, bool) {
@@ -4555,6 +4564,7 @@ impl Default for RunForm {
             output_dir: String::new(),
             config_file: String::new(),
             do_swi: false,
+            swi_unwrap: 0,
             swi_scaling: 0,
             swi_strength: format!("{}", swi.strength),
             swi_hp_sigma: format!("{} {} {}", swi.hp_sigma[0], swi.hp_sigma[1], swi.hp_sigma[2]),
@@ -6608,8 +6618,9 @@ impl App {
     fn swi_smwi_rows(&self) -> Vec<PipelineRow> {
         use PipelineRow::{AlgoSelect, Param, Toggle};
         let f = &self.form;
-        let mut rows = vec![Toggle { label: "Compute SWI", field: "do_swi", help: "Also compute susceptibility-weighted images" }];
+        let mut rows = vec![Toggle { label: "Compute SWI", field: "do_swi", help: "Also compute susceptibility-weighted images with CLEAR-SWI, from every echo" }];
         if f.do_swi {
+            rows.push(AlgoSelect { label: "  Unwrapping", field: "swi_unwrap", options: &SWI_UNWRAP_OPTIONS, help: &SWI_UNWRAP_HELP });
             rows.push(AlgoSelect { label: "  Scaling", field: "swi_scaling", options: &SWI_SCALING_OPTIONS, help: &SWI_SCALING_HELP });
             rows.push(Param { label: "  Strength", field: "swi_strength", help: "Phase scaling strength (higher = stronger phase contrast)" });
             rows.push(Param { label: "  HP Sigma (x y z)", field: "swi_hp_sigma", help: "High-pass filter sigma per axis, in voxels (x y z): background phase removal. Set z to 0 for thin axial slices" });

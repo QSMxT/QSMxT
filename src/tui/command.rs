@@ -160,6 +160,13 @@ pub fn build_run_args(app: &App) -> crate::Result<RunArgs> {
 /// back into an algorithm. The two lists must stay in step: insert an algorithm into one and not
 /// the other and the TUI silently runs a *different* algorithm than the one on screen, with no
 /// error anywhere. `qsm_algo_args_match_the_option_list` holds them together.
+/// The SWI unwrapping each entry of the TUI's SWI "Unwrapping" select runs, by index. A test
+/// holds the select's labels to these.
+pub const SWI_UNWRAP_ARGS: [crate::cli::SwiUnwrapArg; 3] = {
+    use crate::cli::SwiUnwrapArg as U;
+    [U::Laplacian, U::LaplacianSlice, U::Romeo]
+};
+
 /// The SWI scaling each entry of the TUI's SWI "Scaling" select runs, by index. A test holds
 /// the select's labels to these.
 pub const SWI_SCALING_ARGS: [crate::cli::SwiScalingArg; 5] = {
@@ -617,6 +624,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         },
         swi_params: crate::cli::SwiParamArgs {
             swi_hp_sigma: form.swi_hp_sigma_values(),
+            swi_unwrapping: Some(SWI_UNWRAP_ARGS[form.swi_unwrap]),
             swi_scaling: Some(SWI_SCALING_ARGS[form.swi_scaling]),
             swi_strength: parse_optional_f64(&form.swi_strength),
             swi_mip_window: parse_optional_usize(&form.swi_mip_window),
@@ -869,6 +877,21 @@ mod tests {
             assert_eq!(name, QSM_ALGO_OPTIONS[i],
                        "row {i} shows {:?} but would run {name}", QSM_ALGO_OPTIONS[i]);
         }
+    }
+
+    /// Each entry of the SWI unwrapping select runs the unwrapping it shows.
+    #[test]
+    fn swi_unwrap_select_runs_what_it_shows() {
+        use qsmxt_config::SwiUnwrap;
+        assert_eq!(SWI_UNWRAP_ARGS.len(), SwiUnwrap::ALL.len());
+        for (i, &expected) in SwiUnwrap::ALL.iter().enumerate() {
+            let mut app = App::new();
+            app.form.do_swi = true;
+            app.form.swi_unwrap = i;
+            assert_eq!(config_from_app(&app).unwrap().swi.unwrap, expected, "row {i}");
+        }
+        // The first entry is the default.
+        assert_eq!(SwiUnwrap::ALL[0], qsmxt_config::SwiConfig::default().unwrap);
     }
 
     /// Each entry of the SWI scaling select runs the scaling it shows, and every scaling reaches

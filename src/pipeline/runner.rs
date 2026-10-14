@@ -455,7 +455,7 @@ pub fn run_pipeline_cached(
     let mask_path = if needs_mask { stage_motion(&mut ctx, &brain_mask_path, progress)? } else { brain_mask_path };
 
     if wanted(requirements::Output::Swi) {
-        stage_swi(&mut ctx, &mask_path, progress)?;
+        stage_swi(&mut ctx, progress)?;
     }
 
     // Before reconstruction, not after: a region reference is measured on the parcellation, so
@@ -1994,7 +1994,11 @@ fn mask_echo_magnitudes(ctx: &StageContext) -> crate::Result<Vec<Vec<f64>>> {
     Ok(out)
 }
 
-fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
+/// CLEAR-SWI over every echo.
+///
+/// The phase is filtered within CLEAR-SWI's own mask (from the first echo's magnitude) rather
+/// than the brain mask, as CLEAR-SWI does: the SWI covers the head, not just the brain.
+fn stage_swi(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
     let (nx, ny, nz) = ctx.dims();
     let (vsx, vsy, vsz) = ctx.voxel_size();
     // Checked up front so an impossible window fails before the SWI is computed, not after.
@@ -2002,11 +2006,17 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
     let (mip_grid, _) = qsm_core::swi::mip_geometry(&grid, &ctx.meta.affine, window)
         .map_err(QsmxtError::Config)?;
+    let n_echoes = ctx.meta.n_echoes;
     let swi_params = serde_json::json!({
+        "unwrap": ctx.config.swi.unwrap,
         "scaling": ctx.config.swi.scaling,
         "strength": ctx.config.swi.strength,
         "hp_sigma": ctx.config.swi.hp_sigma,
         "mip_window": window,
+        // Every echo contributes, so their number and times are part of what was computed. Their
+        // absence also retires SWIs cached when the stage used the first echo only.
+        "echoes": n_echoes,
+        "echo_times": ctx.meta.echo_times,
         // Part of the cache key so a minIP written with full-volume dimensions before this was
         // fixed (issue #211) is rebuilt rather than kept.
         "mip_dims": [mip_grid.nx(), mip_grid.ny(), mip_grid.nz()],
@@ -2016,20 +2026,18 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
         return Ok(());
     }
     let t = Instant::now();
-    log::info!("Computing SWI (echo 1: Laplacian unwrap, high-pass phase mask, minIP)");
+    log::info!("Computing CLEAR-SWI ({} echo{})", n_echoes, if n_echoes == 1 { "" } else { "es" });
     progress("Computing SWI");
-    let phase_data = load_volume(&ctx.echo_phase_path(1))?;
-    let mag_data = load_volume(&ctx.output.magnitude_path(&ctx.run.key))?;
-    let mask = load_mask(mask_path)?;
+    let phase_paths: Vec<PathBuf> = (1..=n_echoes).map(|e| ctx.echo_phase_path(e)).collect();
+    let mag_paths: Vec<PathBuf> = (1..=n_echoes).map(|e| ctx.echo_mag_path(e)).collect();
+    let phases = phase_paths.iter().map(|p| load_volume(p)).collect::<crate::Result<Vec<_>>>()?;
+    let mags = mag_paths.iter().map(|p| load_volume(p)).collect::<crate::Result<Vec<_>>>()?;
 
-    let unwrapped = qsm_core::unwrap::laplacian_unwrap(&phase_data, &mask, &grid, qsm_core::unwrap::LaplacianSolver::Dct);
-    let swi_params_core = qsm_core::swi::SwiParams {
-        hp_sigma: ctx.config.swi.hp_sigma, scaling: ctx.config.swi.scaling.into(),
-        strength: ctx.config.swi.strength, mip_window: window,
-    };
     let swi = qsm_core::swi::calculate_swi(
-        &unwrapped, &mag_data, &mask, &grid, &swi_params_core,
-    );
+        &phases, &mags, &ctx.meta.echo_times, None, &grid, &ctx.config.swi.to_params(),
+    )?.swi;
+    drop(phases);
+    drop(mags);
     // The projection carries its own geometry: shorter than the SWI along the slice axis, and
     // centred on each slab. Writing it under the run's dimensions is issue #211.
     let mip = qsm_core::swi::create_mip(&swi, &grid, &ctx.meta.affine, window)
@@ -2039,9 +2047,8 @@ fn stage_swi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) 
     let mip_path = ctx.output.swi_mip_path(&ctx.run.key);
     save_volume(&swi_path, &swi, ctx.meta)?;
     write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
-    let phase_path = ctx.echo_phase_path(1);
-    let mag_input = ctx.output.magnitude_path(&ctx.run.key);
-    ctx.complete_step("swi", Some("clear-swi"), swi_params, &[phase_path.as_path(), mag_input.as_path(), mask_path], vec![swi_path, mip_path], t)?;
+    let inputs: Vec<&Path> = phase_paths.iter().chain(&mag_paths).map(PathBuf::as_path).collect();
+    ctx.complete_step("swi", Some("clear-swi"), swi_params, &inputs, vec![swi_path, mip_path], t)?;
     log_step_done("SWI", t);
     Ok(())
 }
@@ -5592,19 +5599,22 @@ mod swi_export_tests {
         affine: [f64; 16],
         window: usize,
     ) -> (crate::Result<()>, DerivativeOutputs, crate::bids::entities::AcquisitionKey) {
-        let (nx, ny, nz) = dims;
         let k = key();
         let run = run_for(k.clone());
         let output = DerivativeOutputs::new(dir);
-        let meta = meta_for(dims, affine);
+        // Two echoes: CLEAR-SWI reads every one.
+        let mut meta = meta_for(dims, affine);
+        meta.n_echoes = 2;
+        meta.echo_times = vec![0.004, 0.008];
 
         let mut config = PipelineConfig::default();
         config.swi.mip_window = window;
 
-        let mask_path = output.mask_path(&k);
-        write_volume(&output.phase_scaled_path(&k, 1), &textured(dims), dims, meta.voxel_size, &affine).unwrap();
-        write_volume(&output.magnitude_path(&k), &textured(dims), dims, meta.voxel_size, &affine).unwrap();
-        write_volume(&mask_path, &vec![1.0; nx * ny * nz], dims, meta.voxel_size, &affine).unwrap();
+        let phase: Vec<f64> = textured(dims).iter().map(|v| (v * 0.01).sin()).collect();
+        for e in 1..=meta.n_echoes {
+            write_volume(&output.phase_scaled_path(&k, e), &phase, dims, meta.voxel_size, &affine).unwrap();
+            write_volume(&output.mag_path(&k, e), &textured(dims), dims, meta.voxel_size, &affine).unwrap();
+        }
 
         let state_path = dir.join("state.json");
         let mut state = PipelineState::load_or_create(&state_path, &config, &k, true);
@@ -5612,7 +5622,7 @@ mod swi_export_tests {
             run: &run, config: &config, output: &output, meta: &meta,
             state: &mut state, state_path: &state_path,
         };
-        let result = stage_swi(&mut ctx, &mask_path, &|_| {});
+        let result = stage_swi(&mut ctx, &|_| {});
         (result, output, k)
     }
 
@@ -5711,6 +5721,23 @@ mod swi_export_tests {
         let (result, _, _) = run_swi_stage(dir.path(), (8, 8, 10), IDENTITY, 0);
         let err = result.unwrap_err().to_string();
         assert!(err.contains("at least 1 slice"), "{err}");
+    }
+
+    /// An SWI cached when the stage used the first echo only must be recomputed with every echo.
+    #[test]
+    fn a_first_echo_swi_cache_is_rebuilt() {
+        let dir = tempfile::tempdir().unwrap();
+        let (result, _, _) = run_swi_stage(dir.path(), (8, 8, 16), IDENTITY, 7);
+        result.unwrap();
+        let d = PipelineConfig::default().swi;
+        let first_echo_key = serde_json::json!({
+            "scaling": d.scaling, "strength": d.strength, "hp_sigma": d.hp_sigma,
+            "mip_window": 7, "mip_dims": [8, 8, 10],
+        });
+        let first_echo_hash = crate::pipeline::graph::step_params_hash(Some("clear-swi"), &first_echo_key);
+        let state: PipelineState = serde_json::from_str(
+            &std::fs::read_to_string(dir.path().join("state.json")).unwrap()).unwrap();
+        assert_ne!(state.completed_steps.get("swi").unwrap().params_hash.as_deref(), Some(first_echo_hash.as_str()));
     }
 
     /// A minIP written with full-volume dimensions must not survive as a cache hit.
