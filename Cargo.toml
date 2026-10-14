@@ -23,12 +23,12 @@ default = ["dl"]
 dl = ["qsm-core/onnx", "qsm-core/download"]
 
 [dependencies]
-# TEMP: pinned by rev to the QSM.rs feat/mindgrab branch (MindGrab brain extraction and
-# `ScanMetadata::affine`), which is v0.39.0 plus that branch. Re-pin to the release tag once it
-# merges: a `rev` pin is what CI can resolve, but it must become a `tag` pin before the next QSMxT
+# TEMP: pinned by rev to QSM.rs main at #189 (MindGrab brain extraction and
+# `ScanMetadata::affine`), which is v0.39.0 plus that PR. Re-pin to the release tag once one is
+# cut: a `rev` pin is what CI can resolve, but it must become a `tag` pin before the next QSMxT
 # release, or qsmbly (which pins qsmxt-config) has no release to match. qsmxt-config must move in
 # lockstep.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "3a2f4ee2626168bbc70b9cd1aeb60de3bbe45bfc", features = ["parallel"] }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "a5667665e074832b4700193e87bc0714408af5e8", features = ["parallel"] }
 qsmxt-config = { path = "crates/qsmxt-config" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
