@@ -330,7 +330,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         // Overlap-tiling for the DL inversions: presence of `tile_size` enables it (core size);
         // `tile_halo` defaults to 8 (qsm-core's TileConfig default) when omitted. `None` =
         // whole-volume. Stored as `(core, halo)` so this crate needn't pull qsm-core's onnx feature.
-        tile: cfg.inversion.tile_size.map(|core| (core, cfg.inversion.tile_halo.unwrap_or(8))),
+        tile: cfg.inversion.tile_size.map(|core| (core, cfg.inversion.tile_halo.unwrap_or(crate::config::DEFAULT_TILE_HALO))),
         // `b0` and `mask_output` are the dispatcher's: it sets b0 from scan metadata and forces
         // mask_output off when HEIDI consumes the solution, so neither is in LsqrConfig.
         lsqr: qsm_core::inversion::LsqrQsmParams {

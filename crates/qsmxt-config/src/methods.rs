@@ -353,6 +353,280 @@ const RECON_MASK: &str =
     "the reconstruction mask (the brain mask less any rim eroded by background field removal)";
 const RECON_MASK_AGAIN: &str = "the reconstruction mask";
 
+// ─── Settings that differ from the defaults ───
+//
+// A methods sentence names its method and cites it. A parameter value is stated only when the
+// run's setting differs from QSMxT's default for it: the defaults are what the citation and the
+// QSMxT version already pin down, and listing them buries the choices the user actually made.
+
+/// Whether two floats differ by more than rounding.
+fn differs(a: f64, b: f64) -> bool {
+    (a - b).abs() > 1e-9 * a.abs().max(b.abs()).max(1.0)
+}
+
+/// The non-default settings of one sentence, as prose fragments ("deconvolution enabled").
+#[derive(Default)]
+struct Changed(Vec<String>);
+
+impl Changed {
+    /// Add `text` when `differs` holds.
+    fn add(&mut self, differs: bool, text: impl FnOnce() -> String) {
+        if differs {
+            self.0.push(text());
+        }
+    }
+
+    /// Add every field of `cfg` that differs from `default` (see [`changed_fields`]).
+    fn add_fields<T: serde::Serialize>(&mut self, cfg: &T, default: &T, skip: &[&str]) {
+        self.0.extend(changed_fields(cfg, default, skip));
+    }
+
+    fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+
+    /// `" with a, b and c"`, or nothing.
+    fn with(&self) -> String {
+        self.joined(" with ")
+    }
+
+    /// `", with a, b and c"`, or nothing — for the end of a sentence that already has commas.
+    fn comma_with(&self) -> String {
+        self.joined(", with ")
+    }
+
+    /// `"; a, b and c"`, or nothing — for inside a citation's parentheses.
+    fn semi(&self) -> String {
+        self.joined("; ")
+    }
+
+    /// `" (a, b and c)"`, or nothing.
+    fn paren(&self) -> String {
+        if self.0.is_empty() { String::new() } else { format!(" ({})", join_list(&self.0)) }
+    }
+
+    fn joined(&self, lead: &str) -> String {
+        if self.0.is_empty() { String::new() } else { format!("{lead}{}", join_list(&self.0)) }
+    }
+}
+
+/// How a parameter reads in prose.
+enum Label {
+    /// `"λ = 0.001"`.
+    Eq(&'static str),
+    /// `"λ = 0.001"` plus a unit: `"radius = 5 mm"`.
+    Unit(&'static str, &'static str),
+    /// `"500 iterations"`.
+    Count(&'static str),
+    /// `"at most 500 iterations"`.
+    AtMost(&'static str),
+    /// `"merit enabled"` / `"merit disabled"`.
+    Toggle(&'static str),
+}
+
+/// The prose label of an algorithm parameter, by its config field name. Anything not listed reads
+/// as its field name with spaces, which is still unambiguous next to the algorithm it belongs to.
+fn param_label(field: &str) -> Label {
+    use Label::*;
+    match field {
+        "tol" | "tolerance" => Eq("tolerance"),
+        "cg_tol" => Eq("conjugate-gradient tolerance"),
+        "tol_update" => Eq("update tolerance"),
+        "tol_delta" => Eq("convergence tolerance"),
+        "max_iter" | "max_iterations" => AtMost("iterations"),
+        "cg_max_iter" => AtMost("conjugate-gradient iterations"),
+        "max_iter_l1" => AtMost("L1 iterations"),
+        "max_iter_l2" => AtMost("L2 iterations"),
+        "lsmr_iter" => Count("LSMR iterations"),
+        "newton_iter" => Count("Newton iterations"),
+        "iterations" => Count("iterations"),
+        "erosions" => Count("mask erosions"),
+        "continuation_steps" => Count("continuation steps"),
+        "inner_iterations" => Count("inner iterations"),
+        "denoise_iterations" => Count("denoising iterations"),
+        "max_evaluations" => AtMost("evaluations"),
+        "max_samples" => AtMost("samples"),
+        "levels" => Count("pyramid levels"),
+        "chain_levels" => Count("pyramid levels for chained registrations"),
+        "chain" => Toggle("chained registration"),
+        "lambda" => Eq("λ"),
+        "lambda1" => Eq("λ1"),
+        "lambda_para" => Eq("λ (paramagnetic)"),
+        "lambda_dia" => Eq("λ (diamagnetic)"),
+        "lambda_cpl" => Eq("λ (coupling)"),
+        "alpha" => Eq("α"),
+        "alpha0" => Eq("α0"),
+        "alpha1" => Eq("α1"),
+        "alpha_l2" => Eq("α (L2)"),
+        "beta" => Eq("β"),
+        "delta" => Eq("δ"),
+        "mu" => Eq("μ"),
+        "mu0" => Eq("μ0"),
+        "mu1" => Eq("μ1"),
+        "mu2" => Eq("μ2"),
+        "mu3" => Eq("μ3"),
+        "mu1_l2" => Eq("μ1 (L2)"),
+        "muh" => Eq("μ (harmonic)"),
+        "mu_min" => Eq("minimum μ"),
+        "rho" => Eq("ρ"),
+        "tau" => Eq("τ"),
+        "threshold" => Eq("threshold"),
+        "radius" | "smv_radius" => Unit("SMV radius", "mm"),
+        "maxk" => AtMost("residual-removal iterations"),
+        "tik_reg" => Eq("Tikhonov weight"),
+        "smv" => Toggle("SMV preprocessing"),
+        "merit" => Toggle("MERIT"),
+        "percentage" => Eq("gradient-mask percentage"),
+        "data_weighting" => Eq("data weighting mode"),
+        "precond" => Eq("preconditioner weight"),
+        "step_size" => Eq("step size"),
+        "phase_scale" => Eq("phase scale"),
+        "reg" => Eq("regularization operator"),
+        "pad_mm" | "ilsqr_pad_mm" => Unit("zero-padding", "mm per side"),
+        "dr_pos" => Eq("Dr+"),
+        "dr_neg" => Eq("Dr−"),
+        "dr_pos_3t" => Eq("Dr+ at 3 T"),
+        "r_const_3t" => Eq("relaxometric constant at 3 T"),
+        "sigma_mm" => Unit("σ", "mm"),
+        "nbox" => Count("box-filter passes"),
+        "estimate_offset" => Toggle("phase-offset estimation"),
+        "reliability_threshold_percentile" => Eq("reliability threshold percentile"),
+        "denoise" => Toggle("anisotropic-diffusion denoising"),
+        "rotation_step_deg" => Unit("initial rotation step", "°"),
+        "translation_step_mm" => Unit("initial translation step", "mm"),
+        "min_overlap" => Eq("minimum overlap"),
+        "crop" => Unit("centre crop", "voxels"),
+        "topology_cleanup" => Toggle("topology cleanup"),
+        "sigma_smoothing" => Unit("posterior smoothing σ", "voxels"),
+        "patch" => Unit("patch", "voxels"),
+        _ => Eq(""),
+    }
+}
+
+/// A JSON value as prose: numbers as written, arrays as `a × b × c`, `null` as "automatic".
+fn json_prose(v: &serde_json::Value) -> String {
+    match v {
+        serde_json::Value::Null => "automatic".to_string(),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Array(a) => a.iter().map(json_prose).collect::<Vec<_>>().join(" × "),
+        serde_json::Value::Number(n) if !n.is_i64() && !n.is_u64() => {
+            n.as_f64().map_or_else(|| n.to_string(), |f| format!("{f}"))
+        }
+        other => other.to_string(),
+    }
+}
+
+fn json_differs(a: &serde_json::Value, b: &serde_json::Value) -> bool {
+    match (a.as_f64(), b.as_f64()) {
+        (Some(x), Some(y)) => differs(x, y),
+        _ => a != b,
+    }
+}
+
+/// The fields of `cfg` that differ from `default`, as prose (`"λ = 0.002"`, `"at most 50
+/// iterations"`). Works on any serializable parameter struct, so every algorithm's settings are
+/// covered without a sentence of its own; `skip` names fields the caller words itself.
+fn changed_fields<T: serde::Serialize>(cfg: &T, default: &T, skip: &[&str]) -> Vec<String> {
+    let (Ok(serde_json::Value::Object(c)), Ok(serde_json::Value::Object(d))) =
+        (serde_json::to_value(cfg), serde_json::to_value(default))
+    else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    for (k, v) in &c {
+        if skip.contains(&k.as_str()) || d.get(k).is_some_and(|dv| !json_differs(v, dv)) {
+            continue;
+        }
+        let value = json_prose(v);
+        out.push(match param_label(k) {
+            Label::Eq("") if v.is_boolean() => format!("{} {}", k.replace('_', " "),
+                if v.as_bool() == Some(true) { "enabled" } else { "disabled" }),
+            Label::Eq("") => format!("{} = {value}", k.replace('_', " ")),
+            Label::Eq(l) => format!("{l} = {value}"),
+            Label::Unit(l, "°") => format!("{l} = {value}°"),
+            Label::Unit(l, u) => format!("{l} = {value} {u}"),
+            Label::Count(noun) => format!("{value} {noun}"),
+            Label::AtMost(noun) => format!("at most {value} {noun}"),
+            Label::Toggle(l) => format!("{l} {}", if v.as_bool() == Some(true) { "enabled" } else { "disabled" }),
+        });
+    }
+    out
+}
+
+/// The non-default settings of the selected dipole inversion. Deep-learning inversions have none
+/// here (tiling is worded separately).
+fn inversion_changes(config: &PipelineConfig, alg: QsmAlgorithm) -> Changed {
+    let (i, d) = (&config.inversion, InversionConfig::default());
+    let mut c = Changed::default();
+    match alg {
+        QsmAlgorithm::Rts => c.add_fields(&i.rts, &d.rts, &[]),
+        QsmAlgorithm::Tv => c.add_fields(&i.tv, &d.tv, &[]),
+        QsmAlgorithm::Tkd => c.add_fields(&i.tkd, &d.tkd, &[]),
+        QsmAlgorithm::Tsvd => c.add_fields(&i.tsvd, &d.tsvd, &[]),
+        QsmAlgorithm::Tikhonov => c.add_fields(&i.tikhonov, &d.tikhonov, &[]),
+        QsmAlgorithm::Nltv => c.add_fields(&i.nltv, &d.nltv, &[]),
+        QsmAlgorithm::Medi => c.add_fields(&i.medi, &d.medi, &[]),
+        QsmAlgorithm::Tfi => c.add_fields(&i.tfi, &d.tfi, &[]),
+        QsmAlgorithm::Ilsqr => c.add_fields(&i.ilsqr, &d.ilsqr, &[]),
+        QsmAlgorithm::Lsqr => c.add_fields(&i.lsqr, &d.lsqr, &[]),
+        QsmAlgorithm::Heidi => {
+            c.add_fields(&i.lsqr, &d.lsqr, &[]);
+            c.add_fields(&i.heidi, &d.heidi, &[]);
+        }
+        QsmAlgorithm::Ndi => c.add_fields(&i.ndi, &d.ndi, &[]),
+        QsmAlgorithm::Fansi | QsmAlgorithm::FansiTgv => c.add_fields(&i.fansi, &d.fansi, &[]),
+        QsmAlgorithm::L1qsm => c.add_fields(&i.l1qsm, &d.l1qsm, &[]),
+        QsmAlgorithm::Whqsm => c.add_fields(&i.whqsm, &d.whqsm, &[]),
+        QsmAlgorithm::Hdqsm => c.add_fields(&i.hdqsm, &d.hdqsm, &[]),
+        QsmAlgorithm::AmpPe => c.add_fields(&i.amp_pe, &d.amp_pe, &[]),
+        QsmAlgorithm::Tgv => c.add_fields(&i.tgv, &d.tgv, &[]),
+        _ => {}
+    }
+    c
+}
+
+/// The non-default settings of the selected background-field remover. V-SHARP's are worded by
+/// its own sentence.
+fn bg_removal_changes(config: &PipelineConfig) -> Changed {
+    let (b, d) = (&config.bg_removal, BgRemovalConfig::default());
+    let mut c = Changed::default();
+    match b.algorithm {
+        BfAlgorithm::Pdf => c.add_fields(&b.pdf, &d.pdf, &[]),
+        BfAlgorithm::Lbv => c.add_fields(&b.lbv, &d.lbv, &[]),
+        BfAlgorithm::Ismv => c.add_fields(&b.ismv, &d.ismv, &[]),
+        BfAlgorithm::Sharp => c.add_fields(&b.sharp, &d.sharp, &[]),
+        BfAlgorithm::Resharp => c.add_fields(&b.resharp, &d.resharp, &[]),
+        BfAlgorithm::Harperella => c.add_fields(&b.harperella, &d.harperella, &[]),
+        BfAlgorithm::Iharperella => c.add_fields(&b.iharperella, &d.iharperella, &[]),
+        BfAlgorithm::Vsharp | BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => {}
+    }
+    c
+}
+
+/// The non-default rigid-registration settings, shared by motion correction and
+/// multi-orientation co-registration.
+fn registration_changes(config: &PipelineConfig) -> Changed {
+    let mut c = Changed::default();
+    c.add_fields(&config.registration, &crate::motion::RegistrationConfig::default(), &[]);
+    c
+}
+
+/// The non-default settings of the selected susceptibility-source separation.
+fn separation_changes(config: &PipelineConfig) -> Changed {
+    let (s, d) = (&config.separation, SeparationConfig::default());
+    let mut c = Changed::default();
+    match s.algorithm {
+        SeparationAlgorithm::R2starQsm => c.add_fields(&s.r2star_qsm, &d.r2star_qsm, &[]),
+        SeparationAlgorithm::Decompose => c.add_fields(&s.decompose, &d.decompose, &[]),
+        SeparationAlgorithm::ChiSepIlsqr => c.add_fields(&s.chi_sep_ilsqr, &d.chi_sep_ilsqr, &[]),
+        SeparationAlgorithm::ChiSepMedi => c.add_fields(&s.chi_sep_medi, &d.chi_sep_medi, &[]),
+        SeparationAlgorithm::WaveSep => c.add_fields(&s.wavesep, &d.wavesep, &[]),
+        SeparationAlgorithm::HcChisep => c.add_fields(&s.hc_chisep, &d.hc_chisep, &[]),
+        SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet => {}
+    }
+    c
+}
+
 /// Generate a methods description and citation list from a pipeline configuration.
 /// Uses "qsmxt" as the tool name by default.
 pub fn generate_methods(config: &PipelineConfig) -> String {
@@ -381,22 +655,23 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 
     // QSM-specific pipeline
     if config.pipeline.do_qsm {
+        describe_reconstruction_grid(config, &mut sentences);
         match config.inversion.algorithm {
             QsmAlgorithm::Tgv => {
                 // Routed by QSM.rs's `InversionInput`: one echo goes in as wrapped phase (TGV
                 // unwraps it itself), several are field-mapped first and go in as the total field.
                 // Neither route runs a separate background-removal stage.
-                let tgv = &config.inversion.tgv;
-                sentences.push(format!(
+                sentences.push(
                     "QSM was computed using the Total Generalized Variation (TGV) algorithm \
                      (Langkammer et al., 2015), with background field removal and dipole inversion \
                      performed jointly. For single-echo data TGV was applied to the wrapped phase of \
                      the echo, converted to ppm using its echo time and the field strength, and also \
                      performed the phase unwrapping; for multi-echo data TGV was applied to the B0 \
-                     field map in ppm, computed as described below. Regularization weights were \
-                     α0 = {} ppm and α1 = {} ppm, with {} iterations and {} mask erosions.",
-                    tgv.alpha0, tgv.alpha1, tgv.iterations, tgv.erosions,
-                ));
+                     field map in ppm, computed as described below.".to_string());
+                let changed = inversion_changes(config, QsmAlgorithm::Tgv);
+                if !changed.is_empty() {
+                    sentences.push(format!("TGV was run{}.", changed.with()));
+                }
                 add_citation(&mut citations, &CITE_TGV);
                 describe_field_mapping(config, &mut sentences, &mut citations);
             }
@@ -420,8 +695,13 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 sentences.push(format!(
                     "QSM was computed using QSMART (Yaghmaie et al., 2021), with spatially dependent \
                      filtering for background field removal, {} dipole inversion ({}), and Frangi \
-                     vesselness-based tissue/vasculature separation.",
-                    inv_name, cite_inline(inv_cite),
+                     vesselness-based tissue/vasculature separation{}.",
+                    inv_name, cite_inline(inv_cite), {
+                        let (q, d) = (&config.inversion.qsmart, QsmartConfig::default());
+                        let mut c = Changed::default();
+                        c.add_fields(q, &d, &["inversion"]);
+                        c.comma_with()
+                    },
                 ));
                 add_citation(&mut citations, &CITE_QSMART);
                 add_citation(&mut citations, inv_cite);
@@ -447,15 +727,18 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                         BfAlgorithm::Iqfm => ("iQFM (deep-learning joint unwrapping + background removal)", &CITE_IQSM),
                     };
                     if *alg == BfAlgorithm::Vsharp {
-                        let v = &config.bg_removal.vsharp;
-                        let radii = format!("SMV kernel radii from {} to {} mm", v.max_radius, v.min_radius);
-                        sentences.push(if v.deconvolve {
-                            format!("Background field removal was performed using {} ({}) with {} and truncated-SVD deconvolution (threshold {}).",
-                                name, cite_inline(cite), radii, v.threshold)
-                        } else {
-                            format!("Background field removal was performed using {} ({}) with {} and deconvolution disabled.",
-                                name, cite_inline(cite), radii)
-                        });
+                        let (v, d) = (&config.bg_removal.vsharp, VsharpConfig::default());
+                        let mut changed = Changed::default();
+                        changed.add(differs(v.max_radius, d.max_radius) || differs(v.min_radius, d.min_radius),
+                            || format!("SMV kernel radii from {} to {} mm", v.max_radius, v.min_radius));
+                        changed.add(v.deconvolve != d.deconvolve, || format!(
+                            "truncated-SVD deconvolution {}",
+                            if v.deconvolve { "enabled" } else { "disabled" }));
+                        // The threshold only exists for the deconvolution.
+                        changed.add(v.deconvolve && differs(v.threshold, d.threshold),
+                            || format!("a deconvolution threshold of {}", v.threshold));
+                        sentences.push(format!("Background field removal was performed using {} ({}){}.",
+                            name, cite_inline(cite), changed.with()));
                         let resample = "the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution";
                         match v.grid {
                             VsharpGrid::Finest => sentences.push(format!(
@@ -465,15 +748,18 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                             VsharpGrid::Native => {}
                         }
                     } else {
-                        sentences.push(format!("Background field removal was performed using {} ({}).", name, cite_inline(cite)));
+                        sentences.push(format!("Background field removal was performed using {} ({}){}.",
+                            name, cite_inline(cite), bg_removal_changes(config).with()));
                     }
                     add_citation(&mut citations, cite);
 
                     // Optional mSMV boundary-shadow refinement layered on the primary BFR.
                     if config.bg_removal.msmv_refine {
+                        let mut changed = Changed::default();
+                        changed.add_fields(&config.bg_removal.msmv, &MsmvConfig::default(), &[]);
                         sentences.push(format!(
-                            "Residual boundary-field shadows were then removed with maximum spherical mean value (mSMV) filtering ({}).",
-                            cite_inline(&CITE_MSMV),
+                            "Residual boundary-field shadows were then removed with maximum spherical mean value (mSMV) filtering ({}){}.",
+                            cite_inline(&CITE_MSMV), changed.with(),
                         ));
                         add_citation(&mut citations, &CITE_MSMV);
                     }
@@ -481,11 +767,10 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 
                 // Dipole inversion
                 let (name, cite) = inversion_name_cite(config.inversion.algorithm);
-                sentences.push(if total_field {
-                    format!("Dipole inversion was performed on the total field within the brain mask using {} ({}).", name, cite_inline(cite))
-                } else {
-                    format!("Dipole inversion was performed using {} ({}).", name, cite_inline(cite))
-                });
+                let target = if total_field { " on the total field within the brain mask" } else { "" };
+                sentences.push(format!("Dipole inversion was performed{} using {} ({}){}.",
+                    target, name, cite_inline(cite),
+                    inversion_changes(config, config.inversion.algorithm).with()));
                 add_citation(&mut citations, cite);
                 // Deep-learning tiling (memory-bounded, approximate) is noted when enabled — only
                 // for the tileable DL nets (a stray --tile-size on a classical algorithm is ignored).
@@ -496,10 +781,13 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                         | QsmAlgorithm::Nextqsm
                 );
                 if let (true, Some(core)) = (tileable, config.inversion.tile_size) {
-                    let halo = config.inversion.tile_halo.unwrap_or(8);
+                    // The halo is said only when it is not the default the runner fills in.
+                    let halo = match config.inversion.tile_halo {
+                        Some(h) if h != DEFAULT_TILE_HALO => format!(", halo {h} voxels"),
+                        _ => String::new(),
+                    };
                     sentences.push(format!(
-                        "Network inference was run on overlapping tiles (tile size {core} voxels, \
-                         halo {halo} voxels).",
+                        "Network inference was run on overlapping tiles (tile size {core} voxels{halo}).",
                     ));
                 }
             }
@@ -538,13 +826,18 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     if config.pipeline.do_segmentation {
         add_citation(&mut citations, &CITE_SYNTHSEG);
         let labels = if config.segmentation.version == SynthSegVersion::V2 { 33 } else { 32 };
+        let (s, d) = (&config.segmentation, SegmentationConfig::default());
+        let mut changed = Changed::default();
+        changed.add(s.flip_averaging != d.flip_averaging, || format!(
+            "left-right flip averaging of the posteriors {}",
+            if s.flip_averaging { "enabled" } else { "disabled" }));
+        // The version names the weights (and the label count says what they produce); the
+        // bring-your-own tool is not a SynthSeg setting.
+        changed.add_fields(s, &d, &["version", "flip_averaging", "custom_dseg_tool"]);
         sentences.push(format!(
             "The brain was parcellated from the GRE magnitude using SynthSeg {} (Billot et al., \
              2023), yielding {} FreeSurfer-labelled structures{}.",
-            config.segmentation.version, labels,
-            if config.segmentation.flip_averaging {
-                "; posteriors were averaged with a left-right flipped second pass"
-            } else { "" },
+            config.segmentation.version, labels, changed.comma_with(),
         ));
     }
     if config.pipeline.do_analysis {
@@ -556,12 +849,17 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 
     if config.pipeline.do_smwi {
         add_citation(&mut citations, &CITE_SMWI);
+        let (s, d) = (&config.smwi, SmwiConfig::default());
+        let mut mask = Changed::default();
+        mask.add(differs(s.threshold_ppm, d.threshold_ppm), || format!("|χ| threshold {:.2} ppm", s.threshold_ppm));
+        mask.add(differs(s.power, d.power), || format!("mask raised to the power {}", s.power));
+        let slab = if s.mip_window != d.mip_window { format!(" over {} slices", s.mip_window) } else { String::new() };
         sentences.push(format!(
             "Susceptibility map-weighted images were computed (Gho et al., 2014) by weighting the \
-             magnitude with a mask derived from the susceptibility map (|χ| threshold {:.2} ppm, \
-             mask raised to the power {:.1}), separately for paramagnetic and diamagnetic sources, \
-             each followed by a minimum-intensity projection over {} slices.",
-            config.smwi.threshold_ppm, config.smwi.power, config.smwi.mip_window,
+             magnitude with a mask derived from the susceptibility map{}, separately for \
+             paramagnetic and diamagnetic sources, each followed by a minimum-intensity \
+             projection{slab}.",
+            mask.paren(),
         ));
     }
 
@@ -569,15 +867,27 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     if config.pipeline.do_swi {
         // What the runner does: echo 1 only, Laplacian-unwrapped, then QSM.rs's single-echo
         // phase-mask SWI on the combined magnitude. Not CLEAR-SWI, which combines the echoes.
-        let swi = &config.swi;
+        let (swi, d) = (&config.swi, SwiConfig::default());
+        let filter = if swi.hp_sigma.iter().zip(d.hp_sigma).any(|(a, b)| differs(*a, b)) {
+            format!(" with a Gaussian (σ = {} voxels)",
+                swi.hp_sigma.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" × "))
+        } else {
+            String::new()
+        };
+        let mut mask = Changed::default();
+        mask.add(swi.scaling != d.scaling, || format!("{} scaling", swi.scaling));
+        mask.add(differs(swi.strength, d.strength), || format!("power {}", swi.strength));
+        let mip = if swi.mip_window != d.mip_window {
+            format!("Minimum-intensity projections were taken over {}-slice slabs.", swi.mip_window)
+        } else {
+            "Minimum-intensity projections of these images were also computed.".to_string()
+        };
         sentences.push(format!(
             "Susceptibility-weighted images (Haacke et al., 2004) were computed from the first echo: \
              its phase was unwrapped with the Laplacian method (Schofield & Zhu, 2003), high-pass \
-             filtered with a Gaussian (σ = {} voxels), scaled into a phase mask ({} scaling, power {}) \
-             and multiplied into the combined magnitude. Minimum-intensity projections were taken over \
-             {}-slice slabs.",
-            swi.hp_sigma.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" × "),
-            swi.scaling, swi.strength, swi.mip_window,
+             filtered{filter}, scaled into a phase mask{} and multiplied into the combined \
+             magnitude. {mip}",
+            mask.paren(),
         ));
         add_citation(&mut citations, &CITE_SWI);
         add_citation(&mut citations, &CITE_LAPLACIAN_UNWRAP);
@@ -605,6 +915,11 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                  Phase Graph dictionary (Weigel, 2015).".to_string());
         }
         if config.pipeline.do_r2primemap {
+            // R2PRIMEnet's own settings; the field-strength override gets a sentence below.
+            let mut r2pn = Changed::default();
+            r2pn.add_fields(&config.separation.r2primenet, &R2primenetConfig::default(),
+                &["ignore_field_mismatch"]);
+            let r2pn = r2pn.semi();
             match config.separation.custom_r2prime_tool.as_deref() {
                 Some(_) => sentences.push(
                     "R2' maps were taken from the supplied BIDS derivatives.".to_string()),
@@ -613,22 +928,22 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                         "R2' was computed as R2* - R2.".to_string()),
                     R2PrimeStrategy::R2primenet => {
                         add_citation(&mut citations, &CITE_R2PRIMENET);
-                        sentences.push(
+                        sentences.push(format!(
                             "R2' was estimated from the R2* map with R2PRIMEnet (Kim et al., \
-                             2025)."
-                            .to_string());
+                             2025{r2pn}).",
+                        ));
                     }
                     R2PrimeStrategy::Auto => {
                         add_citation(&mut citations, &CITE_R2PRIMENET);
                         sentences.push(if config.separation.r2primenet.ignore_field_mismatch {
-                            "R2' was computed as R2* - R2 where a multi-echo spin-echo \
+                            format!("R2' was computed as R2* - R2 where a multi-echo spin-echo \
                              acquisition was available, and estimated from R2* with R2PRIMEnet \
-                             (Kim et al., 2025) otherwise."
+                             (Kim et al., 2025{r2pn}) otherwise.")
                         } else {
-                            "R2' was computed as R2* - R2 where a multi-echo spin-echo \
+                            format!("R2' was computed as R2* - R2 where a multi-echo spin-echo \
                              acquisition was available, and otherwise, at 3 T only, estimated \
-                             from R2* with R2PRIMEnet (Kim et al., 2025)."
-                        }.to_string());
+                             from R2* with R2PRIMEnet (Kim et al., 2025{r2pn}).")
+                        });
                     }
                 },
             }
@@ -648,10 +963,11 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     if config.pipeline.do_chi_separation {
         let (sep_name, sep_cite) = separation_name_cite(config.separation.algorithm);
         sentences.push(format!(
-            "Paramagnetic and diamagnetic susceptibility maps were computed using {} ({}) within {}.",
+            "Paramagnetic and diamagnetic susceptibility maps were computed using {} ({}) within {}{}.",
             sep_name, cite_inline(sep_cite),
             // Named in full by the referencing sentence, unless the map was left unreferenced.
             if config.pipeline.do_qsm && config.qsm.reference != QsmReference::None { RECON_MASK_AGAIN } else { RECON_MASK },
+            separation_changes(config).comma_with(),
         ));
         add_citation(&mut citations, sep_cite);
     }
@@ -686,20 +1002,20 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
         // How the orientations got onto one grid is part of the method, not an implementation
         // detail: it determines where the B0 directions came from, which is half the input.
         if config.multi_orientation.register {
-            sentences.push(
+            sentences.push(format!(
                 "Orientations that were not already on a common grid were rigidly co-registered \
                  (6 degrees of freedom, normalized cross-correlation over a multi-resolution \
-                 pyramid) onto the first orientation's grid using the magnitude images, and each \
-                 orientation's B0 direction was derived from the recovered rotation."
-                    .to_string(),
-            );
+                 pyramid{}) onto the first orientation's grid using the magnitude images, and each \
+                 orientation's B0 direction was derived from the recovered rotation.",
+                registration_changes(config).semi(),
+            ));
         } else {
             sentences.push(
                 "The orientations were taken to be already co-registered onto a common grid."
                     .to_string(),
             );
         }
-        if config.multi_orientation.lambda > 0.0 {
+        if differs(config.multi_orientation.lambda, MultiOrientationConfig::default().lambda) {
             sentences.push(format!(
                 "The multi-orientation inversion was regularized with lambda = {}.",
                 config.multi_orientation.lambda
@@ -708,10 +1024,13 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
         let m = &config.multi_orientation;
         if m.algorithm == MultiOrientAlgorithm::Cosmos {
             if m.magnitude_weighting {
+                let d = MultiOrientationConfig::default();
+                let mut cg = Changed::default();
+                cg.add(differs(m.cosmos_tol, d.cosmos_tol), || format!("tolerance {}", m.cosmos_tol));
+                cg.add(m.cosmos_max_iter != d.cosmos_max_iter, || format!("at most {} iterations", m.cosmos_max_iter));
                 sentences.push(format!(
                     "Each orientation's field was weighted by its magnitude, and the weighted \
-                     least-squares problem solved by conjugate gradient (tolerance {}, at most {} \
-                     iterations).", m.cosmos_tol, m.cosmos_max_iter));
+                     least-squares problem solved by conjugate gradient{}.", cg.paren()));
             }
             sentences.push(
                 "The COSMOS map was referenced in the same way as the single-orientation maps, \
@@ -743,6 +1062,38 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     out
 }
 
+/// The reconstruction-grid switches, all off by default, so each is said only when on.
+fn describe_reconstruction_grid(config: &PipelineConfig, sentences: &mut Vec<String>) {
+    let p = &config.pipeline;
+    if p.ignore_slice_gap {
+        sentences.push("Acquisitions whose slices were separated by a gap were reconstructed as if the slices were contiguous.".to_string());
+    }
+    if p.axial_resampling {
+        let which = if differs(p.obliquity_threshold, DEFAULT_OBLIQUITY_THRESHOLD) {
+            format!("Acquisitions more than {}° oblique", p.obliquity_threshold)
+        } else {
+            "Oblique acquisitions".to_string()
+        };
+        let space = match p.output_space {
+            OutputSpace::Acquired => "",
+            OutputSpace::Working => ", and the derivatives were written on the resampled grid",
+        };
+        sentences.push(format!(
+            "{which} were resampled onto an axial grid, with B0 along the slice normal, before reconstruction{space}."));
+    }
+    if p.crop_to_mask {
+        let margin = if differs(p.crop_margin_mm, PipelineToggles::default().crop_margin_mm) {
+            format!(" with a {} mm margin", p.crop_margin_mm)
+        } else {
+            String::new()
+        };
+        sentences.push(format!("Reconstruction was performed within a box around the brain mask{margin}."));
+    }
+    if p.fft_padding {
+        sentences.push("Before the FFT-based stages, the grid was zero-padded to an FFT-efficient size.".to_string());
+    }
+}
+
 /// "64" for a uniform pad, "64×64×32" otherwise.
 fn describe_pad(p: [usize; 3]) -> String {
     if p[0] == p[1] && p[1] == p[2] { p[0].to_string() } else { format!("{}×{}×{}", p[0], p[1], p[2]) }
@@ -752,32 +1103,40 @@ fn describe_pad(p: [usize; 3]) -> String {
 /// unwrapping, and B0 estimation. Shared by the standard pipeline and QSMART
 /// (which consumes a pre-computed total field, so these steps still run).
 fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, citations: &mut Vec<&Citation>) {
-    if config.pipeline.axial_resampling {
-        sentences.push(format!(
-            "Acquisitions more than {}° oblique were resampled onto an axial grid, with B0 along the slice normal, before reconstruction.",
-            config.pipeline.obliquity_threshold));
-    }
+    let fm = &config.field_mapping;
+    let d = FieldMappingConfig::default();
     let m = &config.motion_correction;
     if m.enabled {
+        // The reference echo says what was done (which echo the others were moved onto), so it
+        // is always named; the registration settings only when changed.
         let reference = match m.reference {
             crate::motion::MotionReference::First => "the first echo".to_string(),
             crate::motion::MotionReference::Last => "the last echo".to_string(),
             crate::motion::MotionReference::Echo(n) => format!("echo {n}"),
         };
+        let mut changed = registration_changes(config);
+        changed.add_fields(m, &crate::motion::MotionCorrectionConfig::default(),
+            &["enabled", "reference", "min_ncc"]);
         sentences.push(format!(
-            "Before field mapping, every echo was rigidly co-registered to {reference} by maximising the normalised cross-correlation of the magnitude images (multi-resolution, {} levels), and the phase was resampled with it through the complex signal; the brain mask was restricted to voxels covered by every echo.",
-            config.registration.levels));
+            "Before field mapping, every echo was rigidly co-registered to {reference} by maximising the normalised cross-correlation of the magnitude images over a multi-resolution pyramid{}, and the phase was resampled with it through the complex signal; the brain mask was restricted to voxels covered by every echo.",
+            changed.paren()));
     }
     // Phase offset removal and/or bipolar correction (ROMEO only: the Laplacian path skips both)
-    let romeo = config.field_mapping.unwrapping_algorithm == UnwrappingAlgorithm::Romeo;
-    match (config.field_mapping.phase_offset_removal && romeo, config.field_mapping.bipolar_correction && romeo) {
+    let romeo = fm.unwrapping_algorithm == UnwrappingAlgorithm::Romeo;
+    let sigma = if fm.phase_offset_sigma.iter().zip(d.phase_offset_sigma).any(|(a, b)| differs(*a, b)) {
+        format!("; smoothing σ = {} voxels",
+            fm.phase_offset_sigma.iter().map(|v| format!("{v}")).collect::<Vec<_>>().join(" × "))
+    } else {
+        String::new()
+    };
+    match (fm.phase_offset_removal && romeo, fm.bipolar_correction && romeo) {
         (true, true) => {
-            sentences.push("Phase offset removal (Eckstein et al., 2018) and bipolar gradient correction (Eckstein, 2021) were applied.".to_string());
+            sentences.push(format!("Phase offset removal (Eckstein et al., 2018{sigma}) and bipolar gradient correction (Eckstein, 2021) were applied."));
             add_citation(citations, &CITE_MCPC3DS);
             add_citation(citations, &CITE_BIPOLAR);
         }
         (true, false) => {
-            sentences.push("Phase offset removal was performed using the HIP method (Eckstein et al., 2018).".to_string());
+            sentences.push(format!("Phase offset removal was performed using the HIP method (Eckstein et al., 2018{sigma})."));
             add_citation(citations, &CITE_MCPC3DS);
         }
         (false, true) => {
@@ -788,74 +1147,112 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
     }
 
     // Unwrapping
-    match config.field_mapping.unwrapping_algorithm {
+    match fm.unwrapping_algorithm {
         UnwrappingAlgorithm::Romeo => {
-            let mode = if config.field_mapping.romeo.individual { "individual per-echo" } else { "template-based temporal" };
-            sentences.push(format!("Phase unwrapping was performed using ROMEO ({} mode) (Dymerska et al., 2021).", mode));
+            let mode = if fm.romeo.individual == d.romeo.individual {
+                ""
+            } else if fm.romeo.individual {
+                " in individual per-echo mode"
+            } else {
+                " in template-based temporal mode"
+            };
+            let mut changed = Changed::default();
+            changed.add_fields(&fm.romeo, &d.romeo, &["individual"]);
+            sentences.push(format!("Phase unwrapping was performed using ROMEO (Dymerska et al., 2021){mode}{}.", changed.with()));
             add_citation(citations, &CITE_ROMEO);
         }
         UnwrappingAlgorithm::Laplacian => {
-            sentences.push(match config.field_mapping.laplacian_solver {
-                LaplacianSolver::Dct => "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003), solved as unweighted least squares with a Neumann-boundary DCT (Ghiglia & Romero, 1994).".to_string(),
-                LaplacianSolver::Fft => format!(
-                    "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003), with an FFT Poisson solve on the volume zero-padded by {} voxels.",
-                    describe_pad(config.field_mapping.laplacian_fft_pad)),
-            });
+            let solver = match fm.laplacian_solver {
+                _ if fm.laplacian_solver == d.laplacian_solver => String::new(),
+                LaplacianSolver::Dct => " solved as unweighted least squares with a Neumann-boundary DCT (Ghiglia & Romero, 1994)".to_string(),
+                LaplacianSolver::Fft => " with an FFT Poisson solve".to_string(),
+            };
+            // The padding only exists for the FFT solve.
+            let pad = if fm.laplacian_solver == LaplacianSolver::Fft && fm.laplacian_fft_pad != d.laplacian_fft_pad {
+                format!(" on the volume zero-padded by {} voxels", describe_pad(fm.laplacian_fft_pad))
+            } else {
+                String::new()
+            };
+            sentences.push(format!(
+                "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003){solver}{pad}."));
             add_citation(citations, &CITE_LAPLACIAN_UNWRAP);
         }
     }
 
-    // B0 estimation
-    match config.field_mapping.b0_estimation {
+    // B0 estimation. The linear fit's settings are shared with the robust fit.
+    let mut linear = Changed::default();
+    linear.add_fields(&fm.linear_fit, &d.linear_fit, &[]);
+    match fm.b0_estimation {
         B0Estimation::WeightedAvg => {
-            if config.field_mapping.b0_weight_type == B0WeightType::AssumedDecay {
+            if fm.b0_weight_type == B0WeightType::AssumedDecay {
+                let t2star = if differs(fm.b0_weight_assumed_t2star_ms, d.b0_weight_assumed_t2star_ms) {
+                    format!(" of {} ms", fm.b0_weight_assumed_t2star_ms)
+                } else {
+                    String::new()
+                };
                 sentences.push(format!(
-                    "The B0 field map was estimated as a weighted average of the unwrapped echo phases with per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2* of {} ms and identical in every voxel (Wang et al., 2022).",
-                    config.field_mapping.b0_weight_assumed_t2star_ms));
+                    "The B0 field map was estimated as a weighted average of the unwrapped echo phases with per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2*{t2star} and identical in every voxel (Wang et al., 2022)."));
                 add_citation(citations, &CITE_UKB_QSM);
             } else {
-                let wt = format!("{}", config.field_mapping.b0_weight_type);
-                sentences.push(format!("The B0 field map was estimated using weighted averaging ({} weighting).", wt));
+                let mut changed = Changed::default();
+                changed.add(fm.b0_weight_type != d.b0_weight_type, || format!("{} weighting", fm.b0_weight_type));
+                sentences.push(format!("The B0 field map was estimated as a weighted average of the unwrapped echo phases{}.", changed.with()));
             }
         }
         B0Estimation::LinearFit => {
-            sentences.push("The B0 field map was estimated using magnitude-weighted linear fit of phase vs echo time.".to_string());
+            sentences.push(format!("The B0 field map was estimated using magnitude-weighted linear fit of phase vs echo time{}.", linear.with()));
         }
         B0Estimation::RobustFit => {
-            let r = &config.field_mapping.robust_fit;
-            let tuning = match (r.tuning, r.loss) {
-                (Some(t), _) => format!("{t}"),
-                (None, RobustLoss::Tukey) => "4.685".to_string(),
-                (None, RobustLoss::Huber) => "1.345".to_string(),
-            };
+            let (r, rd) = (&fm.robust_fit, &d.robust_fit);
+            let conventional = match r.loss { RobustLoss::Tukey => 4.685, RobustLoss::Huber => 1.345 };
+            let mut changed = Changed::default();
+            changed.add(r.loss != rd.loss, || format!("a {} loss", if r.loss == RobustLoss::Tukey { "Tukey biweight" } else { "Huber" }));
+            changed.add(r.tuning.is_some_and(|t| differs(t, conventional)), || format!("tuning constant {}", r.tuning.unwrap_or(conventional)));
+            changed.0.extend(linear.0);
             sentences.push(if r.iterations == 0 {
-                "The B0 field map was estimated using magnitude-weighted linear fit of phase vs echo time, with per-echo residual statistics reported to flag echoes inconsistent with the fit.".to_string()
+                format!("The B0 field map was estimated using magnitude-weighted linear fit of phase vs echo time, with per-echo residual statistics reported to flag echoes inconsistent with the fit{}.",
+                    if changed.is_empty() { String::new() } else { format!("; {}", join_list(&changed.0)) })
             } else {
-                format!(
-                    "The B0 field map was estimated with a motion-robust magnitude-weighted linear fit of phase vs echo time: {} iterations of iteratively reweighted least squares with a {} loss (tuning constant {}).",
-                    r.iterations, if r.loss == RobustLoss::Tukey { "Tukey biweight" } else { "Huber" }, tuning)
+                changed.add(r.iterations != rd.iterations, || format!("{} iterations", r.iterations));
+                format!("The B0 field map was estimated with a motion-robust magnitude-weighted linear fit of phase vs echo time by iteratively reweighted least squares{}.", changed.with())
             });
         }
     }
 }
 
 /// Prose for a list of mask refinement ops, in the order they run.
+/// An op's settings are compared with what the op is when written without arguments
+/// (`erode` is one iteration, `gaussian` is 4 mm), so only the ones the user chose are stated.
 fn describe_refinements(ops: &[MaskOp], citations: &mut Vec<&Citation>) -> Vec<String> {
+    let default_of = |spec: &str| parse_mask_op(spec).expect("bare mask op parses");
     ops.iter().map(|op| match op {
-        MaskOp::Erode { iterations } => format!("erosion ({} iteration{})", iterations, if *iterations != 1 { "s" } else { "" }),
-        MaskOp::Dilate { iterations } => format!("dilation ({} iteration{})", iterations, if *iterations != 1 { "s" } else { "" }),
-        MaskOp::Close { radius } => format!("morphological closing (radius={})", radius),
+        MaskOp::Erode { iterations } | MaskOp::Dilate { iterations } => {
+            let (name, spec) = if matches!(op, MaskOp::Erode { .. }) { ("erosion", "erode") } else { ("dilation", "dilate") };
+            if *op == default_of(spec) {
+                name.to_string()
+            } else {
+                format!("{name} ({iterations} iteration{})", if *iterations != 1 { "s" } else { "" })
+            }
+        }
+        MaskOp::Close { radius } if *op != default_of("close") => format!("morphological closing (radius {radius} voxels)"),
+        MaskOp::Close { .. } => "morphological closing".to_string(),
         MaskOp::FillHoles { max_size: 0 } => "hole-filling".to_string(),
-        MaskOp::FillHoles { max_size } => format!("hole-filling (max {} voxels)", max_size),
-        MaskOp::GaussianSmooth { sigma_mm } => format!("Gaussian smoothing (sigma={:.1} mm)", sigma_mm),
-        MaskOp::SignalErode { threshold, depth_cap, global_erosions, .. } => {
+        MaskOp::FillHoles { max_size } => format!("hole-filling (holes of at most {} voxels)", max_size),
+        MaskOp::GaussianSmooth { sigma_mm } if *op != default_of("gaussian") => format!("Gaussian smoothing (σ = {sigma_mm} mm)"),
+        MaskOp::GaussianSmooth { .. } => "Gaussian smoothing".to_string(),
+        MaskOp::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } => {
             add_citation(citations, &CITE_QSMCI_SIGNAL_EROSION);
-            let depth = if *depth_cap == 0 { "no depth limit".to_string() } else { format!("at most {} voxels deep", depth_cap) };
-            let global = if *global_erosions > 0 { format!("{} plain erosion{} then ", global_erosions, if *global_erosions != 1 { "s" } else { "" }) } else { String::new() };
-            format!(
-                "signal-gated erosion ({}removal of boundary voxels below {:.2} of the median bias-corrected magnitude, {}; QSM-CI)",
-                global, threshold, depth,
-            )
+            let MaskOp::SignalErode {
+                threshold: dt, depth_cap: dd, global_erosions: dg, bias_sigma: db, min_component: dm,
+            } = MaskOp::signal_erode_default() else { unreachable!() };
+            let mut changed = Changed::default();
+            changed.add(*global_erosions != dg, || format!("{} plain erosion{} first", global_erosions, if *global_erosions != 1 { "s" } else { "" }));
+            changed.add(differs(*threshold, dt), || format!("threshold {threshold:.2} of the median bias-corrected magnitude"));
+            changed.add(*depth_cap != dd, || if *depth_cap == 0 { "no depth limit".to_string() } else { format!("at most {depth_cap} voxels deep") });
+            changed.add(differs(*bias_sigma, db), || format!("bias-field σ = {bias_sigma}"));
+            changed.add(*min_component != dm, || format!("components under {min_component} voxels discarded"));
+            format!("signal-gated erosion (removal of low-signal boundary voxels{}; QSM-CI)",
+                if changed.is_empty() { String::new() } else { format!(", {}", join_list(&changed.0)) })
         }
         _ => format!("{}", op),
     }).collect()
@@ -905,41 +1302,39 @@ fn describe_generator(
         }
         MaskOp::Bet { fractional_intensity, voxel_scale } => {
             add_citation(citations, &CITE_BET);
-            // A scaled run did not see the acquisition's own geometry, which changes what BET's
-            // millimetre-scale surface model was fitted to. Stated whenever it happened.
-            let scaled = if (*voxel_scale - crate::masking::bet_default_voxel_scale()).abs() > f64::EPSILON {
-                format!("; voxel sizes scaled by {voxel_scale}x")
-            } else {
-                String::new()
-            };
-            // The surface settings are said when they differ from BET's defaults.
+            let MaskOp::Bet { fractional_intensity: df, .. } = parse_mask_op("bet").expect("bare bet parses")
+                else { unreachable!() };
+            let mut changed = Changed::default();
+            changed.add(differs(*fractional_intensity, df), || format!("f={fractional_intensity:.2}"));
+            // The surface settings, from the shared BET config.
             let (b, d) = (&config.bet, crate::config::BetConfig::default());
-            let mut surface = Vec::new();
-            if b.smoothness != d.smoothness { surface.push(format!("smoothness {}", b.smoothness)); }
-            if b.gradient_threshold != d.gradient_threshold { surface.push(format!("gradient threshold {}", b.gradient_threshold)); }
-            if b.iterations != d.iterations { surface.push(format!("{} iterations", b.iterations)); }
-            if b.subdivisions != d.subdivisions { surface.push(format!("icosphere subdivision level {}", b.subdivisions)); }
-            let surface = if surface.is_empty() { String::new() } else { format!("; {}", surface.join(", ")) };
-            format!("BET brain extraction (Smith, 2002; f={:.2}{}{}) of {}", fractional_intensity, surface, scaled, input_desc)
+            changed.add(differs(b.smoothness, d.smoothness), || format!("smoothness {}", b.smoothness));
+            changed.add(differs(b.gradient_threshold, d.gradient_threshold), || format!("gradient threshold {}", b.gradient_threshold));
+            changed.add(b.iterations != d.iterations, || format!("{} iterations", b.iterations));
+            changed.add(b.subdivisions != d.subdivisions, || format!("icosphere subdivision level {}", b.subdivisions));
+            // A scaled run did not see the acquisition's own geometry, which changes what BET's
+            // millimetre-scale surface model was fitted to.
+            changed.add(differs(*voxel_scale, crate::masking::bet_default_voxel_scale()),
+                || format!("voxel sizes scaled by {voxel_scale}x"));
+            format!("BET brain extraction (Smith, 2002{}) of {}", changed.semi(), input_desc)
         }
         MaskOp::Rs2Net { tta, tile_step } => {
             add_citation(citations, &CITE_RS2NET);
-            format!(
-                "RS2-Net deep-learning rodent brain extraction (Lin et al., 2024; \
-                 sliding-window patches stepped by {:.0}% of the patch{}) of {}",
-                tile_step * 100.0,
-                if *tta { ", mirroring test-time augmentation" } else { "" }, input_desc,
-            )
+            let mut changed = Changed::default();
+            changed.add(differs(*tile_step, crate::masking::rs2_net_default_tile_step()),
+                || format!("sliding-window patches stepped by {:.0}% of the patch", tile_step * 100.0));
+            changed.add(*tta, || "mirroring test-time augmentation".to_string());
+            format!("RS2-Net deep-learning rodent brain extraction (Lin et al., 2024{}) of {}", changed.semi(), input_desc)
         }
         MaskOp::HdBet { patch, tta, tile_step } => {
             add_citation(citations, &CITE_HDBET);
-            // Always stated: a methods section should name every parameter the run used.
-            format!(
-                "HD-BET deep-learning brain extraction (Isensee et al., 2019; {}x{}x{}-voxel \
-                 sliding-window patches stepped by {:.0}% of the patch{}) of {}",
-                patch[0], patch[1], patch[2], tile_step * 100.0,
-                if *tta { ", mirroring test-time augmentation" } else { "" }, input_desc,
-            )
+            let mut changed = Changed::default();
+            changed.add(*patch != MaskOp::hd_bet_default_patch(),
+                || format!("{}x{}x{}-voxel sliding-window patches", patch[0], patch[1], patch[2]));
+            changed.add(differs(*tile_step, crate::masking::hd_bet_default_tile_step()),
+                || format!("windows stepped by {:.0}% of the patch", tile_step * 100.0));
+            changed.add(*tta, || "mirroring test-time augmentation".to_string());
+            format!("HD-BET deep-learning brain extraction (Isensee et al., 2019{}) of {}", changed.semi(), input_desc)
         }
         _ => format!("{} of {}", section.generator, input_desc),
     }
@@ -997,6 +1392,9 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
     // while MagnitudeFirst/MagnitudeLast use their specific echo magnitudes.
     if config.masking.inhomogeneity_correction {
         add_citation(citations, &CITE_BIAS);
+        let mut changed = Changed::default();
+        changed.add_fields(&config.homogeneity, &HomogeneityConfig::default(), &[]);
+        let settings = changed.semi();
 
         let inputs: Vec<MaskingInput> = config.masking.sections.iter().map(|s| s.input).collect();
         let uses_rss = inputs.iter().any(|i| matches!(i, MaskingInput::Magnitude | MaskingInput::PhaseQuality));
@@ -1004,15 +1402,15 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
         let uses_last = inputs.iter().any(|i| matches!(i, MaskingInput::MagnitudeLast));
 
         if uses_rss && !uses_first && !uses_last {
-            sentences.push("Inhomogeneity correction (Eckstein et al., 2019) was applied to the RSS-combined magnitude image.".to_string());
+            sentences.push(format!("Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the RSS-combined magnitude image."));
         } else if !uses_rss && (uses_first || uses_last) {
             let echo = if uses_first { "first" } else { "last" };
             sentences.push(format!(
-                "Inhomogeneity correction (Eckstein et al., 2019) was applied to the {}-echo magnitude image.",
+                "Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the {}-echo magnitude image.",
                 echo
             ));
         } else {
-            sentences.push("Inhomogeneity correction (Eckstein et al., 2019) was applied to the magnitude data.".to_string());
+            sentences.push(format!("Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the magnitude data."));
         }
     }
 
@@ -1344,11 +1742,12 @@ mod tests {
         assert!(out.contains("voxel sizes scaled by 10x"),
                 "out: {out}");
 
-        // Unscaled BET reads as it always did.
+        // Unscaled BET at the default f states neither.
         config.masking.sections[0].generator = MaskOp::bet(0.5);
         let out = generate_methods(&config);
-        assert!(out.contains("BET brain extraction (Smith, 2002; f=0.50)"), "out: {out}");
+        assert!(out.contains("BET brain extraction (Smith, 2002) of"), "out: {out}");
         assert!(!out.contains("voxel sizes scaled"), "out: {out}");
+        assert!(!out.contains("f="), "out: {out}");
     }
 
     /// The `bet-and-phase` recipe names the operation, the intersection it means, and the
@@ -1375,15 +1774,20 @@ mod tests {
     }
 
     #[test]
-    fn vsharp_methods_say_whether_it_deconvolved() {
+    fn vsharp_methods_state_only_changed_settings() {
         let mut config = PipelineConfig::default();
         let out = generate_methods(&config);
-        assert!(out.contains("deconvolution disabled"), "{out}");
-        assert!(out.contains("12 to 1 mm"), "{out}");
+        assert!(out.contains("Background field removal was performed using V-SHARP (Wu et al., 2012)."), "{out}");
+        assert!(!out.contains("deconvolution"), "{out}");
+        assert!(!out.contains("radii"), "{out}");
         config.bg_removal.vsharp.deconvolve = true;
         let out = generate_methods(&config);
-        assert!(out.contains("truncated-SVD deconvolution (threshold 0.2)"), "{out}");
-        assert!(!out.contains("deconvolution disabled"), "{out}");
+        assert!(out.contains("V-SHARP (Wu et al., 2012) with truncated-SVD deconvolution enabled."), "{out}");
+        assert!(!out.contains("deconvolution threshold"), "the default threshold is not stated: {out}");
+        config.bg_removal.vsharp.threshold = 0.1;
+        config.bg_removal.vsharp.max_radius = 8.0;
+        let out = generate_methods(&config);
+        assert!(out.contains("with SMV kernel radii from 8 to 1 mm, truncated-SVD deconvolution enabled, and a deconvolution threshold of 0.1."), "{out}");
     }
 
     #[test]
@@ -1424,8 +1828,12 @@ mod tests {
         config.inversion.algorithm = QsmAlgorithm::Tgv;
         let out = generate_methods(&config);
         assert!(out.contains("Total Generalized Variation (TGV)"));
-        assert!(out.contains("Regularization weights were α0 = "), "{out}");
-        assert!(out.contains(&format!("α0 = {}", config.inversion.tgv.alpha0)));
+        assert!(!out.contains("α0"), "default weights are not stated: {out}");
+        assert!(!out.contains("TGV was run with"), "{out}");
+        config.inversion.tgv.alpha0 = 0.123;
+        config.inversion.tgv.erosions = 7;
+        let out = generate_methods(&config);
+        assert!(out.contains("TGV was run with 7 mask erosions and α0 = 0.123."), "{out}");
         // Multi-echo TGV is fed the field map, so field mapping is described (#282); background
         // removal never runs in front of it.
         assert!(out.contains("for multi-echo data TGV was applied to the B0 field map"), "{out}");
@@ -1490,9 +1898,16 @@ mod tests {
         config.field_mapping.b0_estimation = B0Estimation::RobustFit;
         let out = generate_methods(&config);
         assert!(out.contains("motion-robust"), "{out}");
-        assert!(out.contains("Tukey biweight loss (tuning constant 4.685)"), "{out}");
+        assert!(out.contains("by iteratively reweighted least squares."), "{out}");
+        assert!(!out.contains("Tukey") && !out.contains("tuning"), "defaults are not stated: {out}");
         config.field_mapping.robust_fit.loss = RobustLoss::Huber;
-        assert!(generate_methods(&config).contains("Huber loss (tuning constant 1.345)"));
+        let out = generate_methods(&config);
+        assert!(out.contains("least squares with a Huber loss."), "{out}");
+        // Huber's conventional constant is its default, so it is not a change.
+        config.field_mapping.robust_fit.tuning = Some(1.345);
+        assert!(!generate_methods(&config).contains("tuning"));
+        config.field_mapping.robust_fit.tuning = Some(2.0);
+        assert!(generate_methods(&config).contains("a Huber loss and tuning constant 2."));
     }
 
     #[test]
@@ -1510,17 +1925,22 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("Laplacian method"));
         assert!(out.contains("Schofield"));
+        assert!(!out.contains("DCT"), "the default solver is not stated: {out}");
         config.field_mapping.laplacian_solver = LaplacianSolver::Fft;
-        assert!(generate_methods(&config).contains("zero-padded by 64 voxels"));
+        let out = generate_methods(&config);
+        assert!(out.contains("(Schofield & Zhu, 2003) with an FFT Poisson solve."), "{out}");
+        assert!(!out.contains("zero-padded"), "the default padding is not stated: {out}");
         config.field_mapping.laplacian_fft_pad = [64, 64, 32];
-        assert!(generate_methods(&config).contains("zero-padded by 64×64×32 voxels"));
+        assert!(generate_methods(&config).contains("with an FFT Poisson solve on the volume zero-padded by 64×64×32 voxels."));
     }
 
     #[test]
     fn test_romeo_individual_mode() {
+        // Individual per-echo unwrapping is the default, so the mode is not stated.
         let config = PipelineConfig::default();
         let out = generate_methods(&config);
-        assert!(out.contains("individual per-echo"));
+        assert!(out.contains("Phase unwrapping was performed using ROMEO (Dymerska et al., 2021)."), "{out}");
+        assert!(!out.contains("mode"), "{out}");
     }
 
     #[test]
@@ -1528,7 +1948,7 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.field_mapping.romeo.individual = false;
         let out = generate_methods(&config);
-        assert!(out.contains("template-based temporal"));
+        assert!(out.contains("using ROMEO (Dymerska et al., 2021) in template-based temporal mode."), "{out}");
     }
 
     #[test]
@@ -1568,8 +1988,11 @@ mod tests {
     fn test_b0_weighted_avg_methods() {
         let config = PipelineConfig::default();
         let out = generate_methods(&config);
-        assert!(out.contains("weighted averaging"));
-        assert!(out.contains("phase-snr"));
+        assert!(out.contains("The B0 field map was estimated as a weighted average of the unwrapped echo phases."), "{out}");
+        assert!(!out.contains("phase-snr"), "the default weighting is not stated: {out}");
+        let mut config = config;
+        config.field_mapping.b0_weight_type = B0WeightType::Mag;
+        assert!(generate_methods(&config).contains("unwrapped echo phases with mag weighting."));
     }
 
     #[test]
@@ -1586,8 +2009,10 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.field_mapping.b0_weight_type = B0WeightType::AssumedDecay;
         let out = generate_methods(&config);
-        assert!(out.contains("TE·exp(−TE/T2*), computed from the echo times and an assumed T2* of 40 ms"), "{out}");
+        assert!(out.contains("TE·exp(−TE/T2*), computed from the echo times and an assumed T2* and identical"), "{out}");
         assert!(out.contains("Wang, C., et al. (2022)"), "{out}");
+        config.field_mapping.b0_weight_assumed_t2star_ms = 30.0;
+        assert!(generate_methods(&config).contains("an assumed T2* of 30 ms"));
     }
 
     #[test]
@@ -1783,8 +2208,8 @@ mod tests {
             refinements: vec![],
         }];
         let out = generate_methods(&config);
-        assert!(out.contains("RS2-Net deep-learning rodent brain extraction (Lin et al., 2024;"), "{out}");
-        assert!(out.contains("stepped by 50% of the patch"), "{out}");
+        assert!(out.contains("RS2-Net deep-learning rodent brain extraction (Lin et al., 2024) of"), "{out}");
+        assert!(!out.contains("stepped by"), "the default step is not stated: {out}");
         assert!(out.contains("https://doi.org/10.1016/j.neuroimage.2024.120769"), "{out}");
         // Otsu is not cited by a run that never thresholded.
         assert!(!out.contains("Otsu, 1979"), "{out}");
@@ -1803,11 +2228,17 @@ mod tests {
             refinements: vec![MaskOp::signal_erode_default()],
         }];
         let out = generate_methods(&config);
-        assert!(out.contains("HD-BET deep-learning brain extraction (Isensee et al., 2019; 192x192x96"), "{out}");
-        assert!(out.contains("signal-gated erosion (1 plain erosion then removal of boundary voxels below 0.80"), "{out}");
-        assert!(out.contains("at most 5 voxels deep"), "{out}");
+        assert!(out.contains("HD-BET deep-learning brain extraction (Isensee et al., 2019) of"), "{out}");
+        assert!(out.contains("signal-gated erosion (removal of low-signal boundary voxels; QSM-CI)"), "{out}");
+        assert!(!out.contains("0.80") && !out.contains("voxels deep"), "{out}");
         assert!(out.contains("https://doi.org/10.1002/hbm.24750"), "{out}");
         assert!(out.contains("https://github.com/QSMxT/QSM-CI"), "{out}");
+
+        config.masking.sections[0].generator = MaskOp::HdBet { patch: MaskOp::hd_bet_default_patch(), tta: true, tile_step: 0.25 };
+        config.masking.sections[0].refinements = vec![parse_mask_op("signal-erode:0.7").unwrap()];
+        let out = generate_methods(&config);
+        assert!(out.contains("(Isensee et al., 2019; windows stepped by 25% of the patch and mirroring test-time augmentation)"), "{out}");
+        assert!(out.contains("signal-gated erosion (removal of low-signal boundary voxels, threshold 0.70 of the median bias-corrected magnitude; QSM-CI)"), "{out}");
     }
 
     #[test]
@@ -1944,8 +2375,9 @@ mod tests {
             refinements: vec![MaskOp::Erode { iterations: 1 }],
         }];
         let out = generate_methods(&config);
-        assert!(out.contains("erosion (1 iteration)"));
-        assert!(!out.contains("iterations)"));
+        // One iteration is what a bare `erode` means, so it is not stated.
+        assert!(out.contains("followed by erosion."), "{out}");
+        assert!(!out.contains("iteration"), "{out}");
     }
 
     #[test]
@@ -1969,7 +2401,7 @@ mod tests {
             refinements: vec![MaskOp::Close { radius: 5 }],
         }];
         let out = generate_methods(&config);
-        assert!(out.contains("morphological closing (radius=5)"));
+        assert!(out.contains("morphological closing (radius 5 voxels)"), "{out}");
     }
 
     #[test]
@@ -1981,7 +2413,7 @@ mod tests {
             refinements: vec![MaskOp::GaussianSmooth { sigma_mm: 2.5 }],
         }];
         let out = generate_methods(&config);
-        assert!(out.contains("Gaussian smoothing (sigma=2.5 mm)"));
+        assert!(out.contains("Gaussian smoothing (σ = 2.5 mm)"), "{out}");
     }
 
     #[test]
@@ -1993,7 +2425,7 @@ mod tests {
             refinements: vec![MaskOp::FillHoles { max_size: 500 }],
         }];
         let out = generate_methods(&config);
-        assert!(out.contains("hole-filling (max 500 voxels)"));
+        assert!(out.contains("hole-filling (holes of at most 500 voxels)"), "{out}");
     }
 
     #[test]
@@ -2230,5 +2662,178 @@ mod multiorient_methods_tests {
                 assert!(!paragraph.contains(banned), "`{banned}` in methods:\n{paragraph}");
             }
         }
+    }
+}
+
+
+/// Parameter values are stated only when they differ from QSMxT's defaults.
+#[cfg(test)]
+mod defaults_only_tests {
+    use super::*;
+
+    /// Fragments that only a stated parameter value produces.
+    const VALUE_MARKERS: [&str; 16] = [
+        "=", " mm", "iteration", "%", "slices", "slab", "weighting)", "scaling", "power", "σ",
+        "radii", "threshold ", "tolerance", "oblique", " mode", "tuning",
+    ];
+
+    fn paragraph(config: &PipelineConfig) -> String {
+        let out = generate_methods(config);
+        out.split("## References").next().unwrap().to_string()
+    }
+
+    fn assert_no_values(config: &PipelineConfig, what: &str) {
+        assert_no_values_except(config, what, &[]);
+    }
+
+    fn assert_no_values_except(config: &PipelineConfig, what: &str, allowed: &[&str]) {
+        let text = paragraph(config);
+        for m in VALUE_MARKERS.iter().filter(|m| !allowed.contains(m)) {
+            assert!(!text.contains(m), "{what}: `{m}` in default methods:\n{text}");
+        }
+    }
+
+    /// Every section, switched on with its default settings, names its method and no values.
+    #[test]
+    fn default_settings_state_no_parameter_values() {
+        let base = || {
+            let mut c = PipelineConfig::default();
+            c.pipeline.do_swi = true;
+            c.pipeline.do_smwi = true;
+            c.pipeline.do_t2starmap = true;
+            c.pipeline.do_r2starmap = true;
+            c.pipeline.do_segmentation = true;
+            c.pipeline.do_analysis = true;
+            c.pipeline.axial_resampling = true;
+            c.pipeline.crop_to_mask = true;
+            c.pipeline.fft_padding = true;
+            c.masking.two_pass = true;
+            c.motion_correction.enabled = true;
+            c.bg_removal.msmv_refine = true;
+            c
+        };
+        assert_no_values(&base(), "everything on");
+        for alg in &QsmAlgorithm::ALL {
+            let mut c = base();
+            c.inversion.algorithm = *alg;
+            c.inversion.tile_size = Some(64);
+            assert_no_values(&c, &format!("inversion {alg}"));
+        }
+        for alg in [BfAlgorithm::Pdf, BfAlgorithm::Lbv, BfAlgorithm::Ismv, BfAlgorithm::Sharp,
+                    BfAlgorithm::Resharp, BfAlgorithm::Harperella, BfAlgorithm::Iharperella] {
+            let mut c = base();
+            c.bg_removal.algorithm = alg;
+            assert_no_values(&c, &format!("background removal {alg:?}"));
+        }
+        for alg in [SeparationAlgorithm::R2starQsm, SeparationAlgorithm::Decompose,
+                    SeparationAlgorithm::ChiSepIlsqr, SeparationAlgorithm::ChiSepMedi,
+                    SeparationAlgorithm::WaveSep, SeparationAlgorithm::HcChisep] {
+            let mut c = base();
+            c.pipeline.do_chi_separation = true;
+            c.separation.algorithm = alg;
+            crate::config::enforce_separation_dependencies(&mut c);
+            assert_no_values(&c, &format!("separation {alg:?}"));
+        }
+        for b0 in [B0Estimation::LinearFit, B0Estimation::RobustFit] {
+            let mut c = base();
+            c.field_mapping.b0_estimation = b0;
+            assert_no_values(&c, &format!("B0 {b0:?}"));
+        }
+        let mut c = base();
+        c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        c.field_mapping.b0_weight_type = B0WeightType::AssumedDecay;
+        assert_no_values(&c, "laplacian + assumed decay");
+        for (name, recipe) in mask_presets() {
+            let mut c = base();
+            c.masking.sections = recipe.sections;
+            c.masking.combine = recipe.combine;
+            c.masking.refinements = recipe.refinements;
+            // A recipe's own refinement counts (the `bet` preset erodes twice) are part of the
+            // recipe, not a setting with a default.
+            assert_no_values_except(&c, &format!("mask preset {name}"), &["iteration"]);
+        }
+        let mut c = base();
+        c.pipeline.do_r2primemap = true;
+        c.separation.r2prime_strategy = R2PrimeStrategy::R2primenet;
+        assert_no_values(&c, "R2PRIMEnet");
+        let mut c = base();
+        c.multi_orientation.group_by = "acq".into();
+        c.multi_orientation.magnitude_weighting = true;
+        assert_no_values(&c, "COSMOS");
+    }
+
+    /// Changing one setting states exactly that setting.
+    #[test]
+    fn a_changed_setting_is_stated() {
+        type Edit = fn(&mut PipelineConfig);
+        let cases: Vec<(Edit, &str)> = vec![
+            (|c| c.bg_removal.vsharp.min_radius = 2.0, "V-SHARP (Wu et al., 2012) with SMV kernel radii from 12 to 2 mm."),
+            (|c| c.bg_removal.vsharp.deconvolve = true, "V-SHARP (Wu et al., 2012) with truncated-SVD deconvolution enabled."),
+            (|c| { c.bg_removal.algorithm = BfAlgorithm::Ismv; c.bg_removal.ismv.radius = 7.5; },
+                "iSMV (Wen et al., 2014) with SMV radius = 7.5 mm."),
+            (|c| { c.bg_removal.algorithm = BfAlgorithm::Pdf; c.bg_removal.pdf.tol = 0.123; },
+                "PDF (Liu et al., 2011) with tolerance = 0.123."),
+            (|c| { c.bg_removal.msmv_refine = true; c.bg_removal.msmv.maxk = 9; },
+                "(Roberts et al., 2024) with at most 9 residual-removal iterations."),
+            (|c| c.inversion.ilsqr.max_iter = 123, "iLSQR (Li et al., 2015) with at most 123 iterations."),
+            (|c| { c.inversion.algorithm = QsmAlgorithm::Rts; c.inversion.rts.delta = 0.37; },
+                "(Kames et al., 2018) with δ = 0.37."),
+            (|c| { c.inversion.algorithm = QsmAlgorithm::Medi; c.inversion.medi.merit = !MediConfig::default().merit; },
+                "MERIT"),
+            (|c| { c.inversion.algorithm = QsmAlgorithm::Xqsm; c.inversion.tile_size = Some(64); c.inversion.tile_halo = Some(4); },
+                "(tile size 64 voxels, halo 4 voxels)"),
+            (|c| { c.inversion.algorithm = QsmAlgorithm::Qsmart; c.inversion.qsmart.frangi_c = 123.0; },
+                "tissue/vasculature separation, with frangi c = 123."),
+            (|c| c.field_mapping.romeo.correct_global = false, "ROMEO (Dymerska et al., 2021) with correct global disabled."),
+            (|c| c.field_mapping.phase_offset_sigma = [3.0, 3.0, 3.0], "(Eckstein et al., 2018; smoothing σ = 3 × 3 × 3 voxels)"),
+            (|c| { c.field_mapping.b0_estimation = B0Estimation::LinearFit; c.field_mapping.linear_fit.estimate_offset = !LinearFitConfig::default().estimate_offset; },
+                "echo time with phase-offset estimation"),
+            (|c| { c.pipeline.axial_resampling = true; c.pipeline.obliquity_threshold = 5.0; },
+                "Acquisitions more than 5° oblique were resampled"),
+            (|c| { c.pipeline.axial_resampling = true; c.pipeline.output_space = crate::config::OutputSpace::Working; },
+                "and the derivatives were written on the resampled grid."),
+            (|c| { c.pipeline.crop_to_mask = true; c.pipeline.crop_margin_mm = 16.0; },
+                "within a box around the brain mask with a 16 mm margin."),
+            (|c| { c.motion_correction.enabled = true; c.registration.levels = 2; },
+                "over a multi-resolution pyramid (2 pyramid levels)"),
+            (|c| { c.homogeneity.sigma_mm = 5.0; }, "(Eckstein et al., 2019; σ = 5 mm)"),
+            (|c| c.masking.sections[0].refinements[0] = MaskOp::Dilate { iterations: 2 }, "followed by dilation (2 iterations), hole-filling, and erosion."),
+            (|c| { c.pipeline.do_swi = true; c.swi.hp_sigma = [2.0, 2.0, 0.0]; },
+                "high-pass filtered with a Gaussian (σ = 2 × 2 × 0 voxels), scaled into a phase mask and"),
+            (|c| { c.pipeline.do_swi = true; c.swi.strength = 2.0; },
+                "high-pass filtered, scaled into a phase mask (power 2) and"),
+            (|c| { c.pipeline.do_swi = true; c.swi.scaling = SwiScaling::Positive; },
+                "scaled into a phase mask (positive scaling) and"),
+            (|c| { c.pipeline.do_swi = true; c.swi.mip_window = 5; }, "taken over 5-slice slabs."),
+            (|c| { c.pipeline.do_smwi = true; c.smwi.power = 2.5; },
+                "derived from the susceptibility map (mask raised to the power 2.5), separately"),
+            (|c| { c.pipeline.do_smwi = true; c.smwi.mip_window = 5; }, "minimum-intensity projection over 5 slices."),
+            (|c| { c.pipeline.do_segmentation = true; c.segmentation.flip_averaging = !SegmentationConfig::default().flip_averaging; },
+                "structures, with left-right flip averaging of the posteriors"),
+            (|c| { c.pipeline.do_chi_separation = true; c.separation.r2star_qsm.r_const_3t = 123.0; },
+                "with relaxometric constant at 3 T = 123."),
+            (|c| { c.pipeline.do_r2primemap = true; c.separation.r2prime_strategy = R2PrimeStrategy::R2primenet; c.separation.r2primenet.patch = [160, 160, 128]; },
+                "(Kim et al., 2025; patch = 160 × 160 × 128 voxels)"),
+            (|c| { c.multi_orientation.group_by = "acq".into(); c.multi_orientation.magnitude_weighting = true; c.multi_orientation.cosmos_max_iter = 77; },
+                "solved by conjugate gradient (at most 77 iterations)."),
+            (|c| { c.multi_orientation.group_by = "acq".into(); c.registration.levels = 2; },
+                "multi-resolution pyramid; 2 pyramid levels)"),
+        ];
+        for (edit, expected) in cases {
+            let mut c = PipelineConfig::default();
+            edit(&mut c);
+            crate::config::enforce_separation_dependencies(&mut c);
+            let text = paragraph(&c);
+            assert!(text.contains(expected), "expected `{expected}` in:\n{text}");
+        }
+    }
+
+    #[test]
+    fn floats_compare_with_a_tolerance() {
+        assert!(!differs(0.1 + 0.2, 0.3));
+        assert!(differs(0.3, 0.31));
+        let mut c = PipelineConfig::default();
+        c.bg_removal.vsharp.max_radius += 1e-12;
+        assert!(!paragraph(&c).contains("radii"));
     }
 }

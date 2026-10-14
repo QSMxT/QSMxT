@@ -259,6 +259,19 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
   `--ilsqr-tol`, `--ilsqr-max-iter`, ...) and the reference pages drop STI Suite, UK Biobank and
   previous-QSMxT-version asides. No output changes.
 
+- **The methods text states parameter values only when they differ from QSMxT's defaults.**
+  Each sentence names its method and cites it; a value is added, phrased as a setting, only
+  when the run changed it. A default run now reads "Background field removal was performed
+  using V-SHARP (Wu et al., 2012)." where it used to list the SMV radii and the deconvolution
+  switch, and the SWI sentence no longer lists the Gaussian σ, tanh scaling, power and MIP slab.
+  The same applies to masking (BET f, HD-BET/RS2-Net windows, signal-gated erosion, erosion and
+  dilation counts), field mapping (ROMEO mode, B0 weighting, assumed T2*, Laplacian solver and
+  padding, robust-fit loss), TGV, SMWI, SynthSeg flip averaging, motion correction and COSMOS.
+  Changed settings of every inversion, background-removal and source-separation algorithm are
+  now stated too (e.g. "using RTS (Kames et al., 2018) with δ = 0.37"), as are axial
+  resampling's threshold and output grid, `--crop-to-mask`, `--fft-padding` and
+  `--ignore-slice-gap` when switched on. No output changes.
+
 - **Breaking: `--axial-resampling` turns obliquity resampling on; the threshold is only a
   threshold.** `--obliquity-threshold <degrees>` (default 10) now only sets where
   `--axial-resampling` starts resampling, and a negative value is refused with a message pointing
