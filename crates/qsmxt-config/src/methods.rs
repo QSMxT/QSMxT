@@ -1809,6 +1809,17 @@ mod tests {
     }
 
     #[test]
+    fn ilsqr_methods_state_only_a_non_default_padding() {
+        let mut config = PipelineConfig::default();
+        config.inversion.algorithm = QsmAlgorithm::Ilsqr;
+        let out = generate_methods(&config);
+        assert!(!out.contains("zero-padding"), "the default padding is not stated: {out}");
+        config.inversion.ilsqr.pad_mm = 32.0;
+        let out = generate_methods(&config);
+        assert!(out.contains("zero-padding = 32 mm per side"), "{out}");
+    }
+
+    #[test]
     fn test_default_methods() {
         let config = PipelineConfig::default();
         let out = generate_methods(&config);

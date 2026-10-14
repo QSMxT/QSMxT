@@ -192,7 +192,9 @@ pub fn execute(cmd: InvertCommand) -> crate::Result<()> {
             let params = qsm_core::inversion::IlsqrParams {
                 tol: args.tol.unwrap_or(d.tol),
                 max_iter: args.max_iter.unwrap_or(d.max_iter),
+                pad_mm: args.pad_mm.unwrap_or(d.pad_mm),
             };
+            params.validate().map_err(|e| QsmxtError::Config(format!("--pad-mm: {e}")))?;
             let (chi, _, _, _) = qsm_core::inversion::ilsqr(
                 &field_nifti.data, &mask, &grid, bdir, &params, |_, _| {},
             );

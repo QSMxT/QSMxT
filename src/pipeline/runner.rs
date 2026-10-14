@@ -3394,6 +3394,7 @@ fn invert_params(config: &PipelineConfig) -> serde_json::Value {
         QsmAlgorithm::Tsvd => serde_json::json!({ "threshold": config.inversion.tsvd.threshold }),
         QsmAlgorithm::Ilsqr => serde_json::json!({
             "tol": config.inversion.ilsqr.tol, "max_iter": config.inversion.ilsqr.max_iter,
+            "pad_mm": config.inversion.ilsqr.pad_mm,
         }),
         // HEIDI's cache key carries the LSQR group too — its seed is an LSQR solve, so changing
         // `--lsqr-tol` changes the HEIDI result and has to invalidate it.

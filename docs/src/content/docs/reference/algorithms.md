@@ -257,8 +257,8 @@ the complex domain, for the same reason phase went out that way.
 
 ## Grid padding and cropping
 
-Both of these trade reconstruction cost against the grid the FFT stages run on,
-and both are off by default.
+All three trade reconstruction cost against the grid the FFT stages run on.
+`--fft-padding` and `--crop-to-mask` are off by default; iLSQR always pads.
 
 ### `--fft-padding`
 
@@ -295,10 +295,19 @@ the FFT stages were 5% of wall time there — HD-BET masking was 289 s of 338 s 
 so the end-to-end saving was inside noise. Use it for grids with large empty
 regions, not as a general speedup.
 
-`--crop-margin-mm` defaults to 32. At 16 mm the reconstruction differed from the
-uncropped one by 0.8% of dynamic range at the median and 5.1% at p99; at 32 mm
-and 64 mm it was identical. The margin must also clear the largest SMV kernel in
-use, and V-SHARP defaults to 12 mm.
+### `--ilsqr-pad-mm`
+
+iLSQR crops the field to the mask's bounding box and zero-pads it before
+solving. Each axis is padded to the next multiple of 16 above the crop plus
+`2 × pad / voxel size`, and both LSQR solves run on that grid. The default is
+16 mm per side.
+
+The padding changes χ slightly, because the dipole convolution is circular on
+the padded grid. Larger padding costs time and memory roughly in proportion to
+the padded grid. For example, a 256×288×48 acquisition at 0.8×0.8×3 mm is
+solved on 208×256×64 at 16 mm and on 336×384×96 at 64 mm, which takes 2.4 times
+as long. Padding below 16 mm loses accuracy on thin slabs and small fields of
+view, where the volume wraps onto itself.
 
 ## Coil combination
 

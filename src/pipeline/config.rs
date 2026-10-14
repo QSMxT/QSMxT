@@ -398,6 +398,12 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         if let Some(v) = args.tsvd_params.tsvd_threshold { config.inversion.tsvd.threshold = v; }
         if let Some(v) = args.ilsqr_params.ilsqr_tol { config.inversion.ilsqr.tol = v; }
         if let Some(v) = args.ilsqr_params.ilsqr_max_iter { config.inversion.ilsqr.max_iter = v; }
+        if let Some(v) = args.ilsqr_params.ilsqr_pad_mm {
+            qsm_core::inversion::IlsqrParams { pad_mm: v, ..Default::default() }
+                .validate()
+                .map_err(|e| QsmxtError::Config(format!("--ilsqr-pad-mm: {e}")))?;
+            config.inversion.ilsqr.pad_mm = v;
+        }
         // LSQR's params serve HEIDI too — its seed is an LSQR solve.
         if let Some(v) = args.lsqr_params.lsqr_residual_weighting { config.inversion.lsqr.residual_weighting = Some(v); }
         if args.lsqr_params.no_lsqr_global_offset { config.inversion.lsqr.fit_global_offset = false; }
@@ -939,6 +945,7 @@ mod tests {
             &["--mask-refine", "threshold:otsu"],
             &["--motion-correction", "--motion-reference", "middle"],
             &["--laplacian-fft-pad", "8", "8"],
+            &["--ilsqr-pad-mm", "NaN"],
             &["--do-segmentation", "--synthseg-version", "v3"],
         ];
         for extra in cases {
@@ -1009,6 +1016,16 @@ mod tests {
         assert_eq!(with(&["--laplacian-fft-pad", "12"]).field_mapping.laplacian_fft_pad, [12; 3]);
         assert_eq!(with(&["--laplacian-fft-pad", "64", "64", "32"]).field_mapping.laplacian_fft_pad, [64, 64, 32]);
         // Two values is neither: refused (see `unusable_flag_values_are_refused`).
+    }
+
+    #[test]
+    fn ilsqr_pad_mm_from_cli() {
+        let d = config_from_cli(&["qsmxt", "run", "<bids>"]);
+        assert_eq!(d.inversion.ilsqr.pad_mm, qsm_core::inversion::DEFAULT_PAD_MM);
+        let c = config_from_cli(&["qsmxt", "run", "<bids>", "--ilsqr-pad-mm", "32"]);
+        assert_eq!(c.inversion.ilsqr.pad_mm, 32.0);
+        assert_eq!(c.inversion.qsmart.ilsqr_pad_mm, d.inversion.qsmart.ilsqr_pad_mm, "QSMART keeps its own");
+        assert_eq!(config_from_cli(&["qsmxt", "run", "<bids>", "--ilsqr-pad-mm", "0"]).inversion.ilsqr.pad_mm, 0.0);
     }
 
     #[test]

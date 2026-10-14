@@ -1566,6 +1566,7 @@ pub struct PipelineFormState {
     // iLSQR
     pub ilsqr_tol: String,
     pub ilsqr_max_iter: String,
+    pub ilsqr_pad_mm: String,
 
     // LSQR (also HEIDI's seed)
     pub lsqr_residual_weighting: String,
@@ -1962,6 +1963,7 @@ impl Default for PipelineFormState {
             tsvd_threshold: format!("{}", tkd.threshold),
             ilsqr_tol: format!("{}", qsm_core::inversion::IlsqrParams::default().tol),
             ilsqr_max_iter: format!("{}", qsm_core::inversion::IlsqrParams::default().max_iter),
+            ilsqr_pad_mm: format!("{}", qsm_core::inversion::IlsqrParams::default().pad_mm),
             // Via qsmxt-config rather than qsm-core: it is the layer that decides which of
             // qsm-core's fields are the user's (LSQR's b0 and mask_output are not), and it
             // flattens HEIDI's optional denoise struct into the four values shown here.
@@ -2794,6 +2796,7 @@ impl PipelineFormState {
             "ilsqr" => { // iLSQR
                 rows.push(PipelineRow::Param { label: "  Tolerance", field: "ilsqr_tol", help: "Convergence tolerance" });
                 rows.push(PipelineRow::Param { label: "  Max Iter", field: "ilsqr_max_iter", help: "Maximum iterations" });
+                rows.push(PipelineRow::Param { label: "  Pad (mm)", field: "ilsqr_pad_mm", help: "Zero-padding per side, mm. Larger costs time and memory; below 16 mm thin volumes lose accuracy" });
             }
             // HEIDI seeds itself with an LSQR solve, so it shows both groups.
             "lsqr" | "heidi" => {
@@ -3072,7 +3075,7 @@ impl PipelineFormState {
         "rts_delta", "rts_mu", "rts_tol", "rts_rho", "rts_max_iter", "rts_lsmr_iter",
         "tv_lambda", "tv_rho", "tv_tol", "tv_max_iter",
         "tkd_threshold", "tsvd_threshold",
-        "ilsqr_tol", "ilsqr_max_iter",
+        "ilsqr_tol", "ilsqr_max_iter", "ilsqr_pad_mm",
         "tgv_iterations", "tgv_erosions", "tgv_alpha1", "tgv_alpha0",
         "tikhonov_lambda",
         "nltv_lambda", "nltv_mu", "nltv_tol", "nltv_max_iter", "nltv_newton_iter",
@@ -3177,6 +3180,7 @@ impl PipelineFormState {
             "heidi_denoise_time_step" => &self.heidi_denoise_time_step,
             "heidi_denoise_conductance" => &self.heidi_denoise_conductance,
             "ilsqr_max_iter" => &self.ilsqr_max_iter,
+            "ilsqr_pad_mm" => &self.ilsqr_pad_mm,
             "tgv_iterations" => &self.tgv_iterations,
             "tgv_erosions" => &self.tgv_erosions,
             "tgv_alpha1" => &self.tgv_alpha1,
@@ -3399,6 +3403,7 @@ impl PipelineFormState {
             "heidi_denoise_time_step" => Some(&mut self.heidi_denoise_time_step),
             "heidi_denoise_conductance" => Some(&mut self.heidi_denoise_conductance),
             "ilsqr_max_iter" => Some(&mut self.ilsqr_max_iter),
+            "ilsqr_pad_mm" => Some(&mut self.ilsqr_pad_mm),
             "tgv_iterations" => Some(&mut self.tgv_iterations),
             "tgv_erosions" => Some(&mut self.tgv_erosions),
             "tgv_alpha1" => Some(&mut self.tgv_alpha1),
