@@ -203,10 +203,10 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
         }),
         MaskCommand::HdBet(args) => { let op = hd_bet_op(&args)?; generate(&args.common, op) }
         MaskCommand::Rs2Net(args) => { let op = rs2_net_op(&args)?; generate(&args.common, op) }
-        MaskCommand::Preset(args) => { let recipe = mask_preset_recipe(args.preset); preset(&args, recipe) }
+        MaskCommand::Preset(args) => { let recipe = mask_preset_recipe(args.preset)?; preset(&args, recipe) }
         MaskCommand::Robust(args) => preset(
             &MaskPresetArgs { preset: crate::cli::MaskPresetArg::RobustThreshold, common: args.common, quality: None },
-            mask_preset_recipe(crate::cli::MaskPresetArg::RobustThreshold),
+            mask_preset_recipe(crate::cli::MaskPresetArg::RobustThreshold)?,
         ),
         MaskCommand::Erode(args) => refine_file(&args.common, MaskOp::Erode { iterations: args.iterations }),
         MaskCommand::Dilate(args) => refine_file(&args.common, MaskOp::Dilate { iterations: args.iterations }),

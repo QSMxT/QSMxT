@@ -23,7 +23,7 @@ Generate or refine binary masks.
 | `bet` | Brain extraction (BET) |
 | `hd-bet` | Deep-learning brain extraction (HD-BET); `--low-memory`, `--patch XxYxZ`, `--tta`. Weights are downloaded on first use |
 | `rs2-net` | Deep-learning **rodent** brain extraction (RS2-Net); `--tta`, `--tile-step`. Weights are downloaded on first use |
-| `preset` | Run a [`--mask-preset`](/QSMxT/reference/algorithms/#masking) recipe on an image: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mouse-bet` |
+| `preset` | Run a [`--mask-preset`](/QSMxT/reference/algorithms/#masking) recipe on an image: `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net` |
 | `robust` | Alias for `preset robust-threshold` |
 | `erode` / `dilate` | Morphological erosion / dilation |
 | `close` | Morphological closing |

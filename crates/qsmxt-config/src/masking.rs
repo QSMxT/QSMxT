@@ -121,10 +121,6 @@ fn se_min_component() -> usize { se_default().min_component }
 fn bet_voxel_scale() -> f64 { bet_default_voxel_scale() }
 /// qsm-core's default BET voxel scaling — 1.0, the acquisition's own geometry.
 pub fn bet_default_voxel_scale() -> f64 { qsm_core::bet::BetParams::default().voxel_scale }
-/// The preclinical voxel scaling that brings a mouse brain up to human dimensions, for
-/// `--mask-preset mouse-bet`. Not a qsm-core default (which is "unscaled"): it is the
-/// convention the preclinical `fslchpixdim` x10 workaround established.
-pub fn mouse_bet_voxel_scale() -> f64 { 10.0 }
 fn rs2_net_tile_step() -> f64 { rs2_net_default_tile_step() }
 /// qsm-core's default RS2-Net sliding-window step (nnU-Net's `tile_step_size`).
 pub fn rs2_net_default_tile_step() -> f64 { qsm_core::bet::Rs2NetParams::default().tile_step }
@@ -358,17 +354,6 @@ pub fn rs2_net_mask_sections() -> Vec<MaskSection> {
     }]
 }
 
-/// Voxel-scaled BET on the magnitude (the `mouse-bet` mask preset) — the rodent fallback for
-/// when RS2-Net's weights cannot be fetched. It leaks into the skull base on thick-slice data;
-/// prefer [`rs2_net_mask_sections`].
-pub fn mouse_bet_mask_sections() -> Vec<MaskSection> {
-    vec![MaskSection {
-        input: MaskingInput::Magnitude,
-        generator: MaskOp::Bet { fractional_intensity: 0.5, voxel_scale: mouse_bet_voxel_scale() },
-        refinements: vec![MaskOp::Erode { iterations: 1 }],
-    }]
-}
-
 /// A complete masking recipe: the sections, how they fold together, and the refinements that
 /// run on the combined mask. Presets that need more than one section return one of these.
 #[derive(Debug, Clone, PartialEq)]
@@ -434,7 +419,6 @@ pub fn mask_presets() -> Vec<(&'static str, MaskRecipe)> {
         ("hd-bet", MaskRecipe::from_sections(hd_bet_mask_sections())),
         ("bet-and-phase", bet_and_phase_mask_recipe()),
         ("rs2-net", MaskRecipe::from_sections(rs2_net_mask_sections())),
-        ("mouse-bet", MaskRecipe::from_sections(mouse_bet_mask_sections())),
     ]
 }
 
@@ -785,8 +769,7 @@ mod tests {
         assert!(MaskOp::rs2_net_default().is_generator());
     }
 
-    /// The rodent presets are the two rodent paths, and `mouse-bet` is the one that does not
-    /// need a weight download.
+    /// RS2-Net is the rodent preset.
     #[test]
     fn test_rodent_presets() {
         let presets = mask_presets();
@@ -796,11 +779,7 @@ mod tests {
         assert_eq!(rs2.sections.len(), 1);
         assert_eq!(rs2.sections[0].generator, MaskOp::rs2_net_default());
         assert!(rs2.sections[0].refinements.is_empty(), "RS2-Net needs no post-processing");
-
-        let mouse = by_name("mouse-bet");
-        assert_eq!(mouse.sections[0].generator,
-                   MaskOp::Bet { fractional_intensity: 0.5, voxel_scale: mouse_bet_voxel_scale() });
-        assert_eq!(format!("{}", mouse.sections[0]), "magnitude,bet:0.50:scale=10,erode:1");
+        assert!(presets.iter().all(|(n, _)| *n != "mouse-bet"), "mouse-bet was removed");
     }
 
     #[test]

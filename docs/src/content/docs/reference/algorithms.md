@@ -19,7 +19,6 @@ operates on with `--masking-input`.
 | `hd-bet` | HD-BET deep-learning brain extraction on the magnitude image, followed by signal-gated erosion (the QSM-CI harmonization masking). Needs a deep-learning build; the weights (~120 MB, CC-BY-NC-4.0) are downloaded on first use |
 | `bet-and-phase` | BET on the first-echo magnitude intersected with the `robust-threshold` mask of the phase-quality map, then hole-filled and eroded (the masking recommended by the [ISMRM EMTP study group consensus](https://doi.org/10.1002/mrm.30006)) |
 | `rs2-net` | RS2-Net deep-learning **rodent** brain extraction (Lin et al., 2024) on the magnitude image, with no refinements: it follows the inner skull directly. Needs a deep-learning build; the weights are downloaded on first use |
-| `mouse-bet` | BET on the magnitude with the voxel size scaled ×10, so a rodent brain looks human-sized to BET, then one erosion. The fallback when RS2-Net's weights cannot be fetched; it leaks into the skull base on thick-slice data |
 
 Each preset is exactly the custom mask sections below (see the next
 paragraphs for the grammar), so a preset can be used as the starting point for
@@ -32,7 +31,6 @@ your own recipe:
 | `hd-bet` | `--mask magnitude,hd-bet,signal-erode` |
 | `bet-and-phase` | `--mask magnitude-first,bet:0.50 --mask phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1 --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1` |
 | `rs2-net` | `--mask magnitude,rs2-net` |
-| `mouse-bet` | `--mask magnitude,bet:0.50:scale=10,erode:1` |
 
 **Masking input** (`--masking-input`): `magnitude-first`, `magnitude`,
 `magnitude-last`, `phase-quality`. For example,
