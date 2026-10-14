@@ -347,6 +347,12 @@ const CITE_QSMBLY: Citation = Citation {
     text: "Stewart, A. (2026). QSMbly: Browser-based Quantitative Susceptibility Mapping. https://github.com/astewartau/qsmbly",
 };
 
+/// The voxels a susceptibility map is defined on (`referencing::defined_support` in the main
+/// crate), named once in full and as "the reconstruction mask" after that.
+const RECON_MASK: &str =
+    "the reconstruction mask (the brain mask less any rim eroded by background field removal)";
+const RECON_MASK_AGAIN: &str = "the reconstruction mask";
+
 /// Generate a methods description and citation list from a pipeline configuration.
 /// Uses "qsmxt" as the tool name by default.
 pub fn generate_methods(config: &PipelineConfig) -> String {
@@ -383,13 +389,12 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 let tgv = &config.inversion.tgv;
                 sentences.push(format!(
                     "QSM was computed using the Total Generalized Variation (TGV) algorithm \
-                     (Langkammer et al., 2015), which removes the background field and inverts the \
-                     dipole jointly, with no separate background field removal. For single-echo data \
-                     TGV was applied to the wrapped phase of the echo, converted to ppm using its echo \
-                     time and the field strength, and so also performed the phase unwrapping; for \
-                     multi-echo data the echoes were first combined into a B0 field map as described \
-                     below, and TGV was applied to that total field in ppm. Regularization weights \
-                     were given in ppm (α0 = {}, α1 = {}; {} iterations, {} mask erosions).",
+                     (Langkammer et al., 2015), with background field removal and dipole inversion \
+                     performed jointly. For single-echo data TGV was applied to the wrapped phase of \
+                     the echo, converted to ppm using its echo time and the field strength, and also \
+                     performed the phase unwrapping; for multi-echo data TGV was applied to the B0 \
+                     field map in ppm, computed as described below. Regularization weights were \
+                     α0 = {} ppm and α1 = {} ppm, with {} iterations and {} mask erosions.",
                     tgv.alpha0, tgv.alpha1, tgv.iterations, tgv.erosions,
                 ));
                 add_citation(&mut citations, &CITE_TGV);
@@ -399,10 +404,9 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 // `InversionInput::WrappedPhase`: no field mapping and no background removal ran.
                 let (name, cite) = inversion_name_cite(config.inversion.algorithm);
                 sentences.push(format!(
-                    "QSM was reconstructed end to end with {} ({}) directly from the wrapped phase of \
-                     each echo, which the network unwraps, background-corrects and inverts itself: no \
-                     separate phase unwrapping, echo combination or background field removal was \
-                     performed.",
+                    "QSM was reconstructed with {} ({}) from the wrapped phase of each echo, with \
+                     phase unwrapping, background field removal and dipole inversion performed by the \
+                     network.",
                     name, cite_inline(cite),
                 ));
                 add_citation(&mut citations, cite);
@@ -414,9 +418,9 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 describe_field_mapping(config, &mut sentences, &mut citations);
                 let (inv_name, inv_cite) = inversion_name_cite(config.inversion.qsmart.inversion);
                 sentences.push(format!(
-                    "QSM was computed using QSMART (Yaghmaie et al., 2021), a two-stage approach using \
-                     spatially dependent filtering for background field removal, {} dipole inversion ({}), \
-                     and Frangi vesselness-based tissue/vasculature separation.",
+                    "QSM was computed using QSMART (Yaghmaie et al., 2021), with spatially dependent \
+                     filtering for background field removal, {} dipole inversion ({}), and Frangi \
+                     vesselness-based tissue/vasculature separation.",
                     inv_name, cite_inline(inv_cite),
                 ));
                 add_citation(&mut citations, &CITE_QSMART);
@@ -427,10 +431,8 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 
                 // Background removal — only in front of a local-field inversion (QSM.rs
                 // `InversionInput`); the total-field methods remove or model it themselves.
-                if !crate::bridge::inversion_input(config, 2).needs_bg_removal() {
-                    sentences.push("No separate background field removal was performed: the \
-                        inversion below was given the total field and the brain mask.".to_string());
-                } else {
+                let total_field = !crate::bridge::inversion_input(config, 2).needs_bg_removal();
+                if !total_field {
                     let alg = &config.bg_removal.algorithm;
                     let (name, cite) = match alg {
                         BfAlgorithm::Vsharp => ("V-SHARP", &CITE_VSHARP),
@@ -448,10 +450,10 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                         let v = &config.bg_removal.vsharp;
                         let radii = format!("SMV kernel radii from {} to {} mm", v.max_radius, v.min_radius);
                         sentences.push(if v.deconvolve {
-                            format!("Background field removal was performed using {} ({}), {}, with a truncated-SVD deconvolution (threshold {}).",
+                            format!("Background field removal was performed using {} ({}) with {} and truncated-SVD deconvolution (threshold {}).",
                                 name, cite_inline(cite), radii, v.threshold)
                         } else {
-                            format!("Background field removal was performed using {} ({}) without the final deconvolution step: an SMV high-pass with {}, the largest kernel that fits at each voxel (as in STI Suite).",
+                            format!("Background field removal was performed using {} ({}) with {} and deconvolution disabled.",
                                 name, cite_inline(cite), radii)
                         });
                         let resample = "the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution";
@@ -479,7 +481,11 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 
                 // Dipole inversion
                 let (name, cite) = inversion_name_cite(config.inversion.algorithm);
-                sentences.push(format!("Dipole inversion was performed using {} ({}).", name, cite_inline(cite)));
+                sentences.push(if total_field {
+                    format!("Dipole inversion was performed on the total field within the brain mask using {} ({}).", name, cite_inline(cite))
+                } else {
+                    format!("Dipole inversion was performed using {} ({}).", name, cite_inline(cite))
+                });
                 add_citation(&mut citations, cite);
                 // Deep-learning tiling (memory-bounded, approximate) is noted when enabled — only
                 // for the tileable DL nets (a stray --tile-size on a classical algorithm is ignored).
@@ -492,8 +498,8 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 if let (true, Some(core)) = (tileable, config.inversion.tile_size) {
                     let halo = config.inversion.tile_halo.unwrap_or(8);
                     sentences.push(format!(
-                        "Inference was run overlap-tiled (tile size {core} voxels, halo {halo} voxels) \
-                         to bound memory; note that tiling approximates the whole-volume network.",
+                        "Network inference was run on overlapping tiles (tile size {core} voxels, \
+                         halo {halo} voxels).",
                     ));
                 }
             }
@@ -506,11 +512,9 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
         // Referencing
         match config.qsm.reference {
             QsmReference::Mean => {
-                sentences.push(
-                    "The resulting susceptibility map was mean-referenced over the voxels on which \
-                     it was reconstructed (the brain mask less any rim eroded by background-field \
-                     removal), and set to zero outside them.".to_string(),
-                );
+                sentences.push(format!(
+                    "Susceptibility values were referenced to the mean susceptibility within \
+                     {RECON_MASK}."));
             }
             QsmReference::None => {
                 sentences.push("No susceptibility referencing was applied.".to_string());
@@ -518,14 +522,14 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
             QsmReference::Region => {
                 let region = config.qsm.reference_region.as_deref().unwrap_or("");
                 let pretty = region.replace('-', " ").replace(',', ", ");
+                let plural = if region.contains(',') { "s" } else { "" };
+                let labels = match config.segmentation.custom_dseg_tool.as_deref() {
+                    Some(tool) => format!("'{tool}' segmentation label{plural}"),
+                    None => format!("SynthSeg label{plural}"),
+                };
                 sentences.push(format!(
-                    "The resulting susceptibility map was referenced to the mean susceptibility of \
-                     the {pretty} ({}), taken from the SynthSeg parcellation over the voxels on \
-                     which the map was reconstructed, so that zero corresponds to that tissue \
-                     rather than to the whole-brain average; the map was set to zero outside \
-                     those voxels.",
-                    if region.contains(',') { "a union of parcellation labels" }
-                    else { "a parcellation label" },
+                    "Susceptibility values were referenced to the mean susceptibility in the \
+                     {pretty} ({labels}), computed within {RECON_MASK}."
                 ));
             }
         }
@@ -535,10 +539,8 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
         add_citation(&mut citations, &CITE_SYNTHSEG);
         let labels = if config.segmentation.version == SynthSegVersion::V2 { 33 } else { 32 };
         sentences.push(format!(
-            "The brain was parcellated directly from the GRE magnitude using SynthSeg {} \
-             (Billot et al., 2023), a network trained on synthetic images of randomised contrast, \
-             yielding {} FreeSurfer-labelled structures without a separate T1w acquisition or \
-             registration step{}.",
+            "The brain was parcellated from the GRE magnitude using SynthSeg {} (Billot et al., \
+             2023), yielding {} FreeSurfer-labelled structures{}.",
             config.segmentation.version, labels,
             if config.segmentation.flip_averaging {
                 "; posteriors were averaged with a left-right flipped second pass"
@@ -600,8 +602,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
             add_citation(&mut citations, &CITE_EPG);
             sentences.push(
                 "R2 maps were fitted from multi-echo spin-echo magnitude data using an Extended \
-                 Phase Graph dictionary (Weigel, 2015), which models imperfect refocusing and so \
-                 removes the stimulated-echo bias of a mono-exponential fit.".to_string());
+                 Phase Graph dictionary (Weigel, 2015).".to_string());
         }
         if config.pipeline.do_r2primemap {
             match config.separation.custom_r2prime_tool.as_deref() {
@@ -614,7 +615,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                         add_citation(&mut citations, &CITE_R2PRIMENET);
                         sentences.push(
                             "R2' was estimated from the R2* map with R2PRIMEnet (Kim et al., \
-                             2025) rather than measured, no spin-echo R2 being subtracted."
+                             2025)."
                             .to_string());
                     }
                     R2PrimeStrategy::Auto => {
@@ -636,8 +637,8 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 && config.separation.r2primenet.ignore_field_mismatch
             {
                 sentences.push(
-                    "R2PRIMEnet was allowed to run on data acquired away from 3 T, the only field \
-                     strength its weights were trained at; R2' estimated that way is uncalibrated."
+                    "R2PRIMEnet, whose weights were trained at 3 T, was also applied to data \
+                     acquired at other field strengths."
                         .to_string());
             }
         }
@@ -647,11 +648,10 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     if config.pipeline.do_chi_separation {
         let (sep_name, sep_cite) = separation_name_cite(config.separation.algorithm);
         sentences.push(format!(
-            "Paramagnetic and diamagnetic susceptibility maps were computed by susceptibility source separation using {} ({}), \
-             over the voxels on which the susceptibility map was defined (the brain mask less any rim eroded by \
-             background-field removal), with all relaxation and field inputs restricted to those voxels; the maps \
-             were set to zero outside them.",
+            "Paramagnetic and diamagnetic susceptibility maps were computed using {} ({}) within {}.",
             sep_name, cite_inline(sep_cite),
+            // Named in full by the referencing sentence, unless the map was left unreferenced.
+            if config.pipeline.do_qsm && config.qsm.reference != QsmReference::None { RECON_MASK_AGAIN } else { RECON_MASK },
         ));
         add_citation(&mut citations, sep_cite);
     }
@@ -781,7 +781,7 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
             add_citation(citations, &CITE_MCPC3DS);
         }
         (false, true) => {
-            sentences.push("Bipolar gradient correction (Eckstein, 2021) was applied to remove readout-induced phase artefacts.".to_string());
+            sentences.push("Bipolar gradient correction (Eckstein, 2021) was applied.".to_string());
             add_citation(citations, &CITE_BIPOLAR);
         }
         (false, false) => {}
@@ -798,7 +798,7 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
             sentences.push(match config.field_mapping.laplacian_solver {
                 LaplacianSolver::Dct => "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003), solved as unweighted least squares with a Neumann-boundary DCT (Ghiglia & Romero, 1994).".to_string(),
                 LaplacianSolver::Fft => format!(
-                    "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003), with an FFT Poisson solve on the volume zero-padded by {} voxels (as STI Suite's MRPhaseUnwrap).",
+                    "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003), with an FFT Poisson solve on the volume zero-padded by {} voxels.",
                     describe_pad(config.field_mapping.laplacian_fft_pad)),
             });
             add_citation(citations, &CITE_LAPLACIAN_UNWRAP);
@@ -810,7 +810,7 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
         B0Estimation::WeightedAvg => {
             if config.field_mapping.b0_weight_type == B0WeightType::AssumedDecay {
                 sentences.push(format!(
-                    "The B0 field map was estimated as a weighted average of the unwrapped echo phases with fixed per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2* of {} ms (no T2* map; the same weights in every voxel), as in the UK Biobank QSM pipeline (Wang et al., 2022).",
+                    "The B0 field map was estimated as a weighted average of the unwrapped echo phases with per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2* of {} ms and identical in every voxel (Wang et al., 2022).",
                     config.field_mapping.b0_weight_assumed_t2star_ms));
                 add_citation(citations, &CITE_UKB_QSM);
             } else {
@@ -832,7 +832,7 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
                 "The B0 field map was estimated using magnitude-weighted linear fit of phase vs echo time, with per-echo residual statistics reported to flag echoes inconsistent with the fit.".to_string()
             } else {
                 format!(
-                    "The B0 field map was estimated with a motion-robust magnitude-weighted linear fit of phase vs echo time: {} iterations of iteratively reweighted least squares with a {} loss (tuning constant {}), which down-weights, voxel by voxel, echoes that depart from a linear phase evolution.",
+                    "The B0 field map was estimated with a motion-robust magnitude-weighted linear fit of phase vs echo time: {} iterations of iteratively reweighted least squares with a {} loss (tuning constant {}).",
                     r.iterations, if r.loss == RobustLoss::Tukey { "Tukey biweight" } else { "Huber" }, tuning)
             });
         }
@@ -908,7 +908,7 @@ fn describe_generator(
             // A scaled run did not see the acquisition's own geometry, which changes what BET's
             // millimetre-scale surface model was fitted to. Stated whenever it happened.
             let scaled = if (*voxel_scale - crate::masking::bet_default_voxel_scale()).abs() > f64::EPSILON {
-                format!("; voxel sizes scaled by {voxel_scale}x to present the brain at human scale")
+                format!("; voxel sizes scaled by {voxel_scale}x")
             } else {
                 String::new()
             };
@@ -1081,7 +1081,7 @@ fn inversion_name_cite(alg: QsmAlgorithm) -> (&'static str, &'static Citation) {
         QsmAlgorithm::Nltv => ("NLTV (Nonlinear Total Variation)", &CITE_NLTV),
         QsmAlgorithm::Medi => ("MEDI (Morphology Enabled Dipole Inversion)", &CITE_MEDI),
         QsmAlgorithm::Tfi => ("TFI (Total Field Inversion)", &CITE_TFI),
-        QsmAlgorithm::Ilsqr => ("iLSQR (the STI Suite 3.0 algorithm)", &CITE_ILSQR),
+        QsmAlgorithm::Ilsqr => ("iLSQR", &CITE_ILSQR),
         QsmAlgorithm::Lsqr => ("minimally regularised LSQR", &CITE_LSQR),
         QsmAlgorithm::Heidi => ("HEIDI (Homogeneity Enabled Incremental Dipole Inversion)", &CITE_HEIDI),
         QsmAlgorithm::Ndi => ("NDI (Nonlinear Dipole Inversion)", &CITE_NDI),
@@ -1227,7 +1227,6 @@ mod tests {
 
         let out = generate_methods(&cfg(crate::enums::R2PrimeStrategy::R2primenet));
         assert!(out.contains("estimated from the R2* map with R2PRIMEnet"), "out: {out}");
-        assert!(out.contains("rather than measured"), "the distinction must be explicit: {out}");
         assert!(out.contains("10.1002/hbm.70136"), "R2PRIMEnet citation missing: {out}");
         // Nothing measured R2 on this route, so it must not claim to have fitted one.
         assert!(!out.contains("Extended Phase Graph"), "out: {out}");
@@ -1251,7 +1250,7 @@ mod tests {
         let out = generate_methods(&config);
         assert!(out.contains("SynthSeg v1"), "out: {out}");
         assert!(out.contains("32 FreeSurfer-labelled structures"), "out: {out}");
-        assert!(out.contains("without a separate T1w"), "out: {out}");
+        assert!(out.contains("parcellated from the GRE magnitude"), "out: {out}");
         assert!(out.contains("10.1016/j.media.2023.102789"), "SynthSeg citation missing: {out}");
         assert!(!out.contains("summarised within every segmented structure"),
                 "no statistics were asked for: {out}");
@@ -1311,7 +1310,7 @@ mod tests {
         // It describes the reconstruction, so it belongs after inversion and before referencing.
         let inv = out.find("Dipole inversion was performed").expect("inversion sentence");
         let two = out.find("Two-pass artefact reduction").expect("two-pass sentence");
-        let reference = out.find("mean-referenced").expect("referencing sentence");
+        let reference = out.find("referenced to the mean susceptibility").expect("referencing sentence");
         assert!(inv < two && two < reference, "out-of-order methods: {out}");
     }
 
@@ -1342,7 +1341,7 @@ mod tests {
             refinements: vec![],
         }];
         let out = generate_methods(&config);
-        assert!(out.contains("voxel sizes scaled by 10x to present the brain at human scale"),
+        assert!(out.contains("voxel sizes scaled by 10x"),
                 "out: {out}");
 
         // Unscaled BET reads as it always did.
@@ -1379,12 +1378,12 @@ mod tests {
     fn vsharp_methods_say_whether_it_deconvolved() {
         let mut config = PipelineConfig::default();
         let out = generate_methods(&config);
-        assert!(out.contains("without the final deconvolution step"), "{out}");
+        assert!(out.contains("deconvolution disabled"), "{out}");
         assert!(out.contains("12 to 1 mm"), "{out}");
         config.bg_removal.vsharp.deconvolve = true;
         let out = generate_methods(&config);
         assert!(out.contains("truncated-SVD deconvolution (threshold 0.2)"), "{out}");
-        assert!(!out.contains("without the final deconvolution"), "{out}");
+        assert!(!out.contains("deconvolution disabled"), "{out}");
     }
 
     #[test]
@@ -1414,7 +1413,7 @@ mod tests {
         assert!(out.contains("ROMEO"));
         assert!(out.contains("V-SHARP"));
         assert!(out.contains("iLSQR"));
-        assert!(out.contains("mean-referenced"));
+        assert!(out.contains("referenced to the mean susceptibility within the reconstruction mask"), "{out}");
         assert!(out.contains("# Methods"));
         assert!(out.contains("## References"));
     }
@@ -1425,11 +1424,11 @@ mod tests {
         config.inversion.algorithm = QsmAlgorithm::Tgv;
         let out = generate_methods(&config);
         assert!(out.contains("Total Generalized Variation (TGV)"));
-        assert!(out.contains("Regularization weights were given in ppm"));
+        assert!(out.contains("Regularization weights were α0 = "), "{out}");
         assert!(out.contains(&format!("α0 = {}", config.inversion.tgv.alpha0)));
         // Multi-echo TGV is fed the field map, so field mapping is described (#282); background
         // removal never runs in front of it.
-        assert!(out.contains("for multi-echo data the echoes were first combined"), "{out}");
+        assert!(out.contains("for multi-echo data TGV was applied to the B0 field map"), "{out}");
         assert!(out.contains("Phase unwrapping was performed"), "{out}");
         assert!(!out.contains("Background field removal was performed"), "{out}");
     }
@@ -1439,12 +1438,12 @@ mod tests {
         let mut config = PipelineConfig::default();
         config.inversion.algorithm = QsmAlgorithm::Xqsm;
         // No tiling sentence when tiling is off.
-        assert!(!generate_methods(&config).contains("overlap-tiled"));
+        assert!(!generate_methods(&config).contains("overlapping tiles"));
         // Sentence appears (with the sizes) when tiling is enabled.
         config.inversion.tile_size = Some(64);
         config.inversion.tile_halo = Some(4);
         let out = generate_methods(&config);
-        assert!(out.contains("overlap-tiled"), "got: {}", out);
+        assert!(out.contains("overlapping tiles"), "got: {}", out);
         assert!(out.contains("tile size 64") && out.contains("halo 4"), "got: {}", out);
     }
 
@@ -1623,7 +1622,7 @@ mod tests {
             config.pipeline.do_chi_separation = true;
             config.separation.algorithm = alg;
             let out = generate_methods(&config);
-            assert!(out.contains("susceptibility source separation"), "{:?}: {}", alg, out);
+            assert!(out.contains("Paramagnetic and diamagnetic susceptibility maps were computed using"), "{:?}: {}", alg, out);
             assert!(out.contains(needle), "missing {} for {:?}: {}", needle, alg, out);
             assert!(out.contains(cite), "missing citation for {:?}: {}", alg, out);
         }
@@ -1660,9 +1659,10 @@ mod tests {
                 assert_eq!(bfr, input.needs_bg_removal() && *alg != QsmAlgorithm::Qsmart,
                     "{alg} (medi.smv={medi_smv}): BFR described = {bfr}:\n{out}");
                 if !input.needs_bg_removal() && *alg != QsmAlgorithm::Qsmart {
-                    assert!(out.to_lowercase().contains("no separate")
-                        && out.to_lowercase().contains("background field removal"),
-                        "{alg}: should say no BFR ran:\n{out}");
+                    assert!(out.contains("background field removal and dipole inversion performed jointly")
+                        || out.contains("background field removal and dipole inversion performed by the network")
+                        || out.contains("Dipole inversion was performed on the total field"),
+                        "{alg}: should say the inversion took the total field:\n{out}");
                 }
                 let unwrap = out.contains("Phase unwrapping was performed");
                 assert_eq!(unwrap, input.needs_field_mapping(),
@@ -1723,12 +1723,18 @@ mod tests {
         config.qsm.reference_region = Some("left-thalamus".to_string());
         let out = generate_methods(&config);
         assert!(out.contains("left thalamus"), "the region must be named: {out}");
-        assert!(out.contains("SynthSeg parcellation"), "and where it came from: {out}");
-        assert!(!out.contains("mean-referenced within the brain mask"), "{out}");
+        assert!(out.contains("left thalamus (SynthSeg label), computed within the reconstruction mask"),
+            "and where it came from, and over which voxels: {out}");
+        // The zero point is the region; nothing about zeroing may read as scoped to the region.
+        assert!(!out.contains("set to zero"), "{out}");
 
         config.qsm.reference_region = Some("left-thalamus,right-thalamus".to_string());
         let out = generate_methods(&config);
-        assert!(out.contains("union of parcellation labels"), "a list reads as a union: {out}");
+        assert!(out.contains("left thalamus, right thalamus (SynthSeg labels)"), "{out}");
+
+        config.segmentation.custom_dseg_tool = Some("freesurfer".to_string());
+        let out = generate_methods(&config);
+        assert!(out.contains("('freesurfer' segmentation labels)"), "{out}");
     }
 
     #[test]
@@ -2099,9 +2105,9 @@ mod tests {
             let out = generate_methods(&c);
             // iQSM/iQSM+ reconstruct end to end from the wrapped phase: no separate inversion.
             let sentence = if matches!(alg, QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus) {
-                "QSM was reconstructed end to end with"
+                "QSM was reconstructed with"
             } else {
-                "Dipole inversion was performed using"
+                "Dipole inversion was performed"
             };
             assert!(out.contains(sentence), "missing dipole sentence for {:?}", alg);
             assert!(out.contains(expected), "missing '{}' for {:?}", expected, alg);
@@ -2190,5 +2196,39 @@ mod multiorient_methods_tests {
         let text = generate_methods(&config);
         assert!(text.contains("taken to be already co-registered"), "{text}");
         assert!(!text.contains("rigidly co-registered"), "{text}");
+    }
+
+    /// The methods paragraph says what was done: no tool provenance (STI Suite, UK Biobank),
+    /// no QSMxT version history, no "rather than". Literature citations in the reference list
+    /// are fine, so only the paragraph itself is checked.
+    #[test]
+    fn methods_paragraph_has_no_provenance_or_contrasts() {
+        use crate::enums::{B0WeightType, LaplacianSolver, UnwrappingAlgorithm};
+        let mut configs = Vec::new();
+        for alg in &QsmAlgorithm::ALL {
+            for laplacian in [false, true] {
+                let mut c = PipelineConfig::default();
+                c.inversion.algorithm = *alg;
+                c.pipeline.do_segmentation = true;
+                c.pipeline.do_chi_separation = true;
+                c.pipeline.do_r2primemap = true;
+                c.pipeline.do_r2map = true;
+                c.field_mapping.b0_weight_type = B0WeightType::AssumedDecay;
+                if laplacian {
+                    c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+                    c.field_mapping.laplacian_solver = LaplacianSolver::Fft;
+                }
+                c.qsm.reference = QsmReference::Region;
+                c.qsm.reference_region = Some("ventricles".to_string());
+                configs.push(c);
+            }
+        }
+        for c in &configs {
+            let out = generate_methods(c);
+            let paragraph = out.split("## References").next().unwrap().to_lowercase();
+            for banned in ["sti suite", "biobank", "ukb", "qsmxt v", "rather than", "without the", "set to zero"] {
+                assert!(!paragraph.contains(banned), "`{banned}` in methods:\n{paragraph}");
+            }
+        }
     }
 }

@@ -247,6 +247,18 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
 
 ### Changed
 
+- **Methods text, help and docs say what is done, plainly.** The generated methods paragraph
+  states settings as settings (V-SHARP "with deconvolution disabled"), drops explanations of
+  tools and contrasts with what was not done, and no longer mentions STI Suite or UK Biobank
+  outside the reference list. Referencing now reads "referenced to the mean susceptibility in the
+  ventricles (SynthSeg labels), computed within the reconstruction mask (the brain mask less any
+  rim eroded by background field removal)", which is what the code does: the offset is the mean
+  over the region's voxels inside the map's support, subtracted everywhere on that support (the
+  old wording read as if everything outside the region were zeroed). TUI help, CLI help
+  (`--vsharp-deconvolve`, `--b0-weight-type`, `--laplacian-solver`, `--laplacian-fft-pad`,
+  `--ilsqr-tol`, `--ilsqr-max-iter`, ...) and the reference pages drop STI Suite, UK Biobank and
+  previous-QSMxT-version asides. No output changes.
+
 - **Breaking: `--axial-resampling` turns obliquity resampling on; the threshold is only a
   threshold.** `--obliquity-threshold <degrees>` (default 10) now only sets where
   `--axial-resampling` starts resampling, and a negative value is refused with a message pointing

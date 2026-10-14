@@ -112,11 +112,10 @@ of these that fits:
 2. **A `B0_dir` in the JSON sidecar wins.** It describes the acquisition better
    than the affine can.
 3. **`--axial-resampling` resamples to axial** when the obliquity exceeds
-   `--obliquity-threshold` (degrees, default 10), as QSMxT 8.x did. Off by
-   default. (Up to v9.22.0 a negative `--obliquity-threshold` turned it off;
-   a negative threshold is now refused, and an old config's
-   `obliquity_threshold` is read with a deprecation warning: negative as off,
-   otherwise on at that threshold.)
+   `--obliquity-threshold` (degrees, default 10). Off by default. A negative
+   threshold is refused; a config file that gives `obliquity_threshold`
+   without `axial_resampling` is read with a deprecation warning: negative as
+   off, otherwise on at that threshold.
 4. **Otherwise the kernel is rotated** — B0 is taken from the affine and used
    as-is. This is the default, and normally the one you want.
 
@@ -124,7 +123,7 @@ Rotating the kernel is preferred because it is exact and free: the dipole
 kernel takes the field direction as a parameter, so pointing it the right way
 costs nothing, keeps the acquired grid, and interpolates nothing.
 
-The cost of the alternative is not small. A 256×288×48 UK Biobank SWI at 32.5°
+The cost of the alternative is not small. A 256×288×48 acquisition at 32.5°
 obliquity resamples to 272×339×77, roughly twice the voxels, and took 459 s
 against 246 s for the same reconstruction on the acquired grid. Resampled
 outputs are returned to the acquired grid afterwards unless you ask otherwise;
@@ -149,8 +148,7 @@ B0 direction: (0.05, 0.39, 0.92) (from the affine)
 Obliquity:    32.5° (B0 22.9° off the slice normal)
 ```
 
-Obliquity is `nibabel`'s definition (the norm of the per-axis angles), so 8.x
-thresholds carry over. It is a combined measure rather than a tilt: a single
+Obliquity is `nibabel`'s definition (the norm of the per-axis angles). It is a combined measure rather than a tilt: a single
 23° oblique acquisition scores ≈32° because two voxel axes move. The tilt in
 brackets is the physical angle between B0 and the slice normal, which is what
 the kernel cares about.
@@ -268,7 +266,7 @@ and both are off by default.
 
 FFT cost is `O(N log N)` in the whole grid, and the transform is much faster on
 sizes built from small prime factors. Resampling has no reason to land on one:
-the UK Biobank grid above comes out 272×339×77, which is 2⁴·17, 3·113 and 7·11.
+the grid above comes out 272×339×77, which is 2⁴·17, 3·113 and 7·11.
 Growing it to 280×343×80 took one FFT from 131 ms to 71 ms for 8% more voxels.
 
 Padding discards nothing, but it is **not** a no-op. The dipole kernel is
@@ -313,8 +311,7 @@ Hermitian inner product of the first two echoes gives the field evolution with t
 coil phase offsets cancelled; it is unwrapped once (with the `--unwrapping-algorithm`
 method), each coil's offset is estimated from its first echo and smoothed with
 `--coil-combination-sigma` (default `10 10 5` voxels; the same masked box-filter
-smoothing as MriResearchTools / QSMxT 8.x, so combined phase matches the 8.x
-converter), and the channels are summed coherently with magnitude² weights. Multi-echo phase-offset removal in the field-mapping stage then runs on
+smoothing as MriResearchTools), and the channels are summed coherently with magnitude² weights. Multi-echo phase-offset removal in the field-mapping stage then runs on
 the combined echoes as usual.
 
 ## Phase unwrapping
@@ -327,7 +324,7 @@ Set with `--unwrapping-algorithm`.
 | `laplacian` | Laplacian-based unwrapping |
 
 With `laplacian`, each echo is unwrapped on its own (the phase is zeroed outside the
-mask first, as UK Biobank calls STI Suite's unwrapper) and the echoes are then combined by
+mask first) and the echoes are then combined by
 `--b0-estimation` / `--b0-weight-type`, the same options as with ROMEO. Phase offset
 removal and bipolar correction are not applied, so use it on phase that is already
 offset-free (single-channel or prescan-normalised reconstructions, MCPC-3D-S combined
@@ -338,11 +335,11 @@ coils).
 | Value | Method |
 | --- | --- |
 | `dct` | Unweighted least squares with a Neumann-boundary DCT solve (Ghiglia & Romero, 1994), as QSM.jl `:dct` (default) |
-| `fft` | Schofield & Zhu (2003): sin/cos Laplacian with an FFT Poisson solve on the volume zero-padded by `--laplacian-fft-pad` voxels per side (default 64, UK Biobank's), reproducing STI Suite 3.0's `MRPhaseUnwrap` |
+| `fft` | Schofield & Zhu (2003): sin/cos Laplacian with an FFT Poisson solve on the volume zero-padded by `--laplacian-fft-pad` voxels per side (default 64) |
 
 `--laplacian-fft-pad` takes one value for every axis or three (x y z); a config
 file's `field_mapping.laplacian_fft_pad` takes a number or a three-element list.
-QSMxT's default of 64 is UK Biobank's; STI Suite's own default is 12. In the TUI,
+In the TUI,
 choosing Laplacian unwrapping shows a "Solver" selector, and `fft` a "FFT Pad
 (voxels)" field that accepts `64` or `64 64 32`.
 
@@ -398,12 +395,9 @@ described below.
 
 `assumed-decay` is a fixed per-echo weighting computed from the echo times and an
 *assumed* T2\*: every voxel gets the same weights, and neither a T2\* map nor the
-magnitude is used. It is UK Biobank's echo-combination weighting, with T2\* = 40 ms for
-every participant ([Wang et al. 2022, *Nat. Neurosci.* 25:818](https://doi.org/10.1038/s41593-022-01074-w)):
-`--unwrapping-algorithm laplacian --b0-weight-type assumed-decay` (with
-`--laplacian-solver fft` for STI Suite's solver) reproduces UK Biobank's field map, i.e.
-per-echo Laplacian unwrapping and a TE·exp(−TE/T2\*)-weighted mean of the unwrapped phases.
-When magnitude images are available, `phase-snr`, which uses the measured magnitude in each
+magnitude is used ([Wang et al. 2022, *Nat. Neurosci.* 25:818](https://doi.org/10.1038/s41593-022-01074-w)).
+With `--unwrapping-algorithm laplacian` it gives per-echo Laplacian unwrapping and a
+TE·exp(−TE/T2\*)-weighted mean of the unwrapped phases. When magnitude images are available, `phase-snr`, which uses the measured magnitude in each
 voxel, is generally preferable.
 
 ### Motion-robust echo combination
@@ -465,25 +459,21 @@ mask. The published method then **deconvolves** that high-pass with a
 truncated SVD (threshold `--vsharp-threshold`) to recover the local field the
 SMV filter attenuated.
 
-QSMxT skips the deconvolution by default (`--vsharp-deconvolve false`), as STI
-Suite's `V_SHARP` and the UK Biobank QSM pipeline do. The deconvolution is exact
-for a noise-free harmonic background, but on real field maps the TSVD inverse
-amplifies low-frequency noise; on UK Biobank the longitudinal sensitivity of
-iron-rich structures was higher without it, with no significant loss of
-test–retest reliability. `--vsharp-deconvolve true` restores the behaviour of
-QSMxT up to v9.22.0, and is what to use to compare against cohorts processed
-with it. In the TUI it is the "Deconvolve" toggle under V-SHARP; the threshold
+The deconvolution is disabled by default (`--vsharp-deconvolve false`). It is
+exact for a noise-free harmonic background, but on real field maps the TSVD
+inverse amplifies low-frequency noise. `--vsharp-deconvolve true` enables it.
+In the TUI it is the "Deconvolve" toggle under V-SHARP; the threshold
 row only appears when it is on. The generated methods text says which variant
 ran.
 
 ### V-SHARP working grid
 
-The SMV kernels are balls on the voxel grid. On strongly anisotropic voxels (UK
-Biobank's 0.8 × 0.8 × 3 mm) they are crude along the thick axis: a 1–2 mm ball
+The SMV kernels are balls on the voxel grid. On strongly anisotropic voxels
+(e.g. 0.8 × 0.8 × 3 mm) they are crude along the thick axis: a 1–2 mm ball
 is a single-slice disk. `--vsharp-grid` chooses the grid the background is
 estimated on:
 
-- `native` (default): the acquired grid, as in QSMxT up to v9.22.0.
+- `native` (default): the acquired grid.
 - `finest`: an isotropic grid at the smallest acquired voxel dimension (0.8 mm
   for 0.8 × 0.8 × 3 mm), so no axis is coarsened. The working grid is larger by
   the anisotropy ratio, so it costs memory and time on very fine or very
@@ -495,9 +485,7 @@ estimated on:
 
 On an isotropic grid the field and mask are cropped to the mask's bounding box
 and resampled trilinearly; the background estimated there is interpolated back,
-so the local field keeps the acquired resolution. On UK Biobank the 1 mm grid
-raised thalamus test–retest ICC (0.69 → 0.73) and longitudinal sensitivity, with
-iron ICC unchanged; `--vsharp-grid isotropic` reproduces that configuration.
+so the local field keeps the acquired resolution.
 In the TUI it is "Working Grid" under V-SHARP, with "Grid
 Spacing" shown for `isotropic`.
 
@@ -519,7 +507,7 @@ reconstructions and deep-learning networks.
 | `nltv` | NLTV — Nonlinear Total Variation |
 | `medi` | MEDI — Morphology-Enabled Dipole Inversion |
 | `tfi` | TFI — Total Field Inversion |
-| `ilsqr` | iLSQR — STI Suite's algorithm, with STI Suite-matched parameters (default) |
+| `ilsqr` | iLSQR — iterative LSQR with streaking-artefact correction (default) |
 | `lsqr` | Minimally regularised LSQR — HEIDI's seed |
 | `heidi` | HEIDI — Homogeneity Enabled Incremental Dipole Inversion |
 | `qsmart` | QSMART two-stage reconstruction |
@@ -896,8 +884,6 @@ regressing R2' against a single-orientation QSM. The χ-sepnet paper (Kim et al.
 baked into χ-sepnet and SUSEP-Net as a training normalisation and is not a
 parameter there. If your χ_total is COSMOS-derived, 114 is the better match for
 the analytic methods too, and `--chi-sep-ilsqr-dr-pos` and friends set it.
-Up to QSMxT v9.22.0 `chi-sep-medi` defaulted to 114/30 while the other three
-used 137/137, so results from it are not comparable across that boundary.
 
 Outputs are written as `desc-paramagnetic_Chimap`, `desc-diamagnetic_Chimap` and
 `desc-total_Chimap`.

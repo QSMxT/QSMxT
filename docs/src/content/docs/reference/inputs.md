@@ -80,7 +80,7 @@ from the real and imaginary parts. Per-coil real/imaginary data is not supported
 
 ### Uncombined receive coils
 
-Data exported per coil element (Siemens "save uncombined", as in UK Biobank SWI)
+Data exported per coil element (Siemens "save uncombined")
 is recognised by the BIDS `coil-<NN>` entity that `qsmxt dicom-convert` writes:
 
 ```

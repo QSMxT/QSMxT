@@ -650,7 +650,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             if v < 0.0 {
                 return Err(QsmxtError::Config(format!(
                     "--obliquity-threshold {v}: the threshold is in degrees and cannot be negative. Resampling \
-                     is off unless --axial-resampling is given (a negative threshold turned it off in QSMxT <= 9.22)")));
+                     is off unless --axial-resampling is given (a negative threshold no longer turns it off)")));
             }
             config.pipeline.obliquity_threshold = v;
         }
