@@ -80,7 +80,18 @@ pub fn estimate_peak_memory_bytes(
 
     // SWI runs before QSM; its outputs persist through QSM stages
     let swi_persistent = if config.pipeline.do_swi { 16 * n } else { 0 }; // swi + mip results
-    let swi_temp = if config.pipeline.do_swi { 32 * n } else { 0 };       // highpass + mask + output
+    // CLEAR-SWI loads every echo's phase and magnitude and keeps each echo's filtered phase;
+    // ROMEO adds its edge weights. Measured: 2 echoes 256×288×48 0.31 GB (Laplacian) / 0.76 GB
+    // (ROMEO); 8 echoes 260×320×160 2.8 GB / 4.5 GB.
+    let swi_temp = if config.pipeline.do_swi {
+        let per_voxel = match config.swi.unwrap {
+            qsmxt_config::SwiUnwrap::Romeo => 4 * n_echoes + 20,
+            _ => 3 * n_echoes + 8,
+        };
+        per_voxel * n * F64
+    } else {
+        0
+    };
 
     let qsm_stage_mem = if config.inversion.algorithm == QsmAlgorithm::Tgv {
         // TGV path: single-step (no separate unwrap/bgremove)

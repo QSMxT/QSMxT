@@ -644,15 +644,32 @@ impl Default for SmwiConfig {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct SwiConfig {
+    /// Phase unwrapping before the echoes are combined.
+    pub unwrap: SwiUnwrap,
     pub hp_sigma: [f64; 3],
     pub scaling: SwiScaling,
     pub strength: f64,
     pub mip_window: usize,
 }
+impl SwiConfig {
+    /// The CLEAR-SWI parameters this config runs with: qsm-core's defaults for what the config
+    /// does not expose.
+    pub fn to_params(&self) -> qsm_core::swi::SwiParams {
+        qsm_core::swi::SwiParams {
+            unwrap: self.unwrap.into(),
+            hp_sigma: self.hp_sigma,
+            scaling: self.scaling.into(),
+            strength: self.strength,
+            mip_window: self.mip_window,
+            ..Default::default()
+        }
+    }
+}
 impl Default for SwiConfig {
     fn default() -> Self {
         let p = qsm_core::swi::SwiParams::default();
         Self {
+            unwrap: p.unwrap.into(),
             hp_sigma: p.hp_sigma,
             scaling: p.scaling.into(),
             strength: p.strength,

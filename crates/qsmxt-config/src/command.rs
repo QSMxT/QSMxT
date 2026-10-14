@@ -408,6 +408,7 @@ pub fn generate_command(config: &PipelineConfig) -> String {
 
     // ── SWI params ──
     if config.pipeline.do_swi {
+        if config.swi.unwrap != d.swi.unwrap { parts.push(format!("--swi-unwrapping {}", config.swi.unwrap)); }
         emit_f64_arr3(&mut parts, "--swi-hp-sigma", &config.swi.hp_sigma, &d.swi.hp_sigma);
         if config.swi.scaling != d.swi.scaling { parts.push(format!("--swi-scaling {}", config.swi.scaling)); }
         emit_f64(&mut parts, "--swi-strength", config.swi.strength, d.swi.strength);
@@ -863,6 +864,9 @@ mod tests {
         config.pipeline.do_swi = true;
         let cmd = generate_command(&config);
         assert!(cmd.contains("--swi-strength 8"));
+        assert!(!cmd.contains("--swi-unwrapping"), "{cmd}");
+        config.swi.unwrap = crate::SwiUnwrap::Romeo;
+        assert!(generate_command(&config).contains("--swi-unwrapping romeo"));
     }
 
     #[test]

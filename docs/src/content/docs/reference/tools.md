@@ -181,7 +181,7 @@ Split a susceptibility map into paramagnetic and diamagnetic sources, writing
 
 | Command | Output |
 | --- | --- |
-| `swi` | Susceptibility-weighted image, and with `--mip` its minimum-intensity projection (named like the pipeline's: `sub-01_swi.nii` → `sub-01_minIP.nii`, unless `--mip-output` is given) |
+| `swi` | Susceptibility-weighted image (CLEAR-SWI) from one or more echoes (`--phase`, `--magnitude`, `--tes`), and with `--mip` its minimum-intensity projection (named like the pipeline's: `sub-01_swi.nii` → `sub-01_minIP.nii`, unless `--mip-output` is given) |
 | `r2star` | R2\* map from multi-echo magnitude |
 | `t2star` | T2\* map from multi-echo magnitude |
 | `r2` | R2 map from multi-echo spin-echo (MESE) magnitude (EPG fit) |

@@ -969,6 +969,18 @@ In the TUI the setting is **QSM → Reference → QSM Reference**. Picking a reg
 there turns segmentation on: **Other outputs → Segmentation** then reads as ticked,
 with its source (SynthSeg or a dseg from derivatives) and settings.
 
+## Susceptibility-weighted imaging
+
+`--do-swi` computes SWI with CLEAR-SWI (Eckstein et al., 2021) from every echo. The magnitudes
+are combined by root sum of squares, divided by a receive-sensitivity estimate and scaled with a
+softplus curve. Each echo's phase is unwrapped (`--swi-unwrapping`: `laplacian` by default,
+`laplacian-slice` for 2D multi-slice data, or `romeo`), high-pass filtered (`--swi-hp-sigma`,
+voxels) and the echoes are combined into a frequency map weighted by magnitude × TE. The phase
+mask (`--swi-scaling`, `--swi-strength`) multiplies the magnitude, and `_minIP` is the
+minimum-intensity projection over `--swi-mip-window` slices. The phase is filtered within
+CLEAR-SWI's own head mask, made from the first echo's magnitude, not within the brain mask, so
+the SWI covers the head. A single echo gives single-echo SWI.
+
 ## Segmentation and per-structure statistics
 
 `--do-segmentation` parcellates the brain straight from the GRE magnitude with

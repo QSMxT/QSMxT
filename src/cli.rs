@@ -1049,6 +1049,9 @@ pub struct SmwiParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct SwiParamArgs {
+    /// SWI phase unwrapping before the echoes are combined [default: laplacian]
+    #[arg(long, value_enum)]
+    pub swi_unwrapping: Option<SwiUnwrapArg>,
     /// SWI high-pass filter sigma (3 values, in voxels)
     #[arg(long, num_args = 3)]
     pub swi_hp_sigma: Option<Vec<f64>>,
@@ -3250,13 +3253,20 @@ pub struct SegmentArgs {
 
 #[derive(Parser, Debug)]
 pub struct SwiArgs {
-    /// Input phase NIfTI file
-    pub phase: PathBuf,
-    /// Input magnitude NIfTI file
-    pub magnitude: PathBuf,
-    /// Binary mask NIfTI file
+    /// Wrapped phase NIfTI files, one per echo, in echo order
+    #[arg(long, num_args = 1.., required = true)]
+    pub phase: Vec<PathBuf>,
+    /// Magnitude NIfTI files, one per echo, in the same order as --phase
+    #[arg(long, num_args = 1.., required = true)]
+    pub magnitude: Vec<PathBuf>,
+    /// Echo times in seconds, one per echo (read from the phase JSON sidecars when omitted;
+    /// not needed for a single echo)
+    #[arg(long, num_args = 1..)]
+    pub tes: Option<Vec<f64>>,
+    /// Mask the phase is filtered within (default: CLEAR-SWI's own, from the first echo's
+    /// magnitude)
     #[arg(short, long)]
-    pub mask: PathBuf,
+    pub mask: Option<PathBuf>,
     /// Output SWI NIfTI file
     #[arg(short, long)]
     pub output: PathBuf,
@@ -3479,6 +3489,16 @@ pub enum R2PrimeStrategyArg {
     Mese,
     /// Always predict it from R2*
     R2primenet,
+}
+
+#[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
+pub enum SwiUnwrapArg {
+    /// Each echo with the Laplacian method, then combined
+    Laplacian,
+    /// Laplacian, slice by slice (2D multi-slice acquisitions)
+    LaplacianSlice,
+    /// All echoes together with ROMEO
+    Romeo,
 }
 
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]

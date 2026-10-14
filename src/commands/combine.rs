@@ -53,7 +53,7 @@ fn group_by_coil(files: &[PathBuf], num_echoes: Option<usize>, what: &str) -> cr
     }
 }
 
-fn echo_times_from_sidecars(phase_files: &[PathBuf]) -> crate::Result<Vec<f64>> {
+pub(crate) fn echo_times_from_sidecars(phase_files: &[PathBuf]) -> crate::Result<Vec<f64>> {
     let mut tes = Vec::with_capacity(phase_files.len());
     for f in phase_files {
         let js = entities::sidecar_path(f).filter(|p| p.exists()).ok_or_else(|| QsmxtError::Config(format!(

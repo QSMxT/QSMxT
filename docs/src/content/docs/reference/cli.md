@@ -300,6 +300,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
 | `--romeo-correct-regions` | ROMEO: correct each region's median to nearest 0 (default: off) |
 | `--romeo-wrap-addition <ROMEO_WRAP_ADDITION>` | ROMEO: additional phase tolerance beyond π for neighbor differences [0,π] (default: 0.0) |
+| `--swi-unwrapping <SWI_UNWRAPPING>` | SWI phase unwrapping before the echoes are combined [default: laplacian]. Values: `laplacian`, `laplacian-slice`, `romeo`. |
 | `--swi-hp-sigma <SWI_HP_SIGMA>` | SWI high-pass filter sigma (3 values, in voxels) |
 | `--swi-scaling <SWI_SCALING>` | SWI phase-mask scaling. Values: `tanh`, `negative-tanh`, `positive`, `negative`, `triangular`. |
 | `--swi-strength <SWI_STRENGTH>` | SWI phase scaling strength. |
@@ -681,6 +682,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
 | `--romeo-correct-regions` | ROMEO: correct each region's median to nearest 0 (default: off) |
 | `--romeo-wrap-addition <ROMEO_WRAP_ADDITION>` | ROMEO: additional phase tolerance beyond π for neighbor differences [0,π] (default: 0.0) |
+| `--swi-unwrapping <SWI_UNWRAPPING>` | SWI phase unwrapping before the echoes are combined [default: laplacian]. Values: `laplacian`, `laplacian-slice`, `romeo`. |
 | `--swi-hp-sigma <SWI_HP_SIGMA>` | SWI high-pass filter sigma (3 values, in voxels) |
 | `--swi-scaling <SWI_SCALING>` | SWI phase-mask scaling. Values: `tanh`, `negative-tanh`, `positive`, `negative`, `triangular`. |
 | `--swi-strength <SWI_STRENGTH>` | SWI phase scaling strength. |
@@ -1001,6 +1003,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--romeo-merge-regions` | ROMEO: merge neighboring regions after unwrapping (default: off) |
 | `--romeo-correct-regions` | ROMEO: correct each region's median to nearest 0 (default: off) |
 | `--romeo-wrap-addition <ROMEO_WRAP_ADDITION>` | ROMEO: additional phase tolerance beyond π for neighbor differences [0,π] (default: 0.0) |
+| `--swi-unwrapping <SWI_UNWRAPPING>` | SWI phase unwrapping before the echoes are combined [default: laplacian]. Values: `laplacian`, `laplacian-slice`, `romeo`. |
 | `--swi-hp-sigma <SWI_HP_SIGMA>` | SWI high-pass filter sigma (3 values, in voxels) |
 | `--swi-scaling <SWI_SCALING>` | SWI phase-mask scaling. Values: `tanh`, `negative-tanh`, `positive`, `negative`, `triangular`. |
 | `--swi-strength <SWI_STRENGTH>` | SWI phase scaling strength. |
@@ -2622,17 +2625,19 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 Susceptibility-weighted imaging
 
 ```sh
-qsmxt swi [OPTIONS] --mask <MASK> --output <OUTPUT> <PHASE> <MAGNITUDE>
+qsmxt swi [OPTIONS] --phase <PHASE>... --magnitude <MAGNITUDE>... --output <OUTPUT>
 ```
 
 | Argument | Description |
 | --- | --- |
-| `<PHASE>` | Input phase NIfTI file. Required. |
-| `<MAGNITUDE>` | Input magnitude NIfTI file. Required. |
-| `-m, --mask <MASK>` | Binary mask NIfTI file. Required. |
+| `--phase <PHASE>` | Wrapped phase NIfTI files, one per echo, in echo order. Required. |
+| `--magnitude <MAGNITUDE>` | Magnitude NIfTI files, one per echo, in the same order as --phase. Required. |
+| `--tes <TES>` | Echo times in seconds, one per echo (read from the phase JSON sidecars when omitted; not needed for a single echo) |
+| `-m, --mask <MASK>` | Mask the phase is filtered within (default: CLEAR-SWI's own, from the first echo's magnitude) |
 | `-o, --output <OUTPUT>` | Output SWI NIfTI file. Required. |
 | `--mip` | Also compute minimum intensity projection. |
 | `--mip-output <MIP_OUTPUT>` | Output path for MIP (default: the --output name with its `swi` suffix replaced by `minIP`, or `_minIP` appended — `sub-01_swi.nii` → `sub-01_minIP.nii`, as the pipeline names them) |
+| `--swi-unwrapping <SWI_UNWRAPPING>` | SWI phase unwrapping before the echoes are combined [default: laplacian]. Values: `laplacian`, `laplacian-slice`, `romeo`. |
 | `--swi-hp-sigma <SWI_HP_SIGMA>` | SWI high-pass filter sigma (3 values, in voxels) |
 | `--swi-scaling <SWI_SCALING>` | SWI phase-mask scaling. Values: `tanh`, `negative-tanh`, `positive`, `negative`, `triangular`. |
 | `--swi-strength <SWI_STRENGTH>` | SWI phase scaling strength. |
