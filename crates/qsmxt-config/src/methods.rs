@@ -1329,10 +1329,11 @@ fn describe_generator(
         MaskOp::HdBet { patch, tta, tile_step } => {
             add_citation(citations, &CITE_HDBET);
             let mut changed = Changed::default();
-            changed.add(*patch != MaskOp::hd_bet_default_patch(),
-                || format!("{}x{}x{}-voxel sliding-window patches", patch[0], patch[1], patch[2]));
-            changed.add(differs(*tile_step, crate::masking::hd_bet_default_tile_step()),
-                || format!("windows stepped by {:.0}% of the patch", tile_step * 100.0));
+            if let Some(p) = patch {
+                changed.add(true, || format!("{}x{}x{}-voxel sliding-window patches", p[0], p[1], p[2]));
+                changed.add(differs(*tile_step, crate::masking::hd_bet_default_tile_step()),
+                    || format!("windows stepped by {:.0}% of the patch", tile_step * 100.0));
+            }
             changed.add(*tta, || "mirroring test-time augmentation".to_string());
             format!("HD-BET deep-learning brain extraction (Isensee et al., 2019{}) of {}", changed.semi(), input_desc)
         }
@@ -2245,11 +2246,24 @@ mod tests {
         assert!(out.contains("https://doi.org/10.1002/hbm.24750"), "{out}");
         assert!(out.contains("https://github.com/QSMxT/QSM-CI"), "{out}");
 
-        config.masking.sections[0].generator = MaskOp::HdBet { patch: MaskOp::hd_bet_default_patch(), tta: true, tile_step: 0.25 };
+        config.masking.sections[0].generator = MaskOp::HdBet { patch: Some(MaskOp::hd_bet_default_patch()), tta: true, tile_step: 0.25 };
         config.masking.sections[0].refinements = vec![parse_mask_op("signal-erode:0.7").unwrap()];
         let out = generate_methods(&config);
-        assert!(out.contains("(Isensee et al., 2019; windows stepped by 25% of the patch and mirroring test-time augmentation)"), "{out}");
+        assert!(out.contains("(Isensee et al., 2019; 192x192x96-voxel sliding-window patches, windows stepped by 25% of the patch, and mirroring test-time augmentation)"), "{out}");
         assert!(out.contains("signal-gated erosion (removal of low-signal boundary voxels, threshold 0.70 of the median bias-corrected magnitude; QSM-CI)"), "{out}");
+    }
+
+    #[test]
+    fn test_masking_hd_bet_window() {
+        let mut config = PipelineConfig::default();
+        config.masking.sections = vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::HdBet { patch: Some([128, 128, 64]), tta: true, tile_step: 0.5 },
+            refinements: vec![],
+        }];
+        let out = generate_methods(&config);
+        assert!(out.contains("(Isensee et al., 2019; 128x128x64-voxel sliding-window patches and mirroring \
+                              test-time augmentation)"), "{out}");
     }
 
     #[test]

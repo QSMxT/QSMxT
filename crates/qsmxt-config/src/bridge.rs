@@ -504,9 +504,11 @@ fn convert_mask_op(op: &crate::masking::MaskOp, bet: &crate::config::BetConfig) 
                 min_component: *min_component,
             }),
         crate::masking::MaskOp::HdBet { patch, tta, tile_step } => PMaskOp::HdBet(qsm_core::bet::HdBetParams {
-            patch: (patch[0], patch[1], patch[2]),
+            inference: match patch {
+                None => qsm_core::bet::HdBetInference::FullVolume,
+                Some(p) => qsm_core::bet::HdBetInference::SlidingWindow { patch: (p[0], p[1], p[2]), tile_step: *tile_step },
+            },
             mirror_tta: *tta,
-            tile_step: *tile_step,
         }),
         crate::masking::MaskOp::Rs2Net { tta, tile_step } => PMaskOp::Rs2Net(qsm_core::bet::Rs2NetParams {
             mirror_tta: *tta,
@@ -634,12 +636,12 @@ mod tests {
             }),
             other => panic!("wrong op {other:?}"),
         }
-        match convert_mask_op_d(&MaskOp::HdBet { patch: [128, 128, 64], tta: true, tile_step: 0.75 }) {
+        match convert_mask_op_d(&MaskOp::HdBet { patch: Some([128, 128, 64]), tta: true, tile_step: 0.75 }) {
             PMaskOp::HdBet(p) => {
-                assert_eq!(p.patch, (128, 128, 64));
-                assert!(p.mirror_tta);
                 // Used to be pinned to the default here: the config type had no field for it.
-                assert_eq!(p.tile_step, 0.75);
+                assert_eq!(p.inference,
+                           qsm_core::bet::HdBetInference::SlidingWindow { patch: (128, 128, 64), tile_step: 0.75 });
+                assert!(p.mirror_tta);
             }
             other => panic!("wrong op {other:?}"),
         }
@@ -657,7 +659,8 @@ mod tests {
         }
         // A parsed op carries its step through to qsm-core too.
         match convert_mask_op_d(&parse_mask_op("hd-bet:low-memory:step=0.75").unwrap()) {
-            PMaskOp::HdBet(p) => assert_eq!(p.tile_step, 0.75),
+            PMaskOp::HdBet(p) => assert_eq!(p.inference, qsm_core::bet::HdBetInference::SlidingWindow {
+                patch: (128, 128, 64), tile_step: 0.75 }),
             other => panic!("wrong op {other:?}"),
         }
         // Defaults on both sides agree.

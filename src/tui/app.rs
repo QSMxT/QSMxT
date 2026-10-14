@@ -3722,12 +3722,17 @@ impl PipelineFormState {
             MaskOp::FillHoles { max_size } => ("fill-holes", if *max_size == 0 { "auto".to_string() } else { format!("{}", max_size) }),
             MaskOp::GaussianSmooth { sigma_mm } => ("gaussian", format!("{}", sigma_mm)),
             MaskOp::HdBet { patch, tta, tile_step } => {
-                let step = if (*tile_step - crate::pipeline::config::hd_bet_default_tile_step()).abs() > f64::EPSILON {
+                let step = if patch.is_some()
+                    && (*tile_step - crate::pipeline::config::hd_bet_default_tile_step()).abs() > f64::EPSILON {
                     format!(" step={tile_step}")
                 } else {
                     String::new()
                 };
-                ("hd-bet", format!("{}x{}x{}{}{}", patch[0], patch[1], patch[2], step, if *tta { " tta" } else { "" }))
+                let inference = match patch {
+                    None => "full".to_string(),
+                    Some(p) => format!("{}x{}x{}", p[0], p[1], p[2]),
+                };
+                ("hd-bet", format!("{inference}{step}{}", if *tta { " tta" } else { "" }))
             }
             MaskOp::Rs2Net { tta, tile_step } => {
                 let step = if (*tile_step - crate::pipeline::config::rs2_net_default_tile_step()).abs() > f64::EPSILON {
@@ -3921,7 +3926,7 @@ impl PipelineFormState {
                     rows.push(PipelineRow::MaskOpThresholdValue { section: si });
                 }
             }
-            if matches!(generator, Some(MaskOp::HdBet { .. })) {
+            if matches!(generator, Some(MaskOp::HdBet { patch: Some(_), .. })) {
                 rows.push(PipelineRow::MaskOpHdBetStep { section: si });
             }
             if matches!(generator, Some(MaskOp::Bet { .. })) {
@@ -4029,10 +4034,12 @@ impl PipelineFormState {
             MaskOp::Bet { fractional_intensity, .. } => {
                 *fractional_intensity = (*fractional_intensity + delta as f64 * 0.05).clamp(0.05, 1.0);
             }
-            // Toggle between the native patch and the low-memory one.
+            // Cycle whole volume -> native sliding window -> low-memory sliding window.
             MaskOp::HdBet { patch, .. } => {
-                let low = crate::pipeline::config::hd_bet_low_memory_patch();
-                *patch = if *patch == low { MaskOp::hd_bet_default_patch() } else { low };
+                let options = [None, Some(MaskOp::hd_bet_default_patch()),
+                               Some(crate::pipeline::config::hd_bet_low_memory_patch())];
+                let cur = options.iter().position(|o| o == patch).unwrap_or(0) as isize;
+                *patch = options[(cur + delta).rem_euclid(options.len() as isize) as usize];
             }
             _ => {}
         }
@@ -10544,6 +10551,12 @@ mod tests {
         goto_page(&mut app, Page::Masking);
         app.pipeline_state.mask_sections[0].generator = MaskOp::hd_bet_default();
         app.pipeline_state.mark_mask_custom(0);
+        let rows = app.rows();
+        assert!(!rows.iter().any(|r| matches!(r, PipelineRow::MaskOpHdBetStep { .. })),
+                "whole-volume HD-BET has no window step");
+        app.pipeline_state.mask_sections[0].generator =
+            MaskOp::HdBet { patch: Some(MaskOp::hd_bet_default_patch()), tta: false,
+                            tile_step: crate::pipeline::config::hd_bet_default_tile_step() };
 
         let find_step_row = |app: &App| {
             let rows = app.rows();

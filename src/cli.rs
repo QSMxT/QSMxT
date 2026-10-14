@@ -1472,7 +1472,7 @@ pub struct PipelineArgs {
     /// Format: <input>,<generator>,<refinement1>,<refinement2>,...
     /// Example: phase-quality,threshold:otsu,dilate:2,fill-holes:0,erode:2
     /// Example: magnitude,bet:0.5,erode:2
-    /// Example: magnitude,hd-bet,signal-erode   (HD-BET: `hd-bet[:XxYxZ|low-memory][:tta][:step=F]`;
+    /// Example: magnitude,hd-bet,signal-erode   (HD-BET: `hd-bet[:full|window|XxYxZ|low-memory][:tta][:step=F]`;
     ///   signal-erode: `signal-erode[:threshold[:depth_cap[:global_erosions[:bias_sigma[:min_component]]]]]`)
     #[arg(long = "mask", num_args = 1)]
     pub mask_sections_cli: Option<Vec<String>>,
@@ -1841,10 +1841,14 @@ pub struct MaskBetArgs {
 pub struct MaskHdBetArgs {
     #[command(flatten)]
     pub common: MaskCommonArgs,
-    /// Use 128x128x64 sliding-window patches (~1.9 GB peak instead of ~4.5 GB)
+    /// Run in 192x192x96 sliding-window patches (~3.6 GB peak) instead of on the whole volume
+    /// (the default; ~6-8 GB peak and about twice as fast)
+    #[arg(long)]
+    pub window: bool,
+    /// Use 128x128x64 sliding-window patches (~1.5 GB peak)
     #[arg(long)]
     pub low_memory: bool,
-    /// Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16; default 192x192x96)
+    /// Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16)
     #[arg(long)]
     pub patch: Option<String>,
     /// 8-fold mirroring test-time augmentation (about 8x slower)
@@ -1852,6 +1856,7 @@ pub struct MaskHdBetArgs {
     pub tta: bool,
     /// Sliding-window step as a fraction of the patch, in (0, 1]. Larger steps mean fewer
     /// patches and a shorter run: 0.5 (default) is HD-BET's own, 1.0 abuts the patches.
+    /// Implies --window.
     #[arg(long)]
     pub tile_step: Option<f64>,
 }

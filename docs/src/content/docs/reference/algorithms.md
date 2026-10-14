@@ -42,10 +42,12 @@ e.g. `--mask magnitude,bet:0.5,erode:2`. Each section names its input
 followed by a generator and refinement operations.
 
 - **Generators:** `threshold[:otsu|fixed:<v>|percentile:<p>]`, `bet[:<f>][:scale=<s>]`,
-  `hd-bet[:<X>x<Y>x<Z>|low-memory][:tta][:step=<s>]` and `rs2-net[:tta][:step=<s>]`. HD-BET runs 192×192×96 sliding-window
-  patches by default (about 4.5 GB peak). `low-memory` uses 128×128×64 patches
-  (about 1.9 GB peak), and `tta` adds mirroring test-time augmentation, which is
-  roughly 8× slower.
+  `hd-bet[:full|window|<X>x<Y>x<Z>|low-memory][:tta][:step=<s>]` and `rs2-net[:tta][:step=<s>]`. HD-BET runs on the
+  whole volume by default (`full`; about 6–8 GB peak). `window` runs 192×192×96
+  sliding-window patches instead (about 3.6 GB peak, about twice as long),
+  `low-memory` 128×128×64 patches (about 1.5 GB peak), and `step=` sets the
+  window stride. `tta` adds mirroring test-time augmentation, which is roughly
+  8× slower.
 - **Refinements:** `erode[:<n>]`, `dilate[:<n>]`, `close[:<r>]`, `fill-holes[:<max>]`
   (`0`, or omitted, is automatic: holes up to 5% of the volume),
   `gaussian[:<sigma_mm>]`, and
