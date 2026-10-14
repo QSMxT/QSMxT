@@ -72,7 +72,11 @@ pub(crate) fn init_logging(sink: LogSink, debug: bool) {
             // draw target is hidden and `println` silently discards the line. That would take
             // every warning and every fatal error with it, leaving a bare exit code and no
             // explanation, so write straight to stderr in that case.
-            if crate::pipeline::runner::MULTI_PROGRESS.is_hidden() {
+            if cfg!(test) {
+                // The logger is process-global, so once a test has run the pipeline every later
+                // test's warnings would reach the test output (tens of thousands of lines from the
+                // TUI parity test alone). Tests keep only the log sink.
+            } else if crate::pipeline::runner::MULTI_PROGRESS.is_hidden() {
                 let _ = writeln!(std::io::stderr(), "[{level:5} {}] {}",
                                  record.target(), record.args());
             } else {
