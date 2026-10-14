@@ -1233,7 +1233,7 @@ mod tests {
             "qsmxt", "run", "<bids>", "--mask", "magnitude,signal-erode:0.7,hd-bet:low-memory",
         ]);
         assert_eq!(c.masking.sections[0].generator,
-                   MaskOp::HdBet { patch: [128, 128, 64], tta: false, tile_step: hd_bet_default_tile_step() });
+                   MaskOp::HdBet { patch: Some([128, 128, 64]), tta: false, tile_step: hd_bet_default_tile_step() });
         assert!(matches!(c.masking.sections[0].refinements[..], [MaskOp::SignalErode { threshold, .. }] if threshold == 0.7));
     }
 

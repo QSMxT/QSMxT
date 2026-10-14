@@ -91,10 +91,17 @@ fn refine_file(common: &MaskCommonArgs, op: MaskOp) -> crate::Result<()> {
     save_and_log(common, &mask, &nifti)
 }
 
-/// The HD-BET op for `qsmxt mask hd-bet` (`--patch` wins over `--low-memory`).
+/// The HD-BET op for `qsmxt mask hd-bet` (`--patch` wins over `--low-memory`, which wins over
+/// `--window`; any of them, or `--tile-step`, selects the sliding window).
 fn hd_bet_op(args: &crate::cli::MaskHdBetArgs) -> crate::Result<MaskOp> {
     let mut spec = String::from("hd-bet");
-    if let Some(p) = &args.patch { spec += &format!(":{p}"); } else if args.low_memory { spec += ":low-memory"; }
+    if let Some(p) = &args.patch {
+        spec += &format!(":{p}");
+    } else if args.low_memory {
+        spec += ":low-memory";
+    } else if args.window || args.tile_step.is_some() {
+        spec += ":window";
+    }
     if args.tta { spec += ":tta"; }
     if let Some(step) = args.tile_step { spec += &format!(":step={step}"); }
     Ok(parse_mask_op(&spec)?)

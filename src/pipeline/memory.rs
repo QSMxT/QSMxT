@@ -58,13 +58,20 @@ pub fn estimate_peak_memory_bytes(
     // Masking stage (temporary) — worst case across all sections
     // BET is the most expensive: sorted nonzero vec (~N*8) + within_brain values (~N*8) + output (N)
     let has_bet = config.masking.sections.iter().any(|s| matches!(s.generator, MaskOp::Bet { .. }));
-    // HD-BET: tract activations for one sliding-window patch (~1 KiB per patch voxel), the parsed
-    // model (~300 MB), and its f32 working volumes (~40 B/voxel). Measured on 164×205×205:
-    // ~3.6–4.5 GB with the native 192×192×96 patch, ~1.5–1.9 GB with the 128×128×64 one.
+    // HD-BET: tract activations for one network input (~1 KiB per input voxel), the parsed
+    // model (~300 MB), and its f32 working volumes (~40 B/voxel). A sliding window's input is
+    // its patch: ~3.6 GB peak with the native 192×192×96, ~1.5 GB with 128×128×64. The whole
+    // volume's is the head's bounding box at 1 mm, padded to multiples of 32×32×16, which does
+    // not depend on the acquired resolution: 6.4–8.2 GB measured on 1 mm whole-head and
+    // 0.8×0.8×3 mm GRE (up to 160×256×256 voxels), so budget a 176×256×256 box.
+    const HD_BET_FULL_VOLUME_VOXELS: usize = 256 * 256 * 176;
     let hd_bet_mem = config.masking.sections.iter()
-        .filter_map(|s| match &s.generator { MaskOp::HdBet { patch, .. } => Some(patch.iter().product::<usize>()), _ => None })
+        .filter_map(|s| match &s.generator {
+            MaskOp::HdBet { patch, .. } => Some(patch.map_or(HD_BET_FULL_VOLUME_VOXELS, |p| p.iter().product())),
+            _ => None,
+        })
         .max()
-        .map_or(0, |patch_voxels| patch_voxels * 1024 + 300 * 1024 * 1024 + 40 * n);
+        .map_or(0, |input_voxels| input_voxels * 1024 + 300 * 1024 * 1024 + 40 * n);
     // Signal-gated erosion keeps a handful of f64 volumes (smoothed signal, bias estimate, depth).
     let has_signal_erode = config.masking.sections.iter()
         .any(|s| s.refinements.iter().any(|op| matches!(op, MaskOp::SignalErode { .. })));
@@ -354,11 +361,16 @@ mod tests {
         let mut c = default_config();
         let base = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
         c.masking.sections = hd_bet_mask_sections();
+        let full = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
+        c.masking.sections[0].generator =
+            MaskOp::HdBet { patch: Some(MaskOp::hd_bet_default_patch()), tta: false, tile_step: hd_bet_default_tile_step() };
         let native = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
         c.masking.sections[0].generator =
-            MaskOp::HdBet { patch: [128, 128, 64], tta: false, tile_step: hd_bet_default_tile_step() };
+            MaskOp::HdBet { patch: Some([128, 128, 64]), tta: false, tile_step: hd_bet_default_tile_step() };
         let low = estimate_peak_memory_bytes(164, 205, 205, 4, 1, true, &c);
-        // The native patch dominates the pipeline peak (measured ~3.6–4.5 GB for masking alone).
+        // HD-BET dominates the pipeline peak (measured for masking alone: ~6.4–8.2 GB on the
+        // whole volume, ~3.6 GB with the native patch).
+        assert!(full > 8_000_000_000 && full > native, "full {full}, native {native}");
         assert!(native > 3_500_000_000 && native > base, "native {native}, base {base}");
         assert!(low < native, "low-memory patch ({low}) should estimate below native ({native})");
     }

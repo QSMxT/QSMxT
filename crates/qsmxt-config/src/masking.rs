@@ -92,10 +92,11 @@ pub enum MaskOp {
         #[serde(default = "se_min_component")] min_component: usize,
     },
     /// HD-BET deep-learning brain extraction from the magnitude (needs a `dl` build).
-    /// `patch` is the sliding-window size `[x, y, z]` in voxels at 1 mm; `tile_step` is the
-    /// window stride as a fraction of the patch, in `(0, 1]`.
+    /// `patch` is `None` for one pass over the whole volume (the default), or the sliding-window
+    /// size `[x, y, z]` in voxels at 1 mm; `tile_step` is the window stride as a fraction of the
+    /// patch, in `(0, 1]`, and only applies to a sliding window.
     HdBet {
-        #[serde(default = "hd_bet_patch")] patch: [usize; 3],
+        #[serde(default)] patch: Option<[usize; 3]>,
         #[serde(default)] tta: bool,
         #[serde(default = "hd_bet_tile_step")] tile_step: f64,
     },
@@ -124,15 +125,19 @@ pub fn bet_default_voxel_scale() -> f64 { qsm_core::bet::BetParams::default().vo
 fn rs2_net_tile_step() -> f64 { rs2_net_default_tile_step() }
 /// qsm-core's default RS2-Net sliding-window step (nnU-Net's `tile_step_size`).
 pub fn rs2_net_default_tile_step() -> f64 { qsm_core::bet::Rs2NetParams::default().tile_step }
-fn hd_bet_patch() -> [usize; 3] { let p = qsm_core::bet::HdBetParams::default().patch; [p.0, p.1, p.2] }
+/// The `[x, y, z]` patch and step of one of qsm-core's sliding-window settings.
+fn hd_bet_window(w: qsm_core::bet::HdBetInference) -> ([usize; 3], f64) {
+    match w {
+        qsm_core::bet::HdBetInference::SlidingWindow { patch: p, tile_step } => ([p.0, p.1, p.2], tile_step),
+        qsm_core::bet::HdBetInference::FullVolume => unreachable!("not a sliding window"),
+    }
+}
+fn hd_bet_patch() -> [usize; 3] { hd_bet_window(qsm_core::bet::HdBetInference::SLIDING_WINDOW).0 }
 fn hd_bet_tile_step() -> f64 { hd_bet_default_tile_step() }
 /// qsm-core's default HD-BET sliding-window step (nnU-Net's `tile_step_size`).
-pub fn hd_bet_default_tile_step() -> f64 { qsm_core::bet::HdBetParams::default().tile_step }
-/// `hd-bet:low-memory` patch — qsm-core's `HdBetParams::low_memory()` (~1.9 GB peak vs ~4.5 GB).
-pub fn hd_bet_low_memory_patch() -> [usize; 3] {
-    let p = qsm_core::bet::HdBetParams::low_memory().patch;
-    [p.0, p.1, p.2]
-}
+pub fn hd_bet_default_tile_step() -> f64 { hd_bet_window(qsm_core::bet::HdBetInference::SLIDING_WINDOW).1 }
+/// `hd-bet:low-memory` patch — qsm-core's `HdBetInference::LOW_MEMORY` (~1.5 GB peak vs ~3.6 GB).
+pub fn hd_bet_low_memory_patch() -> [usize; 3] { hd_bet_window(qsm_core::bet::HdBetInference::LOW_MEMORY).0 }
 
 impl MaskOp {
     /// Signal-gated erosion with qsm-core's defaults (the QSM-CI harmonization setting).
@@ -151,9 +156,9 @@ impl MaskOp {
     pub fn rs2_net_default() -> Self {
         Self::Rs2Net { tta: false, tile_step: rs2_net_tile_step() }
     }
-    /// HD-BET with the native (training-size) patch and no test-time augmentation.
+    /// HD-BET on the whole volume, without test-time augmentation.
     pub fn hd_bet_default() -> Self {
-        Self::HdBet { patch: hd_bet_patch(), tta: false, tile_step: hd_bet_tile_step() }
+        Self::HdBet { patch: None, tta: false, tile_step: hd_bet_tile_step() }
     }
     /// HD-BET's native (training-size) sliding-window patch `[x, y, z]`.
     pub fn hd_bet_default_patch() -> [usize; 3] { hd_bet_patch() }
@@ -192,13 +197,14 @@ impl MaskOp {
             }
             Self::HdBet { patch, tta, tile_step } => {
                 let mut spec = String::from("hd-bet");
-                if *patch == hd_bet_low_memory_patch() {
-                    spec += ":low-memory";
-                } else if *patch != hd_bet_patch() {
-                    spec += &format!(":{}x{}x{}", patch[0], patch[1], patch[2]);
+                match patch {
+                    None => {}
+                    Some(p) if *p == hd_bet_low_memory_patch() => spec += ":low-memory",
+                    Some(p) if *p == hd_bet_patch() => spec += ":window",
+                    Some(p) => spec += &format!(":{}x{}x{}", p[0], p[1], p[2]),
                 }
                 if *tta { spec += ":tta"; }
-                if (*tile_step - hd_bet_tile_step()).abs() > f64::EPSILON {
+                if patch.is_some() && (*tile_step - hd_bet_tile_step()).abs() > f64::EPSILON {
                     spec += &format!(":step={tile_step}");
                 }
                 spec
@@ -240,7 +246,12 @@ impl fmt::Display for MaskOp {
             Self::GaussianSmooth { sigma_mm } => write!(f, "gaussian:{:.1}", sigma_mm),
             Self::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } =>
                 write!(f, "signal-erode:{:.2}:{}:{}:{:.1}:{}", threshold, depth_cap, global_erosions, bias_sigma, min_component),
-            Self::HdBet { patch, tta, tile_step } => {
+            Self::HdBet { patch: None, tta, .. } => {
+                write!(f, "hd-bet:full")?;
+                if *tta { write!(f, ":tta")?; }
+                Ok(())
+            }
+            Self::HdBet { patch: Some(patch), tta, tile_step } => {
                 write!(f, "hd-bet:{}x{}x{}", patch[0], patch[1], patch[2])?;
                 if *tta { write!(f, ":tta")?; }
                 write!(f, ":step={}", tile_step)?;
@@ -513,19 +524,24 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
             })
         }
         "hd-bet" => {
-            let mut patch = hd_bet_patch();
+            let mut patch = None;
             let mut tta = false;
-            let mut tile_step = hd_bet_tile_step();
+            let mut tile_step = None;
             for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
                 match *part {
                     "tta" => tta = true,
-                    "native" => patch = hd_bet_patch(),
-                    "low-memory" => patch = hd_bet_low_memory_patch(),
-                    s if s.starts_with("step=") => tile_step = parse_window_step("hd-bet", &s[5..])?,
-                    dims => patch = parse_hd_bet_patch(dims)?,
+                    "full" => patch = None,
+                    "window" | "native" => patch = Some(hd_bet_patch()),
+                    "low-memory" => patch = Some(hd_bet_low_memory_patch()),
+                    s if s.starts_with("step=") => tile_step = Some(parse_window_step("hd-bet", &s[5..])?),
+                    dims => patch = Some(parse_hd_bet_patch(dims)?),
                 }
             }
-            Ok(MaskOp::HdBet { patch, tta, tile_step })
+            if patch.is_none() && tile_step.is_some() {
+                return Err(ConfigError::Parse(
+                    "hd-bet: step= applies to a sliding window; add 'window', 'low-memory' or a patch size".into()));
+            }
+            Ok(MaskOp::HdBet { patch, tta, tile_step: tile_step.unwrap_or_else(hd_bet_tile_step) })
         }
         "rs2-net" => {
             let mut tta = false;
@@ -572,7 +588,7 @@ fn parse_window_step(op: &str, s: &str) -> crate::Result<f64> {
 /// `XxYxZ` HD-BET patch; each size must be a multiple of the network's 32×32×16 down-sampling.
 fn parse_hd_bet_patch(s: &str) -> crate::Result<[usize; 3]> {
     let dims: Vec<usize> = s.split('x').map(|d| d.trim().parse()).collect::<Result<_, _>>()
-        .map_err(|_| ConfigError::Parse(format!("hd-bet: expected a patch like 192x192x96, 'low-memory' or 'tta', got '{s}'")))?;
+        .map_err(|_| ConfigError::Parse(format!("hd-bet: expected 'full', 'window', a patch like 192x192x96, 'low-memory' or 'tta', got '{s}'")))?;
     match dims[..] {
         [x, y, z] if x > 0 && y > 0 && z > 0 && x % 32 == 0 && y % 32 == 0 && z % 16 == 0 => Ok([x, y, z]),
         _ => Err(ConfigError::Parse(format!("hd-bet: patch '{s}' must be three sizes that are multiples of 32x32x16"))),
@@ -701,40 +717,44 @@ mod tests {
     /// Every spelling of the op survives print → parse unchanged.
     #[test]
     fn hd_bet_specs_round_trip() {
-        for spec in ["hd-bet", "hd-bet:low-memory", "hd-bet:128x128x64:step=0.75",
-                     "hd-bet:low-memory:step=1:tta", "hd-bet:step=0.625"] {
+        for spec in ["hd-bet", "hd-bet:tta", "hd-bet:window", "hd-bet:low-memory", "hd-bet:128x128x64:step=0.75",
+                     "hd-bet:low-memory:step=1:tta", "hd-bet:window:step=0.625"] {
             let op = parse_mask_op(spec).expect(spec);
             let printed = format!("{op}");
             assert_eq!(parse_mask_op(&printed).expect(&printed), op, "round-trip of {spec}");
         }
         // Printed unconditionally: an op string always states every parameter it ran with.
         assert_eq!(format!("{}", parse_mask_op("hd-bet:low-memory").unwrap()), "hd-bet:128x128x64:step=0.5");
-        assert_eq!(format!("{}", parse_mask_op("hd-bet:tta").unwrap()), "hd-bet:192x192x96:tta:step=0.5");
+        assert_eq!(format!("{}", parse_mask_op("hd-bet:window:tta").unwrap()), "hd-bet:192x192x96:tta:step=0.5");
+        assert_eq!(format!("{}", parse_mask_op("hd-bet:tta").unwrap()), "hd-bet:full:tta");
     }
 
     #[test]
     fn test_parse_hd_bet() {
         let step = hd_bet_tile_step();
-        assert_eq!(parse_mask_op("hd-bet").unwrap(), MaskOp::HdBet { patch: [192, 192, 96], tta: false, tile_step: step });
-        assert_eq!(parse_mask_op("hd-bet:low-memory").unwrap(), MaskOp::HdBet { patch: [128, 128, 64], tta: false, tile_step: step });
-        assert_eq!(parse_mask_op("hd-bet:160x160x128:tta").unwrap(), MaskOp::HdBet { patch: [160, 160, 128], tta: true, tile_step: step });
+        assert_eq!(parse_mask_op("hd-bet").unwrap(), MaskOp::HdBet { patch: None, tta: false, tile_step: step });
+        assert_eq!(parse_mask_op("hd-bet:full").unwrap(), MaskOp::hd_bet_default());
+        assert_eq!(parse_mask_op("hd-bet:window").unwrap(), MaskOp::HdBet { patch: Some([192, 192, 96]), tta: false, tile_step: step });
+        assert_eq!(parse_mask_op("hd-bet:low-memory").unwrap(), MaskOp::HdBet { patch: Some([128, 128, 64]), tta: false, tile_step: step });
+        assert_eq!(parse_mask_op("hd-bet:160x160x128:tta").unwrap(), MaskOp::HdBet { patch: Some([160, 160, 128]), tta: true, tile_step: step });
         assert!(parse_mask_op("hd-bet:100x100x100").is_err(), "not a multiple of 32x32x16");
         assert!(parse_mask_op("hd-bet:big").is_err());
 
         // The sliding-window stride, which used to be silently pinned to qsm-core's default.
-        assert_eq!(parse_mask_op("hd-bet:step=0.75").unwrap(),
-                   MaskOp::HdBet { patch: [192, 192, 96], tta: false, tile_step: 0.75 });
+        assert_eq!(parse_mask_op("hd-bet:window:step=0.75").unwrap(),
+                   MaskOp::HdBet { patch: Some([192, 192, 96]), tta: false, tile_step: 0.75 });
         assert_eq!(parse_mask_op("hd-bet:low-memory:step=1:tta").unwrap(),
-                   MaskOp::HdBet { patch: [128, 128, 64], tta: true, tile_step: 1.0 });
-        assert!(parse_mask_op("hd-bet:step=0").is_err(), "stride must be > 0");
-        assert!(parse_mask_op("hd-bet:step=1.5").is_err(), "stride > 1 would leave gaps");
-        assert!(parse_mask_op("hd-bet:step=half").is_err());
+                   MaskOp::HdBet { patch: Some([128, 128, 64]), tta: true, tile_step: 1.0 });
+        assert!(parse_mask_op("hd-bet:step=0.75").is_err(), "a stride needs a sliding window");
+        assert!(parse_mask_op("hd-bet:window:step=0").is_err(), "stride must be > 0");
+        assert!(parse_mask_op("hd-bet:window:step=1.5").is_err(), "stride > 1 would leave gaps");
+        assert!(parse_mask_op("hd-bet:window:step=half").is_err());
 
         // Always printed, and what we print parses back to the same op.
-        let stepped = MaskOp::HdBet { patch: [128, 128, 64], tta: false, tile_step: 0.75 };
+        let stepped = MaskOp::HdBet { patch: Some([128, 128, 64]), tta: false, tile_step: 0.75 };
         assert_eq!(format!("{stepped}"), "hd-bet:128x128x64:step=0.75");
         assert_eq!(parse_mask_op(&format!("{stepped}")).unwrap(), stepped);
-        let op = MaskOp::HdBet { patch: [128, 128, 64], tta: true, tile_step: step };
+        let op = MaskOp::HdBet { patch: Some([128, 128, 64]), tta: true, tile_step: step };
         assert_eq!(format!("{op}"), "hd-bet:128x128x64:tta:step=0.5");
         assert_eq!(parse_mask_op(&format!("{op}")).unwrap(), op);
         assert!(op.is_generator());
@@ -790,7 +810,12 @@ mod tests {
         ).unwrap();
         assert_eq!(sec.generator, MaskOp::hd_bet_default());
         assert_eq!(sec.refinements, vec![MaskOp::signal_erode_default()]);
-        assert_eq!(format!("{sec}"), "magnitude,hd-bet:192x192x96:step=0.5,signal-erode:0.80:5:1:12.0:1000");
+        assert_eq!(format!("{sec}"), "magnitude,hd-bet:full,signal-erode:0.80:5:1:12.0:1000");
+        // A config written with an explicit patch keeps its sliding window.
+        let sec: MaskSection = toml::from_str(
+            "input = \"magnitude\"\ngenerator = { op = \"hd-bet\", patch = [192, 192, 96] }\n",
+        ).unwrap();
+        assert_eq!(sec.generator, MaskOp::HdBet { patch: Some([192, 192, 96]), tta: false, tile_step: 0.5 });
     }
 
     #[test]
@@ -837,8 +862,10 @@ mod tests {
     fn compact_specs_round_trip_and_are_no_longer() {
         let ops = [
             MaskOp::hd_bet_default(),
-            MaskOp::HdBet { patch: hd_bet_low_memory_patch(), tta: false, tile_step: hd_bet_default_tile_step() },
-            MaskOp::HdBet { patch: [160, 160, 128], tta: true, tile_step: 0.75 },
+            MaskOp::HdBet { patch: None, tta: true, tile_step: hd_bet_default_tile_step() },
+            MaskOp::HdBet { patch: Some(MaskOp::hd_bet_default_patch()), tta: false, tile_step: hd_bet_default_tile_step() },
+            MaskOp::HdBet { patch: Some(hd_bet_low_memory_patch()), tta: false, tile_step: hd_bet_default_tile_step() },
+            MaskOp::HdBet { patch: Some([160, 160, 128]), tta: true, tile_step: 0.75 },
             MaskOp::signal_erode_default(),
             parse_mask_op("signal-erode:0.70").unwrap(),
             parse_mask_op("signal-erode:0.80:5:1:12:500").unwrap(),
@@ -858,13 +885,13 @@ mod tests {
         // The two that motivated it: all-default parameters collapse to the bare op name.
         assert_eq!(MaskOp::hd_bet_default().compact_spec(), "hd-bet");
         assert_eq!(MaskOp::signal_erode_default().compact_spec(), "signal-erode");
-        assert_eq!(MaskOp::HdBet { patch: hd_bet_low_memory_patch(), tta: false,
+        assert_eq!(MaskOp::HdBet { patch: Some(hd_bet_low_memory_patch()), tta: false,
                                    tile_step: hd_bet_default_tile_step() }.compact_spec(), "hd-bet:low-memory");
         // Only trailing defaults drop: a changed last field keeps the ones before it.
         assert_eq!(parse_mask_op("signal-erode:0.80:5:1:12:500").unwrap().compact_spec(),
                    "signal-erode:0.80:5:1:12.0:500");
         // Display stays fully explicit — it is the cache key.
-        assert_eq!(format!("{}", MaskOp::hd_bet_default()), "hd-bet:192x192x96:step=0.5");
+        assert_eq!(format!("{}", MaskOp::hd_bet_default()), "hd-bet:full");
     }
 
     /// The preset list is what `--mask-preset` and the TUI both build from, and the command

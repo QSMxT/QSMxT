@@ -17,6 +17,16 @@ upgrade.
   lose. Every iLSQR run's χ changes slightly (~3 ppb RMS on UK Biobank). `--ilsqr-pad-mm 64`
   reproduces the previous output. QSMART's inner iLSQR keeps `--qsmart-ilsqr-pad-mm` (default 6).
 
+- **HD-BET runs on the whole volume by default** (QSM.rs#187). The network now sees the
+  cropped 1 mm volume in one pass instead of 192×192×96 sliding-window patches: 2–3.7× faster
+  (UK Biobank SWI 28 s instead of 71 s on 8 threads) at a higher peak memory (6.4–8.2 GB
+  instead of 3.6 GB). Masks agree with the sliding window at Dice 0.993–0.996 and are 0.5–1%
+  smaller, mostly at the inferior edge. The sliding window stays available as
+  `hd-bet:window` (or `hd-bet:low-memory`, `hd-bet:<X>x<Y>x<Z>`, with `step=`) in `--mask`,
+  `qsmxt mask hd-bet --window`, the TUI ("Inference" under HD-BET) and the config (`patch`);
+  `hd-bet:full` names the default explicitly. A `step=` without a window is now rejected.
+  Configs that set `patch` keep their sliding window.
+
 - **V-SHARP can estimate the background on an isotropic working grid** (QSM.rs#185).
   `--vsharp-grid finest` uses the smallest acquired voxel dimension (0.8 mm for UK Biobank's
   0.8 × 0.8 × 3 mm), so no axis is coarsened; `--vsharp-grid isotropic

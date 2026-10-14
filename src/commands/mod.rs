@@ -335,7 +335,7 @@ mod integration_tests {
         testutils::write_magnitude(&input);
         let err = super::mask::execute(MaskCommand::HdBet(MaskHdBetArgs {
             common: common_mask(input, dir.path().join("mask.nii")),
-            low_memory: false, patch: None, tta: false, tile_step: None,
+            window: false, low_memory: false, patch: None, tta: false, tile_step: None,
         })).unwrap_err();
         assert!(format!("{err}").contains("deep-learning"), "{err}");
     }
@@ -352,7 +352,7 @@ mod integration_tests {
         let mut c = common_mask(input, output.clone());
         c.ops = vec!["signal-erode".to_string()];
         super::mask::execute(MaskCommand::HdBet(MaskHdBetArgs {
-            common: c, low_memory: true, patch: None, tta: false, tile_step: None,
+            common: c, window: false, low_memory: true, patch: None, tta: false, tile_step: None,
         })).unwrap();
         assert!(output.exists());
     }

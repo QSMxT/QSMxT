@@ -1475,9 +1475,14 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                         ("Frac. Intensity:", format!("{:.2}", fractional_intensity), "BET fractional intensity 0.0-1.0, smaller = larger brain (←/→ to adjust)")
                     }
                     crate::pipeline::config::MaskOp::HdBet { patch, .. } => {
-                        let low = *patch == crate::pipeline::config::hd_bet_low_memory_patch();
-                        ("Patch:", format!("{}x{}x{}{}", patch[0], patch[1], patch[2], if low { " (low memory)" } else { "" }),
-                         "HD-BET sliding-window patch: native ~4.5 GB peak, low memory ~1.9 GB (←/→ to toggle)")
+                        let val = match patch {
+                            None => "whole volume".to_string(),
+                            Some(p) => format!("{}x{}x{} window{}", p[0], p[1], p[2],
+                                if *p == crate::pipeline::config::hd_bet_low_memory_patch() { " (low memory)" } else { "" }),
+                        };
+                        ("Inference:", val,
+                         "HD-BET on the whole volume (~6-8 GB peak, fastest) or in sliding-window \
+                          patches: 192x192x96 ~3.6 GB, low memory 128x128x64 ~1.5 GB (←/→ to change)")
                     }
                     // RS2-Net's graph is traced at one fixed patch, so there is nothing to cycle.
                     crate::pipeline::config::MaskOp::Rs2Net { tta, .. } => {
