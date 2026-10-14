@@ -66,7 +66,7 @@ qsmxt run study/bids \
 | `--qsm-algorithm` | 20 classical (`rts`, `tv`, `tkd`, `tgv`, `medi`, `ilsqr`, …) and 11 deep-learning (`xqsm`, `qsmnet`, `iqsm`, …) |
 | `--unwrapping-algorithm` | `romeo`, `laplacian` |
 | `--bf-algorithm` | `vsharp`, `pdf`, `lbv`, `ismv`, `sharp`, `resharp`, `harperella`, `iharperella`, `bfrnet`, `iqfm` |
-| `--mask-preset` | `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net` |
+| `--mask-preset` | `robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab` |
 | `--masking-input` | `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality` |
 
 Every value of every option is listed in the [CLI reference](/QSMxT/reference/cli/)

@@ -1460,8 +1460,10 @@ pub struct PipelineArgs {
     pub output_space: Option<OutputSpaceArg>,
 
     /// Mask preset: robust-threshold, bet, hd-bet (HD-BET deep-learning brain extraction +
-    /// signal-gated erosion; needs a deep-learning build), or bet-and-phase (BET on the
-    /// magnitude AND a thresholded phase-quality map, then hole-filled and eroded)
+    /// signal-gated erosion; needs a deep-learning build), bet-and-phase (BET on the
+    /// magnitude AND a thresholded phase-quality map, then hole-filled and eroded), rs2-net
+    /// (RS2-Net deep-learning rodent brain extraction), or mindgrab (MindGrab deep-learning
+    /// brain extraction for any contrast; needs a deep-learning build)
     #[arg(long, value_enum)]
     pub mask_preset: Option<MaskPresetArg>,
 
@@ -1764,8 +1766,10 @@ pub enum MaskCommand {
     HdBet(MaskHdBetArgs),
     /// Deep-learning rodent brain extraction (RS2-Net; downloads weights on first use)
     Rs2Net(MaskRs2NetArgs),
+    /// Deep-learning brain extraction for any contrast (MindGrab; downloads weights on first use)
+    Mindgrab(MaskMindGrabArgs),
     /// Run a `--mask-preset` recipe on an image (robust-threshold, bet, hd-bet, bet-and-phase,
-    /// rs2-net)
+    /// rs2-net, mindgrab)
     Preset(MaskPresetArgs),
     /// Alias for `preset robust-threshold`
     Robust(MaskRobustArgs),
@@ -1875,6 +1879,15 @@ pub struct MaskRs2NetArgs {
     /// patches and a shorter run: 0.5 (default) is nnU-Net's own, 1.0 abuts the patches.
     #[arg(long)]
     pub tile_step: Option<f64>,
+}
+
+#[derive(Parser, Debug)]
+pub struct MaskMindGrabArgs {
+    #[command(flatten)]
+    pub common: MaskCommonArgs,
+    /// Left-right flip test-time augmentation (about 2x slower)
+    #[arg(long)]
+    pub tta: bool,
 }
 
 #[derive(Parser, Debug)]
@@ -3581,6 +3594,8 @@ pub enum MaskInputArg {
 #[derive(ValueEnum, Clone, Copy, Debug, PartialEq)]
 pub enum MaskPresetArg {
     RobustThreshold, Bet, HdBet, BetAndPhase, Rs2Net,
+    #[value(name = "mindgrab")]
+    MindGrab,
     /// Removed. Still parsed, and hidden, so a script that asks for it gets an error that says
     /// what to use instead rather than clap's bare "invalid value".
     #[value(hide = true)]

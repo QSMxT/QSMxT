@@ -110,6 +110,13 @@ pub enum MaskOp {
         #[serde(default)] tta: bool,
         #[serde(default = "rs2_net_tile_step")] tile_step: f64,
     },
+    /// MindGrab deep-learning brain extraction from the magnitude, for any contrast (needs a
+    /// `dl` build and the image affine). `tta` adds a left–right flipped pass, summing the logits;
+    /// it doubles the run time.
+    #[serde(rename = "mindgrab")]
+    MindGrab {
+        #[serde(default)] tta: bool,
+    },
 }
 
 // Defaults come from qsm-core so the two never drift apart.
@@ -156,6 +163,10 @@ impl MaskOp {
     pub fn rs2_net_default() -> Self {
         Self::Rs2Net { tta: false, tile_step: rs2_net_tile_step() }
     }
+    /// MindGrab without test-time augmentation.
+    pub fn mindgrab_default() -> Self {
+        Self::MindGrab { tta: false }
+    }
     /// HD-BET on the whole volume, without test-time augmentation.
     pub fn hd_bet_default() -> Self {
         Self::HdBet { patch: None, tta: false, tile_step: hd_bet_tile_step() }
@@ -164,7 +175,8 @@ impl MaskOp {
     pub fn hd_bet_default_patch() -> [usize; 3] { hd_bet_patch() }
     /// Whether this op creates a mask (as opposed to refining one).
     pub fn is_generator(&self) -> bool {
-        matches!(self, Self::Threshold { .. } | Self::Bet { .. } | Self::HdBet { .. } | Self::Rs2Net { .. })
+        matches!(self, Self::Threshold { .. } | Self::Bet { .. } | Self::HdBet { .. } | Self::Rs2Net { .. }
+            | Self::MindGrab { .. })
     }
 }
 
@@ -263,6 +275,7 @@ impl fmt::Display for MaskOp {
                 write!(f, ":step={}", tile_step)?;
                 Ok(())
             }
+            Self::MindGrab { tta } => write!(f, "mindgrab{}", if *tta { ":tta" } else { "" }),
         }
     }
 }
@@ -365,6 +378,15 @@ pub fn rs2_net_mask_sections() -> Vec<MaskSection> {
     }]
 }
 
+/// MindGrab on the magnitude (the `mindgrab` mask preset), with no refinements.
+pub fn mindgrab_mask_sections() -> Vec<MaskSection> {
+    vec![MaskSection {
+        input: MaskingInput::Magnitude,
+        generator: MaskOp::mindgrab_default(),
+        refinements: vec![],
+    }]
+}
+
 /// A complete masking recipe: the sections, how they fold together, and the refinements that
 /// run on the combined mask. Presets that need more than one section return one of these.
 #[derive(Debug, Clone, PartialEq)]
@@ -430,6 +452,7 @@ pub fn mask_presets() -> Vec<(&'static str, MaskRecipe)> {
         ("hd-bet", MaskRecipe::from_sections(hd_bet_mask_sections())),
         ("bet-and-phase", bet_and_phase_mask_recipe()),
         ("rs2-net", MaskRecipe::from_sections(rs2_net_mask_sections())),
+        ("mindgrab", MaskRecipe::from_sections(mindgrab_mask_sections())),
     ]
 }
 
@@ -555,6 +578,16 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
                 }
             }
             Ok(MaskOp::Rs2Net { tta, tile_step })
+        }
+        "mindgrab" => {
+            let mut tta = false;
+            for part in parts.iter().skip(1).filter(|p| !p.is_empty()) {
+                match *part {
+                    "tta" => tta = true,
+                    s => return Err(ConfigError::Parse(format!("mindgrab: expected 'tta', got '{s}'"))),
+                }
+            }
+            Ok(MaskOp::MindGrab { tta })
         }
         _ => Err(ConfigError::Parse(format!("Unknown mask-op: '{}'", parts[0]))),
     }
@@ -787,6 +820,43 @@ mod tests {
         assert_eq!(MaskOp::Rs2Net { tta: true, tile_step: 0.75 }.compact_spec(), "rs2-net:tta:step=0.75");
 
         assert!(MaskOp::rs2_net_default().is_generator());
+    }
+
+    #[test]
+    fn test_parse_mindgrab() {
+        assert_eq!(parse_mask_op("mindgrab").unwrap(), MaskOp::MindGrab { tta: false });
+        assert_eq!(parse_mask_op("mindgrab:tta").unwrap(), MaskOp::MindGrab { tta: true });
+        assert!(parse_mask_op("mindgrab:step=0.5").is_err(), "no sliding window to set");
+        assert!(parse_mask_op("mindgrab:128x128x128").is_err());
+
+        assert_eq!(format!("{}", MaskOp::mindgrab_default()), "mindgrab");
+        for spec in ["mindgrab", "mindgrab:tta"] {
+            let op = parse_mask_op(spec).expect(spec);
+            let printed = format!("{op}");
+            assert_eq!(printed, spec);
+            assert_eq!(parse_mask_op(&printed).expect(&printed), op, "round-trip of {spec}");
+            assert_eq!(op.compact_spec(), spec);
+        }
+        assert!(MaskOp::mindgrab_default().is_generator());
+
+        // Config files spell it `mindgrab`, like the spec, and may omit `tta`.
+        let sec: MaskSection = toml::from_str(
+            "input = \"magnitude\"\ngenerator = { op = \"mindgrab\" }\n",
+        ).unwrap();
+        assert_eq!(sec.generator, MaskOp::mindgrab_default());
+        let back = toml::to_string(&sec).unwrap();
+        assert!(back.contains("op = \"mindgrab\""), "{back}");
+    }
+
+    #[test]
+    fn test_mindgrab_preset() {
+        let presets = mask_presets();
+        let (_, r) = presets.iter().find(|(k, _)| *k == "mindgrab").expect("mindgrab preset");
+        assert_eq!(r.sections.len(), 1);
+        assert_eq!(r.sections[0].input, MaskingInput::Magnitude);
+        assert_eq!(r.sections[0].generator, MaskOp::mindgrab_default());
+        assert!(r.sections[0].refinements.is_empty());
+        assert!(r.refinements.is_empty());
     }
 
     /// RS2-Net is the rodent preset.

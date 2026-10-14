@@ -432,12 +432,16 @@ pub fn to_separation_config(cfg: &PipelineConfig) -> PSeparation {
 }
 
 /// Convert RunMetadata-like info to qsm-core ScanMetadata.
+///
+/// `affine` is the voxel→world affine (row-major 4×4) of the grid `dims` describes, when there is
+/// one; MindGrab needs it, everything else works in voxel space.
 pub fn to_scan_metadata(
     dims: (usize, usize, usize),
     voxel_size: (f64, f64, f64),
     echo_times: &[f64],
     field_strength: f64,
     b0_direction: (f64, f64, f64),
+    affine: Option<[f64; 16]>,
 ) -> PScanMetadata {
     PScanMetadata {
         dims,
@@ -446,6 +450,7 @@ pub fn to_scan_metadata(
         field_strength,
         b0_direction,
         slice_geometry: None,
+        affine,
     }
 }
 
@@ -513,6 +518,9 @@ fn convert_mask_op(op: &crate::masking::MaskOp, bet: &crate::config::BetConfig) 
         crate::masking::MaskOp::Rs2Net { tta, tile_step } => PMaskOp::Rs2Net(qsm_core::bet::Rs2NetParams {
             mirror_tta: *tta,
             tile_step: *tile_step,
+        }),
+        crate::masking::MaskOp::MindGrab { tta } => PMaskOp::MindGrab(qsm_core::bet::MindGrabParams {
+            flip_tta: *tta,
         }),
     }
 }
@@ -665,7 +673,10 @@ mod tests {
         }
         // Defaults on both sides agree.
         assert_eq!(convert_mask_op_d(&MaskOp::hd_bet_default()), PMaskOp::HdBet(Default::default()));
-        assert_eq!(convert_mask_op_d(&MaskOp::signal_erode_default()), PMaskOp::SignalErode(Default::default()));
+        assert_eq!(convert_mask_op_d(&MaskOp::signal_erode_default()), PMaskOp::SignalErode(Default::default()));        assert_eq!(convert_mask_op_d(&MaskOp::mindgrab_default()), PMaskOp::MindGrab(Default::default()));
+        assert_eq!(convert_mask_op_d(&parse_mask_op("mindgrab:tta").unwrap()),
+                   PMaskOp::MindGrab(qsm_core::bet::MindGrabParams { flip_tta: true }));
+        assert_eq!(convert_mask_op_d(&MaskOp::mindgrab_default()).dl_model_id(), Some("mindgrab"));
     }
 
     use super::*;

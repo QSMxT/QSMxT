@@ -19,6 +19,7 @@ operates on with `--masking-input`.
 | `hd-bet` | HD-BET deep-learning brain extraction on the magnitude image, followed by signal-gated erosion (the QSM-CI harmonization masking). Needs a deep-learning build; the weights (~120 MB, CC-BY-NC-4.0) are downloaded on first use |
 | `bet-and-phase` | BET on the first-echo magnitude intersected with the `robust-threshold` mask of the phase-quality map, then hole-filled and eroded (the masking recommended by the [ISMRM EMTP study group consensus](https://doi.org/10.1002/mrm.30006)) |
 | `rs2-net` | RS2-Net deep-learning **rodent** brain extraction (Lin et al., 2024) on the magnitude image, with no refinements: it follows the inner skull directly. Needs a deep-learning build; the weights are downloaded on first use |
+| `mindgrab` | MindGrab deep-learning brain extraction (Fani et al., 2025) on the magnitude image, with no refinements. Works on any contrast; the image is resliced to a 256³ 1 mm grid for the network using its NIfTI affine, and the mask is returned on the original grid. Needs a deep-learning build; the weights are downloaded on first use |
 
 Each preset is exactly the custom mask sections below (see the next
 paragraphs for the grammar), so a preset can be used as the starting point for
@@ -31,6 +32,7 @@ your own recipe:
 | `hd-bet` | `--mask magnitude,hd-bet,signal-erode` |
 | `bet-and-phase` | `--mask magnitude-first,bet:0.50 --mask phase-quality,threshold:otsu,dilate:1,fill-holes:0,erode:1 --mask-combine and --mask-refine fill-holes:0 --mask-refine erode:1` |
 | `rs2-net` | `--mask magnitude,rs2-net` |
+| `mindgrab` | `--mask magnitude,mindgrab` |
 
 **Masking input** (`--masking-input`): `magnitude-first`, `magnitude`,
 `magnitude-last`, `phase-quality`. For example,
@@ -42,12 +44,13 @@ e.g. `--mask magnitude,bet:0.5,erode:2`. Each section names its input
 followed by a generator and refinement operations.
 
 - **Generators:** `threshold[:otsu|fixed:<v>|percentile:<p>]`, `bet[:<f>][:scale=<s>]`,
-  `hd-bet[:full|window|<X>x<Y>x<Z>|low-memory][:tta][:step=<s>]` and `rs2-net[:tta][:step=<s>]`. HD-BET runs on the
+  `hd-bet[:full|window|<X>x<Y>x<Z>|low-memory][:tta][:step=<s>]`, `rs2-net[:tta][:step=<s>]` and `mindgrab[:tta]`. HD-BET runs on the
   whole volume by default (`full`; about 6–8 GB peak). `window` runs 192×192×96
   sliding-window patches instead (about 3.6 GB peak, about twice as long),
   `low-memory` 128×128×64 patches (about 1.5 GB peak), and `step=` sets the
   window stride. `tta` adds mirroring test-time augmentation, which is roughly
-  8× slower.
+  8× slower. For `mindgrab`, `tta` adds a left–right flipped pass, which doubles
+  the run time.
 - **Refinements:** `erode[:<n>]`, `dilate[:<n>]`, `close[:<r>]`, `fill-holes[:<max>]`
   (`0`, or omitted, is automatic: holes up to 5% of the volume),
   `gaussian[:<sigma_mm>]`, and

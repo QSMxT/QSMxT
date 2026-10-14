@@ -16,9 +16,9 @@ use crate::pipeline::config::{
     MaskCombine, MaskOp, MaskRecipe, MaskSection, MaskingInput,
 };
 
-/// qsm-core's view of a volume: the mask ops only need dims and voxel size.
+/// qsm-core's view of a volume: the mask ops need dims and voxel size, and MindGrab the affine.
 fn scan_meta(nifti: &NiftiData) -> ScanMetadata {
-    to_scan_metadata(nifti.dims, nifti.voxel_size, &[], 0.0, (0.0, 0.0, 1.0))
+    to_scan_metadata(nifti.dims, nifti.voxel_size, &[], 0.0, (0.0, 0.0, 1.0), Some(nifti.affine))
 }
 
 fn dims_str(nifti: &NiftiData) -> String {
@@ -116,6 +116,11 @@ fn rs2_net_op(args: &crate::cli::MaskRs2NetArgs) -> crate::Result<MaskOp> {
     Ok(parse_mask_op(&spec)?)
 }
 
+/// Build the `mindgrab` op from its flags, through the same parser the `--mask` strings use.
+fn mindgrab_op(args: &crate::cli::MaskMindGrabArgs) -> crate::Result<MaskOp> {
+    Ok(parse_mask_op(if args.tta { "mindgrab:tta" } else { "mindgrab" })?)
+}
+
 /// Run a whole `--mask-preset` recipe on files: each section reads the input image, or
 /// `--quality` for the phase-quality sections when it is given; the sections fold with the
 /// recipe's combine mode; the recipe's own refinements run on the result, then the `--op` chain.
@@ -210,6 +215,7 @@ pub fn execute(cmd: MaskCommand) -> crate::Result<()> {
         }),
         MaskCommand::HdBet(args) => { let op = hd_bet_op(&args)?; generate(&args.common, op) }
         MaskCommand::Rs2Net(args) => { let op = rs2_net_op(&args)?; generate(&args.common, op) }
+        MaskCommand::Mindgrab(args) => { let op = mindgrab_op(&args)?; generate(&args.common, op) }
         MaskCommand::Preset(args) => { let recipe = mask_preset_recipe(args.preset)?; preset(&args, recipe) }
         MaskCommand::Robust(args) => preset(
             &MaskPresetArgs { preset: crate::cli::MaskPresetArg::RobustThreshold, common: args.common, quality: None },

@@ -72,10 +72,19 @@ pub fn estimate_peak_memory_bytes(
         })
         .max()
         .map_or(0, |input_voxels| input_voxels * 1024 + 300 * 1024 * 1024 + 40 * n);
+    // MindGrab runs on the image conformed to 256³ at 1 mm whatever the acquisition, so its peak
+    // does not depend on the volume: 7.3 GB measured on 256×288×48 GRE, with or without TTA (the
+    // flipped pass runs after the first).
+    const MINDGRAB_MEM: usize = 7_500_000_000;
+    let mindgrab_mem = if config.masking.sections.iter().any(|s| matches!(s.generator, MaskOp::MindGrab { .. })) {
+        MINDGRAB_MEM
+    } else {
+        0
+    };
     // Signal-gated erosion keeps a handful of f64 volumes (smoothed signal, bias estimate, depth).
     let has_signal_erode = config.masking.sections.iter()
         .any(|s| s.refinements.iter().any(|op| matches!(op, MaskOp::SignalErode { .. })));
-    let mask_mem = (if has_bet { 17 * n } else { 9 * n }).max(hd_bet_mem)
+    let mask_mem = (if has_bet { 17 * n } else { 9 * n }).max(hd_bet_mem).max(mindgrab_mem)
         + if has_signal_erode { 8 * n * F64 } else { 0 };
 
     // SWI runs before QSM; its outputs persist through QSM stages
@@ -384,6 +393,17 @@ mod tests {
         assert!(full > 8_000_000_000 && full > native, "full {full}, native {native}");
         assert!(native > 3_500_000_000 && native > base, "native {native}, base {base}");
         assert!(low < native, "low-memory patch ({low}) should estimate below native ({native})");
+    }
+
+    #[test]
+    fn test_mindgrab_mask_memory() {
+        use crate::pipeline::config::mindgrab_mask_sections;
+        let mut c = default_config();
+        let base = estimate_peak_memory_bytes(256, 288, 48, 2, 1, true, &c);
+        c.masking.sections = mindgrab_mask_sections();
+        let mg = estimate_peak_memory_bytes(256, 288, 48, 2, 1, true, &c);
+        // Measured: 7.3 GB peak for the whole run on this grid, MindGrab being the peak.
+        assert!(mg > 7_300_000_000 && mg > base, "mindgrab {mg}, base {base}");
     }
 
     #[test]

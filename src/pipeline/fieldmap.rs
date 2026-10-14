@@ -431,7 +431,7 @@ mod tests {
     fn meta(tes: &[f64]) -> ScanMetadata {
         ScanMetadata {
             dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), echo_times: tes.to_vec(),
-            field_strength: 3.0, b0_direction: (0.0, 0.0, 1.0), slice_geometry: None,
+            field_strength: 3.0, b0_direction: (0.0, 0.0, 1.0), slice_geometry: None, affine: None,
         }
     }
 

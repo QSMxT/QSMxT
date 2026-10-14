@@ -247,6 +247,7 @@ fn run_field_mapping(
         field_strength: params.field_strength,
         b0_direction,
         slice_geometry: None,
+        affine: Some(phase_me.affine),
     };
 
     let config = field_mapping_config(common, algorithm, apply_algo);

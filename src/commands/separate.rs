@@ -43,7 +43,7 @@ fn load_common(
     let n_voxels = qsm.data.len();
     let bdir = (c.b0_direction[0], c.b0_direction[1], c.b0_direction[2]);
     let metadata = qsmxt_config::bridge::to_scan_metadata(
-        qsm.dims, qsm.voxel_size, echo_times, c.field_strength, bdir,
+        qsm.dims, qsm.voxel_size, echo_times, c.field_strength, bdir, Some(qsm.affine),
     );
     Ok((qsm, mask, metadata, n_voxels))
 }
