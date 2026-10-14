@@ -262,6 +262,13 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
   tiled deep-learning inference and SynthSeg's posterior smoothing. MEDI's and TFI's data
   weighting is a choice (uniform / magnitude SNR) rather than a 0/1 text field, and signal-erode's
   depth cap reads "off (no cap)" at 0.
+- **TUI: restyled stage tabs and sub-tabs.** A cyan QSMxT chip and quiet stage labels, the active
+  stage bold and underlined in cyan on a dim rule that also carries the QSMxT and QSM.rs versions;
+  sub-tabs are pills along the top of a dim rounded panel titled `Stage › Sub-tab`, the active
+  one filled cyan, with a `[ ] sub-tab n/m` hint. On narrow terminals inactive stage labels
+  shorten (then to digits) and sub-tabs show a window around the active one, so all seven stages
+  fit at 80 columns. Terminals with only 16 colours (`TERM=linux`, `*-16color`, ...) get named
+  greys instead of 256-colour ones. Keys are unchanged.
 - **TUI: new layout with sub-tabs.** The tabs are now 1 Input, 2 Preprocessing, 3 QSM,
   4 Separation, 5 Other outputs, 6 Execution, 7 Methods, and the collapsible sections are gone:
   a second tab row (switched with `[` and `]`) splits a tab into sub-tabs. Preprocessing has
