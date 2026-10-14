@@ -65,7 +65,7 @@ param_config!(AmpPeConfig from qsm_core::inversion::AmpPeParams {
     damp_rate_par: f64, max_pe_spar_ite: usize, max_pe_est_ite: usize,
     cvg_thd: f64, tikhonov_beta: f64
 });
-param_config!(IlsqrConfig from qsm_core::inversion::IlsqrParams { tol: f64, max_iter: usize });
+param_config!(IlsqrConfig from qsm_core::inversion::IlsqrParams { tol: f64, max_iter: usize, pad_mm: f64 });
 
 /// Minimally regularised LSQR (Schweser 2010), and the seed HEIDI builds on.
 ///

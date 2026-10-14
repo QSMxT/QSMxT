@@ -8,6 +8,15 @@ upgrade.
 
 ### Output changes with default settings
 
+- **iLSQR pads by 16 mm instead of 64 mm, and the padding is an option** (QSM.rs#186).
+  `--ilsqr-pad-mm <MM>` (mm per side; also `qsmxt invert ilsqr --pad-mm`, the config's
+  `inversion.ilsqr.pad_mm`, "Pad (mm)" under iLSQR in the TUI, the cache key and the methods
+  text). iLSQR's padding used to be fixed at UK Biobank's 64 mm. On a 150-subject UK Biobank
+  pilot, no test-retest, age or longitudinal metric changed between 0 and 128 mm. 16 mm takes
+  about 40 % of the time and memory of 64 mm, and it keeps the accuracy on thin slabs that 0–6 mm
+  lose. Every iLSQR run's χ changes slightly (~3 ppb RMS on UK Biobank). `--ilsqr-pad-mm 64`
+  reproduces the previous output. QSMART's inner iLSQR keeps `--qsmart-ilsqr-pad-mm` (default 6).
+
 - **V-SHARP can estimate the background on an isotropic working grid** (QSM.rs#185).
   `--vsharp-grid finest` uses the smallest acquired voxel dimension (0.8 mm for UK Biobank's
   0.8 × 0.8 × 3 mm), so no axis is coarsened; `--vsharp-grid isotropic

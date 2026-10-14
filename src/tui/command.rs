@@ -406,6 +406,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
         ilsqr_params: crate::cli::IlsqrParamArgs {
             ilsqr_tol: parse_optional_f64(&ps.ilsqr_tol),
             ilsqr_max_iter: parse_optional_usize(&ps.ilsqr_max_iter),
+            ilsqr_pad_mm: parse_optional_f64(&ps.ilsqr_pad_mm),
         },
         qsmart_params: crate::cli::QsmartParamArgs {
             qsmart_ilsqr_max_iter: parse_optional_usize(&ps.qsmart_ilsqr_max_iter),
@@ -1274,10 +1275,12 @@ mod tests {
     fn test_command_string_parameters() {
         let mut app = default_app();
         app.pipeline_state.ilsqr_tol = "0.01".to_string();
+        app.pipeline_state.ilsqr_pad_mm = "32".to_string();
         app.pipeline_state.axial_resampling = true;
         app.pipeline_state.obliquity_threshold = "5".to_string();
         let cmd = build_command_string(&app);
         assert!(cmd.contains("--ilsqr-tol 0.01"));
+        assert!(cmd.contains("--ilsqr-pad-mm 32"));
         assert!(cmd.contains("--obliquity-threshold 5"));
     }
 

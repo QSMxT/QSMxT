@@ -251,6 +251,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
         },
         ilsqr: qsm_core::inversion::IlsqrParams {
             tol: cfg.inversion.ilsqr.tol, max_iter: cfg.inversion.ilsqr.max_iter,
+            pad_mm: cfg.inversion.ilsqr.pad_mm,
         },
         ndi: qsm_core::inversion::NdiParams {
             tau: cfg.inversion.ndi.tau, alpha: cfg.inversion.ndi.alpha,
@@ -693,6 +694,17 @@ mod tests {
             let _ = sep.algorithm;
             assert!(!s.to_string().is_empty());
         }
+    }
+
+    #[test]
+    fn ilsqr_padding_propagates_to_core_params() {
+        let mut cfg = PipelineConfig::default();
+        assert_eq!(cfg.inversion.ilsqr.pad_mm, qsm_core::inversion::DEFAULT_PAD_MM);
+        cfg.inversion.ilsqr.pad_mm = 32.0;
+        let (_, _, inv, _) = to_pipeline_stages(&cfg);
+        assert_eq!(inv.ilsqr.pad_mm, 32.0);
+        // QSMART's inner iLSQR keeps its own padding
+        assert_eq!(inv.qsmart.ilsqr_pad_mm, cfg.inversion.qsmart.ilsqr_pad_mm);
     }
 
     #[test]

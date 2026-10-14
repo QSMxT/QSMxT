@@ -619,6 +619,9 @@ pub struct IlsqrParamArgs {
     /// iLSQR max iterations of each LSQR solve (default: 100)
     #[arg(long)]
     pub ilsqr_max_iter: Option<usize>,
+    /// iLSQR zero-padding in mm per side (default: 16)
+    #[arg(long, value_name = "MM")]
+    pub ilsqr_pad_mm: Option<f64>,
 }
 
 #[derive(Args, Debug, Default, Clone)]
@@ -2675,6 +2678,9 @@ pub struct InvertIlsqrArgs {
     /// Max iterations
     #[arg(long)]
     pub max_iter: Option<usize>,
+    /// Zero-padding in mm per side (default: 16)
+    #[arg(long, value_name = "MM")]
+    pub pad_mm: Option<f64>,
 }
 
 /// Minimally regularised LSQR. The residual-field weight (`--lsqr-residual-weighting`) is the only
