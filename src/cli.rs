@@ -613,10 +613,10 @@ pub struct TfiParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct IlsqrParamArgs {
-    /// iLSQR tolerance of the streaking-artefact solve (default: STI Suite's)
+    /// iLSQR tolerance of the streaking-artefact solve (default: 0.001)
     #[arg(long)]
     pub ilsqr_tol: Option<f64>,
-    /// iLSQR max iterations of each LSQR solve (default: STI Suite's)
+    /// iLSQR max iterations of each LSQR solve (default: 100)
     #[arg(long)]
     pub ilsqr_max_iter: Option<usize>,
 }
@@ -690,7 +690,7 @@ pub struct QsmartParamArgs {
     /// QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol.
     #[arg(long)]
     pub qsmart_ilsqr_max_iter: Option<usize>,
-    /// Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6, STI Suite's)
+    /// Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6)
     #[arg(long, value_name = "MM")]
     pub qsmart_ilsqr_pad_mm: Option<f64>,
     /// QSMART vasculature detection sphere radius
@@ -784,8 +784,7 @@ pub struct MotionParamArgs {
 
 #[derive(Args, Debug, Default, Clone)]
 pub struct VsharpParamArgs {
-    /// Undo V-SHARP's SMV high-pass with a truncated-SVD deconvolution (default: false). Off is
-    /// STI Suite's / UK Biobank's V-SHARP; on is what QSMxT up to v9.22.0 ran
+    /// Undo V-SHARP's SMV high-pass with a truncated-SVD deconvolution (default: false)
     #[arg(long, value_name = "BOOL")]
     pub vsharp_deconvolve: Option<bool>,
     /// V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true
@@ -1132,7 +1131,7 @@ pub struct PipelineArgs {
     pub phase_offset_sigma: Option<Vec<f64>>,
 
     /// MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets
-    /// (3 values, in voxels; default 10 10 5, as in QSMxT 8.x / MriResearchTools).
+    /// (3 values, in voxels; default 10 10 5, as in MriResearchTools).
     /// Only used for uncombined multi-coil runs.
     #[arg(long, num_args = 3)]
     pub coil_combination_sigma: Option<Vec<f64>>,
@@ -1147,27 +1146,26 @@ pub struct PipelineArgs {
 
     /// B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight
     /// TE·exp(−TE/T2*) computed from the echo times and an assumed T2*
-    /// (`--b0-weight-assumed-t2star`), the same in every voxel: no T2* map, no magnitude. It is
-    /// UK Biobank's echo combination (Wang et al. 2022, Nat Neurosci 25:818); with
-    /// `--unwrapping-algorithm laplacian` it gives UK Biobank's field map. `phase-snr`, which uses
+    /// (`--b0-weight-assumed-t2star`), the same in every voxel: no T2* map, no magnitude (Wang
+    /// et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses
     /// the measured magnitude in each voxel, is generally preferable when magnitude is available.
     /// Applies to Laplacian unwrapping as well as ROMEO
     #[arg(long, value_enum)]
     pub b0_weight_type: Option<B0WeightTypeArg>,
 
     /// T2* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights
-    /// (default 40, UK Biobank's; no T2* map is used)
+    /// (default 40; no T2* map is used)
     #[arg(long, value_name = "MS")]
     pub b0_weight_assumed_t2star: Option<f64>,
 
     /// Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares,
     /// Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a
-    /// zero-padded volume = STI Suite's MRPhaseUnwrap, as UK Biobank)
+    /// zero-padded volume)
     #[arg(long, value_enum, alias = "laplacian-kernel")]
     pub laplacian_solver: Option<LaplacianSolverArg>,
 
     /// Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or
-    /// three (x y z). Default 64, UK Biobank's (STI Suite's own default is 12)
+    /// three (x y z). Default 64
     #[arg(long, value_name = "VOXELS", num_args = 1..=3)]
     pub laplacian_fft_pad: Option<Vec<usize>>,
 
@@ -1994,8 +1992,8 @@ pub struct FieldmapCommonArgs {
     #[arg(long, value_enum, default_value = "weighted-avg")]
     pub b0_estimation: B0EstimationArg,
     /// B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight
-    /// TE·exp(−TE/T2*) from the echo times and an assumed T2* (no T2* map, no magnitude):
-    /// UK Biobank's echo combination. `phase-snr` is generally preferable with magnitude
+    /// TE·exp(−TE/T2*) from the echo times and an assumed T2* (no T2* map, no magnitude; Wang et
+    /// al. 2022). `phase-snr` is generally preferable with magnitude
     #[arg(long, value_enum, default_value = "phase-snr")]
     pub b0_weight_type: B0WeightTypeArg,
     /// T2* in ms assumed by `--b0-weight-type assumed-decay` (no T2* map is used)
@@ -2059,11 +2057,11 @@ pub struct FieldmapLaplacianArgs {
     #[command(flatten)]
     pub common: FieldmapCommonArgs,
     /// Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve) or `fft` (Schofield &
-    /// Zhu, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap)
+    /// Zhu, FFT solve on a zero-padded volume)
     #[arg(long, value_enum, default_value = "dct", alias = "laplacian-kernel")]
     pub laplacian_solver: LaplacianSolverArg,
     /// Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or
-    /// three (x y z). Default 64, UK Biobank's (STI Suite's own default is 12)
+    /// three (x y z)
     #[arg(long, value_name = "VOXELS", num_args = 1..=3, default_values_t = [64])]
     pub laplacian_fft_pad: Vec<usize>,
     // Note: phase offset removal and bipolar correction are not applied with Laplacian
@@ -2126,8 +2124,7 @@ pub struct BgremoveBfrnetArgs {
 pub struct BgremoveVsharpArgs {
     #[command(flatten)]
     pub common: BgremoveCommonArgs,
-    /// Undo the SMV high-pass with a truncated-SVD deconvolution (default: false, as STI Suite
-    /// and UK Biobank; true is what QSMxT up to v9.22.0 ran)
+    /// Undo the SMV high-pass with a truncated-SVD deconvolution (default: false)
     #[arg(long, value_name = "BOOL")]
     pub deconvolve: Option<bool>,
     /// Deconvolution (TSVD) threshold; only used with --deconvolve true

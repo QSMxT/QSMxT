@@ -1335,7 +1335,7 @@ const QSM_ALGO_HELP: &[&str] = &[
     "NLTV (Nonlinear Total Variation) — nonlinear data fidelity with a TV prior. https://doi.org/10.1002/mrm.27073",
     "MEDI (Morphology Enabled Dipole Inversion) — magnitude-guided edge weighting. https://doi.org/10.1002/mrm.22816",
     "TFI (Total Field Inversion) — inverts the total field directly (its own background removal). https://doi.org/10.1002/mrm.26331",
-    "iLSQR (default) — iterative LSQR with streaking-artifact correction; STI Suite-matched defaults. https://doi.org/10.1016/j.neuroimage.2014.12.043",
+    "iLSQR (default) — iterative LSQR with streaking-artifact correction. https://doi.org/10.1016/j.neuroimage.2014.12.043",
     "LSQR (minimally regularised) — one least-squares solve for χ plus a residual field; the residual weight is the only regularisation. https://doi.org/10.1118/1.3481505",
     "HEIDI (Homogeneity Enabled Incremental Dipole Inversion) — keeps the well-conditioned k-space of an LSQR solve and re-derives the dipole cone under a homogeneity prior. https://doi.org/10.1016/j.neuroimage.2012.05.067",
     "QSMART — two-stage spatially-dependent filtering plus inversion. https://doi.org/10.1016/j.neuroimage.2020.117701",
@@ -2247,7 +2247,7 @@ const MOTION_REFERENCE_HELP: &[&str] = &[
 ];
 const LAPLACIAN_SOLVER_HELP: &[&str] = &[
     "Unweighted least squares, Neumann-boundary DCT solve (Ghiglia & Romero 1994; QSM.jl :dct) (default)",
-    "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap (UK Biobank)",
+    "Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume",
 ];
 pub const B0_WEIGHT_TYPE_OPTIONS: &[&str] = &["phase-snr", "phase-var", "average", "tes", "mag", "assumed-decay"];
 const B0_ESTIMATION_HELP: &[&str] = &[
@@ -2261,7 +2261,7 @@ const B0_WEIGHT_TYPE_HELP: &[&str] = &[
     "Uniform weights (unweighted average)",
     "TE only",
     "Magnitude only",
-    "Fixed TE·exp(−TE/T2*) per echo from an assumed T2* (no T2* map, no magnitude) — UK Biobank's; phase-snr is generally better",
+    "Fixed TE·exp(−TE/T2*) per echo from an assumed T2* (no T2* map, no magnitude); phase-snr is generally better",
 ];
 /// Borrowed from the statics above so the row types keep their `&'static` slices.
 pub fn qsm_ref_options() -> &'static [&'static str] { &QSM_REF_OPTIONS_V }
@@ -2522,7 +2522,7 @@ impl PipelineFormState {
             });
             if self.laplacian_solver == 1 {
             rows.push(PipelineRow::Param { label: "    FFT Pad (voxels)", field: "laplacian_fft_pad",
-                    help: "Zero-padding per side: one value for every axis or three (x y z). UK Biobank: 64; STI Suite default: 12" });
+                    help: "Zero-padding per side: one value for every axis or three (x y z). Default: 64" });
             }
         }
 
@@ -2623,7 +2623,7 @@ impl PipelineFormState {
             });
             if self.b0_weight_type == 5 { // assumed-decay
             rows.push(PipelineRow::Param { label: "    Assumed T2* (ms)", field: "b0_weight_assumed_t2star_ms",
-                    help: "T2* assumed to compute the fixed echo weights; no T2* map is used (UK Biobank: 40 ms)" });
+                    help: "T2* assumed to compute the fixed echo weights; no T2* map is used (default: 40 ms)" });
             }
         } else { // linear-fit / robust-fit
             rows.push(PipelineRow::Toggle {
@@ -2667,7 +2667,7 @@ impl PipelineFormState {
         match self.bf_algorithm {
             0 => { // V-SHARP
                 rows.push(PipelineRow::Toggle { label: "  Deconvolve", field: "vsharp_deconvolve",
-                    help: "Undo the SMV high-pass (TSVD). Off = STI Suite / UK Biobank V-SHARP (QSMxT default); on = QSMxT <= v9.22" });
+                    help: "Undo the SMV high-pass with a truncated-SVD deconvolution (default: off)" });
                 if self.vsharp_deconvolve {
                     rows.push(PipelineRow::Param { label: "  Threshold", field: "vsharp_threshold", help: "Deconvolution (TSVD) threshold" });
                 }
@@ -2852,7 +2852,7 @@ impl PipelineFormState {
                     0 => { // iLSQR: QSMART's own max_iter/pad, iLSQR's tolerance
                         rows.push(PipelineRow::Param { label: "  iLSQR Tolerance", field: "ilsqr_tol", help: "Streaking-stage LSQR tolerance (shared with iLSQR)" });
                         rows.push(PipelineRow::Param { label: "  iLSQR Max Iter", field: "qsmart_ilsqr_max_iter", help: "Maximum iLSQR iterations per stage (tolerance: iLSQR's)" });
-                        rows.push(PipelineRow::Param { label: "  iLSQR Pad (mm)", field: "qsmart_ilsqr_pad_mm", help: "Zero-padding of the inner iLSQR solves, mm per side (STI Suite: 6)" });
+                        rows.push(PipelineRow::Param { label: "  iLSQR Pad (mm)", field: "qsmart_ilsqr_pad_mm", help: "Zero-padding of the inner iLSQR solves, mm per side (default: 6)" });
                     }
                     1 => { // RTS
                         rows.push(PipelineRow::Param { label: "  Delta", field: "rts_delta", help: "Threshold for ill-conditioned k-space region" });

@@ -70,13 +70,13 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma <PHASE_OFFSET_SIGMA>` | Phase offset removal smoothing sigma (3 values, in voxels) |
-| `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in QSMxT 8.x / MriResearchTools). Only used for uncombined multi-coil runs. |
+| `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. |
-| `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude. It is UK Biobank's echo combination (Wang et al. 2022, Nat Neurosci 25:818); with `--unwrapping-algorithm laplacian` it gives UK Biobank's field map. `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
-| `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40, UK Biobank's; no T2\* map is used) |
-| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap, as UK Biobank) Values: `dct`, `fft`. |
-| `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64, UK Biobank's (STI Suite's own default is 12) |
+| `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
+| `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40; no T2\* map is used) |
+| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) Values: `dct`, `fft`. |
+| `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
 | `--bet-gradient-threshold <BET_GRADIENT_THRESHOLD>` | BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe. |
@@ -128,8 +128,8 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
-| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: STI Suite's) |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: STI Suite's) |
+| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: 0.001) |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
@@ -148,7 +148,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
-| `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6, STI Suite's) |
+| `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
 | `--qsmart-sdf-spatial-radius <QSMART_SDF_SPATIAL_RADIUS>` | QSMART SDF spatial radius. |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
@@ -256,7 +256,7 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--registration-rotation-step-deg <REGISTRATION_ROTATION_STEP_DEG>` | Registration: initial rotation step at the finest level, degrees (default 3) |
 | `--registration-translation-step-mm <REGISTRATION_TRANSLATION_STEP_MM>` | Registration: initial translation step at the finest level, mm (default 3) |
 | `--registration-min-overlap <REGISTRATION_MIN_OVERLAP>` | Registration: smallest fraction of sampled voxels that must overlap (default 0.25) |
-| `--vsharp-deconvolve <BOOL>` | Undo V-SHARP's SMV high-pass with a truncated-SVD deconvolution (default: false). Off is STI Suite's / UK Biobank's V-SHARP; on is what QSMxT up to v9.22.0 ran. |
+| `--vsharp-deconvolve <BOOL>` | Undo V-SHARP's SMV high-pass with a truncated-SVD deconvolution (default: false) |
 | `--vsharp-threshold <VSHARP_THRESHOLD>` | V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true. |
 | `--vsharp-max-radius <VSHARP_MAX_RADIUS>` | V-SHARP max kernel radius in mm. |
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
@@ -450,13 +450,13 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma <PHASE_OFFSET_SIGMA>` | Phase offset removal smoothing sigma (3 values, in voxels) |
-| `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in QSMxT 8.x / MriResearchTools). Only used for uncombined multi-coil runs. |
+| `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. |
-| `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude. It is UK Biobank's echo combination (Wang et al. 2022, Nat Neurosci 25:818); with `--unwrapping-algorithm laplacian` it gives UK Biobank's field map. `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
-| `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40, UK Biobank's; no T2\* map is used) |
-| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap, as UK Biobank) Values: `dct`, `fft`. |
-| `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64, UK Biobank's (STI Suite's own default is 12) |
+| `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
+| `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40; no T2\* map is used) |
+| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) Values: `dct`, `fft`. |
+| `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
 | `--bet-gradient-threshold <BET_GRADIENT_THRESHOLD>` | BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe. |
@@ -508,8 +508,8 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
-| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: STI Suite's) |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: STI Suite's) |
+| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: 0.001) |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
@@ -528,7 +528,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
-| `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6, STI Suite's) |
+| `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
 | `--qsmart-sdf-spatial-radius <QSMART_SDF_SPATIAL_RADIUS>` | QSMART SDF spatial radius. |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
@@ -636,7 +636,7 @@ qsmxt slurm [OPTIONS] --account <ACCOUNT> <BIDS_DIR> [OUTPUT_DIR]
 | `--registration-rotation-step-deg <REGISTRATION_ROTATION_STEP_DEG>` | Registration: initial rotation step at the finest level, degrees (default 3) |
 | `--registration-translation-step-mm <REGISTRATION_TRANSLATION_STEP_MM>` | Registration: initial translation step at the finest level, mm (default 3) |
 | `--registration-min-overlap <REGISTRATION_MIN_OVERLAP>` | Registration: smallest fraction of sampled voxels that must overlap (default 0.25) |
-| `--vsharp-deconvolve <BOOL>` | Undo V-SHARP's SMV high-pass with a truncated-SVD deconvolution (default: false). Off is STI Suite's / UK Biobank's V-SHARP; on is what QSMxT up to v9.22.0 ran. |
+| `--vsharp-deconvolve <BOOL>` | Undo V-SHARP's SMV high-pass with a truncated-SVD deconvolution (default: false) |
 | `--vsharp-threshold <VSHARP_THRESHOLD>` | V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true. |
 | `--vsharp-max-radius <VSHARP_MAX_RADIUS>` | V-SHARP max kernel radius in mm. |
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
@@ -769,13 +769,13 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--masking-input <MASKING_INPUT>` | Masking input image (overrides the input of the configured mask sections; combine with --mask-preset, e.g. --mask-preset robust-threshold --masking-input magnitude) Values: `magnitude-first`, `magnitude`, `magnitude-last`, `phase-quality`. |
 | `--phase-offset-removal <PHASE_OFFSET_REMOVAL>` | Enable phase offset removal for multi-echo data (default: true) |
 | `--phase-offset-sigma <PHASE_OFFSET_SIGMA>` | Phase offset removal smoothing sigma (3 values, in voxels) |
-| `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in QSMxT 8.x / MriResearchTools). Only used for uncombined multi-coil runs. |
+| `--coil-combination-sigma <COIL_COMBINATION_SIGMA>` | MCPC-3D-S coil combination: smoothing sigma for the per-coil phase offsets (3 values, in voxels; default 10 10 5, as in MriResearchTools). Only used for uncombined multi-coil runs. |
 | `--bipolar-correction` | Enable bipolar gradient correction (requires &gt;= 3 echoes) |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. |
-| `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude. It is UK Biobank's echo combination (Wang et al. 2022, Nat Neurosci 25:818); with `--unwrapping-algorithm laplacian` it gives UK Biobank's field map. `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
-| `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40, UK Biobank's; no T2\* map is used) |
-| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap, as UK Biobank) Values: `dct`, `fft`. |
-| `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64, UK Biobank's (STI Suite's own default is 12) |
+| `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) computed from the echo times and an assumed T2\* (`--b0-weight-assumed-t2star`), the same in every voxel: no T2\* map, no magnitude (Wang et al. 2022, Nat Neurosci 25:818). `phase-snr`, which uses the measured magnitude in each voxel, is generally preferable when magnitude is available. Applies to Laplacian unwrapping as well as ROMEO. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. |
+| `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` to compute its fixed echo weights (default 40; no T2\* map is used) |
+| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver for `--unwrapping-algorithm laplacian`: `dct` (unweighted least squares, Neumann/DCT solve; default) or `fft` (Schofield & Zhu sin/cos Laplacian, FFT solve on a zero-padded volume) Values: `dct`, `fft`. |
+| `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64. |
 | `--bet-fractional-intensity <BET_FRACTIONAL_INTENSITY>` | BET fractional intensity (0.0-1.0; smaller = larger brain). Applies to every BET step in the masking recipe, overriding a `bet:<f>` in a --mask spec. |
 | `--bet-smoothness <BET_SMOOTHNESS>` | BET surface smoothness factor. Applies to every BET step in the masking recipe. |
 | `--bet-gradient-threshold <BET_GRADIENT_THRESHOLD>` | BET gradient threshold (-1 to 1). Applies to every BET step in the masking recipe. |
@@ -827,8 +827,8 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--tfi-cg-max-iter <TFI_CG_MAX_ITER>` | TFI CG max iterations. |
 | `--tfi-max-iter <TFI_MAX_ITER>` | TFI max outer iterations. |
 | `--tfi-tol <TFI_TOL>` | TFI outer tolerance. |
-| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: STI Suite's) |
-| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: STI Suite's) |
+| `--ilsqr-tol <ILSQR_TOL>` | iLSQR tolerance of the streaking-artefact solve (default: 0.001) |
+| `--ilsqr-max-iter <ILSQR_MAX_ITER>` | iLSQR max iterations of each LSQR solve (default: 100) |
 | `--lsqr-residual-weighting <LSQR_RESIDUAL_WEIGHTING>` | LSQR residual-field weight `w` — the only thing regularising the solve. Omit to use qsm-core's field-strength-scaled default; 0 drops the residual term and streaks badly. |
 | `--no-lsqr-global-offset` | Do not fit a global field offset alongside χ. |
 | `--lsqr-tol <LSQR_TOL>` | LSQR convergence tolerance. |
@@ -847,7 +847,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--heidi-denoise-time-step <HEIDI_DENOISE_TIME_STEP>` | Anisotropic-diffusion time step. |
 | `--heidi-denoise-conductance <HEIDI_DENOISE_CONDUCTANCE>` | Anisotropic-diffusion conductance. |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
-| `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6, STI Suite's) |
+| `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
 | `--qsmart-sdf-spatial-radius <QSMART_SDF_SPATIAL_RADIUS>` | QSMART SDF spatial radius. |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |
@@ -955,7 +955,7 @@ qsmxt aggregate [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--registration-rotation-step-deg <REGISTRATION_ROTATION_STEP_DEG>` | Registration: initial rotation step at the finest level, degrees (default 3) |
 | `--registration-translation-step-mm <REGISTRATION_TRANSLATION_STEP_MM>` | Registration: initial translation step at the finest level, mm (default 3) |
 | `--registration-min-overlap <REGISTRATION_MIN_OVERLAP>` | Registration: smallest fraction of sampled voxels that must overlap (default 0.25) |
-| `--vsharp-deconvolve <BOOL>` | Undo V-SHARP's SMV high-pass with a truncated-SVD deconvolution (default: false). Off is STI Suite's / UK Biobank's V-SHARP; on is what QSMxT up to v9.22.0 ran. |
+| `--vsharp-deconvolve <BOOL>` | Undo V-SHARP's SMV high-pass with a truncated-SVD deconvolution (default: false) |
 | `--vsharp-threshold <VSHARP_THRESHOLD>` | V-SHARP deconvolution (TSVD) threshold; only used with --vsharp-deconvolve true. |
 | `--vsharp-max-radius <VSHARP_MAX_RADIUS>` | V-SHARP max kernel radius in mm. |
 | `--vsharp-min-radius <VSHARP_MIN_RADIUS>` | V-SHARP min kernel radius in mm. |
@@ -1421,7 +1421,7 @@ qsmxt fieldmap romeo [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. Default: `weighted-avg`. |
-| `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude): UK Biobank's echo combination. `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
+| `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` (no T2\* map is used) Default: `40`. |
 | `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
@@ -1470,7 +1470,7 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--b0 <B0>` | Field strength in Tesla (alias: --field-strength) |
 | `--params <PARAMS>` | JSON params file: {"TE":[..seconds], "B0":&lt;tesla&gt;, "voxel_size":[..], "B0_dir":[..]}. --tes / --b0 override values from this file when both are present. |
 | `--b0-estimation <B0_ESTIMATION>` | B0 field estimation method. Values: `weighted-avg`, `linear-fit`, `robust-fit`. Default: `weighted-avg`. |
-| `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude): UK Biobank's echo combination. `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
+| `--b0-weight-type <B0_WEIGHT_TYPE>` | B0 weighted-averaging weight type. `assumed-decay` gives each echo's phase a fixed weight TE·exp(−TE/T2\*) from the echo times and an assumed T2\* (no T2\* map, no magnitude; Wang et al. 2022). `phase-snr` is generally preferable with magnitude. Values: `phase-snr`, `phase-var`, `average`, `tes`, `mag`, `assumed-decay`. Default: `phase-snr`. |
 | `--b0-weight-assumed-t2star <MS>` | T2\* in ms assumed by `--b0-weight-type assumed-decay` (no T2\* map is used) Default: `40`. |
 | `--linear-fit-reliability-threshold <LINEAR_FIT_RELIABILITY_THRESHOLD>` | Linear and robust fit: percentile for the fit's reliability mask (default 90; 0 disables) |
 | `--linear-fit-estimate-offset <LINEAR_FIT_ESTIMATE_OFFSET>` | Linear and robust fit: estimate a phase offset term (default: true). The robust fit needs 4 echoes with it, 3 without. |
@@ -1479,8 +1479,8 @@ qsmxt fieldmap laplacian [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `--robust-fit-iterations <ROBUST_FIT_ITERATIONS>` | Motion-robust fit: IRLS passes (default 3; 0 = report only, the field is the linear fit's) |
 | `--robust-fit-downweight-level <ROBUST_FIT_DOWNWEIGHT_LEVEL>` | Motion-robust fit (reporting only): a robust weight below this counts as down-weighted (default 0.75; in (0, 1]) |
 | `--robust-fit-flag-ratio <ROBUST_FIT_FLAG_RATIO>` | Motion-robust fit (reporting only): flag an echo whose outlier score exceeds this many times the best echo's (default 3; at least 1) |
-| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve) or `fft` (Schofield & Zhu, FFT solve on a zero-padded volume = STI Suite's MRPhaseUnwrap) Values: `dct`, `fft`. Default: `dct`. |
-| `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z). Default 64, UK Biobank's (STI Suite's own default is 12) Default: `64`. |
+| `--laplacian-solver <LAPLACIAN_SOLVER>` | Poisson solver: `dct` (unweighted least squares, Neumann/DCT solve) or `fft` (Schofield & Zhu, FFT solve on a zero-padded volume) Values: `dct`, `fft`. Default: `dct`. |
+| `--laplacian-fft-pad <VOXELS>` | Zero-padding in voxels per side for `--laplacian-solver fft`: one value for every axis, or three (x y z) Default: `64`. |
 
 ## `qsmxt bgremove`
 
@@ -1514,7 +1514,7 @@ qsmxt bgremove vsharp [OPTIONS] --mask <MASK> --output <OUTPUT> <INPUT>
 | `-o, --output <OUTPUT>` | Output local field NIfTI file. Required. |
 | `--b0-direction <B0_DIRECTION>` | B0 direction (3 values) Default: `0 0 1`. |
 | `--output-mask <OUTPUT_MASK>` | Output eroded mask (for algorithms that erode) |
-| `--deconvolve <BOOL>` | Undo the SMV high-pass with a truncated-SVD deconvolution (default: false, as STI Suite and UK Biobank; true is what QSMxT up to v9.22.0 ran) |
+| `--deconvolve <BOOL>` | Undo the SMV high-pass with a truncated-SVD deconvolution (default: false) |
 | `--threshold <THRESHOLD>` | Deconvolution (TSVD) threshold; only used with --deconvolve true. |
 | `--max-radius <MAX_RADIUS>` | Largest SMV kernel radius, in mm (default: 12) |
 | `--min-radius <MIN_RADIUS>` | Smallest SMV kernel radius, in mm (default: 1) |
@@ -2597,7 +2597,7 @@ qsmxt qsmart [OPTIONS] --mask <MASK> --output <OUTPUT> --field-strength <FIELD_S
 | `--echo-time <ECHO_TIME>` | Echo time in seconds. Required. |
 | `--magnitude <MAGNITUDE>` | Combined magnitude NIfTI (optional; drives vasculature detection) |
 | `--qsmart-ilsqr-max-iter <QSMART_ILSQR_MAX_ITER>` | QSMART iLSQR max iterations per stage. The iLSQR tolerance is --ilsqr-tol. |
-| `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6, STI Suite's) |
+| `--qsmart-ilsqr-pad-mm <MM>` | Zero-padding of QSMART's inner iLSQR solves, in mm per side (default: 6) |
 | `--qsmart-vasc-sphere-radius <QSMART_VASC_SPHERE_RADIUS>` | QSMART vasculature detection sphere radius. |
 | `--qsmart-sdf-spatial-radius <QSMART_SDF_SPATIAL_RADIUS>` | QSMART SDF spatial radius. |
 | `--qsmart-inversion <QSMART_INVERSION>` | QSMART inner dipole inversion algorithm (default: ilsqr) Values: `rts`, `tv`, `tkd`, `tsvd`, `tgv`, `tikhonov`, `nltv`, `medi`, `tfi`, `ilsqr`, `lsqr`, `heidi`, `qsmart`, `ndi`, `fansi`, `fansi-tgv`, `l1qsm`, `whqsm`, `hdqsm`, `amp-pe`, `xqsm`, `qsmnet`, `qsmnet-plus`, `autoqsm`, `qsmgan`, `ir2qsm`, `lpcnn`, `modl-qsm`, `nextqsm`, `iqsm`, `iqsm-plus`. |

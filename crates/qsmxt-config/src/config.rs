@@ -1198,10 +1198,10 @@ impl PipelineConfig {
                         p.insert("obliquity_threshold".into(), toml::Value::Float(DEFAULT_OBLIQUITY_THRESHOLD));
                     }
                     warnings.push(if on {
-                        format!("pipeline.obliquity_threshold = {t} without axial_resampling is deprecated (QSMxT <= 9.22 configs): \
+                        format!("pipeline.obliquity_threshold = {t} without axial_resampling is deprecated: \
                                  read as axial_resampling = true, obliquity_threshold = {t}")
                     } else {
-                        format!("pipeline.obliquity_threshold = {t} is deprecated (QSMxT <= 9.22 configs): a negative threshold \
+                        format!("pipeline.obliquity_threshold = {t} is deprecated: a negative threshold \
                                  meant no resampling, read as axial_resampling = false")
                     });
                 }
