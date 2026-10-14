@@ -3,6 +3,12 @@
 //! Shared configuration, command generation, and methods text for QSMxT tools.
 //! Used by both qsmxt (CLI/TUI) and qsmbly (browser WASM).
 
+/// The qsm-core this crate is built against. Downstream consumers (qsmbly's WASM crate) use
+/// algorithms through this re-export rather than depending on qsm-core themselves, so the
+/// pipeline configuration and the algorithms always come from a single qsm-core version.
+/// qsm-core's `simd`, `onnx` and `parallel` features are forwarded as features of this crate.
+pub use qsm_core;
+
 pub mod error;
 pub mod enums;
 pub mod masking;
