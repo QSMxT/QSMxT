@@ -27,6 +27,7 @@ pub fn mask_preset_recipe(preset: cli::MaskPresetArg) -> crate::Result<MaskRecip
         cli::MaskPresetArg::HdBet => "hd-bet",
         cli::MaskPresetArg::BetAndPhase => "bet-and-phase",
         cli::MaskPresetArg::Rs2Net => "rs2-net",
+        cli::MaskPresetArg::MindGrab => "mindgrab",
         cli::MaskPresetArg::MouseBet => return Err(QsmxtError::Config(
             "the `mouse-bet` mask preset has been removed. For rodent data use `--mask-preset \
              rs2-net`; BET on scaled voxel sizes is still available as a mask step, e.g. \
@@ -763,11 +764,12 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             if untouched {
                 log::info!("QSMART: defaulting to BET brain mask (override with --mask)");
                 config.masking.sections = qsmart_default_mask_sections();
-            } else if !config.masking.sections.iter().all(|s| matches!(s.generator, MaskOp::Bet { .. } | MaskOp::HdBet { .. })) {
+            } else if !config.masking.sections.iter()
+                .all(|s| matches!(s.generator, MaskOp::Bet { .. } | MaskOp::HdBet { .. } | MaskOp::MindGrab { .. })) {
                 log::warn!(
-                    "QSMART needs a tight brain mask; the configured mask is not BET- or HD-BET-based and \
-                     may cause streaking artifacts. Consider --mask-preset bet, --mask-preset hd-bet or \
-                     --mask magnitude,bet:0.5,erode:2."
+                    "QSMART needs a tight brain mask; the configured mask is not BET-, HD-BET- or \
+                     MindGrab-based and may cause streaking artifacts. Consider --mask-preset bet, \
+                     --mask-preset hd-bet, --mask-preset mindgrab or --mask magnitude,bet:0.5,erode:2."
                 );
             }
         }

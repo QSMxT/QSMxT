@@ -340,6 +340,18 @@ mod integration_tests {
         assert!(format!("{err}").contains("deep-learning"), "{err}");
     }
 
+    #[cfg(not(feature = "dl"))]
+    #[test]
+    fn test_mask_mindgrab_needs_dl() {
+        let dir = tempfile::tempdir().unwrap();
+        let input = dir.path().join("mag.nii");
+        testutils::write_magnitude(&input);
+        let err = super::mask::execute(MaskCommand::Mindgrab(crate::cli::MaskMindGrabArgs {
+            common: common_mask(input, dir.path().join("mask.nii")), tta: false,
+        })).unwrap_err();
+        assert!(format!("{err}").contains("deep-learning"), "{err}");
+    }
+
     /// Runs HD-BET for real (downloads the ~120 MB weights on first use).
     #[cfg(feature = "dl")]
     #[test]

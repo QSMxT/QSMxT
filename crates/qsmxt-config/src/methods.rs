@@ -282,6 +282,11 @@ const CITE_RS2NET: Citation = Citation {
     text: "Lin, Y., Ding, Y., Chang, S., Ge, X., Sui, X., Jiang, Y. (2024). \"RS2-Net: An end-to-end deep learning framework for rodent skull stripping in multi-center brain MRI.\" *NeuroImage*, 298:120769. https://doi.org/10.1016/j.neuroimage.2024.120769",
 };
 
+const CITE_MINDGRAB: Citation = Citation {
+    key: "fani2025",
+    text: "Fani, A., Masoud, M., Rorden, C., Plis, S. (2025). \"MindGrab for BrainChop: Fast and Accurate Skull Stripping for Command Line and Browser.\" *arXiv*:2506.11860. https://doi.org/10.48550/arXiv.2506.11860",
+};
+
 const CITE_QSM_CONSENSUS: Citation = Citation {
     key: "bilgic2024consensus",
     text: "Bilgic, B., Costagli, M., Chan, K.-S., et al. (2024). \"Recommended implementation of quantitative susceptibility mapping for clinical research in the brain: A consensus of the ISMRM electro-magnetic tissue properties study group.\" *Magnetic Resonance in Medicine*, 91(5):1834-1862. https://doi.org/10.1002/mrm.30006",
@@ -1333,6 +1338,12 @@ fn describe_generator(
             changed.add(*tta, || "mirroring test-time augmentation".to_string());
             format!("RS2-Net deep-learning rodent brain extraction (Lin et al., 2024{}) of {}", changed.semi(), input_desc)
         }
+        MaskOp::MindGrab { tta } => {
+            add_citation(citations, &CITE_MINDGRAB);
+            let mut changed = Changed::default();
+            changed.add(*tta, || "left-right flip test-time augmentation".to_string());
+            format!("MindGrab deep-learning brain extraction (Fani et al., 2025{}) of {}", changed.semi(), input_desc)
+        }
         MaskOp::HdBet { patch, tta, tile_step } => {
             add_citation(citations, &CITE_HDBET);
             let mut changed = Changed::default();
@@ -2246,6 +2257,21 @@ mod tests {
         config.masking.sections[0].generator = MaskOp::Rs2Net { tta: true, tile_step: 0.5 };
         let tta = generate_methods(&config);
         assert!(tta.contains("mirroring test-time augmentation"), "{tta}");
+    }
+
+    #[test]
+    fn test_masking_mindgrab() {
+        let mut config = PipelineConfig::default();
+        config.masking.sections = crate::masking::mindgrab_mask_sections();
+        let out = generate_methods(&config);
+        assert!(out.contains("MindGrab deep-learning brain extraction (Fani et al., 2025) of"), "{out}");
+        assert!(!out.contains("test-time augmentation"), "TTA is off by default: {out}");
+        assert!(out.contains("https://doi.org/10.48550/arXiv.2506.11860"), "{out}");
+        assert!(!out.contains("Otsu, 1979"), "{out}");
+
+        config.masking.sections[0].generator = MaskOp::MindGrab { tta: true };
+        let tta = generate_methods(&config);
+        assert!(tta.contains("MindGrab deep-learning brain extraction (Fani et al., 2025; left-right flip test-time augmentation) of"), "{tta}");
     }
 
     #[test]

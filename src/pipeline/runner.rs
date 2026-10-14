@@ -1020,14 +1020,35 @@ fn resolve_geometry(
     Ok(meta)
 }
 
-/// qsm-core's scan metadata for a stage working on `dims` (the run's grid, or a crop of it, which
-/// keeps its voxel size), with the slice geometry for qsm-core's slice-gap check.
-fn scan_metadata(meta: &RunMetadata, dims: (usize, usize, usize)) -> qsm_core::pipeline::ScanMetadata {
+/// qsm-core's scan metadata for a stage working on the run's (working) grid, with the slice
+/// geometry for qsm-core's slice-gap check and the working grid's affine — after axial
+/// resampling that is the resampled grid's, which is the grid the stages run on.
+fn scan_metadata(meta: &RunMetadata) -> qsm_core::pipeline::ScanMetadata {
     let mut m = crate::pipeline::config::to_scan_metadata(
-        dims, meta.voxel_size, &meta.echo_times, meta.field_strength, meta.b0_direction,
+        meta.dims, meta.voxel_size, &meta.echo_times, meta.field_strength, meta.b0_direction,
+        Some(meta.affine),
     );
     m.slice_geometry = meta.slice_geometry.map(|(thickness, axis)| qsm_core::grid::SliceGeometry { thickness, axis });
     m
+}
+
+/// [`scan_metadata`] for a stage working on the box `cb` of the run's grid (same voxel size; the
+/// affine moved to the box's first voxel).
+fn scan_metadata_in(meta: &RunMetadata, cb: &qsm_core::crop::CropBox) -> qsm_core::pipeline::ScanMetadata {
+    let mut m = scan_metadata(meta);
+    m.dims = cb.dims;
+    m.affine = Some(cropped_affine(&meta.affine, cb.origin));
+    m
+}
+
+/// The affine of a sub-grid whose voxel (0,0,0) is voxel `origin` of the grid `affine` describes.
+fn cropped_affine(affine: &[f64; 16], origin: (isize, isize, isize)) -> [f64; 16] {
+    let o = [origin.0 as f64, origin.1 as f64, origin.2 as f64];
+    let mut a = *affine;
+    for r in 0..3 {
+        a[4 * r + 3] += (0..3).map(|c| affine[4 * r + c] * o[c]).sum::<f64>();
+    }
+    a
 }
 
 /// The acquisition's slices, as `(thickness mm, voxel axis)`, when the sidecar says enough to
@@ -1214,6 +1235,7 @@ fn stage_motion(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str
     let mag_refs: Vec<&[f64]> = mags.iter().map(|v| v.as_slice()).collect();
     let meta = crate::pipeline::config::to_scan_metadata(
         ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times, ctx.meta.field_strength, ctx.meta.b0_direction,
+        Some(ctx.meta.affine),
     );
     let r = qsm_core::pipeline::run_motion_correction(
         &phase_refs, &mag_refs, &mask, &meta, &m.to_core(&ctx.config.registration), &mut |_, _| {},
@@ -1846,7 +1868,7 @@ fn build_mask_from_sections(
 
     // Convert config masking sections to qsm-core types
     let core_sections = crate::pipeline::config::to_mask_sections(sections, &ctx.config.bet);
-    let scan_meta = scan_metadata(ctx.meta, ctx.meta.dims);
+    let scan_meta = scan_metadata(ctx.meta);
     let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
 
     // Deep-learning mask ops (HD-BET): fetch the weights first, with a progress bar — or fail
@@ -3179,7 +3201,7 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
         zero_outside(&support, map);
     }
 
-    let metadata = scan_metadata(ctx.meta, ctx.meta.dims);
+    let metadata = scan_metadata(ctx.meta);
     let mut sep_config = qsmxt_config::bridge::to_separation_config(ctx.config);
     if let Some(mese) = &ctx.run.mese {
         sep_config.hc_chisep.se_echo_times = mese.echo_times.clone();
@@ -3295,7 +3317,7 @@ fn stage_unwrap(
     let mag_option: Option<&[&[f64]]> = if mag_slices.is_empty() { None } else { Some(&mag_slices) };
 
     let (fm_config, _, _, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-    let scan_meta = scan_metadata(ctx.meta, ctx.meta.dims);
+    let scan_meta = scan_metadata(ctx.meta);
 
     if unwrap_name == "laplacian" && ctx.meta.n_echoes > 1 {
         log::info!("Laplacian unwrapping per echo ({} solver), then {} ({} weighting)",
@@ -3623,7 +3645,7 @@ fn stage_iqsm(ctx: &mut StageContext, pass: &Pass, progress: &dyn Fn(&str)) -> c
     progress(&format!("iQSM reconstruction{}", pass.label()));
     let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
     let mask = load_mask(mask_path)?;
-    let scan_meta = scan_metadata(ctx.meta, ctx.meta.dims);
+    let scan_meta = scan_metadata(ctx.meta);
     let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
     let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
     prefetch_weights(alg, &ctx.run.key.to_string())?;
@@ -3769,7 +3791,7 @@ fn stage_qsmart(
     // Delegate the full two-stage QSMART reconstruction to qsm-core. The inner
     // dipole inversion (default iLSQR) is selected via config.inversion.qsmart.inversion.
     let (_, _, mut inv_config, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-    let scan_meta = scan_metadata(ctx.meta, ctx.meta.dims);
+    let scan_meta = scan_metadata(ctx.meta);
 
     // The vasculature sphere radius and Frangi vessel scales are configured in mm
     // (matching qsmbly); convert to voxels using the dataset voxel size before running.
@@ -3866,7 +3888,7 @@ fn stage_standard_qsm(
         progress(&format!("iQFM field preparation{}", pass.label()));
         let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
         let mask = load_mask(mask_path)?;
-        let scan_meta = scan_metadata(ctx.meta, ctx.meta.dims);
+        let scan_meta = scan_metadata(ctx.meta);
         let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
         let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
         prefetch_weights("iqfm", &ctx.run.key.to_string())?;
@@ -3892,7 +3914,7 @@ fn stage_standard_qsm(
 
         let (_, bg_config, _, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
         let cb = crop_box_for(ctx, &mask, "Background removal");
-        let scan_meta = scan_metadata(ctx.meta, cb.dims);
+        let scan_meta = scan_metadata_in(ctx.meta, &cb);
 
         // Fetch DL weights (BFRnet) with a download bar before removal; no-op otherwise.
         prefetch_weights(&bf_name, &ctx.run.key.to_string())?;
@@ -3935,7 +3957,7 @@ fn stage_standard_qsm(
         // The dipole kernel has infinite support, so this is the stage most exposed to the
         // periodic boundary moving inward; the margin is there to keep it off the object.
         let cb = crop_box_for(ctx, &eroded_mask, "Dipole inversion");
-        let scan_meta = scan_metadata(ctx.meta, cb.dims);
+        let scan_meta = scan_metadata_in(ctx.meta, &cb);
 
         // Load combined magnitude for MEDI edge weighting
         let mag_combined_path = ctx.output.magnitude_path(&ctx.run.key);
@@ -4417,7 +4439,7 @@ mod tests {
         for z in 4..7 { for y in 4..7 { for x in 4..7 {
             quality[z * nx * ny + y * nx + x] = 0.0;
         }}}
-        let meta = crate::pipeline::config::to_scan_metadata(dims, (1.0, 1.0, 1.0), &[0.005], 3.0, (0.0, 0.0, 1.0));
+        let meta = crate::pipeline::config::to_scan_metadata(dims, (1.0, 1.0, 1.0), &[0.005], 3.0, (0.0, 0.0, 1.0), None);
 
         let recipe = |refinements: Vec<MaskOp>| crate::pipeline::config::to_mask_sections(&[MaskSection {
             input: MaskingInput::Magnitude,
@@ -4611,6 +4633,16 @@ mod tests {
         assert!(format!("{}", err).contains("deep-learning"), "got: {}", err);
     }
 
+    #[cfg(not(feature = "dl"))]
+    #[test]
+    fn test_mindgrab_mask_needs_dl_feature() {
+        let sections = crate::pipeline::config::to_mask_sections(&crate::pipeline::config::mindgrab_mask_sections(), &Default::default());
+        let ids: Vec<&str> = sections.iter().flat_map(|s| s.all_ops()).filter_map(|op| op.dl_model_id()).collect();
+        assert_eq!(ids, ["mindgrab"]);
+        let err = super::prefetch_weights(ids[0], "test").unwrap_err();
+        assert!(format!("{}", err).contains("deep-learning"), "got: {}", err);
+    }
+
     /// Two magnitude sections with fixed thresholds, so the section masks are known exactly:
     /// OR is their union, AND their intersection, and the post-combine refinements run once on
     /// the result rather than per section.
@@ -4623,7 +4655,7 @@ mod tests {
         let n = dims.0 * dims.1 * dims.2;
         // A ramp: voxel i has value i, so `threshold:fixed:t` keeps exactly the voxels above t.
         let mag: Vec<f64> = (0..n).map(|i| i as f64).collect();
-        let meta = crate::pipeline::config::to_scan_metadata(dims, (1.0, 1.0, 1.0), &[0.005], 3.0, (0.0, 0.0, 1.0));
+        let meta = crate::pipeline::config::to_scan_metadata(dims, (1.0, 1.0, 1.0), &[0.005], 3.0, (0.0, 0.0, 1.0), None);
 
         let section = |t: f64| MaskSection {
             input: MaskingInput::Magnitude,
@@ -4890,7 +4922,7 @@ mod tests {
         // And qsm-core refuses it too, given the geometry.
         let mut gapped = meta.clone();
         gapped.slice_geometry = Some((2.0, 2));
-        assert!(super::scan_metadata(&gapped, gapped.dims).require_contiguous_slices().is_err());
+        assert!(super::scan_metadata(&gapped).require_contiguous_slices().is_err());
     }
 
     #[test]
@@ -4931,6 +4963,30 @@ mod tests {
                 "the cardinal box is at least as large, got {:?}", meta.dims);
         assert_eq!(meta.b0_direction, (0.0, 0.0, 1.0), "resampled grid puts B0 along z");
         assert!(qsm_core::geometry::obliquity_from_affine(&meta.affine) < 1e-9);
+        // The stages (masking among them) run on the resampled grid, so that is the affine
+        // qsm-core is given — not the oblique one the files were acquired on.
+        assert_eq!(super::scan_metadata(&meta).affine, Some(meta.affine));
+        assert_ne!(meta.affine, oblique_affine());
+    }
+
+    /// A crop of the working grid keeps its world position: voxel (0,0,0) of the box is voxel
+    /// `origin` of the grid, so the box's affine maps it to the same point.
+    #[test]
+    fn scan_metadata_in_a_box_moves_the_affine_to_the_box() {
+        let cfg = crate::pipeline::config::PipelineConfig::default();
+        let meta = super::resolve_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
+        let cb = qsm_core::crop::CropBox { origin: (2, -1, 3), dims: (8, 10, 4), full_dims: meta.dims };
+        let m = super::scan_metadata_in(&meta, &cb);
+        assert_eq!(m.dims, (8, 10, 4));
+        let (a, b) = (meta.affine, m.affine.unwrap());
+        let world = |aff: &[f64; 16], v: [f64; 3]| -> [f64; 3] {
+            std::array::from_fn(|r| aff[4 * r] * v[0] + aff[4 * r + 1] * v[1] + aff[4 * r + 2] * v[2] + aff[4 * r + 3])
+        };
+        for (vb, vg) in [([0.0, 0.0, 0.0], [2.0, -1.0, 3.0]), ([1.0, 2.0, 3.0], [3.0, 1.0, 6.0])] {
+            let (pb, pg) = (world(&b, vb), world(&a, vg));
+            assert!(pb.iter().zip(pg).all(|(x, y)| (x - y).abs() < 1e-9), "{pb:?} vs {pg:?}");
+        }
+        assert_eq!(super::scan_metadata(&meta).affine, Some(meta.affine));
     }
 
     #[test]
@@ -6658,7 +6714,7 @@ mod chisep_support_tests {
             magnitude_rss: Some(&mag), magnitude_multi: Some(&mag), se_magnitude_multi: None,
         };
         let metadata = crate::pipeline::config::to_scan_metadata(
-            m.dims, m.voxel_size, &m.echo_times, m.field_strength, m.b0_direction);
+            m.dims, m.voxel_size, &m.echo_times, m.field_strength, m.b0_direction, Some(m.affine));
         let r = qsm_core::pipeline::run_separation(
             inputs, &metadata, &qsmxt_config::bridge::to_separation_config(config), &mut |_, _| {},
         ).unwrap();

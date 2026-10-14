@@ -38,7 +38,7 @@ pub fn execute(args: QsmartArgs) -> crate::Result<()> {
     }
 
     let scan_meta =
-        config::to_scan_metadata(dims, voxel_size, &[args.echo_time], args.field_strength, b0);
+        config::to_scan_metadata(dims, voxel_size, &[args.echo_time], args.field_strength, b0, Some(field.affine));
 
     let magnitude: Option<Vec<f64>> = match &args.magnitude {
         Some(p) => Some(load_nifti(p)?.data),

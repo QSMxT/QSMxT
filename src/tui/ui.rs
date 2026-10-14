@@ -210,7 +210,7 @@ fn is_deep_learning_algo(name: &str) -> bool {
         name,
         "xqsm" | "qsmnet" | "qsmnet-plus" | "autoqsm" | "qsmgan" | "ir2qsm" | "lpcnn"
             | "modl-qsm" | "nextqsm" | "iqsm" | "iqsm-plus" | "bfrnet" | "iqfm"
-            | "susep-net" | "chi-sepnet" | "hd-bet" | "rs2-net"
+            | "susep-net" | "chi-sepnet" | "hd-bet" | "rs2-net" | "mindgrab"
     )
 }
 
@@ -1433,6 +1433,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     crate::pipeline::config::MaskOp::Bet { .. } => "bet",
                     crate::pipeline::config::MaskOp::HdBet { .. } => "hd-bet",
                     crate::pipeline::config::MaskOp::Rs2Net { .. } => "rs2-net",
+                    crate::pipeline::config::MaskOp::MindGrab { .. } => "mindgrab",
                     _ => "?",
                 };
                 let label_style = if focused {
@@ -1442,7 +1443,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 };
                 if focused {
                     if focused_help.is_none() {
-                        focused_help = Some("Mask algorithm (←/→ to switch between threshold, BET and HD-BET)".to_string());
+                        focused_help = Some("Mask algorithm (←/→ to switch between threshold, BET, HD-BET, MindGrab and RS2-Net)".to_string());
                     }
                     Line::from(vec![
                         Span::styled(format!("  {:lw$}", "Algorithm:"), label_style),
@@ -1490,6 +1491,10 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     crate::pipeline::config::MaskOp::Rs2Net { tta, .. } => {
                         ("Augmentation:", if *tta { "mirroring TTA".to_string() } else { "none".to_string() },
                          "RS2-Net rodent brain extraction: the patch is fixed by the exported graph")
+                    }
+                    crate::pipeline::config::MaskOp::MindGrab { tta } => {
+                        ("Augmentation:", if *tta { "left-right flip TTA".to_string() } else { "none".to_string() },
+                         "Left-right flip test-time augmentation: a second, mirrored pass; about 2x slower (←/→ to toggle)")
                     }
                     _ => ("?:", "?".to_string(), ""),
                 };

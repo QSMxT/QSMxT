@@ -28,7 +28,7 @@ pipeline, and run the same code as the corresponding pipeline stage. See
 
 | Command | Description |
 | --- | --- |
-| `mask` | Masking: thresholds, BET, HD-BET, RS2-Net, the `--mask-preset` recipes, morphology, and/or |
+| `mask` | Masking: thresholds, BET, HD-BET, RS2-Net, MindGrab, the `--mask-preset` recipes, morphology, and/or |
 | `combine` | Multi-coil phase combination (MCPC-3D-S) |
 | `unwrap` | Phase unwrapping (ROMEO, Laplacian) |
 | `fieldmap` | Multi-echo B0 field mapping from phase, in ppm |
@@ -67,7 +67,7 @@ qsmxt <cmd> --help # full help for a command
 | `--qsm-algorithm <A>` | Dipole inversion method |
 | `--unwrapping-algorithm <A>` | Phase unwrapping method |
 | `--bf-algorithm <A>` | Background field removal method |
-| `--mask-preset <P>` | Masking recipe (`robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`) |
+| `--mask-preset <P>` | Masking recipe (`robust-threshold`, `bet`, `hd-bet`, `bet-and-phase`, `rs2-net`, `mindgrab`) |
 | `--mask <SECTION>` | Custom mask section, repeatable (e.g. `magnitude,bet:0.5,erode:2`) |
 | `--mask-combine <or\|and>` | How multiple `--mask` sections combine (default `or`) |
 | `--mask-refine <OP>` | Refinement applied to the combined mask, repeatable (e.g. `fill-holes:0`) |

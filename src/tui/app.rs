@@ -1270,7 +1270,7 @@ pub const MASK_OP_TYPES: &[&str] = &[
 ];
 
 /// Ops that create a mask (the section's generator); the rest are refinements.
-pub const MASK_GENERATOR_TYPES: &[&str] = &["threshold", "bet", "hd-bet", "rs2-net"];
+pub const MASK_GENERATOR_TYPES: &[&str] = &["threshold", "bet", "hd-bet", "mindgrab", "rs2-net"];
 
 /// How R2' is obtained when no custom map is supplied.
 pub const R2PRIME_STRATEGY_OPTIONS: &[&str] = &["auto", "mese", "r2primenet"];
@@ -1280,13 +1280,14 @@ pub const R2PRIME_STRATEGY_HELP: &[&str] = &[
     "Always predict R2' from R2* with R2PRIMEnet, even when a MESE acquisition is available (an estimate, not a measurement)",
 ];
 
-pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "bet-and-phase", "rs2-net", "custom"];
+pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "bet-and-phase", "rs2-net", "mindgrab", "custom"];
 pub const MASK_PRESET_HELP: &[&str] = &[
     "Otsu threshold + dilate + fill holes + erode (recommended for brain)",
     "BET brain extraction + erode",
     "HD-BET deep-learning brain extraction + signal-gated erosion (QSM-CI harmonization masking)",
     "BET on the magnitude AND thresholded phase quality, then fill holes + erode (ISMRM EMTP consensus)",
     "RS2-Net deep-learning rodent brain extraction (mouse, rat)",
+    "MindGrab deep-learning brain extraction, for any contrast",
     "Fully custom mask pipeline (edit steps below)",
 ];
 /// Index of the "custom" preset — set automatically when the steps are edited by hand, and
@@ -3744,6 +3745,7 @@ impl PipelineFormState {
                 };
                 ("rs2-net", format!("rodent{}{}", step, if *tta { " tta" } else { "" }))
             }
+            MaskOp::MindGrab { tta } => ("mindgrab", if *tta { "flip tta" } else { "default" }.to_string()),
             // Only the threshold: every other parameter has a row of its own below.
             MaskOp::SignalErode { threshold, .. } => ("signal-erode", format!("{:.2}", threshold)),
         }
@@ -3762,6 +3764,7 @@ impl PipelineFormState {
             MaskOp::GaussianSmooth { .. } => "Gaussian sigma in mm (Enter to edit)",
             MaskOp::HdBet { .. } => "HD-BET deep-learning brain extraction (needs a deep-learning build)",
             MaskOp::Rs2Net { .. } => "RS2-Net deep-learning rodent brain extraction (needs a deep-learning build)",
+            MaskOp::MindGrab { .. } => "MindGrab deep-learning brain extraction, for any contrast (needs a deep-learning build)",
             MaskOp::SignalErode { .. } =>
                 "Signal gate as a fraction of the in-mask median magnitude (←/→ to adjust); above ~0.85 it over-carves",
         }
@@ -3780,6 +3783,7 @@ impl PipelineFormState {
             "gaussian" => Some(MaskOp::GaussianSmooth { sigma_mm: 4.0 }),
             "hd-bet" => Some(MaskOp::hd_bet_default()),
             "rs2-net" => Some(MaskOp::rs2_net_default()),
+            "mindgrab" => Some(MaskOp::mindgrab_default()),
             "signal-erode" => Some(MaskOp::signal_erode_default()),
             _ => None,
         }
@@ -4013,7 +4017,7 @@ impl PipelineFormState {
             .unwrap_or(0)
     }
 
-    /// Cycle the generator of a mask section (threshold → BET → HD-BET → RS2-Net) with
+    /// Cycle the generator of a mask section (threshold → BET → HD-BET → MindGrab → RS2-Net) with
     /// left/right.
     pub fn adjust_mask_generator(&mut self, section: usize, delta: isize) {
         if self.mask_section(section).is_none() { return; }
@@ -4043,6 +4047,8 @@ impl PipelineFormState {
                 let cur = options.iter().position(|o| o == patch).unwrap_or(0) as isize;
                 *patch = options[(cur + delta).rem_euclid(options.len() as isize) as usize];
             }
+            // Off / on: the only setting MindGrab has.
+            MaskOp::MindGrab { tta } => *tta = !*tta,
             _ => {}
         }
         self.mark_mask_custom(section);
@@ -4186,7 +4192,7 @@ impl PipelineFormState {
             MaskOp::GaussianSmooth { sigma_mm } => {
                 *sigma_mm = (*sigma_mm + delta as f64 * 0.5).max(0.5);
             }
-            MaskOp::HdBet { .. } | MaskOp::Rs2Net { .. } => {}
+            MaskOp::HdBet { .. } | MaskOp::Rs2Net { .. } | MaskOp::MindGrab { .. } => {}
             MaskOp::SignalErode { threshold, .. } => {
                 *threshold = ((*threshold + delta as f64 * 0.05).clamp(0.05, 0.95) * 100.0).round() / 100.0;
             }
@@ -5977,6 +5983,8 @@ impl App {
                                     "Intensity threshold-based masking".to_string(),
                                     "FSL BET brain extraction".to_string(),
                                     "HD-BET deep-learning brain extraction (Isensee et al., 2019)".to_string(),
+                                    "MindGrab deep-learning brain extraction, for any contrast (Fani et al., 2025)".to_string(),
+                                    "RS2-Net deep-learning rodent brain extraction (Lin et al., 2024)".to_string(),
                                 ],
                                 cursor: ps.mask_generator_index(*section),
                             })
@@ -9543,6 +9551,9 @@ mod tests {
         assert_eq!(app.pipeline_state.mask_combine, crate::pipeline::config::MaskCombine::Or);
         assert!(app.pipeline_state.mask_combined_refinements.is_empty());
         app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.pipeline_state.mask_preset, 5); // MindGrab
+        assert_eq!(app.pipeline_state.mask_sections, crate::pipeline::config::mindgrab_mask_sections());
+        app.handle_key(key(KeyCode::Right));
         assert_eq!(app.pipeline_state.mask_preset, 0, "cycling skips 'custom'");
     }
 
@@ -10292,6 +10303,11 @@ mod tests {
         assert!(matches!(
             app.pipeline_state.mask_sections[0].generator,
             crate::pipeline::config::MaskOp::HdBet { .. }
+        ));
+        app.handle_key(key(KeyCode::Right));
+        assert!(matches!(
+            app.pipeline_state.mask_sections[0].generator,
+            crate::pipeline::config::MaskOp::MindGrab { tta: false }
         ));
         app.handle_key(key(KeyCode::Right));
         assert!(matches!(
