@@ -291,6 +291,12 @@ These come from QSM.rs (qsm-core is pinned by rev to QSM.rs main `ad39808`):
   SynthSeg (with its settings) or a dseg from derivatives — and the statistics sit beside it with
   the custom QSM they may read; QSM Reference has one row (QSM → Reference). Unticking Compute QSM
   while SMWI or the statistics need it is refused with the reason, as for the forced maps.
+- **TUI: all BET settings sit together under the BET step.** Smoothness, gradient threshold,
+  iterations and subdivisions used to be listed after every mask section, apart from the
+  fractional intensity and voxel scale. They are run-wide (`[bet]`, `--bet-*`) and shared by
+  every BET step, while the other two belong to each step, which is why they were separate; they
+  are now listed once, directly under the first BET step's fractional intensity and voxel scale.
+
 - **The generated command keeps `--do-r2map` / `--do-r2starmap` / `--do-r2primemap` unless the
   rest of the command implies them.** It dropped them whenever χ-separation was on, so a TUI run
   (or a config turned into a command) with, say, R2\*-QSM separation and an R2 map lost the R2 map.
