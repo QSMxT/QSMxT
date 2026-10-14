@@ -536,7 +536,7 @@ impl Page {
             Page::Inversion => "Inversion",
             Page::MultiOrientation => "Multi-orientation",
             Page::Reference => "Reference",
-            Page::Separation => "Separation",
+            Page::Separation => "χ-separation",
             Page::SwiSmwi => "SWI/SMWI",
             Page::Relaxometry => "Relaxometry",
             Page::Segmentation => "Segmentation",
@@ -779,7 +779,7 @@ pub const TAB_NAMES: [&str; 7] = [
     "Input",
     "Preprocessing",
     "QSM",
-    "Separation",
+    "χ-separation",
     "Other outputs",
     "Execution",
     "Methods",
@@ -1261,6 +1261,8 @@ pub enum PipelineRow {
     /// "Add mask..." row for adding a new OR'd section — to the main mask, or to the two-pass
     /// reliable mask when `two_pass` is set
     MaskOpAddSection { two_pass: bool },
+    /// The Execution tab's button: Enter does what F5 does ([`App::try_run`]).
+    RunButton,
 }
 
 pub const MASK_OP_TYPES: &[&str] = &[
@@ -1795,7 +1797,7 @@ pub struct PipelineFormState {
     pub mask_preset: usize, // index into MASK_PRESET_OPTIONS (MASK_PRESET_CUSTOM = hand-edited)
     pub custom_mask_tool: String, // empty=off; "*"=any derivatives tool; else a tool name
 
-    // Separation tab
+    // χ-separation tab
     pub do_chi_separation: bool,
     pub separation_algorithm: usize, // index into SEP_ALGO_OPTIONS
     pub custom_qsm_tool: String,     // empty=off; "*"=any; else a derivatives tool name
@@ -4302,6 +4304,8 @@ pub struct App {
     pub active_tab: usize,
     /// The sub-tab last chosen on each tab (see [`App::page`]).
     pub sub_page: [Option<Page>; TAB_NAMES.len()],
+    /// Focus is on the sub-tab strip rather than the rows (see [`App::on_subtabs`]).
+    pub subtab_focus: bool,
     pub active_field: usize,
     pub editing: bool,
     pub cursor_pos: usize,
@@ -4316,11 +4320,16 @@ pub struct App {
     pub form_scroll_offset: usize,
     pub methods_scroll_offset: usize,
     pub error_message: Option<String>,
+    /// A one-line confirmation in the footer (e.g. "Methods copied to clipboard"); cleared,
+    /// like `error_message`, by the next key.
+    pub status_message: Option<String>,
+    /// Text to put on the clipboard: the main loop takes it and writes it out (OSC 52).
+    pub clipboard: Option<String>,
     pub input_mode: InputMode,
     pub example_state: ExampleState,
     pub dicom_state: DicomConvertState,
     pub nifti_state: NiftiState,
-    /// When set, an algorithm-selection modal is open over the QSM/Separation tab.
+    /// When set, an algorithm-selection modal is open over the QSM/χ-separation tab.
     pub algo_modal: Option<AlgoModal>,
     /// The "a new version is available" pop-up, once the background check has found one.
     pub update_modal: Option<UpdateModal>,
@@ -4584,6 +4593,7 @@ impl App {
         App {
             active_tab: 0,
             sub_page: [None; TAB_NAMES.len()],
+            subtab_focus: false,
             active_field: 0,
             editing: false,
             cursor_pos: 0,
@@ -4596,6 +4606,8 @@ impl App {
             form_scroll_offset: 0,
             methods_scroll_offset: 0,
             error_message: None,
+            status_message: None,
+            clipboard: None,
             algo_modal: None,
             update_modal: None,
             update_state: UpdateState::start(),
@@ -4656,6 +4668,29 @@ impl App {
         self.should_run = true;
     }
 
+    /// Put the methods text for the current settings on the clipboard (written out by the main
+    /// loop as an OSC 52 sequence, which reaches the local clipboard through SSH).
+    pub fn copy_methods(&mut self) {
+        match super::command::methods_text(self) {
+            Ok(text) => {
+                self.clipboard = Some(text);
+                self.status_message = Some("Methods copied to clipboard".to_string());
+            }
+            Err(e) => self.error_message = Some(format!("Nothing copied: {e}")),
+        }
+    }
+
+    /// What F5 (and the Execution tab's button) does with the current settings: the button's
+    /// label and the help line shown while it has focus.
+    pub fn run_action(&self) -> (&'static str, &'static str) {
+        match (self.form.execution_mode, self.form.dry_run, self.form.slurm_submit) {
+            (0, false, _) => ("Run", "Run the pipeline now with these settings (the same as F5)"),
+            (0, true, _) => ("Dry run", "Print the processing plan without running anything (the same as F5)"),
+            (_, _, true) => ("Submit SLURM jobs", "Write a SLURM job script per run and submit them with sbatch (the same as F5)"),
+            (_, _, false) => ("Write SLURM scripts", "Write a SLURM job script per run, to submit yourself (the same as F5)"),
+        }
+    }
+
     /// Main-tab switching, the same in every tab's key handler: the digits `1`..=`N` (one per
     /// entry of [`TAB_NAMES`]), Tab and Shift-Tab. Returns whether `key` switched tabs.
     pub fn switch_tab(&mut self, key: KeyEvent) -> bool {
@@ -4672,6 +4707,8 @@ impl App {
         self.active_tab = target;
         self.reset_view();
         self.sync_pipeline_mode();
+        // A stage with sub-tabs opens on its sub-tab strip: ←/→ choose one, ↓ enters it.
+        self.subtab_focus = self.has_subtabs();
         true
     }
 
@@ -4692,6 +4729,7 @@ impl App {
         if key.code != KeyCode::F(5) {
             self.error_message = None;
         }
+        self.status_message = None;
 
         // Route tab 0 (Input) to its combined IO + filter handler
         if self.active_tab == TAB_INPUT {
@@ -4717,7 +4755,8 @@ impl App {
                 KeyCode::Down | KeyCode::Char('j') => {
                     self.methods_scroll_offset += 1;
                 }
-                KeyCode::F(5) | KeyCode::Enter => self.try_run(),
+                KeyCode::Enter | KeyCode::Char('c') | KeyCode::Char('y') => self.copy_methods(),
+                KeyCode::F(5) => self.try_run(),
                 _ => {}
             }
         }
@@ -5813,6 +5852,23 @@ impl App {
             return;
         }
 
+        // On the sub-tab strip: ←/→ choose the sub-tab, ↓ or Enter go into its rows. Tab
+        // switching, `[`/`]`, `R`, F5 and quitting work as on the rows; nothing else applies.
+        if self.on_subtabs() {
+            match key.code {
+                KeyCode::Left => return self.cycle_page(-1),
+                KeyCode::Right => return self.cycle_page(1),
+                KeyCode::Down | KeyCode::Char('j') | KeyCode::Enter => {
+                    self.subtab_focus = false;
+                    self.set_focus(0);
+                    return;
+                }
+                KeyCode::Char('q' | '[' | ']' | 'R') | KeyCode::Esc | KeyCode::Tab | KeyCode::BackTab | KeyCode::F(5) => {}
+                KeyCode::Char(c) if c.is_ascii_digit() => {}
+                _ => return,
+            }
+        }
+
         match key.code {
             // Escape from add mode before quit
             KeyCode::Esc if self.pipeline_state.mask_ops_adding => {
@@ -5851,10 +5907,14 @@ impl App {
                 }
             }
 
-            // Navigation
+            // Navigation; up from the first row goes back to the sub-tab strip.
             KeyCode::Up | KeyCode::Char('k') => {
                 let f = self.focus();
-                self.set_focus(f.saturating_sub(1));
+                if f == 0 && self.has_subtabs() && !self.pipeline_state.mask_ops_adding {
+                    self.subtab_focus = true;
+                } else {
+                    self.set_focus(f.saturating_sub(1));
+                }
             }
             KeyCode::Down | KeyCode::Char('j') => {
                 let max = self.focusable_rows().len().saturating_sub(1);
@@ -5865,6 +5925,7 @@ impl App {
             }
 
             // Interact
+            KeyCode::Enter | KeyCode::Char(' ') if matches!(self.focused_row(), Some(PipelineRow::RunButton)) => self.try_run(),
             KeyCode::Enter | KeyCode::Char(' ') => {
                 let row = self.focused_row();
                 // Single-choice selectors open a modal listing every option (rather than cycling).
@@ -6210,19 +6271,33 @@ impl App {
         chosen.filter(|p| pages.contains(p)).or_else(|| pages.first().copied())
     }
 
-    /// Move to the next (`delta` 1) or previous (-1) sub-tab of the active tab, wrapping.
+    /// Move to the next (`delta` 1) or previous (-1) sub-tab of the active tab, wrapping. Focus
+    /// stays on the sub-tab strip if it was there, else goes to the first row.
     pub fn cycle_page(&mut self, delta: isize) {
         let pages = self.pages(self.active_tab);
         if pages.len() < 2 { return; }
+        let on_strip = self.on_subtabs();
         let cur = self.page().and_then(|p| pages.iter().position(|&q| q == p)).unwrap_or(0);
         let next = pages[(cur as isize + delta).rem_euclid(pages.len() as isize) as usize];
         self.sub_page[self.active_tab] = Some(next);
         self.reset_view();
         self.sync_pipeline_mode();
+        self.subtab_focus = on_strip;
+    }
+
+    /// Whether the active tab shows a sub-tab strip (a row-based tab with more than one page).
+    pub fn has_subtabs(&self) -> bool {
+        Self::is_rows_tab(self.active_tab) && self.pages(self.active_tab).len() > 1
+    }
+
+    /// Whether focus is on the sub-tab strip rather than on a row.
+    pub fn on_subtabs(&self) -> bool {
+        self.subtab_focus && self.has_subtabs()
     }
 
     /// Put focus and scrolling back at the top: on every change of tab or sub-tab.
     pub fn reset_view(&mut self) {
+        self.subtab_focus = false;
         self.active_field = 0;
         self.form_scroll_offset = 0;
         self.editing = false;
@@ -6639,6 +6714,8 @@ impl App {
         rows.push(Toggle { label: "Debug Logging", field: "debug", help: "Enable verbose debug log output" });
         rows.push(Toggle { label: "Force Re-run", field: "force", help: "Ignore cached pipeline state and recompute everything" });
         rows.push(Toggle { label: "Clean Intermediates", field: "clean_intermediates", help: "Remove intermediate files after the run, keeping only final outputs" });
+        rows.push(PipelineRow::Separator);
+        rows.push(PipelineRow::RunButton);
         rows
     }
 }
@@ -8680,13 +8757,22 @@ mod tests {
         assert!(app.should_run);
     }
 
+    /// Enter, `c` and `y` copy the methods text (F5 still runs); the next key clears the message.
     #[test]
-    fn test_methods_tab_enter_triggers_run() {
-        let mut app = App::new();
-        app.active_tab = TAB_METHODS;
-        app.form.bids_dir = "/tmp/bids".to_string();
-        app.handle_key(key(KeyCode::Enter));
-        assert!(app.should_run);
+    fn methods_tab_enter_copies_the_methods_text() {
+        for k in [KeyCode::Enter, KeyCode::Char('c'), KeyCode::Char('y')] {
+            let mut app = App::new();
+            app.active_tab = TAB_METHODS;
+            app.form.bids_dir = "/tmp/bids".to_string();
+            app.handle_key(key(k));
+            assert!(!app.should_run, "{k:?} ran the pipeline");
+            let copied = app.clipboard.take().unwrap_or_else(|| panic!("{k:?} copied nothing"));
+            assert_eq!(copied, crate::tui::command::methods_text(&app).unwrap());
+            assert!(copied.contains("processing was performed using qsmxt"), "{copied}");
+            assert_eq!(app.status_message.as_deref(), Some("Methods copied to clipboard"));
+            app.handle_key(key(KeyCode::Down));
+            assert_eq!(app.status_message, None);
+        }
     }
 
     // ========== Filter tree key handler tests ==========
@@ -10621,5 +10707,168 @@ mod tests {
         let (inc, exc) = fs.get_include_exclude();
         assert!(inc.is_none());
         assert!(exc.is_none());
+    }
+
+    // ─── The sub-tab strip: focus, arrows, and back ───
+
+    #[test]
+    fn a_stage_with_sub_tabs_opens_on_its_sub_tab_strip() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char('2')));
+        assert_eq!(app.active_tab, TAB_PREPROCESSING);
+        assert!(app.on_subtabs());
+        assert_eq!(app.page(), Some(Page::Geometry));
+        // ←/→ move along the strip, wrapping, and focus stays on it.
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.page(), Some(Page::Masking));
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Left));
+        app.handle_key(key(KeyCode::Left));
+        assert_eq!(app.page(), Some(Page::Motion));
+        assert!(app.on_subtabs());
+        // `[`/`]` still switch too.
+        app.handle_key(key(KeyCode::Char(']')));
+        assert_eq!(app.page(), Some(Page::Geometry));
+        assert!(app.on_subtabs());
+    }
+
+    #[test]
+    fn down_enters_the_sub_tab_and_up_from_its_first_row_returns() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char('2')));
+        app.handle_key(key(KeyCode::Right)); // Masking
+        let first = app.focusable_rows().len();
+        assert!(first > 1);
+        app.handle_key(key(KeyCode::Down));
+        assert!(!app.on_subtabs());
+        assert_eq!(app.focus(), 0);
+        assert_eq!(app.page(), Some(Page::Masking));
+        app.handle_key(key(KeyCode::Down));
+        assert_eq!(app.focus(), 1);
+        app.handle_key(key(KeyCode::Up));
+        assert_eq!(app.focus(), 0);
+        assert!(!app.on_subtabs());
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.on_subtabs());
+        // Up on the strip goes nowhere; Enter also goes into the rows.
+        app.handle_key(key(KeyCode::Up));
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Enter));
+        assert!(!app.on_subtabs());
+        assert_eq!(app.focus(), 0);
+        assert_eq!(app.page(), Some(Page::Masking));
+    }
+
+    /// On the strip, ←/→ switch sub-tabs; on a row they still change the row's choice.
+    #[test]
+    fn left_and_right_change_a_choice_on_a_row_not_the_sub_tab() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char('3')));
+        assert!(app.on_subtabs());
+        let page = app.page();
+        app.handle_key(key(KeyCode::Down));
+        let field = app.focused_field_name();
+        let before = app.focused_row().map(|r| matches!(r, PipelineRow::Toggle { .. } | PipelineRow::AlgoSelect { .. }));
+        assert_eq!(before, Some(true), "first QSM row should be a choice or checkbox");
+        app.handle_key(key(KeyCode::Right));
+        assert_eq!(app.page(), page, "→ on a row switched the sub-tab");
+        assert!(!app.on_subtabs());
+        assert_eq!(app.focused_field_name(), field);
+    }
+
+    /// Keys that act on a row do nothing while the strip has focus.
+    #[test]
+    fn row_keys_do_nothing_on_the_strip() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Char('2')));
+        app.handle_key(key(KeyCode::Right)); // Masking
+        let before = crate::tui::command::build_command_string(&app);
+        for k in [KeyCode::Char(' '), KeyCode::Char('d'), KeyCode::Delete, KeyCode::Char('r')] {
+            app.handle_key(key(k));
+            assert!(app.on_subtabs(), "{k:?} left the strip");
+        }
+        assert_eq!(crate::tui::command::build_command_string(&app), before);
+        assert!(app.algo_modal.is_none());
+    }
+
+    /// Tabs without sub-tabs behave as before: focus starts on the first row.
+    #[test]
+    fn a_stage_without_sub_tabs_opens_on_its_first_row() {
+        let mut app = App::new();
+        for tab in [TAB_SEPARATION, TAB_EXECUTION] {
+            app.handle_key(key(KeyCode::Char(char::from_digit(tab as u32 + 1, 10).unwrap())));
+            assert_eq!(app.active_tab, tab);
+            assert!(!app.on_subtabs());
+            assert_eq!(app.focus(), 0);
+            app.handle_key(key(KeyCode::Up));
+            assert!(!app.on_subtabs());
+        }
+    }
+
+    /// Tab, Shift-Tab and the digits land on the strip of a stage with sub-tabs; `q` still quits.
+    #[test]
+    fn tab_switching_and_quitting_work_from_the_strip() {
+        let mut app = App::new();
+        app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.active_tab, TAB_PREPROCESSING);
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Tab));
+        assert_eq!(app.active_tab, TAB_QSM);
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Char('5')));
+        assert_eq!(app.active_tab, TAB_OUTPUTS);
+        assert!(app.on_subtabs());
+        app.handle_key(key(KeyCode::Char('q')));
+        assert!(app.should_quit);
+    }
+
+    // ─── The Execution tab's Run button ───
+
+    fn focus_run_button(app: &mut App) {
+        app.handle_key(key(KeyCode::Char(char::from_digit(TAB_EXECUTION as u32 + 1, 10).unwrap())));
+        for _ in 0..40 {
+            app.handle_key(key(KeyCode::Down));
+        }
+        assert!(matches!(app.focused_row(), Some(PipelineRow::RunButton)), "{:?}", app.focused_row());
+    }
+
+    #[test]
+    fn the_run_button_is_the_last_row_and_enter_runs_like_f5() {
+        let mut app = App::new();
+        app.form.bids_dir = "/tmp/bids".to_string();
+        focus_run_button(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.should_run);
+        assert!(app.error_message.is_none());
+    }
+
+    /// The button goes through the same checks as F5: SLURM without an account is refused.
+    #[test]
+    fn the_run_button_validates_like_f5() {
+        let mut app = App::new();
+        focus_run_button(&mut app);
+        app.handle_key(key(KeyCode::Enter));
+        assert!(!app.should_run);
+        assert_eq!(app.error_message.as_deref(), Some("BIDS Directory is required"));
+
+        let mut app = App::new();
+        app.form.bids_dir = "/tmp/bids".to_string();
+        app.form.execution_mode = 1;
+        focus_run_button(&mut app);
+        app.handle_key(key(KeyCode::Char(' ')));
+        assert!(!app.should_run);
+        assert_eq!(app.error_message.as_deref(), Some("SLURM Account is required"));
+    }
+
+    #[test]
+    fn the_run_button_says_what_f5_will_do() {
+        let mut app = App::new();
+        assert_eq!(app.run_action().0, "Run");
+        app.form.dry_run = true;
+        assert_eq!(app.run_action().0, "Dry run");
+        app.form.execution_mode = 1;
+        assert_eq!(app.run_action().0, "Write SLURM scripts");
+        app.form.slurm_submit = true;
+        assert_eq!(app.run_action().0, "Submit SLURM jobs");
     }
 }

@@ -1,4 +1,5 @@
 mod app;
+mod clipboard;
 mod command;
 mod tabs;
 mod ui;
@@ -79,6 +80,10 @@ pub fn run_tui() -> crate::Result<()> {
                 // keystroke; only act on Press or every action fires twice.
                 if key.kind == crossterm::event::KeyEventKind::Press {
                     app.handle_key(key);
+                }
+                // Copying goes through the terminal (OSC 52), so it works over SSH too.
+                if let Some(text) = app.clipboard.take() {
+                    let _ = clipboard::copy(terminal.backend_mut(), &text);
                 }
             }
         }

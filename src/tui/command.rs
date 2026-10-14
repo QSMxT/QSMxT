@@ -839,6 +839,11 @@ pub fn build_slurm_args(app: &App) -> crate::Result<SlurmArgs> {
 ///
 /// An error is a setting the run would refuse (an unparseable mask section, say); the TUI shows
 /// it in place of the command and the methods rather than previewing some other configuration.
+/// The methods text (Markdown) for the current settings, or why the settings are invalid.
+pub fn methods_text(app: &App) -> Result<String, String> {
+    config_from_app(app).map(|c| crate::pipeline::methods::generate_methods(&c)).map_err(|e| e.to_string())
+}
+
 pub fn config_from_app(app: &App) -> crate::Result<PipelineConfig> {
     let mut config = PipelineConfig::default();
     crate::pipeline::config::apply_run_overrides(&mut config, &pipeline_args_from_app(app))?;

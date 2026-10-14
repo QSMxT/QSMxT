@@ -3,7 +3,9 @@
 //! The header is a cyan "QSMxT" chip followed by quiet stage labels; the active stage is bold
 //! and underlined by a cyan `━` bar set into a dim rule, which also carries the versions. A
 //! stage with sub-tabs shows them as pills along the top of its (dim, rounded) panel: the active
-//! one filled cyan, the others on dark grey, with a `[ ] sub-tab  n/m` hint on the right.
+//! one filled cyan, the others on dark grey, with a `[ ] sub-tab  n/m` hint on the right. While
+//! focus is on the strip itself (←/→ move along it), the active pill is yellow, the colour of a
+//! focused row, and the hint reads `← → sub-tab`.
 //!
 //! On a narrow terminal the stage labels shorten (inactive tabs first to short names, then to
 //! their digits; the active tab keeps its full name), and the sub-tabs drop the hint and then
@@ -23,7 +25,7 @@ use ratatui::{
 use super::app::{App, TAB_NAMES};
 
 /// Short names, used for inactive tabs when the full names do not fit the width.
-const SHORT: [&str; TAB_NAMES.len()] = ["Input", "Prep", "QSM", "Sep", "Outputs", "Exec", "Methods"];
+const SHORT: [&str; TAB_NAMES.len()] = ["Input", "Prep", "QSM", "χ-sep", "Outputs", "Exec", "Methods"];
 
 /// The greys the design is drawn with.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -243,7 +245,8 @@ pub fn subtab_rows(app: &App) -> u16 {
     if subtabs(app).is_some() { 2 } else { 0 }
 }
 
-/// Pills, the active one filled with the accent; a key hint and counter on the right.
+/// Pills, the active one filled with the accent (yellow while the strip has focus); a key hint
+/// and counter on the right.
 pub fn draw_subtabs(f: &mut Frame, app: &App, area: Rect) {
     let Some((names, cur)) = subtabs(app) else { return };
     let buf = f.buffer_mut();
@@ -251,7 +254,10 @@ pub fn draw_subtabs(f: &mut Frame, app: &App, area: Rect) {
     let width = area.width as usize;
     let items: Vec<String> = names.iter().map(|n| format!(" {n} ")).collect();
     let widths: Vec<usize> = items.iter().map(|s| w(s)).collect();
+    let focused = app.on_subtabs();
     let counter = format!("{}/{}", cur + 1, names.len());
+    // The two hints are the same width, so focusing the strip never moves the pills.
+    let (k0, k1) = if focused { ("←", "→") } else { ("[", "]") };
     let hint_w = w("[ ] sub-tab  ") + w(&counter) + 1;
     let all = widths.iter().sum::<usize>() + widths.len() - 1 + 1;
     let show_hint = all + hint_w + 2 <= width;
@@ -268,7 +274,8 @@ pub fn draw_subtabs(f: &mut Frame, app: &App, area: Rect) {
             x += 1;
         }
         let st = if i == cur {
-            Style::default().fg(Color::Black).bg(Color::Cyan).add_modifier(Modifier::BOLD)
+            let bg = if focused { Color::Yellow } else { Color::Cyan };
+            Style::default().fg(Color::Black).bg(bg).add_modifier(Modifier::BOLD)
         } else {
             let st = Style::default().fg(pal.text);
             match pal.pill_bg { Some(bg) => st.bg(bg), None => st }
@@ -282,9 +289,9 @@ pub fn draw_subtabs(f: &mut Frame, app: &App, area: Rect) {
         let key = Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD);
         let dim = Style::default().fg(pal.muted);
         let mut x = area.right() - hint_w as u16;
-        x = put(buf, area, x, y, "[", key);
+        x = put(buf, area, x, y, k0, key);
         x = put(buf, area, x, y, " ", dim);
-        x = put(buf, area, x, y, "]", key);
+        x = put(buf, area, x, y, k1, key);
         x = put(buf, area, x, y, " sub-tab  ", dim);
         put(buf, area, x, y, &counter, Style::default().fg(pal.text));
     }
@@ -427,5 +434,82 @@ pub(super) mod tests {
         assert_eq!(Palette::detect(Some("xterm"), None), Palette::EXTENDED);
         assert_eq!(Palette::detect(Some("rxvt-16color"), None), Palette::BASIC);
         assert_eq!(Palette::detect(None, None), Palette::EXTENDED);
+    }
+
+    fn key(app: &mut App, code: crossterm::event::KeyCode) {
+        app.handle_key(crossterm::event::KeyEvent::new(code, crossterm::event::KeyModifiers::NONE));
+    }
+
+    fn screen(t: &Terminal<TestBackend>) -> String {
+        (0..t.backend().buffer().area.height).map(|y| row(t, y)).collect::<Vec<_>>().join("\n")
+    }
+
+    /// With focus on the strip the active pill turns yellow (the focus colour) and the hint
+    /// shows the arrows; going down into the rows turns it back to cyan.
+    #[test]
+    fn a_focused_sub_tab_strip_looks_focused() {
+        for (width, height) in [(120, 40), (80, 24)] {
+            let mut app = App::new();
+            key(&mut app, crossterm::event::KeyCode::Char('2'));
+            key(&mut app, crossterm::event::KeyCode::Right);
+            let t = render(&mut app, width, height);
+            let pills = row(&t, 3);
+            let at = |s: &str| pills.find(s).map(|b| pills[..b].chars().count() as u16 + 1).unwrap();
+            assert_eq!(t.backend().buffer()[(at(" Masking "), 3)].bg, Color::Yellow, "{width}x{height}:\n{pills}");
+            assert!(pills.contains("← → sub-tab  2/3"), "{width}x{height}:\n{pills}");
+            let text = screen(&t);
+            assert!(text.contains("↓ or Enter to go to its settings"), "{width}x{height}:\n{text}");
+            assert!(row(&t, height - 1).contains("Sub-tabs"), "{width}x{height}:\n{}", row(&t, height - 1));
+
+            key(&mut app, crossterm::event::KeyCode::Down);
+            let t = render(&mut app, width, height);
+            let pills = row(&t, 3);
+            let at = |s: &str| pills.find(s).map(|b| pills[..b].chars().count() as u16 + 1).unwrap();
+            assert_eq!(t.backend().buffer()[(at(" Masking "), 3)].bg, Color::Cyan);
+            assert!(pills.contains("[ ] sub-tab  2/3"), "{pills}");
+        }
+    }
+
+    #[test]
+    fn the_chi_separation_tab_is_named_in_full_and_fits() {
+        for (width, height) in [(120, 40), (80, 24)] {
+            let mut app = App::new();
+            goto(&mut app, crate::tui::app::TAB_SEPARATION, None);
+            let t = render(&mut app, width, height);
+            assert!(row(&t, 0).contains("4 χ-separation"), "{width}x{height}:\n{}", row(&t, 0));
+            assert!(row(&t, 2).contains(" χ-separation "), "{width}x{height}:\n{}", row(&t, 2));
+        }
+    }
+
+    /// The Execution tab shows its Run button without scrolling, labelled with what F5 does.
+    #[test]
+    fn the_run_button_is_on_screen() {
+        for (width, height) in [(120, 40), (80, 24)] {
+            for (mode, dry, submit, label) in [(0, false, false, "▶ Run "), (0, true, false, "▶ Dry run "),
+                                               (1, false, false, "▶ Write SLURM scripts "), (1, false, true, "▶ Submit SLURM jobs ")] {
+                let mut app = App::new();
+                app.form.execution_mode = mode;
+                app.form.dry_run = dry;
+                app.form.slurm_submit = submit;
+                goto(&mut app, crate::tui::app::TAB_EXECUTION, None);
+                let t = render(&mut app, width, height);
+                let text = screen(&t);
+                assert!(text.contains(label), "{width}x{height} {label}:\n{text}");
+            }
+        }
+    }
+
+    /// The Methods tab's footer says how to copy, and the confirmation replaces it once copied.
+    #[test]
+    fn the_methods_tab_offers_copying() {
+        for (width, height) in [(120, 40), (80, 24)] {
+            let mut app = App::new();
+            goto(&mut app, crate::tui::app::TAB_METHODS, None);
+            let t = render(&mut app, width, height);
+            assert!(row(&t, height - 1).contains("Enter/c:Copy to clipboard"), "{}", row(&t, height - 1));
+            key(&mut app, crossterm::event::KeyCode::Enter);
+            let t = render(&mut app, width, height);
+            assert!(row(&t, height - 1).contains("Methods copied to clipboard"), "{}", row(&t, height - 1));
+        }
     }
 }

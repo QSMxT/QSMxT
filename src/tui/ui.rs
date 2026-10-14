@@ -1265,6 +1265,8 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let ps_focus = app.focus();
     let ps_editing = app.pipeline_state.editing;
     let ps_cursor = app.pipeline_state.cursor;
+    // With focus on the sub-tab strip no row is focused; the help line says how to get in.
+    let on_strip = app.on_subtabs();
 
     // One label column per page, wide enough for its longest label (within reason).
     let lw = rows.iter().filter_map(|r| match r {
@@ -1279,7 +1281,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
     let mut focusable_idx = 0;
     for (i, row) in rows.iter().enumerate() {
         let is_focusable = focusable.contains(&i);
-        let focused = is_focusable && focusable_idx == ps_focus;
+        let focused = is_focusable && focusable_idx == ps_focus && !on_strip;
         if is_focusable {
             focusable_idx += 1;
         }
@@ -1707,12 +1709,34 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                     label_style,
                 ))
             }
+            PipelineRow::RunButton => {
+                let (label, help) = app.run_action();
+                let label = format!(" ▶ {label} ");
+                let key = Style::default().fg(Color::DarkGray);
+                if focused {
+                    focused_help = Some(help.to_string());
+                    Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(label, Style::default().fg(Color::Black).bg(Color::Green).add_modifier(Modifier::BOLD)),
+                        Span::styled("  Enter or F5", key),
+                    ])
+                } else {
+                    Line::from(vec![
+                        Span::raw("  "),
+                        Span::styled(label, Style::default().fg(Color::Green).add_modifier(Modifier::BOLD | Modifier::REVERSED)),
+                        Span::styled("  F5", key),
+                    ])
+                }
+            }
         };
         lines.push(line);
     }
+    if on_strip {
+        focused_help = Some("←/→ choose a sub-tab; ↓ or Enter to go to its settings".to_string());
+    }
 
-    // Determine which line is focused for auto-scroll
-    let focused_line = focusable.get(ps_focus).copied();
+    // Determine which line is focused for auto-scroll (the top while the sub-tab strip has it)
+    let focused_line = if on_strip { Some(0) } else { focusable.get(ps_focus).copied() };
 
     let scroll_offset = &mut app.pipeline_state.scroll_offset;
     render_scrollable(f, form_area, lines, scroll_offset, focused_line);
@@ -1748,10 +1772,9 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
 }
 
 fn draw_methods_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
-    let methods_text = match command::config_from_app(app) {
-        Ok(config) => crate::pipeline::methods::generate_methods(&config),
-        Err(e) => format!("# Invalid setting\n\n{e}\n\nThe run would refuse this configuration."),
-    };
+    let methods_text = command::methods_text(app).unwrap_or_else(|e| {
+        format!("# Invalid setting\n\n{e}\n\nThe run would refuse this configuration.")
+    });
 
     let block = super::tabs::panel(app);
     let inner = block.inner(area);
@@ -1866,36 +1889,32 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
         f.render_widget(Paragraph::new(error_line), area);
         return;
     }
+    if let Some(ref msg) = app.status_message {
+        let line = Line::from(Span::styled(format!(" ✓ {msg}"), Style::default().fg(Color::Green).add_modifier(Modifier::BOLD)));
+        f.render_widget(Paragraph::new(line), area);
+        return;
+    }
 
-    let help = if app.editing || app.pipeline_state.editing {
-        vec![
-            Span::styled(" Esc", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Cancel  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Enter", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Confirm", Style::default().fg(Color::DarkGray)),
-        ]
+    let tabs = format!("1-{}", TAB_NAMES.len());
+    let keys: Vec<(&str, &str)> = if app.editing || app.pipeline_state.editing {
+        vec![("Esc", "Cancel"), ("Enter", "Confirm")]
+    } else if app.active_tab == TAB_METHODS {
+        vec![(&tabs, "Tabs"), ("\u{2191}\u{2193}", "Scroll"), ("Enter/c", "Copy to clipboard"), ("F5", "Run"), ("q", "Quit")]
+    } else if app.on_subtabs() {
+        vec![(&tabs, "Tabs"), ("\u{2190}\u{2192}/[ ]", "Sub-tabs"), ("\u{2193}/Enter", "Settings"), ("R", "Reset Page"),
+             ("F5", "Run"), ("q", "Quit")]
     } else {
-        vec![
-            Span::styled(format!(" 1-{}", TAB_NAMES.len()), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Tabs  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("[ ]", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Sub-tabs  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("\u{2191}\u{2193}", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Navigate  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("\u{2190}\u{2192}/Space", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Change  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("Enter", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Edit  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("r", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Reset  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("R", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Reset Page  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("F5", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Run  ", Style::default().fg(Color::DarkGray)),
-            Span::styled("q", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-            Span::styled(":Quit", Style::default().fg(Color::DarkGray)),
-        ]
+        vec![(&tabs, "Tabs"), ("[ ]", "Sub-tabs"), ("\u{2191}\u{2193}", "Navigate"), ("\u{2190}\u{2192}/Space", "Change"),
+             ("Enter", "Edit"), ("r", "Reset"), ("R", "Reset Page"), ("F5", "Run"), ("q", "Quit")]
     };
+    let mut help = vec![Span::raw(" ")];
+    for (i, (key, what)) in keys.into_iter().enumerate() {
+        if i > 0 {
+            help.push(Span::raw("  "));
+        }
+        help.push(Span::styled(key.to_string(), Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)));
+        help.push(Span::styled(format!(":{what}"), Style::default().fg(Color::DarkGray)));
+    }
 
     f.render_widget(Paragraph::new(Line::from(help)), area);
 }
