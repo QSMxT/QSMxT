@@ -1121,6 +1121,10 @@ pub struct InversionConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tile_halo: Option<usize>,
 }
+/// Context margin per side (voxels) of a tiled deep-learning inversion when `tile_halo` is
+/// omitted — qsm-core's `TileConfig` default.
+pub const DEFAULT_TILE_HALO: usize = 8;
+
 /// iLSQR with QSM.rs's STI Suite-matched parameters is the default inversion: on the UK Biobank
 /// pilot it tracks age and longitudinal change better than RTS, matching UKB's own pipeline.
 impl Default for InversionConfig {
