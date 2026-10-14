@@ -28,7 +28,7 @@ dl = ["qsm-core/onnx", "qsm-core/download"]
 # merges: a `rev` pin is what CI can resolve, but it must become a `tag` pin before the next QSMxT
 # release, or qsmbly (which pins qsmxt-config) has no release to match. qsmxt-config must move in
 # lockstep.
-qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "94828d2c264d58001527e040e099e8bbd9fc4982", features = ["parallel"] }
+qsm-core = { git = "https://github.com/astewartau/QSM.rs.git", rev = "9158d41bdb373a5298abf7e57e76bc051a456dcd", features = ["parallel"] }
 qsmxt-config = { path = "crates/qsmxt-config" }
 clap = { version = "4", features = ["derive"] }
 const_format = "0.2"
