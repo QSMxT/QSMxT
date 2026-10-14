@@ -2439,12 +2439,9 @@ impl PipelineFormState {
             self.push_refinement_rows(rows, MASK_COMBINED_SECTION);
             rows.push(PipelineRow::MaskOpAddStep { section: MASK_COMBINED_SECTION });
         }
-        // BET's surface settings are one value per run, shared by every BET step.
-        if self.uses_bet() {
-            rows.push(PipelineRow::Param { label: "BET Smoothness", field: "bet_smoothness", help: "BET surface smoothness factor (every BET step)" });
-            rows.push(PipelineRow::Param { label: "BET Gradient Threshold", field: "bet_gradient_threshold", help: "BET gradient threshold, -1 to 1 (every BET step)" });
-            rows.push(PipelineRow::Param { label: "BET Iterations", field: "bet_iterations", help: "BET surface evolution iterations (every BET step)" });
-            rows.push(PipelineRow::Param { label: "BET Subdivisions", field: "bet_subdivisions", help: "BET icosphere subdivision level (every BET step)" });
+        // BET only as a refinement step has no generator block to sit under.
+        if self.uses_bet() && self.first_bet_generator_section().is_none() {
+            Self::push_bet_surface_rows(rows);
         }
 
         // Two-pass artefact reduction. Configured here because what it needs is a second mask;
@@ -3925,10 +3922,34 @@ impl PipelineFormState {
             }
             if matches!(generator, Some(MaskOp::Bet { .. })) {
                 rows.push(PipelineRow::MaskOpBetVoxelScale { section: si });
+                if self.first_bet_generator_section() == Some(si) {
+                    Self::push_bet_surface_rows(rows);
+                }
             }
             self.push_refinement_rows(rows, si);
             rows.push(PipelineRow::MaskOpAddStep { section: si });
         }
+    }
+
+    /// BET's surface settings. They are one value per run (`[bet]` in the config, `--bet-*` on
+    /// the command line) shared by every BET step, unlike the fractional intensity and voxel
+    /// scale, which are part of each step. They are listed under the first BET step with that
+    /// step's own settings, so all of BET's settings sit together.
+    fn push_bet_surface_rows(rows: &mut Vec<PipelineRow>) {
+        rows.push(PipelineRow::Param { label: "Smoothness", field: "bet_smoothness", help: "BET surface smoothness factor (shared by every BET step)" });
+        rows.push(PipelineRow::Param { label: "Gradient Threshold", field: "bet_gradient_threshold", help: "BET gradient threshold, -1 to 1 (shared by every BET step)" });
+        rows.push(PipelineRow::Param { label: "Iterations", field: "bet_iterations", help: "BET surface evolution iterations (shared by every BET step)" });
+        rows.push(PipelineRow::Param { label: "Subdivisions", field: "bet_subdivisions", help: "BET icosphere subdivision level (shared by every BET step)" });
+    }
+
+    /// The first section, main mask then two-pass mask, whose generator is BET.
+    fn first_bet_generator_section(&self) -> Option<usize> {
+        use crate::pipeline::config::MaskOp;
+        let is_bet = |s: &crate::pipeline::config::MaskSection| matches!(s.generator, MaskOp::Bet { .. });
+        self.mask_sections.iter().position(is_bet).or_else(|| {
+            if !self.two_pass { return None; }
+            self.two_pass_sections.iter().position(is_bet).map(|i| MASK_TWO_PASS_BASE + i)
+        })
     }
 
     /// Rows for one refinement list: the step itself, plus a row per extra parameter for the
@@ -10473,6 +10494,45 @@ mod tests {
         // The row belongs to BET only.
         app.pipeline_state.mask_sections[0].generator = MaskOp::hd_bet_default();
         assert!(find_scale_row(&app).is_none(), "scale row should not show for HD-BET");
+    }
+
+    /// Every BET setting sits in one block under the BET step: the step's own fractional
+    /// intensity and voxel scale, then the run-wide surface settings.
+    #[test]
+    fn bet_settings_are_listed_together_under_the_bet_step() {
+        use crate::pipeline::config::MaskOp;
+        let mut app = App::new();
+        goto_page(&mut app, Page::Masking);
+        app.pipeline_state.mask_sections[0].generator = MaskOp::bet(0.5);
+        app.pipeline_state.mark_mask_custom(0);
+        let rows = app.rows();
+        let start = rows.iter().position(|r| matches!(r, PipelineRow::MaskOpGenerator { section: 0 }))
+            .expect("generator row");
+        let block: Vec<String> = rows[start..start + 7].iter().map(|r| match r {
+            PipelineRow::MaskOpGenerator { .. } => "generator".to_string(),
+            PipelineRow::MaskOpGeneratorParam { .. } => "frac".to_string(),
+            PipelineRow::MaskOpBetVoxelScale { .. } => "scale".to_string(),
+            PipelineRow::Param { field, .. } => field.to_string(),
+            other => format!("{other:?}"),
+        }).collect();
+        assert_eq!(block, ["generator", "frac", "scale", "bet_smoothness", "bet_gradient_threshold",
+            "bet_iterations", "bet_subdivisions"]);
+        // Listed once, however many BET steps share them.
+        let count = |app: &App| app.rows().iter()
+            .filter(|r| matches!(r, PipelineRow::Param { field: "bet_smoothness", .. })).count();
+        assert_eq!(count(&app), 1);
+        let bet_and_phase = MASK_PRESET_OPTIONS.iter().position(|o| *o == "bet-and-phase").unwrap();
+        app.pipeline_state.apply_mask_preset(bet_and_phase);
+        assert!(app.pipeline_state.mask_sections.len() > 1);
+        assert_eq!(count(&app), 1);
+        // Not shown without BET.
+        app.pipeline_state.mask_sections = vec![crate::pipeline::config::MaskSection {
+            input: crate::pipeline::config::MaskingInput::Magnitude,
+            generator: MaskOp::hd_bet_default(),
+            refinements: vec![],
+        }];
+        app.pipeline_state.mark_mask_custom(0);
+        assert_eq!(count(&app), 0);
     }
 
     #[test]
