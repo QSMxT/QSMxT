@@ -2,13 +2,13 @@
 
 use crate::config::PipelineConfig;
 use crate::error::EngineError;
+use crate::observe::{Core, Observer, VolumeData};
 use crate::scan::{scan_metadata, RunMetadata};
 
-/// The intermediates [`qsmart`] reports through its observer, by name, in the order they are
-/// produced: the vessel mask, then the stage-1 and stage-2 local fields and susceptibility maps.
-/// See [`qsm_core::pipeline::qsmart::outputs`] for what each holds.
+/// The intermediates [`qsmart`] returns, by name, in the order they are produced: the vessel
+/// mask, then the stage-1 and stage-2 local fields and susceptibility maps. See
+/// [`qsm_core::pipeline::qsmart::outputs`] for what each holds.
 pub use qsm_core::pipeline::qsmart::outputs;
-pub use qsm_core::pipeline::{Observer, VolumeRef};
 
 /// The QSMART step's parameters.
 pub fn params(config: &PipelineConfig) -> serde_json::Value {
@@ -50,27 +50,39 @@ pub fn inversion_config(config: &PipelineConfig, meta: &RunMetadata) -> qsm_core
     inv_config
 }
 
+/// What QSMART produced.
+pub struct Qsmart {
+    /// The raw (unreferenced) susceptibility map in ppm: referencing is left to the referencing
+    /// stage.
+    pub chi: Vec<f64>,
+    /// Its intermediates, by their names in [`outputs`], in the order they were produced.
+    pub intermediates: Vec<(&'static str, VolumeData)>,
+}
+
 /// QSMART's two-stage reconstruction of the total field `field_ppm` (ppm) inside the brain `mask`
 /// ([`qsm_core::pipeline::run_qsmart`]). `magnitude` is the combined magnitude, which drives
 /// vasculature detection (and MEDI's edge weighting when that is the inner inversion); uniform
-/// when `None`. Returns the raw (unreferenced) susceptibility map in ppm: referencing is left to
-/// the referencing stage.
+/// when `None`.
 ///
-/// `observer` gets progress (step of 6) and each of the [`outputs`] as it is produced.
+/// `observer` gets progress (step of 6). The intermediates come back with the map rather than
+/// through it, so that keeping them is the caller's, and a failure to keep one is the caller's
+/// error to return.
 pub fn qsmart(
     field_ppm: &[f64], mask: &[u8], magnitude: Option<&[f64]>, meta: &RunMetadata,
     config: &PipelineConfig, observer: &mut dyn Observer,
-) -> Result<Vec<f64>, EngineError> {
+) -> Result<Qsmart, EngineError> {
     let q = &config.inversion.qsmart;
     log::info!(
         "QSMART (inversion={}, ilsqr tol={:.0e}, max_iter={}, pad={} mm, vasc_radius={}, sdf_radius={})",
         q.inversion, config.inversion.ilsqr.tol, q.ilsqr_max_iter, q.ilsqr_pad_mm,
         q.vasc_sphere_radius, q.sdf_spatial_radius,
     );
-    qsm_core::pipeline::run_qsmart(
+    let mut core = Core::new(observer);
+    let chi = qsm_core::pipeline::run_qsmart(
         field_ppm, mask, magnitude, &scan_metadata(meta), &inversion_config(config, meta),
-        qsm_core::pipeline::QsmReference::None, observer,
-    ).map_err(|e| EngineError::Config(format!("qsmart: {}", e)))
+        qsm_core::pipeline::QsmReference::None, &mut core,
+    ).map_err(|e| EngineError::Config(format!("qsmart: {}", e)))?;
+    Ok(Qsmart { chi, intermediates: core.outputs })
 }
 
 #[cfg(test)]

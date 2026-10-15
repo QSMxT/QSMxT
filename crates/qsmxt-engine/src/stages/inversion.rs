@@ -5,6 +5,7 @@
 use crate::config::{PipelineConfig, TgvConfig};
 use crate::enums::QsmAlgorithm;
 use crate::error::EngineError;
+use crate::observe::Observer;
 use crate::scan::{scan_metadata, scan_metadata_in, RunMetadata};
 use crate::stages::crop::crop_box_for;
 
@@ -112,7 +113,7 @@ pub fn params(config: &PipelineConfig) -> serde_json::Value {
 /// to keep it off the object.
 pub fn invert(
     local_field: &[f64], mask: &[u8], magnitude: Option<&[f64]>, meta: &RunMetadata,
-    config: &PipelineConfig, progress: &mut dyn FnMut(usize, usize),
+    config: &PipelineConfig, observer: &mut dyn Observer,
 ) -> Result<Vec<f64>, EngineError> {
     let (_, _, inv_config, _) = crate::bridge::to_pipeline_stages(config);
     let cb = crop_box_for(config, meta, mask, "Dipole inversion");
@@ -120,7 +121,8 @@ pub fn invert(
     let chi = qsm_core::pipeline::run_dipole_inversion(
         &qsm_core::crop::crop_volume(local_field, &cb),
         &qsm_core::crop::crop_volume(mask, &cb),
-        &scan_metadata_in(meta, &cb), &inv_config, magnitude.as_deref(), progress,
+        &scan_metadata_in(meta, &cb), &inv_config, magnitude.as_deref(),
+        &mut |done, total| observer.progress(done, total),
     ).map_err(|e| EngineError::Config(format!("inversion: {}", e)))?;
     Ok(qsm_core::crop::uncrop_volume(&chi, &cb, 0.0))
 }
