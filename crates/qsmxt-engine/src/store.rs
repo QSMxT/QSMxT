@@ -9,6 +9,8 @@
 use std::collections::HashMap;
 
 use crate::error::EngineError;
+use qsm_core::pipeline::VolumeRef;
+
 use crate::observe::VolumeData;
 use crate::plan::Pass;
 use crate::scan::{QsmSidecar, RunMetadata};
@@ -326,18 +328,112 @@ pub trait StageStore {
     }
 }
 
+/// Where a [`MemoryStore`] keeps its volumes: in its own memory ([`InMemory`], the default), or
+/// wherever the front end chooses (qsmbly: in the page, outside the WASM heap, so the heap holds
+/// only the step being computed).
+///
+/// The store decides what is cached; the volumes only hold data. Precision is the volumes': a
+/// step's real-valued outputs reach [`Volumes::insert`] in double precision, and `qsmxt` keeps
+/// them as float32 (its NIfTI files), so volumes that round them to float32 likewise give every
+/// later step the values `qsmxt run` reads back. The default keeps them as they are.
+pub trait Volumes {
+    /// Whether `item` is held.
+    fn contains(&self, item: &Item) -> bool;
+
+    /// `item`'s data, if it is held.
+    fn get(&self, item: &Item) -> Result<Option<VolumeData>, EngineError>;
+
+    /// Hold `volume` as `item`, replacing what was there.
+    fn insert(&mut self, item: Item, volume: VolumeRef<'_>) -> Result<(), EngineError>;
+
+    /// Hold a copy of `from` as `to`; `false` if `from` is not held.
+    fn copy(&mut self, from: &Item, to: Item) -> Result<bool, EngineError> {
+        let Some(v) = self.get(from)? else { return Ok(false) };
+        self.insert(to, v.as_ref())?;
+        Ok(true)
+    }
+
+    /// Stop holding `item`; `false` if it was not held.
+    fn remove(&mut self, item: &Item) -> bool;
+
+    /// Move `item` out of its place and keep it aside: the working-grid version of an output that
+    /// is about to be returned to the acquired grid. `false` if it is not held.
+    fn set_aside(&mut self, item: &Item) -> bool;
+
+    /// Put the version of `item` kept aside back in its place, replacing what is there; `false`
+    /// if none is aside.
+    fn put_back(&mut self, item: &Item) -> bool;
+
+    /// Drop the version of `item` kept aside, if there is one.
+    fn drop_aside(&mut self, item: &Item);
+
+    /// The run's grid is known ([`StageStore::begin`]): every volume a step writes is on it.
+    fn begin(&mut self, _meta: &RunMetadata) {}
+}
+
+/// A [`MemoryStore`]'s own volumes, as computed (double precision).
+#[derive(Debug, Default)]
+pub struct InMemory {
+    held: HashMap<Item, VolumeData>,
+    aside: HashMap<Item, VolumeData>,
+}
+
+impl Volumes for InMemory {
+    fn contains(&self, item: &Item) -> bool {
+        self.held.contains_key(item)
+    }
+
+    fn get(&self, item: &Item) -> Result<Option<VolumeData>, EngineError> {
+        Ok(self.held.get(item).cloned())
+    }
+
+    fn insert(&mut self, item: Item, volume: VolumeRef<'_>) -> Result<(), EngineError> {
+        self.held.insert(item, VolumeData::from(volume));
+        Ok(())
+    }
+
+    fn copy(&mut self, from: &Item, to: Item) -> Result<bool, EngineError> {
+        let Some(v) = self.held.get(from).cloned() else { return Ok(false) };
+        self.held.insert(to, v);
+        Ok(true)
+    }
+
+    fn remove(&mut self, item: &Item) -> bool {
+        self.held.remove(item).is_some()
+    }
+
+    fn set_aside(&mut self, item: &Item) -> bool {
+        let Some(v) = self.held.remove(item) else { return false };
+        self.aside.insert(*item, v);
+        true
+    }
+
+    fn put_back(&mut self, item: &Item) -> bool {
+        let Some(v) = self.aside.remove(item) else { return false };
+        self.held.insert(*item, v);
+        true
+    }
+
+    fn drop_aside(&mut self, item: &Item) {
+        self.aside.remove(item);
+    }
+}
+
 /// A [`StageStore`] that keeps everything in memory: the scan as given, every output, and the
 /// step cache, with the same invalidation rules `qsmxt` follows. Running the same plan again
 /// recomputes only the steps whose keys changed and what is downstream of them.
 ///
+/// The volumes are kept in `V` ([`Volumes`]); everything else (their grids when not the run's,
+/// reports, annotations, the step cache) in the store itself.
+///
 /// Outputs returned to the acquired grid replace their working-grid versions, as they do in
-/// `qsmxt`'s files; the working-grid versions are kept aside and put back as soon as a later run
-/// has a step to compute that may read them.
+/// `qsmxt`'s files; the working-grid versions are kept aside ([`Volumes::set_aside`]) and put
+/// back as soon as a later run has a step to compute that may read them.
 #[derive(Debug, Default)]
-pub struct MemoryStore {
+pub struct MemoryStore<V = InMemory> {
     header: Option<Header>,
     identity: serde_json::Value,
-    volumes: HashMap<Item, VolumeData>,
+    volumes: V,
     /// The grid of each volume that is not on the run's.
     geometries: HashMap<Item, Geometry>,
     reports: HashMap<Item, serde_json::Value>,
@@ -346,8 +442,9 @@ pub struct MemoryStore {
     mese: Option<Mese>,
     /// The step being computed.
     current: Option<String>,
-    /// The working-grid versions of the outputs returned to the acquired grid.
-    working_grid: HashMap<Item, (VolumeData, Option<Geometry>)>,
+    /// The outputs returned to the acquired grid whose working-grid versions are kept aside, with
+    /// the grid each of those was on when not the run's.
+    working_grid: HashMap<Item, Option<Geometry>>,
     /// Each recorded step's key, and the outputs it recorded.
     steps: HashMap<String, (String, Vec<Item>)>,
     scan: Option<(String, RunMetadata)>,
@@ -357,7 +454,40 @@ impl MemoryStore {
     /// A store holding a scan: its first echo's header, and `identity` (anything that changes
     /// when the data does, e.g. a load counter). Add the echoes with [`Self::insert`].
     pub fn new(header: Header, identity: serde_json::Value) -> Self {
-        Self { header: Some(header), identity, ..Self::default() }
+        Self::with_volumes(header, identity, InMemory::default())
+    }
+
+    /// Put an input (or replace any volume) in the store.
+    pub fn insert(&mut self, item: Item, volume: VolumeData) {
+        self.volumes.held.insert(item, volume);
+    }
+
+    /// Put an input on a grid of its own in the store.
+    pub fn insert_on_grid(&mut self, item: Item, data: Vec<f64>, geometry: Geometry) {
+        self.volumes.held.insert(item, VolumeData::Real(data));
+        self.geometries.insert(item, geometry);
+    }
+
+    pub fn get(&self, item: &Item) -> Option<&VolumeData> {
+        self.volumes.held.get(item)
+    }
+
+    /// Take a volume out of the store, to stay inside a memory budget. A step that wrote it is no
+    /// longer cached.
+    pub fn take(&mut self, item: &Item) -> Option<VolumeData> {
+        self.volumes.held.remove(item)
+    }
+}
+
+impl<V: Volumes> MemoryStore<V> {
+    /// A store holding a scan, as [`MemoryStore::new`], whose volumes are kept in `volumes`. The
+    /// echoes (`AcquiredPhase`, `AcquiredMagnitude`) are expected there.
+    pub fn with_volumes(header: Header, identity: serde_json::Value, volumes: V) -> Self {
+        Self {
+            header: Some(header), identity, volumes, geometries: HashMap::new(), reports: HashMap::new(),
+            annotations: HashMap::new(), supplied: None, mese: None, current: None,
+            working_grid: HashMap::new(), steps: HashMap::new(), scan: None,
+        }
     }
 
     /// Replace the scan's input data: the next run recomputes everything.
@@ -365,29 +495,30 @@ impl MemoryStore {
         self.identity = identity;
     }
 
-    /// Put an input (or replace any volume) in the store.
-    pub fn insert(&mut self, item: Item, volume: VolumeData) {
-        self.volumes.insert(item, volume);
-    }
-
     /// Supply a brain mask with the scan.
     pub fn supply_mask(&mut self, mask: Supplied) {
         self.supplied = Some(mask);
     }
 
-    /// Match a MESE acquisition to the scan; add its echoes with [`Self::insert_on_grid`].
+    /// Match a MESE acquisition to the scan; add its echoes with [`MemoryStore::insert_on_grid`],
+    /// or put them in the volumes and give their grid with [`Self::set_geometry`].
     pub fn supply_mese(&mut self, mese: Mese) {
         self.mese = Some(mese);
     }
 
-    /// Put an input on a grid of its own in the store.
-    pub fn insert_on_grid(&mut self, item: Item, data: Vec<f64>, geometry: Geometry) {
-        self.volumes.insert(item, VolumeData::Real(data));
+    /// The input the volumes hold as `item` is on a grid of its own.
+    pub fn set_geometry(&mut self, item: Item, geometry: Geometry) {
         self.geometries.insert(item, geometry);
     }
 
-    pub fn get(&self, item: &Item) -> Option<&VolumeData> {
-        self.volumes.get(item)
+    /// Where the volumes are kept.
+    pub fn volumes(&mut self) -> &mut V {
+        &mut self.volumes
+    }
+
+    /// The grid the last run worked on, once its load step has run.
+    pub fn grid(&self) -> Option<&RunMetadata> {
+        self.scan.as_ref().map(|(_, meta)| meta)
     }
 
     /// The grid `item` is on, when it is not the run's.
@@ -405,20 +536,17 @@ impl MemoryStore {
         self.annotations.get(item)
     }
 
-    /// Take a volume out of the store, to stay inside a memory budget. A step that wrote it is no
-    /// longer cached.
-    pub fn take(&mut self, item: &Item) -> Option<VolumeData> {
-        self.volumes.remove(item)
-    }
-
     /// Put the working-grid versions back, for a step that may read them; the return to the
-    /// acquired grid is then to do again.
+    /// acquired grid is then to do again. One the volumes no longer have aside is dropped rather
+    /// than left on the acquired grid, so whatever wrote it is computed again.
     fn restore_working_grid(&mut self) {
         if self.working_grid.is_empty() {
             return;
         }
-        for (item, (volume, geometry)) in self.working_grid.drain() {
-            self.volumes.insert(item, volume);
+        for (item, geometry) in std::mem::take(&mut self.working_grid) {
+            if !self.volumes.put_back(&item) {
+                self.volumes.remove(&item);
+            }
             match geometry {
                 Some(g) => { self.geometries.insert(item, g); }
                 None => { self.geometries.remove(&item); }
@@ -435,11 +563,16 @@ impl MemoryStore {
     }
 
     fn present(&self, item: &Item) -> bool {
-        self.volumes.contains_key(item) || self.reports.contains_key(item)
+        self.volumes.contains(item) || self.reports.contains_key(item)
+    }
+
+    fn volume(&self, item: &Item) -> Result<VolumeData, EngineError> {
+        Volumes::get(&self.volumes, item)?
+            .ok_or_else(|| EngineError::Config(format!("{item:?} is not in the store")))
     }
 }
 
-impl StageStore for MemoryStore {
+impl<V: Volumes> StageStore for MemoryStore<V> {
     type Error = EngineError;
 
     fn input_identity(&mut self) -> serde_json::Value {
@@ -454,10 +587,10 @@ impl StageStore for MemoryStore {
         Ok(self.header.as_ref().and_then(|h| h.sidecar.clone()))
     }
 
-    /// The coils whose echoes were inserted ([`Item::CoilPhase`]), numbered by their position.
+    /// The coils whose echoes were inserted ([`Item::CoilPhase`]), numbered by their position
+    /// from 1: as many as have a first echo, in turn.
     fn coils(&mut self) -> Vec<u32> {
-        let n = self.volumes.keys().filter_map(|i| match i { Item::CoilPhase(c, _) => Some(*c), _ => None }).max();
-        (1..=n.unwrap_or(0) as u32).collect()
+        (1..).take_while(|&c| self.volumes.contains(&Item::CoilPhase(c, 1))).map(|c| c as u32).collect()
     }
 
     fn cached_scan(&mut self, key: &str) -> Option<RunMetadata> {
@@ -465,7 +598,9 @@ impl StageStore for MemoryStore {
             Some((k, meta)) if k == key => Some(meta.clone()),
             Some(_) => {
                 self.steps.clear();
-                self.working_grid.clear();
+                for item in std::mem::take(&mut self.working_grid).into_keys() {
+                    self.volumes.drop_aside(&item);
+                }
                 self.scan = None;
                 None
             }
@@ -478,24 +613,27 @@ impl StageStore for MemoryStore {
         Ok(())
     }
 
+    fn begin(&mut self, meta: &RunMetadata) -> Result<(), EngineError> {
+        self.volumes.begin(meta);
+        Ok(())
+    }
+
     fn has(&mut self, item: &Item) -> bool {
         self.present(item)
     }
 
     fn real(&mut self, item: &Item) -> Result<Vec<f64>, EngineError> {
-        match self.volumes.get(item) {
-            Some(VolumeData::Real(v)) => Ok(v.clone()),
-            Some(VolumeData::Mask(m)) => Ok(m.iter().map(|&v| v as f64).collect()),
-            None => Err(EngineError::Config(format!("{item:?} is not in the store"))),
-        }
+        Ok(match self.volume(item)? {
+            VolumeData::Real(v) => v,
+            VolumeData::Mask(m) => m.iter().map(|&v| v as f64).collect(),
+        })
     }
 
     fn mask(&mut self, item: &Item) -> Result<Vec<u8>, EngineError> {
-        match self.volumes.get(item) {
-            Some(VolumeData::Mask(m)) => Ok(m.clone()),
-            Some(VolumeData::Real(v)) => Ok(v.iter().map(|&v| u8::from(v > 0.5)).collect()),
-            None => Err(EngineError::Config(format!("{item:?} is not in the store"))),
-        }
+        Ok(match self.volume(item)? {
+            VolumeData::Mask(m) => m,
+            VolumeData::Real(v) => v.iter().map(|&v| u8::from(v > 0.5)).collect(),
+        })
     }
 
     fn supplied_mask(&mut self) -> Supplied {
@@ -508,10 +646,10 @@ impl StageStore for MemoryStore {
 
     fn supplied(&mut self, item: &Item) -> Supplied {
         let origin = format!("{item:?}");
-        let (Some(VolumeData::Real(data)), Some(g)) = (self.volumes.get(item), self.geometries.get(item)) else {
+        let (Ok(Some(VolumeData::Real(data))), Some(g)) = (Volumes::get(&self.volumes, item), self.geometries.get(item)) else {
             return Supplied::Missing { searched: "the loaded files".into() };
         };
-        Supplied::Found { origin, data: data.clone(), dims: g.dims, affine: g.affine }
+        Supplied::Found { origin, data, dims: g.dims, affine: g.affine }
     }
 
     fn identity(&mut self, item: &Item) -> serde_json::Value {
@@ -542,25 +680,25 @@ impl StageStore for MemoryStore {
     }
 
     fn put(&mut self, item: Item, data: Data<'_>) -> Result<(), EngineError> {
-        if self.current.as_deref() == Some("output_space") && !self.working_grid.contains_key(&item) {
-            if let Some(volume) = self.volumes.get(&item) {
-                self.working_grid.insert(item, (volume.clone(), self.geometries.get(&item).cloned()));
-            }
+        if self.current.as_deref() == Some("output_space") && !self.working_grid.contains_key(&item)
+            && self.volumes.set_aside(&item)
+        {
+            self.working_grid.insert(item, self.geometries.get(&item).cloned());
         }
         self.geometries.remove(&item);
         match data {
-            Data::Real(v) => { self.volumes.insert(item, VolumeData::Real(v.to_vec())); }
-            Data::Mask(m) => { self.volumes.insert(item, VolumeData::Mask(m.to_vec())); }
+            Data::Real(v) => self.volumes.insert(item, VolumeRef::Real(v))?,
+            Data::Mask(m) => self.volumes.insert(item, VolumeRef::Mask(m))?,
             Data::OnGrid(v, geometry) => {
-                self.volumes.insert(item, VolumeData::Real(v.to_vec()));
+                self.volumes.insert(item, VolumeRef::Real(v))?;
                 self.geometries.insert(item, geometry.clone());
             }
             Data::Json(j) => { self.reports.insert(item, j.clone()); }
             Data::Text(t) => { self.reports.insert(item, serde_json::Value::String(t.to_string())); }
             Data::Same(source) => {
-                let v = self.volumes.get(&source).cloned()
-                    .ok_or_else(|| EngineError::Config(format!("{source:?} is not in the store")))?;
-                self.volumes.insert(item, v);
+                if !self.volumes.copy(&source, item)? {
+                    return Err(EngineError::Config(format!("{source:?} is not in the store")));
+                }
             }
         }
         Ok(())
@@ -598,5 +736,100 @@ impl StageStore for MemoryStore {
         }
         self.steps.insert(c.step.to_string(), (c.key.to_string(), c.outputs.to_vec()));
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Volumes kept as `qsmxt` keeps them: real outputs rounded to float32.
+    #[derive(Default)]
+    struct Single {
+        held: HashMap<Item, (Vec<f32>, bool)>,
+        aside: HashMap<Item, (Vec<f32>, bool)>,
+        grid: Option<(usize, usize, usize)>,
+    }
+
+    impl Volumes for Single {
+        fn contains(&self, item: &Item) -> bool {
+            self.held.contains_key(item)
+        }
+
+        fn get(&self, item: &Item) -> Result<Option<VolumeData>, EngineError> {
+            Ok(self.held.get(item).map(|(v, mask)| if *mask {
+                VolumeData::Mask(v.iter().map(|&x| x as u8).collect())
+            } else {
+                VolumeData::Real(v.iter().map(|&x| x as f64).collect())
+            }))
+        }
+
+        fn insert(&mut self, item: Item, volume: VolumeRef<'_>) -> Result<(), EngineError> {
+            let kept = match volume {
+                VolumeRef::Real(v) => (v.iter().map(|&x| x as f32).collect(), false),
+                VolumeRef::Mask(m) => (m.iter().map(|&x| x as f32).collect(), true),
+            };
+            self.held.insert(item, kept);
+            Ok(())
+        }
+
+        fn remove(&mut self, item: &Item) -> bool {
+            self.held.remove(item).is_some()
+        }
+
+        fn set_aside(&mut self, item: &Item) -> bool {
+            let Some(v) = self.held.remove(item) else { return false };
+            self.aside.insert(*item, v);
+            true
+        }
+
+        fn put_back(&mut self, item: &Item) -> bool {
+            let Some(v) = self.aside.remove(item) else { return false };
+            self.held.insert(*item, v);
+            true
+        }
+
+        fn drop_aside(&mut self, item: &Item) {
+            self.aside.remove(item);
+        }
+
+        fn begin(&mut self, meta: &RunMetadata) {
+            self.grid = Some(meta.dims);
+        }
+    }
+
+    fn header() -> Header {
+        Header { dims: (2, 1, 1), voxel_size: (1.0, 1.0, 1.0), affine: [0.0; 16], sidecar: None }
+    }
+
+    /// The store reads and writes through its volumes, at their precision, and tells them the grid.
+    #[test]
+    fn a_store_keeps_its_volumes_where_they_are_given() {
+        let mut store = MemoryStore::with_volumes(header(), serde_json::json!(1), Single::default());
+        let third = 1.0 / 3.0;
+        store.put(Item::FieldPpm, Data::Real(&[third, 2.0])).unwrap();
+        assert_eq!(store.real(&Item::FieldPpm).unwrap(), [third as f32 as f64, 2.0]);
+        store.put(Item::BrainMask, Data::Mask(&[1, 0])).unwrap();
+        assert_eq!(store.mask(&Item::BrainMask).unwrap(), [1, 0]);
+        assert_eq!(store.real(&Item::BrainMask).unwrap(), [1.0, 0.0]);
+        store.put(Item::Chi, Data::Same(Item::FieldPpm)).unwrap();
+        assert_eq!(store.real(&Item::Chi).unwrap(), store.real(&Item::FieldPpm).unwrap());
+        assert!(store.put(Item::RawChi(Pass::Main), Data::Same(Item::LocalField(Pass::Main))).is_err());
+        assert!(store.has(&Item::Chi) && !store.has(&Item::LocalField(Pass::Main)));
+
+        let meta = crate::stages::magnitude::tests::meta_4x4x4();
+        store.begin(&meta).unwrap();
+        assert_eq!(store.volumes().grid, Some(meta.dims));
+        // Returning an output to the acquired grid keeps its working-grid version aside in the
+        // volumes; a later step to compute puts it back.
+        store.put(Item::Chi, Data::Real(&[1.0, 2.0])).unwrap();
+        store.start("output_space");
+        store.put(Item::Chi, Data::Real(&[3.0, 4.0])).unwrap();
+        assert!(store.volumes().aside.contains_key(&Item::Chi));
+        assert_eq!(store.real(&Item::Chi).unwrap(), [3.0, 4.0]);
+        assert!(!store.cached("invert", "k"));
+        assert_eq!(store.real(&Item::Chi).unwrap(), [1.0, 2.0]);
+        assert!(store.volumes().aside.is_empty());
+        assert!(store.volumes().remove(&Item::Chi) && !store.has(&Item::Chi));
     }
 }
