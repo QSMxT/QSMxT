@@ -211,6 +211,23 @@ pub fn total_fieldmap_ppm() -> Tail { Tail::new("fieldmap").with("desc", "totalp
 /// A susceptibility map before referencing (a workflow intermediate).
 pub fn unreferenced_chimap() -> Tail { chimap_desc("unreferenced") }
 
+/// One of QSMART's intermediates, by the name QSM.rs reports it under
+/// (`qsm_core::pipeline::qsmart::outputs`): the vessel mask (`desc-vessels_mask`), and each
+/// stage's local field (`desc-stage1_localfield`, `desc-stage2_localfield`) and unreferenced
+/// susceptibility map (`desc-stage1_Chimap`, `desc-stage2_Chimap`). `None` for a name QSMxT does
+/// not know.
+pub fn qsmart_intermediate(name: &str) -> Option<Tail> {
+    use qsm_core::pipeline::qsmart::outputs;
+    Some(match name {
+        outputs::VESSEL_MASK => mask_desc("vessels"),
+        outputs::LOCAL_FIELD_STAGE1 => Tail::new("localfield").with("desc", "stage1"),
+        outputs::CHI_STAGE1 => chimap_desc("stage1"),
+        outputs::LOCAL_FIELD_STAGE2 => Tail::new("localfield").with("desc", "stage2"),
+        outputs::CHI_STAGE2 => chimap_desc("stage2"),
+        _ => return None,
+    })
+}
+
 /// One echo of a MCPC-3D-S coil combination (`rec-mcpc3ds_echo-N_part-{phase,mag}_<suffix>`).
 pub fn combined_echo(echo: usize, part: &str, suffix: &str) -> Tail {
     Tail::new(suffix).with("rec", "mcpc3ds").with("echo", echo.to_string()).with("part", part)
@@ -297,5 +314,17 @@ mod tests {
     fn entity_of_reads_a_value() {
         assert_eq!(entity_of("sub-01_space-axial_Chimap.nii", "space").as_deref(), Some("axial"));
         assert_eq!(entity_of("sub-01_Chimap.nii", "space"), None);
+    }
+
+    /// Every intermediate QSMART reports has a name of its own, and an unknown one has none.
+    #[test]
+    fn every_qsmart_intermediate_is_named_once() {
+        use qsm_core::pipeline::qsmart::outputs;
+        let names: Vec<String> = [outputs::VESSEL_MASK, outputs::LOCAL_FIELD_STAGE1, outputs::CHI_STAGE1,
+                                  outputs::LOCAL_FIELD_STAGE2, outputs::CHI_STAGE2]
+            .iter().map(|n| compose("sub-01", &qsmart_intermediate(n).unwrap())).collect();
+        assert_eq!(names, ["sub-01_desc-vessels_mask", "sub-01_desc-stage1_localfield", "sub-01_desc-stage1_Chimap",
+                           "sub-01_desc-stage2_localfield", "sub-01_desc-stage2_Chimap"]);
+        assert!(qsmart_intermediate("something_else").is_none());
     }
 }

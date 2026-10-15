@@ -330,6 +330,11 @@ impl DerivativeOutputs {
     pub fn reliable_chi_raw_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.workflow_nifti_path(key, "invert-reliable", naming::unreferenced_chimap())
     }
+    /// One of QSMART's intermediates ([`naming::qsmart_intermediate`]), in the workflow directory
+    /// of its step: `qsmart`, or `qsmart-reliable` for the reliable pass of a two-pass run.
+    pub fn qsmart_intermediate_path(&self, key: &AcquisitionKey, step: &str, name: &str) -> Option<PathBuf> {
+        naming::qsmart_intermediate(name).map(|tail| self.workflow_nifti_path(key, step, tail))
+    }
     /// The combined (two-pass) raw map, before referencing.
     pub fn two_pass_chi_raw_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.workflow_nifti_path(key, "twopass", naming::unreferenced_chimap())

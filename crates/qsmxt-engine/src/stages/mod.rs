@@ -18,3 +18,4 @@ pub mod field;
 pub mod crop;
 pub mod background;
 pub mod inversion;
+pub mod qsmart;

@@ -2968,56 +2968,15 @@ fn stage_qsmart(
 ) -> crate::Result<()> {
     let (mask_path, chi_raw_path) = (pass.mask.as_path(), pass.chi_raw.clone());
     let qsmart_step = pass.step("qsmart");
-    let qsmart_params = serde_json::json!({
-        "inversion": format!("{}", ctx.config.inversion.qsmart.inversion),
-        "sdf_spatial_radius": ctx.config.inversion.qsmart.sdf_spatial_radius,
-        "vasc_sphere_radius": ctx.config.inversion.qsmart.vasc_sphere_radius,
-        // The inner iLSQR's tolerance is the iLSQR stage's.
-        "ilsqr_tol": ctx.config.inversion.ilsqr.tol,
-        "ilsqr_max_iter": ctx.config.inversion.qsmart.ilsqr_max_iter,
-        "ilsqr_pad_mm": ctx.config.inversion.qsmart.ilsqr_pad_mm,
-        "sdf_sigma1_stage1": ctx.config.inversion.qsmart.sdf_sigma1_stage1,
-        "sdf_sigma2_stage1": ctx.config.inversion.qsmart.sdf_sigma2_stage1,
-        "sdf_sigma1_stage2": ctx.config.inversion.qsmart.sdf_sigma1_stage2,
-        "sdf_sigma2_stage2": ctx.config.inversion.qsmart.sdf_sigma2_stage2,
-        "sdf_lower_lim": ctx.config.inversion.qsmart.sdf_lower_lim,
-        "sdf_curv_constant": ctx.config.inversion.qsmart.sdf_curv_constant,
-        "frangi_scale_min": ctx.config.inversion.qsmart.frangi_scale_min,
-        "frangi_scale_max": ctx.config.inversion.qsmart.frangi_scale_max,
-        "frangi_scale_ratio": ctx.config.inversion.qsmart.frangi_scale_ratio,
-        "frangi_c": ctx.config.inversion.qsmart.frangi_c,
-    });
+    let qsmart_params = qsmxt_engine::stages::qsmart::params(ctx.config);
     if ctx.is_cached_with_params(&qsmart_step, Some("qsmart"), &qsmart_params) {
         log::info!("Skipping qsmart (cached)");
         return Ok(());
     }
     let t = Instant::now();
-    log::info!(
-        "QSMART (inversion={}, ilsqr tol={:.0e}, max_iter={}, pad={} mm, vasc_radius={}, sdf_radius={})",
-        ctx.config.inversion.qsmart.inversion,
-        ctx.config.inversion.ilsqr.tol, ctx.config.inversion.qsmart.ilsqr_max_iter,
-        ctx.config.inversion.qsmart.ilsqr_pad_mm,
-        ctx.config.inversion.qsmart.vasc_sphere_radius, ctx.config.inversion.qsmart.sdf_spatial_radius,
-    );
     progress("QSMART reconstruction");
     let field_ppm = load_volume(field_path)?;
     let mask = load_mask(mask_path)?;
-
-    // Delegate the full two-stage QSMART reconstruction to qsm-core. The inner
-    // dipole inversion (default iLSQR) is selected via config.inversion.qsmart.inversion.
-    let (_, _, mut inv_config, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-    let scan_meta = scan_metadata(ctx.meta);
-
-    // The vasculature sphere radius and Frangi vessel scales are configured in mm
-    // (matching qsmbly); convert to voxels using the dataset voxel size before running.
-    {
-        let (vsx, vsy, vsz) = ctx.meta.voxel_size;
-        let avg = (vsx + vsy + vsz) / 3.0;
-        let q = &mut inv_config.qsmart;
-        q.vasc_sphere_radius = (((q.vasc_sphere_radius as f64) / avg).round() as i32).max(2);
-        q.frangi_scale_range = [q.frangi_scale_range[0] / avg, q.frangi_scale_range[1] / avg];
-        q.frangi_scale_ratio = (q.frangi_scale_ratio / avg).max(0.1);
-    }
 
     // Combined magnitude drives vasculature detection (and MEDI edge weighting if used).
     let mag_combined_path = ctx.output.magnitude_path(&ctx.run.key);
@@ -3027,18 +2986,63 @@ fn stage_qsmart(
         None
     };
 
-    let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), "QSMART");
-    // Reference with None here: stage_qsmart writes the unreferenced chi to chi_raw,
-    // and the separate reference stage applies the chosen referencing.
-    let chi = qsm_core::pipeline::run_qsmart(
-        &field_ppm, &mask, magnitude.as_deref(), &scan_meta, &inv_config,
-        qsm_core::pipeline::QsmReference::None, &mut prog,
-    ).map_err(|e| QsmxtError::Config(format!("qsmart: {}", e)))?;
+    let (prog, _) = iter_progress_bar(&ctx.run.key.to_string(), "QSMART");
+    let mut observer = QsmartIntermediates {
+        progress: prog, ctx: &*ctx, step: &qsmart_step, written: Vec::new(), error: None,
+    };
+    let chi = qsmxt_engine::stages::qsmart::qsmart(
+        &field_ppm, &mask, magnitude.as_deref(), ctx.meta, ctx.config, &mut observer,
+    );
+    let QsmartIntermediates { written, error, .. } = observer;
+    let chi = chi?;
+    if let Some(e) = error {
+        return Err(e);
+    }
 
     save_volume(&chi_raw_path, &chi, ctx.meta)?;
-    ctx.complete_step(&qsmart_step, Some("qsmart"), qsmart_params, &[mask_path, field_path], vec![chi_raw_path], t)?;
+    let mut outputs = vec![chi_raw_path];
+    outputs.extend(written);
+    ctx.complete_step(&qsmart_step, Some("qsmart"), qsmart_params, &[mask_path, field_path], outputs, t)?;
     log_step_done(&format!("QSMART{}", pass.label()), t);
     Ok(())
+}
+
+/// QSMART's observer: drives the progress bar, and writes each intermediate QSMART reports (its
+/// vessel mask, and each stage's local field and susceptibility map) into the step's workflow
+/// directory as it is produced, so they are kept, and cleaned, like every other intermediate.
+struct QsmartIntermediates<'a, 'c> {
+    progress: Box<dyn FnMut(usize, usize)>,
+    ctx: &'a StageContext<'c>,
+    /// The step's name: `qsmart`, or `qsmart-reliable` for the reliable pass of a two-pass run.
+    step: &'a str,
+    written: Vec<PathBuf>,
+    /// The first intermediate that could not be written; the stage fails with it.
+    error: Option<QsmxtError>,
+}
+
+impl qsmxt_engine::stages::qsmart::Observer for QsmartIntermediates<'_, '_> {
+    fn progress(&mut self, done: usize, total: usize) {
+        (self.progress)(done, total)
+    }
+
+    fn output(&mut self, name: &'static str, volume: qsmxt_engine::stages::qsmart::VolumeRef<'_>) {
+        use qsmxt_engine::stages::qsmart::VolumeRef;
+        if self.error.is_some() {
+            return;
+        }
+        let Some(path) = self.ctx.output.qsmart_intermediate_path(&self.ctx.run.key, self.step, name) else {
+            log::warn!("QSMART reported an intermediate QSMxT has no name for ({name}); not saved");
+            return;
+        };
+        let saved = match volume {
+            VolumeRef::Real(data) => save_volume(&path, data, self.ctx.meta),
+            VolumeRef::Mask(mask) => save_mask(&path, mask, self.ctx.meta),
+        };
+        match saved {
+            Ok(()) => self.written.push(path),
+            Err(e) => self.error = Some(e),
+        }
+    }
 }
 
 fn stage_standard_qsm(
@@ -4907,6 +4911,41 @@ mod oblique_run_tests {
         run_pipeline_cached(&run, &tkd, &output, false, &|_| {}).unwrap();
         assert_ne!(mtime(output.qsm_path(&run.key)), before);
         assert_eq!(voxels(&output.qsm_path(&run.key)), ACQUIRED);
+    }
+
+    /// QSMART's intermediates land in each pass's own step directory, are recorded as that step's
+    /// outputs, and go with the other intermediates when they are cleaned.
+    #[test]
+    fn qsmart_keeps_its_intermediates_in_each_pass_step() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 3);
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let mut config = fast_config();
+        config.inversion.algorithm = QsmAlgorithm::Qsmart;
+        config.masking.two_pass = true;
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+
+        let names = [
+            qsm_core::pipeline::qsmart::outputs::VESSEL_MASK,
+            qsm_core::pipeline::qsmart::outputs::LOCAL_FIELD_STAGE1,
+            qsm_core::pipeline::qsmart::outputs::CHI_STAGE1,
+            qsm_core::pipeline::qsmart::outputs::LOCAL_FIELD_STAGE2,
+            qsm_core::pipeline::qsmart::outputs::CHI_STAGE2,
+        ];
+        let state = PipelineState::load_or_create(&output.state_path(&run.key), &config, &run.key, false);
+        let mut written = Vec::new();
+        for step in ["qsmart", "qsmart-reliable"] {
+            let recorded = &state.completed_steps[step].outputs;
+            for name in names {
+                let path = output.qsmart_intermediate_path(&run.key, step, name).unwrap();
+                assert!(path.exists(), "{step}: {} not written", path.display());
+                assert!(recorded.contains(&path), "{step}: {} not recorded", path.display());
+                assert_eq!(voxels(&path), voxels(&output.mask_path(&run.key)), "on the working grid");
+                written.push(path);
+            }
+        }
+        crate::commands::run::clean_run(&output, &run);
+        assert!(written.iter().all(|p| !p.exists()), "cleaning keeps QSMART's intermediates");
     }
 
     /// End to end with V-SHARP: the published χ is 0 on the rim background removal eroded, its
