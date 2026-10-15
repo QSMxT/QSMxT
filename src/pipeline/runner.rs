@@ -13,8 +13,7 @@ use crate::pipeline::config::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
 use qsmxt_engine::bridge::{field_mapping_runs, skips_bgremove};
 use qsmxt_engine::cache::step_cache_key;
-use qsmxt_engine::fieldmap::hz_per_ppm;
-use qsmxt_engine::scan::{scan_metadata, scan_metadata_in, AXIAL_ONLY_TOLERANCE_DEG};
+use qsmxt_engine::scan::{scan_metadata, AXIAL_ONLY_TOLERANCE_DEG};
 use crate::pipeline::memory;
 use crate::pipeline::requirements::{
     self, r2primenet_field_message, r2primenet_field_policy, R2primenetFieldPolicy,
@@ -772,67 +771,6 @@ fn record_working_space(ctx: &StageContext) -> crate::Result<()> {
 fn write_on_grid(path: &Path, data: &[f64], dims: (usize, usize, usize), affine: &[f64; 16]) -> crate::Result<()> {
     let voxel_size = qsm_core::geometry::voxel_sizes_from_affine(affine);
     write_volume(path, data, dims, voxel_size, affine)
-}
-
-/// The box the FFT-based stages reconstruct in.
-///
-/// Two levers on the same cost, both opt-in, for different reasons.
-///
-/// `--fft-padding` grows the grid to a size `rustfft` likes. It discards nothing and an awkward
-/// grid can get most of a transform's time back, but it changes where the dipole kernel is
-/// sampled in k-space, so the reconstruction shifts slightly. `--crop-to-mask` reconstructs only
-/// around the brain, which is faster still but genuinely discards field. See `qsm_core::crop`.
-fn crop_box_for(ctx: &StageContext, mask: &[u8], stage: &str) -> qsm_core::crop::CropBox {
-    let cropping = ctx.config.pipeline.crop_to_mask;
-    let margin = ctx.config.pipeline.crop_margin_mm;
-    let b = reconstruction_box(
-        cropping, ctx.config.pipeline.fft_padding,
-        mask, ctx.meta.dims, ctx.meta.voxel_size, margin,
-    );
-
-    if b.dims == ctx.meta.dims {
-        return b;
-    }
-    if cropping {
-        log::info!(
-            "{}: reconstructing in {}x{}x{} instead of {}x{}x{} ({:.1}x fewer voxels, {:.0} mm margin)",
-            stage, b.dims.0, b.dims.1, b.dims.2,
-            b.full_dims.0, b.full_dims.1, b.full_dims.2, b.reduction(), margin,
-        );
-    } else {
-        log::info!(
-            "{}: padding {}x{}x{} to {}x{}x{} for a cheaper FFT",
-            stage, b.full_dims.0, b.full_dims.1, b.full_dims.2,
-            b.dims.0, b.dims.1, b.dims.2,
-        );
-    }
-    b
-}
-
-/// Which box, given the setting — split out from the logging so it can be tested directly.
-///
-/// Falls back to the full grid when the chosen box would not change it, since copying volumes in
-/// and out only pays for itself if the grid actually moves.
-fn reconstruction_box(
-    crop_to_mask: bool,
-    fft_padding: bool,
-    mask: &[u8],
-    dims: (usize, usize, usize),
-    voxel_size: (f64, f64, f64),
-    margin_mm: f64,
-) -> qsm_core::crop::CropBox {
-    let b = if crop_to_mask {
-        qsm_core::crop::crop_box_for_mask(mask, dims, voxel_size, margin_mm)
-    } else if fft_padding {
-        qsm_core::crop::fft_pad_box(dims)
-    } else {
-        qsm_core::crop::CropBox::full(dims)
-    };
-    if b.dims == dims {
-        qsm_core::crop::CropBox::full(dims)
-    } else {
-        b
-    }
 }
 
 /// The grid and B0 direction the pipeline will reconstruct on: the engine's decision
@@ -2767,48 +2705,19 @@ fn robust_fit_report_path(field_path: &Path) -> PathBuf {
 fn stage_unwrap(
     ctx: &mut StageContext, mask_path: &Path, field_path: &Path, progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
-    let unwrap_name = format!("{}", ctx.config.field_mapping.unwrapping_algorithm);
-    let do_offset = ctx.meta.n_echoes > 1 && ctx.config.field_mapping.phase_offset_removal && unwrap_name != "laplacian";
-    let unwrap_alg = if do_offset { "phase_offset_removal" } else { &unwrap_name };
-    let unwrap_params = serde_json::json!({
-        "n_echoes": ctx.meta.n_echoes,
-        "phase_offset_removal": ctx.config.field_mapping.phase_offset_removal,
-        "bipolar_correction": ctx.config.field_mapping.bipolar_correction,
-        "romeo_individual": ctx.config.field_mapping.romeo.individual,
-        "romeo_correct_global": ctx.config.field_mapping.romeo.correct_global,
-        "echo_times": ctx.meta.echo_times,
-        "field_strength": ctx.meta.field_strength,
-        // The echo combination: changing it must not reuse a field map cached under another.
-        "b0_estimation": format!("{}", ctx.config.field_mapping.b0_estimation),
-        "b0_weight_type": format!("{}", ctx.config.field_mapping.b0_weight_type),
-        "b0_weight_assumed_t2star_ms": ctx.config.field_mapping.b0_weight_assumed_t2star_ms,
-        "linear_fit_estimate_offset": ctx.config.field_mapping.linear_fit.estimate_offset,
-        "linear_fit_reliability_threshold": ctx.config.field_mapping.linear_fit.reliability_threshold_percentile,
-        "robust_fit": ctx.config.field_mapping.robust_fit,
-        // Per-echo masked Laplacian + echo combination (qsmxt_engine::fieldmap); bump on a change
-        // to that path so field maps from the old one are recomputed.
-        "laplacian_echo_combination": if unwrap_name == "laplacian" { 2 } else { 0 },
-        "laplacian_solver": format!("{}", ctx.config.field_mapping.laplacian_solver),
-        "laplacian_fft_pad": ctx.config.field_mapping.laplacian_fft_pad,
-    });
-    if ctx.is_cached_with_params("unwrap", Some(unwrap_alg), &unwrap_params) {
+    let unwrap_alg = qsmxt_engine::stages::field::algorithm(ctx.config, ctx.meta);
+    let unwrap_params = qsmxt_engine::stages::field::params(ctx.config, ctx.meta);
+    if ctx.is_cached_with_params("unwrap", Some(&unwrap_alg), &unwrap_params) {
         log::info!("Skipping unwrap (cached)");
         return Ok(());
     }
     let t = Instant::now();
-    if do_offset {
-        log::info!("Field mapping: offset removal + {} unwrapping ({} echoes)", unwrap_name, ctx.meta.n_echoes);
-    } else if ctx.meta.n_echoes > 1 {
-        log::info!("Field mapping: {} unwrapping ({} echoes)", unwrap_name, ctx.meta.n_echoes);
-    } else {
-        log::info!("Phase unwrapping ({}, single echo)", unwrap_name);
-    }
     progress("Phase unwrapping / echo combination");
-    let mut phases: Vec<NiftiData> = Vec::new();
+    let mut phases: Vec<Vec<f64>> = Vec::new();
     for i in 0..ctx.meta.n_echoes {
         let p = io::read_nifti_file(&ctx.echo_phase_path(i + 1))
             .map_err(|e| QsmxtError::NiftiIo(format!("echo {}: {}", i + 1, e)))?;
-        phases.push(p);
+        phases.push(p.data);
     }
     let mask = load_mask(mask_path)?;
 
@@ -2821,29 +2730,14 @@ fn stage_unwrap(
         }
     }
 
-    // Build inputs for shared pipeline stage
-    let phase_slices: Vec<&[f64]> = phases.iter().map(|p| p.data.as_slice()).collect();
+    let phase_slices: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
     let mag_slices: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
-    let mag_option: Option<&[&[f64]]> = if mag_slices.is_empty() { None } else { Some(&mag_slices) };
-
-    let (fm_config, _, _, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-    let scan_meta = scan_metadata(ctx.meta);
-
-    if unwrap_name == "laplacian" && ctx.meta.n_echoes > 1 {
-        log::info!("Laplacian unwrapping per echo ({} solver), then {} ({} weighting)",
-            ctx.config.field_mapping.laplacian_solver,
-            ctx.config.field_mapping.b0_estimation, ctx.config.field_mapping.b0_weight_type);
-    }
-    let field = qsmxt_engine::fieldmap::run_field_mapping(
-        &phase_slices, mag_option, &mask, &scan_meta, &fm_config,
-    ).map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
+    let field = qsmxt_engine::stages::field::map_field(&phase_slices, &mag_slices, &mask, ctx.meta, ctx.config)?;
 
     save_volume(field_path, &field.b0_field_ppm, ctx.meta)?;
     // Published as a BIDS `fieldmap`, which takes Hz (or rad/s, or T) but not ppm.
     let total_field = ctx.output.total_field_path(&ctx.run.key);
-    let hz_per_ppm = hz_per_ppm(ctx.meta.field_strength);
-    let field_hz: Vec<f64> = field.b0_field_ppm.iter().map(|v| v * hz_per_ppm).collect();
-    save_volume(&total_field, &field_hz, ctx.meta)?;
+    save_volume(&total_field, &field.total_field_hz, ctx.meta)?;
     if let Some(sidecar) = crate::bids::entities::sidecar_path(&total_field) {
         let mut obj = read_json_object(&sidecar);
         obj.insert("Units".into(), "Hz".into());
@@ -2869,17 +2763,16 @@ fn stage_unwrap(
         }
         outputs.push(mag_path);
     }
-    if let Some(report) = &field.robust_fit {
-        qsmxt_engine::fieldmap::log_robust_fit_report(report);
+    if let Some(report) = &field.robust_fit_report {
         let json_path = robust_fit_report_path(field_path);
-        let json = serde_json::to_string_pretty(&qsmxt_engine::fieldmap::robust_fit_report_json(report))
+        let json = serde_json::to_string_pretty(report)
             .map_err(|e| QsmxtError::Config(format!("robust fit report: {e}")))?;
         std::fs::write(&json_path, json)?;
         outputs.push(json_path);
     }
     let phase_inputs: Vec<PathBuf> = (0..ctx.meta.n_echoes).map(|i| ctx.echo_phase_path(i + 1)).collect();
     let input_refs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).chain(std::iter::once(mask_path)).collect();
-    ctx.complete_step("unwrap", Some(unwrap_alg), unwrap_params, &input_refs, outputs, t)?;
+    ctx.complete_step("unwrap", Some(&unwrap_alg), unwrap_params, &input_refs, outputs, t)?;
     log_step_done("Phase unwrapping", t);
     Ok(())
 }
@@ -2906,101 +2799,6 @@ fn load_phase_echoes(ctx: &StageContext) -> crate::Result<PhaseEchoes> {
         }
     }
     Ok((phases, magnitudes, phase_inputs))
-}
-
-/// iQSM / iQSM+ end-to-end reconstruction from wrapped **phase** (joint unwrapping +
-/// The inversion stage's cache key: the algorithm's user-facing parameters, as JSON.
-///
-/// A parameter missing here is a parameter whose change does not invalidate a cached
-/// reconstruction, so the run silently reuses a map computed with the old value. Extracted from
-/// the stage so it can be tested directly.
-fn invert_params(config: &PipelineConfig) -> serde_json::Value {
-    match config.inversion.algorithm {
-        QsmAlgorithm::Rts => serde_json::json!({
-            "delta": config.inversion.rts.delta, "mu": config.inversion.rts.mu,
-            "tol": config.inversion.rts.tol, "max_iter": config.inversion.rts.max_iter,
-        }),
-        QsmAlgorithm::Tv => serde_json::json!({
-            "lambda": config.inversion.tv.lambda, "max_iter": config.inversion.tv.max_iter,
-        }),
-        QsmAlgorithm::Tkd => serde_json::json!({ "threshold": config.inversion.tkd.threshold }),
-        QsmAlgorithm::Tsvd => serde_json::json!({ "threshold": config.inversion.tsvd.threshold }),
-        QsmAlgorithm::Ilsqr => serde_json::json!({
-            "tol": config.inversion.ilsqr.tol, "max_iter": config.inversion.ilsqr.max_iter,
-            "pad_mm": config.inversion.ilsqr.pad_mm,
-        }),
-        // HEIDI's cache key carries the LSQR group too — its seed is an LSQR solve, so changing
-        // `--lsqr-tol` changes the HEIDI result and has to invalidate it.
-        QsmAlgorithm::Lsqr | QsmAlgorithm::Heidi => {
-            let l = &config.inversion.lsqr;
-            let mut key = serde_json::json!({
-                "lsqr_residual_weighting": l.residual_weighting,
-                "lsqr_fit_global_offset": l.fit_global_offset,
-                "lsqr_tol": l.tol, "lsqr_max_iter": l.max_iter,
-            });
-            if config.inversion.algorithm == QsmAlgorithm::Heidi {
-                let h = &config.inversion.heidi;
-                key["heidi"] = serde_json::json!({
-                    "cone_threshold": h.cone_threshold,
-                    "gradient_threshold": h.gradient_threshold,
-                    "apply_laplacian_correction": h.apply_laplacian_correction,
-                    "laplacian_threshold": h.laplacian_threshold,
-                    "gradient_mask_floor": h.gradient_mask_floor,
-                    "continuation_steps": h.continuation_steps,
-                    "inner_iterations": h.inner_iterations,
-                    "mu_min": h.mu_min, "tol": h.tol,
-                    "denoise": h.denoise,
-                    "denoise_iterations": h.denoise_iterations,
-                    "denoise_time_step": h.denoise_time_step,
-                    "denoise_conductance": h.denoise_conductance,
-                });
-            }
-            key
-        }
-        QsmAlgorithm::Tikhonov => serde_json::json!({ "lambda": config.inversion.tikhonov.lambda }),
-        QsmAlgorithm::Nltv => serde_json::json!({
-            "lambda": config.inversion.nltv.lambda, "max_iter": config.inversion.nltv.max_iter,
-        }),
-        QsmAlgorithm::Medi => serde_json::json!({
-            "lambda": config.inversion.medi.lambda, "max_iter": config.inversion.medi.max_iter,
-            "smv": config.inversion.medi.smv,
-        }),
-        QsmAlgorithm::Ndi => serde_json::json!({
-            "tau": config.inversion.ndi.tau, "alpha": config.inversion.ndi.alpha,
-            "max_iter": config.inversion.ndi.max_iter,
-        }),
-        QsmAlgorithm::Fansi => serde_json::json!({
-            "is_tgv": false, "alpha1": config.inversion.fansi.alpha1,
-            "max_iter": config.inversion.fansi.max_iter,
-        }),
-        QsmAlgorithm::FansiTgv => serde_json::json!({
-            "is_tgv": true, "alpha1": config.inversion.fansi.alpha1,
-            "alpha0": config.inversion.fansi.alpha0,
-            "max_iter": config.inversion.fansi.max_iter,
-        }),
-        QsmAlgorithm::L1qsm => serde_json::json!({
-            "alpha1": config.inversion.l1qsm.alpha1, "lambda": config.inversion.l1qsm.lambda,
-            "max_iter": config.inversion.l1qsm.max_iter,
-        }),
-        QsmAlgorithm::Whqsm => serde_json::json!({
-            "alpha1": config.inversion.whqsm.alpha1, "beta": config.inversion.whqsm.beta,
-            "max_iter": config.inversion.whqsm.max_iter,
-        }),
-        QsmAlgorithm::Hdqsm => serde_json::json!({
-            "alpha_l2": config.inversion.hdqsm.alpha_l2,
-            "max_iter_l1": config.inversion.hdqsm.max_iter_l1,
-            "max_iter_l2": config.inversion.hdqsm.max_iter_l2,
-        }),
-        QsmAlgorithm::AmpPe => serde_json::json!({
-            "wave_order": config.inversion.amp_pe.wave_order,
-            "nlevel": config.inversion.amp_pe.nlevel,
-            "wave_pec": config.inversion.amp_pe.wave_pec,
-            "simulated_te": config.inversion.amp_pe.simulated_te,
-            "max_linearization_ite": config.inversion.amp_pe.max_linearization_ite,
-            "tikhonov_beta": config.inversion.amp_pe.tikhonov_beta,
-        }),
-        _ => serde_json::json!({}),
-    }
 }
 
 /// Whether this run actually gets two-pass artefact reduction.
@@ -3107,18 +2905,17 @@ impl Pass {
     }
 }
 
-/// background removal + dipole inversion in one network). Writes the raw susceptibility
-/// map; referencing is applied downstream by [`stage_reference`].
+/// iQSM / iQSM+ end-to-end reconstruction from wrapped **phase**
+/// ([`qsmxt_engine::stages::inversion::iqsm`]). Writes the raw susceptibility map; referencing is
+/// applied downstream by [`stage_reference`].
 fn stage_iqsm(ctx: &mut StageContext, pass: &Pass, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let plus = matches!(ctx.config.inversion.algorithm, QsmAlgorithm::IqsmPlus);
-    let alg = if plus { "iqsm-plus" } else { "iqsm" };
+    let Some(alg) = qsmxt_engine::stages::inversion::iqsm_algorithm(ctx.config) else {
+        return Err(QsmxtError::Config(format!("iQSM stage run for --qsm-algorithm {}", ctx.config.inversion.algorithm)));
+    };
+    let label = if alg == "iqsm-plus" { "iQSM+" } else { "iQSM" };
     let (mask_path, chi_raw_path) = (pass.mask.as_path(), pass.chi_raw.clone());
     let invert_step = pass.step("invert");
-    let params = serde_json::json!({
-        "echo_times": ctx.meta.echo_times,
-        "field_strength": ctx.meta.field_strength,
-        "b0_direction": [ctx.meta.b0_direction.0, ctx.meta.b0_direction.1, ctx.meta.b0_direction.2],
-    });
+    let params = qsmxt_engine::stages::inversion::iqsm_params(ctx.meta);
     if ctx.is_cached_with_params(&invert_step, Some(alg), &params) {
         log::info!("Skipping {} (cached)", alg);
         return Ok(());
@@ -3127,107 +2924,43 @@ fn stage_iqsm(ctx: &mut StageContext, pass: &Pass, progress: &dyn Fn(&str)) -> c
     progress(&format!("iQSM reconstruction{}", pass.label()));
     let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
     let mask = load_mask(mask_path)?;
-    let scan_meta = scan_metadata(ctx.meta);
     let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
     let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
     prefetch_weights(alg, &ctx.run.key.to_string())?;
-    log::info!("{} reconstruction (end-to-end from phase)", if plus { "iQSM+" } else { "iQSM" });
-    // Referencing is done by stage_reference, so request None from the pipeline runner.
-    let chi = if plus {
-        qsm_core::pipeline::run_iqsm_plus(&phase_refs, &mag_refs, &mask, &scan_meta, qsm_core::pipeline::QsmReference::None)
-    } else {
-        qsm_core::pipeline::run_iqsm(&phase_refs, &mag_refs, &mask, &scan_meta, qsm_core::pipeline::QsmReference::None)
-    }.map_err(|e| QsmxtError::Config(format!("{}: {}", alg, e)))?;
+    let chi = qsmxt_engine::stages::inversion::iqsm(&phase_refs, &mag_refs, &mask, ctx.meta, ctx.config)?;
     save_volume(&chi_raw_path, &chi, ctx.meta)?;
     let mut inputs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).collect();
     inputs.push(mask_path);
     ctx.complete_step(&invert_step, Some(alg), params, &inputs, vec![chi_raw_path], t)?;
-    log_step_done(&format!("{}{}", if plus { "iQSM+" } else { "iQSM" }, pass.label()), t);
+    log_step_done(&format!("{}{}", label, pass.label()), t);
     Ok(())
 }
 
 fn stage_tgv(
     ctx: &mut StageContext, pass: &Pass, field_path: &Path, progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
+    use qsmxt_engine::stages::inversion::{tgv_source, TgvSource};
     let (mask_path, chi_raw_path) = (pass.mask.as_path(), pass.chi_raw.clone());
     let tgv_step = pass.step("tgv");
-    // Multi-echo: the combined B0 field map, in ppm. Single echo: echo 1's wrapped phase, which
-    // TGV unwraps itself and converts to ppm with TE1 and B0. α are in ppm either way.
-    let multi_echo = ctx.meta.n_echoes > 1;
-    let te1_s = ctx.meta.echo_times[0];
-    let b0_t = ctx.meta.field_strength;
-    let mut tgv_params = serde_json::json!({
-        "iterations": ctx.config.inversion.tgv.iterations,
-        "alphas_ppm": [ctx.config.inversion.tgv.alpha1, ctx.config.inversion.tgv.alpha0],
-        "erosions": ctx.config.inversion.tgv.erosions,
-        "step_size": ctx.config.inversion.tgv.step_size,
-        "tol": ctx.config.inversion.tgv.tol,
-        "input": if multi_echo { "field_ppm" } else { "wrapped_phase" },
-    });
-    if !multi_echo {
-        tgv_params["te_ms"] = serde_json::json!(te1_s * 1000.0);
-        tgv_params["field_strength"] = serde_json::json!(b0_t);
-    }
+    let tgv_params = qsmxt_engine::stages::inversion::tgv_params(ctx.config, ctx.meta);
     if ctx.is_cached_with_params(&tgv_step, Some("tgv"), &tgv_params) {
         log::info!("Skipping tgv (cached)");
         return Ok(());
     }
     let t = Instant::now();
-    if multi_echo {
-        log::info!(
-            "TGV-QSM on the B0 field map (iterations={}, alphas=[{}, {}] ppm, erosions={})",
-            ctx.config.inversion.tgv.iterations, ctx.config.inversion.tgv.alpha1,
-            ctx.config.inversion.tgv.alpha0, ctx.config.inversion.tgv.erosions,
-        );
-    } else {
-        log::info!(
-            "TGV-QSM on wrapped echo-1 phase (iterations={}, alphas=[{}, {}] ppm, erosions={}, TE={:.3}ms, B0={:.1}T)",
-            ctx.config.inversion.tgv.iterations, ctx.config.inversion.tgv.alpha1,
-            ctx.config.inversion.tgv.alpha0, ctx.config.inversion.tgv.erosions, te1_s * 1000.0, b0_t,
-        );
-    }
     progress(&format!("TGV-QSM reconstruction{}", pass.label()));
     let mask = load_mask(mask_path)?;
-    let bdir = ctx.meta.b0_direction;
-
-    let data = if multi_echo {
-        load_volume(field_path)?
-    } else {
-        load_volume(&ctx.echo_phase_path(1))?
+    // Multi-echo: the combined B0 field map, in ppm. Single echo: echo 1's wrapped phase.
+    let data = match tgv_source(ctx.meta) {
+        TgvSource::FieldPpm => load_volume(field_path)?,
+        TgvSource::WrappedPhase => load_volume(&ctx.echo_phase_path(1))?,
     };
-    let input = if multi_echo {
-        qsm_core::inversion::TgvInput::FieldPpm(&data)
-    } else {
-        if !(te1_s.is_finite() && te1_s > 0.0 && b0_t.is_finite() && b0_t > 0.0) {
-            return Err(QsmxtError::Config(format!(
-                "single-echo TGV needs a positive echo time and field strength (TE1 = {te1_s} s, B0 = {b0_t} T)"
-            )));
-        }
-        qsm_core::inversion::TgvInput::WrappedPhase { phase: &data, te_s: te1_s, b0_t }
-    };
-
-    let (nx, ny, nz) = ctx.meta.dims;
-    let (vsx, vsy, vsz) = ctx.meta.voxel_size;
-    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-    let params = tgv_params_from_config(&ctx.config.inversion.tgv);
-    let chi = qsm_core::inversion::tgv_qsm(input, &mask, &grid, &params, bdir, |_, _| {})?;
+    let chi = qsmxt_engine::stages::inversion::tgv(&data, &mask, ctx.meta, ctx.config)?;
 
     save_volume(&chi_raw_path, &chi, ctx.meta)?;
     ctx.complete_step(&tgv_step, Some("tgv"), tgv_params, &[mask_path, field_path], vec![chi_raw_path], t)?;
     log_step_done(&format!("TGV-QSM{}", pass.label()), t);
     Ok(())
-}
-
-/// qsm-core's TGV parameters from QSMxT's TGV config. α are in ppm.
-fn tgv_params_from_config(c: &crate::pipeline::config::TgvConfig) -> qsm_core::inversion::TgvParams {
-    qsm_core::inversion::TgvParams {
-        alpha0: c.alpha0 as f32,
-        alpha1: c.alpha1 as f32,
-        iterations: c.iterations,
-        erosions: c.erosions,
-        step_size: c.step_size as f32,
-        tol: c.tol as f32,
-    }
 }
 
 fn stage_qsmart(
@@ -3323,44 +3056,7 @@ fn stage_standard_qsm(
     let local_field_path = pass.local_field.clone();
     let bg_mask_path = pass.bg_mask.clone();
     let bf_name = format!("{}", ctx.config.bg_removal.algorithm);
-    let bf_params = match ctx.config.bg_removal.algorithm {
-        BfAlgorithm::Vsharp => serde_json::json!({
-            "deconvolve": ctx.config.bg_removal.vsharp.deconvolve,
-            "max_radius": ctx.config.bg_removal.vsharp.max_radius,
-            "min_radius": ctx.config.bg_removal.vsharp.min_radius,
-            "threshold": ctx.config.bg_removal.vsharp.threshold,
-            "grid": ctx.config.bg_removal.vsharp.grid.to_string(),
-            "grid_spacing": ctx.config.bg_removal.vsharp.grid_spacing,
-        }),
-        BfAlgorithm::Pdf => serde_json::json!({ "tol": ctx.config.bg_removal.pdf.tol }),
-        BfAlgorithm::Lbv => serde_json::json!({ "tol": ctx.config.bg_removal.lbv.tol }),
-        BfAlgorithm::Ismv => serde_json::json!({
-            "radius": ctx.config.bg_removal.ismv.radius,
-            "tol": ctx.config.bg_removal.ismv.tol,
-            "max_iter": ctx.config.bg_removal.ismv.max_iter,
-        }),
-        BfAlgorithm::Sharp => serde_json::json!({
-            "radius": ctx.config.bg_removal.sharp.radius,
-            "threshold": ctx.config.bg_removal.sharp.threshold,
-        }),
-        BfAlgorithm::Resharp => serde_json::json!({
-            "radius": ctx.config.bg_removal.resharp.radius,
-            "tik_reg": ctx.config.bg_removal.resharp.tik_reg,
-            "tol": ctx.config.bg_removal.resharp.tol,
-            "max_iter": ctx.config.bg_removal.resharp.max_iter,
-        }),
-        BfAlgorithm::Harperella => serde_json::json!({
-            "radius": ctx.config.bg_removal.harperella.radius,
-            "max_iter": ctx.config.bg_removal.harperella.max_iter,
-            "tol": ctx.config.bg_removal.harperella.tol,
-        }),
-        BfAlgorithm::Iharperella => serde_json::json!({
-            "max_iter": ctx.config.bg_removal.iharperella.max_iter,
-            "tol": ctx.config.bg_removal.iharperella.tol,
-        }),
-        // BFRnet / iQFM (deep learning) have no user-tunable parameters; cache key is the weights.
-        BfAlgorithm::Bfrnet | BfAlgorithm::Iqfm => serde_json::json!({}),
-    };
+    let bf_params = qsmxt_engine::stages::background::params(ctx.config);
     if skip_bgremove {
         log::info!("Skipping background removal (single-step inversion handles it internally)");
     }
@@ -3370,16 +3066,12 @@ fn stage_standard_qsm(
         progress(&format!("iQFM field preparation{}", pass.label()));
         let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
         let mask = load_mask(mask_path)?;
-        let scan_meta = scan_metadata(ctx.meta);
         let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
         let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
         prefetch_weights("iqfm", &ctx.run.key.to_string())?;
-        log::info!("Background removal (iQFM, deep-learning joint unwrap+BFR)");
-        let local_field = qsm_core::pipeline::run_iqfm(&phase_refs, &mag_refs, &mask, &scan_meta)
-            .map_err(|e| QsmxtError::Config(format!("iQFM: {}", e)))?;
-        // iQFM preserves the brain edge (no erosion): reuse the brain mask.
-        save_volume(&local_field_path, &local_field, ctx.meta)?;
-        save_mask(&bg_mask_path, &mask, ctx.meta)?;
+        let lf = qsmxt_engine::stages::background::iqfm(&phase_refs, &mag_refs, &mask, ctx.meta)?;
+        save_volume(&local_field_path, &lf.local_field_ppm, ctx.meta)?;
+        save_mask(&bg_mask_path, &lf.mask, ctx.meta)?;
         let mut inputs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).collect();
         inputs.push(mask_path);
         ctx.complete_step(&bgremove_step, Some(&bf_name), bf_params.clone(), &inputs,
@@ -3394,28 +3086,15 @@ fn stage_standard_qsm(
         let field_ppm = load_volume(field_path)?;
         let mask = load_mask(mask_path)?;
 
-        let (_, bg_config, _, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-        let cb = crop_box_for(ctx, &mask, "Background removal");
-        let scan_meta = scan_metadata_in(ctx.meta, &cb);
-
         // Fetch DL weights (BFRnet) with a download bar before removal; no-op otherwise.
         prefetch_weights(&bf_name, &ctx.run.key.to_string())?;
         log::info!("Background removal ({}){}", bf_name, pass.label());
         let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &bf_name);
-        let bg_result = qsm_core::pipeline::run_bg_removal(
-            &qsm_core::crop::crop_volume(&field_ppm, &cb),
-            &qsm_core::crop::crop_volume(&mask, &cb),
-            &scan_meta, &bg_config, &mut *prog,
-        ).map_err(|e| QsmxtError::Config(format!("bg removal: {}", e)))?;
-
-        // Back onto the full grid: the local field and the eroded mask are both undefined
-        // outside the box, so zero is the right fill for each.
-        let (local_field, eroded_mask) = (
-            qsm_core::crop::uncrop_volume(&bg_result.local_field_ppm, &cb, 0.0),
-            qsm_core::crop::uncrop_volume(&bg_result.eroded_mask, &cb, 0u8),
-        );
-        save_volume(&local_field_path, &local_field, ctx.meta)?;
-        save_mask(&bg_mask_path, &eroded_mask, ctx.meta)?;
+        let lf = qsmxt_engine::stages::background::remove_background(
+            &field_ppm, &mask, ctx.meta, ctx.config, &mut *prog,
+        )?;
+        save_volume(&local_field_path, &lf.local_field_ppm, ctx.meta)?;
+        save_mask(&bg_mask_path, &lf.mask, ctx.meta)?;
         ctx.complete_step(&bgremove_step, Some(&bf_name),
             bf_params.clone(), &[field_path, mask_path],
             vec![local_field_path.clone(), bg_mask_path.clone()], t,
@@ -3428,23 +3107,17 @@ fn stage_standard_qsm(
     // --- Dipole inversion ---
     let chi_raw_path = pass.chi_raw.clone();
     let alg_name = format!("{}", ctx.config.inversion.algorithm);
-    let invert_params = invert_params(ctx.config);
+    let invert_params = qsmxt_engine::stages::inversion::params(ctx.config);
     if !ctx.is_cached_with_params(&invert_step, Some(&alg_name), &invert_params) {
         let t = Instant::now();
         progress(&format!("Dipole inversion{}", pass.label()));
         let local_field = if skip_bgremove { load_volume(field_path)? } else { load_volume(&local_field_path)? };
         let eroded_mask = if skip_bgremove { load_mask(mask_path)? } else { load_mask(&bg_mask_path)? };
 
-        let (_, _, inv_config, _) = crate::pipeline::config::to_pipeline_stages(ctx.config);
-        // The dipole kernel has infinite support, so this is the stage most exposed to the
-        // periodic boundary moving inward; the margin is there to keep it off the object.
-        let cb = crop_box_for(ctx, &eroded_mask, "Dipole inversion");
-        let scan_meta = scan_metadata_in(ctx.meta, &cb);
-
-        // Load combined magnitude for MEDI edge weighting
+        // Combined magnitude, for MEDI's edge weighting.
         let mag_combined_path = ctx.output.magnitude_path(&ctx.run.key);
         let magnitude: Option<Vec<f64>> = if mag_combined_path.exists() {
-            Some(qsm_core::crop::crop_volume(&load_volume(&mag_combined_path)?, &cb))
+            Some(load_volume(&mag_combined_path)?)
         } else {
             None
         };
@@ -3453,12 +3126,9 @@ fn stage_standard_qsm(
         prefetch_weights(&alg_name, &ctx.run.key.to_string())?;
         log::info!("Dipole inversion ({}){}", alg_name, pass.label());
         let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &alg_name);
-        let chi = qsm_core::pipeline::run_dipole_inversion(
-            &qsm_core::crop::crop_volume(&local_field, &cb),
-            &qsm_core::crop::crop_volume(&eroded_mask, &cb),
-            &scan_meta, &inv_config, magnitude.as_deref(), &mut *prog,
-        ).map_err(|e| QsmxtError::Config(format!("inversion: {}", e)))?;
-        let chi = qsm_core::crop::uncrop_volume(&chi, &cb, 0.0);
+        let chi = qsmxt_engine::stages::inversion::invert(
+            &local_field, &eroded_mask, magnitude.as_deref(), ctx.meta, ctx.config, &mut *prog,
+        )?;
         save_volume(&chi_raw_path, &chi, ctx.meta)?;
         let lf_input = if skip_bgremove { field_path } else { local_field_path.as_path() };
         let mask_input = if skip_bgremove { mask_path } else { bg_mask_path.as_path() };
@@ -3675,12 +3345,8 @@ fn read_json_object(path: &Path) -> serde_json::Map<String, serde_json::Value> {
         .unwrap_or_default()
 }
 
-/// Combine the two reconstructions of a two-pass run into one raw susceptibility map.
-///
-/// The reliable pass wins wherever it produced a value; the ordinary pass fills the holes its mask
-/// left, and the rim background removal eroded off it. Nothing is averaged — each voxel comes from
-/// exactly one pass — so this cannot blur the reliable pass's values with the ones it was run to
-/// avoid.
+/// Combine the two reconstructions of a two-pass run into one raw susceptibility map
+/// ([`qsmxt_engine::stages::inversion::combine_two_pass`]).
 fn stage_two_pass_combine(
     ctx: &mut StageContext, main: &Pass, reliable: &Pass, skip_bgremove: bool,
     progress: &dyn Fn(&str),
@@ -3697,26 +3363,9 @@ fn stage_two_pass_combine(
     let support_path = reliable.support(skip_bgremove).to_path_buf();
     let chi_reliable = load_volume(&reliable.chi_raw)?;
     let chi_main = load_volume(&main.chi_raw)?;
-
-    // Where the reliable pass actually produced a value: its declared mask, minus any voxel the
-    // reconstruction left at exactly zero. Several algorithms erode beyond the mask they were
-    // handed — V-SHARP by its kernel radius, TGV by `tgv_erosions` — and trusting the mask file
-    // over that rim would ring every hole with a seam of zeros instead of filling it from the
-    // single-pass map. An exact 0.0 inside a reconstruction is masking, not a measurement.
     let declared = load_mask(&support_path)?;
-    let support: Vec<u8> = declared.iter().zip(&chi_reliable)
-        .map(|(&m, &chi)| u8::from(m != 0 && chi != 0.0))
-        .collect();
-    let kept = support.iter().filter(|&&v| v != 0).count();
-    log::info!(
-        "Two-pass combination: reliable pass over {} voxels ({:.1}% of the brain mask), \
-         single-pass elsewhere",
-        kept,
-        100.0 * kept as f64 / load_mask(&main.mask)?.iter().filter(|&&v| v != 0).count().max(1) as f64,
-    );
-
-    let combined = qsm_core::pipeline::combine_two_pass(&chi_reliable, &chi_main, &support)
-        .map_err(|e| QsmxtError::Config(format!("two-pass combination: {}", e)))?;
+    let brain = load_mask(&main.mask)?;
+    let combined = qsmxt_engine::stages::inversion::combine_two_pass(&chi_reliable, &chi_main, &declared, &brain)?;
     save_volume(&out_path, &combined, ctx.meta)?;
     ctx.complete_step(
         "twopass", None, params,
@@ -3761,52 +3410,6 @@ mod tests {
             assert_ne!(main.step(step), reliable.step(step));
         }
         assert_eq!(main.step("invert"), "invert", "the main pass keeps the unsuffixed step names");
-    }
-
-    /// HEIDI seeds itself with an LSQR solve, so an LSQR parameter changes the HEIDI result and
-    /// must invalidate it. Its cache key therefore has to carry both groups — otherwise editing
-    /// `--lsqr-tol` silently reuses a HEIDI map computed with the old tolerance.
-    #[test]
-    fn the_heidi_cache_key_covers_its_lsqr_seed() {
-        use crate::pipeline::config::{PipelineConfig, QsmAlgorithm};
-        let key = |c: &PipelineConfig| crate::pipeline::graph::step_params_hash(
-            Some(&format!("{}", c.inversion.algorithm)), &super::invert_params(c));
-
-        let mut c = PipelineConfig::default();
-        c.inversion.algorithm = QsmAlgorithm::Heidi;
-        let base = key(&c);
-
-        let mut edited = c.clone();
-        edited.inversion.lsqr.tol *= 10.0;
-        assert_ne!(key(&edited), base, "an LSQR tolerance change must invalidate HEIDI");
-
-        let mut edited = c.clone();
-        edited.inversion.lsqr.max_iter += 1;
-        assert_ne!(key(&edited), base, "an LSQR iteration change must invalidate HEIDI");
-
-        // And HEIDI's own knobs, including the flattened denoise sub-parameters.
-        for mutate in [
-            (|c: &mut PipelineConfig| c.inversion.heidi.cone_threshold += 0.05) as fn(&mut PipelineConfig),
-            |c: &mut PipelineConfig| c.inversion.heidi.continuation_steps += 1,
-            |c: &mut PipelineConfig| c.inversion.heidi.denoise = !c.inversion.heidi.denoise,
-            |c: &mut PipelineConfig| c.inversion.heidi.denoise_conductance += 0.5,
-            |c: &mut PipelineConfig| c.inversion.heidi.gradient_mask_floor += 0.05,
-        ] {
-            let mut edited = c.clone();
-            mutate(&mut edited);
-            assert_ne!(key(&edited), base, "a HEIDI parameter change must invalidate the cache");
-        }
-
-        // Plain LSQR must not be invalidated by HEIDI-only knobs it never reads.
-        let mut l = PipelineConfig::default();
-        l.inversion.algorithm = QsmAlgorithm::Lsqr;
-        let lbase = key(&l);
-        let mut edited = l.clone();
-        edited.inversion.heidi.cone_threshold += 0.05;
-        assert_eq!(key(&edited), lbase, "plain LSQR does not read HEIDI's parameters");
-        let mut edited = l.clone();
-        edited.inversion.lsqr.tol *= 10.0;
-        assert_ne!(key(&edited), lbase, "but it does read its own");
     }
 
     /// The support is the eroded mask when background removal ran, and the brain mask when the
@@ -4547,57 +4150,6 @@ mod tests {
         assert!(meta.source_geometry.is_some(),
                 "a MESE no longer suppresses a resample the threshold asked for");
         assert_eq!(meta.b0_direction, (0.0, 0.0, 1.0));
-    }
-
-    // --- which box the FFT stages reconstruct in ---
-
-    /// The grid a 32.5-degree oblique UK Biobank SWI resamples to. Awkward on every axis:
-    /// 272 = 2^4 * 17, 339 = 3 * 113, 77 = 7 * 11.
-    const UKB_RESAMPLED: (usize, usize, usize) = (272, 339, 77);
-
-    #[test]
-    fn reconstruction_box_pads_to_a_friendly_size_when_asked() {
-        let mask = vec![1u8; 8];
-        let b = super::reconstruction_box(false, true, &mask, UKB_RESAMPLED, (0.8, 0.8, 3.0), 32.0);
-        assert_eq!(b.dims, (280, 343, 80), "every awkward axis should grow");
-        assert!(b.dims.0 >= UKB_RESAMPLED.0 && b.dims.1 >= UKB_RESAMPLED.1 && b.dims.2 >= UKB_RESAMPLED.2,
-                "padding must never discard a voxel");
-    }
-
-    #[test]
-    fn reconstruction_box_leaves_an_already_friendly_grid_alone() {
-        let mask = vec![1u8; 8];
-        let friendly = (256, 288, 48); // 2^8, 2^5*3^2, 2^4*3
-        let b = super::reconstruction_box(false, true, &mask, friendly, (0.8, 0.8, 3.0), 32.0);
-        assert_eq!(b.dims, friendly, "nothing to gain, so no copy");
-        assert_eq!(b.origin, (0, 0, 0));
-    }
-
-    #[test]
-    fn reconstruction_box_does_not_pad_by_default() {
-        let mask = vec![1u8; 8];
-        let b = super::reconstruction_box(false, false, &mask, UKB_RESAMPLED, (0.8, 0.8, 3.0), 32.0);
-        assert_eq!(b.dims, UKB_RESAMPLED,
-                   "padding changes where k-space is sampled, so it must be asked for");
-        assert_eq!(b.origin, (0, 0, 0));
-    }
-
-    #[test]
-    fn reconstruction_box_crops_to_the_mask_when_asked() {
-        // A small blob in the middle of a large grid: the case cropping is actually for.
-        let dims = (64, 64, 64);
-        let mut mask = vec![0u8; dims.0 * dims.1 * dims.2];
-        for k in 30..34 {
-            for j in 30..34 {
-                for i in 30..34 {
-                    mask[i + j * dims.0 + k * dims.0 * dims.1] = 1;
-                }
-            }
-        }
-        let cropped = super::reconstruction_box(true, false, &mask, dims, (1.0, 1.0, 1.0), 4.0);
-        assert!(cropped.dims.0 < dims.0, "a 4-voxel blob with a 4 mm margin should shrink 64");
-        let padded = super::reconstruction_box(false, true, &mask, dims, (1.0, 1.0, 1.0), 4.0);
-        assert_eq!(padded.dims, dims, "padding ignores the mask; 64 is already friendly");
     }
 
     // --- an algorithm that only understands axial data outranks everything else ---
