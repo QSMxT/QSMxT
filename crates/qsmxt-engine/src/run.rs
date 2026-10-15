@@ -135,6 +135,9 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             Stage::TwoPassCombination => self.two_pass_combination(),
             Stage::Reference => self.reference(false),
             Stage::SinglePassReference => self.reference(true),
+            Stage::Swi => self.swi(),
+            Stage::Smwi => self.smwi(),
+            Stage::Relaxometry => self.relaxometry(),
             stage => Err(crate::EngineError::Config(format!(
                 "the {} step is not in the engine yet", stage.name())).into()),
         }
@@ -154,13 +157,14 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         Some(key)
     }
 
-    /// Keep an output, and show it.
+    /// Keep an output, and show it. A volume on a grid of its own (a projection) is kept but not
+    /// shown: the observer's volumes are on the run's grid.
     fn put(&mut self, item: Item, data: Data<'_>) -> Result<(), S::Error> {
         self.store.put(item, data)?;
         match data {
             Data::Real(v) => self.observer.output(&item, qsm_core::pipeline::VolumeRef::Real(v)),
             Data::Mask(m) => self.observer.output(&item, qsm_core::pipeline::VolumeRef::Mask(m)),
-            Data::Json(_) | Data::Same(_) => {}
+            Data::OnGrid(..) | Data::Json(_) | Data::Same(_) => {}
         }
         Ok(())
     }
@@ -222,6 +226,14 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             }
         }
         Ok((phases, magnitudes))
+    }
+
+    /// Echo `e`'s magnitude as the stages after motion correction read it, falling back to the
+    /// acquired echo when there is no working-grid copy (only for a run that was not resampled,
+    /// where the two are the same grid).
+    fn working_magnitude(&mut self, e: usize) -> Item {
+        let item = self.echo_magnitude(e);
+        if !self.store.has(&item) && self.store.has(&Item::AcquiredMagnitude(e)) { Item::AcquiredMagnitude(e) } else { item }
     }
 
     fn combined_magnitude(&mut self) -> Result<Option<Vec<f64>>, S::Error> {
@@ -656,6 +668,83 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             inputs: &inputs, outputs: &outputs,
         }, "QSM referencing")
     }
+
+    /// CLEAR-SWI over every echo, and its minIP.
+    fn swi(&mut self) -> Result<(), S::Error> {
+        let params = stages::swi::swi_params(self.config, &self.meta)?;
+        let Some(key) = self.begin("swi", Some("clear-swi"), &params, "Skipping swi (cached)", "Computing SWI") else { return Ok(()) };
+        let n = self.n_echoes();
+        self.log(Level::Info, &format!("Computing CLEAR-SWI ({} echo{})", n, if n == 1 { "" } else { "es" }));
+        let phase_items: Vec<Item> = (1..=n).map(|e| self.echo_phase(e)).collect();
+        let mag_items: Vec<Item> = (1..=n).map(|e| self.echo_magnitude(e)).collect();
+        let phases = phase_items.iter().map(|i| self.store.real(i)).collect::<Result<Vec<_>, _>>()?;
+        let magnitudes = mag_items.iter().map(|i| self.store.real(i)).collect::<Result<Vec<_>, _>>()?;
+        let swi = stages::swi::swi(&phases, &magnitudes, &self.meta, self.config)?;
+        drop((phases, magnitudes));
+        self.put(Item::Swi, Data::Real(&swi.image))?;
+        self.put(Item::SwiMip, Data::OnGrid(&swi.mip, &swi.mip_geometry))?;
+        let inputs: Vec<Item> = phase_items.into_iter().chain(mag_items).collect();
+        self.complete(Completed {
+            step: "swi", algorithm: Some("clear-swi"), params: &params, outcome: None, key: &key,
+            inputs: &inputs, outputs: &[Item::Swi, Item::SwiMip],
+        }, "SWI")
+    }
+
+    /// SMWI, weighted by the final, referenced susceptibility map over the voxels it is defined on
+    /// (outside them χ is 0 by construction, not by measurement).
+    fn smwi(&mut self) -> Result<(), S::Error> {
+        let params = stages::swi::smwi_params(self.config, &self.meta)?;
+        if !self.store.has(&Item::Chi) {
+            self.log(Level::Warn, "Skipping SMWI: no susceptibility map");
+            return Ok(());
+        }
+        let Some(key) = self.begin("smwi", Some("smwi"), &params, "Skipping smwi (cached)", "Computing SMWI") else { return Ok(()) };
+        let s = &self.config.smwi;
+        self.log(Level::Info, &format!("Computing SMWI (threshold {} ppm, power {}, mIP over {} slices)",
+                                       s.threshold_ppm, s.power, s.mip_window));
+        let mask_item = if self.store.has(&Item::ChiSupport) { Item::ChiSupport } else { self.mask_item() };
+        let chi = self.store.real(&Item::Chi)?;
+        let magnitude = self.store.real(&Item::CombinedMagnitude)?;
+        let mask = self.store.mask(&mask_item)?;
+        let weighted = stages::swi::smwi(&magnitude, &chi, &mask, &self.meta, self.config)?;
+        drop((chi, magnitude, mask));
+        let mut outputs = Vec::new();
+        for (contrast, image) in &weighted {
+            self.put(Item::Smwi(*contrast), Data::Real(&image.image))?;
+            self.put(Item::SmwiMip(*contrast), Data::OnGrid(&image.mip, &image.mip_geometry))?;
+            outputs.extend([Item::Smwi(*contrast), Item::SmwiMip(*contrast)]);
+        }
+        self.complete(Completed {
+            step: "smwi", algorithm: Some("smwi"), params: &params, outcome: None, key: &key,
+            inputs: &[Item::Chi, Item::CombinedMagnitude, mask_item], outputs: &outputs,
+        }, "SMWI")
+    }
+
+    /// R2* by ARLO from every echo's magnitude, and T2* from it.
+    fn relaxometry(&mut self) -> Result<(), S::Error> {
+        let params = stages::relaxometry::t2star_r2star_params(&self.meta);
+        let Some(key) = self.begin("t2star_r2star", Some("arlo"), &params, "Skipping t2star_r2star (cached)",
+                                   "Computing R2*/T2* maps") else { return Ok(()) };
+        let n = self.n_echoes();
+        self.log(Level::Info, &format!("Computing R2*/T2* maps (ARLO, {n} echoes)"));
+        let mask_item = self.mask_item();
+        let mask = self.store.mask(&mask_item)?;
+        let (nx, ny, nz) = self.meta.dims;
+        let mut magnitudes = stages::relaxometry::VoxelMajor::new(nx * ny * nz, n);
+        for e in 1..=n {
+            let item = self.working_magnitude(e);
+            let echo = self.store.real(&item)?;
+            magnitudes.set(e - 1, &echo, &format!("mag echo {e}"))?;
+        }
+        let (r2star, t2star) = stages::relaxometry::t2star_r2star(&magnitudes.data, &mask, &self.meta)?;
+        drop(magnitudes);
+        self.put(Item::R2star, Data::Real(&r2star))?;
+        self.put(Item::T2star, Data::Real(&t2star))?;
+        self.complete(Completed {
+            step: "t2star_r2star", algorithm: Some("arlo"), params: &params, outcome: None, key: &key,
+            inputs: &[mask_item], outputs: &[Item::R2star, Item::T2star],
+        }, "T2*/R2* mapping")
+    }
 }
 
 /// How a pass is named in progress messages and the log: nothing for a single-pass run's (only)
@@ -672,7 +761,7 @@ mod tests {
     use super::*;
     use crate::enums::{BfAlgorithm, QsmAlgorithm};
     use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
-    use crate::store::{Header, MemoryStore};
+    use crate::store::{Contrast, Header, MemoryStore};
 
     const N: usize = 16;
     const TES: [f64; 3] = [0.005, 0.010, 0.015];
@@ -822,18 +911,54 @@ mod tests {
         assert_eq!(r.store.identity(&r.support(Pass::Reliable)), json!("LocalFieldMask(Reliable)"));
     }
 
+    /// SWI and its minIP, T2*/R2*, and SMWI from the final map, all in memory: each projection on
+    /// its own shorter grid, T2* the inverse of R2* inside the mask.
+    #[test]
+    fn swi_smwi_and_relaxometry_run_in_memory() {
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        config.pipeline.do_swi = true;
+        config.pipeline.do_smwi = true;
+        config.pipeline.do_t2starmap = true;
+        config.pipeline.do_r2starmap = true;
+        config.swi.mip_window = 4;
+        config.smwi.mip_window = 4;
+        let events = run_once(&config, &facts, &mut store);
+        for step in ["swi", "t2star_r2star", "smwi"] {
+            assert!(events.computed.iter().any(|c| c == step), "{step}: {:?}", events.computed);
+        }
+        for item in [Item::SwiMip, Item::SmwiMip(Contrast::Paramagnetic), Item::SmwiMip(Contrast::Diamagnetic)] {
+            assert_eq!(store.geometry(&item).map(|g| g.dims), Some((N, N, N - 3)), "{item:?}");
+            assert!(!events.outputs.contains(&item), "a projection is not shown on the run's grid");
+        }
+        for item in [Item::Swi, Item::Smwi(Contrast::Paramagnetic), Item::Smwi(Contrast::Diamagnetic)] {
+            assert!(events.outputs.contains(&item) && store.geometry(&item).is_none(), "{item:?}");
+        }
+        let (Some(VolumeData::Real(r2star)), Some(VolumeData::Real(t2star)), Some(VolumeData::Mask(mask))) =
+            (store.get(&Item::R2star), store.get(&Item::T2star), store.get(&Item::BrainMask)) else { panic!("no maps") };
+        // The phantom's magnitude decays with T2* = 40 ms.
+        let inside: Vec<f64> = r2star.iter().zip(mask).filter(|(_, &m)| m != 0).map(|(&r, _)| r).collect();
+        assert!(inside.iter().all(|r| (r - 25.0).abs() < 1.0), "R2* {:?}", &inside[..4]);
+        assert!(r2star.iter().zip(t2star).all(|(&r, &t)| if r > 0.0 { (t * r - 1.0).abs() < 1e-12 } else { t == 0.0 }));
+        assert!(run_once(&config, &facts, &mut store).computed.is_empty());
+
+        // SMWI reads the referenced map, so a new inversion redoes it; SWI and R2* read the echoes.
+        config.inversion.tkd.threshold *= 2.0;
+        assert_eq!(run_once(&config, &facts, &mut store).computed, ["invert", "reference", "smwi"]);
+    }
+
     /// A step the engine does not run yet is handed to the store, which says so if it cannot.
     #[test]
     fn host_steps_are_the_stores() {
         let (facts, mut store) = phantom();
         let mut config = config();
-        config.pipeline.do_swi = true;
+        config.pipeline.do_r2map = true;
         let plan = crate::plan::plan(&config, &facts);
-        assert!(plan.steps.iter().any(|s| s.stage == Stage::Swi && s.host));
+        assert!(plan.steps.iter().any(|s| s.stage == Stage::R2 && s.host));
         // As a front end hands it on: each step's stage, models and who runs it.
         let json = serde_json::to_value(&plan).unwrap();
-        assert!(json["steps"].as_array().unwrap().iter().any(|s| s["stage"] == "Swi" && s["host"] == true), "{json}");
+        assert!(json["steps"].as_array().unwrap().iter().any(|s| s["stage"] == "R2" && s["host"] == true), "{json}");
         let err = run(&plan, &config, &facts, &mut store, &mut ()).unwrap_err();
-        assert!(format!("{err}").contains("swi"), "{err}");
+        assert!(format!("{err}").contains("r2_r2prime"), "{err}");
     }
 }

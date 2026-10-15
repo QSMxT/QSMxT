@@ -65,6 +65,46 @@ pub enum Item {
     SinglePassChi,
     /// The segmentation: the run's own, or one supplied with the scan (`--use-custom-dseg`).
     Segmentation,
+    /// The CLEAR-SWI image.
+    Swi,
+    /// The SWI's minimum-intensity projection, on its own grid ([`Data::OnGrid`]).
+    SwiMip,
+    /// A susceptibility map-weighted image, suppressing one sign of χ.
+    Smwi(Contrast),
+    /// An SMWI's minimum-intensity projection, on its own grid.
+    SmwiMip(Contrast),
+    /// The R2* map (Hz).
+    R2star,
+    /// The T2* map (s).
+    T2star,
+}
+
+/// Which sign of susceptibility an output is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+pub enum Contrast {
+    /// Positive χ (iron, haemorrhage).
+    Paramagnetic,
+    /// Negative χ (calcification, myelin).
+    Diamagnetic,
+}
+
+impl Contrast {
+    pub const BOTH: [Contrast; 2] = [Contrast::Paramagnetic, Contrast::Diamagnetic];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            Contrast::Paramagnetic => "paramagnetic",
+            Contrast::Diamagnetic => "diamagnetic",
+        }
+    }
+}
+
+/// A grid other than the run's: its dimensions, voxel size and voxel-to-world affine.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Geometry {
+    pub dims: (usize, usize, usize),
+    pub voxel_size: (f64, f64, f64),
+    pub affine: [f64; 16],
 }
 
 /// An output, as a step hands it to the store.
@@ -72,6 +112,8 @@ pub enum Item {
 pub enum Data<'a> {
     Real(&'a [f64]),
     Mask(&'a [u8]),
+    /// A volume on a grid of its own rather than the run's (a projection's shorter one).
+    OnGrid(&'a [f64], &'a Geometry),
     /// A report.
     Json(&'a serde_json::Value),
     /// This input, unchanged: the store keeps it as it was given (`qsmxt` copies the file).
@@ -204,6 +246,8 @@ pub struct MemoryStore {
     header: Option<Header>,
     identity: serde_json::Value,
     volumes: HashMap<Item, VolumeData>,
+    /// The grid of each volume that is not on the run's.
+    geometries: HashMap<Item, Geometry>,
     reports: HashMap<Item, serde_json::Value>,
     annotations: HashMap<Item, serde_json::Map<String, serde_json::Value>>,
     supplied: Option<Supplied>,
@@ -236,6 +280,11 @@ impl MemoryStore {
 
     pub fn get(&self, item: &Item) -> Option<&VolumeData> {
         self.volumes.get(item)
+    }
+
+    /// The grid `item` is on, when it is not the run's.
+    pub fn geometry(&self, item: &Item) -> Option<&Geometry> {
+        self.geometries.get(item)
     }
 
     /// A report an output holds.
@@ -336,9 +385,14 @@ impl StageStore for MemoryStore {
     }
 
     fn put(&mut self, item: Item, data: Data<'_>) -> Result<(), EngineError> {
+        self.geometries.remove(&item);
         match data {
             Data::Real(v) => { self.volumes.insert(item, VolumeData::Real(v.to_vec())); }
             Data::Mask(m) => { self.volumes.insert(item, VolumeData::Mask(m.to_vec())); }
+            Data::OnGrid(v, geometry) => {
+                self.volumes.insert(item, VolumeData::Real(v.to_vec()));
+                self.geometries.insert(item, geometry.clone());
+            }
             Data::Json(j) => { self.reports.insert(item, j.clone()); }
             Data::Same(source) => {
                 let v = self.volumes.get(&source).cloned()
