@@ -60,11 +60,13 @@ impl From<qsm_core::error::InputError> for QsmxtError {
     }
 }
 
-/// The engine's refusals are configuration errors, worded as the engine words them.
+/// The engine's refusals, worded as the engine words them, as the error of the same kind.
 impl From<qsmxt_engine::EngineError> for QsmxtError {
     fn from(e: qsmxt_engine::EngineError) -> Self {
         match e {
             qsmxt_engine::EngineError::Config(msg) => QsmxtError::Config(msg),
+            qsmxt_engine::EngineError::DimensionMismatch(msg) => QsmxtError::DimensionMismatch(msg),
+            qsmxt_engine::EngineError::InvalidInput(msg) => QsmxtError::InvalidInput(msg),
         }
     }
 }
