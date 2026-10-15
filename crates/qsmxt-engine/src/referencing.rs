@@ -12,7 +12,7 @@
 //! the mask, and subtracting it there turns the rim into a shell of constant `-offset`. See
 //! [`defined_support`].
 
-use crate::error::QsmxtError;
+use crate::error::EngineError;
 
 /// The voxels a raw susceptibility map is defined on.
 ///
@@ -44,7 +44,7 @@ pub fn defined_support(declared: &[&[u8]], chi: &[f64]) -> Vec<u8> {
 /// the whole reason for referencing to tissue in the first place.
 pub fn reference_to_region(
     chi: &[f64], brain: &[u8], roi: &[u8], region: &str,
-) -> crate::Result<(Vec<f64>, Offset)> {
+) -> Result<(Vec<f64>, Offset), EngineError> {
     let mut sum = 0.0;
     let mut count = 0usize;
     for ((&c, &b), &r) in chi.iter().zip(brain).zip(roi) {
@@ -54,7 +54,7 @@ pub fn reference_to_region(
         }
     }
     if count == 0 {
-        return Err(QsmxtError::Config(format!(
+        return Err(EngineError::Config(format!(
             "QSM reference region `{region}` has no voxels where the susceptibility map is \
              defined, so there is nothing to reference to. The parcellation may have missed the \
              structure, or it may lie outside the brain mask or in the rim background-field \

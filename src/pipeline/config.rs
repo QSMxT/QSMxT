@@ -800,7 +800,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
 /// was never written (or a stale one from an earlier run). Asked-for iQFM there is an error;
 /// another non-default method is a warning, since nothing else depends on it.
 pub fn validate_inversion_input(config: &PipelineConfig) -> crate::Result<()> {
-    if !config.pipeline.do_qsm || !crate::pipeline::runner::skips_bgremove(config) {
+    if !config.pipeline.do_qsm || !qsmxt_engine::bridge::skips_bgremove(config) {
         return Ok(());
     }
     let alg = config.inversion.algorithm;
@@ -838,7 +838,7 @@ pub fn validate_multi_orientation(config: &PipelineConfig) -> crate::Result<()> 
             "--orientation-group combines each orientation's local field, which only the QSM \
              reconstruction produces; it cannot be used with --no-qsm".into()));
     }
-    if crate::pipeline::runner::skips_bgremove(config) {
+    if qsmxt_engine::bridge::skips_bgremove(config) {
         let medi_smv = config.inversion.algorithm == QsmAlgorithm::Medi && config.inversion.medi.smv;
         return Err(QsmxtError::Config(format!(
             "--orientation-group combines each orientation's local field, and --qsm-algorithm \

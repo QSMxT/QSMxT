@@ -11,9 +11,16 @@ use crate::bids::entities::AcquisitionKey;
 use crate::bids::discovery::QsmRun;
 use crate::pipeline::config::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
+use qsmxt_engine::bridge::{field_mapping_runs, skips_bgremove};
+use qsmxt_engine::cache::step_cache_key;
+use qsmxt_engine::fieldmap::hz_per_ppm;
+use qsmxt_engine::scan::{scan_metadata, scan_metadata_in, AXIAL_ONLY_TOLERANCE_DEG};
 use crate::pipeline::memory;
 use crate::pipeline::phase;
-use crate::pipeline::requirements;
+use crate::pipeline::requirements::{
+    self, r2primenet_field_message, r2primenet_field_policy, R2primenetFieldPolicy,
+    R2PRIMENET_TRAINED_B0_T,
+};
 use crate::pipeline::stats;
 use crate::nifti::write::write_volume;
 use crate::error::QsmxtError;
@@ -27,7 +34,7 @@ struct Provenance {
     inputs: Vec<String>,
     outputs: Vec<String>,
     duration_secs: f64,
-    peak_memory_bytes: usize,
+    peak_memory_bytes: u64,
     timestamp: String,
 }
 
@@ -60,67 +67,6 @@ pub(crate) fn write_step_provenance(
         .map_err(|e| QsmxtError::Config(format!("Failed to serialize provenance: {}", e)))?;
     std::fs::write(prov_path, json)?;
     Ok(())
-}
-
-/// The configuration a step reads, serialised whole, so that every field of it is part of the step's
-/// cache key — a new config field is keyed without anyone remembering to (#272). The step's own
-/// `parameters` (what provenance records) stay as they are; this is added beside them.
-///
-/// Sections are as narrow as the step actually reads: an upstream step keyed on a section it does
-/// not read would be recomputed, and invalidate everything after it, whenever that section
-/// changed. Two-pass steps read what their main-pass twin reads.
-pub(crate) fn consumed_config(step: &str, config: &PipelineConfig) -> serde_json::Value {
-    use serde_json::json;
-    let base = step.strip_suffix(crate::pipeline::graph::RELIABLE_SUFFIX).unwrap_or(step);
-    let crop = json!({
-        "crop_to_mask": config.pipeline.crop_to_mask,
-        "fft_padding": config.pipeline.fft_padding,
-        "crop_margin_mm": config.pipeline.crop_margin_mm,
-    });
-    match base {
-        "scale_phase" => json!({ "coil_combination_sigma": config.field_mapping.coil_combination_sigma }),
-        "magnitude" => json!({
-            "inhomogeneity_correction": config.masking.inhomogeneity_correction,
-            "homogeneity": config.homogeneity,
-        }),
-        // The main mask is not the two-pass one, so its settings stay out of the main mask's key.
-        "mask" if step == base => {
-            let mut m = serde_json::to_value(&config.masking).unwrap_or_default();
-            if let Some(o) = m.as_object_mut() {
-                o.remove("two_pass");
-                o.remove("two_pass_sections");
-            }
-            json!({ "masking": m, "bet": config.bet })
-        }
-        "mask" => json!({ "masking": config.masking, "bet": config.bet, "homogeneity": config.homogeneity }),
-        "motion" => json!({ "motion_correction": config.motion_correction, "registration": config.registration }),
-        "swi" => json!({ "swi": config.swi }),
-        "unwrap" => json!({ "field_mapping": config.field_mapping }),
-        "bgremove" => json!({ "bg_removal": config.bg_removal, "crop": crop }),
-        "invert" | "tgv" | "qsmart" => json!({ "inversion": config.inversion, "crop": crop }),
-        "twopass" => json!({ "masking": config.masking }),
-        "reference" | "reference-singlepass" => json!({ "qsm": config.qsm }),
-        "segmentation" => json!({ "segmentation": config.segmentation }),
-        "smwi" => json!({ "smwi": config.smwi }),
-        "chi_separation" => json!({ "separation": config.separation }),
-        "output_space" => json!({ "output_space": config.pipeline.output_space }),
-        // Keyed by their own parameters alone: R2*/T2* (ARLO has no settings), R2/R2′ (its
-        // separation settings are in its parameters; keying the whole section would recompute the
-        // MESE fit whenever the χ-separation method changed) and the statistics.
-        _ => serde_json::Value::Null,
-    }
-}
-
-/// A step's cache key: its algorithm and recorded parameters, plus the configuration it reads.
-pub(crate) fn step_cache_key(
-    step: &str, algorithm: Option<&str>, params: &serde_json::Value, config: &PipelineConfig,
-) -> String {
-    let consumed = consumed_config(step, config);
-    if consumed.is_null() {
-        return crate::pipeline::graph::step_params_hash(algorithm, params);
-    }
-    crate::pipeline::graph::step_params_hash(
-        algorithm, &serde_json::json!({ "params": params, "config": consumed }))
 }
 
 /// Bundles references needed by every pipeline stage.
@@ -419,7 +365,7 @@ pub fn run_pipeline_cached(
     // What this run can produce of what was enabled. `qsmxt run` has already refused a requested
     // output the data cannot give and warned about an implied one (`requirements::check_runs`);
     // here the same rules decide which stages run, so the two cannot disagree.
-    let facts = requirements::RunFacts::of(qsm_run, config);
+    let facts = requirements::scan_facts(qsm_run, config);
     let wanted = |o: requirements::Output| requirements::wanted(&facts, config, o);
     let do_relaxometry = wanted(requirements::Output::T2star) || wanted(requirements::Output::R2star);
     let needs_mask = config.pipeline.do_qsm || config.pipeline.do_swi || config.pipeline.do_smwi
@@ -890,213 +836,26 @@ fn reconstruction_box(
     }
 }
 
-/// Work out the grid and B0 direction the pipeline will actually reconstruct on.
-///
-/// The dipole kernel is built in voxel space, so an oblique acquisition has to be handled one of
-/// two ways, and doing neither is what leaves susceptibility contrast on the floor:
-///
-/// 1. **Resample to a cardinal-aligned grid** (`--obliquity-threshold`, as QSMxT 8.x did), after
-///    which B0 is `(0,0,1)` by construction. Costs one interpolation of every echo.
-/// 2. **Keep the grid and rotate the kernel**, using the true B0 direction from the affine.
-///
-/// A sidecar `B0_dir` always wins, since it describes the acquisition better than the affine can.
-/// How far B0 may sit from the slice normal before an axial-only algorithm is given resampled
-/// data. Acquisitions carry sub-degree tilts from rounding in the affine; resampling for those
-/// costs an interpolation and buys nothing.
-const AXIAL_ONLY_TOLERANCE_DEG: f64 = 1.0;
-
-/// What the orientation gate cannot read from the config alone.
-///
-/// Only whether a measured R2 exists, which is what decides whether `--r2prime-strategy auto`
-/// falls back to R2PRIMEnet. Both sources are judged optimistically — a declared
-/// `--custom-r2-tool` whose derivative turns out to be missing, or a MESE that turns out to be
-/// unreadable, both leave `auto` predicting R2′ after all. `stage_r2_r2prime` warns when that
-/// happens on a grid that was left oblique.
-fn run_orientation_facts(
-    run: &QsmRun,
-    config: &PipelineConfig,
-) -> qsmxt_engine::bridge::RunOrientationFacts {
-    qsmxt_engine::bridge::RunOrientationFacts {
-        has_measured_r2: run.mese.is_some() || config.separation.custom_r2_tool.is_some(),
-    }
-}
-
+/// The grid and B0 direction the pipeline will reconstruct on: the engine's decision
+/// ([`qsmxt_engine::scan::resolve_geometry`]) from the first phase image's header.
 fn resolve_geometry(
     run: &QsmRun,
     first_phase: &NiftiData,
     config: &PipelineConfig,
 ) -> crate::Result<RunMetadata> {
-    let affine = first_phase.affine;
-    let obliquity = qsm_core::geometry::obliquity_from_affine(&affine);
-    let tilt = qsm_core::geometry::b0_angle_from_affine(&affine);
-    let threshold = config.pipeline.obliquity_threshold;
-    let axes = qsm_core::geometry::obliquity_axes_from_affine(&affine);
-
-    let mut meta = RunMetadata {
-        dims: first_phase.dims,
-        voxel_size: first_phase.voxel_size,
-        affine,
-        n_echoes: run.echoes.len(),
-        echo_times: run.echo_times.clone(),
-        b0_direction: (0.0, 0.0, 1.0),
-        field_strength: run.magnetic_field_strength,
-        has_magnitude: run.has_magnitude,
-        source_geometry: None, slice_geometry: None,
-    };
-
-    if obliquity > 0.01 {
-        log::info!(
-            "Obliquity {:.1}° (per-axis {:.1}/{:.1}/{:.1}°); B0 is {:.1}° from the slice normal",
-            obliquity, axes[0], axes[1], axes[2], tilt
-        );
-    }
-
-    // An algorithm that only understands axial data settles the question before anything else
-    // does. It takes no B0 direction, so neither a sidecar nor the affine can help it: the only
-    // way to reconstruct correctly is to move the data. Below the obliquity threshold the tilt
-    // is small enough not to bother.
-    let axial_only = qsmxt_engine::bridge::axial_only_algorithms(config, run_orientation_facts(run, config));
-    let forced_axial = !axial_only.is_empty() && tilt > AXIAL_ONLY_TOLERANCE_DEG;
-    if forced_axial {
-        log::info!(
-            "Resampling to axial because {} {} no B0 direction and {} assume it is +z; B0 is \
-             {:.1}° from the slice normal here",
-            axial_only.join(", "),
-            if axial_only.len() == 1 { "takes" } else { "take" },
-            if axial_only.len() == 1 { "it assumes" } else { "they assume" },
-            tilt
-        );
-    }
-
-    // A sidecar B0_dir is authoritative for anything that can use a direction at all.
-    if !forced_axial {
-        if let Some(dir) = run.b0_dir {
-            meta.b0_direction = dir;
-            log::info!("B0 direction {:?} (from the JSON sidecar)", dir);
-            return Ok(meta);
-        }
-    }
-
-    let resample = forced_axial || (config.pipeline.axial_resampling && obliquity > threshold);
-    if resample {
-        // A matched MESE used to veto this, on both branches: the GRE would move to a cardinal
-        // grid and the MESE, read straight from BIDS, would be left behind. It no longer does,
-        // because the MESE is no longer assumed to share the GRE's grid — `load_mese_voxel_major`
-        // resamples it onto whatever grid is chosen here. That also makes a MESE acquired on its
-        // own grid usable, which is the ordinary case and used to be discarded.
-        let grid = qsm_core::geometry::axial_grid_for(
-            first_phase.dims.0, first_phase.dims.1, first_phase.dims.2, &affine,
-        );
-        let why = if forced_axial {
-            "required by the chosen algorithm".to_string()
-        } else {
-            format!("obliquity {obliquity:.1}° > threshold {threshold:.1}°")
-        };
-        log::info!(
-            "Resampling to axial: {}x{}x{} -> {}x{}x{} ({}); B0 becomes (0, 0, 1)",
-            first_phase.dims.0, first_phase.dims.1, first_phase.dims.2,
-            grid.dims.0, grid.dims.1, grid.dims.2, why
-        );
-        if run.mese.is_some() {
-            log::info!("The matched MESE acquisition will be resampled onto the same grid");
-        }
-        meta.source_geometry = Some((first_phase.dims, affine));
-        meta.dims = grid.dims;
-        meta.voxel_size = grid.voxel_size;
-        meta.affine = grid.affine;
-        meta.b0_direction = (0.0, 0.0, 1.0);
-        return Ok(meta);
-    }
-
-    // No resampling: build the kernel on the acquired grid, with B0 where it actually points.
-    meta.b0_direction = qsm_core::geometry::b0_direction_from_affine(&affine);
-    if tilt > 0.5 {
-        log::info!(
-            "B0 direction ({:.3}, {:.3}, {:.3}) from the affine; pass --axial-resampling to \
-             resample to axial instead",
-            meta.b0_direction.0, meta.b0_direction.1, meta.b0_direction.2
-        );
-    }
-    Ok(meta)
+    let facts = requirements::scan_facts(run, config);
+    Ok(qsmxt_engine::scan::resolve_geometry(
+        first_phase.dims, first_phase.voxel_size, first_phase.affine, &facts, config,
+    ))
 }
 
-/// qsm-core's scan metadata for a stage working on the run's (working) grid, with the slice
-/// geometry for qsm-core's slice-gap check and the working grid's affine — after axial
-/// resampling that is the resampled grid's, which is the grid the stages run on.
-fn scan_metadata(meta: &RunMetadata) -> qsm_core::pipeline::ScanMetadata {
-    let mut m = crate::pipeline::config::to_scan_metadata(
-        meta.dims, meta.voxel_size, &meta.echo_times, meta.field_strength, meta.b0_direction,
-        Some(meta.affine),
-    );
-    m.slice_geometry = meta.slice_geometry.map(|(thickness, axis)| qsm_core::grid::SliceGeometry { thickness, axis });
-    m
-}
-
-/// [`scan_metadata`] for a stage working on the box `cb` of the run's grid (same voxel size; the
-/// affine moved to the box's first voxel).
-fn scan_metadata_in(meta: &RunMetadata, cb: &qsm_core::crop::CropBox) -> qsm_core::pipeline::ScanMetadata {
-    let mut m = scan_metadata(meta);
-    m.dims = cb.dims;
-    m.affine = Some(cropped_affine(&meta.affine, cb.origin));
-    m
-}
-
-/// The affine of a sub-grid whose voxel (0,0,0) is voxel `origin` of the grid `affine` describes.
-fn cropped_affine(affine: &[f64; 16], origin: (isize, isize, isize)) -> [f64; 16] {
-    let o = [origin.0 as f64, origin.1 as f64, origin.2 as f64];
-    let mut a = *affine;
-    for r in 0..3 {
-        a[4 * r + 3] += (0..3).map(|c| affine[4 * r + c] * o[c]).sum::<f64>();
-    }
-    a
-}
-
-/// The acquisition's slices, as `(thickness mm, voxel axis)`, when the sidecar says enough to
-/// check them for a gap: `SliceThickness`, and either `MRAcquisitionType` "2D" or a thickness
-/// that differs from the pitch (a 3D acquisition records its partition thickness, the pitch, so
-/// there is nothing to check). The axis is `SliceEncodingDirection`'s, else the coarsest one.
-fn slice_geometry_from_sidecar(
-    sc: &crate::bids::sidecar::QsmSidecar, voxel_size: (f64, f64, f64),
-) -> Option<(f64, usize)> {
-    let thickness = sc.slice_thickness?;
-    let vs = [voxel_size.0, voxel_size.1, voxel_size.2];
-    let axis = match sc.slice_encoding_direction.as_deref().map(|d| d.trim_end_matches('-')) {
-        Some("i") => 0,
-        Some("j") => 1,
-        Some("k") => 2,
-        _ => (0..3).rev().max_by(|&a, &b| vs[a].total_cmp(&vs[b])).unwrap_or(2),
-    };
-    let is_2d = sc.mr_acquisition_type.as_deref().is_some_and(|t| t.eq_ignore_ascii_case("2D"));
-    let differs = (thickness - vs[axis]).abs() > 0.01 * vs[axis];
-    (is_2d || differs).then_some((thickness, axis))
-}
-
-/// Refuse a gapped acquisition before any work, unless `--ignore-slice-gap` (or nothing that
-/// needs a contiguous grid was asked for). Checked on the acquired grid, so it holds whether or
-/// not the run is then resampled. Returns the geometry to hand qsm-core (on the working grid).
+/// Refuse a gapped acquisition before any work ([`qsmxt_engine::scan::check_slice_gap`]), from
+/// the first echo's sidecar. Returns the geometry to hand qsm-core (on the working grid).
 fn check_slice_gap(
     run: &QsmRun, first_phase: &NiftiData, meta: &RunMetadata, config: &PipelineConfig,
 ) -> crate::Result<Option<(f64, usize)>> {
     let Some(sc) = crate::bids::sidecar::read_sidecar(&run.echoes[0].phase_json).ok() else { return Ok(None) };
-    let Some((thickness, axis)) = slice_geometry_from_sidecar(&sc, first_phase.voxel_size) else { return Ok(None) };
-    let (nx, ny, nz) = first_phase.dims;
-    let (vx, vy, vz) = first_phase.voxel_size;
-    let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
-    if let Err(gap) = grid.require_contiguous_slices(thickness, axis) {
-        if config.pipeline.ignore_slice_gap {
-            log::warn!("{gap}; reconstructing anyway (--ignore-slice-gap): treat the result as unreliable");
-            return Ok(None);
-        }
-        if config.pipeline.do_qsm {
-            return Err(QsmxtError::Config(format!(
-                "{gap} (from the sidecar's SliceThickness). QSM needs contiguous slices; pass \
-                 --ignore-slice-gap to reconstruct anyway")));
-        }
-        log::warn!("{gap}; no QSM was asked for, so continuing");
-        return Ok(None);
-    }
-    // Contiguous: hand the geometry on, unless resampling moved the slices off the grid's axes.
-    Ok(if meta.source_geometry.is_none() { Some((thickness, axis)) } else { None })
+    Ok(qsmxt_engine::scan::check_slice_gap(&sc, first_phase.dims, first_phase.voxel_size, meta, config)?)
 }
 
 /// Every input file of a run — echoes, sidecars, uncombined coils, the MESE — by path, size and
@@ -1139,7 +898,7 @@ fn stage_load(
         "motion_correction": config.motion_correction,
         "registration": if config.motion_correction.enabled { Some(&config.registration) } else { None },
         "axial_only": qsmxt_engine::bridge::axial_only_algorithms(
-            config, run_orientation_facts(qsm_run, config)),
+            config, qsmxt_engine::scan::orientation_facts(&requirements::scan_facts(qsm_run, config), config)),
         // Replacing an input in place (a re-export, a corrected sidecar) changes everything
         // computed from it; nothing else would notice.
         "inputs": input_identity(qsm_run),
@@ -2243,73 +2002,6 @@ fn r2primenet_params(
     })
 }
 
-/// What to do about R2PRIMEnet's field strength before running it.
-#[derive(Debug, PartialEq)]
-enum R2primenetFieldPolicy {
-    /// At 3 T: run.
-    Run,
-    /// Off 3 T but explicitly allowed: run, and warn that the R2' is uncalibrated.
-    RunUncalibrated,
-    /// Off 3 T under `--r2prime-strategy auto`: skip R2' with a warning rather than fail the run
-    /// over a stage the user may not have asked for by name.
-    Skip,
-    /// Off 3 T and R2PRIMEnet asked for by name: refuse.
-    Refuse,
-}
-
-fn r2primenet_field_policy(
-    field_strength: f64, strategy: R2PrimeStrategy, ignore_field_mismatch: bool,
-) -> R2primenetFieldPolicy {
-    match (r2primenet_field_offset(field_strength).is_some(), ignore_field_mismatch, strategy) {
-        (false, _, _) => R2primenetFieldPolicy::Run,
-        (true, true, _) => R2primenetFieldPolicy::RunUncalibrated,
-        (true, false, R2PrimeStrategy::Auto) => R2primenetFieldPolicy::Skip,
-        (true, false, _) => R2primenetFieldPolicy::Refuse,
-    }
-}
-
-/// How far this acquisition sits outside the band R2PRIMEnet's weights were trained over, in
-/// Tesla, or `None` when it is inside it.
-///
-/// Kept separate from the inference so a non-`dl` build still compiles the check, and so the
-/// policy is decided before the weights are fetched rather than after.
-fn r2primenet_field_offset(field_strength: f64) -> Option<f64> {
-    let off = (field_strength - R2PRIMENET_TRAINED_B0_T).abs();
-    (off > R2PRIMENET_B0_TOLERANCE_T).then_some(off)
-}
-
-/// qsm-core's `relaxometry::{TRAINED_B0_T, B0_TOLERANCE_T}`, which only exist with its `onnx`
-/// feature; a non-`dl` build still needs them for the policy. Checked against qsm-core in tests.
-const R2PRIMENET_TRAINED_B0_T: f64 = 3.0;
-const R2PRIMENET_B0_TOLERANCE_T: f64 = 0.3;
-
-/// Why R2PRIMEnet off 3 T is a problem, for the warning or the error.
-///
-/// R2* scales with field strength and the network has no way to be told what it is looking at,
-/// so a 7 T R2* produces an R2' map that is the right shape, the right units and the wrong
-/// numbers. Nothing downstream can detect that, which is the reason to say it here.
-/// What is wrong with running R2PRIMEnet at this field strength under this strategy, when the
-/// policy would skip or refuse it; `None` when it may run.
-pub(crate) fn r2primenet_off_field(
-    field_strength: f64, strategy: R2PrimeStrategy, ignore_field_mismatch: bool,
-) -> Option<String> {
-    match r2primenet_field_policy(field_strength, strategy, ignore_field_mismatch) {
-        R2primenetFieldPolicy::Skip | R2primenetFieldPolicy::Refuse =>
-            Some(r2primenet_field_message(field_strength)),
-        R2primenetFieldPolicy::Run | R2primenetFieldPolicy::RunUncalibrated => None,
-    }
-}
-
-fn r2primenet_field_message(field_strength: f64) -> String {
-    format!(
-        "R2PRIMEnet's weights are trained at {} T and this acquisition is {} T. R2* scales with \
-         field strength, so a predicted R2' would be outside what the network has seen and wrong \
-         in a way that looks plausible. Acquire a MESE and use --r2prime-strategy mese to measure \
-         R2' instead, or supply one with --use-custom-r2prime",
-        R2PRIMENET_TRAINED_B0_T, field_strength,
-    )
-}
-
 #[cfg(not(feature = "dl"))]
 fn run_r2primenet(
     _ctx: &StageContext, _r2star: &[f64], _mask: &[u8], _grid: &qsm_core::Grid,
@@ -2608,9 +2300,9 @@ fn stage_t2star_r2star(ctx: &mut StageContext, mask_path: &Path, progress: &dyn 
 /// Say so when R2PRIMEnet is about to run on a grid that was not brought to axial.
 ///
 /// `axial_only_algorithms` normally resamples first — R2PRIMEnet assumes B0 along `+z` and has no
-/// way to be told otherwise. It decides from the config and `run_orientation_facts`, which judge
-/// a declared R2 source optimistically, so a run can reach here having been promised a measured R2
-/// that never materialised (a missing `--custom-r2-tool` derivative, an unreadable MESE). The
+/// way to be told otherwise. It decides from the config and the engine's `orientation_facts`,
+/// which judge a declared R2 source optimistically, so a run can reach here having been promised
+/// a measured R2 that never materialised (a missing `--custom-r2-tool` derivative, an unreadable MESE). The
 /// grid cannot be changed this late, so the one useful thing is to not be silent about it.
 fn warn_if_r2primenet_grid_is_oblique(ctx: &StageContext) {
     if let Some(tilt) = r2primenet_grid_tilt(ctx.meta.source_geometry.is_some(), &ctx.meta.affine) {
@@ -2830,7 +2522,7 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
             None => { log::warn!("no custom R2 map under derivatives (tool: {}) — skipping R2", tool); None }
         }
     } else if let Some(mese) = ctx.run.mese.clone() {
-        let facts = requirements::RunFacts::of(ctx.run, ctx.config);
+        let facts = requirements::scan_facts(ctx.run, ctx.config);
         if let Some(why) = requirements::mese_problem(&facts) {
             // Refused up front when R2 was asked for; here only when something else implied it.
             log::warn!("Not measuring R2 from the MESE ({why})");
@@ -2998,7 +2690,7 @@ fn stage_r2_r2prime(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(
 ///
 /// `published` is the support referencing wrote for the pipeline's own χ (`desc-qsm_mask`); with
 /// none — a bring-your-own χ — it is the brain mask less the voxels `chi` leaves undefined (the
-/// rule of [`crate::pipeline::referencing::defined_support`]). `local_field`, for the methods that
+/// rule of [`qsmxt_engine::referencing::defined_support`]). `local_field`, for the methods that
 /// fit it, limits the support further to where the field is defined: a two-pass χ is the union
 /// of both passes' supports, but the local field is the main pass's alone.
 fn separation_support(
@@ -3006,7 +2698,7 @@ fn separation_support(
 ) -> Vec<u8> {
     let mut support: Vec<u8> = match published {
         Some(p) => p.iter().zip(brain).map(|(&p, &b)| u8::from(p != 0 && b != 0)).collect(),
-        None => crate::pipeline::referencing::defined_support(&[brain], chi),
+        None => qsmxt_engine::referencing::defined_support(&[brain], chi),
     };
     if let Some(field) = local_field {
         for (s, &f) in support.iter_mut().zip(field) {
@@ -3275,7 +2967,7 @@ fn stage_unwrap(
         "linear_fit_estimate_offset": ctx.config.field_mapping.linear_fit.estimate_offset,
         "linear_fit_reliability_threshold": ctx.config.field_mapping.linear_fit.reliability_threshold_percentile,
         "robust_fit": ctx.config.field_mapping.robust_fit,
-        // Per-echo masked Laplacian + echo combination (pipeline::fieldmap); bump on a change
+        // Per-echo masked Laplacian + echo combination (qsmxt_engine::fieldmap); bump on a change
         // to that path so field maps from the old one are recomputed.
         "laplacian_echo_combination": if unwrap_name == "laplacian" { 2 } else { 0 },
         "laplacian_solver": format!("{}", ctx.config.field_mapping.laplacian_solver),
@@ -3324,7 +3016,7 @@ fn stage_unwrap(
             ctx.config.field_mapping.laplacian_solver,
             ctx.config.field_mapping.b0_estimation, ctx.config.field_mapping.b0_weight_type);
     }
-    let field = crate::pipeline::fieldmap::run_field_mapping(
+    let field = qsmxt_engine::fieldmap::run_field_mapping(
         &phase_slices, mag_option, &mask, &scan_meta, &fm_config,
     ).map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
 
@@ -3360,9 +3052,9 @@ fn stage_unwrap(
         outputs.push(mag_path);
     }
     if let Some(report) = &field.robust_fit {
-        crate::pipeline::fieldmap::log_robust_fit_report(report);
+        qsmxt_engine::fieldmap::log_robust_fit_report(report);
         let json_path = robust_fit_report_path(field_path);
-        let json = serde_json::to_string_pretty(&crate::pipeline::fieldmap::robust_fit_report_json(report))
+        let json = serde_json::to_string_pretty(&qsmxt_engine::fieldmap::robust_fit_report_json(report))
             .map_err(|e| QsmxtError::Config(format!("robust fit report: {e}")))?;
         std::fs::write(&json_path, json)?;
         outputs.push(json_path);
@@ -3372,12 +3064,6 @@ fn stage_unwrap(
     ctx.complete_step("unwrap", Some(unwrap_alg), unwrap_params, &input_refs, outputs, t)?;
     log_step_done("Phase unwrapping", t);
     Ok(())
-}
-
-/// Hz per ppm of field at `field_strength` T: γ̄·B0·10⁻⁶, with the γ̄ QSM.rs converts by
-/// (42.576 MHz/T), so the published Hz map is exactly the ppm one the inversions read.
-pub fn hz_per_ppm(field_strength: f64) -> f64 {
-    42.576e6 * field_strength * 1e-6
 }
 
 /// Per-echo phase + magnitude volumes and the phase input paths (for cache provenance).
@@ -3539,28 +3225,6 @@ fn reconstruct(
         QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => stage_iqsm(ctx, pass, progress),
         _ => stage_standard_qsm(ctx, pass, field_path, progress),
     }
-}
-
-/// Whether field mapping (unwrapping and B0 estimation) runs for a run with `n_echoes` echoes.
-///
-/// QSM.rs's `InversionConfig::input` decides (#265): the wrapped-phase methods (iQSM, iQSM+,
-/// single-echo TGV) skip it, the total-field ones (TFI, multi-echo TGV, QSMART, ...) need it. iQFM
-/// in front of a local-field inversion makes that field from phase itself. The TUI shows the
-/// field-mapping settings by the same rule.
-pub(crate) fn field_mapping_runs(config: &PipelineConfig, n_echoes: usize) -> bool {
-    let input = qsmxt_engine::bridge::inversion_input(config, n_echoes);
-    input.needs_field_mapping()
-        && !(input.needs_bg_removal() && config.bg_removal.algorithm == BfAlgorithm::Iqfm)
-}
-
-/// Whether the configured inversion runs without a separate background-removal stage, and so
-/// leaves its map defined over the brain mask rather than an eroded one.
-///
-/// Read off QSM.rs's `InversionConfig::input` (#265): the total-field and wrapped-phase methods
-/// skip it. That does not depend on the echo count (multi-echo TGV takes the total field, a
-/// single echo its wrapped phase), so any count gives the same answer.
-pub(crate) fn skips_bgremove(config: &PipelineConfig) -> bool {
-    !qsmxt_engine::bridge::inversion_input(config, 1).needs_bg_removal()
 }
 
 /// One reconstruction pass: the mask it runs on, where its outputs go, and how its steps are
@@ -3998,7 +3662,7 @@ fn stage_standard_qsm(
 /// `support_masks` are the masks the map was reconstructed on ([`Pass::support`]: the
 /// background-removal mask, or the brain mask when the inversion removed the background itself;
 /// both passes' for a two-pass map). Every reference is measured over the map's support only —
-/// see [`crate::pipeline::referencing::defined_support`] — and the map is written as 0 outside it.
+/// see [`qsmxt_engine::referencing::defined_support`] — and the map is written as 0 outside it.
 /// Referencing over the brain mask instead averaged in the rim background removal eroded (0 in
 /// the raw map), biasing the offset, and then left that rim at a constant `-offset`.
 ///
@@ -4085,7 +3749,7 @@ fn stage_reference(
 pub(crate) struct Referenced {
     pub chi: Vec<f64>,
     pub support: Vec<u8>,
-    pub offset: Option<crate::pipeline::referencing::Offset>,
+    pub offset: Option<qsmxt_engine::referencing::Offset>,
 }
 
 /// Reference `chi` with `--qsm-reference`, over the voxels it is defined on within `declared`.
@@ -4100,7 +3764,7 @@ pub(crate) fn reference_chi(
         return Err(QsmxtError::DimensionMismatch(format!(
             "support mask has {} voxels but the susceptibility map has {}", m.len(), chi.len())));
     }
-    let support = crate::pipeline::referencing::defined_support(declared, chi);
+    let support = qsmxt_engine::referencing::defined_support(declared, chi);
     log::info!(
         "Referencing over the map's support: {} voxels",
         support.iter().filter(|&&m| m != 0).count(),
@@ -4116,15 +3780,15 @@ pub(crate) fn reference_chi(
                 "segmentation has {} voxels but the susceptibility map has {}",
                 dseg.len(), chi.len())));
         }
-        let roi = crate::pipeline::referencing::region_mask(dseg, &ids);
-        let (out, off) = crate::pipeline::referencing::reference_to_region(chi, &support, &roi, &spec)?;
+        let roi = qsmxt_engine::referencing::region_mask(dseg, &ids);
+        let (out, off) = qsmxt_engine::referencing::reference_to_region(chi, &support, &roi, &spec)?;
         return Ok(Referenced { chi: out, support, offset: Some(off) });
     }
     let (_, _, _, ref_method_core) = crate::pipeline::config::to_pipeline_stages(config);
     // What the mean reference removed is worth recording for the same reason a region's offset
     // is; `apply_reference` applies it without saying.
     let offset = (config.qsm.reference == QsmReference::Mean)
-        .then(|| crate::pipeline::referencing::mask_mean(chi, &support))
+        .then(|| qsmxt_engine::referencing::mask_mean(chi, &support))
         .flatten();
     let out = qsm_core::pipeline::apply_reference(chi, &support, ref_method_core);
     Ok(Referenced { chi: out, support, offset })
@@ -4132,7 +3796,7 @@ pub(crate) fn reference_chi(
 
 /// The `QsmReference*` sidecar fields for a map referenced under `config`.
 pub(crate) fn reference_sidecar_fields(
-    config: &PipelineConfig, offset: Option<&crate::pipeline::referencing::Offset>,
+    config: &PipelineConfig, offset: Option<&qsmxt_engine::referencing::Offset>,
 ) -> serde_json::Map<String, serde_json::Value> {
     let mut obj = serde_json::Map::new();
     obj.insert("QsmReference".into(), serde_json::json!(config.qsm.reference_spec()));
@@ -4158,7 +3822,7 @@ pub(crate) fn reference_sidecar_fields(
 /// Merged into whatever is already there, since BIDS-Prov adds `GeneratedBy` to the same file.
 fn write_reference_sidecar(
     ctx: &StageContext, qsm_path: &Path,
-    offset: Option<crate::pipeline::referencing::Offset>,
+    offset: Option<qsmxt_engine::referencing::Offset>,
 ) -> crate::Result<()> {
     let Some(sidecar) = crate::bids::entities::sidecar_path(qsm_path) else { return Ok(()) };
     let mut obj = read_json_object(&sidecar);
@@ -4245,81 +3909,6 @@ fn stage_two_pass_combine(
     Ok(())
 }
 
-
-/// Cache keys cover the whole configuration each step reads (#272).
-#[cfg(test)]
-mod cache_key_tests {
-    use super::*;
-
-    /// Every leaf of `value`, as a JSON pointer.
-    fn leaves(value: &serde_json::Value, path: String, out: &mut Vec<String>) {
-        match value {
-            serde_json::Value::Object(m) => for (k, v) in m { leaves(v, format!("{path}/{k}"), out) },
-            serde_json::Value::Array(a) if !a.is_empty() && !a[0].is_object() => out.push(format!("{path}/0")),
-            serde_json::Value::Array(a) => for (i, v) in a.iter().enumerate() { leaves(v, format!("{path}/{i}"), out) },
-            _ => out.push(path),
-        }
-    }
-
-    /// A different value of the same type, or `None` where there is no generic one (strings —
-    /// enum names — and absent options).
-    fn changed(v: &serde_json::Value) -> Option<serde_json::Value> {
-        use serde_json::Value as V;
-        Some(match v {
-            V::Bool(b) => V::Bool(!b),
-            V::Number(n) if n.is_u64() => serde_json::json!(n.as_u64().unwrap() + 1),
-            V::Number(n) if n.is_i64() => serde_json::json!(n.as_i64().unwrap() + 1),
-            V::Number(n) => serde_json::json!(n.as_f64().unwrap() * 1.5 + 0.125),
-            _ => return None,
-        })
-    }
-
-    /// Change each leaf of a config section, one at a time, and the step that reads the section
-    /// must no longer be cached. Generated from the serialised config like `param_coverage`, so a
-    /// field added later is covered without anyone listing it.
-    #[test]
-    fn every_leaf_of_a_consumed_section_is_in_the_cache_key() {
-        let base = PipelineConfig::default();
-        let base_json = serde_json::to_value(&base).unwrap();
-        let params = serde_json::json!({});
-        for (section, step) in [("inversion", "invert"), ("bg_removal", "bgremove"),
-                                ("field_mapping", "unwrap"), ("separation", "chi_separation"),
-                                ("masking", "mask-reliable"), ("swi", "swi"), ("smwi", "smwi")] {
-            let mut paths = Vec::new();
-            leaves(&base_json[section], format!("/{section}"), &mut paths);
-            let mut tested = 0;
-            for p in &paths {
-                let Some(new) = changed(base_json.pointer(p).unwrap()) else { continue };
-                let mut j = base_json.clone();
-                *j.pointer_mut(p).unwrap() = new;
-                let Ok(cfg) = serde_json::from_value::<PipelineConfig>(j) else { continue };
-                tested += 1;
-                assert_ne!(step_cache_key(step, None, &params, &cfg), step_cache_key(step, None, &params, &base),
-                           "changing {p} leaves {step} cached");
-            }
-            assert!(tested * 2 >= paths.len().min(4), "{section}: only {tested} of {} leaves exercised", paths.len());
-        }
-    }
-
-    /// Cropping changes what background removal and the inversion compute, so it is in their keys
-    /// — and not in the field map's, which it does not touch.
-    #[test]
-    fn cropping_is_in_the_reconstruction_keys() {
-        let base = PipelineConfig::default();
-        let mut c = base.clone();
-        c.pipeline.crop_to_mask = !c.pipeline.crop_to_mask;
-        let p = serde_json::json!({});
-        for step in ["bgremove", "invert", "tgv", "qsmart", "invert-reliable"] {
-            assert_ne!(step_cache_key(step, None, &p, &c), step_cache_key(step, None, &p, &base), "{step}");
-        }
-        assert_eq!(step_cache_key("unwrap", None, &p, &c), step_cache_key("unwrap", None, &p, &base));
-        // The two-pass settings are the reliable pass's business, not the main mask's.
-        let mut t = base.clone();
-        t.masking.two_pass = true;
-        assert_eq!(step_cache_key("mask", None, &p, &t), step_cache_key("mask", None, &p, &base));
-        assert_ne!(step_cache_key("mask-reliable", None, &p, &t), step_cache_key("mask-reliable", None, &p, &base));
-    }
-}
 
 #[cfg(test)]
 mod tests {
@@ -4875,27 +4464,6 @@ mod tests {
         run
     }
 
-    fn sidecar(thickness: Option<f64>, acq: Option<&str>, dir: Option<&str>) -> crate::bids::sidecar::QsmSidecar {
-        crate::bids::sidecar::QsmSidecar {
-            echo_time: 0.004, magnetic_field_strength: 3.0, b0_dir: None,
-            slice_thickness: thickness, mr_acquisition_type: acq.map(str::to_string),
-            slice_encoding_direction: dir.map(str::to_string), manufacturer: None,
-        }
-    }
-
-    #[test]
-    fn slice_geometry_is_read_only_where_a_gap_can_be_checked() {
-        let vs = (0.8, 0.8, 3.0);
-        assert_eq!(super::slice_geometry_from_sidecar(&sidecar(Some(2.0), Some("2D"), None), vs), Some((2.0, 2)));
-        assert_eq!(super::slice_geometry_from_sidecar(&sidecar(Some(0.8), Some("2D"), Some("j-")), vs), Some((0.8, 1)));
-        // 3D: the partition thickness is the pitch; nothing to check.
-        assert_eq!(super::slice_geometry_from_sidecar(&sidecar(Some(3.0), Some("3D"), None), vs), None);
-        // No SliceThickness: nothing can be said.
-        assert_eq!(super::slice_geometry_from_sidecar(&sidecar(None, Some("2D"), None), vs), None);
-        // A thickness that is not the pitch is checked even without MRAcquisitionType.
-        assert_eq!(super::slice_geometry_from_sidecar(&sidecar(Some(2.0), None, None), vs), Some((2.0, 2)));
-    }
-
     #[test]
     fn a_gapped_2d_acquisition_is_refused_unless_ignored() {
         let dir = tempfile::tempdir().unwrap();
@@ -4922,7 +4490,7 @@ mod tests {
         // And qsm-core refuses it too, given the geometry.
         let mut gapped = meta.clone();
         gapped.slice_geometry = Some((2.0, 2));
-        assert!(super::scan_metadata(&gapped).require_contiguous_slices().is_err());
+        assert!(qsmxt_engine::scan::scan_metadata(&gapped).require_contiguous_slices().is_err());
     }
 
     #[test]
@@ -4965,7 +4533,7 @@ mod tests {
         assert!(qsm_core::geometry::obliquity_from_affine(&meta.affine) < 1e-9);
         // The stages (masking among them) run on the resampled grid, so that is the affine
         // qsm-core is given — not the oblique one the files were acquired on.
-        assert_eq!(super::scan_metadata(&meta).affine, Some(meta.affine));
+        assert_eq!(qsmxt_engine::scan::scan_metadata(&meta).affine, Some(meta.affine));
         assert_ne!(meta.affine, oblique_affine());
     }
 
@@ -4976,7 +4544,7 @@ mod tests {
         let cfg = crate::pipeline::config::PipelineConfig::default();
         let meta = super::resolve_geometry(&run_for_geometry(None), &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
         let cb = qsm_core::crop::CropBox { origin: (2, -1, 3), dims: (8, 10, 4), full_dims: meta.dims };
-        let m = super::scan_metadata_in(&meta, &cb);
+        let m = qsmxt_engine::scan::scan_metadata_in(&meta, &cb);
         assert_eq!(m.dims, (8, 10, 4));
         let (a, b) = (meta.affine, m.affine.unwrap());
         let world = |aff: &[f64; 16], v: [f64; 3]| -> [f64; 3] {
@@ -4986,7 +4554,7 @@ mod tests {
             let (pb, pg) = (world(&b, vb), world(&a, vg));
             assert!(pb.iter().zip(pg).all(|(x, y)| (x - y).abs() < 1e-9), "{pb:?} vs {pg:?}");
         }
-        assert_eq!(super::scan_metadata(&meta).affine, Some(meta.affine));
+        assert_eq!(qsmxt_engine::scan::scan_metadata(&meta).affine, Some(meta.affine));
     }
 
     #[test]
@@ -5197,22 +4765,6 @@ mod tests {
                    "a zero R2 inside the brain mask is an absent measurement, not R2' = R2*");
     }
 
-    /// R2PRIMEnet's 3 T band: everything sold as "3 T" is inside it, 1.5 T and 7 T are not.
-    ///
-    /// The warning this drives is the only thing standing between a 7 T user and an R2' map that
-    /// is the right shape, the right units and the wrong numbers.
-    #[test]
-    fn r2primenet_field_band_covers_3t_and_excludes_7t() {
-        for inside in [3.0, 2.89, 2.8, 3.2] {
-            assert!(super::r2primenet_field_offset(inside).is_none(),
-                    "{inside} T is a 3 T acquisition");
-        }
-        for outside in [1.5, 7.0, 9.4, 0.55] {
-            assert!(super::r2primenet_field_offset(outside).is_some(),
-                    "{outside} T is not what R2PRIMEnet was trained on");
-        }
-    }
-
     /// qsmxt-engine writes R2PRIMEnet's defaults out (it builds without qsm-core's `onnx`); they
     /// must stay qsm-core's.
     #[cfg(feature = "dl")]
@@ -5222,8 +4774,8 @@ mod tests {
         let core = qsm_core::relaxometry::R2PrimeNetParams::default();
         assert_eq!(ours.patch, core.patch);
         assert_eq!(ours.ignore_field_mismatch, core.ignore_field_mismatch);
-        assert_eq!(super::R2PRIMENET_TRAINED_B0_T, qsm_core::relaxometry::TRAINED_B0_T);
-        assert_eq!(super::R2PRIMENET_B0_TOLERANCE_T, qsm_core::relaxometry::B0_TOLERANCE_T);
+        assert_eq!(qsmxt_engine::requirements::R2PRIMENET_TRAINED_B0_T, qsm_core::relaxometry::TRAINED_B0_T);
+        assert_eq!(qsmxt_engine::requirements::R2PRIMENET_B0_TOLERANCE_T, qsm_core::relaxometry::B0_TOLERANCE_T);
     }
 
     #[test]
@@ -5232,19 +4784,6 @@ mod tests {
         assert_eq!(super::robust_fit_report_path(p), std::path::PathBuf::from("/w/unwrap/sub-1_field-ppm_robustfit.json"));
         let gz = std::path::Path::new("/w/unwrap/sub-1_field-ppm.nii.gz");
         assert_eq!(super::robust_fit_report_path(gz), std::path::PathBuf::from("/w/unwrap/sub-1_field-ppm_robustfit.json"));
-    }
-
-    /// Off 3 T: `auto` skips, an explicit `r2primenet` refuses, and the override runs either.
-    #[test]
-    fn r2primenet_field_policy_by_strategy() {
-        use super::{r2primenet_field_policy as policy, R2primenetFieldPolicy as P};
-        use crate::pipeline::config::R2PrimeStrategy as S;
-        assert_eq!(policy(3.0, S::Auto, false), P::Run);
-        assert_eq!(policy(3.0, S::R2primenet, false), P::Run);
-        assert_eq!(policy(7.0, S::Auto, false), P::Skip);
-        assert_eq!(policy(7.0, S::R2primenet, false), P::Refuse);
-        assert_eq!(policy(7.0, S::Auto, true), P::RunUncalibrated);
-        assert_eq!(policy(1.5, S::R2primenet, true), P::RunUncalibrated);
     }
 
     /// The backstop for the residual case the gate judges optimistically: a declared R2 source

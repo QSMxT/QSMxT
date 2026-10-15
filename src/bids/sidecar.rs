@@ -1,34 +1,8 @@
-use serde::Deserialize;
 use std::path::Path;
 
 use crate::error::QsmxtError;
 
-/// Relevant fields from a BIDS JSON sidecar.
-#[derive(Debug, Clone, Deserialize)]
-pub struct QsmSidecar {
-    #[serde(rename = "EchoTime")]
-    pub echo_time: f64,
-
-    #[serde(rename = "MagneticFieldStrength")]
-    pub magnetic_field_strength: f64,
-
-    #[serde(rename = "B0_dir")]
-    pub b0_dir: Option<Vec<f64>>,
-
-    /// `SliceThickness` (mm): the excited thickness, which for a 2D acquisition can be less than
-    /// the slice pitch.
-    #[serde(rename = "SliceThickness")]
-    pub slice_thickness: Option<f64>,
-    /// `MRAcquisitionType`: "2D" or "3D".
-    #[serde(rename = "MRAcquisitionType")]
-    pub mr_acquisition_type: Option<String>,
-    /// `SliceEncodingDirection`: "i", "j" or "k", optionally with "-".
-    #[serde(rename = "SliceEncodingDirection")]
-    pub slice_encoding_direction: Option<String>,
-    /// `Manufacturer`, which decides the phase sign convention of real/imaginary input.
-    #[serde(rename = "Manufacturer")]
-    pub manufacturer: Option<String>,
-}
+pub use qsmxt_engine::scan::QsmSidecar;
 
 /// Read a BIDS JSON sidecar, extracting QSM-relevant fields.
 pub fn read_sidecar(path: &Path) -> crate::Result<QsmSidecar> {
@@ -41,39 +15,9 @@ pub fn read_sidecar(path: &Path) -> crate::Result<QsmSidecar> {
             source: e,
         })?;
 
-    let echo_time = value
-        .get("EchoTime")
-        .and_then(|v| v.as_f64())
-        .ok_or_else(|| QsmxtError::MissingSidecarField {
-            field: "EchoTime".to_string(),
-            path: path.to_owned(),
-        })?;
-
-    let magnetic_field_strength = value
-        .get("MagneticFieldStrength")
-        .and_then(|v| v.as_f64())
-        .ok_or_else(|| QsmxtError::MissingSidecarField {
-            field: "MagneticFieldStrength".to_string(),
-            path: path.to_owned(),
-        })?;
-
-    let b0_dir = value.get("B0_dir").and_then(|v| {
-        v.as_array().map(|arr| {
-            arr.iter()
-                .filter_map(|x| x.as_f64())
-                .collect::<Vec<f64>>()
-        })
-    });
-
-    let string = |k: &str| value.get(k).and_then(|v| v.as_str()).map(str::to_string);
-    Ok(QsmSidecar {
-        echo_time,
-        magnetic_field_strength,
-        b0_dir,
-        slice_thickness: value.get("SliceThickness").and_then(|v| v.as_f64()),
-        mr_acquisition_type: string("MRAcquisitionType"),
-        slice_encoding_direction: string("SliceEncodingDirection"),
-        manufacturer: string("Manufacturer"),
+    QsmSidecar::from_json(&value).map_err(|field| QsmxtError::MissingSidecarField {
+        field: field.to_string(),
+        path: path.to_owned(),
     })
 }
 

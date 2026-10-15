@@ -2091,7 +2091,7 @@ pub struct FieldmapLaplacianArgs {
     // Note: phase offset removal and bipolar correction are not applied with Laplacian
     // unwrapping, so they are intentionally not exposed here. Each echo is unwrapped on its
     // own and the echoes are then combined by b0-estimation / b0-weight-type / linear-fit-*
-    // on `common` (see `pipeline::fieldmap`).
+    // on `common` (see `qsmxt_engine::fieldmap`).
 }
 
 // ── Bgremove ──

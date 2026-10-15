@@ -11,7 +11,7 @@ pub struct ExecutionConfig {
     /// Maximum number of threads (from --n-procs or auto-detected)
     pub n_procs: usize,
     /// Memory limit in bytes for concurrent run scheduling (None = no limit)
-    pub mem_limit_bytes: Option<usize>,
+    pub mem_limit_bytes: Option<u64>,
     /// Force re-run, ignoring cached state
     pub force: bool,
     /// Optional source DICOM directory for `--export-dicom` (metadata inheritance).
@@ -143,7 +143,7 @@ fn compute_concurrency(
         .unwrap_or(0);
 
     let max_by_memory = (mem_limit.checked_div(per_run))
-        .map(|v| v.max(1))
+        .map(|v| v.max(1) as usize)
         .unwrap_or(exec_config.n_procs);
 
     let effective = exec_config.n_procs.min(max_by_memory);

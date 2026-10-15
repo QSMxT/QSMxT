@@ -3794,7 +3794,7 @@ impl PipelineFormState {
     /// Whether the selected inversion reads a background-removed local field (QSM.rs
     /// `InversionInput::LocalField`), and so whether background removal is part of the run.
     pub fn inversion_needs_bg_removal(&self) -> bool {
-        self.stage_config().is_none_or(|c| !crate::pipeline::runner::skips_bgremove(&c))
+        self.stage_config().is_none_or(|c| !qsmxt_engine::bridge::skips_bgremove(&c))
     }
 
     /// The settings that decide which reconstruction stages run — the inversion (and MEDI's SMV
@@ -3821,7 +3821,7 @@ impl PipelineFormState {
             None => vec![1, 2],
         };
         let runs: Vec<bool> = counts.iter()
-            .map(|&n| crate::pipeline::runner::field_mapping_runs(&config, n)).collect();
+            .map(|&n| qsmxt_engine::bridge::field_mapping_runs(&config, n)).collect();
         (runs.iter().any(|&r| r), runs.iter().all(|&r| r))
     }
 

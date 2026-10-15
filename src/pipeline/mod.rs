@@ -1,13 +1,11 @@
 pub mod config;
 pub mod canvas;
-pub mod fieldmap;
 pub mod figure;
 pub mod graph;
 pub mod memory;
 pub mod methods;
 pub mod phase;
 pub mod multiorient;
-pub mod referencing;
 pub mod requirements;
 pub mod runner;
 pub mod stats;

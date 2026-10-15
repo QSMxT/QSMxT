@@ -2339,6 +2339,7 @@ name = "qsmxt-engine"
 version = "0.0.0"
 dependencies = [
  "getrandom 0.4.2",
+ "log",
  "qsm-core",
  "serde",
  "serde_json",

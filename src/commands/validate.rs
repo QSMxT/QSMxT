@@ -135,7 +135,7 @@ pub fn execute(args: ValidateArgs) -> crate::Result<()> {
 
         // Capability derivations: the same rules `qsmxt run` refuses requested outputs by.
         let config = crate::pipeline::config::PipelineConfig::default();
-        let facts = crate::pipeline::requirements::RunFacts::of(run, &config);
+        let facts = crate::pipeline::requirements::scan_facts(run, &config);
         let arlo = crate::pipeline::requirements::arlo_problem(&facts);
         let r2star_ok = arlo.is_none();
 

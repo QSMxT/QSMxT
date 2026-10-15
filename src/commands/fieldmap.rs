@@ -257,7 +257,7 @@ fn run_field_mapping(
         algorithm, nx, ny, nz, n_echoes, params.field_strength
     );
 
-    let field = crate::pipeline::fieldmap::run_field_mapping(
+    let field = qsmxt_engine::fieldmap::run_field_mapping(
         &phase_slices,
         mag_option,
         &mask,
@@ -266,7 +266,7 @@ fn run_field_mapping(
     )
     .map_err(|e| QsmxtError::Config(format!("field mapping: {}", e)))?;
     if let Some(report) = &field.robust_fit {
-        crate::pipeline::fieldmap::log_robust_fit_report(report);
+        qsmxt_engine::fieldmap::log_robust_fit_report(report);
     }
     let mut field_ppm = field.b0_field_ppm;
 
