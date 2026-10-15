@@ -16,13 +16,17 @@ pub fn scan_facts(run: &QsmRun, config: &PipelineConfig) -> ScanFacts {
         tool.and_then(|t| find(run, t, glob, exclude)).is_some()
     };
     ScanFacts {
+        dims: run.dims,
         n_echoes: run.echoes.len(),
         echo_times: run.echo_times.clone(),
         has_magnitude: run.has_magnitude,
         n_coils: run.coils.as_ref().map_or(1, |c| c.len()),
+        real_imaginary: run.echoes.first().is_some_and(|e| e.imaginary_nifti.is_some()),
         field_strength: run.magnetic_field_strength,
         b0_dir: run.b0_dir,
         mese_echo_times: run.mese.as_ref().map(|m| m.echo_times.clone()),
+        custom_mask: config.masking.custom_mask_tool.as_deref()
+            .and_then(|tool| crate::pipeline::runner::find_custom_mask(run, tool)).is_some(),
         custom_dseg: found(config.segmentation.custom_dseg_tool.as_deref(), "*_dseg.nii*", &[]),
         custom_qsm: found(s.custom_qsm_tool.as_deref(), "*_Chimap.nii*", &["desc-"]),
         custom_r2: found(s.custom_r2_tool.as_deref(), "*_R2map.nii*", &[]),

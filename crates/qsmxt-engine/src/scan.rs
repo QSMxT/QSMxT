@@ -13,6 +13,8 @@ use crate::error::EngineError;
 /// names were found for it.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ScanFacts {
+    /// The matrix size of the first echo, as acquired.
+    pub dims: (usize, usize, usize),
     pub n_echoes: usize,
     /// Echo times in seconds, in echo order.
     pub echo_times: Vec<f64>,
@@ -20,12 +22,16 @@ pub struct ScanFacts {
     pub has_magnitude: bool,
     /// Uncombined receive-coil channels; 1 for combined data.
     pub n_coils: usize,
+    /// Given as real and imaginary parts rather than magnitude and phase.
+    pub real_imaginary: bool,
     /// Tesla.
     pub field_strength: f64,
     /// B0 direction in voxel coordinates, when a sidecar declares `B0_dir`.
     pub b0_dir: Option<(f64, f64, f64)>,
     /// Echo times of a matched multi-echo spin-echo (MESE) acquisition, if there is one.
     pub mese_echo_times: Option<Vec<f64>>,
+    /// A brain mask from `--use-custom-masks`' tool was found for this scan.
+    pub custom_mask: bool,
     /// A segmentation from `--use-custom-dseg`'s tool was found for this scan.
     pub custom_dseg: bool,
     /// A susceptibility map from `--use-custom-qsm`'s tool was found.
