@@ -14,7 +14,18 @@ serde_json = { version = "1", features = ["preserve_order"] }
 toml = "0.8"
 thiserror = "2"
 
+# qsm-core's `onnx` (tract) pulls in getrandom 0.4, which needs its `wasm_js` backend to compile
+# for wasm32-unknown-unknown. Enabled with our `onnx` feature, so a WASM consumer needs nothing else.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.4", features = ["wasm_js"], optional = true }
+
 [features]
+# Forwarded qsm-core features, so a consumer that depends on qsmxt-config alone (qsmbly's WASM
+# crate, via the `qsm_core` re-export) can switch them on without its own qsm-core pin. All off
+# by default; the qsmxt binary enables what it needs on its own qsm-core dependency.
+simd = ["qsm-core/simd"]
+onnx = ["qsm-core/onnx", "dep:getrandom"]
+parallel = ["qsm-core/parallel"]
 # Enables qsm-core's Serialize derives so the param-coverage test can introspect
 # every *Params field. Test-only; not enabled by normal/release builds.
 introspection = ["qsm-core/introspection"]
