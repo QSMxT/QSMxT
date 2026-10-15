@@ -1389,7 +1389,7 @@ const QSM_REF_METHODS: [(&str, &str); 2] = [
 /// types hold `&'static [&'static str]`.
 static QSM_REF_ENTRIES: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
     let mut out: Vec<(&'static str, &'static str)> = QSM_REF_METHODS.to_vec();
-    for r in qsmxt_config::regions::REGIONS.iter() {
+    for r in qsmxt_engine::regions::REGIONS.iter() {
         let ids = r.ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
         let help = format!(
             "Reference χ to the mean of the {} (FreeSurfer {} {}){}. Enables SynthSeg",
@@ -1441,7 +1441,7 @@ pub struct RowContext {
 
 /// Which bring-your-own inputs (and the R2' source) the run can use.
 ///
-/// Mirrors `qsmxt_config::enforce_separation_dependencies` and `requirements::implied_by`, but
+/// Mirrors `qsmxt_engine::enforce_separation_dependencies` and `requirements::implied_by`, but
 /// from the form's *requests* rather than the resolved config: a supplied map switches its own
 /// computation off, and the row that supplies it must not vanish because it was filled in.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -1875,7 +1875,7 @@ impl Default for PipelineFormState {
         let rts = qsm_core::inversion::RtsParams::default();
         let tv = qsm_core::inversion::TvParams::default();
         let tkd = qsm_core::inversion::TkdParams::default();
-        // These two come from qsmxt-config, not qsm-core: it owns which of qsm-core's fields are
+        // These two come from qsmxt-engine, not qsm-core: it owns which of qsm-core's fields are
         // the user's (LSQR's b0 and mask_output are the dispatcher's) and flattens HEIDI's
         // optional denoise struct into a switch plus three numbers.
         let lsqr = crate::pipeline::config::LsqrConfig::default();
@@ -1900,43 +1900,43 @@ impl Default for PipelineFormState {
             romeo_template: "1".to_string(),
             b0_estimation: 0,    // weighted_avg
             b0_weight_type: 0,   // phase_snr
-            b0_weight_assumed_t2star_ms: format!("{}", qsmxt_config::default_b0_weight_assumed_t2star_ms()),
+            b0_weight_assumed_t2star_ms: format!("{}", qsmxt_engine::default_b0_weight_assumed_t2star_ms()),
             laplacian_solver: 0, // dct
-            laplacian_fft_pad: qsmxt_config::default_laplacian_fft_pad()[0].to_string(),
+            laplacian_fft_pad: qsmxt_engine::default_laplacian_fft_pad()[0].to_string(),
             motion_correction: false,
             orientation_registration: true,
             multi_orientation_force: false,
             cosmos_magnitude_weighting: false,
-            cosmos_tol: format!("{}", qsmxt_config::MultiOrientationConfig::default().cosmos_tol),
-            cosmos_max_iter: format!("{}", qsmxt_config::MultiOrientationConfig::default().cosmos_max_iter),
+            cosmos_tol: format!("{}", qsmxt_engine::MultiOrientationConfig::default().cosmos_tol),
+            cosmos_max_iter: format!("{}", qsmxt_engine::MultiOrientationConfig::default().cosmos_max_iter),
             motion_reference: 0,
             motion_reference_echo: "1".to_string(),
-            motion_chain: qsmxt_config::MotionCorrectionConfig::default().chain,
-            motion_chain_levels: qsmxt_config::MotionCorrectionConfig::default().chain_levels.to_string(),
-            motion_min_ncc: format!("{}", qsmxt_config::MotionCorrectionConfig::default().min_ncc),
-            reg_levels: format!("{}", qsmxt_config::RegistrationConfig::default().levels),
-            reg_max_samples: format!("{}", qsmxt_config::RegistrationConfig::default().max_samples),
-            reg_max_iterations: format!("{}", qsmxt_config::RegistrationConfig::default().max_iterations),
-            reg_max_evaluations: format!("{}", qsmxt_config::RegistrationConfig::default().max_evaluations),
-            reg_tolerance: format!("{}", qsmxt_config::RegistrationConfig::default().tolerance),
-            reg_rotation_step_deg: format!("{}", qsmxt_config::RegistrationConfig::default().rotation_step_deg),
-            reg_translation_step_mm: format!("{}", qsmxt_config::RegistrationConfig::default().translation_step_mm),
-            reg_min_overlap: format!("{}", qsmxt_config::RegistrationConfig::default().min_overlap),
+            motion_chain: qsmxt_engine::MotionCorrectionConfig::default().chain,
+            motion_chain_levels: qsmxt_engine::MotionCorrectionConfig::default().chain_levels.to_string(),
+            motion_min_ncc: format!("{}", qsmxt_engine::MotionCorrectionConfig::default().min_ncc),
+            reg_levels: format!("{}", qsmxt_engine::RegistrationConfig::default().levels),
+            reg_max_samples: format!("{}", qsmxt_engine::RegistrationConfig::default().max_samples),
+            reg_max_iterations: format!("{}", qsmxt_engine::RegistrationConfig::default().max_iterations),
+            reg_max_evaluations: format!("{}", qsmxt_engine::RegistrationConfig::default().max_evaluations),
+            reg_tolerance: format!("{}", qsmxt_engine::RegistrationConfig::default().tolerance),
+            reg_rotation_step_deg: format!("{}", qsmxt_engine::RegistrationConfig::default().rotation_step_deg),
+            reg_translation_step_mm: format!("{}", qsmxt_engine::RegistrationConfig::default().translation_step_mm),
+            reg_min_overlap: format!("{}", qsmxt_engine::RegistrationConfig::default().min_overlap),
             inhomogeneity_correction: true,
             ignore_slice_gap: false,
             crop_to_mask: false,
-            crop_margin_mm: fmt_default(qsmxt_config::PipelineToggles::default().crop_margin_mm),
+            crop_margin_mm: fmt_default(qsmxt_engine::PipelineToggles::default().crop_margin_mm),
             fft_padding: false,
             output_space: 0,
-            homogeneity_sigma_mm: fmt_default(qsmxt_config::HomogeneityConfig::default().sigma_mm),
-            homogeneity_nbox: qsmxt_config::HomogeneityConfig::default().nbox.to_string(),
+            homogeneity_sigma_mm: fmt_default(qsmxt_engine::HomogeneityConfig::default().sigma_mm),
+            homogeneity_nbox: qsmxt_engine::HomogeneityConfig::default().nbox.to_string(),
             coil_combination_sigma: {
-                let s = qsmxt_config::FieldMappingConfig::default().coil_combination_sigma;
+                let s = qsmxt_engine::FieldMappingConfig::default().coil_combination_sigma;
                 format!("{} {} {}", s[0], s[1], s[2])
             },
-            romeo_phase_coherence: qsmxt_config::RomeoConfig::default().phase_coherence,
-            tgv_step_size: fmt_default(qsmxt_config::TgvConfig::default().step_size),
-            tgv_tol: fmt_default(qsmxt_config::TgvConfig::default().tol),
+            romeo_phase_coherence: qsmxt_engine::RomeoConfig::default().phase_coherence,
+            tgv_step_size: fmt_default(qsmxt_engine::TgvConfig::default().step_size),
+            tgv_tol: fmt_default(qsmxt_engine::TgvConfig::default().tol),
             medi_merit: qsm_core::inversion::MediParams::default().merit,
             medi_data_weighting: qsm_core::inversion::MediParams::default().data_weighting.to_string(),
             tfi_merit: qsm_core::inversion::TfiParams::default().merit,
@@ -1948,7 +1948,7 @@ impl Default for PipelineFormState {
             amp_pe_cvg_thd: fmt_default(qsm_core::inversion::AmpPeParams::default().cvg_thd),
             custom_dseg_tool: String::new(),
             axial_resampling: false,
-            obliquity_threshold: format!("{}", qsmxt_config::DEFAULT_OBLIQUITY_THRESHOLD),
+            obliquity_threshold: format!("{}", qsmxt_engine::DEFAULT_OBLIQUITY_THRESHOLD),
             dl_tiling: false,
             dl_tile_size: "128".to_string(),
             dl_tile_halo: String::new(),
@@ -1967,7 +1967,7 @@ impl Default for PipelineFormState {
             ilsqr_tol: format!("{}", qsm_core::inversion::IlsqrParams::default().tol),
             ilsqr_max_iter: format!("{}", qsm_core::inversion::IlsqrParams::default().max_iter),
             ilsqr_pad_mm: format!("{}", qsm_core::inversion::IlsqrParams::default().pad_mm),
-            // Via qsmxt-config rather than qsm-core: it is the layer that decides which of
+            // Via qsmxt-engine rather than qsm-core: it is the layer that decides which of
             // qsm-core's fields are the user's (LSQR's b0 and mask_output are not), and it
             // flattens HEIDI's optional denoise struct into the four values shown here.
             lsqr_residual_weighting: lsqr.residual_weighting.map(|w| format!("{w}")).unwrap_or_default(),
@@ -2018,12 +2018,12 @@ impl Default for PipelineFormState {
             amp_pe_simulated_te: format!("{}", qsm_core::inversion::AmpPeParams::default().simulated_te),
             amp_pe_max_linearization_ite: format!("{}", qsm_core::inversion::AmpPeParams::default().max_linearization_ite),
             amp_pe_tikhonov_beta: format!("{}", qsm_core::inversion::AmpPeParams::default().tikhonov_beta),
-            vsharp_deconvolve: qsmxt_config::VsharpConfig::default().deconvolve,
+            vsharp_deconvolve: qsmxt_engine::VsharpConfig::default().deconvolve,
             vsharp_threshold: format!("{}", qsm_core::bgremove::VsharpParams::default().threshold),
             vsharp_max_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().max_radius),
             vsharp_min_radius: format!("{}", qsm_core::bgremove::VsharpParams::default().min_radius),
             vsharp_grid: 0, // native
-            vsharp_grid_spacing: format!("{}", qsmxt_config::VsharpConfig::default().grid_spacing),
+            vsharp_grid_spacing: format!("{}", qsmxt_engine::VsharpConfig::default().grid_spacing),
             pdf_tol: format!("{}", qsm_core::bgremove::PdfParams::default().tol),
             lbv_tol: format!("{}", qsm_core::bgremove::LbvParams::default().tol),
             ismv_tol: format!("{}", qsm_core::bgremove::IsmvParams::default().tol),
@@ -2057,13 +2057,13 @@ impl Default for PipelineFormState {
             romeo_correct_regions: qsm_core::unwrap::RomeoParams::default().correct_regions,
             romeo_wrap_addition: format!("{}", qsm_core::unwrap::RomeoParams::default().wrap_addition),
             linear_fit_estimate_offset: true,
-            linear_fit_reliability: qsmxt_config::LinearFitConfig::default().reliability_threshold_percentile > 0.0,
-            linear_fit_reliability_threshold: fmt_default(qsmxt_config::LinearFitConfig::default().reliability_threshold_percentile),
+            linear_fit_reliability: qsmxt_engine::LinearFitConfig::default().reliability_threshold_percentile > 0.0,
+            linear_fit_reliability_threshold: fmt_default(qsmxt_engine::LinearFitConfig::default().reliability_threshold_percentile),
             robust_fit_loss: 0,
             robust_fit_tuning: String::new(),
-            robust_fit_iterations: qsmxt_config::RobustFitConfig::default().iterations.to_string(),
-            robust_fit_downweight_level: fmt_default(qsmxt_config::RobustFitConfig::default().downweight_level),
-            robust_fit_flag_ratio: fmt_default(qsmxt_config::RobustFitConfig::default().flag_ratio),
+            robust_fit_iterations: qsmxt_engine::RobustFitConfig::default().iterations.to_string(),
+            robust_fit_downweight_level: fmt_default(qsmxt_engine::RobustFitConfig::default().downweight_level),
+            robust_fit_flag_ratio: fmt_default(qsmxt_engine::RobustFitConfig::default().flag_ratio),
             phase_offset_sigma: {
                 let s = qsm_core::utils::PhaseOffsetParams::default().sigma;
                 format!("{} {} {}", s[0], s[1], s[2])
@@ -2133,7 +2133,7 @@ impl Default for PipelineFormState {
             mask_combine: crate::pipeline::config::MaskCombine::Or,
             mask_combined_refinements: vec![],
             two_pass: false,
-            two_pass_sections: qsmxt_config::default_two_pass_sections(),
+            two_pass_sections: qsmxt_engine::default_two_pass_sections(),
             mask_preset: 0, // robust threshold
             custom_mask_tool: String::new(),
             do_chi_separation: false,
@@ -2144,7 +2144,7 @@ impl Default for PipelineFormState {
             r2prime_strategy: 0,
             r2primenet_ignore_field_mismatch: false,
             r2primenet_patch: {
-                let p = qsmxt_config::R2primenetConfig::default().patch;
+                let p = qsmxt_engine::R2primenetConfig::default().patch;
                 format!("{} {} {}", p[0], p[1], p[2])
             },
             sep_r2starqsm_r_const_3t: fmt_default(sep_r2starqsm.r_const_3t),
@@ -4297,17 +4297,17 @@ fn forced_output_name(out: crate::pipeline::requirements::Output) -> &'static st
     }
 }
 
-/// The SWI unwrapping select: qsmxt_config's unwrappers, in [`super::command::SWI_UNWRAP_ARGS`]'s order.
+/// The SWI unwrapping select: qsmxt_engine's unwrappers, in [`super::command::SWI_UNWRAP_ARGS`]'s order.
 static SWI_UNWRAP_OPTIONS: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| qsmxt_config::SwiUnwrap::ALL.iter().map(|s| s.as_str()).collect());
+    LazyLock::new(|| qsmxt_engine::SwiUnwrap::ALL.iter().map(|s| s.as_str()).collect());
 static SWI_UNWRAP_HELP: LazyLock<Vec<&'static str>> = LazyLock::new(|| vec![
     "Each echo unwrapped with the Laplacian method and high-pass filtered, then combined",
     "Laplacian unwrapping slice by slice, for 2D multi-slice acquisitions",
     "All echoes unwrapped together with ROMEO, combined, then high-pass filtered",
 ]);
-/// The SWI scaling select: qsmxt_config's scalings, in [`super::command::SWI_SCALING_ARGS`]'s order.
+/// The SWI scaling select: qsmxt_engine's scalings, in [`super::command::SWI_SCALING_ARGS`]'s order.
 static SWI_SCALING_OPTIONS: LazyLock<Vec<&'static str>> =
-    LazyLock::new(|| qsmxt_config::SwiScaling::ALL.iter().map(|s| s.as_str()).collect());
+    LazyLock::new(|| qsmxt_engine::SwiScaling::ALL.iter().map(|s| s.as_str()).collect());
 static SWI_SCALING_HELP: LazyLock<Vec<&'static str>> =
     LazyLock::new(|| vec!["Phase scaling type for SWI"; SWI_SCALING_OPTIONS.len()]);
 const SYNTHSEG_VERSION_OPTIONS: &[&str] = &["v1", "v2"];
@@ -4472,8 +4472,8 @@ pub struct RunForm {
 
     // Other outputs
     pub do_swi: bool,
-    pub swi_unwrap: usize,  // index into qsmxt_config::SwiUnwrap::ALL (= command::SWI_UNWRAP_ARGS)
-    pub swi_scaling: usize,  // index into qsmxt_config::SwiScaling::ALL (= command::SWI_SCALING_ARGS)
+    pub swi_unwrap: usize,  // index into qsmxt_engine::SwiUnwrap::ALL (= command::SWI_UNWRAP_ARGS)
+    pub swi_scaling: usize,  // index into qsmxt_engine::SwiScaling::ALL (= command::SWI_SCALING_ARGS)
     pub swi_strength: String,
     /// High-pass sigma per axis, "x y z" in voxels.
     pub swi_hp_sigma: String,
@@ -5745,8 +5745,8 @@ impl App {
             num_echoes: self.filter_state.num_echoes.trim().parse().ok(),
             inputs: self.input_relevance(),
             axial_forced_by: config.as_ref().and_then(|c| {
-                let names = qsmxt_config::bridge::axial_only_algorithms(
-                    c, qsmxt_config::bridge::RunOrientationFacts { has_measured_r2: false });
+                let names = qsmxt_engine::bridge::axial_only_algorithms(
+                    c, qsmxt_engine::bridge::RunOrientationFacts { has_measured_r2: false });
                 (!names.is_empty()).then(|| names.join(", "))
             }),
             multi_coil: self.filter_state.tree.as_ref().is_none_or(|t| {
@@ -5763,7 +5763,7 @@ impl App {
         let ps = &self.pipeline_state;
         let f = &self.form;
         let sep = SEP_ALGO_OPTIONS.get(ps.separation_algorithm).copied().unwrap_or("");
-        // The R2'-based methods (qsmxt_config::enforce_separation_dependencies).
+        // The R2'-based methods (qsmxt_engine::enforce_separation_dependencies).
         let sep_needs_r2prime = ps.do_chi_separation
             && !matches!(sep, "r2star-qsm" | "decompose");
         let r2prime = f.do_r2primemap || sep_needs_r2prime;

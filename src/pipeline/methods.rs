@@ -1,1 +1,1 @@
-pub use qsmxt_config::methods::generate_methods;
+pub use qsmxt_engine::methods::generate_methods;

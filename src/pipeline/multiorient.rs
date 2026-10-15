@@ -408,7 +408,7 @@ const WARN_REGISTRATION_NCC: f64 = 0.8;
 fn register_group(
     loaded: &[MemberData],
     members: &[&QsmRun],
-    registration: &qsmxt_config::RegistrationConfig,
+    registration: &qsmxt_engine::RegistrationConfig,
     progress: &dyn Fn(&str),
 ) -> crate::Result<Vec<Registered>> {
     let (ref_dims, _, ref_affine) = loaded[0].geometry;
@@ -1392,7 +1392,7 @@ mod tests {
     /// weighting at all.
     #[test]
     fn cosmos_solver_settings_are_refused_where_they_would_be_ignored() {
-        let mut m = qsmxt_config::MultiOrientationConfig::default();
+        let mut m = qsmxt_engine::MultiOrientationConfig::default();
         assert!(m.validate().is_ok());
         m.cosmos_max_iter = 10;
         assert!(m.validate().unwrap_err().contains("--cosmos-magnitude-weighting"));

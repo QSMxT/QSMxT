@@ -94,7 +94,7 @@ pub fn estimate_peak_memory_bytes(
     // (ROMEO); 8 echoes 260×320×160 2.8 GB / 4.5 GB.
     let swi_temp = if config.pipeline.do_swi {
         let per_voxel = match config.swi.unwrap {
-            qsmxt_config::SwiUnwrap::Romeo => 4 * n_echoes + 20,
+            qsmxt_engine::SwiUnwrap::Romeo => 4 * n_echoes + 20,
             _ => 3 * n_echoes + 8,
         };
         per_voxel * n * F64
@@ -168,9 +168,9 @@ fn estimate_standard_pipeline(n: usize, n_echoes: usize, config: &PipelineConfig
         // cropped working grid (UKB 0.8x0.8x3 mm: 0.37 -> 0.78 GB). The finest-voxel grid grows
         // with the anisotropy ratio (3.75x the voxels for UKB); budget for ratios up to ~4.
         BfAlgorithm::Vsharp => match config.bg_removal.vsharp.grid {
-            qsmxt_config::VsharpGrid::Native => 80 * n,
-            qsmxt_config::VsharpGrid::Isotropic => 160 * n,
-            qsmxt_config::VsharpGrid::Finest => 400 * n,
+            qsmxt_engine::VsharpGrid::Native => 80 * n,
+            qsmxt_engine::VsharpGrid::Isotropic => 160 * n,
+            qsmxt_engine::VsharpGrid::Finest => 400 * n,
         },
         // PDF: dipole kernel + masks + LSMR state + FFT workspace
         BfAlgorithm::Pdf => 112 * n,

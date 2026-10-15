@@ -118,8 +118,8 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           echo "VERSION=${VERSION}" >> "$GITHUB_ENV"
           sed -i.bak "s/^version = .*/version = \"${VERSION}\"/" Cargo.toml
-          sed -i.bak "s/^version = .*/version = \"${VERSION}\"/" crates/qsmxt-config/Cargo.toml
-          rm -f Cargo.toml.bak crates/qsmxt-config/Cargo.toml.bak
+          sed -i.bak "s/^version = .*/version = \"${VERSION}\"/" crates/qsmxt-engine/Cargo.toml
+          rm -f Cargo.toml.bak crates/qsmxt-engine/Cargo.toml.bak
 
       - name: Install cross-compilation tools (aarch64-linux)
         if: matrix.target == 'aarch64-unknown-linux-gnu'
@@ -234,12 +234,12 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: gh release upload "$GITHUB_REF_NAME" SHA256SUMS -R "$GITHUB_REPOSITORY" --clobber
 
-  # Tell qsmbly (astewartau/qsmbly) a new qsmxt-config tag exists so it can
+  # Tell qsmbly (astewartau/qsmbly) a new qsmxt-engine tag exists so it can
   # open a PR bumping its pin. Requires a QSMBLY_DISPATCH_TOKEN secret: a
   # fine-grained PAT scoped to astewartau/qsmbly with Contents: write
   # (the default GITHUB_TOKEN cannot trigger workflows in another repo).
   notify-qsmbly:
-    name: Notify qsmbly of new qsmxt-config
+    name: Notify qsmbly of new qsmxt-engine
     needs: build
     runs-on: ubuntu-latest
     steps:
@@ -252,5 +252,5 @@ jobs:
             exit 0
           fi
           gh api repos/astewartau/qsmbly/dispatches \
-            -f event_type=qsmxt-config-release \
+            -f event_type=qsmxt-engine-release \
             -f "client_payload[version]=${GITHUB_REF_NAME}"

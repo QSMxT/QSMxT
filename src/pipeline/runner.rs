@@ -915,8 +915,8 @@ const AXIAL_ONLY_TOLERANCE_DEG: f64 = 1.0;
 fn run_orientation_facts(
     run: &QsmRun,
     config: &PipelineConfig,
-) -> qsmxt_config::bridge::RunOrientationFacts {
-    qsmxt_config::bridge::RunOrientationFacts {
+) -> qsmxt_engine::bridge::RunOrientationFacts {
+    qsmxt_engine::bridge::RunOrientationFacts {
         has_measured_r2: run.mese.is_some() || config.separation.custom_r2_tool.is_some(),
     }
 }
@@ -955,7 +955,7 @@ fn resolve_geometry(
     // does. It takes no B0 direction, so neither a sidecar nor the affine can help it: the only
     // way to reconstruct correctly is to move the data. Below the obliquity threshold the tilt
     // is small enough not to bother.
-    let axial_only = qsmxt_config::bridge::axial_only_algorithms(config, run_orientation_facts(run, config));
+    let axial_only = qsmxt_engine::bridge::axial_only_algorithms(config, run_orientation_facts(run, config));
     let forced_axial = !axial_only.is_empty() && tilt > AXIAL_ONLY_TOLERANCE_DEG;
     if forced_axial {
         log::info!(
@@ -1138,7 +1138,7 @@ fn stage_load(
         // key says so; changing these recomputes the run, as a geometry change does.
         "motion_correction": config.motion_correction,
         "registration": if config.motion_correction.enabled { Some(&config.registration) } else { None },
-        "axial_only": qsmxt_config::bridge::axial_only_algorithms(
+        "axial_only": qsmxt_engine::bridge::axial_only_algorithms(
             config, run_orientation_facts(qsm_run, config)),
         // Replacing an input in place (a re-export, a corrected sidecar) changes everything
         // computed from it; nothing else would notice.
@@ -1212,7 +1212,7 @@ fn stage_motion(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str
     let t = Instant::now();
     progress("Motion correction (rigid co-registration of the echoes)");
     let n = ctx.meta.n_echoes;
-    if m.reference != qsmxt_config::MotionReference::First
+    if m.reference != qsmxt_engine::MotionReference::First
         && ctx.config.masking.sections.iter().any(|s| s.input == MaskingInput::MagnitudeFirst)
     {
         log::warn!("Motion correction aligns the echoes onto echo {} but the mask was made on the \
@@ -1877,7 +1877,7 @@ fn build_mask_from_sections(
         prefetch_weights(id, &ctx.run.key.to_string())?;
     }
 
-    let core_refinements = qsmxt_config::to_mask_ops(&ctx.config.masking.refinements, &ctx.config.bet);
+    let core_refinements = qsmxt_engine::to_mask_ops(&ctx.config.masking.refinements, &ctx.config.bet);
     let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
     combine_mask_sections(
         &core_sections, ctx.config.masking.combine, &core_refinements,
@@ -3202,7 +3202,7 @@ fn stage_chi_separation(ctx: &mut StageContext, mask_path: &Path, progress: &dyn
     }
 
     let metadata = scan_metadata(ctx.meta);
-    let mut sep_config = qsmxt_config::bridge::to_separation_config(ctx.config);
+    let mut sep_config = qsmxt_engine::bridge::to_separation_config(ctx.config);
     if let Some(mese) = &ctx.run.mese {
         sep_config.hc_chisep.se_echo_times = mese.echo_times.clone();
     }
@@ -3548,7 +3548,7 @@ fn reconstruct(
 /// in front of a local-field inversion makes that field from phase itself. The TUI shows the
 /// field-mapping settings by the same rule.
 pub(crate) fn field_mapping_runs(config: &PipelineConfig, n_echoes: usize) -> bool {
-    let input = qsmxt_config::bridge::inversion_input(config, n_echoes);
+    let input = qsmxt_engine::bridge::inversion_input(config, n_echoes);
     input.needs_field_mapping()
         && !(input.needs_bg_removal() && config.bg_removal.algorithm == BfAlgorithm::Iqfm)
 }
@@ -3560,7 +3560,7 @@ pub(crate) fn field_mapping_runs(config: &PipelineConfig, n_echoes: usize) -> bo
 /// skip it. That does not depend on the echo count (multi-echo TGV takes the total field, a
 /// single echo its wrapped phase), so any count gives the same answer.
 pub(crate) fn skips_bgremove(config: &PipelineConfig) -> bool {
-    !qsmxt_config::bridge::inversion_input(config, 1).needs_bg_removal()
+    !qsmxt_engine::bridge::inversion_input(config, 1).needs_bg_removal()
 }
 
 /// One reconstruction pass: the mask it runs on, where its outputs go, and how its steps are
@@ -4020,7 +4020,7 @@ fn stage_reference(
     // segmentation that measured it.
     let region = if ctx.config.qsm.reference == QsmReference::Region {
         let spec = ctx.config.qsm.reference_region.clone().unwrap_or_default();
-        let ids = qsmxt_config::regions::resolve(&spec, ctx.config.segmentation.version)
+        let ids = qsmxt_engine::regions::resolve(&spec, ctx.config.segmentation.version)
             .map_err(|e| QsmxtError::Config(format!("--qsm-reference: {e}")))?;
         ref_params["region"] = serde_json::json!(spec);
         ref_params["region_ids"] = serde_json::json!(ids);
@@ -4107,7 +4107,7 @@ pub(crate) fn reference_chi(
     );
     if config.qsm.reference == QsmReference::Region {
         let spec = config.qsm.reference_region.clone().unwrap_or_default();
-        let ids = qsmxt_config::regions::resolve(&spec, config.segmentation.version)
+        let ids = qsmxt_engine::regions::resolve(&spec, config.segmentation.version)
             .map_err(|e| QsmxtError::Config(format!("--qsm-reference: {e}")))?;
         let dseg = dseg.ok_or_else(|| QsmxtError::Config(format!(
             "--qsm-reference {spec}: no segmentation to measure the region on")))?;
@@ -4142,7 +4142,7 @@ pub(crate) fn reference_sidecar_fields(
     }
     if config.qsm.reference == QsmReference::Region {
         let spec = config.qsm.reference_region.clone().unwrap_or_default();
-        if let Ok(ids) = qsmxt_config::regions::resolve(&spec, config.segmentation.version) {
+        if let Ok(ids) = qsmxt_engine::regions::resolve(&spec, config.segmentation.version) {
             obj.insert("QsmReferenceLabels".into(), serde_json::json!(ids));
         }
     }
@@ -5213,7 +5213,7 @@ mod tests {
         }
     }
 
-    /// qsmxt-config writes R2PRIMEnet's defaults out (it builds without qsm-core's `onnx`); they
+    /// qsmxt-engine writes R2PRIMEnet's defaults out (it builds without qsm-core's `onnx`); they
     /// must stay qsm-core's.
     #[cfg(feature = "dl")]
     #[test]
@@ -5435,7 +5435,7 @@ mod tests {
         cfg.pipeline.do_chi_separation = true;
         // χ-sep-iLSQR takes B0 as a parameter, so nothing else in this run wants axial data.
         cfg.separation.algorithm = crate::pipeline::config::SeparationAlgorithm::ChiSepIlsqr;
-        qsmxt_config::config::enforce_separation_dependencies(&mut cfg);
+        qsmxt_engine::config::enforce_separation_dependencies(&mut cfg);
         // No MESE, so `--r2prime-strategy auto` predicts R2′ with R2PRIMEnet.
         let run = run_for_geometry(None);
         let meta = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
@@ -5451,7 +5451,7 @@ mod tests {
         let mut cfg = crate::pipeline::config::PipelineConfig::default();
         cfg.pipeline.do_chi_separation = true;
         cfg.separation.algorithm = crate::pipeline::config::SeparationAlgorithm::ChiSepIlsqr;
-        qsmxt_config::config::enforce_separation_dependencies(&mut cfg);
+        qsmxt_engine::config::enforce_separation_dependencies(&mut cfg);
         let mut run = run_for_geometry(None);
         run.mese = Some(mese_on((16, 16, 8), oblique_affine()));
         let meta = super::resolve_geometry(&run, &nifti_with(oblique_affine(), (16, 16, 8)), &cfg).unwrap();
@@ -5475,7 +5475,7 @@ mod tests {
     #[test]
     fn geometry_classical_algorithm_needs_no_resampling() {
         let cfg = crate::pipeline::config::PipelineConfig::default(); // iLSQR by default
-        assert!(qsmxt_config::bridge::axial_only_algorithms(&cfg, Default::default()).is_empty(),
+        assert!(qsmxt_engine::bridge::axial_only_algorithms(&cfg, Default::default()).is_empty(),
                 "the default pipeline takes B0 as a parameter throughout");
     }
 
@@ -6547,7 +6547,7 @@ mod reference_support_tests {
         let mut config = PipelineConfig::default();
         config.qsm.reference = QsmReference::Region;
         config.qsm.reference_region = Some("left-thalamus".into());
-        let ids = qsmxt_config::regions::resolve("left-thalamus", config.segmentation.version).unwrap();
+        let ids = qsmxt_engine::regions::resolve("left-thalamus", config.segmentation.version).unwrap();
 
         // The region covers the lower half of the brain: half of it lies in the eroded rim, which
         // is where a small deep structure (the accumbens) lost about half its voxels in practice.
@@ -6716,7 +6716,7 @@ mod chisep_support_tests {
         let metadata = crate::pipeline::config::to_scan_metadata(
             m.dims, m.voxel_size, &m.echo_times, m.field_strength, m.b0_direction, Some(m.affine));
         let r = qsm_core::pipeline::run_separation(
-            inputs, &metadata, &qsmxt_config::bridge::to_separation_config(config), &mut |_, _| {},
+            inputs, &metadata, &qsmxt_engine::bridge::to_separation_config(config), &mut |_, _| {},
         ).unwrap();
         let mut out = [r.chi_pos, r.chi_neg.iter().map(|v| v.abs()).collect(), r.chi_total];
         for map in out.iter_mut() {

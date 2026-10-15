@@ -446,10 +446,10 @@ mod tests {
 
     /// The final config, as `apply_run_overrides` leaves it.
     fn enforced(mut c: PipelineConfig) -> PipelineConfig {
-        qsmxt_config::config::enforce_analysis_dependencies(&mut c);
-        qsmxt_config::config::enforce_smwi_dependencies(&mut c);
-        qsmxt_config::config::enforce_separation_dependencies(&mut c);
-        qsmxt_config::config::enforce_reference_dependencies(&mut c);
+        qsmxt_engine::config::enforce_analysis_dependencies(&mut c);
+        qsmxt_engine::config::enforce_smwi_dependencies(&mut c);
+        qsmxt_engine::config::enforce_separation_dependencies(&mut c);
+        qsmxt_engine::config::enforce_reference_dependencies(&mut c);
         c
     }
 

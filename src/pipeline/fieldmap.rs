@@ -138,10 +138,10 @@ pub(crate) mod legacy {
     }
 
     impl Solver {
-        pub fn from_config(cfg: &qsmxt_config::FieldMappingConfig) -> Self {
+        pub fn from_config(cfg: &qsmxt_engine::FieldMappingConfig) -> Self {
             match cfg.laplacian_solver {
-                qsmxt_config::LaplacianSolver::Dct => Solver::Dct,
-                qsmxt_config::LaplacianSolver::Fft => Solver::Fft { pad: cfg.laplacian_fft_pad },
+                qsmxt_engine::LaplacianSolver::Dct => Solver::Dct,
+                qsmxt_engine::LaplacianSolver::Fft => Solver::Fft { pad: cfg.laplacian_fft_pad },
             }
         }
 
@@ -173,9 +173,9 @@ pub(crate) mod legacy {
 
     impl EchoWeighting {
         /// The weighting `field_mapping.b0_weight_type` asks for.
-        pub fn from_config(cfg: &qsmxt_config::FieldMappingConfig) -> Self {
+        pub fn from_config(cfg: &qsmxt_engine::FieldMappingConfig) -> Self {
             use qsm_core::utils::B0WeightType as W;
-            use qsmxt_config::B0WeightType as C;
+            use qsmxt_engine::B0WeightType as C;
             match cfg.b0_weight_type {
                 C::PhaseSNR => EchoWeighting::Core(W::PhaseSNR),
                 C::PhaseVar => EchoWeighting::Core(W::PhaseVar),
