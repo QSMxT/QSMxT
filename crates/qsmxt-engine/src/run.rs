@@ -20,7 +20,7 @@ use crate::observe::{Observer, StageEvent, VolumeData};
 use crate::plan::{Pass, Plan, Stage, Step};
 use crate::scan::{RunMetadata, ScanFacts};
 use crate::stages;
-use crate::store::{Completed, Data, Item, StageStore, Supplied};
+use crate::store::{Completed, Contrast, Data, Item, StageStore, Supplied};
 
 /// Run `plan` (made by [`crate::plan::plan`] from `config` and `facts`) on the scan in `store`,
 /// reporting to `observer`.
@@ -39,7 +39,7 @@ pub fn run<S: StageStore + ?Sized>(
     if !config.pipeline.do_qsm {
         observer.log(Level::Info, "QSM processing disabled — skipping reconstruction");
     }
-    let mut r = Run { plan, config, meta, store, observer };
+    let mut r = Run { plan, config, facts, meta, store, observer };
     for step in &plan.steps {
         if step.host {
             r.store.host(step, plan, r.observer)?;
@@ -53,10 +53,10 @@ pub fn run<S: StageStore + ?Sized>(
 /// Run one of `plan`'s engine steps on its own, on a run whose grid (from its load step) is
 /// `meta`: what a front end re-running a single step uses (a mask preview, say), and tests.
 pub fn run_step<S: StageStore + ?Sized>(
-    plan: &Plan, config: &PipelineConfig, meta: &RunMetadata, step: &Step, store: &mut S,
+    plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, meta: &RunMetadata, step: &Step, store: &mut S,
     observer: &mut dyn Observer,
 ) -> Result<(), S::Error> {
-    Run { plan, config, meta: meta.clone(), store, observer }.step(step)
+    Run { plan, config, facts, meta: meta.clone(), store, observer }.step(step)
 }
 
 /// The grid the run is processed on: the cached load step's, or decided from the first echo's
@@ -113,6 +113,7 @@ type Echoes = (Vec<Vec<f64>>, Vec<Vec<f64>>);
 struct Run<'r, S: StageStore + ?Sized> {
     plan: &'r Plan,
     config: &'r PipelineConfig,
+    facts: &'r ScanFacts,
     meta: RunMetadata,
     store: &'r mut S,
     observer: &'r mut dyn Observer,
@@ -138,6 +139,8 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             Stage::Swi => self.swi(),
             Stage::Smwi => self.smwi(),
             Stage::Relaxometry => self.relaxometry(),
+            Stage::R2 => self.r2(step),
+            Stage::ChiSeparation => self.chi_separation(step),
             stage => Err(crate::EngineError::Config(format!(
                 "the {} step is not in the engine yet", stage.name())).into()),
         }
@@ -234,6 +237,13 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     fn working_magnitude(&mut self, e: usize) -> Item {
         let item = self.echo_magnitude(e);
         if !self.store.has(&item) && self.store.has(&Item::AcquiredMagnitude(e)) { Item::AcquiredMagnitude(e) } else { item }
+    }
+
+    /// The MESE's echoes, voxel-major on the working grid, and where its FOV reaches
+    /// ([`stages::r2::mese_on_grid`]); `None` without a usable MESE.
+    fn mese_on_grid(&mut self, mese: &crate::store::Mese) -> Result<Option<stages::r2::MeseOnGrid>, S::Error> {
+        let store = &mut *self.store;
+        Ok(stages::r2::mese_on_grid(mese, |n| store.supplied(&Item::MeseMagnitude(n)), self.meta.dims, &self.meta.affine)?)
     }
 
     fn combined_magnitude(&mut self) -> Result<Option<Vec<f64>>, S::Error> {
@@ -745,6 +755,343 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             inputs: &[mask_item], outputs: &[Item::R2star, Item::T2star],
         }, "T2*/R2* mapping")
     }
+
+    /// R2 from the MESE (or a supplied map) and R2′, measured as R2* − R2 where R2 was measured
+    /// and otherwise, as the strategy allows, predicted from R2* by R2PRIMEnet (or supplied). An
+    /// input that is not there skips its map with a warning rather than failing the run.
+    fn r2(&mut self, step: &Step) -> Result<(), S::Error> {
+        use crate::enums::R2PrimeStrategy;
+        use crate::requirements::{r2primenet_field_message, r2primenet_field_policy, R2primenetFieldPolicy};
+        let (want_r2, want_r2p) = (self.config.pipeline.do_r2map, self.config.pipeline.do_r2primemap);
+        if !want_r2 && !want_r2p {
+            return Ok(());
+        }
+        let mese = self.store.mese();
+        let params = stages::r2::params(self.config, &self.meta, mese.as_ref());
+        let Some(key) = self.begin("r2_r2prime", Some("epg"), &params, "Skipping r2_r2prime (cached)",
+                                   "Computing R2/R2' maps") else { return Ok(()) };
+        let config = self.config;
+        let sep = &config.separation;
+        let mask_item = self.mask_item();
+        let mask = self.store.mask(&mask_item)?;
+        let mut outputs = Vec::new();
+        // The mask R2 was actually measured over. Narrower than the brain mask when the MESE's FOV
+        // does not reach all of it; `None` means R2 came from somewhere other than a MESE.
+        let mut r2_mask: Option<Vec<u8>> = None;
+
+        // ── R2 map (Hz) ──
+        let r2: Option<Vec<f64>> = if let Some(tool) = &sep.custom_r2_tool {
+            if self.store.has(&Item::SuppliedR2) {
+                let from = self.store.identity(&Item::SuppliedR2);
+                self.log(Level::Info, &format!("Using custom R2 map from {}", from.as_str().unwrap_or_default()));
+                Some(self.store.real(&Item::SuppliedR2)?)
+            } else {
+                self.log(Level::Warn, &format!("no custom R2 map under derivatives (tool: {tool}) — skipping R2"));
+                None
+            }
+        } else if let Some(mese) = &mese {
+            if let Some(why) = crate::requirements::mese_problem(self.facts) {
+                // Refused up front when R2 was asked for; here only when something else implied it.
+                self.log(Level::Warn, &format!("Not measuring R2 from the MESE ({why})"));
+                None
+            } else {
+                self.log(Level::Info, "Computing R2 (EPG) from MESE");
+                match self.mese_on_grid(mese)? {
+                    Some(stages::r2::MeseOnGrid { echoes: se, coverage }) => {
+                        // R2 is only measured where the MESE's FOV reaches. Fitting outside it
+                        // would put a number on interpolated zeros, and R2' = R2* - R2 would then
+                        // quietly take that number as a measurement.
+                        let fit_mask = stages::r2::mese_measured_mask(&mask, &coverage);
+                        let (in_mask, in_both) = (stages::r2::count_set(&mask), stages::r2::count_set(&fit_mask));
+                        if in_mask > 0 && in_both < in_mask {
+                            self.log(Level::Warn, &format!(
+                                "The MESE covers {:.0}% of the brain mask; R2 (and so a measured R2') \
+                                 is left at zero over the remaining {} voxels.",
+                                100.0 * in_both as f64 / in_mask as f64, in_mask - in_both));
+                        }
+                        let r2 = stages::r2::r2_epg(&se, &fit_mask, mese, &self.meta)?;
+                        r2_mask = Some(fit_mask);
+                        Some(r2)
+                    }
+                    None => None,
+                }
+            }
+        } else {
+            self.log(Level::Info, "No MESE acquisition and no custom R2 map — R2/R2' unavailable for this run");
+            None
+        };
+        if let Some(r2) = &r2 {
+            self.put(Item::R2, Data::Real(r2))?;
+            outputs.push(Item::R2);
+        }
+
+        // ── R2' map (Hz) = R2* − R2 ──
+        if want_r2p {
+            // Where this R2' came from, recorded with it (#236): a predicted R2' looks exactly like
+            // a measured one, and only that record can tell a downstream reader which it is.
+            let mut source = serde_json::Map::new();
+            let r2p: Option<Vec<f64>> = if let Some(tool) = &sep.custom_r2prime_tool {
+                if self.store.has(&Item::SuppliedR2prime) {
+                    let from = self.store.identity(&Item::SuppliedR2prime);
+                    let from = from.as_str().unwrap_or_default();
+                    self.log(Level::Info, &format!("Using custom R2' map from {from}"));
+                    source.insert("R2primeSource".into(), json!("supplied"));
+                    source.insert("R2primeSuppliedFrom".into(), json!(from));
+                    Some(self.store.real(&Item::SuppliedR2prime)?)
+                } else {
+                    self.log(Level::Warn, &format!("no custom R2' map under derivatives (tool: {tool}) — skipping R2'"));
+                    None
+                }
+            } else {
+                let strategy = sep.r2prime_strategy;
+                let has_r2star = self.store.has(&Item::R2star);
+                // Measuring wins wherever it is possible and allowed: R2' = R2* - R2 is a
+                // measurement, and R2PRIMEnet's is an estimate standing in for one.
+                if let (Some(r2), true) = (&r2, strategy != R2PrimeStrategy::R2primenet) {
+                    if has_r2star {
+                        self.log(Level::Info, "R2' measured as R2* - R2");
+                        let r2star = self.store.real(&Item::R2star)?;
+                        // Subtract only where R2 was measured: outside the MESE's FOV, R2 is zero
+                        // because nothing was acquired there, and R2' = R2* - 0 would report the
+                        // whole of R2* as reversible.
+                        let (r2p, coverage) = stages::r2::measured_r2prime(&r2star, r2, &mask, r2_mask.as_deref())?;
+                        // Kept, so a 0 in the R2' map can be told apart from R2* = R2.
+                        self.put(Item::R2primeCoverage, Data::Mask(&coverage))?;
+                        outputs.push(Item::R2primeCoverage);
+                        let (in_mask, measured) = (stages::r2::count_set(&mask), stages::r2::count_set(&coverage));
+                        if in_mask > 0 && measured < in_mask {
+                            self.log(Level::Warn, &format!(
+                                "R2' is a measurement over {:.0}% of the brain mask; the remaining {} \
+                                 voxels are left at zero because no R2 was measured there. Maps \
+                                 derived from this R2' inherit that gap.",
+                                100.0 * measured as f64 / in_mask as f64, in_mask - measured));
+                        }
+                        source.insert("R2primeSource".into(), json!("measured"));
+                        source.insert("R2primeMethod".into(), json!(match &sep.custom_r2_tool {
+                            Some(tool) => format!("R2* - R2 (R2 supplied by {tool})"),
+                            None => "R2* - R2 (R2 by EPG fit of the MESE)".to_string(),
+                        }));
+                        Some(r2p)
+                    } else {
+                        self.log(Level::Warn, "R2' needs both R2* and R2 - one is missing; skipping R2'");
+                        None
+                    }
+                } else if strategy == R2PrimeStrategy::Mese {
+                    self.log(Level::Warn,
+                        "Skipping R2': no R2 to subtract (no MESE acquisition and no custom R2 map), \
+                         and --r2prime-strategy mese does not estimate one. Use `auto` or \
+                         `r2primenet` to predict R2' from R2* instead.");
+                    None
+                } else if !has_r2star {
+                    self.log(Level::Warn, "Skipping R2': R2PRIMEnet predicts it from R2*, which was not computed");
+                    None
+                } else {
+                    // Auto with no R2 to subtract, or r2primenet outright.
+                    let field = self.meta.field_strength;
+                    match r2primenet_field_policy(field, strategy, sep.r2primenet.ignore_field_mismatch) {
+                        R2primenetFieldPolicy::Skip => {
+                            self.log(Level::Warn, &format!(
+                                "Skipping R2': there is no R2 to subtract, and {}. Pass \
+                                 --r2primenet-ignore-field-mismatch to predict it anyway (uncalibrated).",
+                                r2primenet_field_message(field)));
+                            None
+                        }
+                        R2primenetFieldPolicy::Refuse => {
+                            return Err(crate::EngineError::Config(format!(
+                                "--r2prime-strategy r2primenet: {}; or pass \
+                                 --r2primenet-ignore-field-mismatch to run it anyway and treat the R2' \
+                                 (and any chi-separation built on it) as uncalibrated.",
+                                r2primenet_field_message(field))).into());
+                        }
+                        policy => {
+                            if policy == R2primenetFieldPolicy::RunUncalibrated {
+                                self.log(Level::Warn, &format!(
+                                    "{}. Running anyway (--r2primenet-ignore-field-mismatch): treat this \
+                                     R2', and any chi-separation built on it, as uncalibrated.",
+                                    r2primenet_field_message(field)));
+                            }
+                            if strategy == R2PrimeStrategy::Auto {
+                                self.log(Level::Info, "No R2 to subtract - estimating R2' from R2* with R2PRIMEnet");
+                            }
+                            if let Some(tilt) = stages::r2::r2primenet_grid_tilt(self.meta.source_geometry.is_some(), &self.meta.affine) {
+                                self.log(Level::Warn, &format!(
+                                    "R2PRIMEnet assumes B0 lies along +z, but this run is reconstructing on its \
+                                     acquired grid with B0 {tilt:.1}° from the slice normal, so its R2' is \
+                                     off-distribution. The run was not resampled because a measured R2 was \
+                                     expected and did not materialise. Pass --axial-resampling to resample, \
+                                     or --r2prime-strategy mese to not estimate R2' at all."));
+                            }
+                            self.store.models(&step.models)?;
+                            let r2star = self.store.real(&Item::R2star)?;
+                            let predicted = stages::r2::r2primenet(&r2star, &mask, &self.meta, &sep.r2primenet, self.observer)?;
+                            self.log(Level::Info, "R2' estimated by R2PRIMEnet (an estimate, not a measurement)");
+                            source.insert("R2primeSource".into(), json!("predicted"));
+                            source.insert("R2primeMethod".into(), json!("R2PRIMEnet (from R2*)"));
+                            source.insert("R2primenetTrainedFieldStrength".into(),
+                                          json!(crate::requirements::R2PRIMENET_TRAINED_B0_T));
+                            source.insert("R2primenetCalibrated".into(), json!(policy == R2primenetFieldPolicy::Run));
+                            Some(predicted)
+                        }
+                    }
+                }
+            };
+            if let Some(r2p) = &r2p {
+                self.put(Item::R2prime, Data::Real(r2p))?;
+                self.store.annotate(&Item::R2prime, source)?;
+                outputs.push(Item::R2prime);
+            }
+        }
+
+        if outputs.is_empty() {
+            return Ok(());
+        }
+        self.complete(Completed {
+            step: "r2_r2prime", algorithm: Some("epg"), params: &params, outcome: None, key: &key,
+            inputs: &[mask_item], outputs: &outputs,
+        }, "R2/R2' mapping")
+    }
+
+    /// χ-separation of the susceptibility map (the run's, or one supplied) into its paramagnetic
+    /// and diamagnetic sources, from what the earlier steps made (local field, R2*, R2′, the
+    /// echoes' magnitude, the MESE). Fitted over, and 0 outside, χ's support
+    /// ([`stages::separation::separation_support`]). Only ever asked for, never implied, so an
+    /// input it lacks fails the run: `qsmxt run` has already refused the cases the scan decides,
+    /// and what is left (the local field the reconstruction route did not write, an R2′ that did
+    /// not materialise) must not be a successful run with the maps missing.
+    fn chi_separation(&mut self, step: &Step) -> Result<(), S::Error> {
+        use stages::separation as sep;
+        let alg = self.config.separation.algorithm;
+        let alg_name = format!("{alg}");
+        // Every method needs a conventional QSM (χ_total): the run's, or a supplied one.
+        let qsm_item = match &self.config.separation.custom_qsm_tool {
+            Some(tool) => {
+                if !self.store.has(&Item::SuppliedChi) {
+                    return Err(crate::EngineError::Config(format!(
+                        "--do-chisep ({alg_name}) needs a QSM, and --use-custom-qsm {tool} names no Chimap \
+                         for this run under derivatives/{tool}")).into());
+                }
+                let from = self.store.identity(&Item::SuppliedChi);
+                self.log(Level::Info, &format!("Using custom QSM from {}", from.as_str().unwrap_or_default()));
+                Item::SuppliedChi
+            }
+            None => {
+                if !self.store.has(&Item::Chi) {
+                    return Err(crate::EngineError::Config(format!(
+                        "--do-chisep ({alg_name}) needs a QSM, and none was made")).into());
+                }
+                Item::Chi
+            }
+        };
+        let mese = self.store.mese();
+        let params = sep::params(self.config, &self.meta, mese.is_some());
+        let Some(key) = self.begin("chi_separation", Some(&alg_name), &params, "Skipping chi_separation (cached)",
+                                   "Chi-separation") else { return Ok(()) };
+        self.log(Level::Info, &format!("Chi-separation ({alg_name})"));
+        let (nx, ny, nz) = self.meta.dims;
+        let n_voxels = nx * ny * nz;
+        let mask_item = self.mask_item();
+        let brain = self.store.mask(&mask_item)?;
+        let mut qsm = self.store.real(&qsm_item)?;
+
+        // Multi-echo magnitude (voxel-major) and its RSS over echoes, when there is magnitude.
+        let (magnitude_multi, magnitude_rss) = if self.meta.has_magnitude {
+            let n = self.n_echoes();
+            let mut multi = stages::relaxometry::VoxelMajor::new(n_voxels, n);
+            let mut rss = vec![0.0f64; n_voxels];
+            for e in 1..=n {
+                let item = self.working_magnitude(e);
+                let echo = self.store.real(&item)?;
+                multi.set(e - 1, &echo, &format!("mag echo {e}"))?;
+                for (r, m) in rss.iter_mut().zip(&echo) {
+                    *r += m * m;
+                }
+            }
+            for v in rss.iter_mut() { *v = v.sqrt(); }
+            (Some(multi.data), Some(rss))
+        } else {
+            (None, None)
+        };
+        // R2* and R2′, from the relaxometry and R2 steps, or a supplied R2′.
+        let mut r2star = if self.store.has(&Item::R2star) { Some(self.store.real(&Item::R2star)?) } else { None };
+        let r2prime_item = if self.config.separation.custom_r2prime_tool.is_some() { Item::SuppliedR2prime } else { Item::R2prime };
+        let mut r2prime = if self.store.has(&r2prime_item) { Some(self.store.real(&r2prime_item)?) } else { None };
+        // The MESE's echoes on this run's grid, for HC-ChiSep. Voxels outside its FOV are zero,
+        // the same as voxels outside the brain.
+        let se_multi = match &mese {
+            Some(m) => self.mese_on_grid(m)?.map(|m| m.echoes),
+            None => None,
+        };
+        // The local field (ppm), for the field-based methods.
+        let field_item = Item::LocalField(Pass::Main);
+        let mut local_field = if self.store.has(&field_item) { self.store.real(&field_item)? } else { Vec::new() };
+
+        let missing = sep::missing_inputs(alg, &qsm_core::pipeline::SeparationInputs {
+            local_field_ppm: &local_field, qsm: &qsm, mask: &brain, r2prime: r2prime.as_deref(),
+            r2star: r2star.as_deref(), magnitude_rss: magnitude_rss.as_deref(),
+            magnitude_multi: magnitude_multi.as_deref(), se_magnitude_multi: se_multi.as_deref(),
+        });
+        if !missing.is_empty() {
+            return Err(crate::EngineError::Config(format!(
+                "--do-chisep ({alg_name}) cannot run: missing {}", missing.join(", "))).into());
+        }
+
+        // Fit, and write, only where χ is defined. The run's χ is 0 on the rim background-field
+        // removal eroded; fitting the brain mask would treat that rim as measured χ = 0. Its
+        // support is the one referencing kept; a supplied χ has none, so it is the brain mask less
+        // the voxels that χ leaves undefined. The field-based methods also need the local field
+        // there, so they are further limited to where it exists.
+        let published = if qsm_item == Item::Chi && self.store.has(&Item::ChiSupport) {
+            Some(self.store.mask(&Item::ChiSupport)?)
+        } else {
+            None
+        };
+        let uses_field = sep::uses_field(alg);
+        for (what, len) in [("brain mask", brain.len()), ("QSM", qsm.len())]
+            .into_iter()
+            .chain(published.as_ref().map(|p| ("QSM support", p.len())))
+            .chain(uses_field.then_some(("local field", local_field.len())))
+            .chain(r2prime.as_ref().map(|m| ("a relaxation map", m.len())))
+            .chain(r2star.as_ref().map(|m| ("a relaxation map", m.len())))
+        {
+            if len != n_voxels {
+                return Err(crate::EngineError::DimensionMismatch(format!(
+                    "chi-separation: {what} has {len} voxels but this run is processed on {n_voxels}")).into());
+            }
+        }
+        let support = sep::separation_support(&brain, published.as_deref(), &qsm, uses_field.then_some(local_field.as_slice()));
+        self.log(Level::Info, &format!("Chi-separation over the χ support: {} of {} brain-mask voxels",
+            stages::r2::count_set(&support), stages::r2::count_set(&brain)));
+        // The maps combined with χ voxel by voxel take the same support, so no method — the
+        // spatial and deep-learning ones included — sees values on the rim that χ does not have.
+        sep::zero_outside(&support, &mut qsm);
+        if uses_field {
+            sep::zero_outside(&support, &mut local_field);
+        }
+        for map in [r2prime.as_mut(), r2star.as_mut()].into_iter().flatten() {
+            sep::zero_outside(&support, map);
+        }
+        let inputs = qsm_core::pipeline::SeparationInputs {
+            local_field_ppm: &local_field, qsm: &qsm, mask: &support, r2prime: r2prime.as_deref(),
+            r2star: r2star.as_deref(), magnitude_rss: magnitude_rss.as_deref(),
+            magnitude_multi: magnitude_multi.as_deref(), se_magnitude_multi: se_multi.as_deref(),
+        };
+        self.store.models(&step.models)?;
+        let separated = sep::separate(inputs, mese.as_ref().map(|m| m.echo_times.as_slice()), &self.meta,
+                                      self.config, self.observer)?;
+        self.put(Item::SeparatedChi(Contrast::Paramagnetic), Data::Real(&separated.paramagnetic))?;
+        self.put(Item::SeparatedChi(Contrast::Diamagnetic), Data::Real(&separated.diamagnetic))?;
+        self.put(Item::SeparatedTotalChi, Data::Real(&separated.total))?;
+        let mut inputs = vec![mask_item, qsm_item];
+        if published.is_some() {
+            inputs.push(Item::ChiSupport);
+        }
+        self.complete(Completed {
+            step: "chi_separation", algorithm: Some(&alg_name), params: &params, outcome: None, key: &key,
+            inputs: &inputs,
+            outputs: &[Item::SeparatedChi(Contrast::Paramagnetic), Item::SeparatedChi(Contrast::Diamagnetic),
+                       Item::SeparatedTotalChi],
+        }, &format!("Chi-separation ({alg_name})"))
+    }
 }
 
 /// How a pass is named in progress messages and the log: nothing for a single-pass run's (only)
@@ -761,7 +1108,7 @@ mod tests {
     use super::*;
     use crate::enums::{BfAlgorithm, QsmAlgorithm};
     use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
-    use crate::store::{Contrast, Header, MemoryStore};
+    use crate::store::{Header, MemoryStore};
 
     const N: usize = 16;
     const TES: [f64; 3] = [0.005, 0.010, 0.015];
@@ -905,7 +1252,7 @@ mod tests {
             assert!(store.get(&item).is_some(), "{item:?}");
         }
         // The combination is keyed by which mask its reliable pass is defined on.
-        let r = Run { plan: &crate::plan::plan(&config, &facts), config: &config,
+        let r = Run { plan: &crate::plan::plan(&config, &facts), config: &config, facts: &facts,
                           meta: crate::stages::magnitude::tests::meta_4x4x4(), store: &mut store, observer: &mut () };
         assert_eq!(r.support(Pass::Reliable), Item::LocalFieldMask(Pass::Reliable));
         assert_eq!(r.store.identity(&r.support(Pass::Reliable)), json!("LocalFieldMask(Reliable)"));
@@ -947,18 +1294,93 @@ mod tests {
         assert_eq!(run_once(&config, &facts, &mut store).computed, ["invert", "reference", "smwi"]);
     }
 
+    /// The phantom with a MESE on its own grid (the run's): spin echoes at n·10 ms decaying with
+    /// R2 = 10 Hz inside the sphere.
+    fn with_mese(facts: &mut ScanFacts, store: &mut MemoryStore) {
+        let tes: Vec<f64> = vec![0.01, 0.02, 0.03, 0.04];
+        let mut affine = [0.0; 16];
+        for i in 0..4 { affine[5 * i] = 1.0; }
+        let geometry = crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine };
+        let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
+        for (e, te) in tes.iter().enumerate() {
+            let echo: Vec<f64> = m.iter().map(|&v| if v > 50.0 { 1000.0 * (-10.0f64 * te).exp() } else { 1.0 }).collect();
+            store.insert_on_grid(Item::MeseMagnitude(e + 1), echo, geometry.clone());
+        }
+        store.supply_mese(crate::store::Mese { name: "MESE".into(), dims: (N, N, N), affine, echo_times: tes.clone() });
+        facts.mese_echo_times = Some(tes);
+    }
+
+    /// R2 from the MESE, R2′ measured as R2* − R2 (and recorded as measured), and χ-separation
+    /// over the final map's support, in memory.
+    #[test]
+    fn r2_r2prime_and_chi_separation_run_in_memory() {
+        let (mut facts, mut store) = phantom();
+        with_mese(&mut facts, &mut store);
+        let mut config = config();
+        config.pipeline.do_r2starmap = true;
+        config.pipeline.do_r2map = true;
+        config.pipeline.do_r2primemap = true;
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepIlsqr;
+        let events = run_once(&config, &facts, &mut store);
+        for step in ["t2star_r2star", "r2_r2prime", "chi_separation"] {
+            assert!(events.computed.iter().any(|c| c == step), "{step}: {:?}", events.computed);
+        }
+        let real = |item: Item| match store.get(&item) { Some(VolumeData::Real(v)) => v.clone(), _ => panic!("no {item:?}") };
+        let (r2, mask) = (real(Item::R2), store.get(&Item::BrainMask).cloned().unwrap());
+        let VolumeData::Mask(mask) = mask else { panic!() };
+        let inside: Vec<f64> = r2.iter().zip(&mask).filter(|(_, &m)| m != 0).map(|(&r, _)| r).collect();
+        assert!(inside.iter().all(|r| (r - 10.0).abs() < 1.0), "R2 {:?}", &inside[..4]);
+        assert_eq!(store.annotations(&Item::R2prime).and_then(|a| a.get("R2primeSource")), Some(&json!("measured")));
+        assert!(store.get(&Item::R2primeCoverage).is_some());
+        let support = match store.get(&Item::ChiSupport) { Some(VolumeData::Mask(m)) => m.clone(), _ => panic!() };
+        for item in [Item::SeparatedChi(Contrast::Paramagnetic), Item::SeparatedChi(Contrast::Diamagnetic), Item::SeparatedTotalChi] {
+            let map = real(item);
+            assert!(map.iter().zip(&support).all(|(&v, &s)| s != 0 || v == 0.0), "{item:?} outside the support");
+            assert!(map.iter().all(|v| v.is_finite()));
+        }
+        assert!(real(Item::SeparatedChi(Contrast::Diamagnetic)).iter().all(|&v| v >= 0.0), "|χ−|");
+        assert!(run_once(&config, &facts, &mut store).computed.is_empty());
+    }
+
+    /// Without a MESE, R2′ is predicted by R2PRIMEnet (whose weights the plan lists), and a
+    /// network separates the sources. Minutes in a debug build, so run with `--ignored`; skipped
+    /// where the weights have not been downloaded.
+    #[test]
+    #[ignore]
+    fn r2primenet_and_a_separation_network_run_in_memory() {
+        let present = |id: &str| qsm_core::models::find_model(id)
+            .is_some_and(|m| m.files.iter().all(qsm_core::models::weight_file_present));
+        if !cfg!(feature = "onnx") || !present("r2primenet") || !present("chi-sepnet") {
+            eprintln!("skipped: R2PRIMEnet or χ-sepnet weights are not available here");
+            return;
+        }
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        config.pipeline.do_r2starmap = true;
+        config.pipeline.do_r2primemap = true;
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepNet;
+        config.separation.r2primenet.patch = [16, 16, 16];
+        let plan = crate::plan::plan(&config, &facts);
+        assert_eq!(plan.models, ["r2primenet", "chi-sepnet"]);
+        run(&plan, &config, &facts, &mut store, &mut ()).unwrap();
+        assert_eq!(store.annotations(&Item::R2prime).and_then(|a| a.get("R2primeSource")), Some(&json!("predicted")));
+        assert!(store.get(&Item::SeparatedTotalChi).is_some());
+    }
+
     /// A step the engine does not run yet is handed to the store, which says so if it cannot.
     #[test]
     fn host_steps_are_the_stores() {
         let (facts, mut store) = phantom();
         let mut config = config();
-        config.pipeline.do_r2map = true;
+        config.pipeline.do_segmentation = true;
         let plan = crate::plan::plan(&config, &facts);
-        assert!(plan.steps.iter().any(|s| s.stage == Stage::R2 && s.host));
+        assert!(plan.steps.iter().any(|s| s.stage == Stage::Segmentation && s.host));
         // As a front end hands it on: each step's stage, models and who runs it.
         let json = serde_json::to_value(&plan).unwrap();
-        assert!(json["steps"].as_array().unwrap().iter().any(|s| s["stage"] == "R2" && s["host"] == true), "{json}");
+        assert!(json["steps"].as_array().unwrap().iter().any(|s| s["stage"] == "Segmentation" && s["host"] == true), "{json}");
         let err = run(&plan, &config, &facts, &mut store, &mut ()).unwrap_err();
-        assert!(format!("{err}").contains("r2_r2prime"), "{err}");
+        assert!(format!("{err}").contains("segmentation"), "{err}");
     }
 }

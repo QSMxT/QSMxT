@@ -77,6 +77,25 @@ pub enum Item {
     R2star,
     /// The T2* map (s).
     T2star,
+    /// Echo `n` (1-based) of a matched multi-echo spin-echo (MESE) acquisition, on its own grid
+    /// ([`StageStore::mese`]).
+    MeseMagnitude(usize),
+    /// An R2 map supplied with the scan (`--use-custom-r2`).
+    SuppliedR2,
+    /// The R2 map (Hz).
+    R2,
+    /// An R2′ map supplied with the scan (`--use-custom-r2prime`).
+    SuppliedR2prime,
+    /// The R2′ map (Hz).
+    R2prime,
+    /// Where a measured R2′ is valid: the brain mask, narrowed to where R2 was measured.
+    R2primeCoverage,
+    /// A susceptibility map supplied with the scan (`--use-custom-qsm`), in place of the run's.
+    SuppliedChi,
+    /// One sign's χ-separation map, as a magnitude (both are positive).
+    SeparatedChi(Contrast),
+    /// The χ-separation net susceptibility, χ+ + χ−.
+    SeparatedTotalChi,
 }
 
 /// Which sign of susceptibility an output is about.
@@ -130,7 +149,7 @@ pub struct Header {
     pub sidecar: Option<QsmSidecar>,
 }
 
-/// A mask supplied with the scan, as the store found it.
+/// A volume supplied with the scan (a brain mask, a MESE echo), as the store found it.
 #[derive(Debug, Clone)]
 pub enum Supplied {
     /// `origin` names it in the log (`qsmxt`: its path); `dims` and `affine` are its own grid's.
@@ -139,6 +158,19 @@ pub enum Supplied {
     Unreadable { origin: String, error: String },
     /// None was found; `searched` says where it was looked for.
     Missing { searched: String },
+}
+
+/// A multi-echo spin-echo (MESE) acquisition matched to the scan, for R2: its echoes are
+/// [`Item::MeseMagnitude`].
+#[derive(Debug, Clone)]
+pub struct Mese {
+    /// Names it in the log (`qsmxt`: its BIDS key).
+    pub name: String,
+    /// Its grid, from its first echo.
+    pub dims: (usize, usize, usize),
+    pub affine: [f64; 16],
+    /// Echo times in seconds, in echo order.
+    pub echo_times: Vec<f64>,
 }
 
 /// A step the run loop has computed, for the store to record.
@@ -201,6 +233,14 @@ pub trait StageStore {
     /// The brain mask supplied with the scan (asked for only when one is configured).
     fn supplied_mask(&mut self) -> Supplied;
 
+    /// The MESE acquisition matched to the scan, if there is one.
+    fn mese(&mut self) -> Option<Mese> {
+        None
+    }
+
+    /// A volume supplied with the scan on a grid of its own (a MESE echo), as the store found it.
+    fn supplied(&mut self, item: &Item) -> Supplied;
+
     /// What names `item` in a cache key (`qsmxt`: its path, as earlier releases keyed it).
     fn identity(&mut self, item: &Item) -> serde_json::Value;
 
@@ -251,6 +291,7 @@ pub struct MemoryStore {
     reports: HashMap<Item, serde_json::Value>,
     annotations: HashMap<Item, serde_json::Map<String, serde_json::Value>>,
     supplied: Option<Supplied>,
+    mese: Option<Mese>,
     /// Each recorded step's key, and the outputs it recorded.
     steps: HashMap<String, (String, Vec<Item>)>,
     scan: Option<(String, RunMetadata)>,
@@ -276,6 +317,17 @@ impl MemoryStore {
     /// Supply a brain mask with the scan.
     pub fn supply_mask(&mut self, mask: Supplied) {
         self.supplied = Some(mask);
+    }
+
+    /// Match a MESE acquisition to the scan; add its echoes with [`Self::insert_on_grid`].
+    pub fn supply_mese(&mut self, mese: Mese) {
+        self.mese = Some(mese);
+    }
+
+    /// Put an input on a grid of its own in the store.
+    pub fn insert_on_grid(&mut self, item: Item, data: Vec<f64>, geometry: Geometry) {
+        self.volumes.insert(item, VolumeData::Real(data));
+        self.geometries.insert(item, geometry);
     }
 
     pub fn get(&self, item: &Item) -> Option<&VolumeData> {
@@ -365,6 +417,18 @@ impl StageStore for MemoryStore {
 
     fn supplied_mask(&mut self) -> Supplied {
         self.supplied.clone().unwrap_or(Supplied::Missing { searched: "the loaded files".into() })
+    }
+
+    fn mese(&mut self) -> Option<Mese> {
+        self.mese.clone()
+    }
+
+    fn supplied(&mut self, item: &Item) -> Supplied {
+        let origin = format!("{item:?}");
+        let (Some(VolumeData::Real(data)), Some(g)) = (self.volumes.get(item), self.geometries.get(item)) else {
+            return Supplied::Missing { searched: "the loaded files".into() };
+        };
+        Supplied::Found { origin, data: data.clone(), dims: g.dims, affine: g.affine }
     }
 
     fn identity(&mut self, item: &Item) -> serde_json::Value {

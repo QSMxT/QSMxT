@@ -21,3 +21,5 @@ pub mod inversion;
 pub mod qsmart;
 pub mod swi;
 pub mod relaxometry;
+pub mod r2;
+pub mod separation;

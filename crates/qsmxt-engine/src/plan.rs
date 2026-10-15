@@ -195,28 +195,29 @@ fn reconstruction(config: &PipelineConfig, pass: Pass) -> Vec<Step> {
     }
 }
 
-/// Whether R2′ comes from R2PRIMEnet on this scan: computed rather than supplied, not measured
-/// (asked for by name, or `auto` with no R2 to subtract), and allowed at this field strength.
-fn predicts_r2prime(facts: &ScanFacts, config: &PipelineConfig) -> bool {
+/// Whether R2′ may come from R2PRIMEnet on this scan: computed rather than supplied, not
+/// certain to be measured, and allowed at this field strength. Asked for by name it is predicted;
+/// under `auto` it is when there is no R2 to subtract, and also when the R2 is to come from a MESE,
+/// which can still prove unusable when it is read (an unreadable echo, a grid that shares no
+/// space with the run's): the step then predicts R2′ instead, so its weights are listed.
+fn may_predict_r2prime(facts: &ScanFacts, config: &PipelineConfig) -> bool {
     let s = &config.separation;
     if s.custom_r2prime_tool.is_some() || s.r2prime_strategy == R2PrimeStrategy::Mese {
         return false;
     }
-    let measured = requirements::r2_problem(facts, config).is_none();
-    let predicts = s.r2prime_strategy == R2PrimeStrategy::R2primenet || !measured;
+    let certainly_measured = s.custom_r2_tool.is_some() && requirements::r2_problem(facts, config).is_none();
+    let predicts = s.r2prime_strategy == R2PrimeStrategy::R2primenet || !certainly_measured;
     predicts && requirements::r2primenet_off_field(
         facts.field_strength, s.r2prime_strategy, s.r2primenet.ignore_field_mismatch).is_none()
 }
 
 /// Whether the engine runs `stage` on this scan itself. The rest are still the front end's: the
 /// stages listed for step 2.4 of the parity plan (coil combination and real/imaginary input, motion
-/// correction, R2 and R2′, χ-separation, segmentation and its statistics, the return to the
-/// acquired grid).
+/// correction, segmentation and its statistics, the return to the acquired grid).
 fn in_engine(stage: Stage, facts: &ScanFacts) -> bool {
     match stage {
         Stage::ScalePhase => facts.n_coils <= 1 && !facts.real_imaginary,
-        Stage::Motion | Stage::Segmentation | Stage::R2 | Stage::ChiSeparation | Stage::Analysis
-        | Stage::OutputSpace => false,
+        Stage::Motion | Stage::Segmentation | Stage::Analysis | Stage::OutputSpace => false,
         _ => true,
     }
 }
@@ -277,7 +278,7 @@ pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
             add(Stage::Relaxometry, vec![]);
         }
         if p.do_r2map || p.do_r2primemap {
-            let predicts = p.do_r2primemap && predicts_r2prime(facts, config);
+            let predicts = p.do_r2primemap && may_predict_r2prime(facts, config);
             add(Stage::R2, if predicts { model("r2primenet").into_iter().collect() } else { vec![] });
         }
         if p.do_qsm {
@@ -429,6 +430,31 @@ pub(crate) mod tests {
         let p = plan(&config, &f);
         assert!(!p.has(Stage::Swi) && !p.has(Stage::Magnitude));
         assert_eq!(p.check.errors, ["--do-swi needs magnitude images, and this run has none"]);
+    }
+
+    /// R2PRIMEnet is listed wherever the R2 step may run it: R2′ asked for with no R2 to subtract,
+    /// or with R2 to come from a MESE that may prove unusable, but not when R2 is supplied or the
+    /// strategy only measures.
+    #[test]
+    fn r2primenet_is_listed_wherever_r2prime_may_be_predicted() {
+        let mut config = PipelineConfig::default();
+        config.pipeline.do_r2primemap = true;
+        let r2_models = |config: &PipelineConfig, f: &ScanFacts| {
+            plan(config, f).steps.iter().find(|s| s.stage == Stage::R2).unwrap().models.clone()
+        };
+        let mut f = facts();
+        assert_eq!(r2_models(&config, &f), ["r2primenet"], "no R2 to subtract");
+        f.mese_echo_times = Some(vec![0.01, 0.02, 0.03, 0.04]);
+        assert_eq!(r2_models(&config, &f), ["r2primenet"], "the MESE may yet give no R2");
+        config.separation.custom_r2_tool = Some("mine".into());
+        f.custom_r2 = true;
+        assert!(r2_models(&config, &f).is_empty(), "a supplied R2 is there to subtract");
+        config.separation.custom_r2_tool = None;
+        config.separation.r2prime_strategy = R2PrimeStrategy::Mese;
+        assert!(r2_models(&config, &f).is_empty(), "measured or nothing");
+        config.separation.r2prime_strategy = R2PrimeStrategy::Auto;
+        f.field_strength = 7.0;
+        assert!(r2_models(&config, &f).is_empty(), "not run off its training field strength");
     }
 
     #[test]
