@@ -748,8 +748,8 @@ pub fn reconstruct_group(
             } else {
                 None
             };
-            let referenced = crate::pipeline::runner::reference_chi(config, &raw, &[&mask], dseg.as_deref())?;
-            reference_fields = crate::pipeline::runner::reference_sidecar_fields(config, referenced.offset.as_ref());
+            let referenced = qsmxt_engine::referencing::reference_chi(config, &raw, &[&mask], dseg.as_deref())?;
+            reference_fields = qsmxt_engine::referencing::sidecar_fields(config, referenced.offset.as_ref());
 
             let path = output.cosmos_path(&key);
             match acquired {

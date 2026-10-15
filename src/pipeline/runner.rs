@@ -3165,27 +3165,9 @@ fn stage_reference(
     support_out: Option<PathBuf>, step: &str, progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
     let ref_method = format!("{}", ctx.config.qsm.reference);
-    // `domain` versions what the reference is measured over, so maps referenced over the brain
-    // mask by an older release are re-referenced rather than reused from the cache.
-    let mut ref_params = serde_json::json!({ "method": ref_method, "domain": "support" });
-
-    // A region reference depends on the parcellation as well as the map. Rather than a static
-    // `segmentation -> reference` edge — which would invalidate referencing, and everything that
-    // reads the referenced map, whenever any SynthSeg setting changed on a `mean` run — the
-    // dependency is carried here, only when it is real: the region, and the hash of the
-    // segmentation that measured it.
-    let region = if ctx.config.qsm.reference == QsmReference::Region {
-        let spec = ctx.config.qsm.reference_region.clone().unwrap_or_default();
-        let ids = qsmxt_engine::regions::resolve(&spec, ctx.config.segmentation.version)
-            .map_err(|e| QsmxtError::Config(format!("--qsm-reference: {e}")))?;
-        ref_params["region"] = serde_json::json!(spec);
-        ref_params["region_ids"] = serde_json::json!(ids);
-        ref_params["segmentation"] = serde_json::json!(
-            ctx.state.completed_steps.get("segmentation").and_then(|r| r.params_hash.clone()));
-        Some((spec, ids))
-    } else {
-        None
-    };
+    let segmentation = ctx.state.completed_steps.get("segmentation").and_then(|r| r.params_hash.clone());
+    let ref_params = qsmxt_engine::referencing::params(ctx.config, segmentation.as_deref())?;
+    let region = qsmxt_engine::referencing::reference_region(ctx.config)?;
 
     if ctx.is_cached_with_params(step, Some(&ref_method), &ref_params) {
         log::info!("Skipping {} (cached)", step);
@@ -3215,8 +3197,8 @@ fn stage_reference(
         }
         None => None,
     };
-    let Referenced { chi: chi_final, support: mask, offset } =
-        reference_chi(ctx.config, &chi, &declared_refs, dseg.as_deref())?;
+    let qsmxt_engine::referencing::Referenced { chi: chi_final, support: mask, offset } =
+        qsmxt_engine::referencing::reference_chi(ctx.config, &chi, &declared_refs, dseg.as_deref())?;
 
     save_volume(&qsm_path, &chi_final, ctx.meta)?;
     let mut outputs = vec![qsm_path.clone()];
@@ -3236,75 +3218,6 @@ fn stage_reference(
     Ok(())
 }
 
-/// A susceptibility map after referencing: the map, the support it was referenced over, and what
-/// the reference removed (when that is a single number worth recording).
-pub(crate) struct Referenced {
-    pub chi: Vec<f64>,
-    pub support: Vec<u8>,
-    pub offset: Option<qsmxt_engine::referencing::Offset>,
-}
-
-/// Reference `chi` with `--qsm-reference`, over the voxels it is defined on within `declared`.
-///
-/// Shared by the per-run maps and the multi-orientation (COSMOS) map, so every susceptibility
-/// map QSMxT publishes is referenced the same way. `dseg` must be on `chi`'s grid; it is needed
-/// only for a region reference.
-pub(crate) fn reference_chi(
-    config: &PipelineConfig, chi: &[f64], declared: &[&[u8]], dseg: Option<&[f64]>,
-) -> crate::Result<Referenced> {
-    if let Some(m) = declared.iter().find(|m| m.len() != chi.len()) {
-        return Err(QsmxtError::DimensionMismatch(format!(
-            "support mask has {} voxels but the susceptibility map has {}", m.len(), chi.len())));
-    }
-    let support = qsmxt_engine::referencing::defined_support(declared, chi);
-    log::info!(
-        "Referencing over the map's support: {} voxels",
-        support.iter().filter(|&&m| m != 0).count(),
-    );
-    if config.qsm.reference == QsmReference::Region {
-        let spec = config.qsm.reference_region.clone().unwrap_or_default();
-        let ids = qsmxt_engine::regions::resolve(&spec, config.segmentation.version)
-            .map_err(|e| QsmxtError::Config(format!("--qsm-reference: {e}")))?;
-        let dseg = dseg.ok_or_else(|| QsmxtError::Config(format!(
-            "--qsm-reference {spec}: no segmentation to measure the region on")))?;
-        if dseg.len() != chi.len() {
-            return Err(QsmxtError::DimensionMismatch(format!(
-                "segmentation has {} voxels but the susceptibility map has {}",
-                dseg.len(), chi.len())));
-        }
-        let roi = qsmxt_engine::referencing::region_mask(dseg, &ids);
-        let (out, off) = qsmxt_engine::referencing::reference_to_region(chi, &support, &roi, &spec)?;
-        return Ok(Referenced { chi: out, support, offset: Some(off) });
-    }
-    let (_, _, _, ref_method_core) = crate::pipeline::config::to_pipeline_stages(config);
-    // What the mean reference removed is worth recording for the same reason a region's offset
-    // is; `apply_reference` applies it without saying.
-    let offset = (config.qsm.reference == QsmReference::Mean)
-        .then(|| qsmxt_engine::referencing::mask_mean(chi, &support))
-        .flatten();
-    let out = qsm_core::pipeline::apply_reference(chi, &support, ref_method_core);
-    Ok(Referenced { chi: out, support, offset })
-}
-
-/// The `QsmReference*` sidecar fields for a map referenced under `config`.
-pub(crate) fn reference_sidecar_fields(
-    config: &PipelineConfig, offset: Option<&qsmxt_engine::referencing::Offset>,
-) -> serde_json::Map<String, serde_json::Value> {
-    let mut obj = serde_json::Map::new();
-    obj.insert("QsmReference".into(), serde_json::json!(config.qsm.reference_spec()));
-    if let Some(off) = offset {
-        obj.insert("QsmReferenceOffsetPpm".into(), serde_json::json!(off.ppm));
-        obj.insert("QsmReferenceVoxels".into(), serde_json::json!(off.voxels));
-    }
-    if config.qsm.reference == QsmReference::Region {
-        let spec = config.qsm.reference_region.clone().unwrap_or_default();
-        if let Ok(ids) = qsmxt_engine::regions::resolve(&spec, config.segmentation.version) {
-            obj.insert("QsmReferenceLabels".into(), serde_json::json!(ids));
-        }
-    }
-    obj
-}
-
 /// Record the reference in the susceptibility map's JSON sidecar.
 ///
 /// The offset is a measurement in its own right — the susceptibility of the reference tissue — and
@@ -3318,7 +3231,7 @@ fn write_reference_sidecar(
 ) -> crate::Result<()> {
     let Some(sidecar) = crate::bids::entities::sidecar_path(qsm_path) else { return Ok(()) };
     let mut obj = read_json_object(&sidecar);
-    obj.extend(reference_sidecar_fields(ctx.config, offset.as_ref()));
+    obj.extend(qsmxt_engine::referencing::sidecar_fields(ctx.config, offset.as_ref()));
     if let Some(parent) = sidecar.parent() {
         std::fs::create_dir_all(parent)?;
     }

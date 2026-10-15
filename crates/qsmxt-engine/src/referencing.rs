@@ -12,7 +12,108 @@
 //! the mask, and subtracting it there turns the rim into a shell of constant `-offset`. See
 //! [`defined_support`].
 
+use crate::config::PipelineConfig;
+use crate::enums::QsmReference;
 use crate::error::EngineError;
+
+/// The reference step's parameters.
+///
+/// `domain` versions what the reference is measured over, so maps referenced over the brain mask
+/// by an older release are re-referenced rather than reused from the cache. A region reference
+/// depends on the parcellation as well as the map. Rather than a static `segmentation ->
+/// reference` edge — which would invalidate referencing, and everything that reads the referenced
+/// map, whenever any SynthSeg setting changed on a `mean` run — the dependency is carried here,
+/// only when it is real: the region, its label ids, and `segmentation`, the cache key of the
+/// segmentation that measured it.
+pub fn params(config: &PipelineConfig, segmentation: Option<&str>) -> Result<serde_json::Value, EngineError> {
+    let mut params = serde_json::json!({ "method": format!("{}", config.qsm.reference), "domain": "support" });
+    if let Some((spec, ids)) = reference_region(config)? {
+        params["region"] = serde_json::json!(spec);
+        params["region_ids"] = serde_json::json!(ids);
+        params["segmentation"] = serde_json::json!(segmentation);
+    }
+    Ok(params)
+}
+
+/// The region a `--qsm-reference <region>` measures the offset on, as written and as label ids;
+/// `None` for the other references.
+pub fn reference_region(config: &PipelineConfig) -> Result<Option<(String, Vec<i32>)>, EngineError> {
+    if config.qsm.reference != QsmReference::Region {
+        return Ok(None);
+    }
+    let spec = config.qsm.reference_region.clone().unwrap_or_default();
+    let ids = crate::regions::resolve(&spec, config.segmentation.version)
+        .map_err(|e| EngineError::Config(format!("--qsm-reference: {e}")))?;
+    Ok(Some((spec, ids)))
+}
+
+/// A susceptibility map after referencing: the map, the support it was referenced over, and what
+/// the reference removed (when that is a single number worth recording).
+pub struct Referenced {
+    pub chi: Vec<f64>,
+    pub support: Vec<u8>,
+    pub offset: Option<Offset>,
+}
+
+/// Reference `chi` with `--qsm-reference`, over the voxels it is defined on within `declared`
+/// ([`defined_support`]); the map comes back 0 outside that support.
+///
+/// Used for every susceptibility map QSMxT publishes — each run's and the multi-orientation
+/// (COSMOS) map — so all are referenced the same way. `dseg` must be on `chi`'s grid; it is needed
+/// only for a region reference.
+pub fn reference_chi(
+    config: &PipelineConfig, chi: &[f64], declared: &[&[u8]], dseg: Option<&[f64]>,
+) -> Result<Referenced, EngineError> {
+    if let Some(m) = declared.iter().find(|m| m.len() != chi.len()) {
+        return Err(EngineError::DimensionMismatch(format!(
+            "support mask has {} voxels but the susceptibility map has {}", m.len(), chi.len())));
+    }
+    let support = defined_support(declared, chi);
+    log::info!(
+        "Referencing over the map's support: {} voxels",
+        support.iter().filter(|&&m| m != 0).count(),
+    );
+    if let Some((spec, ids)) = reference_region(config)? {
+        let dseg = dseg.ok_or_else(|| EngineError::Config(format!(
+            "--qsm-reference {spec}: no segmentation to measure the region on")))?;
+        if dseg.len() != chi.len() {
+            return Err(EngineError::DimensionMismatch(format!(
+                "segmentation has {} voxels but the susceptibility map has {}",
+                dseg.len(), chi.len())));
+        }
+        let roi = region_mask(dseg, &ids);
+        let (out, off) = reference_to_region(chi, &support, &roi, &spec)?;
+        return Ok(Referenced { chi: out, support, offset: Some(off) });
+    }
+    let (_, _, _, ref_method_core) = crate::bridge::to_pipeline_stages(config);
+    // What the mean reference removed is worth recording for the same reason a region's offset
+    // is; `apply_reference` applies it without saying.
+    let offset = (config.qsm.reference == QsmReference::Mean)
+        .then(|| mask_mean(chi, &support))
+        .flatten();
+    let out = qsm_core::pipeline::apply_reference(chi, &support, ref_method_core);
+    Ok(Referenced { chi: out, support, offset })
+}
+
+/// The `QsmReference*` sidecar fields for a map referenced under `config`: the reference, and what
+/// it removed and from how many voxels, when that is known.
+pub fn sidecar_fields(
+    config: &PipelineConfig, offset: Option<&Offset>,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut obj = serde_json::Map::new();
+    obj.insert("QsmReference".into(), serde_json::json!(config.qsm.reference_spec()));
+    if let Some(off) = offset {
+        obj.insert("QsmReferenceOffsetPpm".into(), serde_json::json!(off.ppm));
+        obj.insert("QsmReferenceVoxels".into(), serde_json::json!(off.voxels));
+    }
+    if config.qsm.reference == QsmReference::Region {
+        let spec = config.qsm.reference_region.clone().unwrap_or_default();
+        if let Ok(ids) = crate::regions::resolve(&spec, config.segmentation.version) {
+            obj.insert("QsmReferenceLabels".into(), serde_json::json!(ids));
+        }
+    }
+    obj
+}
 
 /// The voxels a raw susceptibility map is defined on.
 ///
@@ -184,6 +285,36 @@ mod tests {
         assert_eq!(mask_mean(&[1.0, f64::NAN], &[1, 1]), Some(Offset { ppm: 1.0, voxels: 1 }),
                    "non-finite voxels must not poison the offset");
         assert_eq!(mask_mean(&[1.0, 2.0], &[0, 0]), None, "an empty mask has no mean");
+    }
+
+    /// The reference's cache key names the region only for a region reference, and the
+    /// segmentation it was measured on with it.
+    #[test]
+    fn only_a_region_reference_keys_on_the_segmentation() {
+        let mut config = PipelineConfig::default();
+        let mean = params(&config, Some("abc")).unwrap();
+        assert_eq!(mean["domain"], "support");
+        assert!(mean.get("segmentation").is_none(), "a mean reference reads no parcellation");
+
+        config.qsm.reference = QsmReference::Region;
+        config.qsm.reference_region = Some("thalamus".into());
+        let region = params(&config, Some("abc")).unwrap();
+        assert_eq!(region["segmentation"], "abc");
+        assert!(!region["region_ids"].as_array().unwrap().is_empty());
+
+        config.qsm.reference_region = Some("no-such-structure".into());
+        assert!(format!("{}", params(&config, None).unwrap_err()).starts_with("--qsm-reference:"));
+    }
+
+    /// A map and a support of different sizes are refused as the dimension error they are.
+    #[test]
+    fn a_mis_sized_support_is_a_dimension_error() {
+        let config = PipelineConfig::default();
+        let err = reference_chi(&config, &[1.0, 2.0], &[&[1u8]], None).err().unwrap();
+        assert!(matches!(err, EngineError::DimensionMismatch(_)), "{err}");
+        let ok = reference_chi(&config, &[1.0, 3.0, 0.0], &[&[1u8, 1, 1]], None).unwrap();
+        assert_eq!(ok.chi, vec![-1.0, 1.0, 0.0]);
+        assert_eq!(ok.offset, Some(Offset { ppm: 2.0, voxels: 2 }));
     }
 
     /// The mask is built from the label ids, and a label not asked for is not in it.
