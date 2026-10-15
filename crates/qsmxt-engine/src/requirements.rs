@@ -378,7 +378,7 @@ fn input_problems(f: &ScanFacts) -> Option<String> {
 
 /// The result of checking every run: one error line per requested output a run cannot produce,
 /// one warning per implied output it cannot.
-#[derive(Debug, Default)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct Check {
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
@@ -387,8 +387,16 @@ pub struct Check {
 /// Check one scan against the config. `key` names it in the messages (`qsmxt` uses the run's
 /// BIDS key, e.g. `sub-01_ses-1_MEGRE`).
 pub fn check_scan(key: &str, f: &ScanFacts, config: &PipelineConfig, out: &mut Check) {
+    let Check { errors, warnings } = scan_check(f, config);
+    out.errors.extend(errors.into_iter().map(|e| format!("{key}: {e}")));
+    out.warnings.extend(warnings.into_iter().map(|w| format!("{key}: {w}")));
+}
+
+/// [`check_scan`] for a scan on its own: the same messages, without a key in front of them.
+pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
+    let mut out = Check::default();
     if let Some(why) = input_problems(f) {
-        out.errors.push(format!("{key}: {why}"));
+        out.errors.push(why);
     }
     for o in Output::ALL {
         if !o.enabled(config) {
@@ -396,11 +404,11 @@ pub fn check_scan(key: &str, f: &ScanFacts, config: &PipelineConfig, out: &mut C
         }
         let Some(why) = problem(f, config, o) else { continue };
         match implied_by(config, o) {
-            Some(by) => out.warnings.push(format!(
-                "{key}: {} (turned on by {by}) is skipped: it {why}", o.flag())),
-            None => out.errors.push(format!("{key}: {} {why}", o.flag())),
+            Some(by) => out.warnings.push(format!("{} (turned on by {by}) is skipped: it {why}", o.flag())),
+            None => out.errors.push(format!("{} {why}", o.flag())),
         }
     }
+    out
 }
 
 impl Check {
@@ -426,6 +434,7 @@ mod tests {
 
     fn run(echo_times: &[f64], has_magnitude: bool) -> ScanFacts {
         ScanFacts {
+            dims: (4, 4, 4),
             n_echoes: echo_times.len(),
             echo_times: echo_times.to_vec(),
             has_magnitude,
@@ -433,7 +442,9 @@ mod tests {
             field_strength: 3.0,
             b0_dir: None,
             mese_echo_times: None,
-            custom_dseg: false, custom_qsm: false, custom_r2: false, custom_r2prime: false,
+            real_imaginary: false,
+            custom_mask: false, custom_dseg: false, custom_qsm: false, custom_r2: false,
+            custom_r2prime: false,
         }
     }
 

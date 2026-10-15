@@ -27,6 +27,7 @@ pub mod requirements;
 pub mod memory;
 pub mod cache;
 pub mod graph;
+pub mod plan;
 pub mod fieldmap;
 pub mod referencing;
 pub mod observe;
