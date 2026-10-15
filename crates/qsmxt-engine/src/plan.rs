@@ -117,13 +117,11 @@ pub struct Step {
     /// The deep-learning models the step runs, by QSM.rs model id: the weights to have ready
     /// before it is computed.
     pub models: Vec<&'static str>,
-    /// The step is not in the engine yet: the front end runs it ([`crate::store::StageStore::host`]).
-    pub host: bool,
 }
 
 /// What a run will do.
-/// Serialises (as front ends pass it on, e.g. to JavaScript) with each step as its stage, models
-/// and whether the front end runs it.
+/// Serialises (as front ends pass it on, e.g. to JavaScript) with each step as its stage and
+/// models.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Plan {
     /// Every step, in the order the run takes them.
@@ -168,7 +166,7 @@ fn model(id: &str) -> Option<&'static str> {
 /// route the chosen algorithm takes. Both passes of a two-pass run take the same route.
 fn reconstruction(config: &PipelineConfig, pass: Pass) -> Vec<Step> {
     let inversion = &config.inversion.algorithm;
-    let single = |stage: Stage, models: Vec<&'static str>| vec![Step { stage, models, host: false }];
+    let single = |stage: Stage, models: Vec<&'static str>| vec![Step { stage, models }];
     match inversion {
         QsmAlgorithm::Tgv => single(Stage::Tgv(pass), vec![]),
         QsmAlgorithm::Qsmart => single(Stage::Qsmart(pass), vec![]),
@@ -183,12 +181,11 @@ fn reconstruction(config: &PipelineConfig, pass: Pass) -> Vec<Step> {
             if !skips_bgremove(config) {
                 let bf = config.bg_removal.algorithm;
                 let id = if bf == BfAlgorithm::Iqfm { model("iqfm") } else { model(&bf.to_string()) };
-                steps.push(Step { stage: Stage::BackgroundRemoval(pass), models: id.into_iter().collect(), host: false });
+                steps.push(Step { stage: Stage::BackgroundRemoval(pass), models: id.into_iter().collect() });
             }
             steps.push(Step {
                 stage: Stage::Inversion(pass),
                 models: model(&inversion.to_string()).into_iter().collect(),
-                host: false,
             });
             steps
         }
@@ -209,15 +206,6 @@ fn may_predict_r2prime(facts: &ScanFacts, config: &PipelineConfig) -> bool {
     let predicts = s.r2prime_strategy == R2PrimeStrategy::R2primenet || !certainly_measured;
     predicts && requirements::r2primenet_off_field(
         facts.field_strength, s.r2prime_strategy, s.r2primenet.ignore_field_mismatch).is_none()
-}
-
-/// Whether the engine runs `stage` on this scan itself. The rest are still the front end's: phase
-/// scaling of uncombined coils (their combination) and of real and imaginary parts.
-fn in_engine(stage: Stage, facts: &ScanFacts) -> bool {
-    match stage {
-        Stage::ScalePhase => facts.n_coils <= 1 && !facts.real_imaginary,
-        _ => true,
-    }
 }
 
 /// Plan one run of `config` on the scan `facts` describes.
@@ -244,10 +232,8 @@ pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
     }
     let motion_corrected = config.motion_correction.enabled && facts.n_echoes > 1 && facts.has_magnitude;
 
-    let mut steps = vec![Step { stage: Stage::Load, models: vec![], host: false }];
-    let mut add = |stage: Stage, models: Vec<&'static str>| {
-        steps.push(Step { stage, models, host: !in_engine(stage, facts) })
-    };
+    let mut steps = vec![Step { stage: Stage::Load, models: vec![] }];
+    let mut add = |stage: Stage, models: Vec<&'static str>| steps.push(Step { stage, models });
     if needs_phase {
         add(Stage::ScalePhase, vec![]);
         if facts.has_magnitude {
