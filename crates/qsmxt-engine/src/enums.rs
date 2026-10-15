@@ -229,6 +229,13 @@ impl SynthSegVersion {
     pub fn weights_id(self) -> &'static str {
         match self { Self::V1 => "synthseg", Self::V2 => "synthseg-2.0" }
     }
+
+    pub fn to_core(self) -> qsm_core::segment::SynthSegVersion {
+        match self {
+            Self::V1 => qsm_core::segment::SynthSegVersion::V1,
+            Self::V2 => qsm_core::segment::SynthSegVersion::V2,
+        }
+    }
 }
 pub fn parse_synthseg_version(s: &str) -> Option<SynthSegVersion> {
     match s.trim() {

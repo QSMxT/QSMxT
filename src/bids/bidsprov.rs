@@ -564,7 +564,6 @@ mod tests {
                 .collect()
         };
         let mut names = literal_after("complete_step(");
-        names.extend(literal_after("complete_step_with_metadata("));
         // The steps the engine computes, which the runner records under their engine names.
         use qsmxt_engine::plan::{Pass, Stage};
         for pass in [Pass::Main, Pass::Reliable] {
@@ -575,22 +574,22 @@ mod tests {
         }
         for stage in [Stage::ScalePhase, Stage::Magnitude, Stage::FieldMap, Stage::TwoPassCombination,
                       Stage::Reference, Stage::SinglePassReference, Stage::Swi, Stage::Smwi,
-                      Stage::Relaxometry, Stage::R2, Stage::ChiSeparation] {
+                      Stage::Relaxometry, Stage::R2, Stage::ChiSeparation, Stage::Motion,
+                      Stage::Segmentation, Stage::Analysis, Stage::OutputSpace] {
             names.push(stage.name());
         }
         for name in &names {
             assert!(STEPS.contains(&name.as_str()), "step {name:?} is recorded but missing from STEPS");
         }
         // Every call site whose name is not a literal is one of the cases handled above (the
-        // engine's steps, and complete_step_with_metadata's own forwarding call). A new one has to
-        // be added here (and to STEPS).
-        let dynamic = src.match_indices("complete_step(").chain(src.match_indices("complete_step_with_metadata("))
+        // engine's steps, recorded by the store). A new one has to be added here (and to STEPS).
+        let dynamic = src.match_indices("complete_step(")
             .filter(|(i, pat)| {
                 let rest = src[i + pat.len()..].trim_start();
                 !rest.starts_with('"') && !rest.starts_with("&mut")
             })
             .count();
-        assert_eq!(dynamic, 1, "a step name is built somewhere new: cover it in STEPS and in this test");
+        assert_eq!(dynamic, 0, "a step name is built somewhere new: cover it in STEPS and in this test");
         for step in STEPS {
             assert!(names.iter().any(|n| n == step), "STEPS lists {step:?}, which no step records");
         }

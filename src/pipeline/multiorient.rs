@@ -232,8 +232,8 @@ struct MemberData {
 
 /// Where one of a member's published volumes is on its *working* grid.
 ///
-/// `stage_output_space` returns a resampled run's published outputs to the acquired grid and keeps
-/// the working-grid originals in the run's `working-grid` stash. The local field and the
+/// The `output_space` step returns a resampled run's published outputs to the acquired grid, and
+/// the working-grid originals are kept in the run's `working-grid` stash. The local field and the
 /// background-removal mask never leave the working grid, so everything combined with them has to
 /// be read from the stash when the run was returned — not from `anat/`, which by then is on
 /// another grid (#270). The run's state file says whether that happened this time.
@@ -926,12 +926,12 @@ fn group_statistics(
         return Err(QsmxtError::DimensionMismatch(format!(
             "segmentation has {} voxels but the COSMOS map has {}", seg.len(), map.len())));
     }
-    let labels = crate::pipeline::runner::to_core_synthseg_version(config.segmentation.version).labels();
+    let labels = config.segmentation.version.to_core().labels();
     let reference = crate::bids::entities::sidecar_path(&spec.path)
         .as_deref()
-        .and_then(stats::ReferenceInfo::from_sidecar);
+        .and_then(stats::reference_from_sidecar);
     let mut table = String::from(stats::HEADER);
-    table.push_str(&stats::map_rows(&spec, &map, &seg, labels, None, reference.as_ref()));
+    table.push_str(&stats::map_rows(spec.name, spec.unit, &map, &seg, labels, None, reference.as_ref()));
     let out = output.segmentation_stats_path(key);
     std::fs::write(&out, table)?;
     info!("  per-structure statistics -> {}", out.display());

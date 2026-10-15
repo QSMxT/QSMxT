@@ -23,3 +23,7 @@ pub mod swi;
 pub mod relaxometry;
 pub mod r2;
 pub mod separation;
+pub mod segmentation;
+pub mod analysis;
+pub mod motion;
+pub mod output_space;

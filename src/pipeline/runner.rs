@@ -132,24 +132,6 @@ impl StageContext<'_> {
         self.state.mark_completed(step, output_paths, Some(hash));
         self.state.save(self.state_path)
     }
-
-    /// [`Self::complete_step`], plus step metadata kept in the state file for a later stage.
-    #[allow(clippy::too_many_arguments)]
-    fn complete_step_with_metadata(
-        &mut self,
-        step: &str,
-        algorithm: Option<&str>,
-        parameters: serde_json::Value,
-        inputs: &[&Path],
-        output_paths: Vec<PathBuf>,
-        metadata: Option<serde_json::Value>,
-        start: Instant,
-    ) -> crate::Result<()> {
-        self.complete_step(step, algorithm, parameters.clone(), inputs, output_paths.clone(), start)?;
-        let hash = step_cache_key(step, algorithm, &parameters, self.config);
-        self.state.mark_completed_with_metadata(step, output_paths, Some(hash), metadata);
-        self.state.save(self.state_path)
-    }
 }
 
 /// Global multi-progress for coordinating parallel progress bars.
@@ -268,14 +250,6 @@ pub fn prefetch_weights(model_id: &str, _label: &str) -> crate::Result<()> {
     Ok(())
 }
 
-/// Fetch the weights of every deep-learning model in `models` (a planned step's) for this run.
-fn prefetch_models(ctx: &StageContext, models: &[&'static str]) -> crate::Result<()> {
-    for id in models {
-        prefetch_weights(id, &ctx.run.key.to_string())?;
-    }
-    Ok(())
-}
-
 /// Log step completion with timing.
 fn log_step_done(step_name: &str, start: Instant) {
     let elapsed = start.elapsed();
@@ -340,7 +314,8 @@ pub fn run_pipeline_cached(
     }
     let mut store = FileStore {
         run: qsm_run, config, output: output.clone(), meta: None, state, state_path, progress,
-        started: None, supplied_mask: None, mask_path: None,
+        started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(), metadata: None,
+        working_grid_kept: false,
     };
     let mut observer = RunObserver { key: qsm_run.key.to_string(), progress, bar: None, started: None };
     qsmxt_engine::run::run(&plan, config, &facts, &mut store, &mut observer)
@@ -350,6 +325,9 @@ pub fn run_pipeline_cached(
 /// by [`DerivativeOutputs`], its step cache in the run's state file ([`PipelineState`]), and a
 /// provenance record for every step. The stages the engine does not run yet are run here, from the
 /// same files.
+///
+/// Returning the outputs to the acquired grid rewrites them in place; the working-grid originals
+/// are kept aside first, and put back when a later run starts ([`restore_working_grid`]).
 struct FileStore<'a> {
     run: &'a QsmRun,
     config: &'a PipelineConfig,
@@ -362,10 +340,19 @@ struct FileStore<'a> {
     progress: &'a dyn Fn(&str),
     /// When the step being computed started, for its provenance.
     started: Option<Instant>,
+    /// The step being computed.
+    step: Option<String>,
     /// The supplied brain mask, once found.
     supplied_mask: Option<PathBuf>,
-    /// The mask the stages after motion correction read, once motion correction has run.
-    mask_path: Option<PathBuf>,
+    /// Files the step being computed wrote beside its outputs (the figures beside the statistics
+    /// table), recorded with them.
+    extra_outputs: Vec<PathBuf>,
+    /// What the step being computed keeps in the state file rather than in a file of its own
+    /// (SynthSeg's per-label volumes).
+    metadata: Option<serde_json::Value>,
+    /// The working-grid copies of the run's published volumes are kept aside for the return to the
+    /// acquired grid being computed.
+    working_grid_kept: bool,
 }
 
 impl FileStore<'_> {
@@ -410,18 +397,13 @@ impl FileStore<'_> {
             Item::Chi => o.qsm_path(key),
             Item::ChiSupport => o.qsm_support_path(key),
             Item::SinglePassChi => o.singlepass_qsm_path(key),
-            // The run's own segmentation, or the one supplied in its place.
-            Item::Segmentation => {
-                let own = o.dseg_path(key);
-                if own.exists() {
-                    own
-                } else {
-                    let tool = self.config.segmentation.custom_dseg_tool.as_deref()?;
-                    let found = find_custom_derivative(self.run, tool, "*_dseg.nii*", &[])?;
-                    log::info!("Summarising the supplied {}", found.display());
-                    found
-                }
-            }
+            Item::Segmentation => o.dseg_path(key),
+            Item::SuppliedSegmentation => self.custom(self.config.segmentation.custom_dseg_tool.as_deref(), "*_dseg.nii*", &[])?,
+            Item::SegmentationLabels => o.dseg_lookup_path(key),
+            // Kept in the state file, with the step's record.
+            Item::SegmentationVolumes => return None,
+            Item::RegionStats => o.segmentation_stats_path(key),
+            Item::MotionReport => o.motion_report_path(key),
             Item::Swi => o.swi_path(key),
             Item::SwiMip => o.swi_mip_path(key),
             Item::Smwi(c) => o.smwi_path(key, c.name()),
@@ -445,6 +427,52 @@ impl FileStore<'_> {
     /// The derivative `tool` supplies for this run, when one is configured and found.
     fn custom(&self, tool: Option<&str>, glob: &str, exclude: &[&str]) -> Option<PathBuf> {
         find_custom_derivative(self.run, tool?, glob, exclude)
+    }
+
+    /// Before the first output is returned to the acquired grid: copy every one of the run's
+    /// published volumes aside, since later steps read them back on the working grid (the mask,
+    /// the combined magnitude, ...) and a re-run has to start from them rather than from what lands
+    /// in `anat/`. Only this run's files: every run of the session shares `anat/`, and another
+    /// run's outputs may be on its own working grid, or still being read by a reconstruction in
+    /// progress.
+    fn keep_working_grid_copies(&mut self) -> crate::Result<()> {
+        let stash = self.output.working_grid_dir(&self.run.key);
+        if stash.exists() {
+            std::fs::remove_dir_all(&stash)?;
+        }
+        std::fs::create_dir_all(&stash)?;
+        for f in self.output.run_published_niftis(&self.run.key) {
+            // Not a file some other configuration left in another space.
+            if f.file_name().and_then(|n| crate::bids::naming::entity_of(&n.to_string_lossy(), "space")).is_some() {
+                continue;
+            }
+            if let Some(name) = f.file_name() {
+                std::fs::copy(&f, stash.join(name))?;
+            }
+        }
+        self.working_grid_kept = true;
+        Ok(())
+    }
+
+    /// One figure per map beside the statistics table. Best-effort: the numbers are the
+    /// deliverable, and a figure that fails to draw must not cost the run the statistics it
+    /// already computed.
+    fn draw_figures(&mut self, table: &str) {
+        let anat = self.output.anat_dir(&self.run.key);
+        match crate::pipeline::figure::render_all(
+            &stats::parse_tsv(table),
+            &self.run.key.to_string(),
+            "Mean per structure; whiskers ±1 SD over the structure's voxels",
+            "Volume from the SynthSeg posteriors, partial volume included",
+        ) {
+            Ok(figs) => for f in figs {
+                match f.save_in(&anat, &self.run.key.basename()) {
+                    Ok(p) => { log::info!("Figure -> {}", p.display()); self.extra_outputs.push(p); }
+                    Err(e) => log::warn!("Could not write {}: {e}", f.stem),
+                }
+            },
+            Err(e) => log::warn!("Could not draw the per-structure figures: {e}"),
+        }
     }
 
     fn existing(&self, item: &Item) -> crate::Result<PathBuf> {
@@ -568,8 +596,12 @@ impl StageStore for FileStore<'_> {
         self.state.is_step_cached_with_hash(step, Some(key))
     }
 
-    fn start(&mut self, _step: &str) {
+    fn start(&mut self, step: &str) {
         self.started = Some(Instant::now());
+        self.step = Some(step.to_string());
+        self.extra_outputs.clear();
+        self.metadata = None;
+        self.working_grid_kept = false;
     }
 
     fn models(&mut self, models: &[&'static str]) -> crate::Result<()> {
@@ -580,6 +612,13 @@ impl StageStore for FileStore<'_> {
     }
 
     fn put(&mut self, item: Item, data: Data<'_>) -> crate::Result<()> {
+        if let (Item::SegmentationVolumes, Data::Json(volumes)) = (item, data) {
+            self.metadata = Some(serde_json::json!({ "volumes": volumes }));
+            return Ok(());
+        }
+        if self.step.as_deref() == Some("output_space") && !self.working_grid_kept {
+            self.keep_working_grid_copies()?;
+        }
         let Some(path) = self.path(&item) else {
             match item {
                 Item::QsmartIntermediate(_, name) =>
@@ -592,6 +631,12 @@ impl StageStore for FileStore<'_> {
             Data::Real(v) => save_volume(&path, v, self.meta())?,
             Data::Mask(m) => save_mask(&path, m, self.meta())?,
             Data::OnGrid(v, g) => write_volume(&path, v, g.dims, g.voxel_size, &g.affine)?,
+            Data::Text(t) => {
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::write(&path, t)?;
+            }
             Data::Json(j) => {
                 let json = serde_json::to_string_pretty(j)
                     .map_err(|e| QsmxtError::Config(format!("{}: {e}", path.display())))?;
@@ -625,6 +670,10 @@ impl StageStore for FileStore<'_> {
         if let Some(fields) = described {
             self.annotate(&item, fields.into_iter().map(|(k, v)| (k.to_string(), v)).collect())?;
         }
+        if let (Item::RegionStats, Data::Text(table)) = (item, data) {
+            log::info!("Per-structure statistics -> {}", path.display());
+            self.draw_figures(table);
+        }
         // A new R2' map: what an earlier run recorded about where its R2' came from no longer
         // holds, and the step records it afresh.
         if item == Item::R2prime {
@@ -651,33 +700,85 @@ impl StageStore for FileStore<'_> {
         Ok(())
     }
 
+    fn report(&mut self, item: &Item) -> Option<serde_json::Value> {
+        if *item == Item::SegmentationVolumes {
+            return self.state.completed_steps.get("segmentation")?.metadata.as_ref()?.get("volumes").cloned();
+        }
+        let text = std::fs::read_to_string(self.path(item)?).ok()?;
+        Some(serde_json::from_str(&text).unwrap_or(serde_json::Value::String(text)))
+    }
+
+    /// The item's JSON sidecar.
+    fn annotation(&mut self, item: &Item) -> serde_json::Map<String, serde_json::Value> {
+        self.path(item).and_then(|p| crate::bids::entities::sidecar_path(&p))
+            .map(|sidecar| read_json_object(&sidecar)).unwrap_or_default()
+    }
+
+    fn discard(&mut self, step: &str, outputs: &[Item]) -> crate::Result<()> {
+        for path in outputs.iter().filter_map(|i| self.path(i)) {
+            if path.exists() {
+                std::fs::remove_file(&path)?;
+            }
+        }
+        if self.state.completed_steps.contains_key(step) {
+            log::info!("{step} is off now: re-running the stages that read its output");
+            self.state.invalidate(step);
+            self.state.save(&self.state_path)?;
+        }
+        Ok(())
+    }
+
+    /// Each output left on the working grid gets a `SpatialReference`: the BIDS sidecar field a
+    /// `space-` label that is not a standard template needs, pointing at the run's combined
+    /// magnitude in that space.
+    fn keep_working_grid(&mut self) -> crate::Result<()> {
+        let Some(space) = self.output.space.as_deref() else { return Ok(()) };
+        let reference = crate::pipeline::multiorient::spatial_reference(&self.output, &self.run.key, space);
+        let files: Vec<PathBuf> = self.output.run_published_niftis(&self.run.key).into_iter()
+            .filter(|p| p.file_name().and_then(|n| crate::bids::naming::entity_of(&n.to_string_lossy(), "space"))
+                .as_deref() == Some(space))
+            .collect();
+        for f in files {
+            let Some(sidecar) = crate::bids::entities::sidecar_path(&f) else { continue };
+            let mut obj = read_json_object(&sidecar);
+            obj.insert("SpatialReference".into(), serde_json::Value::String(reference.clone()));
+            std::fs::write(&sidecar, serde_json::to_string_pretty(&serde_json::Value::Object(obj))
+                .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
+        }
+        Ok(())
+    }
+
     fn record(&mut self, c: &Completed<'_>) -> crate::Result<()> {
-        let inputs: Vec<PathBuf> = c.inputs.iter().filter_map(|i| self.path(i)).collect();
-        let outputs: Vec<PathBuf> = c.outputs.iter().filter_map(|i| self.path(i)).collect();
+        let mut inputs: Vec<PathBuf> = c.inputs.iter().filter_map(|i| self.path(i)).collect();
+        let mut outputs: Vec<PathBuf> = c.outputs.iter().filter_map(|i| self.path(i)).collect();
+        if c.step == "output_space" {
+            if !self.working_grid_kept {
+                self.keep_working_grid_copies()?;
+            }
+            // Read: the working-grid originals each output was returned from.
+            outputs.sort();
+            let stash = self.output.working_grid_dir(&self.run.key);
+            inputs = outputs.iter().filter_map(|f| f.file_name().map(|n| stash.join(n))).collect();
+        }
+        outputs.append(&mut self.extra_outputs);
         let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).collect();
         let start = self.started.take().unwrap_or_else(Instant::now);
+        let metadata = self.metadata.take();
+        let hash_outputs = outputs.clone();
         self.ctx().complete_step_with_outcome(
-            c.step, c.algorithm, c.params.clone(), c.outcome.clone(), &input_refs, outputs, start)
+            c.step, c.algorithm, c.params.clone(), c.outcome.clone(), &input_refs, outputs, start)?;
+        if let Some(metadata) = metadata {
+            self.state.mark_completed_with_metadata(c.step, hash_outputs, Some(c.key.to_string()), Some(metadata));
+            self.state.save(&self.state_path)?;
+        }
+        Ok(())
     }
 
     fn host(&mut self, step: &Step, _plan: &Plan, _observer: &mut dyn Observer) -> crate::Result<()> {
         let progress = self.progress;
-        let brain_mask = self.output.mask_path(&self.run.key);
-        let dseg_path = self.output.dseg_path(&self.run.key);
-        let models = step.models.as_slice();
         let mut ctx = self.ctx();
         match step.stage {
             Stage::ScalePhase => stage_scale_phase(&mut ctx, progress),
-            Stage::Motion => {
-                let mask = stage_motion(&mut ctx, &brain_mask, progress)?;
-                self.mask_path = Some(mask);
-                Ok(())
-            }
-            Stage::Segmentation => stage_segmentation(&mut ctx, &dseg_path, models, progress),
-            // Last of the map-producing stages: it summarises every map on disk, so it has to run
-            // after all of them — chi-separation included.
-            Stage::Analysis => stage_analysis(&mut ctx, &dseg_path, progress),
-            Stage::OutputSpace => stage_output_space(&mut ctx, progress),
             stage => Err(QsmxtError::Config(format!("the {} step is the engine's to run", stage.name()))),
         }
     }
@@ -786,9 +887,9 @@ pub fn published_space(config: &PipelineConfig, meta: &RunMetadata) -> Option<&'
 
 /// Undo a previous run's return to the acquired grid before any step reads `anat/` again.
 ///
-/// Cached steps hand their outputs to the steps after them on the working grid, but
-/// [`stage_output_space`] rewrote them in place. Put the working-grid copies back and let it run
-/// again at the end. Without the copies (a run from before they were kept), nothing in `anat/`
+/// Cached steps hand their outputs to the steps after them on the working grid, but the return
+/// to the acquired grid (the `output_space` step) rewrote them in place. Put the working-grid
+/// copies back and let it run again at the end. Without the copies (a run from before they were kept), nothing in `anat/`
 /// can be trusted on the working grid, so everything after loading is redone.
 fn restore_working_grid(
     run: &QsmRun, output: &DerivativeOutputs, state: &mut PipelineState, state_path: &Path,
@@ -822,187 +923,6 @@ fn restore_working_grid(
     state.save(state_path)
 }
 
-/// Put the derivatives back on the grid the data was acquired on.
-///
-/// A run that was resampled to axial reconstructs, and by default writes, on the cardinal grid.
-/// That is the wrong place for anything the caller already holds in the acquired space — a FLIRT
-/// matrix is defined in a coordinate space derived from the image's dimensions and voxel sizes,
-/// so applying one to a volume on a different grid gives a wrong registration rather than an
-/// error. `--output-space working` keeps the resampled grid for callers who want it.
-///
-/// Each kind of volume travels the way it must: masks by nearest neighbour, wrapped phase with
-/// its magnitude through the complex domain, everything else trilinearly. This is a second
-/// interpolation on top of the first, so the result is slightly smoother than a reconstruction
-/// that was never resampled.
-fn stage_output_space(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let Some((dst_dims, dst_affine)) = ctx.meta.source_geometry else { return Ok(()) };
-    if ctx.config.pipeline.output_space != crate::pipeline::config::OutputSpace::Acquired {
-        log::info!("Leaving outputs on the resampled grid (--output-space working)");
-        return record_working_space(ctx);
-    }
-    // `resampling` versions how each kind travels, so outputs returned by an older release (a
-    // trilinearly interpolated dseg, SMWI minIPs left on the working grid; #267) are redone.
-    let params = serde_json::json!({
-        "space": "acquired", "dims": [dst_dims.0, dst_dims.1, dst_dims.2], "resampling": "by-kind",
-    });
-    if ctx.is_cached_with_params("output_space", None, &params) {
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress("Resampling outputs to the acquired grid");
-    log::info!(
-        "Returning outputs to the acquired grid: {}x{}x{} -> {}x{}x{}",
-        ctx.meta.dims.0, ctx.meta.dims.1, ctx.meta.dims.2, dst_dims.0, dst_dims.1, dst_dims.2
-    );
-
-    let src_dims = ctx.meta.dims;
-    let src_affine = ctx.meta.affine;
-    // Only this run's files: every run of the session shares `anat/`, and another run's outputs
-    // may be on its own working grid, or still being read by a reconstruction in progress.
-    let files: Vec<PathBuf> = ctx.output.run_published_niftis(&ctx.run.key).into_iter()
-        // Not a file some other configuration left in another space.
-        .filter(|p| p.file_name().and_then(|n| crate::bids::naming::entity_of(&n.to_string_lossy(), "space")).is_none())
-        .collect();
-
-    // Keep the working-grid originals: later steps read these back (the mask, the combined
-    // magnitude, ...), so a re-run has to start from them rather than from what lands in `anat/`.
-    let stash = ctx.output.working_grid_dir(&ctx.run.key);
-    if stash.exists() {
-        std::fs::remove_dir_all(&stash)?;
-    }
-    std::fs::create_dir_all(&stash)?;
-    for f in &files {
-        if let Some(name) = f.file_name() {
-            std::fs::copy(f, stash.join(name))?;
-        }
-    }
-
-    // How each file travels is decided by what it is (#267), not by its name.
-    use crate::bids::derivatives::OutputKind;
-    let kind = |p: &Path| ctx.output.output_kind(&ctx.run.key, p);
-
-    // Phase is only meaningful alongside its magnitude, so handle those pairs first and skip
-    // them in the scalar pass.
-    let mut done: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-    // Projections are on their own, shorter grids, so they cannot travel with the volumes that
-    // share the working grid; each is rebuilt from its resampled source below.
-    for f in files.iter().filter(|p| kind(p) == OutputKind::Projection) {
-        done.insert(f.clone());
-    }
-    for phase_path in files.iter().filter(|p| kind(p) == OutputKind::Phase) {
-        let mag_path = PathBuf::from(phase_path.to_string_lossy().replace("part-phase", "part-mag"));
-        if !mag_path.exists() {
-            log::warn!(
-                "Leaving {} on the working grid: wrapped phase can only be resampled with its \
-                 magnitude, and there is none beside it", phase_path.display());
-            done.insert(phase_path.clone());
-            continue;
-        }
-        let (phase, mag) = (load_volume(phase_path)?, load_volume(&mag_path)?);
-        let resampled = qsm_core::geometry::resample_complex_onto(
-            &mag, &phase, src_dims, &src_affine, dst_dims, &dst_affine,
-        );
-        if let Some((new_mag, new_phase)) = resampled {
-            write_on_grid(phase_path, &new_phase, dst_dims, &dst_affine)?;
-            write_on_grid(&mag_path, &new_mag, dst_dims, &dst_affine)?;
-            done.insert(phase_path.clone());
-            done.insert(mag_path);
-        }
-    }
-
-    let src_voxels = src_dims.0 * src_dims.1 * src_dims.2;
-    for f in files.iter().filter(|f| !done.contains(*f)) {
-        let data = load_volume(f)?;
-        // Resampling indexes the source by the working grid, so anything on a different grid
-        // would be read out of bounds. Leave it where it is rather than corrupt it.
-        if data.len() != src_voxels {
-            log::warn!(
-                "Leaving {} on its own grid: {} voxels, not the {} of the working grid",
-                f.display(), data.len(), src_voxels,
-            );
-            continue;
-        }
-        match kind(f) {
-            OutputKind::Mask => {
-                let m: Vec<u8> = data.iter().map(|v| if *v > 0.5 { 1u8 } else { 0u8 }).collect();
-                if let Some(out) = qsm_core::geometry::resample_mask_onto(&m, src_dims, &src_affine, dst_dims, &dst_affine) {
-                    let as_f64: Vec<f64> = out.iter().map(|v| *v as f64).collect();
-                    write_on_grid(f, &as_f64, dst_dims, &dst_affine)?;
-                }
-            }
-            // A label id is a name, not a quantity: interpolating between two ids invents a third.
-            OutputKind::Labels => {
-                let out = qsm_core::geometry::resample_labels_onto(&data, src_dims, &src_affine, dst_dims, &dst_affine)?;
-                write_on_grid(f, &out, dst_dims, &dst_affine)?;
-            }
-            OutputKind::Continuous | OutputKind::Phase | OutputKind::Projection => {
-                if let Some(out) = qsm_core::geometry::resample_onto(&data, src_dims, &src_affine, dst_dims, &dst_affine) {
-                    write_on_grid(f, &out, dst_dims, &dst_affine)?;
-                }
-            }
-        }
-    }
-
-    // A projection cannot be interpolated onto the acquired grid as if it were a volume — its
-    // slices are slabs, not samples — so each is rebuilt from the volume that just landed there:
-    // the SWI minIP from the SWI, each SMWI minIP from its SMWI.
-    let dst_voxel_size = qsm_core::geometry::voxel_sizes_from_affine(&dst_affine);
-    let dst_grid = qsm_core::Grid::new(
-        dst_dims.0, dst_dims.1, dst_dims.2,
-        dst_voxel_size.0, dst_voxel_size.1, dst_voxel_size.2,
-    );
-    let mut projections = vec![(ctx.output.swi_mip_path(&ctx.run.key), ctx.output.swi_path(&ctx.run.key),
-                                ctx.config.swi.mip_window)];
-    for contrast in ["paramagnetic", "diamagnetic"] {
-        projections.push((ctx.output.smwi_mip_path(&ctx.run.key, contrast),
-                          ctx.output.smwi_path(&ctx.run.key, contrast), ctx.config.smwi.mip_window));
-    }
-    for (mip_path, source, window) in projections {
-        if !(files.contains(&mip_path) && source.exists()) {
-            continue;
-        }
-        let volume = load_volume(&source)?;
-        let mip = qsm_core::swi::create_mip(&volume, &dst_grid, &dst_affine, window)
-            .map_err(QsmxtError::Config)?;
-        write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
-    }
-
-    // Used: the working-grid originals each output was resampled from.
-    let originals: Vec<PathBuf> = files.iter()
-        .filter_map(|f| f.file_name().map(|n| stash.join(n)))
-        .collect();
-    let original_refs: Vec<&Path> = originals.iter().map(|p| p.as_path()).collect();
-    ctx.complete_step("output_space", None, params, &original_refs, files, t)?;
-    log_step_done("Output space", t);
-    Ok(())
-}
-
-/// Give each of the run's outputs left on the working grid a `SpatialReference`: the BIDS
-/// sidecar field a `space-` label that is not a standard template needs, pointing at the run's
-/// combined magnitude in that space.
-fn record_working_space(ctx: &StageContext) -> crate::Result<()> {
-    let Some(space) = ctx.output.space.as_deref() else { return Ok(()) };
-    let reference = crate::pipeline::multiorient::spatial_reference(ctx.output, &ctx.run.key, space);
-    let files: Vec<PathBuf> = ctx.output.run_published_niftis(&ctx.run.key).into_iter()
-        .filter(|p| p.file_name().and_then(|n| crate::bids::naming::entity_of(&n.to_string_lossy(), "space"))
-            .as_deref() == Some(space))
-        .collect();
-    for f in files {
-        let Some(sidecar) = crate::bids::entities::sidecar_path(&f) else { continue };
-        let mut obj = read_json_object(&sidecar);
-        obj.insert("SpatialReference".into(), serde_json::Value::String(reference.clone()));
-        std::fs::write(&sidecar, serde_json::to_string_pretty(&serde_json::Value::Object(obj))
-            .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
-    }
-    Ok(())
-}
-
-/// Overwrite a NIfTI with data on a different grid.
-fn write_on_grid(path: &Path, data: &[f64], dims: (usize, usize, usize), affine: &[f64; 16]) -> crate::Result<()> {
-    let voxel_size = qsm_core::geometry::voxel_sizes_from_affine(affine);
-    write_volume(path, data, dims, voxel_size, affine)
-}
-
 /// Every input file of a run — echoes, sidecars, uncombined coils, the MESE — by path, size and
 /// modification time.
 fn input_identity(run: &QsmRun) -> Vec<serde_json::Value> {
@@ -1023,144 +943,6 @@ fn input_identity(run: &QsmRun) -> Vec<serde_json::Value> {
             .map(|d| d.as_nanos().to_string());
         serde_json::json!([p.display().to_string(), meta.map(|m| m.len()), modified])
     }).collect()
-}
-
-/// Retrospective motion correction: rigidly co-register every echo onto the reference echo
-/// (estimated on magnitude, applied to phase through the complex signal) and shrink the mask to
-/// where every echo still has data. Returns the mask the later stages should use.
-fn stage_motion(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<PathBuf> {
-    let m = &ctx.config.motion_correction;
-    if !m.enabled {
-        forget_motion(ctx)?;
-        return Ok(mask_path.to_path_buf());
-    }
-    if !ctx.meta.has_magnitude {
-        return Err(QsmxtError::Config(
-            "--motion-correction needs magnitude images: the registration is estimated on magnitude, \
-             and this run has none".into()));
-    }
-    if ctx.meta.n_echoes < 2 {
-        log::warn!("Motion correction needs at least two echoes; this run has one, so it is skipped");
-        forget_motion(ctx)?;
-        return Ok(mask_path.to_path_buf());
-    }
-    let out_mask = ctx.output.motion_coverage_path(&ctx.run.key);
-    let params = serde_json::json!({
-        "motion_correction": m, "registration": ctx.config.registration, "n_echoes": ctx.meta.n_echoes,
-    });
-    if ctx.is_cached_with_params("motion", None, &params) && out_mask.exists() {
-        log::info!("Skipping motion correction (cached)");
-        return Ok(out_mask);
-    }
-    let t = Instant::now();
-    progress("Motion correction (rigid co-registration of the echoes)");
-    let n = ctx.meta.n_echoes;
-    if m.reference != qsmxt_engine::MotionReference::First
-        && ctx.config.masking.sections.iter().any(|s| s.input == MaskingInput::MagnitudeFirst)
-    {
-        log::warn!("Motion correction aligns the echoes onto echo {} but the mask was made on the \
-                    first echo's magnitude; if the head moved, the mask is offset from the corrected \
-                    echoes", m.reference);
-    }
-    let mut phases = Vec::with_capacity(n);
-    let mut mags = Vec::with_capacity(n);
-    let mut inputs: Vec<PathBuf> = Vec::with_capacity(2 * n + 1);
-    for e in 1..=n {
-        let p = ctx.output.phase_scaled_path(&ctx.run.key, e);
-        let q = ctx.output.mag_path(&ctx.run.key, e);
-        phases.push(load_volume(&p)?);
-        mags.push(load_volume(&q)?);
-        inputs.push(p);
-        inputs.push(q);
-    }
-    let mask = load_mask(mask_path)?;
-    let phase_refs: Vec<&[f64]> = phases.iter().map(|v| v.as_slice()).collect();
-    let mag_refs: Vec<&[f64]> = mags.iter().map(|v| v.as_slice()).collect();
-    let meta = crate::pipeline::config::to_scan_metadata(
-        ctx.meta.dims, ctx.meta.voxel_size, &ctx.meta.echo_times, ctx.meta.field_strength, ctx.meta.b0_direction,
-        Some(ctx.meta.affine),
-    );
-    let r = qsm_core::pipeline::run_motion_correction(
-        &phase_refs, &mag_refs, &mask, &meta, &m.to_core(&ctx.config.registration), &mut |_, _| {},
-    ).map_err(|e| QsmxtError::Config(format!("motion correction: {e}")))?;
-
-    let mut outputs = Vec::with_capacity(2 * n + 2);
-    for e in 0..n {
-        let p = ctx.output.motion_phase_path(&ctx.run.key, e + 1);
-        let q = ctx.output.motion_mag_path(&ctx.run.key, e + 1);
-        save_volume(&p, &r.phases[e], ctx.meta)?;
-        save_volume(&q, &r.magnitudes[e], ctx.meta)?;
-        outputs.push(p);
-        outputs.push(q);
-    }
-    save_mask(&out_mask, &r.mask, ctx.meta)?;
-    outputs.push(out_mask.clone());
-    let report = motion_report_json(&r);
-    let report_path = ctx.output.motion_report_path(&ctx.run.key);
-    std::fs::write(&report_path, serde_json::to_string_pretty(&report)
-        .map_err(|e| QsmxtError::Config(format!("motion report: {e}")))?)?;
-    outputs.push(report_path);
-
-    log_motion_summary(&r, &mask);
-    let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).chain(std::iter::once(mask_path)).collect();
-    ctx.complete_step("motion", None, params, &input_refs, outputs, t)?;
-    log_step_done("Motion correction", t);
-    Ok(out_mask)
-}
-
-/// Motion correction did not run this time. If an earlier run of this configuration did, what
-/// it left is stale: its coverage mask must not be published as this run's, and every stage that
-/// read the corrected echoes or that mask has to run again on the uncorrected ones.
-fn forget_motion(ctx: &mut StageContext) -> crate::Result<()> {
-    let coverage = ctx.output.motion_coverage_path(&ctx.run.key);
-    if coverage.exists() {
-        std::fs::remove_file(&coverage)?;
-    }
-    if ctx.state.completed_steps.contains_key("motion") {
-        log::info!("Motion correction is off now: re-running the stages that read its output");
-        ctx.state.invalidate("motion");
-        ctx.state.save(ctx.state_path)?;
-    }
-    Ok(())
-}
-
-/// The motion report: per echo (1-based) rotation, translation, largest tissue displacement,
-/// NCC, overlap and whether the registration is suspect, plus the series' extremes.
-fn motion_report_json(r: &qsm_core::pipeline::MotionCorrectionResult) -> serde_json::Value {
-    serde_json::json!({
-        "reference_echo": r.motion.reference + 1,
-        "max_displacement_mm": r.max_displacement_mm(),
-        "rotation_spread_deg": r.rotation_spread_deg(),
-        "echoes": r.motion.volumes.iter().map(|v| serde_json::json!({
-            "echo": v.index + 1,
-            "rotation_deg": v.rotation_deg,
-            "translation_mm": v.translation_mm,
-            "max_displacement_mm": v.max_displacement_mm,
-            "ncc": v.ncc,
-            "overlap": v.overlap,
-            "suspect": v.suspect,
-            "b0_direction": [v.bdir.0, v.bdir.1, v.bdir.2],
-        })).collect::<Vec<_>>(),
-    })
-}
-
-fn log_motion_summary(r: &qsm_core::pipeline::MotionCorrectionResult, mask_in: &[u8]) {
-    for v in &r.motion.volumes {
-        log::info!("  echo {}: rotation {:.2}°, translation {:.2} mm, max displacement {:.2} mm, NCC {:.3}, overlap {:.2}{}",
-            v.index + 1, v.rotation_deg, v.translation_mm, v.max_displacement_mm, v.ncc, v.overlap,
-            if v.suspect { "  [suspect registration]" } else { "" });
-    }
-    log::info!("Motion: max displacement {:.2} mm, B0 direction spread {:.2}° (field mapping uses the reference echo's)",
-        r.max_displacement_mm(), r.rotation_spread_deg());
-    let suspect: Vec<String> = r.motion.volumes.iter().filter(|v| v.suspect).map(|v| (v.index + 1).to_string()).collect();
-    if !suspect.is_empty() {
-        log::warn!("Motion correction: the registration of echo(es) {} may have failed (low NCC or overlap); \
-                    check the motion report", suspect.join(", "));
-    }
-    let (before, after) = (qsmxt_engine::stages::r2::count_set(mask_in), qsmxt_engine::stages::r2::count_set(&r.mask));
-    if after < before {
-        log::info!("Mask restricted to voxels every echo covers: {} -> {} voxels", before, after);
-    }
 }
 
 /// Whether real/imaginary input from this manufacturer has its phase negated on conversion.
@@ -1478,289 +1260,6 @@ pub(crate) fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
     find_custom_derivative(run, tool, "*_mask.nii*", &["_desc-reliable_", "_desc-qsm_", "_desc-r2prime_"])
 }
 
-/// The pipeline's own output for an input, or the bring-your-own derivative standing in for it.
-///
-/// A custom tool means the stage that would have written `path` never ran, so the file has to be
-/// found under `<bids>/derivatives/<tool>/` instead. The pipeline's own output still wins when it
-/// exists: a run that computed the map should be summarised on what it computed.
-fn resolve_input(
-    ctx: &StageContext, path: &Path, custom_tool: Option<&str>, glob: &str, exclude: &[&str],
-) -> Option<PathBuf> {
-    if path.exists() {
-        return Some(path.to_path_buf());
-    }
-    let found = find_custom_derivative(ctx.run, custom_tool?, glob, exclude)?;
-    log::info!("Summarising the supplied {}", found.display());
-    Some(found)
-}
-
-/// Per-structure statistics over a segmentation.
-///
-/// One row per (map, structure), covering every quantitative map the run produced: χ, the
-/// chi-separation maps, T2*, R2*, R2 and R2'. The maps are found on disk rather than inferred from
-/// the config, so a bring-your-own derivative is summarised the same as one this run computed, and
-/// a map that was enabled but could not be made (no MESE for R2, say) simply contributes no rows.
-///
-/// Both a median and a mean are reported because they answer different questions: the
-/// distributions inside a structure are skewed and carry outliers (vessels, partial volume at a
-/// boundary), so the median is the robust summary while the mean is what most of the literature
-/// quotes. Min/max and the 5th/95th percentiles bracket the spread from both ends — the
-/// percentiles without a single voxel setting them, the extremes saying how far that voxel went.
-fn stage_analysis(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let out_path = ctx.output.segmentation_stats_path(&ctx.run.key);
-
-    // A supplied dseg or Chimap is read where it lies, as chi-separation reads its custom inputs:
-    // `--use-custom-dseg`/`--use-custom-qsm` mean the run never computed one, so nothing was
-    // written to the pipeline's own path for it.
-    let dseg = resolve_input(
-        ctx, dseg_path, ctx.config.segmentation.custom_dseg_tool.as_deref(), "*_dseg.nii*", &[]);
-    let Some(dseg) = dseg else {
-        log::warn!("Skipping analysis: no segmentation at {}", dseg_path.display());
-        return Ok(());
-    };
-    let qsm = resolve_input(
-        ctx, &ctx.output.qsm_path(&ctx.run.key),
-        ctx.config.separation.custom_qsm_tool.as_deref(), "*_Chimap.nii*", &["desc-"]);
-
-    let mut maps: Vec<stats::MapSpec> = stats::candidate_maps(ctx.output, &ctx.run.key)
-        .into_iter()
-        .filter(|m| m.path.exists())
-        .collect();
-    if let Some(qsm) = qsm {
-        if !maps.iter().any(|m| m.name == stats::CHIMAP) {
-            maps.insert(0, stats::MapSpec { name: stats::CHIMAP, unit: "ppm", path: qsm });
-        }
-    }
-
-    // The cache key carries which maps were summarised: computing R2* on a re-run has to add its
-    // rows rather than leave the table as it was.
-    let params = serde_json::json!({
-        "version": format!("{}", ctx.config.segmentation.version),
-        "dseg": dseg.display().to_string(),
-        "maps": maps.iter().map(|m| (m.name, m.path.display().to_string())).collect::<Vec<_>>(),
-    });
-    if ctx.is_cached_with_params("analysis", None, &params) {
-        log::info!("Skipping analysis (cached)");
-        return Ok(());
-    }
-
-    if maps.is_empty() {
-        log::warn!("Skipping analysis: the run produced no quantitative map to summarise");
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress("Summarising maps per structure");
-
-    let seg = load_volume(&dseg)?;
-    let labels = to_core_synthseg_version(ctx.config.segmentation.version).labels();
-    // SynthSeg's per-label volumes, when this run produced them itself.
-    let volumes: Option<Vec<f64>> = ctx.state.completed_steps.get("segmentation")
-        .and_then(|r| r.metadata.as_ref())
-        .and_then(|m| m.get("volumes"))
-        .and_then(|v| serde_json::from_value(v.clone()).ok());
-
-    let mut table = String::from(stats::HEADER);
-    let mut summarised: Vec<&str> = Vec::new();
-    for spec in &maps {
-        let map = load_volume(&spec.path)?;
-        if map.len() != seg.len() {
-            return Err(QsmxtError::DimensionMismatch(format!(
-                "segmentation has {} voxels but {} has {}",
-                seg.len(), spec.path.display(), map.len())));
-        }
-        // What this map was referenced to, read back from its own sidecar, where the referencing
-        // stage wrote it — so the table says what its zero means. A map that was never
-        // referenced (the χ-separation maps) has no such record, and its columns stay empty.
-        let reference = crate::bids::entities::sidecar_path(&spec.path)
-            .as_deref()
-            .and_then(stats::ReferenceInfo::from_sidecar);
-        table.push_str(&stats::map_rows(spec, &map, &seg, labels, volumes.as_deref(),
-                                        reference.as_ref()));
-        summarised.push(spec.name);
-    }
-
-    if let Some(parent) = out_path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&out_path, table.clone())?;
-    log::info!("Per-structure statistics for {} -> {}", summarised.join(", "), out_path.display());
-
-    // One figure per map, beside the table. Best-effort: the numbers are the deliverable, and a
-    // figure that fails to draw must not cost the run the statistics it already computed.
-    let mut outputs = vec![out_path.clone()];
-    let anat = ctx.output.anat_dir(&ctx.run.key);
-    match crate::pipeline::figure::render_all(
-        &stats::parse_tsv(&table),
-        &ctx.run.key.to_string(),
-        "Mean per structure; whiskers ±1 SD over the structure's voxels",
-        "Volume from the SynthSeg posteriors, partial volume included",
-    ) {
-        Ok(figs) => for f in figs {
-            match f.save_in(&anat, &ctx.run.key.basename()) {
-                Ok(p) => { log::info!("Figure -> {}", p.display()); outputs.push(p); }
-                Err(e) => log::warn!("Could not write {}: {e}", f.stem),
-            }
-        },
-        Err(e) => log::warn!("Could not draw the per-structure figures: {e}"),
-    }
-    let inputs: Vec<&Path> = std::iter::once(dseg.as_path())
-        .chain(maps.iter().map(|m| m.path.as_path()))
-        .collect();
-    ctx.complete_step("analysis", None, params, &inputs, outputs, t)?;
-    log_step_done("Per-structure analysis", t);
-    Ok(())
-}
-
-/// Bring-your-own segmentation (`*_dseg.nii*`).
-fn find_custom_dseg(run: &QsmRun, tool: &str) -> Option<PathBuf> {
-    find_custom_derivative(run, tool, "*_dseg.nii*", &[])
-}
-
-/// Whole-brain parcellation of the GRE magnitude via SynthSeg.
-///
-/// SynthSeg is trained on synthetic images with randomised contrast, which is what lets one set of
-/// weights segment a GRE magnitude — so susceptibility can be reported per structure without
-/// acquiring and registering a separate T1w. It takes no brain mask: it finds the brain itself.
-///
-/// Writes the label volume and the BIDS lookup table that gives its integers names.
-/// `models` are the plan's for the step: SynthSeg's, unless a supplied segmentation was found.
-fn stage_segmentation(
-    ctx: &mut StageContext, dseg_path: &Path, models: &[&'static str], progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    let cfg = &ctx.config.segmentation;
-    let params_json = serde_json::json!({
-        "version": format!("{}", cfg.version),
-        "crop": cfg.crop,
-        "flip_averaging": cfg.flip_averaging,
-        "topology_cleanup": cfg.topology_cleanup,
-        "sigma_smoothing": cfg.sigma_smoothing,
-        "custom_dseg_tool": cfg.custom_dseg_tool,
-    });
-    if ctx.is_cached_with_params("segmentation", Some("synthseg"), &params_json) {
-        log::info!("Skipping segmentation (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-
-    let version = to_core_synthseg_version(cfg.version);
-    let labels_table = version.labels();
-
-    // Prefer a bring-your-own segmentation, as masking does. Its integers are assumed to be
-    // FreeSurfer ids, which is what the lookup table is written from.
-    if let Some(tool) = cfg.custom_dseg_tool.clone() {
-        if let Some(path) = find_custom_dseg(ctx.run, &tool) {
-            match io::read_nifti_file(&path) {
-                Ok(nd) if nd.dims == ctx.meta.dims => {
-                    log::info!("Using custom segmentation from {}", path.display());
-                    progress("Reading the supplied segmentation");
-                    save_volume(dseg_path, &nd.data, ctx.meta)?;
-                    let lut = ctx.output.dseg_lookup_path(&ctx.run.key);
-                    write_dseg_lookup(&lut, labels_table)?;
-                    ctx.complete_step("segmentation", Some("synthseg"), params_json,
-                                      &[path.as_path()], vec![dseg_path.to_path_buf(), lut], t)?;
-                    log_step_done("Segmentation (custom)", t);
-                    return Ok(());
-                }
-                Ok(nd) => log::warn!(
-                    "custom segmentation {} is {}x{}x{}, not the run's {}x{}x{} — computing instead",
-                    path.display(), nd.dims.0, nd.dims.1, nd.dims.2,
-                    ctx.meta.dims.0, ctx.meta.dims.1, ctx.meta.dims.2),
-                Err(e) => log::warn!("could not read custom segmentation {} ({}) — computing instead",
-                                     path.display(), e),
-            }
-        } else {
-            log::info!("no custom segmentation under derivatives (tool: {}) — computing", tool);
-        }
-    }
-
-    let mag_path = ctx.output.magnitude_path(&ctx.run.key);
-    if !mag_path.exists() {
-        log::warn!("Skipping segmentation: no combined magnitude at {}", mag_path.display());
-        return Ok(());
-    }
-
-    crate::pipeline::config::synthseg_weights_available(cfg.version)?;
-    prefetch_models(ctx, models)?;
-    progress("Segmenting (SynthSeg)");
-    log::info!("Segmentation (SynthSeg {}, {} labels{}{})",
-               cfg.version, labels_table.ids.len(),
-               if cfg.flip_averaging { ", flip-averaged" } else { "" },
-               if cfg.topology_cleanup { ", topology cleanup" } else { "" });
-
-    let (result, volumes) = run_synthseg(ctx, &mag_path, version)?;
-
-    // FreeSurfer ids are integers; they travel through the f64 writer exactly (all are < 2^53).
-    let as_f64: Vec<f64> = result.iter().map(|&l| l as f64).collect();
-    save_volume(dseg_path, &as_f64, ctx.meta)?;
-    let lut = ctx.output.dseg_lookup_path(&ctx.run.key);
-    write_dseg_lookup(&lut, labels_table)?;
-
-    let present = labels_table.ids.iter().skip(1).zip(volumes.iter().skip(1))
-        .filter(|(_, &v)| v > 0.0).count();
-    log::info!("Segmented {} of {} structures", present, labels_table.ids.len() - 1);
-
-    ctx.complete_step_with_metadata(
-        "segmentation", Some("synthseg"), params_json, &[mag_path.as_path()],
-        vec![dseg_path.to_path_buf(), lut],
-        Some(serde_json::json!({ "volumes": volumes })), t)?;
-    log_step_done("Segmentation", t);
-    Ok(())
-}
-
-pub(crate) fn to_core_synthseg_version(v: crate::pipeline::config::SynthSegVersion) -> qsm_core::segment::SynthSegVersion {
-    match v {
-        crate::pipeline::config::SynthSegVersion::V1 => qsm_core::segment::SynthSegVersion::V1,
-        crate::pipeline::config::SynthSegVersion::V2 => qsm_core::segment::SynthSegVersion::V2,
-    }
-}
-
-/// Run the network. Split out so the `dl`-feature gate sits in one place: without it the weights
-/// cannot be run at all, and saying so plainly beats a missing-symbol build error.
-#[cfg(feature = "dl")]
-fn run_synthseg(
-    ctx: &StageContext, mag_path: &Path, version: qsm_core::segment::SynthSegVersion,
-) -> crate::Result<(Vec<i32>, Vec<f64>)> {
-    let mag = load_volume(mag_path)?;
-    let (nx, ny, nz) = ctx.meta.dims;
-    let (vsx, vsy, vsz) = ctx.meta.voxel_size;
-    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-    let params = qsm_core::segment::SynthSegParams {
-        version,
-        crop: ctx.config.segmentation.crop,
-        flip_averaging: ctx.config.segmentation.flip_averaging,
-        topology_cleanup: ctx.config.segmentation.topology_cleanup,
-        sigma_smoothing: ctx.config.segmentation.sigma_smoothing,
-    };
-    let weights = qsm_core::models::primary_weight(ctx.config.segmentation.version.weights_id())
-        .map_err(|e| QsmxtError::Config(format!("synthseg weights: {}", e)))?;
-    let (prog, _) = iter_progress_bar(&ctx.run.key.to_string(), "synthseg");
-    let out = qsm_core::segment::synthseg(&mag, &grid, &ctx.meta.affine, &weights, &params, prog)
-        .map_err(|e| QsmxtError::Config(format!("synthseg: {}", e)))?;
-    Ok((out.labels, out.volumes))
-}
-
-#[cfg(not(feature = "dl"))]
-fn run_synthseg(
-    _ctx: &StageContext, _mag_path: &Path, _version: qsm_core::segment::SynthSegVersion,
-) -> crate::Result<(Vec<i32>, Vec<f64>)> {
-    Err(QsmxtError::Config(
-        "segmentation needs a deep-learning build: SynthSeg runs an ONNX network, which this \
-         binary was compiled without (--no-default-features)".into()))
-}
-
-/// The BIDS lookup table pairing each label integer with its name.
-fn write_dseg_lookup(path: &Path, labels: &qsm_core::segment::SynthSegLabels) -> crate::Result<()> {
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    let mut out = String::from("index\tname\n");
-    for (id, name) in labels.ids.iter().zip(labels.names) {
-        out.push_str(&format!("{id}\t{name}\n"));
-    }
-    std::fs::write(path, out)?;
-    Ok(())
-}
-
 /// The robust echo fit's per-echo report, next to the field map: `<field map>_robustfit.json`.
 fn robust_fit_report_path(field_path: &Path) -> PathBuf {
     let name = field_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
@@ -1788,7 +1287,8 @@ fn run_engine_step(
     let plan = qsmxt_engine::plan::plan(config, &facts);
     let mut store = FileStore {
         run, config, output: output.clone(), meta: Some(meta.clone()), state, state_path,
-        progress: &|_| {}, started: None, supplied_mask: None, mask_path: None,
+        progress: &|_| {}, started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(),
+        metadata: None, working_grid_kept: false,
     };
     let step = Step { stage, models: vec![], host: false };
     qsmxt_engine::run::run_step(&plan, config, &facts, meta, &step, &mut store, &mut ())
@@ -1832,7 +1332,8 @@ mod tests {
         let store = super::FileStore {
             run: &run, config: &config, output: DerivativeOutputs::new(std::path::Path::new("/out")),
             meta: None, state: PipelineState::new(&config, &run.key), state_path: PathBuf::from("/out/s.json"),
-            progress: &|_| {}, started: None, supplied_mask: None, mask_path: None,
+            progress: &|_| {}, started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(),
+        metadata: None, working_grid_kept: false,
         };
         for (a, b) in [
             (Item::BrainMask, Item::ReliableMask),
@@ -2572,18 +2073,13 @@ mod swi_export_tests {
         let brain: Vec<f64> = blob(0.0).iter().map(|&v| (v > 5.0) as u8 as f64).collect();
         write_volume(&mask_path, &brain, dims, vs, &IDENTITY).unwrap();
 
-        let state_path = dir.path().join("state.json");
         let mut config = PipelineConfig::default();
-        let mut state = PipelineState::load_or_create(&state_path, &config, &k, true);
-        {
-            let mut ctx = StageContext { run: &run, config: &config, output: &output, meta: &meta, state: &mut state, state_path: &state_path };
-            assert_eq!(stage_motion(&mut ctx, &mask_path, &|_| {}).unwrap(), mask_path, "off: the mask is unchanged");
-        }
+        run_engine_step(&run, &config, &output, &meta, Stage::Motion).unwrap();
+        assert!(!output.motion_coverage_path(&k).exists(), "off: no coverage mask");
 
         config.motion_correction.enabled = true;
-        let mut ctx = StageContext { run: &run, config: &config, output: &output, meta: &meta, state: &mut state, state_path: &state_path };
-        let shrunk = stage_motion(&mut ctx, &mask_path, &|_| {}).unwrap();
-        assert_eq!(shrunk, output.motion_coverage_path(&k));
+        run_engine_step(&run, &config, &output, &meta, Stage::Motion).unwrap();
+        let shrunk = output.motion_coverage_path(&k);
         let report: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(output.motion_report_path(&k)).unwrap()).unwrap();
         let t = report["echoes"][1]["translation_mm"].as_f64().unwrap();
@@ -2595,10 +2091,15 @@ mod swi_export_tests {
         let err = m1.iter().zip(&m2).zip(&mask).filter(|(_, &m)| m != 0).map(|((a, b), _)| (a - b).abs()).fold(0.0, f64::max);
         assert!(err < 5.0, "max magnitude difference after correction {err}");
 
+        // Off again: the coverage mask it left is not this run's.
+        config.motion_correction.enabled = false;
+        run_engine_step(&run, &config, &output, &meta, Stage::Motion).unwrap();
+        assert!(!shrunk.exists(), "a stale coverage mask stays behind");
+
+        config.motion_correction.enabled = true;
         let mut no_mag = meta.clone();
         no_mag.has_magnitude = false;
-        let mut ctx = StageContext { run: &run, config: &config, output: &output, meta: &no_mag, state: &mut state, state_path: &state_path };
-        let e = stage_motion(&mut ctx, &mask_path, &|_| {}).unwrap_err().to_string();
+        let e = run_engine_step(&run, &config, &output, &no_mag, Stage::Motion).unwrap_err().to_string();
         assert!(e.contains("magnitude"), "{e}");
     }
 
@@ -3569,12 +3070,6 @@ mod reference_support_tests {
         let raw2: Vec<f64> = f.chi_raw.iter().map(|&c| if c != 0.0 { c + 0.02 } else { 0.0 }).collect();
         save_volume(&f.output.chi_raw_path(&f.run.key), &raw2, &m).unwrap();
         run_engine_step(&f.run, &config, &f.output, &m, Stage::SinglePassReference).unwrap();
-        let state_path = f.output.state_path(&f.run.key);
-        let mut state = PipelineState::load_or_create(&state_path, &config, &f.run.key, true);
-        let mut ctx = StageContext {
-            run: &f.run, config: &config, output: &f.output, meta: &m,
-            state: &mut state, state_path: &state_path,
-        };
         // χ-separation maps, which are never referenced.
         for p in [f.output.chi_para_path(&f.run.key), f.output.chi_dia_path(&f.run.key),
                   f.output.chi_sep_total_path(&f.run.key)] {
@@ -3583,7 +3078,7 @@ mod reference_support_tests {
         let dseg: Vec<f64> = f.brain.iter().map(|&b| if b != 0 { 10.0 } else { 0.0 }).collect();
         let dseg_path = f.output.dseg_path(&f.run.key);
         save_volume(&dseg_path, &dseg, &m).unwrap();
-        stage_analysis(&mut ctx, &dseg_path, &|_| {}).unwrap();
+        run_engine_step(&f.run, &config, &f.output, &m, Stage::Analysis).unwrap();
 
         let offset_of = |path: PathBuf| -> f64 {
             read_json_object(&crate::bids::entities::sidecar_path(&path).unwrap())
