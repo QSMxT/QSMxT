@@ -106,6 +106,28 @@ pub fn inversion_input(cfg: &PipelineConfig, n_echoes: usize) -> qsm_core::pipel
     to_pipeline_stages(cfg).2.input(n_echoes)
 }
 
+/// Whether field mapping (unwrapping and B0 estimation) runs for a run with `n_echoes` echoes.
+///
+/// QSM.rs's `InversionConfig::input` decides (#265): the wrapped-phase methods (iQSM, iQSM+,
+/// single-echo TGV) skip it, the total-field ones (TFI, multi-echo TGV, QSMART, ...) need it. iQFM
+/// in front of a local-field inversion makes that field from phase itself. The TUI shows the
+/// field-mapping settings by the same rule.
+pub fn field_mapping_runs(config: &PipelineConfig, n_echoes: usize) -> bool {
+    let input = inversion_input(config, n_echoes);
+    input.needs_field_mapping()
+        && !(input.needs_bg_removal() && config.bg_removal.algorithm == BfAlgorithm::Iqfm)
+}
+
+/// Whether the configured inversion runs without a separate background-removal stage, and so
+/// leaves its map defined over the brain mask rather than an eroded one.
+///
+/// Read off QSM.rs's `InversionConfig::input` (#265): the total-field and wrapped-phase methods
+/// skip it. That does not depend on the echo count (multi-echo TGV takes the total field, a
+/// single echo its wrapped phase), so any count gives the same answer.
+pub fn skips_bgremove(config: &PipelineConfig) -> bool {
+    !inversion_input(config, 1).needs_bg_removal()
+}
+
 pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     PFieldMapping,
     PBgRemoval,

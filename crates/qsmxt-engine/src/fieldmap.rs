@@ -105,6 +105,12 @@ pub fn robust_fit_report_json(report: &qsm_core::pipeline::RobustFitReport) -> s
     })
 }
 
+/// Hz per ppm of field at `field_strength` T: γ̄·B0·10⁻⁶, with the γ̄ QSM.rs converts by
+/// (42.576 MHz/T), so the published Hz map is exactly the ppm one the inversions read.
+pub fn hz_per_ppm(field_strength: f64) -> f64 {
+    42.576e6 * field_strength * 1e-6
+}
+
 /// The field mapping this module implemented itself before qsm-core could (QSMxT#252): per-echo
 /// Laplacian unwrapping of the masked phase, per-echo constant alignment, the configured echo
 /// combination including assumed-decay weighting, and qsm-core's offset-removal ROMEO path with
@@ -138,10 +144,10 @@ pub(crate) mod legacy {
     }
 
     impl Solver {
-        pub fn from_config(cfg: &qsmxt_engine::FieldMappingConfig) -> Self {
+        pub fn from_config(cfg: &crate::FieldMappingConfig) -> Self {
             match cfg.laplacian_solver {
-                qsmxt_engine::LaplacianSolver::Dct => Solver::Dct,
-                qsmxt_engine::LaplacianSolver::Fft => Solver::Fft { pad: cfg.laplacian_fft_pad },
+                crate::LaplacianSolver::Dct => Solver::Dct,
+                crate::LaplacianSolver::Fft => Solver::Fft { pad: cfg.laplacian_fft_pad },
             }
         }
 
@@ -173,9 +179,9 @@ pub(crate) mod legacy {
 
     impl EchoWeighting {
         /// The weighting `field_mapping.b0_weight_type` asks for.
-        pub fn from_config(cfg: &qsmxt_engine::FieldMappingConfig) -> Self {
+        pub fn from_config(cfg: &crate::FieldMappingConfig) -> Self {
             use qsm_core::utils::B0WeightType as W;
-            use qsmxt_engine::B0WeightType as C;
+            use crate::B0WeightType as C;
             match cfg.b0_weight_type {
                 C::PhaseSNR => EchoWeighting::Core(W::PhaseSNR),
                 C::PhaseVar => EchoWeighting::Core(W::PhaseVar),

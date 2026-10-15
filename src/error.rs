@@ -60,6 +60,15 @@ impl From<qsm_core::error::InputError> for QsmxtError {
     }
 }
 
+/// The engine's refusals are configuration errors, worded as the engine words them.
+impl From<qsmxt_engine::EngineError> for QsmxtError {
+    fn from(e: qsmxt_engine::EngineError) -> Self {
+        match e {
+            qsmxt_engine::EngineError::Config(msg) => QsmxtError::Config(msg),
+        }
+    }
+}
+
 pub type Result<T> = std::result::Result<T, QsmxtError>;
 
 #[cfg(test)]

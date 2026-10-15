@@ -11,3 +11,12 @@ pub enum ConfigError {
 }
 
 pub type Result<T> = std::result::Result<T, ConfigError>;
+
+/// Why the run logic refused a run: an input or a combination of settings it cannot use. The
+/// message is complete as it stands, and front ends show it as it is (`qsmxt` as a pipeline
+/// configuration error).
+#[derive(Error, Debug)]
+pub enum EngineError {
+    #[error("{0}")]
+    Config(String),
+}

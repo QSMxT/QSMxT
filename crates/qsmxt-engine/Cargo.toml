@@ -13,6 +13,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 toml = "0.8"
 thiserror = "2"
+log = "0.4"
 
 # qsm-core's `onnx` (tract) pulls in getrandom 0.4, which needs its `wasm_js` backend to compile
 # for wasm32-unknown-unknown. Enabled with our `onnx` feature, so a WASM consumer needs nothing else.

@@ -6,29 +6,10 @@ use serde::{Deserialize, Serialize};
 use crate::bids::entities::AcquisitionKey;
 use crate::error::QsmxtError;
 use crate::pipeline::config::PipelineConfig;
+use qsmxt_engine::cache::config_hash;
+pub use qsmxt_engine::cache::{step_params_hash, RELIABLE_SUFFIX};
 
-/// Metadata about the run, extracted during the load step.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct RunMetadata {
-    pub dims: (usize, usize, usize),
-    pub voxel_size: (f64, f64, f64),
-    pub affine: [f64; 16],
-    pub n_echoes: usize,
-    pub echo_times: Vec<f64>,
-    pub b0_direction: (f64, f64, f64),
-    pub field_strength: f64,
-    pub has_magnitude: bool,
-    /// Set when the run is being resampled to a cardinal-aligned grid: the dims and affine of the
-    /// files as they sit on disk. `dims`/`voxel_size`/`affine` above are then the *working* grid
-    /// every stage after `scale_phase` sees, and `b0_direction` is `(0,0,1)`.
-    #[serde(default)]
-    pub source_geometry: Option<((usize, usize, usize), [f64; 16])>,
-    /// `(thickness mm, voxel axis)` of the acquisition's slices on the working grid, when the
-    /// sidecar records them and the grid was not resampled; qsm-core's stages check it for a
-    /// gap. `None` = not known (or `--ignore-slice-gap`).
-    #[serde(default)]
-    pub slice_geometry: Option<(f64, usize)>,
-}
+pub use qsmxt_engine::scan::RunMetadata;
 
 /// Record of a completed step.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -280,32 +261,6 @@ impl PipelineState {
     }
 }
 
-/// Compute a hash of the pipeline config for change detection.
-fn config_hash(config: &PipelineConfig) -> String {
-    let toml = config.to_toml().unwrap_or_default();
-    format!("{:x}", md5_simple(&toml))
-}
-
-/// Compute a hash of step parameters (algorithm + params JSON) for per-step cache invalidation.
-pub fn step_params_hash(algorithm: Option<&str>, params: &serde_json::Value) -> String {
-    let s = format!("{}:{}", algorithm.unwrap_or(""), params);
-    format!("{:x}", md5_simple(&s))
-}
-
-/// Simple hash (not cryptographic, just for change detection).
-fn md5_simple(s: &str) -> u64 {
-    let mut hash: u64 = 0xcbf29ce484222325;
-    for b in s.bytes() {
-        hash ^= b as u64;
-        hash = hash.wrapping_mul(0x100000001b3);
-    }
-    hash
-}
-
-/// Return step names that depend on the given step (for invalidation).
-#[allow(dead_code)]
-/// Suffix on the reliable pass's step names — see [`RELIABLE_SUFFIX`] users in the runner.
-pub const RELIABLE_SUFFIX: &str = "-reliable";
 
 /// Every step that has to be re-run when `step_name` changes, the two-pass steps included.
 ///

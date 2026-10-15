@@ -49,11 +49,11 @@ const GIB: f64 = 1024.0 * 1024.0 * 1024.0;
 
 /// Memory to request for a job whose pipeline peaks at about `estimate_bytes`: the estimate
 /// plus a quarter and a GB for the process itself, in whole GB, at least 2.
-fn mem_gb_for(estimate_bytes: usize) -> usize {
+fn mem_gb_for(estimate_bytes: u64) -> usize {
     (((estimate_bytes as f64 * 1.25) / GIB).ceil() as usize + 1).max(2)
 }
 
-fn run_estimate(run: &QsmRun, config: &PipelineConfig) -> usize {
+fn run_estimate(run: &QsmRun, config: &PipelineConfig) -> u64 {
     let (nx, ny, nz) = run.dims;
     crate::pipeline::memory::estimate_peak_memory_bytes(
         nx, ny, nz, run.echoes.len(), run.coils.as_ref().map_or(1, |c| c.len()), run.has_magnitude, config,
@@ -62,7 +62,7 @@ fn run_estimate(run: &QsmRun, config: &PipelineConfig) -> usize {
 
 /// The aggregation job's estimate: a multi-orientation group holds every member's field and
 /// mask at once, so its largest group's members together; otherwise one run's.
-fn aggregate_estimate(runs: &[QsmRun], config: &PipelineConfig) -> usize {
+fn aggregate_estimate(runs: &[QsmRun], config: &PipelineConfig) -> u64 {
     let largest_run = runs.iter().map(|r| run_estimate(r, config)).max().unwrap_or(0);
     let groups = if config.multi_orientation.enabled() {
         crate::bids::orientation::parse_pattern(&config.multi_orientation.group_by).ok().flatten()
@@ -71,7 +71,7 @@ fn aggregate_estimate(runs: &[QsmRun], config: &PipelineConfig) -> usize {
         Vec::new()
     };
     groups.iter()
-        .map(|g| g.members.iter().map(|&i| run_estimate(&runs[i], config)).sum::<usize>())
+        .map(|g| g.members.iter().map(|&i| run_estimate(&runs[i], config)).sum::<u64>())
         .max().unwrap_or(0).max(largest_run)
 }
 

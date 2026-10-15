@@ -310,7 +310,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
     let mem_limit_bytes = if args.no_mem_limit {
         None
     } else if let Some(gb) = args.mem_limit_gb {
-        Some((gb * 1024.0 * 1024.0 * 1024.0) as usize)
+        Some((gb * 1024.0 * 1024.0 * 1024.0) as u64)
     } else {
         // Auto-detect: use MemAvailable, reserve 1 GB for OS
         let available = memory::available_memory_bytes();
@@ -370,7 +370,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                 .max()
                 .unwrap_or(0);
             let max_concurrent = (mem.checked_div(per_run_max))
-                .map(|v| v.max(1).min(n_procs))
+                .map(|v| (v.max(1) as usize).min(n_procs))
                 .unwrap_or(n_procs);
             println!();
             println!(
