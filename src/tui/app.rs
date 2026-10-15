@@ -6058,7 +6058,9 @@ impl App {
                     Some(PipelineRow::MaskOpThresholdValue { section }) => {
                         // Start editing threshold value
                         let ps = &mut self.pipeline_state;
-                        let current = if let crate::pipeline::config::MaskOp::Threshold { value, .. } = &ps.mask_sections[section].generator {
+                        let current = if let Some(crate::pipeline::config::MaskOp::Threshold { value, .. }) =
+                            ps.mask_section(section).map(|s| &s.generator)
+                        {
                             value.map(|v| format!("{}", v)).unwrap_or_default()
                         } else { String::new() };
                         ps.mask_threshold_value_buf = current.clone();
@@ -10579,6 +10581,43 @@ mod tests {
         if let crate::pipeline::config::MaskOp::Threshold { value, .. } = &app.pipeline_state.mask_sections[0].generator {
             assert!((value.unwrap() - 0.7).abs() < 0.001);
         }
+    }
+
+    /// The reliable mask's sections are addressed from `MASK_TWO_PASS_BASE`, so starting an edit
+    /// there must not index the main mask's sections (it used to panic).
+    #[test]
+    fn test_reliable_mask_threshold_value_editing() {
+        use crate::pipeline::config::{MaskOp, MaskThresholdMethod};
+        let mut app = App::new();
+        goto_page(&mut app, Page::Masking);
+        app.pipeline_state.two_pass = true;
+        app.pipeline_state.two_pass_sections[0].generator =
+            MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(0.5) };
+        app.pipeline_state.mark_mask_custom(MASK_TWO_PASS_BASE);
+        let main_before = app.pipeline_state.mask_sections.clone();
+
+        let rows = app.rows();
+        let focus = app.focusable_rows().iter()
+            .position(|&ri| matches!(&rows[ri], PipelineRow::MaskOpThresholdValue { section } if is_two_pass_section(*section)))
+            .expect("reliable threshold value row not focusable");
+        app.pipeline_state.focus = focus;
+        app.handle_key(key(KeyCode::Enter));
+        assert!(app.pipeline_state.mask_threshold_editing);
+        assert_eq!(app.pipeline_state.mask_threshold_value_buf, "0.5");
+
+        for _ in 0..app.pipeline_state.mask_threshold_value_buf.len() {
+            app.handle_key(key(KeyCode::Backspace));
+        }
+        for c in "0.7".chars() {
+            app.handle_key(key(KeyCode::Char(c)));
+        }
+        app.handle_key(key(KeyCode::Enter));
+        assert!(!app.pipeline_state.mask_threshold_editing);
+        let MaskOp::Threshold { value, .. } = &app.pipeline_state.two_pass_sections[0].generator else {
+            panic!("the reliable mask's generator should still be a threshold");
+        };
+        assert!((value.unwrap() - 0.7).abs() < 0.001);
+        assert_eq!(app.pipeline_state.mask_sections, main_before, "the main mask must be untouched");
     }
 
     #[test]

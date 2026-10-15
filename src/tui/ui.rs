@@ -663,7 +663,7 @@ fn draw_input_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
             super::app::FilterFocus::OrientationGroup => {
                 "Runs that are the same object at a different angle: an entity (acq, run, rec, inv), a glob (*acq-dir*), or re:<regex>. Empty = off. How they combine: QSM → Multi-orientation"
             }
-            super::app::FilterFocus::TreeNode(_) => "Space: toggle, Enter: expand/collapse",
+            super::app::FilterFocus::TreeNode(_) => "Space/Enter: toggle, Left/Right: expand/collapse",
             super::app::FilterFocus::NumEchoes => "Limit number of echoes to process",
         }
     } else if is_example {
