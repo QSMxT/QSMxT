@@ -95,22 +95,22 @@ fn apply_common_config(
         }
         B0EstimationArg::RobustFit => {
             // QSMxT's defaults, then the flags (shared with `qsmxt run`).
-            let mut cfg = qsmxt_config::PipelineConfig::default();
+            let mut cfg = qsmxt_engine::PipelineConfig::default();
             let fm = &mut cfg.field_mapping;
-            fm.b0_estimation = qsmxt_config::B0Estimation::RobustFit;
+            fm.b0_estimation = qsmxt_engine::B0Estimation::RobustFit;
             if let Some(v) = common.linear_fit_reliability_threshold { fm.linear_fit.reliability_threshold_percentile = v; }
             if let Some(v) = common.linear_fit_estimate_offset { fm.linear_fit.estimate_offset = v; }
             if let Some(l) = common.robust_fit_loss {
                 fm.robust_fit.loss = match l {
-                    crate::cli::RobustLossArg::Tukey => qsmxt_config::RobustLoss::Tukey,
-                    crate::cli::RobustLossArg::Huber => qsmxt_config::RobustLoss::Huber,
+                    crate::cli::RobustLossArg::Tukey => qsmxt_engine::RobustLoss::Tukey,
+                    crate::cli::RobustLossArg::Huber => qsmxt_engine::RobustLoss::Huber,
                 };
             }
             if let Some(v) = common.robust_fit_tuning { fm.robust_fit.tuning = Some(v); }
             if let Some(v) = common.robust_fit_iterations { fm.robust_fit.iterations = v; }
             if let Some(v) = common.robust_fit_downweight_level { fm.robust_fit.downweight_level = v; }
             if let Some(v) = common.robust_fit_flag_ratio { fm.robust_fit.flag_ratio = v; }
-            qsmxt_config::to_pipeline_stages(&cfg).0.b0_estimation
+            qsmxt_engine::to_pipeline_stages(&cfg).0.b0_estimation
         }
     };
 }
@@ -138,7 +138,7 @@ pub fn execute(cmd: FieldmapCommand) -> crate::Result<()> {
             &|c| apply_romeo(&args, c),
         ),
         FieldmapCommand::Laplacian(args) => {
-            let pad = qsmxt_config::pad3_from(&args.laplacian_fft_pad).ok_or_else(|| QsmxtError::Config(
+            let pad = qsmxt_engine::pad3_from(&args.laplacian_fft_pad).ok_or_else(|| QsmxtError::Config(
                 format!("--laplacian-fft-pad {:?}: give one value or three", args.laplacian_fft_pad)))?;
             let solver = match args.laplacian_solver {
                 LaplacianSolverArg::Dct => qsm_core::unwrap::LaplacianSolver::Dct,
@@ -172,7 +172,7 @@ fn field_mapping_config(
     algorithm: qsm_core::pipeline::config::UnwrappingAlgorithm,
     apply_algo: &dyn Fn(&mut qsm_core::pipeline::config::FieldMappingConfig),
 ) -> qsm_core::pipeline::config::FieldMappingConfig {
-    let mut config = qsmxt_config::to_pipeline_stages(&qsmxt_config::PipelineConfig::default()).0;
+    let mut config = qsmxt_engine::to_pipeline_stages(&qsmxt_engine::PipelineConfig::default()).0;
     config.unwrapping_algorithm = algorithm;
     apply_common_config(&mut config, common);
     apply_algo(&mut config);
@@ -321,9 +321,9 @@ mod tests {
             run.extend_from_slice(flags);
             let cli = crate::cli::Cli::try_parse_from(&run).unwrap();
             let crate::cli::Command::Run(r) = cli.command else { panic!() };
-            let mut config = qsmxt_config::PipelineConfig::default();
+            let mut config = qsmxt_engine::PipelineConfig::default();
             crate::pipeline::config::apply_run_overrides(&mut config, &r.pipeline).unwrap();
-            let pipeline = qsmxt_config::to_pipeline_stages(&config).0;
+            let pipeline = qsmxt_engine::to_pipeline_stages(&config).0;
             assert_eq!(format!("{standalone:?}"), format!("{pipeline:?}"), "flags {flags:?}");
         }
     }

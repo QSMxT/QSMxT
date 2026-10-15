@@ -38,8 +38,8 @@ pub fn execute(cmd: BgremoveCommand) -> crate::Result<()> {
             info!("Background removal (V-SHARP, {}x{}x{})", grid.nx(), grid.ny(), grid.nz());
 
             // QSMxT's defaults (deconvolution off), the same as `qsmxt run`'s.
-            let d = qsmxt_config::VsharpConfig::default();
-            let grid_cfg = qsmxt_config::VsharpConfig {
+            let d = qsmxt_engine::VsharpConfig::default();
+            let grid_cfg = qsmxt_engine::VsharpConfig {
                 grid: args.grid.map(Into::into).unwrap_or(d.grid),
                 grid_spacing: args.grid_spacing.unwrap_or(d.grid_spacing),
                 ..d.clone()

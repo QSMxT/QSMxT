@@ -1,4 +1,4 @@
-//! Bridge between qsmxt-config types and qsm-core pipeline types.
+//! Bridge between qsmxt-engine types and qsm-core pipeline types.
 //!
 //! Converts from the serde-enabled config types in this crate to the
 //! pure algorithm config types in qsm-core's pipeline module.
@@ -26,7 +26,7 @@ use qsm_core::pipeline::{
 use crate::config::PipelineConfig;
 use crate::enums::*;
 
-/// Map a qsmxt-config dipole inversion algorithm to its qsm-core equivalent.
+/// Map a qsmxt-engine dipole inversion algorithm to its qsm-core equivalent.
 fn map_alg(alg: QsmAlgorithm) -> PInvAlg {
     match alg {
         QsmAlgorithm::Rts => PInvAlg::Rts,
@@ -65,7 +65,7 @@ fn map_alg(alg: QsmAlgorithm) -> PInvAlg {
     }
 }
 
-/// Map a qsmxt-config background field removal algorithm to its qsm-core equivalent.
+/// Map a qsmxt-engine background field removal algorithm to its qsm-core equivalent.
 fn map_bf_alg(alg: BfAlgorithm) -> PBgAlg {
     match alg {
         BfAlgorithm::Vsharp => PBgAlg::Vsharp,
@@ -371,7 +371,7 @@ pub fn to_pipeline_stages(cfg: &PipelineConfig) -> (
     (field_mapping, bg_removal, inversion, reference)
 }
 
-/// Map a qsmxt-config separation algorithm to its qsm-core equivalent.
+/// Map a qsmxt-engine separation algorithm to its qsm-core equivalent.
 fn map_sep_alg(alg: SeparationAlgorithm) -> PSepAlg {
     match alg {
         SeparationAlgorithm::ChiSepIlsqr => PSepAlg::ChiSepIlsqr,
@@ -454,7 +454,7 @@ pub fn to_scan_metadata(
     }
 }
 
-/// Convert qsmxt-config MaskSection to qsm-core MaskSection.
+/// Convert qsmxt-engine MaskSection to qsm-core MaskSection.
 ///
 /// `bet` supplies the BET settings a mask spec does not carry (smoothness, gradient threshold,
 /// iterations, subdivisions): one value per run, from `[bet]` / `--bet-*`.

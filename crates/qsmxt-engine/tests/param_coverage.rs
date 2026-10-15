@@ -1,10 +1,10 @@
 //! Param-coverage guard.
 //!
-//! qsmxt-config is the single source of truth for the user-facing algorithm
+//! qsmxt-engine is the single source of truth for the user-facing algorithm
 //! parameter set (downstream consumers like qsmbly serialize these configs
 //! directly instead of hand-maintaining their own lists). This test makes sure
 //! the wrapper layer doesn't silently fall behind qsm-core: for each
-//! `qsm_core::*Params` / `qsmxt_config::*Config` pair, every core field must be
+//! `qsm_core::*Params` / `qsmxt_engine::*Config` pair, every core field must be
 //! either present in the config or explicitly listed as intentionally-not-exposed.
 //!
 //! Add a field to a qsm-core `*Params` struct and forget the matching `*Config`,
@@ -12,7 +12,7 @@
 //!
 //! Runs only under the `introspection` feature, which turns on qsm-core's
 //! (otherwise-absent) `Serialize` derives so we can read its field names:
-//!   cargo test -p qsmxt-config --features introspection
+//!   cargo test -p qsmxt-engine --features introspection
 #![cfg(feature = "introspection")]
 
 use serde::Serialize;
@@ -55,9 +55,9 @@ macro_rules! cover {
 }
 
 #[test]
-fn qsmxt_config_covers_all_qsm_core_params() {
+fn qsmxt_engine_covers_all_qsm_core_params() {
     use qsm_core as q;
-    use qsmxt_config as c;
+    use qsmxt_engine as c;
 
     // Inversion algorithms
     cover!(q::inversion::RtsParams => c::RtsConfig);

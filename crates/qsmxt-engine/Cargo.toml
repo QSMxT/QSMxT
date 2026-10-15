@@ -1,8 +1,8 @@
 [package]
-name = "qsmxt-config"
+name = "qsmxt-engine"
 version = "0.0.0"  # set automatically by release CI from git tag
 edition = "2021"
-description = "Pipeline configuration, command generation, and methods text for QSMxT"
+description = "QSMxT's run engine: pipeline configuration, command generation and methods text, without file I/O"
 license = "GPL-3.0-only"
 
 [dependencies]
@@ -20,7 +20,7 @@ thiserror = "2"
 getrandom = { version = "0.4", features = ["wasm_js"], optional = true }
 
 [features]
-# Forwarded qsm-core features, so a consumer that depends on qsmxt-config alone (qsmbly's WASM
+# Forwarded qsm-core features, so a consumer that depends on qsmxt-engine alone (qsmbly's WASM
 # crate, via the `qsm_core` re-export) can switch them on without its own qsm-core pin. All off
 # by default; the qsmxt binary enables what it needs on its own qsm-core dependency.
 simd = ["qsm-core/simd"]

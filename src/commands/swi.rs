@@ -7,7 +7,7 @@ use crate::pipeline::phase;
 
 /// The CLEAR-SWI parameters `qsmxt swi` runs with: the config defaults, overridden by the flags.
 fn swi_params(p: &crate::cli::SwiParamArgs) -> qsm_core::swi::SwiParams {
-    let mut c = qsmxt_config::SwiConfig::default();
+    let mut c = qsmxt_engine::SwiConfig::default();
     if let Some(ref s) = p.swi_hp_sigma {
         if s.len() == 3 { c.hp_sigma = [s[0], s[1], s[2]]; }
     }
@@ -103,8 +103,8 @@ mod tests {
         }
         assert!(crate::cli::Cli::try_parse_from(["qsmxt", "run", "bids", "--swi-scaling", "tahn"]).is_err());
         // A config file with an unknown scaling is refused too.
-        assert!(toml::from_str::<qsmxt_config::SwiConfig>("scaling = \"tahn\"").is_err());
-        assert_eq!(toml::from_str::<qsmxt_config::SwiConfig>("scaling = \"negative_tanh\"").unwrap().scaling,
-                   qsmxt_config::SwiScaling::NegativeTanh);
+        assert!(toml::from_str::<qsmxt_engine::SwiConfig>("scaling = \"tahn\"").is_err());
+        assert_eq!(toml::from_str::<qsmxt_engine::SwiConfig>("scaling = \"negative_tanh\"").unwrap().scaling,
+                   qsmxt_engine::SwiScaling::NegativeTanh);
     }
 }

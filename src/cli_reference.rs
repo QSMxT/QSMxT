@@ -240,7 +240,7 @@ mod tests {
         let run = cmd.find_subcommand("run").unwrap();
         let arg = run.get_arguments().find(|a| a.get_long() == Some("qsm-algorithm")).unwrap();
         let cli: Vec<String> = arg.get_possible_values().iter().map(|v| v.get_name().to_string()).collect();
-        let all: Vec<String> = qsmxt_config::QsmAlgorithm::ALL.iter().map(|a| a.to_string()).collect();
+        let all: Vec<String> = qsmxt_engine::QsmAlgorithm::ALL.iter().map(|a| a.to_string()).collect();
         assert_eq!(cli, all);
     }
 
@@ -248,10 +248,10 @@ mod tests {
     /// what QSM.rs says assumes B0 along z (`OrientationSupport::AxialOnly`).
     #[test]
     fn inversion_counts_in_the_docs_are_right() {
-        use qsmxt_config::bridge::{axial_only_algorithms, RunOrientationFacts};
+        use qsmxt_engine::bridge::{axial_only_algorithms, RunOrientationFacts};
         let (mut classical, mut dl) = (0, 0);
-        for alg in qsmxt_config::QsmAlgorithm::ALL {
-            let mut cfg = qsmxt_config::PipelineConfig::default();
+        for alg in qsmxt_engine::QsmAlgorithm::ALL {
+            let mut cfg = qsmxt_engine::PipelineConfig::default();
             cfg.inversion.algorithm = alg;
             let axial = axial_only_algorithms(&cfg, RunOrientationFacts { has_measured_r2: true });
             if axial.iter().any(|a| a.starts_with("dipole inversion")) { dl += 1 } else { classical += 1 }
@@ -275,8 +275,8 @@ mod tests {
     #[test]
     fn the_default_inversion_is_the_one_the_docs_mark() {
         let algorithms = doc("reference/algorithms.md");
-        let default = qsmxt_config::InversionConfig::default().algorithm;
-        for alg in qsmxt_config::QsmAlgorithm::ALL {
+        let default = qsmxt_engine::InversionConfig::default().algorithm;
+        for alg in qsmxt_engine::QsmAlgorithm::ALL {
             let row = algorithms.lines().find(|l| l.starts_with(&format!("| `{alg}` |")))
                 .unwrap_or_else(|| panic!("reference/algorithms.md has no row for `{alg}`"));
             assert_eq!(row.contains("(default"), alg == default,
@@ -289,10 +289,10 @@ mod tests {
     #[test]
     fn mask_preset_expansions_in_the_docs_are_the_recipes() {
         let algorithms = doc("reference/algorithms.md");
-        for (name, recipe) in qsmxt_config::mask_presets() {
+        for (name, recipe) in qsmxt_engine::mask_presets() {
             let mut flags: Vec<String> = recipe.sections.iter()
                 .map(|s| format!("--mask {}", s.compact_spec())).collect();
-            if recipe.sections.len() > 1 && recipe.combine == qsmxt_config::MaskCombine::And {
+            if recipe.sections.len() > 1 && recipe.combine == qsmxt_engine::MaskCombine::And {
                 flags.push("--mask-combine and".to_string());
             }
             flags.extend(recipe.refinements.iter().map(|r| format!("--mask-refine {}", r.compact_spec())));

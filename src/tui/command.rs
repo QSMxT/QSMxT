@@ -39,11 +39,11 @@ pub fn build_command_string(app: &App) -> String {
         parts.push(format!("--num-echoes {}", app.filter_state.num_echoes));
     }
 
-    // Pipeline flags — delegate to qsmxt-config library
+    // Pipeline flags — delegate to qsmxt-engine library
     match config_from_app(app) {
         Err(e) => parts.push(format!("<invalid setting: {e}>")),
         Ok(config) => {
-        let lib_cmd = qsmxt_config::generate_command(&config);
+        let lib_cmd = qsmxt_engine::generate_command(&config);
         // The library generates "qsmxt run <bids_dir> [flags]"
         // Strip the prefix and append only the flags
         let flags = lib_cmd.strip_prefix("qsmxt run <bids_dir>").unwrap_or(&lib_cmd).trim();
@@ -208,7 +208,7 @@ pub const QSM_ALGO_ARGS: [QsmAlgorithmArg; 31] = [
         QsmAlgorithmArg::IqsmPlus,
 ];
 
-/// The inversion row's starting index: qsmxt-config's default inversion, so the TUI and
+/// The inversion row's starting index: qsmxt-engine's default inversion, so the TUI and
 /// `qsmxt run` without `--qsm-algorithm` mean the same algorithm.
 pub fn default_qsm_algorithm_index() -> usize {
     let default = crate::pipeline::config::InversionConfig::default().algorithm;
@@ -314,7 +314,7 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             .then_some(crate::cli::LaplacianSolverArg::Fft),
         laplacian_fft_pad: if ps.unwrapping_algorithm == 1 && ps.laplacian_solver == 1 {
             parse_pad3(&ps.laplacian_fft_pad)
-                .filter(|&p| p != qsmxt_config::default_laplacian_fft_pad())
+                .filter(|&p| p != qsmxt_engine::default_laplacian_fft_pad())
                 .map(|p| if p[0] == p[1] && p[1] == p[2] { vec![p[0]] } else { p.to_vec() })
         } else { None },
         // BET is edited per mask step in the TUI, so its settings travel inside the sections.
@@ -782,7 +782,7 @@ fn parse_usize_triple(s: &str) -> Option<[usize; 3]> {
 /// "64" (every axis) or "64 64 32".
 fn parse_pad3(s: &str) -> Option<[usize; 3]> {
     let v: Vec<usize> = s.split_whitespace().map(|t| t.parse().ok()).collect::<Option<_>>()?;
-    qsmxt_config::pad3_from(&v)
+    qsmxt_engine::pad3_from(&v)
 }
 
 /// Three numbers, separated by spaces or commas; anything else is None.
@@ -882,7 +882,7 @@ mod tests {
     /// Each entry of the SWI unwrapping select runs the unwrapping it shows.
     #[test]
     fn swi_unwrap_select_runs_what_it_shows() {
-        use qsmxt_config::SwiUnwrap;
+        use qsmxt_engine::SwiUnwrap;
         assert_eq!(SWI_UNWRAP_ARGS.len(), SwiUnwrap::ALL.len());
         for (i, &expected) in SwiUnwrap::ALL.iter().enumerate() {
             let mut app = App::new();
@@ -891,14 +891,14 @@ mod tests {
             assert_eq!(config_from_app(&app).unwrap().swi.unwrap, expected, "row {i}");
         }
         // The first entry is the default.
-        assert_eq!(SwiUnwrap::ALL[0], qsmxt_config::SwiConfig::default().unwrap);
+        assert_eq!(SwiUnwrap::ALL[0], qsmxt_engine::SwiConfig::default().unwrap);
     }
 
     /// Each entry of the SWI scaling select runs the scaling it shows, and every scaling reaches
     /// qsm-core's `PhaseScaling` unchanged (#266: `negative-tanh` used to run `tanh`).
     #[test]
     fn swi_scaling_select_runs_what_it_shows() {
-        use qsmxt_config::SwiScaling;
+        use qsmxt_engine::SwiScaling;
         assert_eq!(SWI_SCALING_ARGS.len(), SwiScaling::ALL.len());
         for (i, &expected) in SwiScaling::ALL.iter().enumerate() {
             let mut app = App::new();
@@ -943,7 +943,7 @@ mod tests {
 
         let mut app = default_app();
         app.form.do_r2primemap = true;
-        let d = qsmxt_config::R2primenetConfig::default();
+        let d = qsmxt_engine::R2primenetConfig::default();
         assert_eq!(config_from_app(&app).unwrap().separation.r2primenet, d);
         app.pipeline_state.toggle("r2primenet_ignore_field_mismatch");
         app.pipeline_state.r2primenet_patch = "128 128 64".into();
@@ -965,16 +965,16 @@ mod tests {
         }).collect::<Vec<_>>();
         assert!(fields(&app).contains(&"vsharp_grid".to_string()));
         assert!(!fields(&app).contains(&"vsharp_grid_spacing".to_string()));
-        assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_config::VsharpGrid::Native);
+        assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_engine::VsharpGrid::Native);
         assert_eq!(pipeline_args_from_app(&app).vsharp_params.vsharp_grid, None);
         app.pipeline_state.set_select("vsharp_grid", 1);
-        assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_config::VsharpGrid::Finest);
+        assert_eq!(config_from_app(&app).unwrap().bg_removal.vsharp.grid, qsmxt_engine::VsharpGrid::Finest);
         assert!(!fields(&app).contains(&"vsharp_grid_spacing".to_string()));
         app.pipeline_state.set_select("vsharp_grid", 2);
         assert!(fields(&app).contains(&"vsharp_grid_spacing".to_string()));
         app.pipeline_state.vsharp_grid_spacing = "0.8".into();
         let c = config_from_app(&app).unwrap();
-        assert_eq!((c.bg_removal.vsharp.grid, c.bg_removal.vsharp.grid_spacing), (qsmxt_config::VsharpGrid::Isotropic, 0.8));
+        assert_eq!((c.bg_removal.vsharp.grid, c.bg_removal.vsharp.grid_spacing), (qsmxt_engine::VsharpGrid::Isotropic, 0.8));
         let a = pipeline_args_from_app(&app);
         assert_eq!(a.vsharp_params.vsharp_grid, Some(crate::cli::VsharpGridArg::Isotropic));
         assert_eq!(a.vsharp_params.vsharp_grid_spacing, Some(0.8));
@@ -1013,7 +1013,7 @@ mod tests {
         app.pipeline_state.laplacian_solver = 1; // fft
         assert!(fields(&app).contains(&"laplacian_fft_pad".to_string()));
         let c = config_from_app(&app).unwrap();
-        assert_eq!(c.field_mapping.laplacian_solver, qsmxt_config::LaplacianSolver::Fft);
+        assert_eq!(c.field_mapping.laplacian_solver, qsmxt_engine::LaplacianSolver::Fft);
         assert_eq!(c.field_mapping.laplacian_fft_pad, [64; 3]);
         assert_eq!(pipeline_args_from_app(&app).laplacian_fft_pad, None, "default pad not emitted");
         app.pipeline_state.laplacian_fft_pad = "64 64 32".into();
@@ -1043,7 +1043,7 @@ mod tests {
                      "robust_fit_downweight_level", "robust_fit_flag_ratio", "linear_fit_reliability_threshold"] {
             assert!(f.contains(&name.to_string()), "{name} missing: {f:?}");
         }
-        assert_eq!(config_from_app(&app).unwrap().field_mapping.robust_fit, qsmxt_config::RobustFitConfig::default());
+        assert_eq!(config_from_app(&app).unwrap().field_mapping.robust_fit, qsmxt_engine::RobustFitConfig::default());
         let ps = &mut app.pipeline_state;
         ps.robust_fit_loss = 1;
         ps.robust_fit_tuning = "2".into();
@@ -1053,9 +1053,9 @@ mod tests {
         ps.linear_fit_reliability_threshold = "80".into();
         ps.toggle("linear_fit_estimate_offset");
         let c = config_from_app(&app).unwrap();
-        assert_eq!(c.field_mapping.b0_estimation, qsmxt_config::B0Estimation::RobustFit);
-        assert_eq!(c.field_mapping.robust_fit, qsmxt_config::RobustFitConfig {
-            loss: qsmxt_config::RobustLoss::Huber, tuning: Some(2.0), iterations: 0,
+        assert_eq!(c.field_mapping.b0_estimation, qsmxt_engine::B0Estimation::RobustFit);
+        assert_eq!(c.field_mapping.robust_fit, qsmxt_engine::RobustFitConfig {
+            loss: qsmxt_engine::RobustLoss::Huber, tuning: Some(2.0), iterations: 0,
             downweight_level: 0.5, flag_ratio: 4.0,
         });
         assert!(!c.field_mapping.linear_fit.estimate_offset);
@@ -1077,9 +1077,9 @@ mod tests {
         assert!(config_from_app(&app).unwrap().pipeline.ignore_slice_gap);
         assert!(pipeline_args_from_app(&app).ignore_slice_gap);
         let mut c = config_from_app(&app).unwrap();
-        assert!(qsmxt_config::generate_command(&c).contains("--ignore-slice-gap"));
+        assert!(qsmxt_engine::generate_command(&c).contains("--ignore-slice-gap"));
         c.pipeline.ignore_slice_gap = false;
-        assert!(!qsmxt_config::generate_command(&c).contains("--ignore-slice-gap"));
+        assert!(!qsmxt_engine::generate_command(&c).contains("--ignore-slice-gap"));
     }
 
     /// Motion correction and every registration setting reach the config and the CLI args, and
@@ -1096,7 +1096,7 @@ mod tests {
         assert!(fields(&app).contains(&"motion_correction".to_string()));
         assert!(!fields(&app).contains(&"reg_levels".to_string()),
                 "registration serves motion correction and orientation groups, and neither is on");
-        assert_eq!(config_from_app(&app).unwrap().motion_correction, qsmxt_config::MotionCorrectionConfig::default());
+        assert_eq!(config_from_app(&app).unwrap().motion_correction, qsmxt_engine::MotionCorrectionConfig::default());
         let ps = &mut app.pipeline_state;
         ps.toggle("motion_correction");
         ps.motion_reference = 2;
@@ -1114,7 +1114,7 @@ mod tests {
         assert!(!f.contains(&"motion_chain_levels".to_string()), "chain levels hidden when chain is off");
         let m = config_from_app(&app).unwrap().motion_correction;
         assert!(m.enabled && !m.chain);
-        assert_eq!(m.reference, qsmxt_config::MotionReference::Echo(2));
+        assert_eq!(m.reference, qsmxt_engine::MotionReference::Echo(2));
         let reg = config_from_app(&app).unwrap().registration;
         assert_eq!((m.min_ncc, reg.levels, reg.min_overlap), (0.9, 4, 0.5));
         let a = pipeline_args_from_app(&app).motion_params;
@@ -1816,7 +1816,7 @@ mod parity {
     /// building clap's command is most of the cost of a parse.
     fn round_trip(cli: &mut clap::Command, c: &PipelineConfig) -> PipelineConfig {
         use clap::FromArgMatches;
-        let cmd = qsmxt_config::generate_command(c);
+        let cmd = qsmxt_engine::generate_command(c);
         let argv: Vec<&str> = cmd.split_whitespace().collect();
         let m = cli.try_get_matches_from_mut(&argv).unwrap_or_else(|e| panic!("{cmd}: {e}"));
         let parsed = crate::cli::Cli::from_arg_matches(&m).unwrap_or_else(|e| panic!("{cmd}: {e}"));
@@ -1980,12 +1980,12 @@ mod parity {
                 let d = diff(&before, &after);
                 problems.entry(format!("not in the command: {d:?}")).or_insert(what.clone());
             }
-            let cmd = qsmxt_config::generate_command(&after);
+            let cmd = qsmxt_engine::generate_command(&after);
             // Parsing is most of a check's cost, and many changes produce a command already seen.
             let back = match round_trips.get(&cmd) {
                 Some(b) => b.clone(),
                 None => {
-                    let b = qsmxt_config::generate_command(&round_trip(&mut cli, &after));
+                    let b = qsmxt_engine::generate_command(&round_trip(&mut cli, &after));
                     round_trips.insert(cmd.clone(), b.clone());
                     b
                 }
@@ -2115,7 +2115,7 @@ mod parity {
                 problems.entry(format!("not in the command: {what}")).or_insert(what.to_string());
             }
             let c = config_from_app(&a).unwrap();
-            let (cmd, back) = (qsmxt_config::generate_command(&c), qsmxt_config::generate_command(&round_trip(&mut cli, &c)));
+            let (cmd, back) = (qsmxt_engine::generate_command(&c), qsmxt_engine::generate_command(&round_trip(&mut cli, &c)));
             if cmd != back {
                 problems.entry(format!("command does not reproduce itself: {what}")).or_insert(what.to_string());
             }

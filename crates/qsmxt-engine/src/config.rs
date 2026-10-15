@@ -1171,7 +1171,7 @@ pub struct QsmConfig {
     /// Held as the spec the user wrote (`thalamus`, `left-thalamus,right-caudate`, `4,43`) rather
     /// than resolved ids: the ids depend on the SynthSeg generation, which the user can still
     /// change after setting this, and an error naming what they typed beats one naming a number
-    /// they never saw. Resolved by `qsmxt_config::regions::resolve` where it is used.
+    /// they never saw. Resolved by `qsmxt_engine::regions::resolve` where it is used.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reference_region: Option<String>,
 }

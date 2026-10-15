@@ -1,6 +1,6 @@
 //! RunArgs/PipelineArgs-coverage guard.
 //!
-//! Sibling of qsmxt-config's tests/param_coverage.rs, one layer up: every
+//! Sibling of qsmxt-engine's tests/param_coverage.rs, one layer up: every
 //! `qsmxt run` CLI flag must actually be consumed by the run pipeline. v9
 //! shipped --masking-algorithm and --masking-input parsed but silently
 //! ignored; this test goes red if a RunArgs or PipelineArgs field exists that

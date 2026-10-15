@@ -1,4 +1,4 @@
-//! Pipeline configuration — re-exports from qsmxt-config library
+//! Pipeline configuration — re-exports from qsmxt-engine library
 //! plus qsmxt-specific extensions (file I/O, CLI override mapping).
 
 use std::path::Path;
@@ -6,7 +6,7 @@ use crate::cli;
 use crate::error::QsmxtError;
 
 // Re-export everything from the library
-pub use qsmxt_config::*;
+pub use qsmxt_engine::*;
 
 /// Load config from a TOML file.
 pub fn load_config(path: &Path) -> crate::Result<PipelineConfig> {
@@ -94,18 +94,18 @@ fn hole_closing_warnings(sections: &[MaskSection]) -> Vec<String> {
 }
 
 /// Map a CLI SWI unwrapping argument to the config enum (shared by `run` and `qsmxt swi`).
-pub fn swi_unwrap_arg_to_config(a: cli::SwiUnwrapArg) -> qsmxt_config::SwiUnwrap {
+pub fn swi_unwrap_arg_to_config(a: cli::SwiUnwrapArg) -> qsmxt_engine::SwiUnwrap {
     match a {
-        cli::SwiUnwrapArg::Laplacian => qsmxt_config::SwiUnwrap::Laplacian,
-        cli::SwiUnwrapArg::LaplacianSlice => qsmxt_config::SwiUnwrap::LaplacianSlice,
-        cli::SwiUnwrapArg::Romeo => qsmxt_config::SwiUnwrap::Romeo,
+        cli::SwiUnwrapArg::Laplacian => qsmxt_engine::SwiUnwrap::Laplacian,
+        cli::SwiUnwrapArg::LaplacianSlice => qsmxt_engine::SwiUnwrap::LaplacianSlice,
+        cli::SwiUnwrapArg::Romeo => qsmxt_engine::SwiUnwrap::Romeo,
     }
 }
 
 /// Map a CLI SWI scaling argument to the config enum — the one place `run` and `qsmxt swi` both
 /// go through, so the two cannot disagree about what a value means.
-pub fn swi_scaling_arg_to_config(a: cli::SwiScalingArg) -> qsmxt_config::SwiScaling {
-    use qsmxt_config::SwiScaling as S;
+pub fn swi_scaling_arg_to_config(a: cli::SwiScalingArg) -> qsmxt_engine::SwiScaling {
+    use qsmxt_engine::SwiScaling as S;
     match a {
         cli::SwiScalingArg::Tanh => S::Tanh,
         cli::SwiScalingArg::NegativeTanh => S::NegativeTanh,
@@ -262,7 +262,7 @@ pub fn validate_reference_region(config: &PipelineConfig) -> crate::Result<()> {
         return Ok(());
     }
     let spec = config.qsm.reference_region.as_deref().unwrap_or_default();
-    let ids = qsmxt_config::regions::resolve(spec, config.segmentation.version)
+    let ids = qsmxt_engine::regions::resolve(spec, config.segmentation.version)
         .map_err(|e| QsmxtError::Config(format!("--qsm-reference: {e}")))?;
     log::info!(
         "Referencing χ to `{spec}` (SynthSeg {} label{} {})",
@@ -361,7 +361,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
             };
         }
         if let Some(ref p) = args.laplacian_fft_pad {
-            config.field_mapping.laplacian_fft_pad = qsmxt_config::pad3_from(p).ok_or_else(|| {
+            config.field_mapping.laplacian_fft_pad = qsmxt_engine::pad3_from(p).ok_or_else(|| {
                 QsmxtError::Config(format!("--laplacian-fft-pad {p:?}: give one value or three (x y z)"))
             })?;
         }
@@ -780,7 +780,7 @@ pub fn apply_run_overrides(config: &mut PipelineConfig, args: &cli::PipelineArgs
         // the sections a preset, `--mask` or the QSMART default has just installed — and so
         // `--bet-fractional-intensity` / `--bet-voxel-scale` (or a `[bet]` value in a config
         // file) are the whole recipe's answer, whether or not a `--mask` spec also spelled one out.
-        let d = qsmxt_config::BetConfig::default();
+        let d = qsmxt_engine::BetConfig::default();
         if args.bet_fractional_intensity.is_some() || config.bet.fractional_intensity != d.fractional_intensity {
             let fi = config.bet.fractional_intensity;
             for_each_bet_op(&mut config.masking, |f, _| *f = fi);
@@ -806,7 +806,7 @@ pub fn validate_inversion_input(config: &PipelineConfig) -> crate::Result<()> {
     let alg = config.inversion.algorithm;
     let medi_smv = alg == QsmAlgorithm::Medi && config.inversion.medi.smv;
     let what = format!("--qsm-algorithm {alg}{}", if medi_smv { " with SMV" } else { "" });
-    let takes = if qsmxt_config::bridge::inversion_input(config, 2).needs_field_mapping() {
+    let takes = if qsmxt_engine::bridge::inversion_input(config, 2).needs_field_mapping() {
         "the total field and removes the background itself"
     } else {
         "the wrapped phase"
@@ -815,7 +815,7 @@ pub fn validate_inversion_input(config: &PipelineConfig) -> crate::Result<()> {
         BfAlgorithm::Iqfm => Err(QsmxtError::Config(format!(
             "--bf-algorithm iqfm produces a local field, and {what} takes {takes}, so iQFM would \
              have no effect. Choose another inversion, or drop --bf-algorithm iqfm."))),
-        b if b != qsmxt_config::BgRemovalConfig::default().algorithm => {
+        b if b != qsmxt_engine::BgRemovalConfig::default().algorithm => {
             log::warn!("--bf-algorithm {b} has no effect: {what} takes {takes}");
             Ok(())
         }
@@ -1074,13 +1074,13 @@ mod tests {
             "--registration-translation-step-mm", "1.5", "--registration-min-overlap", "0.4"]);
         let m = &c.motion_correction;
         assert!(m.enabled && !m.chain);
-        assert_eq!(m.reference, qsmxt_config::MotionReference::Echo(3));
+        assert_eq!(m.reference, qsmxt_engine::MotionReference::Echo(3));
         assert_eq!((m.chain_levels, m.min_ncc), (2, 0.9));
         let r = &c.registration;
         assert_eq!((r.levels, r.max_samples, r.max_iterations, r.max_evaluations), (4, 1000, 7, 99));
         assert_eq!((r.tolerance, r.rotation_step_deg, r.translation_step_mm, r.min_overlap), (0.001, 2.0, 1.5, 0.4));
         let l = config_from_cli(&["qsmxt", "run", "<bids>", "--motion-correction", "--motion-reference", "last"]);
-        assert_eq!(l.motion_correction.reference, qsmxt_config::MotionReference::Last);
+        assert_eq!(l.motion_correction.reference, qsmxt_engine::MotionReference::Last);
     }
 
     #[test]

@@ -48,10 +48,10 @@ jobs:
           cargo llvm-cov --workspace --lcov --output-path target/lcov.info
           --ignore-filename-regex '(^|/)src/(main|tui/mod|tui/ui|commands/update)\.rs$'
 
-      # Fails if a qsm-core *Params field isn't represented in its qsmxt-config
-      # *Config wrapper (drift guard). See crates/qsmxt-config/tests/param_coverage.rs.
-      - name: Param coverage (qsmxt-config vs qsm-core)
-        run: cargo test -p qsmxt-config --features introspection --test param_coverage
+      # Fails if a qsm-core *Params field isn't represented in its qsmxt-engine
+      # *Config wrapper (drift guard). See crates/qsmxt-engine/tests/param_coverage.rs.
+      - name: Param coverage (qsmxt-engine vs qsm-core)
+        run: cargo test -p qsmxt-engine --features introspection --test param_coverage
 
       # Two thresholds, deliberately. 70% is the gate `release.yml` enforces, so failing here is
       # what stops a PR discovering at release time that it cannot ship. 90% is the target, and
@@ -76,11 +76,11 @@ jobs:
             echo "::warning::Coverage ${COVERAGE}% is below the 90% target (release gate is 70%)"
           fi
 
-  # qsmbly builds qsmxt-config (and, through its `qsm_core` re-export, qsm-core) for the browser.
+  # qsmbly builds qsmxt-engine (and, through its `qsm_core` re-export, qsm-core) for the browser.
   # Keep it WebAssembly-buildable: classical only, and with the deep-learning engine. The `onnx`
   # build needs SIMD128, as qsmbly's does (qsm-core refuses to compile wasm `onnx` without it).
   wasm:
-    name: WebAssembly check (qsmxt-config)
+    name: WebAssembly check (qsmxt-engine)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -92,12 +92,12 @@ jobs:
       - uses: Swatinem/rust-cache@v2
 
       - name: Check (classical)
-        run: cargo check -p qsmxt-config --target wasm32-unknown-unknown --features simd
+        run: cargo check -p qsmxt-engine --target wasm32-unknown-unknown --features simd
 
       - name: Check (with ONNX)
         env:
           RUSTFLAGS: -C target-feature=+simd128
-        run: cargo check -p qsmxt-config --target wasm32-unknown-unknown --features simd,onnx
+        run: cargo check -p qsmxt-engine --target wasm32-unknown-unknown --features simd,onnx
 
   # The derivatives of a run that makes every output QSMxT names have to pass the BIDS validator
   # with only the documented `.bidsignore` entries (#275). The fixture (an ignored test) writes

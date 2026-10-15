@@ -960,7 +960,7 @@ impl RomeoParamArgs {
     /// Apply these flags onto a ROMEO configuration. The one place they are read, so `qsmxt run`
     /// and `qsmxt fieldmap romeo` / `unwrap romeo` cannot disagree about what a flag means.
     /// `--romeo-template` is 1-indexed on the CLI and 0-indexed in the library.
-    pub fn apply_to(&self, r: &mut qsmxt_config::RomeoConfig) {
+    pub fn apply_to(&self, r: &mut qsmxt_engine::RomeoConfig) {
         // Weight component flags (default-true → disabled via --no-*)
         if self.no_romeo_phase_coherence { r.phase_coherence = false; }
         if self.no_romeo_phase_gradient_coherence { r.phase_gradient_coherence = false; }
@@ -988,7 +988,7 @@ impl RomeoParamArgs {
     /// the ones `qsmxt run` uses (individual unwrapping and global correction on), not the
     /// library's.
     pub fn to_romeo_params(&self) -> qsm_core::unwrap::RomeoParams {
-        let mut r = qsmxt_config::RomeoConfig::default();
+        let mut r = qsmxt_engine::RomeoConfig::default();
         self.apply_to(&mut r);
         (&r).into()
     }
@@ -3548,7 +3548,7 @@ pub enum VsharpGridArg {
     Native, Finest, Isotropic,
 }
 
-impl From<VsharpGridArg> for qsmxt_config::VsharpGrid {
+impl From<VsharpGridArg> for qsmxt_engine::VsharpGrid {
     fn from(a: VsharpGridArg) -> Self {
         match a {
             VsharpGridArg::Native => Self::Native,

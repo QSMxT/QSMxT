@@ -1,7 +1,8 @@
-//! QSMxT Pipeline Configuration Library
+//! QSMxT's run engine.
 //!
-//! Shared configuration, command generation, and methods text for QSMxT tools.
-//! Used by both qsmxt (CLI/TUI) and qsmbly (browser WASM).
+//! Pipeline configuration, command generation and methods text for QSMxT, with no file I/O, so it
+//! also builds for the browser. Used by both qsmxt (CLI/TUI) and qsmbly (browser WASM). The run
+//! logic in `qsmxt`'s `src/pipeline/` moves here in stages.
 
 /// The qsm-core this crate is built against. Downstream consumers (qsmbly's WASM crate) use
 /// algorithms through this re-export rather than depending on qsm-core themselves, so the

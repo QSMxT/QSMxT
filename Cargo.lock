@@ -2320,7 +2320,7 @@ dependencies = [
  "nifti",
  "png",
  "qsm-core",
- "qsmxt-config",
+ "qsmxt-engine",
  "ratatui",
  "rayon",
  "regex",
@@ -2335,7 +2335,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "qsmxt-config"
+name = "qsmxt-engine"
 version = "0.0.0"
 dependencies = [
  "getrandom 0.4.2",
