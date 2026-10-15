@@ -7,14 +7,13 @@ use qsm_core::io::{self, NiftiData};
 use serde::Serialize;
 
 use crate::bids::derivatives::DerivativeOutputs;
-use crate::bids::entities::AcquisitionKey;
 use crate::bids::discovery::QsmRun;
 use crate::pipeline::config::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
-use qsmxt_engine::bridge::skips_bgremove;
 use qsmxt_engine::cache::step_cache_key;
-use qsmxt_engine::observe::VolumeData;
-use qsmxt_engine::plan::{Pass as EnginePass, Stage};
+use qsmxt_engine::observe::{Observer, StageEvent};
+use qsmxt_engine::plan::{Pass as EnginePass, Plan, Stage, Step};
+use qsmxt_engine::store::{Completed, Data, Header, Item, StageStore, Supplied};
 use qsmxt_engine::scan::{scan_metadata, AXIAL_ONLY_TOLERANCE_DEG};
 use crate::pipeline::memory;
 use crate::pipeline::requirements::{
@@ -229,22 +228,6 @@ fn iter_progress_bar(run_key: &str, step_name: &str) -> (Box<dyn FnMut(usize, us
     (cb, None)
 }
 
-/// The engine's observer for one stage: its progress drives a progress bar named for the run and
-/// the stage.
-struct StageProgress(Box<dyn FnMut(usize, usize)>);
-
-impl StageProgress {
-    fn new(run_key: &str, step_name: &str) -> Self {
-        Self(iter_progress_bar(run_key, step_name).0)
-    }
-}
-
-impl qsmxt_engine::observe::Observer for StageProgress {
-    fn progress(&mut self, done: usize, total: usize) {
-        (self.0)(done, total)
-    }
-}
-
 /// Create a byte-oriented progress bar for weight downloads, in the same visual style as
 /// [`create_progress_bar`] (spinner + `━╸─` bar) but showing size + transfer rate.
 #[cfg(feature = "dl")]
@@ -359,8 +342,9 @@ fn load_mask(path: &Path) -> crate::Result<Vec<u8>> {
 
 /// Execute the QSM pipeline with disk caching and auto-resume.
 ///
-/// Each step saves its output to disk and drops data from memory.
-/// On re-run, completed steps with valid outputs on disk are skipped.
+/// The engine plans the run and runs it ([`qsmxt_engine::run::run`]) against the run's files
+/// ([`FileStore`]): each step saves its output to disk and drops data from memory, and on re-run,
+/// completed steps with valid outputs on disk are skipped.
 pub fn run_pipeline_cached(
     qsm_run: &QsmRun,
     config: &PipelineConfig,
@@ -369,7 +353,7 @@ pub fn run_pipeline_cached(
     progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
     let state_path = output.state_path(&qsm_run.key);
-    let mut state = PipelineState::load_or_create(&state_path, config, &qsm_run.key, force);
+    let state = PipelineState::load_or_create(&state_path, config, &qsm_run.key, force);
 
     // What this run can produce of what was enabled, and the steps that produce it. `qsmxt run`
     // has already refused a requested output the data cannot give and warned about an implied one
@@ -379,120 +363,355 @@ pub fn run_pipeline_cached(
     for note in &plan.notes {
         log::warn!("{note}");
     }
-
-    let meta = stage_load(qsm_run, config, &facts, &mut state, &state_path, progress)?;
-    restore_working_grid(qsm_run, output, &mut state, &state_path)?;
-
-    // A run left on the axial grid it was resampled to names its outputs in that space (#275).
-    let space = published_space(config, &meta);
-    if state.space.as_deref() != space {
-        // Every output of the last run is under the other names: nothing cached can be found,
-        // and nothing under those names may stay beside the new ones.
-        state.remove_recorded_outputs(&state_path);
-        state.completed_steps.retain(|step, _| step == "load");
-        state.space = space.map(str::to_string);
-        state.save(&state_path)?;
-    }
-    let output = &output.in_space(space);
-
-    if !plan.processes() {
-        log::info!("No outputs enabled — nothing to process");
-        state.mark_run_complete(config);
-        state.save(&state_path)?;
-        return Ok(());
-    }
-    if !config.pipeline.do_qsm {
-        log::info!("QSM processing disabled — skipping reconstruction");
-    }
-
-    let mut ctx = StageContext {
-        run: qsm_run, config, output, meta: &meta,
-        state: &mut state, state_path: &state_path,
+    let mut store = FileStore {
+        run: qsm_run, facts: &facts, config, output: output.clone(), meta: None, state, state_path, progress,
+        started: None, supplied_mask: None, mask_path: None,
     };
+    let mut observer = RunObserver { key: qsm_run.key.to_string(), progress, bar: None, started: None };
+    qsmxt_engine::run::run(&plan, config, &facts, &mut store, &mut observer)
+}
 
-    let brain_mask_path = output.mask_path(&qsm_run.key);
-    // Every stage after masking reads the motion-corrected echoes (when on) and the mask every
-    // echo still covers; the published brain mask stays the one masking made.
-    let mut mask_path = brain_mask_path.clone();
-    let field_path = output.field_ppm_path(&qsm_run.key);
-    let dseg_path = output.dseg_path(&qsm_run.key);
-    // A pass's masks and outputs. The main pass works in the mask the field map was computed on,
-    // which is only known once motion correction has run.
-    let pass = |p: EnginePass, mask: &Path| match p {
-        EnginePass::Main => Pass::main(output, &qsm_run.key, mask),
-        EnginePass::Reliable => Pass::reliable(output, &qsm_run.key),
-    };
-    let reliable = Pass::reliable(output, &qsm_run.key);
-    let skip_bgremove = skips_bgremove(config);
-    for step in &plan.steps {
-        let models = step.models.as_slice();
-        match step.stage {
-            Stage::Load => {}
-            Stage::ScalePhase => stage_scale_phase(&mut ctx, progress)?,
-            Stage::Magnitude => stage_magnitude(&mut ctx, progress)?,
-            Stage::Mask(EnginePass::Main) => stage_mask(&mut ctx, &brain_mask_path, models, progress)?,
-            Stage::Mask(EnginePass::Reliable) =>
-                stage_two_pass_mask(&mut ctx, &mask_path, &reliable.mask, models, progress)?,
-            Stage::Motion => mask_path = stage_motion(&mut ctx, &brain_mask_path, progress)?,
-            Stage::Swi => stage_swi(&mut ctx, progress)?,
-            Stage::Segmentation => stage_segmentation(&mut ctx, &dseg_path, models, progress)?,
-            Stage::Relaxometry => stage_t2star_r2star(&mut ctx, &mask_path, progress)?,
-            Stage::R2 => stage_r2_r2prime(&mut ctx, &mask_path, &facts, models, progress)?,
-            // The field map is computed once, on the brain mask, and shared by both passes. The
-            // reliable mask is a subset of it, so its pass needs no field values the shared map
-            // does not already carry — and unwrapping twice would be a second ROMEO run for nothing.
-            Stage::FieldMap => stage_unwrap(&mut ctx, &mask_path, &field_path, progress)?,
-            Stage::BackgroundRemoval(p) =>
-                stage_bgremove(&mut ctx, &pass(p, &mask_path), &field_path, models, progress)?,
-            Stage::Inversion(p) if qsmxt_engine::stages::inversion::iqsm_algorithm(config).is_some() =>
-                stage_iqsm(&mut ctx, &pass(p, &mask_path), models, progress)?,
-            Stage::Inversion(p) => stage_invert(&mut ctx, &pass(p, &mask_path), &field_path, models, progress)?,
-            Stage::Tgv(p) => stage_tgv(&mut ctx, &pass(p, &mask_path), &field_path, progress)?,
-            Stage::Qsmart(p) => stage_qsmart(&mut ctx, &pass(p, &mask_path), &field_path, progress)?,
-            Stage::TwoPassCombination => {
-                let main = pass(EnginePass::Main, &mask_path);
-                stage_two_pass_combine(&mut ctx, &main, &reliable, skip_bgremove, progress)?
-            }
-            // Each map is referenced over the voxels it is defined on. The single-pass map's
-            // support is the main pass's; the combined map takes each voxel from one pass or the
-            // other, so its support is the union of both.
-            Stage::SinglePassReference => {
-                let main = pass(EnginePass::Main, &mask_path);
-                stage_reference(
-                    &mut ctx, &[main.support(skip_bgremove)], &main.chi_raw,
-                    output.singlepass_qsm_path(&qsm_run.key), None, "reference-singlepass", progress,
-                )?
-            }
-            Stage::Reference => {
-                let main = pass(EnginePass::Main, &mask_path);
-                let (supports, chi_raw) = if plan.two_pass {
-                    (vec![main.support(skip_bgremove), reliable.support(skip_bgremove)],
-                     output.two_pass_chi_raw_path(&qsm_run.key))
-                } else {
-                    (vec![main.support(skip_bgremove)], main.chi_raw.clone())
-                };
-                stage_reference(
-                    &mut ctx, &supports, &chi_raw, output.qsm_path(&qsm_run.key),
-                    Some(output.qsm_support_path(&qsm_run.key)), "reference", progress,
-                )?
-            }
-            // SMWI weights by the final, referenced susceptibility map, over the voxels that map
-            // is defined on — outside them χ is 0 by construction, not by measurement.
-            Stage::Smwi => {
-                let support = output.qsm_support_path(&qsm_run.key);
-                let smwi_mask = if support.exists() { support } else { mask_path.clone() };
-                stage_smwi(&mut ctx, &smwi_mask, progress)?
-            }
-            Stage::ChiSeparation => stage_chi_separation(&mut ctx, &mask_path, models, progress)?,
-            Stage::Analysis => stage_analysis(&mut ctx, &dseg_path, progress)?,
-            Stage::OutputSpace => stage_output_space(&mut ctx, progress)?,
+/// `qsmxt run`'s [`StageStore`]: a run's volumes as files under the derivatives directory, named
+/// by [`DerivativeOutputs`], its step cache in the run's state file ([`PipelineState`]), and a
+/// provenance record for every step. The stages the engine does not run yet are run here, from the
+/// same files.
+struct FileStore<'a> {
+    run: &'a QsmRun,
+    /// The run's facts, as the plan was made from them.
+    facts: &'a requirements::ScanFacts,
+    config: &'a PipelineConfig,
+    /// The run's outputs, named in the space they are published in once the grid is known.
+    output: DerivativeOutputs,
+    /// The run's grid, once loaded.
+    meta: Option<RunMetadata>,
+    state: PipelineState,
+    state_path: PathBuf,
+    progress: &'a dyn Fn(&str),
+    /// When the step being computed started, for its provenance.
+    started: Option<Instant>,
+    /// The supplied brain mask, once found.
+    supplied_mask: Option<PathBuf>,
+    /// The mask the stages after motion correction read, once motion correction has run.
+    mask_path: Option<PathBuf>,
+}
+
+impl FileStore<'_> {
+    /// The stage context the runner's own stages take.
+    fn ctx(&mut self) -> StageContext<'_> {
+        StageContext {
+            run: self.run, config: self.config, output: &self.output,
+            meta: self.meta.as_ref().expect("the run's grid is known before any stage runs"),
+            state: &mut self.state, state_path: &self.state_path,
         }
     }
 
-    ctx.state.mark_run_complete(config);
-    ctx.state.save(&state_path)?;
+    /// Where `item` is kept, when it has a place.
+    fn path(&self, item: &Item) -> Option<PathBuf> {
+        let (o, key) = (&self.output, &self.run.key);
+        let echo = |n: usize| self.run.echoes.get(n.checked_sub(1)?);
+        let pass = |p: EnginePass, main: PathBuf, reliable: PathBuf| match p {
+            EnginePass::Main => main,
+            EnginePass::Reliable => reliable,
+        };
+        Some(match *item {
+            Item::AcquiredPhase(n) => echo(n)?.phase_nifti.clone(),
+            Item::AcquiredMagnitude(n) => echo(n)?.magnitude_nifti.clone()?,
+            Item::Phase(n) => o.phase_scaled_path(key, n),
+            Item::Magnitude(n) => o.mag_path(key, n),
+            Item::CorrectedPhase(n) => o.motion_phase_path(key, n),
+            Item::CorrectedMagnitude(n) => o.motion_mag_path(key, n),
+            Item::CombinedMagnitude => o.magnitude_path(key),
+            Item::BrainMask => o.mask_path(key),
+            Item::SuppliedMask => self.supplied_mask.clone()?,
+            Item::CoverageMask => o.motion_coverage_path(key),
+            Item::FieldPpm => o.field_ppm_path(key),
+            Item::TotalFieldHz => o.total_field_path(key),
+            Item::TotalFieldMagnitude => o.total_field_magnitude_path(key),
+            Item::RobustFitReport => robust_fit_report_path(&o.field_ppm_path(key)),
+            Item::LocalField(p) => pass(p, o.local_field_path(key), o.reliable_local_field_path(key)),
+            Item::LocalFieldMask(p) => pass(p, o.bg_mask_path(key), o.reliable_bg_mask_path(key)),
+            Item::RawChi(p) => pass(p, o.chi_raw_path(key), o.reliable_chi_raw_path(key)),
+            Item::ReliableMask => o.two_pass_mask_path(key),
+            Item::QsmartIntermediate(p, name) => o.qsmart_intermediate_path(key, &Stage::Qsmart(p).name(), name)?,
+            Item::CombinedRawChi => o.two_pass_chi_raw_path(key),
+            Item::Chi => o.qsm_path(key),
+            Item::ChiSupport => o.qsm_support_path(key),
+            Item::SinglePassChi => o.singlepass_qsm_path(key),
+            // The run's own segmentation, or the one supplied in its place.
+            Item::Segmentation => {
+                let own = o.dseg_path(key);
+                if own.exists() {
+                    own
+                } else {
+                    let tool = self.config.segmentation.custom_dseg_tool.as_deref()?;
+                    let found = find_custom_derivative(self.run, tool, "*_dseg.nii*", &[])?;
+                    log::info!("Summarising the supplied {}", found.display());
+                    found
+                }
+            }
+        })
+    }
 
-    Ok(())
+    fn existing(&self, item: &Item) -> crate::Result<PathBuf> {
+        self.path(item).ok_or_else(|| QsmxtError::Config(format!("{}: no {item:?} to read", self.run.key)))
+    }
+
+    fn meta(&self) -> &RunMetadata {
+        self.meta.as_ref().expect("the run's grid is known before any output is written")
+    }
+}
+
+impl StageStore for FileStore<'_> {
+    type Error = QsmxtError;
+
+    fn input_identity(&mut self) -> serde_json::Value {
+        serde_json::Value::Array(input_identity(self.run))
+    }
+
+    fn header(&mut self) -> crate::Result<Header> {
+        let first = &self.run.echoes[0];
+        let first_phase = io::read_nifti_file(&first.phase_nifti)
+            .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", first.phase_nifti.display(), e)))?;
+        validate_run_dims(self.run, &first_phase)?;
+        Ok(Header {
+            dims: first_phase.dims, voxel_size: first_phase.voxel_size, affine: first_phase.affine,
+            sidecar: crate::bids::sidecar::read_sidecar(&first.phase_json).ok(),
+        })
+    }
+
+    fn cached_scan(&mut self, key: &str) -> Option<RunMetadata> {
+        // A cache from before the load step was keyed is taken as it stands.
+        if let Some(Some(stored)) = self.state.completed_steps.get("load").map(|r| r.params_hash.as_ref()) {
+            if stored != key {
+                log::info!("Input files or geometry settings changed (obliquity threshold, algorithm, \
+                            motion correction) — recomputing everything");
+                self.state.completed_steps.clear();
+            }
+        }
+        if !self.state.is_step_cached("load") {
+            return None;
+        }
+        self.state.run_metadata.clone()
+    }
+
+    fn record_scan(&mut self, key: &str, meta: &RunMetadata) -> crate::Result<()> {
+        self.state.run_metadata = Some(meta.clone());
+        self.state.mark_completed("load", vec![], Some(key.to_string()));
+        self.state.save(&self.state_path)
+    }
+
+    fn begin(&mut self, meta: &RunMetadata) -> crate::Result<()> {
+        self.meta = Some(meta.clone());
+        restore_working_grid(self.run, &self.output, &mut self.state, &self.state_path)?;
+        // A run left on the axial grid it was resampled to names its outputs in that space (#275).
+        let space = published_space(self.config, meta);
+        if self.state.space.as_deref() != space {
+            // Every output of the last run is under the other names: nothing cached can be found,
+            // and nothing under those names may stay beside the new ones.
+            self.state.remove_recorded_outputs(&self.state_path);
+            self.state.completed_steps.retain(|step, _| step == "load");
+            self.state.space = space.map(str::to_string);
+            self.state.save(&self.state_path)?;
+        }
+        self.output = self.output.in_space(space);
+        Ok(())
+    }
+
+    fn has(&mut self, item: &Item) -> bool {
+        self.path(item).is_some_and(|p| p.exists())
+    }
+
+    fn real(&mut self, item: &Item) -> crate::Result<Vec<f64>> {
+        load_volume(&self.existing(item)?)
+    }
+
+    fn mask(&mut self, item: &Item) -> crate::Result<Vec<u8>> {
+        load_mask(&self.existing(item)?)
+    }
+
+    fn supplied_mask(&mut self) -> Supplied {
+        let tool = self.config.masking.custom_mask_tool.as_deref().unwrap_or_default();
+        let Some(path) = find_custom_mask(self.run, tool) else {
+            let ses = self.run.key.session.as_ref().map(|s| format!("/ses-{}", s)).unwrap_or_default();
+            return Supplied::Missing { searched: format!("sub-{}{}", self.run.key.subject, ses) };
+        };
+        self.supplied_mask = Some(path.clone());
+        let origin = path.display().to_string();
+        match io::read_nifti_file(&path) {
+            Ok(nd) => Supplied::Found { origin, data: nd.data, dims: nd.dims, affine: nd.affine },
+            Err(error) => Supplied::Unreadable { origin, error },
+        }
+    }
+
+    /// The path, which is what earlier releases keyed a step by.
+    fn identity(&mut self, item: &Item) -> serde_json::Value {
+        serde_json::json!(self.path(item).unwrap_or_default().to_string_lossy())
+    }
+
+    fn recorded_key(&mut self, step: &str) -> Option<String> {
+        self.state.completed_steps.get(step).and_then(|r| r.params_hash.clone())
+    }
+
+    fn cached(&mut self, step: &str, key: &str) -> bool {
+        self.state.is_step_cached_with_hash(step, Some(key))
+    }
+
+    fn start(&mut self, _step: &str) {
+        self.started = Some(Instant::now());
+    }
+
+    fn models(&mut self, models: &[&'static str]) -> crate::Result<()> {
+        for id in models {
+            prefetch_weights(id, &self.run.key.to_string())?;
+        }
+        Ok(())
+    }
+
+    fn put(&mut self, item: Item, data: Data<'_>) -> crate::Result<()> {
+        let Some(path) = self.path(&item) else {
+            match item {
+                Item::QsmartIntermediate(_, name) =>
+                    log::warn!("QSMART reported an intermediate QSMxT has no name for ({name}); not saved"),
+                _ => log::warn!("{}: {item:?} has no place among the outputs; not saved", self.run.key),
+            }
+            return Ok(());
+        };
+        match data {
+            Data::Real(v) => save_volume(&path, v, self.meta())?,
+            Data::Mask(m) => save_mask(&path, m, self.meta())?,
+            Data::Json(j) => {
+                let json = serde_json::to_string_pretty(j)
+                    .map_err(|e| QsmxtError::Config(format!("{}: {e}", path.display())))?;
+                std::fs::write(&path, json)?;
+            }
+            Data::Same(source) => {
+                let source = self.existing(&source)?;
+                if let Some(parent) = path.parent() {
+                    std::fs::create_dir_all(parent)?;
+                }
+                std::fs::copy(source, &path)?;
+            }
+        }
+        // The total field is published as a BIDS `fieldmap`, which takes Hz (or rad/s, or T) but
+        // not ppm, paired with a magnitude image for anatomical reference.
+        let echo_time = self.meta().echo_times[0];
+        let described = match item {
+            Item::TotalFieldHz => Some(vec![
+                ("Units", serde_json::json!("Hz")),
+                ("Description", serde_json::json!(
+                    "Total (unwrapped, echo-combined) field: the B0 field offset from the scanner frequency, \
+                     before background-field removal")),
+            ]),
+            Item::TotalFieldMagnitude => Some(vec![
+                ("Description", serde_json::json!(
+                    "Magnitude of the first echo, the anatomical reference for desc-total_fieldmap")),
+                ("EchoTime", serde_json::json!(echo_time)),
+            ]),
+            _ => None,
+        };
+        if let Some(fields) = described {
+            self.annotate(&item, fields.into_iter().map(|(k, v)| (k.to_string(), v)).collect())?;
+        }
+        Ok(())
+    }
+
+    /// Merged into the sidecar's other fields: BIDS-Prov adds `GeneratedBy` to the same file.
+    fn annotate(&mut self, item: &Item, fields: serde_json::Map<String, serde_json::Value>) -> crate::Result<()> {
+        let Some(sidecar) = self.path(item).and_then(|p| crate::bids::entities::sidecar_path(&p)) else { return Ok(()) };
+        let mut obj = read_json_object(&sidecar);
+        obj.extend(fields);
+        if let Some(parent) = sidecar.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        std::fs::write(&sidecar, serde_json::to_string_pretty(&obj)
+            .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
+        Ok(())
+    }
+
+    fn record(&mut self, c: &Completed<'_>) -> crate::Result<()> {
+        let inputs: Vec<PathBuf> = c.inputs.iter().filter_map(|i| self.path(i)).collect();
+        let outputs: Vec<PathBuf> = c.outputs.iter().filter_map(|i| self.path(i)).collect();
+        let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).collect();
+        let start = self.started.take().unwrap_or_else(Instant::now);
+        self.ctx().complete_step_with_outcome(
+            c.step, c.algorithm, c.params.clone(), c.outcome.clone(), &input_refs, outputs, start)
+    }
+
+    fn host(&mut self, step: &Step, _plan: &Plan, _observer: &mut dyn Observer) -> crate::Result<()> {
+        let progress = self.progress;
+        let brain_mask = self.output.mask_path(&self.run.key);
+        // Every stage after masking reads the motion-corrected echoes (when on) and the mask every
+        // echo still covers; the published brain mask stays the one masking made.
+        let mask_path = self.mask_path.clone().unwrap_or_else(|| brain_mask.clone());
+        let dseg_path = self.output.dseg_path(&self.run.key);
+        let support = self.output.qsm_support_path(&self.run.key);
+        let (facts, models) = (self.facts, step.models.as_slice());
+        let mut ctx = self.ctx();
+        match step.stage {
+            Stage::ScalePhase => stage_scale_phase(&mut ctx, progress),
+            Stage::Motion => {
+                let mask = stage_motion(&mut ctx, &brain_mask, progress)?;
+                self.mask_path = Some(mask);
+                Ok(())
+            }
+            Stage::Swi => stage_swi(&mut ctx, progress),
+            Stage::Segmentation => stage_segmentation(&mut ctx, &dseg_path, models, progress),
+            Stage::Relaxometry => stage_t2star_r2star(&mut ctx, &mask_path, progress),
+            Stage::R2 => stage_r2_r2prime(&mut ctx, &mask_path, facts, models, progress),
+            // SMWI weights by the final, referenced susceptibility map, over the voxels that map
+            // is defined on — outside them χ is 0 by construction, not by measurement.
+            Stage::Smwi => stage_smwi(&mut ctx, if support.exists() { &support } else { &mask_path }, progress),
+            Stage::ChiSeparation => stage_chi_separation(&mut ctx, &mask_path, models, progress),
+            // Last of the map-producing stages: it summarises every map on disk, so it has to run
+            // after all of them — chi-separation included.
+            Stage::Analysis => stage_analysis(&mut ctx, &dseg_path, progress),
+            Stage::OutputSpace => stage_output_space(&mut ctx, progress),
+            stage => Err(QsmxtError::Config(format!("the {} step is the engine's to run", stage.name()))),
+        }
+    }
+
+    fn finish(&mut self) -> crate::Result<()> {
+        self.state.mark_run_complete(self.config);
+        self.state.save(&self.state_path)
+    }
+}
+
+/// `qsmxt run`'s [`Observer`]: each step's status line through the executor's progress callback,
+/// a progress bar for its iterations, and the log.
+struct RunObserver<'a> {
+    key: String,
+    progress: &'a dyn Fn(&str),
+    bar: Option<Box<dyn FnMut(usize, usize)>>,
+    started: Option<Instant>,
+}
+
+impl Observer for RunObserver<'_> {
+    fn stage(&mut self, step: &str, algorithm: Option<&str>, event: StageEvent<'_>) {
+        match event {
+            StageEvent::Started(what) => {
+                (self.progress)(what);
+                self.started = Some(Instant::now());
+                self.bar = Some(iter_progress_bar(&self.key, algorithm.unwrap_or(step)).0);
+            }
+            StageEvent::Cached => {}
+            StageEvent::Finished(label) => {
+                self.bar = None;
+                if let Some(t) = self.started.take() {
+                    log_step_done(label, t);
+                }
+            }
+        }
+    }
+
+    fn progress(&mut self, done: usize, total: usize) {
+        if let Some(bar) = self.bar.as_mut() {
+            bar(done, total);
+        }
+    }
+
+    fn log(&mut self, level: log::Level, message: &str) {
+        log::log!(level, "{message}");
+    }
 }
 
 // ─── Stage functions ───
@@ -772,27 +991,6 @@ fn write_on_grid(path: &Path, data: &[f64], dims: (usize, usize, usize), affine:
     write_volume(path, data, dims, voxel_size, affine)
 }
 
-/// The grid and B0 direction the pipeline will reconstruct on: the engine's decision
-/// ([`qsmxt_engine::scan::resolve_geometry`]) from the first phase image's header.
-fn resolve_geometry(
-    first_phase: &NiftiData,
-    facts: &requirements::ScanFacts,
-    config: &PipelineConfig,
-) -> RunMetadata {
-    qsmxt_engine::scan::resolve_geometry(
-        first_phase.dims, first_phase.voxel_size, first_phase.affine, facts, config,
-    )
-}
-
-/// Refuse a gapped acquisition before any work ([`qsmxt_engine::scan::check_slice_gap`]), from
-/// the first echo's sidecar. Returns the geometry to hand qsm-core (on the working grid).
-fn check_slice_gap(
-    run: &QsmRun, first_phase: &NiftiData, meta: &RunMetadata, config: &PipelineConfig,
-) -> crate::Result<Option<(f64, usize)>> {
-    let Some(sc) = crate::bids::sidecar::read_sidecar(&run.echoes[0].phase_json).ok() else { return Ok(None) };
-    Ok(qsmxt_engine::scan::check_slice_gap(&sc, first_phase.dims, first_phase.voxel_size, meta, config)?)
-}
-
 /// Every input file of a run — echoes, sidecars, uncombined coils, the MESE — by path, size and
 /// modification time.
 fn input_identity(run: &QsmRun) -> Vec<serde_json::Value> {
@@ -813,68 +1011,6 @@ fn input_identity(run: &QsmRun) -> Vec<serde_json::Value> {
             .map(|d| d.as_nanos().to_string());
         serde_json::json!([p.display().to_string(), meta.map(|m| m.len()), modified])
     }).collect()
-}
-
-fn stage_load(
-    qsm_run: &QsmRun,
-    config: &PipelineConfig,
-    facts: &requirements::ScanFacts,
-    state: &mut PipelineState,
-    state_path: &Path,
-    progress: &dyn Fn(&str),
-) -> crate::Result<RunMetadata> {
-    // The grid every other step works on is decided here, so a setting that changes it leaves
-    // nothing cached valid. A cache from before this was recorded is taken as it stands.
-    let geometry = serde_json::json!({
-        "axial_resampling": config.pipeline.axial_resampling,
-        "obliquity_threshold": config.pipeline.obliquity_threshold,
-        "ignore_slice_gap": config.pipeline.ignore_slice_gap,
-        // Everything after masking reads the motion-corrected echoes, and no later step's cache
-        // key says so; changing these recomputes the run, as a geometry change does.
-        "motion_correction": config.motion_correction,
-        "registration": if config.motion_correction.enabled { Some(&config.registration) } else { None },
-        "axial_only": qsmxt_engine::bridge::axial_only_algorithms(
-            config, qsmxt_engine::scan::orientation_facts(facts, config)),
-        // Replacing an input in place (a re-export, a corrected sidecar) changes everything
-        // computed from it; nothing else would notice.
-        "inputs": input_identity(qsm_run),
-    });
-    let geometry_hash = crate::pipeline::graph::step_params_hash(None, &geometry);
-    if let Some(Some(stored)) = state.completed_steps.get("load").map(|r| r.params_hash.as_ref()) {
-        if *stored != geometry_hash {
-            log::info!("Input files or geometry settings changed (obliquity threshold, algorithm, \
-                        motion correction) — recomputing everything");
-            state.completed_steps.clear();
-        }
-    }
-    if !state.is_step_cached("load") {
-        let t = Instant::now();
-        progress("Loading NIfTI metadata");
-        let first_phase = io::read_nifti_file(&qsm_run.echoes[0].phase_nifti)
-            .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", qsm_run.echoes[0].phase_nifti.display(), e)))?;
-        validate_run_dims(qsm_run, &first_phase)?;
-
-        let mut meta = resolve_geometry(&first_phase, facts, config);
-        meta.slice_geometry = check_slice_gap(qsm_run, &first_phase, &meta, config)?;
-        log::info!(
-            "Volume: {}x{}x{}, {:.2}x{:.2}x{:.2}mm, {} echoes{}, B0={:.1}T, TEs={:?}s",
-            first_phase.dims.0, first_phase.dims.1, first_phase.dims.2,
-            first_phase.voxel_size.0, first_phase.voxel_size.1, first_phase.voxel_size.2,
-            meta.n_echoes,
-            qsm_run.coils.as_ref().map(|c| format!(" x {} uncombined coils", c.len())).unwrap_or_default(),
-            meta.field_strength, meta.echo_times,
-        );
-        state.run_metadata = Some(meta.clone());
-        state.mark_completed("load", vec![], Some(geometry_hash));
-        state.save(state_path)?;
-        log_step_done("Load", t);
-        Ok(meta)
-    } else {
-        log::info!("Skipping load (cached)");
-        state.run_metadata.clone().ok_or_else(|| {
-            QsmxtError::Config("Cached state missing run metadata".to_string())
-        })
-    }
 }
 
 /// Retrospective motion correction: rigidly co-register every echo onto the reference echo
@@ -1087,84 +1223,40 @@ fn slice_chopping_json(c: &qsm_core::complex::SliceChopping) -> serde_json::Valu
     })
 }
 
+/// `scale_phase` for the input the engine does not read yet: uncombined coils
+/// ([`stage_combine_coils`]) and real/imaginary parts. Real/imaginary input becomes magnitude and
+/// phase ([`convert_real_imaginary`]) before anything else sees it, and each converted echo (already
+/// in radians) is brought onto the working grid as the engine's phase scaling does.
 fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
     if ctx.run.coils.is_some() {
         return stage_combine_coils(ctx, progress);
     }
-    let complex = ctx.run.echoes[0].imaginary_nifti.is_some();
     // The sign convention follows from the sidecar, so it is a parameter (and keys the cache).
-    let negate_phase = complex && negates_real_imaginary_phase(
+    let negate_phase = negates_real_imaginary_phase(
         crate::bids::sidecar::read_sidecar(&ctx.run.echoes[0].phase_json)?.manufacturer.as_deref());
-    let params = qsmxt_engine::stages::phase::params(ctx.meta, complex.then_some(negate_phase));
+    let params = qsmxt_engine::stages::phase::params(ctx.meta, Some(negate_phase));
     if ctx.is_cached_with_params("scale_phase", None, &params) {
         log::info!("Skipping scale_phase (cached)");
         return Ok(());
     }
     let t = Instant::now();
-    // Real/imaginary input becomes magnitude and phase before anything else sees it.
-    let converted = if complex {
-        progress("Converting real/imaginary to magnitude/phase");
-        Some(convert_real_imaginary(ctx, negate_phase)?)
-    } else {
-        None
-    };
-    if ctx.meta.source_geometry.is_some() {
-        progress("Resampling to axial + rescaling phase");
-    } else {
-        progress("Rescaling phase to radians");
-    }
-    let outcome = converted.as_ref().map(|c| ("real_imaginary_conversion", slice_chopping_json(&c.chopping)));
-    let mut converted = converted.map(|c| c.phases.into_iter().zip(c.magnitudes));
+    progress("Converting real/imaginary to magnitude/phase");
+    let converted = convert_real_imaginary(ctx, negate_phase)?;
+    let resampled = ctx.meta.source_geometry.is_some();
+    progress(if resampled { "Resampling to axial + rescaling phase" } else { "Rescaling phase to radians" });
+    let outcome = Some(("real_imaginary_conversion", slice_chopping_json(&converted.chopping)));
     let mut phase_paths = Vec::new();
     let mut mag_paths = Vec::new();
-
-    // Each echo is read, brought onto the working grid in radians and written before the next is
-    // read. Converted echoes are already in radians.
-    let resampled = ctx.meta.source_geometry.is_some();
-    for (i, echo) in ctx.run.echoes.iter().enumerate() {
-        let (phase, magnitude, in_radians) = match converted.as_mut() {
-            Some(c) => {
-                let (phase, mag) = c.next().expect("one converted echo per echo");
-                (phase, Some(mag), true)
-            }
-            None => {
-                let phase = io::read_nifti_file(&echo.phase_nifti)
-                    .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?
-                    .data;
-                // Only resampling reads the magnitude: otherwise the file is copied as it is.
-                let mag = match echo.magnitude_nifti.as_ref().filter(|_| resampled) {
-                    Some(p) => Some(io::read_nifti_file(p)
-                        .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", p.display(), e)))?
-                        .data),
-                    None => None,
-                };
-                (phase, mag, false)
-            }
-        };
-        let out = qsmxt_engine::stages::phase::working_echo(phase, magnitude, in_radians, ctx.meta);
+    for (i, (phase, mag)) in converted.phases.into_iter().zip(converted.magnitudes).enumerate() {
+        let out = qsmxt_engine::stages::phase::working_echo(phase, Some(mag), true, ctx.meta);
         let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
         save_volume(&p_path, &out.phase, ctx.meta)?;
         phase_paths.push(p_path);
-        // A resampled run writes the magnitude it resampled with the phase; a converted one the
-        // magnitude it converted.
-        if let (Some(mag), true) = (&out.magnitude, (resampled && ctx.run.has_magnitude) || (!resampled && complex)) {
+        // The magnitude it converted, resampled with the phase when the run is resampled.
+        if let (Some(mag), true) = (&out.magnitude, !resampled || ctx.run.has_magnitude) {
             let m_path = ctx.output.mag_path(&ctx.run.key, i + 1);
             save_volume(&m_path, mag, ctx.meta)?;
             mag_paths.push(m_path);
-        }
-    }
-
-    // Raw (uncorrected) per-echo magnitudes as they are, for MCPC-3D-S, linear fit and ROMEO.
-    if !resampled && !complex && ctx.run.has_magnitude {
-        for (i, echo) in ctx.run.echoes.iter().enumerate() {
-            if let Some(ref mag_path) = echo.magnitude_nifti {
-                let out_path = ctx.output.mag_path(&ctx.run.key, i + 1);
-                if let Some(parent) = out_path.parent() {
-                    std::fs::create_dir_all(parent)?;
-                }
-                std::fs::copy(mag_path, &out_path)?;
-                mag_paths.push(out_path);
-            }
         }
     }
 
@@ -1175,7 +1267,7 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
         .collect();
     let input_refs: Vec<&Path> = input_paths.iter().map(|p| p.as_path()).collect();
     ctx.complete_step_with_outcome("scale_phase", None, params, outcome, &input_refs, all_paths, t)?;
-    log_step_done(if ctx.meta.source_geometry.is_some() { "Resample + rescale phase" } else { "Rescale phase" }, t);
+    log_step_done(if resampled { "Resample + rescale phase" } else { "Rescale phase" }, t);
     Ok(())
 }
 
@@ -1307,49 +1399,6 @@ fn stage_combine_coils(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate
     Ok(())
 }
 
-fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let mag_params = qsmxt_engine::stages::magnitude::params(ctx.config);
-    if ctx.is_cached_with_params("magnitude", Some("rss"), &mag_params) {
-        log::info!("Skipping magnitude (cached)");
-        return Ok(());
-    }
-    if !ctx.run.has_magnitude {
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress(if ctx.config.masking.inhomogeneity_correction {
-        "Computing RSS-combined magnitude with inhomogeneity correction"
-    } else {
-        "Computing RSS-combined magnitude"
-    });
-
-    // Load raw per-echo magnitudes
-    let mut mag_slices: Vec<Vec<f64>> = Vec::new();
-    for i in 0..ctx.meta.n_echoes {
-        let m_path = ctx.output.mag_path(&ctx.run.key, i + 1);
-        if m_path.exists() {
-            mag_slices.push(load_volume(&m_path)?);
-        } else if let Some(ref src) = ctx.run.echoes[i].magnitude_nifti {
-            let nifti = io::read_nifti_file(src)
-                .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", src.display(), e)))?;
-            mag_slices.push(nifti.data);
-        }
-    }
-
-    if !mag_slices.is_empty() {
-        let refs: Vec<&[f64]> = mag_slices.iter().map(|v| v.as_slice()).collect();
-        let combined = qsmxt_engine::stages::magnitude::combined_magnitude(&refs, ctx.meta, ctx.config)?;
-
-        let combined_path = ctx.output.magnitude_path(&ctx.run.key);
-        save_volume(&combined_path, &combined, ctx.meta)?;
-        let mag_inputs: Vec<PathBuf> = (0..ctx.meta.n_echoes).map(|i| ctx.output.mag_path(&ctx.run.key, i + 1)).collect();
-        let input_refs: Vec<&Path> = mag_inputs.iter().map(|p| p.as_path()).collect();
-        ctx.complete_step("magnitude", Some("rss"), mag_params, &input_refs, vec![combined_path], t)?;
-    }
-    log_step_done("RSS magnitude", t);
-    Ok(())
-}
-
 /// Locate a bring-your-own derivative under `<bids>/derivatives/<tool>/sub-*/[ses-*/]anat/<glob>`
 /// for this run. `tool == "*"` searches every derivatives dir alphabetically; within a tool the
 /// first matching file (alphabetical) wins. Any candidate whose name contains one of `exclude` is
@@ -1415,125 +1464,6 @@ pub(crate) fn find_custom_derivative(
 /// coverage (`_desc-r2prime_mask.nii`), which is the brain mask cut to the MESE's field of view.
 pub(crate) fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
     find_custom_derivative(run, tool, "*_mask.nii*", &["_desc-reliable_", "_desc-qsm_", "_desc-r2prime_"])
-}
-
-/// `models` are the deep-learning models the plan says the recipe runs.
-fn stage_mask(
-    ctx: &mut StageContext, mask_path: &Path, models: &[&'static str], progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    let mask_params = qsmxt_engine::stages::mask::params(ctx.config);
-    if ctx.is_cached_with_params("mask", None, &mask_params) {
-        log::info!("Skipping mask (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress("Creating mask");
-
-    // Prefer a bring-your-own mask from BIDS derivatives, if requested and available. One that
-    // cannot be used falls back to the recipe, whose models the plan did not list.
-    let mut models = models.to_vec();
-    if let Some(tool) = ctx.config.masking.custom_mask_tool.clone() {
-        if let Some(cm_path) = find_custom_mask(ctx.run, &tool) {
-            match io::read_nifti_file(&cm_path) {
-                Ok(nd) => {
-                    let conformed = qsmxt_engine::stages::mask::conform_custom_mask(&nd.data, nd.dims, &nd.affine, ctx.meta);
-                    if let Some(mask_u8) = conformed {
-                        log::info!("Using custom mask from {}", cm_path.display());
-                        save_mask(mask_path, &mask_u8, ctx.meta)?;
-                        ctx.complete_step("mask", None, mask_params, &[cm_path.as_path()],
-                                          vec![mask_path.to_path_buf()], t)?;
-                        log_step_done("Mask (custom)", t);
-                        return Ok(());
-                    }
-                    log::warn!("custom mask {} could not be conformed to the working grid — computing instead",
-                               cm_path.display());
-                }
-                Err(e) => log::warn!("could not read custom mask {} ({}) — computing instead", cm_path.display(), e),
-            }
-            models = qsmxt_engine::stages::mask::model_ids(&ctx.config.masking.sections, ctx.config);
-        } else {
-            let ses_str = ctx.run.key.session.as_ref().map(|s| format!("/ses-{}", s)).unwrap_or_default();
-            log::info!("no custom mask under derivatives (tool: {}) for sub-{}{} — computing",
-                       tool, ctx.run.key.subject, ses_str);
-        }
-    }
-
-    log::info!("Creating mask ({} section(s), combined with {})",
-               ctx.config.masking.sections.len(), ctx.config.masking.combine);
-
-    let working_mask = build_mask_from_sections(ctx, &ctx.config.masking.sections.clone(), &models)?;
-    save_mask(mask_path, &working_mask, ctx.meta)?;
-    let mag_paths: Vec<PathBuf> = (1..=ctx.meta.n_echoes).map(|e| ctx.output.mag_path(&ctx.run.key, e))
-        .filter(|p| p.exists()).collect();
-    let mag_refs: Vec<&Path> = mag_paths.iter().map(|p| p.as_path()).collect();
-    ctx.complete_step("mask", None, mask_params, &mag_refs, vec![mask_path.to_path_buf()], t)?;
-    log_step_done("Mask creation", t);
-    Ok(())
-}
-
-/// Load what masking reads — every echo's phase, and every echo's magnitude (none for a
-/// phase-only run) — and build a mask from `sections` ([`qsmxt_engine::stages::mask::build_mask`]),
-/// with the weights of the deep-learning `models` it runs fetched first. Shared by the main mask
-/// and the two-pass reliable mask.
-fn build_mask_from_sections(
-    ctx: &mut StageContext, sections: &[MaskSection], models: &[&'static str],
-) -> crate::Result<Vec<u8>> {
-    let mut phases: Vec<Vec<f64>> = Vec::new();
-    for i in 0..ctx.meta.n_echoes {
-        let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
-        if p_path.exists() {
-            phases.push(load_volume(&p_path)?);
-        }
-    }
-    let magnitudes = mask_echo_magnitudes(ctx)?;
-
-    // Deep-learning mask ops (HD-BET): fetch the weights first, with a progress bar — or fail
-    // clearly on a build without the `dl` feature.
-    prefetch_models(ctx, models)?;
-
-    let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
-    Ok(qsmxt_engine::stages::mask::build_mask(sections, ctx.config, &phase_refs, magnitudes, ctx.meta)?)
-}
-
-/// Build the reliable-phase mask of a two-pass run, restricted to the main mask
-/// ([`qsmxt_engine::stages::mask::reliable_mask`]).
-fn stage_two_pass_mask(
-    ctx: &mut StageContext, main_mask: &Path, out_path: &Path, models: &[&'static str],
-    progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    let sections = ctx.config.masking.resolved_two_pass_sections();
-    let params = qsmxt_engine::stages::mask::reliable_params(ctx.config);
-    let step = format!("mask{}", crate::pipeline::graph::RELIABLE_SUFFIX);
-    if ctx.is_cached_with_params(&step, None, &params) {
-        log::info!("Skipping reliable-phase mask (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress("Creating the reliable-phase mask");
-    log::info!("Creating the reliable-phase mask ({} section(s))", sections.len());
-
-    let reliable = build_mask_from_sections(ctx, &sections, models)?;
-    let main = load_mask(main_mask)?;
-    let restricted = qsmxt_engine::stages::mask::reliable_mask(&reliable, &main)?;
-
-    save_mask(out_path, &restricted, ctx.meta)?;
-    ctx.complete_step(&step, None, params, &[main_mask], vec![out_path.to_path_buf()], t)?;
-    log_step_done("Reliable-phase mask", t);
-    Ok(())
-}
-
-/// Every echo's magnitude on the working grid, for masking, as stored (masking corrects each for
-/// inhomogeneity itself). Empty for a phase-only run.
-fn mask_echo_magnitudes(ctx: &StageContext) -> crate::Result<Vec<Vec<f64>>> {
-    let mut out = Vec::with_capacity(ctx.meta.n_echoes);
-    for e in 1..=ctx.meta.n_echoes {
-        let p = ctx.output.mag_path(&ctx.run.key, e);
-        if !p.exists() {
-            return Ok(Vec::new());
-        }
-        out.push(load_volume(&p)?);
-    }
-    Ok(out)
 }
 
 /// CLEAR-SWI over every echo.
@@ -2718,479 +2648,6 @@ fn robust_fit_report_path(field_path: &Path) -> PathBuf {
     field_path.with_file_name(format!("{stem}_robustfit.json"))
 }
 
-fn stage_unwrap(
-    ctx: &mut StageContext, mask_path: &Path, field_path: &Path, progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    let unwrap_alg = qsmxt_engine::stages::field::algorithm(ctx.config, ctx.meta);
-    let unwrap_params = qsmxt_engine::stages::field::params(ctx.config, ctx.meta);
-    if ctx.is_cached_with_params("unwrap", Some(&unwrap_alg), &unwrap_params) {
-        log::info!("Skipping unwrap (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress("Phase unwrapping / echo combination");
-    let mut phases: Vec<Vec<f64>> = Vec::new();
-    for i in 0..ctx.meta.n_echoes {
-        let p = io::read_nifti_file(&ctx.echo_phase_path(i + 1))
-            .map_err(|e| QsmxtError::NiftiIo(format!("echo {}: {}", i + 1, e)))?;
-        phases.push(p.data);
-    }
-    let mask = load_mask(mask_path)?;
-
-    // Load per-echo magnitudes
-    let mut magnitudes: Vec<Vec<f64>> = Vec::new();
-    for i in 0..ctx.meta.n_echoes {
-        let m_path = ctx.echo_mag_path(i + 1);
-        if m_path.exists() {
-            magnitudes.push(load_volume(&m_path)?);
-        }
-    }
-
-    let phase_slices: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
-    let mag_slices: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
-    let field = qsmxt_engine::stages::field::map_field(&phase_slices, &mag_slices, &mask, ctx.meta, ctx.config)?;
-
-    save_volume(field_path, &field.b0_field_ppm, ctx.meta)?;
-    // Published as a BIDS `fieldmap`, which takes Hz (or rad/s, or T) but not ppm.
-    let total_field = ctx.output.total_field_path(&ctx.run.key);
-    save_volume(&total_field, &field.total_field_hz, ctx.meta)?;
-    if let Some(sidecar) = crate::bids::entities::sidecar_path(&total_field) {
-        let mut obj = read_json_object(&sidecar);
-        obj.insert("Units".into(), "Hz".into());
-        obj.insert("Description".into(),
-            "Total (unwrapped, echo-combined) field: the B0 field offset from the scanner frequency, \
-             before background-field removal".into());
-        std::fs::write(&sidecar, serde_json::to_string_pretty(&serde_json::Value::Object(obj))
-            .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
-    }
-    let mut outputs = vec![field_path.to_path_buf(), total_field];
-    // BIDS pairs a `fieldmap` with a magnitude image for anatomical reference: the first echo's,
-    // the one with the most signal.
-    if let Some(first) = magnitudes.first() {
-        let mag_path = ctx.output.total_field_magnitude_path(&ctx.run.key);
-        save_volume(&mag_path, first, ctx.meta)?;
-        if let Some(sidecar) = crate::bids::entities::sidecar_path(&mag_path) {
-            let mut obj = read_json_object(&sidecar);
-            obj.insert("Description".into(),
-                "Magnitude of the first echo, the anatomical reference for desc-total_fieldmap".into());
-            obj.insert("EchoTime".into(), serde_json::json!(ctx.meta.echo_times[0]));
-            std::fs::write(&sidecar, serde_json::to_string_pretty(&serde_json::Value::Object(obj))
-                .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
-        }
-        outputs.push(mag_path);
-    }
-    if let Some(report) = &field.robust_fit_report {
-        let json_path = robust_fit_report_path(field_path);
-        let json = serde_json::to_string_pretty(report)
-            .map_err(|e| QsmxtError::Config(format!("robust fit report: {e}")))?;
-        std::fs::write(&json_path, json)?;
-        outputs.push(json_path);
-    }
-    let phase_inputs: Vec<PathBuf> = (0..ctx.meta.n_echoes).map(|i| ctx.echo_phase_path(i + 1)).collect();
-    let input_refs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).chain(std::iter::once(mask_path)).collect();
-    ctx.complete_step("unwrap", Some(&unwrap_alg), unwrap_params, &input_refs, outputs, t)?;
-    log_step_done("Phase unwrapping", t);
-    Ok(())
-}
-
-/// Per-echo phase + magnitude volumes and the phase input paths (for cache provenance).
-type PhaseEchoes = (Vec<Vec<f64>>, Vec<Vec<f64>>, Vec<PathBuf>);
-
-/// Load per-echo wrapped (offset-scaled) phase and, when present, magnitude volumes — the
-/// raw inputs for the phase-domain deep-learning models (iQSM / iQSM+ / iQFM). Returns
-/// `(phases, magnitudes, phase_input_paths)`; `magnitudes` may be empty (→ uniform weights).
-fn load_phase_echoes(ctx: &StageContext) -> crate::Result<PhaseEchoes> {
-    let mut phases = Vec::new();
-    let mut phase_inputs = Vec::new();
-    for i in 0..ctx.meta.n_echoes {
-        let p = ctx.echo_phase_path(i + 1);
-        phases.push(load_volume(&p)?);
-        phase_inputs.push(p);
-    }
-    let mut magnitudes = Vec::new();
-    for i in 0..ctx.meta.n_echoes {
-        let m = ctx.echo_mag_path(i + 1);
-        if m.exists() {
-            magnitudes.push(load_volume(&m)?);
-        }
-    }
-    Ok((phases, magnitudes, phase_inputs))
-}
-
-/// One reconstruction pass: the mask it runs on, where its outputs go, and how its steps are
-/// named in the pipeline state.
-///
-/// Two-pass runs background removal and dipole inversion twice, so neither the step names nor the
-/// intermediate paths can be derived from the run alone — a second pass writing to the first's
-/// `bgremove/` outputs would corrupt the very map it is supposed to be compared against. Every
-/// stage from background removal to inversion takes one of these instead.
-struct Pass {
-    /// Appended to each step name; empty for the main pass.
-    suffix: &'static str,
-    mask: PathBuf,
-    local_field: PathBuf,
-    bg_mask: PathBuf,
-    chi_raw: PathBuf,
-}
-
-impl Pass {
-    /// The ordinary, single-pass reconstruction — also the "filled mask" pass of a two-pass run.
-    ///
-    /// `mask` is the mask the run's field map was computed on: the brain mask, or with motion
-    /// correction the part of it every echo still covers. Background removal and inversion have to
-    /// stay inside it — outside, the field was never computed.
-    fn main(output: &DerivativeOutputs, key: &AcquisitionKey, mask: &Path) -> Self {
-        Self {
-            suffix: "",
-            mask: mask.to_path_buf(),
-            local_field: output.local_field_path(key),
-            bg_mask: output.bg_mask_path(key),
-            chi_raw: output.chi_raw_path(key),
-        }
-    }
-
-    /// The reliable pass of a two-pass run: the mask with its holes left unfilled.
-    fn reliable(output: &DerivativeOutputs, key: &AcquisitionKey) -> Self {
-        Self {
-            suffix: crate::pipeline::graph::RELIABLE_SUFFIX,
-            mask: output.two_pass_mask_path(key),
-            local_field: output.reliable_local_field_path(key),
-            bg_mask: output.reliable_bg_mask_path(key),
-            chi_raw: output.reliable_chi_raw_path(key),
-        }
-    }
-
-    /// This pass's name for a pipeline step.
-    fn step(&self, name: &str) -> String {
-        format!("{name}{}", self.suffix)
-    }
-
-    /// How this pass is named in progress messages and the log. Empty for a single-pass run, so
-    /// nothing changes for the runs that are not two-pass; without it the two passes' background
-    /// removal and inversion lines are indistinguishable in the log.
-    fn label(&self) -> &'static str {
-        if self.suffix.is_empty() { "" } else { " (reliable pass)" }
-    }
-
-    /// Where this pass's susceptibility map is actually defined: the eroded mask background
-    /// removal produced, or the brain mask when the inversion did its own background removal.
-    fn support(&self, skip_bgremove: bool) -> &Path {
-        if skip_bgremove { &self.mask } else { &self.bg_mask }
-    }
-}
-
-/// iQSM / iQSM+ end-to-end reconstruction from wrapped **phase**
-/// ([`qsmxt_engine::stages::inversion::iqsm`]). Writes the raw susceptibility map; referencing is
-/// applied downstream by [`stage_reference`].
-fn stage_iqsm(
-    ctx: &mut StageContext, pass: &Pass, models: &[&'static str], progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    let Some(alg) = qsmxt_engine::stages::inversion::iqsm_algorithm(ctx.config) else {
-        return Err(QsmxtError::Config(format!("iQSM stage run for --qsm-algorithm {}", ctx.config.inversion.algorithm)));
-    };
-    let label = if alg == "iqsm-plus" { "iQSM+" } else { "iQSM" };
-    let (mask_path, chi_raw_path) = (pass.mask.as_path(), pass.chi_raw.clone());
-    let invert_step = pass.step("invert");
-    let params = qsmxt_engine::stages::inversion::iqsm_params(ctx.meta);
-    if ctx.is_cached_with_params(&invert_step, Some(alg), &params) {
-        log::info!("Skipping {} (cached)", alg);
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress(&format!("iQSM reconstruction{}", pass.label()));
-    let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
-    let mask = load_mask(mask_path)?;
-    let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
-    let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
-    prefetch_models(ctx, models)?;
-    let chi = qsmxt_engine::stages::inversion::iqsm(&phase_refs, &mag_refs, &mask, ctx.meta, ctx.config)?;
-    save_volume(&chi_raw_path, &chi, ctx.meta)?;
-    let mut inputs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).collect();
-    inputs.push(mask_path);
-    ctx.complete_step(&invert_step, Some(alg), params, &inputs, vec![chi_raw_path], t)?;
-    log_step_done(&format!("{}{}", label, pass.label()), t);
-    Ok(())
-}
-
-fn stage_tgv(
-    ctx: &mut StageContext, pass: &Pass, field_path: &Path, progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    use qsmxt_engine::stages::inversion::{tgv_source, TgvSource};
-    let (mask_path, chi_raw_path) = (pass.mask.as_path(), pass.chi_raw.clone());
-    let tgv_step = pass.step("tgv");
-    let tgv_params = qsmxt_engine::stages::inversion::tgv_params(ctx.config, ctx.meta);
-    if ctx.is_cached_with_params(&tgv_step, Some("tgv"), &tgv_params) {
-        log::info!("Skipping tgv (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress(&format!("TGV-QSM reconstruction{}", pass.label()));
-    let mask = load_mask(mask_path)?;
-    // Multi-echo: the combined B0 field map, in ppm. Single echo: echo 1's wrapped phase.
-    let data = match tgv_source(ctx.meta) {
-        TgvSource::FieldPpm => load_volume(field_path)?,
-        TgvSource::WrappedPhase => load_volume(&ctx.echo_phase_path(1))?,
-    };
-    let chi = qsmxt_engine::stages::inversion::tgv(&data, &mask, ctx.meta, ctx.config)?;
-
-    save_volume(&chi_raw_path, &chi, ctx.meta)?;
-    ctx.complete_step(&tgv_step, Some("tgv"), tgv_params, &[mask_path, field_path], vec![chi_raw_path], t)?;
-    log_step_done(&format!("TGV-QSM{}", pass.label()), t);
-    Ok(())
-}
-
-fn stage_qsmart(
-    ctx: &mut StageContext, pass: &Pass, field_path: &Path, progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    let (mask_path, chi_raw_path) = (pass.mask.as_path(), pass.chi_raw.clone());
-    let qsmart_step = pass.step("qsmart");
-    let qsmart_params = qsmxt_engine::stages::qsmart::params(ctx.config);
-    if ctx.is_cached_with_params(&qsmart_step, Some("qsmart"), &qsmart_params) {
-        log::info!("Skipping qsmart (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress("QSMART reconstruction");
-    let field_ppm = load_volume(field_path)?;
-    let mask = load_mask(mask_path)?;
-
-    // Combined magnitude drives vasculature detection (and MEDI edge weighting if used).
-    let mag_combined_path = ctx.output.magnitude_path(&ctx.run.key);
-    let magnitude: Option<Vec<f64>> = if mag_combined_path.exists() {
-        Some(load_volume(&mag_combined_path)?)
-    } else {
-        None
-    };
-
-    let mut observer = StageProgress::new(&ctx.run.key.to_string(), "QSMART");
-    let qsmxt_engine::stages::qsmart::Qsmart { chi, intermediates } = qsmxt_engine::stages::qsmart::qsmart(
-        &field_ppm, &mask, magnitude.as_deref(), ctx.meta, ctx.config, &mut observer,
-    )?;
-    // QSMART's intermediates (its vessel mask, and each stage's local field and susceptibility
-    // map) go into the step's workflow directory, so they are kept, and cleaned, like every other
-    // intermediate.
-    let mut written = Vec::new();
-    for (name, volume) in intermediates {
-        let Some(path) = ctx.output.qsmart_intermediate_path(&ctx.run.key, &qsmart_step, name) else {
-            log::warn!("QSMART reported an intermediate QSMxT has no name for ({name}); not saved");
-            continue;
-        };
-        match volume {
-            VolumeData::Real(data) => save_volume(&path, &data, ctx.meta)?,
-            VolumeData::Mask(mask) => save_mask(&path, &mask, ctx.meta)?,
-        }
-        written.push(path);
-    }
-
-    save_volume(&chi_raw_path, &chi, ctx.meta)?;
-    let mut outputs = vec![chi_raw_path];
-    outputs.extend(written);
-    ctx.complete_step(&qsmart_step, Some("qsmart"), qsmart_params, &[mask_path, field_path], outputs, t)?;
-    log_step_done(&format!("QSMART{}", pass.label()), t);
-    Ok(())
-}
-
-/// Background-field removal for one pass: the local field and the mask it is defined on, from
-/// the total field — or, for iQFM, straight from the echoes' wrapped phase (joint unwrapping and
-/// removal). `models` are the deep-learning models the plan says it runs (BFRnet, iQFM).
-fn stage_bgremove(
-    ctx: &mut StageContext, pass: &Pass, field_path: &Path, models: &[&'static str],
-    progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    let mask_path = pass.mask.as_path();
-    let bgremove_step = pass.step("bgremove");
-    let is_iqfm = ctx.config.bg_removal.algorithm == BfAlgorithm::Iqfm;
-    let local_field_path = pass.local_field.clone();
-    let bg_mask_path = pass.bg_mask.clone();
-    let bf_name = format!("{}", ctx.config.bg_removal.algorithm);
-    let bf_params = qsmxt_engine::stages::background::params(ctx.config);
-    if ctx.is_cached_with_params(&bgremove_step, Some(&bf_name), &bf_params) {
-        log::info!("{}", if is_iqfm { "Skipping iQFM field preparation (cached)" } else { "Skipping bgremove (cached)" });
-        return Ok(());
-    }
-    let t = Instant::now();
-    if is_iqfm {
-        progress(&format!("iQFM field preparation{}", pass.label()));
-        let (phases, magnitudes, phase_inputs) = load_phase_echoes(ctx)?;
-        let mask = load_mask(mask_path)?;
-        let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
-        let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
-        prefetch_models(ctx, models)?;
-        let lf = qsmxt_engine::stages::background::iqfm(&phase_refs, &mag_refs, &mask, ctx.meta)?;
-        save_volume(&local_field_path, &lf.local_field_ppm, ctx.meta)?;
-        save_mask(&bg_mask_path, &lf.mask, ctx.meta)?;
-        let mut inputs: Vec<&Path> = phase_inputs.iter().map(|p| p.as_path()).collect();
-        inputs.push(mask_path);
-        ctx.complete_step(&bgremove_step, Some(&bf_name), bf_params, &inputs,
-            vec![local_field_path, bg_mask_path], t)?;
-        log_step_done(&format!("Background removal (iQFM){}", pass.label()), t);
-        return Ok(());
-    }
-    progress(&format!("Background field removal{}", pass.label()));
-    let field_ppm = load_volume(field_path)?;
-    let mask = load_mask(mask_path)?;
-
-    // Fetch DL weights (BFRnet) with a download bar before removal.
-    prefetch_models(ctx, models)?;
-    log::info!("Background removal ({}){}", bf_name, pass.label());
-    let lf = qsmxt_engine::stages::background::remove_background(
-        &field_ppm, &mask, ctx.meta, ctx.config, &mut StageProgress::new(&ctx.run.key.to_string(), &bf_name),
-    )?;
-    save_volume(&local_field_path, &lf.local_field_ppm, ctx.meta)?;
-    save_mask(&bg_mask_path, &lf.mask, ctx.meta)?;
-    ctx.complete_step(&bgremove_step, Some(&bf_name), bf_params, &[field_path, mask_path],
-        vec![local_field_path, bg_mask_path], t,
-    )?;
-    log_step_done(&format!("Background removal ({}){}", bf_name, pass.label()), t);
-    Ok(())
-}
-
-/// Dipole inversion for one pass, of the local field background removal left — or, for the
-/// total-field methods (TFI, MEDI+SMV, AutoQSM, NeXtQSM), which remove or model the background
-/// themselves, of the total field with the brain mask. `models` are the deep-learning models the
-/// plan says it runs.
-fn stage_invert(
-    ctx: &mut StageContext, pass: &Pass, field_path: &Path, models: &[&'static str],
-    progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    let mask_path = pass.mask.as_path();
-    let invert_step = pass.step("invert");
-    let skip_bgremove = skips_bgremove(ctx.config);
-    if skip_bgremove {
-        log::info!("Skipping background removal (single-step inversion handles it internally)");
-    }
-    let (local_field_path, bg_mask_path) = (pass.local_field.as_path(), pass.bg_mask.as_path());
-    let chi_raw_path = pass.chi_raw.clone();
-    let alg_name = format!("{}", ctx.config.inversion.algorithm);
-    let invert_params = qsmxt_engine::stages::inversion::params(ctx.config);
-    if ctx.is_cached_with_params(&invert_step, Some(&alg_name), &invert_params) {
-        log::info!("Skipping invert (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress(&format!("Dipole inversion{}", pass.label()));
-    let lf_input = if skip_bgremove { field_path } else { local_field_path };
-    let mask_input = if skip_bgremove { mask_path } else { bg_mask_path };
-    let local_field = load_volume(lf_input)?;
-    let eroded_mask = load_mask(mask_input)?;
-
-    // Combined magnitude, for MEDI's edge weighting.
-    let mag_combined_path = ctx.output.magnitude_path(&ctx.run.key);
-    let magnitude: Option<Vec<f64>> = if mag_combined_path.exists() {
-        Some(load_volume(&mag_combined_path)?)
-    } else {
-        None
-    };
-
-    // Fetch DL weights (with a download bar) before inference.
-    prefetch_models(ctx, models)?;
-    log::info!("Dipole inversion ({}){}", alg_name, pass.label());
-    let chi = qsmxt_engine::stages::inversion::invert(
-        &local_field, &eroded_mask, magnitude.as_deref(), ctx.meta, ctx.config,
-        &mut StageProgress::new(&ctx.run.key.to_string(), &alg_name),
-    )?;
-    save_volume(&chi_raw_path, &chi, ctx.meta)?;
-    ctx.complete_step(&invert_step, Some(&alg_name),
-        invert_params, &[lf_input, mask_input], vec![chi_raw_path], t,
-    )?;
-    log_step_done(&format!("Dipole inversion ({}){}", ctx.config.inversion.algorithm, pass.label()), t);
-    Ok(())
-}
-
-/// Reference a raw susceptibility map and write it out as a final derivative.
-///
-/// A two-pass run calls this twice — once for the combined map and once for the single-pass one —
-/// so the input, the output and the step name are all explicit.
-///
-/// `support_masks` are the masks the map was reconstructed on ([`Pass::support`]: the
-/// background-removal mask, or the brain mask when the inversion removed the background itself;
-/// both passes' for a two-pass map). Every reference is measured over the map's support only —
-/// see [`qsmxt_engine::referencing::defined_support`] — and the map is written as 0 outside it.
-/// Referencing over the brain mask instead averaged in the rim background removal eroded (0 in
-/// the raw map), biasing the offset, and then left that rim at a constant `-offset`.
-///
-/// `support_out`, when given, is where the support is published.
-#[allow(clippy::too_many_arguments)]
-fn stage_reference(
-    ctx: &mut StageContext, support_masks: &[&Path], chi_raw_path: &Path, qsm_path: PathBuf,
-    support_out: Option<PathBuf>, step: &str, progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    let ref_method = format!("{}", ctx.config.qsm.reference);
-    let segmentation = ctx.state.completed_steps.get("segmentation").and_then(|r| r.params_hash.clone());
-    let ref_params = qsmxt_engine::referencing::params(ctx.config, segmentation.as_deref())?;
-    let region = qsmxt_engine::referencing::reference_region(ctx.config)?;
-
-    if ctx.is_cached_with_params(step, Some(&ref_method), &ref_params) {
-        log::info!("Skipping {} (cached)", step);
-        return Ok(());
-    }
-    let t = Instant::now();
-    log::info!("QSM referencing ({})", ctx.config.qsm.reference);
-    progress("Referencing QSM");
-    let chi = load_volume(chi_raw_path)?;
-    let declared = support_masks.iter().map(|p| load_mask(p)).collect::<crate::Result<Vec<_>>>()?;
-    let declared_refs: Vec<&[u8]> = declared.iter().map(|m| m.as_slice()).collect();
-
-    let mut inputs: Vec<PathBuf> = vec![chi_raw_path.to_path_buf()];
-    inputs.extend(support_masks.iter().map(|p| p.to_path_buf()));
-    let dseg = match region {
-        Some((spec, _)) => {
-            let dseg_path = resolve_input(
-                ctx, &ctx.output.dseg_path(&ctx.run.key),
-                ctx.config.segmentation.custom_dseg_tool.as_deref(), "*_dseg.nii*", &[],
-            )
-            .ok_or_else(|| QsmxtError::Config(format!(
-                "--qsm-reference {spec}: no segmentation to measure the region on. Enable \
-                 --do-segmentation, or supply one with --use-custom-dseg")))?;
-            let dseg = load_volume(&dseg_path)?;
-            inputs.push(dseg_path);
-            Some(dseg)
-        }
-        None => None,
-    };
-    let qsmxt_engine::referencing::Referenced { chi: chi_final, support: mask, offset } =
-        qsmxt_engine::referencing::reference_chi(ctx.config, &chi, &declared_refs, dseg.as_deref())?;
-
-    save_volume(&qsm_path, &chi_final, ctx.meta)?;
-    let mut outputs = vec![qsm_path.clone()];
-    if let Some(path) = support_out {
-        save_mask(&path, &mask, ctx.meta)?;
-        outputs.push(path);
-    }
-
-    // Record what the map was referenced to, beside the map itself. Each map gets its own: the
-    // single-pass map of a two-pass run is referenced over its own support, so its offset is not
-    // the combined map's, and the tables read every map's reference from its own sidecar.
-    write_reference_sidecar(ctx, &qsm_path, offset)?;
-
-    let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).collect();
-    ctx.complete_step(step, Some(&ref_method), ref_params, &input_refs, outputs, t)?;
-    log_step_done("QSM referencing", t);
-    Ok(())
-}
-
-/// Record the reference in the susceptibility map's JSON sidecar.
-///
-/// The offset is a measurement in its own right — the susceptibility of the reference tissue — and
-/// it is what shows whether a subject's reference was sound: one far from the cohort, or measured
-/// on a handful of voxels, means a parcellation that went wrong rather than a brain that differs.
-///
-/// Merged into whatever is already there, since BIDS-Prov adds `GeneratedBy` to the same file.
-fn write_reference_sidecar(
-    ctx: &StageContext, qsm_path: &Path,
-    offset: Option<qsmxt_engine::referencing::Offset>,
-) -> crate::Result<()> {
-    let Some(sidecar) = crate::bids::entities::sidecar_path(qsm_path) else { return Ok(()) };
-    let mut obj = read_json_object(&sidecar);
-    obj.extend(qsmxt_engine::referencing::sidecar_fields(ctx.config, offset.as_ref()));
-    if let Some(parent) = sidecar.parent() {
-        std::fs::create_dir_all(parent)?;
-    }
-    std::fs::write(&sidecar, serde_json::to_string_pretty(&obj)
-        .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
-    Ok(())
-}
-
 /// Record where an R2' map came from in its sidecar, replacing what an earlier run recorded.
 /// Merged into the rest of the file, which BIDS-Prov also writes to.
 fn write_r2prime_sidecar(
@@ -3213,42 +2670,40 @@ fn read_json_object(path: &Path) -> serde_json::Map<String, serde_json::Value> {
         .unwrap_or_default()
 }
 
-/// Combine the two reconstructions of a two-pass run into one raw susceptibility map
-/// ([`qsmxt_engine::stages::inversion::combine_two_pass`]).
-fn stage_two_pass_combine(
-    ctx: &mut StageContext, main: &Pass, reliable: &Pass, skip_bgremove: bool,
-    progress: &dyn Fn(&str),
+/// Run one of the engine's steps on a run's files, as [`run_pipeline_cached`] does once the run's
+/// grid is `meta`, from a fresh state.
+#[cfg(test)]
+fn run_engine_step(
+    run: &QsmRun, config: &PipelineConfig, output: &DerivativeOutputs, meta: &RunMetadata, stage: Stage,
 ) -> crate::Result<()> {
-    let out_path = ctx.output.two_pass_chi_raw_path(&ctx.run.key);
-    let params = serde_json::json!({ "support": reliable.support(skip_bgremove).to_string_lossy() });
-    if ctx.is_cached_with_params("twopass", None, &params) {
-        log::info!("Skipping twopass (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress("Combining two-pass reconstructions");
-
-    let support_path = reliable.support(skip_bgremove).to_path_buf();
-    let chi_reliable = load_volume(&reliable.chi_raw)?;
-    let chi_main = load_volume(&main.chi_raw)?;
-    let declared = load_mask(&support_path)?;
-    let brain = load_mask(&main.mask)?;
-    let combined = qsmxt_engine::stages::inversion::combine_two_pass(&chi_reliable, &chi_main, &declared, &brain)?;
-    save_volume(&out_path, &combined, ctx.meta)?;
-    ctx.complete_step(
-        "twopass", None, params,
-        &[reliable.chi_raw.as_path(), main.chi_raw.as_path(), support_path.as_path()],
-        vec![out_path], t,
-    )?;
-    log_step_done("Two-pass combination", t);
-    Ok(())
+    let state_path = output.state_path(&run.key);
+    let state = PipelineState::load_or_create(&state_path, config, &run.key, true);
+    let facts = requirements::scan_facts(run, config);
+    let plan = qsmxt_engine::plan::plan(config, &facts);
+    let mut store = FileStore {
+        run, facts: &facts, config, output: output.clone(), meta: Some(meta.clone()), state, state_path,
+        progress: &|_| {}, started: None, supplied_mask: None, mask_path: None,
+    };
+    let step = Step { stage, models: vec![], host: false };
+    qsmxt_engine::run::run_step(&plan, config, meta, &step, &mut store, &mut ())
 }
 
-
-/// [`resolve_geometry`] for a discovered run, its facts looked up from it.
+/// The grid and B0 direction the engine decides for a discovered run from its first phase image's
+/// header ([`qsmxt_engine::scan::resolve_geometry`]).
 #[cfg(test)]
 fn resolve_run_geometry(run: &QsmRun, first_phase: &NiftiData, config: &PipelineConfig) -> crate::Result<RunMetadata> {
-    Ok(resolve_geometry(first_phase, &requirements::scan_facts(run, config), config))
+    Ok(qsmxt_engine::scan::resolve_geometry(
+        first_phase.dims, first_phase.voxel_size, first_phase.affine, &requirements::scan_facts(run, config), config))
+}
+
+/// The engine's slice-gap check ([`qsmxt_engine::scan::check_slice_gap`]) for a discovered run,
+/// from its first echo's sidecar.
+#[cfg(test)]
+fn check_slice_gap(
+    run: &QsmRun, first_phase: &NiftiData, meta: &RunMetadata, config: &PipelineConfig,
+) -> crate::Result<Option<(f64, usize)>> {
+    let Some(sc) = crate::bids::sidecar::read_sidecar(&run.echoes[0].phase_json).ok() else { return Ok(None) };
+    Ok(qsmxt_engine::scan::check_slice_gap(&sc, first_phase.dims, first_phase.voxel_size, meta, config)?)
 }
 
 #[cfg(test)]
@@ -3261,47 +2716,33 @@ mod tests {
     #[test]
     fn the_two_passes_write_to_different_places() {
         use crate::bids::derivatives::DerivativeOutputs;
-        use crate::bids::entities::AcquisitionKey;
+        use crate::pipeline::graph::PipelineState;
+        use qsmxt_engine::plan::{Pass, Stage};
+        use qsmxt_engine::store::Item;
+        use std::path::PathBuf;
 
-        let output = DerivativeOutputs::new(std::path::Path::new("/out"));
-        let key = AcquisitionKey {
-            subject: "1".into(), session: None, acquisition: None,
-            reconstruction: None, inversion: None, run: None, suffix: "MEGRE".into(),
+        let run = run_with_echoes(vec![(PathBuf::from("/in/sub-1/anat/p.nii"), None)]);
+        let config = crate::pipeline::config::PipelineConfig::default();
+        let facts = crate::pipeline::requirements::scan_facts(&run, &config);
+        let store = super::FileStore {
+            run: &run, facts: &facts, config: &config, output: DerivativeOutputs::new(std::path::Path::new("/out")),
+            meta: None, state: PipelineState::new(&config, &run.key), state_path: PathBuf::from("/out/s.json"),
+            progress: &|_| {}, started: None, supplied_mask: None, mask_path: None,
         };
-        let (main, reliable) = (super::Pass::main(&output, &key, &output.mask_path(&key)), super::Pass::reliable(&output, &key));
-
         for (a, b) in [
-            (&main.mask, &reliable.mask),
-            (&main.local_field, &reliable.local_field),
-            (&main.bg_mask, &reliable.bg_mask),
-            (&main.chi_raw, &reliable.chi_raw),
+            (Item::BrainMask, Item::ReliableMask),
+            (Item::LocalField(Pass::Main), Item::LocalField(Pass::Reliable)),
+            (Item::LocalFieldMask(Pass::Main), Item::LocalFieldMask(Pass::Reliable)),
+            (Item::RawChi(Pass::Main), Item::RawChi(Pass::Reliable)),
         ] {
-            assert_ne!(a, b, "the two passes share an output path");
+            assert_ne!(store.path(&a), store.path(&b), "the two passes share an output path");
         }
 
         // And their steps are cached separately, or one pass's cache hit would skip the other.
-        for step in ["mask", "bgremove", "invert", "tgv", "qsmart"] {
-            assert_ne!(main.step(step), reliable.step(step));
+        for stage in [Stage::Mask, Stage::BackgroundRemoval, Stage::Inversion, Stage::Tgv, Stage::Qsmart] {
+            assert_ne!(stage(Pass::Main).name(), stage(Pass::Reliable).name());
         }
-        assert_eq!(main.step("invert"), "invert", "the main pass keeps the unsuffixed step names");
-    }
-
-    /// The support is the eroded mask when background removal ran, and the brain mask when the
-    /// inversion did its own — picking the wrong one would hand the combination a mask that does
-    /// not exist on disk.
-    #[test]
-    fn pass_support_follows_the_background_removal_route() {
-        use crate::bids::derivatives::DerivativeOutputs;
-        use crate::bids::entities::AcquisitionKey;
-
-        let output = DerivativeOutputs::new(std::path::Path::new("/out"));
-        let key = AcquisitionKey {
-            subject: "1".into(), session: None, acquisition: None,
-            reconstruction: None, inversion: None, run: None, suffix: "MEGRE".into(),
-        };
-        let pass = super::Pass::reliable(&output, &key);
-        assert_eq!(pass.support(false), pass.bg_mask.as_path());
-        assert_eq!(pass.support(true), pass.mask.as_path());
+        assert_eq!(Stage::Inversion(Pass::Main).name(), "invert", "the main pass keeps the unsuffixed step names");
     }
 
     /// Single-step and end-to-end algorithms produce a map over the brain mask, with no separate
@@ -3313,20 +2754,20 @@ mod tests {
 
         for alg in [QsmAlgorithm::Rts, QsmAlgorithm::Tkd, QsmAlgorithm::Ilsqr] {
             config.inversion.algorithm = alg;
-            assert!(!super::skips_bgremove(&config), "{alg} runs its own background removal stage");
+            assert!(!qsmxt_engine::bridge::skips_bgremove(&config), "{alg} runs its own background removal stage");
         }
         for alg in [QsmAlgorithm::Nextqsm, QsmAlgorithm::Autoqsm, QsmAlgorithm::Iqsm,
                     QsmAlgorithm::IqsmPlus, QsmAlgorithm::Tgv, QsmAlgorithm::Qsmart, QsmAlgorithm::Tfi] {
             config.inversion.algorithm = alg;
-            assert!(super::skips_bgremove(&config), "{alg} has no separate background removal");
+            assert!(qsmxt_engine::bridge::skips_bgremove(&config), "{alg} has no separate background removal");
         }
 
         // MEDI only skips it with SMV enabled.
         config.inversion.algorithm = QsmAlgorithm::Medi;
         config.inversion.medi.smv = false;
-        assert!(!super::skips_bgremove(&config));
+        assert!(!qsmxt_engine::bridge::skips_bgremove(&config));
         config.inversion.medi.smv = true;
-        assert!(super::skips_bgremove(&config));
+        assert!(qsmxt_engine::bridge::skips_bgremove(&config));
     }
 
     /// A bring-your-own mask has no recipe to leave unfilled, so two-pass has nothing to build a
@@ -4485,6 +3926,7 @@ mod swi_export_tests {
 #[cfg(test)]
 mod oblique_run_tests {
     use super::*;
+    use crate::bids::entities::AcquisitionKey;
 
     const DIMS: (usize, usize, usize) = (20, 22, 18);
 
@@ -5166,19 +4608,8 @@ mod reference_support_tests {
     }
 
     /// Run the single-pass `reference` step over the fixture with `config`.
-    fn reference(f: &Fixture, config: &PipelineConfig) -> Vec<f64> {
-        let m = meta();
-        let state_path = f.output.state_path(&f.run.key);
-        let mut state = PipelineState::load_or_create(&state_path, config, &f.run.key, true);
-        let mut ctx = StageContext {
-            run: &f.run, config, output: &f.output, meta: &m,
-            state: &mut state, state_path: &state_path,
-        };
-        let pass = Pass::main(&f.output, &f.run.key, &f.output.mask_path(&f.run.key));
-        stage_reference(
-            &mut ctx, &[pass.support(false)], &pass.chi_raw, f.output.qsm_path(&f.run.key),
-            Some(f.output.qsm_support_path(&f.run.key)), "reference", &|_| {},
-        ).unwrap();
+    pub(super) fn reference(f: &Fixture, config: &PipelineConfig) -> Vec<f64> {
+        run_engine_step(&f.run, config, &f.output, &meta(), Stage::Reference).unwrap();
         load_volume(&f.output.qsm_path(&f.run.key)).unwrap()
     }
 
@@ -5255,19 +4686,14 @@ mod reference_support_tests {
         reference(&f, &config);
         // The single-pass map: a different raw map, so a different offset.
         let raw2: Vec<f64> = f.chi_raw.iter().map(|&c| if c != 0.0 { c + 0.02 } else { 0.0 }).collect();
-        let raw2_path = f.output.reliable_chi_raw_path(&f.run.key);
-        save_volume(&raw2_path, &raw2, &m).unwrap();
+        save_volume(&f.output.chi_raw_path(&f.run.key), &raw2, &m).unwrap();
+        run_engine_step(&f.run, &config, &f.output, &m, Stage::SinglePassReference).unwrap();
         let state_path = f.output.state_path(&f.run.key);
         let mut state = PipelineState::load_or_create(&state_path, &config, &f.run.key, true);
         let mut ctx = StageContext {
             run: &f.run, config: &config, output: &f.output, meta: &m,
             state: &mut state, state_path: &state_path,
         };
-        let pass = Pass::main(&f.output, &f.run.key, &f.output.mask_path(&f.run.key));
-        stage_reference(
-            &mut ctx, &[pass.support(false)], &raw2_path, f.output.singlepass_qsm_path(&f.run.key),
-            None, "reference-singlepass", &|_| {},
-        ).unwrap();
         // χ-separation maps, which are never referenced.
         for p in [f.output.chi_para_path(&f.run.key), f.output.chi_dia_path(&f.run.key),
                   f.output.chi_sep_total_path(&f.run.key)] {
@@ -5354,17 +4780,13 @@ mod chisep_support_tests {
             .map(|(&v, &s)| if s != 0 { 0.01 + 0.001 * v } else { 0.0 }).collect();
         save_volume(&f.output.local_field_path(k), &field, &m).unwrap();
 
+        super::reference_support_tests::reference(f, config);
         let state_path = f.output.state_path(k);
         let mut state = PipelineState::load_or_create(&state_path, config, k, true);
         let mut ctx = StageContext {
             run: &f.run, config, output: &f.output, meta: &m,
             state: &mut state, state_path: &state_path,
         };
-        let pass = Pass::main(&f.output, k, &f.output.mask_path(k));
-        stage_reference(
-            &mut ctx, &[pass.support(false)], &pass.chi_raw, f.output.qsm_path(k),
-            Some(f.output.qsm_support_path(k)), "reference", &|_| {},
-        ).unwrap();
         let models: Vec<&'static str> = qsm_core::models::find_model(&config.separation.algorithm.to_string()).map(|m| m.id).into_iter().collect();
         stage_chi_separation(&mut ctx, &f.output.mask_path(k), &models, &|_| {}).unwrap();
         [f.output.chi_para_path(k), f.output.chi_dia_path(k), f.output.chi_sep_total_path(k)]

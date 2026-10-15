@@ -378,7 +378,7 @@ fn input_problems(f: &ScanFacts) -> Option<String> {
 
 /// The result of checking every run: one error line per requested output a run cannot produce,
 /// one warning per implied output it cannot.
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize)]
 pub struct Check {
     pub errors: Vec<String>,
     pub warnings: Vec<String>,

@@ -5,7 +5,9 @@
 //! logic in `qsmxt`'s `src/pipeline/` moves here in stages; so far: what a scan's headers and
 //! sidecar say ([`scan`]), what a run can produce ([`requirements`]), memory estimates, step
 //! cache keys and which steps read which ([`graph`]), field mapping's input checks, referencing,
-//! what each QSM stage computes ([`stages`]), and what a run reports as it goes ([`observe`]).
+//! what each QSM stage computes ([`stages`]), what a run reports as it goes ([`observe`]), and
+//! running one: [`plan::plan`] decides its steps, [`run::run`] runs them against a
+//! [`store::StageStore`].
 
 /// The qsm-core this crate is built against. Downstream consumers (qsmbly's WASM crate) use
 /// algorithms through this re-export rather than depending on qsm-core themselves, so the
@@ -28,6 +30,8 @@ pub mod memory;
 pub mod cache;
 pub mod graph;
 pub mod plan;
+pub mod store;
+pub mod run;
 pub mod fieldmap;
 pub mod referencing;
 pub mod observe;

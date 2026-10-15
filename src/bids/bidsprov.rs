@@ -565,29 +565,31 @@ mod tests {
         };
         let mut names = literal_after("complete_step(");
         names.extend(literal_after("complete_step_with_metadata("));
-        for base in literal_after("pass.step(") {
-            names.push(format!("{base}{}", crate::pipeline::graph::RELIABLE_SUFFIX));
-            names.push(base);
+        // The steps the engine computes, which the runner records under their engine names.
+        use qsmxt_engine::plan::{Pass, Stage};
+        for pass in [Pass::Main, Pass::Reliable] {
+            for stage in [Stage::Mask(pass), Stage::BackgroundRemoval(pass), Stage::Inversion(pass),
+                          Stage::Tgv(pass), Stage::Qsmart(pass)] {
+                names.push(stage.name());
+            }
         }
-        // Built at run time: the reliable mask, and the single-pass map of a two-pass run.
-        names.push(format!("mask{}", crate::pipeline::graph::RELIABLE_SUFFIX));
-        for name in ["reference", "reference-singlepass"] {
-            assert!(src.contains(&format!("\"{name}\", progress")), "stage_reference no longer records {name:?}");
-            names.push(name.to_string());
+        for stage in [Stage::ScalePhase, Stage::Magnitude, Stage::FieldMap, Stage::TwoPassCombination,
+                      Stage::Reference, Stage::SinglePassReference] {
+            names.push(stage.name());
         }
         for name in &names {
             assert!(STEPS.contains(&name.as_str()), "step {name:?} is recorded but missing from STEPS");
         }
         // Every call site whose name is not a literal is one of the cases handled above (the
-        // two-pass stages, the reliable mask, referencing, and complete_step_with_metadata's own
-        // forwarding call). A new one has to be added here (and to STEPS).
+        // engine's steps, and complete_step_with_metadata's own forwarding call). A new one has to
+        // be added here (and to STEPS).
         let dynamic = src.match_indices("complete_step(").chain(src.match_indices("complete_step_with_metadata("))
             .filter(|(i, pat)| {
                 let rest = src[i + pat.len()..].trim_start();
                 !rest.starts_with('"') && !rest.starts_with("&mut")
             })
             .count();
-        assert_eq!(dynamic, 9, "a step name is built somewhere new: cover it in STEPS and in this test");
+        assert_eq!(dynamic, 1, "a step name is built somewhere new: cover it in STEPS and in this test");
         for step in STEPS {
             assert!(names.iter().any(|n| n == step), "STEPS lists {step:?}, which no step records");
         }

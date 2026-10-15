@@ -1,5 +1,5 @@
 //! What a run reports while it runs: which step it is on, how far an iterative stage has got,
-//! and what it has to say.
+//! what it has to say, and every output as it is produced.
 //!
 //! One observer serves the whole run. `qsmxt` draws progress bars and writes its log from it;
 //! qsmbly posts the same events to the page. A stage that runs a qsm-core pipeline function hands
@@ -13,20 +13,24 @@ pub enum StageEvent<'a> {
     Started(&'a str),
     /// The step's earlier output is still valid, so it is not computed again.
     Cached,
-    /// The step is computed and its outputs are kept.
-    Finished,
+    /// The step is computed and its outputs are kept; the text names it for the log.
+    Finished(&'a str),
 }
 
 /// Receives a run's progress as it happens. Every method has a default that ignores the event.
 pub trait Observer {
-    /// Step `step` (its cache name, e.g. `mask` or `invert-reliable`) reached `event`.
-    fn stage(&mut self, _step: &str, _event: StageEvent<'_>) {}
+    /// Step `step` (its cache name, e.g. `mask` or `invert-reliable`), computed by `algorithm`
+    /// when it has one, reached `event`.
+    fn stage(&mut self, _step: &str, _algorithm: Option<&str>, _event: StageEvent<'_>) {}
 
     /// Iteration `done` of `total` of the stage being computed.
     fn progress(&mut self, _done: usize, _total: usize) {}
 
-    /// A line for the run's log.
+    /// A line for the run's log. (The stages' own detail goes through the `log` crate.)
     fn log(&mut self, _level: log::Level, _message: &str) {}
+
+    /// A step produced `item`. The volume is only valid for the duration of the call.
+    fn output(&mut self, _item: &crate::store::Item, _volume: qsm_core::pipeline::VolumeRef<'_>) {}
 }
 
 /// Ignores everything.
