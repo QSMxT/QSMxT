@@ -4,8 +4,8 @@
 //! also builds for the browser. Used by both qsmxt (CLI/TUI) and qsmbly (browser WASM). The run
 //! logic in `qsmxt`'s `src/pipeline/` moves here in stages; so far: what a scan's headers and
 //! sidecar say ([`scan`]), what a run can produce ([`requirements`]), memory estimates, step
-//! cache keys, field mapping's input checks, referencing, and what each QSM stage computes
-//! ([`stages`]).
+//! cache keys and which steps read which ([`graph`]), field mapping's input checks, referencing,
+//! what each QSM stage computes ([`stages`]), and what a run reports as it goes ([`observe`]).
 
 /// The qsm-core this crate is built against. Downstream consumers (qsmbly's WASM crate) use
 /// algorithms through this re-export rather than depending on qsm-core themselves, so the
@@ -26,8 +26,10 @@ pub mod scan;
 pub mod requirements;
 pub mod memory;
 pub mod cache;
+pub mod graph;
 pub mod fieldmap;
 pub mod referencing;
+pub mod observe;
 pub mod stages;
 
 pub use config::*;

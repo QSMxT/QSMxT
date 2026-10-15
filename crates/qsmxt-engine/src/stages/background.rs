@@ -3,6 +3,7 @@
 use crate::config::PipelineConfig;
 use crate::enums::BfAlgorithm;
 use crate::error::EngineError;
+use crate::observe::Observer;
 use crate::scan::{scan_metadata, scan_metadata_in, RunMetadata};
 use crate::stages::crop::crop_box_for;
 
@@ -66,14 +67,14 @@ pub struct LocalField {
 /// each.
 pub fn remove_background(
     field_ppm: &[f64], mask: &[u8], meta: &RunMetadata, config: &PipelineConfig,
-    progress: &mut dyn FnMut(usize, usize),
+    observer: &mut dyn Observer,
 ) -> Result<LocalField, EngineError> {
     let (_, bg_config, _, _) = crate::bridge::to_pipeline_stages(config);
     let cb = crop_box_for(config, meta, mask, "Background removal");
     let result = qsm_core::pipeline::run_bg_removal(
         &qsm_core::crop::crop_volume(field_ppm, &cb),
         &qsm_core::crop::crop_volume(mask, &cb),
-        &scan_metadata_in(meta, &cb), &bg_config, progress,
+        &scan_metadata_in(meta, &cb), &bg_config, &mut |done, total| observer.progress(done, total),
     ).map_err(|e| EngineError::Config(format!("bg removal: {}", e)))?;
     Ok(LocalField {
         local_field_ppm: qsm_core::crop::uncrop_volume(&result.local_field_ppm, &cb, 0.0),

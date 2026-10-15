@@ -13,6 +13,7 @@ use crate::pipeline::config::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
 use qsmxt_engine::bridge::{field_mapping_runs, skips_bgremove};
 use qsmxt_engine::cache::step_cache_key;
+use qsmxt_engine::observe::VolumeData;
 use qsmxt_engine::scan::{scan_metadata, AXIAL_ONLY_TOLERANCE_DEG};
 use crate::pipeline::memory;
 use crate::pipeline::requirements::{
@@ -225,6 +226,22 @@ fn iter_progress_bar(run_key: &str, step_name: &str) -> (Box<dyn FnMut(usize, us
         }
     });
     (cb, None)
+}
+
+/// The engine's observer for one stage: its progress drives a progress bar named for the run and
+/// the stage.
+struct StageProgress(Box<dyn FnMut(usize, usize)>);
+
+impl StageProgress {
+    fn new(run_key: &str, step_name: &str) -> Self {
+        Self(iter_progress_bar(run_key, step_name).0)
+    }
+}
+
+impl qsmxt_engine::observe::Observer for StageProgress {
+    fn progress(&mut self, done: usize, total: usize) {
+        (self.0)(done, total)
+    }
 }
 
 /// Create a byte-oriented progress bar for weight downloads, in the same visual style as
@@ -2986,17 +3003,24 @@ fn stage_qsmart(
         None
     };
 
-    let (prog, _) = iter_progress_bar(&ctx.run.key.to_string(), "QSMART");
-    let mut observer = QsmartIntermediates {
-        progress: prog, ctx: &*ctx, step: &qsmart_step, written: Vec::new(), error: None,
-    };
-    let chi = qsmxt_engine::stages::qsmart::qsmart(
+    let mut observer = StageProgress::new(&ctx.run.key.to_string(), "QSMART");
+    let qsmxt_engine::stages::qsmart::Qsmart { chi, intermediates } = qsmxt_engine::stages::qsmart::qsmart(
         &field_ppm, &mask, magnitude.as_deref(), ctx.meta, ctx.config, &mut observer,
-    );
-    let QsmartIntermediates { written, error, .. } = observer;
-    let chi = chi?;
-    if let Some(e) = error {
-        return Err(e);
+    )?;
+    // QSMART's intermediates (its vessel mask, and each stage's local field and susceptibility
+    // map) go into the step's workflow directory, so they are kept, and cleaned, like every other
+    // intermediate.
+    let mut written = Vec::new();
+    for (name, volume) in intermediates {
+        let Some(path) = ctx.output.qsmart_intermediate_path(&ctx.run.key, &qsmart_step, name) else {
+            log::warn!("QSMART reported an intermediate QSMxT has no name for ({name}); not saved");
+            continue;
+        };
+        match volume {
+            VolumeData::Real(data) => save_volume(&path, &data, ctx.meta)?,
+            VolumeData::Mask(mask) => save_mask(&path, &mask, ctx.meta)?,
+        }
+        written.push(path);
     }
 
     save_volume(&chi_raw_path, &chi, ctx.meta)?;
@@ -3005,44 +3029,6 @@ fn stage_qsmart(
     ctx.complete_step(&qsmart_step, Some("qsmart"), qsmart_params, &[mask_path, field_path], outputs, t)?;
     log_step_done(&format!("QSMART{}", pass.label()), t);
     Ok(())
-}
-
-/// QSMART's observer: drives the progress bar, and writes each intermediate QSMART reports (its
-/// vessel mask, and each stage's local field and susceptibility map) into the step's workflow
-/// directory as it is produced, so they are kept, and cleaned, like every other intermediate.
-struct QsmartIntermediates<'a, 'c> {
-    progress: Box<dyn FnMut(usize, usize)>,
-    ctx: &'a StageContext<'c>,
-    /// The step's name: `qsmart`, or `qsmart-reliable` for the reliable pass of a two-pass run.
-    step: &'a str,
-    written: Vec<PathBuf>,
-    /// The first intermediate that could not be written; the stage fails with it.
-    error: Option<QsmxtError>,
-}
-
-impl qsmxt_engine::stages::qsmart::Observer for QsmartIntermediates<'_, '_> {
-    fn progress(&mut self, done: usize, total: usize) {
-        (self.progress)(done, total)
-    }
-
-    fn output(&mut self, name: &'static str, volume: qsmxt_engine::stages::qsmart::VolumeRef<'_>) {
-        use qsmxt_engine::stages::qsmart::VolumeRef;
-        if self.error.is_some() {
-            return;
-        }
-        let Some(path) = self.ctx.output.qsmart_intermediate_path(&self.ctx.run.key, self.step, name) else {
-            log::warn!("QSMART reported an intermediate QSMxT has no name for ({name}); not saved");
-            return;
-        };
-        let saved = match volume {
-            VolumeRef::Real(data) => save_volume(&path, data, self.ctx.meta),
-            VolumeRef::Mask(mask) => save_mask(&path, mask, self.ctx.meta),
-        };
-        match saved {
-            Ok(()) => self.written.push(path),
-            Err(e) => self.error = Some(e),
-        }
-    }
 }
 
 fn stage_standard_qsm(
@@ -3093,9 +3079,8 @@ fn stage_standard_qsm(
         // Fetch DL weights (BFRnet) with a download bar before removal; no-op otherwise.
         prefetch_weights(&bf_name, &ctx.run.key.to_string())?;
         log::info!("Background removal ({}){}", bf_name, pass.label());
-        let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &bf_name);
         let lf = qsmxt_engine::stages::background::remove_background(
-            &field_ppm, &mask, ctx.meta, ctx.config, &mut *prog,
+            &field_ppm, &mask, ctx.meta, ctx.config, &mut StageProgress::new(&ctx.run.key.to_string(), &bf_name),
         )?;
         save_volume(&local_field_path, &lf.local_field_ppm, ctx.meta)?;
         save_mask(&bg_mask_path, &lf.mask, ctx.meta)?;
@@ -3129,9 +3114,9 @@ fn stage_standard_qsm(
         // Fetch DL weights (with a download bar) before inference; no-op for classical algs.
         prefetch_weights(&alg_name, &ctx.run.key.to_string())?;
         log::info!("Dipole inversion ({}){}", alg_name, pass.label());
-        let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &alg_name);
         let chi = qsmxt_engine::stages::inversion::invert(
-            &local_field, &eroded_mask, magnitude.as_deref(), ctx.meta, ctx.config, &mut *prog,
+            &local_field, &eroded_mask, magnitude.as_deref(), ctx.meta, ctx.config,
+            &mut StageProgress::new(&ctx.run.key.to_string(), &alg_name),
         )?;
         save_volume(&chi_raw_path, &chi, ctx.meta)?;
         let lf_input = if skip_bgremove { field_path } else { local_field_path.as_path() };
