@@ -3817,7 +3817,7 @@ fn stage_qsmart(
     // and the separate reference stage applies the chosen referencing.
     let chi = qsm_core::pipeline::run_qsmart(
         &field_ppm, &mask, magnitude.as_deref(), &scan_meta, &inv_config,
-        qsm_core::pipeline::QsmReference::None, &mut *prog,
+        qsm_core::pipeline::QsmReference::None, &mut prog,
     ).map_err(|e| QsmxtError::Config(format!("qsmart: {}", e)))?;
 
     save_volume(&chi_raw_path, &chi, ctx.meta)?;

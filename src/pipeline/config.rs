@@ -236,7 +236,7 @@ pub fn synthseg_weights_available(version: SynthSegVersion) -> crate::Result<()>
     let id = version.weights_id();
     let spec = qsm_core::models::find_model(id).ok_or_else(|| QsmxtError::Config(format!(
         "SynthSeg {version}: QSM.rs has no model '{id}'")))?;
-    if spec.is_available() || spec.files.iter().all(|f| qsm_core::models::resolve_local(f).is_some()) {
+    if spec.is_available() || spec.files.iter().all(qsm_core::models::weight_file_present) {
         return Ok(());
     }
     Err(QsmxtError::Config(format!(
@@ -983,7 +983,7 @@ mod tests {
         assert_eq!(SynthSegVersion::V2.weights_id(), "synthseg-2.0");
         let v2 = qsm_core::models::find_model("synthseg-2.0").expect("QSM.rs lists SynthSeg 2.0");
         let v2_present = v2.is_available()
-            || v2.files.iter().all(|f| qsm_core::models::resolve_local(f).is_some());
+            || v2.files.iter().all(qsm_core::models::weight_file_present);
 
         let v1 = config_from_cli(&["qsmxt", "run", "<bids>", "--do-segmentation"]);
         assert!(validate_segmentation(&v1).is_ok());
