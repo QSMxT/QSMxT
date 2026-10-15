@@ -42,6 +42,48 @@ pub struct ScanFacts {
     pub custom_r2prime: bool,
 }
 
+impl ScanFacts {
+    /// The facts of a combined-coil magnitude/phase scan, from its first echo's matrix size and
+    /// every echo's sidecar, in echo order: what a front end that holds the files itself (qsmbly)
+    /// has. Echo times are each sidecar's; the field strength and `B0_dir` are read as `qsmxt`
+    /// reads a BIDS run's (the last echo that has one wins; a `B0_dir` without three components
+    /// is ignored, with a warning). No bring-your-own derivatives: a front end that has them sets
+    /// those fields itself.
+    pub fn from_sidecars(
+        dims: (usize, usize, usize), sidecars: &[QsmSidecar], has_magnitude: bool,
+    ) -> Result<Self, EngineError> {
+        let Some(last) = sidecars.last() else {
+            return Err(EngineError::InvalidInput("a scan needs at least one echo".into()));
+        };
+        let mut b0_dir = None;
+        for (n, sc) in sidecars.iter().enumerate() {
+            match sc.b0_dir.as_deref() {
+                Some(&[x, y, z]) => b0_dir = Some((x, y, z)),
+                Some(dir) => log::warn!(
+                    "B0 direction has {} components (expected 3), defaulting to (0,0,1): echo {}",
+                    dir.len(), n + 1),
+                None => {}
+            }
+        }
+        Ok(ScanFacts {
+            dims,
+            n_echoes: sidecars.len(),
+            echo_times: sidecars.iter().map(|sc| sc.echo_time).collect(),
+            has_magnitude,
+            n_coils: 1,
+            real_imaginary: false,
+            field_strength: last.magnetic_field_strength,
+            b0_dir,
+            mese_echo_times: None,
+            custom_mask: false,
+            custom_dseg: false,
+            custom_qsm: false,
+            custom_r2: false,
+            custom_r2prime: false,
+        })
+    }
+}
+
 /// What the orientation gate cannot read from the config alone.
 ///
 /// Only whether a measured R2 exists, which is what decides whether `--r2prime-strategy auto`
@@ -351,6 +393,20 @@ mod tests {
         assert_eq!(slice_geometry_from_sidecar(&sidecar(None, Some("2D"), None), vs), None);
         // A thickness that is not the pitch is checked even without MRAcquisitionType.
         assert_eq!(slice_geometry_from_sidecar(&sidecar(Some(2.0), None, None), vs), Some((2.0, 2)));
+    }
+
+    #[test]
+    fn facts_are_read_from_the_echoes_sidecars() {
+        let echo = |te: f64, dir: Option<Vec<f64>>| QsmSidecar { echo_time: te, b0_dir: dir, ..sidecar(None, None, None) };
+        let facts = ScanFacts::from_sidecars(
+            (4, 5, 6), &[echo(0.004, Some(vec![0.0, 0.1, 0.99])), echo(0.008, Some(vec![1.0]))], true).unwrap();
+        assert_eq!((facts.dims, facts.n_echoes, facts.has_magnitude), ((4, 5, 6), 2, true));
+        assert_eq!(facts.echo_times, [0.004, 0.008]);
+        assert_eq!(facts.field_strength, 3.0);
+        // A B0_dir without three components is ignored; the last usable one stands.
+        assert_eq!(facts.b0_dir, Some((0.0, 0.1, 0.99)));
+        assert_eq!((facts.n_coils, facts.real_imaginary, facts.custom_mask), (1, false, false));
+        assert!(ScanFacts::from_sidecars((4, 5, 6), &[], true).is_err());
     }
 
     #[test]
