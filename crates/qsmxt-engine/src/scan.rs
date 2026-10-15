@@ -11,7 +11,7 @@ use crate::error::EngineError;
 /// The facts about one scan that decide what it can produce and how it is reconstructed: the
 /// acquisition from its headers and sidecars, and which bring-your-own derivatives the config
 /// names were found for it.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ScanFacts {
     /// The matrix size of the first echo, as acquired.
     pub dims: (usize, usize, usize),

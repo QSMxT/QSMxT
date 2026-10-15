@@ -7,7 +7,7 @@ use crate::bids::entities::AcquisitionKey;
 use crate::error::QsmxtError;
 use crate::pipeline::config::PipelineConfig;
 use qsmxt_engine::cache::config_hash;
-pub use qsmxt_engine::cache::{step_params_hash, RELIABLE_SUFFIX};
+pub use qsmxt_engine::cache::step_params_hash;
 pub use qsmxt_engine::graph::downstream_of;
 
 pub use qsmxt_engine::scan::RunMetadata;
@@ -342,6 +342,7 @@ pub fn clean_intermediates(output_dir: &Path, key: &AcquisitionKey) -> crate::Re
 #[cfg(test)]
 mod tests {
     use super::*;
+    use qsmxt_engine::cache::RELIABLE_SUFFIX;
     use qsmxt_engine::graph::downstream_steps;
 
     /// Every step the runner records has an entry in the invalidation table (#272: `motion` and

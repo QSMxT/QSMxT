@@ -6,6 +6,8 @@
 //! requirement warnings). `qsmxt run` runs the steps in this order, so the plan a front end shows
 //! is the run that happens.
 
+use serde::Serialize;
+
 use crate::bridge::{field_mapping_runs, skips_bgremove};
 use crate::config::PipelineConfig;
 use crate::enums::*;
@@ -14,7 +16,7 @@ use crate::scan::ScanFacts;
 
 /// Which of a two-pass run's reconstructions a step belongs to. A single-pass run has only the
 /// main one.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum Pass {
     /// The ordinary reconstruction, on the brain mask: the only one of a single-pass run, and the
     /// "filled mask" pass of a two-pass run.
@@ -34,7 +36,7 @@ impl Pass {
 }
 
 /// A step of a run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize)]
 pub enum Stage {
     /// The grid the run is processed on, from the first echo's header.
     Load,
@@ -109,16 +111,20 @@ impl Stage {
 }
 
 /// One step of a [`Plan`].
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Step {
     pub stage: Stage,
     /// The deep-learning models the step runs, by QSM.rs model id: the weights to have ready
     /// before it is computed.
     pub models: Vec<&'static str>,
+    /// The step is not in the engine yet: the front end runs it ([`crate::store::StageStore::host`]).
+    pub host: bool,
 }
 
 /// What a run will do.
-#[derive(Debug, Clone, PartialEq)]
+/// Serialises (as front ends pass it on, e.g. to JavaScript) with each step as its stage, models
+/// and whether the front end runs it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Plan {
     /// Every step, in the order the run takes them.
     pub steps: Vec<Step>,
@@ -162,7 +168,7 @@ fn model(id: &str) -> Option<&'static str> {
 /// route the chosen algorithm takes. Both passes of a two-pass run take the same route.
 fn reconstruction(config: &PipelineConfig, pass: Pass) -> Vec<Step> {
     let inversion = &config.inversion.algorithm;
-    let single = |stage: Stage, models: Vec<&'static str>| vec![Step { stage, models }];
+    let single = |stage: Stage, models: Vec<&'static str>| vec![Step { stage, models, host: false }];
     match inversion {
         QsmAlgorithm::Tgv => single(Stage::Tgv(pass), vec![]),
         QsmAlgorithm::Qsmart => single(Stage::Qsmart(pass), vec![]),
@@ -177,11 +183,12 @@ fn reconstruction(config: &PipelineConfig, pass: Pass) -> Vec<Step> {
             if !skips_bgremove(config) {
                 let bf = config.bg_removal.algorithm;
                 let id = if bf == BfAlgorithm::Iqfm { model("iqfm") } else { model(&bf.to_string()) };
-                steps.push(Step { stage: Stage::BackgroundRemoval(pass), models: id.into_iter().collect() });
+                steps.push(Step { stage: Stage::BackgroundRemoval(pass), models: id.into_iter().collect(), host: false });
             }
             steps.push(Step {
                 stage: Stage::Inversion(pass),
                 models: model(&inversion.to_string()).into_iter().collect(),
+                host: false,
             });
             steps
         }
@@ -199,6 +206,19 @@ fn predicts_r2prime(facts: &ScanFacts, config: &PipelineConfig) -> bool {
     let predicts = s.r2prime_strategy == R2PrimeStrategy::R2primenet || !measured;
     predicts && requirements::r2primenet_off_field(
         facts.field_strength, s.r2prime_strategy, s.r2primenet.ignore_field_mismatch).is_none()
+}
+
+/// Whether the engine runs `stage` on this scan itself. The rest are still the front end's: the
+/// stages listed for step 2.4 of the parity plan (coil combination and real/imaginary input, motion
+/// correction, SWI and SMWI, relaxometry, χ-separation, segmentation and its statistics, the
+/// return to the acquired grid).
+fn in_engine(stage: Stage, facts: &ScanFacts) -> bool {
+    match stage {
+        Stage::ScalePhase => facts.n_coils <= 1 && !facts.real_imaginary,
+        Stage::Motion | Stage::Swi | Stage::Segmentation | Stage::Relaxometry | Stage::R2
+        | Stage::Smwi | Stage::ChiSeparation | Stage::Analysis | Stage::OutputSpace => false,
+        _ => true,
+    }
 }
 
 /// Plan one run of `config` on the scan `facts` describes.
@@ -225,8 +245,10 @@ pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
     }
     let motion_corrected = config.motion_correction.enabled && facts.n_echoes > 1 && facts.has_magnitude;
 
-    let mut steps = vec![Step { stage: Stage::Load, models: vec![] }];
-    let mut add = |stage: Stage, models: Vec<&'static str>| steps.push(Step { stage, models });
+    let mut steps = vec![Step { stage: Stage::Load, models: vec![], host: false }];
+    let mut add = |stage: Stage, models: Vec<&'static str>| {
+        steps.push(Step { stage, models, host: !in_engine(stage, facts) })
+    };
     if needs_phase {
         add(Stage::ScalePhase, vec![]);
         if facts.has_magnitude {
