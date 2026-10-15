@@ -16,7 +16,6 @@ use qsmxt_engine::cache::step_cache_key;
 use qsmxt_engine::fieldmap::hz_per_ppm;
 use qsmxt_engine::scan::{scan_metadata, scan_metadata_in, AXIAL_ONLY_TOLERANCE_DEG};
 use crate::pipeline::memory;
-use crate::pipeline::phase;
 use crate::pipeline::requirements::{
     self, r2primenet_field_message, r2primenet_field_policy, R2primenetFieldPolicy,
     R2PRIMENET_TRAINED_B0_T,
@@ -1156,17 +1155,10 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
         return stage_combine_coils(ctx, progress);
     }
     let complex = ctx.run.echoes[0].imaginary_nifti.is_some();
-    let mut params = serde_json::json!({
-        "resampled_to_axial": ctx.meta.source_geometry.is_some(),
-        "dims": [ctx.meta.dims.0, ctx.meta.dims.1, ctx.meta.dims.2],
-    });
     // The sign convention follows from the sidecar, so it is a parameter (and keys the cache).
     let negate_phase = complex && negates_real_imaginary_phase(
         crate::bids::sidecar::read_sidecar(&ctx.run.echoes[0].phase_json)?.manufacturer.as_deref());
-    if complex {
-        params["input"] = serde_json::json!("real_imaginary");
-        params["negate_phase"] = serde_json::json!(negate_phase);
-    }
+    let params = qsmxt_engine::stages::phase::params(ctx.meta, complex.then_some(negate_phase));
     if ctx.is_cached_with_params("scale_phase", None, &params) {
         log::info!("Skipping scale_phase (cached)");
         return Ok(());
@@ -1184,86 +1176,67 @@ fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::
     } else {
         progress("Rescaling phase to radians");
     }
+    let outcome = converted.as_ref().map(|c| ("real_imaginary_conversion", slice_chopping_json(&c.chopping)));
+    let mut converted = converted.map(|c| c.phases.into_iter().zip(c.magnitudes));
     let mut phase_paths = Vec::new();
     let mut mag_paths = Vec::new();
 
-    if let Some((src_dims, src_affine)) = ctx.meta.source_geometry {
-        // Oblique run: bring every echo onto the cardinal grid before anything else sees it.
-        // Magnitude and phase go together through the complex domain, because interpolating
-        // wrapped phase on its own turns every wrap into a band of wrong values.
-        let (nx, ny, nz) = src_dims;
-        let params = qsm_core::geometry::AxialResampleParams::default();
-        for (i, echo) in ctx.run.echoes.iter().enumerate() {
-            let (mag, phase) = match &converted {
-                Some(c) => (c.magnitudes[i].clone(), c.phases[i].clone()),
-                None => {
-                    let mut phase_nifti = io::read_nifti_file(&echo.phase_nifti)
-                        .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?;
-                    qsm_core::pipeline::scale_phase_to_pi(&mut phase_nifti.data);
-                    let mag = match echo.magnitude_nifti.as_ref() {
-                        Some(p) => io::read_nifti_file(p)
-                            .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", p.display(), e)))?
-                            .data,
-                        // No magnitude: weight every voxel equally so the phase still resamples correctly.
-                        None => vec![1.0; phase_nifti.data.len()],
-                    };
-                    (mag, phase_nifti.data)
-                }
-            };
-            let out = qsm_core::geometry::resample_complex_to_axial(
-                &mag, &phase, nx, ny, nz, &src_affine, &params,
-            );
-            let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
-            save_volume(&p_path, &out.phase, ctx.meta)?;
-            phase_paths.push(p_path);
-            if ctx.run.has_magnitude {
-                let m_path = ctx.output.mag_path(&ctx.run.key, i + 1);
-                save_volume(&m_path, &out.magnitude, ctx.meta)?;
-                mag_paths.push(m_path);
+    // Each echo is read, brought onto the working grid in radians and written before the next is
+    // read. Converted echoes are already in radians.
+    let resampled = ctx.meta.source_geometry.is_some();
+    for (i, echo) in ctx.run.echoes.iter().enumerate() {
+        let (phase, magnitude, in_radians) = match converted.as_mut() {
+            Some(c) => {
+                let (phase, mag) = c.next().expect("one converted echo per echo");
+                (phase, Some(mag), true)
             }
-        }
-    } else if let Some(c) = &converted {
-        for i in 0..ctx.run.echoes.len() {
-            let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
-            save_volume(&p_path, &c.phases[i], ctx.meta)?;
-            phase_paths.push(p_path);
+            None => {
+                let phase = io::read_nifti_file(&echo.phase_nifti)
+                    .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?
+                    .data;
+                // Only resampling reads the magnitude: otherwise the file is copied as it is.
+                let mag = match echo.magnitude_nifti.as_ref().filter(|_| resampled) {
+                    Some(p) => Some(io::read_nifti_file(p)
+                        .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", p.display(), e)))?
+                        .data),
+                    None => None,
+                };
+                (phase, mag, false)
+            }
+        };
+        let out = qsmxt_engine::stages::phase::working_echo(phase, magnitude, in_radians, ctx.meta);
+        let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
+        save_volume(&p_path, &out.phase, ctx.meta)?;
+        phase_paths.push(p_path);
+        // A resampled run writes the magnitude it resampled with the phase; a converted one the
+        // magnitude it converted.
+        if let (Some(mag), true) = (&out.magnitude, (resampled && ctx.run.has_magnitude) || (!resampled && complex)) {
             let m_path = ctx.output.mag_path(&ctx.run.key, i + 1);
-            save_volume(&m_path, &c.magnitudes[i], ctx.meta)?;
+            save_volume(&m_path, mag, ctx.meta)?;
             mag_paths.push(m_path);
         }
-    } else {
-        for (i, echo) in ctx.run.echoes.iter().enumerate() {
-            let mut phase_nifti = io::read_nifti_file(&echo.phase_nifti)
-                .map_err(|e| QsmxtError::NiftiIo(format!("{}: {}", echo.phase_nifti.display(), e)))?;
-            qsm_core::pipeline::scale_phase_to_pi(&mut phase_nifti.data);
-            let out_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
-            save_volume(&out_path, &phase_nifti.data, ctx.meta)?;
-            phase_paths.push(out_path);
-        }
+    }
 
-        // Save raw (uncorrected) per-echo magnitudes as intermediates
-        // (needed by MCPC-3D-S, linear fit, ROMEO)
-        if ctx.run.has_magnitude {
-            for (i, echo) in ctx.run.echoes.iter().enumerate() {
-                if let Some(ref mag_path) = echo.magnitude_nifti {
-                    let out_path = ctx.output.mag_path(&ctx.run.key, i + 1);
-                    if let Some(parent) = out_path.parent() {
-                        std::fs::create_dir_all(parent)?;
-                    }
-                    std::fs::copy(mag_path, &out_path)?;
-                    mag_paths.push(out_path);
+    // Raw (uncorrected) per-echo magnitudes as they are, for MCPC-3D-S, linear fit and ROMEO.
+    if !resampled && !complex && ctx.run.has_magnitude {
+        for (i, echo) in ctx.run.echoes.iter().enumerate() {
+            if let Some(ref mag_path) = echo.magnitude_nifti {
+                let out_path = ctx.output.mag_path(&ctx.run.key, i + 1);
+                if let Some(parent) = out_path.parent() {
+                    std::fs::create_dir_all(parent)?;
                 }
+                std::fs::copy(mag_path, &out_path)?;
+                mag_paths.push(out_path);
             }
         }
     }
 
     let mut all_paths = phase_paths;
-    all_paths.extend(mag_paths.clone());
+    all_paths.extend(mag_paths);
     let input_paths: Vec<PathBuf> = ctx.run.echoes.iter()
         .flat_map(|e| std::iter::once(e.phase_nifti.clone()).chain(e.imaginary_nifti.clone()))
         .collect();
     let input_refs: Vec<&Path> = input_paths.iter().map(|p| p.as_path()).collect();
-    let outcome = converted.as_ref().map(|c| ("real_imaginary_conversion", slice_chopping_json(&c.chopping)));
     ctx.complete_step_with_outcome("scale_phase", None, params, outcome, &input_refs, all_paths, t)?;
     log_step_done(if ctx.meta.source_geometry.is_some() { "Resample + rescale phase" } else { "Rescale phase" }, t);
     Ok(())
@@ -1397,41 +1370,8 @@ fn stage_combine_coils(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate
     Ok(())
 }
 
-/// Apply inhomogeneity (bias field) correction on the run's working grid.
-///
-/// qsm-core indexes the volume as `x + y*nx + z*nx*ny` over the grid dimensions, so a volume
-/// with fewer voxels than the grid panics with an out-of-bounds index inside the box filter
-/// rather than reporting which input is wrong (issue #184). `validate_run_dims` catches this at
-/// load time for a fresh run; this guard also covers runs resumed from a cached state.
-fn homogeneity_correct(
-    data: &[f64],
-    meta: &RunMetadata,
-    homogeneity: &HomogeneityConfig,
-    source: &str,
-) -> crate::Result<Vec<f64>> {
-    let (nx, ny, nz) = meta.dims;
-    let (vsx, vsy, vsz) = meta.voxel_size;
-    if data.len() != nx * ny * nz {
-        return Err(QsmxtError::DimensionMismatch(format!(
-            concat!(
-                "inhomogeneity correction: {} has {} voxels but this run is processed on a ",
-                "{}x{}x{} grid ({} voxels) taken from its first phase echo. Check that the ",
-                "magnitude and phase come from the same acquisition, or pass ",
-                "--no-inhomogeneity-correction to skip this step",
-            ),
-            source, data.len(), nx, ny, nz, nx * ny * nz,
-        )));
-    }
-    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-    Ok(qsm_core::utils::makehomogeneous(data, &grid, homogeneity.sigma_mm, homogeneity.nbox))
-}
-
 fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let mag_params = serde_json::json!({
-        "inhomogeneity_correction": ctx.config.masking.inhomogeneity_correction,
-        "homogeneity_sigma_mm": ctx.config.homogeneity.sigma_mm,
-        "homogeneity_nbox": ctx.config.homogeneity.nbox,
-    });
+    let mag_params = qsmxt_engine::stages::magnitude::params(ctx.config);
     if ctx.is_cached_with_params("magnitude", Some("rss"), &mag_params) {
         log::info!("Skipping magnitude (cached)");
         return Ok(());
@@ -1440,7 +1380,11 @@ fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Re
         return Ok(());
     }
     let t = Instant::now();
-    progress("Computing RSS-combined magnitude");
+    progress(if ctx.config.masking.inhomogeneity_correction {
+        "Computing RSS-combined magnitude with inhomogeneity correction"
+    } else {
+        "Computing RSS-combined magnitude"
+    });
 
     // Load raw per-echo magnitudes
     let mut mag_slices: Vec<Vec<f64>> = Vec::new();
@@ -1457,16 +1401,7 @@ fn stage_magnitude(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Re
 
     if !mag_slices.is_empty() {
         let refs: Vec<&[f64]> = mag_slices.iter().map(|v| v.as_slice()).collect();
-        let mut combined = phase::rss_combine(&refs)?;
-
-        // Apply homogeneity correction to the combined result
-        if ctx.config.masking.inhomogeneity_correction {
-            progress("Applying inhomogeneity correction");
-            combined = homogeneity_correct(
-                &combined, ctx.meta, &ctx.config.homogeneity,
-                "the RSS-combined magnitude",
-            )?;
-        }
+        let combined = qsmxt_engine::stages::magnitude::combined_magnitude(&refs, ctx.meta, ctx.config)?;
 
         let combined_path = ctx.output.magnitude_path(&ctx.run.key);
         save_volume(&combined_path, &combined, ctx.meta)?;
@@ -1546,12 +1481,7 @@ fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
 }
 
 fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let mask_params = serde_json::json!({
-        "sections": ctx.config.masking.sections.iter().map(|s| format!("{}", s)).collect::<Vec<_>>(),
-        "combine": format!("{}", ctx.config.masking.combine),
-        "refinements": ctx.config.masking.refinements.iter().map(|o| format!("{}", o)).collect::<Vec<_>>(),
-        "custom_mask_tool": ctx.config.masking.custom_mask_tool,
-    });
+    let mask_params = qsmxt_engine::stages::mask::params(ctx.config);
     if ctx.is_cached_with_params("mask", None, &mask_params) {
         log::info!("Skipping mask (cached)");
         return Ok(());
@@ -1564,15 +1494,8 @@ fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
         if let Some(cm_path) = find_custom_mask(ctx.run, &tool) {
             match io::read_nifti_file(&cm_path) {
                 Ok(nd) => {
-                    let raw: Vec<u8> = nd.data.iter().map(|&v| if v > 0.5 { 1u8 } else { 0u8 }).collect();
-                    let mask_u8 = if nd.dims == ctx.meta.dims {
-                        raw
-                    } else {
-                        // Nearest-neighbour resample onto the working (axial) grid.
-                        phase::resample_mask_to_axial(&raw, nd.dims.0, nd.dims.1, nd.dims.2, &nd.affine)
-                    };
-                    let (nx, ny, nz) = ctx.meta.dims;
-                    if mask_u8.len() == nx * ny * nz {
+                    let conformed = qsmxt_engine::stages::mask::conform_custom_mask(&nd.data, nd.dims, &nd.affine, ctx.meta);
+                    if let Some(mask_u8) = conformed {
                         log::info!("Using custom mask from {}", cm_path.display());
                         save_mask(mask_path, &mask_u8, ctx.meta)?;
                         ctx.complete_step("mask", None, mask_params, &[cm_path.as_path()],
@@ -1605,13 +1528,12 @@ fn stage_mask(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str))
     Ok(())
 }
 
-/// Build a mask from a list of sections, folded with the configured combine mode and post-combine
-/// refinements. Shared by the main mask and the two-pass reliable mask, so both read the same
-/// images and honour the same folding rules.
+/// Load what masking reads — every echo's phase, and every echo's magnitude (none for a
+/// phase-only run) — and build a mask from `sections` ([`qsmxt_engine::stages::mask::build_mask`]).
+/// Shared by the main mask and the two-pass reliable mask.
 fn build_mask_from_sections(
     ctx: &mut StageContext, sections: &[MaskSection],
 ) -> crate::Result<Vec<u8>> {
-    // Load phases (needed for PhaseQuality masking input)
     let mut phases: Vec<Vec<f64>> = Vec::new();
     for i in 0..ctx.meta.n_echoes {
         let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
@@ -1619,69 +1541,25 @@ fn build_mask_from_sections(
             phases.push(load_volume(&p_path)?);
         }
     }
-
-    // Every echo's magnitude: each section builds the magnitude it asks for (echo 1, the RSS, the
-    // last echo) from these in qsm-core, so all sections see the same, consistently corrected,
-    // echoes (QSM.rs#173).
     let magnitudes = mask_echo_magnitudes(ctx)?;
-
-    // Convert config masking sections to qsm-core types
-    let core_sections = crate::pipeline::config::to_mask_sections(sections, &ctx.config.bet);
-    let scan_meta = scan_metadata(ctx.meta);
-    let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
 
     // Deep-learning mask ops (HD-BET): fetch the weights first, with a progress bar — or fail
     // clearly on a build without the `dl` feature.
-    for id in core_sections.iter().flat_map(|s| s.all_ops()).filter_map(|op| op.dl_model_id()) {
+    for id in qsmxt_engine::stages::mask::model_ids(sections, ctx.config) {
         prefetch_weights(id, &ctx.run.key.to_string())?;
     }
 
-    let core_refinements = qsmxt_engine::to_mask_ops(&ctx.config.masking.refinements, &ctx.config.bet);
-    let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|m| m.as_slice()).collect();
-    combine_mask_sections(
-        &core_sections, ctx.config.masking.combine, &core_refinements,
-        &phase_refs, &mag_refs, &scan_meta,
-    ).map_err(|e| QsmxtError::Config(format!("masking: {}", e)))
+    let phase_refs: Vec<&[f64]> = phases.iter().map(|p| p.as_slice()).collect();
+    Ok(qsmxt_engine::stages::mask::build_mask(sections, ctx.config, &phase_refs, magnitudes, ctx.meta)?)
 }
 
-/// Warn when the reliable mask leaves two-pass with nothing useful to do.
-///
-/// The holes are what the method works with, so a reliable mask that has (almost) none is a
-/// second reconstruction spent reproducing the first, and one with no voxels at all produces a
-/// combined map identical to the single-pass one. Neither is an error — the user may be
-/// exploring — but neither is worth the run time in silence. The 99.9% tolerance is there because
-/// a slightly-too-loose threshold leaves a handful of voxels rather than exactly zero.
-fn two_pass_coverage_advice(kept: usize, brain: usize) -> Option<&'static str> {
-    if brain == 0 {
-        return None;
-    }
-    if kept == 0 {
-        return Some("The reliable-phase mask is empty, so the two-pass output will be identical \
-                     to the single-pass one. Loosen --two-pass-mask, or turn two-pass off.");
-    }
-    if kept as f64 >= 0.999 * brain as f64 {
-        return Some("The reliable-phase mask covers essentially the whole brain mask, so \
-                     two-pass has almost nothing to reduce — it will spend a second \
-                     reconstruction reproducing the first. Tighten --two-pass-mask (and drop any \
-                     hole-filling from it), or turn two-pass off.");
-    }
-    None
-}
-
-/// Build the reliable-phase mask of a two-pass run, restricted to the main mask.
-///
-/// The restriction is not optional: the reliable mask decides where its pass's values are
-/// preferred, so a section reaching past the brain mask would promote a reconstruction over a
-/// region the run excluded outright.
+/// Build the reliable-phase mask of a two-pass run, restricted to the main mask
+/// ([`qsmxt_engine::stages::mask::reliable_mask`]).
 fn stage_two_pass_mask(
     ctx: &mut StageContext, main_mask: &Path, out_path: &Path, progress: &dyn Fn(&str),
 ) -> crate::Result<()> {
     let sections = ctx.config.masking.resolved_two_pass_sections();
-    let params = serde_json::json!({
-        "sections": sections.iter().map(|s| format!("{}", s)).collect::<Vec<_>>(),
-        "combine": format!("{}", ctx.config.masking.combine),
-        "refinements": ctx.config.masking.refinements.iter().map(|o| format!("{}", o)).collect::<Vec<_>>(),
-    });
+    let params = qsmxt_engine::stages::mask::reliable_params(ctx.config);
     let step = format!("mask{}", crate::pipeline::graph::RELIABLE_SUFFIX);
     if ctx.is_cached_with_params(&step, None, &params) {
         log::info!("Skipping reliable-phase mask (cached)");
@@ -1693,18 +1571,7 @@ fn stage_two_pass_mask(
 
     let reliable = build_mask_from_sections(ctx, &sections)?;
     let main = load_mask(main_mask)?;
-    let restricted = qsm_core::pipeline::restrict_reliable_mask(&reliable, &main)
-        .map_err(|e| QsmxtError::Config(format!("reliable mask: {}", e)))?;
-
-    let (kept, brain) = (
-        restricted.iter().filter(|&&v| v != 0).count(),
-        main.iter().filter(|&&v| v != 0).count(),
-    );
-    log::info!("Reliable-phase mask: {kept} of {brain} brain voxels ({:.1}%)",
-               100.0 * kept as f64 / brain.max(1) as f64);
-    if let Some(advice) = two_pass_coverage_advice(kept, brain) {
-        log::warn!("{advice}");
-    }
+    let restricted = qsmxt_engine::stages::mask::reliable_mask(&reliable, &main)?;
 
     save_mask(out_path, &restricted, ctx.meta)?;
     ctx.complete_step(&step, None, params, &[main_mask], vec![out_path.to_path_buf()], t)?;
@@ -1712,51 +1579,8 @@ fn stage_two_pass_mask(
     Ok(())
 }
 
-/// Build each mask section, fold them together with `combine`, then apply `refinements` to the
-/// result.
-///
-/// `combine` only matters with more than one section: `or` keeps a voxel any section keeps
-/// (the union qsm-core's `run_masking` produces), `and` keeps only voxels every section keeps.
-/// The refinements run on the combined mask, which is where an intersection's holes get filled —
-/// they are checked to be non-generators before we get here, so the image they see does not
-/// matter; the magnitude is passed for `signal-erode`.
-fn combine_mask_sections(
-    sections: &[qsm_core::pipeline::config::MaskSection],
-    combine: MaskCombine,
-    refinements: &[qsm_core::pipeline::config::MaskOp],
-    phases: &[&[f64]],
-    magnitudes: &[&[f64]],
-    meta: &qsm_core::pipeline::config::ScanMetadata,
-) -> std::result::Result<Vec<u8>, qsm_core::pipeline::PipelineError> {
-    use qsm_core::pipeline::PipelineError;
-
-    let mut combined: Option<Vec<u8>> = None;
-    for section in sections {
-        let mask = qsm_core::pipeline::build_mask_section(section, phases, magnitudes, meta)?;
-        combined = Some(match combined {
-            None => mask,
-            Some(mut acc) => { combine.accumulate(&mut acc, &mask); acc }
-        });
-    }
-    let combined = combined.ok_or_else(|| PipelineError::InvalidConfig("no mask sections configured".into()))?;
-
-    if refinements.is_empty() {
-        return Ok(combined);
-    }
-    // The refinements run on the combined mask, so they see the RSS magnitude (what
-    // `signal-erode` gates on); they are not generators, so the input image does not matter.
-    let magnitude = qsm_core::pipeline::section_magnitude(
-        qsm_core::pipeline::config::MaskingInput::Magnitude, magnitudes, meta)?;
-    qsm_core::pipeline::apply_mask_ops(
-        combined, refinements, magnitude.as_deref().unwrap_or(&[]), magnitude.as_deref(), meta)
-}
-
-/// Every echo's magnitude on the working grid, for masking, homogeneity-corrected when
-/// `--inhomogeneity-correction` is on. Empty for a phase-only run.
-///
-/// Each echo is corrected on its own, so a section on echo 1, on the RSS or on the last echo
-/// sees the same correction; the masks used to mix a corrected RSS with an uncorrected echo
-/// depending on the section.
+/// Every echo's magnitude on the working grid, for masking, as stored (masking corrects each for
+/// inhomogeneity itself). Empty for a phase-only run.
 fn mask_echo_magnitudes(ctx: &StageContext) -> crate::Result<Vec<Vec<f64>>> {
     let mut out = Vec::with_capacity(ctx.meta.n_echoes);
     for e in 1..=ctx.meta.n_echoes {
@@ -1764,13 +1588,7 @@ fn mask_echo_magnitudes(ctx: &StageContext) -> crate::Result<Vec<Vec<f64>>> {
         if !p.exists() {
             return Ok(Vec::new());
         }
-        let data = load_volume(&p)?;
-        out.push(if ctx.config.masking.inhomogeneity_correction {
-            homogeneity_correct(&data, ctx.meta, &ctx.config.homogeneity,
-                                &format!("echo {e}'s magnitude"))?
-        } else {
-            data
-        });
+        out.push(load_volume(&p)?);
     }
     Ok(out)
 }
@@ -3991,74 +3809,6 @@ mod tests {
         assert_ne!(key(&edited), lbase, "but it does read its own");
     }
 
-    /// A reliable mask with no holes, or no voxels, makes the second reconstruction pointless —
-    /// and both are easy to produce by mistake with a slightly-wrong threshold.
-    #[test]
-    fn two_pass_coverage_advice_flags_a_useless_reliable_mask() {
-        // A mask with real holes is the working case: no advice.
-        assert!(super::two_pass_coverage_advice(800, 1000).is_none());
-        assert!(super::two_pass_coverage_advice(997, 1000).is_none());
-
-        // Essentially the whole brain — including the handful-of-voxels case that is not
-        // exactly equal but is just as useless.
-        assert!(super::two_pass_coverage_advice(1000, 1000).unwrap().contains("almost nothing"));
-        assert!(super::two_pass_coverage_advice(999, 1000).unwrap().contains("almost nothing"));
-
-        assert!(super::two_pass_coverage_advice(0, 1000).unwrap().contains("empty"));
-        // No brain mask at all is someone else's error to report.
-        assert!(super::two_pass_coverage_advice(0, 0).is_none());
-    }
-
-    /// The chain the warning exists for, end to end on real masking: a reliable recipe that fills
-    /// its holes produces a mask covering the whole brain, and the advice fires on it — while the
-    /// default recipe keeps its holes and stays silent.
-    ///
-    /// The pieces were tested separately before; this is the join between them, which is where the
-    /// feature would quietly become a no-op that costs a second reconstruction.
-    #[test]
-    fn hole_filling_collapses_the_reliable_mask_onto_the_brain() {
-        use crate::pipeline::config::{MaskCombine, MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
-        use super::combine_mask_sections;
-
-        // A 12³ block of bright signal with a dark 3³ void inside it — a strong susceptibility
-        // source as a quality map sees it.
-        let dims = (12usize, 12, 12);
-        let (nx, ny, nz) = dims;
-        let mut quality = vec![1.0f64; nx * ny * nz];
-        for z in 4..7 { for y in 4..7 { for x in 4..7 {
-            quality[z * nx * ny + y * nx + x] = 0.0;
-        }}}
-        let meta = crate::pipeline::config::to_scan_metadata(dims, (1.0, 1.0, 1.0), &[0.005], 3.0, (0.0, 0.0, 1.0), None);
-
-        let recipe = |refinements: Vec<MaskOp>| crate::pipeline::config::to_mask_sections(&[MaskSection {
-            input: MaskingInput::Magnitude,
-            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(0.5) },
-            refinements,
-        }], &Default::default());
-        let build = |refinements: Vec<MaskOp>| {
-            combine_mask_sections(&recipe(refinements), MaskCombine::Or, &[], &[], &[&quality], &meta).unwrap()
-        };
-        let count = |m: &[u8]| m.iter().filter(|&&v| v != 0).count();
-
-        // The brain mask, standing in for the main pass: holes filled.
-        let brain = build(vec![MaskOp::FillHoles { max_size: 0 }]);
-        assert_eq!(count(&brain), nx * ny * nz, "the filled mask should have swallowed the void");
-
-        // The default reliable recipe keeps the void, so the two passes reconstruct different
-        // regions and the advice stays quiet.
-        let unfilled = build(vec![]);
-        assert_eq!(count(&unfilled), nx * ny * nz - 27, "the void is what the reliable pass excludes");
-        assert!(super::two_pass_coverage_advice(count(&unfilled), count(&brain)).is_none());
-
-        // Fill the holes in the *reliable* mask and it becomes the brain mask — a second
-        // reconstruction of the same region.
-        let filled = build(vec![MaskOp::FillHoles { max_size: 0 }]);
-        assert_eq!(count(&filled), count(&brain));
-        let advice = super::two_pass_coverage_advice(count(&filled), count(&brain))
-            .expect("a reliable mask with no holes must be flagged");
-        assert!(advice.contains("almost nothing to reduce"), "{advice}");
-    }
-
     /// The support is the eroded mask when background removal ran, and the brain mask when the
     /// inversion did its own — picking the wrong one would hand the combination a mask that does
     /// not exist on disk.
@@ -4230,51 +3980,6 @@ mod tests {
         assert_eq!(ids, ["mindgrab"]);
         let err = super::prefetch_weights(ids[0], "test").unwrap_err();
         assert!(format!("{}", err).contains("deep-learning"), "got: {}", err);
-    }
-
-    /// Two magnitude sections with fixed thresholds, so the section masks are known exactly:
-    /// OR is their union, AND their intersection, and the post-combine refinements run once on
-    /// the result rather than per section.
-    #[test]
-    fn test_combine_mask_sections_or_and_and() {
-        use super::combine_mask_sections;
-        use crate::pipeline::config::{MaskCombine, MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
-
-        let dims = (4usize, 4, 4);
-        let n = dims.0 * dims.1 * dims.2;
-        // A ramp: voxel i has value i, so `threshold:fixed:t` keeps exactly the voxels above t.
-        let mag: Vec<f64> = (0..n).map(|i| i as f64).collect();
-        let meta = crate::pipeline::config::to_scan_metadata(dims, (1.0, 1.0, 1.0), &[0.005], 3.0, (0.0, 0.0, 1.0), None);
-
-        let section = |t: f64| MaskSection {
-            input: MaskingInput::Magnitude,
-            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(t) },
-            refinements: vec![],
-        };
-        // > 10 keeps 53 voxels, > 30 keeps 33; the second is a strict subset of the first.
-        let sections = crate::pipeline::config::to_mask_sections(&[section(10.0), section(30.0)], &Default::default());
-        let count = |m: &[u8]| m.iter().filter(|&&v| v == 1).count();
-
-        let or = combine_mask_sections(&sections, MaskCombine::Or, &[], &[], &[&mag], &meta).unwrap();
-        assert_eq!(count(&or), n - 11, "union is the looser threshold");
-
-        let and = combine_mask_sections(&sections, MaskCombine::And, &[], &[], &[&mag], &meta).unwrap();
-        assert_eq!(count(&and), n - 31, "intersection is the tighter threshold");
-        assert!(or.iter().zip(&and).all(|(o, a)| o >= a), "AND ⊆ OR");
-
-        // One section: the combine mode makes no difference.
-        let one = crate::pipeline::config::to_mask_sections(&[section(10.0)], &Default::default());
-        for mode in [MaskCombine::Or, MaskCombine::And] {
-            assert_eq!(combine_mask_sections(&one, mode, &[], &[], &[&mag], &meta).unwrap(), or);
-        }
-
-        // Post-combine refinements run on the combined mask.
-        let refinements = crate::pipeline::config::to_mask_ops(&[MaskOp::Erode { iterations: 1 }], &Default::default());
-        let eroded = combine_mask_sections(&sections, MaskCombine::And, &refinements, &[], &[&mag], &meta).unwrap();
-        assert!(count(&eroded) < count(&and), "erosion shrank the combined mask");
-
-        // No sections is a configuration error, not an empty mask.
-        assert!(combine_mask_sections(&[], MaskCombine::Or, &[], &[], &[&mag], &meta).is_err());
     }
 
     #[test]
@@ -5017,38 +4722,6 @@ mod tests {
         assert!(qsmxt_engine::bridge::axial_only_algorithms(&cfg, Default::default()).is_empty(),
                 "the default pipeline takes B0 as a parameter throughout");
     }
-
-    fn meta_4x4x4() -> crate::pipeline::graph::RunMetadata {
-        crate::pipeline::graph::RunMetadata {
-            dims: (4, 4, 4), voxel_size: (1.0, 1.0, 1.0),
-            affine: [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0],
-            n_echoes: 1, echo_times: vec![0.004], b0_direction: (0.0, 0.0, 1.0),
-            field_strength: 3.0, has_magnitude: true,
-            source_geometry: None, slice_geometry: None,
-        }
-    }
-
-    #[test]
-    fn test_homogeneity_correct_rejects_size_mismatch() {
-        // The guard must report the mismatch rather than let qsm-core index past the volume.
-        let cfg = crate::pipeline::config::HomogeneityConfig::default();
-        let short = vec![1.0f64; 4 * 4 * 3];
-        let err = super::homogeneity_correct(&short, &meta_4x4x4(), &cfg, "the magnitude").unwrap_err();
-        let msg = format!("{}", err);
-        assert!(msg.contains("48 voxels"), "got: {}", msg);
-        assert!(msg.contains("4x4x4"), "got: {}", msg);
-        assert!(msg.contains("--no-inhomogeneity-correction"), "got: {}", msg);
-    }
-
-    #[test]
-    fn test_homogeneity_correct_runs_on_matching_volume() {
-        let cfg = crate::pipeline::config::HomogeneityConfig::default();
-        let data: Vec<f64> = (0..4 * 4 * 4).map(|i| 100.0 + i as f64).collect();
-        let out = super::homogeneity_correct(&data, &meta_4x4x4(), &cfg, "the magnitude").unwrap();
-        assert_eq!(out.len(), data.len());
-        assert!(out.iter().all(|v| v.is_finite()));
-    }
-
 }
 
 #[cfg(test)]
