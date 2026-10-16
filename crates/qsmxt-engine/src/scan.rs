@@ -97,8 +97,8 @@ pub fn orientation_facts(facts: &ScanFacts, config: &PipelineConfig) -> crate::b
     }
 }
 
-/// Relevant fields from a BIDS JSON sidecar.
-#[derive(Debug, Clone, Deserialize)]
+/// Relevant fields from a BIDS JSON sidecar. Serialises back to the sidecar's own field names.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct QsmSidecar {
     #[serde(rename = "EchoTime")]
     pub echo_time: f64,
@@ -106,25 +106,33 @@ pub struct QsmSidecar {
     #[serde(rename = "MagneticFieldStrength")]
     pub magnetic_field_strength: f64,
 
-    #[serde(rename = "B0_dir")]
+    #[serde(rename = "B0_dir", default, skip_serializing_if = "Option::is_none")]
     pub b0_dir: Option<Vec<f64>>,
 
     /// `SliceThickness` (mm): the excited thickness, which for a 2D acquisition can be less than
     /// the slice pitch.
-    #[serde(rename = "SliceThickness")]
+    #[serde(rename = "SliceThickness", default, skip_serializing_if = "Option::is_none")]
     pub slice_thickness: Option<f64>,
     /// `MRAcquisitionType`: "2D" or "3D".
-    #[serde(rename = "MRAcquisitionType")]
+    #[serde(rename = "MRAcquisitionType", default, skip_serializing_if = "Option::is_none")]
     pub mr_acquisition_type: Option<String>,
     /// `SliceEncodingDirection`: "i", "j" or "k", optionally with "-".
-    #[serde(rename = "SliceEncodingDirection")]
+    #[serde(rename = "SliceEncodingDirection", default, skip_serializing_if = "Option::is_none")]
     pub slice_encoding_direction: Option<String>,
     /// `Manufacturer`, which decides the phase sign convention of real/imaginary input.
-    #[serde(rename = "Manufacturer")]
+    #[serde(rename = "Manufacturer", default, skip_serializing_if = "Option::is_none")]
     pub manufacturer: Option<String>,
 }
 
 impl QsmSidecar {
+    /// A sidecar giving only the echo time and field strength.
+    pub fn bare(echo_time: f64, magnetic_field_strength: f64) -> Self {
+        QsmSidecar {
+            echo_time, magnetic_field_strength, b0_dir: None, slice_thickness: None,
+            mr_acquisition_type: None, slice_encoding_direction: None, manufacturer: None,
+        }
+    }
+
     /// The QSM-relevant fields of a parsed sidecar. `Err` names the required field that is
     /// missing (or not a number): `EchoTime` or `MagneticFieldStrength`.
     pub fn from_json(value: &serde_json::Value) -> Result<Self, &'static str> {
