@@ -3,6 +3,8 @@ mod clipboard;
 mod command;
 mod tabs;
 mod ui;
+#[cfg(test)]
+mod schema_parity;
 
 use std::io;
 
