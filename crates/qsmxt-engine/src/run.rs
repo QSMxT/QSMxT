@@ -2,10 +2,6 @@
 //! valid, its inputs read from the store as it starts and its outputs handed back as they are
 //! produced.
 //!
-//! The steps the engine computes are here; the ones it does not yet ([`Step::host`]) are handed
-//! to the store. A step moves into the engine by gaining a function here, its `host` flag
-//! dropping in [`crate::plan`], and its arm in the store's `host` going away.
-//!
 //! A plan is one run. Reconstructions from several runs (multi-orientation COSMOS and STI) are
 //! not steps of any plan: `qsmxt run` makes them after every run's plan has run, from those runs'
 //! outputs. They join the engine as a plan over several runs' [`ScanFacts`], whose steps read the
@@ -41,11 +37,7 @@ pub fn run<S: StageStore + ?Sized>(
     }
     let mut r = Run { plan, config, facts, meta, store, observer };
     for step in &plan.steps {
-        if step.host {
-            r.store.host(step, plan, r.observer)?;
-        } else {
-            r.step(step)?;
-        }
+        r.step(step)?;
     }
     r.store.finish()
 }
@@ -123,6 +115,8 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     fn step(&mut self, step: &Step) -> Result<(), S::Error> {
         match step.stage {
             Stage::Load => Ok(()),
+            Stage::ScalePhase if self.facts.n_coils > 1 => self.combine_coils(),
+            Stage::ScalePhase if self.facts.real_imaginary => self.scale_real_imaginary(),
             Stage::ScalePhase => self.scale_phase(),
             Stage::Magnitude => self.magnitude(),
             Stage::Mask(Pass::Main) => self.mask(step),
@@ -299,6 +293,130 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             step: "scale_phase", algorithm: None, params: &params, outcome: None, key: &key,
             inputs: &inputs, outputs: &outputs,
         }, if resampled { "Resample + rescale phase" } else { "Rescale phase" })
+    }
+
+    /// `scale_phase` for a scan given as real and imaginary parts: they become magnitude and
+    /// phase ([`stages::phase::real_imaginary`]) before anything else sees them, and each converted
+    /// echo (already in radians) is brought onto the working grid as for any other scan. The sign
+    /// convention follows from the scanner's manufacturer, so it is a parameter (and keys the
+    /// cache).
+    fn scale_real_imaginary(&mut self) -> Result<(), S::Error> {
+        let manufacturer = self.store.sidecar()?.and_then(|s| s.manufacturer);
+        let negate_phase = stages::phase::negates_real_imaginary_phase(manufacturer.as_deref());
+        let params = stages::phase::params(&self.meta, Some(negate_phase));
+        let Some(key) = self.begin("scale_phase", None, &params, "Skipping scale_phase (cached)",
+                                   "Converting real/imaginary to magnitude/phase") else { return Ok(()) };
+        let n = self.n_echoes();
+        let acquired = stages::phase::acquired_grid(&self.meta).n_total();
+        let (mut real, mut imaginary, mut inputs) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::new());
+        for e in 1..=n {
+            for (item, out) in [(Item::AcquiredPhase(e), &mut real), (Item::AcquiredImaginary(e), &mut imaginary)] {
+                if !self.store.has(&item) {
+                    return Err(crate::EngineError::Config(format!(
+                        "echo {e}: real/imaginary run without a part-imag file")).into());
+                }
+                let v = self.store.real(&item)?;
+                if v.len() != acquired {
+                    let what = self.store.identity(&item);
+                    return Err(crate::EngineError::DimensionMismatch(format!(
+                        "{} has {} voxels, expected {acquired}", what.as_str().unwrap_or_default(), v.len())).into());
+                }
+                out.push(v);
+                inputs.push(item);
+            }
+        }
+        let (converted, lines) = stages::phase::real_imaginary(&real, &imaginary, &self.meta, negate_phase);
+        drop((real, imaginary));
+        for (level, line) in lines {
+            self.log(level, &line);
+        }
+        let resampled = self.meta.source_geometry.is_some();
+        let outcome = Some(("real_imaginary_conversion", stages::phase::slice_chopping_json(&converted.chopping)));
+        let (mut phases, mut magnitudes) = (Vec::new(), Vec::new());
+        for (i, (phase, mag)) in converted.phases.into_iter().zip(converted.magnitudes).enumerate() {
+            let out = stages::phase::working_echo(phase, Some(mag), true, &self.meta);
+            self.put(Item::Phase(i + 1), Data::Real(&out.phase))?;
+            phases.push(Item::Phase(i + 1));
+            // The magnitude it converted, resampled with the phase when the run is resampled.
+            if let (Some(mag), true) = (&out.magnitude, !resampled || self.meta.has_magnitude) {
+                self.put(Item::Magnitude(i + 1), Data::Real(mag))?;
+                magnitudes.push(Item::Magnitude(i + 1));
+            }
+        }
+        let outputs: Vec<Item> = phases.into_iter().chain(magnitudes).collect();
+        self.complete(Completed {
+            step: "scale_phase", algorithm: None, params: &params, outcome, key: &key,
+            inputs: &inputs, outputs: &outputs,
+        }, if resampled { "Resample + rescale phase" } else { "Rescale phase" })
+    }
+
+    /// `scale_phase` for uncombined coils: every coil's echoes combined by MCPC-3D-S
+    /// ([`stages::phase::combine_coils`]) into the per-echo phase (radians, coil offsets removed)
+    /// and magnitude every later step reads, which are also kept as outputs of their own.
+    fn combine_coils(&mut self) -> Result<(), S::Error> {
+        let coils = self.store.coils();
+        let n = self.n_echoes();
+        // MCPC-3D-S estimates each coil's phase offset from the difference of two echoes.
+        // `qsmxt run` refuses such a run up front; this keeps a direct caller from QSM.rs's assertion.
+        if n < 2 {
+            return Err(crate::EngineError::Config(format!(
+                "MCPC-3D-S coil combination needs at least 2 echoes, and this run has {n} echo with {} \
+                 uncombined coils. Combine the coils first (on the scanner, or with another tool).",
+                coils.len())).into());
+        }
+        let params = stages::phase::coil_params(self.config, &self.meta, &coils);
+        let Some(key) = self.begin("scale_phase", Some("mcpc3ds"), &params, "Skipping coil combination (cached)",
+                                   "MCPC-3D-S coil combination") else { return Ok(()) };
+        self.log(Level::Info, &format!("Coil combination (MCPC-3D-S): {} coils x {n} echoes", coils.len()));
+        let acquired = stages::phase::acquired_grid(&self.meta).n_total();
+        let (mut phases, mut magnitudes, mut inputs) = (Vec::new(), Vec::new(), Vec::new());
+        for (c, number) in coils.iter().enumerate().map(|(i, &number)| (i + 1, number)) {
+            let (mut cp, mut cm) = (Vec::with_capacity(n), Vec::with_capacity(n));
+            for e in 1..=n {
+                let (phase_item, mag_item) = (Item::CoilPhase(c, e), Item::CoilMagnitude(c, e));
+                let mut p = self.store.real(&phase_item)?;
+                if p.len() != acquired {
+                    let what = self.store.identity(&phase_item);
+                    return Err(crate::EngineError::DimensionMismatch(format!(
+                        "{} has {} voxels, expected {acquired}", what.as_str().unwrap_or_default(), p.len())).into());
+                }
+                qsm_core::pipeline::scale_phase_to_pi(&mut p);
+                if !self.store.has(&mag_item) {
+                    return Err(crate::EngineError::Config(format!(
+                        "coil {number} echo {e}: magnitude required for MCPC-3D-S")).into());
+                }
+                let m = self.store.real(&mag_item)?;
+                if m.len() != acquired {
+                    let what = self.store.identity(&mag_item);
+                    return Err(crate::EngineError::DimensionMismatch(format!(
+                        "{} has {} voxels, expected {acquired}", what.as_str().unwrap_or_default(), m.len())).into());
+                }
+                inputs.extend([phase_item, mag_item]);
+                cp.push(p);
+                cm.push(m);
+            }
+            phases.push(cp);
+            magnitudes.push(cm);
+        }
+        let combined = stages::phase::combine_coils(&phases, &magnitudes, &self.meta, self.config)?;
+        drop((phases, magnitudes));
+        let mut outputs = Vec::new();
+        for e in 1..=n {
+            let echo = stages::phase::combined_echo(&combined.magnitudes[e - 1], &combined.phases[e - 1], &self.meta);
+            let magnitude = echo.magnitude.unwrap_or_default();
+            self.put(Item::Phase(e), Data::Real(&echo.phase))?;
+            self.put(Item::Magnitude(e), Data::Real(&magnitude))?;
+            self.put(Item::CombinedEchoPhase(e), Data::Real(&echo.phase))?;
+            self.put(Item::CombinedEchoMagnitude(e), Data::Real(&magnitude))?;
+            outputs.extend([Item::Phase(e), Item::Magnitude(e), Item::CombinedEchoPhase(e), Item::CombinedEchoMagnitude(e)]);
+        }
+        let mask = stages::phase::combination_mask(&combined.mask, &self.meta);
+        self.put(Item::CoilCombinationMask, Data::Mask(&mask))?;
+        outputs.push(Item::CoilCombinationMask);
+        self.complete(Completed {
+            step: "scale_phase", algorithm: Some("mcpc3ds"), params: &params, outcome: None, key: &key,
+            inputs: &inputs, outputs: &outputs,
+        }, "Coil combination")
     }
 
     fn magnitude(&mut self) -> Result<(), S::Error> {
@@ -1294,7 +1412,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.log(Level::Info, &format!(
             "Returning outputs to the acquired grid: {}x{}x{} -> {}x{}x{}",
             src_dims.0, src_dims.1, src_dims.2, dst_dims.0, dst_dims.1, dst_dims.2));
-        let published: Vec<(Item, Kind)> = o::published().into_iter().filter(|(i, _)| self.store.has(i)).collect();
+        let published: Vec<(Item, Kind)> = o::published(self.n_echoes()).into_iter().filter(|(i, _)| self.store.has(i)).collect();
         let dst = o::acquired(dst_dims, &dst_affine);
         let src_voxels = src_dims.0 * src_dims.1 * src_dims.2;
         let mut done: Vec<Item> = Vec::new();
@@ -1753,18 +1871,59 @@ mod tests {
         assert!(store.geometry(&Item::LocalField(Pass::Main)).is_none(), "intermediates stay on the working grid");
     }
 
-    /// A step the engine does not run yet is handed to the store, which says so if it cannot.
+    /// Uncombined coils and real/imaginary parts, in memory: the coils combined by MCPC-3D-S,
+    /// the parts converted (GE's phase sign undone), and either one reconstructed from there.
     #[test]
-    fn host_steps_are_the_stores() {
-        let (mut facts, mut store) = phantom();
+    fn coils_and_real_imaginary_parts_run_in_memory() {
+        let (facts, store) = phantom();
+        let echo = |item: Item| match store.get(&item) { Some(VolumeData::Real(v)) => v.clone(), _ => panic!() };
+        let (phases, mags): (Vec<_>, Vec<_>) = (1..=TES.len()).map(|e| (echo(Item::AcquiredPhase(e)), echo(Item::AcquiredMagnitude(e)))).unzip();
+        let mut affine = [0.0; 16];
+        for i in 0..4 { affine[5 * i] = 1.0; }
+        let header = |manufacturer: &str| {
+            let sidecar: crate::scan::QsmSidecar = serde_json::from_value(json!({
+                "EchoTime": 0.005, "MagneticFieldStrength": 3.0, "Manufacturer": manufacturer })).unwrap();
+            Header { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, sidecar: Some(sidecar) }
+        };
+
+        // Two coils, each seeing the scan with its own smooth sensitivity and phase offset.
+        let mut coils = MemoryStore::new(header("Siemens"), json!("coils"));
+        for (c, offset) in [(1, 0.4), (2, -0.9)] {
+            for e in 1..=TES.len() {
+                let (p, m) = (&phases[e - 1], &mags[e - 1]);
+                let weight = |i: usize| 0.5 + (i % N) as f64 / N as f64 * if c == 1 { 1.0 } else { -1.0 } * 0.4;
+                let phase: Vec<f64> = p.iter().map(|&v| (v + offset + std::f64::consts::PI).rem_euclid(std::f64::consts::TAU) - std::f64::consts::PI).collect();
+                coils.insert(Item::CoilPhase(c, e), VolumeData::Real(phase));
+                coils.insert(Item::CoilMagnitude(c, e), VolumeData::Real(m.iter().enumerate().map(|(i, &v)| v * weight(i)).collect()));
+            }
+        }
+        let mut f = facts.clone();
+        f.n_coils = 2;
         let config = config();
-        facts.n_coils = 2;
-        let plan = crate::plan::plan(&config, &facts);
-        assert!(plan.steps.iter().any(|s| s.stage == Stage::ScalePhase && s.host));
-        // As a front end hands it on: each step's stage, models and who runs it.
-        let json = serde_json::to_value(&plan).unwrap();
-        assert!(json["steps"].as_array().unwrap().iter().any(|s| s["stage"] == "ScalePhase" && s["host"] == true), "{json}");
-        let err = run(&plan, &config, &facts, &mut store, &mut ()).unwrap_err();
-        assert!(format!("{err}").contains("scale_phase"), "{err}");
+        let events = run_once(&config, &f, &mut coils);
+        assert!(events.computed.contains(&"scale_phase".to_string()) && events.computed.contains(&"reference".to_string()));
+        for e in 1..=TES.len() {
+            assert!(coils.get(&Item::CombinedEchoPhase(e)).is_some() && coils.get(&Item::Phase(e)).is_some());
+        }
+        assert!(coils.get(&Item::CoilCombinationMask).is_some());
+        assert!(run_once(&config, &f, &mut coils).computed.is_empty());
+
+        // Real and imaginary parts from a GE scanner, whose phase has the opposite sign.
+        let mut parts = MemoryStore::new(header("GE MEDICAL SYSTEMS"), json!("parts"));
+        for e in 1..=TES.len() {
+            let (p, m) = (&phases[e - 1], &mags[e - 1]);
+            parts.insert(Item::AcquiredPhase(e), VolumeData::Real(p.iter().zip(m).map(|(&p, &m)| m * p.cos()).collect()));
+            parts.insert(Item::AcquiredImaginary(e), VolumeData::Real(p.iter().zip(m).map(|(&p, &m)| -m * p.sin()).collect()));
+        }
+        let mut f = facts.clone();
+        f.real_imaginary = true;
+        run_once(&config, &f, &mut parts);
+        let (Some(VolumeData::Real(converted)), Some(VolumeData::Real(magnitude))) =
+            (parts.get(&Item::Phase(2)), parts.get(&Item::Magnitude(2))) else { panic!("not converted") };
+        // The phase comes back as given: wrapped, so compared on the circle.
+        assert!(converted.iter().zip(&phases[1]).all(|(&a, &b)| (a - b).sin().abs() < 1e-9 && (a - b).cos() > 0.0));
+        assert!(magnitude.iter().zip(&mags[1]).all(|(a, b)| (a - b).abs() < 1e-9));
+        assert!(parts.get(&Item::Chi).is_some());
     }
+
 }

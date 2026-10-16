@@ -10,9 +10,8 @@ use crate::bids::derivatives::DerivativeOutputs;
 use crate::bids::discovery::QsmRun;
 use crate::pipeline::config::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
-use qsmxt_engine::cache::step_cache_key;
 use qsmxt_engine::observe::{Observer, StageEvent};
-use qsmxt_engine::plan::{Pass as EnginePass, Plan, Stage, Step};
+use qsmxt_engine::plan::{Pass as EnginePass, Stage};
 use qsmxt_engine::store::{Completed, Contrast, Data, Header, Item, StageStore, Supplied};
 use crate::pipeline::memory;
 use crate::pipeline::requirements;
@@ -62,76 +61,6 @@ pub(crate) fn write_step_provenance(
         .map_err(|e| QsmxtError::Config(format!("Failed to serialize provenance: {}", e)))?;
     std::fs::write(prov_path, json)?;
     Ok(())
-}
-
-/// Bundles references needed by every pipeline stage.
-struct StageContext<'a> {
-    run: &'a QsmRun,
-    config: &'a PipelineConfig,
-    output: &'a DerivativeOutputs,
-    meta: &'a RunMetadata,
-    state: &'a mut PipelineState,
-    state_path: &'a Path,
-}
-
-impl StageContext<'_> {
-    fn is_cached_with_params(&mut self, step: &str, algorithm: Option<&str>, params: &serde_json::Value) -> bool {
-        let hash = step_cache_key(step, algorithm, params, self.config);
-        self.state.is_step_cached_with_hash(step, Some(&hash))
-    }
-
-
-    /// Write provenance.json, record params hash, and save pipeline state.
-    fn complete_step(
-        &mut self,
-        step: &str,
-        algorithm: Option<&str>,
-        parameters: serde_json::Value,
-        inputs: &[&Path],
-        output_paths: Vec<PathBuf>,
-        start: Instant,
-    ) -> crate::Result<()> {
-        self.complete_step_with_outcome(step, algorithm, parameters, None, inputs, output_paths, start)
-    }
-
-    /// [`Self::complete_step`], with what the step found in the data (`outcome`) recorded in its
-    /// provenance next to its parameters. Only `parameters` key the cache: the outcome follows
-    /// from them and the inputs, so it is not known when the cache is checked.
-    #[allow(clippy::too_many_arguments)]
-    fn complete_step_with_outcome(
-        &mut self,
-        step: &str,
-        algorithm: Option<&str>,
-        parameters: serde_json::Value,
-        outcome: Option<(&str, serde_json::Value)>,
-        inputs: &[&Path],
-        output_paths: Vec<PathBuf>,
-        start: Instant,
-    ) -> crate::Result<()> {
-        let prov_path = self.output.provenance_path(&self.run.key, step);
-        let mut recorded = parameters.clone();
-        if let Some((name, value)) = outcome {
-            recorded[name] = value;
-        }
-        write_step_provenance(&prov_path, step, algorithm, &recorded, inputs, &output_paths, start)?;
-
-        // Whatever read this step's previous output is stale now that it has been recomputed with
-        // other parameters, or for the first time (a step newly switched on, say), which the
-        // downstream steps' own parameter hashes would not notice. Recomputed with the same
-        // parameters — its files were missing, or cleaned — it made the same output, and what
-        // read it stays cached.
-        let hash = step_cache_key(step, algorithm, &parameters, self.config);
-        let same_as_before = self.state.completed_steps.get(step)
-            .is_some_and(|r| r.params_hash.as_deref() == Some(hash.as_str()));
-        if !same_as_before {
-            for ds in crate::pipeline::graph::downstream_of(step) {
-                self.state.completed_steps.remove(&ds);
-            }
-        }
-        // Mark step done with params hash
-        self.state.mark_completed(step, output_paths, Some(hash));
-        self.state.save(self.state_path)
-    }
 }
 
 /// Global multi-progress for coordinating parallel progress bars.
@@ -313,7 +242,7 @@ pub fn run_pipeline_cached(
         log::warn!("{note}");
     }
     let mut store = FileStore {
-        run: qsm_run, config, output: output.clone(), meta: None, state, state_path, progress,
+        run: qsm_run, config, output: output.clone(), meta: None, state, state_path,
         started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(), metadata: None,
         working_grid_kept: false,
     };
@@ -323,8 +252,7 @@ pub fn run_pipeline_cached(
 
 /// `qsmxt run`'s [`StageStore`]: a run's volumes as files under the derivatives directory, named
 /// by [`DerivativeOutputs`], its step cache in the run's state file ([`PipelineState`]), and a
-/// provenance record for every step. The stages the engine does not run yet are run here, from the
-/// same files.
+/// provenance record for every step.
 ///
 /// Returning the outputs to the acquired grid rewrites them in place; the working-grid originals
 /// are kept aside first, and put back when a later run starts ([`restore_working_grid`]).
@@ -337,7 +265,6 @@ struct FileStore<'a> {
     meta: Option<RunMetadata>,
     state: PipelineState,
     state_path: PathBuf,
-    progress: &'a dyn Fn(&str),
     /// When the step being computed started, for its provenance.
     started: Option<Instant>,
     /// The step being computed.
@@ -356,15 +283,6 @@ struct FileStore<'a> {
 }
 
 impl FileStore<'_> {
-    /// The stage context the runner's own stages take.
-    fn ctx(&mut self) -> StageContext<'_> {
-        StageContext {
-            run: self.run, config: self.config, output: &self.output,
-            meta: self.meta.as_ref().expect("the run's grid is known before any stage runs"),
-            state: &mut self.state, state_path: &self.state_path,
-        }
-    }
-
     /// Where `item` is kept, when it has a place.
     fn path(&self, item: &Item) -> Option<PathBuf> {
         let (o, key) = (&self.output, &self.run.key);
@@ -376,6 +294,13 @@ impl FileStore<'_> {
         Some(match *item {
             Item::AcquiredPhase(n) => echo(n)?.phase_nifti.clone(),
             Item::AcquiredMagnitude(n) => echo(n)?.magnitude_nifti.clone()?,
+            Item::AcquiredImaginary(n) => echo(n)?.imaginary_nifti.clone()?,
+            Item::CoilPhase(c, n) => self.run.coils.as_ref()?.get(c.checked_sub(1)?)?.echoes.get(n.checked_sub(1)?)?.phase_nifti.clone(),
+            Item::CoilMagnitude(c, n) =>
+                self.run.coils.as_ref()?.get(c.checked_sub(1)?)?.echoes.get(n.checked_sub(1)?)?.magnitude_nifti.clone()?,
+            Item::CombinedEchoPhase(n) => o.combined_phase_path(key, n),
+            Item::CombinedEchoMagnitude(n) => o.combined_mag_path(key, n),
+            Item::CoilCombinationMask => o.combine_mask_path(key),
             Item::Phase(n) => o.phase_scaled_path(key, n),
             Item::Magnitude(n) => o.mag_path(key, n),
             Item::CorrectedPhase(n) => o.motion_phase_path(key, n),
@@ -500,6 +425,14 @@ impl StageStore for FileStore<'_> {
             dims: first_phase.dims, voxel_size: first_phase.voxel_size, affine: first_phase.affine,
             sidecar: crate::bids::sidecar::read_sidecar(&first.phase_json).ok(),
         })
+    }
+
+    fn sidecar(&mut self) -> crate::Result<Option<qsmxt_engine::scan::QsmSidecar>> {
+        Ok(Some(crate::bids::sidecar::read_sidecar(&self.run.echoes[0].phase_json)?))
+    }
+
+    fn coils(&mut self) -> Vec<u32> {
+        self.run.coils.iter().flatten().map(|c| c.coil_number).collect()
     }
 
     fn cached_scan(&mut self, key: &str) -> Option<RunMetadata> {
@@ -763,24 +696,29 @@ impl StageStore for FileStore<'_> {
         outputs.append(&mut self.extra_outputs);
         let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).collect();
         let start = self.started.take().unwrap_or_else(Instant::now);
-        let metadata = self.metadata.take();
-        let hash_outputs = outputs.clone();
-        self.ctx().complete_step_with_outcome(
-            c.step, c.algorithm, c.params.clone(), c.outcome.clone(), &input_refs, outputs, start)?;
-        if let Some(metadata) = metadata {
-            self.state.mark_completed_with_metadata(c.step, hash_outputs, Some(c.key.to_string()), Some(metadata));
-            self.state.save(&self.state_path)?;
+        // What the step found in the data is recorded next to its parameters; only the parameters
+        // key the cache, since the outcome is not known when the cache is checked.
+        let mut recorded = c.params.clone();
+        if let Some((name, value)) = &c.outcome {
+            recorded[*name] = value.clone();
         }
-        Ok(())
-    }
+        let prov_path = self.output.provenance_path(&self.run.key, c.step);
+        write_step_provenance(&prov_path, c.step, c.algorithm, &recorded, &input_refs, &outputs, start)?;
 
-    fn host(&mut self, step: &Step, _plan: &Plan, _observer: &mut dyn Observer) -> crate::Result<()> {
-        let progress = self.progress;
-        let mut ctx = self.ctx();
-        match step.stage {
-            Stage::ScalePhase => stage_scale_phase(&mut ctx, progress),
-            stage => Err(QsmxtError::Config(format!("the {} step is the engine's to run", stage.name()))),
+        // Whatever read this step's previous output is stale now that it has been recomputed with
+        // other parameters, or for the first time (a step newly switched on, say), which the
+        // downstream steps' own parameter hashes would not notice. Recomputed with the same
+        // parameters — its files were missing, or cleaned — it made the same output, and what
+        // read it stays cached.
+        let same_as_before = self.state.completed_steps.get(c.step)
+            .is_some_and(|r| r.params_hash.as_deref() == Some(c.key));
+        if !same_as_before {
+            for ds in crate::pipeline::graph::downstream_of(c.step) {
+                self.state.completed_steps.remove(&ds);
+            }
         }
+        self.state.mark_completed_with_metadata(c.step, outputs, Some(c.key.to_string()), self.metadata.take());
+        self.state.save(&self.state_path)
     }
 
     fn finish(&mut self) -> crate::Result<()> {
@@ -945,254 +883,6 @@ fn input_identity(run: &QsmRun) -> Vec<serde_json::Value> {
     }).collect()
 }
 
-/// Whether real/imaginary input from this manufacturer has its phase negated on conversion.
-///
-/// GE's real/imaginary pair gives phase of the opposite sign to the Siemens/Philips convention
-/// the pipeline assumes: on one subject scanned on all three, high-pass field maps from GE
-/// anti-correlate with the other two, which correlate with each other. Matched as dcm2niix and
-/// the DICOM tag spell it ("GE", "GE MEDICAL SYSTEMS", "General Electric").
-fn negates_real_imaginary_phase(manufacturer: Option<&str>) -> bool {
-    let Some(m) = manufacturer else { return false };
-    let m = m.trim().to_uppercase();
-    m == "GE" || m.starts_with("GE ") || m.contains("GENERAL ELECTRIC")
-}
-
-/// Real/imaginary echoes of a run as magnitude and phase on its acquired grid, via
-/// `qsm_core::complex::complex_to_mag_phase` (which also detects and undoes slice chopping, and
-/// negates the phase when `negate_phase`).
-fn convert_real_imaginary(ctx: &StageContext, negate_phase: bool) -> crate::Result<qsm_core::complex::MagPhaseEchoes> {
-    let (dims, voxel) = match ctx.meta.source_geometry {
-        Some((d, a)) => (d, qsm_core::geometry::voxel_sizes_from_affine(&a)),
-        None => (ctx.meta.dims, ctx.meta.voxel_size),
-    };
-    let n = dims.0 * dims.1 * dims.2;
-    let mut real = Vec::with_capacity(ctx.run.echoes.len());
-    let mut imag = Vec::with_capacity(ctx.run.echoes.len());
-    for echo in &ctx.run.echoes {
-        let imag_path = echo.imaginary_nifti.as_ref().ok_or_else(|| QsmxtError::Config(format!(
-            "echo {}: real/imaginary run without a part-imag file", echo.echo_number)))?;
-        for (path, out) in [(&echo.phase_nifti, &mut real), (imag_path, &mut imag)] {
-            let v = load_volume(path)?;
-            if v.len() != n {
-                return Err(QsmxtError::DimensionMismatch(format!(
-                    "{} has {} voxels, expected {}", path.display(), v.len(), n)));
-            }
-            out.push(v);
-        }
-    }
-    let grid = qsm_core::Grid::new(dims.0, dims.1, dims.2, voxel.0, voxel.1, voxel.2);
-    let real_refs: Vec<&[f64]> = real.iter().map(|v| v.as_slice()).collect();
-    let imag_refs: Vec<&[f64]> = imag.iter().map(|v| v.as_slice()).collect();
-    let params = qsm_core::complex::ComplexToMagPhaseParams {
-        chop: qsm_core::complex::ChopCorrection::Auto,
-        negate_phase,
-    };
-    let out = qsm_core::complex::complex_to_mag_phase(&real_refs, &imag_refs, &grid, &params);
-    if negate_phase {
-        log::info!("Real/imaginary input: GE phase sign convention, phase negated");
-    }
-
-    let c = &out.chopping;
-    let axes: Vec<&str> = ["x", "y", "z"].into_iter().zip(c.corrected).filter(|(_, on)| *on).map(|(a, _)| a).collect();
-    log::info!("Real/imaginary input: neighbour phase coherence x {:+.3}, y {:+.3}, z {:+.3}; {}",
-        c.coherence[0], c.coherence[1], c.coherence[2],
-        if axes.is_empty() { "no slice chopping".to_string() } else { format!("slice chopping corrected along {}", axes.join(", ")) });
-    let ambiguous = c.ambiguous_axes();
-    if !ambiguous.is_empty() {
-        let names: Vec<&str> = ambiguous.iter().map(|&a| ["x", "y", "z"][a]).collect();
-        log::warn!("Real/imaginary input: slice-chopping detection is uncertain along {} \
-                    (coherence near zero); check the phase for a π jump between neighbouring slices",
-            names.join(", "));
-    }
-    Ok(out)
-}
-
-/// Provenance record of a real/imaginary conversion.
-fn slice_chopping_json(c: &qsm_core::complex::SliceChopping) -> serde_json::Value {
-    serde_json::json!({
-        "method": "complex_to_mag_phase",
-        "detected": c.detected,
-        "coherence": { "x": c.coherence[0], "y": c.coherence[1], "z": c.coherence[2] },
-        "corrected": { "x": c.corrected[0], "y": c.corrected[1], "z": c.corrected[2] },
-    })
-}
-
-/// `scale_phase` for the input the engine does not read yet: uncombined coils
-/// ([`stage_combine_coils`]) and real/imaginary parts. Real/imaginary input becomes magnitude and
-/// phase ([`convert_real_imaginary`]) before anything else sees it, and each converted echo (already
-/// in radians) is brought onto the working grid as the engine's phase scaling does.
-fn stage_scale_phase(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    if ctx.run.coils.is_some() {
-        return stage_combine_coils(ctx, progress);
-    }
-    // The sign convention follows from the sidecar, so it is a parameter (and keys the cache).
-    let negate_phase = negates_real_imaginary_phase(
-        crate::bids::sidecar::read_sidecar(&ctx.run.echoes[0].phase_json)?.manufacturer.as_deref());
-    let params = qsmxt_engine::stages::phase::params(ctx.meta, Some(negate_phase));
-    if ctx.is_cached_with_params("scale_phase", None, &params) {
-        log::info!("Skipping scale_phase (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    progress("Converting real/imaginary to magnitude/phase");
-    let converted = convert_real_imaginary(ctx, negate_phase)?;
-    let resampled = ctx.meta.source_geometry.is_some();
-    progress(if resampled { "Resampling to axial + rescaling phase" } else { "Rescaling phase to radians" });
-    let outcome = Some(("real_imaginary_conversion", slice_chopping_json(&converted.chopping)));
-    let mut phase_paths = Vec::new();
-    let mut mag_paths = Vec::new();
-    for (i, (phase, mag)) in converted.phases.into_iter().zip(converted.magnitudes).enumerate() {
-        let out = qsmxt_engine::stages::phase::working_echo(phase, Some(mag), true, ctx.meta);
-        let p_path = ctx.output.phase_scaled_path(&ctx.run.key, i + 1);
-        save_volume(&p_path, &out.phase, ctx.meta)?;
-        phase_paths.push(p_path);
-        // The magnitude it converted, resampled with the phase when the run is resampled.
-        if let (Some(mag), true) = (&out.magnitude, !resampled || ctx.run.has_magnitude) {
-            let m_path = ctx.output.mag_path(&ctx.run.key, i + 1);
-            save_volume(&m_path, mag, ctx.meta)?;
-            mag_paths.push(m_path);
-        }
-    }
-
-    let mut all_paths = phase_paths;
-    all_paths.extend(mag_paths);
-    let input_paths: Vec<PathBuf> = ctx.run.echoes.iter()
-        .flat_map(|e| std::iter::once(e.phase_nifti.clone()).chain(e.imaginary_nifti.clone()))
-        .collect();
-    let input_refs: Vec<&Path> = input_paths.iter().map(|p| p.as_path()).collect();
-    ctx.complete_step_with_outcome("scale_phase", None, params, outcome, &input_refs, all_paths, t)?;
-    log_step_done(if resampled { "Resample + rescale phase" } else { "Rescale phase" }, t);
-    Ok(())
-}
-
-/// MCPC-3D-S coil combination for uncombined (per-coil) runs.
-///
-/// Replaces `scale_phase` for runs with `coils`: every coil's echoes are loaded, phase rescaled
-/// to radians, combined with `qsm_core::utils::mcpc3ds_combine`, and the combined per-echo
-/// phase (already in radians, coil offsets removed) and magnitude are written to the same
-/// `scale_phase` intermediates every later stage reads. The combined echoes are also exported
-/// to the derivatives `anat/` folder as `rec-mcpc3ds` MEGRE volumes for inspection/reuse.
-fn stage_combine_coils(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let coils = ctx.run.coils.as_ref().expect("stage_combine_coils needs coils");
-    let n_coils = coils.len();
-    let n_echoes = ctx.meta.n_echoes;
-    // MCPC-3D-S estimates each coil's phase offset from the difference of two echoes; qsm-core
-    // asserts on one. `qsmxt run` refuses such a run up front; this keeps a direct caller from
-    // reaching the panic.
-    if n_echoes < 2 {
-        return Err(QsmxtError::Config(format!(
-            "{}: MCPC-3D-S coil combination needs at least 2 echoes, and this run has {} echo \
-             with {} uncombined coils. Combine the coils first (on the scanner, or with another \
-             tool).", ctx.run.key, n_echoes, n_coils)));
-    }
-    let sigma = ctx.config.field_mapping.coil_combination_sigma;
-    let unwrap = format!("{}", ctx.config.field_mapping.unwrapping_algorithm);
-    let params = serde_json::json!({
-        "coil_combination": "mcpc3ds",
-        "n_coils": n_coils,
-        "n_echoes": n_echoes,
-        "coil_numbers": coils.iter().map(|c| c.coil_number).collect::<Vec<_>>(),
-        "hip_echoes": [1, 2],
-        "sigma": sigma,
-        "hip_unwrapping": unwrap,
-        "echo_times": ctx.meta.echo_times,
-        "resampled_to_axial": ctx.meta.source_geometry.is_some(),
-    });
-    if ctx.is_cached_with_params("scale_phase", Some("mcpc3ds"), &params) {
-        log::info!("Skipping coil combination (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    log::info!("Coil combination (MCPC-3D-S): {} coils x {} echoes", n_coils, n_echoes);
-    progress("MCPC-3D-S coil combination");
-
-    let (src_dims, src_voxel) = match ctx.meta.source_geometry {
-        Some((d, a)) => (d, qsm_core::geometry::voxel_sizes_from_affine(&a)),
-        None => (ctx.meta.dims, ctx.meta.voxel_size),
-    };
-    let n = src_dims.0 * src_dims.1 * src_dims.2;
-    let mut phases: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_coils);
-    let mut mags: Vec<Vec<Vec<f64>>> = Vec::with_capacity(n_coils);
-    let mut inputs: Vec<PathBuf> = Vec::new();
-    for coil in coils {
-        let mut cp = Vec::with_capacity(n_echoes);
-        let mut cm = Vec::with_capacity(n_echoes);
-        for echo in coil.echoes.iter().take(n_echoes) {
-            let mut p = load_volume(&echo.phase_nifti)?;
-            if p.len() != n {
-                return Err(QsmxtError::DimensionMismatch(format!(
-                    "{} has {} voxels, expected {}", echo.phase_nifti.display(), p.len(), n)));
-            }
-            qsm_core::pipeline::scale_phase_to_pi(&mut p);
-            let mag_path = echo.magnitude_nifti.as_ref().ok_or_else(|| QsmxtError::Config(format!(
-                "coil {} echo {}: magnitude required for MCPC-3D-S", coil.coil_number, echo.echo_number)))?;
-            let m = load_volume(mag_path)?;
-            if m.len() != n {
-                return Err(QsmxtError::DimensionMismatch(format!(
-                    "{} has {} voxels, expected {}", mag_path.display(), m.len(), n)));
-            }
-            inputs.push(echo.phase_nifti.clone());
-            inputs.push(mag_path.clone());
-            cp.push(p);
-            cm.push(m);
-        }
-        phases.push(cp);
-        mags.push(cm);
-    }
-
-    let grid = qsm_core::Grid::new(
-        src_dims.0, src_dims.1, src_dims.2, src_voxel.0, src_voxel.1, src_voxel.2,
-    );
-    let unwrap_method = if unwrap == "laplacian" {
-        qsm_core::unwrap::UnwrapMethod::Laplacian
-    } else {
-        qsm_core::unwrap::UnwrapMethod::Romeo
-    };
-    let combined = qsm_core::utils::mcpc3ds_combine(
-        &phases, &mags, &ctx.meta.echo_times, sigma, [0, 1], unwrap_method, &grid,
-    )?;
-    drop(phases);
-    drop(mags);
-
-    let mut outputs = Vec::new();
-    for e in 0..n_echoes {
-        // Combine on the acquired grid (all coils share it), then resample the single combined
-        // pair rather than 32 of them.
-        let (phase_e, mag_e) = match ctx.meta.source_geometry {
-            Some((sd, sa)) => {
-                let r = qsm_core::geometry::resample_complex_to_axial(
-                    &combined.magnitudes[e], &combined.phases[e], sd.0, sd.1, sd.2, &sa,
-                    &qsm_core::geometry::AxialResampleParams::default(),
-                );
-                (r.phase, r.magnitude)
-            }
-            None => (combined.phases[e].clone(), combined.magnitudes[e].clone()),
-        };
-        let p_path = ctx.output.phase_scaled_path(&ctx.run.key, e + 1);
-        save_volume(&p_path, &phase_e, ctx.meta)?;
-        let m_path = ctx.output.mag_path(&ctx.run.key, e + 1);
-        save_volume(&m_path, &mag_e, ctx.meta)?;
-        // Exported combined echoes (BIDS-style, rec-mcpc3ds) next to the other derivatives.
-        let p_out = ctx.output.combined_phase_path(&ctx.run.key, e + 1);
-        save_volume(&p_out, &phase_e, ctx.meta)?;
-        let m_out = ctx.output.combined_mag_path(&ctx.run.key, e + 1);
-        save_volume(&m_out, &mag_e, ctx.meta)?;
-        outputs.extend([p_path, m_path, p_out, m_out]);
-    }
-    let mask_out = ctx.output.combine_mask_path(&ctx.run.key);
-    let combine_mask = match ctx.meta.source_geometry {
-        Some((sd, sa)) => qsm_core::geometry::resample_mask_to_axial(&combined.mask, sd.0, sd.1, sd.2, &sa),
-        None => combined.mask.clone(),
-    };
-    save_mask(&mask_out, &combine_mask, ctx.meta)?;
-    outputs.push(mask_out);
-
-    let input_refs: Vec<&Path> = inputs.iter().map(|p| p.as_path()).collect();
-    ctx.complete_step("scale_phase", Some("mcpc3ds"), params, &input_refs, outputs, t)?;
-    log_step_done("Coil combination", t);
-    Ok(())
-}
-
 /// Locate a bring-your-own derivative under `<bids>/derivatives/<tool>/sub-*/[ses-*/]anat/<glob>`
 /// for this run. `tool == "*"` searches every derivatives dir alphabetically; within a tool the
 /// first matching file (alphabetical) wins. Any candidate whose name contains one of `exclude` is
@@ -1287,10 +977,10 @@ fn run_engine_step(
     let plan = qsmxt_engine::plan::plan(config, &facts);
     let mut store = FileStore {
         run, config, output: output.clone(), meta: Some(meta.clone()), state, state_path,
-        progress: &|_| {}, started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(),
+        started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(),
         metadata: None, working_grid_kept: false,
     };
-    let step = Step { stage, models: vec![], host: false };
+    let step = qsmxt_engine::plan::Step { stage, models: vec![] };
     qsmxt_engine::run::run_step(&plan, config, &facts, meta, &step, &mut store, &mut ())
 }
 
@@ -1332,7 +1022,7 @@ mod tests {
         let store = super::FileStore {
             run: &run, config: &config, output: DerivativeOutputs::new(std::path::Path::new("/out")),
             meta: None, state: PipelineState::new(&config, &run.key), state_path: PathBuf::from("/out/s.json"),
-            progress: &|_| {}, started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(),
+            started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(),
         metadata: None, working_grid_kept: false,
         };
         for (a, b) in [
@@ -2872,14 +2562,6 @@ mod real_imag_input_tests {
 
     #[test]
     fn ge_real_imag_phase_is_negated() {
-        assert!(negates_real_imaginary_phase(Some("GE")));
-        assert!(negates_real_imaginary_phase(Some("GE MEDICAL SYSTEMS")));
-        assert!(negates_real_imaginary_phase(Some("General Electric")));
-        assert!(!negates_real_imaginary_phase(Some("Siemens")));
-        assert!(!negates_real_imaginary_phase(Some("Philips")));
-        assert!(!negates_real_imaginary_phase(Some("GEMINI")));
-        assert!(!negates_real_imaginary_phase(None));
-
         // End to end: a GE sidecar gives the negated phase of the same echoes from elsewhere.
         let dir = tempfile::tempdir().unwrap();
         let ge = testutils::create_real_imag_bids(&dir.path().join("ge"), true);

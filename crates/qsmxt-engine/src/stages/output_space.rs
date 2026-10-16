@@ -31,9 +31,9 @@ pub enum Kind {
     Projection(Item),
 }
 
-/// Every output a run publishes, and what each is. The steps that run decide which of them a run
-/// has.
-pub fn published() -> Vec<(Item, Kind)> {
+/// Every output a run of `n_echoes` publishes, and what each is. The steps that run decide which
+/// of them a run has.
+pub fn published(n_echoes: usize) -> Vec<(Item, Kind)> {
     use Kind::*;
     let mut out = vec![
         (Item::Chi, Continuous), (Item::ChiSupport, Mask), (Item::SinglePassChi, Continuous),
@@ -49,6 +49,12 @@ pub fn published() -> Vec<(Item, Kind)> {
         out.extend([
             (Item::Smwi(c), Continuous), (Item::SmwiMip(c), Projection(Item::Smwi(c))),
             (Item::SeparatedChi(c), Continuous),
+        ]);
+    }
+    for e in 1..=n_echoes {
+        out.extend([
+            (Item::CombinedEchoPhase(e), Phase(Item::CombinedEchoMagnitude(e))),
+            (Item::CombinedEchoMagnitude(e), Continuous),
         ]);
     }
     out

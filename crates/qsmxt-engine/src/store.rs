@@ -9,8 +9,8 @@
 use std::collections::HashMap;
 
 use crate::error::EngineError;
-use crate::observe::{Observer, VolumeData};
-use crate::plan::{Pass, Plan, Step};
+use crate::observe::VolumeData;
+use crate::plan::Pass;
 use crate::scan::{QsmSidecar, RunMetadata};
 
 /// A volume (or report) a step reads or writes, by what it is. A store keeps each under its own
@@ -21,6 +21,20 @@ pub enum Item {
     AcquiredPhase(usize),
     /// Echo `n`'s magnitude, as acquired, when there is one.
     AcquiredMagnitude(usize),
+    /// Echo `n`'s imaginary part, for a scan given as real and imaginary parts (whose real part
+    /// is then [`Item::AcquiredPhase`]).
+    AcquiredImaginary(usize),
+    /// Uncombined receive coil `c`'s (1-based, in [`StageStore::coils`] order) echo `n` phase, as
+    /// acquired.
+    CoilPhase(usize, usize),
+    /// Coil `c`'s echo `n` magnitude, as acquired.
+    CoilMagnitude(usize, usize),
+    /// Echo `n`'s phase (radians) combined from the uncombined coils, published.
+    CombinedEchoPhase(usize),
+    /// Echo `n`'s magnitude combined from the uncombined coils, published.
+    CombinedEchoMagnitude(usize),
+    /// The mask the coil combination estimated each coil's phase offset in.
+    CoilCombinationMask,
     /// Echo `n`'s phase in radians, on the working grid.
     Phase(usize),
     /// Echo `n`'s magnitude on the working grid.
@@ -223,6 +237,15 @@ pub trait StageStore {
     /// The first echo's header, every other input checked against it.
     fn header(&mut self) -> Result<Header, Self::Error>;
 
+    /// The first echo's sidecar, when there is one.
+    fn sidecar(&mut self) -> Result<Option<QsmSidecar>, Self::Error>;
+
+    /// The uncombined receive coils' numbers, in order ([`Item::CoilPhase`]); none for combined
+    /// data.
+    fn coils(&mut self) -> Vec<u32> {
+        Vec::new()
+    }
+
     /// The grid a cached load step decided, when the load step is cached under `key`. A different
     /// key leaves nothing cached for the run.
     fn cached_scan(&mut self, key: &str) -> Option<RunMetadata>;
@@ -296,9 +319,6 @@ pub trait StageStore {
 
     /// The step is complete: its outputs are in, and are valid under `completed.key`.
     fn record(&mut self, completed: &Completed<'_>) -> Result<(), Self::Error>;
-
-    /// Run a step the engine does not run itself ([`Step::host`]).
-    fn host(&mut self, step: &Step, plan: &Plan, observer: &mut dyn Observer) -> Result<(), Self::Error>;
 
     /// The run is complete.
     fn finish(&mut self) -> Result<(), Self::Error> {
@@ -428,6 +448,16 @@ impl StageStore for MemoryStore {
 
     fn header(&mut self) -> Result<Header, EngineError> {
         self.header.clone().ok_or_else(|| EngineError::Config("no scan in the store".into()))
+    }
+
+    fn sidecar(&mut self) -> Result<Option<QsmSidecar>, EngineError> {
+        Ok(self.header.as_ref().and_then(|h| h.sidecar.clone()))
+    }
+
+    /// The coils whose echoes were inserted ([`Item::CoilPhase`]), numbered by their position.
+    fn coils(&mut self) -> Vec<u32> {
+        let n = self.volumes.keys().filter_map(|i| match i { Item::CoilPhase(c, _) => Some(*c), _ => None }).max();
+        (1..=n.unwrap_or(0) as u32).collect()
     }
 
     fn cached_scan(&mut self, key: &str) -> Option<RunMetadata> {
@@ -568,10 +598,5 @@ impl StageStore for MemoryStore {
         }
         self.steps.insert(c.step.to_string(), (c.key.to_string(), c.outputs.to_vec()));
         Ok(())
-    }
-
-    /// None: the steps the engine does not run yet are not available in memory.
-    fn host(&mut self, step: &Step, _plan: &Plan, _observer: &mut dyn Observer) -> Result<(), EngineError> {
-        Err(EngineError::Config(format!("the {} step is not available in the engine yet", step.stage.name())))
     }
 }
