@@ -156,6 +156,13 @@ impl PipelineState {
     /// When a parameter mismatch is detected, the step AND all downstream steps
     /// are invalidated so they will be re-executed.
     pub fn is_step_cached_with_hash(&mut self, step_name: &str, expected_params_hash: Option<&str>) -> bool {
+        // Another step has since written over what this one recorded (#373).
+        let overwritten = self.sharing_outputs(step_name, self.step_outputs(step_name).unwrap_or_default());
+        if !overwritten.is_empty() {
+            log::info!("Step '{}': {} has written its outputs since — invalidating cache", step_name, overwritten.join(", "));
+            self.invalidate(step_name);
+            return false;
+        }
         if let Some(record) = self.completed_steps.get(step_name) {
             // Cleaned intermediates are trusted only while nothing can need them again; once the
             // configuration has changed the step is recomputed — with the same parameters, which
@@ -204,16 +211,7 @@ impl PipelineState {
 
     /// Mark a step as completed with its output paths and parameter hash.
     pub fn mark_completed(&mut self, step_name: &str, outputs: Vec<PathBuf>, params_hash: Option<String>) {
-        self.completed_steps.insert(
-            step_name.to_string(),
-            StepRecord {
-                outputs,
-                metadata: None,
-                params_hash,
-                outputs_removed: false,
-            },
-        );
-        self.current_step = None;
+        self.mark_completed_with_metadata(step_name, outputs, params_hash, None);
     }
 
     /// Like [`Self::mark_completed`], but keeping a step's own metadata in the state file.
@@ -224,6 +222,10 @@ impl PipelineState {
         &mut self, step_name: &str, outputs: Vec<PathBuf>, params_hash: Option<String>,
         metadata: Option<serde_json::Value>,
     ) {
+        // Every other step that recorded one of these files: what it recorded is gone.
+        for other in self.sharing_outputs(step_name, &outputs) {
+            self.invalidate(&other);
+        }
         self.completed_steps.insert(
             step_name.to_string(),
             StepRecord { outputs, metadata, params_hash, outputs_removed: false },
@@ -244,6 +246,12 @@ impl PipelineState {
         self.completed_steps
             .get(step_name)
             .map(|r| r.outputs.as_slice())
+    }
+
+    /// The other recorded steps naming one of `outputs` ([`qsmxt_engine::store::sharing_outputs`]).
+    fn sharing_outputs(&self, step_name: &str, outputs: &[PathBuf]) -> Vec<String> {
+        qsmxt_engine::store::sharing_outputs(step_name, outputs,
+            self.completed_steps.iter().map(|(s, r)| (s.as_str(), r.outputs.as_slice())))
     }
 
     /// Invalidate a step and all steps that depend on it.
@@ -406,6 +414,38 @@ mod tests {
         // Mark completed with a file that doesn't exist — should not be cached
         state.mark_completed("mask", vec![PathBuf::from("/nonexistent/mask.nii")], None);
         assert!(!state.is_step_cached("mask"));
+    }
+
+    /// Two steps that write the same file: recording one forgets the other, and what read it
+    /// (#373). A state an earlier release left with both recorded caches neither.
+    #[test]
+    fn a_step_that_writes_another_ones_output_takes_its_place() {
+        let key = AcquisitionKey {
+            subject: "01".into(), session: None, acquisition: None, reconstruction: None, inversion: None,
+            run: None, suffix: "MEGRE".into(),
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let (raw, chi, swi) = (dir.path().join("chi_raw.nii"), dir.path().join("Chimap.nii"), dir.path().join("swi.nii"));
+        for p in [&raw, &chi, &swi] {
+            std::fs::write(p, b"").unwrap();
+        }
+        let mut state = PipelineState::new(&PipelineConfig::default(), &key);
+        state.mark_completed("invert", vec![raw.clone()], Some("a".into()));
+        state.mark_completed("reference", vec![chi.clone()], Some("r".into()));
+        state.mark_completed("swi", vec![swi.clone()], Some("s".into()));
+        state.mark_completed("output_space", vec![chi.clone(), swi.clone()], Some("o".into()));
+        state.mark_completed("tgv", vec![raw.clone()], Some("b".into()));
+        assert!(!state.completed_steps.contains_key("invert") && !state.completed_steps.contains_key("reference"));
+        // The return to the acquired grid rewrites outputs in place without taking them over.
+        assert!(state.is_step_cached_with_hash("swi", Some("s")));
+        assert!(state.is_step_cached_with_hash("tgv", Some("b")));
+
+        state.completed_steps.insert("invert".into(), StepRecord {
+            outputs: vec![raw.clone()], metadata: None, params_hash: Some("a".into()), outputs_removed: false,
+        });
+        assert!(!state.is_step_cached_with_hash("invert", Some("a")));
+        assert!(!state.completed_steps.contains_key("invert"));
+        assert!(state.is_step_cached_with_hash("tgv", Some("b")), "only one of them is left to be recomputed");
     }
 
     #[test]
