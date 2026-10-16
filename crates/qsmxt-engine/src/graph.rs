@@ -47,7 +47,9 @@ pub fn downstream_of(step_name: &str) -> Vec<String> {
             .filter(|ds| PASS_STEPS.contains(ds))
             .map(|ds| format!("{ds}{RELIABLE_SUFFIX}")),
     );
-    if direct.iter().any(|ds| PASS_STEPS.contains(ds)) {
+    // The combination reads both passes' maps: a pass step, or anything a pass step reads,
+    // changes it.
+    if PASS_STEPS.contains(&step_name) || direct.iter().any(|ds| PASS_STEPS.contains(ds)) {
         out.push("twopass".to_string());
     }
     out
@@ -133,10 +135,14 @@ pub fn downstream_steps(step_name: &str) -> Option<&'static [&'static str]> {
             "reference",
             "segmentation",
         ],
+        // The reliable-phase mask is restricted to the brain mask.
         "mask" => &[
+            "mask-reliable",
             "motion",
             "swi",
             "t2star_r2star",
+            // R2 is fitted, and R2′ measured or predicted, inside the mask.
+            "r2_r2prime",
             "unwrap",
             "bgremove",
             "invert",
@@ -189,7 +195,7 @@ mod tests {
     #[test]
     fn mask_invalidates_both_passes_and_the_combination() {
         let ds = downstream_of("mask");
-        for step in ["bgremove", "invert", "tgv", "qsmart",
+        for step in ["mask-reliable", "bgremove", "invert", "tgv", "qsmart",
                      "bgremove-reliable", "invert-reliable", "tgv-reliable", "qsmart-reliable",
                      "twopass", "reference"] {
             assert!(ds.contains(&step.to_string()), "mask should invalidate {step}: {ds:?}");
@@ -248,6 +254,24 @@ mod tests {
         // The magnitude feeds the segmentation, not just the reconstruction.
         assert!(downstream_of("magnitude").contains(&"segmentation".to_string()));
         assert!(downstream_of("analysis").is_empty());
+    }
+
+    /// R2* is estimated, R2 fitted and R2′ measured inside the brain mask. R2 has no R2* step
+    /// between it and the mask in a run that maps R2 alone, so it needs its own edge.
+    #[test]
+    fn relaxometry_follows_the_mask_it_is_computed_in() {
+        for step in ["t2star_r2star", "r2_r2prime"] {
+            assert!(downstream_of("mask").contains(&step.to_string()), "{step}: {:?}", downstream_of("mask"));
+        }
+    }
+
+    /// The combination reads the main pass's map as well as the reliable pass's, so a main-pass
+    /// reconstruction recorded under a new key recomputes it, whether or not the reliable pass's is.
+    #[test]
+    fn a_main_pass_reconstruction_invalidates_the_combination() {
+        for step in ["invert", "tgv", "qsmart"] {
+            assert!(downstream_of(step).contains(&"twopass".to_string()), "{step}: {:?}", downstream_of(step));
+        }
     }
 
     /// Steps with nothing downstream must not grow a two-pass tail.
