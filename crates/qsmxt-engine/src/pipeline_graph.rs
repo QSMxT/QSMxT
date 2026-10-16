@@ -108,39 +108,6 @@ pub fn item_key(item: &Item) -> String {
     format!("{item:?}")
 }
 
-/// What a front end calls each step. (Temporary copy of `Stage::label()`, which arrives with the
-/// plan's step labels.)
-fn stage_label(stage: Stage) -> String {
-    let (base, pass) = match stage {
-        Stage::Load => ("Load", Pass::Main),
-        Stage::ScalePhase => ("Phase scaling", Pass::Main),
-        Stage::Magnitude => ("Combined magnitude", Pass::Main),
-        Stage::Mask(Pass::Main) => ("Brain mask", Pass::Main),
-        Stage::Mask(Pass::Reliable) => ("Reliable-phase mask", Pass::Main),
-        Stage::Motion => ("Motion correction", Pass::Main),
-        Stage::Swi => ("SWI", Pass::Main),
-        Stage::Segmentation => ("Segmentation", Pass::Main),
-        Stage::Relaxometry => ("T2* and R2*", Pass::Main),
-        Stage::R2 => ("R2 and R2′", Pass::Main),
-        Stage::FieldMap => ("Field map", Pass::Main),
-        Stage::BackgroundRemoval(p) => ("Background-field removal", p),
-        Stage::Inversion(p) => ("Dipole inversion", p),
-        Stage::Tgv(p) => ("TGV-QSM", p),
-        Stage::Qsmart(p) => ("QSMART", p),
-        Stage::TwoPassCombination => ("Two-pass combination", Pass::Main),
-        Stage::Reference => ("Referencing", Pass::Main),
-        Stage::SinglePassReference => ("Single-pass referencing", Pass::Main),
-        Stage::Smwi => ("SMWI", Pass::Main),
-        Stage::ChiSeparation => ("χ-separation", Pass::Main),
-        Stage::Analysis => ("Region statistics", Pass::Main),
-        Stage::OutputSpace => ("Return to the acquired grid", Pass::Main),
-    };
-    match pass {
-        Pass::Main => base.to_string(),
-        Pass::Reliable => format!("{base} (reliable pass)"),
-    }
-}
-
 /// What the graph is drawn from.
 struct Ctx<'a> {
     plan: &'a Plan,
@@ -590,20 +557,18 @@ impl Ctx<'_> {
 
     /// The setting that asked for `stage`, for a step that runs only because one did.
     fn enabled_by(&self, stage: Stage) -> Option<String> {
-        let p = &self.config.pipeline;
-        let first = |options: &[(bool, &str)]| options.iter().find(|(on, _)| *on).map(|(_, path)| path.to_string());
         let wanted = |o: Output| requirements::wanted(self.facts, self.config, o);
+        let first = |outputs: &[Output]| outputs.iter().copied().find(|&o| wanted(o)).map(|o| o.setting().to_string());
         match stage {
-            Stage::Swi => Some("pipeline.do_swi".into()),
-            Stage::Smwi => Some("pipeline.do_smwi".into()),
-            Stage::Segmentation => Some("pipeline.do_segmentation".into()),
-            Stage::Relaxometry => first(&[
-                (wanted(Output::T2star), "pipeline.do_t2starmap"),
-                (wanted(Output::R2star), "pipeline.do_r2starmap"),
-            ]),
-            Stage::R2 => first(&[(p.do_r2map, "pipeline.do_r2map"), (p.do_r2primemap, "pipeline.do_r2primemap")]),
-            Stage::ChiSeparation => Some("pipeline.do_chi_separation".into()),
-            Stage::Analysis => Some("pipeline.do_analysis".into()),
+            Stage::Swi => first(&[Output::Swi]),
+            Stage::Smwi => first(&[Output::Smwi]),
+            Stage::Segmentation => first(&[Output::Segmentation]),
+            Stage::Relaxometry => first(&[Output::T2star, Output::R2star]),
+            // Planned when either is asked for; the data decides which it can make.
+            Stage::R2 => first(&[Output::R2, Output::R2prime])
+                .or_else(|| Some(if self.config.pipeline.do_r2map { Output::R2 } else { Output::R2prime }.setting().to_string())),
+            Stage::ChiSeparation => Some(Output::ChiSeparation.setting().to_string()),
+            Stage::Analysis => Some(Output::Analysis.setting().to_string()),
             Stage::Motion => Some("motion_correction.enabled".into()),
             Stage::Mask(Pass::Reliable) | Stage::BackgroundRemoval(Pass::Reliable) | Stage::Inversion(Pass::Reliable)
             | Stage::Tgv(Pass::Reliable) | Stage::Qsmart(Pass::Reliable) | Stage::TwoPassCombination
@@ -675,7 +640,7 @@ pub fn pipeline_graph(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, g
         }
         let (algorithm, algorithm_label, settings) = ctx.algorithm(stage);
         nodes.push(Node {
-            label: stage_label(stage),
+            label: stage.label(),
             algorithm, algorithm_label, settings,
             branch: branch(stage, plan.two_pass),
             enabled_by: ctx.enabled_by(stage),
@@ -695,6 +660,32 @@ pub fn pipeline_graph(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, g
         }
     }).collect();
     PipelineGraph { nodes, edges, items, two_pass: plan.two_pass }
+}
+
+/// What one of a plan's steps runs, reads and writes: what [`crate::plan::Step`] carries
+/// beside its stage.
+pub(crate) struct StepDetails {
+    pub algorithm: Option<String>,
+    pub algorithm_label: Option<String>,
+    pub reads: Vec<Item>,
+    pub writes: Vec<Item>,
+}
+
+/// [`StepDetails`] for every step of `plan`, in its order. A step that does nothing with the
+/// data on this scan (motion correction when it is off) reads and writes nothing.
+pub(crate) fn step_details(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts) -> Vec<StepDetails> {
+    let ctx = Ctx { plan, config, facts };
+    let mut written: Vec<Item> = Vec::new();
+    plan.steps.iter().map(|step| {
+        let (algorithm, algorithm_label, _) = ctx.algorithm(step.stage);
+        let (reads, writes) = if step.stage == Stage::Motion && !plan.motion_corrected {
+            (Vec::new(), Vec::new())
+        } else {
+            ctx.io(step.stage, &written)
+        };
+        written.extend(writes.iter().copied().filter(|i| !written.contains(i)).collect::<Vec<_>>());
+        StepDetails { algorithm, algorithm_label, reads, writes }
+    }).collect()
 }
 
 /// `text` inside a Mermaid quoted label: quotes and angle brackets as entities.

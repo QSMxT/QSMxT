@@ -333,8 +333,13 @@ fn check_against_a_run(config: &PipelineConfig, facts: &ScanFacts, store: Memory
     for (step, algorithm) in observer.0.iter().filter(|(s, _)| s != "load") {
         let node = g.node(step).unwrap_or_else(|| panic!("{step} ran, and is not in the graph {:?}", ids(&g)));
         assert_eq!(&node.algorithm, algorithm, "{step}");
+        // The plan's step carries the observer's name for it, and the same algorithm.
+        let planned = plan.steps.iter().find(|s| &s.name == step).unwrap_or_else(|| panic!("{step} is not a plan step"));
+        assert_eq!(&planned.algorithm, algorithm, "{step}");
     }
     for (step, inputs, outputs) in &store.completed {
+        let planned = plan.steps.iter().find(|s| &s.name == step).unwrap();
+        assert!(outputs.iter().all(|o| planned.outputs.contains(o)), "{step}: {outputs:?} vs {:?}", planned.outputs);
         let node = g.node(step).unwrap();
         for item in inputs {
             assert!(node.reads.contains(&item_key(item)), "{step} read {item:?}; the graph says {:?}", node.reads);
@@ -415,4 +420,27 @@ fn the_graph_is_what_a_run_does() {
     c.qsm.reference = QsmReference::Region;
     c.qsm.reference_region = Some("thalamus".into());
     check_against_a_run(&c, &f, s);
+}
+
+/// The serialised plan names each step as the observer does, labels it, says which algorithm
+/// it runs and what it reads and writes (#348).
+#[test]
+fn plan_steps_carry_their_name_label_algorithm_and_outputs() {
+    let plan = crate::plan::plan(&PipelineConfig::default(), &facts());
+    let bg = plan.steps.iter().find(|s| s.stage == Stage::BackgroundRemoval(Pass::Main)).unwrap();
+    assert_eq!((bg.name.as_str(), bg.label.as_str()), ("bgremove", "Background-field removal"));
+    assert_eq!((bg.algorithm.as_deref(), bg.algorithm_label.as_deref()), (Some("vsharp"), Some("V-SHARP")));
+    assert_eq!(bg.reads, [Item::FieldPpm, Item::BrainMask]);
+    assert_eq!(bg.outputs, [Item::LocalField(Pass::Main), Item::LocalFieldMask(Pass::Main)]);
+    let mask = plan.steps.iter().find(|s| s.name == "mask").unwrap();
+    assert_eq!((mask.algorithm.as_deref(), mask.outputs.as_slice()), (None, [Item::BrainMask].as_slice()));
+    // Motion correction is off: in the plan (its earlier output is forgotten), touching nothing.
+    let motion = plan.steps.iter().find(|s| s.name == "motion").unwrap();
+    assert!(motion.reads.is_empty() && motion.outputs.is_empty());
+    let v = serde_json::to_value(&plan).unwrap();
+    let step = &v["steps"][5];
+    assert_eq!((&step["name"], &step["label"], &step["algorithm"], &step["algorithm_label"]),
+               (&serde_json::json!("unwrap"), &serde_json::json!("Field map"), &serde_json::json!("phase_offset_removal"),
+                &serde_json::json!("ROMEO")));
+    assert_eq!(step["outputs"][0], serde_json::json!("FieldPpm"));
 }

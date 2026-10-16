@@ -980,7 +980,7 @@ fn run_engine_step(
         started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(),
         metadata: None, working_grid_kept: false,
     };
-    let step = qsmxt_engine::plan::Step { stage, models: vec![] };
+    let step = qsmxt_engine::plan::Step::new(stage, vec![]);
     qsmxt_engine::run::run_step(&plan, config, &facts, meta, &step, &mut store, &mut ())
 }
 

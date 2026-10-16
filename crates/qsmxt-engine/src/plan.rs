@@ -13,6 +13,7 @@ use crate::config::PipelineConfig;
 use crate::enums::*;
 use crate::requirements::{self, Check, Output};
 use crate::scan::ScanFacts;
+use crate::store::Item;
 
 /// Which of a two-pass run's reconstructions a step belongs to. A single-pass run has only the
 /// main one.
@@ -152,6 +153,30 @@ pub struct Step {
     /// The deep-learning models the step runs, by QSM.rs model id: the weights to have ready
     /// before it is computed.
     pub models: Vec<&'static str>,
+    /// [`Stage::name`]: what the observer's events and the cache call the step.
+    pub name: String,
+    /// [`Stage::label`]: what a front end calls it.
+    pub label: String,
+    /// The algorithm it runs, as the observer reports it (`vsharp`, `rts`), for a step with a
+    /// choice of one.
+    pub algorithm: Option<String>,
+    /// That algorithm's name as the methods text gives it ("V-SHARP", "RTS").
+    pub algorithm_label: Option<String>,
+    /// The items it reads ([`crate::pipeline_graph`] draws an edge from each one's writer).
+    pub reads: Vec<Item>,
+    /// The items it writes: its outputs, each described by [`Item::meta`].
+    pub outputs: Vec<Item>,
+}
+
+impl Step {
+    /// A step of `stage` running `models`, its name and label filled in; what it runs, reads
+    /// and writes is filled in by [`plan`], which knows the rest of the run.
+    pub fn new(stage: Stage, models: Vec<&'static str>) -> Self {
+        Step {
+            stage, models, name: stage.name(), label: stage.label(),
+            algorithm: None, algorithm_label: None, reads: Vec::new(), outputs: Vec::new(),
+        }
+    }
 }
 
 /// What a run will do.
@@ -201,7 +226,7 @@ fn model(id: &str) -> Option<&'static str> {
 /// route the chosen algorithm takes. Both passes of a two-pass run take the same route.
 fn reconstruction(config: &PipelineConfig, pass: Pass) -> Vec<Step> {
     let inversion = &config.inversion.algorithm;
-    let single = |stage: Stage, models: Vec<&'static str>| vec![Step { stage, models }];
+    let single = |stage: Stage, models: Vec<&'static str>| vec![Step::new(stage, models)];
     match inversion {
         QsmAlgorithm::Tgv => single(Stage::Tgv(pass), vec![]),
         QsmAlgorithm::Qsmart => single(Stage::Qsmart(pass), vec![]),
@@ -216,12 +241,9 @@ fn reconstruction(config: &PipelineConfig, pass: Pass) -> Vec<Step> {
             if !skips_bgremove(config) {
                 let bf = config.bg_removal.algorithm;
                 let id = if bf == BfAlgorithm::Iqfm { model("iqfm") } else { model(&bf.to_string()) };
-                steps.push(Step { stage: Stage::BackgroundRemoval(pass), models: id.into_iter().collect() });
+                steps.push(Step::new(Stage::BackgroundRemoval(pass), id.into_iter().collect()));
             }
-            steps.push(Step {
-                stage: Stage::Inversion(pass),
-                models: model(&inversion.to_string()).into_iter().collect(),
-            });
+            steps.push(Step::new(Stage::Inversion(pass), model(&inversion.to_string()).into_iter().collect()));
             steps
         }
     }
@@ -267,8 +289,8 @@ pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
     }
     let motion_corrected = config.motion_correction.enabled && facts.n_echoes > 1 && facts.has_magnitude;
 
-    let mut steps = vec![Step { stage: Stage::Load, models: vec![] }];
-    let mut add = |stage: Stage, models: Vec<&'static str>| steps.push(Step { stage, models });
+    let mut steps = vec![Step::new(Stage::Load, vec![])];
+    let mut add = |stage: Stage, models: Vec<&'static str>| steps.push(Step::new(stage, models));
     if needs_phase {
         add(Stage::ScalePhase, vec![]);
         if facts.has_magnitude {
@@ -340,7 +362,7 @@ pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
         }
     }
     let (nx, ny, nz) = facts.dims;
-    Plan {
+    let mut plan = Plan {
         steps,
         models,
         peak_memory_bytes: crate::memory::estimate_peak_memory_bytes(
@@ -349,7 +371,12 @@ pub fn plan(config: &PipelineConfig, facts: &ScanFacts) -> Plan {
         notes,
         two_pass,
         motion_corrected,
+    };
+    let details = crate::pipeline_graph::step_details(&plan, config, facts);
+    for (step, d) in plan.steps.iter_mut().zip(details) {
+        (step.algorithm, step.algorithm_label, step.reads, step.outputs) = (d.algorithm, d.algorithm_label, d.reads, d.writes);
     }
+    plan
 }
 
 #[cfg(test)]
