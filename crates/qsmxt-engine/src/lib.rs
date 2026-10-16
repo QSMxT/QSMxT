@@ -47,5 +47,5 @@ pub use masking::*;
 pub use motion::{MotionCorrectionConfig, MotionReference, RegistrationConfig};
 pub use error::{ConfigError, EngineError, Result};
 pub use command::generate_command;
-pub use methods::generate_methods;
+pub use methods::{generate_methods, methods_structured, Methods};
 pub use bridge::{to_pipeline_stages, to_scan_metadata, to_mask_sections, to_mask_ops};

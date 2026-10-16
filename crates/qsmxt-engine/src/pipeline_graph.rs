@@ -590,6 +590,18 @@ fn branch(stage: Stage, two_pass: bool) -> Option<Branch> {
     })
 }
 
+/// Whether the graph leaves out `stage`, a step of `plan` that does nothing with the data:
+/// motion correction when it is off (the step only forgets an earlier run's output), and the
+/// return to the acquired grid of a run that keeps its working grid or, when `resampled` is known
+/// (from the run's grid), is not resampled.
+pub(crate) fn left_out(plan: &Plan, config: &PipelineConfig, stage: Stage, resampled: Option<bool>) -> bool {
+    match stage {
+        Stage::Motion => !plan.motion_corrected,
+        Stage::OutputSpace => config.pipeline.output_space != crate::OutputSpace::Acquired || resampled == Some(false),
+        _ => false,
+    }
+}
+
 /// The graph of a run of `plan` (made by [`crate::plan::plan`] from `config` and `facts`).
 ///
 /// `grid` is the run's grid, when it is known ([`crate::scan::resolve_geometry`] on the first
@@ -609,12 +621,10 @@ pub fn pipeline_graph(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, g
     for step in &plan.steps {
         let stage = step.stage;
         let resampled = grid.map(|g| g.source_geometry.is_some());
-        let only_when = match stage {
-            Stage::Motion if !plan.motion_corrected => continue,
-            Stage::OutputSpace if config.pipeline.output_space != crate::OutputSpace::Acquired || resampled == Some(false) => continue,
-            Stage::OutputSpace if resampled.is_none() => Some("the run is resampled".to_string()),
-            _ => None,
-        };
+        if left_out(plan, config, stage, resampled) {
+            continue;
+        }
+        let only_when = (stage == Stage::OutputSpace && resampled.is_none()).then(|| "the run is resampled".to_string());
         let written: Vec<Item> = writer.iter().map(|(i, _)| *i).collect();
         let (reads, writes) = ctx.io(stage, &written);
         let id = stage.name();
