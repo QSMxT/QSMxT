@@ -1,6 +1,8 @@
 use crate::config::*;
 use crate::enums::*;
 use crate::masking::*;
+use crate::plan::{Pass, Plan, Stage};
+use serde::{Deserialize, Serialize};
 
 struct Citation {
     key: &'static str,
@@ -632,41 +634,169 @@ fn separation_changes(config: &PipelineConfig) -> Changed {
     c
 }
 
+/// One sentence of the methods paragraph.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Sentence {
+    pub text: String,
+    /// The steps it describes, by the ids [`crate::pipeline_graph::pipeline_graph`] gives their
+    /// boxes (`mask`, `invert-reliable`): several where one method does the work of several
+    /// steps (TGV removes the background and inverts the field), none for a sentence about the
+    /// run as a whole.
+    pub steps: Vec<String>,
+    /// The works it cites, by [`Reference::key`].
+    pub citations: Vec<String>,
+}
+
+/// A work the methods text cites.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Reference {
+    /// A short name for it (`dymerska2021`).
+    pub key: String,
+    /// The reference as the list gives it, in Markdown.
+    pub text: String,
+}
+
+/// The methods text sentence by sentence, each with the steps it describes: what a front end
+/// draws beside the pipeline graph, so that a box and the sentences about it can point at each
+/// other. [`Methods::to_markdown`] is the text [`generate_methods_for`] writes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Methods {
+    pub sentences: Vec<Sentence>,
+    /// In the order the paragraph first cites them.
+    pub references: Vec<Reference>,
+}
+
+impl Methods {
+    /// The paragraph: the sentences, joined by spaces.
+    pub fn paragraph(&self) -> String {
+        self.sentences.iter().map(|s| s.text.as_str()).collect::<Vec<_>>().join(" ")
+    }
+
+    /// The paragraph under a `# Methods` heading, and the references under `## References`.
+    pub fn to_markdown(&self) -> String {
+        let mut out = format!("# Methods\n\n{}\n\n", self.paragraph());
+        if !self.references.is_empty() {
+            out.push_str("## References\n\n");
+            for r in &self.references {
+                out.push_str(&format!("- {}\n", r.text));
+            }
+        }
+        out
+    }
+}
+
+/// The methods text as it is written: each sentence with the steps it describes and the works
+/// cited since the one before (a work is cited before the sentence that names it), and the
+/// reference list.
+#[derive(Default)]
+struct Draft {
+    sentences: Vec<(String, Vec<Stage>, Vec<&'static str>)>,
+    references: Vec<&'static Citation>,
+    cited: Vec<&'static str>,
+}
+
+impl Draft {
+    /// Cite `cite` in the next sentence, and list it if it is not listed yet.
+    fn cite(&mut self, cite: &'static Citation) {
+        if !self.references.iter().any(|c| c.key == cite.key) {
+            self.references.push(cite);
+        }
+        if !self.cited.contains(&cite.key) {
+            self.cited.push(cite.key);
+        }
+    }
+
+    /// A sentence about `steps`, citing what was cited since the last one.
+    fn say(&mut self, steps: &[Stage], text: impl Into<String>) {
+        self.sentences.push((text.into(), steps.to_vec(), std::mem::take(&mut self.cited)));
+    }
+
+    /// The steps each sentence names: those `plan` has and its graph draws, or none without a
+    /// plan.
+    fn finish(self, config: &PipelineConfig, plan: Option<&Plan>) -> Methods {
+        let drawn = |stage: &Stage| plan.is_some_and(|p| {
+            p.has(*stage) && !crate::pipeline_graph::left_out(p, config, *stage, None)
+        });
+        let sentences = self.sentences.into_iter().map(|(text, stages, cites)| {
+            let mut steps: Vec<String> = Vec::new();
+            for name in stages.iter().filter(|s| drawn(s)).map(Stage::name) {
+                if !steps.contains(&name) {
+                    steps.push(name);
+                }
+            }
+            Sentence { text, steps, citations: cites.into_iter().map(str::to_string).collect() }
+        }).collect();
+        let references = self.references.iter()
+            .map(|c| Reference { key: c.key.to_string(), text: c.text.to_string() })
+            .collect();
+        Methods { sentences, references }
+    }
+}
+
+/// A step two-pass runs once per pass, in both passes.
+fn both(step: fn(Pass) -> Stage) -> [Stage; 2] {
+    [step(Pass::Main), step(Pass::Reliable)]
+}
+
+/// The steps that reconstruct the susceptibility map, in both passes: the ones that run in the
+/// reconstruction box on the padded grid.
+fn reconstruction() -> Vec<Stage> {
+    [both(Stage::BackgroundRemoval), both(Stage::Inversion), both(Stage::Tgv), both(Stage::Qsmart)].concat()
+}
+
+/// The steps two-pass adds: the reliable-phase mask, the reconstruction on it, and the
+/// combination of the two maps.
+fn two_pass_steps() -> Vec<Stage> {
+    vec![Stage::Mask(Pass::Reliable), Stage::BackgroundRemoval(Pass::Reliable), Stage::Inversion(Pass::Reliable),
+         Stage::Tgv(Pass::Reliable), Stage::Qsmart(Pass::Reliable), Stage::TwoPassCombination]
+}
+
 /// Generate a methods description and citation list from a pipeline configuration.
 /// Uses "qsmxt" as the tool name by default.
 pub fn generate_methods(config: &PipelineConfig) -> String {
     generate_methods_for(config, "qsmxt")
 }
 
-/// Generate methods for a specific tool (e.g. "qsmxt" or "QSMbly").
+/// Generate methods for a specific tool (e.g. "qsmxt" or "QSMbly"): [`Methods::to_markdown`].
 pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
-    let mut sentences = Vec::new();
-    let mut citations: Vec<&Citation> = Vec::new();
+    draft(config, tool).finish(config, None).to_markdown()
+}
+
+/// The methods text for a run of `plan` (made by [`crate::plan::plan`] from `config` and the
+/// scan's facts), sentence by sentence, each naming the steps of `plan`'s pipeline graph it
+/// describes. Its [`Methods::to_markdown`] is [`generate_methods_for`]'s text.
+pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> Methods {
+    draft(config, tool).finish(config, Some(plan))
+}
+
+fn draft(config: &PipelineConfig, tool: &str) -> Draft {
+    let mut doc = Draft::default();
 
     let (cite, author_year) = match tool {
         "QSMbly" | "qsmbly" => (&CITE_QSMBLY, "Stewart, 2026"),
         _ => (&CITE_QSMXT, "Stewart, 2026"),
     };
 
+    doc.cite(cite);
     if config.pipeline.do_qsm {
-        sentences.push(format!("QSM processing was performed using {} ({}).", tool, author_year));
+        doc.say(&[], format!("QSM processing was performed using {} ({}).", tool, author_year));
     } else {
-        sentences.push(format!("MRI processing was performed using {} ({}).", tool, author_year));
+        doc.say(&[], format!("MRI processing was performed using {} ({}).", tool, author_year));
     }
-    add_citation(&mut citations, cite);
 
     // Masking (inhomogeneity correction is described inline)
-    describe_masking(config, &mut sentences, &mut citations);
+    describe_masking(config, &mut doc);
 
     // QSM-specific pipeline
     if config.pipeline.do_qsm {
-        describe_reconstruction_grid(config, &mut sentences);
+        describe_reconstruction_grid(config, &mut doc);
         match config.inversion.algorithm {
             QsmAlgorithm::Tgv => {
                 // Routed by QSM.rs's `InversionInput`: one echo goes in as wrapped phase (TGV
                 // unwraps it itself), several are field-mapped first and go in as the total field.
                 // Neither route runs a separate background-removal stage.
-                sentences.push(
+                doc.cite(&CITE_TGV);
+                doc.say(&both(Stage::Tgv), 
                     "QSM was computed using the Total Generalized Variation (TGV) algorithm \
                      (Langkammer et al., 2015), with background field removal and dipole inversion \
                      performed jointly. For single-echo data TGV was applied to the wrapped phase of \
@@ -675,29 +805,30 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                      field map in ppm, computed as described below.".to_string());
                 let changed = inversion_changes(config, QsmAlgorithm::Tgv);
                 if !changed.is_empty() {
-                    sentences.push(format!("TGV was run{}.", changed.with()));
+                    doc.say(&both(Stage::Tgv), format!("TGV was run{}.", changed.with()));
                 }
-                add_citation(&mut citations, &CITE_TGV);
-                describe_field_mapping(config, &mut sentences, &mut citations);
+                describe_field_mapping(config, &mut doc);
             }
             QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {
                 // `InversionInput::WrappedPhase`: no field mapping and no background removal ran.
                 let (name, cite) = inversion_name_cite(config.inversion.algorithm);
-                sentences.push(format!(
+                doc.cite(cite);
+                doc.say(&both(Stage::Inversion), format!(
                     "QSM was reconstructed with {} ({}) from the wrapped phase of each echo, with \
                      phase unwrapping, background field removal and dipole inversion performed by the \
                      network.",
                     name, cite_inline(cite),
                 ));
-                add_citation(&mut citations, cite);
             }
             QsmAlgorithm::Qsmart => {
                 // QSMART consumes a pre-computed total field, so the field-mapping
                 // stage (phase offset, unwrapping, B0 estimation) still runs and must
                 // be described.
-                describe_field_mapping(config, &mut sentences, &mut citations);
+                describe_field_mapping(config, &mut doc);
                 let (inv_name, inv_cite) = inversion_name_cite(config.inversion.qsmart.inversion);
-                sentences.push(format!(
+                doc.cite(&CITE_QSMART);
+                doc.cite(inv_cite);
+                doc.say(&both(Stage::Qsmart), format!(
                     "QSM was computed using QSMART (Yaghmaie et al., 2021), with spatially dependent \
                      filtering for background field removal, {} dipole inversion ({}), and Frangi \
                      vesselness-based tissue/vasculature separation{}.",
@@ -708,11 +839,9 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                         c.comma_with()
                     },
                 ));
-                add_citation(&mut citations, &CITE_QSMART);
-                add_citation(&mut citations, inv_cite);
             }
             _ => {
-                describe_field_mapping(config, &mut sentences, &mut citations);
+                describe_field_mapping(config, &mut doc);
 
                 // Background removal — only in front of a local-field inversion (QSM.rs
                 // `InversionInput`); the total-field methods remove or model it themselves.
@@ -720,6 +849,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 if !total_field {
                     let alg = &config.bg_removal.algorithm;
                     let (name, cite) = bg_removal_name_cite(*alg);
+                    doc.cite(cite);
                     if *alg == BfAlgorithm::Vsharp {
                         let (v, d) = (&config.bg_removal.vsharp, VsharpConfig::default());
                         let mut changed = Changed::default();
@@ -731,41 +861,40 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                         // The threshold only exists for the deconvolution.
                         changed.add(v.deconvolve && differs(v.threshold, d.threshold),
                             || format!("a deconvolution threshold of {}", v.threshold));
-                        sentences.push(format!("Background field removal was performed using {} ({}){}.",
+                        doc.say(&both(Stage::BackgroundRemoval), format!("Background field removal was performed using {} ({}){}.",
                             name, cite_inline(cite), changed.with()));
                         let resample = "the field and mask were cropped to the brain mask's bounding box and resampled trilinearly, and the background field estimated there was interpolated back to the acquired grid, so the local field kept the acquired resolution";
                         match v.grid {
-                            VsharpGrid::Finest => sentences.push(format!(
+                            VsharpGrid::Finest => doc.say(&both(Stage::BackgroundRemoval), format!(
                                 "For anisotropic voxels the V-SHARP background was estimated on an isotropic grid at the smallest acquired voxel dimension: {resample}. Isotropic acquisitions were processed on their acquired grid.")),
-                            VsharpGrid::Isotropic => sentences.push(format!(
+                            VsharpGrid::Isotropic => doc.say(&both(Stage::BackgroundRemoval), format!(
                                 "The V-SHARP background was estimated on a {} mm isotropic grid: {resample}.", v.grid_spacing)),
                             VsharpGrid::Native => {}
                         }
                     } else {
-                        sentences.push(format!("Background field removal was performed using {} ({}){}.",
+                        doc.say(&both(Stage::BackgroundRemoval), format!("Background field removal was performed using {} ({}){}.",
                             name, cite_inline(cite), bg_removal_changes(config).with()));
                     }
-                    add_citation(&mut citations, cite);
 
                     // Optional mSMV boundary-shadow refinement layered on the primary BFR.
                     if config.bg_removal.msmv_refine {
                         let mut changed = Changed::default();
                         changed.add_fields(&config.bg_removal.msmv, &MsmvConfig::default(), &[]);
-                        sentences.push(format!(
+                        doc.cite(&CITE_MSMV);
+                        doc.say(&both(Stage::BackgroundRemoval), format!(
                             "Residual boundary-field shadows were then removed with maximum spherical mean value (mSMV) filtering ({}){}.",
                             cite_inline(&CITE_MSMV), changed.with(),
                         ));
-                        add_citation(&mut citations, &CITE_MSMV);
                     }
                 }
 
                 // Dipole inversion
                 let (name, cite) = inversion_name_cite(config.inversion.algorithm);
                 let target = if total_field { " on the total field within the brain mask" } else { "" };
-                sentences.push(format!("Dipole inversion was performed{} using {} ({}){}.",
+                doc.cite(cite);
+                doc.say(&both(Stage::Inversion), format!("Dipole inversion was performed{} using {} ({}){}.",
                     target, name, cite_inline(cite),
                     inversion_changes(config, config.inversion.algorithm).with()));
-                add_citation(&mut citations, cite);
                 // Deep-learning tiling (memory-bounded, approximate) is noted when enabled — only
                 // for the tileable DL nets (a stray --tile-size on a classical algorithm is ignored).
                 let tileable = matches!(
@@ -780,7 +909,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                         Some(h) if h != DEFAULT_TILE_HALO => format!(", halo {h} voxels"),
                         _ => String::new(),
                     };
-                    sentences.push(format!(
+                    doc.say(&both(Stage::Inversion), format!(
                         "Network inference was run on overlapping tiles (tile size {core} voxels{halo}).",
                     ));
                 }
@@ -789,17 +918,17 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 
         // Two-pass wraps background removal and inversion, so it is described after both and
         // before referencing, which runs on the combined map.
-        describe_two_pass(config, &mut sentences, &mut citations);
+        describe_two_pass(config, &mut doc);
 
         // Referencing
         match config.qsm.reference {
             QsmReference::Mean => {
-                sentences.push(format!(
+                doc.say(&[Stage::Reference, Stage::SinglePassReference], format!(
                     "Susceptibility values were referenced to the mean susceptibility within \
                      {RECON_MASK}."));
             }
             QsmReference::None => {
-                sentences.push("No susceptibility referencing was applied.".to_string());
+                doc.say(&[Stage::Reference, Stage::SinglePassReference], "No susceptibility referencing was applied.".to_string());
             }
             QsmReference::Region => {
                 let region = config.qsm.reference_region.as_deref().unwrap_or("");
@@ -809,7 +938,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                     Some(tool) => format!("'{tool}' segmentation label{plural}"),
                     None => format!("SynthSeg label{plural}"),
                 };
-                sentences.push(format!(
+                doc.say(&[Stage::Reference, Stage::SinglePassReference], format!(
                     "Susceptibility values were referenced to the mean susceptibility in the \
                      {pretty} ({labels}), computed within {RECON_MASK}."
                 ));
@@ -818,7 +947,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     }
 
     if config.pipeline.do_segmentation {
-        add_citation(&mut citations, &CITE_SYNTHSEG);
+        doc.cite(&CITE_SYNTHSEG);
         let labels = if config.segmentation.version == SynthSegVersion::V2 { 33 } else { 32 };
         let (s, d) = (&config.segmentation, SegmentationConfig::default());
         let mut changed = Changed::default();
@@ -828,27 +957,27 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
         // The version names the weights (and the label count says what they produce); the
         // bring-your-own tool is not a SynthSeg setting.
         changed.add_fields(s, &d, &["version", "flip_averaging", "custom_dseg_tool"]);
-        sentences.push(format!(
+        doc.say(&[Stage::Segmentation], format!(
             "The brain was parcellated from the GRE magnitude using SynthSeg {} (Billot et al., \
              2023), yielding {} FreeSurfer-labelled structures{}.",
             config.segmentation.version, labels, changed.comma_with(),
         ));
     }
     if config.pipeline.do_analysis {
-        sentences.push(
+        doc.say(&[Stage::Analysis], 
             "Each quantitative map was then summarised within every segmented structure (mean, \
              standard deviation, median, minimum, maximum and 5th/95th percentiles over the \
              structure's voxels), excluding voxels the map does not cover.".to_string());
     }
 
     if config.pipeline.do_smwi {
-        add_citation(&mut citations, &CITE_SMWI);
+        doc.cite(&CITE_SMWI);
         let (s, d) = (&config.smwi, SmwiConfig::default());
         let mut mask = Changed::default();
         mask.add(differs(s.threshold_ppm, d.threshold_ppm), || format!("|χ| threshold {:.2} ppm", s.threshold_ppm));
         mask.add(differs(s.power, d.power), || format!("mask raised to the power {}", s.power));
         let slab = if s.mip_window != d.mip_window { format!(" over {} slices", s.mip_window) } else { String::new() };
-        sentences.push(format!(
+        doc.say(&[Stage::Smwi], format!(
             "Susceptibility map-weighted images were computed (Gho et al., 2014) by weighting the \
              magnitude with a mask derived from the susceptibility map{}, separately for \
              paramagnetic and diamagnetic sources, each followed by a minimum-intensity \
@@ -865,7 +994,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
             _ if swi.unwrap == d.unwrap => {}
             SwiUnwrap::Romeo => {
                 changed.push("ROMEO phase unwrapping (Dymerska et al., 2021)".into());
-                add_citation(&mut citations, &CITE_ROMEO);
+                doc.cite(&CITE_ROMEO);
             }
             SwiUnwrap::LaplacianSlice => changed.push("slice-wise Laplacian phase unwrapping".into()),
             SwiUnwrap::Laplacian => changed.push("Laplacian phase unwrapping".into()),
@@ -888,30 +1017,30 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
             "Minimum-intensity projections of these images were also computed.".to_string()
         };
         let using = if changed.is_empty() { String::new() } else { format!(" using {}", join_list(&changed)) };
-        sentences.push(format!(
+        doc.cite(&CITE_CLEARSWI);
+        doc.say(&[Stage::Swi], format!(
             "Susceptibility-weighted images were computed with CLEAR-SWI (Eckstein et al., 2021){using}. {mip}"
         ));
-        add_citation(&mut citations, &CITE_CLEARSWI);
     }
 
     // T2*/R2*
     if config.pipeline.do_t2starmap && config.pipeline.do_r2starmap {
-        sentences.push("T2* and R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015).".to_string());
-        add_citation(&mut citations, &CITE_ARLO);
+        doc.cite(&CITE_ARLO);
+        doc.say(&[Stage::Relaxometry], "T2* and R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015).".to_string());
     } else if config.pipeline.do_t2starmap {
-        sentences.push("T2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015).".to_string());
-        add_citation(&mut citations, &CITE_ARLO);
+        doc.cite(&CITE_ARLO);
+        doc.say(&[Stage::Relaxometry], "T2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015).".to_string());
     } else if config.pipeline.do_r2starmap {
-        sentences.push("R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015).".to_string());
-        add_citation(&mut citations, &CITE_ARLO);
+        doc.cite(&CITE_ARLO);
+        doc.say(&[Stage::Relaxometry], "R2* maps were computed from multi-echo magnitude data using the ARLO method (Pei et al., 2015).".to_string());
     }
 
     // R2 / R2'. Worth stating how R2' was obtained, not just that it was: a measured R2' and an
     // estimated one support different claims, and only one of them is a measurement.
     if config.pipeline.do_r2map || config.pipeline.do_r2primemap {
         if config.pipeline.do_r2map {
-            add_citation(&mut citations, &CITE_EPG);
-            sentences.push(
+            doc.cite(&CITE_EPG);
+            doc.say(&[Stage::R2], 
                 "R2 maps were fitted from multi-echo spin-echo magnitude data using an Extended \
                  Phase Graph dictionary (Weigel, 2015).".to_string());
         }
@@ -922,21 +1051,21 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 &["ignore_field_mismatch"]);
             let r2pn = r2pn.semi();
             match config.separation.custom_r2prime_tool.as_deref() {
-                Some(_) => sentences.push(
+                Some(_) => doc.say(&[Stage::R2], 
                     "R2' maps were taken from the supplied BIDS derivatives.".to_string()),
                 None => match config.separation.r2prime_strategy {
-                    R2PrimeStrategy::Mese => sentences.push(
+                    R2PrimeStrategy::Mese => doc.say(&[Stage::R2], 
                         "R2' was computed as R2* - R2.".to_string()),
                     R2PrimeStrategy::R2primenet => {
-                        add_citation(&mut citations, &CITE_R2PRIMENET);
-                        sentences.push(format!(
+                        doc.cite(&CITE_R2PRIMENET);
+                        doc.say(&[Stage::R2], format!(
                             "R2' was estimated from the R2* map with R2PRIMEnet (Kim et al., \
                              2025{r2pn}).",
                         ));
                     }
                     R2PrimeStrategy::Auto => {
-                        add_citation(&mut citations, &CITE_R2PRIMENET);
-                        sentences.push(if config.separation.r2primenet.ignore_field_mismatch {
+                        doc.cite(&CITE_R2PRIMENET);
+                        doc.say(&[Stage::R2], if config.separation.r2primenet.ignore_field_mismatch {
                             format!("R2' was computed as R2* - R2 where a multi-echo spin-echo \
                              acquisition was available, and estimated from R2* with R2PRIMEnet \
                              (Kim et al., 2025{r2pn}) otherwise.")
@@ -952,7 +1081,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 && config.separation.r2prime_strategy != R2PrimeStrategy::Mese
                 && config.separation.r2primenet.ignore_field_mismatch
             {
-                sentences.push(
+                doc.say(&[Stage::R2], 
                     "R2PRIMEnet, whose weights were trained at 3 T, was also applied to data \
                      acquired at other field strengths."
                         .to_string());
@@ -963,14 +1092,14 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     // Chi-separation (susceptibility source separation)
     if config.pipeline.do_chi_separation {
         let (sep_name, sep_cite) = separation_name_cite(config.separation.algorithm);
-        sentences.push(format!(
+        doc.cite(sep_cite);
+        doc.say(&[Stage::ChiSeparation], format!(
             "Paramagnetic and diamagnetic susceptibility maps were computed using {} ({}) within {}{}.",
             sep_name, cite_inline(sep_cite),
             // Named in full by the referencing sentence, unless the map was left unreferenced.
             if config.pipeline.do_qsm && config.qsm.reference != QsmReference::None { RECON_MASK_AGAIN } else { RECON_MASK },
             separation_changes(config).comma_with(),
         ));
-        add_citation(&mut citations, sep_cite);
     }
 
     // Multi-orientation. Described after the per-orientation pipeline because that is the
@@ -979,17 +1108,18 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
     if config.multi_orientation.enabled() {
         match config.multi_orientation.algorithm {
             MultiOrientAlgorithm::Cosmos => {
-                sentences.push(
+                doc.cite(&CITE_COSMOS);
+                doc.say(&[], 
                     "Local field maps from multiple head orientations, co-registered onto a common \
                      grid, were combined by Calculation Of Susceptibility through Multiple \
                      Orientation Sampling (COSMOS; Liu et al., 2009), using each orientation's B0 \
                      direction expressed in that common frame."
                         .to_string(),
                 );
-                add_citation(&mut citations, &CITE_COSMOS);
             }
             MultiOrientAlgorithm::Sti => {
-                sentences.push(
+                doc.cite(&CITE_STI);
+                doc.say(&[], 
                     "Local field maps from multiple head orientations, co-registered onto a common \
                      grid, were combined by susceptibility tensor imaging (STI; Liu, 2010), \
                      yielding the six independent components of the symmetric susceptibility \
@@ -997,13 +1127,12 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                      anisotropy (MSA) and the principal eigenvector."
                         .to_string(),
                 );
-                add_citation(&mut citations, &CITE_STI);
             }
         }
         // How the orientations got onto one grid is part of the method, not an implementation
         // detail: it determines where the B0 directions came from, which is half the input.
         if config.multi_orientation.register {
-            sentences.push(format!(
+            doc.say(&[], format!(
                 "Orientations that were not already on a common grid were rigidly co-registered \
                  (6 degrees of freedom, normalized cross-correlation over a multi-resolution \
                  pyramid{}) onto the first orientation's grid using the magnitude images, and each \
@@ -1011,13 +1140,13 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 registration_changes(config).semi(),
             ));
         } else {
-            sentences.push(
+            doc.say(&[], 
                 "The orientations were taken to be already co-registered onto a common grid."
                     .to_string(),
             );
         }
         if differs(config.multi_orientation.lambda, MultiOrientationConfig::default().lambda) {
-            sentences.push(format!(
+            doc.say(&[], format!(
                 "The multi-orientation inversion was regularized with lambda = {}.",
                 config.multi_orientation.lambda
             ));
@@ -1029,11 +1158,11 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 let mut cg = Changed::default();
                 cg.add(differs(m.cosmos_tol, d.cosmos_tol), || format!("tolerance {}", m.cosmos_tol));
                 cg.add(m.cosmos_max_iter != d.cosmos_max_iter, || format!("at most {} iterations", m.cosmos_max_iter));
-                sentences.push(format!(
+                doc.say(&[], format!(
                     "Each orientation's field was weighted by its magnitude, and the weighted \
                      least-squares problem solved by conjugate gradient{}.", cg.paren()));
             }
-            sentences.push(
+            doc.say(&[], 
                 "The COSMOS map was referenced in the same way as the single-orientation maps, \
                  over the voxels covered by every orientation's background-field-removal mask."
                     .to_string(),
@@ -1043,31 +1172,17 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
 
     // DICOM export
     if config.pipeline.export_dicom {
-        sentences.push("Final maps were additionally exported as DICOM series.".to_string());
+        doc.say(&[], "Final maps were additionally exported as DICOM series.".to_string());
     }
 
-    // Build output
-    let mut out = String::new();
-    out.push_str("# Methods\n\n");
-    out.push_str(&sentences.join(" "));
-    out.push_str("\n\n");
-
-    // Citations
-    if !citations.is_empty() {
-        out.push_str("## References\n\n");
-        for cite in &citations {
-            out.push_str(&format!("- {}\n", cite.text));
-        }
-    }
-
-    out
+    doc
 }
 
 /// The reconstruction-grid switches, all off by default, so each is said only when on.
-fn describe_reconstruction_grid(config: &PipelineConfig, sentences: &mut Vec<String>) {
+fn describe_reconstruction_grid(config: &PipelineConfig, doc: &mut Draft) {
     let p = &config.pipeline;
     if p.ignore_slice_gap {
-        sentences.push("Acquisitions whose slices were separated by a gap were reconstructed as if the slices were contiguous.".to_string());
+        doc.say(&[Stage::Load], "Acquisitions whose slices were separated by a gap were reconstructed as if the slices were contiguous.".to_string());
     }
     if p.axial_resampling {
         let which = if differs(p.obliquity_threshold, DEFAULT_OBLIQUITY_THRESHOLD) {
@@ -1079,7 +1194,7 @@ fn describe_reconstruction_grid(config: &PipelineConfig, sentences: &mut Vec<Str
             OutputSpace::Acquired => "",
             OutputSpace::Working => ", and the derivatives were written on the resampled grid",
         };
-        sentences.push(format!(
+        doc.say(&[Stage::Load, Stage::OutputSpace], format!(
             "{which} were resampled onto an axial grid, with B0 along the slice normal, before reconstruction{space}."));
     }
     if p.crop_to_mask {
@@ -1088,10 +1203,10 @@ fn describe_reconstruction_grid(config: &PipelineConfig, sentences: &mut Vec<Str
         } else {
             String::new()
         };
-        sentences.push(format!("Reconstruction was performed within a box around the brain mask{margin}."));
+        doc.say(&reconstruction(), format!("Reconstruction was performed within a box around the brain mask{margin}."));
     }
     if p.fft_padding {
-        sentences.push("Before the FFT-based stages, the grid was zero-padded to an FFT-efficient size.".to_string());
+        doc.say(&reconstruction(), "Before the FFT-based stages, the grid was zero-padded to an FFT-efficient size.".to_string());
     }
 }
 
@@ -1103,7 +1218,7 @@ fn describe_pad(p: [usize; 3]) -> String {
 /// Describe the field-mapping stage: phase offset / bipolar correction, phase
 /// unwrapping, and B0 estimation. Shared by the standard pipeline and QSMART
 /// (which consumes a pre-computed total field, so these steps still run).
-fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, citations: &mut Vec<&Citation>) {
+fn describe_field_mapping(config: &PipelineConfig, doc: &mut Draft) {
     let fm = &config.field_mapping;
     let d = FieldMappingConfig::default();
     let m = &config.motion_correction;
@@ -1118,7 +1233,7 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
         let mut changed = registration_changes(config);
         changed.add_fields(m, &crate::motion::MotionCorrectionConfig::default(),
             &["enabled", "reference", "min_ncc"]);
-        sentences.push(format!(
+        doc.say(&[Stage::Motion], format!(
             "Before field mapping, every echo was rigidly co-registered to {reference} by maximising the normalised cross-correlation of the magnitude images over a multi-resolution pyramid{}, and the phase was resampled with it through the complex signal; the brain mask was restricted to voxels covered by every echo.",
             changed.paren()));
     }
@@ -1132,17 +1247,17 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
     };
     match (fm.phase_offset_removal && romeo, fm.bipolar_correction && romeo) {
         (true, true) => {
-            sentences.push(format!("Phase offset removal (Eckstein et al., 2018{sigma}) and bipolar gradient correction (Eckstein, 2021) were applied."));
-            add_citation(citations, &CITE_MCPC3DS);
-            add_citation(citations, &CITE_BIPOLAR);
+            doc.cite(&CITE_MCPC3DS);
+            doc.cite(&CITE_BIPOLAR);
+            doc.say(&[Stage::FieldMap], format!("Phase offset removal (Eckstein et al., 2018{sigma}) and bipolar gradient correction (Eckstein, 2021) were applied."));
         }
         (true, false) => {
-            sentences.push(format!("Phase offset removal was performed using the HIP method (Eckstein et al., 2018{sigma})."));
-            add_citation(citations, &CITE_MCPC3DS);
+            doc.cite(&CITE_MCPC3DS);
+            doc.say(&[Stage::FieldMap], format!("Phase offset removal was performed using the HIP method (Eckstein et al., 2018{sigma})."));
         }
         (false, true) => {
-            sentences.push("Bipolar gradient correction (Eckstein, 2021) was applied.".to_string());
-            add_citation(citations, &CITE_BIPOLAR);
+            doc.cite(&CITE_BIPOLAR);
+            doc.say(&[Stage::FieldMap], "Bipolar gradient correction (Eckstein, 2021) was applied.".to_string());
         }
         (false, false) => {}
     }
@@ -1159,8 +1274,8 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
             };
             let mut changed = Changed::default();
             changed.add_fields(&fm.romeo, &d.romeo, &["individual"]);
-            sentences.push(format!("Phase unwrapping was performed using ROMEO (Dymerska et al., 2021){mode}{}.", changed.with()));
-            add_citation(citations, &CITE_ROMEO);
+            doc.cite(&CITE_ROMEO);
+            doc.say(&[Stage::FieldMap], format!("Phase unwrapping was performed using ROMEO (Dymerska et al., 2021){mode}{}.", changed.with()));
         }
         UnwrappingAlgorithm::Laplacian => {
             let solver = match fm.laplacian_solver {
@@ -1174,9 +1289,9 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
             } else {
                 String::new()
             };
-            sentences.push(format!(
+            doc.cite(&CITE_LAPLACIAN_UNWRAP);
+            doc.say(&[Stage::FieldMap], format!(
                 "Phase unwrapping was performed separately for each echo using the Laplacian method (Schofield & Zhu, 2003){solver}{pad}."));
-            add_citation(citations, &CITE_LAPLACIAN_UNWRAP);
         }
     }
 
@@ -1191,17 +1306,17 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
                 } else {
                     String::new()
                 };
-                sentences.push(format!(
+                doc.cite(&CITE_UKB_QSM);
+                doc.say(&[Stage::FieldMap], format!(
                     "The B0 field map was estimated as a weighted average of the unwrapped echo phases with per-echo weights TE·exp(−TE/T2*), computed from the echo times and an assumed T2*{t2star} and identical in every voxel (Wang et al., 2022)."));
-                add_citation(citations, &CITE_UKB_QSM);
             } else {
                 let mut changed = Changed::default();
                 changed.add(fm.b0_weight_type != d.b0_weight_type, || format!("{} weighting", fm.b0_weight_type));
-                sentences.push(format!("The B0 field map was estimated as a weighted average of the unwrapped echo phases{}.", changed.with()));
+                doc.say(&[Stage::FieldMap], format!("The B0 field map was estimated as a weighted average of the unwrapped echo phases{}.", changed.with()));
             }
         }
         B0Estimation::LinearFit => {
-            sentences.push(format!("The B0 field map was estimated using magnitude-weighted linear fit of phase vs echo time{}.", linear.with()));
+            doc.say(&[Stage::FieldMap], format!("The B0 field map was estimated using magnitude-weighted linear fit of phase vs echo time{}.", linear.with()));
         }
         B0Estimation::RobustFit => {
             let (r, rd) = (&fm.robust_fit, &d.robust_fit);
@@ -1210,7 +1325,7 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
             changed.add(r.loss != rd.loss, || format!("a {} loss", if r.loss == RobustLoss::Tukey { "Tukey biweight" } else { "Huber" }));
             changed.add(r.tuning.is_some_and(|t| differs(t, conventional)), || format!("tuning constant {}", r.tuning.unwrap_or(conventional)));
             changed.0.extend(linear.0);
-            sentences.push(if r.iterations == 0 {
+            doc.say(&[Stage::FieldMap], if r.iterations == 0 {
                 format!("The B0 field map was estimated using magnitude-weighted linear fit of phase vs echo time, with per-echo residual statistics reported to flag echoes inconsistent with the fit{}.",
                     if changed.is_empty() { String::new() } else { format!("; {}", join_list(&changed.0)) })
             } else {
@@ -1224,7 +1339,7 @@ fn describe_field_mapping(config: &PipelineConfig, sentences: &mut Vec<String>, 
 /// Prose for a list of mask refinement ops, in the order they run.
 /// An op's settings are compared with what the op is when written without arguments
 /// (`erode` is one iteration, `gaussian` is 4 mm), so only the ones the user chose are stated.
-fn describe_refinements(ops: &[MaskOp], citations: &mut Vec<&Citation>) -> Vec<String> {
+fn describe_refinements(ops: &[MaskOp], doc: &mut Draft) -> Vec<String> {
     let default_of = |spec: &str| parse_mask_op(spec).expect("bare mask op parses");
     ops.iter().map(|op| match op {
         MaskOp::Erode { iterations } | MaskOp::Dilate { iterations } => {
@@ -1242,7 +1357,7 @@ fn describe_refinements(ops: &[MaskOp], citations: &mut Vec<&Citation>) -> Vec<S
         MaskOp::GaussianSmooth { sigma_mm } if *op != default_of("gaussian") => format!("Gaussian smoothing (σ = {sigma_mm} mm)"),
         MaskOp::GaussianSmooth { .. } => "Gaussian smoothing".to_string(),
         MaskOp::SignalErode { threshold, depth_cap, global_erosions, bias_sigma, min_component } => {
-            add_citation(citations, &CITE_QSMCI_SIGNAL_EROSION);
+            doc.cite(&CITE_QSMCI_SIGNAL_EROSION);
             let MaskOp::SignalErode {
                 threshold: dt, depth_cap: dd, global_erosions: dg, bias_sigma: db, min_component: dm,
             } = MaskOp::signal_erode_default() else { unreachable!() };
@@ -1263,13 +1378,13 @@ fn describe_refinements(ops: &[MaskOp], citations: &mut Vec<&Citation>) -> Vec<S
 /// phase quality map", and so on. Shared by the main mask and the two-pass reliable mask, so the
 /// same recipe never gets described two different ways.
 fn describe_generator(
-    section: &MaskSection, config: &PipelineConfig, citations: &mut Vec<&Citation>,
+    section: &MaskSection, config: &PipelineConfig, doc: &mut Draft,
 ) -> String {
     // Input description — clarify which magnitude goes into ROMEO
     let corrected = config.masking.inhomogeneity_correction;
     let input_desc = match section.input {
         MaskingInput::PhaseQuality => {
-            add_citation(citations, &CITE_ROMEO);
+            doc.cite(&CITE_ROMEO);
             if corrected {
                 "the ROMEO phase quality map (computed from phase data and the inhomogeneity-corrected RSS-combined magnitude)"
             } else {
@@ -1292,7 +1407,7 @@ fn describe_generator(
 
     match &section.generator {
         MaskOp::Threshold { method: MaskThresholdMethod::Otsu, .. } => {
-            add_citation(citations, &CITE_OTSU);
+            doc.cite(&CITE_OTSU);
             format!("Otsu thresholding (Otsu, 1979) of {}", input_desc)
         }
         MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value } => {
@@ -1302,7 +1417,7 @@ fn describe_generator(
             format!("percentile thresholding ({}th percentile) of {}", value.unwrap_or(75.0), input_desc)
         }
         MaskOp::Bet { fractional_intensity, voxel_scale } => {
-            add_citation(citations, &CITE_BET);
+            doc.cite(&CITE_BET);
             let MaskOp::Bet { fractional_intensity: df, .. } = parse_mask_op("bet").expect("bare bet parses")
                 else { unreachable!() };
             let mut changed = Changed::default();
@@ -1320,7 +1435,7 @@ fn describe_generator(
             format!("BET brain extraction (Smith, 2002{}) of {}", changed.semi(), input_desc)
         }
         MaskOp::Rs2Net { tta, tile_step } => {
-            add_citation(citations, &CITE_RS2NET);
+            doc.cite(&CITE_RS2NET);
             let mut changed = Changed::default();
             changed.add(differs(*tile_step, crate::masking::rs2_net_default_tile_step()),
                 || format!("sliding-window patches stepped by {:.0}% of the patch", tile_step * 100.0));
@@ -1328,13 +1443,13 @@ fn describe_generator(
             format!("RS2-Net deep-learning rodent brain extraction (Lin et al., 2024{}) of {}", changed.semi(), input_desc)
         }
         MaskOp::MindGrab { tta } => {
-            add_citation(citations, &CITE_MINDGRAB);
+            doc.cite(&CITE_MINDGRAB);
             let mut changed = Changed::default();
             changed.add(*tta, || "left-right flip test-time augmentation".to_string());
             format!("MindGrab deep-learning brain extraction (Fani et al., 2025{}) of {}", changed.semi(), input_desc)
         }
         MaskOp::HdBet { patch, tta, tile_step } => {
-            add_citation(citations, &CITE_HDBET);
+            doc.cite(&CITE_HDBET);
             let mut changed = Changed::default();
             if let Some(p) = patch {
                 changed.add(true, || format!("{}x{}x{}-voxel sliding-window patches", p[0], p[1], p[2]));
@@ -1352,24 +1467,24 @@ fn describe_generator(
 ///
 /// Named as "two-pass" throughout, matching both the paper and the `_desc-singlepass_` derivative
 /// that carries the other pass's map.
-fn describe_two_pass(config: &PipelineConfig, sentences: &mut Vec<String>, citations: &mut Vec<&Citation>) {
+fn describe_two_pass(config: &PipelineConfig, doc: &mut Draft) {
     if !config.masking.two_pass {
         return;
     }
-    add_citation(citations, &CITE_TWOPASS);
+    doc.cite(&CITE_TWOPASS);
 
     let sections = config.masking.resolved_two_pass_sections();
     let mut descs = Vec::new();
     for section in &sections {
-        let mut parts = vec![describe_generator(section, config, citations)];
-        let refinements = describe_refinements(&section.refinements, citations);
+        let mut parts = vec![describe_generator(section, config, doc)];
+        let refinements = describe_refinements(&section.refinements, doc);
         if !refinements.is_empty() {
             parts.push(format!("followed by {}", join_list(&refinements)));
         }
         descs.push(parts.join(", "));
     }
 
-    sentences.push(format!(
+    doc.say(&two_pass_steps(), format!(
         "Two-pass artefact reduction (Stewart et al., 2022) was applied: background field removal \
          and dipole inversion were repeated against a second mask generated using {}, whose holes \
          around strong susceptibility sources were left unfilled, and the two susceptibility maps \
@@ -1379,17 +1494,17 @@ fn describe_two_pass(config: &PipelineConfig, sentences: &mut Vec<String>, citat
     ));
 }
 
-fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citations: &mut Vec<&Citation>) {
+fn describe_masking(config: &PipelineConfig, doc: &mut Draft) {
     if config.masking.sections.is_empty() {
         return;
     }
 
     // Prefer a bring-your-own mask from BIDS derivatives, where available.
     match config.masking.custom_mask_tool.as_deref() {
-        Some("*") => sentences.push(
+        Some("*") => doc.say(&[Stage::Mask(Pass::Main)], 
             "Where available, existing brain masks were sourced from the BIDS derivatives; \
              otherwise they were generated as follows.".to_string()),
-        Some(tool) => sentences.push(format!(
+        Some(tool) => doc.say(&[Stage::Mask(Pass::Main)], format!(
             "Where available, brain masks were sourced from the '{}' BIDS derivatives; \
              otherwise they were generated as follows.", tool)),
         None => {}
@@ -1399,7 +1514,7 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
     // The RSS-combined magnitude is used for both Magnitude and PhaseQuality masking inputs,
     // while MagnitudeFirst/MagnitudeLast use their specific echo magnitudes.
     if config.masking.inhomogeneity_correction {
-        add_citation(citations, &CITE_BIAS);
+        doc.cite(&CITE_BIAS);
         let mut changed = Changed::default();
         changed.add_fields(&config.homogeneity, &HomogeneityConfig::default(), &[]);
         let settings = changed.semi();
@@ -1410,15 +1525,15 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
         let uses_last = inputs.iter().any(|i| matches!(i, MaskingInput::MagnitudeLast));
 
         if uses_rss && !uses_first && !uses_last {
-            sentences.push(format!("Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the RSS-combined magnitude image."));
+            doc.say(&[Stage::Magnitude], format!("Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the RSS-combined magnitude image."));
         } else if !uses_rss && (uses_first || uses_last) {
             let echo = if uses_first { "first" } else { "last" };
-            sentences.push(format!(
+            doc.say(&[Stage::Magnitude], format!(
                 "Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the {}-echo magnitude image.",
                 echo
             ));
         } else {
-            sentences.push(format!("Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the magnitude data."));
+            doc.say(&[Stage::Magnitude], format!("Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the magnitude data."));
         }
     }
 
@@ -1426,10 +1541,10 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
     let mut section_descs = Vec::new();
 
     for section in &config.masking.sections {
-        let mut parts = vec![describe_generator(section, config, citations)];
+        let mut parts = vec![describe_generator(section, config, doc)];
 
         // Refinements
-        let refinement_descs = describe_refinements(&section.refinements, citations);
+        let refinement_descs = describe_refinements(&section.refinements, doc);
 
         if !refinement_descs.is_empty() {
             parts.push(format!("followed by {}", join_list(&refinement_descs)));
@@ -1439,21 +1554,21 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
     }
 
     if section_count == 1 {
-        sentences.push(format!("A brain mask was generated using {}.", section_descs[0]));
+        doc.say(&[Stage::Mask(Pass::Main)], format!("A brain mask was generated using {}.", section_descs[0]));
     } else {
         let (op, how) = match config.masking.combine {
             MaskCombine::Or => ("OR", "union"),
             MaskCombine::And => ("AND", "intersection"),
         };
-        sentences.push(format!(
+        doc.say(&[Stage::Mask(Pass::Main)], format!(
             "A brain mask was generated by combining {} mask sections ({} operation, i.e. their {}): {}.",
             section_count, op, how, join_list(&section_descs)
         ));
     }
 
-    let combined_descs = describe_refinements(&config.masking.refinements, citations);
+    let combined_descs = describe_refinements(&config.masking.refinements, doc);
     if !combined_descs.is_empty() {
-        sentences.push(format!(
+        doc.say(&[Stage::Mask(Pass::Main)], format!(
             "The {} mask was then refined by {}.",
             if section_count == 1 { "resulting" } else { "combined" },
             join_list(&combined_descs)
@@ -1466,8 +1581,8 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
         && config.masking.combine == consensus.combine
         && config.masking.refinements == consensus.refinements
     {
-        add_citation(citations, &CITE_QSM_CONSENSUS);
-        sentences.push(
+        doc.cite(&CITE_QSM_CONSENSUS);
+        doc.say(&[Stage::Mask(Pass::Main)], 
             "This masking follows the recommendation of the ISMRM electro-magnetic tissue \
              properties study group consensus (Bilgic et al., 2024).".to_string());
     }
@@ -1570,10 +1685,10 @@ pub(crate) mod words {
                 MaskOp::HdBet { .. } => "HD-BET".to_string(),
                 MaskOp::Rs2Net { .. } => "RS2-Net".to_string(),
                 MaskOp::MindGrab { .. } => "MindGrab".to_string(),
-                other => describe_refinements(std::slice::from_ref(other), &mut Vec::new()).join(", "),
+                other => describe_refinements(std::slice::from_ref(other), &mut Draft::default()).join(", "),
             };
             let steps: Vec<String> = std::iter::once(generator)
-                .chain(describe_refinements(&section.refinements, &mut Vec::new()))
+                .chain(describe_refinements(&section.refinements, &mut Draft::default()))
                 .collect();
             format!("{input}: {}", steps.join(", "))
         }).collect()
@@ -1685,12 +1800,6 @@ fn cite_inline(cite: &Citation) -> &'static str {
         "gao2024iqsmplus" => "Gao et al., 2024",
         "eckstein2021phd" => "Eckstein, 2021",
         _ => cite.key,
-    }
-}
-
-fn add_citation<'a>(citations: &mut Vec<&'a Citation>, cite: &'a Citation) {
-    if !citations.iter().any(|c| c.key == cite.key) {
-        citations.push(cite);
     }
 }
 
@@ -3008,3 +3117,6 @@ mod defaults_only_tests {
         assert!(!paragraph(&c).contains("radii"));
     }
 }
+
+#[cfg(test)]
+mod structured_tests;
