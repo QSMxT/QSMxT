@@ -2412,6 +2412,49 @@ mod oblique_run_tests {
         }
     }
 
+    /// Switched from each inversion to each other one and back, the only provenance naming a raw
+    /// map as its output is that of the step that wrote it last. QSMART runs on its own mask, as
+    /// `qsmxt run` gives it by default, so switching to or from it remakes the mask first and the
+    /// state has already forgotten the other inversion by the time QSMART is recorded.
+    #[test]
+    fn only_the_last_inversion_is_named_the_raw_maps_maker() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 2);
+        let k = &run.key;
+        let algorithms = [(QsmAlgorithm::Rts, "invert"), (QsmAlgorithm::Tgv, "tgv"), (QsmAlgorithm::Qsmart, "qsmart")];
+        for (a, step) in algorithms {
+            for (b, _) in algorithms.into_iter().filter(|&(b, _)| b != a) {
+                for two_pass in [false, true] {
+                    let mut config = fast_config();
+                    config.masking.two_pass = two_pass;
+                    config.inversion.qsmart.ilsqr_max_iter = 5;
+                    let output = DerivativeOutputs::new(&dir.path().join(format!("{a:?}-{b:?}-{two_pass}")));
+                    for algorithm in [a, b, a] {
+                        config.inversion.algorithm = algorithm;
+                        config.masking.sections = if algorithm == QsmAlgorithm::Qsmart {
+                            qsmxt_engine::masking::qsmart_default_mask_sections()
+                        } else {
+                            fast_config().masking.sections
+                        };
+                        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+                    }
+                    let mut raws = vec![(output.chi_raw_path(k), step.to_string())];
+                    if two_pass {
+                        raws.push((output.reliable_chi_raw_path(k), format!("{step}-reliable")));
+                    }
+                    for (raw, step) in raws {
+                        let makers: Vec<&str> = crate::bids::bidsprov::STEPS.iter().copied().filter(|&s| {
+                            let Ok(text) = std::fs::read_to_string(output.provenance_path(k, s)) else { return false };
+                            let prov: serde_json::Value = serde_json::from_str(&text).unwrap();
+                            prov["outputs"].as_array().unwrap().iter().any(|o| o.as_str() == Some(&raw.display().to_string()))
+                        }).collect();
+                        assert_eq!(makers, [step.as_str()], "{a:?} → {b:?} → {a:?}, two-pass {two_pass}");
+                    }
+                }
+            }
+        }
+    }
+
     /// A recomputed map's sidecar says what was done to it, not to the map it replaced: re-run
     /// without a reference, the map records no offset from the mean reference it had before.
     #[test]
