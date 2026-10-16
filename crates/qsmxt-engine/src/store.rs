@@ -1066,6 +1066,38 @@ mod tests {
         assert!(again.cached("tgv", "b"), "only one of them is left to be recomputed");
     }
 
+    /// Which differently named steps write the same output, over every inversion, single- and
+    /// two-pass, with every output on: only the inversions' raw map. Not a rule the stores rely on
+    /// ([`sharing_outputs`] holds for any), but the list of what they meet.
+    #[test]
+    fn only_the_inversion_steps_write_the_same_output() {
+        use crate::enums::QsmAlgorithm;
+        let mut facts = crate::plan::tests::facts();
+        facts.mese_echo_times = Some(vec![0.01, 0.02, 0.03]);
+        let mut writers: HashMap<Item, std::collections::BTreeSet<String>> = HashMap::new();
+        for algorithm in QsmAlgorithm::ALL {
+            for two_pass in [false, true] {
+                let mut config = crate::config::PipelineConfig::default();
+                config.inversion.algorithm = algorithm;
+                config.masking.two_pass = two_pass;
+                let p = &mut config.pipeline;
+                (p.do_swi, p.do_smwi, p.do_t2starmap, p.do_r2starmap, p.do_r2map, p.do_r2primemap) = (true, true, true, true, true, true);
+                (p.do_chi_separation, p.do_segmentation, p.do_analysis) = (true, true, true);
+                for step in crate::plan::plan(&config, &facts).steps.iter().filter(|s| s.name != OUTPUT_SPACE) {
+                    for &item in &step.outputs {
+                        writers.entry(item).or_default().insert(step.name.clone());
+                    }
+                }
+            }
+        }
+        writers.retain(|_, steps| steps.len() > 1);
+        let names = |s: &[&str]| s.iter().map(|n| n.to_string()).collect();
+        assert_eq!(writers, HashMap::from([
+            (Item::RawChi(Pass::Main), names(&["invert", "qsmart", "tgv"])),
+            (Item::RawChi(Pass::Reliable), names(&["invert-reliable", "qsmart-reliable", "tgv-reliable"])),
+        ]));
+    }
+
     #[test]
     fn items_are_read_back_from_their_keys() {
         use qsm_core::pipeline::qsmart::outputs as q;
