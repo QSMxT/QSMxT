@@ -510,3 +510,30 @@ fn the_printed_command_reproduces_the_tuis_run() {
     }
     assert!(failures.is_empty(), "{} forms, e.g.:\n{}", failures.len(), failures[..failures.len().min(4)].join("\n"));
 }
+
+/// The mask editor's step types are the mask schema's, and the ones it offers as a section's
+/// first step are the ones that start one.
+#[test]
+fn the_mask_editors_steps_are_the_mask_schemas() {
+    let m = schema::mask_schema();
+    let step = |label: &str| m.steps.iter().find(|s| s.label == label).unwrap_or_else(|| panic!("{label} is not a mask step"));
+    for t in MASK_GENERATOR_TYPES {
+        assert!(step(t).starts_section, "{t}");
+        // The default the editor adds is the schema's.
+        let op = PipelineFormState::default_mask_op(t).unwrap();
+        assert_eq!(serde_json::to_value(&op).unwrap(), step(t).default, "{t}");
+    }
+    for t in MASK_OP_TYPES {
+        step(t);
+    }
+    for t in PipelineFormState::default().available_op_types(0) {
+        assert!(!step(t).starts_section, "{t} is offered as a refinement");
+    }
+    // Every step type the schema has, the editor can make.
+    for s in &m.steps {
+        assert!(MASK_GENERATOR_TYPES.contains(&s.label) || MASK_OP_TYPES.contains(&s.label), "{}", s.label);
+    }
+    // Every input the schema has, the editor offers, in its order.
+    let inputs: Vec<_> = m.inputs.iter().map(|i| i.value).collect();
+    assert_eq!(inputs, PipelineFormState::MASK_INPUT_SOURCES);
+}

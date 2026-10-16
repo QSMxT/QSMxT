@@ -1163,8 +1163,8 @@ qsmxt mask hd-bet [OPTIONS] --output <OUTPUT> <INPUT>
 | `<INPUT>` | Input NIfTI file (an image for the generating subcommands, a mask for the rest) Required. |
 | `-o, --output <OUTPUT>` | Output mask NIfTI file. Required. |
 | `--op <OPS>` | Further refinement, applied in order after the subcommand's own operation (repeatable). Examples: erode:2, dilate:1, fill-holes:0, close:1, gaussian:4.0, signal-erode (signal-gated erosion of low-signal boundary voxels; needs a magnitude input) |
-| `--window` | Run in 192x192x96 sliding-window patches (~3.6 GB peak) instead of on the whole volume (the default; ~6-8 GB peak and about twice as fast) |
-| `--low-memory` | Use 128x128x64 sliding-window patches (~1.5 GB peak) |
+| `--window` | Run in 192x192x96 sliding-window patches (about 3.6–4.5 GB measured) instead of on the whole volume (the default; about 6–8 GB measured, and about twice as fast) |
+| `--low-memory` | Use 128x128x64 sliding-window patches (about 1.5–1.9 GB measured) |
 | `--patch <PATCH>` | Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16) |
 | `--tta` | 8-fold mirroring test-time augmentation (about 8x slower) |
 | `--tile-step <TILE_STEP>` | Sliding-window step as a fraction of the patch, in (0, 1]. Larger steps mean fewer patches and a shorter run: 0.5 (default) is HD-BET's own, 1.0 abuts the patches. Implies --window. |

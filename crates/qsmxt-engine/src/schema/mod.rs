@@ -20,6 +20,7 @@
 //! [`get`] and [`set`], through the config's own serde form, so a path that round-trips here is
 //! one the TOML config accepts.
 
+pub mod mask;
 mod table;
 mod view;
 
@@ -29,6 +30,7 @@ use serde_json::Value;
 use crate::config::PipelineConfig;
 use crate::store::Item;
 
+pub use mask::{mask_schema, MaskSchema};
 pub use view::{prune_hidden, settings_view, SettingView, ViewFacts};
 
 /// A tab of the settings, as the TUI lays them out.
@@ -558,19 +560,21 @@ pub fn schema() -> Vec<Setting> {
         .collect()
 }
 
-/// [`schema`] as JSON: `{ "tabs": [...], "sections": [...], "settings": [...] }`, the tab and
-/// section entries giving each one's id, title and (for sections) tab.
+/// [`schema`] as JSON: `{ "tabs": [...], "sections": [...], "settings": [...], "mask": {...} }`,
+/// the tab and section entries giving each one's id, title and (for sections) tab, and `mask`
+/// the parts of a mask recipe ([`mask_schema`]).
 pub fn schema_json() -> String {
     #[derive(Serialize)]
     struct TabEntry { id: Tab, label: &'static str }
     #[derive(Serialize)]
     struct SectionEntry { id: Section, label: &'static str, tab: Tab }
     #[derive(Serialize)]
-    struct Doc { tabs: Vec<TabEntry>, sections: Vec<SectionEntry>, settings: Vec<Setting> }
+    struct Doc { tabs: Vec<TabEntry>, sections: Vec<SectionEntry>, settings: Vec<Setting>, mask: MaskSchema }
     let doc = Doc {
         tabs: Tab::ALL.iter().map(|&t| TabEntry { id: t, label: t.label() }).collect(),
         sections: Section::ALL.iter().map(|&s| SectionEntry { id: s, label: s.label(), tab: s.tab() }).collect(),
         settings: schema(),
+        mask: mask_schema(),
     };
     serde_json::to_string(&doc).expect("the schema serialises")
 }
@@ -625,26 +629,31 @@ impl Setting {
 
     /// The range in words: "at least 0", "greater than 0", "from 0 to 1".
     pub fn range_text(&self) -> String {
-        let num = |v: f64| if v.fract() == 0.0 { format!("{v:.0}") } else { format!("{v}") };
-        match (self.min, self.max) {
-            (Some(lo), Some(hi)) => format!(
-                "from {} to {}{}", num(lo), num(hi),
-                match (self.exclusive_min, self.exclusive_max) {
-                    (false, false) => String::new(),
-                    (true, false) => format!(" (not {})", num(lo)),
-                    (false, true) => format!(" (not {})", num(hi)),
-                    (true, true) => format!(" (not {} or {})", num(lo), num(hi)),
-                }),
-            (Some(lo), None) => format!("{} {}", if self.exclusive_min { "greater than" } else { "at least" }, num(lo)),
-            (None, Some(hi)) => format!("{} {}", if self.exclusive_max { "less than" } else { "at most" }, num(hi)),
-            (None, None) => "any value".into(),
-        }
+        range_words(self.min, self.max, self.exclusive_min, self.exclusive_max)
+    }
+}
+
+/// A range in words: "at least 0", "greater than 0", "from 0 to 1".
+pub(crate) fn range_words(min: Option<f64>, max: Option<f64>, exclusive_min: bool, exclusive_max: bool) -> String {
+    let num = |v: f64| if v.fract() == 0.0 { format!("{v:.0}") } else { format!("{v}") };
+    match (min, max) {
+        (Some(lo), Some(hi)) => format!(
+            "from {} to {}{}", num(lo), num(hi),
+            match (exclusive_min, exclusive_max) {
+                (false, false) => String::new(),
+                (true, false) => format!(" (not {})", num(lo)),
+                (false, true) => format!(" (not {})", num(hi)),
+                (true, true) => format!(" (not {} or {})", num(lo), num(hi)),
+            }),
+        (Some(lo), None) => format!("{} {}", if exclusive_min { "greater than" } else { "at least" }, num(lo)),
+        (None, Some(hi)) => format!("{} {}", if exclusive_max { "less than" } else { "at most" }, num(hi)),
+        (None, None) => "any value".into(),
     }
 }
 
 /// Check every setting that applies to `config` against its range, and every number setting
 /// that applies for being finite (a config file and the command line both accept `nan` and
-/// `inf`). A setting that does not apply (see [`settings_view`]) is not checked: it cannot
+/// `inf`), and the mask recipe's steps ([`MaskingConfig::validate`](crate::config::MaskingConfig::validate)). A setting that does not apply (see [`settings_view`]) is not checked: it cannot
 /// change the run.
 ///
 /// The error names each setting out of range (its path and `qsmxt run` option), the value, and
@@ -652,7 +661,9 @@ impl Setting {
 pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
     let applies: std::collections::HashSet<&str> = settings_view(config, &ViewFacts::default())
         .into_iter().filter(|v| v.visible).map(|v| v.path).collect();
-    let problems: Vec<String> = out_of_range(config, |p| applies.contains(p)).into_iter().map(|p| p.described).collect();
+    let mut problems: Vec<String> = out_of_range(config, |p| applies.contains(p)).into_iter().map(|p| p.described).collect();
+    // A mask step that would do nothing (an erosion of 0), as a config file and --mask refuse it.
+    problems.extend(config.masking.validate().err());
     if problems.is_empty() {
         Ok(())
     } else {

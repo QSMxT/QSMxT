@@ -1848,11 +1848,11 @@ pub struct MaskBetArgs {
 pub struct MaskHdBetArgs {
     #[command(flatten)]
     pub common: MaskCommonArgs,
-    /// Run in 192x192x96 sliding-window patches (~3.6 GB peak) instead of on the whole volume
-    /// (the default; ~6-8 GB peak and about twice as fast)
+    /// Run in 192x192x96 sliding-window patches (about 3.6–4.5 GB measured) instead of on the whole
+    /// volume (the default; about 6–8 GB measured, and about twice as fast)
     #[arg(long)]
     pub window: bool,
-    /// Use 128x128x64 sliding-window patches (~1.5 GB peak)
+    /// Use 128x128x64 sliding-window patches (about 1.5–1.9 GB measured)
     #[arg(long)]
     pub low_memory: bool,
     /// Sliding-window patch size XxYxZ in voxels at 1 mm (multiples of 32x32x16)

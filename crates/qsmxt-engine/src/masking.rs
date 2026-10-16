@@ -143,7 +143,7 @@ fn hd_bet_patch() -> [usize; 3] { hd_bet_window(qsm_core::bet::HdBetInference::S
 fn hd_bet_tile_step() -> f64 { hd_bet_default_tile_step() }
 /// qsm-core's default HD-BET sliding-window step (nnU-Net's `tile_step_size`).
 pub fn hd_bet_default_tile_step() -> f64 { hd_bet_window(qsm_core::bet::HdBetInference::SLIDING_WINDOW).1 }
-/// `hd-bet:low-memory` patch — qsm-core's `HdBetInference::LOW_MEMORY` (~1.5 GB peak vs ~3.6 GB).
+/// `hd-bet:low-memory` patch — qsm-core's `HdBetInference::LOW_MEMORY` (about 1.5–1.9 GB measured, vs 3.6–4.5 GB).
 pub fn hd_bet_low_memory_patch() -> [usize; 3] { hd_bet_window(qsm_core::bet::HdBetInference::LOW_MEMORY).0 }
 
 impl MaskOp {
@@ -173,6 +173,20 @@ impl MaskOp {
     }
     /// HD-BET's native (training-size) sliding-window patch `[x, y, z]`.
     pub fn hd_bet_default_patch() -> [usize; 3] { hd_bet_patch() }
+    /// Why the op cannot be run as given, if it cannot: an erosion, dilation or closing of 0
+    /// does nothing, so it is refused rather than run as a silent no-op.
+    pub fn validate(&self) -> Result<(), String> {
+        let (op, param, v) = match self {
+            Self::Erode { iterations } => ("erode", "iterations", *iterations),
+            Self::Dilate { iterations } => ("dilate", "iterations", *iterations),
+            Self::Close { radius } => ("close", "radius", *radius),
+            _ => return Ok(()),
+        };
+        if v == 0 {
+            return Err(format!("{op}: {param} must be at least 1, got 0"));
+        }
+        Ok(())
+    }
     /// Whether this op creates a mask (as opposed to refining one).
     pub fn is_generator(&self) -> bool {
         matches!(self, Self::Threshold { .. } | Self::Bet { .. } | Self::HdBet { .. } | Self::Rs2Net { .. }
@@ -524,9 +538,16 @@ pub fn parse_mask_op(s: &str) -> crate::Result<MaskOp> {
             }
             Ok(MaskOp::Bet { fractional_intensity, voxel_scale })
         }
-        "erode" => Ok(MaskOp::Erode { iterations: arg(&parts, 1, 1, 1)? }),
-        "dilate" => Ok(MaskOp::Dilate { iterations: arg(&parts, 1, 1, 1)? }),
-        "close" => Ok(MaskOp::Close { radius: arg(&parts, 1, 1, 1)? }),
+        "erode" | "dilate" | "close" => {
+            let n = arg(&parts, 1, 1, 1)?;
+            let op = match parts[0] {
+                "erode" => MaskOp::Erode { iterations: n },
+                "dilate" => MaskOp::Dilate { iterations: n },
+                _ => MaskOp::Close { radius: n },
+            };
+            op.validate().map_err(ConfigError::Parse)?;
+            Ok(op)
+        }
         // Bare `fill-holes` is the automatic cap (5% of the volume) — what every preset spells as
         // `fill-holes:0` and what the TUI adds — rather than a 1000-voxel cap nothing else used.
         "fill-holes" => Ok(MaskOp::FillHoles { max_size: arg(&parts, 1, 1, 0)? }),
@@ -702,6 +723,18 @@ mod tests {
     fn test_parse_erode() {
         let op = parse_mask_op("erode:3").unwrap();
         assert!(matches!(op, MaskOp::Erode { iterations: 3 }));
+    }
+
+    /// An erosion, dilation or closing of 0 does nothing; `--mask` refuses it.
+    #[test]
+    fn a_morphology_step_of_zero_is_refused() {
+        for (spec, msg) in [("erode:0", "erode: iterations must be at least 1, got 0"),
+                            ("dilate:0", "dilate: iterations must be at least 1, got 0"),
+                            ("close:0", "close: radius must be at least 1, got 0")] {
+            let e = parse_mask_op(spec).unwrap_err().to_string();
+            assert!(e.contains(msg), "{spec}: {e}");
+        }
+        assert!(parse_mask_op("erode:1").is_ok());
     }
 
     #[test]

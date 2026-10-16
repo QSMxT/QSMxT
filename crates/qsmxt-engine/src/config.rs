@@ -1067,6 +1067,28 @@ impl Default for MaskingConfig {
 }
 
 impl MaskingConfig {
+    /// Why a step of the recipe cannot be run, if one cannot ([`MaskOp::validate`]), naming
+    /// where the step is.
+    pub fn validate(&self) -> Result<(), String> {
+        let sections = |name: &str, list: &[MaskSection]| -> Result<(), String> {
+            for (i, s) in list.iter().enumerate() {
+                s.generator.validate().map_err(|e| format!("masking.{name}[{i}].generator: {e}"))?;
+                for (j, op) in s.refinements.iter().enumerate() {
+                    op.validate().map_err(|e| format!("masking.{name}[{i}].refinements[{j}]: {e}"))?;
+                }
+            }
+            Ok(())
+        };
+        sections("sections", &self.sections)?;
+        for (j, op) in self.refinements.iter().enumerate() {
+            op.validate().map_err(|e| format!("masking.refinements[{j}]: {e}"))?;
+        }
+        if let Some(two) = &self.two_pass_sections {
+            sections("two_pass_sections", two)?;
+        }
+        Ok(())
+    }
+
     /// The reliable-pass mask sections: the configured ones, or the default recipe.
     pub fn resolved_two_pass_sections(&self) -> Vec<MaskSection> {
         self.two_pass_sections.clone().unwrap_or_else(default_two_pass_sections)
@@ -1234,7 +1256,8 @@ impl PipelineConfig {
                 _ => {}
             }
         }
-        let config = toml::Value::Table(value).try_into().map_err(parse_err)?;
+        let config: Self = toml::Value::Table(value).try_into().map_err(parse_err)?;
+        config.masking.validate().map_err(crate::error::ConfigError::Parse)?;
         Ok((config, warnings))
     }
 
@@ -1306,6 +1329,17 @@ mod selected_toml_tests {
 
     /// Configs written before `combine`/`refinements` existed must still load, and keep the
     /// union behaviour they were written with.
+    #[test]
+    fn a_morphology_step_of_zero_is_refused_in_a_config_file() {
+        let toml = "[masking]\n[[masking.sections]]\ninput = \"magnitude\"\ngenerator = { op = \"bet\", fractional_intensity = 0.5 }\n\
+                    refinements = [{ op = \"erode\", iterations = 0 }]\n";
+        let e = PipelineConfig::from_toml(toml).unwrap_err().to_string();
+        assert!(e.contains("masking.sections[0].refinements[0]: erode: iterations must be at least 1, got 0"), "{e}");
+        assert!(PipelineConfig::from_toml(&toml.replace("iterations = 0", "iterations = 2")).is_ok());
+        let e = PipelineConfig::from_toml("[masking]\nrefinements = [{ op = \"close\", radius = 0 }]\n").unwrap_err().to_string();
+        assert!(e.contains("masking.refinements[0]: close: radius must be at least 1, got 0"), "{e}");
+    }
+
     #[test]
     fn masking_combine_defaults_to_or_and_round_trips() {
         let legacy: MaskingConfig = toml::from_str("inhomogeneity_correction = true\n").unwrap();

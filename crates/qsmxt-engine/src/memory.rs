@@ -19,6 +19,19 @@ const F64: u64 = 8;
 const F32: u64 = 4;
 const U8: u64 = 1;
 
+/// HD-BET's peak for the network itself, in bytes, with a sliding window of `patch` (`None`: one
+/// pass over the whole volume): tract activations for one network input (~1 KiB per input
+/// voxel) and the parsed model (~300 MB). A sliding window's input is its patch: ~3.6 GB peak
+/// with the native 192×192×96, ~1.5 GB with 128×128×64. The whole volume's is the head's
+/// bounding box at 1 mm, padded to multiples of 32×32×16, which does not depend on the acquired
+/// resolution: 6.4–8.2 GB measured on 1 mm whole-head and 0.8×0.8×3 mm GRE (up to 160×256×256
+/// voxels), so budget a 176×256×256 box. The scan's own working volumes come on top.
+pub fn hd_bet_network_bytes(patch: Option<[usize; 3]>) -> u64 {
+    const FULL_VOLUME_VOXELS: u64 = 256 * 256 * 176;
+    let input_voxels = patch.map_or(FULL_VOLUME_VOXELS, |p| p.iter().map(|&d| d as u64).product());
+    input_voxels * 1024 + 300 * 1024 * 1024
+}
+
 /// Estimate peak memory usage in bytes for a single pipeline run.
 ///
 /// The estimate accounts for:
@@ -63,20 +76,14 @@ pub fn estimate_peak_memory_bytes(
     // Masking stage (temporary) — worst case across all sections
     // BET is the most expensive: sorted nonzero vec (~N*8) + within_brain values (~N*8) + output (N)
     let has_bet = config.masking.sections.iter().any(|s| matches!(s.generator, MaskOp::Bet { .. }));
-    // HD-BET: tract activations for one network input (~1 KiB per input voxel), the parsed
-    // model (~300 MB), and its f32 working volumes (~40 B/voxel). A sliding window's input is
-    // its patch: ~3.6 GB peak with the native 192×192×96, ~1.5 GB with 128×128×64. The whole
-    // volume's is the head's bounding box at 1 mm, padded to multiples of 32×32×16, which does
-    // not depend on the acquired resolution: 6.4–8.2 GB measured on 1 mm whole-head and
-    // 0.8×0.8×3 mm GRE (up to 160×256×256 voxels), so budget a 176×256×256 box.
-    const HD_BET_FULL_VOLUME_VOXELS: u64 = 256 * 256 * 176;
+    // HD-BET: the network ([`hd_bet_network_bytes`]) and its f32 working volumes (~40 B/voxel).
     let hd_bet_mem = config.masking.sections.iter()
         .filter_map(|s| match &s.generator {
-            MaskOp::HdBet { patch, .. } => Some(patch.map_or(HD_BET_FULL_VOLUME_VOXELS, |p| p.iter().map(|&d| d as u64).product())),
+            MaskOp::HdBet { patch, .. } => Some(hd_bet_network_bytes(*patch)),
             _ => None,
         })
         .max()
-        .map_or(0, |input_voxels| input_voxels * 1024 + 300 * 1024 * 1024 + 40 * n);
+        .map_or(0, |network| network + 40 * n);
     // MindGrab runs on the image conformed to 256³ at 1 mm whatever the acquisition, so its peak
     // does not depend on the volume: 7.3 GB measured on 256×288×48 GRE, with or without TTA (the
     // flipped pass runs after the first).
