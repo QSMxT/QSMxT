@@ -36,6 +36,7 @@ pub mod fieldmap;
 pub mod referencing;
 pub mod observe;
 pub mod stages;
+pub mod schema;
 
 pub use config::*;
 pub use enums::*;
