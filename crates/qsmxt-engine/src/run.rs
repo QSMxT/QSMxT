@@ -1488,7 +1488,7 @@ fn pass_label(pass: Pass) -> &'static str {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::enums::{BfAlgorithm, QsmAlgorithm};
     use crate::masking::{MaskOp, MaskSection, MaskThresholdMethod, MaskingInput};
@@ -1499,14 +1499,14 @@ mod tests {
 
     /// A sphere of tissue in a 16³ box at 1 mm, three echoes: a smooth local field inside it
     /// (wrapped into the phase at each echo time) and a magnitude that is bright inside, dark out.
-    fn phantom() -> (ScanFacts, MemoryStore) {
+    pub(crate) fn phantom() -> (ScanFacts, MemoryStore) {
         let mut affine = [0.0; 16];
         for i in 0..4 { affine[5 * i] = 1.0; }
         phantom_on(affine)
     }
 
     /// The phantom, its voxels placed in the world by `affine`.
-    fn phantom_on(affine: [f64; 16]) -> (ScanFacts, MemoryStore) {
+    pub(crate) fn phantom_on(affine: [f64; 16]) -> (ScanFacts, MemoryStore) {
         let header = Header { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, sidecar: None };
         let mut store = MemoryStore::new(header, json!("phantom-1"));
         let c = (N as f64 - 1.0) / 2.0;
@@ -1544,7 +1544,7 @@ mod tests {
 
     /// A quick configuration for a tiny phantom: a magnitude threshold for the mask, PDF (which
     /// does not erode a small brain away) and TKD.
-    fn config() -> PipelineConfig {
+    pub(crate) fn config() -> PipelineConfig {
         let mut config = PipelineConfig::default();
         config.masking.sections = vec![MaskSection {
             input: MaskingInput::Magnitude,
@@ -1685,7 +1685,7 @@ mod tests {
 
     /// The phantom with a MESE on its own grid (the run's): spin echoes at n·10 ms decaying with
     /// R2 = 10 Hz inside the sphere.
-    fn with_mese(facts: &mut ScanFacts, store: &mut MemoryStore) {
+    pub(crate) fn with_mese(facts: &mut ScanFacts, store: &mut MemoryStore) {
         let tes: Vec<f64> = vec![0.01, 0.02, 0.03, 0.04];
         let mut affine = [0.0; 16];
         for i in 0..4 { affine[5 * i] = 1.0; }
