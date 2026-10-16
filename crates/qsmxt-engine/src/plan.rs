@@ -110,6 +110,41 @@ impl Stage {
     }
 }
 
+impl Stage {
+    /// What the step is called where a front end lists the steps (qsmbly's plan view), the pass
+    /// named for a two-pass run's second one.
+    pub fn label(&self) -> String {
+        let (base, pass) = match *self {
+            Stage::Load => ("Load", Pass::Main),
+            Stage::ScalePhase => ("Phase scaling", Pass::Main),
+            Stage::Magnitude => ("Combined magnitude", Pass::Main),
+            Stage::Mask(Pass::Main) => ("Brain mask", Pass::Main),
+            Stage::Mask(Pass::Reliable) => ("Reliable-phase mask", Pass::Main),
+            Stage::Motion => ("Motion correction", Pass::Main),
+            Stage::Swi => ("SWI", Pass::Main),
+            Stage::Segmentation => ("Segmentation", Pass::Main),
+            Stage::Relaxometry => ("T2* and R2*", Pass::Main),
+            Stage::R2 => ("R2 and R2′", Pass::Main),
+            Stage::FieldMap => ("Field map", Pass::Main),
+            Stage::BackgroundRemoval(p) => ("Background-field removal", p),
+            Stage::Inversion(p) => ("Dipole inversion", p),
+            Stage::Tgv(p) => ("TGV-QSM", p),
+            Stage::Qsmart(p) => ("QSMART", p),
+            Stage::TwoPassCombination => ("Two-pass combination", Pass::Main),
+            Stage::Reference => ("Referencing", Pass::Main),
+            Stage::SinglePassReference => ("Single-pass referencing", Pass::Main),
+            Stage::Smwi => ("SMWI", Pass::Main),
+            Stage::ChiSeparation => ("χ-separation", Pass::Main),
+            Stage::Analysis => ("Region statistics", Pass::Main),
+            Stage::OutputSpace => ("Return to the acquired grid", Pass::Main),
+        };
+        match pass {
+            Pass::Main => base.to_string(),
+            Pass::Reliable => format!("{base} (reliable pass)"),
+        }
+    }
+}
+
 /// One step of a [`Plan`].
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Step {
@@ -359,6 +394,7 @@ pub(crate) mod tests {
         config.masking.two_pass = true;
         config.inversion.algorithm = QsmAlgorithm::Tgv;
         let p = plan(&config, &facts());
+        assert_eq!(p.steps[8].stage.label(), "TGV-QSM (reliable pass)");
         assert_eq!(names(&p)[5..], ["unwrap", "tgv", "mask-reliable", "tgv-reliable", "twopass",
                                     "reference-singlepass", "reference", "output_space"]);
         // Every step name is one the invalidation table knows.
@@ -414,6 +450,11 @@ pub(crate) mod tests {
         let p = plan(&config, &f);
         assert!(!p.has(Stage::Swi) && !p.has(Stage::Magnitude));
         assert_eq!(p.check.errors, ["--do-swi needs magnitude images, and this run has none"]);
+        // The same problem as data, naming the setting rather than the flag.
+        assert_eq!(p.check.problems, [requirements::Problem {
+            severity: requirements::Severity::Error, setting: Some("pipeline.do_swi"), implied_by: None,
+            reason: "needs magnitude images, and this run has none".into(),
+        }]);
     }
 
     /// R2PRIMEnet is listed wherever the R2 step may run it: R2′ asked for with no R2 to subtract,
