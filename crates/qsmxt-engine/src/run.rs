@@ -2293,3 +2293,6 @@ pub(crate) mod tests {
     }
 
 }
+
+#[cfg(test)]
+mod record_tests;

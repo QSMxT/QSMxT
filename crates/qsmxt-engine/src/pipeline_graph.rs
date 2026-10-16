@@ -20,6 +20,7 @@ use crate::enums::*;
 use crate::items::ItemKind;
 use crate::methods::words;
 use crate::plan::{Pass, Plan, Stage};
+use crate::record::{Choice, Decision, RunRecord, StepState, Topic};
 use crate::requirements::{self, Output};
 use crate::scan::{RunMetadata, ScanFacts};
 use crate::store::{Contrast, Item};
@@ -62,6 +63,18 @@ pub struct Node {
     pub reads: Vec<String>,
     /// The items it writes, by [`item_key`].
     pub writes: Vec<String>,
+    /// What the step did in the run, on the graph after a run ([`pipeline_graph_after`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub run: Option<NodeRun>,
+}
+
+/// What a step did in a run ([`crate::record::StepRecord`]).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct NodeRun {
+    pub state: StepState,
+    /// What it decided, in the order it decided it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decisions: Vec<Decision>,
 }
 
 /// One step reading what another wrote.
@@ -612,6 +625,47 @@ pub(crate) fn left_out(plan: &Plan, config: &PipelineConfig, stage: Stage, resam
 /// is off (the step only forgets an earlier run's output), and the return to the acquired grid
 /// of a run that is not resampled or keeps its working grid.
 pub fn pipeline_graph(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, grid: Option<&RunMetadata>) -> PipelineGraph {
+    pipeline_graph_on(plan, config, facts, grid.map(|g| g.source_geometry.is_some()))
+}
+
+/// The graph after a run of `plan` that did what `record` says ([`crate::run::run`]'s record):
+/// each box carries what its step did ([`Node::run`]: computed, reused or skipped, and what it
+/// decided), and the boxes are drawn as the run took them where it decided something the plan
+/// could not know: a supplied mask that could not be used is drawn computed from the echoes, a
+/// segmentation, R2 or R2′ map read from what was supplied only where one was.
+///
+/// [`PipelineGraph::differs_from`] says whether it differs from the planned graph.
+pub fn pipeline_graph_after(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, record: &RunRecord) -> PipelineGraph {
+    let decided = |topic: Topic| record.decisions().find(|(_, d)| d.topic == topic).map(|(_, d)| d.choice);
+    let mut ran = facts.clone();
+    if let Some(c) = decided(Topic::MaskSource) {
+        ran.custom_mask = c == Choice::Supplied;
+    }
+    if let Some(c) = decided(Topic::SegmentationSource) {
+        ran.custom_dseg = c == Choice::Supplied;
+    }
+    if let Some(c) = decided(Topic::R2Source) {
+        ran.custom_r2 = c == Choice::Supplied;
+    }
+    if let Some(c) = decided(Topic::R2primeSource) {
+        ran.custom_r2prime = c == Choice::Supplied;
+    }
+    let mut graph = pipeline_graph_on(plan, config, &ran, record.resampled);
+    for node in &mut graph.nodes {
+        // A mask computed in place of one the plan expected to read runs its recipe's models.
+        if node.id == Stage::Mask(Pass::Main).name() && facts.custom_mask && !ran.custom_mask {
+            node.models = crate::stages::mask::model_ids(&config.masking.sections, config)
+                .into_iter().map(str::to_string).collect();
+        }
+        node.run = record.step(&node.id).map(|s| NodeRun { state: s.state, decisions: s.decisions.clone() });
+    }
+    graph
+}
+
+/// [`pipeline_graph`], knowing only whether the run is `resampled` (when it is known) rather than
+/// its whole grid: the planned graph a run's graph after it ([`pipeline_graph_after`]) is compared
+/// with.
+pub fn pipeline_graph_on(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, resampled: Option<bool>) -> PipelineGraph {
     let ctx = Ctx { plan, config, facts };
     let mut nodes: Vec<Node> = Vec::new();
     let mut edges: Vec<Edge> = Vec::new();
@@ -620,7 +674,6 @@ pub fn pipeline_graph(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, g
     let mut writer: Vec<(Item, String)> = Vec::new();
     for step in &plan.steps {
         let stage = step.stage;
-        let resampled = grid.map(|g| g.source_geometry.is_some());
         if left_out(plan, config, stage, resampled) {
             continue;
         }
@@ -659,6 +712,7 @@ pub fn pipeline_graph(plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, g
             reads: reads.iter().map(item_key).collect(),
             writes: writes.iter().map(item_key).collect(),
             id,
+            run: None,
         });
     }
     let items = items.iter().map(|item| {
@@ -717,6 +771,18 @@ impl PipelineGraph {
         self.items.iter().find(|i| i.key == key)
     }
 
+    /// Whether this graph, of a run ([`pipeline_graph_after`]), differs from `planned`, the graph
+    /// of its plan: a box or an arrow the run drew differently (what a step read, wrote, ran or
+    /// how it is labelled), or a box whose step did nothing. A step reused from the cache, and what
+    /// a step noted without changing what it did (the box it reconstructed in), are not differences.
+    pub fn differs_from(&self, planned: &PipelineGraph) -> bool {
+        let bare = |n: &Node| Node { run: None, ..n.clone() };
+        self.nodes.len() != planned.nodes.len()
+            || self.nodes.iter().zip(&planned.nodes).any(|(a, b)| bare(a) != bare(b))
+            || self.edges != planned.edges
+            || self.nodes.iter().any(|n| n.run.as_ref().is_some_and(|r| r.state == StepState::Skipped))
+    }
+
     /// Whether `from` feeds `to` directly.
     pub fn has_edge(&self, from: &str, to: &str) -> bool {
         self.edges.iter().any(|e| e.from == from && e.to == to)
@@ -738,6 +804,17 @@ impl PipelineGraph {
             }
             if let Some(when) = &n.only_when {
                 text.push_str(&format!("<br/><small>only when {}</small>", mermaid_text(when)));
+            }
+            if let Some(run) = &n.run {
+                let state = match run.state {
+                    StepState::Computed => "computed",
+                    StepState::Cached => "reused from the cache",
+                    StepState::Skipped => "skipped",
+                };
+                text.push_str(&format!("<br/><small><b>{state}</b></small>"));
+                for d in &run.decisions {
+                    text.push_str(&format!("<br/><small>{}</small>", mermaid_text(&d.note())));
+                }
             }
             format!("{}[\"{text}\"]", mermaid_id(&n.id))
         };
@@ -774,6 +851,13 @@ impl PipelineGraph {
         if !conditional.is_empty() {
             out.push_str("    classDef conditional stroke-dasharray: 2 3\n");
             out.push_str(&format!("    class {} conditional\n", conditional.join(",")));
+        }
+        let skipped: Vec<String> = self.nodes.iter()
+            .filter(|n| n.run.as_ref().is_some_and(|r| r.state == StepState::Skipped))
+            .map(|n| mermaid_id(&n.id)).collect();
+        if !skipped.is_empty() {
+            out.push_str("    classDef skipped fill:#eeeeee,color:#777777\n");
+            out.push_str(&format!("    class {} skipped\n", skipped.join(",")));
         }
         out
     }

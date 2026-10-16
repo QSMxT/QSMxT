@@ -26,6 +26,10 @@ pub struct StepRecord {
     /// [`PipelineState::config_unchanged`]); otherwise it is recomputed when it is reached.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub outputs_removed: bool,
+    /// What the step decided when it was computed ([`qsmxt_engine::record`]), reported by a run
+    /// that reuses it. Not part of the cache key.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decisions: Vec<qsmxt_engine::record::Decision>,
 }
 
 /// Persistent pipeline state, serialised to JSON.
@@ -228,9 +232,16 @@ impl PipelineState {
         }
         self.completed_steps.insert(
             step_name.to_string(),
-            StepRecord { outputs, metadata, params_hash, outputs_removed: false },
+            StepRecord { outputs, metadata, params_hash, outputs_removed: false, decisions: Vec::new() },
         );
         self.current_step = None;
+    }
+
+    /// Keep what a completed step decided when it was computed.
+    pub fn set_decisions(&mut self, step_name: &str, decisions: &[qsmxt_engine::record::Decision]) {
+        if let Some(r) = self.completed_steps.get_mut(step_name) {
+            r.decisions = decisions.to_vec();
+        }
     }
 
     /// Mark the entire run as complete, under the configuration it ran with.
@@ -442,6 +453,7 @@ mod tests {
 
         state.completed_steps.insert("invert".into(), StepRecord {
             outputs: vec![raw.clone()], metadata: None, params_hash: Some("a".into()), outputs_removed: false,
+            decisions: Vec::new(),
         });
         assert!(!state.is_step_cached_with_hash("invert", Some("a")));
         assert!(!state.completed_steps.contains_key("invert"));

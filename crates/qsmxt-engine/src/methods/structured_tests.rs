@@ -1,6 +1,7 @@
 use super::*;
 use crate::plan::{plan, tests::facts};
 use crate::scan::ScanFacts;
+use crate::record::RunRecord;
 
 /// A spread of configurations: the defaults, every inversion and background removal, two-pass
 /// with each kind of reconstruction, single and multi-echo field mapping, each output switch,
@@ -300,4 +301,33 @@ fn sentences_name_the_steps_they_describe() {
     let m = methods_structured(&c, &plan(&c, &facts()), "QSMbly");
     let tgv = m.sentences.iter().find(|s| s.text.contains("(TGV)")).unwrap();
     assert_eq!(tgv.citations, ["langkammer2015"]);
+}
+
+/// What a run that decided nothing at run time did, step by step: every step of `plan` computed.
+fn as_planned(plan: &crate::plan::Plan) -> RunRecord {
+    RunRecord {
+        steps: plan.steps.iter().map(|s| crate::record::StepRecord {
+            id: s.name.clone(), label: s.label.clone(), state: crate::record::StepState::Computed, decisions: vec![],
+        }).collect(),
+        resampled: None,
+    }
+}
+
+/// A run, or a dataset of runs, that decided nothing at run time gets the configuration's text,
+/// byte for byte, with the same steps named: over the whole spread of configurations and scans.
+#[test]
+fn a_run_that_decided_nothing_gets_the_configurations_text() {
+    for (name, c) in configs() {
+        for tool in ["qsmxt", "QSMbly"] {
+            let text = generate_methods_for(&c, tool);
+            for (scan, f) in scans() {
+                let p = plan(&c, &f);
+                let record = as_planned(&p);
+                let run = methods_for_run(&c, &p, &record, tool);
+                assert_eq!(run, methods_structured(&c, &p, tool), "{name} on {scan} [{tool}]");
+                let merged = crate::record::merge(&[record.clone(), record.clone(), record]);
+                assert_eq!(methods_for_dataset(&c, &merged, tool).to_markdown(), text, "{name} on {scan} [{tool}]");
+            }
+        }
+    }
 }

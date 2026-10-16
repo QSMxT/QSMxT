@@ -12,6 +12,7 @@ use crate::pipeline::config::*;
 use crate::pipeline::graph::{PipelineState, RunMetadata};
 use qsmxt_engine::observe::{Observer, StageEvent};
 use qsmxt_engine::plan::{Pass as EnginePass, Stage};
+use qsmxt_engine::record::Decision;
 use qsmxt_engine::store::{Completed, Contrast, Data, Header, Item, StageStore, Supplied};
 use crate::pipeline::memory;
 use crate::pipeline::requirements;
@@ -247,7 +248,37 @@ pub fn run_pipeline_cached(
         working_grid_kept: false,
     };
     let mut observer = RunObserver { key: qsm_run.key.to_string(), progress, bar: None, started: None };
-    qsmxt_engine::run::run(&plan, config, &facts, &mut store, &mut observer)
+    let record = qsmxt_engine::run::run(&plan, config, &facts, &mut store, &mut observer)?;
+    write_run_files(qsm_run, config, &facts, &plan, &record, output)
+}
+
+/// What a run did, beside its outputs in `anat/`: its methods text, from the plan and what the
+/// run decided ([`qsmxt_engine::methods::methods_for_run`]); the record itself
+/// ([`qsmxt_engine::record::RunRecord`]); the planned pipeline graph; and the graph after the run,
+/// only when it differs from the planned one ([`qsmxt_engine::pipeline_graph::PipelineGraph::differs_from`]).
+fn write_run_files(
+    run: &QsmRun, config: &PipelineConfig, facts: &qsmxt_engine::scan::ScanFacts, plan: &qsmxt_engine::plan::Plan,
+    record: &qsmxt_engine::record::RunRecord, output: &DerivativeOutputs,
+) -> crate::Result<()> {
+    use qsmxt_engine::pipeline_graph::{pipeline_graph_after, pipeline_graph_on};
+    let key = &run.key;
+    let dir = output.anat_dir(key);
+    std::fs::create_dir_all(&dir)?;
+    std::fs::write(output.run_methods_path(key),
+                   qsmxt_engine::methods::methods_for_run(config, plan, record, "qsmxt").to_markdown())?;
+    let json = serde_json::to_string_pretty(record).map_err(|e| QsmxtError::Config(e.to_string()))?;
+    std::fs::write(output.run_record_path(key), json + "\n")?;
+    // Drawn on the grid the run took: the return to the acquired grid only if it was resampled.
+    let planned = pipeline_graph_on(plan, config, facts, record.resampled);
+    std::fs::write(output.run_graph_path(key, false), planned.to_mermaid())?;
+    let after = pipeline_graph_after(plan, config, facts, record);
+    let after_path = output.run_graph_path(key, true);
+    if after.differs_from(&planned) {
+        std::fs::write(&after_path, after.to_mermaid())?;
+    } else if after_path.exists() {
+        std::fs::remove_file(&after_path)?;
+    }
+    Ok(())
 }
 
 /// `qsmxt run`'s [`StageStore`]: a run's volumes as files under the derivatives directory, named
@@ -450,10 +481,15 @@ impl StageStore for FileStore<'_> {
         self.state.run_metadata.clone()
     }
 
-    fn record_scan(&mut self, key: &str, meta: &RunMetadata) -> crate::Result<()> {
+    fn record_scan(&mut self, key: &str, meta: &RunMetadata, decisions: &[Decision]) -> crate::Result<()> {
         self.state.run_metadata = Some(meta.clone());
         self.state.mark_completed("load", vec![], Some(key.to_string()));
+        self.state.set_decisions("load", decisions);
         self.state.save(&self.state_path)
+    }
+
+    fn decisions(&mut self, step: &str) -> Vec<Decision> {
+        self.state.completed_steps.get(step).map(|r| r.decisions.clone()).unwrap_or_default()
     }
 
     fn begin(&mut self, meta: &RunMetadata) -> crate::Result<()> {
@@ -728,6 +764,7 @@ impl StageStore for FileStore<'_> {
             }
         }
         self.state.mark_completed_with_metadata(c.step, outputs, Some(c.key.to_string()), self.metadata.take());
+        self.state.set_decisions(c.step, c.decisions);
         self.state.save(&self.state_path)
     }
 
@@ -991,7 +1028,7 @@ fn run_engine_step(
         metadata: None, working_grid_kept: false,
     };
     let step = qsmxt_engine::plan::Step::new(stage, vec![]);
-    qsmxt_engine::run::run_step(&plan, config, &facts, meta, &step, &mut store, &mut ())
+    qsmxt_engine::run::run_step(&plan, config, &facts, meta, &step, &mut store, &mut ()).map(|_| ())
 }
 
 /// The grid and B0 direction the engine decides for a discovered run from its first phase image's
@@ -1009,7 +1046,7 @@ fn check_slice_gap(
     run: &QsmRun, first_phase: &NiftiData, meta: &RunMetadata, config: &PipelineConfig,
 ) -> crate::Result<Option<(f64, usize)>> {
     let Some(sc) = crate::bids::sidecar::read_sidecar(&run.echoes[0].phase_json).ok() else { return Ok(None) };
-    Ok(qsmxt_engine::scan::check_slice_gap(&sc, first_phase.dims, first_phase.voxel_size, meta, config)?)
+    Ok(qsmxt_engine::scan::check_slice_gap(&sc, first_phase.dims, first_phase.voxel_size, meta, config)?.0)
 }
 
 #[cfg(test)]

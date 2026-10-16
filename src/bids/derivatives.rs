@@ -218,6 +218,21 @@ impl DerivativeOutputs {
         self.anat_dir(key).join(format!("{}_desc-segmentation_stats.tsv", key.basename()))
     }
 
+    /// The run's methods text: what was done to it, from its plan and what it decided as it ran.
+    pub fn run_methods_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_methods.md", key.basename()))
+    }
+    /// What the run did, step by step (`qsmxt_engine::record::RunRecord`, JSON).
+    pub fn run_record_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.anat_dir(key).join(format!("{}_runrecord.json", key.basename()))
+    }
+    /// The run's pipeline graph (Mermaid): as planned, or (`after`) as the run took it, written
+    /// only when that differs from the plan.
+    pub fn run_graph_path(&self, key: &AcquisitionKey, after: bool) -> PathBuf {
+        let desc = if after { "_desc-ran" } else { "" };
+        self.anat_dir(key).join(format!("{}{desc}_pipeline.mmd", key.basename()))
+    }
+
     /// SMWI and its minIP, per contrast. The `desc-` values match the chi-separation outputs, which
     /// split the same two ways.
     pub fn smwi_path(&self, key: &AcquisitionKey, contrast: &str) -> PathBuf {

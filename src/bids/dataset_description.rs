@@ -111,6 +111,10 @@ slurm
 desc-segmentation_stats.tsv
 *_stats.png
 desc-reference_summary.tsv
+# Per-run methods text, run record and pipeline graphs
+*_methods.md
+*_runrecord.json
+*_pipeline.mmd
 # BEP028 (BIDS-Prov) records — not yet in the released BIDS schema
 prov
 ";
@@ -157,6 +161,12 @@ are listed in `.bidsignore`.
 - `desc-reference_summary.tsv` — what each run's susceptibility maps were
   referenced to (one row per map; the `map` column names it), and the offset
   that removed. The same facts are in each map's `_Chimap.json`.
+- `sub-*/[ses-*/]anat/*_methods.md` — the methods text of each run: what was
+  done to it, including what the run decided as it went (a supplied mask used,
+  or computed when none could be used). `*_runrecord.json` is the same as data:
+  each step computed, reused or skipped, and why. `*_pipeline.mmd` is the
+  run's pipeline graph as planned (Mermaid); `*_desc-ran_pipeline.mmd`, written
+  only when the run differed from the plan, is the graph as it ran.
 - `prov/` — BEP028 (BIDS-Prov) provenance records: one Activity per pipeline
   stage, with Entity/Agent/Environment records. Each output NIfTI also carries a
   `GeneratedBy` reference in its JSON sidecar.

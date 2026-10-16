@@ -2,6 +2,7 @@ use crate::config::*;
 use crate::enums::*;
 use crate::masking::*;
 use crate::plan::{Pass, Plan, Stage};
+use crate::record::{Choice, DatasetRecord, RunRecord, Topic};
 use serde::{Deserialize, Serialize};
 
 struct Citation {
@@ -714,9 +715,13 @@ impl Draft {
     /// The steps each sentence names: those `plan` has and its graph draws, or none without a
     /// plan.
     fn finish(self, config: &PipelineConfig, plan: Option<&Plan>) -> Methods {
-        let drawn = |stage: &Stage| plan.is_some_and(|p| {
+        self.finish_drawn(|stage| plan.is_some_and(|p| {
             p.has(*stage) && !crate::pipeline_graph::left_out(p, config, *stage, None)
-        });
+        }))
+    }
+
+    /// The steps each sentence names: those `drawn` says the graph draws.
+    fn finish_drawn(self, drawn: impl Fn(&Stage) -> bool) -> Methods {
         let sentences = self.sentences.into_iter().map(|(text, stages, cites)| {
             let mut steps: Vec<String> = Vec::new();
             for name in stages.iter().filter(|s| drawn(s)).map(Stage::name) {
@@ -759,17 +764,64 @@ pub fn generate_methods(config: &PipelineConfig) -> String {
 
 /// Generate methods for a specific tool (e.g. "qsmxt" or "QSMbly"): [`Methods::to_markdown`].
 pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
-    draft(config, tool).finish(config, None).to_markdown()
+    draft(config, tool, Ran::default()).finish(config, None).to_markdown()
 }
 
 /// The methods text for a run of `plan` (made by [`crate::plan::plan`] from `config` and the
 /// scan's facts), sentence by sentence, each naming the steps of `plan`'s pipeline graph it
 /// describes. Its [`Methods::to_markdown`] is [`generate_methods_for`]'s text.
 pub fn methods_structured(config: &PipelineConfig, plan: &Plan, tool: &str) -> Methods {
-    draft(config, tool).finish(config, Some(plan))
+    draft(config, tool, Ran::default()).finish(config, Some(plan))
 }
 
-fn draft(config: &PipelineConfig, tool: &str) -> Draft {
+/// The methods text of a run of `plan` that did what `record` says ([`crate::run::run`]'s
+/// record): it says what was done, as [`methods_structured`] does for the plan, where the run
+/// decided something the configuration does not (a supplied mask used, or not found and computed
+/// instead; R2′ measured rather than predicted; a step that had nothing to work on). A run that
+/// decided nothing gets [`methods_structured`]'s text.
+pub fn methods_for_run(config: &PipelineConfig, plan: &Plan, record: &RunRecord, tool: &str) -> Methods {
+    let merged = DatasetRecord::from(record);
+    draft(config, tool, Ran(Some(&merged))).finish_drawn(|stage| {
+        plan.has(*stage) && !crate::pipeline_graph::left_out(plan, config, *stage, record.resampled)
+    })
+}
+
+/// The methods text of a dataset's runs of `config`, merged into `record` ([`crate::record::merge`]):
+/// a choice every run made is said as for one run; where the runs differ, the configuration's
+/// wording ("where available") stands. Each sentence names the steps some run did something in.
+pub fn methods_for_dataset(config: &PipelineConfig, record: &DatasetRecord, tool: &str) -> Methods {
+    draft(config, tool, Ran(Some(record)))
+        .finish_drawn(|stage| record.step(&stage.name()).is_some_and(|s| s.ran() > 0))
+}
+
+/// What the runs the text describes did ([`DatasetRecord`]; one run's is a dataset of one). With
+/// nothing known, the text says what the configuration asks for.
+#[derive(Clone, Copy, Default)]
+struct Ran<'a>(Option<&'a DatasetRecord>);
+
+impl Ran<'_> {
+    /// Some run decided about `topic`, and every one that did chose one of `choices`.
+    fn only(&self, topic: Topic, choices: &[Choice]) -> bool {
+        self.0.is_some_and(|r| r.only(topic, choices))
+    }
+
+    /// The runs that chose `choice` about `topic`.
+    fn count(&self, topic: Topic, choice: Choice) -> usize {
+        self.0.map_or(0, |r| r.count(topic, choice))
+    }
+
+    /// The plan of some run had `stage`, and no run did anything in it.
+    fn none_ran(&self, stage: Stage) -> bool {
+        self.0.is_some_and(|r| r.none_ran(&stage.name()))
+    }
+
+    /// The runs that did something in `stage`.
+    fn ran(&self, stage: Stage) -> usize {
+        self.0.and_then(|r| r.step(&stage.name())).map_or(0, |s| s.ran())
+    }
+}
+
+fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
     let mut doc = Draft::default();
 
     let (cite, author_year) = match tool {
@@ -785,11 +837,11 @@ fn draft(config: &PipelineConfig, tool: &str) -> Draft {
     }
 
     // Masking (inhomogeneity correction is described inline)
-    describe_masking(config, &mut doc);
+    describe_masking(config, ran, &mut doc);
 
     // QSM-specific pipeline
     if config.pipeline.do_qsm {
-        describe_reconstruction_grid(config, &mut doc);
+        describe_reconstruction_grid(config, ran, &mut doc);
         match config.inversion.algorithm {
             QsmAlgorithm::Tgv => {
                 // Routed by QSM.rs's `InversionInput`: one echo goes in as wrapped phase (TGV
@@ -807,7 +859,7 @@ fn draft(config: &PipelineConfig, tool: &str) -> Draft {
                 if !changed.is_empty() {
                     doc.say(&both(Stage::Tgv), format!("TGV was run{}.", changed.with()));
                 }
-                describe_field_mapping(config, &mut doc);
+                describe_field_mapping(config, ran, &mut doc);
             }
             QsmAlgorithm::Iqsm | QsmAlgorithm::IqsmPlus => {
                 // `InversionInput::WrappedPhase`: no field mapping and no background removal ran.
@@ -824,7 +876,7 @@ fn draft(config: &PipelineConfig, tool: &str) -> Draft {
                 // QSMART consumes a pre-computed total field, so the field-mapping
                 // stage (phase offset, unwrapping, B0 estimation) still runs and must
                 // be described.
-                describe_field_mapping(config, &mut doc);
+                describe_field_mapping(config, ran, &mut doc);
                 let (inv_name, inv_cite) = inversion_name_cite(config.inversion.qsmart.inversion);
                 doc.cite(&CITE_QSMART);
                 doc.cite(inv_cite);
@@ -841,7 +893,7 @@ fn draft(config: &PipelineConfig, tool: &str) -> Draft {
                 ));
             }
             _ => {
-                describe_field_mapping(config, &mut doc);
+                describe_field_mapping(config, ran, &mut doc);
 
                 // Background removal — only in front of a local-field inversion (QSM.rs
                 // `InversionInput`); the total-field methods remove or model it themselves.
@@ -918,7 +970,7 @@ fn draft(config: &PipelineConfig, tool: &str) -> Draft {
 
         // Two-pass wraps background removal and inversion, so it is described after both and
         // before referencing, which runs on the combined map.
-        describe_two_pass(config, &mut doc);
+        describe_two_pass(config, ran, &mut doc);
 
         // Referencing
         match config.qsm.reference {
@@ -946,7 +998,20 @@ fn draft(config: &PipelineConfig, tool: &str) -> Draft {
         }
     }
 
-    if config.pipeline.do_segmentation {
+    // A supplied segmentation, every run's or some runs'.
+    let dseg_tool = config.segmentation.custom_dseg_tool.as_deref();
+    let dseg_supplied = ran.count(Topic::SegmentationSource, Choice::Supplied) > 0;
+    let dseg_all_supplied = ran.only(Topic::SegmentationSource, &[Choice::Supplied]);
+    if config.pipeline.do_segmentation && dseg_supplied {
+        let from = match dseg_tool { Some(t) if t != "*" => format!("'{t}' "), _ => String::new() };
+        doc.say(&[Stage::Segmentation], if dseg_all_supplied {
+            format!("Segmentations were sourced from the {from}BIDS derivatives.")
+        } else {
+            format!("Where available, segmentations were sourced from the {from}BIDS derivatives; \
+                     otherwise they were generated as follows.")
+        });
+    }
+    if config.pipeline.do_segmentation && !dseg_all_supplied && !ran.none_ran(Stage::Segmentation) {
         doc.cite(&CITE_SYNTHSEG);
         let labels = if config.segmentation.version == SynthSegVersion::V2 { 33 } else { 32 };
         let (s, d) = (&config.segmentation, SegmentationConfig::default());
@@ -963,14 +1028,14 @@ fn draft(config: &PipelineConfig, tool: &str) -> Draft {
             config.segmentation.version, labels, changed.comma_with(),
         ));
     }
-    if config.pipeline.do_analysis {
+    if config.pipeline.do_analysis && !ran.none_ran(Stage::Analysis) {
         doc.say(&[Stage::Analysis], 
             "Each quantitative map was then summarised within every segmented structure (mean, \
              standard deviation, median, minimum, maximum and 5th/95th percentiles over the \
              structure's voxels), excluding voxels the map does not cover.".to_string());
     }
 
-    if config.pipeline.do_smwi {
+    if config.pipeline.do_smwi && !ran.none_ran(Stage::Smwi) {
         doc.cite(&CITE_SMWI);
         let (s, d) = (&config.smwi, SmwiConfig::default());
         let mut mask = Changed::default();
@@ -1038,7 +1103,9 @@ fn draft(config: &PipelineConfig, tool: &str) -> Draft {
     // R2 / R2'. Worth stating how R2' was obtained, not just that it was: a measured R2' and an
     // estimated one support different claims, and only one of them is a measurement.
     if config.pipeline.do_r2map || config.pipeline.do_r2primemap {
-        if config.pipeline.do_r2map {
+        if config.pipeline.do_r2map && ran.only(Topic::R2Source, &[Choice::Supplied]) {
+            doc.say(&[Stage::R2], "R2 maps were sourced from the supplied BIDS derivatives.".to_string());
+        } else if config.pipeline.do_r2map && !ran.only(Topic::R2Source, &[Choice::Unavailable]) {
             doc.cite(&CITE_EPG);
             doc.say(&[Stage::R2], 
                 "R2 maps were fitted from multi-echo spin-echo magnitude data using an Extended \
@@ -1050,7 +1117,23 @@ fn draft(config: &PipelineConfig, tool: &str) -> Draft {
             r2pn.add_fields(&config.separation.r2primenet, &R2primenetConfig::default(),
                 &["ignore_field_mismatch"]);
             let r2pn = r2pn.semi();
+            // What the runs that made an R2′ did, where they all did the same.
+            let measured = ran.count(Topic::R2primeSource, Choice::Measured) > 0;
+            let predicted = ran.count(Topic::R2primeSource, Choice::Predicted) > 0;
+            let none_made = ran.only(Topic::R2primeSource, &[Choice::Unavailable]);
             match config.separation.custom_r2prime_tool.as_deref() {
+                _ if none_made => {}
+                // `auto` that only measured, or only predicted.
+                None if config.separation.r2prime_strategy == R2PrimeStrategy::Auto && measured != predicted => {
+                    if measured {
+                        doc.say(&[Stage::R2], "R2' was computed as R2* - R2.".to_string());
+                    } else {
+                        doc.cite(&CITE_R2PRIMENET);
+                        doc.say(&[Stage::R2], format!(
+                            "R2' was estimated from the R2* map with R2PRIMEnet (Kim et al., 2025{r2pn}).",
+                        ));
+                    }
+                }
                 Some(_) => doc.say(&[Stage::R2], 
                     "R2' maps were taken from the supplied BIDS derivatives.".to_string()),
                 None => match config.separation.r2prime_strategy {
@@ -1077,9 +1160,13 @@ fn draft(config: &PipelineConfig, tool: &str) -> Draft {
                     }
                 },
             }
+            // Said where a run applied it off 3 T, or nothing is known of the runs.
+            let off_field = ran.count(Topic::R2primenetCalibration, Choice::Uncalibrated) > 0
+                || ran.0.map_or(true, |r| r.split(Topic::R2primeSource).is_empty());
             if config.separation.custom_r2prime_tool.is_none()
                 && config.separation.r2prime_strategy != R2PrimeStrategy::Mese
                 && config.separation.r2primenet.ignore_field_mismatch
+                && off_field && !none_made
             {
                 doc.say(&[Stage::R2], 
                     "R2PRIMEnet, whose weights were trained at 3 T, was also applied to data \
@@ -1179,20 +1266,28 @@ fn draft(config: &PipelineConfig, tool: &str) -> Draft {
 }
 
 /// The reconstruction-grid switches, all off by default, so each is said only when on.
-fn describe_reconstruction_grid(config: &PipelineConfig, doc: &mut Draft) {
+fn describe_reconstruction_grid(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     let p = &config.pipeline;
     if p.ignore_slice_gap {
         doc.say(&[Stage::Load], "Acquisitions whose slices were separated by a gap were reconstructed as if the slices were contiguous.".to_string());
     }
-    if p.axial_resampling {
+    let space = match p.output_space {
+        OutputSpace::Acquired => "",
+        OutputSpace::Working => ", and the derivatives were written on the resampled grid",
+    };
+    // Resampled only because an algorithm needs axial data: the switches do not say so.
+    if !p.axial_resampling && ran.count(Topic::Grid, Choice::ResampledForAlgorithm) > 0 {
+        doc.say(&[Stage::Load, Stage::OutputSpace], format!(
+            "Acquisitions whose B0 direction was more than {}° from the slice normal were resampled onto an \
+             axial grid, with B0 along the slice normal, before reconstruction, as the algorithms used assume \
+             it{space}.", crate::scan::AXIAL_ONLY_TOLERANCE_DEG));
+    }
+    // None of the runs was resampled: there is nothing to say.
+    if p.axial_resampling && !ran.only(Topic::Grid, &[Choice::Acquired]) {
         let which = if differs(p.obliquity_threshold, DEFAULT_OBLIQUITY_THRESHOLD) {
             format!("Acquisitions more than {}° oblique", p.obliquity_threshold)
         } else {
             "Oblique acquisitions".to_string()
-        };
-        let space = match p.output_space {
-            OutputSpace::Acquired => "",
-            OutputSpace::Working => ", and the derivatives were written on the resampled grid",
         };
         doc.say(&[Stage::Load, Stage::OutputSpace], format!(
             "{which} were resampled onto an axial grid, with B0 along the slice normal, before reconstruction{space}."));
@@ -1218,11 +1313,12 @@ fn describe_pad(p: [usize; 3]) -> String {
 /// Describe the field-mapping stage: phase offset / bipolar correction, phase
 /// unwrapping, and B0 estimation. Shared by the standard pipeline and QSMART
 /// (which consumes a pre-computed total field, so these steps still run).
-fn describe_field_mapping(config: &PipelineConfig, doc: &mut Draft) {
+fn describe_field_mapping(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     let fm = &config.field_mapping;
     let d = FieldMappingConfig::default();
     let m = &config.motion_correction;
-    if m.enabled {
+    // Not said for runs that could not be corrected (a single echo).
+    if m.enabled && !ran.none_ran(Stage::Motion) {
         // The reference echo says what was done (which echo the others were moved onto), so it
         // is always named; the registration settings only when changed.
         let reference = match m.reference {
@@ -1467,8 +1563,9 @@ fn describe_generator(
 ///
 /// Named as "two-pass" throughout, matching both the paper and the `_desc-singlepass_` derivative
 /// that carries the other pass's map.
-fn describe_two_pass(config: &PipelineConfig, doc: &mut Draft) {
-    if !config.masking.two_pass {
+fn describe_two_pass(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
+    let not_applied = ran.count(Topic::TwoPass, Choice::NotApplied);
+    if !config.masking.two_pass || (not_applied > 0 && ran.ran(Stage::Mask(Pass::Reliable)) == 0) {
         return;
     }
     doc.cite(&CITE_TWOPASS);
@@ -1492,15 +1589,28 @@ fn describe_two_pass(config: &PipelineConfig, doc: &mut Draft) {
          elsewhere.",
         join_list(&descs),
     ));
+    if not_applied > 0 {
+        doc.say(&two_pass_steps(), "It was not applied where the brain mask was sourced from the BIDS derivatives, \
+                                    which leaves no recipe for the second mask.".to_string());
+    }
 }
 
-fn describe_masking(config: &PipelineConfig, doc: &mut Draft) {
+fn describe_masking(config: &PipelineConfig, ran: Ran, doc: &mut Draft) {
     if config.masking.sections.is_empty() {
         return;
     }
 
-    // Prefer a bring-your-own mask from BIDS derivatives, where available.
-    match config.masking.custom_mask_tool.as_deref() {
+    // Prefer a bring-your-own mask from BIDS derivatives, where available. Every run having used
+    // one, or none, says which.
+    let tool = config.masking.custom_mask_tool.as_deref();
+    let all_supplied = tool.is_some() && ran.only(Topic::MaskSource, &[Choice::Supplied]);
+    let none_supplied = ran.only(Topic::MaskSource, &[Choice::Computed]);
+    match tool {
+        Some(tool) if all_supplied => {
+            let from = if tool == "*" { String::new() } else { format!("'{tool}' ") };
+            doc.say(&[Stage::Mask(Pass::Main)], format!("Brain masks were sourced from the {from}BIDS derivatives."));
+        }
+        _ if none_supplied => {}
         Some("*") => doc.say(&[Stage::Mask(Pass::Main)], 
             "Where available, existing brain masks were sourced from the BIDS derivatives; \
              otherwise they were generated as follows.".to_string()),
@@ -1535,6 +1645,11 @@ fn describe_masking(config: &PipelineConfig, doc: &mut Draft) {
         } else {
             doc.say(&[Stage::Magnitude], format!("Inhomogeneity correction (Eckstein et al., 2019{settings}) was applied to the magnitude data."));
         }
+    }
+
+    // No run generated a mask: there is no recipe to describe.
+    if all_supplied {
+        return;
     }
 
     let section_count = config.masking.sections.len();
