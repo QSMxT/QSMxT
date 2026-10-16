@@ -436,3 +436,149 @@ fn a_value_out_of_range_is_an_error_on_its_own_setting() {
     let tkd = doc.as_array().unwrap().iter().find(|v| v["path"] == "inversion.tkd.threshold").unwrap();
     assert_eq!(tkd["error"], "Must be greater than 0");
 }
+
+/// The values serde names when it refuses one of type `T`.
+fn variants_of<T: serde::de::DeserializeOwned>(probe: Value) -> BTreeSet<String> {
+    let err = serde_json::from_value::<T>(probe).err().expect("the probe is refused").to_string();
+    let (_, list) = err.split_once("expected one of ").expect(&err);
+    list.split(", ").filter_map(|v| v.split('`').nth(1).map(str::to_string)).collect()
+}
+
+#[test]
+fn the_mask_schema_covers_every_input_step_and_preset() {
+    use qsmxt_engine::masking::{mask_presets, MaskOp, MaskingInput};
+    use qsmxt_engine::schema::mask::step_kind;
+    let m = schema::mask_schema();
+
+    let inputs: BTreeSet<String> = m.inputs.iter().map(|i| json!(i.value).as_str().unwrap().to_string()).collect();
+    assert_eq!(inputs, variants_of::<MaskingInput>(json!("__none__")));
+
+    let ops: BTreeSet<String> = m.steps.iter().map(|s| s.op.to_string()).collect();
+    assert_eq!(ops, variants_of::<MaskOp>(json!({ "op": "__none__" })));
+    let methods: BTreeSet<String> = m.steps.iter().filter(|s| s.op == "threshold")
+        .map(|s| s.default["method"].as_str().unwrap().to_string()).collect();
+    assert_eq!(methods, variants_of::<qsmxt_engine::masking::MaskThresholdMethod>(json!("__none__")));
+
+    let kinds: BTreeSet<&str> = m.steps.iter().map(|s| s.kind).collect();
+    assert_eq!(kinds.len(), m.steps.len(), "a step kind is listed twice");
+    for s in &m.steps {
+        let op: MaskOp = serde_json::from_value(s.default.clone()).unwrap_or_else(|e| panic!("{}: {e}", s.kind));
+        assert_eq!(step_kind(&op), s.kind);
+        assert_eq!(s.starts_section, op.is_generator(), "{}", s.kind);
+        assert!(!s.name.is_empty() && !s.help.is_empty() && !s.label.is_empty(), "{}", s.kind);
+        for p in &s.params {
+            assert!(s.default.get(p.key).is_some(), "{}: {} is not a field of the step", s.kind, p.key);
+            assert!(!p.label.is_empty() && !p.help.is_empty(), "{}.{}", s.kind, p.key);
+            if let Some(x) = p.default.as_f64() {
+                assert!(p.in_range(x), "{}.{}: the default {x} is out of range", s.kind, p.key);
+            }
+            if let Some(u) = p.units {
+                assert!(!names_unit(p.help, u), "{}.{}: help repeats the units", s.kind, p.key);
+            }
+            if let Some(k) = p.only_with {
+                assert!(s.params.iter().any(|q| q.key == k), "{}.{}: only with {k}?", s.kind, p.key);
+            }
+        }
+        // Every field but the tag (and a threshold's method, which is the step type) is a
+        // parameter; Otsu's unused value stays null.
+        for (k, v) in s.default.as_object().unwrap() {
+            if k == "op" || (s.op == "threshold" && k == "method") || v.is_null() && s.kind == "threshold-otsu" {
+                continue;
+            }
+            assert!(s.params.iter().any(|p| p.key == k), "{}: {k} has no parameter", s.kind);
+        }
+    }
+    // The step types that start a section come first.
+    let first_refinement = m.steps.iter().position(|s| !s.starts_section).unwrap();
+    assert!(m.steps[first_refinement..].iter().all(|s| !s.starts_section));
+
+    let names: Vec<&str> = m.presets.iter().map(|p| p.value).collect();
+    let expected: Vec<&str> = mask_presets().iter().map(|(n, _)| *n).collect();
+    assert_eq!(names, expected);
+    for p in &m.presets {
+        let mut c = PipelineConfig::default();
+        c.masking.sections = p.sections.clone();
+        c.masking.combine = p.combine;
+        c.masking.refinements = p.refinements.clone();
+        let errors: Vec<_> = schema::settings_view(&c, &ViewFacts::default()).into_iter().filter_map(|v| v.error).collect();
+        assert!(errors.is_empty(), "preset {}: {errors:?}", p.value);
+    }
+    // The whole document carries it.
+    let doc: Value = serde_json::from_str(&schema::schema_json()).unwrap();
+    assert_eq!(doc["mask"]["steps"].as_array().unwrap().len(), m.steps.len());
+}
+
+#[test]
+fn hd_bet_inference_choices_are_the_patches_mask_names() {
+    use qsmxt_engine::masking::{parse_mask_op, MaskOp};
+    let choices = schema::mask_schema().hd_bet_inference;
+    assert_eq!(choices.len(), 3);
+    for c in &choices {
+        let op = parse_mask_op(&format!("hd-bet:{}", c.label)).unwrap();
+        let MaskOp::HdBet { patch, .. } = op else { panic!() };
+        assert_eq!(json!(patch), c.value, "{}", c.label);
+        assert_eq!(c.peak_memory_bytes, qsmxt_engine::memory::hd_bet_network_bytes(patch));
+    }
+    // The whole volume costs most; the low-memory window least.
+    assert!(choices[0].peak_memory_bytes > choices[1].peak_memory_bytes);
+    assert!(choices[1].peak_memory_bytes > choices[2].peak_memory_bytes);
+    // And the step's patch parameter offers the same choices.
+    let hd = schema::mask::step("hd-bet").unwrap();
+    let values: Vec<Value> = hd.params[0].value_type.options().iter().map(|o| o.value.clone()).collect();
+    assert_eq!(values, choices.iter().map(|c| c.value.clone()).collect::<Vec<_>>());
+}
+
+#[test]
+fn mask_parameter_ranges_match_what_mask_refuses() {
+    use qsmxt_engine::masking::parse_mask_op;
+    let param = |kind: &str, key: &str| schema::mask::step(kind).unwrap().params.into_iter().find(|p| p.key == key).unwrap();
+    // `--mask` refuses these; the ranges say the same.
+    for (kind, key, spec, ok) in [
+        ("bet", "voxel_scale", "bet:0.5:scale={}", [(0.0, false), (1e-6, true), (10.0, true)]),
+        ("hd-bet", "tile_step", "hd-bet:window:step={}", [(0.0, false), (1.0, true), (1.000001, false)]),
+        ("rs2-net", "tile_step", "rs2-net:step={}", [(0.0, false), (1.0, true), (1.000001, false)]),
+    ] {
+        let p = param(kind, key);
+        for (x, accepted) in ok {
+            assert_eq!(parse_mask_op(&spec.replace("{}", &x.to_string())).is_ok(), accepted, "{spec} = {x}");
+            assert_eq!(p.in_range(x), accepted, "{kind}.{key} = {x}");
+        }
+    }
+    // Every bounded parameter, just outside its range, is an error on the recipe that names
+    // the step and the parameter; at an inclusive bound, it is not.
+    let mut tested = 0;
+    for s in schema::mask_schema().steps {
+        for p in &s.params {
+            let int = matches!(p.value_type, ValueType::Int);
+            let step = if int { 1.0 } else { 1e-6 };
+            let mut cases = Vec::new();
+            if let Some(lo) = p.min { cases.push((if p.exclusive_min { lo } else { lo - step }, false)); }
+            if let Some(hi) = p.max { cases.push((if p.exclusive_max { hi } else { hi + step }, false)); }
+            if let (Some(lo), false) = (p.min, p.exclusive_min) { cases.push((lo, true)); }
+            if let (Some(hi), false) = (p.max, p.exclusive_max) { cases.push((hi, true)); }
+            for (x, fine) in cases {
+                if int && x < 0.0 { continue; } // an unsigned field cannot hold it
+                let mut op = s.default.clone();
+                op[p.key] = if int { json!(x as u64) } else { json!(x) };
+                // A parameter that applies only with another one: set that one.
+                if let Some(k) = p.only_with { op[k] = json!([128, 128, 64]); }
+                let mut c = PipelineConfig::default();
+                c.masking.sections = vec![qsmxt_engine::masking::MaskSection {
+                    input: qsmxt_engine::masking::MaskingInput::Magnitude,
+                    generator: if s.starts_section { serde_json::from_value(op.clone()).unwrap() } else { qsmxt_engine::masking::MaskOp::bet(0.5) },
+                    refinements: if s.starts_section { vec![] } else { vec![serde_json::from_value(op).unwrap()] },
+                }];
+                let error = schema::settings_view(&c, &ViewFacts::default()).into_iter()
+                    .find(|v| v.path == "masking.sections").unwrap().error;
+                if fine {
+                    assert_eq!(error, None, "{}.{} = {x}", s.kind, p.key);
+                } else {
+                    let e = error.unwrap_or_else(|| panic!("{}.{} = {x} was accepted", s.kind, p.key));
+                    assert!(e.contains(s.name) && e.contains(p.label) && e.starts_with("Section 1, step "), "{e}");
+                    tested += 1;
+                }
+            }
+        }
+    }
+    assert!(tested >= 10, "{tested}");
+}

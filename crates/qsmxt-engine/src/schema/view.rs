@@ -38,7 +38,8 @@ pub struct SettingView {
     pub forced_by: Option<&'static str>,
     /// What is wrong with the setting's value, for showing next to it: outside its range, not a
     /// finite number, or refused by a rule of the setting ("Every dimension must be a positive
-    /// multiple of 16"). Only a setting that applies has one.
+    /// multiple of 16"); for a mask recipe, each step parameter outside its range ("Section 1,
+    /// step 2 (Erode): Iterations must be at least 1"). Only a setting that applies has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
 }
@@ -215,6 +216,18 @@ fn errors(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<(&'sta
     for (path, result) in rules {
         if let (true, Err(e)) = (checked(path), result) {
             out.push((path, sentence(&e)));
+        }
+    }
+    // The mask recipes' steps, against the mask schema's parameter ranges.
+    let m = &config.masking;
+    let recipes: [(&'static str, Vec<String>); 3] = [
+        ("masking.sections", super::mask::check_sections(&m.sections)),
+        ("masking.refinements", super::mask::check_steps(&m.refinements, "Combined mask")),
+        ("masking.two_pass_sections", m.two_pass_sections.as_deref().map(super::mask::check_sections).unwrap_or_default()),
+    ];
+    for (path, problems) in recipes {
+        if checked(path) && !problems.is_empty() {
+            out.push((path, problems.join("; ")));
         }
     }
     out

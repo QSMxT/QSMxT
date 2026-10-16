@@ -1411,7 +1411,8 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 };
                 if focused {
                     if focused_help.is_none() {
-                        focused_help = Some("Masking input source (←/→ to change)".to_string());
+                        let i = super::app::mask_schema().inputs.iter().find(|i| i.value == *input);
+                        focused_help = Some(format!("{} (←/→ to change)", i.map_or("Masking input source", |i| i.help)));
                     }
                     Line::from(vec![
                         Span::styled(format!("  {:lw$}", "Input:"), label_style),
@@ -1443,7 +1444,8 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 };
                 if focused {
                     if focused_help.is_none() {
-                        focused_help = Some("Mask algorithm (←/→ to switch between threshold, BET, HD-BET, MindGrab and RS2-Net)".to_string());
+                        focused_help = Some(format!("{} (←/→ to switch between threshold, BET, HD-BET, MindGrab and RS2-Net)",
+                            super::app::mask_step_of(gen).help));
                     }
                     Line::from(vec![
                         Span::styled(format!("  {:lw$}", "Algorithm:"), label_style),
@@ -1472,10 +1474,11 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                             crate::pipeline::config::MaskThresholdMethod::Fixed => "fixed",
                             crate::pipeline::config::MaskThresholdMethod::Percentile => "percentile",
                         };
-                        ("Method:", method_name.to_string(), "Threshold method (←/→ to change)")
+                        ("Method:", method_name.to_string(), format!("{} (←/→ to change the method)", super::app::mask_step_of(gen).help))
                     }
                     crate::pipeline::config::MaskOp::Bet { fractional_intensity, .. } => {
-                        ("Frac. Intensity:", format!("{:.2}", fractional_intensity), "BET fractional intensity 0.0-1.0, smaller = larger brain (←/→ to adjust)")
+                        let p = super::app::mask_param("bet", "fractional_intensity");
+                        ("Frac. Intensity:", format!("{:.2}", fractional_intensity), format!("{}: {}, from 0 to 1 (←/→ to adjust)", p.label, p.help))
                     }
                     crate::pipeline::config::MaskOp::HdBet { patch, .. } => {
                         let val = match patch {
@@ -1483,24 +1486,22 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                             Some(p) => format!("{}x{}x{} window{}", p[0], p[1], p[2],
                                 if *p == crate::pipeline::config::hd_bet_low_memory_patch() { " (low memory)" } else { "" }),
                         };
-                        ("Inference:", val,
-                         "HD-BET on the whole volume (~6-8 GB peak, fastest) or in sliding-window \
-                          patches: 192x192x96 ~3.6 GB, low memory 128x128x64 ~1.5 GB (←/→ to change)")
+                        ("Inference:", val, hd_bet_inference_help())
                     }
                     // RS2-Net's graph is traced at one fixed patch, so there is nothing to cycle.
                     crate::pipeline::config::MaskOp::Rs2Net { tta, .. } => {
                         ("Augmentation:", if *tta { "mirroring TTA".to_string() } else { "none".to_string() },
-                         "RS2-Net rodent brain extraction: the patch is fixed by the exported graph")
+                         super::app::mask_step("rs2-net").help.to_string())
                     }
                     crate::pipeline::config::MaskOp::MindGrab { tta } => {
                         ("Augmentation:", if *tta { "left-right flip TTA".to_string() } else { "none".to_string() },
-                         "Left-right flip test-time augmentation: a second, mirrored pass; about 2x slower (←/→ to toggle)")
+                         format!("{} (←/→ to toggle)", super::app::mask_param("mindgrab", "tta").help))
                     }
-                    _ => ("?:", "?".to_string(), ""),
+                    _ => ("?:", "?".to_string(), String::new()),
                 };
                 if focused {
                     if focused_help.is_none() {
-                        focused_help = Some(help.to_string());
+                        focused_help = Some(help);
                     }
                     Line::from(vec![
                         Span::styled(format!("  {:lw$}", label), label_style),
@@ -1534,10 +1535,11 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 } else {
                     val
                 };
-                if focused
-                    && focused_help.is_none() {
-                        focused_help = Some("Enter to edit value, Esc to cancel".to_string());
-                    }
+                if focused && focused_help.is_none() {
+                    let kind = super::app::mask_step_of(gen).kind;
+                    let help = super::app::mask_step(kind).params.first().map_or("", |p| p.help);
+                    focused_help = Some(format!("{help} (Enter to edit, Esc to cancel)"));
+                }
                 let val_style = if focused { Style::default().fg(Color::Cyan) } else { Style::default().fg(Color::Gray) };
                 Line::from(vec![
                     Span::styled(format!("  {:lw$}", label), label_style),
@@ -1561,9 +1563,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 let val = format!("{:.3}{}", step,
                     if (step - crate::pipeline::config::hd_bet_default_tile_step()).abs() < f64::EPSILON { " (default)" } else { "" });
                 if focused && focused_help.is_none() {
-                    focused_help = Some(
-                        "HD-BET sliding-window step, as a fraction of the patch: larger steps mean \
-                         fewer patches and a shorter run, at softer patch seams (←/→ to change)".to_string());
+                    focused_help = Some(format!("{} (←/→ to change)", super::app::mask_param("hd-bet", "tile_step").help));
                 }
                 if focused {
                     Line::from(vec![
@@ -1593,10 +1593,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 let default = (scale - crate::pipeline::config::bet_default_voxel_scale()).abs() < f64::EPSILON;
                 let val = format!("{}x{}", scale, if default { " (acquired geometry)" } else { "" });
                 if focused && focused_help.is_none() {
-                    focused_help = Some(
-                        "Voxel sizes are multiplied by this before BET runs: its surface model is \
-                         tuned to a human brain in mm, so preclinical data needs presenting at human \
-                         scale — 10x for mouse (←/→ to change)".to_string());
+                    focused_help = Some(format!("{} (←/→ to change)", super::app::mask_param("bet", "voxel_scale").help));
                 }
                 if focused {
                     Line::from(vec![
@@ -1630,7 +1627,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 };
                 if focused {
                     if focused_help.is_none() {
-                        focused_help = Some(super::app::PipelineFormState::mask_op_help(op).to_string());
+                        focused_help = Some(super::app::PipelineFormState::mask_op_help(op));
                     }
                     Line::from(vec![
                         Span::styled(format!("  {:3}", format!("{}.", index + 1)), label_style),
@@ -1661,7 +1658,7 @@ fn draw_rows_tab(f: &mut Frame, app: &mut App, area: ratatui::layout::Rect) {
                 let label = format!("      {:18}", format!("{label}:"));
                 if focused {
                     if focused_help.is_none() {
-                        focused_help = Some(super::app::SIGNAL_ERODE_PARAMS[*param].1.to_string());
+                        focused_help = Some(format!("{} (←/→ to adjust)", super::app::signal_erode_params()[*param].1));
                     }
                     Line::from(vec![
                         Span::styled(label, label_style),
@@ -1927,6 +1924,18 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     }
 
     f.render_widget(Paragraph::new(Line::from(help)), area);
+}
+
+/// HD-BET's inference choices and their memory, from the mask schema.
+fn hd_bet_inference_help() -> String {
+    let choices: Vec<String> = super::app::mask_schema().hd_bet_inference.iter().map(|c| {
+        let size = match c.value.as_array() {
+            Some(p) => format!(" {}", p.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("x")),
+            None => String::new(),
+        };
+        format!("{}{size} ~{:.1} GB", c.name.to_lowercase(), c.peak_memory_bytes as f64 / 1e9)
+    }).collect();
+    format!("HD-BET inference: {} (←/→ to change)", choices.join(", "))
 }
 
 #[cfg(test)]
@@ -2220,7 +2229,7 @@ mod tests {
     /// Every signal-erode parameter gets its own labelled row under the step.
     #[test]
     fn test_draw_signal_erode_param_rows() {
-        use crate::tui::app::{PipelineRow, SIGNAL_ERODE_PARAMS};
+        use crate::tui::app::{signal_erode_params, PipelineRow};
         let mut app = App::new();
         app.pipeline_state.apply_mask_preset(2); // hd-bet + signal-erode
         assert!(app.goto_field("mask_preset"));
@@ -2230,7 +2239,7 @@ mod tests {
             PipelineRow::MaskOpSignalErodeParam { param, .. } => Some(*param),
             _ => None,
         }).collect();
-        assert_eq!(params, (0..SIGNAL_ERODE_PARAMS.len()).collect::<Vec<_>>());
+        assert_eq!(params, (0..signal_erode_params().len()).collect::<Vec<_>>());
 
         // Focus the last one, so every param row is scrolled into view together.
         app.pipeline_state.focus = app.focusable_rows().iter()
@@ -2238,7 +2247,7 @@ mod tests {
             .expect("min component row not focusable");
         let terminal = render_app(&mut app);
         let text: String = terminal.backend().buffer().content().iter().map(|c| c.symbol()).collect();
-        for (label, _) in SIGNAL_ERODE_PARAMS {
+        for (label, _) in signal_erode_params() {
             assert!(text.contains(label), "{label} row not drawn");
         }
         assert!(text.contains("connected component"), "focused param's help not drawn");

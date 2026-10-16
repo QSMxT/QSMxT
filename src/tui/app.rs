@@ -1254,7 +1254,7 @@ pub enum PipelineRow {
     /// A refinement step (editable, deletable, reorderable)
     MaskOpEntry { section: usize, index: usize },
     /// One extra parameter of a multi-parameter refinement step (signal-erode), indexed into
-    /// [`SIGNAL_ERODE_PARAMS`] (focusable, ←/→ to adjust)
+    /// [`signal_erode_params`] (focusable, ←/→ to adjust)
     MaskOpSignalErodeParam { section: usize, index: usize, param: usize },
     /// "Add step..." row for appending new ops to a section
     MaskOpAddStep { section: usize },
@@ -1281,28 +1281,44 @@ pub const R2PRIME_STRATEGY_HELP: &[&str] = &[
 ];
 
 pub const MASK_PRESET_OPTIONS: &[&str] = &["robust-threshold", "bet", "hd-bet", "bet-and-phase", "rs2-net", "mindgrab", "custom"];
-pub const MASK_PRESET_HELP: &[&str] = &[
-    "Otsu threshold + dilate + fill holes + erode (recommended for brain)",
-    "BET brain extraction + erode",
-    "HD-BET deep-learning brain extraction + signal-gated erosion (QSM-CI harmonization masking)",
-    "BET on the magnitude AND thresholded phase quality, then fill holes + erode (ISMRM EMTP consensus)",
-    "RS2-Net deep-learning rodent brain extraction (mouse, rat)",
-    "MindGrab deep-learning brain extraction, for any contrast",
-    "Fully custom mask pipeline (edit steps below)",
-];
+/// The presets' help, from the engine's mask schema, then the "custom" entry's.
+static MASK_PRESET_HELP_V: LazyLock<Vec<&'static str>> = LazyLock::new(|| {
+    mask_schema().presets.iter().map(|p| p.help).chain(["Fully custom mask pipeline (edit steps below)"]).collect()
+});
+pub fn mask_preset_help() -> &'static [&'static str] { &MASK_PRESET_HELP_V }
+
+/// The engine's description of a mask recipe's parts, whose wording the mask editor shows.
+pub fn mask_schema() -> &'static qsmxt_engine::schema::MaskSchema {
+    static SCHEMA: LazyLock<qsmxt_engine::schema::MaskSchema> = LazyLock::new(qsmxt_engine::schema::mask_schema);
+    &SCHEMA
+}
+
+/// The mask step type `kind` (`erode`, `threshold-otsu`).
+pub fn mask_step(kind: &str) -> &'static qsmxt_engine::schema::mask::MaskStep {
+    mask_schema().steps.iter().find(|s| s.kind == kind).unwrap_or_else(|| panic!("no mask step {kind}"))
+}
+
+/// The parameter `key` of the mask step type `kind`.
+pub fn mask_param(kind: &str, key: &str) -> &'static qsmxt_engine::schema::mask::MaskParam {
+    mask_step(kind).params.iter().find(|p| p.key == key).unwrap_or_else(|| panic!("no parameter {key} of {kind}"))
+}
+
+/// The step type of `op`'s, from the mask schema.
+pub fn mask_step_of(op: &crate::pipeline::config::MaskOp) -> &'static qsmxt_engine::schema::mask::MaskStep {
+    mask_step(qsmxt_engine::schema::mask::step_kind(op))
+}
 /// Index of the "custom" preset — set automatically when the steps are edited by hand, and
 /// skipped when cycling presets with ←/→. Derived, because it is always the trailing entry:
 /// a hardcoded index silently goes stale the moment a preset is added.
 pub const MASK_PRESET_CUSTOM: usize = MASK_PRESET_OPTIONS.len() - 1;
 
 /// The signal-erode parameters that get a row of their own, past the threshold shown on the step
-/// row itself: label, help, and how ←/→ moves them. Order matches the row order.
-pub const SIGNAL_ERODE_PARAMS: &[(&str, &str)] = &[
-    ("Depth Cap", "Never peel deeper than this many voxels below the original surface (0 = no cap)"),
-    ("Plain Erosions", "Plain erosions run inside signal-erode, before the gate — unlike a separate erode step they spend the depth budget and leave the gate unchanged"),
-    ("Bias Sigma", "Gaussian scale (voxels) of the receive-coil bias estimate divided out of the magnitude"),
-    ("Min Component", "Keep every connected component with at least this many voxels, not just the largest"),
-];
+/// row itself: label and help. Order matches the row order.
+/// The wording is the mask schema's; the threshold is its first parameter.
+static SIGNAL_ERODE_PARAMS_V: LazyLock<Vec<(&'static str, &'static str)>> = LazyLock::new(|| {
+    mask_step("signal-erode").params.iter().skip(1).map(|p| (p.label, p.help)).collect()
+});
+pub fn signal_erode_params() -> &'static [(&'static str, &'static str)] { &SIGNAL_ERODE_PARAMS_V }
 
 /// Pseudo-section index for the refinements that run on the combined mask, so the mask-step rows
 /// and their key handling are shared with the per-section refinements.
@@ -2426,7 +2442,7 @@ impl PipelineFormState {
     fn masking_rows(&self, rows: &mut Vec<PipelineRow>) {
         rows.push(PipelineRow::AlgoSelect {
             label: "Mask Preset", field: "mask_preset",
-            options: MASK_PRESET_OPTIONS, help: MASK_PRESET_HELP,
+            options: MASK_PRESET_OPTIONS, help: mask_preset_help(),
         });
         rows.push(PipelineRow::Param {
             label: "Use custom masks", field: "custom_mask_tool",
@@ -3751,42 +3767,26 @@ impl PipelineFormState {
         }
     }
 
-    /// Get help text for a mask op.
-    pub fn mask_op_help(op: &crate::pipeline::config::MaskOp) -> &'static str {
+    /// Help for a mask step's row: what the value it shows does (the mask schema's wording),
+    /// and how to change it.
+    pub fn mask_op_help(op: &crate::pipeline::config::MaskOp) -> String {
         use crate::pipeline::config::MaskOp;
+        let step = mask_step_of(op);
         match op {
-            MaskOp::Threshold { .. } => "Threshold method (←/→ to change, Enter to edit value)",
-            MaskOp::Bet { .. } => "BET fractional intensity (Enter to edit); scale= inflates the voxel sizes for rodent data",
-            MaskOp::Erode { .. } => "Erosion iterations (←/→ to adjust)",
-            MaskOp::Dilate { .. } => "Dilation iterations (←/→ to adjust)",
-            MaskOp::Close { .. } => "Morphological close radius (←/→ to adjust)",
-            MaskOp::FillHoles { .. } => "Fill holes max size (0=auto, Enter to edit)",
-            MaskOp::GaussianSmooth { .. } => "Gaussian sigma in mm (Enter to edit)",
-            MaskOp::HdBet { .. } => "HD-BET deep-learning brain extraction (needs a deep-learning build)",
-            MaskOp::Rs2Net { .. } => "RS2-Net deep-learning rodent brain extraction (needs a deep-learning build)",
-            MaskOp::MindGrab { .. } => "MindGrab deep-learning brain extraction, for any contrast (needs a deep-learning build)",
-            MaskOp::SignalErode { .. } =>
-                "Signal gate as a fraction of the in-mask median magnitude (←/→ to adjust); above ~0.85 it over-carves",
+            MaskOp::Threshold { .. } => format!("{} (←/→ to change the method)", step.help),
+            MaskOp::HdBet { .. } | MaskOp::Rs2Net { .. } | MaskOp::MindGrab { .. } =>
+                format!("{} (needs a deep-learning build)", step.help),
+            // The row shows the step's first parameter (signal-erode's threshold); the rest have
+            // rows of their own.
+            _ => format!("{} (←/→ to adjust)", step.params.first().map_or(step.help, |p| p.help)),
         }
     }
 
-    /// Create a default mask op for the given type name.
+    /// Create a default mask op for the given type name: the mask schema's default for the
+    /// first step type of that name (a threshold is Otsu's).
     pub fn default_mask_op(type_name: &str) -> Option<crate::pipeline::config::MaskOp> {
-        use crate::pipeline::config::*;
-        match type_name {
-            "threshold" => Some(MaskOp::Threshold { method: MaskThresholdMethod::Otsu, value: None }),
-            "bet" => Some(MaskOp::bet(0.5)),
-            "erode" => Some(MaskOp::Erode { iterations: 1 }),
-            "dilate" => Some(MaskOp::Dilate { iterations: 1 }),
-            "close" => Some(MaskOp::Close { radius: 1 }),
-            "fill-holes" => Some(MaskOp::FillHoles { max_size: 0 }),
-            "gaussian" => Some(MaskOp::GaussianSmooth { sigma_mm: 4.0 }),
-            "hd-bet" => Some(MaskOp::hd_bet_default()),
-            "rs2-net" => Some(MaskOp::rs2_net_default()),
-            "mindgrab" => Some(MaskOp::mindgrab_default()),
-            "signal-erode" => Some(MaskOp::signal_erode_default()),
-            _ => None,
-        }
+        let step = mask_schema().steps.iter().find(|s| s.label == type_name)?;
+        serde_json::from_value(step.default.clone()).ok()
     }
 
     /// Apply a mask preset, overwriting the whole recipe (sections, combine mode and the
@@ -3974,7 +3974,7 @@ impl PipelineFormState {
         for (index, op) in refinements.iter().enumerate() {
             rows.push(PipelineRow::MaskOpEntry { section, index });
             if matches!(op, crate::pipeline::config::MaskOp::SignalErode { .. }) {
-                for param in 0..SIGNAL_ERODE_PARAMS.len() {
+                for param in 0..signal_erode_params().len() {
                     rows.push(PipelineRow::MaskOpSignalErodeParam { section, index, param });
                 }
             }
@@ -4205,7 +4205,7 @@ impl PipelineFormState {
         use crate::pipeline::config::MaskOp;
         let MaskOp::SignalErode { depth_cap, global_erosions, bias_sigma, min_component, .. } =
             self.mask_refinements(section)?.get(index)? else { return None };
-        let (label, _) = *SIGNAL_ERODE_PARAMS.get(param)?;
+        let (label, _) = *signal_erode_params().get(param)?;
         let value = match param {
             0 => if *depth_cap == 0 { "off (no cap)".to_string() } else { format!("{depth_cap}") },
             1 => format!("{global_erosions}"),
@@ -5966,12 +5966,7 @@ impl App {
                             target: AlgoModalTarget::MaskInput(*section),
                             title: "Masking Input".to_string(),
                             options: PipelineFormState::MASK_INPUT_SOURCES.iter().map(|s| format!("{}", s)).collect(),
-                            help: vec![
-                                "First-echo magnitude".to_string(),
-                                "Magnitude (single- or combined-echo)".to_string(),
-                                "Last-echo magnitude".to_string(),
-                                "Phase-quality map".to_string(),
-                            ],
+                            help: mask_schema().inputs.iter().map(|i| format!("{}: {}", i.label, i.help)).collect(),
                             cursor: ps.mask_input_index(*section),
                         }),
                         Some(PipelineRow::MaskOpGenerator { section }) => {
@@ -5979,13 +5974,11 @@ impl App {
                                 target: AlgoModalTarget::MaskGenerator(*section),
                                 title: "Mask Algorithm".to_string(),
                                 options: MASK_GENERATOR_TYPES.iter().map(|t| t.to_string()).collect(),
-                                help: vec![
-                                    "Intensity threshold-based masking".to_string(),
-                                    "FSL BET brain extraction".to_string(),
-                                    "HD-BET deep-learning brain extraction (Isensee et al., 2019)".to_string(),
-                                    "MindGrab deep-learning brain extraction, for any contrast (Fani et al., 2025)".to_string(),
-                                    "RS2-Net deep-learning rodent brain extraction (Lin et al., 2024)".to_string(),
-                                ],
+                                // A threshold's method is chosen on its own row.
+                                help: MASK_GENERATOR_TYPES.iter().map(|t| match *t {
+                                    "threshold" => "Keep the voxels of the section's image above a threshold: Otsu's, a value, or a percentile".to_string(),
+                                    t => mask_step(t).help.to_string(),
+                                }).collect(),
                                 cursor: ps.mask_generator_index(*section),
                             })
                         }
@@ -7799,7 +7792,7 @@ mod tests {
             ("motion-reference", MOTION_REFERENCE_OPTIONS.len(), MOTION_REFERENCE_HELP.len()),
             ("bg-removal", BF_OPTIONS.len(), BF_HELP.len()),
             ("qsm-reference", qsm_ref_options().len(), qsm_ref_help().len()),
-            ("mask-preset", MASK_PRESET_OPTIONS.len(), MASK_PRESET_HELP.len()),
+            ("mask-preset", MASK_PRESET_OPTIONS.len(), mask_preset_help().len()),
         ] {
             assert_eq!(opts, help, "{label}: {opts} options but {help} help entries");
         }
@@ -9616,7 +9609,7 @@ mod tests {
         let names: Vec<&str> = crate::pipeline::config::mask_presets().iter().map(|(n, _)| *n).collect();
         assert_eq!(&MASK_PRESET_OPTIONS[..MASK_PRESET_CUSTOM], &names[..]);
         assert_eq!(MASK_PRESET_OPTIONS[MASK_PRESET_CUSTOM], "custom");
-        assert_eq!(MASK_PRESET_OPTIONS.len(), MASK_PRESET_HELP.len());
+        assert_eq!(MASK_PRESET_OPTIONS.len(), mask_preset_help().len());
 
         let cli_names: Vec<String> = crate::cli::MaskPresetArg::value_variants().iter()
             .filter_map(|v| v.to_possible_value()).filter(|v| !v.is_hide_set())
