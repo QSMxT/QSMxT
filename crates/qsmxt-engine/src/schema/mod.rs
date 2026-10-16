@@ -189,6 +189,12 @@ pub struct Setting {
     pub min: Option<f64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max: Option<f64>,
+    /// Whether `min` itself is outside the range (the value must be greater than it).
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub exclusive_min: bool,
+    /// Whether `max` itself is outside the range.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub exclusive_max: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub step: Option<f64>,
     /// QSMxT's default.
@@ -272,6 +278,8 @@ pub(crate) struct Def {
     units: Option<&'static str>,
     min: Option<f64>,
     max: Option<f64>,
+    exclusive_min: bool,
+    exclusive_max: bool,
     off: Option<Value>,
     optional: bool,
     flag: Option<&'static str>,
@@ -283,7 +291,7 @@ pub(crate) struct Def {
 
 pub(crate) fn d(path: &'static str, section: Section, label: &'static str, help: &'static str, ty: Ty) -> Def {
     Def {
-        path, section, label, help, ty, value: None, basic: false, units: None, min: None, max: None,
+        path, section, label, help, ty, value: None, basic: false, units: None, min: None, max: None, exclusive_min: false, exclusive_max: false,
         off: None, optional: false, flag: None, parent: None, also: &[], browser: Browser::Available, when: None,
     }
 }
@@ -298,6 +306,10 @@ impl Def {
     fn units(mut self, u: &'static str) -> Self { self.units = Some(u); self }
     fn min(mut self, v: f64) -> Self { self.min = Some(v); self }
     fn max(mut self, v: f64) -> Self { self.max = Some(v); self }
+    /// Greater than `v` (exclusive minimum).
+    fn above(mut self, v: f64) -> Self { self.min = Some(v); self.exclusive_min = true; self }
+    /// Less than `v` (exclusive maximum).
+    fn below(mut self, v: f64) -> Self { self.max = Some(v); self.exclusive_max = true; self }
     fn off(mut self, v: Value) -> Self { self.optional |= v.is_null(); self.off = Some(v); self }
     fn optional(mut self) -> Self { self.optional = true; self }
     fn flag(mut self, f: &'static str) -> Self { self.flag = Some(f); self }
@@ -390,6 +402,8 @@ pub fn schema() -> Vec<Setting> {
                 units: d.units,
                 min: d.min,
                 max: d.max,
+                exclusive_min: d.exclusive_min,
+                exclusive_max: d.exclusive_max,
                 step,
                 default: lookup(&native, d.path).cloned().unwrap_or(Value::Null),
                 browser_default: lookup(&browser, d.path).cloned().unwrap_or(Value::Null),
@@ -461,4 +475,165 @@ pub fn set(config: &mut PipelineConfig, path: &str, value: Value) -> Result<(), 
     map.insert(key.to_string(), value);
     *config = serde_json::from_value(v).map_err(|e| format!("{path}: {e}"))?;
     Ok(())
+}
+
+impl Setting {
+    /// Whether one number is inside the setting's range.
+    pub fn in_range(&self, x: f64) -> bool {
+        let lo = self.min.is_none_or(|m| if self.exclusive_min { x > m } else { x >= m });
+        let hi = self.max.is_none_or(|m| if self.exclusive_max { x < m } else { x <= m });
+        lo && hi
+    }
+
+    /// The range in words: "at least 0", "greater than 0", "from 0 to 1".
+    pub fn range_text(&self) -> String {
+        let num = |v: f64| if v.fract() == 0.0 { format!("{v:.0}") } else { format!("{v}") };
+        match (self.min, self.max) {
+            (Some(lo), Some(hi)) => format!(
+                "from {} to {}{}", num(lo), num(hi),
+                match (self.exclusive_min, self.exclusive_max) {
+                    (false, false) => String::new(),
+                    (true, false) => format!(" (not {})", num(lo)),
+                    (false, true) => format!(" (not {})", num(hi)),
+                    (true, true) => format!(" (not {} or {})", num(lo), num(hi)),
+                }),
+            (Some(lo), None) => format!("{} {}", if self.exclusive_min { "greater than" } else { "at least" }, num(lo)),
+            (None, Some(hi)) => format!("{} {}", if self.exclusive_max { "less than" } else { "at most" }, num(hi)),
+            (None, None) => "any value".into(),
+        }
+    }
+}
+
+/// Check every setting that applies to `config` against its range, and every number setting
+/// that applies for being finite (a config file and the command line both accept `nan` and
+/// `inf`). A setting that does not apply (see [`settings_view`]) is not checked: it cannot
+/// change the run.
+///
+/// The error names each setting out of range (its path and `qsmxt run` option), the value, and
+/// the range.
+pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
+    let applies: std::collections::HashSet<&str> = settings_view(config, &ViewFacts::default())
+        .into_iter().filter(|v| v.visible).map(|v| v.path).collect();
+    let problems = out_of_range(config, |p| applies.contains(p));
+    if problems.is_empty() {
+        Ok(())
+    } else {
+        Err(crate::EngineError::Config(format!("setting out of range: {}", problems.join("; "))))
+    }
+}
+
+/// Each checked setting whose value is outside its range, described.
+fn out_of_range(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<String> {
+    // Serialised, a non-finite number is `null`.
+    let Ok(json) = serde_json::to_value(config) else { return vec![] };
+    let mut problems = Vec::new();
+    for s in schema() {
+        let float = matches!(s.value_type, ValueType::Float | ValueType::FloatVec3);
+        if !checked(s.path) || !(float || s.min.is_some() || s.max.is_some()) {
+            continue;
+        }
+        let (parent, key) = s.path.rsplit_once('.').unwrap_or(("", s.path));
+        let obj = if parent.is_empty() { Some(&json) } else { lookup(&json, parent) };
+        let v = obj.and_then(|o| o.get(key)).cloned().unwrap_or(Value::Null);
+        let flag = s.cli_flag.map(|f| format!(" ({f})")).unwrap_or_default();
+        let values: Vec<Option<f64>> = match &v {
+            Value::Array(a) => a.iter().map(Value::as_f64).collect(),
+            Value::Null if s.optional => vec![],
+            other => vec![other.as_f64()],
+        };
+        if float && values.iter().any(Option::is_none) {
+            problems.push(format!("{}{flag} must be a finite number", s.path));
+        } else if values.iter().flatten().any(|&x| !s.in_range(x)) {
+            problems.push(format!("{}{flag} is {v}; it must be {}", s.path, s.range_text()));
+        }
+    }
+    problems
+}
+
+#[cfg(test)]
+mod range_tests {
+    use super::*;
+
+    /// A value just outside each end of the range, of the setting's type.
+    fn outside(s: &Setting) -> Vec<f64> {
+        let int = matches!(s.value_type, ValueType::Int | ValueType::IntVec3);
+        let step = if int { 1.0 } else { 1e-6 };
+        let mut out = Vec::new();
+        if let Some(lo) = s.min {
+            out.push(if s.exclusive_min { lo } else { lo - step });
+        }
+        if let Some(hi) = s.max {
+            out.push(if s.exclusive_max { hi } else { hi + step });
+        }
+        out.retain(|&x| !int || x >= 0.0); // an unsigned setting cannot hold a negative
+        out
+    }
+
+    fn with(path: &str, s: &Setting, x: f64) -> Option<PipelineConfig> {
+        let v = match s.value_type {
+            ValueType::Int => json!(x as u64),
+            ValueType::IntVec3 => json!([x as u64, x as u64, x as u64]),
+            ValueType::FloatVec3 => json!([x, x, x]),
+            _ => json!(x),
+        };
+        let mut c = PipelineConfig::default();
+        set(&mut c, path, v).ok().map(|_| c)
+    }
+
+    use serde_json::json;
+
+    #[test]
+    fn every_default_and_browser_default_is_in_range() {
+        let checked = |_: &str| true;
+        assert_eq!(out_of_range(&PipelineConfig::default(), checked), Vec::<String>::new());
+        assert_eq!(out_of_range(&PipelineConfig::browser(), checked), Vec::<String>::new());
+    }
+
+    #[test]
+    fn every_range_is_enforced_just_outside_it() {
+        let mut tested = 0;
+        for s in schema() {
+            for x in outside(&s) {
+                let c = with(s.path, &s, x).unwrap_or_else(|| panic!("{} = {x} does not fit the type", s.path));
+                let problems = out_of_range(&c, |p| p == s.path);
+                assert_eq!(problems.len(), 1, "{} = {x} was accepted", s.path);
+                assert!(problems[0].contains(s.path) && problems[0].contains(&s.range_text()), "{}", problems[0]);
+                tested += 1;
+            }
+            // And the ends that are in the range are accepted.
+            for x in [s.min.filter(|_| !s.exclusive_min), s.max.filter(|_| !s.exclusive_max)].into_iter().flatten() {
+                let c = with(s.path, &s, x).unwrap();
+                assert!(out_of_range(&c, |p| p == s.path).is_empty(), "{} = {x} was refused", s.path);
+            }
+        }
+        assert!(tested > 40, "{tested}");
+    }
+
+    #[test]
+    fn a_number_that_is_not_finite_is_refused() {
+        let mut c = PipelineConfig::default();
+        c.bg_removal.vsharp.max_radius = f64::INFINITY;
+        let e = check_ranges(&c).unwrap_err().to_string();
+        assert!(e.contains("bg_removal.vsharp.max_radius (--vsharp-max-radius) must be a finite number"), "{e}");
+        c.bg_removal.vsharp.max_radius = f64::NAN;
+        assert!(check_ranges(&c).is_err());
+    }
+
+    #[test]
+    fn the_error_names_the_setting_its_value_and_range() {
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = crate::QsmAlgorithm::Tkd;
+        c.inversion.tkd.threshold = 0.0;
+        let e = check_ranges(&c).unwrap_err().to_string();
+        assert!(e.contains("inversion.tkd.threshold (--tkd-threshold) is 0.0; it must be greater than 0"), "{e}");
+    }
+
+    #[test]
+    fn a_setting_that_does_not_apply_is_not_checked() {
+        // TKD's threshold, under the default iLSQR inversion.
+        let mut c = PipelineConfig::default();
+        c.inversion.tkd.threshold = 0.0;
+        assert!(check_ranges(&c).is_ok());
+        assert!(check_ranges(&PipelineConfig::default()).is_ok());
+    }
 }
