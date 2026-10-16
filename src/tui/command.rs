@@ -305,10 +305,11 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             2 => Some(B0EstimationArg::RobustFit),
             _ => None,
         },
+        // The echo weights belong to the weighted average; the fits do not use them.
         b0_weight_type: [B0WeightTypeArg::PhaseSNR, B0WeightTypeArg::PhaseVar, B0WeightTypeArg::Average,
                          B0WeightTypeArg::TEs, B0WeightTypeArg::Mag, B0WeightTypeArg::AssumedDecay]
-            .get(ps.b0_weight_type).copied().filter(|&w| w != B0WeightTypeArg::PhaseSNR),
-        b0_weight_assumed_t2star: if ps.b0_weight_type == 5 { parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) } else { None },
+            .get(ps.b0_weight_type).copied().filter(|&w| ps.b0_estimation == 0 && w != B0WeightTypeArg::PhaseSNR),
+        b0_weight_assumed_t2star: if ps.b0_estimation == 0 && ps.b0_weight_type == 5 { parse_optional_f64(&ps.b0_weight_assumed_t2star_ms) } else { None },
         // Only when Laplacian unwrapping is selected, and only when changed from the default.
         laplacian_solver: (ps.unwrapping_algorithm == 1 && ps.laplacian_solver == 1)
             .then_some(crate::cli::LaplacianSolverArg::Fft),
@@ -611,9 +612,10 @@ pub fn pipeline_args_from_app(app: &App) -> PipelineArgs {
             no_romeo_mag_weight: false,
             romeo_mag_weight2: ps.romeo_mag_weight2,
             romeo_bestpath: ps.romeo_bestpath,
-            romeo_template: if ps.romeo_individual { None } else { parse_optional_usize(&ps.romeo_template) },
+            romeo_template: if ps.unwrapping_algorithm != 0 || ps.romeo_individual { None } else { parse_optional_usize(&ps.romeo_template) },
+            // ROMEO's own setting: not passed under Laplacian unwrapping.
             romeo_individual: ps.romeo_individual,
-            no_romeo_individual: !ps.romeo_individual,
+            no_romeo_individual: ps.unwrapping_algorithm == 0 && !ps.romeo_individual,
             romeo_correct_global: ps.romeo_correct_global,
             no_romeo_correct_global: !ps.romeo_correct_global,
             romeo_temporal_uncertain_unwrapping: if ps.romeo_temporal_uncertain { parse_optional_f64(&ps.romeo_temporal_uncertain_unwrapping) } else { Some(0.0) },
