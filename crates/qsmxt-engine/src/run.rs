@@ -1607,10 +1607,8 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
     /// ([`stages::output_space`]) — or, with `--output-space working`, left where they are.
     fn output_space(&mut self) -> Result<(), S::Error> {
         use stages::output_space::{self as o, Kind};
-        let Some((dst_dims, dst_affine)) = self.meta.source_geometry else {
-            self.skip("The run was not resampled, so its outputs are on the acquired grid.");
-            return Ok(());
-        };
+        // Not resampled: the outputs are on the acquired grid already (the record's `resampled`).
+        let Some((dst_dims, dst_affine)) = self.meta.source_geometry else { return Ok(()) };
         if self.config.pipeline.output_space != crate::OutputSpace::Acquired {
             self.log(Level::Info, "Leaving outputs on the resampled grid (--output-space working)");
             return self.store.keep_working_grid();

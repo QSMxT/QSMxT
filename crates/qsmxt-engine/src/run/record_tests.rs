@@ -35,7 +35,7 @@ fn a_run_that_decides_nothing_records_its_steps_computed_then_reused() {
         ("output_space", StepState::Skipped),
     ]);
     // Motion correction is off and the run is not resampled: the plan already said so.
-    assert!(!first.decided() || first.decisions().all(|(s, _)| s.id == "output_space"), "{first:?}");
+    assert!(!first.decided(), "{first:?}");
     assert_eq!(first.resampled, Some(false));
 
     let (_, again) = run_recorded(&config, &facts, &mut store);
