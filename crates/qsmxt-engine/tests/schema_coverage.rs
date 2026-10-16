@@ -255,3 +255,19 @@ fn pruning_puts_hidden_settings_back_to_their_defaults() {
     assert_eq!(p.bg_removal.pdf.tol, PipelineConfig::default().bg_removal.pdf.tol);
     assert_eq!(p.bg_removal.vsharp.max_radius, 10.0);
 }
+
+#[test]
+fn the_derivatives_tools_are_supplied_files_in_the_browser() {
+    use schema::Browser;
+    let by: BTreeMap<&str, Browser> = schema::schema().iter().map(|s| (s.path, s.browser)).collect();
+    for p in ["masking.custom_mask_tool", "separation.custom_qsm_tool", "separation.custom_r2_tool",
+              "separation.custom_r2prime_tool", "segmentation.custom_dseg_tool"] {
+        assert_eq!(by[p], Browser::SuppliedFile, "{p}");
+        // The value a browser run sets is one the setting takes.
+        let mut c = PipelineConfig::default();
+        schema::set(&mut c, p, json!(schema::BROWSER_SUPPLIED_TOOL)).unwrap();
+    }
+    assert_eq!(by["pipeline.export_dicom"], Browser::Unavailable);
+    let others = by.values().filter(|&&b| b == Browser::Available).count();
+    assert_eq!(others, by.len() - 6);
+}

@@ -42,7 +42,7 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.c.masking.sections.len() > 1),
         d("masking.refinements", Masking, "Combined Mask Steps", "Refinement steps run on the combined mask, after the sections are combined", MaskOps).parent("masking.sections")
         .when(|x| x.c.masking.sections.len() > 1),
-        d("masking.custom_mask_tool", Masking, "Use custom masks", "BYO mask from BIDS derivatives: empty=off, * =any tool, or a tool name (e.g. bet); falls back if absent", Text).optional().flag("--use-custom-masks").not_in_browser(),
+        d("masking.custom_mask_tool", Masking, "Use custom masks", "BYO mask from BIDS derivatives: empty=off, * =any tool, or a tool name (e.g. bet); falls back if absent", Text).optional().flag("--use-custom-masks").supplied_file(),
         d("masking.two_pass", Masking, "Two-pass Artefact Reduction", "Reconstruct again on a mask whose holes are left unfilled and keep that result where it is defined — keeps streaking from strong sources out of the rest of the brain, at roughly double the reconstruction time (doi:10.1002/mrm.29048)", Bool).basic().flag("--two-pass"),
         d("bet.smoothness", Masking, "Smoothness", "BET surface smoothness factor (shared by every BET step)", Float).min(0.0).flag("--bet-smoothness").parent("masking.sections")
         .when(|x| x.uses_bet),
@@ -636,7 +636,7 @@ pub(super) fn table() -> Vec<Def> {
         .when(|x| x.sep("hc-chisep")),
         d("separation.hc_chisep.bin_hz", Separation, "R2' bin (Hz)", "R2' bin width for anchored grid search", Float).units("Hz").min(0.0).flag("--hc-chisep-bin-hz").parent("separation.algorithm")
         .when(|x| x.sep("hc-chisep")),
-        d("separation.custom_qsm_tool", Separation, "Custom QSM tool", "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool", Text).optional().flag("--use-custom-qsm").also(&[SwiSmwi, Segmentation]).not_in_browser()
+        d("separation.custom_qsm_tool", Separation, "Custom QSM tool", "Use a Chimap from <bids>/derivatives/<tool>/ instead of recomputing QSM (χ-separation, statistics, SMWI); blank = compute, * = any tool", Text).optional().flag("--use-custom-qsm").also(&[SwiSmwi, Segmentation]).supplied_file()
         .when(|x| x.reads_qsm),
         d("pipeline.do_swi", SwiSmwi, "Compute SWI", "Also compute susceptibility-weighted images with CLEAR-SWI, from every echo", Bool).basic().flag("--do-swi"),
         d("swi.unwrap", SwiSmwi, "Unwrapping", "", Enum(vec![
@@ -669,10 +669,10 @@ pub(super) fn table() -> Vec<Def> {
         d("pipeline.do_t2starmap", Relaxometry, "Compute T2* Map", "Compute T2* relaxation map (requires 3+ echoes with magnitude)", Bool).basic().flag("--do-t2starmap"),
         d("pipeline.do_r2starmap", Relaxometry, "Compute R2* Map", "Compute R2* decay rate map (requires 3+ echoes with magnitude)", Bool).basic().flag("--do-r2starmap"),
         d("pipeline.do_r2map", Relaxometry, "Compute R2 Map", "R2 map (Hz) from a multi-echo spin-echo (MESE) acquisition via EPG. Forced on when chi-separation needs it", Bool).basic().flag("--do-r2map"),
-        d("separation.custom_r2_tool", Relaxometry, "Custom R2 tool", "Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE (blank = compute, * = any tool)", Text).optional().flag("--use-custom-r2").parent("pipeline.do_r2map").not_in_browser()
+        d("separation.custom_r2_tool", Relaxometry, "Custom R2 tool", "Use an R2 map from <bids>/derivatives/<tool>/ instead of computing it from MESE (blank = compute, * = any tool)", Text).optional().flag("--use-custom-r2").parent("pipeline.do_r2map").supplied_file()
         .when(|x| x.reads_r2),
         d("pipeline.do_r2primemap", Relaxometry, "Compute R2' Map", "R2' = R2* − R2 (Hz); needs GRE magnitude + a MESE acquisition, or R2PRIMEnet. Forced on when chi-separation needs it", Bool).basic().flag("--do-r2primemap"),
-        d("separation.custom_r2prime_tool", Relaxometry, "Custom R2' tool", "Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it (blank = compute, * = any tool)", Text).optional().flag("--use-custom-r2prime").parent("pipeline.do_r2primemap").not_in_browser()
+        d("separation.custom_r2prime_tool", Relaxometry, "Custom R2' tool", "Use an R2' map from <bids>/derivatives/<tool>/ instead of computing it (blank = compute, * = any tool)", Text).optional().flag("--use-custom-r2prime").parent("pipeline.do_r2primemap").supplied_file()
         .when(|x| x.reads_r2prime),
         d("separation.r2prime_strategy", Relaxometry, "R2' Source", "", Enum(vec![
             o("auto", "auto", "Measure R2' = R2* - R2 from a MESE acquisition when one is present, else predict it from R2* with R2PRIMEnet"),
@@ -685,7 +685,7 @@ pub(super) fn table() -> Vec<Def> {
         d("separation.r2primenet.patch", Relaxometry, "R2PRIMEnet Patch", "Sliding-window patch D H W in voxels, each a multiple of 16 (default 192 192 128)", IntVec3).units("voxels").min(0.0).flag("--r2primenet-patch").parent("separation.r2prime_strategy")
         .when(|x| x.computes_r2prime && x.c.separation.r2prime_strategy != R2PrimeStrategy::Mese),
         d("pipeline.do_segmentation", Segmentation, "Segmentation", "Whole-brain parcellation: SynthSeg straight off the GRE magnitude, or one supplied in derivatives. Forced on by the statistics and a region reference", Bool).basic().flag("--do-segmentation"),
-        d("segmentation.custom_dseg_tool", Segmentation, "Derivatives tool", "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found", Text).optional().flag("--use-custom-dseg").parent("pipeline.do_segmentation").not_in_browser()
+        d("segmentation.custom_dseg_tool", Segmentation, "Derivatives tool", "The dseg from <bids>/derivatives/<tool>/: * = any tool, or a tool name; SynthSeg runs where none is found", Text).optional().flag("--use-custom-dseg").parent("pipeline.do_segmentation").supplied_file()
         .when(|x| x.segmentation_on),
         d("segmentation.version", Segmentation, "SynthSeg Version", "", Enum(vec![
             o("v1", "v1", "v1: 32 labels, weights ship with SynthSeg. v2: 33 labels (adds CSF); its weights are not published yet, so a run with v2 is refused unless synthseg-2.0.onnx is in $QSM_MODEL_DIR"),
@@ -702,6 +702,7 @@ pub(super) fn table() -> Vec<Def> {
         .value("Sigma (voxels)", "Gaussian sigma of the posterior blur, in voxels").units("voxels").min(0.0).off(json!(0.0)).flag("--synthseg-sigma").parent("pipeline.do_segmentation")
         .when(|x| x.segmentation_on && x.c.segmentation.custom_dseg_tool.is_none()),
         d("pipeline.do_analysis", Segmentation, "Per-structure statistics", "Summarise every map the run makes (χ, χ+/χ−, T2*, R2*, R2, R2') per structure into a TSV: mean, SD, median, min, max, 5th/95th percentiles. Implies segmentation; implies QSM only if no other map is enabled", Bool).basic().flag("--do-analysis"),
-        d("pipeline.export_dicom", Export, "Export DICOM", "Also write final maps as DICOM series into each subject's extra_files/ folder", Bool).basic().flag("--export-dicom").not_in_browser(),
+        // DICOM export is not in the browser yet (astewartau/qsmbly#164).
+        d("pipeline.export_dicom", Export, "Export DICOM", "Also write final maps as DICOM series into each subject's extra_files/ folder", Bool).basic().flag("--export-dicom").unavailable_in_browser(),
     ]
 }

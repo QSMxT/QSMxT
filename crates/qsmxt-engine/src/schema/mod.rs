@@ -210,10 +210,27 @@ pub struct Setting {
     /// The `qsmxt run` option that sets it, when it has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cli_flag: Option<&'static str>,
-    /// Whether a browser run can use it (the settings that read a BIDS derivatives directory or
-    /// write DICOM cannot).
-    pub in_browser: bool,
+    /// How a browser front end offers it.
+    pub browser: Browser,
 }
+
+/// How a browser front end offers a setting.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Browser {
+    /// As any other setting.
+    Available,
+    /// A map the user supplies instead of one the run computes or finds in a BIDS derivatives
+    /// directory: the front end shows a file input, adds the file to the run's store, and sets
+    /// the setting to [`BROWSER_SUPPLIED_TOOL`].
+    SuppliedFile,
+    /// Not offered in the browser yet.
+    Unavailable,
+}
+
+/// The derivatives "tool" a browser run names its supplied files by, so the generated command
+/// reads them from `<bids>/derivatives/qsmbly/` when the run is repeated with QSMxT.
+pub const BROWSER_SUPPLIED_TOOL: &str = "qsmbly";
 
 /// Config leaves that are deliberately not in the schema, with why.
 pub const NOT_IN_SCHEMA: &[(&str, &str)] = &[
@@ -260,14 +277,14 @@ pub(crate) struct Def {
     flag: Option<&'static str>,
     parent: Option<&'static str>,
     also: &'static [Section],
-    in_browser: bool,
+    browser: Browser,
     when: Option<fn(&view::Ctx) -> bool>,
 }
 
 pub(crate) fn d(path: &'static str, section: Section, label: &'static str, help: &'static str, ty: Ty) -> Def {
     Def {
         path, section, label, help, ty, value: None, basic: false, units: None, min: None, max: None,
-        off: None, optional: false, flag: None, parent: None, also: &[], in_browser: true, when: None,
+        off: None, optional: false, flag: None, parent: None, also: &[], browser: Browser::Available, when: None,
     }
 }
 
@@ -286,7 +303,8 @@ impl Def {
     fn flag(mut self, f: &'static str) -> Self { self.flag = Some(f); self }
     fn parent(mut self, p: &'static str) -> Self { self.parent = Some(p); self }
     fn also(mut self, s: &'static [Section]) -> Self { self.also = s; self }
-    fn not_in_browser(mut self) -> Self { self.in_browser = false; self }
+    fn supplied_file(mut self) -> Self { self.browser = Browser::SuppliedFile; self }
+    fn unavailable_in_browser(mut self) -> Self { self.browser = Browser::Unavailable; self }
     fn when(mut self, f: fn(&view::Ctx) -> bool) -> Self { self.when = Some(f); self }
 }
 
@@ -383,7 +401,7 @@ pub fn schema() -> Vec<Setting> {
                 order,
                 parent: d.parent,
                 cli_flag: d.flag,
-                in_browser: d.in_browser,
+                browser: d.browser,
             }
         })
         .collect()
