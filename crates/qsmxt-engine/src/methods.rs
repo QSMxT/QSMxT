@@ -719,18 +719,7 @@ pub fn generate_methods_for(config: &PipelineConfig, tool: &str) -> String {
                 let total_field = !crate::bridge::inversion_input(config, 2).needs_bg_removal();
                 if !total_field {
                     let alg = &config.bg_removal.algorithm;
-                    let (name, cite) = match alg {
-                        BfAlgorithm::Vsharp => ("V-SHARP", &CITE_VSHARP),
-                        BfAlgorithm::Pdf => ("PDF", &CITE_PDF),
-                        BfAlgorithm::Lbv => ("LBV", &CITE_LBV),
-                        BfAlgorithm::Ismv => ("iSMV", &CITE_ISMV),
-                        BfAlgorithm::Sharp => ("SHARP", &CITE_SHARP),
-                        BfAlgorithm::Resharp => ("RESHARP", &CITE_RESHARP),
-                        BfAlgorithm::Harperella => ("HARPERELLA", &CITE_HARPERELLA),
-                        BfAlgorithm::Iharperella => ("iHARPERELLA", &CITE_IHARPERELLA),
-                        BfAlgorithm::Bfrnet => ("BFRnet (deep-learning background removal)", &CITE_BFRNET),
-                        BfAlgorithm::Iqfm => ("iQFM (deep-learning joint unwrapping + background removal)", &CITE_IQSM),
-                    };
+                    let (name, cite) = bg_removal_name_cite(*alg);
                     if *alg == BfAlgorithm::Vsharp {
                         let (v, d) = (&config.bg_removal.vsharp, VsharpConfig::default());
                         let mut changed = Changed::default();
@@ -1481,6 +1470,120 @@ fn describe_masking(config: &PipelineConfig, sentences: &mut Vec<String>, citati
         sentences.push(
             "This masking follows the recommendation of the ISMRM electro-magnetic tissue \
              properties study group consensus (Bilgic et al., 2024).".to_string());
+    }
+}
+
+/// Display name + citation for a background-field removal algorithm.
+fn bg_removal_name_cite(alg: BfAlgorithm) -> (&'static str, &'static Citation) {
+    match alg {
+        BfAlgorithm::Vsharp => ("V-SHARP", &CITE_VSHARP),
+        BfAlgorithm::Pdf => ("PDF", &CITE_PDF),
+        BfAlgorithm::Lbv => ("LBV", &CITE_LBV),
+        BfAlgorithm::Ismv => ("iSMV", &CITE_ISMV),
+        BfAlgorithm::Sharp => ("SHARP", &CITE_SHARP),
+        BfAlgorithm::Resharp => ("RESHARP", &CITE_RESHARP),
+        BfAlgorithm::Harperella => ("HARPERELLA", &CITE_HARPERELLA),
+        BfAlgorithm::Iharperella => ("iHARPERELLA", &CITE_IHARPERELLA),
+        BfAlgorithm::Bfrnet => ("BFRnet (deep-learning background removal)", &CITE_BFRNET),
+        BfAlgorithm::Iqfm => ("iQFM (deep-learning joint unwrapping + background removal)", &CITE_IQSM),
+    }
+}
+
+/// What the pipeline graph ([`crate::pipeline_graph`]) says about a step's algorithm, in the
+/// methods text's words: so a box and the sentence describing the same step cannot disagree.
+pub(crate) mod words {
+    use super::*;
+
+    /// The name the methods text gives an algorithm, without what follows it in parentheses:
+    /// "RTS (Rapid Two-Step)" is "RTS" in a box.
+    fn short(name: &'static str) -> String {
+        name.split(" (").next().unwrap_or(name).to_string()
+    }
+
+    pub(crate) fn inversion(alg: QsmAlgorithm) -> String {
+        short(inversion_name_cite(alg).0)
+    }
+
+    pub(crate) fn bg_removal(alg: BfAlgorithm) -> String {
+        short(bg_removal_name_cite(alg).0)
+    }
+
+    pub(crate) fn separation(alg: SeparationAlgorithm) -> String {
+        short(separation_name_cite(alg).0)
+    }
+
+    /// The selected inversion's settings that differ from their defaults (`"λ = 0.002"`).
+    pub(crate) fn inversion_settings(config: &PipelineConfig, alg: QsmAlgorithm) -> Vec<String> {
+        inversion_changes(config, alg).0
+    }
+
+    /// The selected background removal's settings: V-SHARP's kernel radii always (they are what
+    /// says which V-SHARP ran), and otherwise what differs from the defaults.
+    pub(crate) fn bg_removal_settings(config: &PipelineConfig) -> Vec<String> {
+        let b = &config.bg_removal;
+        if b.algorithm != BfAlgorithm::Vsharp {
+            return bg_removal_changes(config).0;
+        }
+        let (v, d) = (&b.vsharp, VsharpConfig::default());
+        let mut c = Changed::default();
+        c.add(true, || format!("SMV kernel radii from {} to {} mm", v.max_radius, v.min_radius));
+        c.add(v.deconvolve != d.deconvolve, || format!(
+            "truncated-SVD deconvolution {}", if v.deconvolve { "enabled" } else { "disabled" }));
+        c.add(v.deconvolve && differs(v.threshold, d.threshold), || format!("deconvolution threshold = {}", v.threshold));
+        c.0
+    }
+
+    pub(crate) fn separation_settings(config: &PipelineConfig) -> Vec<String> {
+        separation_changes(config).0
+    }
+
+    pub(crate) fn registration_settings(config: &PipelineConfig) -> Vec<String> {
+        registration_changes(config).0
+    }
+
+    /// ROMEO's settings that differ from their defaults; Laplacian unwrapping has none here.
+    pub(crate) fn unwrapping_settings(config: &PipelineConfig) -> Vec<String> {
+        let (fm, d) = (&config.field_mapping, FieldMappingConfig::default());
+        let mut c = Changed::default();
+        if fm.unwrapping_algorithm == UnwrappingAlgorithm::Romeo {
+            c.add_fields(&fm.romeo, &d.romeo, &[]);
+        }
+        c.0
+    }
+
+    /// Each mask section as one line: its input, how the mask is made from it and how it is
+    /// refined ("phase quality: Otsu threshold, dilation, hole-filling, erosion").
+    pub(crate) fn mask_sections(sections: &[MaskSection]) -> Vec<String> {
+        sections.iter().map(|section| {
+            let input = match section.input {
+                MaskingInput::PhaseQuality => "phase quality",
+                MaskingInput::Magnitude => "magnitude",
+                MaskingInput::MagnitudeFirst => "first-echo magnitude",
+                MaskingInput::MagnitudeLast => "last-echo magnitude",
+            };
+            let generator = match &section.generator {
+                MaskOp::Threshold { method: MaskThresholdMethod::Otsu, .. } => "Otsu threshold".to_string(),
+                MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value } => format!("threshold {}", value.unwrap_or(0.5)),
+                MaskOp::Threshold { method: MaskThresholdMethod::Percentile, value } =>
+                    format!("{}th-percentile threshold", value.unwrap_or(75.0)),
+                MaskOp::Bet { .. } => "BET".to_string(),
+                MaskOp::HdBet { .. } => "HD-BET".to_string(),
+                MaskOp::Rs2Net { .. } => "RS2-Net".to_string(),
+                MaskOp::MindGrab { .. } => "MindGrab".to_string(),
+                other => describe_refinements(std::slice::from_ref(other), &mut Vec::new()).join(", "),
+            };
+            let steps: Vec<String> = std::iter::once(generator)
+                .chain(describe_refinements(&section.refinements, &mut Vec::new()))
+                .collect();
+            format!("{input}: {}", steps.join(", "))
+        }).collect()
+    }
+
+    /// QSMART's settings that differ from their defaults (its inner inversion is said apart).
+    pub(crate) fn qsmart_settings(config: &PipelineConfig) -> Vec<String> {
+        let mut c = Changed::default();
+        c.add_fields(&config.inversion.qsmart, &QsmartConfig::default(), &["inversion"]);
+        c.0
     }
 }
 

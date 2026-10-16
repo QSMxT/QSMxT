@@ -1041,6 +1041,35 @@ mod tests {
         assert_eq!(Stage::Inversion(Pass::Main).name(), "invert", "the main pass keeps the unsuffixed step names");
     }
 
+    /// The BIDS name the engine gives each item ([`qsmxt_engine::store::Item::meta`]) is the one
+    /// its file is written under, and what it calls published is what lands among the run's
+    /// outputs rather than in a workflow directory.
+    #[test]
+    fn item_metadata_names_the_files_qsmxt_writes() {
+        use crate::bids::derivatives::DerivativeOutputs;
+        use crate::pipeline::graph::PipelineState;
+        use qsmxt_engine::store::Item;
+        use std::path::PathBuf;
+
+        let run = run_with_echoes(vec![(PathBuf::from("/in/sub-1/anat/p.nii"), None)]);
+        let config = crate::pipeline::config::PipelineConfig::default();
+        let store = super::FileStore {
+            run: &run, config: &config, output: DerivativeOutputs::new(std::path::Path::new("/out")),
+            meta: None, state: PipelineState::new(&config, &run.key), state_path: PathBuf::from("/out/s.json"),
+            started: None, step: None, supplied_mask: None, extra_outputs: Vec::new(),
+            metadata: None, working_grid_kept: false,
+        };
+        for item in Item::one_of_each() {
+            let meta = item.meta();
+            let Some(bids) = meta.bids_name else { continue };
+            let path = store.path(&item).unwrap_or_else(|| panic!("{item:?} has a BIDS name and no file"));
+            let name = path.file_name().unwrap().to_string_lossy().to_string();
+            let stem = name.split('.').next().unwrap();
+            assert!(stem.ends_with(&format!("_{bids}")), "{item:?}: {name} is not named {bids}");
+            assert_eq!(meta.published, !path.starts_with("/out/workflow"), "{item:?}: {}", path.display());
+        }
+    }
+
     /// Single-step and end-to-end algorithms produce a map over the brain mask, with no separate
     /// background-removal stage to erode it.
     #[test]
