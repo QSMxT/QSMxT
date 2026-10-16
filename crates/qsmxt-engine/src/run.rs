@@ -1817,6 +1817,88 @@ mod tests {
         assert_eq!(off.computed, ["load", "scale_phase", "magnitude", "mask", "unwrap", "bgremove", "invert", "reference"]);
     }
 
+    /// Two-pass on the phantom, its reliable-phase mask a fixed threshold.
+    fn two_pass_config() -> PipelineConfig {
+        let mut config = config();
+        config.masking.two_pass = true;
+        config.masking.two_pass_sections = Some(vec![MaskSection {
+            input: MaskingInput::Magnitude,
+            generator: MaskOp::Threshold { method: MaskThresholdMethod::Fixed, value: Some(40.0) },
+            refinements: vec![],
+        }]);
+        config
+    }
+
+    /// Another brain mask for the phantom: the usual one, eroded.
+    fn erode_the_brain_mask(config: &mut PipelineConfig) {
+        config.masking.sections[0].refinements = vec![MaskOp::Erode { iterations: 1 }];
+    }
+
+    /// `store`, re-run with `config`, holds what a fresh run with it (on `fresh`, a new store of
+    /// the same scan) does: the same steps under the same keys, and the same outputs.
+    fn assert_as_if_fresh(config: &PipelineConfig, facts: &ScanFacts, store: &MemoryStore, mut fresh: MemoryStore) {
+        run_once(config, facts, &mut fresh);
+        let (got, want) = (store.recorded(), fresh.recorded());
+        assert_eq!(got.steps, want.steps);
+        for (step, (_, outputs)) in &want.steps {
+            for item in outputs.iter().map(|k| Item::from_key(k).unwrap()) {
+                assert!(store.get(&item) == fresh.get(&item), "{step}: {item:?} is not what a fresh run makes");
+            }
+        }
+        assert_eq!(got.reports, want.reports);
+        assert_eq!(got.annotations, want.annotations);
+    }
+
+    /// The reliable-phase mask is restricted to the brain mask, so a new brain mask redoes it and
+    /// the reliable pass after it: re-run over the old outputs, the run is a fresh one.
+    #[test]
+    fn a_new_brain_mask_redoes_the_reliable_pass_as_a_fresh_run_would() {
+        let (facts, mut store) = phantom();
+        let mut config = two_pass_config();
+        run_once(&config, &facts, &mut store);
+        erode_the_brain_mask(&mut config);
+        let rerun = run_once(&config, &facts, &mut store);
+        for step in ["mask", "mask-reliable", "bgremove-reliable", "invert-reliable", "twopass"] {
+            assert!(rerun.computed.iter().any(|c| c == step), "{step}: {:?}", rerun.computed);
+        }
+        let (Some(VolumeData::Mask(brain)), Some(VolumeData::Mask(reliable))) =
+            (store.get(&Item::BrainMask), store.get(&Item::ReliableMask)) else { panic!("no masks") };
+        assert!(reliable.iter().zip(brain).all(|(&r, &b)| r == 0 || b != 0), "the reliable mask is in the new brain mask");
+        assert_as_if_fresh(&config, &facts, &store, phantom().1);
+    }
+
+    /// R2 is fitted inside the brain mask, so a new mask redoes it — on its own too, with no R2*
+    /// map in the run whose recomputation would.
+    #[test]
+    fn a_new_brain_mask_redoes_r2_as_a_fresh_run_would() {
+        let scan = || {
+            let (mut facts, mut store) = phantom();
+            with_mese(&mut facts, &mut store);
+            (facts, store)
+        };
+        let (facts, mut store) = scan();
+        let mut config = config();
+        config.pipeline.do_r2map = true;
+        run_once(&config, &facts, &mut store);
+        erode_the_brain_mask(&mut config);
+        let rerun = run_once(&config, &facts, &mut store);
+        assert!(rerun.computed.iter().any(|c| c == "r2_r2prime"), "{:?}", rerun.computed);
+        assert_as_if_fresh(&config, &facts, &store, scan().1);
+    }
+
+    /// The combination reads the main pass's map as well as the reliable pass's, so a new
+    /// inversion redoes it.
+    #[test]
+    fn a_new_inversion_redoes_the_two_pass_combination_as_a_fresh_run_would() {
+        let (facts, mut store) = phantom();
+        let mut config = two_pass_config();
+        run_once(&config, &facts, &mut store);
+        config.inversion.tkd.threshold *= 2.0;
+        let rerun = run_once(&config, &facts, &mut store);
+        assert_eq!(rerun.computed, ["invert", "invert-reliable", "twopass", "reference-singlepass", "reference"]);
+        assert_as_if_fresh(&config, &facts, &store, phantom().1);
+    }
+
     /// SynthSeg in memory. Minutes in a debug build, so run with `--ignored`; skipped where the
     /// weights have not been downloaded.
     #[test]
