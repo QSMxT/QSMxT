@@ -560,6 +560,14 @@ impl StageStore for FileStore<'_> {
             }
             return Ok(());
         };
+        // A new output: what its sidecar recorded about the one it replaces (a reference offset,
+        // where an R2′ came from) no longer holds, and the step records it afresh. Returned to the
+        // acquired grid, it is the same output.
+        if self.step.as_deref() != Some("output_space") {
+            if let Some(sidecar) = crate::bids::entities::sidecar_path(&path).filter(|p| p.is_file()) {
+                std::fs::remove_file(sidecar)?;
+            }
+        }
         match data {
             Data::Real(v) => save_volume(&path, v, self.meta())?,
             Data::Mask(m) => save_mask(&path, m, self.meta())?,
@@ -606,16 +614,6 @@ impl StageStore for FileStore<'_> {
         if let (Item::RegionStats, Data::Text(table)) = (item, data) {
             log::info!("Per-structure statistics -> {}", path.display());
             self.draw_figures(table);
-        }
-        // A new R2' map: what an earlier run recorded about where its R2' came from no longer
-        // holds, and the step records it afresh.
-        if item == Item::R2prime {
-            if let Some(sidecar) = crate::bids::entities::sidecar_path(&path) {
-                let mut obj = read_json_object(&sidecar);
-                obj.retain(|k, _| !k.starts_with("R2prime"));
-                std::fs::write(&sidecar, serde_json::to_string_pretty(&obj)
-                    .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
-            }
         }
         Ok(())
     }
@@ -704,6 +702,18 @@ impl StageStore for FileStore<'_> {
         }
         let prov_path = self.output.provenance_path(&self.run.key, c.step);
         write_step_provenance(&prov_path, c.step, c.algorithm, &recorded, &input_refs, &outputs, start)?;
+        // Another step whose provenance names one of these files as its output no longer made
+        // what is there (its record is forgotten below, or already was): it would be named their
+        // maker.
+        for &other in crate::bids::bidsprov::STEPS.iter().filter(|&&s| s != c.step && s != "output_space") {
+            let stale = self.output.provenance_path(&self.run.key, other);
+            let Ok(text) = std::fs::read_to_string(&stale) else { continue };
+            let theirs: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+            let theirs = theirs["outputs"].as_array().cloned().unwrap_or_default();
+            if theirs.iter().filter_map(|p| p.as_str()).any(|p| outputs.iter().any(|o| o.display().to_string() == p)) {
+                std::fs::remove_file(stale)?;
+            }
+        }
 
         // Whatever read this step's previous output is stale now that it has been recomputed with
         // other parameters, or for the first time (a step newly switched on, say), which the
@@ -2362,6 +2372,105 @@ mod oblique_run_tests {
         }
         crate::commands::run::clean_run(&output, &run);
         assert!(written.iter().all(|p| !p.exists()), "cleaning keeps QSMART's intermediates");
+    }
+
+    /// Each inversion algorithm's step writes the same raw map. Switching to another and back in
+    /// the same directory (#373) recomputes the first, and leaves what a fresh run in a directory
+    /// of its own does: the same maps, the same sidecar, and no record of the other step.
+    #[test]
+    fn switching_the_inversion_and_back_gives_what_a_fresh_run_does() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 2);
+        for two_pass in [false, true] {
+            let mut config = fast_config();
+            config.masking.two_pass = two_pass;
+            config.inversion.qsmart.ilsqr_max_iter = 5;
+            let fresh = DerivativeOutputs::new(&dir.path().join(format!("fresh-{two_pass}")));
+            run_pipeline_cached(&run, &config, &fresh, false, &|_| {}).unwrap();
+            let output = DerivativeOutputs::new(&dir.path().join(format!("out-{two_pass}")));
+            run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+            config.inversion.algorithm = QsmAlgorithm::Qsmart;
+            run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+            config.inversion.algorithm = QsmAlgorithm::Rts;
+            run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+
+            let k = &run.key;
+            let mut maps = vec![(output.qsm_path(k), fresh.qsm_path(k)), (output.qsm_support_path(k), fresh.qsm_support_path(k)),
+                                (output.chi_raw_path(k), fresh.chi_raw_path(k))];
+            if two_pass {
+                maps.push((output.reliable_chi_raw_path(k), fresh.reliable_chi_raw_path(k)));
+            }
+            for (got, want) in maps {
+                assert!(io::read_nifti_file(&got).unwrap().data == io::read_nifti_file(&want).unwrap().data,
+                        "two-pass {two_pass}: {} is not what a fresh run makes", got.display());
+            }
+            let sidecar = |o: &DerivativeOutputs| read_json_object(&crate::bids::entities::sidecar_path(&o.qsm_path(k)).unwrap());
+            assert_eq!(sidecar(&output), sidecar(&fresh), "two-pass {two_pass}");
+            let state = PipelineState::load_or_create(&output.state_path(k), &config, k, false);
+            assert!(!state.completed_steps.contains_key("qsmart"), "two-pass {two_pass}: QSMART's record outlived its map");
+            assert!(!output.provenance_path(k, "qsmart").exists(), "two-pass {two_pass}: QSMART's provenance outlived its map");
+        }
+    }
+
+    /// Switched from each inversion to each other one and back, the only provenance naming a raw
+    /// map as its output is that of the step that wrote it last. QSMART runs on its own mask, as
+    /// `qsmxt run` gives it by default, so switching to or from it remakes the mask first and the
+    /// state has already forgotten the other inversion by the time QSMART is recorded.
+    #[test]
+    fn only_the_last_inversion_is_named_the_raw_maps_maker() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 2);
+        let k = &run.key;
+        let algorithms = [(QsmAlgorithm::Rts, "invert"), (QsmAlgorithm::Tgv, "tgv"), (QsmAlgorithm::Qsmart, "qsmart")];
+        for (a, step) in algorithms {
+            for (b, _) in algorithms.into_iter().filter(|&(b, _)| b != a) {
+                for two_pass in [false, true] {
+                    let mut config = fast_config();
+                    config.masking.two_pass = two_pass;
+                    config.inversion.qsmart.ilsqr_max_iter = 5;
+                    let output = DerivativeOutputs::new(&dir.path().join(format!("{a:?}-{b:?}-{two_pass}")));
+                    for algorithm in [a, b, a] {
+                        config.inversion.algorithm = algorithm;
+                        config.masking.sections = if algorithm == QsmAlgorithm::Qsmart {
+                            qsmxt_engine::masking::qsmart_default_mask_sections()
+                        } else {
+                            fast_config().masking.sections
+                        };
+                        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+                    }
+                    let mut raws = vec![(output.chi_raw_path(k), step.to_string())];
+                    if two_pass {
+                        raws.push((output.reliable_chi_raw_path(k), format!("{step}-reliable")));
+                    }
+                    for (raw, step) in raws {
+                        let makers: Vec<&str> = crate::bids::bidsprov::STEPS.iter().copied().filter(|&s| {
+                            let Ok(text) = std::fs::read_to_string(output.provenance_path(k, s)) else { return false };
+                            let prov: serde_json::Value = serde_json::from_str(&text).unwrap();
+                            prov["outputs"].as_array().unwrap().iter().any(|o| o.as_str() == Some(&raw.display().to_string()))
+                        }).collect();
+                        assert_eq!(makers, [step.as_str()], "{a:?} → {b:?} → {a:?}, two-pass {two_pass}");
+                    }
+                }
+            }
+        }
+    }
+
+    /// A recomputed map's sidecar says what was done to it, not to the map it replaced: re-run
+    /// without a reference, the map records no offset from the mean reference it had before.
+    #[test]
+    fn a_recomputed_map_keeps_nothing_from_the_sidecar_it_replaced() {
+        let dir = tempfile::tempdir().unwrap();
+        let run = oblique_run(dir.path(), "a", 2);
+        let output = DerivativeOutputs::new(&dir.path().join("out"));
+        let mut config = fast_config();
+        let sidecar = || read_json_object(&crate::bids::entities::sidecar_path(&output.qsm_path(&run.key)).unwrap());
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        assert!(sidecar().contains_key("QsmReferenceOffsetPpm"));
+        config.qsm.reference = crate::pipeline::config::QsmReference::None;
+        run_pipeline_cached(&run, &config, &output, false, &|_| {}).unwrap();
+        let fields = sidecar();
+        assert_eq!(fields["QsmReference"], "none");
+        assert!(!fields.contains_key("QsmReferenceOffsetPpm") && !fields.contains_key("QsmReferenceVoxels"), "{fields:?}");
     }
 
     /// End to end with V-SHARP: the published χ is 0 on the rim background removal eroded, its

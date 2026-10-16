@@ -296,6 +296,12 @@ pub struct Completed<'a> {
 /// recomputed under a different key than it last had makes everything [downstream of it]
 /// stale.
 ///
+/// A step's record holds only while the outputs it names are still the ones it wrote. Steps of
+/// different names can write the same output (each inversion algorithm's step writes the pass's
+/// raw map), so a step is not cached while another step's record names one of its outputs
+/// ([`sharing_outputs`]), and recording a step forgets every other step that named one of the
+/// outputs it has just replaced, with everything downstream of it.
+///
 /// [downstream of it]: crate::graph::downstream_of
 pub trait StageStore {
     /// The store's own errors: file I/O for `qsmxt`. The engine's become one of them.
@@ -370,7 +376,9 @@ pub trait StageStore {
     /// Keep an output of the step being computed.
     fn put(&mut self, item: Item, data: Data<'_>) -> Result<(), Self::Error>;
 
-    /// Merge `fields` into what is recorded about `item` (`qsmxt`: its JSON sidecar).
+    /// Merge `fields` into what is recorded about `item` (`qsmxt`: its JSON sidecar). What was
+    /// recorded about an output goes with it: a step that writes `item` anew ([`Self::put`]) starts
+    /// from nothing recorded, the return to the acquired grid excepted.
     fn annotate(&mut self, item: &Item, fields: serde_json::Map<String, serde_json::Value>) -> Result<(), Self::Error>;
 
     /// A report or text output, as it was kept ([`Data::Json`], [`Data::Text`] as a string).
@@ -397,6 +405,27 @@ pub trait StageStore {
         Ok(())
     }
 }
+
+/// The steps other than `step` whose records name one of `outputs`, of the `recorded` steps (each
+/// one's name and recorded outputs, as a store names them: [`Item`]s, `qsmxt`'s paths). Whichever
+/// wrote last holds the output, so only one of them can be cached ([`StageStore`]).
+///
+/// The return to the acquired grid (`output_space`) rewrites other steps' outputs in place, and a
+/// store undoes it before any of them is computed again or read: it shares outputs with no step.
+pub fn sharing_outputs<'a, T: PartialEq + 'a>(
+    step: &str, outputs: &[T], recorded: impl IntoIterator<Item = (&'a str, &'a [T])>,
+) -> Vec<String> {
+    if step == OUTPUT_SPACE {
+        return Vec::new();
+    }
+    recorded.into_iter()
+        .filter(|&(other, theirs)| other != step && other != OUTPUT_SPACE && theirs.iter().any(|o| outputs.contains(o)))
+        .map(|(other, _)| other.to_string())
+        .collect()
+}
+
+/// The return to the acquired grid's step name.
+pub const OUTPUT_SPACE: &str = "output_space";
 
 /// Where a [`MemoryStore`] keeps its volumes: in its own memory ([`InMemory`], the default), or
 /// wherever the front end chooses (qsmbly: in the page, outside the WASM heap, so the heap holds
@@ -685,7 +714,7 @@ impl<V: Volumes> MemoryStore<V> {
                 None => { self.geometries.remove(&item); }
             }
         }
-        self.steps.remove("output_space");
+        self.steps.remove(OUTPUT_SPACE);
         self.changed();
     }
 
@@ -695,6 +724,11 @@ impl<V: Volumes> MemoryStore<V> {
             self.steps.remove(&ds);
         }
         self.changed();
+    }
+
+    /// The other recorded steps naming one of `outputs` ([`sharing_outputs`]).
+    fn sharing(&self, step: &str, outputs: &[Item]) -> Vec<String> {
+        sharing_outputs(step, outputs, self.steps.iter().map(|(s, (_, out))| (s.as_str(), out.as_slice())))
     }
 
     fn present(&self, item: &Item) -> bool {
@@ -799,14 +833,14 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
 
     fn cached(&mut self, step: &str, key: &str) -> bool {
         let cached = match self.steps.get(step) {
-            Some((recorded, _)) if recorded != key => {
+            Some((recorded, outputs)) if recorded != key || !self.sharing(step, outputs).is_empty() => {
                 self.forget(step);
                 false
             }
             Some((_, outputs)) => outputs.iter().all(|o| self.present(o)),
             None => false,
         };
-        if !cached && step != "output_space" {
+        if !cached && step != OUTPUT_SPACE {
             self.restore_working_grid();
         }
         cached
@@ -817,10 +851,13 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
     }
 
     fn put(&mut self, item: Item, data: Data<'_>) -> Result<(), EngineError> {
-        if self.current.as_deref() == Some("output_space") && !self.working_grid.contains_key(&item)
-            && self.volumes.set_aside(&item)
-        {
-            self.working_grid.insert(item, self.geometries.get(&item).cloned());
+        if self.current.as_deref() == Some(OUTPUT_SPACE) {
+            if !self.working_grid.contains_key(&item) && self.volumes.set_aside(&item) {
+                self.working_grid.insert(item, self.geometries.get(&item).cloned());
+            }
+        } else if self.annotations.remove(&item).is_some() {
+            // What was recorded about the output it replaces.
+            self.changed();
         }
         self.geometries.remove(&item);
         match data {
@@ -875,6 +912,9 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
     }
 
     fn record(&mut self, c: &Completed<'_>) -> Result<(), EngineError> {
+        for other in self.sharing(c.step, c.outputs) {
+            self.forget(&other);
+        }
         if self.steps.get(c.step).map(|(k, _)| k.as_str()) != Some(c.key) {
             for ds in crate::graph::downstream_of(c.step) {
                 self.steps.remove(&ds);
@@ -983,6 +1023,79 @@ mod tests {
         assert_eq!(store.real(&Item::Chi).unwrap(), [1.0, 2.0]);
         assert!(store.volumes().aside.is_empty());
         assert!(store.volumes().remove(&Item::Chi) && !store.has(&Item::Chi));
+    }
+
+    /// Two steps that write the same output: recording one forgets the other and what read it
+    /// (#373), and a store restored with both recorded caches neither. What was recorded about an
+    /// output goes with it.
+    #[test]
+    fn a_step_that_writes_another_ones_output_takes_its_place() {
+        let raw = Item::RawChi(Pass::Main);
+        let done = |store: &mut MemoryStore, step: &str, key: &str, outputs: &[Item]| {
+            store.start(step);
+            for &item in outputs {
+                store.put(item, Data::Real(&[1.0, 2.0])).unwrap();
+            }
+            store.record(&Completed {
+                step, algorithm: None, params: &serde_json::json!({}), outcome: None, key, inputs: &[], outputs,
+            }).unwrap();
+        };
+        let mut store = MemoryStore::new(header(), serde_json::json!(1));
+        done(&mut store, "invert", "a", &[raw]);
+        done(&mut store, "reference", "r", &[Item::Chi]);
+        let mut fields = serde_json::Map::new();
+        fields.insert("QsmReferenceOffsetPpm".into(), 0.5.into());
+        store.annotate(&Item::Chi, fields).unwrap();
+        done(&mut store, "swi", "s", &[Item::Swi]);
+        done(&mut store, "output_space", "o", &[Item::Chi, Item::Swi]);
+        assert!(store.annotations(&Item::Chi).is_some(), "returned to the acquired grid, it is the same output");
+        done(&mut store, "tgv", "b", &[raw]);
+        let steps = store.recorded().steps;
+        assert!(!steps.contains_key("invert") && !steps.contains_key("reference"), "{steps:?}");
+        assert!(store.cached("tgv", "b"));
+        done(&mut store, "reference", "r", &[Item::Chi]);
+        assert!(store.annotations(&Item::Chi).is_none(), "a new map keeps nothing recorded about the old one");
+
+        let mut both = store.recorded();
+        both.steps.insert("invert".into(), ("a".into(), vec![raw.key()]));
+        let volumes = std::mem::take(store.volumes());
+        let mut again = MemoryStore::with_volumes(header(), serde_json::json!(1), volumes);
+        again.restore(both);
+        assert!(!again.cached("invert", "a"));
+        assert!(!again.recorded().steps.contains_key("invert") && !again.recorded().steps.contains_key("reference"));
+        assert!(again.cached("tgv", "b"), "only one of them is left to be recomputed");
+    }
+
+    /// Which differently named steps write the same output, over every inversion, single- and
+    /// two-pass, with every output on: only the inversions' raw map. Not a rule the stores rely on
+    /// ([`sharing_outputs`] holds for any), but the list of what they meet.
+    #[test]
+    fn only_the_inversion_steps_write_the_same_output() {
+        use crate::enums::QsmAlgorithm;
+        let mut facts = crate::plan::tests::facts();
+        facts.mese_echo_times = Some(vec![0.01, 0.02, 0.03]);
+        let mut writers: HashMap<Item, std::collections::BTreeSet<String>> = HashMap::new();
+        for algorithm in QsmAlgorithm::ALL {
+            for two_pass in [false, true] {
+                let mut config = crate::config::PipelineConfig::default();
+                config.inversion.algorithm = algorithm;
+                config.masking.two_pass = two_pass;
+                let p = &mut config.pipeline;
+                (p.do_swi, p.do_smwi, p.do_t2starmap, p.do_r2starmap, p.do_r2map, p.do_r2primemap) = (true, true, true, true, true, true);
+                (p.do_chi_separation, p.do_segmentation, p.do_analysis) = (true, true, true);
+                for step in crate::plan::plan(&config, &facts).steps.iter().filter(|s| s.name != OUTPUT_SPACE) {
+                    for &item in &step.outputs {
+                        writers.entry(item).or_default().insert(step.name.clone());
+                    }
+                }
+            }
+        }
+        writers.retain(|_, steps| steps.len() > 1);
+        let names = |s: &[&str]| s.iter().map(|n| n.to_string()).collect();
+        assert_eq!(writers, HashMap::from([
+            (Item::RawChi(Pass::Main), names(&["invert", "qsmart", "tgv"])),
+            (Item::RawChi(Pass::Reliable), names(&["invert-reliable", "qsmart-reliable", "tgv-reliable"])),
+        ]));
     }
 
     #[test]

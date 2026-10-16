@@ -1834,19 +1834,42 @@ pub(crate) mod tests {
         config.masking.sections[0].refinements = vec![MaskOp::Erode { iterations: 1 }];
     }
 
+    /// What a run left in a store: its records, and every output a step recorded.
+    struct Snapshot {
+        recorded: crate::store::Recorded,
+        outputs: Vec<(Item, Option<VolumeData>)>,
+    }
+
+    fn snapshot(store: &MemoryStore) -> Snapshot {
+        let recorded = store.recorded();
+        let outputs = recorded.steps.values().flat_map(|(_, outputs)| outputs)
+            .map(|k| Item::from_key(k).unwrap()).map(|item| (item, store.get(&item).cloned())).collect();
+        Snapshot { recorded, outputs }
+    }
+
     /// `store`, re-run with `config`, holds what a fresh run with it (on `fresh`, a new store of
-    /// the same scan) does: the same steps under the same keys, and the same outputs.
+    /// the same scan) does.
     fn assert_as_if_fresh(config: &PipelineConfig, facts: &ScanFacts, store: &MemoryStore, mut fresh: MemoryStore) {
         run_once(config, facts, &mut fresh);
-        let (got, want) = (store.recorded(), fresh.recorded());
-        assert_eq!(got.steps, want.steps);
-        for (step, (_, outputs)) in &want.steps {
-            for item in outputs.iter().map(|k| Item::from_key(k).unwrap()) {
-                assert!(store.get(&item) == fresh.get(&item), "{step}: {item:?} is not what a fresh run makes");
-            }
+        assert_holds(config, facts, store, &snapshot(&fresh));
+    }
+
+    /// `store` holds what `want` does: the same steps under the same keys, and the same outputs.
+    /// Any other step it still records is one `config`'s plan does not have, left by an earlier
+    /// configuration.
+    fn assert_holds(config: &PipelineConfig, facts: &ScanFacts, store: &MemoryStore, want: &Snapshot) {
+        let mut got = store.recorded();
+        let plan: Vec<String> = crate::plan::plan(config, facts).steps.iter().map(|s| s.stage.name()).collect();
+        got.steps.retain(|step, _| want.recorded.steps.contains_key(step) || {
+            assert!(!plan.contains(step), "{step} is in the plan but a fresh run does not record it");
+            false
+        });
+        assert_eq!(got.steps, want.recorded.steps);
+        for (item, volume) in &want.outputs {
+            assert!(store.get(item) == volume.as_ref(), "{item:?} is not what a fresh run makes");
         }
-        assert_eq!(got.reports, want.reports);
-        assert_eq!(got.annotations, want.annotations);
+        assert_eq!(got.reports, want.recorded.reports);
+        assert_eq!(got.annotations, want.recorded.annotations);
     }
 
     /// The reliable-phase mask is restricted to the brain mask, so a new brain mask redoes it and
@@ -1897,6 +1920,50 @@ pub(crate) mod tests {
         let rerun = run_once(&config, &facts, &mut store);
         assert_eq!(rerun.computed, ["invert", "invert-reliable", "twopass", "reference-singlepass", "reference"]);
         assert_as_if_fresh(&config, &facts, &store, phantom().1);
+    }
+
+    /// The inversion steps are named for their algorithm (`invert`, `tgv`, `qsmart`), and every one
+    /// writes the pass's raw map. Switching from `a` to another and back in the same store (#373)
+    /// would leave `a`'s record naming a map the other has since replaced: the switch back
+    /// recomputes it, and what reads it, and the store holds what `a`'s first (fresh) run left —
+    /// single- and two-pass, after each of the others.
+    fn switch_away_and_back(a: QsmAlgorithm) {
+        let algorithms = [QsmAlgorithm::Tkd, QsmAlgorithm::Tgv, QsmAlgorithm::Qsmart];
+        for two_pass in [false, true] {
+            let mut config = if two_pass { two_pass_config() } else { config() };
+            config.inversion.qsmart.ilsqr_max_iter = 5;
+            config.inversion.algorithm = a;
+            let (facts, mut store) = phantom();
+            run_once(&config, &facts, &mut store);
+            let fresh = snapshot(&store);
+            let step = crate::plan::plan(&config, &facts).steps.iter()
+                .find(|s| matches!(s.stage, Stage::Inversion(Pass::Main) | Stage::Tgv(Pass::Main) | Stage::Qsmart(Pass::Main)))
+                .map(|s| s.stage.name()).unwrap();
+            for b in algorithms.into_iter().filter(|&b| b != a) {
+                config.inversion.algorithm = b;
+                run_once(&config, &facts, &mut store);
+                config.inversion.algorithm = a;
+                let back = run_once(&config, &facts, &mut store);
+                assert!(back.computed.contains(&step), "{a} → {b} → {a}, two-pass {two_pass}: {:?}", back.computed);
+                assert_holds(&config, &facts, &store, &fresh);
+                assert!(run_once(&config, &facts, &mut store).computed.is_empty(), "{a} → {b} → {a}, two-pass {two_pass}");
+            }
+        }
+    }
+
+    #[test]
+    fn switching_from_tkd_and_back_gives_what_a_fresh_run_does() {
+        switch_away_and_back(QsmAlgorithm::Tkd);
+    }
+
+    #[test]
+    fn switching_from_tgv_and_back_gives_what_a_fresh_run_does() {
+        switch_away_and_back(QsmAlgorithm::Tgv);
+    }
+
+    #[test]
+    fn switching_from_qsmart_and_back_gives_what_a_fresh_run_does() {
+        switch_away_and_back(QsmAlgorithm::Qsmart);
     }
 
     /// SynthSeg in memory. Minutes in a debug build, so run with `--ignored`; skipped where the
