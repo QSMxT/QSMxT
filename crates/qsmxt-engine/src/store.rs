@@ -63,8 +63,18 @@ pub enum Item {
     ChiSupport,
     /// A two-pass run's single-pass map, referenced.
     SinglePassChi,
-    /// The segmentation: the run's own, or one supplied with the scan (`--use-custom-dseg`).
+    /// The run's segmentation (FreeSurfer label ids).
     Segmentation,
+    /// A segmentation supplied with the scan (`--use-custom-dseg`), on whatever grid it came on.
+    SuppliedSegmentation,
+    /// The segmentation's lookup table: each label id and its name (text, a BIDS `dseg.tsv`).
+    SegmentationLabels,
+    /// SynthSeg's per-label volumes in mm³, in label-table order (a JSON array).
+    SegmentationVolumes,
+    /// Per-structure statistics of every map over the segmentation (text, a TSV table).
+    RegionStats,
+    /// The motion correction's per-echo report (a JSON document).
+    MotionReport,
     /// The CLEAR-SWI image.
     Swi,
     /// The SWI's minimum-intensity projection, on its own grid ([`Data::OnGrid`]).
@@ -135,6 +145,8 @@ pub enum Data<'a> {
     OnGrid(&'a [f64], &'a Geometry),
     /// A report.
     Json(&'a serde_json::Value),
+    /// A table or other text.
+    Text(&'a str),
     /// This input, unchanged: the store keeps it as it was given (`qsmxt` copies the file).
     Same(Item),
 }
@@ -266,6 +278,22 @@ pub trait StageStore {
     /// Merge `fields` into what is recorded about `item` (`qsmxt`: its JSON sidecar).
     fn annotate(&mut self, item: &Item, fields: serde_json::Map<String, serde_json::Value>) -> Result<(), Self::Error>;
 
+    /// A report or text output, as it was kept ([`Data::Json`], [`Data::Text`] as a string).
+    fn report(&mut self, item: &Item) -> Option<serde_json::Value>;
+
+    /// What is recorded about `item` ([`Self::annotate`]).
+    fn annotation(&mut self, item: &Item) -> serde_json::Map<String, serde_json::Value>;
+
+    /// `step` did not run this time, and what it left (`outputs`) no longer applies: drop them,
+    /// and forget the step and everything downstream of it.
+    fn discard(&mut self, step: &str, outputs: &[Item]) -> Result<(), Self::Error>;
+
+    /// The run's outputs stay on the working grid it was resampled to (`--output-space working`):
+    /// a store that names its outputs by the grid they are on records which grid that is.
+    fn keep_working_grid(&mut self) -> Result<(), Self::Error> {
+        Ok(())
+    }
+
     /// The step is complete: its outputs are in, and are valid under `completed.key`.
     fn record(&mut self, completed: &Completed<'_>) -> Result<(), Self::Error>;
 
@@ -281,6 +309,10 @@ pub trait StageStore {
 /// A [`StageStore`] that keeps everything in memory: the scan as given, every output, and the
 /// step cache, with the same invalidation rules `qsmxt` follows. Running the same plan again
 /// recomputes only the steps whose keys changed and what is downstream of them.
+///
+/// Outputs returned to the acquired grid replace their working-grid versions, as they do in
+/// `qsmxt`'s files; the working-grid versions are kept aside and put back as soon as a later run
+/// has a step to compute that may read them.
 #[derive(Debug, Default)]
 pub struct MemoryStore {
     header: Option<Header>,
@@ -292,6 +324,10 @@ pub struct MemoryStore {
     annotations: HashMap<Item, serde_json::Map<String, serde_json::Value>>,
     supplied: Option<Supplied>,
     mese: Option<Mese>,
+    /// The step being computed.
+    current: Option<String>,
+    /// The working-grid versions of the outputs returned to the acquired grid.
+    working_grid: HashMap<Item, (VolumeData, Option<Geometry>)>,
     /// Each recorded step's key, and the outputs it recorded.
     steps: HashMap<String, (String, Vec<Item>)>,
     scan: Option<(String, RunMetadata)>,
@@ -355,6 +391,22 @@ impl MemoryStore {
         self.volumes.remove(item)
     }
 
+    /// Put the working-grid versions back, for a step that may read them; the return to the
+    /// acquired grid is then to do again.
+    fn restore_working_grid(&mut self) {
+        if self.working_grid.is_empty() {
+            return;
+        }
+        for (item, (volume, geometry)) in self.working_grid.drain() {
+            self.volumes.insert(item, volume);
+            match geometry {
+                Some(g) => { self.geometries.insert(item, g); }
+                None => { self.geometries.remove(&item); }
+            }
+        }
+        self.steps.remove("output_space");
+    }
+
     fn forget(&mut self, step: &str) {
         self.steps.remove(step);
         for ds in crate::graph::downstream_of(step) {
@@ -383,6 +435,7 @@ impl StageStore for MemoryStore {
             Some((k, meta)) if k == key => Some(meta.clone()),
             Some(_) => {
                 self.steps.clear();
+                self.working_grid.clear();
                 self.scan = None;
                 None
             }
@@ -440,15 +493,30 @@ impl StageStore for MemoryStore {
     }
 
     fn cached(&mut self, step: &str, key: &str) -> bool {
-        let Some((recorded, outputs)) = self.steps.get(step) else { return false };
-        if recorded != key {
-            self.forget(step);
-            return false;
+        let cached = match self.steps.get(step) {
+            Some((recorded, _)) if recorded != key => {
+                self.forget(step);
+                false
+            }
+            Some((_, outputs)) => outputs.iter().all(|o| self.present(o)),
+            None => false,
+        };
+        if !cached && step != "output_space" {
+            self.restore_working_grid();
         }
-        outputs.iter().all(|o| self.present(o))
+        cached
+    }
+
+    fn start(&mut self, step: &str) {
+        self.current = Some(step.to_string());
     }
 
     fn put(&mut self, item: Item, data: Data<'_>) -> Result<(), EngineError> {
+        if self.current.as_deref() == Some("output_space") && !self.working_grid.contains_key(&item) {
+            if let Some(volume) = self.volumes.get(&item) {
+                self.working_grid.insert(item, (volume.clone(), self.geometries.get(&item).cloned()));
+            }
+        }
         self.geometries.remove(&item);
         match data {
             Data::Real(v) => { self.volumes.insert(item, VolumeData::Real(v.to_vec())); }
@@ -458,6 +526,7 @@ impl StageStore for MemoryStore {
                 self.geometries.insert(item, geometry.clone());
             }
             Data::Json(j) => { self.reports.insert(item, j.clone()); }
+            Data::Text(t) => { self.reports.insert(item, serde_json::Value::String(t.to_string())); }
             Data::Same(source) => {
                 let v = self.volumes.get(&source).cloned()
                     .ok_or_else(|| EngineError::Config(format!("{source:?} is not in the store")))?;
@@ -472,6 +541,25 @@ impl StageStore for MemoryStore {
         Ok(())
     }
 
+    fn report(&mut self, item: &Item) -> Option<serde_json::Value> {
+        self.reports.get(item).cloned()
+    }
+
+    fn annotation(&mut self, item: &Item) -> serde_json::Map<String, serde_json::Value> {
+        self.annotations.get(item).cloned().unwrap_or_default()
+    }
+
+    fn discard(&mut self, step: &str, outputs: &[Item]) -> Result<(), EngineError> {
+        for item in outputs {
+            self.volumes.remove(item);
+            self.reports.remove(item);
+        }
+        if self.steps.contains_key(step) {
+            self.forget(step);
+        }
+        Ok(())
+    }
+
     fn record(&mut self, c: &Completed<'_>) -> Result<(), EngineError> {
         if self.steps.get(c.step).map(|(k, _)| k.as_str()) != Some(c.key) {
             for ds in crate::graph::downstream_of(c.step) {
@@ -482,17 +570,8 @@ impl StageStore for MemoryStore {
         Ok(())
     }
 
-    /// Only the steps that have nothing to do on this scan: motion correction when it is off, and
-    /// returning the outputs to the acquired grid when they never left it. The rest are not in the
-    /// engine yet.
-    fn host(&mut self, step: &Step, plan: &Plan, _observer: &mut dyn Observer) -> Result<(), EngineError> {
-        use crate::plan::Stage;
-        let resampled = self.scan.as_ref().is_some_and(|(_, m)| m.source_geometry.is_some());
-        match step.stage {
-            Stage::Motion if !plan.motion_corrected => Ok(()),
-            Stage::OutputSpace if !resampled => Ok(()),
-            stage => Err(EngineError::Config(format!(
-                "the {} step is not available in the engine yet", stage.name()))),
-        }
+    /// None: the steps the engine does not run yet are not available in memory.
+    fn host(&mut self, step: &Step, _plan: &Plan, _observer: &mut dyn Observer) -> Result<(), EngineError> {
+        Err(EngineError::Config(format!("the {} step is not available in the engine yet", step.stage.name())))
     }
 }

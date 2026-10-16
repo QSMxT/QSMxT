@@ -141,8 +141,10 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             Stage::Relaxometry => self.relaxometry(),
             Stage::R2 => self.r2(step),
             Stage::ChiSeparation => self.chi_separation(step),
-            stage => Err(crate::EngineError::Config(format!(
-                "the {} step is not in the engine yet", stage.name())).into()),
+            Stage::Motion => self.motion(),
+            Stage::Segmentation => self.segmentation(step),
+            Stage::Analysis => self.analysis(),
+            Stage::OutputSpace => self.output_space(),
         }
     }
 
@@ -167,7 +169,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         match data {
             Data::Real(v) => self.observer.output(&item, qsm_core::pipeline::VolumeRef::Real(v)),
             Data::Mask(m) => self.observer.output(&item, qsm_core::pipeline::VolumeRef::Mask(m)),
-            Data::OnGrid(..) | Data::Json(_) | Data::Same(_) => {}
+            Data::OnGrid(..) | Data::Json(_) | Data::Text(_) | Data::Same(_) => {}
         }
         Ok(())
     }
@@ -244,6 +246,12 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     fn mese_on_grid(&mut self, mese: &crate::store::Mese) -> Result<Option<stages::r2::MeseOnGrid>, S::Error> {
         let store = &mut *self.store;
         Ok(stages::r2::mese_on_grid(mese, |n| store.supplied(&Item::MeseMagnitude(n)), self.meta.dims, &self.meta.affine)?)
+    }
+
+    /// The segmentation regions are measured on: the run's own, or the one supplied with the scan
+    /// (`--use-custom-dseg` without segmenting).
+    fn segmentation_item(&mut self) -> Option<Item> {
+        [Item::Segmentation, Item::SuppliedSegmentation].into_iter().find(|i| self.store.has(i))
     }
 
     fn combined_magnitude(&mut self) -> Result<Option<Vec<f64>>, S::Error> {
@@ -652,13 +660,13 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let mut inputs: Vec<Item> = std::iter::once(raw).chain(supports.iter().copied()).collect();
         let dseg = match region {
             Some((spec, _)) => {
-                if !self.store.has(&Item::Segmentation) {
+                let Some(segmentation) = self.segmentation_item() else {
                     return Err(crate::EngineError::Config(format!(
                         "--qsm-reference {spec}: no segmentation to measure the region on. Enable \
                          --do-segmentation, or supply one with --use-custom-dseg")).into());
-                }
-                inputs.push(Item::Segmentation);
-                Some(self.store.real(&Item::Segmentation)?)
+                };
+                inputs.push(segmentation);
+                Some(self.store.real(&segmentation)?)
             }
             None => None,
         };
@@ -1092,6 +1100,262 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                        Item::SeparatedTotalChi],
         }, &format!("Chi-separation ({alg_name})"))
     }
+
+    /// Retrospective motion correction: every echo co-registered onto the reference echo and the
+    /// mask cut to where every echo still has data. Off (or with one echo), what an earlier run
+    /// of it left is stale: its coverage mask must not be published as this run's, and every
+    /// step that read the corrected echoes or that mask has to run again on the uncorrected ones.
+    fn motion(&mut self) -> Result<(), S::Error> {
+        let m = &self.config.motion_correction;
+        if !m.enabled {
+            return self.store.discard("motion", &[Item::CoverageMask]);
+        }
+        if !self.meta.has_magnitude {
+            return Err(crate::EngineError::Config(
+                "--motion-correction needs magnitude images: the registration is estimated on magnitude, \
+                 and this run has none".into()).into());
+        }
+        let n = self.n_echoes();
+        if n < 2 {
+            self.log(Level::Warn, "Motion correction needs at least two echoes; this run has one, so it is skipped");
+            return self.store.discard("motion", &[Item::CoverageMask]);
+        }
+        let params = stages::motion::params(self.config, &self.meta);
+        let Some(key) = self.begin("motion", None, &params, "Skipping motion correction (cached)",
+                                   "Motion correction (rigid co-registration of the echoes)") else { return Ok(()) };
+        if m.reference != crate::MotionReference::First
+            && self.config.masking.sections.iter().any(|s| s.input == crate::MaskingInput::MagnitudeFirst)
+        {
+            self.log(Level::Warn, &format!(
+                "Motion correction aligns the echoes onto echo {} but the mask was made on the first \
+                 echo's magnitude; if the head moved, the mask is offset from the corrected echoes", m.reference));
+        }
+        let (mut phases, mut magnitudes, mut inputs) = (Vec::with_capacity(n), Vec::with_capacity(n), Vec::new());
+        for e in 1..=n {
+            phases.push(self.store.real(&Item::Phase(e))?);
+            magnitudes.push(self.store.real(&Item::Magnitude(e))?);
+            inputs.extend([Item::Phase(e), Item::Magnitude(e)]);
+        }
+        let mask = self.store.mask(&Item::BrainMask)?;
+        inputs.push(Item::BrainMask);
+        let phase_refs: Vec<&[f64]> = phases.iter().map(|v| v.as_slice()).collect();
+        let mag_refs: Vec<&[f64]> = magnitudes.iter().map(|v| v.as_slice()).collect();
+        let r = stages::motion::correct(&phase_refs, &mag_refs, &mask, &self.meta, self.config)?;
+        drop((phases, magnitudes));
+        let mut outputs = Vec::with_capacity(2 * n + 2);
+        for e in 1..=n {
+            self.put(Item::CorrectedPhase(e), Data::Real(&r.phases[e - 1]))?;
+            self.put(Item::CorrectedMagnitude(e), Data::Real(&r.magnitudes[e - 1]))?;
+            outputs.extend([Item::CorrectedPhase(e), Item::CorrectedMagnitude(e)]);
+        }
+        self.put(Item::CoverageMask, Data::Mask(&r.mask))?;
+        self.put(Item::MotionReport, Data::Json(&stages::motion::report(&r)))?;
+        outputs.extend([Item::CoverageMask, Item::MotionReport]);
+        for (level, line) in stages::motion::summary(&r, &mask) {
+            self.log(level, &line);
+        }
+        self.complete(Completed {
+            step: "motion", algorithm: None, params: &params, outcome: None, key: &key,
+            inputs: &inputs, outputs: &outputs,
+        }, "Motion correction")
+    }
+
+    /// Whole-brain parcellation of the combined magnitude by SynthSeg, with its lookup table — or
+    /// a segmentation supplied with the scan, read as FreeSurfer ids, when one is asked for and
+    /// fits the working grid.
+    fn segmentation(&mut self, step: &Step) -> Result<(), S::Error> {
+        let config = self.config;
+        let c = &config.segmentation;
+        let params = stages::segmentation::params(config);
+        let Some(key) = self.begin("segmentation", Some("synthseg"), &params, "Skipping segmentation (cached)",
+                                   "Segmenting") else { return Ok(()) };
+        let lookup = stages::segmentation::lookup_table(c.version);
+        // Prefer a bring-your-own segmentation, as masking does.
+        if let Some(tool) = &c.custom_dseg_tool {
+            match self.store.supplied(&Item::SuppliedSegmentation) {
+                Supplied::Found { origin, data, dims, .. } if dims == self.meta.dims => {
+                    self.log(Level::Info, &format!("Using custom segmentation from {origin}"));
+                    self.put(Item::Segmentation, Data::Real(&data))?;
+                    self.put(Item::SegmentationLabels, Data::Text(&lookup))?;
+                    return self.complete(Completed {
+                        step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key,
+                        inputs: &[Item::SuppliedSegmentation], outputs: &[Item::Segmentation, Item::SegmentationLabels],
+                    }, "Segmentation (custom)");
+                }
+                Supplied::Found { origin, dims, .. } => self.log(Level::Warn, &format!(
+                    "custom segmentation {origin} is {}x{}x{}, not the run's {}x{}x{} — computing instead",
+                    dims.0, dims.1, dims.2, self.meta.dims.0, self.meta.dims.1, self.meta.dims.2)),
+                Supplied::Unreadable { origin, error } => self.log(Level::Warn, &format!(
+                    "could not read custom segmentation {origin} ({error}) — computing instead")),
+                Supplied::Missing { .. } => self.log(Level::Info, &format!(
+                    "no custom segmentation under derivatives (tool: {tool}) — computing")),
+            }
+        }
+        if !self.store.has(&Item::CombinedMagnitude) {
+            self.log(Level::Warn, "Skipping segmentation: no combined magnitude");
+            return Ok(());
+        }
+        stages::segmentation::weights_available(c.version)?;
+        self.store.models(&step.models)?;
+        let labels = c.version.to_core().labels();
+        self.log(Level::Info, &format!("Segmentation (SynthSeg {}, {} labels{}{})",
+            c.version, labels.ids.len(),
+            if c.flip_averaging { ", flip-averaged" } else { "" },
+            if c.topology_cleanup { ", topology cleanup" } else { "" }));
+        let magnitude = self.store.real(&Item::CombinedMagnitude)?;
+        let seg = stages::segmentation::synthseg(&magnitude, &self.meta, c, self.observer)?;
+        drop(magnitude);
+        self.put(Item::Segmentation, Data::Real(&seg.labels))?;
+        self.put(Item::SegmentationLabels, Data::Text(&lookup))?;
+        self.put(Item::SegmentationVolumes, Data::Json(&json!(seg.volumes)))?;
+        let present = labels.ids.iter().skip(1).zip(seg.volumes.iter().skip(1)).filter(|(_, &v)| v > 0.0).count();
+        self.log(Level::Info, &format!("Segmented {} of {} structures", present, labels.ids.len() - 1));
+        self.complete(Completed {
+            step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key,
+            inputs: &[Item::CombinedMagnitude],
+            outputs: &[Item::Segmentation, Item::SegmentationLabels, Item::SegmentationVolumes],
+        }, "Segmentation")
+    }
+
+    /// Per-structure statistics of every quantitative map the run made (or was given) over the
+    /// segmentation ([`stages::analysis`]). The maps are the ones there, not the ones the
+    /// configuration implies, so a supplied map is summarised the same as one this run computed,
+    /// and a map that was enabled but could not be made simply contributes no rows. Last of the
+    /// map-producing steps, so it summarises all of them.
+    fn analysis(&mut self) -> Result<(), S::Error> {
+        use stages::analysis::{self as a, MAPS};
+        let Some(seg_item) = self.segmentation_item() else {
+            self.log(Level::Warn, "Skipping analysis: no segmentation");
+            return Ok(());
+        };
+        let mut maps: Vec<(Item, &str, &str)> = MAPS.into_iter().filter(|(i, ..)| self.store.has(i)).collect();
+        // A supplied χ is summarised where the run made none.
+        if self.config.separation.custom_qsm_tool.is_some() && !maps.iter().any(|(i, ..)| *i == Item::Chi)
+            && self.store.has(&Item::SuppliedChi)
+        {
+            maps.insert(0, (Item::SuppliedChi, a::CHIMAP, "ppm"));
+        }
+        let identities: Vec<(&str, Value)> = maps.iter().map(|(i, name, _)| (*name, self.store.identity(i))).collect();
+        let params = a::params(self.config.segmentation.version, self.store.identity(&seg_item), &identities);
+        let key = step_cache_key("analysis", None, &params, self.config);
+        if self.store.cached("analysis", &key) {
+            self.log(Level::Info, "Skipping analysis (cached)");
+            self.observer.stage("analysis", None, StageEvent::Cached);
+            return Ok(());
+        }
+        if maps.is_empty() {
+            self.log(Level::Warn, "Skipping analysis: the run produced no quantitative map to summarise");
+            return Ok(());
+        }
+        self.observer.stage("analysis", None, StageEvent::Started("Summarising maps per structure"));
+        self.store.start("analysis");
+        let seg = self.store.real(&seg_item)?;
+        let labels = self.config.segmentation.version.to_core().labels();
+        // SynthSeg's per-label volumes, when this run segmented the scan itself.
+        let volumes: Option<Vec<f64>> = self.store.report(&Item::SegmentationVolumes)
+            .and_then(|v| serde_json::from_value(v).ok());
+        let mut table = String::from(a::HEADER);
+        for (item, name, unit) in &maps {
+            let map = self.store.real(item)?;
+            if map.len() != seg.len() {
+                let what = self.store.identity(item);
+                return Err(crate::EngineError::DimensionMismatch(format!(
+                    "segmentation has {} voxels but {} has {}", seg.len(), what.as_str().unwrap_or_default(), map.len())).into());
+            }
+            // What this map was referenced to, as referencing recorded it, so the table says what
+            // its zero means. A map that was never referenced (the χ-separation maps) has no such
+            // record, and its columns stay empty.
+            let reference = a::ReferenceInfo::from_fields(&self.store.annotation(item));
+            table.push_str(&a::map_rows(name, unit, &map, &seg, labels, volumes.as_deref(), reference.as_ref()));
+        }
+        let names: Vec<&str> = maps.iter().map(|(_, name, _)| *name).collect();
+        self.log(Level::Info, &format!("Per-structure statistics for {}", names.join(", ")));
+        self.put(Item::RegionStats, Data::Text(&table))?;
+        let inputs: Vec<Item> = std::iter::once(seg_item).chain(maps.iter().map(|(i, ..)| *i)).collect();
+        self.complete(Completed {
+            step: "analysis", algorithm: None, params: &params, outcome: None, key: &key,
+            inputs: &inputs, outputs: &[Item::RegionStats],
+        }, "Per-structure analysis")
+    }
+
+    /// The outputs of a run resampled to axial, back on the grid it was acquired on
+    /// ([`stages::output_space`]) — or, with `--output-space working`, left where they are.
+    fn output_space(&mut self) -> Result<(), S::Error> {
+        use stages::output_space::{self as o, Kind};
+        let Some((dst_dims, dst_affine)) = self.meta.source_geometry else { return Ok(()) };
+        if self.config.pipeline.output_space != crate::OutputSpace::Acquired {
+            self.log(Level::Info, "Leaving outputs on the resampled grid (--output-space working)");
+            return self.store.keep_working_grid();
+        }
+        let params = o::params(dst_dims);
+        let Some(key) = self.begin("output_space", None, &params, "Skipping output_space (cached)",
+                                   "Resampling outputs to the acquired grid") else { return Ok(()) };
+        let (src_dims, src_affine) = (self.meta.dims, self.meta.affine);
+        self.log(Level::Info, &format!(
+            "Returning outputs to the acquired grid: {}x{}x{} -> {}x{}x{}",
+            src_dims.0, src_dims.1, src_dims.2, dst_dims.0, dst_dims.1, dst_dims.2));
+        let published: Vec<(Item, Kind)> = o::published().into_iter().filter(|(i, _)| self.store.has(i)).collect();
+        let dst = o::acquired(dst_dims, &dst_affine);
+        let src_voxels = src_dims.0 * src_dims.1 * src_dims.2;
+        let mut done: Vec<Item> = Vec::new();
+        // Phase is only meaningful alongside its magnitude, so those pairs go first, together.
+        for &(phase_item, kind) in &published {
+            let Kind::Phase(mag_item) = kind else { continue };
+            if !published.iter().any(|(i, _)| *i == mag_item) {
+                let what = self.store.identity(&phase_item);
+                self.log(Level::Warn, &format!(
+                    "Leaving {} on the working grid: wrapped phase can only be resampled with its \
+                     magnitude, and there is none beside it", what.as_str().unwrap_or_default()));
+                done.push(phase_item);
+                continue;
+            }
+            let (phase, magnitude) = (self.store.real(&phase_item)?, self.store.real(&mag_item)?);
+            if let Some((m, p)) = qsm_core::geometry::resample_complex_onto(
+                &magnitude, &phase, src_dims, &src_affine, dst_dims, &dst_affine,
+            ) {
+                self.put(phase_item, Data::OnGrid(&p, &dst))?;
+                self.put(mag_item, Data::OnGrid(&m, &dst))?;
+                done.extend([phase_item, mag_item]);
+            }
+        }
+        for &(item, kind) in &published {
+            if done.contains(&item) || matches!(kind, Kind::Projection(_)) {
+                continue;
+            }
+            let data = self.store.real(&item)?;
+            // Resampling indexes the source by the working grid, so anything on a different grid
+            // would be read out of bounds. Leave it where it is rather than corrupt it.
+            if data.len() != src_voxels {
+                let what = self.store.identity(&item);
+                self.log(Level::Warn, &format!(
+                    "Leaving {} on its own grid: {} voxels, not the {} of the working grid",
+                    what.as_str().unwrap_or_default(), data.len(), src_voxels));
+                continue;
+            }
+            if let Some(out) = o::resample(&data, kind, (&src_dims, &src_affine), &dst)? {
+                self.put(item, Data::OnGrid(&out, &dst))?;
+            }
+        }
+        // A projection cannot be interpolated onto the acquired grid as if it were a volume — its
+        // slices are slabs, not samples — so each is rebuilt from its source, now on that grid.
+        let dst_grid = qsm_core::Grid::new(dst_dims.0, dst_dims.1, dst_dims.2, dst.voxel_size.0, dst.voxel_size.1, dst.voxel_size.2);
+        for &(item, kind) in &published {
+            let Kind::Projection(source) = kind else { continue };
+            if !self.store.has(&source) {
+                continue;
+            }
+            let window = if source == Item::Swi { self.config.swi.mip_window } else { self.config.smwi.mip_window };
+            let volume = self.store.real(&source)?;
+            let (mip, geometry) = stages::swi::project_on(&volume, &dst_grid, &dst_affine, window)?;
+            self.put(item, Data::OnGrid(&mip, &geometry))?;
+        }
+        // Read: the working-grid versions each output was returned from.
+        let items: Vec<Item> = published.iter().map(|(i, _)| *i).collect();
+        self.complete(Completed {
+            step: "output_space", algorithm: None, params: &params, outcome: None, key: &key,
+            inputs: &items, outputs: &items,
+        }, "Output space")
+    }
 }
 
 /// How a pass is named in progress messages and the log: nothing for a single-pass run's (only)
@@ -1118,6 +1382,11 @@ mod tests {
     fn phantom() -> (ScanFacts, MemoryStore) {
         let mut affine = [0.0; 16];
         for i in 0..4 { affine[5 * i] = 1.0; }
+        phantom_on(affine)
+    }
+
+    /// The phantom, its voxels placed in the world by `affine`.
+    fn phantom_on(affine: [f64; 16]) -> (ScanFacts, MemoryStore) {
         let header = Header { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine, sidecar: None };
         let mut store = MemoryStore::new(header, json!("phantom-1"));
         let c = (N as f64 - 1.0) / 2.0;
@@ -1369,18 +1638,133 @@ mod tests {
         assert!(store.get(&Item::SeparatedTotalChi).is_some());
     }
 
+    /// A supplied segmentation, a region reference measured on it, and the statistics of every map
+    /// over it, all in memory.
+    #[test]
+    fn segmentation_and_analysis_run_in_memory() {
+        let (mut facts, mut store) = phantom();
+        let mut affine = [0.0; 16];
+        for i in 0..4 { affine[5 * i] = 1.0; }
+        // Two structures: the sphere's left and right halves.
+        let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
+        let dseg: Vec<f64> = m.iter().enumerate()
+            .map(|(i, &v)| if v > 50.0 { if i % N < N / 2 { 10.0 } else { 49.0 } } else { 0.0 }).collect();
+        store.insert_on_grid(Item::SuppliedSegmentation, dseg.clone(),
+                             crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine });
+        facts.custom_dseg = true;
+        let mut config = config();
+        config.pipeline.do_segmentation = true;
+        config.pipeline.do_analysis = true;
+        config.pipeline.do_r2starmap = true;
+        config.segmentation.custom_dseg_tool = Some("mine".into());
+        config.qsm.reference = crate::enums::QsmReference::Region;
+        config.qsm.reference_region = Some("thalamus".into());
+        let events = run_once(&config, &facts, &mut store);
+        for step in ["segmentation", "analysis"] {
+            assert!(events.computed.iter().any(|c| c == step), "{step}: {:?}", events.computed);
+        }
+        assert_eq!(store.get(&Item::Segmentation), Some(&VolumeData::Real(dseg)));
+        let lookup = store.report(&Item::SegmentationLabels).unwrap();
+        assert!(lookup.as_str().unwrap().starts_with("index\tname\n"));
+        assert!(store.report(&Item::SegmentationVolumes).is_none(), "a supplied segmentation has no posteriors");
+        let table = store.report(&Item::RegionStats).unwrap();
+        let rows: Vec<&str> = table.as_str().unwrap().lines().skip(1).collect();
+        for map in ["Chimap", "R2starmap"] {
+            assert_eq!(rows.iter().filter(|r| r.starts_with(&format!("{map}\t"))).count(), 2, "{map}: {rows:?}");
+        }
+        assert!(rows.iter().filter(|r| r.starts_with("Chimap\t")).all(|r| r.contains("\tthalamus\t")), "{rows:?}");
+        assert!(run_once(&config, &facts, &mut store).computed.is_empty());
+    }
+
+    /// Motion correction in memory: the corrected echoes and the mask every echo covers, which
+    /// the steps after it read. Turned off again, what it left goes, and the run is redone (the
+    /// load step's key carries the setting, as for a change of grid).
+    #[test]
+    fn motion_correction_runs_in_memory() {
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        config.motion_correction.enabled = true;
+        let events = run_once(&config, &facts, &mut store);
+        assert_eq!(events.computed[..5], ["load", "scale_phase", "magnitude", "mask", "motion"]);
+        assert!(store.get(&Item::CoverageMask).is_some() && store.get(&Item::CorrectedPhase(3)).is_some());
+        let report = store.report(&Item::MotionReport).unwrap();
+        assert_eq!(report["echoes"].as_array().map(Vec::len), Some(3));
+        assert!(run_once(&config, &facts, &mut store).computed.is_empty());
+
+        config.motion_correction.enabled = false;
+        let off = run_once(&config, &facts, &mut store);
+        assert!(store.get(&Item::CoverageMask).is_none(), "the coverage mask is not this run's");
+        assert_eq!(off.computed, ["load", "scale_phase", "magnitude", "mask", "unwrap", "bgremove", "invert", "reference"]);
+    }
+
+    /// SynthSeg in memory. Minutes in a debug build, so run with `--ignored`; skipped where the
+    /// weights have not been downloaded.
+    #[test]
+    #[ignore]
+    fn synthseg_runs_in_memory() {
+        let present = qsm_core::models::find_model("synthseg")
+            .is_some_and(|m| m.files.iter().all(qsm_core::models::weight_file_present));
+        if !cfg!(feature = "onnx") || !present {
+            eprintln!("skipped: SynthSeg's weights are not available here");
+            return;
+        }
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        config.pipeline.do_qsm = false;
+        config.pipeline.do_segmentation = true;
+        let events = run_once(&config, &facts, &mut store);
+        assert!(events.computed.iter().any(|c| c == "segmentation"), "{:?}", events.computed);
+        let Some(VolumeData::Real(labels)) = store.get(&Item::Segmentation) else { panic!("no segmentation") };
+        assert_eq!(labels.len(), N * N * N);
+        let volumes = store.report(&Item::SegmentationVolumes).expect("SynthSeg's volumes");
+        assert_eq!(volumes.as_array().unwrap().len(), config.segmentation.version.to_core().labels().ids.len());
+    }
+
+    /// An oblique run resampled to axial, reconstructed there and returned to the grid it was
+    /// acquired on: the masks still binary, the minIP rebuilt on that grid, and a re-run that
+    /// recomputes a step reads the working-grid versions again.
+    #[test]
+    fn a_resampled_run_returns_to_the_acquired_grid_in_memory() {
+        let (c, s) = (20f64.to_radians().cos(), 20f64.to_radians().sin());
+        let affine = [1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let (facts, mut store) = phantom_on(affine);
+        let mut config = config();
+        config.pipeline.axial_resampling = true;
+        config.pipeline.obliquity_threshold = 5.0;
+        config.pipeline.do_swi = true;
+        config.swi.mip_window = 4;
+        let events = run_once(&config, &facts, &mut store);
+        assert_eq!(events.computed.last().map(String::as_str), Some("output_space"), "{:?}", events.computed);
+        for item in [Item::Chi, Item::ChiSupport, Item::BrainMask, Item::CombinedMagnitude, Item::Swi] {
+            let g = store.geometry(&item).unwrap_or_else(|| panic!("{item:?} left on the working grid"));
+            assert_eq!((g.dims, g.affine), ((N, N, N), affine), "{item:?}");
+        }
+        let Some(VolumeData::Real(mask)) = store.get(&Item::BrainMask) else { panic!() };
+        assert!(mask.iter().all(|&v| v == 0.0 || v == 1.0), "a mask travels by nearest neighbour");
+        let mip = store.geometry(&Item::SwiMip).unwrap();
+        assert_eq!(mip.dims, (N, N, N - 3), "rebuilt from the returned SWI");
+        assert!(run_once(&config, &facts, &mut store).computed.is_empty());
+
+        // A new inversion reads the working-grid field again, and returns its map once more.
+        config.inversion.tkd.threshold *= 2.0;
+        let again = run_once(&config, &facts, &mut store);
+        assert_eq!(again.computed, ["invert", "reference", "output_space"]);
+        assert!(store.geometry(&Item::Chi).is_some_and(|g| g.affine == affine));
+        assert!(store.geometry(&Item::LocalField(Pass::Main)).is_none(), "intermediates stay on the working grid");
+    }
+
     /// A step the engine does not run yet is handed to the store, which says so if it cannot.
     #[test]
     fn host_steps_are_the_stores() {
-        let (facts, mut store) = phantom();
-        let mut config = config();
-        config.pipeline.do_segmentation = true;
+        let (mut facts, mut store) = phantom();
+        let config = config();
+        facts.n_coils = 2;
         let plan = crate::plan::plan(&config, &facts);
-        assert!(plan.steps.iter().any(|s| s.stage == Stage::Segmentation && s.host));
+        assert!(plan.steps.iter().any(|s| s.stage == Stage::ScalePhase && s.host));
         // As a front end hands it on: each step's stage, models and who runs it.
         let json = serde_json::to_value(&plan).unwrap();
-        assert!(json["steps"].as_array().unwrap().iter().any(|s| s["stage"] == "Segmentation" && s["host"] == true), "{json}");
+        assert!(json["steps"].as_array().unwrap().iter().any(|s| s["stage"] == "ScalePhase" && s["host"] == true), "{json}");
         let err = run(&plan, &config, &facts, &mut store, &mut ()).unwrap_err();
-        assert!(format!("{err}").contains("segmentation"), "{err}");
+        assert!(format!("{err}").contains("scale_phase"), "{err}");
     }
 }
