@@ -81,9 +81,10 @@ fn another(s: &Setting, cur: &Value) -> Vec<Value> {
         ValueType::IntVec3 => vec![json!([7, 8, 9])],
         ValueType::FloatVec3 => vec![json!([1.5, 2.5, 3.5])],
         ValueType::Text => vec![json!("probe")],
-        ValueType::Enum { options } | ValueType::EchoReference { options } => {
-            options.iter().map(|o| o.value.clone()).filter(|v| v != cur).collect()
-        }
+        ValueType::Enum { .. } => s.value_type.options().iter().map(|o| o.value.clone()).filter(|v| v != cur).collect(),
+        // The named echoes, and an echo by number.
+        ValueType::EchoReference { .. } => s.value_type.options().iter().map(|o| o.value.clone())
+            .chain([json!("3")]).filter(|v| v != cur).collect(),
         ValueType::MaskSections => vec![serde_json::to_value(qsmxt_engine::masking::hd_bet_mask_sections()).unwrap()],
         ValueType::MaskOps => vec![json!([{ "op": "erode", "iterations": 2 }])],
     };
@@ -185,15 +186,16 @@ fn the_schema_is_well_formed() {
         assert_eq!(s.order, i);
         assert!(!s.label.trim().is_empty(), "{}: no label", s.path);
         assert_eq!(s.label, s.label.trim(), "{}: label padding", s.path);
-        let is_choice = matches!(s.value_type, ValueType::Enum { .. } | ValueType::EchoReference { .. });
-        assert!(is_choice || !s.help.is_empty(), "{}: no help", s.path);
+        assert!(!s.help.is_empty(), "{}: no help", s.path);
+        assert!(!s.full_label.trim().is_empty(), "{}: no full label", s.path);
         if let Some(p) = s.parent {
             assert!(paths.contains(p), "{}: parent {p} is not a setting", s.path);
             assert_ne!(p, s.path);
         }
         assert!(!s.also_in.contains(&s.section), "{}", s.path);
         assert_eq!(s.section.tab(), s.tab, "{}", s.path);
-        if let ValueType::Enum { options } | ValueType::EchoReference { options } = &s.value_type {
+        if matches!(s.value_type, ValueType::Enum { .. } | ValueType::EchoReference { .. }) {
+            let options = s.value_type.options();
             assert!(!options.is_empty(), "{}", s.path);
             for o in options {
                 assert!(!o.help.contains("https://"), "{}: a link left in help", s.path);
@@ -268,8 +270,31 @@ fn the_derivatives_tools_are_supplied_files_in_the_browser() {
         schema::set(&mut c, p, json!(schema::BROWSER_SUPPLIED_TOOL)).unwrap();
     }
     assert_eq!(by["pipeline.export_dicom"], Browser::Unavailable);
+    // A single run has no other orientations to group.
+    assert_eq!(by["multi_orientation.group_by"], Browser::Unavailable);
     let others = by.values().filter(|&&b| b == Browser::Available).count();
-    assert_eq!(others, by.len() - 6);
+    assert_eq!(others, by.len() - 7);
+}
+
+#[test]
+fn every_supplied_file_setting_names_the_item_it_fills() {
+    use qsmxt_engine::store::Item;
+    use schema::Browser;
+    let mut items = Vec::new();
+    for s in schema::schema() {
+        let supplied = s.browser == Browser::SuppliedFile;
+        assert_eq!(s.item.is_some(), supplied, "{}: item", s.path);
+        assert_eq!(s.browser_help.is_some(), supplied, "{}: browser help", s.path);
+        if let Some(h) = s.browser_help {
+            // Worded for a file input, not for the command line's tool names.
+            assert!(!h.contains("derivatives") && !h.contains('*') && !h.contains("<tool>"), "{}: {h}", s.path);
+        }
+        items.extend(s.item);
+    }
+    assert_eq!(items, [Item::SuppliedMask, Item::SuppliedChi, Item::SuppliedR2, Item::SuppliedR2prime, Item::SuppliedSegmentation]);
+    let doc: Value = serde_json::from_str(&schema::schema_json()).unwrap();
+    let mask = doc["settings"].as_array().unwrap().iter().find(|s| s["path"] == "masking.custom_mask_tool").unwrap();
+    assert_eq!(mask["item"], "SuppliedMask");
 }
 
 #[test]
@@ -280,4 +305,134 @@ fn browser_defaults_are_qsmxts_except_where_the_browser_profile_changes_them() {
     for s in schema::schema() {
         assert_eq!(Some(s.browser_default.clone()), schema::get(&PipelineConfig::browser(), s.path), "{}", s.path);
     }
+}
+
+#[test]
+fn every_option_has_a_display_name() {
+    for s in schema::schema() {
+        let names: BTreeSet<&str> = s.value_type.options().iter().map(|o| o.name.as_str()).collect();
+        for o in s.value_type.options() {
+            assert!(!o.name.trim().is_empty(), "{}: option {} has no name", s.path, o.value);
+        }
+        assert_eq!(names.len(), s.value_type.options().len(), "{}: two options share a name", s.path);
+    }
+}
+
+/// Every piece of help a front end shows for a setting.
+fn helps(s: &Setting) -> Vec<String> {
+    let mut out = vec![s.help.to_string()];
+    out.extend(s.value_help.map(str::to_string));
+    out.extend(s.browser_help.map(str::to_string));
+    out.extend(s.value_type.options().iter().map(|o| o.help.clone()));
+    out
+}
+
+#[test]
+fn no_help_names_the_default() {
+    // The schema carries QSMxT's default and the browser's, which can differ.
+    for s in schema::schema() {
+        for h in helps(&s) {
+            let l = h.to_lowercase();
+            let names_it = l.contains("(default") || l.contains("by default") || l.contains("default:")
+                || l.split("default ").skip(1).any(|r| r.starts_with(|c: char| c.is_ascii_digit()));
+            assert!(!names_it, "{}: {h:?}", s.path);
+        }
+    }
+}
+
+/// Whether `unit` is a word of `text` other than after a number ("32 mm" is a value, not the
+/// units restated).
+fn names_unit(text: &str, unit: &str) -> bool {
+    let words = |u: &str| text.match_indices(u).any(|(i, _)| {
+        let before = text[..i].chars().next_back();
+        let after = text[i + u.len()..].chars().next();
+        let word = before.is_none_or(|c| !c.is_alphanumeric()) && after.is_none_or(|c| !c.is_alphanumeric());
+        let after_number = text[..i].trim_end().chars().next_back().is_some_and(|c| c.is_ascii_digit());
+        word && !after_number
+    });
+    let spelled: &[&str] = match unit { "deg" => &["deg", "degrees", "°"], u => &[u] };
+    spelled.iter().any(|u| words(u))
+}
+
+#[test]
+fn units_are_not_repeated_in_labels_or_help() {
+    for s in schema::schema() {
+        let Some(u) = s.units else { continue };
+        let mut texts = helps(&s);
+        texts.push(s.full_label.to_string());
+        texts.extend(s.value_label.map(str::to_string));
+        for t in texts {
+            assert!(!names_unit(&t, u), "{}: {t:?} repeats the units ({u})", s.path);
+        }
+    }
+}
+
+#[test]
+fn full_labels_are_not_abbreviated() {
+    const SHORT: &[&str] = &["Iter", "Ite", "Tol", "Comb.", "Inhomog.", "Tik", "Reg", "Lim", "Curv", "Const", "Vasc",
+                             "Precond", "Mag", "BG", "Param", "Est", "Recon", "Max", "Min", "Pad", "cpl", "para", "dia", "Pec"];
+    for s in schema::schema() {
+        for w in s.full_label.split([' ', ',']) {
+            assert!(!SHORT.contains(&w), "{}: full label {:?} abbreviates {w:?}", s.path, s.full_label);
+        }
+    }
+}
+
+#[test]
+fn labels_are_unique_within_a_section_after_their_context() {
+    let schema = schema::schema();
+    for section in schema::Section::ALL {
+        let mut seen: BTreeMap<(&str, Option<&str>), &str> = BTreeMap::new();
+        for s in schema.iter().filter(|s| s.section == section || s.also_in.contains(&section)) {
+            if let Some(other) = seen.insert((s.full_label, s.context), s.path) {
+                panic!("{section:?}: {} and {other} are both {:?} ({:?})", s.path, s.full_label, s.context);
+            }
+        }
+    }
+    // A method's own parameters name it.
+    let ctx = |p: &str| schema.iter().find(|s| s.path == p).unwrap().context;
+    assert_eq!(ctx("bg_removal.pdf.tol"), Some("PDF"));
+    assert_eq!(ctx("bg_removal.vsharp.threshold"), Some("V-SHARP"));
+    assert_eq!(ctx("inversion.heidi.denoise_iterations"), Some("HEIDI"));
+    assert_eq!(ctx("inversion.qsmart.ilsqr_max_iter"), Some("QSMART"));
+    assert_eq!(ctx("inversion.amp_pe.nlevel"), Some("AMP-PE"));
+    assert_eq!(ctx("pipeline.do_qsm"), None);
+}
+
+#[test]
+fn the_echo_reference_says_which_choice_is_an_echo_number() {
+    let s = schema::setting("motion_correction.reference").unwrap();
+    let ValueType::EchoReference { options } = &s.value_type else { panic!() };
+    let kinds: Vec<_> = options.iter().map(|o| o.kind).collect();
+    use schema::EchoKind::*;
+    assert_eq!(kinds, [Named, Named, EchoNumber { min: 1 }]);
+    let doc: Value = serde_json::to_value(&s).unwrap();
+    assert_eq!(doc["options"][0]["kind"], "named");
+    assert_eq!(doc["options"][2]["kind"], "echo-number");
+    assert_eq!(doc["options"][2]["min"], 1);
+    // Any echo number is a value the setting takes.
+    let mut c = PipelineConfig::default();
+    schema::set(&mut c, s.path, json!("4")).unwrap();
+}
+
+#[test]
+fn a_value_out_of_range_is_an_error_on_its_own_setting() {
+    let error = |c: &PipelineConfig, p: &str| schema::settings_view(c, &ViewFacts::default())
+        .into_iter().find(|v| v.path == p).unwrap().error;
+    let mut c = PipelineConfig::default();
+    assert!(schema::settings_view(&c, &ViewFacts::default()).iter().all(|v| v.error.is_none()));
+    c.inversion.tkd.threshold = 0.0;
+    // TKD is not the method, so its threshold does not apply.
+    assert_eq!(error(&c, "inversion.tkd.threshold"), None);
+    c.inversion.algorithm = qsmxt_engine::QsmAlgorithm::Tkd;
+    assert_eq!(error(&c, "inversion.tkd.threshold").as_deref(), Some("Must be greater than 0"));
+    c.bg_removal.vsharp.max_radius = f64::NAN;
+    assert_eq!(error(&c, "bg_removal.vsharp.max_radius").as_deref(), Some("Must be a finite number"));
+    // A setting's own rule.
+    c.pipeline.do_r2primemap = true;
+    c.separation.r2primenet.patch = [192, 192, 120];
+    assert_eq!(error(&c, "separation.r2primenet.patch").as_deref(), Some("Every dimension must be a positive multiple of 16 (got 120)"));
+    let doc = serde_json::to_value(schema::settings_view(&c, &ViewFacts::default())).unwrap();
+    let tkd = doc.as_array().unwrap().iter().find(|v| v["path"] == "inversion.tkd.threshold").unwrap();
+    assert_eq!(tkd["error"], "Must be greater than 0");
 }

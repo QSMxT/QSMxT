@@ -2,12 +2,18 @@
 //! restate them.
 //!
 //! [`schema`] lists each setting of [`PipelineConfig`] a user can change: its config path (e.g.
-//! `bg_removal.vsharp.max_radius`), label and help, value type, units and range, QSMxT's default
+//! `bg_removal.vsharp.max_radius`), labels and help, value type, units and range, QSMxT's default
 //! and the browser's ([`PipelineConfig::browser`]), level (basic or advanced), where it sits (the
 //! TUI's tabs and sub-tabs, in the TUI's order), the setting it belongs under, and its
-//! `qsmxt run` option. [`settings_view`] says which settings apply to a given config, and which
-//! of them another setting forces on. Labels, help and visibility are the TUI's, and the TUI's
-//! tests check that they still are.
+//! `qsmxt run` option. [`settings_view`] says which settings apply to a given config, which of
+//! them another setting forces on, and what is wrong with each value. [`mask_schema`] describes
+//! the parts of a mask recipe.
+//!
+//! Each setting has the TUI's short label (`label`) and a full one for front ends with more room
+//! (`full_label`), plus a `context` (the method it belongs to) where the label alone could be
+//! another setting's. `help` is worded for any front end: it does not name the default or repeat
+//! the units, which the schema carries. The TUI's own help and visibility are checked against the
+//! schema by the TUI's tests.
 //!
 //! The schema is static data plus two functions of a config, so it serialises to JSON
 //! ([`schema_json`]) for front ends in other languages. Values are read and written by path with
@@ -21,6 +27,7 @@ use serde::Serialize;
 use serde_json::Value;
 
 use crate::config::PipelineConfig;
+use crate::store::Item;
 
 pub use view::{prune_hidden, settings_view, SettingView, ViewFacts};
 
@@ -132,11 +139,36 @@ pub struct EnumOption {
     pub value: Value,
     /// How the option is named in the TUI (usually the `qsmxt run` value).
     pub label: &'static str,
+    /// Its display name: short, as the method is written ("V-SHARP", "iLSQR").
+    pub name: String,
     /// What it does, without its link.
     pub help: String,
     /// A reference for it (a DOI link, or the method's page), when it has one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub url: Option<String>,
+    /// The TUI's help for it, without its link (which also names the default).
+    #[serde(skip)]
+    pub tui_help: String,
+}
+
+/// One choice of an echo reference: a named echo, or any echo by its number.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct EchoOption {
+    #[serde(flatten)]
+    pub option: EnumOption,
+    #[serde(flatten)]
+    pub kind: EchoKind,
+}
+
+/// What an echo-reference choice stands for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum EchoKind {
+    /// The option's own value (`"first"`).
+    Named,
+    /// Any echo by number, counted from `min`: the setting's value is the number as a string
+    /// (`"3"`). The option's value is the number the choice starts at.
+    EchoNumber { min: u32 },
 }
 
 /// What kind of value a setting holds.
@@ -152,9 +184,8 @@ pub enum ValueType {
     FloatVec3,
     Text,
     Enum { options: Vec<EnumOption> },
-    /// An echo to align onto: one of `options`, where the option whose value is a number
-    /// (`"1"`) stands for any 1-based echo number, written as a string (`"3"`).
-    EchoReference { options: Vec<EnumOption> },
+    /// An echo to align onto: a named echo, or any echo by its number (see [`EchoKind`]).
+    EchoReference { options: Vec<EchoOption> },
     /// A mask recipe: a list of mask sections (`masking.sections` in the config). Edited with a
     /// mask builder rather than a field.
     MaskSections,
@@ -162,19 +193,44 @@ pub enum ValueType {
     MaskOps,
 }
 
+impl ValueType {
+    /// The choices of an enum or echo-reference setting (none for other types).
+    pub fn options(&self) -> Vec<&EnumOption> {
+        match self {
+            ValueType::Enum { options } => options.iter().collect(),
+            ValueType::EchoReference { options } => options.iter().map(|o| &o.option).collect(),
+            _ => vec![],
+        }
+    }
+}
+
 /// One user-facing setting.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Setting {
     /// Where the value lives in the config, dot-separated (`bg_removal.vsharp.max_radius`).
     pub path: &'static str,
+    /// The TUI's label: short, to fit its column.
     pub label: &'static str,
+    /// The label in full, without units, for a front end with room for it.
+    pub full_label: &'static str,
+    /// What the setting belongs to, for telling apart settings with the same label in one
+    /// section: the method whose parameter it is ("PDF", "LBV"). Absent for a setting that is
+    /// not one method's.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub context: Option<&'static str>,
+    /// What it does. It does not name the default or the units, which are given separately.
     pub help: &'static str,
-    /// For a setting the TUI shows as a checkbox with a value under it (`off` is set): the
-    /// value's own label and help.
+    /// For a setting shown as a checkbox with a value under it (`off` is set): the value's own
+    /// label and help.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_label: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub value_help: Option<&'static str>,
+    /// The TUI's help for the setting (its row's), and its value row's label and help.
+    #[serde(skip)]
+    pub tui_help: &'static str,
+    #[serde(skip)]
+    pub tui_value: Option<(&'static str, &'static str)>,
     #[serde(flatten)]
     pub value_type: ValueType,
     /// Whether the value may be `null` (unset: the setting's own fallback, given in its help).
@@ -204,8 +260,10 @@ pub struct Setting {
     pub browser_default: Value,
     pub level: Level,
     pub tab: Tab,
+    /// The setting's own section: where a front end that shows each setting once shows it.
     pub section: Section,
-    /// Other sections that show the same setting (it is one value wherever it shows).
+    /// Other sections the setting also bears on, where the TUI repeats it. It is one value
+    /// wherever it shows, so a front end may show a reference to it there instead.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub also_in: Vec<Section>,
     /// Position in the TUI's order, across all settings.
@@ -218,6 +276,13 @@ pub struct Setting {
     pub cli_flag: Option<&'static str>,
     /// How a browser front end offers it.
     pub browser: Browser,
+    /// For a [`Browser::SuppliedFile`] setting: the item the supplied file fills.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub item: Option<Item>,
+    /// For a [`Browser::SuppliedFile`] setting: its help, for the file input a browser shows in
+    /// place of the setting's text.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub browser_help: Option<&'static str>,
 }
 
 /// How a browser front end offers a setting.
@@ -258,13 +323,16 @@ pub(crate) enum Ty {
     IntVec3,
     FloatVec3,
     Text,
-    Enum(Vec<(Value, &'static str, &'static str)>),
-    EchoReference(Vec<(Value, &'static str, &'static str)>),
+    Enum(Vec<Opt>),
+    EchoReference(Vec<Opt>),
     /// The SynthSeg regions ([`crate::regions::REGIONS`]).
     Regions,
     MaskSections,
     MaskOps,
 }
+
+/// An option of a table entry: value, TUI label, display name and the TUI's help.
+pub(crate) type Opt = (Value, &'static str, &'static str, &'static str);
 
 /// A table entry.
 pub(crate) struct Def {
@@ -274,6 +342,15 @@ pub(crate) struct Def {
     help: &'static str,
     ty: Ty,
     value: Option<(&'static str, &'static str)>,
+    /// The full label, where it is not `label`.
+    full: Option<&'static str>,
+    /// The front-end help, where it is not the TUI's `help`.
+    gui_help: Option<&'static str>,
+    /// The value row's front-end label and help, where they are not the TUI's.
+    gui_value: Option<(&'static str, &'static str)>,
+    context: Option<&'static str>,
+    item: Option<Item>,
+    browser_help: Option<&'static str>,
     basic: bool,
     units: Option<&'static str>,
     min: Option<f64>,
@@ -291,17 +368,28 @@ pub(crate) struct Def {
 
 pub(crate) fn d(path: &'static str, section: Section, label: &'static str, help: &'static str, ty: Ty) -> Def {
     Def {
-        path, section, label, help, ty, value: None, basic: false, units: None, min: None, max: None, exclusive_min: false, exclusive_max: false,
+        path, section, label, help, ty, value: None, full: None, gui_help: None, gui_value: None, context: None,
+        item: None, browser_help: None, basic: false, units: None, min: None, max: None, exclusive_min: false, exclusive_max: false,
         off: None, optional: false, flag: None, parent: None, also: &[], browser: Browser::Available, when: None,
     }
 }
 
-pub(crate) fn o(value: impl Into<Value>, label: &'static str, help: &'static str) -> (Value, &'static str, &'static str) {
-    (value.into(), label, help)
+pub(crate) fn o(value: impl Into<Value>, label: &'static str, name: &'static str, help: &'static str) -> Opt {
+    (value.into(), label, name, help)
 }
 
 impl Def {
     fn value(mut self, label: &'static str, help: &'static str) -> Self { self.value = Some((label, help)); self }
+    /// The label in full (default: the TUI's label).
+    fn full(mut self, label: &'static str) -> Self { self.full = Some(label); self }
+    /// Help for any front end, where the TUI's names the default, repeats the units, or is
+    /// missing.
+    fn gui(mut self, help: &'static str) -> Self { self.gui_help = Some(help); self }
+    /// The value row's label and help for any front end, where the TUI's differ.
+    fn gui_value(mut self, label: &'static str, help: &'static str) -> Self { self.gui_value = Some((label, help)); self }
+    /// What the setting belongs to, where it is not the method its path names (see
+    /// [`context_of`]).
+    fn context(mut self, c: &'static str) -> Self { self.context = Some(c); self }
     fn basic(mut self) -> Self { self.basic = true; self }
     fn units(mut self, u: &'static str) -> Self { self.units = Some(u); self }
     fn min(mut self, v: f64) -> Self { self.min = Some(v); self }
@@ -315,7 +403,13 @@ impl Def {
     fn flag(mut self, f: &'static str) -> Self { self.flag = Some(f); self }
     fn parent(mut self, p: &'static str) -> Self { self.parent = Some(p); self }
     fn also(mut self, s: &'static [Section]) -> Self { self.also = s; self }
-    fn supplied_file(mut self) -> Self { self.browser = Browser::SuppliedFile; self }
+    /// Supplied as a file in the browser, filling `item`, with the file input's help.
+    fn supplied_file(mut self, item: Item, help: &'static str) -> Self {
+        self.browser = Browser::SuppliedFile;
+        self.item = Some(item);
+        self.browser_help = Some(help);
+        self
+    }
     fn unavailable_in_browser(mut self) -> Self { self.browser = Browser::Unavailable; self }
     fn when(mut self, f: fn(&view::Ctx) -> bool) -> Self { self.when = Some(f); self }
 }
@@ -332,13 +426,49 @@ fn split_link(help: &str) -> (String, Option<String>) {
     }
 }
 
-fn options(opts: &[(Value, &'static str, &'static str)]) -> Vec<EnumOption> {
+fn options(opts: &[Opt]) -> Vec<EnumOption> {
     opts.iter()
-        .map(|(value, label, help)| {
-            let (help, url) = split_link(help);
-            EnumOption { value: value.clone(), label, help, url }
+        .map(|(value, label, name, help)| {
+            let (tui_help, url) = split_link(help);
+            // The schema carries the default; an option's help need not say it is one.
+            let help = tui_help.replace(" (default)", "");
+            EnumOption { value: value.clone(), label, name: name.to_string(), help, url, tui_help }
         })
         .collect()
+}
+
+/// An echo reference's options: the one whose value is a number stands for any echo number.
+fn echo_options(opts: &[Opt]) -> Vec<EchoOption> {
+    options(opts)
+        .into_iter()
+        .map(|option| {
+            let kind = match option.value.as_str().and_then(|v| v.parse::<u32>().ok()) {
+                Some(min) => EchoKind::EchoNumber { min },
+                None => EchoKind::Named,
+            };
+            EchoOption { option, kind }
+        })
+        .collect()
+}
+
+/// The method a setting's path names, as its parent's option names it: `bg_removal.pdf.tol`
+/// under `bg_removal.algorithm` is PDF's. Walks up the parents to the first choice with an
+/// option named like the path's middle part.
+fn context_of(d: &Def, defs: &[Def]) -> Option<&'static str> {
+    let parts: Vec<&str> = d.path.split('.').collect();
+    let [_, method, _] = parts[..] else { return None };
+    let method = method.replace('_', "-");
+    let mut parent = d.parent;
+    while let Some(p) = parent {
+        let pd = defs.iter().find(|x| x.path == p)?;
+        if let Ty::Enum(opts) = &pd.ty {
+            if let Some((_, _, name, _)) = opts.iter().find(|(v, ..)| v.as_str() == Some(&method)) {
+                return Some(name);
+            }
+        }
+        parent = pd.parent;
+    }
+    None
 }
 
 /// The reference regions as options: the same help the TUI's reference picker gives them.
@@ -347,12 +477,12 @@ fn region_options() -> Vec<EnumOption> {
         .iter()
         .map(|r| {
             let ids = r.ids.iter().map(|i| i.to_string()).collect::<Vec<_>>().join(", ");
-            EnumOption {
-                value: Value::from(r.slug),
-                label: r.slug,
-                help: region_help(&r.label, r.ids.len(), &ids, r.v2_only),
-                url: None,
+            let help = region_help(&r.label, r.ids.len(), &ids, r.v2_only);
+            let mut name = r.label.clone();
+            if let Some(first) = name.get(..1) {
+                name = first.to_uppercase() + &name[1..];
             }
+            EnumOption { value: Value::from(r.slug), label: r.slug, name, tui_help: help.clone(), help, url: None }
         })
         .collect()
 }
@@ -372,10 +502,12 @@ pub fn region_help(label: &str, n_ids: usize, ids: &str, v2_only: bool) -> Strin
 pub fn schema() -> Vec<Setting> {
     let native = serde_json::to_value(PipelineConfig::default()).expect("the default config serialises");
     let browser = serde_json::to_value(PipelineConfig::browser()).expect("the browser config serialises");
-    table::table()
-        .into_iter()
+    let defs = table::table();
+    let contexts: Vec<Option<&'static str>> = defs.iter().map(|d| d.context.or_else(|| context_of(d, &defs))).collect();
+    defs.iter()
+        .zip(contexts)
         .enumerate()
-        .map(|(order, d)| {
+        .map(|(order, (d, context))| {
             let value_type = match &d.ty {
                 Ty::Bool => ValueType::Bool,
                 Ty::Int => ValueType::Int,
@@ -384,7 +516,7 @@ pub fn schema() -> Vec<Setting> {
                 Ty::FloatVec3 => ValueType::FloatVec3,
                 Ty::Text => ValueType::Text,
                 Ty::Enum(o) => ValueType::Enum { options: options(o) },
-                Ty::EchoReference(o) => ValueType::EchoReference { options: options(o) },
+                Ty::EchoReference(o) => ValueType::EchoReference { options: echo_options(o) },
                 Ty::Regions => ValueType::Enum { options: region_options() },
                 Ty::MaskSections => ValueType::MaskSections,
                 Ty::MaskOps => ValueType::MaskOps,
@@ -393,9 +525,13 @@ pub fn schema() -> Vec<Setting> {
             Setting {
                 path: d.path,
                 label: d.label,
-                help: d.help,
-                value_label: d.value.map(|v| v.0),
-                value_help: d.value.map(|v| v.1),
+                full_label: d.full.unwrap_or(d.label),
+                context,
+                help: d.gui_help.unwrap_or(d.help),
+                value_label: d.gui_value.or(d.value).map(|v| v.0),
+                value_help: d.gui_value.or(d.value).map(|v| v.1),
+                tui_help: d.help,
+                tui_value: d.value,
                 value_type,
                 optional: d.optional,
                 off: d.off.clone(),
@@ -415,6 +551,8 @@ pub fn schema() -> Vec<Setting> {
                 parent: d.parent,
                 cli_flag: d.flag,
                 browser: d.browser,
+                item: d.item,
+                browser_help: d.browser_help,
             }
         })
         .collect()
@@ -514,7 +652,7 @@ impl Setting {
 pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
     let applies: std::collections::HashSet<&str> = settings_view(config, &ViewFacts::default())
         .into_iter().filter(|v| v.visible).map(|v| v.path).collect();
-    let problems = out_of_range(config, |p| applies.contains(p));
+    let problems: Vec<String> = out_of_range(config, |p| applies.contains(p)).into_iter().map(|p| p.described).collect();
     if problems.is_empty() {
         Ok(())
     } else {
@@ -522,8 +660,17 @@ pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
     }
 }
 
-/// Each checked setting whose value is outside its range, described.
-fn out_of_range(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<String> {
+/// What is wrong with one setting's value.
+pub(crate) struct Problem {
+    pub path: &'static str,
+    /// For showing next to the setting: "Must be greater than 0".
+    pub message: String,
+    /// For an error message, naming the setting, its option and its value.
+    pub described: String,
+}
+
+/// Each checked setting whose value is outside its range, or not a finite number.
+pub(crate) fn out_of_range(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<Problem> {
     // Serialised, a non-finite number is `null`.
     let Ok(json) = serde_json::to_value(config) else { return vec![] };
     let mut problems = Vec::new();
@@ -542,9 +689,18 @@ fn out_of_range(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<
             other => vec![other.as_f64()],
         };
         if float && values.iter().any(Option::is_none) {
-            problems.push(format!("{}{flag} must be a finite number", s.path));
+            problems.push(Problem {
+                path: s.path,
+                message: "Must be a finite number".into(),
+                described: format!("{}{flag} must be a finite number", s.path),
+            });
         } else if values.iter().flatten().any(|&x| !s.in_range(x)) {
-            problems.push(format!("{}{flag} is {v}; it must be {}", s.path, s.range_text()));
+            let range = s.range_text();
+            problems.push(Problem {
+                path: s.path,
+                message: format!("Must be {range}"),
+                described: format!("{}{flag} is {v}; it must be {range}", s.path),
+            });
         }
     }
     problems
@@ -585,8 +741,8 @@ mod range_tests {
     #[test]
     fn every_default_and_browser_default_is_in_range() {
         let checked = |_: &str| true;
-        assert_eq!(out_of_range(&PipelineConfig::default(), checked), Vec::<String>::new());
-        assert_eq!(out_of_range(&PipelineConfig::browser(), checked), Vec::<String>::new());
+        assert!(out_of_range(&PipelineConfig::default(), checked).is_empty());
+        assert!(out_of_range(&PipelineConfig::browser(), checked).is_empty());
     }
 
     #[test]
@@ -597,7 +753,10 @@ mod range_tests {
                 let c = with(s.path, &s, x).unwrap_or_else(|| panic!("{} = {x} does not fit the type", s.path));
                 let problems = out_of_range(&c, |p| p == s.path);
                 assert_eq!(problems.len(), 1, "{} = {x} was accepted", s.path);
-                assert!(problems[0].contains(s.path) && problems[0].contains(&s.range_text()), "{}", problems[0]);
+                let p = &problems[0];
+                assert!(p.described.contains(s.path) && p.described.contains(&s.range_text()), "{}", p.described);
+                assert_eq!(p.path, s.path);
+                assert_eq!(p.message, format!("Must be {}", s.range_text()));
                 tested += 1;
             }
             // And the ends that are in the range are accepted.
