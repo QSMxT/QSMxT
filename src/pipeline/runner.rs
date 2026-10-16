@@ -702,11 +702,15 @@ impl StageStore for FileStore<'_> {
         }
         let prov_path = self.output.provenance_path(&self.run.key, c.step);
         write_step_provenance(&prov_path, c.step, c.algorithm, &recorded, &input_refs, &outputs, start)?;
-        // A step that wrote one of these files before no longer made what is there (the state
-        // forgets it below): its provenance would name it as their maker.
-        for other in self.state.sharing_outputs(c.step, &outputs) {
-            let stale = self.output.provenance_path(&self.run.key, &other);
-            if stale.is_file() {
+        // Another step whose provenance names one of these files as its output no longer made
+        // what is there (its record is forgotten below, or already was): it would be named their
+        // maker.
+        for &other in crate::bids::bidsprov::STEPS.iter().filter(|&&s| s != c.step && s != "output_space") {
+            let stale = self.output.provenance_path(&self.run.key, other);
+            let Ok(text) = std::fs::read_to_string(&stale) else { continue };
+            let theirs: serde_json::Value = serde_json::from_str(&text).unwrap_or_default();
+            let theirs = theirs["outputs"].as_array().cloned().unwrap_or_default();
+            if theirs.iter().filter_map(|p| p.as_str()).any(|p| outputs.iter().any(|o| o.display().to_string() == p)) {
                 std::fs::remove_file(stale)?;
             }
         }
