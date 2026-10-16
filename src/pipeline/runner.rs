@@ -702,6 +702,14 @@ impl StageStore for FileStore<'_> {
         }
         let prov_path = self.output.provenance_path(&self.run.key, c.step);
         write_step_provenance(&prov_path, c.step, c.algorithm, &recorded, &input_refs, &outputs, start)?;
+        // A step that wrote one of these files before no longer made what is there (the state
+        // forgets it below): its provenance would name it as their maker.
+        for other in self.state.sharing_outputs(c.step, &outputs) {
+            let stale = self.output.provenance_path(&self.run.key, &other);
+            if stale.is_file() {
+                std::fs::remove_file(stale)?;
+            }
+        }
 
         // Whatever read this step's previous output is stale now that it has been recomputed with
         // other parameters, or for the first time (a step newly switched on, say), which the
@@ -2396,6 +2404,7 @@ mod oblique_run_tests {
             assert_eq!(sidecar(&output), sidecar(&fresh), "two-pass {two_pass}");
             let state = PipelineState::load_or_create(&output.state_path(k), &config, k, false);
             assert!(!state.completed_steps.contains_key("qsmart"), "two-pass {two_pass}: QSMART's record outlived its map");
+            assert!(!output.provenance_path(k, "qsmart").exists(), "two-pass {two_pass}: QSMART's provenance outlived its map");
         }
     }
 

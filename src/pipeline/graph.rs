@@ -249,7 +249,7 @@ impl PipelineState {
     }
 
     /// The other recorded steps naming one of `outputs` ([`qsmxt_engine::store::sharing_outputs`]).
-    fn sharing_outputs(&self, step_name: &str, outputs: &[PathBuf]) -> Vec<String> {
+    pub fn sharing_outputs(&self, step_name: &str, outputs: &[PathBuf]) -> Vec<String> {
         qsmxt_engine::store::sharing_outputs(step_name, outputs,
             self.completed_steps.iter().map(|(s, r)| (s.as_str(), r.outputs.as_slice())))
     }
