@@ -105,6 +105,8 @@ pub(crate) fn build_config(
     crate::pipeline::config::validate_segmentation(&config)?;
     crate::pipeline::config::validate_multi_orientation(&config)?;
     crate::pipeline::config::validate_inversion_input(&config)?;
+    qsmxt_engine::schema::check_ranges(&config)
+        .map_err(|e| crate::error::QsmxtError::Config(e.to_string()))?;
     Ok(config)
 }
 
@@ -651,4 +653,37 @@ fn print_orientation_groups(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    fn pipeline_args(argv: &[&str]) -> crate::cli::PipelineArgs {
+        let mut full = vec!["qsmxt", "run", "<bids>"];
+        full.extend_from_slice(argv);
+        match crate::cli::Cli::try_parse_from(full).expect("clap accepts it").command {
+            crate::cli::Command::Run(a) => a.pipeline,
+            _ => panic!("expected run"),
+        }
+    }
+
+    /// A value outside a setting's range is refused before the run, from the command line and
+    /// from a config file alike, naming the setting, its value and its range.
+    #[test]
+    fn a_setting_out_of_range_is_refused_before_the_run() {
+        let e = super::build_config(None, &pipeline_args(&["--qsm-algorithm", "tkd", "--tkd-threshold", "0"]))
+            .unwrap_err().to_string();
+        assert!(e.contains("inversion.tkd.threshold (--tkd-threshold) is 0.0; it must be greater than 0"), "{e}");
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("c.toml");
+        std::fs::write(&path, "[bg_removal.vsharp]\nmin_radius = 0.0\n").unwrap();
+        let e = super::build_config(Some(&path), &pipeline_args(&[])).unwrap_err().to_string();
+        assert!(e.contains("bg_removal.vsharp.min_radius"), "{e}");
+
+        // In range, or set on a method that does not run: accepted.
+        assert!(super::build_config(None, &pipeline_args(&["--tkd-threshold", "0"])).is_ok());
+        assert!(super::build_config(None, &pipeline_args(&[])).is_ok());
+    }
 }

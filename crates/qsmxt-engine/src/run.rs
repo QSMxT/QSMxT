@@ -26,6 +26,8 @@ use crate::store::{Completed, Contrast, Data, Item, StageStore, Supplied};
 pub fn run<S: StageStore + ?Sized>(
     plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, store: &mut S, observer: &mut dyn Observer,
 ) -> Result<(), S::Error> {
+    // Every front end's config is held to the settings' ranges (qsmxt checks them earlier too).
+    crate::schema::check_ranges(config)?;
     let meta = load(config, facts, store, observer)?;
     store.begin(&meta)?;
     if !plan.processes() {
