@@ -34,6 +34,7 @@ pub mod plan;
 pub mod store;
 pub mod items;
 pub mod pipeline_graph;
+pub mod record;
 pub mod run;
 pub mod fieldmap;
 pub mod referencing;

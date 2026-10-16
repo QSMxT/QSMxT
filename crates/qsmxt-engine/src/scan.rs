@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::PipelineConfig;
 use crate::error::EngineError;
+use crate::record::{Choice, Decision, Topic};
 
 /// The facts about one scan that decide what it can produce and how it is reconstructed: the
 /// acquisition from its headers and sidecars, and which bring-your-own derivatives the config
@@ -352,19 +353,20 @@ pub fn slice_geometry_from_sidecar(sc: &QsmSidecar, voxel_size: (f64, f64, f64))
 /// Refuse a gapped acquisition before any work, unless `--ignore-slice-gap` (or nothing that
 /// needs a contiguous grid was asked for). Checked on the acquired grid (`dims`, `voxel_size`),
 /// so it holds whether or not the run is then resampled. Returns the geometry to hand qsm-core
-/// (on the working grid `meta`).
+/// (on the working grid `meta`), and the decision to reconstruct across a gap, when there is one.
 pub fn check_slice_gap(
     sc: &QsmSidecar, dims: (usize, usize, usize), voxel_size: (f64, f64, f64), meta: &RunMetadata,
     config: &PipelineConfig,
-) -> Result<Option<(f64, usize)>, EngineError> {
-    let Some((thickness, axis)) = slice_geometry_from_sidecar(sc, voxel_size) else { return Ok(None) };
+) -> Result<(Option<(f64, usize)>, Option<Decision>), EngineError> {
+    let Some((thickness, axis)) = slice_geometry_from_sidecar(sc, voxel_size) else { return Ok((None, None)) };
     let (nx, ny, nz) = dims;
     let (vx, vy, vz) = voxel_size;
     let grid = qsm_core::Grid::new(nx, ny, nz, vx, vy, vz);
     if let Err(gap) = grid.require_contiguous_slices(thickness, axis) {
         if config.pipeline.ignore_slice_gap {
             log::warn!("{gap}; reconstructing anyway (--ignore-slice-gap): treat the result as unreliable");
-            return Ok(None);
+            return Ok((None, Some(Decision::new(Topic::SliceGap, Choice::Ignored,
+                "The slices are separated by a gap, and were reconstructed as if contiguous.").with_detail(gap.to_string()))));
         }
         if config.pipeline.do_qsm {
             return Err(EngineError::Config(format!(
@@ -372,10 +374,35 @@ pub fn check_slice_gap(
                  --ignore-slice-gap to reconstruct anyway")));
         }
         log::warn!("{gap}; no QSM was asked for, so continuing");
-        return Ok(None);
+        return Ok((None, None));
     }
     // Contiguous: hand the geometry on, unless resampling moved the slices off the grid's axes.
-    Ok(if meta.source_geometry.is_none() { Some((thickness, axis)) } else { None })
+    Ok((if meta.source_geometry.is_none() { Some((thickness, axis)) } else { None }, None))
+}
+
+
+/// What [`resolve_geometry`] decided about the grid of a run on `meta`, where there was a choice:
+/// resampled to axial or kept as acquired when `--axial-resampling` is on or an algorithm the run
+/// uses needs axial data, and nothing otherwise.
+pub fn grid_decision(meta: &RunMetadata, facts: &ScanFacts, config: &PipelineConfig) -> Option<Decision> {
+    let acquired_affine = meta.source_geometry.map_or(meta.affine, |(_, a)| a);
+    let axial_only = crate::bridge::axial_only_algorithms(config, orientation_facts(facts, config));
+    if !config.pipeline.axial_resampling && axial_only.is_empty() {
+        return None;
+    }
+    let obliquity = qsm_core::geometry::obliquity_from_affine(&acquired_affine);
+    let tilt = qsm_core::geometry::b0_angle_from_affine(&acquired_affine);
+    let detail = format!("{obliquity:.1}° oblique, B0 {tilt:.1}° from the slice normal");
+    Some(if meta.source_geometry.is_none() {
+        Decision::new(Topic::Grid, Choice::Acquired, "Processed on the acquired grid.").with_detail(detail)
+    } else if !axial_only.is_empty() && tilt > AXIAL_ONLY_TOLERANCE_DEG {
+        Decision::new(Topic::Grid, Choice::ResampledForAlgorithm,
+            "Resampled onto an axial grid, as an algorithm the run uses assumes B0 along the slice normal.")
+            .with_detail(format!("{detail}; {}", axial_only.join(", ")))
+    } else {
+        Decision::new(Topic::Grid, Choice::Resampled, "Resampled onto an axial grid, the acquisition being oblique.")
+            .with_detail(detail)
+    })
 }
 
 #[cfg(test)]

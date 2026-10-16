@@ -282,7 +282,10 @@ impl StageStore for Recorder {
     fn sidecar(&mut self) -> Result<Option<crate::scan::QsmSidecar>, Self::Error> { self.inner.sidecar() }
     fn coils(&mut self) -> Vec<u32> { self.inner.coils() }
     fn cached_scan(&mut self, key: &str) -> Option<RunMetadata> { self.inner.cached_scan(key) }
-    fn record_scan(&mut self, key: &str, meta: &RunMetadata) -> Result<(), Self::Error> { self.inner.record_scan(key, meta) }
+    fn record_scan(&mut self, key: &str, meta: &RunMetadata, decisions: &[crate::record::Decision]) -> Result<(), Self::Error> {
+        self.inner.record_scan(key, meta, decisions)
+    }
+    fn decisions(&mut self, step: &str) -> Vec<crate::record::Decision> { self.inner.decisions(step) }
     fn has(&mut self, item: &Item) -> bool { self.inner.has(item) }
     fn real(&mut self, item: &Item) -> Result<Vec<f64>, Self::Error> { self.inner.real(item) }
     fn mask(&mut self, item: &Item) -> Result<Vec<u8>, Self::Error> { self.inner.mask(item) }
