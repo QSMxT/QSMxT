@@ -1504,4 +1504,39 @@ mod tests {
             "qsmxt", "run", "<bids>", "--mask-erosions", "3",
         ]).is_err());
     }
+
+    /// A browser run is reproducible as a command: the browser profile's values reach the
+    /// generated `qsmxt run` command, and the command rebuilds them.
+    #[test]
+    fn browser_profile_round_trips_through_the_command() {
+        use qsmxt_engine::profile::{BROWSER_R2PRIMENET_PATCH, BROWSER_TILE_HALO, BROWSER_TILE_SIZE};
+        let mut c = PipelineConfig::default();
+        c.inversion.algorithm = QsmAlgorithm::Xqsm;
+        c.masking.sections = qsmxt_engine::masking::hd_bet_mask_sections();
+        c.pipeline.do_r2primemap = true;
+        c.separation.r2prime_strategy = qsmxt_engine::R2PrimeStrategy::R2primenet;
+        c.apply_browser_profile();
+
+        let cmd = generate_command(&c);
+        let argv: Vec<String> = cmd.split_whitespace().map(|s| s.to_string()).collect();
+        let cli = cli::Cli::try_parse_from(&argv)
+            .unwrap_or_else(|e| panic!("generated command did not parse: {e}\ncmd: {cmd}"));
+        let cli::Command::Run(run_args) = cli.command else { panic!("expected Run") };
+        let mut rebuilt = PipelineConfig::default();
+        apply_run_overrides(&mut rebuilt, &run_args.pipeline).unwrap();
+
+        assert_eq!(rebuilt.inversion.tile_size, Some(BROWSER_TILE_SIZE), "{cmd}");
+        assert_eq!(rebuilt.inversion.tile_halo, Some(BROWSER_TILE_HALO), "{cmd}");
+        assert_eq!(rebuilt.separation.r2primenet.patch, BROWSER_R2PRIMENET_PATCH, "{cmd}");
+        assert_eq!(rebuilt.masking.sections, c.masking.sections, "{cmd}");
+        assert_eq!(generate_command(&rebuilt), cmd);
+    }
+
+    /// The browser's R2PRIMEnet patch is the one qsm-core sizes for a WASM heap.
+    #[cfg(feature = "dl")]
+    #[test]
+    fn browser_r2primenet_patch_is_qsm_cores_wasm_patch() {
+        let (x, y, z) = qsm_core::relaxometry::WASM_PATCH;
+        assert_eq!(qsmxt_engine::profile::BROWSER_R2PRIMENET_PATCH, [x, y, z]);
+    }
 }
