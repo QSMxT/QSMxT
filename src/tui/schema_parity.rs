@@ -470,29 +470,41 @@ fn every_schema_option_is_a_qsmxt_run_option() {
     }
 }
 
-/// Hidden settings the TUI still passes on, and the command still carries.
-///
-/// - `field_mapping.b0_weight_type`: the echo weights of the weighted average, passed (and
-///   written as `--b0-weight-type`) under the linear and robust fits too, which do not use them.
-/// - `field_mapping.romeo.individual`: ROMEO's individual mode, passed (and written as
-///   `--no-romeo-individual`) under Laplacian unwrapping too.
-const SENT_WHILE_HIDDEN: &[&str] = &["field_mapping.b0_weight_type", "field_mapping.romeo.individual"];
-
-/// A hidden setting does not change the run: putting every setting the engine reports hidden
-/// back to its default leaves the generated `qsmxt run` command as it was. (The TUI does send a
-/// few hidden values, e.g. V-SHARP's options under another method; this is why that is harmless.)
+/// The command the TUI prints runs what the TUI runs: parsed back into a config, it agrees with
+/// the TUI's own config on every setting that applies. (Settings that do not apply are left out
+/// of the command; they do not change the run.)
 #[test]
-fn pruning_hidden_settings_leaves_the_command_unchanged() {
+fn the_printed_command_reproduces_the_tuis_run() {
+    use clap::Parser;
     let mut failures = Vec::new();
     for (acts, app) in explore() {
         let config = config_from_app(&app).unwrap();
-        let mut pruned = schema::prune_hidden(&config, &facts(&app));
-        for p in SENT_WHILE_HIDDEN {
-            schema::set(&mut pruned, p, schema::get(&config, p).unwrap()).unwrap();
+        let cmd = qsmxt_engine::generate_command(&config);
+        let argv: Vec<String> = cmd.split_whitespace().map(str::to_string).collect();
+        let cli = crate::cli::Cli::try_parse_from(&argv).unwrap_or_else(|e| panic!("{e}\n{cmd}"));
+        let crate::cli::Command::Run(run) = cli.command else { panic!("expected run") };
+        let mut rebuilt = crate::pipeline::config::PipelineConfig::default();
+        crate::pipeline::config::apply_run_overrides(&mut rebuilt, &run.pipeline).unwrap();
+        let f = facts(&app);
+        let (mut a, mut b) = (schema::prune_hidden(&config, &f), schema::prune_hidden(&rebuilt, &f));
+        // An unset reliable mask means the main mask without its hole filling: compare the masks.
+        for c in [&mut a, &mut b] {
+            if c.masking.two_pass {
+                c.masking.two_pass_sections = Some(c.masking.resolved_two_pass_sections());
+            }
         }
-        let (a, b) = (qsmxt_engine::generate_command(&config), qsmxt_engine::generate_command(&pruned));
-        if a != b {
-            failures.push(format!("after {acts:?}:\n  {a}\n  {b}"));
+        let differ: Vec<_> = schema::schema().iter()
+            .filter(|s| schema::get(&a, s.path) != schema::get(&b, s.path)).map(|s| s.path).collect();
+        if !differ.is_empty() {
+            failures.push(format!("{differ:?} after {acts:?}\n  {cmd}"));
+        }
+        // The two leaks this used to allow: the TUI no longer passes either while it is hidden.
+        let fm = &config.field_mapping;
+        if fm.b0_estimation != qsmxt_engine::B0Estimation::WeightedAvg {
+            assert_eq!(fm.b0_weight_type, qsmxt_engine::B0WeightType::PhaseSNR, "after {acts:?}");
+        }
+        if fm.unwrapping_algorithm == qsmxt_engine::UnwrappingAlgorithm::Laplacian {
+            assert!(fm.romeo.individual, "after {acts:?}");
         }
     }
     assert!(failures.is_empty(), "{} forms, e.g.:\n{}", failures.len(), failures[..failures.len().min(4)].join("\n"));

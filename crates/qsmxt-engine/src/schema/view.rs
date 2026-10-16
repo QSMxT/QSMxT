@@ -193,17 +193,77 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
 }
 
 /// `config` with every setting that does not apply to it (see [`settings_view`]) put back to
-/// QSMxT's default, so a value left behind by an earlier choice cannot change the run.
+/// QSMxT's default, so a value left behind by an earlier choice cannot change the run or show
+/// up in its command.
 pub fn prune_hidden(config: &PipelineConfig, facts: &ViewFacts) -> PipelineConfig {
-    let defaults = PipelineConfig::default();
-    let mut out = config.clone();
-    for v in settings_view(config, facts) {
-        if !v.visible {
-            if let Some(d) = super::get(&defaults, v.path) {
-                // A default always round-trips.
-                let _ = super::set(&mut out, v.path, d);
-            }
+    let hidden: Vec<&str> = settings_view(config, facts).into_iter()
+        .filter(|v| !v.visible).map(|v| v.path).collect();
+    if hidden.is_empty() {
+        return config.clone();
+    }
+    let (Ok(defaults), Ok(mut out)) = (serde_json::to_value(PipelineConfig::default()), serde_json::to_value(config)) else {
+        return config.clone();
+    };
+    for path in hidden {
+        let (parent, key) = path.rsplit_once('.').unwrap_or(("", path));
+        let default = super::lookup(&defaults, path).cloned().unwrap_or(Value::Null);
+        let mut obj = &mut out;
+        for k in parent.split('.').filter(|k| !k.is_empty()) {
+            obj = &mut obj[k];
+        }
+        if let Some(map) = obj.as_object_mut() {
+            map.insert(key.to_string(), default);
         }
     }
-    out
+    // Every value written is a default the config already had, so this cannot fail.
+    serde_json::from_value(out).unwrap_or_else(|_| config.clone())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::stages::field::map_field;
+
+    /// What the command now leaves out does not change the run: the field map from a config with
+    /// a hidden value left behind is the field map from the same config pruned, bit for bit.
+    #[test]
+    fn a_pruned_setting_does_not_change_the_field_map() {
+        let mut meta = crate::stages::magnitude::tests::meta_4x4x4();
+        meta.n_echoes = 4;
+        meta.echo_times = vec![0.005, 0.010, 0.015, 0.020];
+        let n = 64;
+        // A smooth field, wrapped per echo.
+        let phases: Vec<Vec<f64>> = meta.echo_times.iter().map(|te| {
+            (0..n).map(|i| {
+                let p = 2.0 * std::f64::consts::PI * 40.0 * te * (1.0 + (i % 4) as f64 * 0.3);
+                (p + std::f64::consts::PI).rem_euclid(2.0 * std::f64::consts::PI) - std::f64::consts::PI
+            }).collect()
+        }).collect();
+        let mags: Vec<Vec<f64>> = (0..4).map(|e| vec![1.0 - 0.1 * e as f64; n]).collect();
+        let (p, m): (Vec<&[f64]>, Vec<&[f64]>) = (phases.iter().map(|v| &v[..]).collect(), mags.iter().map(|v| &v[..]).collect());
+        let mask = vec![1u8; n];
+
+        let mut cases = Vec::new();
+        // --b0-weight-type under the linear and robust fits.
+        for est in [B0Estimation::LinearFit, B0Estimation::RobustFit] {
+            let mut c = PipelineConfig::default();
+            c.field_mapping.b0_estimation = est;
+            c.field_mapping.b0_weight_type = B0WeightType::Average;
+            cases.push(c);
+        }
+        // --no-romeo-individual (and its template) under Laplacian unwrapping.
+        let mut c = PipelineConfig::default();
+        c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
+        c.field_mapping.romeo.individual = false;
+        c.field_mapping.romeo.template = 1;
+        cases.push(c);
+
+        for c in cases {
+            let pruned = prune_hidden(&c, &ViewFacts::default());
+            assert_ne!(serde_json::to_value(&c).unwrap(), serde_json::to_value(&pruned).unwrap(), "something was pruned");
+            let a = map_field(&p, &m, &mask, &meta, &c).unwrap();
+            let b = map_field(&p, &m, &mask, &meta, &pruned).unwrap();
+            assert!(a.b0_field_ppm.iter().zip(&b.b0_field_ppm).all(|(x, y)| x.to_bits() == y.to_bits()));
+        }
+    }
 }

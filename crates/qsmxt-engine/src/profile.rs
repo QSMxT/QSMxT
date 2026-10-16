@@ -113,13 +113,9 @@ mod tests {
     }
 
     #[test]
-    fn a_default_browser_run_adds_only_the_r2primenet_patch_to_the_command() {
-        // iLSQR does not tile, so the tiling stays out of the command. The R2PRIMEnet patch is
-        // written whenever it differs from the default and R2' may be predicted, whether or not
-        // R2' is computed.
-        let [x, y, z] = BROWSER_R2PRIMENET_PATCH;
-        assert_eq!(generate_command(&PipelineConfig::browser()),
-                   format!("{} --r2primenet-patch {x} {y} {z}", generate_command(&PipelineConfig::default())));
+    fn a_default_browser_run_is_the_default_command() {
+        // iLSQR does not tile and R2' is not computed: nothing the profile set applies.
+        assert_eq!(generate_command(&PipelineConfig::browser()), generate_command(&PipelineConfig::default()));
     }
 
     #[test]

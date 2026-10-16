@@ -5,7 +5,15 @@ use crate::enums::*;
 
 /// Generate a `qsmxt run` CLI command from a pipeline configuration.
 /// Compares against defaults and only emits flags that differ.
+///
+/// Settings that do not apply to the configuration (the TUI hides them; see
+/// [`crate::schema::settings_view`]) are left out: they cannot change the run, so saying them
+/// only makes the command longer and suggests they matter.
 pub fn generate_command(config: &PipelineConfig) -> String {
+    command_for(&crate::schema::prune_hidden(config, &crate::schema::ViewFacts::default()))
+}
+
+fn command_for(config: &PipelineConfig) -> String {
     let d = PipelineConfig::default();
     let mut parts: Vec<String> = vec!["qsmxt".into(), "run".into(), "<bids_dir>".into()];
 
@@ -25,8 +33,7 @@ pub fn generate_command(config: &PipelineConfig) -> String {
             parts.push(format!("--cosmos-max-iter {}", m.cosmos_max_iter));
         }
     }
-    // Settings that only matter with a grouping, but are said whenever they were changed, so the
-    // command reproduces the configuration (the TUI shows them without a grouping too).
+    // Only matter with a grouping; without one they are pruned before they get here.
     if config.multi_orientation.force { parts.push("--multi-orientation-force".into()); }
     if !config.multi_orientation.register { parts.push("--no-orientation-registration".into()); }
 
@@ -48,7 +55,7 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         if !c.topology_cleanup { parts.push("--no-synthseg-topology-cleanup".into()); }
         emit_f64(&mut parts, "--synthseg-sigma", c.sigma_smoothing, dd.sigma_smoothing);
     }
-    // Said whenever set, like the multi-orientation settings: the TUI shows it on the QSM tab.
+    // Said whenever set and a segmentation is made or read (otherwise pruned).
     match config.segmentation.custom_dseg_tool.as_deref() {
         Some("*") => parts.push("--use-custom-dseg".into()),
         Some(tool) => parts.push(format!("--use-custom-dseg {tool}")),
@@ -171,7 +178,7 @@ pub fn generate_command(config: &PipelineConfig) -> String {
         if m.chain { emit_usize(&mut parts, "--motion-chain-levels", m.chain_levels, md.chain_levels); }
         emit_f64(&mut parts, "--motion-min-ncc", m.min_ncc, md.min_ncc);
     }
-    // Shared by motion correction and orientation co-registration; said whenever changed.
+    // Shared by motion correction and orientation co-registration; said when either registers.
     {
         let (r, rd) = (&config.registration, &d.registration);
         emit_usize(&mut parts, "--registration-levels", r.levels, rd.levels);
@@ -1020,10 +1027,13 @@ frangi_c = 400.0
             "--qsm-algorithm qsmart", "--qsmart-inversion rts",
             "--qsmart-sdf-sigma1-stage1 11", "--qsmart-sdf-lower-lim 0.45",
             "--qsmart-frangi-scale-min 1.5", "--qsmart-frangi-c 400",
-            "--qsmart-ilsqr-pad-mm 8",
         ] {
             assert!(cmd.contains(flag), "missing `{}` in: {}", flag, cmd);
         }
+        // The inner iLSQR's settings do not apply under an RTS inner inversion.
+        assert!(!cmd.contains("--qsmart-ilsqr"), "{cmd}");
+        let config = PipelineConfig::from_toml(&toml.replace(r#"inversion = "rts""#, r#"inversion = "ilsqr""#)).unwrap();
+        assert!(generate_command(&config).contains("--qsmart-ilsqr-pad-mm 8"));
     }
 
     #[test]
@@ -1032,6 +1042,9 @@ frangi_c = 400.0
         assert!(!generate_command(&c).contains("--r2primenet"));
         c.separation.r2primenet.ignore_field_mismatch = true;
         c.separation.r2primenet.patch = [128, 128, 64];
+        // Not said while R2' is not computed: R2PRIMEnet does not run.
+        assert!(!generate_command(&c).contains("--r2primenet"));
+        c.pipeline.do_r2primemap = true;
         let cmd = generate_command(&c);
         assert!(cmd.contains("--r2primenet-ignore-field-mismatch"), "{cmd}");
         assert!(cmd.contains("--r2primenet-patch 128 128 64"), "{cmd}");
@@ -1135,6 +1148,9 @@ frangi_c = 400.0
         let mut c = PipelineConfig::default();
         assert!(!generate_command(&c).contains("--laplacian-solver"));
         c.field_mapping.laplacian_solver = LaplacianSolver::Fft;
+        // Only Laplacian unwrapping has a solver.
+        assert!(!generate_command(&c).contains("--laplacian-solver"));
+        c.field_mapping.unwrapping_algorithm = UnwrappingAlgorithm::Laplacian;
         let cmd = generate_command(&c);
         assert!(cmd.contains("--laplacian-solver fft"), "{cmd}");
         assert!(!cmd.contains("--laplacian-fft-pad"), "default pad is not emitted: {cmd}");
@@ -1412,6 +1428,9 @@ algorithm = "tv"
         assert_eq!(c.pipeline.output_space, OutputSpace::Acquired, "acquired is the default");
         assert!(!generate_command(&c).contains("--output-space"));
         c.pipeline.output_space = OutputSpace::Working;
+        // Only meaningful when the data is resampled.
+        assert!(!generate_command(&c).contains("--output-space"));
+        c.pipeline.axial_resampling = true;
         assert!(generate_command(&c).contains("--output-space working"));
     }
 
