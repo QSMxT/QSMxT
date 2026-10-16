@@ -124,6 +124,76 @@ pub enum Item {
     SeparatedTotalChi,
 }
 
+impl Item {
+    /// The name a front end keeps the item under: as Rust writes it (`AcquiredPhase(1)`,
+    /// `LocalField(Main)`, `CoilPhase(2, 1)`, `QsmartIntermediate(Main, "vessel_mask")`).
+    /// [`Item::from_key`] reads it back.
+    pub fn key(&self) -> String {
+        format!("{self:?}")
+    }
+
+    /// The item [`Item::key`] wrote as `key`; `None` for one this engine does not have.
+    pub fn from_key(key: &str) -> Option<Item> {
+        let (name, args) = match key.split_once('(') {
+            Some((name, rest)) => (name, Some(rest.strip_suffix(')')?)),
+            None => (key, None),
+        };
+        let pass = |a: &str| match a.trim() {
+            "Main" => Some(Pass::Main),
+            "Reliable" => Some(Pass::Reliable),
+            _ => None,
+        };
+        let contrast = |a: Option<&str>| {
+            let a = a?.trim();
+            Contrast::BOTH.into_iter().find(|c| format!("{c:?}") == a)
+        };
+        let n = |a: &str| a.trim().parse::<usize>().ok();
+        let echo = |a: Option<&str>| n(a?);
+        let pair = |a: Option<&str>| {
+            let (c, e) = a?.split_once(',')?;
+            Some((n(c)?, n(e)?))
+        };
+        use qsm_core::pipeline::qsmart::outputs as q;
+        Some(match (name, args) {
+            ("AcquiredPhase", a) => Item::AcquiredPhase(echo(a)?),
+            ("AcquiredMagnitude", a) => Item::AcquiredMagnitude(echo(a)?),
+            ("AcquiredImaginary", a) => Item::AcquiredImaginary(echo(a)?),
+            ("CoilPhase", a) => { let (c, e) = pair(a)?; Item::CoilPhase(c, e) }
+            ("CoilMagnitude", a) => { let (c, e) = pair(a)?; Item::CoilMagnitude(c, e) }
+            ("CombinedEchoPhase", a) => Item::CombinedEchoPhase(echo(a)?),
+            ("CombinedEchoMagnitude", a) => Item::CombinedEchoMagnitude(echo(a)?),
+            ("Phase", a) => Item::Phase(echo(a)?),
+            ("Magnitude", a) => Item::Magnitude(echo(a)?),
+            ("CorrectedPhase", a) => Item::CorrectedPhase(echo(a)?),
+            ("CorrectedMagnitude", a) => Item::CorrectedMagnitude(echo(a)?),
+            ("MeseMagnitude", a) => Item::MeseMagnitude(echo(a)?),
+            ("LocalField", Some(a)) => Item::LocalField(pass(a)?),
+            ("LocalFieldMask", Some(a)) => Item::LocalFieldMask(pass(a)?),
+            ("RawChi", Some(a)) => Item::RawChi(pass(a)?),
+            ("QsmartIntermediate", Some(a)) => {
+                let (p, n) = a.split_once(',')?;
+                let n = n.trim().strip_prefix('"')?.strip_suffix('"')?;
+                let name = [q::VESSEL_MASK, q::LOCAL_FIELD_STAGE1, q::CHI_STAGE1, q::LOCAL_FIELD_STAGE2, q::CHI_STAGE2]
+                    .into_iter().find(|&known| known == n)?;
+                Item::QsmartIntermediate(pass(p)?, name)
+            }
+            ("Smwi", a) => Item::Smwi(contrast(a)?),
+            ("SmwiMip", a) => Item::SmwiMip(contrast(a)?),
+            ("SeparatedChi", a) => Item::SeparatedChi(contrast(a)?),
+            (name, None) => [
+                Item::CoilCombinationMask, Item::CombinedMagnitude, Item::BrainMask, Item::SuppliedMask,
+                Item::CoverageMask, Item::FieldPpm, Item::TotalFieldHz, Item::TotalFieldMagnitude,
+                Item::RobustFitReport, Item::ReliableMask, Item::CombinedRawChi, Item::Chi, Item::ChiSupport,
+                Item::SinglePassChi, Item::Segmentation, Item::SuppliedSegmentation, Item::SegmentationLabels,
+                Item::SegmentationVolumes, Item::RegionStats, Item::MotionReport, Item::Swi, Item::SwiMip,
+                Item::R2star, Item::T2star, Item::SuppliedR2, Item::R2, Item::SuppliedR2prime, Item::R2prime,
+                Item::R2primeCoverage, Item::SuppliedChi, Item::SeparatedTotalChi,
+            ].into_iter().find(|item| item.key() == name)?,
+            _ => return None,
+        })
+    }
+}
+
 /// Which sign of susceptibility an output is about.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
 pub enum Contrast {
@@ -145,7 +215,7 @@ impl Contrast {
 }
 
 /// A grid other than the run's: its dimensions, voxel size and voxel-to-world affine.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Geometry {
     pub dims: (usize, usize, usize),
     pub voxel_size: (f64, f64, f64),
@@ -369,6 +439,32 @@ pub trait Volumes {
 
     /// The run's grid is known ([`StageStore::begin`]): every volume a step writes is on it.
     fn begin(&mut self, _meta: &RunMetadata) {}
+
+    /// What the store has recorded changed (a step completed or went stale, a report or an
+    /// annotation was kept): volumes that outlive the store keep it, to restore a store over them
+    /// later ([`MemoryStore::restore`]) with every completed step still cached.
+    fn recorded(&mut self, _recorded: &Recorded) {}
+}
+
+/// What a [`MemoryStore`] has recorded besides the volumes: which steps are complete under which
+/// keys and what they wrote, the grid of the last load, the reports and annotations steps kept,
+/// the grids of volumes not on the run's, and which outputs have their working-grid versions
+/// kept aside. Items are named by [`Item::key`].
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct Recorded {
+    /// Each completed step: the key it was recorded under, and its outputs.
+    pub steps: std::collections::BTreeMap<String, (String, Vec<String>)>,
+    /// The load step's key and the grid it decided.
+    pub scan: Option<(String, RunMetadata)>,
+    pub reports: std::collections::BTreeMap<String, serde_json::Value>,
+    pub annotations: std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
+    /// The grid of each volume not on the run's.
+    #[serde(default)]
+    pub geometries: std::collections::BTreeMap<String, Geometry>,
+    /// The outputs returned to the acquired grid whose working-grid versions the volumes keep
+    /// aside, with the grid each of those was on when not the run's.
+    #[serde(default)]
+    pub working_grid: std::collections::BTreeMap<String, Option<Geometry>>,
 }
 
 /// A [`MemoryStore`]'s own volumes, as computed (double precision).
@@ -536,6 +632,43 @@ impl<V: Volumes> MemoryStore<V> {
         self.annotations.get(item)
     }
 
+    /// What the store has recorded ([`Recorded`]).
+    pub fn recorded(&self) -> Recorded {
+        let keys = |items: &[Item]| items.iter().map(Item::key).collect();
+        Recorded {
+            steps: self.steps.iter().map(|(s, (k, out))| (s.clone(), (k.clone(), keys(out)))).collect(),
+            scan: self.scan.clone(),
+            reports: self.reports.iter().map(|(i, v)| (i.key(), v.clone())).collect(),
+            annotations: self.annotations.iter().map(|(i, a)| (i.key(), a.clone())).collect(),
+            geometries: self.geometries.iter().map(|(i, g)| (i.key(), g.clone())).collect(),
+            working_grid: self.working_grid.iter().map(|(i, g)| (i.key(), g.clone())).collect(),
+        }
+    }
+
+    /// Take up what an earlier store over the same volumes recorded, so its completed steps are
+    /// cached here too (whatever the volumes no longer hold is not). A step naming an item this
+    /// engine does not have is left out, and so computed again.
+    pub fn restore(&mut self, recorded: Recorded) {
+        fn items<T>(m: std::collections::BTreeMap<String, T>) -> impl Iterator<Item = (Item, T)> {
+            m.into_iter().filter_map(|(k, v)| Some((Item::from_key(&k)?, v)))
+        }
+        self.steps = recorded.steps.into_iter().filter_map(|(step, (key, outputs))| {
+            let outputs = outputs.iter().map(|k| Item::from_key(k)).collect::<Option<Vec<_>>>()?;
+            Some((step, (key, outputs)))
+        }).collect();
+        self.scan = recorded.scan;
+        self.reports = items(recorded.reports).collect();
+        self.annotations = items(recorded.annotations).collect();
+        self.geometries.extend(items(recorded.geometries));
+        self.working_grid = items(recorded.working_grid).collect();
+    }
+
+    /// Tell the volumes what is recorded now.
+    fn changed(&mut self) {
+        let recorded = self.recorded();
+        self.volumes.recorded(&recorded);
+    }
+
     /// Put the working-grid versions back, for a step that may read them; the return to the
     /// acquired grid is then to do again. One the volumes no longer have aside is dropped rather
     /// than left on the acquired grid, so whatever wrote it is computed again.
@@ -553,6 +686,7 @@ impl<V: Volumes> MemoryStore<V> {
             }
         }
         self.steps.remove("output_space");
+        self.changed();
     }
 
     fn forget(&mut self, step: &str) {
@@ -560,6 +694,7 @@ impl<V: Volumes> MemoryStore<V> {
         for ds in crate::graph::downstream_of(step) {
             self.steps.remove(&ds);
         }
+        self.changed();
     }
 
     fn present(&self, item: &Item) -> bool {
@@ -602,6 +737,7 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
                     self.volumes.drop_aside(&item);
                 }
                 self.scan = None;
+                self.changed();
                 None
             }
             None => None,
@@ -610,6 +746,7 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
 
     fn record_scan(&mut self, key: &str, meta: &RunMetadata) -> Result<(), EngineError> {
         self.scan = Some((key.to_string(), meta.clone()));
+        self.changed();
         Ok(())
     }
 
@@ -693,8 +830,14 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
                 self.volumes.insert(item, VolumeRef::Real(v))?;
                 self.geometries.insert(item, geometry.clone());
             }
-            Data::Json(j) => { self.reports.insert(item, j.clone()); }
-            Data::Text(t) => { self.reports.insert(item, serde_json::Value::String(t.to_string())); }
+            Data::Json(j) => {
+                self.reports.insert(item, j.clone());
+                self.changed();
+            }
+            Data::Text(t) => {
+                self.reports.insert(item, serde_json::Value::String(t.to_string()));
+                self.changed();
+            }
             Data::Same(source) => {
                 if !self.volumes.copy(&source, item)? {
                     return Err(EngineError::Config(format!("{source:?} is not in the store")));
@@ -706,6 +849,7 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
 
     fn annotate(&mut self, item: &Item, fields: serde_json::Map<String, serde_json::Value>) -> Result<(), EngineError> {
         self.annotations.entry(*item).or_default().extend(fields);
+        self.changed();
         Ok(())
     }
 
@@ -724,6 +868,8 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
         }
         if self.steps.contains_key(step) {
             self.forget(step);
+        } else {
+            self.changed();
         }
         Ok(())
     }
@@ -735,6 +881,7 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
             }
         }
         self.steps.insert(c.step.to_string(), (c.key.to_string(), c.outputs.to_vec()));
+        self.changed();
         Ok(())
     }
 }
@@ -749,6 +896,7 @@ mod tests {
         held: HashMap<Item, (Vec<f32>, bool)>,
         aside: HashMap<Item, (Vec<f32>, bool)>,
         grid: Option<(usize, usize, usize)>,
+        kept: Option<Recorded>,
     }
 
     impl Volumes for Single {
@@ -796,6 +944,10 @@ mod tests {
         fn begin(&mut self, meta: &RunMetadata) {
             self.grid = Some(meta.dims);
         }
+
+        fn recorded(&mut self, recorded: &Recorded) {
+            self.kept = Some(recorded.clone());
+        }
     }
 
     fn header() -> Header {
@@ -831,5 +983,82 @@ mod tests {
         assert_eq!(store.real(&Item::Chi).unwrap(), [1.0, 2.0]);
         assert!(store.volumes().aside.is_empty());
         assert!(store.volumes().remove(&Item::Chi) && !store.has(&Item::Chi));
+    }
+
+    #[test]
+    fn items_are_read_back_from_their_keys() {
+        use qsm_core::pipeline::qsmart::outputs as q;
+        let mut items = vec![
+            Item::AcquiredPhase(1), Item::AcquiredMagnitude(12), Item::AcquiredImaginary(2), Item::CoilPhase(3, 1),
+            Item::CoilMagnitude(1, 4), Item::CombinedEchoPhase(2), Item::CombinedEchoMagnitude(3),
+            Item::CoilCombinationMask, Item::Phase(3), Item::Magnitude(2), Item::CorrectedPhase(4),
+            Item::CorrectedMagnitude(5), Item::CombinedMagnitude, Item::BrainMask, Item::SuppliedMask,
+            Item::CoverageMask, Item::FieldPpm, Item::TotalFieldHz, Item::TotalFieldMagnitude,
+            Item::RobustFitReport, Item::LocalField(Pass::Main), Item::LocalFieldMask(Pass::Reliable),
+            Item::RawChi(Pass::Reliable), Item::ReliableMask, Item::QsmartIntermediate(Pass::Main, q::VESSEL_MASK),
+            Item::QsmartIntermediate(Pass::Reliable, q::CHI_STAGE2), Item::CombinedRawChi, Item::Chi,
+            Item::ChiSupport, Item::SinglePassChi, Item::Segmentation, Item::SuppliedSegmentation,
+            Item::SegmentationLabels, Item::SegmentationVolumes, Item::RegionStats, Item::MotionReport, Item::Swi,
+            Item::SwiMip, Item::R2star, Item::T2star, Item::MeseMagnitude(6), Item::SuppliedR2, Item::R2,
+            Item::SuppliedR2prime, Item::R2prime, Item::R2primeCoverage, Item::SuppliedChi, Item::SeparatedTotalChi,
+        ];
+        for c in Contrast::BOTH {
+            items.extend([Item::Smwi(c), Item::SmwiMip(c), Item::SeparatedChi(c)]);
+        }
+        for item in items {
+            assert_eq!(Item::from_key(&item.key()), Some(item), "{}", item.key());
+        }
+        for key in ["Chi(1)", "Phase", "Phase(x)", "CoilPhase(1)", "LocalField(Other)", "Smwi(Neither)",
+                    "QsmartIntermediate(Main, \"x\")", "Nope"] {
+            assert_eq!(Item::from_key(key), None, "{key}");
+        }
+    }
+
+    /// What one store recorded reaches its volumes as it changes, and a new store over the same
+    /// volumes takes it up with the completed steps still cached.
+    #[test]
+    fn a_new_store_restores_what_an_earlier_one_recorded() {
+        let mut store = MemoryStore::with_volumes(header(), serde_json::json!(1), Single::default());
+        let meta = crate::stages::magnitude::tests::meta_4x4x4();
+        store.record_scan("load-key", &meta).unwrap();
+        store.put(Item::FieldPpm, Data::Real(&[1.0, 2.0])).unwrap();
+        store.put(Item::RobustFitReport, Data::Json(&serde_json::json!({ "fit": 1 }))).unwrap();
+        let mip = Geometry { dims: (2, 1, 1), voxel_size: (1.0, 1.0, 4.0), affine: [0.0; 16] };
+        store.put(Item::SwiMip, Data::OnGrid(&[1.0, 2.0], &mip)).unwrap();
+        let mut fields = serde_json::Map::new();
+        fields.insert("Units".into(), "ppm".into());
+        store.annotate(&Item::FieldPpm, fields).unwrap();
+        store.record(&Completed {
+            step: "unwrap", algorithm: None, params: &serde_json::json!({}), outcome: None, key: "k1",
+            inputs: &[], outputs: &[Item::FieldPpm, Item::RobustFitReport],
+        }).unwrap();
+        store.start("output_space");
+        store.put(Item::FieldPpm, Data::Real(&[3.0, 4.0])).unwrap();
+        store.record(&Completed {
+            step: "output_space", algorithm: None, params: &serde_json::json!({}), outcome: None, key: "k2",
+            inputs: &[], outputs: &[Item::FieldPpm],
+        }).unwrap();
+        let kept = store.volumes().kept.clone().unwrap();
+        assert_eq!(serde_json::to_value(&kept).unwrap(), serde_json::to_value(store.recorded()).unwrap());
+        assert_eq!(kept.steps["unwrap"], ("k1".to_string(), vec!["FieldPpm".to_string(), "RobustFitReport".to_string()]));
+        assert_eq!(kept.geometries["SwiMip"], mip);
+        assert_eq!(kept.working_grid["FieldPpm"], None);
+
+        let volumes = std::mem::take(store.volumes());
+        let mut again = MemoryStore::with_volumes(header(), serde_json::json!(1), volumes);
+        again.restore(serde_json::from_value(serde_json::to_value(&kept).unwrap()).unwrap());
+        assert!(again.cached("output_space", "k2"));
+        assert_eq!(again.cached_scan("load-key").map(|m| m.dims), Some(meta.dims));
+        assert_eq!(again.report(&Item::RobustFitReport), Some(&serde_json::json!({ "fit": 1 })));
+        assert!(again.annotations(&Item::FieldPpm).is_some_and(|a| a["Units"] == "ppm"));
+        assert_eq!(again.geometry(&Item::SwiMip), Some(&mip));
+        // A step to compute puts the working-grid version back, and the return to the acquired grid
+        // is to do again.
+        assert!(!again.cached("invert", "k3"));
+        assert_eq!(again.real(&Item::FieldPpm).unwrap(), [1.0, 2.0]);
+        assert!(again.cached("unwrap", "k1") && !again.cached("output_space", "k2"));
+        // A key the step was not recorded under makes it stale, as ever.
+        assert!(!again.cached("unwrap", "k2"));
+        assert!(!again.volumes().kept.as_ref().unwrap().steps.contains_key("unwrap"));
     }
 }
