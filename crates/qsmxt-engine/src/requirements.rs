@@ -53,6 +53,23 @@ impl Output {
         }
     }
 
+    /// The setting that asks for it, by its path in the configuration: what a front end that
+    /// shows settings rather than flags names.
+    pub fn setting(self) -> &'static str {
+        match self {
+            Output::Swi => "pipeline.do_swi",
+            Output::Smwi => "pipeline.do_smwi",
+            Output::Segmentation => "pipeline.do_segmentation",
+            Output::T2star => "pipeline.do_t2starmap",
+            Output::R2star => "pipeline.do_r2starmap",
+            Output::R2 => "pipeline.do_r2map",
+            Output::R2prime => "pipeline.do_r2primemap",
+            Output::ChiSeparation => "pipeline.do_chi_separation",
+            Output::Analysis => "pipeline.do_analysis",
+            Output::RegionReference => "qsm.reference",
+        }
+    }
+
     fn enabled(self, config: &PipelineConfig) -> bool {
         let p = &config.pipeline;
         match self {
@@ -382,12 +399,39 @@ fn input_problems(f: &ScanFacts) -> Option<String> {
 pub struct Check {
     pub errors: Vec<String>,
     pub warnings: Vec<String>,
+    /// The same problems, each as data: for a front end that words them itself (qsmbly names
+    /// settings by their labels, not by their flags).
+    pub problems: Vec<Problem>,
+}
+
+/// One problem a [`Check`] found, as data.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct Problem {
+    /// An error (an output asked for that cannot be made: nothing runs) or a warning (an output
+    /// another one implied: the run goes ahead without it).
+    pub severity: Severity,
+    /// The setting asking for the output ([`Output::setting`]); `None` for a problem with the
+    /// input data itself.
+    pub setting: Option<&'static str>,
+    /// For a warning, the option that implied the output, as `qsmxt` names it.
+    pub implied_by: Option<String>,
+    /// What is missing: the error or warning's message after the flag (for an input problem, the
+    /// whole message).
+    pub reason: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Severity {
+    Error,
+    Warning,
 }
 
 /// Check one scan against the config. `key` names it in the messages (`qsmxt` uses the run's
 /// BIDS key, e.g. `sub-01_ses-1_MEGRE`).
 pub fn check_scan(key: &str, f: &ScanFacts, config: &PipelineConfig, out: &mut Check) {
-    let Check { errors, warnings } = scan_check(f, config);
+    let Check { errors, warnings, problems } = scan_check(f, config);
+    out.problems.extend(problems);
     out.errors.extend(errors.into_iter().map(|e| format!("{key}: {e}")));
     out.warnings.extend(warnings.into_iter().map(|w| format!("{key}: {w}")));
 }
@@ -396,17 +440,21 @@ pub fn check_scan(key: &str, f: &ScanFacts, config: &PipelineConfig, out: &mut C
 pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
     let mut out = Check::default();
     if let Some(why) = input_problems(f) {
-        out.errors.push(why);
+        out.errors.push(why.clone());
+        out.problems.push(Problem { severity: Severity::Error, setting: None, implied_by: None, reason: why });
     }
     for o in Output::ALL {
         if !o.enabled(config) {
             continue;
         }
         let Some(why) = problem(f, config, o) else { continue };
-        match implied_by(config, o) {
+        let by = implied_by(config, o);
+        match &by {
             Some(by) => out.warnings.push(format!("{} (turned on by {by}) is skipped: it {why}", o.flag())),
             None => out.errors.push(format!("{} {why}", o.flag())),
         }
+        let severity = if by.is_some() { Severity::Warning } else { Severity::Error };
+        out.problems.push(Problem { severity, setting: Some(o.setting()), implied_by: by, reason: why });
     }
     out
 }
