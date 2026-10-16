@@ -19,3 +19,5 @@ pub mod crop;
 pub mod background;
 pub mod inversion;
 pub mod qsmart;
+pub mod swi;
+pub mod relaxometry;

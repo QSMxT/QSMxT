@@ -91,13 +91,6 @@ impl StageContext<'_> {
         self.config.motion_correction.enabled && self.meta.n_echoes > 1 && self.meta.has_magnitude
     }
 
-    /// Echo `echo` (1-based) phase, in radians on the working grid, as the stages after motion
-    /// correction should read it.
-    fn echo_phase_path(&self, echo: usize) -> PathBuf {
-        if self.motion_corrected() { self.output.motion_phase_path(&self.run.key, echo) }
-        else { self.output.phase_scaled_path(&self.run.key, echo) }
-    }
-
     /// Echo `echo` (1-based) magnitude on the working grid, as the stages after motion
     /// correction should read it.
     fn echo_mag_path(&self, echo: usize) -> PathBuf {
@@ -449,6 +442,12 @@ impl FileStore<'_> {
                     found
                 }
             }
+            Item::Swi => o.swi_path(key),
+            Item::SwiMip => o.swi_mip_path(key),
+            Item::Smwi(c) => o.smwi_path(key, c.name()),
+            Item::SmwiMip(c) => o.smwi_mip_path(key, c.name()),
+            Item::R2star => o.r2star_path(key),
+            Item::T2star => o.t2star_path(key),
         })
     }
 
@@ -579,6 +578,7 @@ impl StageStore for FileStore<'_> {
         match data {
             Data::Real(v) => save_volume(&path, v, self.meta())?,
             Data::Mask(m) => save_mask(&path, m, self.meta())?,
+            Data::OnGrid(v, g) => write_volume(&path, v, g.dims, g.voxel_size, &g.affine)?,
             Data::Json(j) => {
                 let json = serde_json::to_string_pretty(j)
                     .map_err(|e| QsmxtError::Config(format!("{}: {e}", path.display())))?;
@@ -644,7 +644,6 @@ impl StageStore for FileStore<'_> {
         // echo still covers; the published brain mask stays the one masking made.
         let mask_path = self.mask_path.clone().unwrap_or_else(|| brain_mask.clone());
         let dseg_path = self.output.dseg_path(&self.run.key);
-        let support = self.output.qsm_support_path(&self.run.key);
         let (facts, models) = (self.facts, step.models.as_slice());
         let mut ctx = self.ctx();
         match step.stage {
@@ -654,13 +653,8 @@ impl StageStore for FileStore<'_> {
                 self.mask_path = Some(mask);
                 Ok(())
             }
-            Stage::Swi => stage_swi(&mut ctx, progress),
             Stage::Segmentation => stage_segmentation(&mut ctx, &dseg_path, models, progress),
-            Stage::Relaxometry => stage_t2star_r2star(&mut ctx, &mask_path, progress),
             Stage::R2 => stage_r2_r2prime(&mut ctx, &mask_path, facts, models, progress),
-            // SMWI weights by the final, referenced susceptibility map, over the voxels that map
-            // is defined on — outside them χ is 0 by construction, not by measurement.
-            Stage::Smwi => stage_smwi(&mut ctx, if support.exists() { &support } else { &mask_path }, progress),
             Stage::ChiSeparation => stage_chi_separation(&mut ctx, &mask_path, models, progress),
             // Last of the map-producing stages: it summarises every map on disk, so it has to run
             // after all of them — chi-separation included.
@@ -1466,65 +1460,6 @@ pub(crate) fn find_custom_mask(run: &QsmRun, tool: &str) -> Option<PathBuf> {
     find_custom_derivative(run, tool, "*_mask.nii*", &["_desc-reliable_", "_desc-qsm_", "_desc-r2prime_"])
 }
 
-/// CLEAR-SWI over every echo.
-///
-/// The phase is filtered within CLEAR-SWI's own mask (from the first echo's magnitude) rather
-/// than the brain mask, as CLEAR-SWI does: the SWI covers the head, not just the brain.
-fn stage_swi(ctx: &mut StageContext, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let (nx, ny, nz) = ctx.dims();
-    let (vsx, vsy, vsz) = ctx.voxel_size();
-    // Checked up front so an impossible window fails before the SWI is computed, not after.
-    let window = ctx.config.swi.mip_window;
-    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-    let (mip_grid, _) = qsm_core::swi::mip_geometry(&grid, &ctx.meta.affine, window)
-        .map_err(QsmxtError::Config)?;
-    let n_echoes = ctx.meta.n_echoes;
-    let swi_params = serde_json::json!({
-        "unwrap": ctx.config.swi.unwrap,
-        "scaling": ctx.config.swi.scaling,
-        "strength": ctx.config.swi.strength,
-        "hp_sigma": ctx.config.swi.hp_sigma,
-        "mip_window": window,
-        // Every echo contributes, so their number and times are part of what was computed. Their
-        // absence also retires SWIs cached when the stage used the first echo only.
-        "echoes": n_echoes,
-        "echo_times": ctx.meta.echo_times,
-        // Part of the cache key so a minIP written with full-volume dimensions before this was
-        // fixed (issue #211) is rebuilt rather than kept.
-        "mip_dims": [mip_grid.nx(), mip_grid.ny(), mip_grid.nz()],
-    });
-    if ctx.is_cached_with_params("swi", Some("clear-swi"), &swi_params) {
-        log::info!("Skipping swi (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    log::info!("Computing CLEAR-SWI ({} echo{})", n_echoes, if n_echoes == 1 { "" } else { "es" });
-    progress("Computing SWI");
-    let phase_paths: Vec<PathBuf> = (1..=n_echoes).map(|e| ctx.echo_phase_path(e)).collect();
-    let mag_paths: Vec<PathBuf> = (1..=n_echoes).map(|e| ctx.echo_mag_path(e)).collect();
-    let phases = phase_paths.iter().map(|p| load_volume(p)).collect::<crate::Result<Vec<_>>>()?;
-    let mags = mag_paths.iter().map(|p| load_volume(p)).collect::<crate::Result<Vec<_>>>()?;
-
-    let swi = qsm_core::swi::calculate_swi(
-        &phases, &mags, &ctx.meta.echo_times, None, &grid, &ctx.config.swi.to_params(),
-    )?.swi;
-    drop(phases);
-    drop(mags);
-    // The projection carries its own geometry: shorter than the SWI along the slice axis, and
-    // centred on each slab. Writing it under the run's dimensions is issue #211.
-    let mip = qsm_core::swi::create_mip(&swi, &grid, &ctx.meta.affine, window)
-        .map_err(QsmxtError::Config)?;
-
-    let swi_path = ctx.output.swi_path(&ctx.run.key);
-    let mip_path = ctx.output.swi_mip_path(&ctx.run.key);
-    save_volume(&swi_path, &swi, ctx.meta)?;
-    write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
-    let inputs: Vec<&Path> = phase_paths.iter().chain(&mag_paths).map(PathBuf::as_path).collect();
-    ctx.complete_step("swi", Some("clear-swi"), swi_params, &inputs, vec![swi_path, mip_path], t)?;
-    log_step_done("SWI", t);
-    Ok(())
-}
-
 /// The pipeline's own output for an input, or the bring-your-own derivative standing in for it.
 ///
 /// A custom tool means the stage that would have written `path` never ran, so the file has to be
@@ -1853,76 +1788,6 @@ fn write_dseg_lookup(path: &Path, labels: &qsm_core::segment::SynthSegLabels) ->
     Ok(())
 }
 
-/// Susceptibility map-weighted imaging: weight the magnitude by a mask built from χ.
-///
-/// Unlike SWI, the weighting comes from the susceptibility map rather than from high-pass filtered
-/// phase, so the contrast sits where the source is instead of spreading with the dipole field. It
-/// therefore runs after referencing, on the final `Chimap`.
-///
-/// Both contrasts are written: the paramagnetic mask suppresses positive χ (iron, haemorrhage), the
-/// diamagnetic one negative χ (calcification, myelin). Each gets a minIP, carrying the projection's
-/// own shorter geometry as the SWI minIP does.
-fn stage_smwi(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let (nx, ny, nz) = ctx.dims();
-    let (vsx, vsy, vsz) = ctx.voxel_size();
-    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-    let window = ctx.config.smwi.mip_window;
-    // Checked before any work, so an impossible window fails early rather than after the weighting.
-    let (mip_grid, _) = qsm_core::swi::mip_geometry(&grid, &ctx.meta.affine, window)
-        .map_err(QsmxtError::Config)?;
-    let params = serde_json::json!({
-        "threshold_ppm": ctx.config.smwi.threshold_ppm,
-        "power": ctx.config.smwi.power,
-        "mip_window": window,
-        "mip_dims": [mip_grid.nx(), mip_grid.ny(), mip_grid.nz()],
-    });
-    if ctx.is_cached_with_params("smwi", Some("smwi"), &params) {
-        log::info!("Skipping smwi (cached)");
-        return Ok(());
-    }
-
-    let qsm_path = ctx.output.qsm_path(&ctx.run.key);
-    if !qsm_path.exists() {
-        log::warn!("Skipping SMWI: no susceptibility map at {}", qsm_path.display());
-        return Ok(());
-    }
-    let t = Instant::now();
-    log::info!("Computing SMWI (threshold {} ppm, power {}, mIP over {} slices)",
-               ctx.config.smwi.threshold_ppm, ctx.config.smwi.power, window);
-    progress("Computing SMWI");
-
-    let chi = load_volume(&qsm_path)?;
-    let mag = load_volume(&ctx.output.magnitude_path(&ctx.run.key))?;
-    let mask = load_mask(mask_path)?;
-    let core = qsm_core::swi::SmwiParams {
-        threshold_ppm: ctx.config.smwi.threshold_ppm,
-        power: ctx.config.smwi.power,
-        mip_window: window,
-    };
-    let (para, dia) = qsm_core::swi::calculate_smwi(&mag, &chi, Some(&mask), &grid, &core);
-
-    let mut outputs = Vec::new();
-    for (contrast, data) in [("paramagnetic", &para), ("diamagnetic", &dia)] {
-        let smwi_path = ctx.output.smwi_path(&ctx.run.key, contrast);
-        let mip_path = ctx.output.smwi_mip_path(&ctx.run.key, contrast);
-        // The combined magnitude is one volume here, but calculate_smwi also accepts echoes
-        // stacked along the slowest axis; collapse before projecting either way.
-        let collapsed = qsm_core::swi::average_echoes(data, &grid);
-        let mip = qsm_core::swi::create_mip(&collapsed, &grid, &ctx.meta.affine, window)
-            .map_err(QsmxtError::Config)?;
-        save_volume(&smwi_path, &collapsed, ctx.meta)?;
-        write_volume(&mip_path, &mip.data, mip.grid.dims, mip.grid.voxel_size, &mip.affine)?;
-        outputs.push(smwi_path);
-        outputs.push(mip_path);
-    }
-
-    let mag_input = ctx.output.magnitude_path(&ctx.run.key);
-    ctx.complete_step("smwi", Some("smwi"), params,
-                      &[qsm_path.as_path(), mag_input.as_path(), mask_path], outputs, t)?;
-    log_step_done("SMWI", t);
-    Ok(())
-}
-
 /// One echo's magnitude on the working grid (0-based `echo`).
 ///
 /// The scale_phase intermediate is the one to read: it is the same echo, already resampled when
@@ -1945,50 +1810,6 @@ fn load_echo_magnitude(ctx: &StageContext, echo: usize) -> crate::Result<Vec<f64
         )));
     }
     Ok(data)
-}
-
-fn stage_t2star_r2star(ctx: &mut StageContext, mask_path: &Path, progress: &dyn Fn(&str)) -> crate::Result<()> {
-    let t2r2_params = serde_json::json!({
-        "n_echoes": ctx.meta.n_echoes,
-        "echo_times": ctx.meta.echo_times,
-    });
-    if ctx.is_cached_with_params("t2star_r2star", Some("arlo"), &t2r2_params) {
-        log::info!("Skipping t2star_r2star (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    let (nx, ny, nz) = ctx.dims();
-    let n_voxels = nx * ny * nz;
-    log::info!("Computing R2*/T2* maps (ARLO, {} echoes)", ctx.meta.n_echoes);
-    progress("Computing R2*/T2* maps");
-    let mask = load_mask(mask_path)?;
-
-    let mut interleaved = vec![0.0f64; n_voxels * ctx.meta.n_echoes];
-    for i in 0..ctx.meta.n_echoes {
-        let mag_data = load_echo_magnitude(ctx, i)?;
-        for vox in 0..n_voxels {
-            interleaved[vox * ctx.meta.n_echoes + i] = mag_data[vox];
-        }
-    }
-
-    let (vsx, vsy, vsz) = ctx.voxel_size();
-    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-    let (r2star_map, _s0) = qsm_core::utils::r2star_arlo(
-        &interleaved, &mask, &ctx.meta.echo_times, &grid,
-    )?;
-    drop(interleaved);
-
-    // Always compute and save both maps — T2* is trivially derived from R2*
-    let r2_path = ctx.output.r2star_path(&ctx.run.key);
-    save_volume(&r2_path, &r2star_map, ctx.meta)?;
-    let t2star: Vec<f64> = r2star_map.iter().zip(mask.iter())
-        .map(|(&r2, &m)| if m > 0 && r2 > 0.0 { 1.0 / r2 } else { 0.0 })
-        .collect();
-    let t2_path = ctx.output.t2star_path(&ctx.run.key);
-    save_volume(&t2_path, &t2star, ctx.meta)?;
-    ctx.complete_step("t2star_r2star", Some("arlo"), t2r2_params, &[mask_path], vec![r2_path, t2_path], t)?;
-    log_step_done("T2*/R2* mapping", t);
-    Ok(())
 }
 
 /// Say so when R2PRIMEnet is about to run on a grid that was not brought to axial.
@@ -2492,7 +2313,7 @@ fn stage_chi_separation(
         (None, None)
     };
 
-    // R2* / R2' — from stage_t2star_r2star / stage_r2_r2prime, or a bring-your-own R2' map.
+    // R2* / R2' — from the relaxometry and R2 steps, or a bring-your-own R2' map.
     let mut r2star: Option<Vec<f64>> = {
         let p = ctx.output.r2star_path(&ctx.run.key);
         if p.exists() { Some(load_volume(&p)?) } else { None }
@@ -3695,7 +3516,6 @@ mod swi_export_tests {
         let shrunk = stage_motion(&mut ctx, &mask_path, &|_| {}).unwrap();
         assert_eq!(shrunk, output.motion_coverage_path(&k));
         assert_eq!(ctx.echo_mag_path(2), output.motion_mag_path(&k, 2));
-        assert_eq!(ctx.echo_phase_path(1), output.motion_phase_path(&k, 1));
         let report: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(output.motion_report_path(&k)).unwrap()).unwrap();
         let t = report["echoes"][1]["translation_mm"].as_f64().unwrap();
@@ -3730,7 +3550,7 @@ mod swi_export_tests {
         data
     }
 
-    /// Run `stage_swi` end to end over synthetic inputs on the given grid.
+    /// Run the SWI step end to end over synthetic inputs on the given grid.
     fn run_swi_stage(
         dir: &Path,
         dims: (usize, usize, usize),
@@ -3754,13 +3574,7 @@ mod swi_export_tests {
             write_volume(&output.mag_path(&k, e), &textured(dims), dims, meta.voxel_size, &affine).unwrap();
         }
 
-        let state_path = dir.join("state.json");
-        let mut state = PipelineState::load_or_create(&state_path, &config, &k, true);
-        let mut ctx = StageContext {
-            run: &run, config: &config, output: &output, meta: &meta,
-            state: &mut state, state_path: &state_path,
-        };
-        let result = stage_swi(&mut ctx, &|_| {});
+        let result = run_engine_step(&run, &config, &output, &meta, Stage::Swi);
         (result, output, k)
     }
 
@@ -3865,7 +3679,7 @@ mod swi_export_tests {
     #[test]
     fn a_first_echo_swi_cache_is_rebuilt() {
         let dir = tempfile::tempdir().unwrap();
-        let (result, _, _) = run_swi_stage(dir.path(), (8, 8, 16), IDENTITY, 7);
+        let (result, output, k) = run_swi_stage(dir.path(), (8, 8, 16), IDENTITY, 7);
         result.unwrap();
         let d = PipelineConfig::default().swi;
         let first_echo_key = serde_json::json!({
@@ -3874,7 +3688,7 @@ mod swi_export_tests {
         });
         let first_echo_hash = crate::pipeline::graph::step_params_hash(Some("clear-swi"), &first_echo_key);
         let state: PipelineState = serde_json::from_str(
-            &std::fs::read_to_string(dir.path().join("state.json")).unwrap()).unwrap();
+            &std::fs::read_to_string(output.state_path(&k)).unwrap()).unwrap();
         assert_ne!(state.completed_steps.get("swi").unwrap().params_hash.as_deref(), Some(first_echo_hash.as_str()));
     }
 
@@ -3883,7 +3697,7 @@ mod swi_export_tests {
     fn a_stale_minip_cache_is_rebuilt() {
         let dir = tempfile::tempdir().unwrap();
         let dims = (8, 8, 16);
-        let (result, _, _) = run_swi_stage(dir.path(), dims, IDENTITY, 7);
+        let (result, output, k) = run_swi_stage(dir.path(), dims, IDENTITY, 7);
         result.unwrap();
 
         // Replay the pre-fix parameter set: same window, no minIP dimensions recorded.
@@ -3894,9 +3708,8 @@ mod swi_export_tests {
             "mip_window": 7,
         });
         let stale_hash = crate::pipeline::graph::step_params_hash(Some("clear-swi"), &stale);
-        let state_path = dir.path().join("state.json");
         let mut state: PipelineState =
-            serde_json::from_str(&std::fs::read_to_string(&state_path).unwrap()).unwrap();
+            serde_json::from_str(&std::fs::read_to_string(output.state_path(&k)).unwrap()).unwrap();
         assert_ne!(
             state.completed_steps.get("swi").unwrap().params_hash.as_deref(),
             Some(stale_hash.as_str()),

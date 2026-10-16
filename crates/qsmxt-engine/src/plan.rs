@@ -210,13 +210,13 @@ fn predicts_r2prime(facts: &ScanFacts, config: &PipelineConfig) -> bool {
 
 /// Whether the engine runs `stage` on this scan itself. The rest are still the front end's: the
 /// stages listed for step 2.4 of the parity plan (coil combination and real/imaginary input, motion
-/// correction, SWI and SMWI, relaxometry, χ-separation, segmentation and its statistics, the
-/// return to the acquired grid).
+/// correction, R2 and R2′, χ-separation, segmentation and its statistics, the return to the
+/// acquired grid).
 fn in_engine(stage: Stage, facts: &ScanFacts) -> bool {
     match stage {
         Stage::ScalePhase => facts.n_coils <= 1 && !facts.real_imaginary,
-        Stage::Motion | Stage::Swi | Stage::Segmentation | Stage::Relaxometry | Stage::R2
-        | Stage::Smwi | Stage::ChiSeparation | Stage::Analysis | Stage::OutputSpace => false,
+        Stage::Motion | Stage::Segmentation | Stage::R2 | Stage::ChiSeparation | Stage::Analysis
+        | Stage::OutputSpace => false,
         _ => true,
     }
 }

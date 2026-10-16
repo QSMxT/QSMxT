@@ -574,7 +574,8 @@ mod tests {
             }
         }
         for stage in [Stage::ScalePhase, Stage::Magnitude, Stage::FieldMap, Stage::TwoPassCombination,
-                      Stage::Reference, Stage::SinglePassReference] {
+                      Stage::Reference, Stage::SinglePassReference, Stage::Swi, Stage::Smwi,
+                      Stage::Relaxometry] {
             names.push(stage.name());
         }
         for name in &names {
