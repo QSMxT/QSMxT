@@ -13,13 +13,9 @@ use crate::pipeline::graph::{PipelineState, RunMetadata};
 use qsmxt_engine::cache::step_cache_key;
 use qsmxt_engine::observe::{Observer, StageEvent};
 use qsmxt_engine::plan::{Pass as EnginePass, Plan, Stage, Step};
-use qsmxt_engine::store::{Completed, Data, Header, Item, StageStore, Supplied};
-use qsmxt_engine::scan::{scan_metadata, AXIAL_ONLY_TOLERANCE_DEG};
+use qsmxt_engine::store::{Completed, Contrast, Data, Header, Item, StageStore, Supplied};
 use crate::pipeline::memory;
-use crate::pipeline::requirements::{
-    self, r2primenet_field_message, r2primenet_field_policy, R2primenetFieldPolicy,
-    R2PRIMENET_TRAINED_B0_T,
-};
+use crate::pipeline::requirements;
 use crate::pipeline::stats;
 use crate::nifti::write::write_volume;
 use crate::error::QsmxtError;
@@ -84,20 +80,6 @@ impl StageContext<'_> {
         self.state.is_step_cached_with_hash(step, Some(&hash))
     }
 
-    fn dims(&self) -> (usize, usize, usize) { self.meta.dims }
-
-    /// Whether the echoes after masking are the motion-corrected ones.
-    fn motion_corrected(&self) -> bool {
-        self.config.motion_correction.enabled && self.meta.n_echoes > 1 && self.meta.has_magnitude
-    }
-
-    /// Echo `echo` (1-based) magnitude on the working grid, as the stages after motion
-    /// correction should read it.
-    fn echo_mag_path(&self, echo: usize) -> PathBuf {
-        if self.motion_corrected() { self.output.motion_mag_path(&self.run.key, echo) }
-        else { self.output.mag_path(&self.run.key, echo) }
-    }
-    fn voxel_size(&self) -> (f64, f64, f64) { self.meta.voxel_size }
 
     /// Write provenance.json, record params hash, and save pipeline state.
     fn complete_step(
@@ -357,7 +339,7 @@ pub fn run_pipeline_cached(
         log::warn!("{note}");
     }
     let mut store = FileStore {
-        run: qsm_run, facts: &facts, config, output: output.clone(), meta: None, state, state_path, progress,
+        run: qsm_run, config, output: output.clone(), meta: None, state, state_path, progress,
         started: None, supplied_mask: None, mask_path: None,
     };
     let mut observer = RunObserver { key: qsm_run.key.to_string(), progress, bar: None, started: None };
@@ -370,8 +352,6 @@ pub fn run_pipeline_cached(
 /// same files.
 struct FileStore<'a> {
     run: &'a QsmRun,
-    /// The run's facts, as the plan was made from them.
-    facts: &'a requirements::ScanFacts,
     config: &'a PipelineConfig,
     /// The run's outputs, named in the space they are published in once the grid is known.
     output: DerivativeOutputs,
@@ -448,7 +428,23 @@ impl FileStore<'_> {
             Item::SmwiMip(c) => o.smwi_mip_path(key, c.name()),
             Item::R2star => o.r2star_path(key),
             Item::T2star => o.t2star_path(key),
+            Item::MeseMagnitude(n) => self.run.mese.as_ref()?.magnitude_niftis.get(n.checked_sub(1)?)?.clone(),
+            Item::SuppliedR2 => self.custom(self.config.separation.custom_r2_tool.as_deref(), "*_R2map.nii*", &[])?,
+            Item::R2 => o.r2_path(key),
+            Item::SuppliedR2prime =>
+                self.custom(self.config.separation.custom_r2prime_tool.as_deref(), "*_R2primemap.nii*", &[])?,
+            Item::R2prime => o.r2prime_path(key),
+            Item::R2primeCoverage => o.r2prime_coverage_path(key),
+            Item::SuppliedChi => self.custom(self.config.separation.custom_qsm_tool.as_deref(), "*_Chimap.nii*", &["desc-"])?,
+            Item::SeparatedChi(Contrast::Paramagnetic) => o.chi_para_path(key),
+            Item::SeparatedChi(Contrast::Diamagnetic) => o.chi_dia_path(key),
+            Item::SeparatedTotalChi => o.chi_sep_total_path(key),
         })
+    }
+
+    /// The derivative `tool` supplies for this run, when one is configured and found.
+    fn custom(&self, tool: Option<&str>, glob: &str, exclude: &[&str]) -> Option<PathBuf> {
+        find_custom_derivative(self.run, tool?, glob, exclude)
     }
 
     fn existing(&self, item: &Item) -> crate::Result<PathBuf> {
@@ -542,6 +538,23 @@ impl StageStore for FileStore<'_> {
         }
     }
 
+    fn mese(&mut self) -> Option<qsmxt_engine::store::Mese> {
+        self.run.mese.as_ref().map(|m| qsmxt_engine::store::Mese {
+            name: m.key.to_string(), dims: m.dims, affine: m.affine, echo_times: m.echo_times.clone(),
+        })
+    }
+
+    fn supplied(&mut self, item: &Item) -> Supplied {
+        let Some(path) = self.path(item) else {
+            return Supplied::Missing { searched: format!("the inputs of {}", self.run.key) };
+        };
+        let origin = path.display().to_string();
+        match io::read_nifti_file(&path) {
+            Ok(nd) => Supplied::Found { origin, data: nd.data, dims: nd.dims, affine: nd.affine },
+            Err(error) => Supplied::Unreadable { origin, error },
+        }
+    }
+
     /// The path, which is what earlier releases keyed a step by.
     fn identity(&mut self, item: &Item) -> serde_json::Value {
         serde_json::json!(self.path(item).unwrap_or_default().to_string_lossy())
@@ -612,6 +625,16 @@ impl StageStore for FileStore<'_> {
         if let Some(fields) = described {
             self.annotate(&item, fields.into_iter().map(|(k, v)| (k.to_string(), v)).collect())?;
         }
+        // A new R2' map: what an earlier run recorded about where its R2' came from no longer
+        // holds, and the step records it afresh.
+        if item == Item::R2prime {
+            if let Some(sidecar) = crate::bids::entities::sidecar_path(&path) {
+                let mut obj = read_json_object(&sidecar);
+                obj.retain(|k, _| !k.starts_with("R2prime"));
+                std::fs::write(&sidecar, serde_json::to_string_pretty(&obj)
+                    .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
+            }
+        }
         Ok(())
     }
 
@@ -640,11 +663,8 @@ impl StageStore for FileStore<'_> {
     fn host(&mut self, step: &Step, _plan: &Plan, _observer: &mut dyn Observer) -> crate::Result<()> {
         let progress = self.progress;
         let brain_mask = self.output.mask_path(&self.run.key);
-        // Every stage after masking reads the motion-corrected echoes (when on) and the mask every
-        // echo still covers; the published brain mask stays the one masking made.
-        let mask_path = self.mask_path.clone().unwrap_or_else(|| brain_mask.clone());
         let dseg_path = self.output.dseg_path(&self.run.key);
-        let (facts, models) = (self.facts, step.models.as_slice());
+        let models = step.models.as_slice();
         let mut ctx = self.ctx();
         match step.stage {
             Stage::ScalePhase => stage_scale_phase(&mut ctx, progress),
@@ -654,8 +674,6 @@ impl StageStore for FileStore<'_> {
                 Ok(())
             }
             Stage::Segmentation => stage_segmentation(&mut ctx, &dseg_path, models, progress),
-            Stage::R2 => stage_r2_r2prime(&mut ctx, &mask_path, facts, models, progress),
-            Stage::ChiSeparation => stage_chi_separation(&mut ctx, &mask_path, models, progress),
             // Last of the map-producing stages: it summarises every map on disk, so it has to run
             // after all of them — chi-separation included.
             Stage::Analysis => stage_analysis(&mut ctx, &dseg_path, progress),
@@ -1139,7 +1157,7 @@ fn log_motion_summary(r: &qsm_core::pipeline::MotionCorrectionResult, mask_in: &
         log::warn!("Motion correction: the registration of echo(es) {} may have failed (low NCC or overlap); \
                     check the motion report", suspect.join(", "));
     }
-    let (before, after) = (count_set(mask_in), count_set(&r.mask));
+    let (before, after) = (qsmxt_engine::stages::r2::count_set(mask_in), qsmxt_engine::stages::r2::count_set(&r.mask));
     if after < before {
         log::info!("Mask restricted to voxels every echo covers: {} -> {} voxels", before, after);
     }
@@ -1593,51 +1611,6 @@ fn stage_analysis(ctx: &mut StageContext, dseg_path: &Path, progress: &dyn Fn(&s
     Ok(())
 }
 
-/// R2PRIMEnet inference. Gated in one place so a non-`dl` build says why it cannot run rather
-/// than failing to link.
-///
-/// The network's weights are trained at 3 T and it takes no field strength as an input, so
-/// `qsm_core` refuses anything far from 3 T unless `separation.r2primenet.ignore_field_mismatch`
-/// is set. Whether to get this far at all off 3 T is [`r2primenet_field_policy`]'s decision.
-#[cfg(feature = "dl")]
-fn run_r2primenet(
-    ctx: &StageContext, r2star: &[f64], mask: &[u8], grid: &qsm_core::Grid,
-) -> crate::Result<Vec<f64>> {
-    let params = r2primenet_params(&ctx.config.separation.r2primenet)?;
-    let weights = qsm_core::models::primary_weight("r2primenet")
-        .map_err(|e| QsmxtError::Config(format!("r2primenet weights: {}", e)))?;
-    let (prog, _) = iter_progress_bar(&ctx.run.key.to_string(), "r2primenet");
-    qsm_core::relaxometry::r2primenet(
-        r2star, mask, grid, ctx.meta.field_strength, &weights,
-        &qsm_core::relaxometry::R2PrimeNetNorm::default(),
-        &params,
-        prog,
-    )
-    .map_err(|e| QsmxtError::Config(format!("r2primenet: {}", e)))
-}
-
-/// qsm-core's R2PRIMEnet parameters, or why the configured patch cannot be used.
-#[cfg(feature = "dl")]
-fn r2primenet_params(
-    c: &crate::pipeline::config::R2primenetConfig,
-) -> crate::Result<qsm_core::relaxometry::R2PrimeNetParams> {
-    c.validate().map_err(QsmxtError::Config)?;
-    Ok(qsm_core::relaxometry::R2PrimeNetParams {
-        patch: (c.patch[0], c.patch[1], c.patch[2]),
-        ignore_field_mismatch: c.ignore_field_mismatch,
-    })
-}
-
-#[cfg(not(feature = "dl"))]
-fn run_r2primenet(
-    _ctx: &StageContext, _r2star: &[f64], _mask: &[u8], _grid: &qsm_core::Grid,
-) -> crate::Result<Vec<f64>> {
-    Err(QsmxtError::Config(
-        "estimating R2' needs a deep-learning build: R2PRIMEnet runs an ONNX network, which this \
-         binary was compiled without (--no-default-features). Supply a custom R2' map, or a MESE \
-         acquisition to measure it from".into()))
-}
-
 /// Bring-your-own segmentation (`*_dseg.nii*`).
 fn find_custom_dseg(run: &QsmRun, tool: &str) -> Option<PathBuf> {
     find_custom_derivative(run, tool, "*_dseg.nii*", &[])
@@ -1788,699 +1761,11 @@ fn write_dseg_lookup(path: &Path, labels: &qsm_core::segment::SynthSegLabels) ->
     Ok(())
 }
 
-/// One echo's magnitude on the working grid (0-based `echo`).
-///
-/// The scale_phase intermediate is the one to read: it is the same echo, already resampled when
-/// the run was moved to axial, and it is the only copy when the coils were combined. The source
-/// file is the fallback, and is only on the working grid when the run was not resampled.
-fn load_echo_magnitude(ctx: &StageContext, echo: usize) -> crate::Result<Vec<f64>> {
-    let intermediate = ctx.echo_mag_path(echo + 1);
-    let path = match ctx.run.echoes[echo].magnitude_nifti.as_ref() {
-        Some(raw) if !intermediate.exists() => raw.clone(),
-        _ => intermediate,
-    };
-    let data = io::read_nifti_file(&path)
-        .map_err(|e| QsmxtError::NiftiIo(format!("mag echo {} ({}): {}", echo + 1, path.display(), e)))?
-        .data;
-    let (nx, ny, nz) = ctx.meta.dims;
-    if data.len() != nx * ny * nz {
-        return Err(QsmxtError::Config(format!(
-            "mag echo {}: {} has {} voxels, but this run is processed on a {}x{}x{} grid",
-            echo + 1, path.display(), data.len(), nx, ny, nz,
-        )));
-    }
-    Ok(data)
-}
-
-/// Say so when R2PRIMEnet is about to run on a grid that was not brought to axial.
-///
-/// `axial_only_algorithms` normally resamples first — R2PRIMEnet assumes B0 along `+z` and has no
-/// way to be told otherwise. It decides from the config and the engine's `orientation_facts`,
-/// which judge a declared R2 source optimistically, so a run can reach here having been promised
-/// a measured R2 that never materialised (a missing `--custom-r2-tool` derivative, an unreadable MESE). The
-/// grid cannot be changed this late, so the one useful thing is to not be silent about it.
-fn warn_if_r2primenet_grid_is_oblique(ctx: &StageContext) {
-    if let Some(tilt) = r2primenet_grid_tilt(ctx.meta.source_geometry.is_some(), &ctx.meta.affine) {
-        log::warn!(
-            "R2PRIMEnet assumes B0 lies along +z, but this run is reconstructing on its acquired \
-             grid with B0 {tilt:.1}° from the slice normal, so its R2' is off-distribution. The \
-             run was not resampled because a measured R2 was expected and did not materialise. \
-             Pass --axial-resampling to resample, or --r2prime-strategy mese to not estimate \
-             R2' at all."
-        );
-    }
-}
-
-/// The tilt worth warning about before R2PRIMEnet runs, or `None` when there is nothing to say.
-///
-/// Split out from the logging so the decision can be asserted: a run resampled to a cardinal grid
-/// has nothing wrong with it, and a sub-tolerance tilt is the rounding every affine carries.
-fn r2primenet_grid_tilt(was_resampled: bool, affine: &[f64; 16]) -> Option<f64> {
-    if was_resampled {
-        return None;
-    }
-    let tilt = qsm_core::geometry::b0_angle_from_affine(affine);
-    (tilt > AXIAL_ONLY_TOLERANCE_DEG).then_some(tilt)
-}
-
-/// The mask a MESE-measured R2 is valid over: the brain mask, narrowed to where the MESE's FOV
-/// reached.
-///
-/// Outside that FOV the resampled echoes are zero because nothing was acquired there, not because
-/// the tissue is dark, so a fit there invents an R2 out of interpolated nothing.
-fn mese_measured_mask(brain: &[u8], coverage: &[u8]) -> Vec<u8> {
-    brain.iter().zip(coverage.iter()).map(|(&m, &c)| ((m > 0) && (c > 0)) as u8).collect()
-}
-
-fn count_set(mask: &[u8]) -> usize {
-    mask.iter().filter(|&&m| m > 0).count()
-}
-
-/// R2' = R2* - R2, over the voxels where R2 was actually measured.
-///
-/// `r2_mask` is where the MESE's FOV reached, when R2 came from one that does not cover the whole
-/// brain. It is passed as coverage rather than substituted for the brain mask, because the two
-/// mean different things to `r2prime`: the brain mask is where an R2' is wanted, the coverage is
-/// where R2 exists. Subtracting over the brain mask alone would take a zero R2 for a measured one
-/// and report the whole of R2* as reversible, which is a plausible-looking number standing in for
-/// an absent measurement.
-///
-/// Returns the map and the coverage it is valid over. The coverage can be narrower than
-/// `r2_mask`: `r2prime` also drops any voxel whose R2 is not finite and positive, since R2 = 0
-/// means T2 = infinity and no tissue has that.
-fn measured_r2prime(
-    r2star: &[f64], r2: &[f64], brain: &[u8], r2_mask: Option<&[u8]>,
-) -> crate::Result<(Vec<f64>, Vec<u8>)> {
-    let out = qsm_core::relaxometry::r2prime(r2star, r2, brain, r2_mask)?;
-    Ok((out.r2prime, out.coverage))
-}
-
-/// Whether two grids are the same one, to within the precision a NIfTI header stores.
-///
-/// Affines come back from 32-bit header fields, so bitwise equality is the wrong test: a volume
-/// round-tripped through a header can differ in the last few bits and is still the same grid.
-/// A millimetre is far below any real difference in FOV, position or orientation and far above
-/// that noise.
-fn same_grid(
-    a_dims: (usize, usize, usize), a_affine: &[f64; 16],
-    b_dims: (usize, usize, usize), b_affine: &[f64; 16],
-) -> bool {
-    a_dims == b_dims && a_affine.iter().zip(b_affine.iter()).all(|(x, y)| (x - y).abs() < 1e-3)
-}
-
-/// A matched MESE acquisition's magnitude, voxel-major `(n_voxels, n_se)`, on this run's grid.
-///
-/// The MESE is a separate acquisition, so its geometry is reconciled with the reconstruction grid
-/// here instead of being assumed. Two things make them disagree, and both are ordinary rather
-/// than exceptional:
-///
-/// - the MESE was acquired on its own grid (a 2D stack with thicker slices, a smaller matrix, a
-///   tighter FOV), which is the usual shape of a spin-echo companion to a 3D GRE;
-/// - the GRE was resampled to a cardinal grid, which moves it away from whatever the MESE shares.
-///
-/// Either way the echoes are resampled onto `dst_dims`/`dst_affine` — magnitude is continuous, so
-/// trilinear interpolation is safe (wrapped phase would have to go through the complex domain
-/// instead; see the `qsm_core::geometry` module docs). This used to compare voxel counts, which
-/// silently dropped the whole MESE when the grids differed and silently accepted a mis-registered
-/// one when they happened to agree in size.
-///
-/// Returns the buffer and a coverage mask marking which destination voxels the MESE's FOV
-/// actually reaches: a MESE with fewer slices than the GRE leaves the rest of the grid empty, and
-/// R2 must not be reported where nothing was measured.
-fn load_mese_voxel_major(
-    mese: &crate::bids::discovery::MeseRun,
-    dst_dims: (usize, usize, usize),
-    dst_affine: &[f64; 16],
-) -> crate::Result<Option<(Vec<f64>, Vec<u8>)>> {
-    let n_voxels = dst_dims.0 * dst_dims.1 * dst_dims.2;
-    let n_se = mese.echo_times.len();
-    let on_grid = same_grid(mese.dims, &mese.affine, dst_dims, dst_affine);
-
-    // Where the MESE's FOV lands on the destination grid. Resampling ones rather than inspecting
-    // the data keeps this about geometry: a genuinely dark voxel inside the FOV is measured.
-    let coverage: Vec<u8> = if on_grid {
-        vec![1u8; n_voxels]
-    } else {
-        let src_n = mese.dims.0 * mese.dims.1 * mese.dims.2;
-        let Some(c) = qsm_core::geometry::resample_onto(
-            &vec![1.0f64; src_n], mese.dims, &mese.affine, dst_dims, dst_affine,
-        ) else {
-            log::warn!(
-                "MESE acquisition {} has an affine that cannot be inverted; ignoring the MESE",
-                mese.key
-            );
-            return Ok(None);
-        };
-        c.iter().map(|&v| (v > 0.5) as u8).collect()
-    };
-    let covered = coverage.iter().filter(|&&c| c > 0).count();
-    if covered == 0 {
-        // Not a grid difference to interpolate across: the two acquisitions do not occupy the
-        // same space at all, so there is no reading of this that produces an R2 map.
-        return Err(QsmxtError::Config(format!(
-            "The MESE acquisition {} shares no space with the grid this run reconstructs on \
-             ({}x{}x{} vs {}x{}x{}), so R2 cannot be computed from it. Check that the MESE and \
-             the GRE belong to the same subject and that their affines are not corrupt.",
-            mese.key, mese.dims.0, mese.dims.1, mese.dims.2, dst_dims.0, dst_dims.1, dst_dims.2,
-        )));
-    }
-    if !on_grid {
-        log::info!(
-            "Resampling the MESE onto this run's grid: {}x{}x{} -> {}x{}x{} ({:.0}% of the grid \
-             is inside its FOV)",
-            mese.dims.0, mese.dims.1, mese.dims.2, dst_dims.0, dst_dims.1, dst_dims.2,
-            100.0 * covered as f64 / n_voxels as f64,
-        );
-    }
-
-    let mut se = vec![0.0f64; n_voxels * n_se];
-    for (i, p) in mese.magnitude_niftis.iter().enumerate() {
-        let nf = match io::read_nifti_file(p) {
-            Ok(nf) => nf,
-            Err(e) => {
-                log::warn!("MESE echo unreadable ({}): {}; ignoring the MESE", p.display(), e);
-                return Ok(None);
-            }
-        };
-        // The acquisition's grid was taken from its first echo. An echo that disagrees with it is
-        // a broken series, not a second geometry to reconcile.
-        if !same_grid(nf.dims, &nf.affine, mese.dims, &mese.affine) {
-            log::warn!(
-                "MESE echo {} is on a different grid from the first echo of its own acquisition \
-                 ({}x{}x{} vs {}x{}x{}); ignoring the MESE",
-                p.display(), nf.dims.0, nf.dims.1, nf.dims.2,
-                mese.dims.0, mese.dims.1, mese.dims.2,
-            );
-            return Ok(None);
-        }
-        let values = if on_grid {
-            nf.data
-        } else {
-            match qsm_core::geometry::resample_onto(
-                &nf.data, mese.dims, &mese.affine, dst_dims, dst_affine,
-            ) {
-                Some(v) => v,
-                None => {
-                    log::warn!("Cannot resample MESE echo {}; ignoring the MESE", p.display());
-                    return Ok(None);
-                }
-            }
-        };
-        for vox in 0..n_voxels { se[vox * n_se + i] = values[vox]; }
-    }
-    Ok(Some((se, coverage)))
-}
-
-/// Supplementary R2 (EPG from a MESE acquisition) and R2' = R2* − R2 maps.
-///
-/// Runs when `do_r2map`/`do_r2primemap` are set (chi-separation forces these on via
-/// `enforce_separation_dependencies`). A bring-your-own R2/R2' map from `<bids>/derivatives/<tool>`
-/// is preferred over computing. Missing inputs (no MESE, no R2*) skip the affected map with a
-/// warning rather than failing the run.
-/// `facts` are the run's; `models` are the plan's for the step: R2PRIMEnet's when it predicts R2'.
-fn stage_r2_r2prime(
-    ctx: &mut StageContext, mask_path: &Path, facts: &requirements::ScanFacts, models: &[&'static str],
-    progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    let want_r2 = ctx.config.pipeline.do_r2map;
-    let want_r2p = ctx.config.pipeline.do_r2primemap;
-    if !want_r2 && !want_r2p {
-        return Ok(());
-    }
-    let params = serde_json::json!({
-        "do_r2map": want_r2, "do_r2primemap": want_r2p,
-        "custom_r2": ctx.config.separation.custom_r2_tool,
-        "custom_r2prime": ctx.config.separation.custom_r2prime_tool,
-        "echo_times": ctx.meta.echo_times,
-        "has_mese": ctx.run.mese.is_some(),
-        // The MESE is reconciled onto this run's grid, so both grids belong in the cache key:
-        // a MESE swapped for one on another grid produces a different R2 map from the same config.
-        "mese_grid": ctx.run.mese.as_ref().map(|m| (m.dims, m.affine)),
-        "grid": (ctx.meta.dims, ctx.meta.affine),
-        "r2prime_strategy": format!("{}", ctx.config.separation.r2prime_strategy),
-        "r2primenet": ctx.config.separation.r2primenet,
-    });
-    if ctx.is_cached_with_params("r2_r2prime", Some("epg"), &params) {
-        log::info!("Skipping r2_r2prime (cached)");
-        return Ok(());
-    }
-    let t = Instant::now();
-    let (nx, ny, nz) = ctx.dims();
-    let (vsx, vsy, vsz) = ctx.voxel_size();
-    let grid = qsm_core::Grid::new(nx, ny, nz, vsx, vsy, vsz);
-    let mask = load_mask(mask_path)?;
-    let mut outputs: Vec<PathBuf> = Vec::new();
-    // The mask R2 was actually measured over. Narrower than the brain mask when the MESE's FOV
-    // does not reach all of it; `None` means R2 came from somewhere other than a MESE.
-    let mut r2_mask: Option<Vec<u8>> = None;
-
-    // ── R2 map (Hz) ──
-    let r2: Option<Vec<f64>> = if let Some(tool) = ctx.config.separation.custom_r2_tool.clone() {
-        match find_custom_derivative(ctx.run, &tool, "*_R2map.nii*", &[]) {
-            Some(p) => { log::info!("Using custom R2 map from {}", p.display()); Some(load_volume(&p)?) }
-            None => { log::warn!("no custom R2 map under derivatives (tool: {}) — skipping R2", tool); None }
-        }
-    } else if let Some(mese) = ctx.run.mese.clone() {
-        if let Some(why) = requirements::mese_problem(facts) {
-            // Refused up front when R2 was asked for; here only when something else implied it.
-            log::warn!("Not measuring R2 from the MESE ({why})");
-            None
-        } else {
-            progress("Computing R2 (EPG) from MESE");
-            match load_mese_voxel_major(&mese, ctx.meta.dims, &ctx.meta.affine)? {
-                Some((se, coverage)) => {
-                    // R2 is only measured where the MESE's FOV reaches. Fitting outside it would
-                    // put a number on interpolated zeros, and R2' = R2* - R2 would then quietly
-                    // take that number as a measurement.
-                    let fit_mask = mese_measured_mask(&mask, &coverage);
-                    let (in_mask, in_both) = (count_set(&mask), count_set(&fit_mask));
-                    if in_mask > 0 && in_both < in_mask {
-                        log::warn!(
-                            "The MESE covers {:.0}% of the brain mask; R2 (and so a measured R2') \
-                             is left at zero over the remaining {} voxels.",
-                            100.0 * in_both as f64 / in_mask as f64, in_mask - in_both,
-                        );
-                    }
-                    let p = qsm_core::relaxometry::R2EpgParams::default();
-                    let (r2_map, _b1) = qsm_core::relaxometry::r2_epg(&se, &fit_mask, &mese.echo_times, &grid, &p, None)?;
-                    r2_mask = Some(fit_mask);
-                    Some(r2_map)
-                }
-                None => None,
-            }
-        }
-    } else {
-        log::info!("No MESE acquisition and no custom R2 map — R2/R2' unavailable for this run");
-        None
-    };
-    if let Some(ref r2map) = r2 {
-        let out = ctx.output.r2_path(&ctx.run.key);
-        save_volume(&out, r2map, ctx.meta)?;
-        outputs.push(out);
-    }
-
-    // ── R2' map (Hz) = R2* − R2 ──
-    if want_r2p {
-        // Where this R2' came from, for its sidecar (#236): a predicted R2' looks exactly like a
-        // measured one, and only the sidecar can tell a downstream reader which it is.
-        let mut source = serde_json::Map::new();
-        let r2p: Option<Vec<f64>> = if let Some(tool) = ctx.config.separation.custom_r2prime_tool.clone() {
-            match find_custom_derivative(ctx.run, &tool, "*_R2primemap.nii*", &[]) {
-                Some(p) => {
-                    log::info!("Using custom R2' map from {}", p.display());
-                    source.insert("R2primeSource".into(), serde_json::json!("supplied"));
-                    source.insert("R2primeSuppliedFrom".into(), serde_json::json!(p.display().to_string()));
-                    Some(load_volume(&p)?)
-                }
-                None => { log::warn!("no custom R2' map under derivatives (tool: {}) — skipping R2'", tool); None }
-            }
-        } else {
-            let r2star_path = ctx.output.r2star_path(&ctx.run.key);
-            let strategy = ctx.config.separation.r2prime_strategy;
-            // Measuring wins wherever it is possible and allowed: R2' = R2* - R2 is a measurement,
-            // and R2PRIMEnet's is an estimate standing in for one.
-            let can_measure = r2.is_some() && strategy != R2PrimeStrategy::R2primenet;
-            if can_measure {
-                match (r2star_path.exists(), r2.as_ref()) {
-                    (true, Some(r2map)) => {
-                        log::info!("R2' measured as R2* - R2");
-                        let r2s = load_volume(&r2star_path)?;
-                        // Subtract only where R2 was measured: outside the MESE's FOV, R2 is zero
-                        // because nothing was acquired there, and R2' = R2* - 0 would report the
-                        // whole of R2* as reversible.
-                        let (r2p, coverage) =
-                            measured_r2prime(&r2s, r2map, &mask, r2_mask.as_deref())?;
-                        // Published, so a 0 in the R2' map can be told apart from R2* = R2.
-                        let cov_path = ctx.output.r2prime_coverage_path(&ctx.run.key);
-                        save_mask(&cov_path, &coverage, ctx.meta)?;
-                        outputs.push(cov_path);
-                        let (in_mask, measured) = (count_set(&mask), count_set(&coverage));
-                        if in_mask > 0 && measured < in_mask {
-                            log::warn!(
-                                "R2' is a measurement over {:.0}% of the brain mask; the \
-                                 remaining {} voxels are left at zero because no R2 was measured \
-                                 there. Maps derived from this R2' inherit that gap.",
-                                100.0 * measured as f64 / in_mask as f64, in_mask - measured,
-                            );
-                        }
-                        source.insert("R2primeSource".into(), serde_json::json!("measured"));
-                        source.insert("R2primeMethod".into(), serde_json::json!(match &ctx.config.separation.custom_r2_tool {
-                            Some(tool) => format!("R2* - R2 (R2 supplied by {tool})"),
-                            None => "R2* - R2 (R2 by EPG fit of the MESE)".to_string(),
-                        }));
-                        Some(r2p)
-                    }
-                    _ => { log::warn!("R2' needs both R2* and R2 - one is missing; skipping R2'"); None }
-                }
-            } else if strategy == R2PrimeStrategy::Mese {
-                log::warn!(
-                    "Skipping R2': no R2 to subtract (no MESE acquisition and no custom R2 map), \
-                     and --r2prime-strategy mese does not estimate one. Use `auto` or \
-                     `r2primenet` to predict R2' from R2* instead."
-                );
-                None
-            } else if !r2star_path.exists() {
-                log::warn!("Skipping R2': R2PRIMEnet predicts it from R2*, which was not computed");
-                None
-            } else {
-                // Auto with no MESE, or r2primenet outright.
-                let field = ctx.meta.field_strength;
-                match r2primenet_field_policy(
-                    field, strategy, ctx.config.separation.r2primenet.ignore_field_mismatch,
-                ) {
-                    R2primenetFieldPolicy::Skip => {
-                        log::warn!(
-                            "Skipping R2': there is no R2 to subtract, and {}. Pass \
-                             --r2primenet-ignore-field-mismatch to predict it anyway (uncalibrated).",
-                            r2primenet_field_message(field));
-                        None
-                    }
-                    R2primenetFieldPolicy::Refuse => {
-                        return Err(QsmxtError::Config(format!(
-                            "--r2prime-strategy r2primenet: {}; or pass \
-                             --r2primenet-ignore-field-mismatch to run it anyway and treat the R2' \
-                             (and any chi-separation built on it) as uncalibrated.",
-                            r2primenet_field_message(field))));
-                    }
-                    policy => {
-                        if policy == R2primenetFieldPolicy::RunUncalibrated {
-                            log::warn!(
-                                "{}. Running anyway (--r2primenet-ignore-field-mismatch): treat this \
-                                 R2', and any chi-separation built on it, as uncalibrated.",
-                                r2primenet_field_message(field));
-                        }
-                        if strategy == R2PrimeStrategy::Auto {
-                            log::info!("No R2 to subtract - estimating R2' from R2* with R2PRIMEnet");
-                        }
-                        warn_if_r2primenet_grid_is_oblique(ctx);
-                        // The plan lists R2PRIMEnet when the scan's facts say R2' is predicted; a
-                        // MESE that turns out to give no R2 falls back to it here, unlisted.
-                        prefetch_models(ctx, if models.is_empty() { &["r2primenet"][..] } else { models })?;
-                        progress("Estimating R2' (R2PRIMEnet)");
-                        let r2s = load_volume(&r2star_path)?;
-                        let predicted = run_r2primenet(ctx, &r2s, &mask, &grid)?;
-                        log::info!("R2' estimated by R2PRIMEnet (an estimate, not a measurement)");
-                        source.insert("R2primeSource".into(), serde_json::json!("predicted"));
-                        source.insert("R2primeMethod".into(), serde_json::json!("R2PRIMEnet (from R2*)"));
-                        source.insert("R2primenetTrainedFieldStrength".into(),
-                                      serde_json::json!(R2PRIMENET_TRAINED_B0_T));
-                        source.insert("R2primenetCalibrated".into(),
-                                      serde_json::json!(policy == R2primenetFieldPolicy::Run));
-                        Some(predicted)
-                    }
-                }
-            }
-        };
-        if let Some(ref r2pv) = r2p {
-            let out = ctx.output.r2prime_path(&ctx.run.key);
-            save_volume(&out, r2pv, ctx.meta)?;
-            write_r2prime_sidecar(&out, source)?;
-            outputs.push(out);
-        }
-    }
-
-    if !outputs.is_empty() {
-        ctx.complete_step("r2_r2prime", Some("epg"), params, &[mask_path], outputs, t)?;
-        log_step_done("R2/R2' mapping", t);
-    }
-    Ok(())
-}
-
-/// The voxels χ-separation is fitted on and writes.
-///
-/// `published` is the support referencing wrote for the pipeline's own χ (`desc-qsm_mask`); with
-/// none — a bring-your-own χ — it is the brain mask less the voxels `chi` leaves undefined (the
-/// rule of [`qsmxt_engine::referencing::defined_support`]). `local_field`, for the methods that
-/// fit it, limits the support further to where the field is defined: a two-pass χ is the union
-/// of both passes' supports, but the local field is the main pass's alone.
-fn separation_support(
-    brain: &[u8], published: Option<&[u8]>, chi: &[f64], local_field: Option<&[f64]>,
-) -> Vec<u8> {
-    let mut support: Vec<u8> = match published {
-        Some(p) => p.iter().zip(brain).map(|(&p, &b)| u8::from(p != 0 && b != 0)).collect(),
-        None => qsmxt_engine::referencing::defined_support(&[brain], chi),
-    };
-    if let Some(field) = local_field {
-        for (s, &f) in support.iter_mut().zip(field) {
-            if f == 0.0 || !f.is_finite() {
-                *s = 0;
-            }
-        }
-    }
-    support
-}
-
-/// Write 0 wherever `support` is 0.
-fn zero_outside(support: &[u8], map: &mut [f64]) {
-    for (v, &s) in map.iter_mut().zip(support) {
-        if s == 0 {
-            *v = 0.0;
-        }
-    }
-}
-
-/// Susceptibility source separation (chi-separation).
-///
-/// Splits the conventional QSM (χ_total) into paramagnetic (χ+) and diamagnetic (χ−) maps.
-/// Inputs are loaded from pipeline outputs (or bring-your-own derivatives): the QSM (`Chimap`),
-/// local field, multi-echo magnitude (+ RSS), R2* and R2' (produced by earlier stages). Methods
-/// whose required inputs are unavailable are skipped with a warning rather than failing the run.
-/// The fit runs over, and the outputs are 0 outside, χ's support: see [`separation_support`].
-/// `models` are the plan's for the step: the separation network's, when it is one.
-fn stage_chi_separation(
-    ctx: &mut StageContext, mask_path: &Path, models: &[&'static str], progress: &dyn Fn(&str),
-) -> crate::Result<()> {
-    let alg = ctx.config.separation.algorithm;
-    let alg_name = format!("{}", alg);
-
-    // Every method needs a conventional QSM (χ_total) — pipeline output or a custom derivative.
-    let qsm_path = match ctx.config.separation.custom_qsm_tool.clone() {
-        Some(tool) => match find_custom_derivative(ctx.run, &tool, "*_Chimap.nii*", &["desc-"]) {
-            Some(p) => { log::info!("Using custom QSM from {}", p.display()); p }
-            None => return Err(QsmxtError::Config(format!(
-                "{}: --do-chisep ({}) needs a QSM, and --use-custom-qsm {} names no Chimap for \
-                 this run under derivatives/{}", ctx.run.key, alg_name, tool, tool))),
-        },
-        None => {
-            let p = ctx.output.qsm_path(&ctx.run.key);
-            if !p.exists() {
-                return Err(QsmxtError::Config(format!(
-                    "{}: --do-chisep ({}) needs a QSM, and none was written at {}",
-                    ctx.run.key, alg_name, p.display())));
-            }
-            p
-        }
-    };
-
-    let sep_params = serde_json::json!({
-        "algorithm": alg_name,
-        "echo_times": ctx.meta.echo_times,
-        "field_strength": ctx.meta.field_strength,
-        "has_mese": ctx.run.mese.is_some(),
-        "custom_qsm": ctx.config.separation.custom_qsm_tool,
-        "custom_r2prime": ctx.config.separation.custom_r2prime_tool,
-        // `domain` versions where the fit runs, so maps fitted over the whole brain mask by an
-        // older release (the eroded rim taken as χ = 0) are recomputed rather than reused.
-        "domain": "support",
-    });
-    if ctx.is_cached_with_params("chi_separation", Some(&alg_name), &sep_params) {
-        log::info!("Skipping chi_separation (cached)");
-        return Ok(());
-    }
-
-    let t = Instant::now();
-    let (nx, ny, nz) = ctx.dims();
-    let n_voxels = nx * ny * nz;
-    progress("Chi-separation");
-    log::info!("Chi-separation ({})", alg_name);
-    let brain = load_mask(mask_path)?;
-    let mut qsm = load_volume(&qsm_path)?;
-
-    // Multi-echo magnitude (voxel-major) + RSS over echoes, when magnitude is available.
-    let (magnitude_multi, magnitude_rss): (Option<Vec<f64>>, Option<Vec<f64>>) = if ctx.meta.has_magnitude {
-        let mut interleaved = vec![0.0f64; n_voxels * ctx.meta.n_echoes];
-        let mut rss = vec![0.0f64; n_voxels];
-        for i in 0..ctx.meta.n_echoes {
-            let mag = load_echo_magnitude(ctx, i)?;
-            for vox in 0..n_voxels {
-                interleaved[vox * ctx.meta.n_echoes + i] = mag[vox];
-                rss[vox] += mag[vox] * mag[vox];
-            }
-        }
-        for v in rss.iter_mut() { *v = v.sqrt(); }
-        (Some(interleaved), Some(rss))
-    } else {
-        (None, None)
-    };
-
-    // R2* / R2' — from the relaxometry and R2 steps, or a bring-your-own R2' map.
-    let mut r2star: Option<Vec<f64>> = {
-        let p = ctx.output.r2star_path(&ctx.run.key);
-        if p.exists() { Some(load_volume(&p)?) } else { None }
-    };
-    let mut r2prime: Option<Vec<f64>> = match ctx.config.separation.custom_r2prime_tool.clone() {
-        Some(tool) => find_custom_derivative(ctx.run, &tool, "*_R2primemap.nii*", &[])
-            .map(|p| load_volume(&p)).transpose()?,
-        None => {
-            let p = ctx.output.r2prime_path(&ctx.run.key);
-            if p.exists() { Some(load_volume(&p)?) } else { None }
-        }
-    };
-
-    // Multi-echo spin-echo magnitude (voxel-major) for HC-ChiSep, on this run's grid. Voxels
-    // outside the MESE's FOV come back zero, the same as voxels outside the brain.
-    let se_multi: Option<Vec<f64>> = match ctx.run.mese.as_ref() {
-        Some(mese) => load_mese_voxel_major(mese, ctx.meta.dims, &ctx.meta.affine)?.map(|(se, _)| se),
-        None => None,
-    };
-
-    // Local field (ppm) for the field-based methods.
-    let mut local_field: Vec<f64> = {
-        let p = ctx.output.local_field_path(&ctx.run.key);
-        if p.exists() { load_volume(&p)? } else { Vec::new() }
-    };
-
-    // Gate on the inputs the chosen method requires. Chi-separation is only ever asked for, never
-    // implied, so a missing input fails the run: `qsmxt run` has already refused the cases the
-    // data decides (`requirements::chisep_problem`), and what is left — the local field the
-    // reconstruction route did not write, an R2' that did not materialise — must not be a
-    // successful run with the maps missing.
-    let missing = std::cell::RefCell::new(Vec::<&str>::new());
-    let need = |cond: bool, what: &'static str| -> bool {
-        if !cond {
-            missing.borrow_mut().push(what);
-        }
-        cond
-    };
-    let ready = match alg {
-        SeparationAlgorithm::R2starQsm => need(r2star.is_some() || magnitude_multi.is_some(), "R2* or multi-echo magnitude"),
-        SeparationAlgorithm::Decompose => need(magnitude_multi.is_some(), "multi-echo magnitude"),
-        SeparationAlgorithm::ChiSepIlsqr => {
-            need(!local_field.is_empty(), "local field") & need(r2prime.is_some(), "R2'") & need(magnitude_rss.is_some(), "magnitude")
-        }
-        SeparationAlgorithm::ChiSepMedi => {
-            need(!local_field.is_empty(), "local field") & need(r2prime.is_some(), "R2'") & need(magnitude_rss.is_some(), "magnitude")
-        }
-        SeparationAlgorithm::WaveSep => need(r2prime.is_some(), "R2'"),
-        SeparationAlgorithm::HcChisep => need(r2prime.is_some(), "R2'") & need(magnitude_multi.is_some(), "multi-echo magnitude"),
-        // SUSEP-Net / χ-sepnet (deep learning) consume [QSM, R2', local field] → [χ+, χ−].
-        SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet =>
-            need(!local_field.is_empty(), "local field") & need(r2prime.is_some(), "R2'"),
-    };
-    if !ready {
-        return Err(QsmxtError::Config(format!(
-            "{}: --do-chisep ({}) cannot run: missing {}",
-            ctx.run.key, alg_name, missing.borrow().join(", "))));
-    }
-
-    // Fit, and write, only where χ is defined. The pipeline's χ is 0 on the rim background-field
-    // removal eroded; fitting the brain mask would treat that rim as measured χ = 0. Its support
-    // is the one referencing published (`desc-qsm_mask`); a bring-your-own χ has no published
-    // support, so it is the brain mask less the voxels that χ leaves undefined. The field-based
-    // methods also need the local field there, so they are further limited to where it exists.
-    let support_path = ctx.output.qsm_support_path(&ctx.run.key);
-    let published = match ctx.config.separation.custom_qsm_tool {
-        None if support_path.exists() => Some(load_mask(&support_path)?),
-        _ => None,
-    };
-    let uses_field = matches!(alg,
-        SeparationAlgorithm::ChiSepIlsqr | SeparationAlgorithm::ChiSepMedi
-        | SeparationAlgorithm::SusepNet | SeparationAlgorithm::ChiSepNet);
-    for (what, len) in [("brain mask", brain.len()), ("QSM", qsm.len())]
-        .into_iter()
-        .chain(published.as_ref().map(|p| ("QSM support", p.len())))
-        .chain(uses_field.then_some(("local field", local_field.len())))
-    {
-        if len != n_voxels {
-            return Err(QsmxtError::DimensionMismatch(format!(
-                "chi-separation: {what} has {len} voxels but this run is processed on {n_voxels}")));
-        }
-    }
-    let support = separation_support(
-        &brain, published.as_deref(), &qsm, uses_field.then_some(local_field.as_slice()),
-    );
-    log::info!("Chi-separation over the χ support: {} of {} brain-mask voxels",
-        support.iter().filter(|&&s| s != 0).count(), brain.iter().filter(|&&b| b != 0).count());
-    // The maps combined with χ voxel by voxel take the same support, so no method — the spatial
-    // and deep-learning ones included — sees values on the rim that χ does not have.
-    zero_outside(&support, &mut qsm);
-    if uses_field {
-        zero_outside(&support, &mut local_field);
-    }
-    for map in [r2prime.as_mut(), r2star.as_mut()].into_iter().flatten() {
-        if map.len() != n_voxels {
-            return Err(QsmxtError::DimensionMismatch(format!(
-                "chi-separation: a relaxation map has {} voxels but this run is processed on {n_voxels}",
-                map.len())));
-        }
-        zero_outside(&support, map);
-    }
-
-    let metadata = scan_metadata(ctx.meta);
-    let mut sep_config = qsmxt_engine::bridge::to_separation_config(ctx.config);
-    if let Some(mese) = &ctx.run.mese {
-        sep_config.hc_chisep.se_echo_times = mese.echo_times.clone();
-    }
-
-    let inputs = qsm_core::pipeline::SeparationInputs {
-        local_field_ppm: &local_field,
-        qsm: &qsm,
-        mask: &support,
-        r2prime: r2prime.as_deref(),
-        r2star: r2star.as_deref(),
-        magnitude_rss: magnitude_rss.as_deref(),
-        magnitude_multi: magnitude_multi.as_deref(),
-        se_magnitude_multi: se_multi.as_deref(),
-    };
-
-    // Fetch the network's weights with a download bar; nothing for the classical methods.
-    prefetch_models(ctx, models)?;
-    let (mut prog, _) = iter_progress_bar(&ctx.run.key.to_string(), &alg_name);
-    let mut result = qsm_core::pipeline::run_separation(inputs, &metadata, &sep_config, &mut *prog)
-        .map_err(|e| QsmxtError::Config(format!("chi-separation: {}", e)))?;
-    // Not every method zeroes outside the mask it is given (the networks predict everywhere).
-    for map in [&mut result.chi_pos, &mut result.chi_neg, &mut result.chi_total] {
-        zero_outside(&support, map);
-    }
-
-    let para_path = ctx.output.chi_para_path(&ctx.run.key);
-    let dia_path = ctx.output.chi_dia_path(&ctx.run.key);
-    let total_path = ctx.output.chi_sep_total_path(&ctx.run.key);
-    // χ− is signed-negative in qsm-core (so χ_total = χ+ + χ−); write the diamagnetic map as its
-    // magnitude |χ−| so both source maps are positive. χ_total stays the signed net susceptibility.
-    let chi_dia: Vec<f64> = result.chi_neg.iter().map(|&v| v.abs()).collect();
-    save_volume(&para_path, &result.chi_pos, ctx.meta)?;
-    save_volume(&dia_path, &chi_dia, ctx.meta)?;
-    save_volume(&total_path, &result.chi_total, ctx.meta)?;
-    let mut inputs: Vec<&Path> = vec![mask_path, &qsm_path];
-    if published.is_some() {
-        inputs.push(&support_path);
-    }
-    ctx.complete_step("chi_separation", Some(&alg_name), sep_params, &inputs,
-        vec![para_path, dia_path, total_path], t)?;
-    log_step_done(&format!("Chi-separation ({})", alg_name), t);
-    Ok(())
-}
-
 /// The robust echo fit's per-echo report, next to the field map: `<field map>_robustfit.json`.
 fn robust_fit_report_path(field_path: &Path) -> PathBuf {
     let name = field_path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     let stem = name.strip_suffix(".nii.gz").or_else(|| name.strip_suffix(".nii")).unwrap_or(&name);
     field_path.with_file_name(format!("{stem}_robustfit.json"))
-}
-
-/// Record where an R2' map came from in its sidecar, replacing what an earlier run recorded.
-/// Merged into the rest of the file, which BIDS-Prov also writes to.
-fn write_r2prime_sidecar(
-    r2prime_path: &Path, source: serde_json::Map<String, serde_json::Value>,
-) -> crate::Result<()> {
-    let Some(sidecar) = crate::bids::entities::sidecar_path(r2prime_path) else { return Ok(()) };
-    let mut obj = read_json_object(&sidecar);
-    obj.retain(|k, _| !k.starts_with("R2prime"));
-    obj.extend(source);
-    std::fs::write(&sidecar, serde_json::to_string_pretty(&obj)
-        .map_err(|e| QsmxtError::Config(format!("{}: {e}", sidecar.display())))?)?;
-    Ok(())
 }
 
 /// A JSON file's top-level object, or an empty one if it is absent or unreadable.
@@ -2502,11 +1787,11 @@ fn run_engine_step(
     let facts = requirements::scan_facts(run, config);
     let plan = qsmxt_engine::plan::plan(config, &facts);
     let mut store = FileStore {
-        run, facts: &facts, config, output: output.clone(), meta: Some(meta.clone()), state, state_path,
+        run, config, output: output.clone(), meta: Some(meta.clone()), state, state_path,
         progress: &|_| {}, started: None, supplied_mask: None, mask_path: None,
     };
     let step = Step { stage, models: vec![], host: false };
-    qsmxt_engine::run::run_step(&plan, config, meta, &step, &mut store, &mut ())
+    qsmxt_engine::run::run_step(&plan, config, &facts, meta, &step, &mut store, &mut ())
 }
 
 /// The grid and B0 direction the engine decides for a discovered run from its first phase image's
@@ -2544,9 +1829,8 @@ mod tests {
 
         let run = run_with_echoes(vec![(PathBuf::from("/in/sub-1/anat/p.nii"), None)]);
         let config = crate::pipeline::config::PipelineConfig::default();
-        let facts = crate::pipeline::requirements::scan_facts(&run, &config);
         let store = super::FileStore {
-            run: &run, facts: &facts, config: &config, output: DerivativeOutputs::new(std::path::Path::new("/out")),
+            run: &run, config: &config, output: DerivativeOutputs::new(std::path::Path::new("/out")),
             meta: None, state: PipelineState::new(&config, &run.key), state_path: PathBuf::from("/out/s.json"),
             progress: &|_| {}, started: None, supplied_mask: None, mask_path: None,
         };
@@ -3027,203 +2311,15 @@ mod tests {
 
     // --- reconciling a MESE's geometry with the grid the run reconstructs on ---
 
-    /// Write `n_echoes` MESE magnitude volumes on `dims`/`affine`, echo `i` filled by `value(i)`,
-    /// and return a `MeseRun` pointing at them.
-    fn mese_files(
-        dir: &std::path::Path,
-        dims: (usize, usize, usize),
-        affine: [f64; 16],
-        n_echoes: usize,
-        value: impl Fn(usize, usize, usize, usize) -> f64,
-    ) -> crate::bids::discovery::MeseRun {
-        let mut run = mese_on(dims, affine);
-        run.magnitude_niftis.clear();
-        run.echo_times.clear();
-        for e in 0..n_echoes {
-            let mut data = vec![0.0f64; dims.0 * dims.1 * dims.2];
-            for k in 0..dims.2 {
-                for j in 0..dims.1 {
-                    for i in 0..dims.0 {
-                        data[i + j * dims.0 + k * dims.0 * dims.1] = value(e, i, j, k);
-                    }
-                }
-            }
-            let path = dir.join(format!("mese_echo-{}.nii", e + 1));
-            qsm_core::io::save_nifti_to_file(
-                &path, &data, dims,
-                qsm_core::geometry::voxel_sizes_from_affine(&affine), &affine,
-            ).unwrap();
-            run.magnitude_niftis.push(path);
-            run.echo_times.push(0.01 * (e + 1) as f64);
-        }
-        run
-    }
 
-    fn diag_affine(vs: f64, origin_x: f64) -> [f64; 16] {
-        [
-            vs, 0.0, 0.0, origin_x,
-            0.0, vs, 0.0, 0.0,
-            0.0, 0.0, vs, 0.0,
-            0.0, 0.0, 0.0, 1.0,
-        ]
-    }
 
-    /// The broad case: a 2D-style MESE on a coarser grid of its own. The whole acquisition used to
-    /// be discarded here (the voxel counts disagree), so R2 and R2' were never computed.
-    #[test]
-    fn mese_on_a_different_grid_is_resampled_rather_than_dropped() {
-        let dir = tempfile::tempdir().unwrap();
-        // 4x4x4 at 2 mm: voxel centres span 0..6 mm on every axis.
-        let mese = mese_files(dir.path(), (4, 4, 4), diag_affine(2.0, 0.0), 3,
-                              |e, _, _, _| 7.0 * (e + 1) as f64);
-        // 7x7x7 at 1 mm over the same 0..6 mm box: every destination centre is inside the source.
-        let dst_dims = (7, 7, 7);
-        let dst_affine = diag_affine(1.0, 0.0);
 
-        let (se, coverage) = super::load_mese_voxel_major(&mese, dst_dims, &dst_affine)
-            .expect("a differently-gridded MESE is reconcilable, not an error")
-            .expect("and must not be dropped");
 
-        let n = dst_dims.0 * dst_dims.1 * dst_dims.2;
-        assert_eq!(se.len(), n * 3, "one value per destination voxel per echo");
-        assert!(coverage.iter().all(|&c| c > 0), "the destination box is inside the MESE's FOV");
-        // Each echo is constant, so interpolation must reproduce it exactly — and land on the
-        // right echo: the buffer is voxel-major, (n_voxels, n_se).
-        for vox in 0..n {
-            for e in 0..3 {
-                let got = se[vox * 3 + e];
-                let want = 7.0 * (e + 1) as f64;
-                assert!((got - want).abs() < 1e-9,
-                        "voxel {vox} echo {e}: got {got}, want {want}");
-            }
-        }
-    }
 
-    /// The correctness case: the same voxel count, so the old length check waved it through, but a
-    /// FOV shifted 2 mm along x. Copying it voxel-for-voxel would use it mis-registered.
-    #[test]
-    fn mese_with_a_matching_voxel_count_but_a_shifted_fov_is_registered_not_copied() {
-        let dir = tempfile::tempdir().unwrap();
-        // Source value is the x index, so a mis-registration along x is visible in the values.
-        let mese = mese_files(dir.path(), (8, 8, 8), diag_affine(1.0, 0.0), 3,
-                              |_, i, _, _| i as f64);
-        let dst_dims = (8, 8, 8);                       // same voxel count
-        let dst_affine = diag_affine(1.0, 2.0);         // ... shifted 2 mm along x
 
-        let (se, coverage) = super::load_mese_voxel_major(&mese, dst_dims, &dst_affine)
-            .unwrap()
-            .expect("a shifted FOV is reconcilable");
 
-        // Along the row y = 0, z = 0, where the voxel index is just the x index.
-        let at = |i: usize, e: usize| se[i * 3 + e];
-        // Destination voxel i sits at world x = i + 2, which is source voxel i + 2.
-        for i in 0..6 {
-            assert!((at(i, 0) - (i + 2) as f64).abs() < 1e-9,
-                    "dst x={i} should sample source x={}, got {}", i + 2, at(i, 0));
-        }
-        assert!((at(0, 0) - 2.0).abs() < 1e-9,
-                "a voxel-for-voxel copy would have put source x=0 here, not x=2");
-        // The two rightmost columns fall outside the source entirely.
-        let covered = |i: usize| coverage[i] > 0;
-        assert!(covered(5) && !covered(6) && !covered(7),
-                "the shift leaves the last two columns outside the MESE's FOV");
-    }
 
-    /// The genuinely undecidable case, which still refuses: the two acquisitions do not occupy the
-    /// same space, so there is no interpolation that produces an R2 map.
-    #[test]
-    fn mese_sharing_no_space_with_the_run_is_refused() {
-        let dir = tempfile::tempdir().unwrap();
-        let mese = mese_files(dir.path(), (4, 4, 4), diag_affine(1.0, 0.0), 3, |_, _, _, _| 1.0);
-        let err = super::load_mese_voxel_major(&mese, (4, 4, 4), &diag_affine(1.0, 1000.0))
-            .expect_err("a metre apart is not a grid difference to interpolate across");
-        let msg = err.to_string();
-        assert!(msg.contains("shares no space"), "the error should say why: {msg}");
-    }
 
-    /// Echoes of one acquisition must agree with each other. That is a broken series rather than a
-    /// second geometry to reconcile, so the MESE is dropped (with a warning) and the run goes on.
-    #[test]
-    fn mese_whose_echoes_disagree_with_each_other_is_dropped() {
-        let dir = tempfile::tempdir().unwrap();
-        let mut mese = mese_files(dir.path(), (4, 4, 4), diag_affine(1.0, 0.0), 3, |_, _, _, _| 1.0);
-        // Overwrite the last echo on a grid of its own.
-        let odd = dir.path().join("mese_echo-3.nii");
-        qsm_core::io::save_nifti_to_file(
-            &odd, &[1.0f64; 2 * 2 * 2], (2, 2, 2), (1.0, 1.0, 1.0), &diag_affine(1.0, 0.0),
-        ).unwrap();
-        mese.magnitude_niftis[2] = odd;
-        assert!(super::load_mese_voxel_major(&mese, (4, 4, 4), &diag_affine(1.0, 0.0))
-                    .unwrap().is_none(),
-                "a series whose echoes are on different grids cannot be fitted");
-    }
-
-    /// A MESE that does not reach all of the brain leaves R2 unmeasured there, and R2' must not
-    /// quietly report R2* - 0 as if the whole of R2* were reversible.
-    #[test]
-    fn r2_outside_the_mese_fov_is_not_subtracted_as_a_measurement() {
-        // Four voxels of brain; the MESE's FOV reaches the first two.
-        let brain = [1u8, 1, 1, 1];
-        let coverage = [1u8, 1, 0, 0];
-        let measured = super::mese_measured_mask(&brain, &coverage);
-        assert_eq!(measured, vec![1, 1, 0, 0]);
-        assert_eq!(super::count_set(&measured), 2);
-
-        let r2star = [30.0, 30.0, 30.0, 30.0];
-        // R2 was fitted only inside the FOV; outside it the echoes were zero, so it is zero.
-        let r2 = [10.0, 10.0, 0.0, 0.0];
-        let (r2p, cov) = super::measured_r2prime(&r2star, &r2, &brain, Some(&measured)).unwrap();
-        assert_eq!(&r2p[..2], &[20.0, 20.0], "measured where the MESE reached");
-        assert_eq!(&r2p[2..], &[0.0, 0.0],
-                   "R2* - 0 = 30 here would be an estimate dressed as a measurement");
-        assert_eq!(cov, vec![1, 1, 0, 0], "the coverage reported back is the FOV, not the brain");
-    }
-
-    /// The FOV mask has to do the work on its own when R2 is non-zero outside it.
-    ///
-    /// A MESE resampled onto the reconstruction grid interpolates across its own boundary, so the
-    /// voxels just outside the acquired slices carry small non-zero R2 values that look exactly
-    /// like tissue. Nothing in the map distinguishes them, which is why `load_mese_voxel_major`
-    /// resamples a volume of ones to find the FOV geometrically rather than thresholding the data.
-    #[test]
-    fn interpolated_r2_outside_the_fov_is_still_not_a_measurement() {
-        let brain = [1u8, 1, 1, 1];
-        let measured = super::mese_measured_mask(&brain, &[1u8, 1, 0, 0]);
-        let r2star = [30.0, 30.0, 30.0, 30.0];
-        // Interpolation bleed: small, positive, and entirely plausible as tissue R2.
-        let r2 = [10.0, 10.0, 0.6, 0.2];
-        let (r2p, cov) = super::measured_r2prime(&r2star, &r2, &brain, Some(&measured)).unwrap();
-        assert_eq!(&r2p[2..], &[0.0, 0.0],
-                   "29.4 and 29.8 here would be nearly the whole of R2* called reversible");
-        assert_eq!(cov, vec![1, 1, 0, 0]);
-    }
-
-    /// With R2 from a custom derivative there is no FOV to narrow by, so the brain mask stands,
-    /// bar any voxel whose R2 is zero: T2 = infinity is not a tissue property, so a zero there is
-    /// a gap in the map rather than a measured value to subtract.
-    #[test]
-    fn a_custom_r2_map_is_subtracted_over_the_whole_brain() {
-        let brain = [1u8, 1, 0, 1];
-        let (r2p, cov) = super::measured_r2prime(
-            &[30.0, 30.0, 30.0, 30.0], &[10.0, 10.0, 10.0, 0.0], &brain, None,
-        ).unwrap();
-        assert_eq!(r2p, vec![20.0, 20.0, 0.0, 0.0]);
-        assert_eq!(cov, vec![1, 1, 0, 0],
-                   "a zero R2 inside the brain mask is an absent measurement, not R2' = R2*");
-    }
-
-    /// qsmxt-engine writes R2PRIMEnet's defaults out (it builds without qsm-core's `onnx`); they
-    /// must stay qsm-core's.
-    #[cfg(feature = "dl")]
-    #[test]
-    fn r2primenet_config_defaults_are_qsm_cores() {
-        let ours = super::r2primenet_params(&Default::default()).unwrap();
-        let core = qsm_core::relaxometry::R2PrimeNetParams::default();
-        assert_eq!(ours.patch, core.patch);
-        assert_eq!(ours.ignore_field_mismatch, core.ignore_field_mismatch);
-        assert_eq!(qsmxt_engine::requirements::R2PRIMENET_TRAINED_B0_T, qsm_core::relaxometry::TRAINED_B0_T);
-        assert_eq!(qsmxt_engine::requirements::R2PRIMENET_B0_TOLERANCE_T, qsm_core::relaxometry::B0_TOLERANCE_T);
-    }
 
     #[test]
     fn robust_fit_report_sits_next_to_the_field_map() {
@@ -3233,33 +2329,7 @@ mod tests {
         assert_eq!(super::robust_fit_report_path(gz), std::path::PathBuf::from("/w/unwrap/sub-1_field-ppm_robustfit.json"));
     }
 
-    /// The backstop for the residual case the gate judges optimistically: a declared R2 source
-    /// that never materialises leaves R2PRIMEnet running on an unresampled grid, and this is the
-    /// only thing that says so.
-    #[test]
-    fn r2primenet_warns_only_when_the_grid_was_left_oblique() {
-        let oblique = oblique_affine();
-        assert!(super::r2primenet_grid_tilt(false, &oblique).is_some_and(|t| t > 1.0),
-                "an unresampled oblique grid is exactly the case worth warning about");
-        assert!(super::r2primenet_grid_tilt(true, &oblique).is_none(),
-                "a run resampled to a cardinal grid has nothing wrong with it");
-        let axial = [
-            0.8, 0.0, 0.0, 0.0, 0.0, 0.8, 0.0, 0.0, 0.0, 0.0, 3.0, 0.0, 0.0, 0.0, 0.0, 1.0,
-        ];
-        assert!(super::r2primenet_grid_tilt(false, &axial).is_none(),
-                "an axial acquisition needs no warning");
-    }
 
-    #[test]
-    fn same_grid_tolerates_header_precision_but_not_a_real_difference() {
-        let a = diag_affine(1.0, 0.0);
-        let mut rounded = a;
-        rounded[3] = 1e-5; // what a 32-bit header field can cost
-        assert!(super::same_grid((4, 4, 4), &a, (4, 4, 4), &rounded));
-        assert!(!super::same_grid((4, 4, 4), &a, (4, 4, 4), &diag_affine(1.0, 0.5)),
-                "half a millimetre of offset is a real difference");
-        assert!(!super::same_grid((4, 4, 4), &a, (4, 4, 5), &a), "dims count too");
-    }
 
     /// A MESE attached to a run, on whatever grid is given.
     fn mese_on(dims: (usize, usize, usize), affine: [f64; 16]) -> crate::bids::discovery::MeseRun {
@@ -3508,14 +2578,12 @@ mod swi_export_tests {
         {
             let mut ctx = StageContext { run: &run, config: &config, output: &output, meta: &meta, state: &mut state, state_path: &state_path };
             assert_eq!(stage_motion(&mut ctx, &mask_path, &|_| {}).unwrap(), mask_path, "off: the mask is unchanged");
-            assert_eq!(ctx.echo_mag_path(2), output.mag_path(&k, 2), "off: the echoes are the scaled ones");
         }
 
         config.motion_correction.enabled = true;
         let mut ctx = StageContext { run: &run, config: &config, output: &output, meta: &meta, state: &mut state, state_path: &state_path };
         let shrunk = stage_motion(&mut ctx, &mask_path, &|_| {}).unwrap();
         assert_eq!(shrunk, output.motion_coverage_path(&k));
-        assert_eq!(ctx.echo_mag_path(2), output.motion_mag_path(&k, 2));
         let report: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(output.motion_report_path(&k)).unwrap()).unwrap();
         let t = report["echoes"][1]["translation_mm"].as_f64().unwrap();
@@ -4567,6 +3635,7 @@ mod reference_support_tests {
 #[cfg(test)]
 mod chisep_support_tests {
     use super::*;
+    use qsmxt_engine::stages::separation::zero_outside;
     use super::reference_support_tests::{fixture, meta, Fixture};
 
     fn sep_config(alg: SeparationAlgorithm) -> PipelineConfig {
@@ -4594,14 +3663,7 @@ mod chisep_support_tests {
         save_volume(&f.output.local_field_path(k), &field, &m).unwrap();
 
         super::reference_support_tests::reference(f, config);
-        let state_path = f.output.state_path(k);
-        let mut state = PipelineState::load_or_create(&state_path, config, k, true);
-        let mut ctx = StageContext {
-            run: &f.run, config, output: &f.output, meta: &m,
-            state: &mut state, state_path: &state_path,
-        };
-        let models: Vec<&'static str> = qsm_core::models::find_model(&config.separation.algorithm.to_string()).map(|m| m.id).into_iter().collect();
-        stage_chi_separation(&mut ctx, &f.output.mask_path(k), &models, &|_| {}).unwrap();
+        run_engine_step(&f.run, config, &f.output, &m, Stage::ChiSeparation).unwrap();
         [f.output.chi_para_path(k), f.output.chi_dia_path(k), f.output.chi_sep_total_path(k)]
             .map(|p| load_volume(&p).unwrap())
     }
@@ -4691,19 +3753,6 @@ mod chisep_support_tests {
         assert!(differs, "fitting over the brain mask must change the support's values");
     }
 
-    #[test]
-    fn separation_support_rules() {
-        let brain = [1u8, 1, 1, 1, 0];
-        let chi = [0.1, 0.0, 0.2, 0.3, 0.4];
-        // The published support wins over χ's own zeros (a referenced voxel can land on 0.0), and
-        // never reaches past the brain mask.
-        assert_eq!(separation_support(&brain, Some(&[1, 1, 0, 1, 1]), &chi, None), vec![1, 1, 0, 1, 0]);
-        // No published support (bring-your-own χ): the brain mask less χ's undefined voxels.
-        assert_eq!(separation_support(&brain, None, &chi, None), vec![1, 0, 1, 1, 0]);
-        // The field-based methods also need the local field.
-        let field = [0.01, 0.01, 0.01, 0.0, 0.01];
-        assert_eq!(separation_support(&brain, Some(&[1, 1, 1, 1, 0]), &chi, Some(&field)), vec![1, 1, 1, 0, 0]);
-    }
 
     /// A rerun of a map fitted over the brain mask by an older release is not reused.
     #[test]

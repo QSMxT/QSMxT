@@ -20,7 +20,7 @@ path = "src/main.rs"
 # such a build keeps all classical algorithms and reports a clear error if a DL algorithm
 # is selected.
 default = ["dl"]
-dl = ["qsm-core/onnx", "qsm-core/download"]
+dl = ["qsm-core/onnx", "qsm-core/download", "qsmxt-engine/onnx"]
 
 [dependencies]
 # TEMP: pinned by rev to QSM.rs main after #193 (v0.39.0 plus MindGrab and `ScanMetadata::affine`
