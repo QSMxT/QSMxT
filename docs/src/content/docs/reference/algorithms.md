@@ -45,9 +45,9 @@ followed by a generator and refinement operations.
 
 - **Generators:** `threshold[:otsu|fixed:<v>|percentile:<p>]`, `bet[:<f>][:scale=<s>]`,
   `hd-bet[:full|window|<X>x<Y>x<Z>|low-memory][:tta][:step=<s>]`, `rs2-net[:tta][:step=<s>]` and `mindgrab[:tta]`. HD-BET runs on the
-  whole volume by default (`full`; about 6–8 GB peak). `window` runs 192×192×96
-  sliding-window patches instead (about 3.6 GB peak, about twice as long),
-  `low-memory` 128×128×64 patches (about 1.5 GB peak), and `step=` sets the
+  whole volume by default (`full`; about 6–8 GB measured). `window` runs 192×192×96
+  sliding-window patches instead (about 3.6–4.5 GB measured, about twice as long),
+  `low-memory` 128×128×64 patches (about 1.5–1.9 GB measured), and `step=` sets the
   window stride. `tta` adds mirroring test-time augmentation, which is roughly
   8× slower. For `mindgrab`, `tta` adds a left–right flipped pass, which doubles
   the run time.

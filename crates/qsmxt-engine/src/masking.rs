@@ -143,7 +143,7 @@ fn hd_bet_patch() -> [usize; 3] { hd_bet_window(qsm_core::bet::HdBetInference::S
 fn hd_bet_tile_step() -> f64 { hd_bet_default_tile_step() }
 /// qsm-core's default HD-BET sliding-window step (nnU-Net's `tile_step_size`).
 pub fn hd_bet_default_tile_step() -> f64 { hd_bet_window(qsm_core::bet::HdBetInference::SLIDING_WINDOW).1 }
-/// `hd-bet:low-memory` patch — qsm-core's `HdBetInference::LOW_MEMORY` (~1.5 GB peak vs ~3.6 GB).
+/// `hd-bet:low-memory` patch — qsm-core's `HdBetInference::LOW_MEMORY` (about 1.5–1.9 GB measured, vs 3.6–4.5 GB).
 pub fn hd_bet_low_memory_patch() -> [usize; 3] { hd_bet_window(qsm_core::bet::HdBetInference::LOW_MEMORY).0 }
 
 impl MaskOp {

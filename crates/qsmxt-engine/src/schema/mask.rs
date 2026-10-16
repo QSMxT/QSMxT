@@ -303,9 +303,9 @@ pub fn hd_bet_choices() -> Vec<HdBetChoice> {
     [
         (full, "full", "Whole volume",
          "One pass over the head's bounding box at 1 mm: the fastest, and the most memory (about 6–8 GB measured on a typical adult head)"),
-        (window, "window", "Sliding window", "192×192×96 patches, HD-BET's training size, half overlapping (about 3.6 GB)"),
+        (window, "window", "Sliding window", "192×192×96 patches, HD-BET's training size, half overlapping (about 3.6–4.5 GB measured)"),
         (low, "low-memory", "Low memory",
-         "128×128×64 patches, half overlapping: the least memory (about 1.5 GB), and agrees with the larger patches to Dice 0.99"),
+         "128×128×64 patches, half overlapping: the least memory (about 1.5–1.9 GB measured), and agrees with the larger patches to Dice 0.99"),
     ]
     .into_iter()
     .map(|(patch, label, name, help)| HdBetChoice {
