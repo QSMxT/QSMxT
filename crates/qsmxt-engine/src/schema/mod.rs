@@ -3,7 +3,7 @@
 //!
 //! [`schema`] lists each setting of [`PipelineConfig`] a user can change: its config path (e.g.
 //! `bg_removal.vsharp.max_radius`), label and help, value type, units and range, QSMxT's default
-//! and the browser's, level (basic or advanced), where it sits (the
+//! and the browser's ([`PipelineConfig::browser`]), level (basic or advanced), where it sits (the
 //! TUI's tabs and sub-tabs, in the TUI's order), the setting it belongs under, and its
 //! `qsmxt run` option. [`settings_view`] says which settings apply to a given config, and which
 //! of them another setting forces on. Labels, help and visibility are the TUI's, and the TUI's
@@ -193,8 +193,8 @@ pub struct Setting {
     pub step: Option<f64>,
     /// QSMxT's default.
     pub default: Value,
-    /// The default in the browser: QSMxT's, except where the browser profile changes it to fit
-    /// the browser's memory.
+    /// The default in the browser: QSMxT's, except where the browser profile
+    /// ([`PipelineConfig::browser`]) changes it to fit the browser's memory.
     pub browser_default: Value,
     pub level: Level,
     pub tab: Tab,
@@ -359,8 +359,7 @@ pub fn region_help(label: &str, n_ids: usize, ids: &str, v2_only: bool) -> Strin
 /// Every user-facing setting, in the TUI's order.
 pub fn schema() -> Vec<Setting> {
     let native = serde_json::to_value(PipelineConfig::default()).expect("the default config serialises");
-    // The browser profile is not defined yet: the browser runs QSMxT's defaults.
-    let browser = native.clone();
+    let browser = serde_json::to_value(PipelineConfig::browser()).expect("the browser config serialises");
     table::table()
         .into_iter()
         .enumerate()
