@@ -517,11 +517,11 @@ fn hd_bet_inference_choices_are_the_patches_mask_names() {
         let op = parse_mask_op(&format!("hd-bet:{}", c.label)).unwrap();
         let MaskOp::HdBet { patch, .. } = op else { panic!() };
         assert_eq!(json!(patch), c.value, "{}", c.label);
-        assert_eq!(c.peak_memory_bytes, qsmxt_engine::memory::hd_bet_network_bytes(patch));
+        assert_eq!(c.budget_bytes, qsmxt_engine::memory::hd_bet_network_bytes(patch));
     }
     // The whole volume costs most; the low-memory window least.
-    assert!(choices[0].peak_memory_bytes > choices[1].peak_memory_bytes);
-    assert!(choices[1].peak_memory_bytes > choices[2].peak_memory_bytes);
+    assert!(choices[0].budget_bytes > choices[1].budget_bytes);
+    assert!(choices[1].budget_bytes > choices[2].budget_bytes);
     // And the step's patch parameter offers the same choices.
     let hd = schema::mask::step("hd-bet").unwrap();
     let values: Vec<Value> = hd.params[0].value_type.options().iter().map(|o| o.value.clone()).collect();
@@ -581,4 +581,18 @@ fn mask_parameter_ranges_match_what_mask_refuses() {
         }
     }
     assert!(tested >= 10, "{tested}");
+}
+
+#[test]
+fn a_morphology_step_of_zero_is_refused_by_the_run_and_the_view() {
+    use qsmxt_engine::masking::MaskOp;
+    let mut c = PipelineConfig::default();
+    c.masking.sections[0].refinements[0] = MaskOp::Dilate { iterations: 0 };
+    let e = schema::check_ranges(&c).unwrap_err().to_string();
+    assert!(e.contains("masking.sections[0].refinements[0]: dilate: iterations must be at least 1, got 0"), "{e}");
+    let view = schema::settings_view(&c, &ViewFacts::default());
+    let error = view.iter().find(|v| v.path == "masking.sections").unwrap().error.clone().unwrap();
+    assert_eq!(error, "Section 1, step 2 (Dilate): Iterations must be at least 1");
+    let dilate = schema::mask::step("dilate").unwrap();
+    assert_eq!((dilate.params[0].min, dilate.params[0].exclusive_min), (Some(1.0), false));
 }

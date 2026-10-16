@@ -20,7 +20,8 @@ pub struct MaskSchema {
     pub inputs: Vec<MaskInput>,
     /// The step types: the ones that start a section, then the ones that refine a mask.
     pub steps: Vec<MaskStep>,
-    /// HD-BET's inference choices (its `patch`), with what each costs in memory.
+    /// HD-BET's inference choices (its `patch`), with what each costs in memory: measured, in
+    /// the help, and the run's conservative budget.
     pub hd_bet_inference: Vec<HdBetChoice>,
     /// The `--mask-preset` recipes, in the TUI's order.
     pub presets: Vec<MaskPreset>,
@@ -101,9 +102,11 @@ pub struct HdBetChoice {
     pub label: &'static str,
     pub name: &'static str,
     pub help: &'static str,
-    /// The peak memory QSMxT budgets for the network, in bytes (the working volumes of the scan
-    /// itself come on top). For the whole volume, a 176×256×256 head at 1 mm.
-    pub peak_memory_bytes: u64,
+    /// The memory the run's memory check budgets for the network, in bytes: a conservative upper
+    /// bound, not a measurement (`help` gives the measured figure). The scan's own working
+    /// volumes come on top. For the whole volume it assumes a 176×256×256 head box at 1 mm and
+    /// ~1 KiB per input voxel, measured on sliding windows.
+    pub budget_bytes: u64,
 }
 
 /// A `--mask-preset`: a whole recipe.
@@ -298,9 +301,11 @@ pub fn hd_bet_choices() -> Vec<HdBetChoice> {
     let window = Some(MaskOp::hd_bet_default_patch());
     let low = Some(hd_bet_low_memory_patch());
     [
-        (full, "full", "Whole volume", "One pass over the head's bounding box at 1 mm: the fastest, and the most memory"),
-        (window, "window", "Sliding window", "Patches of HD-BET's training size, half overlapping"),
-        (low, "low-memory", "Low memory", "Smaller patches, half overlapping: the least memory, and agrees with the larger patches to Dice 0.99"),
+        (full, "full", "Whole volume",
+         "One pass over the head's bounding box at 1 mm: the fastest, and the most memory (about 6–8 GB measured on a typical adult head)"),
+        (window, "window", "Sliding window", "192×192×96 patches, HD-BET's training size, half overlapping (about 3.6 GB)"),
+        (low, "low-memory", "Low memory",
+         "128×128×64 patches, half overlapping: the least memory (about 1.5 GB), and agrees with the larger patches to Dice 0.99"),
     ]
     .into_iter()
     .map(|(patch, label, name, help)| HdBetChoice {
@@ -308,7 +313,7 @@ pub fn hd_bet_choices() -> Vec<HdBetChoice> {
         label,
         name,
         help,
-        peak_memory_bytes: crate::memory::hd_bet_network_bytes(patch),
+        budget_bytes: crate::memory::hd_bet_network_bytes(patch),
     })
     .collect()
 }

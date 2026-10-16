@@ -653,7 +653,7 @@ pub(crate) fn range_words(min: Option<f64>, max: Option<f64>, exclusive_min: boo
 
 /// Check every setting that applies to `config` against its range, and every number setting
 /// that applies for being finite (a config file and the command line both accept `nan` and
-/// `inf`). A setting that does not apply (see [`settings_view`]) is not checked: it cannot
+/// `inf`), and the mask recipe's steps ([`MaskingConfig::validate`](crate::config::MaskingConfig::validate)). A setting that does not apply (see [`settings_view`]) is not checked: it cannot
 /// change the run.
 ///
 /// The error names each setting out of range (its path and `qsmxt run` option), the value, and
@@ -661,7 +661,9 @@ pub(crate) fn range_words(min: Option<f64>, max: Option<f64>, exclusive_min: boo
 pub fn check_ranges(config: &PipelineConfig) -> Result<(), crate::EngineError> {
     let applies: std::collections::HashSet<&str> = settings_view(config, &ViewFacts::default())
         .into_iter().filter(|v| v.visible).map(|v| v.path).collect();
-    let problems: Vec<String> = out_of_range(config, |p| applies.contains(p)).into_iter().map(|p| p.described).collect();
+    let mut problems: Vec<String> = out_of_range(config, |p| applies.contains(p)).into_iter().map(|p| p.described).collect();
+    // A mask step that would do nothing (an erosion of 0), as a config file and --mask refuse it.
+    problems.extend(config.masking.validate().err());
     if problems.is_empty() {
         Ok(())
     } else {

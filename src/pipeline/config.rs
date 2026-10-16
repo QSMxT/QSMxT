@@ -1378,6 +1378,18 @@ mod tests {
         assert!(c.masking.refinements.is_empty());
     }
 
+    /// An erosion, dilation or closing of 0 would do nothing: refused, naming the step.
+    #[test]
+    fn a_morphology_step_of_zero_is_refused_on_the_command_line() {
+        for (flag, spec) in [("--mask", "magnitude,bet:0.5,erode:0"), ("--mask-refine", "dilate:0"),
+                             ("--two-pass-mask", "phase-quality,threshold:otsu,close:0")] {
+            let cli = cli::Cli::try_parse_from(["qsmxt", "run", "<bids>", flag, spec]).expect("parse");
+            let cli::Command::Run(run) = cli.command else { panic!("expected run") };
+            let e = apply_run_overrides(&mut PipelineConfig::default(), &run.pipeline).unwrap_err().to_string();
+            assert!(e.contains("must be at least 1, got 0"), "{flag} {spec}: {e}");
+        }
+    }
+
     #[test]
     fn two_pass_is_off_unless_asked_for() {
         let c = config_from_cli(&["qsmxt", "run", "<bids>"]);

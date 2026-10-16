@@ -1926,16 +1926,12 @@ fn draw_help_bar(f: &mut Frame, app: &App, area: ratatui::layout::Rect) {
     f.render_widget(Paragraph::new(Line::from(help)), area);
 }
 
-/// HD-BET's inference choices and their memory, from the mask schema.
+/// HD-BET's inference choices and what each costs in memory, from the mask schema.
 fn hd_bet_inference_help() -> String {
-    let choices: Vec<String> = super::app::mask_schema().hd_bet_inference.iter().map(|c| {
-        let size = match c.value.as_array() {
-            Some(p) => format!(" {}", p.iter().map(|d| d.to_string()).collect::<Vec<_>>().join("x")),
-            None => String::new(),
-        };
-        format!("{}{size} ~{:.1} GB", c.name.to_lowercase(), c.peak_memory_bytes as f64 / 1e9)
-    }).collect();
-    format!("HD-BET inference: {} (←/→ to change)", choices.join(", "))
+    let choices: Vec<String> = super::app::mask_schema().hd_bet_inference.iter()
+        .map(|c| format!("{}: {}", c.name.to_lowercase(), c.help))
+        .collect();
+    format!("HD-BET inference (←/→ to change). {}", choices.join("; "))
 }
 
 #[cfg(test)]
