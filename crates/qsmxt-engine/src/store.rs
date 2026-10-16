@@ -1170,7 +1170,7 @@ mod tests {
         let box_full = Decision::new(Topic::ReconstructionBox, Choice::Full, "Reconstructed on the whole grid.");
         store.record(&Completed {
             step: "unwrap", algorithm: None, params: &serde_json::json!({}), outcome: None, key: "k1",
-            inputs: &[], outputs: &[Item::FieldPpm, Item::RobustFitReport], decisions: &[box_full.clone()],
+            inputs: &[], outputs: &[Item::FieldPpm, Item::RobustFitReport], decisions: std::slice::from_ref(&box_full),
         }).unwrap();
         store.start("output_space");
         store.put(Item::FieldPpm, Data::Real(&[3.0, 4.0])).unwrap();

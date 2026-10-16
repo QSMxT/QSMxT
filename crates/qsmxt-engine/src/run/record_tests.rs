@@ -195,3 +195,31 @@ fn a_step_with_nothing_to_work_on_is_recorded_skipped() {
     assert_eq!(r.state, StepState::Skipped);
     assert_eq!(r.decision(Topic::Step).unwrap().reason, "There was no susceptibility map to weight by.");
 }
+
+/// A dataset's runs merged: a choice every run made is said as for one run, and where the runs
+/// split, the configuration's "where available" stands; each step counted per run.
+#[test]
+fn a_datasets_methods_text_comes_from_its_merged_record() {
+    use crate::methods::methods_for_dataset;
+    use crate::record::merge;
+    let mut config = config();
+    config.masking.custom_mask_tool = Some("bet".into());
+    let (facts, mut store) = phantom();
+    let (_, computed) = run_recorded(&config, &facts, &mut store);
+    let (mut supplied_facts, mut store) = phantom();
+    supplied_facts.custom_mask = true;
+    let header = store.header().unwrap();
+    let ones = vec![1.0; header.dims.0 * header.dims.1 * header.dims.2];
+    store.supply_mask(Supplied::Found { origin: "m.nii".into(), data: ones, dims: header.dims, affine: header.affine });
+    let (_, supplied) = run_recorded(&config, &supplied_facts, &mut store);
+
+    let split = merge(&[computed.clone(), supplied.clone(), supplied.clone()]);
+    assert_eq!(split.step("mask").unwrap().split(Topic::MaskSource), [(Choice::Computed, 1), (Choice::Supplied, 2)]);
+    assert_eq!(split.step("invert").unwrap().computed, 3);
+    let text = methods_for_dataset(&config, &split, "qsmxt").to_markdown();
+    assert_eq!(text, generate_methods_for(&config, "qsmxt"), "the runs split: where available");
+    let all = methods_for_dataset(&config, &merge(&[supplied.clone(), supplied]), "qsmxt").to_markdown();
+    assert!(all.contains("Brain masks were sourced from the 'bet' BIDS derivatives.") && !all.contains("Where available"), "{all}");
+    let none = methods_for_dataset(&config, &merge(&[computed.clone(), computed]), "qsmxt").to_markdown();
+    assert!(!none.contains("BIDS derivatives") && none.contains("A brain mask was generated"), "{none}");
+}

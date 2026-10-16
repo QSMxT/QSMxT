@@ -350,6 +350,9 @@ pub fn slice_geometry_from_sidecar(sc: &QsmSidecar, voxel_size: (f64, f64, f64))
     (is_2d || differs).then_some((thickness, axis))
 }
 
+/// `(thickness mm, voxel axis)` of an acquisition's slices ([`RunMetadata::slice_geometry`]).
+pub type SliceGeometry = (f64, usize);
+
 /// Refuse a gapped acquisition before any work, unless `--ignore-slice-gap` (or nothing that
 /// needs a contiguous grid was asked for). Checked on the acquired grid (`dims`, `voxel_size`),
 /// so it holds whether or not the run is then resampled. Returns the geometry to hand qsm-core
@@ -357,7 +360,7 @@ pub fn slice_geometry_from_sidecar(sc: &QsmSidecar, voxel_size: (f64, f64, f64))
 pub fn check_slice_gap(
     sc: &QsmSidecar, dims: (usize, usize, usize), voxel_size: (f64, f64, f64), meta: &RunMetadata,
     config: &PipelineConfig,
-) -> Result<(Option<(f64, usize)>, Option<Decision>), EngineError> {
+) -> Result<(Option<SliceGeometry>, Option<Decision>), EngineError> {
     let Some((thickness, axis)) = slice_geometry_from_sidecar(sc, voxel_size) else { return Ok((None, None)) };
     let (nx, ny, nz) = dims;
     let (vx, vy, vz) = voxel_size;

@@ -1162,7 +1162,7 @@ fn draft(config: &PipelineConfig, tool: &str, ran: Ran) -> Draft {
             }
             // Said where a run applied it off 3 T, or nothing is known of the runs.
             let off_field = ran.count(Topic::R2primenetCalibration, Choice::Uncalibrated) > 0
-                || ran.0.map_or(true, |r| r.split(Topic::R2primeSource).is_empty());
+                || ran.0.is_none_or(|r| r.split(Topic::R2primeSource).is_empty());
             if config.separation.custom_r2prime_tool.is_none()
                 && config.separation.r2prime_strategy != R2PrimeStrategy::Mese
                 && config.separation.r2primenet.ignore_field_mismatch

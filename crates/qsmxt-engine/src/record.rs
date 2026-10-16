@@ -133,7 +133,12 @@ pub struct Decision {
 
 impl Decision {
     pub fn new(topic: Topic, choice: Choice, reason: impl Into<String>) -> Self {
-        Decision { topic, choice, reason: reason.into(), detail: None }
+        Decision {
+            topic,
+            choice,
+            reason: reason.into(),
+            detail: None,
+        }
     }
 
     pub fn with_detail(mut self, detail: impl Into<String>) -> Self {
@@ -187,7 +192,9 @@ impl RunRecord {
 
     /// Every decision of every step, with the step it was made in.
     pub fn decisions(&self) -> impl Iterator<Item = (&StepRecord, &Decision)> {
-        self.steps.iter().flat_map(|s| s.decisions.iter().map(move |d| (s, d)))
+        self.steps
+            .iter()
+            .flat_map(|s| s.decisions.iter().map(move |d| (s, d)))
     }
 
     /// Whether anything was decided at run time.
@@ -274,7 +281,11 @@ impl DatasetRecord {
 
     /// The runs that chose `choice` about `topic`.
     pub fn count(&self, topic: Topic, choice: Choice) -> usize {
-        self.split(topic).into_iter().filter(|(c, _)| *c == choice).map(|(_, n)| n).sum()
+        self.split(topic)
+            .into_iter()
+            .filter(|(c, _)| *c == choice)
+            .map(|(_, n)| n)
+            .sum()
     }
 
     /// Whether any run decided about `topic`, and every run that did chose one of `choices`.
@@ -298,7 +309,10 @@ impl From<&RunRecord> for DatasetRecord {
 /// Merge a dataset's runs: each step once, counting the runs that took it, computed, reused or
 /// skipped it, and that made each decision.
 pub fn merge(records: &[RunRecord]) -> DatasetRecord {
-    let mut out = DatasetRecord { runs: records.len(), ..Default::default() };
+    let mut out = DatasetRecord {
+        runs: records.len(),
+        ..Default::default()
+    };
     for record in records {
         if record.resampled == Some(true) {
             out.resampled += 1;
@@ -309,10 +323,18 @@ pub fn merge(records: &[RunRecord]) -> DatasetRecord {
             let i = match out.steps.iter().position(|s| s.id == step.id) {
                 Some(i) => i,
                 None => {
-                    out.steps.insert(at, DatasetStep {
-                        id: step.id.clone(), label: step.label.clone(), runs: 0, computed: 0, cached: 0,
-                        skipped: 0, decisions: Vec::new(),
-                    });
+                    out.steps.insert(
+                        at,
+                        DatasetStep {
+                            id: step.id.clone(),
+                            label: step.label.clone(),
+                            runs: 0,
+                            computed: 0,
+                            cached: 0,
+                            skipped: 0,
+                            decisions: Vec::new(),
+                        },
+                    );
                     at
                 }
             };
@@ -325,12 +347,17 @@ pub fn merge(records: &[RunRecord]) -> DatasetRecord {
                 StepState::Skipped => merged.skipped += 1,
             }
             for d in &step.decisions {
-                match merged.decisions.iter_mut()
+                match merged
+                    .decisions
+                    .iter_mut()
                     .find(|c| c.topic == d.topic && c.choice == d.choice && c.reason == d.reason)
                 {
                     Some(c) => c.runs += 1,
                     None => merged.decisions.push(DecisionCount {
-                        topic: d.topic, choice: d.choice, reason: d.reason.clone(), runs: 1,
+                        topic: d.topic,
+                        choice: d.choice,
+                        reason: d.reason.clone(),
+                        runs: 1,
                     }),
                 }
             }
@@ -344,15 +371,28 @@ mod tests {
     use super::*;
 
     fn step(id: &str, state: StepState, decisions: Vec<Decision>) -> StepRecord {
-        StepRecord { id: id.into(), label: id.into(), state, decisions }
+        StepRecord {
+            id: id.into(),
+            label: id.into(),
+            state,
+            decisions,
+        }
     }
 
     fn supplied() -> Decision {
-        Decision::new(Topic::MaskSource, Choice::Supplied, "Taken from the supplied mask.")
+        Decision::new(
+            Topic::MaskSource,
+            Choice::Supplied,
+            "Taken from the supplied mask.",
+        )
     }
 
     fn computed() -> Decision {
-        Decision::new(Topic::MaskSource, Choice::Computed, "No supplied mask was found, so the mask was computed.")
+        Decision::new(
+            Topic::MaskSource,
+            Choice::Computed,
+            "No supplied mask was found, so the mask was computed.",
+        )
     }
 
     /// The record serialises as the bindings pass it on: snake_case states and decisions, no
@@ -362,26 +402,35 @@ mod tests {
         let record = RunRecord {
             steps: vec![
                 step("load", StepState::Cached, vec![]),
-                step("mask", StepState::Computed, vec![computed().with_detail("derivatives/bet")]),
+                step(
+                    "mask",
+                    StepState::Computed,
+                    vec![computed().with_detail("derivatives/bet")],
+                ),
             ],
             resampled: Some(false),
         };
         let json = serde_json::to_value(&record).unwrap();
-        assert_eq!(json, serde_json::json!({
-            "steps": [
-                { "id": "load", "label": "load", "state": "cached" },
-                { "id": "mask", "label": "mask", "state": "computed", "decisions": [{
-                    "topic": "mask_source", "choice": "computed",
-                    "reason": "No supplied mask was found, so the mask was computed.",
-                    "detail": "derivatives/bet",
-                }] },
-            ],
-            "resampled": false,
-        }));
+        assert_eq!(
+            json,
+            serde_json::json!({
+                "steps": [
+                    { "id": "load", "label": "load", "state": "cached" },
+                    { "id": "mask", "label": "mask", "state": "computed", "decisions": [{
+                        "topic": "mask_source", "choice": "computed",
+                        "reason": "No supplied mask was found, so the mask was computed.",
+                        "detail": "derivatives/bet",
+                    }] },
+                ],
+                "resampled": false,
+            })
+        );
         assert_eq!(serde_json::from_value::<RunRecord>(json).unwrap(), record);
         assert!(record.decided());
-        assert_eq!(record.step("mask").unwrap().decisions[0].note(),
-                   "No supplied mask was found, so the mask was computed. (derivatives/bet)");
+        assert_eq!(
+            record.step("mask").unwrap().decisions[0].note(),
+            "No supplied mask was found, so the mask was computed. (derivatives/bet)"
+        );
     }
 
     /// Merged, each step is counted once per run, a step only some runs took keeps its place, and
@@ -412,7 +461,10 @@ mod tests {
         assert_eq!(ids, ["load", "mask", "r2_r2prime", "invert"]);
         let mask = m.step("mask").unwrap();
         assert_eq!((mask.runs, mask.computed, mask.ran()), (3, 3, 3));
-        assert_eq!(mask.split(Topic::MaskSource), [(Choice::Computed, 2), (Choice::Supplied, 1)]);
+        assert_eq!(
+            mask.split(Topic::MaskSource),
+            [(Choice::Computed, 2), (Choice::Supplied, 1)]
+        );
         assert_eq!(m.count(Topic::MaskSource, Choice::Supplied), 1);
         assert!(!m.only(Topic::MaskSource, &[Choice::Supplied]));
         assert!(m.only(Topic::MaskSource, &[Choice::Supplied, Choice::Computed]));
