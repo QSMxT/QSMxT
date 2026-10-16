@@ -400,8 +400,9 @@ fn every_setting_has_a_row_and_is_worded_as_the_tui_words_it() {
             failures.push(format!("{p}: no TUI row shows it"));
             continue;
         };
-        let main = (s.label.to_string(), s.help.to_string());
-        let value = s.value_label.map(|l| (l.to_string(), s.value_help.unwrap_or("").to_string()));
+        // The TUI's own help (the schema's `help` is worded for any front end).
+        let main = (s.label.to_string(), s.tui_help.to_string());
+        let value = s.tui_value.map(|(l, h)| (l.to_string(), h.to_string()));
         if !w.contains(&main) && !WORDED_DIFFERENTLY.iter().any(|(q, _)| q == p) {
             failures.push(format!("{p}: schema says {main:?}, the TUI {w:?}"));
         }
@@ -410,18 +411,18 @@ fn every_setting_has_a_row_and_is_worded_as_the_tui_words_it() {
                 failures.push(format!("{p}: schema's value row says {v:?}, the TUI {w:?}"));
             }
         }
-        let opts = match &s.value_type {
-            ValueType::Enum { options } | ValueType::EchoReference { options } => options,
-            _ => continue,
-        };
+        let opts = s.value_type.options();
+        if opts.is_empty() {
+            continue;
+        }
         let Some(tui) = options.get(p) else { continue };
         if *p == "qsm.reference" {
             // The TUI's picker: the two methods, then every region (the schema's region choice).
-            let regions = match &schema["qsm.reference_region"].value_type { ValueType::Enum { options } => options, _ => unreachable!() };
+            let regions = schema["qsm.reference_region"].value_type.options();
             let picker: Vec<_> = opts.iter().take(2).chain(regions.iter()).collect();
             assert_eq!(picker.len(), tui.len(), "qsm.reference");
             for (o, (label, help)) in picker.iter().zip(tui) {
-                if o.label != label || o.help != *help {
+                if o.label != label || o.tui_help != *help {
                     failures.push(format!("{p}: option {} / {label}", o.label));
                 }
             }
@@ -432,9 +433,9 @@ fn every_setting_has_a_row_and_is_worded_as_the_tui_words_it() {
             continue;
         }
         for (o, (label, help)) in opts.iter().zip(tui) {
-            let help_matches = help.starts_with(o.help.as_str()) && o.url.as_ref().is_none_or(|u| help.contains(u.as_str()));
+            let help_matches = help.starts_with(o.tui_help.as_str()) && o.url.as_ref().is_none_or(|u| help.contains(u.as_str()));
             if o.label != label || !help_matches {
-                failures.push(format!("{p}: option {:?} {:?} vs the TUI's {label:?} {help:?}", o.label, o.help));
+                failures.push(format!("{p}: option {:?} {:?} vs the TUI's {label:?} {help:?}", o.label, o.tui_help));
             }
         }
     }

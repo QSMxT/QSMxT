@@ -36,6 +36,11 @@ pub struct SettingView {
     /// whatever its own value says.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub forced_by: Option<&'static str>,
+    /// What is wrong with the setting's value, for showing next to it: outside its range, not a
+    /// finite number, or refused by a rule of the setting ("Every dimension must be a positive
+    /// multiple of 16"). Only a setting that applies has one.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
 }
 
 /// The config as the run sees it, and the facts its settings' visibility is decided from.
@@ -167,7 +172,7 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
         sep,
         qsmart_inner: name(&c.inversion.qsmart.inversion),
     };
-    table::table()
+    let mut views: Vec<SettingView> = table::table()
         .iter()
         .map(|d| {
             // Compute QSM is the switch that turns its sections on, so it is shown either way.
@@ -187,9 +192,40 @@ pub fn settings_view(config: &PipelineConfig, facts: &ViewFacts) -> Vec<SettingV
                 "pipeline.do_r2primemap" => forcing_setting(&c, Output::R2prime),
                 _ => None,
             };
-            SettingView { path: d.path, visible, forced_by }
+            SettingView { path: d.path, visible, forced_by, error: None }
         })
-        .collect()
+        .collect();
+    let visible: std::collections::HashSet<&str> = views.iter().filter(|v| v.visible).map(|v| v.path).collect();
+    for (path, message) in errors(config, |p| visible.contains(p)) {
+        if let Some(v) = views.iter_mut().find(|v| v.path == path) {
+            v.error.get_or_insert(message);
+        }
+    }
+    views
+}
+
+/// What is wrong with each checked setting: its range, and the rules a setting's own config
+/// section checks.
+fn errors(config: &PipelineConfig, checked: impl Fn(&str) -> bool) -> Vec<(&'static str, String)> {
+    let mut out: Vec<(&'static str, String)> = super::out_of_range(config, &checked)
+        .into_iter().map(|p| (p.path, p.message)).collect();
+    let rules: [(&'static str, Result<(), String>); 1] = [
+        ("separation.r2primenet.patch", config.separation.r2primenet.validate()),
+    ];
+    for (path, result) in rules {
+        if let (true, Err(e)) = (checked(path), result) {
+            out.push((path, sentence(&e)));
+        }
+    }
+    out
+}
+
+/// A rule's message as a field's: what follows its subject ("R2PRIMEnet patch [..]: every
+/// dimension ..."), capitalised.
+fn sentence(message: &str) -> String {
+    let rest = message.split_once(": ").map_or(message, |(_, r)| r);
+    let mut chars = rest.chars();
+    chars.next().map_or_else(String::new, |c| c.to_uppercase().chain(chars).collect())
 }
 
 /// `config` with every setting that does not apply to it (see [`settings_view`]) put back to
