@@ -134,16 +134,16 @@ impl MaskInputs {
         let core_meta = scan_metadata(meta);
         let failed = |e: qsm_core::pipeline::PipelineError| EngineError::Config(format!("masking: {}", e));
         for input in wanted_magnitudes {
-            if !self.magnitudes.contains_key(&input) {
+            if let std::collections::hash_map::Entry::Vacant(slot) = self.magnitudes.entry(input) {
                 let m = qsm_core::pipeline::section_magnitude(core_input(input), &mag_refs, &core_meta).map_err(failed)?;
-                self.magnitudes.insert(input, m.map(std::sync::Arc::new));
+                slot.insert(m.map(std::sync::Arc::new));
             }
         }
         for input in wanted_images {
-            if !self.images.contains_key(&input) {
+            if let std::collections::hash_map::Entry::Vacant(slot) = self.images.entry(input) {
                 let image = qsm_core::pipeline::resolve_masking_input(core_input(input), &phase_refs, &mag_refs, &core_meta)
                     .map_err(failed)?;
-                self.images.insert(input, std::sync::Arc::new(image));
+                slot.insert(std::sync::Arc::new(image));
             }
         }
         Ok(())

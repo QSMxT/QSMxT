@@ -230,7 +230,7 @@ fn preview_speed() {
         let i = x + y * dims.0 + z * dims.0 * dims.1;
         let r = ((x as f64 - cx) / 70.0).powi(2) + ((y as f64 - cy) / 95.0).powi(2) + ((z as f64 - cz) / 60.0).powi(2);
         magnitude[i] = if r < 1.0 { 100.0 + (i % 7) as f64 } else { (i % 5) as f64 };
-        phase[i] = ((x * 7 + y * 3 + z) % 628) as f64 / 100.0 - 3.14;
+        phase[i] = ((x * 7 + y * 3 + z) % 628) as f64 / 100.0 - std::f64::consts::PI;
     }}}
     let mut config = PipelineConfig::default();
     config.masking.inhomogeneity_correction = false;
