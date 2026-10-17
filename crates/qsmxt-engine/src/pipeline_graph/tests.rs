@@ -554,3 +554,12 @@ fn box_text_wraps_and_svg_escapes() {
     let svg = g.to_svg();
     assert!(svg.contains("a &lt; b &amp; &quot;c&quot;"), "{svg}");
 }
+
+/// The plain-text graph names each step, its algorithm, settings and the steps it follows.
+#[test]
+fn the_graph_as_text() {
+    let text = graph(&PipelineConfig::default(), &facts()).to_text();
+    assert!(text.starts_with("  Load\n  Phase scaling\n      after: Load\n"), "{text}");
+    assert!(text.contains("  Background-field removal: V-SHARP\n      SMV kernel radii from 12 to 1 mm\n      after: Field map, Brain mask\n"), "{text}");
+    assert!(text.contains("      only when the run is resampled\n"), "{text}");
+}

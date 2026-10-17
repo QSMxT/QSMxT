@@ -228,13 +228,14 @@ impl DerivativeOutputs {
     pub fn run_record_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.workflow_run_dir(key).join(format!("{}_runrecord.json", key.basename()))
     }
-    /// The run's pipeline graph (Mermaid) in its workflow directory: as planned, or (`after`) as
-    /// the run took it, written only when that differs from the plan.
+    /// The run's pipeline graph (Mermaid; [`write_graph`] puts the SVG beside it) in its workflow
+    /// directory: as planned, or (`after`) as the run took it, written only when that differs from
+    /// the plan.
     pub fn run_graph_path(&self, key: &AcquisitionKey, after: bool) -> PathBuf {
         let desc = if after { "_desc-ran" } else { "" };
         self.workflow_run_dir(key).join(format!("{}{desc}_pipeline.mmd", key.basename()))
     }
-    /// The dataset's pipeline graph (Mermaid), beside `methods.md`.
+    /// The dataset's pipeline graph (Mermaid, and the SVG beside it), beside `methods.md`.
     pub fn dataset_graph_path(&self) -> PathBuf {
         self.output_dir.join("pipeline.mmd")
     }
@@ -242,8 +243,8 @@ impl DerivativeOutputs {
     pub fn changes_dir(&self) -> PathBuf {
         self.output_dir.join("changes")
     }
-    /// A run that differs from the dataset's methods: its methods text, or (`graph`) its pipeline
-    /// graph as it ran, in [`Self::changes_dir`].
+    /// A run that differs from the dataset: its methods text, or (`graph`) its pipeline graph as
+    /// it ran (Mermaid, and the SVG beside it), in [`Self::changes_dir`].
     pub fn change_path(&self, key: &AcquisitionKey, graph: bool) -> PathBuf {
         let name = if graph { "desc-ran_pipeline.mmd" } else { "methods.md" };
         self.changes_dir().join(format!("{}_{name}", key.basename()))
@@ -399,6 +400,22 @@ impl DerivativeOutputs {
     pub fn state_path(&self, key: &AcquisitionKey) -> PathBuf {
         self.workflow_run_dir(key).join(".pipeline_state.json")
     }
+}
+
+/// `graph` as Mermaid at `path` (`*.mmd`) and as SVG beside it (`*.svg`).
+pub fn write_graph(path: &Path, graph: &qsmxt_engine::pipeline_graph::PipelineGraph) -> std::io::Result<()> {
+    std::fs::write(path, graph.to_mermaid())?;
+    std::fs::write(path.with_extension("svg"), graph.to_svg())
+}
+
+/// Remove the graph [`write_graph`] wrote at `path`, if it is there.
+pub fn remove_graph(path: &Path) -> std::io::Result<()> {
+    for p in [path.to_path_buf(), path.with_extension("svg")] {
+        if p.exists() {
+            std::fs::remove_file(p)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

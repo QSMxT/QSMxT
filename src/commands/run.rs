@@ -124,7 +124,8 @@ pub(crate) fn worker_log_path(derivatives_dir: &std::path::Path, runs: &[discove
 
 /// The dataset-level files written whatever happens to the runs: the BIDS derivative
 /// description (required for a valid derivative dataset), `.bidsignore` and README, the resolved
-/// configuration, the methods text, and the pipeline graph of `runs`.
+/// configuration, and the methods text and pipeline graph as planned for `runs`. Once the runs
+/// are done, [`write_dataset_summary`] replaces the last two with what the runs did.
 pub(crate) fn write_dataset_files(
     derivatives_dir: &std::path::Path, bids_dir: &std::path::Path, config: &PipelineConfig,
     runs: &[discovery::QsmRun],
@@ -135,7 +136,53 @@ pub(crate) fn write_dataset_files(
     std::fs::write(derivatives_dir.join("pipeline_config.toml"), config.to_toml().unwrap_or_default())?;
     std::fs::write(derivatives_dir.join("methods.md"), crate::pipeline::methods::generate_methods(config))?;
     if let Some(graph) = dataset_graph(config, runs) {
-        std::fs::write(DerivativeOutputs::new(derivatives_dir).dataset_graph_path(), graph.to_mermaid())?;
+        crate::bids::derivatives::write_graph(&DerivativeOutputs::new(derivatives_dir).dataset_graph_path(), &graph)?;
+    }
+    Ok(())
+}
+
+/// The dataset's methods text and pipeline graph from what its runs did: every completed run's
+/// record (`*_runrecord.json`, in its workflow directory) merged
+/// ([`qsmxt_engine::dataset::summarise`]). `methods.md` and `pipeline.mmd`/`.svg` are replaced,
+/// and `changes/` is rebuilt to hold the runs that differ from the dataset: each one's methods
+/// text and its graph as it ran. With no record to read, the planned files stay.
+pub(crate) fn write_dataset_summary(
+    derivatives_dir: &std::path::Path, runs: &[discovery::QsmRun], completed: &[bool], config: &PipelineConfig,
+) -> crate::Result<()> {
+    use crate::bids::derivatives::write_graph;
+    let output = DerivativeOutputs::new(derivatives_dir);
+    let mut done: Vec<(&discovery::QsmRun, qsmxt_engine::plan::Plan, qsmxt_engine::scan::ScanFacts, qsmxt_engine::record::RunRecord)> =
+        Vec::new();
+    for (run, _) in runs.iter().zip(completed).filter(|(_, &c)| c) {
+        let path = output.run_record_path(&run.key);
+        let record = match std::fs::read_to_string(&path).map_err(|e| e.to_string())
+            .and_then(|t| serde_json::from_str(&t).map_err(|e| e.to_string())) {
+            Ok(r) => r,
+            Err(e) => {
+                warn!("{}: no run record to describe it by ({}: {e})", run.key, path.display());
+                continue;
+            }
+        };
+        let facts = crate::pipeline::requirements::scan_facts(run, config);
+        let plan = qsmxt_engine::plan::plan(config, &facts);
+        done.push((run, plan, facts, record));
+    }
+    let inputs: Vec<_> = done.iter().map(|(_, p, f, r)| (p, f, r)).collect();
+    let Some(summary) = qsmxt_engine::dataset::summarise(config, &inputs, "qsmxt") else { return Ok(()) };
+    std::fs::write(derivatives_dir.join("methods.md"), summary.methods.to_markdown())?;
+    write_graph(&output.dataset_graph_path(), &summary.graph)?;
+    let changes = output.changes_dir();
+    if changes.exists() {
+        std::fs::remove_dir_all(&changes)?;
+    }
+    for &i in &summary.changed {
+        let (run, ..) = done[i];
+        std::fs::create_dir_all(&changes)?;
+        std::fs::write(output.change_path(&run.key, false), summary.runs[i].methods.to_markdown())?;
+        write_graph(&output.change_path(&run.key, true), &summary.runs[i].after)?;
+    }
+    if !summary.changed.is_empty() {
+        info!("{} run(s) differ from the dataset's methods -> {}", summary.changed.len(), changes.display());
     }
     Ok(())
 }
@@ -397,6 +444,7 @@ pub fn execute(args: RunArgs) -> crate::Result<()> {
                 max_concurrent,
             );
         }
+        print_planned(&derivatives_dir, &config, &runs);
         return Ok(());
     }
 
@@ -478,6 +526,12 @@ pub(crate) struct DatasetSteps<'a> {
 pub(crate) fn run_dataset_steps(steps: &DatasetSteps) -> Vec<String> {
     let DatasetSteps { derivatives_dir, runs, completed, config, force, clean_intermediates, command_line } = *steps;
     let output = DerivativeOutputs::new(derivatives_dir);
+
+    // The methods text and pipeline graph from what the runs did, and the runs that differ.
+    // Best-effort: the planned ones are already written.
+    if let Err(e) = write_dataset_summary(derivatives_dir, runs, completed, config) {
+        warn!("Could not describe the dataset from its runs' records: {}", e);
+    }
 
     // Multi-orientation fan-in. Members have just produced their own local fields (and their
     // own single-orientation maps, which are what you check registration against), so the
@@ -603,6 +657,22 @@ pub(crate) fn finish(
     Ok(())
 }
 
+
+/// What a `--dry` run shows of the methods text and pipeline graph a run would write, as planned
+/// from the configuration and each run's scan. Nothing is written: a dry run leaves the dataset
+/// alone.
+fn print_planned(derivatives_dir: &std::path::Path, config: &PipelineConfig, runs: &[discovery::QsmRun]) {
+    let output = DerivativeOutputs::new(derivatives_dir);
+    if let Some(graph) = dataset_graph(config, runs) {
+        println!();
+        println!("Pipeline graph (a run writes it to {} and .svg):", output.dataset_graph_path().display());
+        print!("{}", graph.to_text());
+    }
+    println!();
+    println!("Methods (a run writes them to {}):", derivatives_dir.join("methods.md").display());
+    println!();
+    print!("{}", crate::pipeline::methods::generate_methods(config));
+}
 
 /// Print the orientation groups a `--dry` run would reconstruct, with the direction table and
 /// the go/no-go verdict for each.

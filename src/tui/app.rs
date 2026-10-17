@@ -6719,7 +6719,7 @@ impl App {
         let local = self.form.execution_mode == 0;
         let mut rows = vec![AlgoSelect { label: "Execution Mode", field: "execution_mode", options: EXECUTION_MODE_OPTIONS, help: EXECUTION_MODE_HELP }];
         if local {
-            rows.push(Toggle { label: "  Dry Run", field: "dry_run", help: "Print processing plan without executing" });
+            rows.push(Toggle { label: "  Dry Run", field: "dry_run", help: "Print the processing plan, pipeline graph and methods text without running anything" });
             rows.push(Param { label: "  Num Processes", field: "n_procs", help: "Number of parallel threads (empty = auto)" });
             // The memory limit schedules concurrent local runs.
             rows.push(Param { label: "  Memory Limit (GB)", field: "mem_limit_gb", help: "Memory budget for scheduling concurrent runs: auto (empty) detects it, a number of GB, or none for no limit" });

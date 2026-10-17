@@ -88,9 +88,9 @@ keeps the names valid. A run with no such twin keeps its name.
 | File | Contents |
 | --- | --- |
 | `dataset_description.json`, `README` | BIDS-Derivatives description, with `GeneratedBy` and `SourceDatasets` |
-| `methods.md` | A methods paragraph describing what ran, with citations |
-| `pipeline.mmd` | The pipeline as a Mermaid graph: one box per step, an arrow for each thing one step reads from another |
-| `changes/` | Only when a run was processed differently from `methods.md` (a decision made as it ran, such as a supplied mask it could not use): that run's methods text (`<run>_methods.md`) and pipeline as it ran (`<run>_desc-ran_pipeline.mmd`) |
+| `methods.md` | A methods paragraph describing what the runs did, with citations |
+| `pipeline.svg`, `pipeline.mmd` | The pipeline the runs took, as an image and as a Mermaid graph: one box per step, an arrow for each thing one step reads from another, and on a box how many runs skipped the step or decided something in it |
+| `changes/` | Only when some runs were processed differently from the rest (a decision made as a run went, such as a supplied mask it could not use): each such run's methods text (`<run>_methods.md`) and pipeline as it ran (`<run>_desc-ran_pipeline.mmd`, `.svg`) |
 | `pipeline_config.toml` | The resolved settings, reusable with `--config` |
 | `qsmxt.log`, `logs/` | The log (and, under SLURM, each run job's log) |
 | `desc-reference_summary.tsv` | What every susceptibility map was referenced to (see [Running noninteractively](/QSMxT/guides/running-noninteractively/#the-reference-summary)) |
@@ -112,7 +112,7 @@ in the derivatives' `.bidsignore`, so the dataset passes the BIDS validator:
 | `smwi` | SMWI, named on the same BEP004 scheme |
 | `evec` | BIDS has no suffix for an orientation field; an eigenvector is not a susceptibility, so it is not a `Chimap` |
 | `*_stats.tsv`, `*_stats.png`, `desc-reference_summary.tsv` | `stats` is not a BIDS suffix |
-| `workflow`, `prov`, `logs`, `slurm`, `extra_files`, `changes`, `methods.md`, `pipeline.mmd`, `pipeline_config.toml`, `*.log` | Not BIDS data files |
+| `workflow`, `prov`, `logs`, `slurm`, `extra_files`, `changes`, `methods.md`, `pipeline.mmd`, `pipeline.svg`, `pipeline_config.toml`, `*.log` | Not BIDS data files |
 
 ## Standalone commands
 

@@ -363,13 +363,13 @@ qsmxt run [OPTIONS] <BIDS_DIR> [OUTPUT_DIR]
 | `--n-procs <N_PROCS>` | Number of parallel threads. |
 | `--source-dicom <SOURCE_DICOM>` | Optional source DICOM directory; inherit patient/study identity from the original DICOMs when exporting (used with --export-dicom) |
 | `--dicom-outputs <DICOM_OUTPUTS>` | Restrict DICOM export to these maps (default: all produced). Values: chimap, swi, minip, t2starmap, r2starmap, r2map, r2primemap, desc-paramagnetic_chimap, desc-diamagnetic_chimap, desc-total_chimap (used with --export-dicom) |
-| `--dry` | Print processing plan without executing. |
+| `--dry` | Print the processing plan, the pipeline graph and the methods text without running anything or writing any file. |
 | `--debug` | Enable debug logging. |
 | `--mem-limit-gb <MEM_LIMIT_GB>` | Memory limit in GB for concurrent run scheduling (auto-detected if not specified) |
 | `--no-mem-limit` | Disable memory-aware concurrency limiting. |
 | `--force` | Force re-run, ignoring cached pipeline state. |
 | `--clean-intermediates` | Once every run (and any multi-orientation combination) is done, delete the intermediate images under workflow/. Published outputs, per-step provenance and the cache state are kept: a re-run with the same configuration recomputes nothing, one with a changed configuration recomputes the intermediates it needs. |
-| `--no-dataset-steps` | Process each run and stop: skip the dataset-level steps (multi-orientation reconstruction, summary tables, cohort figures, provenance, dataset_description.json, pipeline_config.toml, methods.md) and log to logs/&lt;run&gt;.log instead of qsmxt.log. `qsmxt aggregate` does those steps once every run is done; `qsmxt slurm` uses the pair. |
+| `--no-dataset-steps` | Process each run and stop: skip the dataset-level steps (multi-orientation reconstruction, summary tables, cohort figures, provenance, dataset_description.json, pipeline_config.toml, methods.md, the pipeline graph, changes/) and log to logs/&lt;run&gt;.log instead of qsmxt.log. `qsmxt aggregate` does those steps once every run is done; `qsmxt slurm` uses the pair. |
 
 ## `qsmxt init`
 
