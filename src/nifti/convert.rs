@@ -277,10 +277,8 @@ fn process_files(
 
 /// Generate a BIDS filename for a given echo and part.
 fn bids_filename(echo: usize, part: &str) -> String {
-    format!(
-        "sub-01_acq-nifti_echo-{}_part-{}_{}.nii.gz",
-        echo, part, "MEGRE"
-    )
+    let key = crate::bids::entities::converted_nifti_key();
+    format!("{}_echo-{echo}_part-{part}_{}.nii.gz", key.basename(), key.suffix)
 }
 
 /// Write a JSON sidecar next to a NIfTI file.

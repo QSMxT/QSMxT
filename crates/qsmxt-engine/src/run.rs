@@ -707,11 +707,15 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
 
         self.put(Item::FieldPpm, Data::Real(&field.b0_field_ppm))?;
         self.put(Item::TotalFieldHz, Data::Real(&field.total_field_hz))?;
+        let first_echo_time = self.meta.echo_times[0];
+        let fields = |item: &Item| crate::bids::outputs::step_fields(item, first_echo_time).unwrap_or_default();
+        self.store.annotate(&Item::TotalFieldHz, fields(&Item::TotalFieldHz))?;
         let mut outputs = vec![Item::FieldPpm, Item::TotalFieldHz];
         // A published field map is paired with a magnitude for anatomical reference: the first
         // echo's, the one with the most signal.
         if let Some(first) = magnitudes.first() {
             self.put(Item::TotalFieldMagnitude, Data::Real(first))?;
+            self.store.annotate(&Item::TotalFieldMagnitude, fields(&Item::TotalFieldMagnitude))?;
             outputs.push(Item::TotalFieldMagnitude);
         }
         if let Some(report) = &field.robust_fit_report {

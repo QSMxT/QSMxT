@@ -20,6 +20,7 @@ use serde_json::{Map, Value};
 use crate::bids::derivatives::DerivativeOutputs;
 use crate::bids::discovery::QsmRun;
 use crate::bids::entities::{self, AcquisitionKey};
+use qsmxt_engine::bids::outputs::{self, Description};
 
 const BIDSPROV_VERSION: &str = "0.0.1";
 const CONTEXT_URL: &str = "https://purl.org/nidash/bidsprov/context.json";
@@ -138,7 +139,7 @@ fn file_label(file: &str) -> String {
 }
 
 fn activity_iri(step: &str, key: &AcquisitionKey) -> String {
-    format!("bids::prov/#{}-{}", step, key.basename())
+    outputs::activity_iri(step, &key.basename())
 }
 
 /// Split a step's end `timestamp` (RFC3339) and `duration_secs` into
@@ -164,80 +165,14 @@ fn stage_parameters(algorithm: Option<&str>, parameters: &Value) -> Value {
     params
 }
 
-/// Which acquisition metadata is still true of an output, and is forwarded into its sidecar.
-#[derive(Clone, Copy, PartialEq, Debug)]
-enum Forward {
-    /// Nothing: a mask or label image.
-    Nothing,
-    /// `MagneticFieldStrength` only: a map fitted across echoes, or from another acquisition.
-    FieldStrength,
-    /// `MagneticFieldStrength`, and `EchoTime` when the run had a single echo.
-    FieldAndEcho,
-}
-
-/// How a published output is described in its sidecar.
-#[derive(Clone, Copy, PartialEq, Debug)]
-struct OutputMeta {
-    forward: Forward,
-    /// `SkullStripped`, or `None` where the key does not apply (masks and label images, per the
-    /// BIDS derivatives schema).
-    skull_stripped: Option<bool>,
-}
-
-const MASK: OutputMeta = OutputMeta { forward: Forward::Nothing, skull_stripped: None };
-
-/// The sidecar description of the published outputs QSMxT knows. Which step made each file is
-/// not listed here: it is read from the provenance records, so a sidecar can only ever name an
-/// activity that exists.
-///
-/// `SkullStripped` (required for derivative anat images except `mask`) reflects whether the
-/// pipeline confines the output to the brain mask:
-/// - Chimap is referenced within the mask, and T2star*/R2star* are masked explicitly, so they
-///   are skull-stripped; SMWI is the magnitude weighted by a χ-derived mask, so it is confined
-///   the way the Chimap is;
-/// - the RSS magnitude (T2starw) and SWI/minIP retain full field-of-view signal.
-fn run_outputs(output: &DerivativeOutputs, key: &AcquisitionKey, n_echoes: usize) -> Vec<(PathBuf, OutputMeta)> {
-    let image = |forward, ss| OutputMeta { forward, skull_stripped: Some(ss) };
-    use Forward::*;
-    // The MCPC-3D-S combined echoes of a per-coil run: one echo each, full field of view.
-    let combined = (1..=n_echoes).flat_map(|e| [
-        (output.combined_phase_path(key, e), image(FieldStrength, false)),
-        (output.combined_mag_path(key, e), image(FieldStrength, false)),
-    ]);
-    combined.chain([
-        (output.qsm_path(key), image(FieldAndEcho, true)),
-        (output.singlepass_qsm_path(key), image(FieldAndEcho, true)),
-        (output.mask_path(key), MASK),
-        (output.qsm_support_path(key), MASK),
-        (output.two_pass_mask_path(key), MASK),
-        (output.magnitude_path(key), image(FieldAndEcho, false)),
-        (output.swi_path(key), image(FieldAndEcho, false)),
-        (output.swi_mip_path(key), image(FieldAndEcho, false)),
-        (output.dseg_path(key), MASK),
-        (output.smwi_path(key, "paramagnetic"), image(FieldAndEcho, true)),
-        (output.smwi_path(key, "diamagnetic"), image(FieldAndEcho, true)),
-        (output.smwi_mip_path(key, "paramagnetic"), image(FieldAndEcho, true)),
-        (output.smwi_mip_path(key, "diamagnetic"), image(FieldAndEcho, true)),
-        (output.t2star_path(key), image(FieldStrength, true)),
-        (output.r2star_path(key), image(FieldStrength, true)),
-        // R2 comes from the multi-echo spin echo, so the GRE's echo time says nothing about it.
-        (output.r2_path(key), image(FieldStrength, true)),
-        (output.r2prime_path(key), image(FieldStrength, true)),
-        (output.r2prime_coverage_path(key), MASK),
-        (output.motion_coverage_path(key), MASK),
-        (output.chi_para_path(key), image(FieldAndEcho, true)),
-        (output.chi_dia_path(key), image(FieldAndEcho, true)),
-        (output.chi_sep_total_path(key), image(FieldAndEcho, true)),
-        // The field map is computed inside the brain mask and is 0 outside it; its magnitude is
-        // the first echo as acquired.
-        (output.total_field_path(key), image(FieldStrength, true)),
-        (output.total_field_magnitude_path(key), image(FieldStrength, false)),
-    ]).collect()
-}
-
-/// A multi-orientation group's outputs: COSMOS / STI maps, all fitted across orientations.
-fn group_meta() -> OutputMeta {
-    OutputMeta { forward: Forward::FieldStrength, skull_stripped: Some(true) }
+/// The published images QSMxT knows for a run, each with how its sidecar describes it
+/// ([`outputs::description`]). Which step made each file is not listed here: it is read from the
+/// provenance records, so a sidecar can only ever name an activity that exists.
+fn run_outputs(output: &DerivativeOutputs, key: &AcquisitionKey, n_echoes: usize) -> Vec<(PathBuf, Description)> {
+    qsmxt_engine::stages::output_space::published(n_echoes).into_iter()
+        .filter_map(|(item, _)| Some((output.output_dir.join(outputs::published_path(&item, key, output.space.as_deref())?),
+                                      outputs::description(&item)?)))
+        .collect()
 }
 
 fn is_nifti(path: &Path) -> bool {
@@ -341,8 +276,8 @@ pub fn write_provenance(
     struct Owner<'a> {
         /// The directories its published files are in (`anat/`, `fmap/`).
         dirs: Vec<PathBuf>,
-        known: Vec<(PathBuf, OutputMeta)>,
-        default_meta: OutputMeta,
+        known: Vec<(PathBuf, Description)>,
+        default_meta: Description,
         field_strength: f64,
         echo_times: &'a [f64],
     }
@@ -353,7 +288,7 @@ pub fn write_provenance(
         owners.push((run.key.clone(), Owner {
             dirs: output.published_dirs(&run.key).to_vec(),
             known: run_outputs(&output.published(&run.key), &run.key, run.echo_times.len()),
-            default_meta: MASK,
+            default_meta: outputs::MASK,
             field_strength: run.magnetic_field_strength,
             echo_times: &run.echo_times,
         }, STEPS));
@@ -362,7 +297,7 @@ pub fn write_provenance(
         owners.push((group.key.clone(), Owner {
             dirs: vec![output.anat_dir(&group.key)],
             known: Vec::new(),
-            default_meta: group_meta(),
+            default_meta: outputs::MULTI_ORIENTATION,
             field_strength: group.magnetic_field_strength,
             echo_times: &[],
         }, GROUP_STEPS));
@@ -510,20 +445,13 @@ pub fn write_provenance(
             .and_then(|s| serde_json::from_str::<Value>(&s).ok())
             .and_then(|v| v.as_object().cloned())
             .unwrap_or_default();
-        // Required for derivative anat images (except mask).
-        if let Some(ss) = meta.skull_stripped {
-            obj.insert("SkullStripped".to_string(), Value::Bool(ss));
-        }
-        if meta.forward != Forward::Nothing {
-            obj.insert("MagneticFieldStrength".to_string(), serde_json::json!(owner.field_strength));
-        }
-        // EchoTime remains valid only when a single echo was used.
-        if meta.forward == Forward::FieldAndEcho && owner.echo_times.len() == 1 {
-            obj.insert("EchoTime".to_string(), serde_json::json!(owner.echo_times[0]));
-        }
-        obj.insert("GeneratedBy".to_string(), Value::String(activity.clone()));
-        obj.insert("QSMxTVersion".to_string(), Value::String(env!("CARGO_PKG_VERSION").to_string()));
-        obj.insert("QSMrsVersion".to_string(), Value::String(QSM_RS_VERSION.to_string()));
+        let facts = outputs::SidecarFacts {
+            field_strength: owner.field_strength,
+            echo_times: owner.echo_times,
+            qsmxt_version: env!("CARGO_PKG_VERSION"),
+            qsm_rs_version: QSM_RS_VERSION,
+        };
+        outputs::describe(&mut obj, meta, Some(activity), &facts);
         write_json(&sidecar, &Value::Object(obj))?;
     }
 

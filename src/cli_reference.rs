@@ -388,8 +388,8 @@ mod tests {
         let paths = [
             o.qsm_path(&k), o.mask_path(&k), o.magnitude_path(&k), o.swi_path(&k), o.swi_mip_path(&k),
             o.dseg_path(&k), o.dseg_lookup_path(&k), o.segmentation_stats_path(&k),
-            o.smwi_path(&k, "paramagnetic"), o.smwi_path(&k, "diamagnetic"),
-            o.smwi_mip_path(&k, "paramagnetic"), o.smwi_mip_path(&k, "diamagnetic"),
+            o.smwi_path(&k, qsmxt_engine::store::Contrast::Paramagnetic), o.smwi_path(&k, qsmxt_engine::store::Contrast::Diamagnetic),
+            o.smwi_mip_path(&k, qsmxt_engine::store::Contrast::Paramagnetic), o.smwi_mip_path(&k, qsmxt_engine::store::Contrast::Diamagnetic),
             o.t2star_path(&k), o.r2star_path(&k), o.r2_path(&k), o.r2prime_path(&k),
             o.total_field_path(&k), o.total_field_magnitude_path(&k), o.cosmos_path(&k),
             o.sti_tensor_path(&k), o.sti_mms_path(&k), o.sti_msa_path(&k), o.sti_eigenvector_path(&k),

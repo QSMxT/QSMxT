@@ -8,7 +8,7 @@
 //! gives them, so a tail entity lands where it belongs rather than after the prefix; otherwise the
 //! tail is appended as is.
 //!
-//! The tails are built only here — by [`DerivativeOutputs`](super::derivatives::DerivativeOutputs)
+//! The tails are built only here — by [`outputs`](super::outputs) and `qsmxt`'s derivative paths
 //! for the pipeline and directly by `qsmxt invert sti`, `separate`, `combine` and `swi --mip` — so
 //! a standalone command and the pipeline cannot name the same thing two ways.
 //!
