@@ -25,6 +25,7 @@ pub mod methods;
 pub mod bridge;
 pub mod motion;
 pub mod scan;
+pub mod inputs;
 pub mod requirements;
 pub mod memory;
 pub mod cache;
