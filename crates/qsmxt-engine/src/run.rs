@@ -102,7 +102,7 @@ pub fn dry_run<V: crate::store::Volumes>(
     let before = store.recorded_keys();
     let mut shadow = store.shadow();
     let mut quiet = ();
-    let (meta, load_record) = load(config, facts, &mut shadow, &mut quiet)?;
+    let (meta, load_record, _) = load(config, facts, &mut shadow, &mut quiet)?;
     shadow.begin(&meta)?;
     let mut records = vec![load_record];
     if plan.processes() {
