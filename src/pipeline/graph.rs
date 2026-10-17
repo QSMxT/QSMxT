@@ -290,7 +290,7 @@ pub fn run_completed_under(output_dir: &Path, key: &AcquisitionKey, config: &Pip
 
 /// [`run_completed_under`], for the state file at `path`.
 pub fn state_completed_under(path: &Path, config: &PipelineConfig) -> Result<(), String> {
-    let text = std::fs::read_to_string(&path)
+    let text = std::fs::read_to_string(path)
         .map_err(|_| format!("has not been processed (no {})", path.display()))?;
     let state: PipelineState = serde_json::from_str(&text)
         .map_err(|e| format!("has an unreadable pipeline state {}: {e}", path.display()))?;
