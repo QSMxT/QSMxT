@@ -51,6 +51,84 @@ pub fn run<S: StageStore + ?Sized>(
     Ok(record)
 }
 
+/// What a run of a plan would do with one of its steps, found before running it ([`dry_run`]).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Expected {
+    /// The step's name ([`crate::plan::Stage::name`]).
+    pub id: String,
+    pub state: ExpectedState,
+    /// The key it would be cached under ([`crate::cache::step_cache_key`]); none for a step that
+    /// would do nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub key: Option<String>,
+}
+
+/// What a run would do with a step, and why.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ExpectedState {
+    /// Its earlier output is still valid: reused.
+    Cached,
+    /// Computed: it has not been computed before.
+    WillRun,
+    /// Computed: it was computed under another key, so its own parameters or the configuration it
+    /// reads have changed.
+    Changed,
+    /// Computed with the parameters it was computed with before: a step it reads is computed
+    /// again (or its outputs are no longer held).
+    Stale,
+    /// It would do nothing (motion correction off, an unresampled run's return to the acquired
+    /// grid).
+    Skipped,
+}
+
+impl ExpectedState {
+    /// Whether the step would be computed.
+    pub fn computes(self) -> bool {
+        matches!(self, Self::WillRun | Self::Changed | Self::Stale)
+    }
+}
+
+/// What [`run`] would do with each step of `plan` on the scan in `store`, in the plan's order,
+/// computing nothing and leaving `store` as it is: the run is taken on a [`crate::store::MemoryStore::shadow`]
+/// of it, by the same code, with each step that would be computed recorded there under its key
+/// instead. The steps it says are cached are exactly those `run` then reuses.
+///
+/// What the plan says the data cannot produce ([`Plan::check`]) is not looked at, as for [`run`].
+pub fn dry_run<V: crate::store::Volumes>(
+    plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, store: &crate::store::MemoryStore<V>,
+) -> Result<Vec<Expected>, crate::EngineError> {
+    crate::schema::check_ranges(config)?;
+    let before = store.recorded_keys();
+    let mut shadow = store.shadow();
+    let mut quiet = ();
+    let (meta, load_record) = load(config, facts, &mut shadow, &mut quiet)?;
+    shadow.begin(&meta)?;
+    let mut records = vec![load_record];
+    if plan.processes() {
+        let mut r = Run::new(plan, config, facts, meta, &mut shadow, &mut quiet);
+        r.dry = true;
+        for step in plan.steps.iter().filter(|s| s.stage != Stage::Load) {
+            records.push(r.take(step)?);
+        }
+    }
+    let after = shadow.recorded_keys();
+    Ok(records.into_iter().map(|record| {
+        let key = after.get(&record.id).cloned();
+        let state = match record.state {
+            StepState::Cached => ExpectedState::Cached,
+            StepState::Skipped => ExpectedState::Skipped,
+            StepState::Computed => match before.get(&record.id) {
+                None => ExpectedState::WillRun,
+                Some(k) if Some(k) == key.as_ref() => ExpectedState::Stale,
+                Some(_) => ExpectedState::Changed,
+            },
+        };
+        let key = if state == ExpectedState::Skipped { None } else { key };
+        Expected { id: record.id, state, key }
+    }).collect())
+}
+
 /// Run one of `plan`'s engine steps on its own, on a run whose grid (from its load step) is
 /// `meta`: what a front end re-running a single step uses (a mask preview, say), and tests.
 /// Returns what the step did.
@@ -154,6 +232,9 @@ struct Run<'r, S: StageStore + ?Sized> {
     /// Where the decisions made while computing it start: those are kept with it in the store,
     /// for a run that reuses it. The ones before are made every run.
     computing_from: usize,
+    /// A dry run ([`dry_run`]): a step that would be computed is recorded under its key, its
+    /// outputs held, instead.
+    dry: bool,
 }
 
 impl<'r, S: StageStore + ?Sized> Run<'r, S> {
@@ -161,7 +242,7 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
         plan: &'r Plan, config: &'r PipelineConfig, facts: &'r ScanFacts, meta: RunMetadata, store: &'r mut S,
         observer: &'r mut dyn Observer,
     ) -> Self {
-        Run { plan, config, facts, meta, store, observer, state: None, decisions: Vec::new(), computing_from: 0 }
+        Run { plan, config, facts, meta, store, observer, state: None, decisions: Vec::new(), computing_from: 0, dry: false }
     }
 
     /// Take `step`, and say what it did.
@@ -234,10 +315,28 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             self.reuse(step);
             return None;
         }
+        if self.dry {
+            self.pretend(step, algorithm, params, &key);
+            return None;
+        }
         self.observer.stage(step, algorithm, StageEvent::Started(doing));
         self.store.start(step);
         self.computing_from = self.decisions.len();
         Some(key)
+    }
+
+    /// In a dry run, record `step` as computed under `key`, with the outputs the plan says it
+    /// writes, so the steps after it see what they would.
+    fn pretend(&mut self, step: &str, algorithm: Option<&str>, params: &Value, key: &str) {
+        let outputs = self.plan.steps.iter().find(|s| s.name == step).map(|s| s.outputs.clone()).unwrap_or_default();
+        // A dry run's store is a shadow ([`crate::store::MemoryStore::shadow`]), which takes these without fail.
+        for item in &outputs {
+            let _ = self.store.put(*item, Data::Mask(&[]));
+        }
+        let _ = self.store.record(&Completed {
+            step, algorithm, params, outcome: None, key, inputs: &[], outputs: &outputs, decisions: &[],
+        });
+        self.state = Some(StepState::Computed);
     }
 
     /// Keep an output, and show it. A volume on a grid of its own (a projection) is kept but not
@@ -1590,6 +1689,10 @@ impl<'r, S: StageStore + ?Sized> Run<'r, S> {
             self.skip("The run made no quantitative map to summarise.");
             return Ok(());
         }
+        if self.dry {
+            self.pretend("analysis", None, &params, &key);
+            return Ok(());
+        }
         self.observer.stage("analysis", None, StageEvent::Started("Summarising maps per structure"));
         self.store.start("analysis");
         let seg = self.store.real(&seg_item)?;
@@ -1912,6 +2015,182 @@ pub(crate) mod tests {
         });
         let key = crate::cache::step_params_hash(None, &geometry);
         assert!(store.cached_scan(&key).is_some(), "the load step is recorded under the key earlier releases used");
+    }
+
+    /// What a dry run says of each step, after checking that `run` then does exactly that: the
+    /// steps it says are cached are the ones the run reuses, and the ones it says are computed the
+    /// ones the run computes. The store is left as it was by the dry run.
+    fn expect_then_run(config: &PipelineConfig, facts: &ScanFacts, store: &mut MemoryStore) -> Vec<(String, ExpectedState)> {
+        let plan = crate::plan::plan(config, facts);
+        let recorded = serde_json::to_value(store.recorded()).unwrap();
+        let expected = dry_run(&plan, config, facts, store).unwrap();
+        assert_eq!(serde_json::to_value(store.recorded()).unwrap(), recorded, "a dry run changes nothing");
+        assert_eq!(expected.iter().map(|e| e.id.as_str()).collect::<Vec<_>>(),
+                   plan.steps.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(), "every step, in order");
+        let events = run_until_done_or_failed(config, facts, store);
+        let named = |want: fn(ExpectedState) -> bool| expected.iter().filter(|e| want(e.state)).map(|e| e.id.clone()).collect::<Vec<_>>();
+        assert_eq!(named(|s| s == ExpectedState::Cached), events.cached, "cached");
+        assert_eq!(named(ExpectedState::computes), events.computed, "computed");
+        // Each step computed is recorded under the key the dry run gave.
+        for e in expected.iter().filter(|e| e.state.computes()) {
+            if events.computed.contains(&e.id) && e.id != "load" {
+                assert_eq!(store.recorded_keys().get(&e.id), e.key.as_ref(), "{}'s key", e.id);
+            }
+        }
+        expected.into_iter().map(|e| (e.id, e.state)).collect()
+    }
+
+    /// The states of the steps named, in the dry run's answer.
+    fn states<'a>(expected: &'a [(String, ExpectedState)], steps: &[&str]) -> Vec<(&'a str, ExpectedState)> {
+        expected.iter().filter(|(id, _)| steps.contains(&id.as_str())).map(|(id, s)| (id.as_str(), *s)).collect()
+    }
+
+    /// Before the first run every step will run; after it every step is cached; a new inversion
+    /// threshold changes the inversion and makes referencing stale; a new mask makes everything
+    /// after it stale; new input data changes the load step.
+    #[test]
+    fn a_dry_run_says_what_the_run_then_does() {
+        use ExpectedState::*;
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        let first = expect_then_run(&config, &facts, &mut store);
+        assert!(first.iter().all(|(_, s)| matches!(s, WillRun | Skipped)), "{first:?}");
+        let again = expect_then_run(&config, &facts, &mut store);
+        assert!(again.iter().all(|(_, s)| matches!(s, Cached | Skipped)), "{again:?}");
+
+        config.inversion.tkd.threshold *= 2.0;
+        let e = expect_then_run(&config, &facts, &mut store);
+        assert_eq!(states(&e, &["bgremove", "invert", "reference"]), [("bgremove", Cached), ("invert", Changed), ("reference", Stale)]);
+
+        erode_the_brain_mask(&mut config);
+        let e = expect_then_run(&config, &facts, &mut store);
+        assert_eq!(states(&e, &["magnitude", "mask", "unwrap", "bgremove", "invert", "reference"]),
+                   [("magnitude", Cached), ("mask", Changed), ("unwrap", Stale), ("bgremove", Stale), ("invert", Stale), ("reference", Stale)]);
+
+        store.set_identity(json!("phantom-2"));
+        let e = expect_then_run(&config, &facts, &mut store);
+        assert_eq!(e[0], ("load".to_string(), Changed));
+        assert!(e[1..].iter().all(|(_, s)| matches!(s, Stale | Skipped)), "{e:?}");
+    }
+
+    /// A switch to a deep-learning inversion on axial data: only the inversion and what reads it
+    /// are computed (#355). Said before the run, which then fails here for want of weights.
+    #[test]
+    fn a_dry_run_of_an_axial_only_inversion_on_axial_data() {
+        use ExpectedState::*;
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        run_once(&config, &facts, &mut store);
+        config.inversion.algorithm = QsmAlgorithm::Xqsm;
+        let plan = crate::plan::plan(&config, &facts);
+        let e: Vec<_> = dry_run(&plan, &config, &facts, &store).unwrap().into_iter().map(|e| (e.id, e.state)).collect();
+        assert_eq!(states(&e, &["load", "bgremove", "invert", "reference"]),
+                   [("load", Cached), ("bgremove", Cached), ("invert", Changed), ("reference", Stale)]);
+    }
+
+    /// Two-pass, motion correction, SWI with relaxometry, and a resampled run, each changed after
+    /// a first run: the dry run agrees with the run every time.
+    #[test]
+    fn a_dry_run_agrees_with_the_run_on_every_kind_of_change() {
+        let (facts, mut store) = phantom();
+        let mut config = two_pass_config();
+        expect_then_run(&config, &facts, &mut store);
+        config.masking.two_pass_sections.as_mut().unwrap()[0].refinements.push(MaskOp::Erode { iterations: 1 });
+        let e = expect_then_run(&config, &facts, &mut store);
+        assert!(e.iter().any(|(id, s)| id == "mask-reliable" && *s == ExpectedState::Changed), "{e:?}");
+        assert!(e.iter().any(|(id, s)| id == "invert" && *s == ExpectedState::Cached), "{e:?}");
+
+        let (facts, mut store) = phantom();
+        let mut config = super::tests::config();
+        config.pipeline.do_swi = true;
+        config.pipeline.do_smwi = true;
+        config.pipeline.do_t2starmap = true;
+        config.pipeline.do_r2starmap = true;
+        config.swi.mip_window = 4;
+        config.smwi.mip_window = 4;
+        expect_then_run(&config, &facts, &mut store);
+        config.motion_correction.enabled = true;
+        expect_then_run(&config, &facts, &mut store);
+        config.motion_correction.enabled = false;
+        expect_then_run(&config, &facts, &mut store);
+        config.swi.mip_window = 3;
+        expect_then_run(&config, &facts, &mut store);
+
+        let (c, s) = (20f64.to_radians().cos(), 20f64.to_radians().sin());
+        let affine = [1.0, 0.0, 0.0, 0.0, 0.0, c, -s, 0.0, 0.0, s, c, 0.0, 0.0, 0.0, 0.0, 1.0];
+        let (facts, mut store) = phantom_on(affine);
+        let mut config = super::tests::config();
+        config.pipeline.axial_resampling = true;
+        config.pipeline.obliquity_threshold = 5.0;
+        expect_then_run(&config, &facts, &mut store);
+        expect_then_run(&config, &facts, &mut store);
+        config.inversion.tkd.threshold *= 2.0;
+        expect_then_run(&config, &facts, &mut store);
+        config.pipeline.output_space = crate::OutputSpace::Working;
+        expect_then_run(&config, &facts, &mut store);
+    }
+
+    /// R2 and R2′ from a MESE, and chi-separation, before and after a new mask.
+    #[test]
+    fn a_dry_run_follows_relaxometry_and_chi_separation() {
+        let (mut facts, mut store) = phantom();
+        with_mese(&mut facts, &mut store);
+        let mut config = config();
+        config.pipeline.do_r2starmap = true;
+        config.pipeline.do_r2map = true;
+        config.pipeline.do_r2primemap = true;
+        config.pipeline.do_chi_separation = true;
+        config.separation.algorithm = crate::enums::SeparationAlgorithm::ChiSepIlsqr;
+        expect_then_run(&config, &facts, &mut store);
+        expect_then_run(&config, &facts, &mut store);
+        config.inversion.tkd.threshold *= 2.0;
+        let e = expect_then_run(&config, &facts, &mut store);
+        assert_eq!(states(&e, &["r2_r2prime", "chi_separation"]),
+                   [("r2_r2prime", ExpectedState::Cached), ("chi_separation", ExpectedState::Stale)]);
+        erode_the_brain_mask(&mut config);
+        expect_then_run(&config, &facts, &mut store);
+    }
+
+    /// Segmentation and the per-structure statistics, which keys itself outside `begin`.
+    #[test]
+    fn a_dry_run_follows_the_statistics() {
+        let (mut facts, mut store) = phantom();
+        let mut affine = [0.0; 16];
+        for i in 0..4 { affine[5 * i] = 1.0; }
+        let Some(VolumeData::Real(m)) = store.get(&Item::AcquiredMagnitude(1)).cloned() else { panic!() };
+        let dseg: Vec<f64> = m.iter().enumerate()
+            .map(|(i, &v)| if v > 50.0 { if i % N < N / 2 { 10.0 } else { 49.0 } } else { 0.0 }).collect();
+        store.insert_on_grid(Item::SuppliedSegmentation, dseg,
+                             crate::store::Geometry { dims: (N, N, N), voxel_size: (1.0, 1.0, 1.0), affine });
+        facts.custom_dseg = true;
+        let mut config = config();
+        config.pipeline.do_segmentation = true;
+        config.pipeline.do_analysis = true;
+        config.pipeline.do_r2starmap = true;
+        config.segmentation.custom_dseg_tool = Some("mine".into());
+        expect_then_run(&config, &facts, &mut store);
+        expect_then_run(&config, &facts, &mut store);
+        config.inversion.tkd.threshold *= 2.0;
+        let e = expect_then_run(&config, &facts, &mut store);
+        assert_eq!(states(&e, &["segmentation", "analysis"]),
+                   [("segmentation", ExpectedState::Cached), ("analysis", ExpectedState::Stale)]);
+    }
+
+    /// A store restored from an earlier one's record over the same volumes ([`MemoryStore::restore`])
+    /// answers the same.
+    #[test]
+    fn a_dry_run_on_a_restored_store() {
+        let (facts, mut store) = phantom();
+        let mut config = config();
+        run_once(&config, &facts, &mut store);
+        let header = store.header().unwrap();
+        let recorded = store.recorded();
+        let mut restored = MemoryStore::with_volumes(header, json!("phantom-1"), std::mem::take(store.volumes()));
+        restored.restore(recorded);
+        assert!(expect_then_run(&config, &facts, &mut restored).iter().all(|(_, s)| matches!(s, ExpectedState::Cached | ExpectedState::Skipped)));
+        config.inversion.tkd.threshold *= 2.0;
+        let e = expect_then_run(&config, &facts, &mut restored);
+        assert_eq!(states(&e, &["invert", "reference"]), [("invert", ExpectedState::Changed), ("reference", ExpectedState::Stale)]);
     }
 
     /// Two-pass reconstructs twice and references both maps; each pass's map is defined where its

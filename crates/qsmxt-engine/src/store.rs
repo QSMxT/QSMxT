@@ -758,6 +758,99 @@ impl<V: Volumes> MemoryStore<V> {
     }
 }
 
+impl<V: Volumes> MemoryStore<V> {
+    /// A store that starts out as this one and takes whatever is done to it without touching
+    /// this one: what is recorded is copied, and the volumes are only looked at
+    /// ([`Shadow`]). What a run would do is found by running it on one ([`crate::run::dry_run`]).
+    pub fn shadow(&self) -> MemoryStore<Shadow<'_, V>> {
+        MemoryStore {
+            header: self.header.clone(),
+            identity: self.identity.clone(),
+            volumes: Shadow::new(&self.volumes),
+            geometries: self.geometries.clone(),
+            reports: self.reports.clone(),
+            annotations: self.annotations.clone(),
+            // Read only by a step being computed, which a dry run never does.
+            supplied: None,
+            mese: self.mese.clone(),
+            current: None,
+            working_grid: self.working_grid.clone(),
+            steps: self.steps.clone(),
+            scan: self.scan.clone(),
+            decisions: self.decisions.clone(),
+        }
+    }
+
+    /// The key each recorded step was recorded under, the load step's as `load`.
+    pub fn recorded_keys(&self) -> HashMap<String, String> {
+        let mut keys: HashMap<String, String> = self.steps.iter().map(|(s, (k, _))| (s.clone(), k.clone())).collect();
+        if let Some((k, _)) = &self.scan {
+            keys.insert("load".into(), k.clone());
+        }
+        keys
+    }
+}
+
+/// Another store's volumes as a dry run sees them ([`MemoryStore::shadow`]): which items are
+/// held, and nothing of their data. What is written, copied, moved or removed changes only which
+/// items this says are held.
+pub struct Shadow<'a, V> {
+    base: &'a V,
+    added: std::collections::HashSet<Item>,
+    removed: std::collections::HashSet<Item>,
+}
+
+impl<'a, V: Volumes> Shadow<'a, V> {
+    fn new(base: &'a V) -> Self {
+        Self { base, added: Default::default(), removed: Default::default() }
+    }
+}
+
+impl<V: Volumes> Volumes for Shadow<'_, V> {
+    fn contains(&self, item: &Item) -> bool {
+        self.added.contains(item) || (!self.removed.contains(item) && self.base.contains(item))
+    }
+
+    /// Nothing: a dry run reads no data.
+    fn get(&self, _item: &Item) -> Result<Option<VolumeData>, EngineError> {
+        Ok(None)
+    }
+
+    fn insert(&mut self, item: Item, _volume: VolumeRef<'_>) -> Result<(), EngineError> {
+        self.removed.remove(&item);
+        self.added.insert(item);
+        Ok(())
+    }
+
+    fn copy(&mut self, from: &Item, to: Item) -> Result<bool, EngineError> {
+        let held = self.contains(from);
+        if held {
+            self.insert(to, VolumeRef::Mask(&[]))?;
+        }
+        Ok(held)
+    }
+
+    fn remove(&mut self, item: &Item) -> bool {
+        let held = self.contains(item);
+        self.added.remove(item);
+        self.removed.insert(*item);
+        held
+    }
+
+    fn set_aside(&mut self, item: &Item) -> bool {
+        self.remove(item)
+    }
+
+    /// Taken to succeed: the store keeps aside what it says it does.
+    fn put_back(&mut self, item: &Item) -> bool {
+        self.removed.remove(item);
+        self.added.insert(*item);
+        true
+    }
+
+    fn drop_aside(&mut self, _item: &Item) {}
+}
+
 impl<V: Volumes> StageStore for MemoryStore<V> {
     type Error = EngineError;
 
