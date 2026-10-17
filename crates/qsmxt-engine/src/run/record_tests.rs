@@ -116,8 +116,11 @@ fn a_supplied_mask_that_is_used_is_recorded_supplied() {
     let (plan, record) = run_recorded(&config, &facts, &mut store);
     assert_eq!(record.step("mask").unwrap().decision(Topic::MaskSource).unwrap().choice, Choice::Supplied);
     let text = methods_for_run(&config, &plan, &record, "qsmxt").to_markdown();
-    assert!(text.contains("Brain masks were sourced from the 'bet' BIDS derivatives."), "{text}");
-    assert!(!text.contains("A brain mask was generated"), "{text}");
+    assert!(text.contains("The brain mask was supplied with the scan, from the 'bet' BIDS derivatives."), "{text}");
+    assert!(!text.contains("A brain mask was generated") && !text.contains("Brain masks"), "{text}");
+    config.masking.custom_mask_tool = Some("*".into());
+    let text = methods_for_run(&config, &plan, &record, "qsmxt").to_markdown();
+    assert!(text.contains("The brain mask was supplied with the scan, from its BIDS derivatives."), "{text}");
     let before = pipeline_graph(&plan, &config, &facts, store.grid());
     assert!(!pipeline_graph_after(&plan, &config, &facts, &record).differs_from(&before));
 }

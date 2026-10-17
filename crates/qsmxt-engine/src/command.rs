@@ -669,6 +669,19 @@ fn emit_f64_arr3(parts: &mut Vec<String>, flag: &str, val: &[f64; 3], default: &
 
 #[cfg(test)]
 mod tests {
+    /// A mask supplied for the run (qsmbly writes it to derivatives/qsmbly/, `crate::supplied`)
+    /// is read back with `--use-custom-masks qsmbly`.
+    #[test]
+    fn a_supplied_mask_is_read_from_its_tools_derivatives() {
+        let mut config = crate::config::PipelineConfig::default();
+        assert!(!super::generate_command(&config).contains("--use-custom-masks"));
+        config.masking.custom_mask_tool = Some("qsmbly".into());
+        assert!(super::generate_command(&config).contains("--use-custom-masks qsmbly"));
+        config.masking.custom_mask_tool = Some("*".into());
+        let command = super::generate_command(&config);
+        assert!(command.contains("--use-custom-masks") && !command.contains("--use-custom-masks *"), "{command}");
+    }
+
     /// A relaxometry map the selected χ-separation method does not need is still asked for on
     /// the command line: it used to be dropped whenever χ-separation was on.
     #[test]
