@@ -10,7 +10,7 @@ use crate::config::{
 };
 use crate::enums::*;
 use crate::masking::{MaskOp, MaskSection};
-use crate::requirements::{implied_by, Output};
+use crate::requirements::Output;
 
 use super::{table, Section};
 
@@ -127,14 +127,7 @@ fn section_applies(section: Section, x: &Ctx, facts: &ViewFacts) -> bool {
 
 /// The setting that switches `out` on, when another one does.
 fn forcing_setting(c: &PipelineConfig, out: Output) -> Option<&'static str> {
-    let by = implied_by(c, out)?;
-    Some(match by.split_whitespace().next().unwrap_or("") {
-        "--do-analysis" => "pipeline.do_analysis",
-        "--qsm-reference" => "qsm.reference",
-        "--do-chisep" => "pipeline.do_chi_separation",
-        "--do-r2primemap" => "pipeline.do_r2primemap",
-        _ => return None,
-    })
+    crate::requirements::implied_by_setting(c, out)
 }
 
 /// How each setting of [`schema`](super::schema) applies to `config`, in schema order: whether

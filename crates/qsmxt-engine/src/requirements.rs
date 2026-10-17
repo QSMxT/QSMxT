@@ -141,6 +141,75 @@ pub fn implied_by(config: &PipelineConfig, out: Output) -> Option<String> {
     }
 }
 
+/// The setting whose option turned `out` on, when another one did ([`implied_by`], as a config
+/// path).
+pub fn implied_by_setting(config: &PipelineConfig, out: Output) -> Option<&'static str> {
+    let by = implied_by(config, out)?;
+    Some(match by.split_whitespace().next().unwrap_or("") {
+        "--do-analysis" => Output::Analysis.setting(),
+        "--qsm-reference" => Output::RegionReference.setting(),
+        "--do-chisep" => Output::ChiSeparation.setting(),
+        "--do-r2primemap" => Output::R2prime.setting(),
+        _ => return None,
+    })
+}
+
+/// How a problem names the settings it involves: as `qsmxt`'s command line spells them (its
+/// flags), or by their labels in the settings schema, for a front end that shows settings rather
+/// than flags. Every setting a message names is kept, so a problem can list them.
+#[derive(Debug, Default)]
+pub struct Words {
+    labels: bool,
+    named: std::cell::RefCell<Vec<&'static str>>,
+}
+
+impl Words {
+    /// The command line's words.
+    pub fn flags() -> Self {
+        Words::default()
+    }
+
+    /// The settings' labels.
+    pub fn labels() -> Self {
+        Words { labels: true, named: Default::default() }
+    }
+
+    fn note(&self, path: &'static str) {
+        let mut named = self.named.borrow_mut();
+        if !named.contains(&path) {
+            named.push(path);
+        }
+    }
+
+    /// The setting at `path`: `flag` on the command line, else its label.
+    fn setting(&self, path: &'static str, flag: &str) -> String {
+        self.note(path);
+        if !self.labels {
+            return flag.to_string();
+        }
+        crate::schema::setting(path).map_or_else(|| path.to_string(), |s| s.full_label.to_string())
+    }
+
+    /// The setting at `path` set to `value`: `flag` on the command line, else its label and the
+    /// option's name ("R2′ strategy “MESE”").
+    fn choice(&self, path: &'static str, value: &str, flag: &str) -> String {
+        self.note(path);
+        if !self.labels {
+            return flag.to_string();
+        }
+        let Some(setting) = crate::schema::setting(path) else { return format!("{path} {value}") };
+        let name = setting.value_type.options().into_iter()
+            .find(|o| o.value.as_str() == Some(value))
+            .map_or_else(|| value.to_string(), |o| o.name.clone());
+        format!("{} “{name}”", setting.full_label)
+    }
+
+    /// The settings named so far.
+    pub fn named(&self) -> Vec<&'static str> {
+        self.named.borrow().clone()
+    }
+}
+
 /// What to do about R2PRIMEnet's field strength before running it.
 #[derive(Debug, PartialEq)]
 pub enum R2primenetFieldPolicy {
@@ -192,19 +261,35 @@ pub const R2PRIMENET_B0_TOLERANCE_T: f64 = 0.3;
 pub fn r2primenet_off_field(
     field_strength: f64, strategy: R2PrimeStrategy, ignore_field_mismatch: bool,
 ) -> Option<String> {
+    r2primenet_off_field_in(field_strength, strategy, ignore_field_mismatch, &Words::flags())
+}
+
+fn r2primenet_off_field_in(
+    field_strength: f64, strategy: R2PrimeStrategy, ignore_field_mismatch: bool, w: &Words,
+) -> Option<String> {
     match r2primenet_field_policy(field_strength, strategy, ignore_field_mismatch) {
         R2primenetFieldPolicy::Skip | R2primenetFieldPolicy::Refuse =>
-            Some(r2primenet_field_message(field_strength)),
+            Some(r2primenet_field_message_in(field_strength, w)),
         R2primenetFieldPolicy::Run | R2primenetFieldPolicy::RunUncalibrated => None,
     }
 }
 
 pub fn r2primenet_field_message(field_strength: f64) -> String {
+    r2primenet_field_message_in(field_strength, &Words::flags())
+}
+
+fn r2primenet_field_message_in(field_strength: f64, w: &Words) -> String {
+    let (measure, supply) = if w.labels {
+        (format!("set {} to measure R2' instead", w.choice("separation.r2prime_strategy", "mese", "")),
+         format!("supply an R2' map ({})", w.setting("separation.custom_r2prime_tool", "")))
+    } else {
+        ("use --r2prime-strategy mese to measure R2' instead".to_string(),
+         "supply one with --use-custom-r2prime".to_string())
+    };
     format!(
         "R2PRIMEnet's weights are trained at {} T and this acquisition is {} T. R2* scales with \
          field strength, so a predicted R2' would be outside what the network has seen and wrong \
-         in a way that looks plausible. Acquire a MESE and use --r2prime-strategy mese to measure \
-         R2' instead, or supply one with --use-custom-r2prime",
+         in a way that looks plausible. Acquire a MESE and {measure}, or {supply}",
         R2PRIMENET_TRAINED_B0_T, field_strength,
     )
 }
@@ -272,9 +357,24 @@ pub fn mese_problem(f: &ScanFacts) -> Option<String> {
 
 /// Why R2 cannot be had for this run, if it cannot.
 pub fn r2_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    r2_problem_in(f, config, &Words::flags())
+}
+
+/// A supplied derivative the config names (`--use-custom-* tool`) that was not found: `what` is
+/// how the command line names the file, `map` how a label-worded message does.
+fn not_supplied(w: &Words, path: &'static str, flag: &str, tool: &str, what: &str, map: &str) -> String {
+    if w.labels {
+        format!("needs the {map} supplied for {}, and none was found for this run", w.setting(path, ""))
+    } else {
+        w.note(path);
+        format!("{flag} {tool} names no {what} for this run under derivatives/{tool}")
+    }
+}
+
+fn r2_problem_in(f: &ScanFacts, config: &PipelineConfig, w: &Words) -> Option<String> {
     match config.separation.custom_r2_tool.as_deref() {
-        Some(tool) if !f.custom_r2 => Some(format!(
-            "--use-custom-r2 {tool} names no R2 map for this run under derivatives/{tool}")),
+        Some(tool) if !f.custom_r2 => Some(not_supplied(
+            w, "separation.custom_r2_tool", "--use-custom-r2", tool, "R2 map", "R2 map")),
         Some(_) => None,
         None => mese_problem(f),
     }
@@ -282,29 +382,44 @@ pub fn r2_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
 
 /// Why R2' cannot be had for this run, if it cannot.
 pub fn r2prime_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    r2prime_problem_in(f, config, &Words::flags())
+}
+
+fn r2prime_problem_in(f: &ScanFacts, config: &PipelineConfig, w: &Words) -> Option<String> {
     let s = &config.separation;
     if let Some(tool) = s.custom_r2prime_tool.as_deref() {
-        return (!f.custom_r2prime).then(|| format!(
-            "--use-custom-r2prime {tool} names no R2' map for this run under derivatives/{tool}"));
+        return (!f.custom_r2prime).then(|| not_supplied(
+            w, "separation.custom_r2prime_tool", "--use-custom-r2prime", tool, "R2' map", "R2' map"));
     }
     if let Some(why) = arlo_problem(f) {
         return Some(format!("needs R2*, which {why}"));
     }
-    let r2 = r2_problem(f, config);
+    let r2 = r2_problem_in(f, config, w);
     match s.r2prime_strategy {
-        R2PrimeStrategy::Mese => r2.map(|why| format!(
-            "--r2prime-strategy mese measures R2' as R2* − R2, and R2 {why}")),
+        R2PrimeStrategy::Mese => r2.map(|why| if w.labels {
+            format!("measures R2' as R2* − R2 (with {}), and R2 {why}",
+                w.choice("separation.r2prime_strategy", "mese", ""))
+        } else {
+            w.note("separation.r2prime_strategy");
+            format!("--r2prime-strategy mese measures R2' as R2* − R2, and R2 {why}")
+        }),
         R2PrimeStrategy::Auto if r2.is_none() => None,
         strategy => {
-            let field = r2primenet_off_field(
-                f.field_strength, strategy, s.r2primenet.ignore_field_mismatch)?;
+            let field = r2primenet_off_field_in(
+                f.field_strength, strategy, s.r2primenet.ignore_field_mismatch, w)?;
+            let anyway = if w.labels {
+                format!("turn on {} to run it anyway (uncalibrated)",
+                    w.setting("separation.r2primenet.ignore_field_mismatch", ""))
+            } else {
+                w.note("separation.r2primenet.ignore_field_mismatch");
+                "pass --r2primenet-ignore-field-mismatch to run it anyway (uncalibrated)".to_string()
+            };
             Some(match (strategy, r2) {
                 (R2PrimeStrategy::Auto, Some(r2)) => format!(
                     "has no R2 to subtract (R2 {r2}), so R2PRIMEnet would estimate it, but {field}; \
-                     pass --r2primenet-ignore-field-mismatch to run it anyway (uncalibrated)"),
-                _ => format!(
-                    "--r2prime-strategy r2primenet: {field}; pass \
-                     --r2primenet-ignore-field-mismatch to run it anyway (uncalibrated)"),
+                     {anyway}"),
+                _ => format!("{}: {field}; {anyway}",
+                    w.choice("separation.r2prime_strategy", "r2primenet", "--r2prime-strategy r2primenet")),
             })
         }
     }
@@ -312,35 +427,56 @@ pub fn r2prime_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String>
 
 /// Why a segmentation cannot be had for this run, if it cannot.
 pub fn segmentation_problem(f: &ScanFacts) -> Option<String> {
+    segmentation_problem_in(f, &Words::flags())
+}
+
+fn segmentation_problem_in(f: &ScanFacts, w: &Words) -> Option<String> {
     if f.custom_dseg || f.has_magnitude {
         return None;
     }
-    Some("needs magnitude images to segment (or a dseg via --use-custom-dseg), and this run has no \
-          magnitude".into())
+    let supplied = if w.labels {
+        format!("a supplied segmentation, {}", w.setting("segmentation.custom_dseg_tool", ""))
+    } else {
+        w.note("segmentation.custom_dseg_tool");
+        "a dseg via --use-custom-dseg".to_string()
+    };
+    Some(format!("needs magnitude images to segment (or {supplied}), and this run has no magnitude"))
 }
 
 /// Why chi-separation cannot run on this run, if it cannot.
 pub fn chisep_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> {
+    chisep_problem_in(f, config, &Words::flags())
+}
+
+fn chisep_problem_in(f: &ScanFacts, config: &PipelineConfig, w: &Words) -> Option<String> {
     let s = &config.separation;
     if let Some(tool) = s.custom_qsm_tool.as_deref() {
         if !f.custom_qsm {
-            return Some(format!(
-                "--use-custom-qsm {tool} names no Chimap for this run under derivatives/{tool}"));
+            return Some(not_supplied(w, "separation.custom_qsm_tool", "--use-custom-qsm", tool, "Chimap", "susceptibility map"));
         }
     } else if !config.pipeline.do_qsm {
-        return Some("needs a susceptibility map: drop --no-qsm or pass --use-custom-qsm".into());
+        return Some(if w.labels {
+            format!("needs a susceptibility map: turn on {} or supply one ({})",
+                w.setting("pipeline.do_qsm", ""), w.setting("separation.custom_qsm_tool", ""))
+        } else {
+            w.note("pipeline.do_qsm");
+            w.note("separation.custom_qsm_tool");
+            "needs a susceptibility map: drop --no-qsm or pass --use-custom-qsm".into()
+        });
     }
     let magnitude = || (!f.has_magnitude)
         .then(|| "needs magnitude images, and this run has none".to_string());
-    let r2prime = || r2prime_problem(f, config).map(|why| format!("needs R2', which {why}"));
+    let r2prime = || r2prime_problem_in(f, config, w).map(|why| format!("needs R2', which {why}"));
     // The local field is written by background-field removal, which only the field-based
     // inversions run, and only when the pipeline reconstructs χ itself.
     let local_field = || {
         if s.custom_qsm_tool.is_some() && !config.pipeline.do_qsm {
             Some("needs the local field, which a bring-your-own QSM does not come with".to_string())
         } else if crate::bridge::skips_bgremove(config) {
-            Some(format!("needs the local field, and --qsm-algorithm {} has no background-field \
-                removal step to produce one", config.inversion.algorithm))
+            let algorithm = config.inversion.algorithm.to_string();
+            Some(format!("needs the local field, and {} has no background-field removal step to \
+                produce one", w.choice("inversion.algorithm", &algorithm,
+                    &format!("--qsm-algorithm {algorithm}"))))
         } else {
             None
         }
@@ -360,22 +496,30 @@ pub fn chisep_problem(f: &ScanFacts, config: &PipelineConfig) -> Option<String> 
 
 /// Why this run cannot produce `out`, if it cannot.
 pub fn problem(f: &ScanFacts, config: &PipelineConfig, out: Output) -> Option<String> {
+    problem_in(f, config, out, &Words::flags())
+}
+
+/// [`problem`], naming settings in `w`'s words.
+pub fn problem_in(f: &ScanFacts, config: &PipelineConfig, out: Output, w: &Words) -> Option<String> {
     match out {
         Output::Swi => (!f.has_magnitude)
             .then(|| "needs magnitude images, and this run has none".into()),
         Output::Smwi => match config.separation.custom_qsm_tool.as_deref() {
             _ if !f.has_magnitude => Some("needs magnitude images, and this run has none".into()),
-            Some(tool) if !config.pipeline.do_qsm && !f.custom_qsm => Some(format!(
-                "needs a susceptibility map, and --use-custom-qsm {tool} names no Chimap for this \
-                 run under derivatives/{tool}")),
+            Some(tool) if !config.pipeline.do_qsm && !f.custom_qsm => Some(if w.labels {
+                not_supplied(w, "separation.custom_qsm_tool", "", tool, "", "susceptibility map")
+            } else {
+                format!("needs a susceptibility map, and {}",
+                    not_supplied(w, "separation.custom_qsm_tool", "--use-custom-qsm", tool, "Chimap", ""))
+            }),
             _ => None,
         },
-        Output::Segmentation => segmentation_problem(f),
+        Output::Segmentation => segmentation_problem_in(f, w),
         Output::T2star | Output::R2star => arlo_problem(f),
-        Output::R2 => r2_problem(f, config),
-        Output::R2prime => r2prime_problem(f, config),
-        Output::ChiSeparation => chisep_problem(f, config),
-        Output::Analysis | Output::RegionReference => segmentation_problem(f)
+        Output::R2 => r2_problem_in(f, config, w),
+        Output::R2prime => r2prime_problem_in(f, config, w),
+        Output::ChiSeparation => chisep_problem_in(f, config, w),
+        Output::Analysis | Output::RegionReference => segmentation_problem_in(f, w)
             .map(|why| format!("needs a segmentation, which {why}")),
     }
 }
@@ -404,7 +548,8 @@ pub struct Check {
     pub problems: Vec<Problem>,
 }
 
-/// One problem a [`Check`] found, as data.
+/// One problem a [`Check`] found, as data, in words a front end that shows settings rather than
+/// flags can use: settings are named by their schema labels and listed by their config paths.
 #[derive(Debug, Clone, PartialEq, serde::Serialize)]
 pub struct Problem {
     /// An error (an output asked for that cannot be made: nothing runs) or a warning (an output
@@ -413,11 +558,17 @@ pub struct Problem {
     /// The setting asking for the output ([`Output::setting`]); `None` for a problem with the
     /// input data itself.
     pub setting: Option<&'static str>,
-    /// For a warning, the option that implied the output, as `qsmxt` names it.
-    pub implied_by: Option<String>,
-    /// What is missing: the error or warning's message after the flag (for an input problem, the
-    /// whole message).
+    /// For a warning, the setting whose option implied the output ([`implied_by_setting`]).
+    pub implied_by: Option<&'static str>,
+    /// Every setting the problem involves, by config path: the output's, the one that implied
+    /// it, and each the message names (what would resolve it among them).
+    pub settings: Vec<&'static str>,
+    /// What is missing, after the output's name ("needs magnitude images, and this run has
+    /// none"); for an input problem, the whole message. Settings are named by their labels.
     pub reason: String,
+    /// The whole problem in a sentence, naming the output and any implying setting by label:
+    /// "Compute SWI needs magnitude images, and this run has none".
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
@@ -441,8 +592,12 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
     let mut out = Check::default();
     if let Some(why) = input_problems(f) {
         out.errors.push(why.clone());
-        out.problems.push(Problem { severity: Severity::Error, setting: None, implied_by: None, reason: why });
+        out.problems.push(Problem {
+            severity: Severity::Error, setting: None, implied_by: None, settings: vec![],
+            reason: why.clone(), message: why,
+        });
     }
+    let label = |path: &str| crate::schema::setting(path).map_or_else(|| path.to_string(), |s| s.full_label.to_string());
     for o in Output::ALL {
         if !o.enabled(config) {
             continue;
@@ -454,7 +609,22 @@ pub fn scan_check(f: &ScanFacts, config: &PipelineConfig) -> Check {
             None => out.errors.push(format!("{} {why}", o.flag())),
         }
         let severity = if by.is_some() { Severity::Warning } else { Severity::Error };
-        out.problems.push(Problem { severity, setting: Some(o.setting()), implied_by: by, reason: why });
+        let words = Words::labels();
+        let reason = problem_in(f, config, o, &words).unwrap_or_else(|| why.clone());
+        let implied = implied_by_setting(config, o);
+        let output = label(o.setting());
+        let message = match implied {
+            Some(by) => format!("{output} (turned on by {}) is skipped: it {reason}", label(by)),
+            None => format!("{output} {reason}"),
+        };
+        let mut settings = vec![o.setting()];
+        settings.extend(implied);
+        for s in words.named() {
+            if !settings.contains(&s) {
+                settings.push(s);
+            }
+        }
+        out.problems.push(Problem { severity, setting: Some(o.setting()), implied_by: implied, settings, reason, message });
     }
     out
 }
@@ -679,6 +849,101 @@ mod tests {
         c.inversion.algorithm = QsmAlgorithm::Iqsm;
         let out = check(&with_mese(run(&EVEN, true), &[0.01, 0.02, 0.03]), &enforced(c));
         assert!(out.errors.len() == 1 && out.errors[0].contains("local field"), "{out:?}");
+    }
+
+    /// Every problem the checks can produce, as data, names settings by label and path, never
+    /// by flag; the command line's messages are unchanged.
+    #[test]
+    fn problems_as_data_name_no_flags() {
+        let mut configs = Vec::new();
+        for algorithm in [SeparationAlgorithm::R2starQsm, SeparationAlgorithm::ChiSepIlsqr,
+                          SeparationAlgorithm::HcChisep, SeparationAlgorithm::SusepNet] {
+            for strategy in [R2PrimeStrategy::Auto, R2PrimeStrategy::Mese, R2PrimeStrategy::R2primenet] {
+                for (custom, no_qsm, inversion) in [(false, false, QsmAlgorithm::Ilsqr), (true, false, QsmAlgorithm::Ilsqr),
+                                                    (false, true, QsmAlgorithm::Ilsqr), (false, false, QsmAlgorithm::Iqsm)] {
+                    let mut c = PipelineConfig::default();
+                    c.pipeline.do_swi = true;
+                    c.pipeline.do_smwi = true;
+                    c.pipeline.do_analysis = true;
+                    c.pipeline.do_r2starmap = true;
+                    c.pipeline.do_r2map = true;
+                    c.pipeline.do_r2primemap = true;
+                    c.pipeline.do_chi_separation = true;
+                    c.pipeline.do_qsm = !no_qsm;
+                    c.inversion.algorithm = inversion;
+                    c.separation.algorithm = algorithm;
+                    c.separation.r2prime_strategy = strategy;
+                    if custom {
+                        c.separation.custom_qsm_tool = Some("mine".into());
+                        c.separation.custom_r2_tool = Some("mine".into());
+                        c.separation.custom_r2prime_tool = Some("mine".into());
+                    }
+                    configs.push(enforced(c));
+                }
+            }
+        }
+        let mut seven = run(&[0.005, 0.010, 0.030], false);
+        seven.field_strength = 7.0;
+        let mut coils = run(&[0.005], true);
+        coils.n_coils = 4;
+        let scans = [run(&EVEN, true), run(&EVEN, false), seven, coils];
+        let mut seen = 0;
+        for c in &configs {
+            for f in &scans {
+                let out = check(f, c);
+                assert_eq!(out.problems.len(), out.errors.len() + out.warnings.len(), "{out:?}");
+                for p in &out.problems {
+                    seen += 1;
+                    for text in [&p.reason, &p.message] {
+                        assert!(!text.contains("--"), "a flag in {text:?}");
+                        assert!(!text.contains("derivatives/"), "a path in {text:?}");
+                    }
+                    if let Some(s) = p.setting {
+                        assert_eq!(p.settings[0], s);
+                    }
+                    for s in &p.settings {
+                        assert!(crate::schema::setting(s).is_some(), "{s} is not a setting");
+                    }
+                    if let Some(by) = p.implied_by {
+                        assert!(p.settings.contains(&by));
+                    }
+                }
+            }
+        }
+        assert!(seen > 100, "{seen}");
+    }
+
+    /// The words a problem names its settings in, and the settings it lists.
+    #[test]
+    fn problems_name_settings_by_label() {
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_r2primemap = true;
+        c.separation.r2prime_strategy = R2PrimeStrategy::Mese;
+        let out = check(&run(&EVEN, true), &enforced(c));
+        let p = out.problems.iter().find(|p| p.setting == Some("pipeline.do_r2primemap")).unwrap();
+        assert!(p.reason.starts_with("measures R2' as R2* − R2 (with ") && p.reason.contains("“MESE”)"), "{}", p.reason);
+        assert!(p.settings.contains(&"separation.r2prime_strategy"), "{:?}", p.settings);
+        assert!(p.message.starts_with(crate::schema::setting("pipeline.do_r2primemap").unwrap().full_label), "{}", p.message);
+        // The command line's message is the one it always was.
+        assert!(out.errors.iter().any(|e| e.contains("--r2prime-strategy mese measures R2'")), "{out:?}");
+
+        // An implied output names the setting that implied it.
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_analysis = true;
+        let out = check(&run(&EVEN, false), &enforced(c));
+        let w = out.problems.iter().find(|p| p.severity == Severity::Warning).unwrap();
+        assert_eq!((w.setting, w.implied_by), (Some("pipeline.do_segmentation"), Some("pipeline.do_analysis")));
+        assert!(w.message.contains("turned on by") && w.settings.contains(&"segmentation.custom_dseg_tool"), "{w:?}");
+
+        // The local field an end-to-end inversion does not produce names the inversion's method.
+        let mut c = PipelineConfig::default();
+        c.pipeline.do_chi_separation = true;
+        c.separation.algorithm = SeparationAlgorithm::ChiSepIlsqr;
+        c.inversion.algorithm = QsmAlgorithm::Iqsm;
+        let out = check(&with_mese(run(&EVEN, true), &[0.01, 0.02, 0.03]), &enforced(c));
+        let p = &out.problems[0];
+        assert!(p.reason.contains("“iQSM” has no background-field removal step"), "{}", p.reason);
+        assert!(p.settings.contains(&"inversion.algorithm"), "{:?}", p.settings);
     }
 
     /// Off 3 T: `auto` skips, an explicit `r2primenet` refuses, and the override runs either.

@@ -480,7 +480,9 @@ pub(crate) mod tests {
         // The same problem as data, naming the setting rather than the flag.
         assert_eq!(p.check.problems, [requirements::Problem {
             severity: requirements::Severity::Error, setting: Some("pipeline.do_swi"), implied_by: None,
+            settings: vec!["pipeline.do_swi"],
             reason: "needs magnitude images, and this run has none".into(),
+            message: "Compute SWI needs magnitude images, and this run has none".into(),
         }]);
     }
 
