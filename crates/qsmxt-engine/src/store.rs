@@ -14,6 +14,7 @@ use qsm_core::pipeline::VolumeRef;
 use crate::observe::VolumeData;
 use crate::plan::Pass;
 use crate::scan::{QsmSidecar, RunMetadata};
+use crate::record::Decision;
 
 /// A volume (or report) a step reads or writes, by what it is. A store keeps each under its own
 /// name for it (`qsmxt`: a path).
@@ -287,6 +288,9 @@ pub struct Completed<'a> {
     pub inputs: &'a [Item],
     /// What it wrote, in the order provenance lists them.
     pub outputs: &'a [Item],
+    /// What it decided while it was computed ([`crate::record`]): kept with the step, for a later
+    /// run that reuses it to report ([`StageStore::decisions`]). Not part of the key.
+    pub decisions: &'a [Decision],
 }
 
 /// Inputs, outputs and the step cache of one run, for the run loop.
@@ -328,8 +332,13 @@ pub trait StageStore {
     /// key leaves nothing cached for the run.
     fn cached_scan(&mut self, key: &str) -> Option<RunMetadata>;
 
-    /// Record the load step under `key`, with the grid it decided.
-    fn record_scan(&mut self, key: &str, meta: &RunMetadata) -> Result<(), Self::Error>;
+    /// Record the load step under `key`, with the grid it decided and what it decided about the
+    /// scan's header ([`Self::decisions`] of `load`).
+    fn record_scan(&mut self, key: &str, meta: &RunMetadata, decisions: &[Decision]) -> Result<(), Self::Error>;
+
+    /// What `step` decided when it was last computed ([`Completed::decisions`]; for `load`, what
+    /// [`Self::record_scan`] was given): what a run that reuses it reports.
+    fn decisions(&mut self, step: &str) -> Vec<Decision>;
 
     /// The run's grid is known: everything after loading works on it.
     fn begin(&mut self, _meta: &RunMetadata) -> Result<(), Self::Error> {
@@ -487,6 +496,9 @@ pub struct Recorded {
     pub scan: Option<(String, RunMetadata)>,
     pub reports: std::collections::BTreeMap<String, serde_json::Value>,
     pub annotations: std::collections::BTreeMap<String, serde_json::Map<String, serde_json::Value>>,
+    /// What each completed step (and the load step, as `load`) decided when it was computed.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub decisions: std::collections::BTreeMap<String, Vec<Decision>>,
     /// The grid of each volume not on the run's.
     #[serde(default)]
     pub geometries: std::collections::BTreeMap<String, Geometry>,
@@ -573,6 +585,8 @@ pub struct MemoryStore<V = InMemory> {
     /// Each recorded step's key, and the outputs it recorded.
     steps: HashMap<String, (String, Vec<Item>)>,
     scan: Option<(String, RunMetadata)>,
+    /// What each recorded step, and the load step, decided.
+    decisions: HashMap<String, Vec<Decision>>,
 }
 
 impl MemoryStore {
@@ -611,7 +625,7 @@ impl<V: Volumes> MemoryStore<V> {
         Self {
             header: Some(header), identity, volumes, geometries: HashMap::new(), reports: HashMap::new(),
             annotations: HashMap::new(), supplied: None, mese: None, current: None,
-            working_grid: HashMap::new(), steps: HashMap::new(), scan: None,
+            working_grid: HashMap::new(), steps: HashMap::new(), scan: None, decisions: HashMap::new(),
         }
     }
 
@@ -671,6 +685,8 @@ impl<V: Volumes> MemoryStore<V> {
             annotations: self.annotations.iter().map(|(i, a)| (i.key(), a.clone())).collect(),
             geometries: self.geometries.iter().map(|(i, g)| (i.key(), g.clone())).collect(),
             working_grid: self.working_grid.iter().map(|(i, g)| (i.key(), g.clone())).collect(),
+            decisions: self.decisions.iter().filter(|(s, d)| !d.is_empty() && (s.as_str() == "load" || self.steps.contains_key(*s)))
+                .map(|(s, d)| (s.clone(), d.clone())).collect(),
         }
     }
 
@@ -686,6 +702,7 @@ impl<V: Volumes> MemoryStore<V> {
             Some((step, (key, outputs)))
         }).collect();
         self.scan = recorded.scan;
+        self.decisions = recorded.decisions.into_iter().collect();
         self.reports = items(recorded.reports).collect();
         self.annotations = items(recorded.annotations).collect();
         self.geometries.extend(items(recorded.geometries));
@@ -778,8 +795,9 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
         }
     }
 
-    fn record_scan(&mut self, key: &str, meta: &RunMetadata) -> Result<(), EngineError> {
+    fn record_scan(&mut self, key: &str, meta: &RunMetadata, decisions: &[Decision]) -> Result<(), EngineError> {
         self.scan = Some((key.to_string(), meta.clone()));
+        self.decisions.insert("load".into(), decisions.to_vec());
         self.changed();
         Ok(())
     }
@@ -829,6 +847,10 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
 
     fn recorded_key(&mut self, step: &str) -> Option<String> {
         self.steps.get(step).map(|(k, _)| k.clone())
+    }
+
+    fn decisions(&mut self, step: &str) -> Vec<Decision> {
+        self.decisions.get(step).cloned().unwrap_or_default()
     }
 
     fn cached(&mut self, step: &str, key: &str) -> bool {
@@ -921,6 +943,7 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
             }
         }
         self.steps.insert(c.step.to_string(), (c.key.to_string(), c.outputs.to_vec()));
+        self.decisions.insert(c.step.to_string(), c.decisions.to_vec());
         self.changed();
         Ok(())
     }
@@ -929,6 +952,7 @@ impl<V: Volumes> StageStore for MemoryStore<V> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::record::{Choice, Topic};
 
     /// Volumes kept as `qsmxt` keeps them: real outputs rounded to float32.
     #[derive(Default)]
@@ -1038,6 +1062,7 @@ mod tests {
             }
             store.record(&Completed {
                 step, algorithm: None, params: &serde_json::json!({}), outcome: None, key, inputs: &[], outputs,
+                decisions: &[],
             }).unwrap();
         };
         let mut store = MemoryStore::new(header(), serde_json::json!(1));
@@ -1133,7 +1158,8 @@ mod tests {
     fn a_new_store_restores_what_an_earlier_one_recorded() {
         let mut store = MemoryStore::with_volumes(header(), serde_json::json!(1), Single::default());
         let meta = crate::stages::magnitude::tests::meta_4x4x4();
-        store.record_scan("load-key", &meta).unwrap();
+        let gap = Decision::new(Topic::SliceGap, Choice::Ignored, "Reconstructed across a slice gap.");
+        store.record_scan("load-key", &meta, std::slice::from_ref(&gap)).unwrap();
         store.put(Item::FieldPpm, Data::Real(&[1.0, 2.0])).unwrap();
         store.put(Item::RobustFitReport, Data::Json(&serde_json::json!({ "fit": 1 }))).unwrap();
         let mip = Geometry { dims: (2, 1, 1), voxel_size: (1.0, 1.0, 4.0), affine: [0.0; 16] };
@@ -1141,15 +1167,16 @@ mod tests {
         let mut fields = serde_json::Map::new();
         fields.insert("Units".into(), "ppm".into());
         store.annotate(&Item::FieldPpm, fields).unwrap();
+        let box_full = Decision::new(Topic::ReconstructionBox, Choice::Full, "Reconstructed on the whole grid.");
         store.record(&Completed {
             step: "unwrap", algorithm: None, params: &serde_json::json!({}), outcome: None, key: "k1",
-            inputs: &[], outputs: &[Item::FieldPpm, Item::RobustFitReport],
+            inputs: &[], outputs: &[Item::FieldPpm, Item::RobustFitReport], decisions: std::slice::from_ref(&box_full),
         }).unwrap();
         store.start("output_space");
         store.put(Item::FieldPpm, Data::Real(&[3.0, 4.0])).unwrap();
         store.record(&Completed {
             step: "output_space", algorithm: None, params: &serde_json::json!({}), outcome: None, key: "k2",
-            inputs: &[], outputs: &[Item::FieldPpm],
+            inputs: &[], outputs: &[Item::FieldPpm], decisions: &[],
         }).unwrap();
         let kept = store.volumes().kept.clone().unwrap();
         assert_eq!(serde_json::to_value(&kept).unwrap(), serde_json::to_value(store.recorded()).unwrap());
@@ -1165,6 +1192,10 @@ mod tests {
         assert_eq!(again.report(&Item::RobustFitReport), Some(&serde_json::json!({ "fit": 1 })));
         assert!(again.annotations(&Item::FieldPpm).is_some_and(|a| a["Units"] == "ppm"));
         assert_eq!(again.geometry(&Item::SwiMip), Some(&mip));
+        // What the steps decided comes back with them.
+        assert_eq!(again.decisions("load"), [gap]);
+        assert_eq!(again.decisions("unwrap"), [box_full]);
+        assert!(again.decisions("output_space").is_empty());
         // A step to compute puts the working-grid version back, and the return to the acquired grid
         // is to do again.
         assert!(!again.cached("invert", "k3"));

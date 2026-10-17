@@ -14,6 +14,7 @@ use crate::cache::step_cache_key;
 use crate::config::PipelineConfig;
 use crate::observe::{Observer, StageEvent, VolumeData};
 use crate::plan::{Pass, Plan, Stage, Step};
+use crate::record::{Choice, Decision, RunRecord, StepRecord, StepState, Topic};
 use crate::scan::{RunMetadata, ScanFacts};
 use crate::stages;
 use crate::store::{Completed, Contrast, Data, Item, StageStore, Supplied};
@@ -23,41 +24,48 @@ use crate::store::{Completed, Contrast, Data, Item, StageStore, Supplied};
 ///
 /// What the plan says the data cannot produce ([`Plan::check`]) is the front end's to refuse
 /// before calling this: `qsmxt` checks every run before the first starts.
+///
+/// Returns what the run did ([`RunRecord`]): every step of the plan, computed, reused or skipped,
+/// with what was decided in it.
 pub fn run<S: StageStore + ?Sized>(
     plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, store: &mut S, observer: &mut dyn Observer,
-) -> Result<(), S::Error> {
+) -> Result<RunRecord, S::Error> {
     // Every front end's config is held to the settings' ranges (qsmxt checks them earlier too).
     crate::schema::check_ranges(config)?;
-    let meta = load(config, facts, store, observer)?;
+    let (meta, load_record) = load(config, facts, store, observer)?;
     store.begin(&meta)?;
+    let mut record = RunRecord { steps: vec![load_record], resampled: Some(meta.source_geometry.is_some()) };
     if !plan.processes() {
         observer.log(Level::Info, "No outputs enabled — nothing to process");
-        return store.finish();
+        store.finish()?;
+        return Ok(record);
     }
     if !config.pipeline.do_qsm {
         observer.log(Level::Info, "QSM processing disabled — skipping reconstruction");
     }
-    let mut r = Run { plan, config, facts, meta, store, observer };
-    for step in &plan.steps {
-        r.step(step)?;
+    let mut r = Run::new(plan, config, facts, meta, store, observer);
+    for step in plan.steps.iter().filter(|s| s.stage != Stage::Load) {
+        record.steps.push(r.take(step)?);
     }
-    r.store.finish()
+    r.store.finish()?;
+    Ok(record)
 }
 
 /// Run one of `plan`'s engine steps on its own, on a run whose grid (from its load step) is
 /// `meta`: what a front end re-running a single step uses (a mask preview, say), and tests.
+/// Returns what the step did.
 pub fn run_step<S: StageStore + ?Sized>(
     plan: &Plan, config: &PipelineConfig, facts: &ScanFacts, meta: &RunMetadata, step: &Step, store: &mut S,
     observer: &mut dyn Observer,
-) -> Result<(), S::Error> {
-    Run { plan, config, facts, meta: meta.clone(), store, observer }.step(step)
+) -> Result<StepRecord, S::Error> {
+    Run::new(plan, config, facts, meta.clone(), store, observer).take(step)
 }
 
 /// The grid the run is processed on: the cached load step's, or decided from the first echo's
-/// header ([`crate::scan::resolve_geometry`]) and recorded.
+/// header ([`crate::scan::resolve_geometry`]) and recorded; and what the load step did.
 fn load<S: StageStore + ?Sized>(
     config: &PipelineConfig, facts: &ScanFacts, store: &mut S, observer: &mut dyn Observer,
-) -> Result<RunMetadata, S::Error> {
+) -> Result<(RunMetadata, StepRecord), S::Error> {
     // The grid every other step works on is decided here, so a setting that changes it leaves
     // nothing cached valid.
     let geometry = json!({
@@ -75,17 +83,27 @@ fn load<S: StageStore + ?Sized>(
         "inputs": store.input_identity(),
     });
     let key = crate::cache::step_params_hash(None, &geometry);
+    let done = |meta: &RunMetadata, state: StepState, mut decisions: Vec<Decision>| {
+        decisions.extend(crate::scan::grid_decision(meta, facts, config));
+        StepRecord { id: Stage::Load.name(), label: Stage::Load.label(), state, decisions }
+    };
     if let Some(meta) = store.cached_scan(&key) {
         observer.log(Level::Info, "Skipping load (cached)");
         observer.stage("load", None, StageEvent::Cached);
-        return Ok(meta);
+        let record = done(&meta, StepState::Cached, store.decisions("load"));
+        return Ok((meta, record));
     }
     observer.stage("load", None, StageEvent::Started("Loading NIfTI metadata"));
     store.start("load");
     let header = store.header()?;
     let mut meta = crate::scan::resolve_geometry(header.dims, header.voxel_size, header.affine, facts, config);
+    let mut decisions = Vec::new();
     meta.slice_geometry = match &header.sidecar {
-        Some(sc) => crate::scan::check_slice_gap(sc, header.dims, header.voxel_size, &meta, config)?,
+        Some(sc) => {
+            let (geometry, gap) = crate::scan::check_slice_gap(sc, header.dims, header.voxel_size, &meta, config)?;
+            decisions.extend(gap);
+            geometry
+        }
         None => None,
     };
     let (d, v) = (header.dims, header.voxel_size);
@@ -95,9 +113,10 @@ fn load<S: StageStore + ?Sized>(
         if facts.n_coils > 1 { format!(" x {} uncombined coils", facts.n_coils) } else { String::new() },
         meta.field_strength, meta.echo_times,
     ));
-    store.record_scan(&key, &meta)?;
+    store.record_scan(&key, &meta, &decisions)?;
     observer.stage("load", None, StageEvent::Finished("Load"));
-    Ok(meta)
+    let record = done(&meta, StepState::Computed, decisions);
+    Ok((meta, record))
 }
 
 /// Every echo's phase, and every echo's magnitude (or none).
@@ -111,9 +130,54 @@ struct Run<'r, S: StageStore + ?Sized> {
     meta: RunMetadata,
     store: &'r mut S,
     observer: &'r mut dyn Observer,
+    /// What became of the step being taken: `None` until it is computed or found cached, and
+    /// skipped if neither.
+    state: Option<StepState>,
+    /// What it decided so far.
+    decisions: Vec<Decision>,
+    /// Where the decisions made while computing it start: those are kept with it in the store,
+    /// for a run that reuses it. The ones before are made every run.
+    computing_from: usize,
 }
 
-impl<S: StageStore + ?Sized> Run<'_, S> {
+impl<'r, S: StageStore + ?Sized> Run<'r, S> {
+    fn new(
+        plan: &'r Plan, config: &'r PipelineConfig, facts: &'r ScanFacts, meta: RunMetadata, store: &'r mut S,
+        observer: &'r mut dyn Observer,
+    ) -> Self {
+        Run { plan, config, facts, meta, store, observer, state: None, decisions: Vec::new(), computing_from: 0 }
+    }
+
+    /// Take `step`, and say what it did.
+    fn take(&mut self, step: &Step) -> Result<StepRecord, S::Error> {
+        (self.state, self.computing_from) = (None, 0);
+        self.decisions.clear();
+        self.step(step)?;
+        Ok(StepRecord {
+            id: step.name.clone(),
+            label: step.label.clone(),
+            state: self.state.take().unwrap_or(StepState::Skipped),
+            decisions: std::mem::take(&mut self.decisions),
+        })
+    }
+
+    /// Note a decision of the step being taken.
+    fn decide(&mut self, decision: Decision) {
+        self.decisions.push(decision);
+    }
+
+    /// Note that the step did nothing, and why.
+    fn skip(&mut self, reason: &str) {
+        self.decide(Decision::new(Topic::Step, Choice::Skipped, reason));
+    }
+
+    /// The step's earlier output is reused: what it decided when it was computed holds.
+    fn reuse(&mut self, step: &str) {
+        self.state = Some(StepState::Cached);
+        let earlier = self.store.decisions(step);
+        self.decisions.extend(earlier);
+    }
+
     fn step(&mut self, step: &Step) -> Result<(), S::Error> {
         match step.stage {
             Stage::Load => Ok(()),
@@ -151,10 +215,12 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         if self.store.cached(step, &key) {
             self.observer.log(Level::Info, skipping);
             self.observer.stage(step, algorithm, StageEvent::Cached);
+            self.reuse(step);
             return None;
         }
         self.observer.stage(step, algorithm, StageEvent::Started(doing));
         self.store.start(step);
+        self.computing_from = self.decisions.len();
         Some(key)
     }
 
@@ -170,15 +236,46 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         Ok(())
     }
 
-    /// Record a computed step; `label` names it in the log.
+    /// Record a computed step, with what it decided while computed; `label` names it in the log.
     fn complete(&mut self, c: Completed<'_>, label: &str) -> Result<(), S::Error> {
-        self.store.record(&c)?;
-        self.observer.stage(c.step, c.algorithm, StageEvent::Finished(label));
+        let (step, algorithm) = (c.step, c.algorithm);
+        self.record(c)?;
+        self.observer.stage(step, algorithm, StageEvent::Finished(label));
+        Ok(())
+    }
+
+    /// Keep a computed step in the store, with what it decided while computed.
+    fn record(&mut self, c: Completed<'_>) -> Result<(), S::Error> {
+        let decisions = self.decisions[self.computing_from.min(self.decisions.len())..].to_vec();
+        self.store.record(&Completed { decisions: &decisions, ..c })?;
+        self.state = Some(StepState::Computed);
         Ok(())
     }
 
     fn log(&mut self, level: Level, message: &str) {
         self.observer.log(level, message);
+    }
+
+    /// The box the FFT-based stages reconstruct in around `mask` ([`stages::crop::reconstruction_box`]),
+    /// when the run crops or pads.
+    fn reconstruction_box(&self, mask: &[u8]) -> Option<Decision> {
+        let p = &self.config.pipeline;
+        if !p.crop_to_mask && !p.fft_padding {
+            return None;
+        }
+        let b = stages::crop::reconstruction_box(p.crop_to_mask, p.fft_padding, mask, self.meta.dims,
+                                                 self.meta.voxel_size, p.crop_margin_mm);
+        let (d, f) = (b.dims, b.full_dims);
+        let size = format!("{}x{}x{} voxels, of {}x{}x{}", d.0, d.1, d.2, f.0, f.1, f.2);
+        Some(if d == f {
+            Decision::new(Topic::ReconstructionBox, Choice::Full,
+                          "Reconstructed on the whole grid, which the box would not have changed.")
+        } else if p.crop_to_mask {
+            Decision::new(Topic::ReconstructionBox, Choice::Cropped, "Reconstructed in a box around the mask.")
+        } else {
+            Decision::new(Topic::ReconstructionBox, Choice::Padded,
+                          "Reconstructed on the grid zero-padded to an FFT-efficient size.")
+        }.with_detail(size))
     }
 
     fn n_echoes(&self) -> usize {
@@ -238,8 +335,8 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     }
 
     /// The MESE's echoes, voxel-major on the working grid, and where its FOV reaches
-    /// ([`stages::r2::mese_on_grid`]); `None` without a usable MESE.
-    fn mese_on_grid(&mut self, mese: &crate::store::Mese) -> Result<Option<stages::r2::MeseOnGrid>, S::Error> {
+    /// ([`stages::r2::mese_on_grid`]); why not, without a usable MESE.
+    fn mese_on_grid(&mut self, mese: &crate::store::Mese) -> Result<Result<stages::r2::MeseOnGrid, String>, S::Error> {
         let store = &mut *self.store;
         Ok(stages::r2::mese_on_grid(mese, |n| store.supplied(&Item::MeseMagnitude(n)), self.meta.dims, &self.meta.affine)?)
     }
@@ -292,7 +389,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let inputs: Vec<Item> = (1..=n).map(Item::AcquiredPhase).collect();
         let outputs: Vec<Item> = phases.into_iter().chain(magnitudes).collect();
         self.complete(Completed {
-            step: "scale_phase", algorithm: None, params: &params, outcome: None, key: &key,
+            step: "scale_phase", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &inputs, outputs: &outputs,
         }, if resampled { "Resample + rescale phase" } else { "Rescale phase" })
     }
@@ -332,6 +429,18 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         for (level, line) in lines {
             self.log(level, &line);
         }
+        if negate_phase {
+            self.decide(Decision::new(Topic::PhaseSign, Choice::Negated,
+                "The phase from the real and imaginary parts was negated, as the scanner's manufacturer \
+                 records it with the opposite sign.").with_detail(manufacturer.clone().unwrap_or_default()));
+        }
+        let chopped: Vec<&str> = ["x", "y", "z"].into_iter().zip(converted.chopping.corrected)
+            .filter(|(_, on)| *on).map(|(a, _)| a).collect();
+        if !chopped.is_empty() {
+            self.decide(Decision::new(Topic::SliceChopping, Choice::Corrected,
+                "Phase alternating by π between neighbouring slices was corrected.")
+                .with_detail(format!("along {}", chopped.join(", "))));
+        }
         let resampled = self.meta.source_geometry.is_some();
         let outcome = Some(("real_imaginary_conversion", stages::phase::slice_chopping_json(&converted.chopping)));
         let (mut phases, mut magnitudes) = (Vec::new(), Vec::new());
@@ -347,7 +456,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         }
         let outputs: Vec<Item> = phases.into_iter().chain(magnitudes).collect();
         self.complete(Completed {
-            step: "scale_phase", algorithm: None, params: &params, outcome, key: &key,
+            step: "scale_phase", algorithm: None, params: &params, outcome, key: &key, decisions: &[],
             inputs: &inputs, outputs: &outputs,
         }, if resampled { "Resample + rescale phase" } else { "Rescale phase" })
     }
@@ -416,7 +525,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.put(Item::CoilCombinationMask, Data::Mask(&mask))?;
         outputs.push(Item::CoilCombinationMask);
         self.complete(Completed {
-            step: "scale_phase", algorithm: Some("mcpc3ds"), params: &params, outcome: None, key: &key,
+            step: "scale_phase", algorithm: Some("mcpc3ds"), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &inputs, outputs: &outputs,
         }, "Coil combination")
     }
@@ -444,10 +553,12 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             drop(echoes);
             self.put(Item::CombinedMagnitude, Data::Real(&combined))?;
             let inputs: Vec<Item> = (1..=n).map(Item::Magnitude).collect();
-            self.store.record(&Completed {
-                step: "magnitude", algorithm: Some("rss"), params: &params, outcome: None, key: &key,
+            self.record(Completed {
+                step: "magnitude", algorithm: Some("rss"), params: &params, outcome: None, key: &key, decisions: &[],
                 inputs: &inputs, outputs: &[Item::CombinedMagnitude],
             })?;
+        } else {
+            self.skip("There was no magnitude to combine.");
         }
         self.observer.stage("magnitude", Some("rss"), StageEvent::Finished("RSS magnitude"));
         Ok(())
@@ -477,6 +588,12 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     }
 
     fn mask(&mut self, step: &Step) -> Result<(), S::Error> {
+        // The plan leaves two-pass out when a mask is supplied ([`crate::plan::plan`]).
+        if self.config.pipeline.do_qsm && self.config.masking.two_pass && !self.plan.two_pass {
+            self.decide(Decision::new(Topic::TwoPass, Choice::NotApplied,
+                "Two-pass artefact reduction was not applied: the mask was supplied, so there was no recipe to \
+                 derive a reliable-phase mask from."));
+        }
         let params = stages::mask::params(self.config);
         let Some(key) = self.begin("mask", None, &params, "Skipping mask (cached)", "Creating mask") else { return Ok(()) };
         // A supplied mask, when one is asked for and found. One that cannot be used falls back to
@@ -487,22 +604,34 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                 Supplied::Found { origin, data, dims, affine } => {
                     if let Some(mask) = stages::mask::conform_custom_mask(&data, dims, &affine, &self.meta) {
                         self.log(Level::Info, &format!("Using custom mask from {origin}"));
+                        self.decide(Decision::new(Topic::MaskSource, Choice::Supplied,
+                            "The brain mask was the one supplied with the scan.").with_detail(origin));
                         self.put(Item::BrainMask, Data::Mask(&mask))?;
                         return self.complete(Completed {
-                            step: "mask", algorithm: None, params: &params, outcome: None, key: &key,
+                            step: "mask", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
                             inputs: &[Item::SuppliedMask], outputs: &[Item::BrainMask],
                         }, "Mask (custom)");
                     }
                     self.log(Level::Warn, &format!(
                         "custom mask {origin} could not be conformed to the working grid — computing instead"));
+                    self.decide(Decision::new(Topic::MaskSource, Choice::Computed,
+                        "The supplied mask could not be brought onto the working grid, so the mask was computed.")
+                        .with_detail(origin));
                     models = stages::mask::model_ids(&self.config.masking.sections, self.config);
                 }
                 Supplied::Unreadable { origin, error } => {
                     self.log(Level::Warn, &format!("could not read custom mask {origin} ({error}) — computing instead"));
+                    self.decide(Decision::new(Topic::MaskSource, Choice::Computed,
+                        "The supplied mask could not be read, so the mask was computed.")
+                        .with_detail(format!("{origin}: {error}")));
                     models = stages::mask::model_ids(&self.config.masking.sections, self.config);
                 }
-                Supplied::Missing { searched } => self.log(Level::Info, &format!(
-                    "no custom mask under derivatives (tool: {tool}) for {searched} — computing")),
+                Supplied::Missing { searched } => {
+                    self.log(Level::Info, &format!(
+                        "no custom mask under derivatives (tool: {tool}) for {searched} — computing"));
+                    self.decide(Decision::new(Topic::MaskSource, Choice::Computed,
+                        "No supplied mask was found, so the mask was computed.").with_detail(searched));
+                }
             }
         }
         self.log(Level::Info, &format!("Creating mask ({} section(s), combined with {})",
@@ -512,7 +641,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let n = self.n_echoes();
         let inputs: Vec<Item> = (1..=n).map(Item::Magnitude).filter(|i| self.store.has(i)).collect();
         self.complete(Completed {
-            step: "mask", algorithm: None, params: &params, outcome: None, key: &key,
+            step: "mask", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &inputs, outputs: &[Item::BrainMask],
         }, "Mask creation")
     }
@@ -531,7 +660,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let restricted = stages::mask::reliable_mask(&reliable, &main)?;
         self.put(Item::ReliableMask, Data::Mask(&restricted))?;
         self.complete(Completed {
-            step: &name, algorithm: None, params: &params, outcome: None, key: &key,
+            step: &name, algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &[main_item], outputs: &[Item::ReliableMask],
         }, "Reliable-phase mask")
     }
@@ -575,7 +704,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         }
         let inputs: Vec<Item> = phase_items.into_iter().chain(std::iter::once(mask_item)).collect();
         self.complete(Completed {
-            step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome: None, key: &key,
+            step: "unwrap", algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &inputs, outputs: &outputs,
         }, "Phase unwrapping")
     }
@@ -610,6 +739,9 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             let field = self.store.real(&Item::FieldPpm)?;
             let mask = self.store.mask(&mask_item)?;
             self.store.models(&step.models)?;
+            if let Some(d) = self.reconstruction_box(&mask) {
+                self.decide(d);
+            }
             self.log(Level::Info, &format!("Background removal ({algorithm}){label}"));
             let local = stages::background::remove_background(&field, &mask, &self.meta, self.config, self.observer)?;
             (local, vec![Item::FieldPpm, mask_item])
@@ -618,7 +750,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.put(Item::LocalFieldMask(pass), Data::Mask(&local.mask))?;
         let label = if iqfm { format!("Background removal (iQFM){label}") } else { format!("Background removal ({algorithm}){label}") };
         self.complete(Completed {
-            step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key,
+            step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &inputs, outputs: &outputs,
         }, &label)
     }
@@ -647,11 +779,14 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         // The combined magnitude, for MEDI's edge weighting.
         let magnitude = self.combined_magnitude()?;
         self.store.models(&step.models)?;
+        if let Some(d) = self.reconstruction_box(&mask) {
+            self.decide(d);
+        }
         self.log(Level::Info, &format!("Dipole inversion ({algorithm}){label}"));
         let chi = stages::inversion::invert(&field, &mask, magnitude.as_deref(), &self.meta, self.config, self.observer)?;
         self.put(Item::RawChi(pass), Data::Real(&chi))?;
         self.complete(Completed {
-            step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key,
+            step: &name, algorithm: Some(&algorithm), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &[field_item, mask_item], outputs: &[Item::RawChi(pass)],
         }, &format!("Dipole inversion ({algorithm}){label}"))
     }
@@ -676,7 +811,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             .chain(std::iter::once(mask_item)).collect();
         let net = if algorithm == "iqsm-plus" { "iQSM+" } else { "iQSM" };
         self.complete(Completed {
-            step: &name, algorithm: Some(algorithm), params: &params, outcome: None, key: &key,
+            step: &name, algorithm: Some(algorithm), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &inputs, outputs: &[Item::RawChi(pass)],
         }, &format!("{net}{label}"))
     }
@@ -698,7 +833,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let chi = stages::inversion::tgv(&data, &mask, &self.meta, self.config)?;
         self.put(Item::RawChi(pass), Data::Real(&chi))?;
         self.complete(Completed {
-            step: &name, algorithm: Some("tgv"), params: &params, outcome: None, key: &key,
+            step: &name, algorithm: Some("tgv"), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &[mask_item, Item::FieldPpm], outputs: &[Item::RawChi(pass)],
         }, &format!("TGV-QSM{label}"))
     }
@@ -728,7 +863,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             outputs.push(item);
         }
         self.complete(Completed {
-            step: &name, algorithm: Some("qsmart"), params: &params, outcome: None, key: &key,
+            step: &name, algorithm: Some("qsmart"), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &[mask_item, Item::FieldPpm], outputs: &outputs,
         }, &format!("QSMART{}", pass_label(pass)))
     }
@@ -747,7 +882,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let combined = stages::inversion::combine_two_pass(&chi_reliable, &chi_main, &declared, &brain)?;
         self.put(Item::CombinedRawChi, Data::Real(&combined))?;
         self.complete(Completed {
-            step: "twopass", algorithm: None, params: &params, outcome: None, key: &key,
+            step: "twopass", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &[Item::RawChi(Pass::Reliable), Item::RawChi(Pass::Main), support],
             outputs: &[Item::CombinedRawChi],
         }, "Two-pass combination")
@@ -802,7 +937,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         // over its own support, so each has its own offset.
         self.store.annotate(&out, crate::referencing::sidecar_fields(self.config, offset.as_ref()))?;
         self.complete(Completed {
-            step: &name, algorithm: Some(&method), params: &params, outcome: None, key: &key,
+            step: &name, algorithm: Some(&method), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &inputs, outputs: &outputs,
         }, "QSM referencing")
     }
@@ -823,7 +958,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.put(Item::SwiMip, Data::OnGrid(&swi.mip, &swi.mip_geometry))?;
         let inputs: Vec<Item> = phase_items.into_iter().chain(mag_items).collect();
         self.complete(Completed {
-            step: "swi", algorithm: Some("clear-swi"), params: &params, outcome: None, key: &key,
+            step: "swi", algorithm: Some("clear-swi"), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &inputs, outputs: &[Item::Swi, Item::SwiMip],
         }, "SWI")
     }
@@ -834,6 +969,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let params = stages::swi::smwi_params(self.config, &self.meta)?;
         if !self.store.has(&Item::Chi) {
             self.log(Level::Warn, "Skipping SMWI: no susceptibility map");
+            self.skip("There was no susceptibility map to weight by.");
             return Ok(());
         }
         let Some(key) = self.begin("smwi", Some("smwi"), &params, "Skipping smwi (cached)", "Computing SMWI") else { return Ok(()) };
@@ -853,7 +989,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             outputs.extend([Item::Smwi(*contrast), Item::SmwiMip(*contrast)]);
         }
         self.complete(Completed {
-            step: "smwi", algorithm: Some("smwi"), params: &params, outcome: None, key: &key,
+            step: "smwi", algorithm: Some("smwi"), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &[Item::Chi, Item::CombinedMagnitude, mask_item], outputs: &outputs,
         }, "SMWI")
     }
@@ -879,7 +1015,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         self.put(Item::R2star, Data::Real(&r2star))?;
         self.put(Item::T2star, Data::Real(&t2star))?;
         self.complete(Completed {
-            step: "t2star_r2star", algorithm: Some("arlo"), params: &params, outcome: None, key: &key,
+            step: "t2star_r2star", algorithm: Some("arlo"), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &[mask_item], outputs: &[Item::R2star, Item::T2star],
         }, "T2*/R2* mapping")
     }
@@ -912,20 +1048,26 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             if self.store.has(&Item::SuppliedR2) {
                 let from = self.store.identity(&Item::SuppliedR2);
                 self.log(Level::Info, &format!("Using custom R2 map from {}", from.as_str().unwrap_or_default()));
+                self.decide(Decision::new(Topic::R2Source, Choice::Supplied, "The R2 map was the one supplied with the scan.")
+                    .with_detail(from.as_str().unwrap_or_default()));
                 Some(self.store.real(&Item::SuppliedR2)?)
             } else {
                 self.log(Level::Warn, &format!("no custom R2 map under derivatives (tool: {tool}) — skipping R2"));
+                self.decide(Decision::new(Topic::R2Source, Choice::Unavailable,
+                    "No supplied R2 map was found, so there is no R2 map.").with_detail(tool.clone()));
                 None
             }
         } else if let Some(mese) = &mese {
             if let Some(why) = crate::requirements::mese_problem(self.facts) {
                 // Refused up front when R2 was asked for; here only when something else implied it.
                 self.log(Level::Warn, &format!("Not measuring R2 from the MESE ({why})"));
+                self.decide(Decision::new(Topic::R2Source, Choice::Unavailable,
+                    "R2 was not measured: the multi-echo spin-echo acquisition cannot be used.").with_detail(why));
                 None
             } else {
                 self.log(Level::Info, "Computing R2 (EPG) from MESE");
                 match self.mese_on_grid(mese)? {
-                    Some(stages::r2::MeseOnGrid { echoes: se, coverage }) => {
+                    Ok(stages::r2::MeseOnGrid { echoes: se, coverage }) => {
                         // R2 is only measured where the MESE's FOV reaches. Fitting outside it
                         // would put a number on interpolated zeros, and R2' = R2* - R2 would then
                         // quietly take that number as a measurement.
@@ -936,16 +1078,28 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                                 "The MESE covers {:.0}% of the brain mask; R2 (and so a measured R2') \
                                  is left at zero over the remaining {} voxels.",
                                 100.0 * in_both as f64 / in_mask as f64, in_mask - in_both));
+                            self.decide(Decision::new(Topic::R2Coverage, Choice::Partial,
+                                "R2 was measured only where the multi-echo spin-echo acquisition covers the brain mask, \
+                                 and left at zero elsewhere.")
+                                .with_detail(format!("{:.0}% of the brain mask", 100.0 * in_both as f64 / in_mask as f64)));
                         }
+                        self.decide(Decision::new(Topic::R2Source, Choice::Measured,
+                            "R2 was fitted from the multi-echo spin-echo acquisition.").with_detail(mese.name.clone()));
                         let r2 = stages::r2::r2_epg(&se, &fit_mask, mese, &self.meta)?;
                         r2_mask = Some(fit_mask);
                         Some(r2)
                     }
-                    None => None,
+                    Err(why) => {
+                        self.decide(Decision::new(Topic::R2Source, Choice::Unavailable,
+                            "R2 was not measured: the multi-echo spin-echo acquisition cannot be used.").with_detail(why));
+                        None
+                    }
                 }
             }
         } else {
             self.log(Level::Info, "No MESE acquisition and no custom R2 map — R2/R2' unavailable for this run");
+            self.decide(Decision::new(Topic::R2Source, Choice::Unavailable,
+                "There is no R2 map: the scan has no multi-echo spin-echo acquisition and none was supplied."));
             None
         };
         if let Some(r2) = &r2 {
@@ -963,11 +1117,15 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                     let from = self.store.identity(&Item::SuppliedR2prime);
                     let from = from.as_str().unwrap_or_default();
                     self.log(Level::Info, &format!("Using custom R2' map from {from}"));
+                    self.decide(Decision::new(Topic::R2primeSource, Choice::Supplied,
+                        "The R2′ map was the one supplied with the scan.").with_detail(from));
                     source.insert("R2primeSource".into(), json!("supplied"));
                     source.insert("R2primeSuppliedFrom".into(), json!(from));
                     Some(self.store.real(&Item::SuppliedR2prime)?)
                 } else {
                     self.log(Level::Warn, &format!("no custom R2' map under derivatives (tool: {tool}) — skipping R2'"));
+                    self.decide(Decision::new(Topic::R2primeSource, Choice::Unavailable,
+                        "No supplied R2′ map was found, so there is no R2′ map.").with_detail(tool.clone()));
                     None
                 }
             } else {
@@ -993,7 +1151,11 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                                  voxels are left at zero because no R2 was measured there. Maps \
                                  derived from this R2' inherit that gap.",
                                 100.0 * measured as f64 / in_mask as f64, in_mask - measured));
+                            self.decide(Decision::new(Topic::R2primeCoverage, Choice::Partial,
+                                "R2′ was measured only where R2 was, and left at zero elsewhere.")
+                                .with_detail(format!("{:.0}% of the brain mask", 100.0 * measured as f64 / in_mask as f64)));
                         }
+                        self.decide(Decision::new(Topic::R2primeSource, Choice::Measured, "R2′ was computed as R2* − R2."));
                         source.insert("R2primeSource".into(), json!("measured"));
                         source.insert("R2primeMethod".into(), json!(match &sep.custom_r2_tool {
                             Some(tool) => format!("R2* - R2 (R2 supplied by {tool})"),
@@ -1002,6 +1164,8 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                         Some(r2p)
                     } else {
                         self.log(Level::Warn, "R2' needs both R2* and R2 - one is missing; skipping R2'");
+                        self.decide(Decision::new(Topic::R2primeSource, Choice::Unavailable,
+                            "There is no R2′ map: R2* was not computed to subtract R2 from."));
                         None
                     }
                 } else if strategy == R2PrimeStrategy::Mese {
@@ -1009,9 +1173,13 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                         "Skipping R2': no R2 to subtract (no MESE acquisition and no custom R2 map), \
                          and --r2prime-strategy mese does not estimate one. Use `auto` or \
                          `r2primenet` to predict R2' from R2* instead.");
+                    self.decide(Decision::new(Topic::R2primeSource, Choice::Unavailable,
+                        "There is no R2′ map: there was no R2 to subtract, and R2′ was only to be measured."));
                     None
                 } else if !has_r2star {
                     self.log(Level::Warn, "Skipping R2': R2PRIMEnet predicts it from R2*, which was not computed");
+                    self.decide(Decision::new(Topic::R2primeSource, Choice::Unavailable,
+                        "There is no R2′ map: R2* was not computed to predict it from."));
                     None
                 } else {
                     // Auto with no R2 to subtract, or r2primenet outright.
@@ -1022,6 +1190,9 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                                 "Skipping R2': there is no R2 to subtract, and {}. Pass \
                                  --r2primenet-ignore-field-mismatch to predict it anyway (uncalibrated).",
                                 r2primenet_field_message(field)));
+                            self.decide(Decision::new(Topic::R2primeSource, Choice::Unavailable,
+                                "There is no R2′ map: there was no R2 to subtract, and R2PRIMEnet is not run \
+                                 off the field strength it was trained at.").with_detail(format!("{field} T")));
                             None
                         }
                         R2primenetFieldPolicy::Refuse => {
@@ -1037,6 +1208,9 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                                     "{}. Running anyway (--r2primenet-ignore-field-mismatch): treat this \
                                      R2', and any chi-separation built on it, as uncalibrated.",
                                     r2primenet_field_message(field)));
+                                self.decide(Decision::new(Topic::R2primenetCalibration, Choice::Uncalibrated,
+                                    "R2PRIMEnet was run off the field strength it was trained at, so its R2′ is uncalibrated.")
+                                    .with_detail(format!("{field} T")));
                             }
                             if strategy == R2PrimeStrategy::Auto {
                                 self.log(Level::Info, "No R2 to subtract - estimating R2' from R2* with R2PRIMEnet");
@@ -1048,11 +1222,16 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                                      off-distribution. The run was not resampled because a measured R2 was \
                                      expected and did not materialise. Pass --axial-resampling to resample, \
                                      or --r2prime-strategy mese to not estimate R2' at all."));
+                                self.decide(Decision::new(Topic::R2primenetGrid, Choice::OffDistribution,
+                                    "R2PRIMEnet ran on a grid whose B0 is not along the slice normal, so its R2′ is \
+                                     off its training distribution.").with_detail(format!("{tilt:.1}°")));
                             }
                             self.store.models(&step.models)?;
                             let r2star = self.store.real(&Item::R2star)?;
                             let predicted = stages::r2::r2primenet(&r2star, &mask, &self.meta, &sep.r2primenet, self.observer)?;
                             self.log(Level::Info, "R2' estimated by R2PRIMEnet (an estimate, not a measurement)");
+                            self.decide(Decision::new(Topic::R2primeSource, Choice::Predicted,
+                                "R2′ was estimated from R2* by R2PRIMEnet."));
                             source.insert("R2primeSource".into(), json!("predicted"));
                             source.insert("R2primeMethod".into(), json!("R2PRIMEnet (from R2*)"));
                             source.insert("R2primenetTrainedFieldStrength".into(),
@@ -1074,7 +1253,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             return Ok(());
         }
         self.complete(Completed {
-            step: "r2_r2prime", algorithm: Some("epg"), params: &params, outcome: None, key: &key,
+            step: "r2_r2prime", algorithm: Some("epg"), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &[mask_item], outputs: &outputs,
         }, "R2/R2' mapping")
     }
@@ -1100,6 +1279,9 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                 }
                 let from = self.store.identity(&Item::SuppliedChi);
                 self.log(Level::Info, &format!("Using custom QSM from {}", from.as_str().unwrap_or_default()));
+                self.decide(Decision::new(Topic::QsmSource, Choice::Supplied,
+                    "The susceptibility map separated was the one supplied with the scan.")
+                    .with_detail(from.as_str().unwrap_or_default()));
                 Item::SuppliedChi
             }
             None => {
@@ -1146,7 +1328,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         // The MESE's echoes on this run's grid, for HC-ChiSep. Voxels outside its FOV are zero,
         // the same as voxels outside the brain.
         let se_multi = match &mese {
-            Some(m) => self.mese_on_grid(m)?.map(|m| m.echoes),
+            Some(m) => self.mese_on_grid(m)?.ok().map(|m| m.echoes),
             None => None,
         };
         // The local field (ppm), for the field-based methods.
@@ -1214,7 +1396,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             inputs.push(Item::ChiSupport);
         }
         self.complete(Completed {
-            step: "chi_separation", algorithm: Some(&alg_name), params: &params, outcome: None, key: &key,
+            step: "chi_separation", algorithm: Some(&alg_name), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &inputs,
             outputs: &[Item::SeparatedChi(Contrast::Paramagnetic), Item::SeparatedChi(Contrast::Diamagnetic),
                        Item::SeparatedTotalChi],
@@ -1238,6 +1420,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let n = self.n_echoes();
         if n < 2 {
             self.log(Level::Warn, "Motion correction needs at least two echoes; this run has one, so it is skipped");
+            self.skip("Motion correction needs at least two echoes, and this run has one.");
             return self.store.discard("motion", &[Item::CoverageMask]);
         }
         let params = stages::motion::params(self.config, &self.meta);
@@ -1275,7 +1458,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             self.log(level, &line);
         }
         self.complete(Completed {
-            step: "motion", algorithm: None, params: &params, outcome: None, key: &key,
+            step: "motion", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &inputs, outputs: &outputs,
         }, "Motion correction")
     }
@@ -1295,24 +1478,41 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
             match self.store.supplied(&Item::SuppliedSegmentation) {
                 Supplied::Found { origin, data, dims, .. } if dims == self.meta.dims => {
                     self.log(Level::Info, &format!("Using custom segmentation from {origin}"));
+                    self.decide(Decision::new(Topic::SegmentationSource, Choice::Supplied,
+                        "The segmentation was the one supplied with the scan.").with_detail(origin));
                     self.put(Item::Segmentation, Data::Real(&data))?;
                     self.put(Item::SegmentationLabels, Data::Text(&lookup))?;
                     return self.complete(Completed {
-                        step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key,
+                        step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key, decisions: &[],
                         inputs: &[Item::SuppliedSegmentation], outputs: &[Item::Segmentation, Item::SegmentationLabels],
                     }, "Segmentation (custom)");
                 }
-                Supplied::Found { origin, dims, .. } => self.log(Level::Warn, &format!(
-                    "custom segmentation {origin} is {}x{}x{}, not the run's {}x{}x{} — computing instead",
-                    dims.0, dims.1, dims.2, self.meta.dims.0, self.meta.dims.1, self.meta.dims.2)),
-                Supplied::Unreadable { origin, error } => self.log(Level::Warn, &format!(
-                    "could not read custom segmentation {origin} ({error}) — computing instead")),
-                Supplied::Missing { .. } => self.log(Level::Info, &format!(
-                    "no custom segmentation under derivatives (tool: {tool}) — computing")),
+                Supplied::Found { origin, dims, .. } => {
+                    self.log(Level::Warn, &format!(
+                        "custom segmentation {origin} is {}x{}x{}, not the run's {}x{}x{} — computing instead",
+                        dims.0, dims.1, dims.2, self.meta.dims.0, self.meta.dims.1, self.meta.dims.2));
+                    self.decide(Decision::new(Topic::SegmentationSource, Choice::Computed,
+                        "The supplied segmentation is not on the run's grid, so the scan was segmented.")
+                        .with_detail(format!("{origin}: {}x{}x{}", dims.0, dims.1, dims.2)));
+                }
+                Supplied::Unreadable { origin, error } => {
+                    self.log(Level::Warn, &format!(
+                        "could not read custom segmentation {origin} ({error}) — computing instead"));
+                    self.decide(Decision::new(Topic::SegmentationSource, Choice::Computed,
+                        "The supplied segmentation could not be read, so the scan was segmented.")
+                        .with_detail(format!("{origin}: {error}")));
+                }
+                Supplied::Missing { searched } => {
+                    self.log(Level::Info, &format!(
+                        "no custom segmentation under derivatives (tool: {tool}) — computing"));
+                    self.decide(Decision::new(Topic::SegmentationSource, Choice::Computed,
+                        "No supplied segmentation was found, so the scan was segmented.").with_detail(searched));
+                }
             }
         }
         if !self.store.has(&Item::CombinedMagnitude) {
             self.log(Level::Warn, "Skipping segmentation: no combined magnitude");
+            self.skip("There was no combined magnitude to segment.");
             return Ok(());
         }
         stages::segmentation::weights_available(c.version)?;
@@ -1331,7 +1531,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         let present = labels.ids.iter().skip(1).zip(seg.volumes.iter().skip(1)).filter(|(_, &v)| v > 0.0).count();
         self.log(Level::Info, &format!("Segmented {} of {} structures", present, labels.ids.len() - 1));
         self.complete(Completed {
-            step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key,
+            step: "segmentation", algorithm: Some("synthseg"), params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &[Item::CombinedMagnitude],
             outputs: &[Item::Segmentation, Item::SegmentationLabels, Item::SegmentationVolumes],
         }, "Segmentation")
@@ -1346,6 +1546,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         use stages::analysis::{self as a, MAPS};
         let Some(seg_item) = self.segmentation_item() else {
             self.log(Level::Warn, "Skipping analysis: no segmentation");
+            self.skip("There was no segmentation to summarise the maps over.");
             return Ok(());
         };
         let mut maps: Vec<(Item, &str, &str)> = MAPS.into_iter().filter(|(i, ..)| self.store.has(i)).collect();
@@ -1361,10 +1562,12 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         if self.store.cached("analysis", &key) {
             self.log(Level::Info, "Skipping analysis (cached)");
             self.observer.stage("analysis", None, StageEvent::Cached);
+            self.reuse("analysis");
             return Ok(());
         }
         if maps.is_empty() {
             self.log(Level::Warn, "Skipping analysis: the run produced no quantitative map to summarise");
+            self.skip("The run made no quantitative map to summarise.");
             return Ok(());
         }
         self.observer.stage("analysis", None, StageEvent::Started("Summarising maps per structure"));
@@ -1390,10 +1593,12 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         }
         let names: Vec<&str> = maps.iter().map(|(_, name, _)| *name).collect();
         self.log(Level::Info, &format!("Per-structure statistics for {}", names.join(", ")));
+        self.decide(Decision::new(Topic::AnalysisMaps, Choice::Summarised, "The maps summarised per structure.")
+            .with_detail(names.join(", ")));
         self.put(Item::RegionStats, Data::Text(&table))?;
         let inputs: Vec<Item> = std::iter::once(seg_item).chain(maps.iter().map(|(i, ..)| *i)).collect();
         self.complete(Completed {
-            step: "analysis", algorithm: None, params: &params, outcome: None, key: &key,
+            step: "analysis", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &inputs, outputs: &[Item::RegionStats],
         }, "Per-structure analysis")
     }
@@ -1402,6 +1607,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
     /// ([`stages::output_space`]) — or, with `--output-space working`, left where they are.
     fn output_space(&mut self) -> Result<(), S::Error> {
         use stages::output_space::{self as o, Kind};
+        // Not resampled: the outputs are on the acquired grid already (the record's `resampled`).
         let Some((dst_dims, dst_affine)) = self.meta.source_geometry else { return Ok(()) };
         if self.config.pipeline.output_space != crate::OutputSpace::Acquired {
             self.log(Level::Info, "Leaving outputs on the resampled grid (--output-space working)");
@@ -1426,6 +1632,9 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                 self.log(Level::Warn, &format!(
                     "Leaving {} on the working grid: wrapped phase can only be resampled with its \
                      magnitude, and there is none beside it", what.as_str().unwrap_or_default()));
+                self.decide(Decision::new(Topic::OutputGrid, Choice::Kept,
+                    "Phase without a magnitude beside it was left on the working grid.")
+                    .with_detail(what.as_str().unwrap_or_default()));
                 done.push(phase_item);
                 continue;
             }
@@ -1450,6 +1659,9 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
                 self.log(Level::Warn, &format!(
                     "Leaving {} on its own grid: {} voxels, not the {} of the working grid",
                     what.as_str().unwrap_or_default(), data.len(), src_voxels));
+                self.decide(Decision::new(Topic::OutputGrid, Choice::Kept,
+                    "An output not on the working grid was left on its own grid.")
+                    .with_detail(what.as_str().unwrap_or_default()));
                 continue;
             }
             if let Some(out) = o::resample(&data, kind, (&src_dims, &src_affine), &dst)? {
@@ -1472,7 +1684,7 @@ impl<S: StageStore + ?Sized> Run<'_, S> {
         // Read: the working-grid versions each output was returned from.
         let items: Vec<Item> = published.iter().map(|(i, _)| *i).collect();
         self.complete(Completed {
-            step: "output_space", algorithm: None, params: &params, outcome: None, key: &key,
+            step: "output_space", algorithm: None, params: &params, outcome: None, key: &key, decisions: &[],
             inputs: &items, outputs: &items,
         }, "Output space")
     }
@@ -1641,8 +1853,9 @@ pub(crate) mod tests {
             assert!(store.get(&item).is_some(), "{item:?}");
         }
         // The combination is keyed by which mask its reliable pass is defined on.
-        let r = Run { plan: &crate::plan::plan(&config, &facts), config: &config, facts: &facts,
-                          meta: crate::stages::magnitude::tests::meta_4x4x4(), store: &mut store, observer: &mut () };
+        let plan = crate::plan::plan(&config, &facts);
+        let mut quiet = ();
+        let r = Run::new(&plan, &config, &facts, crate::stages::magnitude::tests::meta_4x4x4(), &mut store, &mut quiet);
         assert_eq!(r.support(Pass::Reliable), Item::LocalFieldMask(Pass::Reliable));
         assert_eq!(r.store.identity(&r.support(Pass::Reliable)), json!("LocalFieldMask(Reliable)"));
     }
@@ -2078,3 +2291,6 @@ pub(crate) mod tests {
     }
 
 }
+
+#[cfg(test)]
+mod record_tests;

@@ -282,7 +282,10 @@ impl StageStore for Recorder {
     fn sidecar(&mut self) -> Result<Option<crate::scan::QsmSidecar>, Self::Error> { self.inner.sidecar() }
     fn coils(&mut self) -> Vec<u32> { self.inner.coils() }
     fn cached_scan(&mut self, key: &str) -> Option<RunMetadata> { self.inner.cached_scan(key) }
-    fn record_scan(&mut self, key: &str, meta: &RunMetadata) -> Result<(), Self::Error> { self.inner.record_scan(key, meta) }
+    fn record_scan(&mut self, key: &str, meta: &RunMetadata, decisions: &[crate::record::Decision]) -> Result<(), Self::Error> {
+        self.inner.record_scan(key, meta, decisions)
+    }
+    fn decisions(&mut self, step: &str) -> Vec<crate::record::Decision> { self.inner.decisions(step) }
     fn has(&mut self, item: &Item) -> bool { self.inner.has(item) }
     fn real(&mut self, item: &Item) -> Result<Vec<f64>, Self::Error> { self.inner.real(item) }
     fn mask(&mut self, item: &Item) -> Result<Vec<u8>, Self::Error> { self.inner.mask(item) }
@@ -443,4 +446,32 @@ fn plan_steps_carry_their_name_label_algorithm_and_outputs() {
                (&serde_json::json!("unwrap"), &serde_json::json!("Field map"), &serde_json::json!("phase_offset_removal"),
                 &serde_json::json!("ROMEO")));
     assert_eq!(step["outputs"][0], serde_json::json!("FieldPpm"));
+}
+
+/// A dataset's graphs merged: identical graphs give that graph; where runs differ, every box once,
+/// one only some runs have placed where it runs and drawn as conditional.
+#[test]
+fn a_datasets_graphs_merge_into_one() {
+    let config = PipelineConfig::default();
+    let multi = graph(&config, &facts());
+    assert_eq!(PipelineGraph::merged(&[multi.clone(), multi.clone()]), Some(multi.clone()));
+    assert_eq!(PipelineGraph::merged(&[]), None);
+    let mut swi = config.clone();
+    swi.pipeline.do_swi = true;
+    let mut no_mag = facts();
+    no_mag.has_magnitude = false;
+    let with_swi = graph(&swi, &facts());
+    let without = graph(&swi, &no_mag);
+    let merged = PipelineGraph::merged(&[without.clone(), with_swi.clone()]).unwrap();
+    let ids: Vec<&str> = merged.nodes.iter().map(|n| n.id.as_str()).collect();
+    let mut want: Vec<&str> = with_swi.nodes.iter().map(|n| n.id.as_str()).collect();
+    for n in &without.nodes {
+        if !want.contains(&n.id.as_str()) { want.push(&n.id); }
+    }
+    assert_eq!(ids.len(), want.len(), "{ids:?} vs {want:?}");
+    assert!(merged.node("swi").unwrap().only_when.is_some());
+    assert!(merged.node("invert").unwrap().only_when.is_none());
+    for e in with_swi.edges.iter().chain(&without.edges) {
+        assert!(merged.edges.contains(e));
+    }
 }

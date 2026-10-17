@@ -63,14 +63,20 @@ pub struct MeseOnGrid {
 ///
 /// Returns the buffer and a coverage mask marking which destination voxels the MESE's FOV
 /// actually reaches: a MESE with fewer slices than the GRE leaves the rest of the grid empty, and
-/// R2 must not be reported where nothing was measured. `None` (with a warning) when the MESE
+/// R2 must not be reported where nothing was measured. Why not (logged as a warning) when the MESE
 /// cannot be used: an echo unreadable or on a grid of its own, an affine that cannot be inverted.
+/// `why` the MESE is not used, logged as a warning.
+fn ignoring(why: String) -> String {
+    log::warn!("{why}");
+    why
+}
+
 pub fn mese_on_grid(
     mese: &Mese,
     mut echo: impl FnMut(usize) -> Supplied,
     dst_dims: (usize, usize, usize),
     dst_affine: &[f64; 16],
-) -> Result<Option<MeseOnGrid>, EngineError> {
+) -> Result<Result<MeseOnGrid, String>, EngineError> {
     let n_voxels = dst_dims.0 * dst_dims.1 * dst_dims.2;
     let n_se = mese.echo_times.len();
     let on_grid = same_grid(mese.dims, &mese.affine, dst_dims, dst_affine);
@@ -84,8 +90,7 @@ pub fn mese_on_grid(
         let Some(c) = qsm_core::geometry::resample_onto(
             &vec![1.0f64; src_n], mese.dims, &mese.affine, dst_dims, dst_affine,
         ) else {
-            log::warn!("MESE acquisition {} has an affine that cannot be inverted; ignoring the MESE", mese.name);
-            return Ok(None);
+            return Ok(Err(ignoring(format!("MESE acquisition {} has an affine that cannot be inverted; ignoring the MESE", mese.name))));
         };
         c.iter().map(|&v| (v > 0.5) as u8).collect()
     };
@@ -114,23 +119,20 @@ pub fn mese_on_grid(
         let (origin, data, dims, affine) = match echo(i + 1) {
             Supplied::Found { origin, data, dims, affine } => (origin, data, dims, affine),
             Supplied::Unreadable { origin, error } => {
-                log::warn!("MESE echo unreadable ({origin}): {error}; ignoring the MESE");
-                return Ok(None);
+                return Ok(Err(ignoring(format!("MESE echo unreadable ({origin}): {error}; ignoring the MESE"))));
             }
             Supplied::Missing { searched } => {
-                log::warn!("MESE echo {} not found in {searched}; ignoring the MESE", i + 1);
-                return Ok(None);
+                return Ok(Err(ignoring(format!("MESE echo {} not found in {searched}; ignoring the MESE", i + 1))));
             }
         };
         // The acquisition's grid was taken from its first echo. An echo that disagrees with it is
         // a broken series, not a second geometry to reconcile.
         if !same_grid(dims, &affine, mese.dims, &mese.affine) {
-            log::warn!(
+            return Ok(Err(ignoring(format!(
                 "MESE echo {} is on a different grid from the first echo of its own acquisition \
                  ({}x{}x{} vs {}x{}x{}); ignoring the MESE",
                 origin, dims.0, dims.1, dims.2, mese.dims.0, mese.dims.1, mese.dims.2,
-            );
-            return Ok(None);
+            ))));
         }
         let values = if on_grid {
             data
@@ -138,14 +140,13 @@ pub fn mese_on_grid(
             match qsm_core::geometry::resample_onto(&data, mese.dims, &mese.affine, dst_dims, dst_affine) {
                 Some(v) => v,
                 None => {
-                    log::warn!("Cannot resample MESE echo {origin}; ignoring the MESE");
-                    return Ok(None);
+                    return Ok(Err(ignoring(format!("Cannot resample MESE echo {origin}; ignoring the MESE"))));
                 }
             }
         };
         for vox in 0..n_voxels { se[vox * n_se + i] = values[vox]; }
     }
-    Ok(Some(MeseOnGrid { echoes: se, coverage }))
+    Ok(Ok(MeseOnGrid { echoes: se, coverage }))
 }
 
 /// The mask a MESE-measured R2 is valid over: the brain mask, narrowed to where the MESE's FOV
@@ -277,7 +278,7 @@ mod tests {
     fn on_grid(
         (mese, echoes): &(Mese, Vec<Supplied>), dims: (usize, usize, usize), affine: [f64; 16],
     ) -> Result<Option<MeseOnGrid>, EngineError> {
-        mese_on_grid(mese, |n| echoes[n - 1].clone(), dims, &affine)
+        mese_on_grid(mese, |n| echoes[n - 1].clone(), dims, &affine).map(Result::ok)
     }
 
     /// The broad case: a 2D-style MESE on a coarser grid of its own. The whole acquisition used to

@@ -52,7 +52,7 @@ pub fn execute(args: AggregateArgs) -> crate::Result<()> {
     info!("QSM.rs {}", env!("QSM_CORE_DESCRIBE"));
     info!("Dataset-level steps over {} run(s)", runs.len());
 
-    run::write_dataset_files(&derivatives_dir, &args.bids_dir, &config)?;
+    run::write_dataset_files(&derivatives_dir, &args.bids_dir, &config, &runs)?;
 
     // A local run knows which of its runs succeeded; here the pipeline state says, and it has to
     // be the state of this configuration — a run processed with other settings is not one of

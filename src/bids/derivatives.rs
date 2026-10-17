@@ -218,6 +218,37 @@ impl DerivativeOutputs {
         self.anat_dir(key).join(format!("{}_desc-segmentation_stats.tsv", key.basename()))
     }
 
+    /// The run's methods text, in its workflow directory: what was done to it, from its plan and
+    /// what it decided as it ran.
+    pub fn run_methods_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_run_dir(key).join(format!("{}_methods.md", key.basename()))
+    }
+    /// What the run did, step by step (`qsmxt_engine::record::RunRecord`, JSON), in its workflow
+    /// directory.
+    pub fn run_record_path(&self, key: &AcquisitionKey) -> PathBuf {
+        self.workflow_run_dir(key).join(format!("{}_runrecord.json", key.basename()))
+    }
+    /// The run's pipeline graph (Mermaid) in its workflow directory: as planned, or (`after`) as
+    /// the run took it, written only when that differs from the plan.
+    pub fn run_graph_path(&self, key: &AcquisitionKey, after: bool) -> PathBuf {
+        let desc = if after { "_desc-ran" } else { "" };
+        self.workflow_run_dir(key).join(format!("{}{desc}_pipeline.mmd", key.basename()))
+    }
+    /// The dataset's pipeline graph (Mermaid), beside `methods.md`.
+    pub fn dataset_graph_path(&self) -> PathBuf {
+        self.output_dir.join("pipeline.mmd")
+    }
+    /// Where the runs that differ from the dataset's methods keep what was done to them.
+    pub fn changes_dir(&self) -> PathBuf {
+        self.output_dir.join("changes")
+    }
+    /// A run that differs from the dataset's methods: its methods text, or (`graph`) its pipeline
+    /// graph as it ran, in [`Self::changes_dir`].
+    pub fn change_path(&self, key: &AcquisitionKey, graph: bool) -> PathBuf {
+        let name = if graph { "desc-ran_pipeline.mmd" } else { "methods.md" };
+        self.changes_dir().join(format!("{}_{name}", key.basename()))
+    }
+
     /// SMWI and its minIP, per contrast. The `desc-` values match the chi-separation outputs, which
     /// split the same two ways.
     pub fn smwi_path(&self, key: &AcquisitionKey, contrast: &str) -> PathBuf {
